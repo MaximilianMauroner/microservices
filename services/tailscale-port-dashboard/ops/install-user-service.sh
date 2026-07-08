@@ -16,7 +16,7 @@ After=default.target
 [Service]
 Type=simple
 WorkingDirectory=${service_dir}
-Environment=PORT=8080
+Environment=PORT=80
 ExecStart=${bun_bin} run start
 Restart=on-failure
 RestartSec=5
@@ -32,7 +32,7 @@ systemctl --user restart "${service_name}"
 
 tailscale_ip="$(tailscale ip -4 | sed -n '1p')"
 for _ in {1..20}; do
-  if curl -fsS "http://${tailscale_ip}:8080/health" >/dev/null 2>&1; then
+  if curl -fsS "http://${tailscale_ip}/health" >/dev/null 2>&1; then
     break
   fi
   sleep 0.25

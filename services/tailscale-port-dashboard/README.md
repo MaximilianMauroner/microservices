@@ -43,20 +43,15 @@ The unit requires `tailscaled.service`, starts after network readiness, and retr
 
 The checked-in `.service` files are public-safe examples. Use the install scripts so the real unit is generated with the current repo path, user, and Bun executable on the VM.
 
-Without sudo, install the user service and publish it through Tailscale Serve:
+Without sudo, install the user service:
 
 ```bash
 ops/install-user-service.sh
 ```
 
-This starts the dashboard on the Tailscale address at `http://<tailscale-domain>:8080/`. For guaranteed VM boot before any login session, prefer the system service above.
+This starts the dashboard on the Tailscale address at `http://<tailscale-domain>/`. For guaranteed VM boot before any login session, prefer the system service above.
 
-Publishing the user service on port 80 without keeping the dashboard process privileged requires Tailscale Serve. On this VM, Tailscale Serve currently requires one privileged setup command:
-
-```bash
-sudo tailscale set --operator=$USER
-tailscale serve --bg --http=80 8080
-```
+The user service also binds port 80. It requires the service user to have host-level permission for low-port binding.
 
 ## Checks
 
