@@ -118,8 +118,14 @@ describe("local network dashboard", () => {
 
     const html = await request(app).get("/").expect(200);
     expect(html.headers["content-type"]).toContain("text/html");
+    expect(html.text).toContain('<link rel="icon" type="image/svg+xml" href="/favicon.svg">');
     expect(html.text).toContain(TEST_TAILSCALE_IPV4);
     expect(html.text).toContain(`http://${TEST_TAILSCALE_DNS}:3000/`);
+
+    const favicon = await request(app).get("/favicon.svg").expect(200);
+    expect(favicon.headers["content-type"]).toContain("image/svg+xml");
+    expect(favicon.headers["cache-control"]).toBe("public, max-age=86400");
+    expect(favicon.body.toString("utf8")).toContain("<svg");
 
     const json = await request(app).get("/api/ports").expect(200);
     expect(json.body).toMatchObject({

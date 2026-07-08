@@ -13,6 +13,15 @@ export const DEFAULT_TEMPORARY_FILE_RETENTION_MS = 3 * 24 * 60 * 60 * 1000;
 const PAGE_ID_PATTERN = /^[A-Za-z0-9_-]{32}$/;
 const HTML_MIME_TYPES = new Set(["text/html", "application/xhtml+xml"]);
 const HTML_EXTENSIONS = new Set([".html", ".htm"]);
+const FAVICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <rect x=".75" y=".75" width="30.5" height="30.5" rx="7" fill="#f6f8fa" stroke="#d0d7de" stroke-width="1.5"/>
+  <path d="M10 10h8a4 4 0 0 1 4 4v8" fill="none" stroke="#59636e" stroke-width="2.25" stroke-linecap="round"/>
+  <path d="M10 22h12" fill="none" stroke="#0969da" stroke-width="2.25" stroke-linecap="round"/>
+  <rect x="6" y="6" width="8" height="8" rx="2" fill="#ffffff" stroke="#30363d" stroke-width="1.5"/>
+  <rect x="18" y="18" width="8" height="8" rx="2" fill="#ffffff" stroke="#30363d" stroke-width="1.5"/>
+  <circle cx="10" cy="10" r="2.25" fill="#0969da"/>
+  <rect x="21" y="21" width="4" height="4" rx="1" fill="#0969da"/>
+</svg>`;
 const PUBLIC_HTML_CSP =
   "sandbox allow-scripts allow-forms allow-modals allow-popups allow-downloads";
 
@@ -43,6 +52,10 @@ export function createApp(options: CreateAppOptions) {
   const app = express();
   app.disable("x-powered-by");
   app.set("trust proxy", true);
+
+  app.get(["/favicon.svg", "/favicon.ico"], (_req, res) => {
+    res.set("Cache-Control", "public, max-age=86400").type("image/svg+xml").send(FAVICON_SVG);
+  });
 
   app.get("/health", (_req, res) => {
     res.status(200).json({ ok: true });

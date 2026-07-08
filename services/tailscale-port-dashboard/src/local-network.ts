@@ -70,6 +70,15 @@ const COMMAND_MAX_BUFFER_BYTES = 1_000_000;
 const SS_ARGS = ["-H", "-lntup"] as const;
 const HTTP_PORTS = new Set([80, 3000, 3001, 4173, 5000, 5173, 8000, 8080, 8787]);
 const TAILSCALE_IPV6_PREFIX = "fd7a:115c:a1e0:";
+const FAVICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <rect x=".75" y=".75" width="30.5" height="30.5" rx="7" fill="#f6f8fa" stroke="#d0d7de" stroke-width="1.5"/>
+  <path d="M10 10h8a4 4 0 0 1 4 4v8" fill="none" stroke="#59636e" stroke-width="2.25" stroke-linecap="round"/>
+  <path d="M10 22h12" fill="none" stroke="#0969da" stroke-width="2.25" stroke-linecap="round"/>
+  <rect x="6" y="6" width="8" height="8" rx="2" fill="#ffffff" stroke="#30363d" stroke-width="1.5"/>
+  <rect x="18" y="18" width="8" height="8" rx="2" fill="#ffffff" stroke="#30363d" stroke-width="1.5"/>
+  <circle cx="10" cy="10" r="2.25" fill="#0969da"/>
+  <rect x="21" y="21" width="4" height="4" rx="1" fill="#0969da"/>
+</svg>`;
 const PORT_USAGE = new Map<string, string>([
   ["tcp:22", "SSH remote shell"],
   ["tcp:80", "HTTP web service; this dashboard defaults here"],
@@ -108,6 +117,10 @@ export function createLocalNetworkDashboardApp(options: LocalNetworkDashboardOpt
 
   app.get("/health", (_req, res) => {
     res.status(200).json({ ok: true });
+  });
+
+  app.get("/favicon.svg", (_req, res) => {
+    res.set("Cache-Control", "public, max-age=86400").type("image/svg+xml").send(FAVICON_SVG);
   });
 
   app.get("/api/ports", async (_req, res, next) => {
@@ -535,6 +548,7 @@ function renderDashboard(snapshot: NetworkSnapshot) {
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta http-equiv="refresh" content="20">
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <title>${escapeHtml(snapshot.hostname)} ports</title>
     <style>
       :root {

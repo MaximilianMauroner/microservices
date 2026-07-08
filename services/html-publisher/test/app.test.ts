@@ -140,6 +140,23 @@ describe("html publisher", () => {
     expect(DEFAULT_MAX_UPLOAD_BYTES).toBe(MAX_SINGLE_PUT_UPLOAD_BYTES);
   });
 
+  it("serves the site favicon", async () => {
+    const { app } = setup();
+
+    for (const path of ["/favicon.svg", "/favicon.ico"]) {
+      const response = await request(app).get(path).buffer(true).parse(binaryParser).expect(200);
+
+      expect(response.headers["content-type"]).toContain("image/svg+xml");
+      expect(response.headers["cache-control"]).toBe("public, max-age=86400");
+      const body: unknown = response.body;
+      expect(Buffer.isBuffer(body)).toBe(true);
+      if (!Buffer.isBuffer(body)) {
+        throw new Error("Expected favicon response body to be a Buffer");
+      }
+      expect(body.toString("utf8")).toContain("<svg");
+    }
+  });
+
   it("stores an arbitrary file upload and returns an expiring download url", async () => {
     const now = new Date("2026-07-07T12:00:00.000Z");
     const { app, storage } = setup({

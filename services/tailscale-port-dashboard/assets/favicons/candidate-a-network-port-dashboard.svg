@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Network port dashboard favicon">
+  <rect x="3" y="4" width="26" height="24" rx="5" fill="#f6f8fa"/>
+  <rect x="3.75" y="4.75" width="24.5" height="22.5" rx="4.25" fill="none" stroke="#30363d" stroke-width="1.5"/>
+  <path d="M9 11h5m-5 5h9m-9 5h5" fill="none" stroke="#59636e" stroke-width="2" stroke-linecap="round"/>
+  <path d="M22 9v5.5c0 3-2 5.5-5 5.5h-1" fill="none" stroke="#0969da" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="22" cy="9" r="2.5" fill="#0969da"/>
+  <circle cx="16" cy="20" r="2.5" fill="#0969da"/>
+</svg>

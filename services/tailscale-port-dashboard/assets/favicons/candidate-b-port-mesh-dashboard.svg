@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Port mesh dashboard favicon">
+  <rect width="32" height="32" rx="7" fill="#0d1117"/>
+  <rect x="5" y="6" width="22" height="20" rx="3" fill="#f6f8fa"/>
+  <path d="M5 10h22" stroke="#d0d7de" stroke-width="1.5"/>
+  <path d="M10 15h4m-4 4h4m-4 4h4" stroke="#59636e" stroke-width="2" stroke-linecap="round"/>
+  <path d="M17 17h4l3-4m-7 6h5m-5 2h4l3 4" stroke="#0969da" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="24" cy="13" r="2.2" fill="#0969da"/>
+  <circle cx="22" cy="19" r="2.2" fill="#0969da"/>
+  <circle cx="24" cy="25" r="2.2" fill="#0969da"/>
+</svg>
