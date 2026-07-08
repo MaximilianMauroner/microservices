@@ -1,0 +1,156 @@
+import { describe, expect, it } from "vitest";
+import request from "supertest";
+import {
+  collectNetworkSnapshot,
+  createLocalNetworkDashboardApp,
+  parseSsListeners,
+  type CommandRunner
+} from "../src/local-network.js";
+
+const TEST_TAILSCALE_IPV4 = "100.64.0.10";
+const TEST_TAILSCALE_IPV6 = "fd7a:115c:a1e0::10";
+const TEST_TAILSCALE_DNS = "workstation.example.ts.net";
+
+const SS_OUTPUT = [
+  "udp UNCONN 0 0 127.0.0.54:53 0.0.0.0:*",
+  "udp UNCONN 0 0 [fe80::5054:ff:fe77:21d2%enp1s0]:546 [::]:*",
+  "udp UNCONN 0 0 0.0.0.0:41641 0.0.0.0:*",
+  "tcp LISTEN 0 4096 0.0.0.0:22 0.0.0.0:*",
+  'tcp LISTEN 0 511 0.0.0.0:3000 0.0.0.0:* users:(("node",pid=863,fd=21))',
+  `tcp LISTEN 0 4096 ${TEST_TAILSCALE_IPV4}:33706 0.0.0.0:*`,
+  "tcp LISTEN 0 4096 [::]:22 [::]:*"
+].join("\n");
+
+function createFixtureRunner(): CommandRunner {
+  const fixtures = new Map<string, string>([
+    ["tailscale ip -4", `${TEST_TAILSCALE_IPV4}\n`],
+    ["tailscale ip -6", `${TEST_TAILSCALE_IPV6}\n`],
+    [
+      "tailscale status --json",
+      JSON.stringify({
+        Self: {
+          DNSName: `${TEST_TAILSCALE_DNS}.`,
+          HostName: "workstation"
+        }
+      })
+    ],
+    ["ss -H -lntup", SS_OUTPUT]
+  ]);
+
+  return async (command, args) => {
+    const key = `${command} ${args.join(" ")}`;
+    const stdout = fixtures.get(key);
+    if (stdout === undefined) {
+      throw new Error(`Unexpected command: ${key}`);
+    }
+
+    return { stdout, stderr: "" };
+  };
+}
+
+describe("local network dashboard", () => {
+  it("parses ss listeners with processes and interface-scoped addresses", () => {
+    const ports = parseSsListeners(SS_OUTPUT);
+
+    expect(ports).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          address: "0.0.0.0",
+          port: 22,
+          protocol: "tcp"
+        }),
+        expect.objectContaining({
+          address: "0.0.0.0",
+          port: 3000,
+          processes: [{ name: "node", pid: 863 }],
+          protocol: "tcp"
+        }),
+        expect.objectContaining({
+          address: TEST_TAILSCALE_IPV4,
+          port: 33706,
+          protocol: "tcp"
+        }),
+        expect.objectContaining({
+          address: "127.0.0.54",
+          port: 53,
+          protocol: "udp"
+        }),
+        expect.objectContaining({
+          address: "fe80::5054:ff:fe77:21d2%enp1s0",
+          port: 546,
+          protocol: "udp"
+        })
+      ])
+    );
+  });
+
+  it("collects tailscale addresses and annotates remote targets", async () => {
+    const snapshot = await collectNetworkSnapshot({
+      currentUser: "remote-user",
+      hostname: "workstation",
+      now: () => new Date("2026-07-08T12:00:00.000Z"),
+      runner: createFixtureRunner()
+    });
+
+    expect(snapshot.tailscale).toMatchObject({
+      dnsName: TEST_TAILSCALE_DNS,
+      hostName: "workstation",
+      ipv4: [TEST_TAILSCALE_IPV4],
+      online: true
+    });
+    expect(snapshot.generatedAt).toBe("2026-07-08T12:00:00.000Z");
+    expect(snapshot.ports.find((port) => port.port === 22)?.remoteTargets).toContain(
+      `ssh remote-user@${TEST_TAILSCALE_DNS}`
+    );
+    expect(snapshot.ports.find((port) => port.port === 3000)?.remoteTargets).toContain(
+      `http://${TEST_TAILSCALE_DNS}:3000/`
+    );
+    expect(snapshot.ports.find((port) => port.port === 53)?.remoteTargets).toEqual([]);
+  });
+
+  it("serves a dashboard and json snapshot", async () => {
+    const app = createLocalNetworkDashboardApp({
+      currentUser: "remote-user",
+      hostname: "workstation",
+      now: () => new Date("2026-07-08T12:00:00.000Z"),
+      runner: createFixtureRunner()
+    });
+
+    const html = await request(app).get("/").expect(200);
+    expect(html.headers["content-type"]).toContain("text/html");
+    expect(html.text).toContain(TEST_TAILSCALE_IPV4);
+    expect(html.text).toContain(`http://${TEST_TAILSCALE_DNS}:3000/`);
+
+    const json = await request(app).get("/api/ports").expect(200);
+    expect(json.body).toMatchObject({
+      hostname: "workstation",
+      tailscale: {
+        dnsName: TEST_TAILSCALE_DNS
+      }
+    });
+  });
+
+  it("warns when tailscale status returns malformed json", async () => {
+    const runner: CommandRunner = async (command, args) => {
+      const key = `${command} ${args.join(" ")}`;
+      if (key === "tailscale ip -4") {
+        return { stdout: `${TEST_TAILSCALE_IPV4}\n`, stderr: "" };
+      }
+      if (key === "tailscale ip -6") {
+        return { stdout: "", stderr: "" };
+      }
+      if (key === "tailscale status --json") {
+        return { stdout: "{not-json", stderr: "" };
+      }
+      if (key === "ss -H -lntup") {
+        return { stdout: "", stderr: "" };
+      }
+
+      throw new Error(`Unexpected command: ${key}`);
+    };
+
+    const snapshot = await collectNetworkSnapshot({ runner });
+
+    expect(snapshot.tailscale.warnings).toContain("tailscale status returned malformed JSON");
+  });
+});

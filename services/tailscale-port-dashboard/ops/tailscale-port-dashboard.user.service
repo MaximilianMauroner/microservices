@@ -1,0 +1,15 @@
+[Unit]
+Description=Tailscale port dashboard user service example
+After=default.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/microservices/services/tailscale-port-dashboard
+Environment=PORT=8080
+ExecStart=/usr/local/bin/bun run start
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

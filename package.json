@@ -1,0 +1,19 @@
+{
+  "name": "microservices",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "services/*"
+  ],
+  "scripts": {
+    "build": "cd services/html-publisher && bun run build",
+    "start:html-publisher": "cd services/html-publisher && bun run start",
+    "start:tailscale-port-dashboard": "cd services/tailscale-port-dashboard && bun run start",
+    "test": "bun run test:html-publisher && bun run test:tailscale-port-dashboard",
+    "test:html-publisher": "cd services/html-publisher && bun run test",
+    "test:tailscale-port-dashboard": "cd services/tailscale-port-dashboard && bun run test",
+    "typecheck": "bun run typecheck:html-publisher && bun run typecheck:tailscale-port-dashboard",
+    "typecheck:html-publisher": "cd services/html-publisher && bun run typecheck",
+    "typecheck:tailscale-port-dashboard": "cd services/tailscale-port-dashboard && bun run typecheck"
+  }
+}

@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.env
+.railway/
+coverage/
+.DS_Store
