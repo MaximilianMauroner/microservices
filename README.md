@@ -6,7 +6,7 @@ Local and deployed microservices live in `services/*`. Each service owns its run
 
 | Service | Path | Runtime | Purpose |
 | --- | --- | --- | --- |
-| HTML publisher | `services/html-publisher` | Railway | Temporary file uploads and published HTML pages. |
+| HTML publisher | `services/html-publisher` | Railway | Sandboxed planning pages, temporary file uploads, resumable downloads, and revocation. |
 | Tailscale port dashboard | `services/tailscale-port-dashboard` | Local VM systemd service | Port-80 dashboard for Tailscale address and listening-port discovery. |
 
 ## Commands
