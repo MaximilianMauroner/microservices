@@ -19,15 +19,20 @@ import type {
   GetTemporaryFileOptions,
   GetStoredObjectOptions,
   PutHtmlMetadata,
+  PutHtmlOptions,
   PutTemporaryFileMetadata,
+  StorageOperationOptions,
   StoredHtml,
   StoredTemporaryFile,
   UploadStorage
 } from "../src/storage.js";
-import { RangeNotSatisfiableError } from "../src/storage.js";
+import { HtmlUpdateConflictError, RangeNotSatisfiableError } from "../src/storage.js";
 
 class MemoryUploadStorage implements UploadStorage {
-  readonly pages = new Map<string, { body: Buffer; metadata: PutHtmlMetadata }>();
+  readonly pages = new Map<
+    string,
+    { body: Buffer; etag: string; lastModified: Date; metadata: PutHtmlMetadata }
+  >();
   readonly files = new Map<
     string,
     { body: Buffer; lastModified: Date; metadata: PutTemporaryFileMetadata }
@@ -35,9 +40,23 @@ class MemoryUploadStorage implements UploadStorage {
 
   constructor(private readonly now: () => Date = () => new Date()) {}
 
-  async putHtml(id: string, filePath: string, metadata: PutHtmlMetadata) {
+  async putHtml(
+    id: string,
+    filePath: string,
+    metadata: PutHtmlMetadata,
+    options?: PutHtmlOptions
+  ) {
+    const existing = this.pages.get(id);
+    if (options?.ifMatch && existing?.etag !== options.ifMatch) {
+      throw new HtmlUpdateConflictError();
+    }
     const body = await readFile(filePath);
-    this.pages.set(id, { body, metadata });
+    this.pages.set(id, {
+      body,
+      etag: `"storage-${metadata.sha256}"`,
+      lastModified: this.now(),
+      metadata
+    });
   }
 
   async getHtml(id: string, options?: GetStoredObjectOptions): Promise<StoredHtml | null> {
@@ -46,7 +65,9 @@ class MemoryUploadStorage implements UploadStorage {
       ? {
           body: Readable.from(options?.headOnly ? Buffer.alloc(0) : page.body),
           bytes: page.body.length,
-          sha256: page.metadata.sha256
+          etag: page.etag,
+          sha256: page.metadata.sha256,
+          lastModified: page.lastModified
         }
       : null;
   }
@@ -155,6 +176,130 @@ class CommitThenFailStorage extends MemoryUploadStorage {
   override async deleteUpload(id: string) {
     this.deletedIds.push(id);
     await super.deleteUpload(id);
+  }
+}
+
+class UpdateFailureStorage extends MemoryUploadStorage {
+  readonly deletedIds: string[] = [];
+  failure: "before-commit" | "after-commit" | undefined;
+
+  override async putHtml(id: string, filePath: string, metadata: PutHtmlMetadata) {
+    if (this.failure === "before-commit") {
+      throw new Error("Update failed before commit");
+    }
+    await super.putHtml(id, filePath, metadata);
+    if (this.failure === "after-commit") {
+      throw new Error("Update outcome was uncertain");
+    }
+  }
+
+  override async deleteUpload(id: string) {
+    this.deletedIds.push(id);
+    await super.deleteUpload(id);
+  }
+}
+
+class DeleteBeforeConditionalHtmlWriteStorage extends MemoryUploadStorage {
+  override async putHtml(
+    id: string,
+    filePath: string,
+    metadata: PutHtmlMetadata,
+    options?: PutHtmlOptions
+  ) {
+    if (options?.ifMatch) {
+      await this.deleteUpload(id);
+    }
+    await super.putHtml(id, filePath, metadata, options);
+  }
+}
+
+class BlockingHtmlUpdateStorage extends MemoryUploadStorage {
+  private readonly started: Promise<void>;
+  private readonly unblock: Promise<void>;
+  private markStarted!: () => void;
+  private allowUpdate!: () => void;
+  blockUpdates = false;
+
+  constructor() {
+    super();
+    this.started = new Promise((resolve) => {
+      this.markStarted = resolve;
+    });
+    this.unblock = new Promise((resolve) => {
+      this.allowUpdate = resolve;
+    });
+  }
+
+  override async putHtml(id: string, filePath: string, metadata: PutHtmlMetadata) {
+    if (this.blockUpdates) {
+      this.markStarted();
+      await this.unblock;
+    }
+    await super.putHtml(id, filePath, metadata);
+  }
+
+  waitUntilStarted() {
+    return this.started;
+  }
+
+  releaseUpdate() {
+    this.allowUpdate();
+  }
+}
+
+class AbortAwareUpdateStorage extends MemoryUploadStorage {
+  readonly deletedIds: string[] = [];
+  private readonly started: Promise<void>;
+  private readonly aborted: Promise<void>;
+  private markStarted!: () => void;
+  private markAborted!: () => void;
+  observeUpdates = false;
+
+  constructor() {
+    super();
+    this.started = new Promise((resolve) => {
+      this.markStarted = resolve;
+    });
+    this.aborted = new Promise((resolve) => {
+      this.markAborted = resolve;
+    });
+  }
+
+  override async putHtml(
+    id: string,
+    filePath: string,
+    metadata: PutHtmlMetadata,
+    options?: StorageOperationOptions
+  ) {
+    if (!this.observeUpdates) {
+      await super.putHtml(id, filePath, metadata);
+      return;
+    }
+    const signal = options?.signal;
+    if (!signal) {
+      throw new Error("Expected an update abort signal");
+    }
+    this.markStarted();
+    if (!signal.aborted) {
+      await new Promise<void>((resolve) => {
+        signal.addEventListener("abort", () => resolve(), { once: true });
+      });
+    }
+    this.markAborted();
+    throw new Error("Update aborted");
+  }
+
+  override async deleteUpload(id: string) {
+    this.deletedIds.push(id);
+    await super.deleteUpload(id);
+  }
+
+  waitUntilStarted() {
+    return this.started;
+  }
+
+  waitUntilAborted() {
+    return this.aborted;
   }
 }
 
@@ -784,6 +929,199 @@ describe("html publisher", () => {
     expect(storage.pages.get(response.body.id)?.metadata.bytes).toBe(html.length);
   });
 
+  it("updates an HTML page in place with refreshed representation metadata", async () => {
+    let now = new Date("2026-07-10T12:00:00.000Z");
+    const { app, storage } = setup({ now: () => now });
+    const first = Buffer.from("<!doctype html><title>First</title>");
+    const second = Buffer.from("<!doctype html><title>Second version</title>");
+
+    const created = await request(app)
+      .post("/api/uploads")
+      .set("Authorization", "Bearer test-upload-token")
+      .attach("file", first, { filename: "first.html", contentType: "text/html" })
+      .expect(201);
+    const pagePath = new URL(created.body.url).pathname;
+    const firstRead = await request(app).get(pagePath).expect(200);
+
+    now = new Date("2026-07-10T12:01:00.000Z");
+    const updated = await request(app)
+      .put(`/api/uploads/${created.body.id}`)
+      .set("Authorization", "Bearer test-upload-token")
+      .attach("file", second, { filename: "revised.html", contentType: "text/html" })
+      .expect(200);
+
+    expect(updated.body).toMatchObject({
+      id: created.body.id,
+      kind: "html",
+      filename: "revised.html",
+      contentType: "text/html; charset=utf-8",
+      url: created.body.url,
+      bytes: second.length,
+      sha256: crypto.createHash("sha256").update(second).digest("hex")
+    });
+    expect(storage.pages.size).toBe(1);
+    expect(storage.pages.get(created.body.id)?.metadata).toMatchObject({
+      bytes: second.length,
+      originalName: "revised.html",
+      sha256: updated.body.sha256
+    });
+
+    const secondRead = await request(app)
+      .get(pagePath)
+      .set("If-None-Match", firstRead.headers.etag)
+      .expect(200);
+    expect(secondRead.text).toBe(second.toString());
+    expect(secondRead.headers.etag).toBe(`"sha256-${updated.body.sha256}"`);
+    expect(secondRead.headers.etag).not.toBe(firstRead.headers.etag);
+    expect(secondRead.headers["content-length"]).toBe(String(second.length));
+    expect(secondRead.headers["last-modified"]).toBe(now.toUTCString());
+    expect(secondRead.headers["last-modified"]).not.toBe(firstRead.headers["last-modified"]);
+
+    await request(app)
+      .get(pagePath)
+      .set("If-None-Match", secondRead.headers.etag)
+      .expect(304);
+  });
+
+  it("does not recreate a page revoked during an update", async () => {
+    const storage = new DeleteBeforeConditionalHtmlWriteStorage();
+    const app = createApp({
+      storage,
+      uploadToken: "test-upload-token",
+      publicBaseUrl: "https://html.example"
+    });
+    const created = await request(app)
+      .post("/api/uploads")
+      .set("Authorization", "Bearer test-upload-token")
+      .attach("file", Buffer.from("<html>original</html>"), {
+        filename: "page.html",
+        contentType: "text/html"
+      })
+      .expect(201);
+
+    const update = await request(app)
+      .put(`/api/uploads/${created.body.id}`)
+      .set("Authorization", "Bearer test-upload-token")
+      .attach("file", Buffer.from("<html>replacement</html>"), {
+        filename: "page.html",
+        contentType: "text/html"
+      })
+      .expect(409);
+
+    expect(update.body).toMatchObject({ error: "upload_conflict" });
+    expect(storage.pages.has(created.body.id)).toBe(false);
+    await request(app).get(`/p/${created.body.id}`).expect(404);
+  });
+
+  it("fails closed for unauthorized, invalid, missing, and non-HTML update targets", async () => {
+    const { app, storage } = setup();
+    const created = await request(app)
+      .post("/api/uploads")
+      .set("Authorization", "Bearer test-upload-token")
+      .attach("file", Buffer.from("<html>original</html>"), {
+        filename: "page.html",
+        contentType: "text/html"
+      })
+      .expect(201);
+
+    await request(app)
+      .put(`/api/uploads/${created.body.id}`)
+      .attach("file", Buffer.from("<html>new</html>"), {
+        filename: "page.html",
+        contentType: "text/html"
+      })
+      .expect(401);
+    await request(app)
+      .put("/api/uploads/not-valid")
+      .set("Authorization", "Bearer test-upload-token")
+      .attach("file", Buffer.from("<html>new</html>"), {
+        filename: "page.html",
+        contentType: "text/html"
+      })
+      .expect(400, { error: "invalid_upload_id", message: "Upload ID is invalid." });
+
+    const missing = await request(app)
+      .put(`/api/uploads/${"a".repeat(32)}`)
+      .set("Authorization", "Bearer test-upload-token")
+      .attach("file", Buffer.from("<html>new</html>"), {
+        filename: "page.html",
+        contentType: "text/html"
+      })
+      .expect(404);
+    expect(missing.body).toMatchObject({ error: "upload_not_found" });
+
+    const nonHtml = await request(app)
+      .put(`/api/uploads/${created.body.id}`)
+      .set("Authorization", "Bearer test-upload-token")
+      .attach("file", Buffer.from("not html"), {
+        filename: "page.txt",
+        contentType: "text/plain"
+      })
+      .expect(400);
+    expect(nonHtml.body).toMatchObject({ error: "html_upload_required" });
+    expect(storage.pages.get(created.body.id)?.body.toString()).toBe("<html>original</html>");
+  });
+
+  it("applies multipart, HTML size, and concurrency safeguards to updates", async () => {
+    const storage = new BlockingHtmlUpdateStorage();
+    const app = createApp({
+      storage,
+      uploadToken: "test-upload-token",
+      publicBaseUrl: "https://html.example",
+      maxUploadBytes: 100,
+      maxHtmlUploadBytes: 20,
+      maxConcurrentUploads: 1
+    });
+    const created = await request(app)
+      .post("/api/uploads")
+      .set("Authorization", "Bearer test-upload-token")
+      .attach("file", Buffer.from("<html></html>"), {
+        filename: "page.html",
+        contentType: "text/html"
+      })
+      .expect(201);
+
+    const unsupported = await request(app)
+      .put(`/api/uploads/${created.body.id}`)
+      .set("Authorization", "Bearer test-upload-token")
+      .send("not multipart")
+      .expect(415);
+    expect(unsupported.body).toMatchObject({ error: "unsupported_media_type" });
+
+    const oversized = await request(app)
+      .put(`/api/uploads/${created.body.id}`)
+      .set("Authorization", "Bearer test-upload-token")
+      .attach("file", Buffer.from(`<html>${"x".repeat(20)}</html>`), {
+        filename: "page.html",
+        contentType: "text/html"
+      })
+      .expect(413);
+    expect(oversized.body).toMatchObject({ error: "html_payload_too_large" });
+
+    storage.blockUpdates = true;
+    const firstUpdate = request(app)
+      .put(`/api/uploads/${created.body.id}`)
+      .set("Authorization", "Bearer test-upload-token")
+      .attach("file", Buffer.from("<html>1</html>"), {
+        filename: "page.html",
+        contentType: "text/html"
+      })
+      .then((response) => response);
+    await storage.waitUntilStarted();
+
+    const busy = await request(app)
+      .put(`/api/uploads/${created.body.id}`)
+      .set("Authorization", "Bearer test-upload-token")
+      .attach("file", Buffer.from("<html>2</html>"), {
+        filename: "page.html",
+        contentType: "text/html"
+      })
+      .expect(503);
+    expect(busy.body).toMatchObject({ error: "upload_capacity_reached" });
+    storage.releaseUpdate();
+    expect((await firstUpdate).status).toBe(200);
+  });
+
   it("stores an apk upload with its Android package content type", async () => {
     const now = new Date("2026-07-07T12:00:00.000Z");
     const { app, storage } = setup({
@@ -893,6 +1231,13 @@ describe("html publisher", () => {
       .set("Authorization", "Bearer test-upload-token")
       .expect(400);
     expect(deleteResponse.body).toMatchObject({ error: "invalid_upload_id" });
+
+    await request(app).put("/api/uploads/%ZZ").expect(401);
+    const updateResponse = await request(app)
+      .put("/api/uploads/%ZZ")
+      .set("Authorization", "Bearer test-upload-token")
+      .expect(400);
+    expect(updateResponse.body).toMatchObject({ error: "invalid_upload_id" });
   });
 
   it("returns 404 for expired temporary files", async () => {
@@ -981,6 +1326,93 @@ describe("html publisher", () => {
     expect(response.body).toMatchObject({ error: "internal_server_error" });
     expect(storage.deletedIds).toHaveLength(1);
     expect(storage.pages.size).toBe(0);
+  });
+
+  it("never deletes or revokes a stable page when an update fails", async () => {
+    for (const failure of ["before-commit", "after-commit"] as const) {
+      const storage = new UpdateFailureStorage();
+      const app = createApp({
+        storage,
+        uploadToken: "test-upload-token",
+        publicBaseUrl: "https://html.example"
+      });
+      const original = Buffer.from("<html>original</html>");
+      const replacement = Buffer.from("<html>replacement</html>");
+      const created = await request(app)
+        .post("/api/uploads")
+        .set("Authorization", "Bearer test-upload-token")
+        .attach("file", original, { filename: "page.html", contentType: "text/html" })
+        .expect(201);
+
+      storage.failure = failure;
+      const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+      await request(app)
+        .put(`/api/uploads/${created.body.id}`)
+        .set("Authorization", "Bearer test-upload-token")
+        .attach("file", replacement, {
+          filename: "page.html",
+          contentType: "text/html"
+        })
+        .expect(500);
+      consoleError.mockRestore();
+
+      expect(storage.deletedIds).toEqual([]);
+      const page = await request(app).get(`/p/${created.body.id}`).expect(200);
+      expect([original.toString(), replacement.toString()]).toContain(page.text);
+      expect(storage.pages.size).toBe(1);
+    }
+  });
+
+  it("aborts interrupted updates without deleting the stable page", async () => {
+    const storage = new AbortAwareUpdateStorage();
+    const app = createApp({
+      storage,
+      uploadToken: "test-upload-token",
+      publicBaseUrl: "https://html.example"
+    });
+    const created = await request(app)
+      .post("/api/uploads")
+      .set("Authorization", "Bearer test-upload-token")
+      .attach("file", Buffer.from("<html>original</html>"), {
+        filename: "page.html",
+        contentType: "text/html"
+      })
+      .expect(201);
+    storage.observeUpdates = true;
+
+    const server = app.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const address = server.address() as AddressInfo;
+    const boundary = "interrupted-update-boundary";
+    const body = Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="page.html"\r\nContent-Type: text/html\r\n\r\n<html>replacement</html>\r\n--${boundary}--\r\n`
+    );
+    const clientRequest = http.request({
+      host: "127.0.0.1",
+      port: address.port,
+      path: `/api/uploads/${created.body.id}`,
+      method: "PUT",
+      headers: {
+        Authorization: "Bearer test-upload-token",
+        "Content-Length": body.length,
+        "Content-Type": `multipart/form-data; boundary=${boundary}`
+      }
+    });
+    clientRequest.on("error", () => undefined);
+    clientRequest.end(body);
+
+    try {
+      await storage.waitUntilStarted();
+      clientRequest.destroy();
+      await storage.waitUntilAborted();
+      expect(storage.deletedIds).toEqual([]);
+      expect(storage.pages.get(created.body.id)?.body.toString()).toBe("<html>original</html>");
+    } finally {
+      clientRequest.destroy();
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
   });
 
   it("tracks interrupted upload cleanup until compensating deletion settles", async () => {

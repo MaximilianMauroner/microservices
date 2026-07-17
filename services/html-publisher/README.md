@@ -4,7 +4,7 @@ Publishes self-contained HTML plans and temporary file downloads from a private 
 
 - HTML plans use sandboxed, browser-viewable `/p/:id` URLs and remain available until revoked.
 - Other files use `/f/:id/:filename` download URLs and expire after 3 days by default.
-- Upload and deletion APIs require the bearer token. Public reads do not.
+- Upload, update, and deletion APIs require the bearer token. Public reads do not.
 
 ## Required environment
 
@@ -76,6 +76,20 @@ Temporary file response:
 
 Uploads are staged on local temporary storage, hashed, and sent with one S3 `PutObject` request. The HTML cap is enforced while staging, and partial files from rejected uploads are removed. The concurrency gate protects temporary disk from parallel 5 GB uploads, but slow large uploads can still exceed the hosting platform's HTTP timeout. A future direct-to-bucket multipart API is the appropriate path above this compatibility endpoint's operational limits.
 
+## Update an HTML page
+
+Replace an existing HTML page without changing its ID or public URL:
+
+```bash
+curl -fsS -X PUT "$PUBLIC_BASE_URL/api/uploads/$UPLOAD_ID" \
+  -H "Authorization: Bearer $UPLOAD_TOKEN" \
+  -F "file=@revised-page.html;type=text/html"
+```
+
+The endpoint accepts the same multipart shape and HTML limits as `POST /api/uploads`, returns `200`, and refreshes `filename`, `bytes`, and `sha256` while preserving `id` and `url`. It accepts HTML only; temporary downloads remain immutable. A valid but missing ID returns `404 upload_not_found` and is never created as a side effect.
+
+Concurrent updates are last-successful-write-wins when they observe the same current object. Each replacement is conditional on the page still matching the version read at the start of the update, so a concurrent revoke or replacement returns `409 upload_conflict` instead of restoring or overwriting that newer state. S3 object replacement is atomic, so an interrupted or uncertain update may leave either the complete old page or the complete new page. Update failure never runs create-time compensating deletion and therefore never revokes the stable URL.
+
 ## Read behavior
 
 HTML pages are streamed from S3 rather than buffered in process memory. Responses include `Content-Length`, a SHA-256-based `ETag`, and these sandbox headers:
@@ -88,6 +102,8 @@ X-Robots-Tag: noindex, nofollow
 ```
 
 Inline JavaScript and CSS work. SCSS is not browser-native; upload compiled CSS or include a self-contained runtime in the page.
+
+Successful updates refresh the page's `ETag` and `Last-Modified` metadata. Clients should revalidate stable URLs with `If-None-Match` or `If-Modified-Since`; matching current validators return `304`, while an older validator returns the revised representation.
 
 Temporary downloads support `HEAD` and one standard byte range per request:
 
@@ -115,9 +131,10 @@ Errors use JSON with stable `error` and `message` fields.
 
 | Status | Error | Meaning |
 | --- | --- | --- |
-| `400` | `missing_file`, `invalid_multipart_upload`, `invalid_upload_id` | Invalid client input |
+| `400` | `missing_file`, `invalid_multipart_upload`, `invalid_upload_id`, `html_upload_required` | Invalid client input or a non-HTML update body |
 | `401` | `unauthorized` | Missing or invalid bearer token |
-| `404` | `not_found` | Unknown API route; missing or expired public reads use a plain 404 response |
+| `404` | `not_found`, `upload_not_found` | Unknown API route or missing update target; missing or expired public reads use a plain 404 response |
+| `409` | `upload_conflict` | The HTML page changed or was revoked while an update was in progress |
 | `413` | `payload_too_large`, `html_payload_too_large` | Configured size limit exceeded |
 | `415` | `unsupported_media_type` | Request is not valid multipart form data |
 | `416` | `range_not_satisfiable` | Download byte range cannot be served |
