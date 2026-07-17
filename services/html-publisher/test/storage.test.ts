@@ -23,6 +23,44 @@ afterEach(() => {
 });
 
 describe("S3 upload storage", () => {
+  it("overwrites the same HTML key with refreshed metadata", async () => {
+    const commands: PutObjectCommand[] = [];
+    vi.spyOn(S3Client.prototype, "send").mockImplementation(async (command) => {
+      if (!(command instanceof PutObjectCommand)) {
+        throw new Error("Unexpected S3 command");
+      }
+      commands.push(command);
+      return {} as never;
+    });
+    const storage = createS3UploadStorage(storageConfig);
+
+    await storage.putHtml("stable-id", "/dev/null", {
+      bytes: 0,
+      originalName: "first.html",
+      sha256: "a".repeat(64)
+    });
+    await storage.putHtml("stable-id", "/dev/null", {
+      bytes: 0,
+      originalName: "revised.html",
+      sha256: "b".repeat(64)
+    });
+
+    expect(commands.map((command) => command.input.Key)).toEqual([
+      "pages/stable-id.html",
+      "pages/stable-id.html"
+    ]);
+    expect(commands[1]?.input.Metadata).toMatchObject({
+      "original-name": "revised.html",
+      sha256: "b".repeat(64)
+    });
+    for (const command of commands) {
+      if (command.input.Body instanceof Readable) {
+        command.input.Body.destroy();
+      }
+    }
+    storage.close?.();
+  });
+
   it("streams HTML bodies with representation metadata", async () => {
     const body = Buffer.from("<html>streamed</html>");
     vi.spyOn(S3Client.prototype, "send").mockImplementation(async (command) => {
