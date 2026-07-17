@@ -19,18 +19,19 @@ import type {
   GetTemporaryFileOptions,
   GetStoredObjectOptions,
   PutHtmlMetadata,
+  PutHtmlOptions,
   PutTemporaryFileMetadata,
   StorageOperationOptions,
   StoredHtml,
   StoredTemporaryFile,
   UploadStorage
 } from "../src/storage.js";
-import { RangeNotSatisfiableError } from "../src/storage.js";
+import { HtmlUpdateConflictError, RangeNotSatisfiableError } from "../src/storage.js";
 
 class MemoryUploadStorage implements UploadStorage {
   readonly pages = new Map<
     string,
-    { body: Buffer; lastModified: Date; metadata: PutHtmlMetadata }
+    { body: Buffer; etag: string; lastModified: Date; metadata: PutHtmlMetadata }
   >();
   readonly files = new Map<
     string,
@@ -39,9 +40,23 @@ class MemoryUploadStorage implements UploadStorage {
 
   constructor(private readonly now: () => Date = () => new Date()) {}
 
-  async putHtml(id: string, filePath: string, metadata: PutHtmlMetadata) {
+  async putHtml(
+    id: string,
+    filePath: string,
+    metadata: PutHtmlMetadata,
+    options?: PutHtmlOptions
+  ) {
+    const existing = this.pages.get(id);
+    if (options?.ifMatch && existing?.etag !== options.ifMatch) {
+      throw new HtmlUpdateConflictError();
+    }
     const body = await readFile(filePath);
-    this.pages.set(id, { body, lastModified: this.now(), metadata });
+    this.pages.set(id, {
+      body,
+      etag: `"storage-${metadata.sha256}"`,
+      lastModified: this.now(),
+      metadata
+    });
   }
 
   async getHtml(id: string, options?: GetStoredObjectOptions): Promise<StoredHtml | null> {
@@ -50,6 +65,7 @@ class MemoryUploadStorage implements UploadStorage {
       ? {
           body: Readable.from(options?.headOnly ? Buffer.alloc(0) : page.body),
           bytes: page.body.length,
+          etag: page.etag,
           sha256: page.metadata.sha256,
           lastModified: page.lastModified
         }
@@ -180,6 +196,20 @@ class UpdateFailureStorage extends MemoryUploadStorage {
   override async deleteUpload(id: string) {
     this.deletedIds.push(id);
     await super.deleteUpload(id);
+  }
+}
+
+class DeleteBeforeConditionalHtmlWriteStorage extends MemoryUploadStorage {
+  override async putHtml(
+    id: string,
+    filePath: string,
+    metadata: PutHtmlMetadata,
+    options?: PutHtmlOptions
+  ) {
+    if (options?.ifMatch) {
+      await this.deleteUpload(id);
+    }
+    await super.putHtml(id, filePath, metadata, options);
   }
 }
 
@@ -951,6 +981,36 @@ describe("html publisher", () => {
       .get(pagePath)
       .set("If-None-Match", secondRead.headers.etag)
       .expect(304);
+  });
+
+  it("does not recreate a page revoked during an update", async () => {
+    const storage = new DeleteBeforeConditionalHtmlWriteStorage();
+    const app = createApp({
+      storage,
+      uploadToken: "test-upload-token",
+      publicBaseUrl: "https://html.example"
+    });
+    const created = await request(app)
+      .post("/api/uploads")
+      .set("Authorization", "Bearer test-upload-token")
+      .attach("file", Buffer.from("<html>original</html>"), {
+        filename: "page.html",
+        contentType: "text/html"
+      })
+      .expect(201);
+
+    const update = await request(app)
+      .put(`/api/uploads/${created.body.id}`)
+      .set("Authorization", "Bearer test-upload-token")
+      .attach("file", Buffer.from("<html>replacement</html>"), {
+        filename: "page.html",
+        contentType: "text/html"
+      })
+      .expect(409);
+
+    expect(update.body).toMatchObject({ error: "upload_conflict" });
+    expect(storage.pages.has(created.body.id)).toBe(false);
+    await request(app).get(`/p/${created.body.id}`).expect(404);
   });
 
   it("fails closed for unauthorized, invalid, missing, and non-HTML update targets", async () => {

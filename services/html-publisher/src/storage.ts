@@ -22,6 +22,10 @@ export type StorageOperationOptions = {
   signal?: AbortSignal;
 };
 
+export type PutHtmlOptions = StorageOperationOptions & {
+  ifMatch?: string;
+};
+
 export type GetStoredObjectOptions = StorageOperationOptions & {
   headOnly?: boolean;
 };
@@ -33,6 +37,7 @@ export type GetTemporaryFileOptions = GetStoredObjectOptions & {
 export type StoredHtml = {
   body: Readable;
   bytes: number;
+  etag?: string;
   sha256?: string;
   lastModified?: Date;
 };
@@ -67,7 +72,7 @@ export interface UploadStorage {
     id: string,
     filePath: string,
     metadata: PutHtmlMetadata,
-    options?: StorageOperationOptions
+    options?: PutHtmlOptions
   ): Promise<void>;
   getHtml(id: string, options?: GetStoredObjectOptions): Promise<StoredHtml | null>;
   putTemporaryFile(
@@ -107,6 +112,13 @@ export class RangeNotSatisfiableError extends Error {
   }
 }
 
+export class HtmlUpdateConflictError extends Error {
+  constructor() {
+    super("The HTML page changed or was deleted before the update completed");
+    this.name = "HtmlUpdateConflictError";
+  }
+}
+
 export function createS3UploadStorage(config: S3UploadStorageConfig): UploadStorage {
   const client = new S3Client({
     endpoint: config.endpoint,
@@ -120,22 +132,30 @@ export function createS3UploadStorage(config: S3UploadStorageConfig): UploadStor
 
   return {
     async putHtml(id, filePath, metadata, options) {
-      await client.send(
-        new PutObjectCommand({
-          Bucket: config.bucket,
-          Key: htmlKey(id),
-          Body: createReadStream(filePath, { signal: options?.signal }),
-          CacheControl: "private, no-cache",
-          ContentLength: metadata.bytes,
-          ContentType: "text/html; charset=utf-8",
-          Metadata: {
-            ...originalNameMetadata(metadata.originalName),
-            bytes: String(metadata.bytes),
-            sha256: metadata.sha256
-          }
-        }),
-        requestOptions(options)
-      );
+      try {
+        await client.send(
+          new PutObjectCommand({
+            Bucket: config.bucket,
+            Key: htmlKey(id),
+            Body: createReadStream(filePath, { signal: options?.signal }),
+            CacheControl: "private, no-cache",
+            ContentLength: metadata.bytes,
+            ContentType: "text/html; charset=utf-8",
+            IfMatch: options?.ifMatch,
+            Metadata: {
+              ...originalNameMetadata(metadata.originalName),
+              bytes: String(metadata.bytes),
+              sha256: metadata.sha256
+            }
+          }),
+          requestOptions(options)
+        );
+      } catch (error) {
+        if (options?.ifMatch && isConditionalWriteConflictError(error)) {
+          throw new HtmlUpdateConflictError();
+        }
+        throw error;
+      }
     },
 
     async getHtml(id, options) {
@@ -152,6 +172,7 @@ export function createS3UploadStorage(config: S3UploadStorageConfig): UploadStor
           return {
             body: Readable.from(Buffer.alloc(0)),
             bytes: result.ContentLength ?? 0,
+            etag: result.ETag,
             sha256: result.Metadata?.sha256,
             lastModified: result.LastModified
           };
@@ -168,6 +189,7 @@ export function createS3UploadStorage(config: S3UploadStorageConfig): UploadStor
         return {
           body: await readableBody(result.Body),
           bytes: result.ContentLength ?? 0,
+          etag: result.ETag,
           sha256: result.Metadata?.sha256,
           lastModified: result.LastModified
         };
@@ -440,6 +462,20 @@ function isNotFoundError(error: unknown) {
     candidate.name === "NoSuchKey" ||
     candidate.name === "NotFound" ||
     candidate.$metadata?.httpStatusCode === 404
+  );
+}
+
+function isConditionalWriteConflictError(error: unknown) {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const candidate = error as { name?: string; $metadata?: { httpStatusCode?: number } };
+  return (
+    candidate.name === "PreconditionFailed" ||
+    candidate.name === "ConditionalRequestConflict" ||
+    candidate.$metadata?.httpStatusCode === 409 ||
+    candidate.$metadata?.httpStatusCode === 412
   );
 }
 

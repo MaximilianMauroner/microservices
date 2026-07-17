@@ -17,7 +17,11 @@ import {
   createMultipartStagingStorage,
   HtmlPayloadTooLargeError
 } from "./multipart-staging.js";
-import { RangeNotSatisfiableError, type UploadStorage } from "./storage.js";
+import {
+  HtmlUpdateConflictError,
+  RangeNotSatisfiableError,
+  type UploadStorage
+} from "./storage.js";
 
 export const MAX_SINGLE_PUT_UPLOAD_BYTES = 5_000_000_000;
 export const DEFAULT_MAX_UPLOAD_BYTES = MAX_SINGLE_PUT_UPLOAD_BYTES;
@@ -433,6 +437,7 @@ async function handleUpload(
     );
     const baseUrl = getPublicBaseUrl(req, options.publicBaseUrl);
 
+    let updateEtag: string | undefined;
     if (mode.kind === "update") {
       const existing = await options.storage.getHtml(id, {
         headOnly: true,
@@ -447,6 +452,10 @@ async function handleUpload(
         return;
       }
       existing.body.destroy();
+      if (!existing.etag) {
+        throw new Error(`Stored HTML ${id} is missing an ETag`);
+      }
+      updateEtag = existing.etag;
     }
 
     const sha256 = await sha256File(file.path, operation.signal);
@@ -456,16 +465,28 @@ async function handleUpload(
       if (mode.kind === "create") {
         cleanupId = id;
       }
-      await options.storage.putHtml(
-        id,
-        file.path,
-        {
-          bytes: file.size,
-          originalName,
-          sha256
-        },
-        { signal: operation.signal }
-      );
+      try {
+        await options.storage.putHtml(
+          id,
+          file.path,
+          {
+            bytes: file.size,
+            originalName,
+            sha256
+          },
+          { ifMatch: updateEtag, signal: operation.signal }
+        );
+      } catch (error) {
+        if (error instanceof HtmlUpdateConflictError) {
+          operation.complete();
+          res.status(409).json({
+            error: "upload_conflict",
+            message: "The HTML page changed or was revoked before the update completed."
+          });
+          return;
+        }
+        throw error;
+      }
       throwIfAborted(operation.signal);
 
       operation.complete();

@@ -88,7 +88,7 @@ curl -fsS -X PUT "$PUBLIC_BASE_URL/api/uploads/$UPLOAD_ID" \
 
 The endpoint accepts the same multipart shape and HTML limits as `POST /api/uploads`, returns `200`, and refreshes `filename`, `bytes`, and `sha256` while preserving `id` and `url`. It accepts HTML only; temporary downloads remain immutable. A valid but missing ID returns `404 upload_not_found` and is never created as a side effect.
 
-Concurrent updates are last-successful-write-wins. S3 object replacement is atomic, so an interrupted or uncertain update may leave either the complete old page or the complete new page. Update failure never runs create-time compensating deletion and therefore never revokes the stable URL.
+Concurrent updates are last-successful-write-wins when they observe the same current object. Each replacement is conditional on the page still matching the version read at the start of the update, so a concurrent revoke or replacement returns `409 upload_conflict` instead of restoring or overwriting that newer state. S3 object replacement is atomic, so an interrupted or uncertain update may leave either the complete old page or the complete new page. Update failure never runs create-time compensating deletion and therefore never revokes the stable URL.
 
 ## Read behavior
 
@@ -134,6 +134,7 @@ Errors use JSON with stable `error` and `message` fields.
 | `400` | `missing_file`, `invalid_multipart_upload`, `invalid_upload_id`, `html_upload_required` | Invalid client input or a non-HTML update body |
 | `401` | `unauthorized` | Missing or invalid bearer token |
 | `404` | `not_found`, `upload_not_found` | Unknown API route or missing update target; missing or expired public reads use a plain 404 response |
+| `409` | `upload_conflict` | The HTML page changed or was revoked while an update was in progress |
 | `413` | `payload_too_large`, `html_payload_too_large` | Configured size limit exceeded |
 | `415` | `unsupported_media_type` | Request is not valid multipart form data |
 | `416` | `range_not_satisfiable` | Download byte range cannot be served |

@@ -8,7 +8,7 @@ import {
   S3Client
 } from "@aws-sdk/client-s3";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createS3UploadStorage } from "../src/storage.js";
+import { createS3UploadStorage, HtmlUpdateConflictError } from "../src/storage.js";
 
 const storageConfig = {
   bucket: "bucket",
@@ -39,11 +39,16 @@ describe("S3 upload storage", () => {
       originalName: "first.html",
       sha256: "a".repeat(64)
     });
-    await storage.putHtml("stable-id", "/dev/null", {
-      bytes: 0,
-      originalName: "revised.html",
-      sha256: "b".repeat(64)
-    });
+    await storage.putHtml(
+      "stable-id",
+      "/dev/null",
+      {
+        bytes: 0,
+        originalName: "revised.html",
+        sha256: "b".repeat(64)
+      },
+      { ifMatch: '"current-etag"' }
+    );
 
     expect(commands.map((command) => command.input.Key)).toEqual([
       "pages/stable-id.html",
@@ -53,11 +58,36 @@ describe("S3 upload storage", () => {
       "original-name": "revised.html",
       sha256: "b".repeat(64)
     });
+    expect(commands[1]?.input.IfMatch).toBe('"current-etag"');
     for (const command of commands) {
       if (command.input.Body instanceof Readable) {
         command.input.Body.destroy();
       }
     }
+    storage.close?.();
+  });
+
+  it("maps conditional S3 write failures to an HTML update conflict", async () => {
+    vi.spyOn(S3Client.prototype, "send").mockRejectedValue(
+      Object.assign(new Error("precondition failed"), {
+        name: "PreconditionFailed",
+        $metadata: { httpStatusCode: 412 }
+      })
+    );
+    const storage = createS3UploadStorage(storageConfig);
+
+    await expect(
+      storage.putHtml(
+        "stable-id",
+        "/dev/null",
+        {
+          bytes: 0,
+          originalName: "revised.html",
+          sha256: "b".repeat(64)
+        },
+        { ifMatch: '"stale-etag"' }
+      )
+    ).rejects.toBeInstanceOf(HtmlUpdateConflictError);
     storage.close?.();
   });
 
