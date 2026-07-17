@@ -17,7 +17,11 @@ import {
   createMultipartStagingStorage,
   HtmlPayloadTooLargeError
 } from "./multipart-staging.js";
-import { RangeNotSatisfiableError, type UploadStorage } from "./storage.js";
+import {
+  HtmlUpdateConflictError,
+  RangeNotSatisfiableError,
+  type UploadStorage
+} from "./storage.js";
 
 export const MAX_SINGLE_PUT_UPLOAD_BYTES = 5_000_000_000;
 export const DEFAULT_MAX_UPLOAD_BYTES = MAX_SINGLE_PUT_UPLOAD_BYTES;
@@ -123,61 +127,25 @@ export function createApp(options: CreateAppOptions) {
     "/api/uploads",
     uploadToken,
     requireMultipartUpload,
-    (req, res, next) => {
-      const release = uploadGate.tryAcquire();
-      if (!release) {
-        req.resume();
-        res
-          .set("Connection", "close")
-          .set("Retry-After", "1")
-          .status(503)
-          .json({
-            error: "upload_capacity_reached",
-            message: "The service is already processing its maximum number of uploads."
-          });
-        return;
-      }
-
-      const requestAbort = observeRequestAbort(req, res);
-      let capacityReleased = false;
-      const releaseCapacity = () => {
-        if (!capacityReleased) {
-          capacityReleased = true;
-          release();
-        }
-      };
-      let finished = false;
-      const finish = () => {
-        if (finished) {
-          return;
-        }
-        finished = true;
-        requestAbort.stop();
-        releaseCapacity();
-      };
-
-      upload(req, res, (error) => {
-        if (error) {
-          finish();
-          if (!requestAbort.signal.aborted) {
-            next(error);
-          }
-          return;
-        }
-
-        void activityTracker.track(
-          handleUpload(req, res, next, options, {
-            maxHtmlUploadBytes,
-            temporaryFileRetentionMs,
-            signal: requestAbort.signal,
-            complete: releaseCapacity
-          }).finally(finish)
-        );
-      });
-    }
+    startUpload({ kind: "create" })
   );
 
+  app.put(/^\/api\/uploads\//, uploadToken);
   app.delete(/^\/api\/uploads\//, uploadToken);
+  app.put(
+    "/api/uploads/:id",
+    (req, res, next) => {
+      const id = req.params.id;
+      if (!PAGE_ID_PATTERN.test(id)) {
+        res.status(400).json({ error: "invalid_upload_id", message: "Upload ID is invalid." });
+        return;
+      }
+      next();
+    },
+    requireMultipartUpload,
+    (req, res, next) => startUpload({ id: req.params.id, kind: "update" })(req, res, next)
+  );
+
   app.delete("/api/uploads/:id", trackedAsyncHandler(activityTracker, async (req, res, next) => {
     const id = req.params.id;
     if (!PAGE_ID_PATTERN.test(id)) {
@@ -350,8 +318,65 @@ export function createApp(options: CreateAppOptions) {
 
   app.use(errorHandler);
 
+  function startUpload(mode: UploadMode) {
+    return (req: Request, res: Response, next: NextFunction) => {
+      const release = uploadGate.tryAcquire();
+      if (!release) {
+        req.resume();
+        res
+          .set("Connection", "close")
+          .set("Retry-After", "1")
+          .status(503)
+          .json({
+            error: "upload_capacity_reached",
+            message: "The service is already processing its maximum number of uploads."
+          });
+        return;
+      }
+
+      const requestAbort = observeRequestAbort(req, res);
+      let capacityReleased = false;
+      const releaseCapacity = () => {
+        if (!capacityReleased) {
+          capacityReleased = true;
+          release();
+        }
+      };
+      let finished = false;
+      const finish = () => {
+        if (finished) {
+          return;
+        }
+        finished = true;
+        requestAbort.stop();
+        releaseCapacity();
+      };
+
+      upload(req, res, (error) => {
+        if (error) {
+          finish();
+          if (!requestAbort.signal.aborted) {
+            next(error);
+          }
+          return;
+        }
+
+        void activityTracker.track(
+          handleUpload(req, res, next, options, mode, {
+            maxHtmlUploadBytes,
+            temporaryFileRetentionMs,
+            signal: requestAbort.signal,
+            complete: releaseCapacity
+          }).finally(finish)
+        );
+      });
+    };
+  }
+
   return app;
 }
+
+type UploadMode = { kind: "create" } | { id: string; kind: "update" };
 
 function trackedAsyncHandler(
   activityTracker: ActivityTracker,
@@ -367,6 +392,7 @@ async function handleUpload(
   res: Response,
   next: NextFunction,
   options: CreateAppOptions,
+  mode: UploadMode,
   operation: {
     maxHtmlUploadBytes: number;
     temporaryFileRetentionMs: number;
@@ -387,6 +413,14 @@ async function handleUpload(
     }
 
     const uploadType = classifyUpload(file);
+    if (mode.kind === "update" && uploadType.kind !== "html") {
+      operation.complete();
+      res.status(400).json({
+        error: "html_upload_required",
+        message: "Only HTML pages can be updated."
+      });
+      return;
+    }
     if (uploadType.kind === "html" && file.size > operation.maxHtmlUploadBytes) {
       operation.complete();
       res.status(413).json({
@@ -396,31 +430,67 @@ async function handleUpload(
       return;
     }
 
-    const id = generatePageId();
+    const id = mode.kind === "update" ? mode.id : generatePageId();
     const originalName = safeFileName(
       file.originalname,
       uploadType.kind === "temporary" ? "download" : "page.html"
     );
     const baseUrl = getPublicBaseUrl(req, options.publicBaseUrl);
+
+    let updateEtag: string | undefined;
+    if (mode.kind === "update") {
+      const existing = await options.storage.getHtml(id, {
+        headOnly: true,
+        signal: operation.signal
+      });
+      if (!existing) {
+        operation.complete();
+        res.status(404).json({
+          error: "upload_not_found",
+          message: "The HTML upload to update was not found."
+        });
+        return;
+      }
+      existing.body.destroy();
+      if (!existing.etag) {
+        throw new Error(`Stored HTML ${id} is missing an ETag`);
+      }
+      updateEtag = existing.etag;
+    }
+
     const sha256 = await sha256File(file.path, operation.signal);
     throwIfAborted(operation.signal);
 
     if (uploadType.kind === "html") {
-      cleanupId = id;
-      await options.storage.putHtml(
-        id,
-        file.path,
-        {
-          bytes: file.size,
-          originalName,
-          sha256
-        },
-        { signal: operation.signal }
-      );
+      if (mode.kind === "create") {
+        cleanupId = id;
+      }
+      try {
+        await options.storage.putHtml(
+          id,
+          file.path,
+          {
+            bytes: file.size,
+            originalName,
+            sha256
+          },
+          { ifMatch: updateEtag, signal: operation.signal }
+        );
+      } catch (error) {
+        if (error instanceof HtmlUpdateConflictError) {
+          operation.complete();
+          res.status(409).json({
+            error: "upload_conflict",
+            message: "The HTML page changed or was revoked before the update completed."
+          });
+          return;
+        }
+        throw error;
+      }
       throwIfAborted(operation.signal);
 
       operation.complete();
-      res.status(201).json({
+      res.status(mode.kind === "create" ? 201 : 200).json({
         id,
         kind: "html",
         filename: originalName,
@@ -748,7 +818,10 @@ function errorHandler(error: unknown, req: Request, res: Response, next: NextFun
 
   if (isMalformedPathEncoding(error)) {
     const pathname = req.originalUrl.split(/[?#]/, 1)[0] ?? "";
-    if (req.method === "DELETE" && pathname.startsWith("/api/uploads/")) {
+    if (
+      (req.method === "DELETE" || req.method === "PUT") &&
+      pathname.startsWith("/api/uploads/")
+    ) {
       res.status(400).json({ error: "invalid_upload_id", message: "Upload ID is invalid." });
       return;
     }
