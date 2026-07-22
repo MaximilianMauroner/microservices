@@ -14,6 +14,7 @@ function apiFailure(error:unknown):Response{
   const code=error instanceof Error?error.message:"internal_error";
   const messages:Record<string,string>={invalid_name:"Name must be 1–80 characters",invalid_body:"Request body must be an object",invalid_enabled:"Enabled must be true or false",empty_patch:"Provide a field to update",invalid_content_type:"Content-Type must be application/json"};
   if(code in messages)return problem(code,messages[code],400);
+  if(code==="invalid_cursor")return problem(code,"History cursor is invalid",400);
   if(code==="monitor_limit_reached")return problem(code,"All 40 monitor slots are full",409);
   if(code==="slot_conflict")return problem(code,"Monitor capacity changed; try again",409);
   if(/unique/i.test(code))return problem("duplicate_url","That URL is already monitored",409);
@@ -35,7 +36,7 @@ export async function routeApi(request:Request,env:Env,ctx:ExecutionContext):Pro
       const monitor=await getMonitor(env.DB,route.id);if(!monitor)return problem("not_found","Monitor not found",404);if(!monitor.enabled)return problem("monitor_paused","Resume the monitor before checking it",409);
       if(!await rateLimit(env.DB,`manual:${route.id}`,3,60))return problem("rate_limited","Wait before checking again",429);await runMonitorCheck(env,route.id);return json({ok:true},202);
     }
-    if(route&&request.method==="GET"&&route.tail==="/history"){if(!await getMonitor(env.DB,route.id))return problem("not_found","Monitor not found",404);const window=url.searchParams.get("window");if(window!=="24h"&&window!=="30d")return problem("invalid_window","Window must be 24h or 30d",400);const cursor=url.searchParams.get("cursor")??undefined;if(cursor&&Number.isNaN(Date.parse(cursor)))return problem("invalid_cursor","Cursor must be an ISO timestamp",400);return json(await history(env.DB,route.id,window,cursor));}
+    if(route&&request.method==="GET"&&route.tail==="/history"){if(!await getMonitor(env.DB,route.id))return problem("not_found","Monitor not found",404);const window=url.searchParams.get("window");if(window!=="24h"&&window!=="30d")return problem("invalid_window","Window must be 24h or 30d",400);return json(await history(env.DB,route.id,window,url.searchParams.get("cursor")??undefined));}
     if(request.method==="POST"&&url.pathname==="/api/notifications/discord/test"){
       if(!env.DISCORD_WEBHOOK_URL)return problem("discord_not_configured","Configure the Worker secret first",409);if(!await rateLimit(env.DB,"discord:test",2,300))return problem("rate_limited","Wait before sending another test",429);return await sendTestNotification(env)?json({ok:true}):problem("discord_delivery_failed","Discord rejected the test notification",502);
     }
