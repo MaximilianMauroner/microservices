@@ -1,0 +1,11 @@
+// @vitest-environment jsdom
+import "@testing-library/jest-dom/vitest";
+import { cleanup,fireEvent,render,screen,waitFor } from "@testing-library/react";
+import { afterEach,describe,expect,it,vi } from "vitest";
+import { App } from "../src/client/App";
+
+afterEach(()=>{cleanup();vi.unstubAllGlobals();});
+describe("dashboard",()=>{
+  it("shows empty, capacity, Discord state, and accessible add dialog",async()=>{vi.stubGlobal("fetch",vi.fn(async()=>Response.json({monitors:[],capacity:{used:0,limit:40},discordConfigured:false})));render(<App/>);expect(await screen.findByText("No monitors yet")).toBeInTheDocument();expect(screen.getByText("0/40")).toBeInTheDocument();expect(screen.getByText(/Discord notifications are not configured/)).toBeInTheDocument();fireEvent.click(screen.getAllByRole("button",{name:"Add monitor"})[0]);expect(screen.getByRole("dialog",{name:"Add monitor"})).toBeInTheDocument();expect(screen.getByLabelText("Name")).toHaveFocus();});
+  it("shows text status, offers editing, and asks before deletion",async()=>{const monitor={id:1,name:"Example",url:"https://example.com/",hostname:"example.com",enabled:true,status:"down",latestLatencyMs:120,latestStatusCode:500,lastCheckedAt:"2026-01-01T00:00:00Z",uptime24h:99,uptime30d:99.5,scheduleSlot:0};const fetcher=vi.fn(async(input:RequestInfo|URL)=>String(input).includes("history")?Response.json({uptime:99,checks:[],incidents:[],buckets:[]}):Response.json({monitors:[monitor],capacity:{used:1,limit:40},discordConfigured:true}));vi.stubGlobal("fetch",fetcher);vi.stubGlobal("confirm",vi.fn(()=>false));render(<App/>);fireEvent.click(await screen.findByRole("button",{name:/Open Example, status down/}));expect(await screen.findByRole("dialog",{name:"Example"})).toBeInTheDocument();fireEvent.click(screen.getByRole("button",{name:"Edit"}));expect(screen.getByRole("dialog",{name:"Edit monitor"})).toBeInTheDocument();expect(screen.getByLabelText("Name")).toHaveValue("Example");fireEvent.click(screen.getByRole("button",{name:"Cancel"}));fireEvent.click(screen.getByRole("button",{name:"Delete"}));expect(globalThis.confirm).toHaveBeenCalled();await waitFor(()=>expect(fetcher).not.toHaveBeenCalledWith(expect.stringContaining("/api/monitors/1"),expect.objectContaining({method:"DELETE"})));});
+});
