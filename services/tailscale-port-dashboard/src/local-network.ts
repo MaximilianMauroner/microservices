@@ -51,24 +51,57 @@ export type PortListener = ParsedPortListener & {
   usage: string;
 };
 
+export type Website = {
+  faviconUrl?: string;
+  onlineSince?: string;
+  port: number;
+  processes: ProcessRef[];
+  scopeLabel: string;
+  status: number;
+  title: string;
+  url: string;
+};
+
+export type WebsiteProbeCandidate = {
+  port: number;
+  probeUrl: string;
+  publicUrl: string;
+};
+
+export type WebsiteProbeResult = {
+  faviconPath?: string;
+  path: string;
+  status: number;
+  title: string;
+};
+
+export type WebsiteProbe = (
+  candidate: WebsiteProbeCandidate
+) => Promise<WebsiteProbeResult | null>;
+
 export type NetworkSnapshot = {
   generatedAt: string;
   hostname: string;
   ports: PortListener[];
   tailscale: TailscaleStatus;
+  websites: Website[];
 };
 
 export type LocalNetworkDashboardOptions = {
   currentUser?: string;
+  dashboardPort?: number;
   hostname?: string;
   now?: () => Date;
   runner?: CommandRunner;
+  websiteProbe?: WebsiteProbe;
 };
 
 const COMMAND_TIMEOUT_MS = 2_500;
 const COMMAND_MAX_BUFFER_BYTES = 1_000_000;
 const SS_ARGS = ["-H", "-lntup"] as const;
-const HTTP_PORTS = new Set([80, 3000, 3001, 4173, 5000, 5173, 8000, 8080, 8787]);
+const COMMON_HTTP_PORTS = new Set([80, 3000, 3001, 4173, 5000, 5173, 8000, 8080, 8787]);
+const WEBSITE_PROBE_TIMEOUT_MS = 2_500;
+const WEBSITE_TITLE_READ_LIMIT = 64 * 1024;
 const TAILSCALE_IPV6_PREFIX = "fd7a:115c:a1e0:";
 const FAVICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
   <rect x=".75" y=".75" width="30.5" height="30.5" rx="7" fill="#f6f8fa" stroke="#d0d7de" stroke-width="1.5"/>
@@ -134,7 +167,7 @@ export function createLocalNetworkDashboardApp(options: LocalNetworkDashboardOpt
   app.get("/", async (_req, res, next) => {
     try {
       const snapshot = await collectNetworkSnapshot(options);
-      res.type("html").send(renderDashboard(snapshot));
+      res.type("html").send(renderDashboard(snapshot, options.dashboardPort ?? 80));
     } catch (error) {
       next(error);
     }
@@ -155,12 +188,26 @@ export async function collectNetworkSnapshot(
     collectParsedPortListeners(runner)
   ]);
   const currentUser = options.currentUser ?? os.userInfo().username;
+  const ports = parsedPorts.map((listener) => enrichPortListener(listener, tailscale, currentUser));
+  const detectedWebsites = await discoverWebsites(
+    ports,
+    tailscale,
+    options.dashboardPort ?? 80,
+    options.websiteProbe ?? probeWebsite
+  );
+  const generatedAt = now();
+  const processStartTimes = await collectProcessStartTimes(runner, detectedWebsites, generatedAt);
+  const websites = detectedWebsites.map((website) => ({
+    ...website,
+    onlineSince: getWebsiteStartTime(website, processStartTimes)
+  }));
 
   return {
-    generatedAt: now().toISOString(),
+    generatedAt: generatedAt.toISOString(),
     hostname: options.hostname ?? os.hostname(),
     tailscale,
-    ports: parsedPorts.map((listener) => enrichPortListener(listener, tailscale, currentUser))
+    ports,
+    websites
   };
 }
 
@@ -426,7 +473,7 @@ function buildRemoteTargets(
     return [];
   }
 
-  const host = tailscale.dnsName ?? tailscale.ipv4[0] ?? tailscale.ipv6[0];
+  const host = getPublicTailscaleHost(tailscale);
   if (!host) {
     return [];
   }
@@ -436,7 +483,7 @@ function buildRemoteTargets(
   }
 
   const formattedHost = formatUrlHost(host);
-  if (HTTP_PORTS.has(listener.port)) {
+  if (COMMON_HTTP_PORTS.has(listener.port)) {
     return [`http://${formattedHost}${listener.port === 80 ? "" : `:${listener.port}`}/`];
   }
 
@@ -460,6 +507,249 @@ function describeUsage(listener: ParsedPortListener) {
   }
 
   return "Unknown listener; process details were not available.";
+}
+
+async function discoverWebsites(
+  ports: PortListener[],
+  tailscale: TailscaleStatus,
+  dashboardPort: number,
+  probe: WebsiteProbe
+): Promise<Website[]> {
+  const publicHost = getPublicTailscaleHost(tailscale);
+  if (!publicHost) {
+    return [];
+  }
+
+  const listenersByPort = new Map<number, PortListener[]>();
+  for (const listener of ports) {
+    if (
+      listener.protocol !== "tcp" ||
+      listener.port === dashboardPort ||
+      (listener.processes.length === 0 && !COMMON_HTTP_PORTS.has(listener.port)) ||
+      (listener.scope !== "all-interfaces" && listener.scope !== "tailscale-only")
+    ) {
+      continue;
+    }
+
+    const listeners = listenersByPort.get(listener.port) ?? [];
+    listeners.push(listener);
+    listenersByPort.set(listener.port, listeners);
+  }
+
+  const websites = await Promise.all(
+    [...listenersByPort.entries()].map(async ([port, listeners]): Promise<Website | null> => {
+      const probeHost = getWebsiteProbeHost(listeners, tailscale);
+      if (!probeHost) {
+        return null;
+      }
+
+      const publicUrl = buildHttpUrl(publicHost, port);
+      const result = await probe({
+        port,
+        probeUrl: buildHttpUrl(probeHost, port),
+        publicUrl
+      });
+      if (!result) {
+        return null;
+      }
+
+      return {
+        faviconUrl: buildWebsiteFaviconUrl(result.faviconPath, new URL(result.path, publicUrl).toString()),
+        port,
+        processes: uniqueProcesses(listeners.flatMap((listener) => listener.processes)),
+        scopeLabel: listeners.some((listener) => listener.scope === "all-interfaces")
+          ? SCOPE_LABELS["all-interfaces"]
+          : SCOPE_LABELS["tailscale-only"],
+        status: result.status,
+        title: result.title || `Website on port ${port}`,
+        url: new URL(result.path, publicUrl).toString()
+      };
+    })
+  );
+
+  return websites
+    .filter((website): website is Website => website !== null)
+    .sort((left, right) => left.port - right.port);
+}
+
+function getWebsiteProbeHost(listeners: PortListener[], tailscale: TailscaleStatus) {
+  if (listeners.some((listener) => listener.scope === "all-interfaces")) {
+    return "127.0.0.1";
+  }
+
+  const ipv4Listener = listeners.find((listener) => parseIpv4Octets(normalizeAddress(listener.address)));
+  return ipv4Listener?.address ?? tailscale.ipv4[0] ?? listeners[0]?.address;
+}
+
+function getPublicTailscaleHost(tailscale: TailscaleStatus) {
+  return tailscale.ipv4[0] ?? tailscale.ipv6[0] ?? tailscale.dnsName;
+}
+
+function buildHttpUrl(host: string, port: number) {
+  return `http://${formatUrlHost(normalizeAddress(host))}${port === 80 ? "" : `:${port}`}/`;
+}
+
+async function probeWebsite(candidate: WebsiteProbeCandidate): Promise<WebsiteProbeResult | null> {
+  try {
+    const response = await fetch(candidate.probeUrl, {
+      headers: {
+        accept: "text/html,application/xhtml+xml"
+      },
+      redirect: "follow",
+      signal: AbortSignal.timeout(WEBSITE_PROBE_TIMEOUT_MS)
+    });
+    const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+    if (response.status < 200 || response.status >= 400 || !contentType.includes("text/html")) {
+      await response.body?.cancel();
+      return null;
+    }
+
+    const metadata = await readWebsiteMetadata(response);
+    if (!metadata.title) {
+      return null;
+    }
+
+    const finalUrl = new URL(response.url);
+    return {
+      faviconPath: metadata.faviconPath,
+      path: `${finalUrl.pathname}${finalUrl.search}`,
+      status: response.status,
+      title: metadata.title
+    };
+  } catch {
+    return null;
+  }
+}
+
+function buildWebsiteFaviconUrl(faviconPath: string | undefined, websiteUrl: string) {
+  return new URL(faviconPath || "/favicon.ico", websiteUrl).toString();
+}
+
+async function readWebsiteMetadata(response: Awaited<ReturnType<typeof fetch>>) {
+  if (!response.body) {
+    return { title: "" };
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let html = "";
+
+  try {
+    while (html.length < WEBSITE_TITLE_READ_LIMIT) {
+      const chunk = await reader.read();
+      if (chunk.done) {
+        break;
+      }
+
+      html += decoder.decode(chunk.value, { stream: true });
+      if (html.length >= WEBSITE_TITLE_READ_LIMIT || /<\/head\s*>/i.test(html)) {
+        break;
+      }
+    }
+
+    return {
+      faviconPath: extractHtmlFaviconHref(html),
+      title: extractHtmlTitle(html)
+    };
+  } finally {
+    await reader.cancel().catch(() => undefined);
+  }
+}
+
+function extractHtmlTitle(html: string) {
+  const match = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  return match ? decodeHtmlEntities(match[1].replace(/\s+/g, " ").trim()) : "";
+}
+
+function extractHtmlFaviconHref(html: string) {
+  const linkPattern = /<link\b[^>]*>/gi;
+  let match = linkPattern.exec(html);
+
+  while (match) {
+    const tag = match[0];
+    const rel = getHtmlAttribute(tag, "rel");
+    const href = getHtmlAttribute(tag, "href");
+    if (rel && href && /\b(?:icon|shortcut icon|apple-touch-icon)\b/i.test(rel)) {
+      return href;
+    }
+
+    match = linkPattern.exec(html);
+  }
+
+  return undefined;
+}
+
+function getHtmlAttribute(tag: string, name: string) {
+  const pattern = new RegExp(`\\s${name}\\s*=\\s*("([^"]*)"|'([^']*)'|([^\\s>]+))`, "i");
+  const match = tag.match(pattern);
+  const value = match?.[2] ?? match?.[3] ?? match?.[4];
+  return value ? decodeHtmlEntities(value.trim()) : undefined;
+}
+
+function decodeHtmlEntities(value: string) {
+  const namedEntities: Record<string, string> = {
+    amp: "&",
+    apos: "'",
+    gt: ">",
+    lt: "<",
+    quot: '"'
+  };
+
+  return value.replace(/&(#\d+|#x[\da-f]+|amp|apos|gt|lt|quot);/gi, (_match, entity: string) => {
+    if (entity.startsWith("#x")) {
+      return String.fromCodePoint(Number.parseInt(entity.slice(2), 16));
+    }
+    if (entity.startsWith("#")) {
+      return String.fromCodePoint(Number.parseInt(entity.slice(1), 10));
+    }
+
+    return namedEntities[entity.toLowerCase()] ?? _match;
+  });
+}
+
+function uniqueProcesses(processes: ProcessRef[]) {
+  const byIdentity = new Map(processes.map((processRef) => [`${processRef.name}:${processRef.pid}`, processRef]));
+  return [...byIdentity.values()];
+}
+
+async function collectProcessStartTimes(
+  runner: CommandRunner,
+  websites: Website[],
+  now: Date
+) {
+  const pids = [
+    ...new Set(websites.flatMap((website) => website.processes.map((processRef) => processRef.pid)))
+  ].sort((left, right) => left - right);
+  if (pids.length === 0) {
+    return new Map<number, string>();
+  }
+
+  const result = await safeRun(runner, "ps", ["-o", "pid=,etimes=", "-p", pids.join(",")]);
+  if (!result.result) {
+    return new Map<number, string>();
+  }
+
+  const startTimes = new Map<number, string>();
+  for (const line of result.result.stdout.split(/\r?\n/)) {
+    const match = line.trim().match(/^(\d+)\s+(\d+)$/);
+    if (!match) {
+      continue;
+    }
+
+    const pid = Number.parseInt(match[1], 10);
+    const elapsedSeconds = Number.parseInt(match[2], 10);
+    startTimes.set(pid, new Date(now.getTime() - elapsedSeconds * 1_000).toISOString());
+  }
+
+  return startTimes;
+}
+
+function getWebsiteStartTime(website: Website, processStartTimes: Map<number, string>) {
+  const startTimes = website.processes
+    .map((processRef) => processStartTimes.get(processRef.pid))
+    .filter((startedAt): startedAt is string => startedAt !== undefined)
+    .sort();
+  return startTimes[0];
 }
 
 function compareParsedPortListeners(left: ParsedPortListener, right: ParsedPortListener) {
@@ -533,7 +823,7 @@ function formatUrlHost(host: string) {
   return host;
 }
 
-function renderDashboard(snapshot: NetworkSnapshot) {
+function renderDashboard(snapshot: NetworkSnapshot, dashboardPort: number) {
   const tailscaleAddress = snapshot.tailscale.ipv4[0] ?? snapshot.tailscale.ipv6[0] ?? "Unavailable";
   const dashboardUrl = snapshot.tailscale.ipv4[0]
     ? `http://${snapshot.tailscale.ipv4[0]}/`
@@ -541,6 +831,11 @@ function renderDashboard(snapshot: NetworkSnapshot) {
       ? `http://${snapshot.tailscale.dnsName}/`
       : "Unavailable";
   const warnings = snapshot.tailscale.warnings;
+  const websitePorts = new Set(snapshot.websites.map((website) => website.port));
+  const otherListeners = snapshot.ports.filter(
+    (listener) => listener.port !== dashboardPort && !websitePorts.has(listener.port)
+  );
+  const otherPortCount = new Set(otherListeners.map((listener) => listener.port)).size;
 
   return `<!doctype html>
 <html lang="en">
@@ -610,6 +905,152 @@ function renderDashboard(snapshot: NetworkSnapshot) {
         letter-spacing: 0;
         margin-bottom: 8px;
         text-transform: uppercase;
+      }
+
+      .section-heading {
+        align-items: end;
+        display: flex;
+        justify-content: space-between;
+        margin: 0 0 12px;
+      }
+
+      .section-heading h2 {
+        font-size: 18px;
+        margin: 0;
+      }
+
+      .section-heading span {
+        color: #59636e;
+        font-size: 13px;
+      }
+
+      .website-grid {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      }
+
+      .website-card {
+        background: #ffffff;
+        border: 1px solid #d0d7de;
+        border-radius: 10px;
+        color: inherit;
+        display: block;
+        overflow: hidden;
+        transition: border-color 120ms ease, transform 120ms ease;
+      }
+
+      .website-card:hover {
+        border-color: #0969da;
+        transform: translateY(-1px);
+      }
+
+      .website-link {
+        color: inherit;
+        display: block;
+        padding: 14px 14px 0;
+      }
+
+      .website-link:hover {
+        text-decoration: none;
+      }
+
+      .website-card-top {
+        align-items: center;
+        display: flex;
+        gap: 12px;
+        justify-content: space-between;
+      }
+
+      .website-identity {
+        align-items: center;
+        display: flex;
+        gap: 10px;
+        min-width: 0;
+      }
+
+      .website-favicon {
+        background: #f6f8fa;
+        border: 1px solid #d8dee4;
+        border-radius: 6px;
+        flex: 0 0 auto;
+        height: 28px;
+        object-fit: contain;
+        padding: 4px;
+        width: 28px;
+      }
+
+      .website-title {
+        font-size: 16px;
+        font-weight: 700;
+        line-height: 1.3;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .port-chip {
+        background: #eef2f6;
+        border-radius: 999px;
+        flex: 0 0 auto;
+        font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+        font-size: 12px;
+        padding: 4px 8px;
+      }
+
+      .website-meta {
+        align-items: center;
+        color: #59636e;
+        display: flex;
+        flex-wrap: wrap;
+        font-size: 13px;
+        gap: 7px 10px;
+        padding: 14px;
+      }
+
+      .stop-command {
+        display: inline-flex;
+        gap: 5px;
+      }
+
+      .stop-command span {
+        color: #6e7781;
+      }
+
+      .online-dot {
+        background: #1a7f37;
+        border-radius: 50%;
+        display: inline-block;
+        height: 8px;
+        margin-right: 5px;
+        width: 8px;
+      }
+
+      .empty-websites {
+        background: #ffffff;
+        border: 1px dashed #afb8c1;
+        border-radius: 10px;
+        color: #59636e;
+        padding: 20px;
+      }
+
+      .listener-details {
+        margin-top: 24px;
+      }
+
+      .listener-details > summary {
+        cursor: pointer;
+        font-size: 15px;
+        font-weight: 650;
+        padding: 12px 2px;
+      }
+
+      .listener-details > summary span {
+        color: #59636e;
+        font-size: 13px;
+        font-weight: 400;
+        margin-left: 8px;
       }
 
       code {
@@ -685,13 +1126,23 @@ function renderDashboard(snapshot: NetworkSnapshot) {
         .meta,
         .muted,
         th,
-        .summary-label {
+        .summary-label,
+        .section-heading span,
+        .website-meta,
+        .listener-details > summary span {
           color: #8b949e;
         }
 
         .summary-item,
+        .website-card,
+        .empty-websites,
         .table-wrap {
           background: #161b22;
+          border-color: #30363d;
+        }
+
+        .website-favicon {
+          background: #21262d;
           border-color: #30363d;
         }
 
@@ -708,6 +1159,10 @@ function renderDashboard(snapshot: NetworkSnapshot) {
           background: #21262d;
         }
 
+        .port-chip {
+          background: #21262d;
+        }
+
         a {
           color: #58a6ff;
         }
@@ -716,6 +1171,16 @@ function renderDashboard(snapshot: NetworkSnapshot) {
           background: #2d2305;
           border-color: #9e6a03;
           color: #e3b341;
+        }
+      }
+
+      @media (max-width: 600px) {
+        main {
+          padding: 22px 14px 32px;
+        }
+
+        .summary {
+          grid-template-columns: 1fr;
         }
       }
     </style>
@@ -727,42 +1192,125 @@ function renderDashboard(snapshot: NetworkSnapshot) {
           <h1>${escapeHtml(snapshot.hostname)}</h1>
           <div class="meta">
             <span>${escapeHtml(snapshot.generatedAt)}</span>
-            <span>${snapshot.ports.length} listener${snapshot.ports.length === 1 ? "" : "s"}</span>
+            <span>${snapshot.websites.length} website${snapshot.websites.length === 1 ? "" : "s"}</span>
+            <span>${otherPortCount} other port${otherPortCount === 1 ? "" : "s"}</span>
             <a href="/api/ports">JSON</a>
           </div>
         </div>
         <div class="summary">
           ${renderSummaryItem("Tailscale address", tailscaleAddress)}
-          ${renderSummaryItem("Tailscale DNS", snapshot.tailscale.dnsName ?? "Unavailable")}
+          ${renderSummaryItem("Public host", getPublicTailscaleHost(snapshot.tailscale) ?? "Unavailable")}
           ${renderSummaryItem("Dashboard", dashboardUrl, dashboardUrl.startsWith("http") ? dashboardUrl : undefined)}
         </div>
       </header>
       ${warnings.length > 0 ? renderWarnings(warnings) : ""}
-      <section class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Port</th>
-              <th>Protocol</th>
-              <th>Address</th>
-              <th>Exposure</th>
-              <th>Usage</th>
-              <th>Process</th>
-              <th>Remote target</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${
-              snapshot.ports.length > 0
-                ? snapshot.ports.map(renderPortRow).join("")
-                : `<tr><td colspan="7" class="muted">No listening ports found.</td></tr>`
-            }
-          </tbody>
-        </table>
+      <section aria-labelledby="websites-heading">
+        <div class="section-heading">
+          <h2 id="websites-heading">Websites</h2>
+          <span>Reachable HTML services</span>
+        </div>
+        ${
+          snapshot.websites.length > 0
+            ? `<div class="website-grid">${snapshot.websites.map((website) => renderWebsiteCard(website, snapshot.generatedAt)).join("")}</div>`
+            : `<div class="empty-websites">No reachable websites detected.</div>`
+        }
       </section>
+      <details class="listener-details">
+        <summary>Other listeners <span>${otherListeners.length} sockets across ${otherPortCount} ports</span></summary>
+        <section class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Port</th>
+                <th>Protocol</th>
+                <th>Address</th>
+                <th>Exposure</th>
+                <th>Service</th>
+                <th>Process</th>
+                <th>Stop</th>
+                <th>Remote target</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${
+                otherListeners.length > 0
+                  ? otherListeners.map(renderPortRow).join("")
+                  : `<tr><td colspan="8" class="muted">No other listening ports found.</td></tr>`
+              }
+            </tbody>
+          </table>
+        </section>
+      </details>
     </main>
+    <script>
+      for (const element of document.querySelectorAll("time.online-since")) {
+        const date = new Date(element.dateTime);
+        if (!Number.isNaN(date.getTime())) {
+          const totalMinutes = Math.max(0, Math.floor((Date.now() - date.getTime()) / 60000));
+          const days = Math.floor(totalMinutes / 1440);
+          const hours = Math.floor((totalMinutes % 1440) / 60);
+          const minutes = totalMinutes % 60;
+          element.textContent = days > 0
+            ? days + "d" + hours + "h"
+            : hours > 0
+              ? hours + "h" + minutes + "m"
+              : minutes + "m";
+          element.title = "Started " + date.toLocaleString(undefined, {
+            dateStyle: "medium",
+            timeStyle: "short"
+          });
+        }
+      }
+    </script>
   </body>
 </html>`;
+}
+
+function renderWebsiteCard(website: Website, generatedAt: string) {
+  const processNames = unique(website.processes.map((processRef) => processRef.name));
+  const processLabel = processNames.length > 0 ? processNames.join(", ") : "Process unavailable";
+  const faviconUrl = website.faviconUrl ?? new URL("/favicon.ico", website.url).toString();
+  const onlineStatus = website.onlineSince
+    ? `<span><span class="online-dot"></span>Online since <time class="online-since" datetime="${escapeAttribute(website.onlineSince)}">${formatOnlineDuration(website.onlineSince, generatedAt)}</time></span>`
+    : `<span><span class="online-dot"></span>Online</span>`;
+
+  return `<div class="website-card">
+    <a class="website-link" href="${escapeAttribute(website.url)}" target="_blank" rel="noopener" aria-label="Open ${escapeAttribute(website.title)} on port ${website.port} in a new tab">
+      <div class="website-card-top">
+        <div class="website-identity">
+          <img class="website-favicon" src="${escapeAttribute(faviconUrl)}" alt="" loading="lazy">
+          <div class="website-title">${escapeHtml(website.title)}</div>
+        </div>
+        <span class="port-chip">:${website.port}</span>
+      </div>
+    </a>
+    <div class="website-meta">
+      ${onlineStatus}
+      <span>HTTP ${website.status}</span>
+      <span>${escapeHtml(processLabel)}</span>
+      <span>${escapeHtml(website.scopeLabel)}</span>
+      ${renderStopCommand(website.processes)}
+    </div>
+  </div>`;
+}
+
+function formatOnlineDuration(startedAt: string, generatedAt: string) {
+  const totalMinutes = Math.max(
+    0,
+    Math.floor((new Date(generatedAt).getTime() - new Date(startedAt).getTime()) / 60_000)
+  );
+  const days = Math.floor(totalMinutes / (24 * 60));
+  const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
+  const minutes = totalMinutes % 60;
+
+  if (days > 0) {
+    return `${days}d${hours}h`;
+  }
+  if (hours > 0) {
+    return `${hours}h${minutes}m`;
+  }
+
+  return `${minutes}m`;
 }
 
 function renderSummaryItem(label: string, value: string, href?: string) {
@@ -784,6 +1332,7 @@ function renderPortRow(listener: PortListener) {
     <td>${escapeHtml(listener.scopeLabel)}</td>
     <td>${escapeHtml(listener.usage)}</td>
     <td>${renderProcesses(listener.processes)}</td>
+    <td>${renderStopCommand(listener.processes)}</td>
     <td>${renderRemoteTargets(listener.remoteTargets)}</td>
   </tr>`;
 }
@@ -796,6 +1345,15 @@ function renderProcesses(processes: ProcessRef[]) {
   return processes
     .map((processRef) => `<code>${escapeHtml(processRef.name)}:${processRef.pid}</code>`)
     .join("<br>");
+}
+
+function renderStopCommand(processes: ProcessRef[]) {
+  const pids = unique(processes.map((processRef) => processRef.pid));
+  if (pids.length === 0) {
+    return `<span class="muted">Unavailable</span>`;
+  }
+
+  return `<span class="stop-command"><span>Stop</span><code>kill ${pids.join(" ")}</code></span>`;
 }
 
 function renderRemoteTargets(targets: string[]) {
@@ -834,7 +1392,7 @@ function trimTrailingDot(value: string | undefined) {
   return value?.replace(/\.$/, "");
 }
 
-function unique(values: string[]) {
+function unique<T>(values: T[]) {
   return [...new Set(values)];
 }
 

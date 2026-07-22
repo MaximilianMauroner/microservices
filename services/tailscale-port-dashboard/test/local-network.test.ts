@@ -4,7 +4,8 @@ import {
   collectNetworkSnapshot,
   createLocalNetworkDashboardApp,
   parseSsListeners,
-  type CommandRunner
+  type CommandRunner,
+  type WebsiteProbe
 } from "../src/local-network.js";
 
 const TEST_TAILSCALE_IPV4 = "100.64.0.10";
@@ -21,6 +22,18 @@ const SS_OUTPUT = [
   "tcp LISTEN 0 4096 [::]:22 [::]:*"
 ].join("\n");
 
+const WEBSITE_PROBE: WebsiteProbe = async (candidate) => {
+  if (candidate.port !== 3000) {
+    return null;
+  }
+
+  return {
+    path: "/orders",
+    status: 200,
+    title: "Example App"
+  };
+};
+
 function createFixtureRunner(): CommandRunner {
   const fixtures = new Map<string, string>([
     ["tailscale ip -4", `${TEST_TAILSCALE_IPV4}\n`],
@@ -34,7 +47,8 @@ function createFixtureRunner(): CommandRunner {
         }
       })
     ],
-    ["ss -H -lntup", SS_OUTPUT]
+    ["ss -H -lntup", SS_OUTPUT],
+    ["ps -o pid=,etimes= -p 863", "863 3600\n"]
   ]);
 
   return async (command, args) => {
@@ -89,7 +103,8 @@ describe("local network dashboard", () => {
       currentUser: "remote-user",
       hostname: "workstation",
       now: () => new Date("2026-07-08T12:00:00.000Z"),
-      runner: createFixtureRunner()
+      runner: createFixtureRunner(),
+      websiteProbe: WEBSITE_PROBE
     });
 
     expect(snapshot.tailscale).toMatchObject({
@@ -100,12 +115,21 @@ describe("local network dashboard", () => {
     });
     expect(snapshot.generatedAt).toBe("2026-07-08T12:00:00.000Z");
     expect(snapshot.ports.find((port) => port.port === 22)?.remoteTargets).toContain(
-      `ssh remote-user@${TEST_TAILSCALE_DNS}`
+      `ssh remote-user@${TEST_TAILSCALE_IPV4}`
     );
     expect(snapshot.ports.find((port) => port.port === 3000)?.remoteTargets).toContain(
-      `http://${TEST_TAILSCALE_DNS}:3000/`
+      `http://${TEST_TAILSCALE_IPV4}:3000/`
     );
     expect(snapshot.ports.find((port) => port.port === 53)?.remoteTargets).toEqual([]);
+    expect(snapshot.websites).toEqual([
+      expect.objectContaining({
+        port: 3000,
+        onlineSince: "2026-07-08T11:00:00.000Z",
+        status: 200,
+        title: "Example App",
+        url: `http://${TEST_TAILSCALE_IPV4}:3000/orders`
+      })
+    ]);
   });
 
   it("serves a dashboard and json snapshot", async () => {
@@ -113,14 +137,26 @@ describe("local network dashboard", () => {
       currentUser: "remote-user",
       hostname: "workstation",
       now: () => new Date("2026-07-08T12:00:00.000Z"),
-      runner: createFixtureRunner()
+      runner: createFixtureRunner(),
+      websiteProbe: WEBSITE_PROBE
     });
 
     const html = await request(app).get("/").expect(200);
     expect(html.headers["content-type"]).toContain("text/html");
     expect(html.text).toContain('<link rel="icon" type="image/svg+xml" href="/favicon.svg">');
     expect(html.text).toContain(TEST_TAILSCALE_IPV4);
-    expect(html.text).toContain(`http://${TEST_TAILSCALE_DNS}:3000/`);
+    expect(html.text).toContain("Websites");
+    expect(html.text).toContain("Example App");
+    expect(html.text).toContain(`href="http://${TEST_TAILSCALE_IPV4}:3000/orders"`);
+    expect(html.text).toContain('target="_blank" rel="noopener"');
+    expect(html.text).toContain('<img class="website-favicon"');
+    expect(html.text).not.toContain("<iframe");
+    expect(html.text).not.toContain("website-preview");
+    expect(html.text).toContain("<code>kill 863</code>");
+    expect(html.text).toContain("Online since");
+    expect(html.text).toContain('datetime="2026-07-08T11:00:00.000Z"');
+    expect(html.text).toContain('>1h0m</time>');
+    expect(html.text).toContain("Other listeners");
 
     const favicon = await request(app).get("/favicon.svg").expect(200);
     expect(favicon.headers["content-type"]).toContain("image/svg+xml");
@@ -132,7 +168,14 @@ describe("local network dashboard", () => {
       hostname: "workstation",
       tailscale: {
         dnsName: TEST_TAILSCALE_DNS
-      }
+      },
+      websites: [
+        {
+          port: 3000,
+          onlineSince: "2026-07-08T11:00:00.000Z",
+          title: "Example App"
+        }
+      ]
     });
   });
 
@@ -155,7 +198,7 @@ describe("local network dashboard", () => {
       throw new Error(`Unexpected command: ${key}`);
     };
 
-    const snapshot = await collectNetworkSnapshot({ runner });
+    const snapshot = await collectNetworkSnapshot({ runner, websiteProbe: WEBSITE_PROBE });
 
     expect(snapshot.tailscale.warnings).toContain("tailscale status returned malformed JSON");
   });

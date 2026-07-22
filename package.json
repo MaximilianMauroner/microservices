@@ -15,5 +15,9 @@
     "typecheck": "bun run typecheck:html-publisher && bun run typecheck:tailscale-port-dashboard",
     "typecheck:html-publisher": "cd services/html-publisher && bun run typecheck",
     "typecheck:tailscale-port-dashboard": "cd services/tailscale-port-dashboard && bun run typecheck"
+  },
+  "devDependencies": {
+    "@typescript/native": "npm:typescript@7.0.2",
+    "typescript": "6.0.3"
   }
 }

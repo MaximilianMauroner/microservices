@@ -3,7 +3,7 @@ import { createLocalNetworkDashboardApp } from "./local-network.js";
 
 const port = parsePort(process.env.PORT ?? process.env.LOCAL_NETWORK_PORT, 80);
 const bindHost = process.env.BIND_HOST ?? (await getDefaultBindHost());
-const app = createLocalNetworkDashboardApp();
+const app = createLocalNetworkDashboardApp({ dashboardPort: port });
 
 app.listen(port, bindHost, () => {
   console.log(`tailscale-port-dashboard listening on ${bindHost}:${port}`);
