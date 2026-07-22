@@ -4,8 +4,8 @@ import { runRetentionOnceDaily } from "./retention";
 import type { Env } from "./env";
 
 interface ScheduledRow { id:number }
-export const MAX_MONITORING_SUBREQUESTS=48;
-export const MAX_TOTAL_SUBREQUESTS=49;
+export const MAX_MONITORING_SUBREQUESTS=16;
+export const MAX_TOTAL_SUBREQUESTS=17;
 export function scheduledSlot(at:Date):number{return at.getUTCMinutes()%5;}
 export async function mapConcurrent<T>(values:readonly T[],limit:number,fn:(value:T)=>Promise<void>):Promise<void>{
   let cursor=0; const worker=async()=>{while(cursor<values.length){const index=cursor;cursor+=1;try{await fn(values[index]);}catch{ /* one monitor must not abort the invocation */ }}};

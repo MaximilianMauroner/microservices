@@ -1,10 +1,10 @@
 import { CheckError, normalizedError } from "./errors";
-import { validatePublicHost, type DnsResolver } from "./ip";
+import { validateLiteralTarget } from "./ip";
 import { normalizeMonitorUrl } from "./url";
 import type { ErrorCode } from "../shared/contracts";
 
 export interface CheckResult { success: boolean; statusCode: number | null; latencyMs: number; errorCode: ErrorCode | null; checkedAt: string }
-export interface CheckerDependencies { fetcher: typeof fetch; resolver: DnsResolver; now?: () => number; timeoutMs?: number }
+export interface CheckerDependencies { fetcher: typeof fetch; now?: () => number; timeoutMs?: number }
 
 export async function checkTarget(rawUrl: string, deps: CheckerDependencies): Promise<CheckResult> {
   const started = (deps.now ?? Date.now)();
@@ -14,7 +14,7 @@ export async function checkTarget(rawUrl: string, deps: CheckerDependencies): Pr
   try {
     let url = new URL(normalizeMonitorUrl(rawUrl));
     for (let redirects = 0; redirects <= 1; redirects += 1) {
-      await validatePublicHost(url.hostname, deps.resolver);
+      validateLiteralTarget(url.hostname);
       const response = await deps.fetcher(url, { method: "GET", redirect: "manual", signal: controller.signal, headers: { "user-agent": "UptimeMonitor/1.0", accept: "*/*" } });
       statusCode = response.status;
       if (response.status >= 300 && response.status <= 399 && response.headers.has("location")) {
@@ -25,7 +25,7 @@ export async function checkTarget(rawUrl: string, deps: CheckerDependencies): Pr
         url = new URL(normalizeMonitorUrl(new URL(location, url).toString()));
         continue;
       }
-      void response.body?.cancel();
+      await response.body?.cancel();
       const latencyMs = Math.max(0, (deps.now ?? Date.now)() - started);
       return { success: response.status >= 200 && response.status <= 399, statusCode: response.status, latencyMs, errorCode: response.status >= 400 ? "http_error" : null, checkedAt: new Date().toISOString() };
     }

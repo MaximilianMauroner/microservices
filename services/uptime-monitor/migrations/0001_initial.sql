@@ -18,9 +18,11 @@ CREATE INDEX checks_monitor_time ON checks(monitor_id, checked_at DESC);
 CREATE INDEX checks_retention ON checks(checked_at);
 CREATE TABLE incidents (
   id INTEGER PRIMARY KEY AUTOINCREMENT, monitor_id INTEGER NOT NULL REFERENCES monitors(id) ON DELETE CASCADE,
-  started_at TEXT NOT NULL, resolved_at TEXT, opening_check_id TEXT REFERENCES checks(id), closing_check_id TEXT REFERENCES checks(id),
+  started_at TEXT NOT NULL, resolved_at TEXT, opening_check_id TEXT REFERENCES checks(id) ON DELETE SET NULL, closing_check_id TEXT REFERENCES checks(id) ON DELETE SET NULL,
   down_delivered_at TEXT, down_attempts INTEGER NOT NULL DEFAULT 0, down_next_attempt_at TEXT, down_error TEXT,
-  recovery_delivered_at TEXT, recovery_attempts INTEGER NOT NULL DEFAULT 0, recovery_next_attempt_at TEXT, recovery_error TEXT
+  down_claim_token TEXT, down_claimed_until TEXT,
+  recovery_delivered_at TEXT, recovery_attempts INTEGER NOT NULL DEFAULT 0, recovery_next_attempt_at TEXT, recovery_error TEXT,
+  recovery_claim_token TEXT, recovery_claimed_until TEXT
 );
 CREATE UNIQUE INDEX incidents_one_open ON incidents(monitor_id) WHERE resolved_at IS NULL;
 CREATE INDEX incidents_pending_down ON incidents(down_delivered_at, down_next_attempt_at);
