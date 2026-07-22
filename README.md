@@ -8,12 +8,14 @@ Local and deployed microservices live in `services/*`. Each service owns its run
 | --- | --- | --- | --- |
 | HTML publisher | `services/html-publisher` | Railway | Sandboxed planning pages, temporary file uploads, resumable downloads, and revocation. |
 | Tailscale port dashboard | `services/tailscale-port-dashboard` | Local VM systemd service | Port-80 dashboard for Tailscale address and listening-port discovery. |
+| Uptime monitor | `services/uptime-monitor` | Cloudflare Workers + D1 | Private HTTP(S) uptime dashboard with Discord incident alerts. |
 
 ## Commands
 
 ```bash
 bun run typecheck
 bun run test
+bun run verify
 ```
 
 Run an individual service from its package directory, or use the root shortcuts:
@@ -21,6 +23,7 @@ Run an individual service from its package directory, or use the root shortcuts:
 ```bash
 bun run start:html-publisher
 bun run start:tailscale-port-dashboard
+bun run start:uptime-monitor
 ```
 
 The root is a Bun workspace catalog, not a deployable service. Service deployment config belongs inside each service directory.
