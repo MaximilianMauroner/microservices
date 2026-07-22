@@ -42,8 +42,9 @@ export function isBlockedAddress(address: string): boolean {
   const g = expandedIpv6(address); if (!g) return true;
   if (g.every((x) => x === 0) || g.every((x, i) => i === 7 ? x === 1 : x === 0)) return true;
   const first = g[0];
+  if (g.slice(0,6).every((x)=>x===0) || (first===0x0100&&g.slice(1,4).every((x)=>x===0)) || (first===0x0064&&g[1]===0xff9b&&g[2]===1)) return true;
   if ((first & 0xfe00) === 0xfc00 || (first & 0xffc0) === 0xfe80 || (first & 0xff00) === 0xff00 || (first & 0xffc0) === 0xfec0) return true;
-  if (first === 0x2001 && (g[1] === 0x0db8 || g[1] === 0x0002 || g[1] === 0x0010)) return true;
+  if ((first===0x2001&&(g[1]&0xfe00)===0) || (first===0x2001&&g[1]===0x0db8) || (first===0x3fff&&(g[1]&0xf000)===0) || first===0x5f00) return true;
   if (g.slice(0,5).every((x) => x === 0) && g[5] === 0xffff) {
     const mapped = ((g[6] << 16) | g[7]) >>> 0;
     return blockedV4.some(([base,bits]) => inV4Range(mapped,base,bits));
@@ -51,13 +52,7 @@ export function isBlockedAddress(address: string): boolean {
   return false;
 }
 
-export interface DnsResolver { resolve4(hostname: string): Promise<string[]>; resolve6(hostname: string): Promise<string[]> }
-
-export async function validatePublicHost(hostname: string, resolver: DnsResolver): Promise<void> {
-  if (isIP(hostname)) { if (isBlockedAddress(hostname)) throw new CheckError("blocked_address", "Target address is not public"); return; }
-  let addresses: string[];
-  try { const [a, aaaa] = await Promise.all([resolver.resolve4(hostname).catch(() => []), resolver.resolve6(hostname).catch(() => [])]); addresses = [...a,...aaaa]; }
-  catch { throw new CheckError("dns_failed", "DNS lookup failed"); }
-  if (!addresses.length) throw new CheckError("dns_failed", "DNS lookup returned no addresses");
-  if (addresses.some(isBlockedAddress)) throw new CheckError("blocked_address", "DNS resolved to a non-public address");
+export function validateLiteralTarget(hostname: string): void {
+  const address = hostname.startsWith("[") && hostname.endsWith("]") ? hostname.slice(1, -1) : hostname;
+  if (isIP(address) && isBlockedAddress(address)) throw new CheckError("blocked_address", "Target address is not public");
 }

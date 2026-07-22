@@ -7,6 +7,8 @@ interface CountRow { count: number; schedule_slot?: number }
 interface CheckRow { id: string; checked_at: string; success: number; status_code: number | null; latency_ms: number; error_code: string | null }
 interface IncidentRow { id: number; started_at: string; resolved_at: string | null; down_delivered_at: string | null; recovery_delivered_at: string | null }
 interface IdRow { id: number }
+interface MetricRow { completed: number; successful: number }
+interface BucketRow { bucket_at: number; latency_ms: number | null; completed: number; successful: number }
 
 function summary(row: MonitorRow, uptime24h: number | null = null, uptime30d: number | null = null): MonitorSummary {
   return { id: row.id, name: row.name, url: row.url, hostname: new URL(row.url).hostname, enabled: row.enabled === 1, status: row.status, latestLatencyMs: row.latest_latency_ms, latestStatusCode: row.latest_status_code, lastCheckedAt: row.last_checked_at, uptime24h, uptime30d, scheduleSlot: row.schedule_slot };
@@ -18,9 +20,9 @@ export function chooseScheduleSlot(counts:ReadonlyMap<number,number>):number|nul
 }
 
 export async function listMonitors(db: D1Database): Promise<MonitorSummary[]> {
-  const result = await db.prepare(`SELECT m.*, ROUND(100.0*SUM(CASE WHEN c.success=1 AND c.checked_at >= datetime('now','-24 hours') THEN 1 ELSE 0 END)/NULLIF(SUM(CASE WHEN c.checked_at >= datetime('now','-24 hours') THEN 1 ELSE 0 END),0),2) uptime24h,
-    ROUND(100.0*SUM(CASE WHEN c.success=1 AND c.checked_at >= datetime('now','-30 days') THEN 1 ELSE 0 END)/NULLIF(SUM(CASE WHEN c.checked_at >= datetime('now','-30 days') THEN 1 ELSE 0 END),0),2) uptime30d
-    FROM monitors m LEFT JOIN checks c ON c.monitor_id=m.id AND c.checked_at >= datetime('now','-30 days') GROUP BY m.id ORDER BY m.created_at`).all<MonitorRow & { uptime24h: number | null; uptime30d: number | null }>();
+  const result = await db.prepare(`SELECT m.*, ROUND(100.0*SUM(CASE WHEN c.success=1 AND unixepoch(c.checked_at) >= unixepoch('now','-24 hours') THEN 1 ELSE 0 END)/NULLIF(SUM(CASE WHEN unixepoch(c.checked_at) >= unixepoch('now','-24 hours') THEN 1 ELSE 0 END),0),2) uptime24h,
+    ROUND(100.0*SUM(CASE WHEN c.success=1 AND unixepoch(c.checked_at) >= unixepoch('now','-30 days') THEN 1 ELSE 0 END)/NULLIF(SUM(CASE WHEN unixepoch(c.checked_at) >= unixepoch('now','-30 days') THEN 1 ELSE 0 END),0),2) uptime30d
+    FROM monitors m LEFT JOIN checks c ON c.monitor_id=m.id AND unixepoch(c.checked_at) BETWEEN unixepoch('now','-30 days') AND unixepoch('now') GROUP BY m.id ORDER BY m.created_at`).all<MonitorRow & { uptime24h: number | null; uptime30d: number | null }>();
   return result.results.map((row) => summary(row, row.uptime24h, row.uptime30d));
 }
 
@@ -62,18 +64,27 @@ export async function recordObservation(db: D1Database, monitor: MonitorRow, res
   try{await db.batch(statements);return true;}catch(error){if(error instanceof Error&&error.message.includes("observation_conflict"))return false;throw error;}
 }
 
-export async function history(db:D1Database,id:number,window:"24h"|"30d"):Promise<HistoryResponse>{
-  const modifier=window==="24h"?"-24 hours":"-30 days";
-  const checks=(await db.prepare("SELECT * FROM checks WHERE monitor_id=? AND checked_at >= datetime('now',?) ORDER BY checked_at DESC LIMIT 500").bind(id,modifier).all<CheckRow>()).results;
-  const incidents=(await db.prepare("SELECT * FROM incidents WHERE monitor_id=? AND started_at >= datetime('now',?) ORDER BY started_at DESC").bind(id,modifier).all<IncidentRow>()).results;
-  const values=checks.map((row)=>({id:row.id,checkedAt:row.checked_at,success:row.success===1,statusCode:row.status_code,latencyMs:row.latency_ms,errorCode:row.error_code as HistoryResponse["checks"][number]["errorCode"]}));
-  const uptime=values.length?Math.round(values.filter((v)=>v.success).length/values.length*10000)/100:null;
-  return { uptime, checks:values, incidents:incidents.map((row):IncidentRecord=>({id:row.id,startedAt:row.started_at,resolvedAt:row.resolved_at,downDeliveredAt:row.down_delivered_at,recoveryDeliveredAt:row.recovery_delivered_at})), buckets:values.slice(0,96).reverse().map((v)=>({at:v.checkedAt,latencyMs:v.latencyMs,success:v.success})) };
+export async function history(db:D1Database,id:number,window:"24h"|"30d",cursor?:string,now=new Date()):Promise<HistoryResponse>{
+  const durationSeconds=window==="24h"?24*60*60:30*24*60*60; const current=Math.floor(now.valueOf()/1000); const cutoff=current-durationSeconds; const bucketSeconds=durationSeconds/96;
+  const metric=await db.prepare("SELECT COUNT(*) completed,COALESCE(SUM(success),0) successful FROM checks WHERE monitor_id=? AND unixepoch(checked_at) BETWEEN ? AND ?").bind(id,cutoff,current).first<MetricRow>();
+  const query=cursor
+    ? "SELECT * FROM checks WHERE monitor_id=? AND unixepoch(checked_at) BETWEEN ? AND ? AND unixepoch(checked_at)<unixepoch(?) ORDER BY unixepoch(checked_at) DESC,id DESC LIMIT 101"
+    : "SELECT * FROM checks WHERE monitor_id=? AND unixepoch(checked_at) BETWEEN ? AND ? ORDER BY unixepoch(checked_at) DESC,id DESC LIMIT 101";
+  const result=cursor?await db.prepare(query).bind(id,cutoff,current,cursor).all<CheckRow>():await db.prepare(query).bind(id,cutoff,current).all<CheckRow>();
+  const page=result.results.slice(0,100); const nextCursor=result.results.length>100?page.at(-1)?.checked_at??null:null;
+  const incidents=(await db.prepare("SELECT * FROM incidents WHERE monitor_id=? AND unixepoch(started_at) BETWEEN ? AND ? ORDER BY unixepoch(started_at) DESC").bind(id,cutoff,current).all<IncidentRow>()).results;
+  const buckets=(await db.prepare(`WITH RECURSIVE bucket(n) AS (VALUES(0) UNION ALL SELECT n+1 FROM bucket WHERE n<95)
+    SELECT ?+bucket.n*? bucket_at,ROUND(AVG(c.latency_ms)) latency_ms,COUNT(c.id) completed,COALESCE(SUM(c.success),0) successful
+    FROM bucket LEFT JOIN checks c ON c.monitor_id=? AND unixepoch(c.checked_at)>=?+bucket.n*? AND unixepoch(c.checked_at)<CASE WHEN bucket.n=95 THEN ? ELSE ?+(bucket.n+1)*? END
+    GROUP BY bucket.n ORDER BY bucket.n`).bind(cutoff,bucketSeconds,id,cutoff,bucketSeconds,current+1,cutoff,bucketSeconds).all<BucketRow>()).results;
+  const checks=page.map((row)=>({id:row.id,checkedAt:row.checked_at,success:row.success===1,statusCode:row.status_code,latencyMs:row.latency_ms,errorCode:row.error_code as HistoryResponse["checks"][number]["errorCode"]}));
+  const completed=metric?.completed??0; const uptime=completed?Math.round((metric?.successful??0)/completed*10000)/100:null;
+  return { uptime,checks,nextCursor,incidents:incidents.map((row):IncidentRecord=>({id:row.id,startedAt:row.started_at,resolvedAt:row.resolved_at,downDeliveredAt:row.down_delivered_at,recoveryDeliveredAt:row.recovery_delivered_at})),buckets:buckets.map((row)=>({at:new Date(row.bucket_at*1000).toISOString(),latencyMs:row.latency_ms,success:row.completed>0&&row.successful===row.completed})) };
 }
 
 export async function rateLimit(db:D1Database,key:string,limit:number,windowSeconds:number):Promise<boolean>{
-  const cutoff=new Date(Date.now()-windowSeconds*1000).toISOString(); const now=new Date().toISOString();
-  await db.prepare("INSERT INTO rate_limits(key,window_started_at,count) VALUES(?,?,1) ON CONFLICT(key) DO UPDATE SET window_started_at=CASE WHEN window_started_at < ? THEN excluded.window_started_at ELSE window_started_at END,count=CASE WHEN window_started_at < ? THEN 1 ELSE count+1 END").bind(key,now,cutoff,cutoff).run();
+  const cutoff=Math.floor(Date.now()/1000)-windowSeconds; const now=new Date().toISOString();
+  await db.prepare("INSERT INTO rate_limits(key,window_started_at,count) VALUES(?,?,1) ON CONFLICT(key) DO UPDATE SET window_started_at=CASE WHEN unixepoch(window_started_at) < ? THEN excluded.window_started_at ELSE window_started_at END,count=CASE WHEN unixepoch(window_started_at) < ? THEN 1 ELSE count+1 END").bind(key,now,cutoff,cutoff).run();
   const row=await db.prepare("SELECT count FROM rate_limits WHERE key=?").bind(key).first<CountRow>(); return (row?.count??limit+1)<=limit;
 }
 
