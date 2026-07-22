@@ -27,10 +27,10 @@ export async function checkTarget(rawUrl: string, deps: CheckerDependencies): Pr
       }
       await response.body?.cancel();
       const latencyMs = Math.max(0, (deps.now ?? Date.now)() - started);
-      return { success: response.status >= 200 && response.status <= 399, statusCode: response.status, latencyMs, errorCode: response.status >= 400 ? "http_error" : null, checkedAt: new Date().toISOString() };
+      return { success: response.status >= 200 && response.status <= 399, statusCode: response.status, latencyMs, errorCode: response.status >= 400 ? "http_error" : null, checkedAt: new Date((deps.now ?? Date.now)()).toISOString() };
     }
     throw new CheckError("too_many_redirects", "More than one redirect");
   } catch (error) {
-    return { success: false, statusCode, latencyMs: Math.max(0, (deps.now ?? Date.now)() - started), errorCode: normalizedError(error), checkedAt: new Date().toISOString() };
+    return { success: false, statusCode, latencyMs: Math.max(0, (deps.now ?? Date.now)() - started), errorCode: normalizedError(error), checkedAt: new Date((deps.now ?? Date.now)()).toISOString() };
   } finally { clearTimeout(timer); }
 }

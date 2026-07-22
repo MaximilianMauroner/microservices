@@ -53,26 +53,35 @@ export async function deleteMonitor(db: D1Database,id:number):Promise<boolean>{ 
 
 export async function recordObservation(db: D1Database, monitor: MonitorRow, result: CheckResult): Promise<boolean> {
   const open = await db.prepare("SELECT id FROM incidents WHERE monitor_id=? AND resolved_at IS NULL").bind(monitor.id).first<IdRow>();
+  const currentTime=monitor.last_checked_at===null?null:Date.parse(monitor.last_checked_at); const observedTime=Date.parse(result.checkedAt); const isCurrent=currentTime===null||observedTime>=currentTime;
   const state = applyObservation({ status: monitor.status === "paused" ? "checking" : monitor.status, consecutiveFailures: monitor.consecutive_failures, openIncidentId: open?.id ?? null }, result.success);
   const token=crypto.randomUUID(); const checkId=crypto.randomUUID();
   const statements=[
-    db.prepare("UPDATE monitors SET status=?,consecutive_failures=?,latest_latency_ms=?,latest_status_code=?,last_checked_at=?,observation_token=?,version=version+1,updated_at=? WHERE id=? AND version=? AND enabled=1").bind(state.status,state.consecutiveFailures,result.latencyMs,result.statusCode,result.checkedAt,token,result.checkedAt,monitor.id,monitor.version),
+    isCurrent
+      ? db.prepare("UPDATE monitors SET status=?,consecutive_failures=?,latest_latency_ms=?,latest_status_code=?,last_checked_at=?,observation_token=?,version=version+1,updated_at=? WHERE id=? AND version=? AND enabled=1").bind(state.status,state.consecutiveFailures,result.latencyMs,result.statusCode,result.checkedAt,token,result.checkedAt,monitor.id,monitor.version)
+      : db.prepare("UPDATE monitors SET observation_token=?,version=version+1 WHERE id=? AND version=? AND enabled=1").bind(token,monitor.id,monitor.version),
     db.prepare("INSERT INTO checks(id,monitor_id,observation_token,checked_at,success,status_code,latency_ms,error_code) VALUES(?,?,?,?,?,?,?,?)").bind(checkId,monitor.id,token,result.checkedAt,result.success ? 1 : 0,result.statusCode,result.latencyMs,result.errorCode),
   ];
-  if(state.transition==="down")statements.push(db.prepare("INSERT OR IGNORE INTO incidents(monitor_id,started_at,opening_check_id,down_next_attempt_at) VALUES(?,?,?,?)").bind(monitor.id,result.checkedAt,checkId,result.checkedAt));
-  if(state.transition==="recovery"&&open)statements.push(db.prepare("UPDATE incidents SET resolved_at=?,closing_check_id=?,recovery_next_attempt_at=? WHERE id=? AND resolved_at IS NULL").bind(result.checkedAt,checkId,result.checkedAt,open.id));
+  if(isCurrent&&state.transition==="down")statements.push(db.prepare("INSERT OR IGNORE INTO incidents(monitor_id,started_at,opening_check_id,down_next_attempt_at) VALUES(?,?,?,?)").bind(monitor.id,result.checkedAt,checkId,result.checkedAt));
+  if(isCurrent&&state.transition==="recovery"&&open)statements.push(db.prepare("UPDATE incidents SET resolved_at=?,closing_check_id=?,recovery_next_attempt_at=? WHERE id=? AND resolved_at IS NULL").bind(result.checkedAt,checkId,result.checkedAt,open.id));
   try{await db.batch(statements);return true;}catch(error){if(error instanceof Error&&error.message.includes("observation_conflict"))return false;throw error;}
 }
 
-export async function history(db:D1Database,id:number,window:"24h"|"30d",cursor?:string,now=new Date()):Promise<HistoryResponse>{
+interface HistoryCursor { checkedAt:string; id:string }
+export function encodeHistoryCursor(row:HistoryCursor):string{return btoa(JSON.stringify(row)).replaceAll("+","-").replaceAll("/","_").replace(/=+$/,"");}
+export function decodeHistoryCursor(value:string):HistoryCursor{
+  try{const normalized=value.replaceAll("-","+").replaceAll("_","/");const parsed:unknown=JSON.parse(atob(normalized.padEnd(Math.ceil(normalized.length/4)*4,"=")));if(typeof parsed!=="object"||parsed===null||!("checkedAt" in parsed)||!("id" in parsed)||typeof parsed.checkedAt!=="string"||typeof parsed.id!=="string"||Number.isNaN(Date.parse(parsed.checkedAt))||!parsed.id)throw new Error("invalid_cursor");return{checkedAt:parsed.checkedAt,id:parsed.id};}catch{throw new Error("invalid_cursor");}
+}
+export async function history(db:D1Database,id:number,window:"24h"|"30d",cursorValue?:string,now=new Date()):Promise<HistoryResponse>{
   const durationSeconds=window==="24h"?24*60*60:30*24*60*60; const current=Math.floor(now.valueOf()/1000); const cutoff=current-durationSeconds; const bucketSeconds=durationSeconds/96;
   const metric=await db.prepare("SELECT COUNT(*) completed,COALESCE(SUM(success),0) successful FROM checks WHERE monitor_id=? AND unixepoch(checked_at) BETWEEN ? AND ?").bind(id,cutoff,current).first<MetricRow>();
+  const cursor=cursorValue?decodeHistoryCursor(cursorValue):null;
   const query=cursor
-    ? "SELECT * FROM checks WHERE monitor_id=? AND unixepoch(checked_at) BETWEEN ? AND ? AND unixepoch(checked_at)<unixepoch(?) ORDER BY unixepoch(checked_at) DESC,id DESC LIMIT 101"
+    ? "SELECT * FROM checks WHERE monitor_id=? AND unixepoch(checked_at) BETWEEN ? AND ? AND (unixepoch(checked_at)<unixepoch(?) OR (unixepoch(checked_at)=unixepoch(?) AND id<?)) ORDER BY unixepoch(checked_at) DESC,id DESC LIMIT 101"
     : "SELECT * FROM checks WHERE monitor_id=? AND unixepoch(checked_at) BETWEEN ? AND ? ORDER BY unixepoch(checked_at) DESC,id DESC LIMIT 101";
-  const result=cursor?await db.prepare(query).bind(id,cutoff,current,cursor).all<CheckRow>():await db.prepare(query).bind(id,cutoff,current).all<CheckRow>();
-  const page=result.results.slice(0,100); const nextCursor=result.results.length>100?page.at(-1)?.checked_at??null:null;
-  const incidents=(await db.prepare("SELECT * FROM incidents WHERE monitor_id=? AND unixepoch(started_at) BETWEEN ? AND ? ORDER BY unixepoch(started_at) DESC").bind(id,cutoff,current).all<IncidentRow>()).results;
+  const result=cursor?await db.prepare(query).bind(id,cutoff,current,cursor.checkedAt,cursor.checkedAt,cursor.id).all<CheckRow>():await db.prepare(query).bind(id,cutoff,current).all<CheckRow>();
+  const page=result.results.slice(0,100); const last=page.at(-1); const nextCursor=result.results.length>100&&last?encodeHistoryCursor({checkedAt:last.checked_at,id:last.id}):null;
+  const incidents=(await db.prepare("SELECT * FROM incidents WHERE monitor_id=? AND unixepoch(started_at)<=? AND (resolved_at IS NULL OR unixepoch(resolved_at)>=?) ORDER BY unixepoch(started_at) DESC").bind(id,current,cutoff).all<IncidentRow>()).results;
   const buckets=(await db.prepare(`WITH RECURSIVE bucket(n) AS (VALUES(0) UNION ALL SELECT n+1 FROM bucket WHERE n<95)
     SELECT ?+bucket.n*? bucket_at,ROUND(AVG(c.latency_ms)) latency_ms,COUNT(c.id) completed,COALESCE(SUM(c.success),0) successful
     FROM bucket LEFT JOIN checks c ON c.monitor_id=? AND unixepoch(c.checked_at)>=?+bucket.n*? AND unixepoch(c.checked_at)<CASE WHEN bucket.n=95 THEN ? ELSE ?+(bucket.n+1)*? END

@@ -19,6 +19,7 @@ const blockedV4: ReadonlyArray<readonly [string, number]> = [
   ["192.0.0.0",24],["192.0.2.0",24],["192.88.99.0",24],["192.168.0.0",16],["198.18.0.0",15],["198.51.100.0",24],
   ["203.0.113.0",24],["224.0.0.0",4],["240.0.0.0",4],
 ];
+function blockedEmbeddedV4(high:number,low:number):boolean{const value=((high<<16)|low)>>>0;return blockedV4.some(([base,bits])=>inV4Range(value,base,bits));}
 
 function expandedIpv6(value: string): number[] | null {
   let input = value.toLowerCase().split("%")[0];
@@ -43,6 +44,8 @@ export function isBlockedAddress(address: string): boolean {
   if (g.every((x) => x === 0) || g.every((x, i) => i === 7 ? x === 1 : x === 0)) return true;
   const first = g[0];
   if (g.slice(0,6).every((x)=>x===0) || (first===0x0100&&g.slice(1,4).every((x)=>x===0)) || (first===0x0064&&g[1]===0xff9b&&g[2]===1)) return true;
+  if (first===0x0064&&g[1]===0xff9b&&g.slice(2,6).every((x)=>x===0)&&blockedEmbeddedV4(g[6],g[7])) return true;
+  if (first===0x2002&&blockedEmbeddedV4(g[1],g[2])) return true;
   if ((first & 0xfe00) === 0xfc00 || (first & 0xffc0) === 0xfe80 || (first & 0xff00) === 0xff00 || (first & 0xffc0) === 0xfec0) return true;
   if ((first===0x2001&&(g[1]&0xfe00)===0) || (first===0x2001&&g[1]===0x0db8) || (first===0x3fff&&(g[1]&0xf000)===0) || first===0x5f00) return true;
   if (g.slice(0,5).every((x) => x === 0) && g[5] === 0xffff) {

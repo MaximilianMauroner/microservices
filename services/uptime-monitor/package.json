@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "deploy": "wrangler deploy",
+    "deploy:preview": "wrangler deploy --env=preview",
+    "deploy:production": "wrangler deploy --env=production",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
