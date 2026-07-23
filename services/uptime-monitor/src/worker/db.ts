@@ -1,14 +1,14 @@
 import type { CheckResult } from "../domain/check";
-import { applyObservation } from "../domain/status";
 import type { HistoryResponse, IncidentRecord, MonitorSummary, MonitorStatus } from "../shared/contracts";
 
 interface MonitorRow { id: number; name: string; url: string; enabled: number; status: MonitorStatus; latest_latency_ms: number | null; latest_status_code: number | null; last_checked_at: string | null; consecutive_failures: number; schedule_slot: number; version: number }
 interface CountRow { count: number; schedule_slot?: number }
 interface CheckRow { id: string; checked_at: string; success: number; status_code: number | null; latency_ms: number; error_code: string | null }
-interface IncidentRow { id: number; started_at: string; resolved_at: string | null; down_delivered_at: string | null; recovery_delivered_at: string | null }
-interface IdRow { id: number }
+interface IncidentRow { id: number; started_at: string; resolved_at: string | null; opening_check_id: string | null; closing_check_id: string | null; down_delivered_at: string | null; recovery_delivered_at: string | null; opening_checked_at?: string | null; closing_checked_at?: string | null }
 interface MetricRow { completed: number; successful: number }
 interface BucketRow { bucket_at: number; latency_ms: number | null; completed: number; successful: number }
+interface FoldedIncident { openingCheckId:string; startedAt:string; closingCheckId:string|null; resolvedAt:string|null }
+interface ObservationReadCounts { checks:number;incidents:number }
 
 function summary(row: MonitorRow, uptime24h: number | null = null, uptime30d: number | null = null): MonitorSummary {
   return { id: row.id, name: row.name, url: row.url, hostname: new URL(row.url).hostname, enabled: row.enabled === 1, status: row.status, latestLatencyMs: row.latest_latency_ms, latestStatusCode: row.latest_status_code, lastCheckedAt: row.last_checked_at, uptime24h, uptime30d, scheduleSlot: row.schedule_slot };
@@ -24,6 +24,11 @@ export async function listMonitors(db: D1Database): Promise<MonitorSummary[]> {
     ROUND(100.0*SUM(CASE WHEN c.success=1 AND unixepoch(c.checked_at) >= unixepoch('now','-30 days') THEN 1 ELSE 0 END)/NULLIF(SUM(CASE WHEN unixepoch(c.checked_at) >= unixepoch('now','-30 days') THEN 1 ELSE 0 END),0),2) uptime30d
     FROM monitors m LEFT JOIN checks c ON c.monitor_id=m.id AND unixepoch(c.checked_at) BETWEEN unixepoch('now','-30 days') AND unixepoch('now') GROUP BY m.id ORDER BY m.created_at`).all<MonitorRow & { uptime24h: number | null; uptime30d: number | null }>();
   return result.results.map((row) => summary(row, row.uptime24h, row.uptime30d));
+}
+
+export async function listMonitorStates(db: D1Database): Promise<MonitorSummary[]> {
+  const result=await db.prepare("SELECT * FROM monitors ORDER BY created_at").all<MonitorRow>();
+  return result.results.map((row)=>summary(row));
 }
 
 export async function getMonitor(db: D1Database, id: number): Promise<MonitorRow | null> { return db.prepare("SELECT * FROM monitors WHERE id=?").bind(id).first<MonitorRow>(); }
@@ -51,19 +56,114 @@ export async function updateMonitor(db: D1Database, id: number, patch: { name?: 
 }
 export async function deleteMonitor(db: D1Database,id:number):Promise<boolean>{ const result=await db.prepare("DELETE FROM monitors WHERE id=?").bind(id).run(); return (result.meta.changes ?? 0)>0; }
 
-export async function recordObservation(db: D1Database, monitor: MonitorRow, result: CheckResult): Promise<boolean> {
-  const open = await db.prepare("SELECT id FROM incidents WHERE monitor_id=? AND resolved_at IS NULL").bind(monitor.id).first<IdRow>();
-  const currentTime=monitor.last_checked_at===null?null:Date.parse(monitor.last_checked_at); const observedTime=Date.parse(result.checkedAt); const isCurrent=currentTime===null||observedTime>=currentTime;
-  const state = applyObservation({ status: monitor.status === "paused" ? "checking" : monitor.status, consecutiveFailures: monitor.consecutive_failures, openIncidentId: open?.id ?? null }, result.success);
-  const token=crypto.randomUUID(); const checkId=crypto.randomUUID();
-  const statements=[
-    isCurrent
-      ? db.prepare("UPDATE monitors SET status=?,consecutive_failures=?,latest_latency_ms=?,latest_status_code=?,last_checked_at=?,observation_token=?,version=version+1,updated_at=? WHERE id=? AND version=? AND enabled=1").bind(state.status,state.consecutiveFailures,result.latencyMs,result.statusCode,result.checkedAt,token,result.checkedAt,monitor.id,monitor.version)
-      : db.prepare("UPDATE monitors SET observation_token=?,version=version+1 WHERE id=? AND version=? AND enabled=1").bind(token,monitor.id,monitor.version),
+function compareChecks(left:Pick<CheckRow,"checked_at"|"id">,right:Pick<CheckRow,"checked_at"|"id">):number{
+  return left.checked_at.localeCompare(right.checked_at)||left.id.localeCompare(right.id);
+}
+
+async function failuresBetween(db:D1Database,monitorId:number,lower:CheckRow|null,upper:CheckRow|null):Promise<CheckRow[]>{
+  const result=await db.prepare(`SELECT id,checked_at,success,status_code,latency_ms,error_code FROM checks WHERE monitor_id=? AND success=0
+    AND (? IS NULL OR checked_at>? OR (checked_at=? AND id>?))
+    AND (? IS NULL OR checked_at<? OR (checked_at=? AND id<?))
+    ORDER BY checked_at,id LIMIT 2`).bind(monitorId,lower?.checked_at??null,lower?.checked_at??null,lower?.checked_at??null,lower?.id??null,upper?.checked_at??null,upper?.checked_at??null,upper?.checked_at??null,upper?.id??null).all<CheckRow>();
+  return result.results;
+}
+
+function incidentForFailures(failures:readonly CheckRow[],closing:CheckRow|null):FoldedIncident|null{
+  const opening=[...failures].sort(compareChecks)[1];if(!opening)return null;
+  return{openingCheckId:opening.id,startedAt:opening.checked_at,closingCheckId:closing?.id??null,resolvedAt:closing?.checked_at??null};
+}
+
+function incidentsOverlap(existing:IncidentRow,desired:FoldedIncident):boolean{
+  const desiredStart={checked_at:desired.startedAt,id:desired.openingCheckId};
+  const desiredEnd=desired.resolvedAt===null?null:{checked_at:desired.resolvedAt,id:desired.closingCheckId??""};
+  const existingStart={checked_at:existing.opening_checked_at??existing.started_at,id:existing.opening_check_id??""};
+  const existingEnd=existing.resolved_at===null?null:{checked_at:existing.closing_checked_at??existing.resolved_at,id:existing.closing_check_id??""};
+  return(desiredEnd===null||compareChecks(existingStart,desiredEnd)<=0)&&(existingEnd===null||compareChecks(existingEnd,desiredStart)>=0);
+}
+
+function incidentStartsBetween(existing:IncidentRow,lower:CheckRow|null,upper:CheckRow|null):boolean{
+  if(existing.opening_check_id===null||existing.opening_checked_at===null||existing.opening_checked_at===undefined)return false;
+  const opening={checked_at:existing.opening_checked_at,id:existing.opening_check_id};
+  return(lower===null||compareChecks(opening,lower)>0)&&(upper===null||compareChecks(opening,upper)<0);
+}
+
+export async function recordObservation(db: D1Database, monitor: MonitorRow, result: CheckResult, checkId=crypto.randomUUID(),observeReads?:(counts:ObservationReadCounts)=>void): Promise<boolean> {
+  const candidate:CheckRow={id:checkId,checked_at:result.checkedAt,success:result.success?1:0,status_code:result.statusCode,latency_ms:result.latencyMs,error_code:result.errorCode};
+  const select="SELECT id,checked_at,success,status_code,latency_ms,error_code FROM checks";
+  const [latest,previousSuccess,nextSuccess,lastSuccess]=await Promise.all([
+    db.prepare(`${select} WHERE monitor_id=? ORDER BY checked_at DESC,id DESC LIMIT 1`).bind(monitor.id).first<CheckRow>(),
+    db.prepare(`${select} WHERE monitor_id=? AND success=1 AND (checked_at<? OR (checked_at=? AND id<?)) ORDER BY checked_at DESC,id DESC LIMIT 1`).bind(monitor.id,candidate.checked_at,candidate.checked_at,candidate.id).first<CheckRow>(),
+    db.prepare(`${select} WHERE monitor_id=? AND success=1 AND (checked_at>? OR (checked_at=? AND id>?)) ORDER BY checked_at,id LIMIT 1`).bind(monitor.id,candidate.checked_at,candidate.checked_at,candidate.id).first<CheckRow>(),
+    db.prepare(`${select} WHERE monitor_id=? AND success=1 ORDER BY checked_at DESC,id DESC LIMIT 1`).bind(monitor.id).first<CheckRow>(),
+  ]);
+  const segmentQueries=result.success
+    ? [failuresBetween(db,monitor.id,previousSuccess,candidate),failuresBetween(db,monitor.id,candidate,nextSuccess)]
+    : [failuresBetween(db,monitor.id,previousSuccess,nextSuccess)];
+  const segmentFailures=await Promise.all(segmentQueries);
+  const desiredIncidents=result.success
+    ? [incidentForFailures(segmentFailures[0],candidate),incidentForFailures(segmentFailures[1],nextSuccess)].filter((incident):incident is FoldedIncident=>incident!==null)
+    : [incidentForFailures([...segmentFailures[0],candidate],nextSuccess)].filter((incident):incident is FoldedIncident=>incident!==null);
+  const lower=previousSuccess?.checked_at??null;const upper=nextSuccess?.checked_at??null;
+  const incidentsResult=await db.prepare(`SELECT i.*,opening.checked_at opening_checked_at,closing.checked_at closing_checked_at
+    FROM incidents i
+    LEFT JOIN checks opening ON opening.id=i.opening_check_id
+    LEFT JOIN checks closing ON closing.id=i.closing_check_id
+    WHERE i.monitor_id=?
+      AND (
+        (opening.id IS NOT NULL
+          AND (? IS NULL OR opening.checked_at>? OR (opening.checked_at=? AND opening.id>?))
+          AND (? IS NULL OR opening.checked_at<? OR (opening.checked_at=? AND opening.id<?)))
+        OR
+        (opening.id IS NULL
+          AND (? IS NULL OR i.started_at<=?)
+          AND (i.resolved_at IS NULL OR ? IS NULL OR i.resolved_at>=?))
+      )
+    ORDER BY i.started_at,i.id LIMIT 4`).bind(
+      monitor.id,
+      previousSuccess?.checked_at??null,previousSuccess?.checked_at??null,previousSuccess?.checked_at??null,previousSuccess?.id??null,
+      nextSuccess?.checked_at??null,nextSuccess?.checked_at??null,nextSuccess?.checked_at??null,nextSuccess?.id??null,
+      upper,upper,lower,lower,
+    ).all<IncidentRow>();
+  let consecutiveFailures=monitor.consecutive_failures;
+  const candidateAfterLastSuccess=lastSuccess===null||compareChecks(candidate,lastSuccess)>0;
+  if(candidateAfterLastSuccess){
+    if(result.success){
+      consecutiveFailures=segmentFailures[1]?.length??0;
+    }else consecutiveFailures=Math.min(2,consecutiveFailures+1);
+  }
+  const status:MonitorStatus=consecutiveFailures===0?"up":consecutiveFailures===1?"checking":"down";
+  const newest=latest===null||compareChecks(candidate,latest)>0?candidate:latest;
+  observeReads?.({checks:[latest,previousSuccess,nextSuccess,lastSuccess].filter((row)=>row!==null).length+segmentFailures.reduce((count,rows)=>count+rows.length,0),incidents:incidentsResult.results.length});
+  const token=crypto.randomUUID();
+  const statements:D1PreparedStatement[]=[
+    db.prepare("UPDATE monitors SET status=?,consecutive_failures=?,latest_latency_ms=?,latest_status_code=?,last_checked_at=?,observation_token=?,version=version+1,updated_at=? WHERE id=? AND version=? AND enabled=1").bind(status,consecutiveFailures,newest.latency_ms,newest.status_code,newest.checked_at,token,newest.checked_at,monitor.id,monitor.version),
     db.prepare("INSERT INTO checks(id,monitor_id,observation_token,checked_at,success,status_code,latency_ms,error_code) VALUES(?,?,?,?,?,?,?,?)").bind(checkId,monitor.id,token,result.checkedAt,result.success ? 1 : 0,result.statusCode,result.latencyMs,result.errorCode),
   ];
-  if(isCurrent&&state.transition==="down")statements.push(db.prepare("INSERT OR IGNORE INTO incidents(monitor_id,started_at,opening_check_id,down_next_attempt_at) VALUES(?,?,?,?)").bind(monitor.id,result.checkedAt,checkId,result.checkedAt));
-  if(isCurrent&&state.transition==="recovery"&&open)statements.push(db.prepare("UPDATE incidents SET resolved_at=?,closing_check_id=?,recovery_next_attempt_at=? WHERE id=? AND resolved_at IS NULL").bind(result.checkedAt,checkId,result.checkedAt,open.id));
+  const unused=[...incidentsResult.results];
+  const matches=new Map<FoldedIncident,IncidentRow>();
+  const assign=(predicate:(existing:IncidentRow,desired:FoldedIncident)=>boolean)=>{
+    for(const desired of desiredIncidents){
+      if(matches.has(desired))continue;
+      const index=unused.findIndex((existing)=>predicate(existing,desired));
+      if(index>=0)matches.set(desired,unused.splice(index,1)[0]);
+    }
+  };
+  assign((existing,desired)=>existing.opening_check_id===desired.openingCheckId);
+  assign((existing,desired)=>existing.closing_check_id!==null&&existing.closing_check_id===desired.closingCheckId);
+  assign(incidentsOverlap);
+  for(const desired of desiredIncidents){
+    const existing=matches.get(desired);
+    if(existing?.opening_check_id===null)statements.push(db.prepare("UPDATE incidents SET resolved_at=?,closing_check_id=? WHERE id=?").bind(desired.resolvedAt,desired.closingCheckId,existing.id));
+    else if(existing)statements.push(db.prepare("UPDATE incidents SET started_at=?,resolved_at=?,opening_check_id=?,closing_check_id=? WHERE id=?").bind(desired.startedAt,desired.resolvedAt,desired.openingCheckId,desired.closingCheckId,existing.id));
+    else statements.push(db.prepare("INSERT INTO incidents(monitor_id,started_at,resolved_at,opening_check_id,closing_check_id,down_next_attempt_at,recovery_next_attempt_at) VALUES(?,?,?,?,?,?,?)").bind(monitor.id,desired.startedAt,desired.resolvedAt,desired.openingCheckId,desired.closingCheckId,desired.startedAt,desired.resolvedAt));
+  }
+  for(const stale of unused){
+    if(stale.opening_check_id===null){
+      if(stale.resolved_at===null&&result.success)statements.push(db.prepare("UPDATE incidents SET resolved_at=?,closing_check_id=? WHERE id=? AND resolved_at IS NULL").bind(candidate.checked_at,candidate.id,stale.id));
+      continue;
+    }
+    if(incidentStartsBetween(stale,previousSuccess,nextSuccess))statements.push(db.prepare("DELETE FROM incidents WHERE id=?").bind(stale.id));
+  }
   try{await db.batch(statements);return true;}catch(error){if(error instanceof Error&&error.message.includes("observation_conflict"))return false;throw error;}
 }
 

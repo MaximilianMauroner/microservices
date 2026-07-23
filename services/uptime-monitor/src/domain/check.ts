@@ -19,6 +19,7 @@ export async function checkTarget(rawUrl: string, deps: CheckerDependencies): Pr
       statusCode = response.status;
       if (response.status >= 300 && response.status <= 399 && response.headers.has("location")) {
         void response.body?.cancel();
+        statusCode = null;
         if (redirects === 1) throw new CheckError("too_many_redirects", "More than one redirect");
         const location = response.headers.get("location") ?? "";
         if (location.length > 2048) throw new CheckError("network_error", "Redirect location is too long");

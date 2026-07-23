@@ -1,6 +1,6 @@
 import { authorize } from "./auth";
 import { CheckError } from "../domain/errors";
-import { createMonitor,deleteMonitor,getMonitor,history,listMonitors,rateLimit,updateMonitor } from "./db";
+import { createMonitor,deleteMonitor,getMonitor,history,listMonitors,listMonitorStates,rateLimit,updateMonitor } from "./db";
 import { runMonitorCheck } from "./checker";
 import { sendTestNotification } from "./notifications";
 import { json,problem } from "./responses";
@@ -26,6 +26,7 @@ export async function routeApi(request:Request,env:Env,ctx:ExecutionContext):Pro
   const url=new URL(request.url); const route=monitorRoute(url.pathname);
   try{
     if(request.method==="GET"&&url.pathname==="/api/monitors"){const monitors=await listMonitors(env.DB);return json({monitors,capacity:{used:monitors.length,limit:40},discordConfigured:Boolean(env.DISCORD_WEBHOOK_URL)});}
+    if(request.method==="GET"&&url.pathname==="/api/monitors/state"){const monitors=await listMonitorStates(env.DB);return json({monitors,capacity:{used:monitors.length,limit:40},discordConfigured:Boolean(env.DISCORD_WEBHOOK_URL)});}
     if(request.method==="POST"&&url.pathname==="/api/monitors"){
       const input=monitorInput(await requestJson(request));
       const monitor=await createMonitor(env.DB,input.name,input.url);ctx.waitUntil(runMonitorCheck(env,monitor.id));return json(monitor,201);
