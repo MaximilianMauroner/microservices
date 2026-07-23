@@ -27,7 +27,7 @@ export async function drainOneNotification(env:Env,fetcher:typeof fetch=fetch,cl
   const claimed=await env.DB.prepare(`UPDATE incidents SET ${prefix}_claim_token=?,${prefix}_claimed_until=?,${prefix}_attempts=${prefix}_attempts+1 WHERE id=? AND ${prefix}_delivered_at IS NULL AND (${prefix}_next_attempt_at IS NULL OR unixepoch(${prefix}_next_attempt_at)<=?) AND (${prefix}_claimed_until IS NULL OR unixepoch(${prefix}_claimed_until)<=?) ${recoveryGuard} RETURNING id`).bind(token,claimedUntil,row.incident_id,claimTime,claimTime).first<ClaimRow>();
   if(!claimed)return false;
   const kind=recovery?"recovery":"down"; const at=recovery?(row.resolved_at??now):row.started_at;
-  const detail=recovery?`Recovered in ${row.closing_latency_ms??0} ms`:row.opening_status_code!==null?`Failure: HTTP ${row.opening_status_code}`:`Failure: ${(row.opening_error_code??"network_error").replaceAll("_"," ")}`;
+  const detail=recovery?`Recovered in ${row.closing_latency_ms??0} ms`:row.opening_error_code==="http_error"&&row.opening_status_code!==null?`Failure: HTTP ${row.opening_status_code}`:`Failure: ${(row.opening_error_code??"network_error").replaceAll("_"," ")}`;
   let response:Response; const controller=new AbortController(); const timeout=setTimeout(()=>controller.abort(),10_000);
   try { response=await fetcher(webhookUrl(env.DISCORD_WEBHOOK_URL),{method:"POST",signal:controller.signal,headers:{"content-type":"application/json"},body:JSON.stringify(discordEmbed({kind,name:row.name,hostname:new URL(row.url).hostname,at,dashboardUrl:`${env.DASHBOARD_URL.replace(/\/$/,"")}/?monitor=${row.monitor_id}`,detail}))}); }
   catch {
