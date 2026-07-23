@@ -7,13 +7,19 @@
   ],
   "scripts": {
     "build": "cd services/html-publisher && bun run build",
+    "lint": "bun run lint:uptime-monitor",
+    "lint:uptime-monitor": "cd services/uptime-monitor && bun run lint",
     "start:html-publisher": "cd services/html-publisher && bun run start",
     "start:tailscale-port-dashboard": "cd services/tailscale-port-dashboard && bun run start",
-    "test": "bun run test:html-publisher && bun run test:tailscale-port-dashboard",
+    "start:uptime-monitor": "cd services/uptime-monitor && bun run dev",
+    "test": "bun run test:html-publisher && bun run test:tailscale-port-dashboard && bun run test:uptime-monitor",
     "test:html-publisher": "cd services/html-publisher && bun run test",
     "test:tailscale-port-dashboard": "cd services/tailscale-port-dashboard && bun run test",
-    "typecheck": "bun run typecheck:html-publisher && bun run typecheck:tailscale-port-dashboard",
+    "test:uptime-monitor": "cd services/uptime-monitor && bun run test",
+    "typecheck": "bun run typecheck:html-publisher && bun run typecheck:tailscale-port-dashboard && bun run typecheck:uptime-monitor",
     "typecheck:html-publisher": "cd services/html-publisher && bun run typecheck",
-    "typecheck:tailscale-port-dashboard": "cd services/tailscale-port-dashboard && bun run typecheck"
+    "typecheck:tailscale-port-dashboard": "cd services/tailscale-port-dashboard && bun run typecheck",
+    "typecheck:uptime-monitor": "cd services/uptime-monitor && bun run typecheck",
+    "verify": "bun run lint && bun run typecheck && bun run test"
   }
 }
