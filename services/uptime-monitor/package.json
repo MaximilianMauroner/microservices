@@ -5,9 +5,11 @@
   "type": "module",
   "scripts": {
     "build": "vite build",
+    "build:preview": "CLOUDFLARE_ENV=preview vite build",
+    "build:production": "CLOUDFLARE_ENV=production vite build",
     "dev": "vite",
-    "deploy:preview": "bun run build && wrangler deploy --env=preview",
-    "deploy:production": "bun run build && wrangler deploy --env=production",
+    "deploy:preview": "bun run build:preview && wrangler deploy",
+    "deploy:production": "bun run build:production && wrangler deploy",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
