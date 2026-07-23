@@ -19,9 +19,10 @@
     "production": {
       "name": "uptime-monitor",
       "workers_dev": false,
+      "routes": [{ "pattern": "uptime.mauroner.eu", "custom_domain": true }],
       "triggers": { "crons": ["* * * * *"] },
-      "d1_databases": [{ "binding": "DB", "database_name": "uptime-monitor", "database_id": "REPLACE_WITH_PRODUCTION_D1_ID", "migrations_dir": "migrations" }],
-      "vars": { "ENVIRONMENT": "production", "ACCESS_TEAM_DOMAIN": "https://REPLACE_WITH_TEAM.cloudflareaccess.com", "ACCESS_AUD": "REPLACE_WITH_PRODUCTION_ACCESS_AUD", "DASHBOARD_URL": "https://REPLACE_WITH_PRODUCTION_HOST" }
+      "d1_databases": [{ "binding": "DB", "database_name": "uptime-monitor", "database_id": "b8334e4d-d77f-4b60-9045-c1e21464925b", "migrations_dir": "migrations" }],
+      "vars": { "ENVIRONMENT": "production", "ACCESS_TEAM_DOMAIN": "https://tt-dl.cloudflareaccess.com", "ACCESS_AUD": "20fce5cc10bad892621167c46ab17992835e40fc9fc899f21e423da6d5745c37", "DASHBOARD_URL": "https://uptime.mauroner.eu" }
     }
   }
 }

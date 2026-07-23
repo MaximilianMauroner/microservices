@@ -31,13 +31,13 @@ The Vite development server should be exposed only on a trusted network. For rem
 
 ## Cloudflare provisioning
 
-The checked-in `wrangler.jsonc` deliberately contains placeholders, never production identifiers.
+The checked-in `wrangler.jsonc` contains the live production identifiers for repeatable deploys and clearly marked placeholders for the unprovisioned preview environment. Resource IDs and Access audience tags are identifiers, not credentials; secrets remain in Cloudflare.
 
-1. Create separate preview and production D1 databases. Replace only the clearly marked preview/production placeholders in `wrangler.jsonc`; do not commit real IDs if the repository is public. Apply migrations independently with `bunx wrangler d1 migrations apply DB --remote --env preview` and `bunx wrangler d1 migrations apply DB --remote --env production`.
+1. Production uses the checked-in `uptime-monitor` D1 binding in Western Europe. Create a separate preview D1 database, replace only the clearly marked preview placeholder in `wrangler.jsonc`, and apply migrations independently with `bunx wrangler d1 migrations apply DB --remote --env preview` and `bunx wrangler d1 migrations apply DB --remote --env production`.
 2. Create a Cloudflare Access self-hosted application covering the entire Worker hostname. Add an Allow policy containing only the owner's exact email. Copy its AUD tag to `ACCESS_AUD`; set `ACCESS_TEAM_DOMAIN` to the exact `https://<team>.cloudflareaccess.com` issuer. Do not use an email domain-wide policy.
 3. Set `ENVIRONMENT=production` and `DASHBOARD_URL` to the final HTTPS dashboard URL. Preview must also use a value other than `local` so authentication cannot be bypassed.
 4. Create separate Discord incoming webhooks and store them with `bunx wrangler secret put DISCORD_WEBHOOK_URL --env preview` and `bunx wrangler secret put DISCORD_WEBHOOK_URL --env production`. The URL is never stored in D1, returned by the API, or intentionally logged.
-5. Deploy preview only with `bun run deploy:preview`, validate it, then deploy production only with `bun run deploy:production`. Verify the `* * * * *` trigger, assets route, D1 binding, Access policy, and custom domain in each environment.
+5. Deploy preview only with `bun run deploy:preview`, validate it, then deploy production only with `bun run deploy:production`. Both commands build the client assets before invoking Wrangler. Verify the `* * * * *` trigger, assets route, D1 binding, Access policy, and custom domain in each environment.
 
 There is deliberately no generic `deploy` script. The top-level Wrangler target is named `uptime-monitor-local-dev`, has no cron or public `workers.dev` address, and is the only configuration with the `local` authentication bypass. Preview and production are reachable only after their explicit environment command and custom-domain provisioning; never deploy the top-level target as a substitute.
 
