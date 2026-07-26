@@ -84,7 +84,15 @@ describe("Bun server shutdown", () => {
     const fail = vi.fn();
     const report = vi.fn();
     const checkpoint = vi.fn();
-    const shutdown = createGracefulShutdown({ stop, checkpoint, close, fail, report });
+    const terminate = vi.fn();
+    const shutdown = createGracefulShutdown({
+      stop,
+      checkpoint,
+      close,
+      fail,
+      report,
+      terminate,
+    });
 
     const first = shutdown();
     expect(shutdown()).toBe(first);
@@ -95,18 +103,25 @@ describe("Bun server shutdown", () => {
     expect(checkpoint).toHaveBeenCalledOnce();
     expect(fail).not.toHaveBeenCalled();
     expect(report).not.toHaveBeenCalled();
+    expect(terminate).not.toHaveBeenCalled();
   });
 
   it("forces a stop and marks failure after the drain deadline", async () => {
     const never = new Promise<void>(() => undefined);
-    const stop = vi.fn((force: boolean) => (force ? undefined : never));
+    const order: string[] = [];
+    const stop = vi.fn((force: boolean) => {
+      order.push(force ? "force" : "drain");
+      return force ? undefined : never;
+    });
     const close = vi.fn(async () => undefined);
     const fail = vi.fn();
+    const terminate = vi.fn(() => order.push("terminate"));
     const shutdown = createGracefulShutdown({
       stop,
       close,
       fail,
       report: vi.fn(),
+      terminate,
       timeoutMs: 5,
     });
 
@@ -114,6 +129,8 @@ describe("Bun server shutdown", () => {
     expect(stop.mock.calls).toEqual([[false], [true]]);
     expect(fail).toHaveBeenCalledOnce();
     expect(close).toHaveBeenCalledOnce();
+    expect(terminate).toHaveBeenCalledOnce();
+    expect(order).toEqual(["drain", "force", "terminate"]);
   });
 
   it("reports repository close failures and marks the process unsuccessful", async () => {
@@ -125,6 +142,7 @@ describe("Bun server shutdown", () => {
       close: vi.fn(async () => Promise.reject(error)),
       fail,
       report,
+      terminate: vi.fn(),
     });
 
     await shutdown();
@@ -140,7 +158,13 @@ describe("Bun server shutdown", () => {
     const close = vi.fn(async () => undefined);
     const fail = vi.fn();
     const report = vi.fn();
-    const shutdown = createGracefulShutdown({ stop, close, fail, report });
+    const shutdown = createGracefulShutdown({
+      stop,
+      close,
+      fail,
+      report,
+      terminate: vi.fn(),
+    });
 
     await shutdown();
     expect(stop.mock.calls).toEqual([[false], [true]]);
@@ -161,8 +185,8 @@ describe("Bun server shutdown", () => {
       checkpoint,
       close,
       fail,
-      terminate,
       report: vi.fn(),
+      terminate,
       timeoutMs: 5,
     });
 
@@ -175,10 +199,37 @@ describe("Bun server shutdown", () => {
   });
 
   it("invokes forced cleanup synchronously before hard termination", async () => {
-    const events:string[]=[];
-    const never=new Promise<void>(()=>undefined);
-    const shutdown=createGracefulShutdown({stop:(force)=>{events.push(force?"force":"drain");return force?undefined:never;},checkpoint:()=>{events.push("checkpoint");},close:()=>{events.push("close");return never;},fail:()=>{events.push("fail");},terminate:()=>{events.push("terminate");},report:vi.fn(),timeoutMs:5});
+    const events: string[] = [];
+    const never = new Promise<void>(() => undefined);
+    const shutdown = createGracefulShutdown({
+      stop: (force) => {
+        events.push(force ? "force" : "drain");
+        return force ? undefined : never;
+      },
+      checkpoint: () => {
+        events.push("checkpoint");
+      },
+      close: () => {
+        events.push("close");
+        return never;
+      },
+      fail: () => {
+        events.push("fail");
+      },
+      terminate: () => {
+        events.push("terminate");
+      },
+      report: vi.fn(),
+      timeoutMs: 5,
+    });
     await shutdown();
-    expect(events).toEqual(["drain","fail","force","checkpoint","close","terminate"]);
+    expect(events).toEqual([
+      "drain",
+      "fail",
+      "force",
+      "checkpoint",
+      "close",
+      "terminate",
+    ]);
   });
 });

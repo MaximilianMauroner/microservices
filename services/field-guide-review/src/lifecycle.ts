@@ -3,8 +3,8 @@ export function createGracefulShutdown(options: {
   checkpoint?: () => void | Promise<void>;
   close: () => Promise<void>;
   fail: () => void;
-  terminate?: () => void;
   report: (error: unknown) => void;
+  terminate: () => void;
   timeoutMs?: number;
 }) {
   let shutdown: Promise<void> | undefined;
@@ -20,16 +20,15 @@ export function createGracefulShutdown(options: {
         operation: () => void | Promise<void>,
         onError?: () => void,
       ) => {
-        try {
-          return Promise.resolve(operation()).catch((error: unknown) => {
-            onError?.();
-            markFailed();
-            options.report(error);
-          });
-        } catch (error) {
+        const reject = (error: unknown) => {
           onError?.();
           markFailed();
           options.report(error);
+        };
+        try {
+          return Promise.resolve(operation()).catch(reject);
+        } catch (error) {
+          reject(error);
           return Promise.resolve();
         }
       };
@@ -72,7 +71,7 @@ export function createGracefulShutdown(options: {
         void force();
         void checkpoint();
         void close();
-        options.terminate?.();
+        options.terminate();
       }
     })();
     return shutdown;
