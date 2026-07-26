@@ -1,14 +1,8 @@
-import express from "express";
-import request from "supertest";
 import { expect, it } from "vitest";
 import { reviewConsole } from "../src/ui.js";
 
 it("preserves and exchanges the Shoo callback before normalizing review navigation", async () => {
-  const html = (
-    await request(express().get("/review/callback", reviewConsole)).get(
-      "/review/callback?code=test-code&state=test-state",
-    )
-  ).text;
+  const html = await reviewConsole().text();
 
   expect(html).toContain('data-shoo-callback-path="/review/callback"');
   expect(html).toContain('data-shoo-auto-callback="false"');

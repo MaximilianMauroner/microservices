@@ -1,19 +1,17 @@
-import type { RequestHandler } from "express";
-import request from "supertest";
 import { describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
 import { MemoryReviewRepository } from "../src/memory-repository.js";
 import { decodeCursor, encodeCursor } from "../src/types.js";
+import { callApp, passAuth, responseJson } from "./http-test.js";
 
-const pass: RequestHandler = (_request, _response, next) => next();
 const now = new Date("2026-07-26T00:00:00Z");
 
 function setup() {
   const repository = new MemoryReviewRepository();
   const app = createApp({
     repository,
-    agentAuth: pass,
-    reviewerAuth: pass,
+    agentAuth: passAuth,
+    reviewerAuth: passAuth,
     publicBaseUrl: "https://reviews.example",
     now: () => now,
   });
@@ -36,30 +34,34 @@ describe("opaque cursor validation", () => {
   it("returns HTTP 400 consistently for malformed history cursors", async () => {
     const { app } = setup();
     for (const cursor of ["", "MA==", encodeCursor("01"), "***"]) {
-      const response = await request(app).get(
+      const response = await callApp(
+        app,
         `/api/review/history?cursor=${encodeURIComponent(cursor)}`,
       );
       expect(response.status, cursor).toBe(400);
-      expect(response.body).toMatchObject({ error: "invalid_request" });
+      expect(await responseJson(response)).toMatchObject({ error: "invalid_request" });
     }
     expect(
       (
-        await request(app).get(
+        await callApp(
+          app,
           `/api/review/history?cursor=${encodeCursor("1")}&cursor=${encodeCursor("2")}`,
         )
       ).status,
     ).toBe(400);
-    expect((await request(app).get("/api/agent/decisions?cursor=")).status).toBe(400);
+    expect((await callApp(app, "/api/agent/decisions?cursor=")).status).toBe(400);
     expect(
       (
-        await request(app).get(
+        await callApp(
+          app,
           `/api/review/history?cursor=${encodeCursor("9223372036854775808")}`,
         )
       ).status,
     ).toBe(400);
     expect(
       (
-        await request(app).get(
+        await callApp(
+          app,
           `/api/review/history?cursor=${encodeCursor("9223372036854775807")}`,
         )
       ).status,

@@ -1,9 +1,3 @@
-import express, {
-  type NextFunction,
-  type Request,
-  type RequestHandler,
-  type Response,
-} from "express";
 import type {
   AmendVerdictInput,
   Candidate,
@@ -12,228 +6,361 @@ import type {
   VerdictInput,
 } from "./types.js";
 import { ConflictError, ValidationError } from "./types.js";
-export function createApp(o: {
+import {
+  PayloadTooLargeError,
+  isJsonMediaType,
+  jsonResponse,
+  readJson,
+  secureHeaders,
+  textResponse,
+  type Authenticator,
+  type FetchHandler,
+} from "./http.js";
+import { reviewConsole } from "./ui.js";
+
+type ParsedBody = { json: boolean; value?: unknown };
+
+export function createApp(options: {
   repository: ReviewRepository;
-  agentAuth: RequestHandler;
-  reviewerAuth: RequestHandler;
+  agentAuth: Authenticator;
+  reviewerAuth: Authenticator;
   publicBaseUrl: string;
+  stylesheet?: BodyInit | Blob;
   now?: () => Date;
-}) {
-  const app = express();
-  const now = o.now ?? (() => new Date());
-  app.disable("x-powered-by");
-  app.use((_q, r, n) => {
-    r.set({
-      "Cache-Control": "no-store",
-      "Content-Security-Policy":
-        "default-src 'none'; style-src 'self'; script-src 'self' https://shoo.dev; connect-src 'self' https://shoo.dev; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
-      "Referrer-Policy": "no-referrer",
-      "X-Content-Type-Options": "nosniff",
-    });
-    n();
-  });
-  app.use(express.json({ limit: "128kb" }));
-  app.get("/health", (_q, r) => r.json({ ok: true }));
-  const agent = express.Router();
-  agent.use(o.agentAuth);
-  agent.post(
-    "/candidates",
-    asyncRoute(async (req, res) => {
-      const parsed = parseCandidate(req.body);
-      const result = await o.repository.createCandidate(
-        parsed.idempotencyKey,
-        parsed.candidate,
-      );
-      res.status(result === "created" ? 201 : 200).json({ status: result });
-    }),
-  );
-  agent.get(
-    "/decisions",
-    asyncRoute(async (req, res) => {
-      const limit = parseLimit(req.query.limit);
-      const page = await o.repository.decisions(
-        parseCursorQuery(req.query.cursor),
-        limit,
-      );
-      res.json({ ...page, summary: await o.repository.summary(now()) });
-    }),
-  );
-  agent.post(
-    "/receipts",
-    asyncRoute(async (req, res) => {
-      const b = record(req.body);
-      const key = text(b.idempotencyKey, "idempotencyKey", 128);
-      const id = uuid(b.decisionId, "decisionId");
-      const at = iso(b.appliedAt, "appliedAt");
-      if (b.result !== "applied" && b.result !== "already_applied")
-        throw new InputError("Invalid result.");
-      const result = await o.repository.createReceipt(key, id, at, b.result);
-      res.status(result === "created" ? 201 : 200).json({ status: result });
-    }),
-  );
-  app.use("/api/agent", agent);
-  const review = express.Router();
-  review.use(o.reviewerAuth);
-  review.get(
-    "/queue",
-    asyncRoute(async (req, res) => {
-      const scope = req.query.scope;
-      if (scope !== undefined && scope !== "project" && scope !== "global")
-        throw new InputError("Invalid scope.");
-      res.json({
-        items: await o.repository.queue(scope as Scope | undefined, now()),
-        summary: await o.repository.summary(now()),
-      });
-    }),
-  );
-  review.get("/history",asyncRoute(async(req,res)=>{const scope=parseScope(req.query.scope);const page=await o.repository.history(parseCursorQuery(req.query.cursor),parseLimit(req.query.limit),scope);res.json({...page,summary:await o.repository.summary(now())});}));
-  review.post(
-    "/candidates/:id/rounds/:round/verdict",
-    sameOrigin(o.publicBaseUrl),
-    asyncRoute(async (req, res) => {
-      const input = parseVerdict(req.body);
-      res
-        .status(201)
-        .json({
-          decision: await o.repository.decide(
-            uuid(req.params.id,"candidateId"),
-            parseRound(req.params.round),
-            input,
-            now(),
-            typeof res.locals.shooEmail==="string"?res.locals.shooEmail:"system",
-          ),
+}): FetchHandler {
+  const now = options.now ?? (() => new Date());
+  const allowedOrigin = new URL(options.publicBaseUrl).origin;
+  return async (request) => {
+    try {
+      const url = new URL(request.url);
+      const parsedBody = await parseBody(request);
+      const pathname = url.pathname;
+
+      if (request.method === "GET" && pathname === "/health")
+        return jsonResponse({ ok: true });
+      if (
+        request.method === "GET" &&
+        (pathname === "/review" || pathname === "/review/callback")
+      )
+        return reviewConsole();
+      if (request.method === "GET" && pathname === "/review.css") {
+        return new Response(options.stylesheet ?? "", {
+          headers: secureHeaders({
+            "Cache-Control": "public, max-age=300",
+            "Content-Type": "text/css; charset=utf-8",
+          }),
         });
-    }),
-  );
-  review.post(
-    "/candidates/:id/rounds/:round/amendments",
-    sameOrigin(o.publicBaseUrl),
-    asyncRoute(async (req, res) => {
-      const input = parseAmendment(req.body);
-      res.status(201).json({
-        decision: await o.repository.amendDecision(
-          uuid(req.params.id, "candidateId"),
-          parseRound(req.params.round),
-          input,
-          now(),
-          typeof res.locals.shooEmail === "string"
-            ? res.locals.shooEmail
-            : "system",
-        ),
-      });
-    }),
-  );
-  app.use("/api/review", review);
-  app.get("/", (_req,res)=>res.redirect(302,"/review"));
-  app.all(/^\/api\//, (_q, r) =>
-    r.status(404).json({ error: "not_found", message: "Route not found." }),
-  );
-  app.use((e: unknown, _q: Request, r: Response, _n: NextFunction) => {
-    if (e instanceof ConflictError) {
-      r.status(409).json({ error: "conflict", message: e.message });
-      return;
-    }
-    if (
-      e instanceof InputError ||
-      e instanceof ValidationError ||
-      e instanceof SyntaxError
-    ) {
-      r.status(400).json({ error: "invalid_request", message: e.message });
-      return;
-    }
-    console.error(e);
-    r.status(500).json({ error: "internal_error", message: "Request failed." });
-  });
-  return app;
-}
-function sameOrigin(publicBaseUrl:string): RequestHandler {
-  return (req, res, next) => {
-    const supplied = req.get("origin");
-    const expected = new URL(publicBaseUrl).origin;
-    if (req.method === "POST" && (!supplied || supplied !== expected)) {
-      res
-        .status(403)
-        .json({
-          error: "origin_forbidden",
-          message: "Request origin is not allowed.",
+      }
+      if (request.method === "GET" && pathname === "/")
+        return new Response(null, {
+          status: 302,
+          headers: secureHeaders({ Location: "/review" }),
         });
-      return;
+
+      if (isPrefix(pathname, "/api/agent")) {
+        const auth = await options.agentAuth(request);
+        if (!auth.ok) return auth.response;
+        return await handleAgent(
+          request,
+          url,
+          parsedBody,
+          options.repository,
+          now,
+        );
+      }
+      if (isPrefix(pathname, "/api/review")) {
+        const auth = await options.reviewerAuth(request);
+        if (!auth.ok) return auth.response;
+        return await handleReview(
+          request,
+          url,
+          parsedBody,
+          options.repository,
+          now,
+          allowedOrigin,
+          auth.email ?? "system",
+        );
+      }
+      if (pathname.startsWith("/api/")) return notFoundJson();
+      return textResponse("Route not found.", { status: 404 });
+    } catch (error) {
+      return mapError(error);
     }
-    next();
   };
 }
+
+async function handleAgent(
+  request: Request,
+  url: URL,
+  body: ParsedBody,
+  repository: ReviewRepository,
+  now: () => Date,
+) {
+  if (request.method === "POST" && url.pathname === "/api/agent/candidates") {
+    const parsed = parseCandidate(requireJson(body));
+    const result = await repository.createCandidate(
+      parsed.idempotencyKey,
+      parsed.candidate,
+    );
+    return jsonResponse(
+      { status: result },
+      { status: result === "created" ? 201 : 200 },
+    );
+  }
+  if (request.method === "GET" && url.pathname === "/api/agent/decisions") {
+    const page = await repository.decisions(
+      parseCursorQuery(singleQuery(url, "cursor")),
+      parseLimit(singleQuery(url, "limit")),
+    );
+    return jsonResponse({ ...page, summary: await repository.summary(now()) });
+  }
+  if (request.method === "POST" && url.pathname === "/api/agent/receipts") {
+    const value = record(requireJson(body));
+    const key = text(value.idempotencyKey, "idempotencyKey", 128);
+    const id = uuid(value.decisionId, "decisionId");
+    const at = iso(value.appliedAt, "appliedAt");
+    if (value.result !== "applied" && value.result !== "already_applied")
+      throw new InputError("Invalid result.");
+    const result = await repository.createReceipt(
+      key,
+      id,
+      at,
+      value.result,
+    );
+    return jsonResponse(
+      { status: result },
+      { status: result === "created" ? 201 : 200 },
+    );
+  }
+  return notFoundJson();
+}
+
+async function handleReview(
+  request: Request,
+  url: URL,
+  body: ParsedBody,
+  repository: ReviewRepository,
+  now: () => Date,
+  allowedOrigin: string,
+  reviewer: string,
+) {
+  if (request.method === "GET" && url.pathname === "/api/review/queue") {
+    const scope = parseScope(singleQuery(url, "scope"));
+    return jsonResponse({
+      items: await repository.queue(scope, now()),
+      summary: await repository.summary(now()),
+    });
+  }
+  if (request.method === "GET" && url.pathname === "/api/review/history") {
+    const page = await repository.history(
+      parseCursorQuery(singleQuery(url, "cursor")),
+      parseLimit(singleQuery(url, "limit")),
+      parseScope(singleQuery(url, "scope")),
+    );
+    return jsonResponse({ ...page, summary: await repository.summary(now()) });
+  }
+  const mutation = url.pathname.match(
+    /^\/api\/review\/candidates\/([^/]+)\/rounds\/([^/]+)\/(verdict|amendments)$/,
+  );
+  if (request.method === "POST" && mutation) {
+    enforceOrigin(request, allowedOrigin);
+    const candidateId = uuid(decodePath(mutation[1] ?? ""), "candidateId");
+    const round = parseRound(decodePath(mutation[2] ?? ""));
+    if (mutation[3] === "verdict") {
+      const decision = await repository.decide(
+        candidateId,
+        round,
+        parseVerdict(requireJson(body)),
+        now(),
+        reviewer,
+      );
+      return jsonResponse({ decision }, { status: 201 });
+    }
+    const decision = await repository.amendDecision(
+      candidateId,
+      round,
+      parseAmendment(requireJson(body)),
+      now(),
+      reviewer,
+    );
+    return jsonResponse({ decision }, { status: 201 });
+  }
+  return notFoundJson();
+}
+
+async function parseBody(request: Request): Promise<ParsedBody> {
+  if (!isJsonMediaType(request.headers.get("content-type")))
+    return { json: false };
+  return { json: true, value: await readJson(request) };
+}
+
+function requireJson(body: ParsedBody) {
+  return body.value;
+}
+
+function enforceOrigin(request: Request, allowedOrigin: string) {
+  if (request.headers.get("origin") !== allowedOrigin)
+    throw new OriginError("Request origin is not allowed.");
+}
+
+function isPrefix(pathname: string, prefix: string) {
+  return pathname === prefix || pathname.startsWith(`${prefix}/`);
+}
+
+function singleQuery(url: URL, name: string): string | undefined {
+  const values = url.searchParams.getAll(name);
+  if (values.length > 1) throw new InputError(`Duplicate ${name}.`);
+  return values[0];
+}
+
+function decodePath(value: string) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    throw new InputError("Invalid path parameter.");
+  }
+}
+
+function notFoundJson() {
+  return jsonResponse(
+    { error: "not_found", message: "Route not found." },
+    { status: 404 },
+  );
+}
+
+function mapError(error: unknown) {
+  if (error instanceof ConflictError)
+    return jsonResponse(
+      { error: "conflict", message: error.message },
+      { status: 409 },
+    );
+  if (error instanceof OriginError)
+    return jsonResponse(
+      { error: "origin_forbidden", message: error.message },
+      { status: 403 },
+    );
+  if (error instanceof PayloadTooLargeError)
+    return jsonResponse(
+      { error: "payload_too_large", message: error.message },
+      { status: 413 },
+    );
+  if (
+    error instanceof InputError ||
+    error instanceof ValidationError ||
+    error instanceof SyntaxError
+  )
+    return jsonResponse(
+      { error: "invalid_request", message: error.message },
+      { status: 400 },
+    );
+  console.error(error);
+  return jsonResponse(
+    { error: "internal_error", message: "Request failed." },
+    { status: 500 },
+  );
+}
+
 class InputError extends Error {}
-const record = (v: unknown): Record<string, unknown> => {
-  if (typeof v !== "object" || v === null || Array.isArray(v))
+class OriginError extends Error {}
+
+const record = (value: unknown): Record<string, unknown> => {
+  if (typeof value !== "object" || value === null || Array.isArray(value))
     throw new InputError("JSON object required.");
-  return v as Record<string, unknown>;
+  return value as Record<string, unknown>;
 };
-const text = (v: unknown, n: string, max: number) => {
-  if (typeof v !== "string" || !v.trim() || v.length > max)
-    throw new InputError(`${n} is invalid.`);
-  return v;
+
+const text = (value: unknown, name: string, max: number) => {
+  if (
+    typeof value !== "string" ||
+    !value.trim() ||
+    value.length > max
+  )
+    throw new InputError(`${name} is invalid.`);
+  return value;
 };
-const iso = (v: unknown, n: string) => {
-  const s = text(v, n, 64);
-  if (!Number.isFinite(new Date(s).getTime()))
-    throw new InputError(`${n} is invalid.`);
-  return new Date(s).toISOString();
+
+const iso = (value: unknown, name: string) => {
+  const string = text(value, name, 64);
+  if (!Number.isFinite(new Date(string).getTime()))
+    throw new InputError(`${name} is invalid.`);
+  return new Date(string).toISOString();
 };
+
 function parseCandidate(value: unknown) {
-  const b = record(value),
-    c = record(b.candidate);
-  const scope = c.scope;
+  const body = record(value);
+  const candidateValue = record(body.candidate);
+  const scope = candidateValue.scope;
   if (scope !== "project" && scope !== "global")
     throw new InputError("Invalid scope.");
-  if (scope === "project" && (!c.projectKey || !c.projectDisplayName))
+  if (
+    scope === "project" &&
+    (!candidateValue.projectKey || !candidateValue.projectDisplayName)
+  )
     throw new InputError("Project fields are required.");
-  if (scope === "global" && (c.projectKey || c.projectDisplayName))
+  if (
+    scope === "global" &&
+    (candidateValue.projectKey || candidateValue.projectDisplayName)
+  )
     throw new InputError("Global candidates forbid project fields.");
   if (
-    !Array.isArray(c.evidence) ||
-    c.evidence.length < 1 ||
-    c.evidence.length > 20
+    !Array.isArray(candidateValue.evidence) ||
+    candidateValue.evidence.length < 1 ||
+    candidateValue.evidence.length > 20
   )
     throw new InputError("Evidence is invalid.");
-  const evidence = c.evidence.map((v) => {
-    const e = record(v);
-    if (!Array.isArray(e.commitHashes) || e.commitHashes.length > 20)
+  const evidence = candidateValue.evidence.map((value) => {
+    const item = record(value);
+    if (!Array.isArray(item.commitHashes) || item.commitHashes.length > 20)
       throw new InputError("Commit hashes are invalid.");
     return {
-      excerpt: text(e.excerpt, "excerpt", 2000),
-      ...(e.sessionRef
-        ? { sessionRef: text(e.sessionRef, "sessionRef", 256) }
+      excerpt: text(item.excerpt, "excerpt", 2000),
+      ...(item.sessionRef
+        ? { sessionRef: text(item.sessionRef, "sessionRef", 256) }
         : {}),
-      commitHashes: e.commitHashes.map((x) => text(x, "commitHash", 64)),
+      commitHashes: item.commitHashes.map((hash) =>
+        text(hash, "commitHash", 64),
+      ),
     };
   });
   const candidate: Candidate = {
-    candidateId: uuid(c.candidateId, "candidateId"),
+    candidateId: uuid(candidateValue.candidateId, "candidateId"),
     scope,
     ...(scope === "project"
       ? {
-          projectKey: text(c.projectKey, "projectKey", 128),
+          projectKey: text(candidateValue.projectKey, "projectKey", 128),
           projectDisplayName: text(
-            c.projectDisplayName,
+            candidateValue.projectDisplayName,
             "projectDisplayName",
             256,
           ),
         }
       : {}),
-    lessonKey: text(c.lessonKey, "lessonKey", 128),
-    title: text(c.title, "title", 256),
-    body: text(c.body, "body", 10000),
-    rationale: text(c.rationale, "rationale", 4000),
+    lessonKey: text(candidateValue.lessonKey, "lessonKey", 128),
+    title: text(candidateValue.title, "title", 256),
+    body: text(candidateValue.body, "body", 10_000),
+    rationale: text(candidateValue.rationale, "rationale", 4000),
     evidence,
-    createdAt: iso(c.createdAt, "createdAt"),
+    createdAt: iso(candidateValue.createdAt, "createdAt"),
   };
   return {
-    idempotencyKey: text(b.idempotencyKey, "idempotencyKey", 128),
+    idempotencyKey: text(body.idempotencyKey, "idempotencyKey", 128),
     candidate,
   };
 }
-function parseScope(v:unknown):Scope|undefined{if(v===undefined)return undefined;if(v!=="project"&&v!=="global")throw new InputError("Invalid scope.");return v;}
-function parseCursorQuery(value:unknown){if(value===undefined)return undefined;if(typeof value!=="string")throw new InputError("Invalid cursor.");return value;}
+
+function parseScope(value: unknown): Scope | undefined {
+  if (value === undefined) return undefined;
+  if (value !== "project" && value !== "global")
+    throw new InputError("Invalid scope.");
+  return value;
+}
+
+function parseCursorQuery(value: unknown) {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") throw new InputError("Invalid cursor.");
+  return value;
+}
+
 function parseVerdict(value: unknown): VerdictInput {
   const body = verdictRecord(value, ["action", "deferUntil"]);
   return {
@@ -243,6 +370,7 @@ function parseVerdict(value: unknown): VerdictInput {
       : {}),
   };
 }
+
 function parseAmendment(value: unknown): AmendVerdictInput {
   const body = verdictRecord(value, [
     "expectedDecisionId",
@@ -257,12 +385,14 @@ function parseAmendment(value: unknown): AmendVerdictInput {
       : {}),
   };
 }
+
 function verdictRecord(value: unknown, allowed: readonly string[]) {
   const body = record(value);
   if (Object.keys(body).some((key) => !allowed.includes(key)))
     throw new InputError("Verdict body contains unknown fields.");
   return body;
 }
+
 function parseRound(value: unknown) {
   if (typeof value !== "string" || !/^[1-9]\d*$/.test(value))
     throw new InputError("round must be a positive integer.");
@@ -271,16 +401,22 @@ function parseRound(value: unknown) {
     throw new InputError("round must be a positive integer.");
   return round;
 }
-function uuid(v:unknown,name:string){const value=text(v,name,36);if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value))throw new InputError(`${name} must be a UUID.`);return value;}
-function parseLimit(v: unknown) {
-  if (v === undefined) return 50;
-  const n = Number(v);
-  if (!Number.isInteger(n) || n < 1 || n > 100)
-    throw new InputError("limit must be between 1 and 100.");
-  return n;
+
+function uuid(value: unknown, name: string) {
+  const string = text(value, name, 36);
+  if (
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      string,
+    )
+  )
+    throw new InputError(`${name} must be a UUID.`);
+  return string;
 }
-function asyncRoute(
-  fn: (q: Request, r: Response) => Promise<void>,
-): RequestHandler {
-  return (q, r, n) => void fn(q, r).catch(n);
+
+function parseLimit(value: unknown) {
+  if (value === undefined) return 50;
+  const number = Number(value);
+  if (!Number.isInteger(number) || number < 1 || number > 100)
+    throw new InputError("limit must be between 1 and 100.");
+  return number;
 }

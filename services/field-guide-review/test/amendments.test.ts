@@ -1,10 +1,9 @@
-import type { RequestHandler } from "express";
-import request from "supertest";
 import { describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
 import { MemoryReviewRepository } from "../src/memory-repository.js";
+import type { Decision } from "../src/types.js";
+import { callApp, passAuth, responseJson } from "./http-test.js";
 
-const pass: RequestHandler = (_request, _response, next) => next();
 const origin = "https://reviews.example";
 const start = new Date("2026-07-26T00:00:00.000Z");
 const candidate = {
@@ -24,8 +23,8 @@ function setup() {
   const repository = new MemoryReviewRepository();
   const app = createApp({
     repository,
-    agentAuth: pass,
-    reviewerAuth: pass,
+    agentAuth: passAuth,
+    reviewerAuth: passAuth,
     publicBaseUrl: origin,
     now: () => start,
   });
@@ -44,10 +43,15 @@ async function seed(repository: MemoryReviewRepository) {
 }
 
 function amend(app: ReturnType<typeof createApp>, body: object, round = "1") {
-  return request(app)
-    .post(`/api/review/candidates/${candidate.candidateId}/rounds/${round}/amendments`)
-    .set("Origin", origin)
-    .send(body);
+  return callApp(
+    app,
+    `/api/review/candidates/${candidate.candidateId}/rounds/${round}/amendments`,
+    { method: "POST", headers: { Origin: origin }, json: body },
+  );
+}
+
+function decision(response: Response) {
+  return responseJson<{ decision: Decision }>(response);
 }
 
 describe("decision amendments", () => {
@@ -59,7 +63,8 @@ describe("decision amendments", () => {
       action: "reject",
     });
     expect(response.status).toBe(201);
-    expect(response.body.decision).toMatchObject({
+    const amended = (await decision(response)).decision;
+    expect(amended).toMatchObject({
       roundKind: "initial",
       effect: "deactivate",
       amendsDecisionId: approved.decisionId,
@@ -79,7 +84,7 @@ describe("decision amendments", () => {
       effect: "activate",
     });
     expect(history.decisions[0]).toMatchObject({
-      decisionId: response.body.decision.decisionId,
+      decisionId: amended.decisionId,
       isCurrent: true,
     });
     expect(await repository.queue(undefined, new Date("2026-08-03"))).toHaveLength(0);
@@ -111,7 +116,7 @@ describe("decision amendments", () => {
     });
     expect(deferred.status).toBe(201);
     const approvedAgain = await amend(app, {
-      expectedDecisionId: deferred.body.decision.decisionId,
+      expectedDecisionId: (await decision(deferred)).decision.decisionId,
       action: "approve",
     });
     expect(approvedAgain.status).toBe(201);
@@ -131,7 +136,7 @@ describe("decision amendments", () => {
     expect(
       (
         await amend(app, {
-          expectedDecisionId: approvedAgain.body.decision.decisionId,
+          expectedDecisionId: (await decision(approvedAgain)).decision.decisionId,
           action: "reject",
         })
       ).status,
@@ -175,12 +180,14 @@ describe("decision amendments", () => {
     });
     expect(deferred.status).toBe(201);
     const unchanged = await amend(app, {
-      expectedDecisionId: deferred.body.decision.decisionId,
+      expectedDecisionId: (await decision(deferred)).decision.decisionId,
       action: "defer",
       deferUntil: "2026-07-29T20:00:00-04:00",
     });
     expect(unchanged.status).toBe(400);
-    expect(unchanged.body.message).toBe("Choose a different defer date.");
+    expect(await responseJson<{ message: string }>(unchanged)).toMatchObject({
+      message: "Choose a different defer date.",
+    });
     expect(
       await repository.queue(undefined, new Date("2026-07-30T00:00:00Z")),
     ).toMatchObject([{ round: 2, kind: "initial" }]);
