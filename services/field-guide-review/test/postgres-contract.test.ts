@@ -55,7 +55,9 @@ describe("Postgres repository contract", () => {
     expect(repository).toContain("validateBaselineColumns(columns)");
     expect(repository).toContain("validateBaselineConstraints");
     expect(repository).toContain("pg_get_constraintdef");
-    expect(repository).toContain("constraint.condeferrable deferrable");
+    expect(repository).toContain("FROM pg_constraint catalog_constraint");
+    expect(repository).not.toContain("FROM pg_constraint constraint");
+    expect(repository).toContain("catalog_constraint.condeferrable deferrable");
     expect(repository).toContain("referenced_namespace.nspname referenced_schema");
     expect(repository).toContain("source.relname table_name");
     expect(repository).toContain("AND source.relname IN ('candidates','review_rounds','verdict_events','application_receipts')");
