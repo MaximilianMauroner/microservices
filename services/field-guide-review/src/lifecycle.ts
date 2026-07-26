@@ -1,7 +1,9 @@
 export function createGracefulShutdown(options: {
   stop: (force: boolean) => void | Promise<void>;
+  checkpoint?: () => void | Promise<void>;
   close: () => Promise<void>;
   fail: () => void;
+  terminate?: () => void;
   report: (error: unknown) => void;
   timeoutMs?: number;
 }) {
@@ -28,6 +30,9 @@ export function createGracefulShutdown(options: {
       let closePromise: Promise<void> | undefined;
       const close = () =>
         (closePromise ??= observe(() => options.close()));
+      let checkpointPromise: Promise<void> | undefined;
+      const checkpoint = () =>
+        (checkpointPromise ??= observe(() => options.checkpoint?.()));
       let forcePromise: Promise<void> | undefined;
       const force = () =>
         (forcePromise ??= observe(() => options.stop(true)));
@@ -48,6 +53,7 @@ export function createGracefulShutdown(options: {
           },
         );
         if (drainFailed) void force();
+        await checkpoint();
         await Promise.all([close(), ...(drainFailed ? [force()] : [])]);
       })();
       const outcome = await Promise.race([
@@ -58,7 +64,9 @@ export function createGracefulShutdown(options: {
       if (outcome === "deadline") {
         markFailed();
         void force();
+        void checkpoint();
         void close();
+        options.terminate?.();
       }
     })();
     return shutdown;
