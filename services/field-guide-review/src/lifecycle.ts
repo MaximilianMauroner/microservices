@@ -19,14 +19,20 @@ export function createGracefulShutdown(options: {
       const observe = (
         operation: () => void | Promise<void>,
         onError?: () => void,
-      ) =>
-        Promise.resolve()
-          .then(operation)
-          .catch((error: unknown) => {
+      ) => {
+        try {
+          return Promise.resolve(operation()).catch((error: unknown) => {
             onError?.();
             markFailed();
             options.report(error);
           });
+        } catch (error) {
+          onError?.();
+          markFailed();
+          options.report(error);
+          return Promise.resolve();
+        }
+      };
       let closePromise: Promise<void> | undefined;
       const close = () =>
         (closePromise ??= observe(() => options.close()));

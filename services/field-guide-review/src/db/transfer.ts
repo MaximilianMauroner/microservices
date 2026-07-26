@@ -1,56 +1,58 @@
 import type { Database } from "bun:sqlite";
-import postgres, { type Sql, type TransactionSql } from "postgres";
-import { normalizeRow, snapshotReport, snapshotsEqual, sqliteSnapshot, summarize, type LogicalSnapshot, type TableName } from "./logical-snapshot.js";
+import postgres,{type Sql,type TransactionSql}from"postgres";
 import type { Candidate } from "../types.js";
+import {normalizeRow,snapshotReport,snapshotsEqual,sqliteSnapshot,summarize,type LogicalSnapshot,type SnapshotReport,type TableName}from"./logical-snapshot.js";
 
-export async function postgresSnapshot(sql:Sql|TransactionSql):Promise<LogicalSnapshot> {
-  const read=async(table:TableName,order:string)=>(await sql.unsafe<Record<string,unknown>[]>(`SELECT * FROM ${table} ORDER BY ${order}`)).map(normalizeRow);
-  return summarize({candidates:await read("candidates","candidate_id"),review_rounds:await read("review_rounds","candidate_id,round"),verdict_events:await read("verdict_events","sequence"),application_receipts:await read("application_receipts","idempotency_key"),field_guide_schema_migrations:await read("field_guide_schema_migrations","name")});
+const UTC_FORMAT=`'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'`;
+const PROJECTIONS:Record<TableName,string>={
+  candidates:`candidate_id,idempotency_key,payload,payload_hash,to_char(created_at AT TIME ZONE 'UTC',${UTC_FORMAT}) created_at`,
+  review_rounds:`candidate_id,round,kind,CASE WHEN due_at IS NULL THEN NULL ELSE to_char(due_at AT TIME ZONE 'UTC',${UTC_FORMAT}) END due_at,verdict_id`,
+  verdict_events:`sequence::text sequence,decision_id,candidate_id,round,action,reviewer,to_char(reviewed_at AT TIME ZONE 'UTC',${UTC_FORMAT}) reviewed_at,CASE WHEN next_review_at IS NULL THEN NULL ELSE to_char(next_review_at AT TIME ZONE 'UTC',${UTC_FORMAT}) END next_review_at,round_kind,effect,amends_decision_id`,
+  application_receipts:`idempotency_key,payload_hash,decision_id,to_char(applied_at AT TIME ZONE 'UTC',${UTC_FORMAT}) applied_at,result`,
+  field_guide_schema_migrations:`name,checksum,to_char(applied_at AT TIME ZONE 'UTC',${UTC_FORMAT}) applied_at,adopted`,
+};
+
+export async function postgresSnapshot(sql:Sql|TransactionSql):Promise<LogicalSnapshot>{
+  const read=async(table:TableName)=>(await sql.unsafe<Record<string,unknown>[]>(`SELECT ${PROJECTIONS[table]} FROM ${table}`)).map(normalizeRow);
+  const sequenceRows=await sql.unsafe<{last_value:string;is_called:boolean}[]>("SELECT last_value::text last_value,is_called FROM verdict_events_sequence_seq");
+  const sequenceRow=sequenceRows[0];if(!sequenceRow)throw new Error("PostgreSQL verdict sequence state is unavailable.");
+  const sequence={lastValue:sequenceRow.last_value,isCalled:sequenceRow.is_called,nextValue:(BigInt(sequenceRow.last_value)+(sequenceRow.is_called?1n:0n)).toString()};
+  return summarize({candidates:await read("candidates"),review_rounds:await read("review_rounds"),verdict_events:await read("verdict_events"),application_receipts:await read("application_receipts"),field_guide_schema_migrations:await read("field_guide_schema_migrations")},sequence);
 }
 
-export async function importPostgresToSQLite(db:Database,url:string,allowOverwrite=false) {
-  const client=postgres(url,{max:1,connection:{search_path:"public"}});
-  try{return await client.begin("isolation level repeatable read read only",async tx=>{
-    const source=await postgresSnapshot(tx);
-    const destination=sqliteSnapshot(db);
-    if(total(destination)>0&&snapshotsEqual(source,destination))return snapshotReport(destination);
-    if(total(destination)>0&&!allowOverwrite)throw new Error("SQLite destination is nonempty and differs from PostgreSQL; explicit overwrite authorization is required.");
-    db.exec("BEGIN IMMEDIATE");
-    try { if(total(destination)>0)clearSQLite(db); writeSQLite(db,source); const verified=sqliteSnapshot(db); if(!snapshotsEqual(source,verified))throw new Error("PostgreSQL to SQLite logical verification failed."); db.exec("COMMIT"); return snapshotReport(verified); }
-    catch(error){db.exec("ROLLBACK");throw error;}
-  });}finally{await client.end();}
+export function transferSnapshotToSQLite(db:Database,source:LogicalSnapshot,allowOverwrite=false):SnapshotReport{
+  validateSequence(source);
+  const destination=sqliteSnapshot(db);
+  if(total(destination)>0&&snapshotsEqual(source,destination))return snapshotReport(destination);
+  if(total(destination)>0&&!allowOverwrite)throw new Error("SQLite destination is nonempty and differs from source; explicit overwrite authorization is required.");
+  db.exec("BEGIN IMMEDIATE");
+  try{if(total(destination)>0)clearSQLite(db);writeSQLite(db,source);setSQLiteSequence(db,source.sequence.nextValue);const verified=sqliteSnapshot(db);if(!snapshotsEqual(source,verified))throw new Error("Source to SQLite logical verification failed.");db.exec("COMMIT");return snapshotReport(verified);}catch(error){db.exec("ROLLBACK");throw error;}
 }
 
-export async function recoverSQLiteToPostgres(db:Database,url:string,allowNonempty=false) {
-  const source=sqliteSnapshot(db); const client=postgres(url,{max:1,connection:{search_path:"public"}});
-  try{return await client.begin("isolation level serializable",async tx=>{
-    const destination=await postgresSnapshot(tx);
-    if(total(destination)>0&&snapshotsEqual(source,destination))return snapshotReport(destination);
-    if(total(destination)>0&&!allowNonempty)throw new Error("PostgreSQL destination is nonempty; explicit recovery authorization is required.");
-    if(total(destination)>0)await clearPostgres(tx);
-    await writePostgres(tx,source);
-    const verified=await postgresSnapshot(tx); if(!snapshotsEqual(source,verified))throw new Error("SQLite to PostgreSQL logical verification failed."); return snapshotReport(verified);
-  });}finally{await client.end();}
-}
+export async function importPostgresToSQLite(db:Database,url:string,allowOverwrite=false){const client=postgres(url,{max:1,connection:{search_path:"public"}});try{return await client.begin("isolation level repeatable read read only",async tx=>transferSnapshotToSQLite(db,await postgresSnapshot(tx),allowOverwrite));}finally{await client.end();}}
+
+export async function recoverSQLiteToPostgres(db:Database,url:string,allowNonempty=false){const source=sqliteSnapshot(db);validateSequence(source);const client=postgres(url,{max:1,connection:{search_path:"public"}});try{return await client.begin("isolation level serializable",async tx=>{const destination=await postgresSnapshot(tx);if(total(destination)>0&&snapshotsEqual(source,destination))return snapshotReport(destination);if(total(destination)>0&&!allowNonempty)throw new Error("PostgreSQL destination is nonempty; explicit recovery authorization is required.");if(total(destination)>0)await clearPostgres(tx);await writePostgres(tx,source);const verified=await postgresSnapshot(tx);if(!snapshotsEqual(source,verified))throw new Error("SQLite to PostgreSQL logical verification failed.");return snapshotReport(verified);});}finally{await client.end();}}
 
 const total=(snapshot:LogicalSnapshot)=>Object.values(snapshot.counts).reduce((sum,count)=>sum+count,0);
+function validateSequence(snapshot:LogicalSnapshot){const max=BigInt(snapshot.maxSequence);const next=BigInt(snapshot.sequence.nextValue);if(next<1n||(max>0n&&next<=max))throw new Error("Verdict sequence next value must be greater than every stored sequence.");}
 function clearSQLite(db:Database){db.exec("DELETE FROM application_receipts; UPDATE review_rounds SET verdict_id=NULL; DELETE FROM verdict_events; DELETE FROM review_rounds; DELETE FROM candidates; DELETE FROM field_guide_schema_migrations; DELETE FROM sqlite_sequence WHERE name='verdict_events'");}
-function writeSQLite(db:Database,s:LogicalSnapshot){
-  for(const r of s.tables.candidates)db.query("INSERT INTO candidates VALUES(?,?,?,?,?)").run(String(r.candidate_id),String(r.idempotency_key),JSON.stringify(r.payload),String(r.payload_hash),String(r.created_at));
-  for(const r of s.tables.review_rounds)db.query("INSERT INTO review_rounds(candidate_id,round,kind,due_at,verdict_id) VALUES(?,?,?,?,NULL)").run(String(r.candidate_id),Number(r.round),String(r.kind),nullableString(r.due_at));
-  for(const r of s.tables.verdict_events)db.query("INSERT INTO verdict_events(sequence,decision_id,candidate_id,round,action,reviewer,reviewed_at,next_review_at,round_kind,effect,amends_decision_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)").run(BigInt(String(r.sequence)),String(r.decision_id),String(r.candidate_id),Number(r.round),String(r.action),String(r.reviewer),String(r.reviewed_at),nullableString(r.next_review_at),String(r.round_kind),String(r.effect),nullableString(r.amends_decision_id));
-  for(const r of s.tables.review_rounds)if(r.verdict_id)db.query("UPDATE review_rounds SET verdict_id=? WHERE candidate_id=? AND round=?").run(String(r.verdict_id),String(r.candidate_id),Number(r.round));
-  for(const r of s.tables.application_receipts)db.query("INSERT INTO application_receipts VALUES(?,?,?,?,?)").run(String(r.idempotency_key),String(r.payload_hash),String(r.decision_id),String(r.applied_at),String(r.result));
-  for(const r of s.tables.field_guide_schema_migrations)db.query("INSERT INTO field_guide_schema_migrations VALUES(?,?,?,?)").run(String(r.name),String(r.checksum),String(r.applied_at),r.adopted?1:0);
+function setSQLiteSequence(db:Database,nextValue:string){const last=BigInt(nextValue)-1n;db.query("DELETE FROM sqlite_sequence WHERE name='verdict_events'").run();if(last>0n)db.query("INSERT INTO sqlite_sequence(name,seq) VALUES('verdict_events',?)").run(last);}
+function writeSQLite(db:Database,snapshot:LogicalSnapshot){
+  for(const row of snapshot.tables.candidates)db.query("INSERT INTO candidates VALUES(?,?,?,?,?)").run(String(row.candidate_id),String(row.idempotency_key),JSON.stringify(row.payload),String(row.payload_hash),String(row.created_at));
+  for(const row of snapshot.tables.review_rounds)db.query("INSERT INTO review_rounds(candidate_id,round,kind,due_at,verdict_id) VALUES(?,?,?,?,NULL)").run(String(row.candidate_id),Number(row.round),String(row.kind),nullableString(row.due_at));
+  for(const row of snapshot.tables.verdict_events)db.query("INSERT INTO verdict_events(sequence,decision_id,candidate_id,round,action,reviewer,reviewed_at,next_review_at,round_kind,effect,amends_decision_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)").run(BigInt(String(row.sequence)),String(row.decision_id),String(row.candidate_id),Number(row.round),String(row.action),String(row.reviewer),String(row.reviewed_at),nullableString(row.next_review_at),String(row.round_kind),String(row.effect),nullableString(row.amends_decision_id));
+  for(const row of snapshot.tables.review_rounds)if(row.verdict_id)db.query("UPDATE review_rounds SET verdict_id=? WHERE candidate_id=? AND round=?").run(String(row.verdict_id),String(row.candidate_id),Number(row.round));
+  for(const row of snapshot.tables.application_receipts)db.query("INSERT INTO application_receipts VALUES(?,?,?,?,?)").run(String(row.idempotency_key),String(row.payload_hash),String(row.decision_id),String(row.applied_at),String(row.result));
+  for(const row of snapshot.tables.field_guide_schema_migrations)db.query("INSERT INTO field_guide_schema_migrations VALUES(?,?,?,?)").run(String(row.name),String(row.checksum),String(row.applied_at),row.adopted?1:0);
 }
 const nullableString=(value:unknown)=>value===null||value===undefined?null:String(value);
 async function clearPostgres(tx:TransactionSql){await tx`DELETE FROM application_receipts`;await tx`UPDATE review_rounds SET verdict_id=NULL`;await tx`DELETE FROM verdict_events`;await tx`DELETE FROM review_rounds`;await tx`DELETE FROM candidates`;await tx`DELETE FROM field_guide_schema_migrations`;}
-async function writePostgres(tx:TransactionSql,s:LogicalSnapshot){
-  for(const r of s.tables.candidates)await tx`INSERT INTO candidates(candidate_id,idempotency_key,payload,payload_hash,created_at) VALUES(${String(r.candidate_id)},${String(r.idempotency_key)},${tx.json(r.payload as Candidate)},${String(r.payload_hash)},${String(r.created_at)})`;
-  for(const r of s.tables.review_rounds)await tx`INSERT INTO review_rounds(candidate_id,round,kind,due_at,verdict_id) VALUES(${String(r.candidate_id)},${Number(r.round)},${String(r.kind)},${r.due_at?String(r.due_at):null},NULL)`;
-  for(const r of s.tables.verdict_events)await tx`INSERT INTO verdict_events(sequence,decision_id,candidate_id,round,action,reviewer,reviewed_at,next_review_at,round_kind,effect,amends_decision_id) VALUES(${String(r.sequence)},${String(r.decision_id)},${String(r.candidate_id)},${Number(r.round)},${String(r.action)},${String(r.reviewer)},${String(r.reviewed_at)},${r.next_review_at?String(r.next_review_at):null},${String(r.round_kind)},${String(r.effect)},${r.amends_decision_id?String(r.amends_decision_id):null})`;
-  for(const r of s.tables.review_rounds)if(r.verdict_id)await tx`UPDATE review_rounds SET verdict_id=${String(r.verdict_id)} WHERE candidate_id=${String(r.candidate_id)} AND round=${Number(r.round)}`;
-  for(const r of s.tables.application_receipts)await tx`INSERT INTO application_receipts VALUES(${String(r.idempotency_key)},${String(r.payload_hash)},${String(r.decision_id)},${String(r.applied_at)},${String(r.result)})`;
-  for(const r of s.tables.field_guide_schema_migrations)await tx`INSERT INTO field_guide_schema_migrations VALUES(${String(r.name)},${String(r.checksum)},${String(r.applied_at)},${Boolean(r.adopted)})`;
-  await tx`SELECT setval(pg_get_serial_sequence('verdict_events','sequence'),${s.maxSequence==="0"?"1":s.maxSequence},${s.maxSequence!=="0"})`;
+async function writePostgres(tx:TransactionSql,snapshot:LogicalSnapshot){
+  for(const row of snapshot.tables.candidates)await tx`INSERT INTO candidates(candidate_id,idempotency_key,payload,payload_hash,created_at) VALUES(${String(row.candidate_id)},${String(row.idempotency_key)},${tx.json(row.payload as Candidate)},${String(row.payload_hash)},${String(row.created_at)})`;
+  for(const row of snapshot.tables.review_rounds)await tx`INSERT INTO review_rounds(candidate_id,round,kind,due_at,verdict_id) VALUES(${String(row.candidate_id)},${Number(row.round)},${String(row.kind)},${nullableString(row.due_at)},NULL)`;
+  for(const row of snapshot.tables.verdict_events)await tx`INSERT INTO verdict_events(sequence,decision_id,candidate_id,round,action,reviewer,reviewed_at,next_review_at,round_kind,effect,amends_decision_id) VALUES(${String(row.sequence)},${String(row.decision_id)},${String(row.candidate_id)},${Number(row.round)},${String(row.action)},${String(row.reviewer)},${String(row.reviewed_at)},${nullableString(row.next_review_at)},${String(row.round_kind)},${String(row.effect)},${nullableString(row.amends_decision_id)})`;
+  for(const row of snapshot.tables.review_rounds)if(row.verdict_id)await tx`UPDATE review_rounds SET verdict_id=${String(row.verdict_id)} WHERE candidate_id=${String(row.candidate_id)} AND round=${Number(row.round)}`;
+  for(const row of snapshot.tables.application_receipts)await tx`INSERT INTO application_receipts VALUES(${String(row.idempotency_key)},${String(row.payload_hash)},${String(row.decision_id)},${String(row.applied_at)},${String(row.result)})`;
+  for(const row of snapshot.tables.field_guide_schema_migrations)await tx`INSERT INTO field_guide_schema_migrations VALUES(${String(row.name)},${String(row.checksum)},${String(row.applied_at)},${Boolean(row.adopted)})`;
+  await tx`SELECT setval(pg_get_serial_sequence('verdict_events','sequence'),${snapshot.sequence.nextValue},false)`;
 }
