@@ -1,1 +1,35 @@
-import express from"express";import request from"supertest";import{expect,it}from"vitest";import{reviewConsole}from"../src/ui.js";it("renders accessible feedback and guards defer before disabling controls or requesting",async()=>{const r=await request(express().get("/review",reviewConsole)).get("/review"),html=r.text;expect(html).toContain("id=status role=status aria-live=polite");expect(html).toContain("Choose a future date before deferring.");expect(html.indexOf("if(!value)")).toBeLessThan(html.indexOf("controls.forEach(x=>x.disabled=true)"));expect(html).toContain("controls.forEach(x=>x.disabled=false)");expect(html).toContain("Unable to save review.");expect(html).toContain("Authentication failed.");expect(html).toContain("Unable to load reviews.");expect(html).toContain("Review saved.");});it("renders escaped session and commit provenance in history",async()=>{const html=(await request(express().get("/review",reviewConsole)).get("/review")).text;const history=html.slice(html.indexOf("S.view==='history'"),html.indexOf("function card"));expect(history).toContain("E(e.sessionRef||'')");expect(history).toContain("e.commitHashes.map");expect(history).toContain("<code>'+E(h)+'</code>");});
+import express from "express";
+import request from "supertest";
+import { describe, expect, it } from "vitest";
+import { reviewConsole } from "../src/ui.js";
+
+async function renderReviewConsole(): Promise<string> {
+  return (await request(express().get("/review", reviewConsole)).get("/review")).text;
+}
+
+describe("review console feedback", () => {
+  it("uses explicit element references and validates defer dates before saving", async () => {
+    const html = await renderReviewConsole();
+
+    expect(html).toContain('id="toast"');
+    expect(html).toContain('role="status" aria-live="polite"');
+    expect(html).toContain("const elements={");
+    expect(html).toContain("elements.authMessage.textContent=message");
+    expect(html).not.toContain("status.classList");
+    expect(html).not.toContain("signin.onclick");
+    expect(html).not.toContain("signout.onclick");
+    expect(html).toContain("Choose a future date before deferring.");
+    expect(html.indexOf("if(!input.value")).toBeLessThan(html.indexOf("submitVerdict(card,'defer'"));
+    expect(html).toContain("setCardBusy(card,false)");
+    expect(html).toContain("Review saved.");
+    expect(html).toContain("Authentication failed.");
+  });
+
+  it("escapes session and commit provenance in history", async () => {
+    const html = await renderReviewConsole();
+
+    expect(html).toContain("escapeHtml(item.sessionRef)");
+    expect(html).toContain("item.commitHashes.map");
+    expect(html).toContain("escapeHtml(hash)");
+  });
+});
