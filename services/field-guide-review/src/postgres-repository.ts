@@ -21,6 +21,27 @@ import {
 } from "./types.js";
 type CandidateRow = { payload: Candidate; payload_hash: string };
 type Migration = { name: string; checksum: string; sql: string };
+type BaselineColumn = {
+  tableName: string;
+  columnName: string;
+  dataType: string;
+  notNull: boolean;
+};
+type BaselineConstraint = {
+  name: string;
+  type: "c" | "f" | "p" | "u";
+  columns: string[];
+  referencedTable?: string;
+  referencedSchema?: string;
+  referencedColumns?: string[];
+  checkValues?: string[];
+  definition?: string;
+  deferrable?: boolean;
+  initiallyDeferred?: boolean;
+  foreignDeleteAction?: string;
+  foreignUpdateAction?: string;
+  foreignMatchType?: string;
+};
 type EventRow = {
   sequence: string;
   decision_id: string;
@@ -40,7 +61,10 @@ type EventRow = {
 export class PostgresReviewRepository implements ReviewRepository {
   private readonly sql: Sql;
   constructor(url: string) {
-    this.sql = postgres(url, { max: 5 });
+    this.sql = postgres(url, {
+      max: 5,
+      connection: { search_path: FIELD_GUIDE_SCHEMA },
+    });
   }
   async migrate() {
     const migrations: Migration[] = [];
@@ -55,11 +79,17 @@ export class PostgresReviewRepository implements ReviewRepository {
     }
     await this.sql.begin(async (tx) => {
       await tx`SELECT pg_advisory_xact_lock(${MIGRATION_LOCK})`;
+      const namespace = await tx<{ schema: string | null }[]>`
+        SELECT to_regnamespace(${FIELD_GUIDE_SCHEMA})::text schema
+      `;
+      if (namespace[0]?.schema !== FIELD_GUIDE_SCHEMA)
+        throw new Error("The public schema is unavailable for field-guide migrations.");
+      await tx.unsafe(`SET LOCAL search_path TO ${FIELD_GUIDE_SCHEMA}, pg_catalog`);
       const ledger = await tx<{ ledger: string | null }[]>`
-        SELECT to_regclass('schema_migrations')::text ledger
+        SELECT to_regclass('public.field_guide_schema_migrations')::text ledger
       `;
       if (!ledger[0]?.ledger)
-        await tx.unsafe(`CREATE TABLE schema_migrations (
+        await tx.unsafe(`CREATE TABLE public.field_guide_schema_migrations (
           name text PRIMARY KEY,
           checksum text NOT NULL,
           applied_at timestamptz NOT NULL DEFAULT now(),
@@ -68,7 +98,7 @@ export class PostgresReviewRepository implements ReviewRepository {
 
       const recorded = await tx<
         { name: string; checksum: string }[]
-      >`SELECT name,checksum FROM schema_migrations`;
+      >`SELECT name,checksum FROM public.field_guide_schema_migrations`;
       const applied = new Map(recorded.map((row) => [row.name, row.checksum]));
       for (const migration of migrations) {
         const checksum = applied.get(migration.name);
@@ -84,37 +114,73 @@ export class PostgresReviewRepository implements ReviewRepository {
         if (migration.name === "001_initial.sql") {
           const baseline = await tx<
             { present: number }[]
-          >`SELECT COUNT(*)::int present FROM (VALUES ('candidates'),('review_rounds'),('verdict_events'),('application_receipts')) expected(name) WHERE to_regclass(expected.name) IS NOT NULL`;
+          >`SELECT COUNT(*)::int present FROM (VALUES ('public.candidates'),('public.review_rounds'),('public.verdict_events'),('public.application_receipts')) expected(name) WHERE to_regclass(expected.name) IS NOT NULL`;
           const present = baseline[0]?.present ?? 0;
           if (present !== 0 && present !== 4)
             throw new Error(
               "Cannot adopt a partially initialized field-guide schema.",
             );
           if (present === 4) {
-            const columns = await tx<{ present: number }[]>`
-              SELECT COUNT(*)::int present
-              FROM (VALUES
-                ('candidates','candidate_id'),('candidates','idempotency_key'),('candidates','payload'),('candidates','payload_hash'),('candidates','created_at'),
-                ('review_rounds','candidate_id'),('review_rounds','round'),('review_rounds','kind'),('review_rounds','due_at'),('review_rounds','verdict_id'),
-                ('verdict_events','sequence'),('verdict_events','decision_id'),('verdict_events','candidate_id'),('verdict_events','round'),('verdict_events','action'),('verdict_events','reviewer'),('verdict_events','reviewed_at'),('verdict_events','next_review_at'),
-                ('application_receipts','idempotency_key'),('application_receipts','payload_hash'),('application_receipts','decision_id'),('application_receipts','applied_at'),('application_receipts','result')
-              ) required(table_name,column_name)
-              WHERE EXISTS (
-                SELECT 1 FROM pg_attribute
-                WHERE attrelid=to_regclass(required.table_name)
-                  AND attname=required.column_name
-                  AND NOT attisdropped
-              )
+            const columns = await tx<BaselineColumn[]>`
+              SELECT relation.relname "tableName",attribute.attname "columnName",
+                format_type(attribute.atttypid,attribute.atttypmod) "dataType",
+                attribute.attnotnull "notNull"
+              FROM pg_class relation
+              JOIN pg_namespace namespace ON namespace.oid=relation.relnamespace
+              JOIN pg_attribute attribute ON attribute.attrelid=relation.oid
+              WHERE namespace.nspname=${FIELD_GUIDE_SCHEMA}
+                AND relation.relname IN ('candidates','review_rounds','verdict_events','application_receipts')
+                AND attribute.attnum>0 AND NOT attribute.attisdropped
             `;
-            if (columns[0]?.present !== 23)
-              throw new Error(
-                "Cannot adopt an incompatible field-guide schema.",
-              );
+            validateBaselineColumns(columns);
+            const constraints = await tx<{
+              name:string;
+              type:BaselineConstraint["type"];
+              columns:string[];
+              referenced_table:string|null;
+              referenced_schema:string|null;
+              referenced_columns:string[];
+              definition:string;
+              deferrable:boolean;
+              initially_deferred:boolean;
+              foreign_delete_action:string;
+              foreign_update_action:string;
+              foreign_match_type:string;
+            }[]>`
+              SELECT constraint.conname name,constraint.contype type,
+                ARRAY(SELECT attribute.attname FROM unnest(constraint.conkey) WITH ORDINALITY key(attnum,position) JOIN pg_attribute attribute ON attribute.attrelid=constraint.conrelid AND attribute.attnum=key.attnum ORDER BY key.position) columns,
+                referenced.relname referenced_table,
+                referenced_namespace.nspname referenced_schema,
+                ARRAY(SELECT attribute.attname FROM unnest(constraint.confkey) WITH ORDINALITY key(attnum,position) JOIN pg_attribute attribute ON attribute.attrelid=constraint.confrelid AND attribute.attnum=key.attnum ORDER BY key.position) referenced_columns,
+                pg_get_constraintdef(constraint.oid) definition,
+                constraint.condeferrable deferrable,
+                constraint.condeferred initially_deferred,
+                constraint.confdeltype foreign_delete_action,
+                constraint.confupdtype foreign_update_action,
+                constraint.confmatchtype foreign_match_type
+              FROM pg_constraint constraint
+              JOIN pg_namespace namespace ON namespace.oid=constraint.connamespace
+              LEFT JOIN pg_class referenced ON referenced.oid=constraint.confrelid
+              LEFT JOIN pg_namespace referenced_namespace ON referenced_namespace.oid=referenced.relnamespace
+              WHERE namespace.nspname=${FIELD_GUIDE_SCHEMA}
+            `;
+            validateBaselineConstraints(constraints.map((constraint)=>({
+              name:constraint.name,
+              type:constraint.type,
+              columns:constraint.columns,
+              ...(constraint.referenced_table?{referencedTable:constraint.referenced_table}:{}),
+              ...(constraint.referenced_schema?{referencedSchema:constraint.referenced_schema}:{}),
+              ...(constraint.referenced_columns.length?{referencedColumns:constraint.referenced_columns}:{}),
+              ...(constraint.type==="c"?{definition:constraint.definition}:{}),
+              deferrable:constraint.deferrable,
+              initiallyDeferred:constraint.initially_deferred,
+              ...(constraint.type==="f"?{foreignDeleteAction:constraint.foreign_delete_action,foreignUpdateAction:constraint.foreign_update_action,foreignMatchType:constraint.foreign_match_type}:{}),
+            })));
           }
           adopted = present === 4;
         }
         if (!adopted) await tx.unsafe(migration.sql);
-        await tx`INSERT INTO schema_migrations(name,checksum,adopted) VALUES(${migration.name},${migration.checksum},${adopted})`;
+        await tx`INSERT INTO public.field_guide_schema_migrations(name,checksum,adopted) VALUES(${migration.name},${migration.checksum},${adopted})`;
       }
     });
   }
@@ -314,15 +380,106 @@ export class PostgresReviewRepository implements ReviewRepository {
     await this.sql.end();
   }
 }
+const FIELD_GUIDE_SCHEMA = "public";
+const BASELINE_COLUMNS: readonly BaselineColumn[] = [
+  {tableName:"candidates",columnName:"candidate_id",dataType:"uuid",notNull:true},
+  {tableName:"candidates",columnName:"idempotency_key",dataType:"text",notNull:true},
+  {tableName:"candidates",columnName:"payload",dataType:"jsonb",notNull:true},
+  {tableName:"candidates",columnName:"payload_hash",dataType:"text",notNull:true},
+  {tableName:"candidates",columnName:"created_at",dataType:"timestamp with time zone",notNull:true},
+  {tableName:"review_rounds",columnName:"candidate_id",dataType:"uuid",notNull:true},
+  {tableName:"review_rounds",columnName:"round",dataType:"integer",notNull:true},
+  {tableName:"review_rounds",columnName:"kind",dataType:"text",notNull:true},
+  {tableName:"review_rounds",columnName:"due_at",dataType:"timestamp with time zone",notNull:false},
+  {tableName:"review_rounds",columnName:"verdict_id",dataType:"uuid",notNull:false},
+  {tableName:"verdict_events",columnName:"sequence",dataType:"bigint",notNull:true},
+  {tableName:"verdict_events",columnName:"decision_id",dataType:"uuid",notNull:true},
+  {tableName:"verdict_events",columnName:"candidate_id",dataType:"uuid",notNull:true},
+  {tableName:"verdict_events",columnName:"round",dataType:"integer",notNull:true},
+  {tableName:"verdict_events",columnName:"action",dataType:"text",notNull:true},
+  {tableName:"verdict_events",columnName:"reviewer",dataType:"text",notNull:true},
+  {tableName:"verdict_events",columnName:"reviewed_at",dataType:"timestamp with time zone",notNull:true},
+  {tableName:"verdict_events",columnName:"next_review_at",dataType:"timestamp with time zone",notNull:false},
+  {tableName:"application_receipts",columnName:"idempotency_key",dataType:"text",notNull:true},
+  {tableName:"application_receipts",columnName:"payload_hash",dataType:"text",notNull:true},
+  {tableName:"application_receipts",columnName:"decision_id",dataType:"uuid",notNull:true},
+  {tableName:"application_receipts",columnName:"applied_at",dataType:"timestamp with time zone",notNull:true},
+  {tableName:"application_receipts",columnName:"result",dataType:"text",notNull:true},
+];
+const BASELINE_CONSTRAINTS: readonly BaselineConstraint[] = [
+  {name:"candidates_pkey",type:"p",columns:["candidate_id"]},
+  {name:"candidates_idempotency_key_key",type:"u",columns:["idempotency_key"]},
+  {name:"review_rounds_pkey",type:"p",columns:["candidate_id","round"]},
+  {name:"review_rounds_verdict_id_key",type:"u",columns:["verdict_id"]},
+  {name:"review_rounds_candidate_id_fkey",type:"f",columns:["candidate_id"],referencedSchema:"public",referencedTable:"candidates",referencedColumns:["candidate_id"]},
+  {name:"review_rounds_kind_check",type:"c",columns:["kind"],checkValues:["initial","scheduled"]},
+  {name:"verdict_events_pkey",type:"p",columns:["sequence"]},
+  {name:"verdict_events_decision_id_key",type:"u",columns:["decision_id"]},
+  {name:"verdict_events_candidate_id_round_key",type:"u",columns:["candidate_id","round"]},
+  {name:"verdict_events_candidate_id_round_fkey",type:"f",columns:["candidate_id","round"],referencedSchema:"public",referencedTable:"review_rounds",referencedColumns:["candidate_id","round"]},
+  {name:"application_receipts_pkey",type:"p",columns:["idempotency_key"]},
+  {name:"application_receipts_decision_id_fkey",type:"f",columns:["decision_id"],referencedSchema:"public",referencedTable:"verdict_events",referencedColumns:["decision_id"]},
+  {name:"application_receipts_result_check",type:"c",columns:["result"],checkValues:["applied","already_applied"]},
+];
+
+function validateBaselineColumns(columns:BaselineColumn[]){
+  const actual=new Map(columns.map((column)=>[`${column.tableName}.${column.columnName}`,column]));
+  for(const expected of BASELINE_COLUMNS){
+    const column=actual.get(`${expected.tableName}.${expected.columnName}`);
+    if(!column||column.dataType!==expected.dataType||column.notNull!==expected.notNull)
+      throw new Error("Cannot adopt an incompatible field-guide schema.");
+  }
+}
+
+function validateBaselineConstraints(constraints:BaselineConstraint[]){
+  const actual=new Map(constraints.map((constraint)=>[constraint.name,constraint]));
+  for(const expected of BASELINE_CONSTRAINTS){
+    const constraint=actual.get(expected.name);
+    const checkIsCompatible=!expected.checkValues||(
+      constraint?.definition?.includes("= ANY (ARRAY[")===true&&
+      sameStrings(quotedValues(constraint.definition),expected.checkValues)
+    );
+    const timingIsCompatible=constraint?.deferrable===false&&constraint.initiallyDeferred===false;
+    const foreignActionsAreCompatible=expected.type!=="f"||(
+      constraint?.foreignDeleteAction==="a"&&constraint.foreignUpdateAction==="a"
+      &&constraint.foreignMatchType==="s"
+    );
+    if(!constraint||constraint.type!==expected.type||!sameStrings(constraint.columns,expected.columns)||
+      constraint.referencedTable!==expected.referencedTable||
+      constraint.referencedSchema!==expected.referencedSchema||
+      !sameStrings(constraint.referencedColumns??[],expected.referencedColumns??[])||
+      !checkIsCompatible||!timingIsCompatible||!foreignActionsAreCompatible)
+      throw new Error("Cannot adopt an incompatible field-guide schema.");
+  }
+}
+
+const sameStrings=(left:readonly string[],right:readonly string[])=>
+  left.length===right.length&&left.every((value,index)=>value===right[index]);
+const quotedValues=(definition:string)=>
+  [...definition.matchAll(/'((?:''|[^'])*)'/g)].map((match)=>match[1]?.replace(/''/g,"'")??"");
 const digest = (value: object) =>
   crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const digestText = (value: string) =>
   crypto.createHash("sha256").update(value).digest("hex");
 const MIGRATION_LOCK = 719_873_492;
-const containsTransactionControl = (sql: string) =>
-  /^\s*(BEGIN|COMMIT|ROLLBACK)\b/im.test(
-    sql.replace(/\$\$[\s\S]*?\$\$/g, ""),
+export const containsTransactionControl = (sql: string) =>
+  /(?:^|;)\s*(?:BEGIN\b|START\s+TRANSACTION\b|COMMIT\b|ROLLBACK\b|ABORT\b|SAVEPOINT\b|RELEASE(?:\s+SAVEPOINT)?\b)/im.test(
+    stripDollarQuotedBodies(sql)
+      .replace(/--[^\r\n]*/g, "")
+      .replace(/\/\*[\s\S]*?\*\//g, ""),
   );
+function stripDollarQuotedBodies(sql:string){
+  const delimiter=/\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/g;
+  let result="",offset=0,match:RegExpExecArray|null;
+  while((match=delimiter.exec(sql))!==null){
+    const closing=sql.indexOf(match[0],delimiter.lastIndex);
+    if(closing<0)break;
+    result+=sql.slice(offset,match.index)+" ";
+    offset=closing+match[0].length;
+    delimiter.lastIndex=offset;
+  }
+  return result+sql.slice(offset);
+}
 const isUnique = (e: unknown) =>
   typeof e === "object" &&
   e !== null &&

@@ -154,7 +154,8 @@ export function decodeCursor(cursor: string | undefined): string | undefined {
   const decoded = Buffer.from(cursor, "base64url").toString("utf8");
   if (
     !/^(0|[1-9]\d*)$/.test(decoded) ||
-    Buffer.from(decoded).toString("base64url") !== cursor
+    Buffer.from(decoded).toString("base64url") !== cursor ||
+    BigInt(decoded) > 9_223_372_036_854_775_807n
   )
     throw new ValidationError("Invalid cursor.");
   return decoded;
