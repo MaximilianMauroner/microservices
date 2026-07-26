@@ -1,42 +1,38 @@
 import { sql } from "drizzle-orm";
 import {
-  bigserial,
   check,
   foreignKey,
   integer,
-  jsonb,
-  pgTable,
   primaryKey,
+  sqliteTable,
   text,
-  timestamp,
   uniqueIndex,
-  uuid,
-  type AnyPgColumn,
-} from "drizzle-orm/pg-core";
+  type AnySQLiteColumn,
+} from "drizzle-orm/sqlite-core";
 import type { Candidate } from "../types.js";
 
-function verdictDecisionId(): AnyPgColumn {
+function verdictDecisionId(): AnySQLiteColumn {
   return verdictEvents.decisionId;
 }
 
-export const candidates = pgTable("candidates", {
-  candidateId: uuid("candidate_id").primaryKey(),
+export const candidates = sqliteTable("candidates", {
+  candidateId: text("candidate_id").primaryKey(),
   idempotencyKey: text("idempotency_key")
     .notNull()
     .unique("candidates_idempotency_key_key"),
-  payload: jsonb("payload").$type<Candidate>().notNull(),
+  payload: text("payload", { mode: "json" }).$type<Candidate>().notNull(),
   payloadHash: text("payload_hash").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
-});
+  createdAt: text("created_at").notNull(),
+}, (table) => [check("candidates_payload_json_check", sql`json_valid(${table.payload})`)]);
 
-export const reviewRounds = pgTable(
+export const reviewRounds = sqliteTable(
   "review_rounds",
   {
-    candidateId: uuid("candidate_id").notNull(),
+    candidateId: text("candidate_id").notNull(),
     round: integer("round").notNull(),
     kind: text("kind").notNull(),
-    dueAt: timestamp("due_at", { withTimezone: true }),
-    verdictId: uuid("verdict_id")
+    dueAt: text("due_at"),
+    verdictId: text("verdict_id")
       .unique("review_rounds_verdict_id_key"),
   },
   (table) => [
@@ -61,22 +57,22 @@ export const reviewRounds = pgTable(
   ],
 );
 
-export const verdictEvents = pgTable(
+export const verdictEvents = sqliteTable(
   "verdict_events",
   {
-    sequence: bigserial("sequence", { mode: "bigint" }).primaryKey(),
-    decisionId: uuid("decision_id")
+    sequence: integer("sequence").primaryKey({ autoIncrement: true }),
+    decisionId: text("decision_id")
       .notNull()
       .unique("verdict_events_decision_id_key"),
-    candidateId: uuid("candidate_id").notNull(),
+    candidateId: text("candidate_id").notNull(),
     round: integer("round").notNull(),
     action: text("action").notNull(),
     reviewer: text("reviewer").notNull(),
-    reviewedAt: timestamp("reviewed_at", { withTimezone: true }).notNull(),
-    nextReviewAt: timestamp("next_review_at", { withTimezone: true }),
+    reviewedAt: text("reviewed_at").notNull(),
+    nextReviewAt: text("next_review_at"),
     roundKind: text("round_kind").notNull(),
     effect: text("effect").notNull(),
-    amendsDecisionId: uuid("amends_decision_id"),
+    amendsDecisionId: text("amends_decision_id"),
   },
   (table) => [
     foreignKey({
@@ -103,13 +99,13 @@ export const verdictEvents = pgTable(
   ],
 );
 
-export const applicationReceipts = pgTable(
+export const applicationReceipts = sqliteTable(
   "application_receipts",
   {
     idempotencyKey: text("idempotency_key").primaryKey(),
     payloadHash: text("payload_hash").notNull(),
-    decisionId: uuid("decision_id").notNull(),
-    appliedAt: timestamp("applied_at", { withTimezone: true }).notNull(),
+    decisionId: text("decision_id").notNull(),
+    appliedAt: text("applied_at").notNull(),
     result: text("result").notNull(),
   },
   (table) => [
@@ -122,5 +118,18 @@ export const applicationReceipts = pgTable(
       "application_receipts_result_check",
       sql`${table.result} in ('applied', 'already_applied')`,
     ),
+  ],
+);
+
+export const fieldGuideSchemaMigrations = sqliteTable(
+  "field_guide_schema_migrations",
+  {
+    name: text("name").primaryKey(),
+    checksum: text("checksum").notNull(),
+    appliedAt: text("applied_at").notNull(),
+    adopted: integer("adopted", { mode: "boolean" }).notNull(),
+  },
+  (table) => [
+    check("field_guide_schema_migrations_adopted_check", sql`${table.adopted} in (0, 1)`),
   ],
 );

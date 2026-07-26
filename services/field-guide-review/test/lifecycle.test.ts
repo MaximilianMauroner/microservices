@@ -83,9 +83,11 @@ describe("Bun server shutdown", () => {
     const close = vi.fn(async () => undefined);
     const fail = vi.fn();
     const report = vi.fn();
+    const checkpoint = vi.fn();
     const terminate = vi.fn();
     const shutdown = createGracefulShutdown({
       stop,
+      checkpoint,
       close,
       fail,
       report,
@@ -98,6 +100,7 @@ describe("Bun server shutdown", () => {
     expect(stop).toHaveBeenCalledOnce();
     expect(stop).toHaveBeenCalledWith(false);
     expect(close).toHaveBeenCalledOnce();
+    expect(checkpoint).toHaveBeenCalledOnce();
     expect(fail).not.toHaveBeenCalled();
     expect(report).not.toHaveBeenCalled();
     expect(terminate).not.toHaveBeenCalled();
@@ -175,9 +178,11 @@ describe("Bun server shutdown", () => {
     const stop = vi.fn(async () => undefined);
     const close = vi.fn(() => never);
     const fail = vi.fn();
+    const checkpoint = vi.fn();
     const terminate = vi.fn();
     const shutdown = createGracefulShutdown({
       stop,
+      checkpoint,
       close,
       fail,
       report: vi.fn(),
@@ -189,6 +194,42 @@ describe("Bun server shutdown", () => {
     expect(stop.mock.calls).toEqual([[false], [true]]);
     expect(fail).toHaveBeenCalledOnce();
     expect(close).toHaveBeenCalledOnce();
+    expect(checkpoint).toHaveBeenCalledOnce();
     expect(terminate).toHaveBeenCalledOnce();
+  });
+
+  it("invokes forced cleanup synchronously before hard termination", async () => {
+    const events: string[] = [];
+    const never = new Promise<void>(() => undefined);
+    const shutdown = createGracefulShutdown({
+      stop: (force) => {
+        events.push(force ? "force" : "drain");
+        return force ? undefined : never;
+      },
+      checkpoint: () => {
+        events.push("checkpoint");
+      },
+      close: () => {
+        events.push("close");
+        return never;
+      },
+      fail: () => {
+        events.push("fail");
+      },
+      terminate: () => {
+        events.push("terminate");
+      },
+      report: vi.fn(),
+      timeoutMs: 5,
+    });
+    await shutdown();
+    expect(events).toEqual([
+      "drain",
+      "fail",
+      "force",
+      "checkpoint",
+      "close",
+      "terminate",
+    ]);
   });
 });
