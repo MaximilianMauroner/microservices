@@ -2,18 +2,222 @@ import crypto from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import postgres, { type Sql } from "postgres";
-import { addDays, ConflictError, type Candidate, type Decision, type QueueItem, type ReviewRepository, type Scope, type Summary, type VerdictInput } from "./types.js";
-type CandidateRow={payload:Candidate;payload_hash:string}; type EventRow={sequence:string;decision_id:string;candidate_id:string;round:number;action:Decision["action"];reviewed_at:Date;next_review_at:Date|null;payload:Candidate};
+import {
+  addDays,
+  ConflictError,
+  type Candidate,
+  type Decision,
+  type QueueItem,
+  type ReviewRepository,
+  type Scope,
+  type Summary,
+  type VerdictInput,
+} from "./types.js";
+type CandidateRow = { payload: Candidate; payload_hash: string };
+type EventRow = {
+  sequence: string;
+  decision_id: string;
+  candidate_id: string;
+  round: number;
+  action: Decision["action"];
+  reviewed_at: Date;
+  next_review_at: Date | null;
+  reviewer: string;
+  payload: Candidate;
+};
 export class PostgresReviewRepository implements ReviewRepository {
-  private readonly sql:Sql; constructor(url:string){this.sql=postgres(url,{max:5});}
-  async migrate(){const path=fileURLToPath(new URL("../migrations/001_initial.sql",import.meta.url));await this.sql.unsafe(await readFile(path,"utf8"));}
-  async createCandidate(key:string,candidate:Candidate){const hash=digest(candidate);return this.sql.begin(async tx=>{const old=await tx<CandidateRow[]>`SELECT payload,payload_hash FROM candidates WHERE idempotency_key=${key}`;if(old[0]){if(old[0].payload_hash!==hash)throw new ConflictError("Idempotency key already has different content.");return "replay" as const;}try{await tx`INSERT INTO candidates(candidate_id,idempotency_key,payload,payload_hash,created_at) VALUES(${candidate.candidateId},${key},${tx.json(candidate)},${hash},${candidate.createdAt})`;await tx`INSERT INTO review_rounds(candidate_id,round,kind) VALUES(${candidate.candidateId},1,'initial')`;return "created" as const;}catch(error){if(isUnique(error))throw new ConflictError("Candidate already exists.");throw error;}});}
-  async createReceipt(key:string,decisionId:string,appliedAt:string,result:"applied"|"already_applied"){const hash=digest({decisionId,appliedAt,result});const old=await this.sql<{payload_hash:string}[]>`SELECT payload_hash FROM application_receipts WHERE idempotency_key=${key}`;if(old[0]){if(old[0].payload_hash!==hash)throw new ConflictError("Idempotency key already has different content.");return "replay";}try{await this.sql`INSERT INTO application_receipts VALUES(${key},${hash},${decisionId},${appliedAt},${result})`;return "created";}catch(error){if(isUnique(error))throw new ConflictError("Receipt conflict.");throw error;}}
-  async decisions(cursor:string|undefined,limit:number){const after=decodeCursor(cursor);const rows=await this.sql<EventRow[]>`SELECT v.sequence,v.decision_id,v.candidate_id,v.round,v.action,v.reviewed_at,v.next_review_at,c.payload FROM verdict_events v JOIN candidates c USING(candidate_id) WHERE v.sequence>${after} ORDER BY v.sequence ASC LIMIT ${limit+1}`;const page=rows.slice(0,limit);return {decisions:page.map(toDecision),...(rows.length>limit?{nextCursor:encodeCursor(page.at(-1)?.sequence??after)}:{})};}
-  async queue(scope:Scope|undefined,now:Date):Promise<QueueItem[]>{const rows=await this.sql<{payload:Candidate;round:number;kind:"initial"|"scheduled";due_at:Date|null}[]>`SELECT c.payload,r.round,r.kind,r.due_at FROM candidates c JOIN LATERAL (SELECT * FROM review_rounds rr WHERE rr.candidate_id=c.candidate_id AND rr.verdict_id IS NULL ORDER BY round DESC LIMIT 1) r ON true WHERE (${scope??null}::text IS NULL OR c.payload->>'scope'=${scope??null}) ORDER BY COALESCE(r.due_at,c.created_at),c.candidate_id`;return rows.map(r=>({candidate:r.payload,round:r.round,kind:r.kind,...(r.due_at?{dueAt:r.due_at.toISOString()}:{}),status:!r.due_at?"pending":r.due_at<now?"overdue":"due"}));}
-  async decide(candidateId:string,round:number,input:VerdictInput,now:Date){return this.sql.begin(async tx=>{const rows=await tx<{payload:Candidate;kind:"initial"|"scheduled";due_at:Date|null;verdict_id:string|null}[]>`SELECT c.payload,r.kind,r.due_at,r.verdict_id FROM candidates c JOIN review_rounds r USING(candidate_id) WHERE c.candidate_id=${candidateId} AND r.round=${round} FOR UPDATE`;const row=rows[0];if(!row)throw new Error("Candidate not found.");if(row.verdict_id)throw new ConflictError("Review round is already decided.");const allowed=row.kind==="initial"?["approve","reject","defer"]:["confirm_valid","mark_invalid","defer"];if(!allowed.includes(input.action))throw new Error("Action is not valid for this review round.");let next:Date|undefined;if(input.action==="defer"){next=new Date(input.deferUntil??"");if(!Number.isFinite(next.getTime())||next<=now||next>addDays(now,90))throw new Error("deferUntil must be within the next 90 days.");}else if(input.action==="approve")next=addDays(now,7);else if(input.action==="confirm_valid")next=addDays(now,round===2?30:90);const id=crypto.randomUUID();await tx`INSERT INTO verdict_events(decision_id,candidate_id,round,action,reviewed_at,next_review_at) VALUES(${id},${candidateId},${round},${input.action},${now},${next??null})`;await tx`UPDATE review_rounds SET verdict_id=${id} WHERE candidate_id=${candidateId} AND round=${round}`;if(next)await tx`INSERT INTO review_rounds(candidate_id,round,kind,due_at) VALUES(${candidateId},${round+1},${row.kind==='initial'&&input.action==='approve'?'scheduled':row.kind},${next})`;const c=row.payload;return {decisionId:id,candidateId,round,action:input.action,scope:c.scope,lessonKey:c.lessonKey,title:c.title,body:c.body,reviewedAt:now.toISOString(),...(next?{nextReviewAt:next.toISOString()}:{})};});}
-  async summary(now:Date):Promise<Summary>{const q=await this.queue(undefined,now);return {pending:q.filter(x=>x.status==="pending").length,due:q.filter(x=>x.status==="due").length,overdue:q.filter(x=>x.status==="overdue").length};} async close(){await this.sql.end();}
+  private readonly sql: Sql;
+  constructor(url: string) {
+    this.sql = postgres(url, { max: 5 });
+  }
+  async migrate() {
+    const path = fileURLToPath(
+      new URL("../migrations/001_initial.sql", import.meta.url),
+    );
+    await this.sql.unsafe(await readFile(path, "utf8"));
+  }
+  async createCandidate(key: string, candidate: Candidate) {
+    const hash = digest(candidate);
+    return this.sql.begin(async (tx) => {
+      const old = await tx<
+        CandidateRow[]
+      >`SELECT payload,payload_hash FROM candidates WHERE idempotency_key=${key}`;
+      if (old[0]) {
+        if (old[0].payload_hash !== hash)
+          throw new ConflictError(
+            "Idempotency key already has different content.",
+          );
+        return "replay" as const;
+      }
+      try {
+        const inserted=await tx<{candidate_id:string}[]>`INSERT INTO candidates(candidate_id,idempotency_key,payload,payload_hash,created_at) VALUES(${candidate.candidateId},${key},${tx.json(candidate)},${hash},${candidate.createdAt}) ON CONFLICT DO NOTHING RETURNING candidate_id`;
+        if(!inserted[0]){const raced=await tx<CandidateRow[]>`SELECT payload,payload_hash FROM candidates WHERE idempotency_key=${key}`;if(raced[0]?.payload_hash===hash)return "replay" as const;throw new ConflictError("Candidate already exists.");}
+        await tx`INSERT INTO review_rounds(candidate_id,round,kind) VALUES(${candidate.candidateId},1,'initial')`;
+        return "created" as const;
+      } catch (error) {
+        if (isUnique(error)) throw new ConflictError("Candidate already exists.");
+        throw error;
+      }
+    });
+  }
+  async createReceipt(
+    key: string,
+    decisionId: string,
+    appliedAt: string,
+    result: "applied" | "already_applied",
+  ) {
+    const hash = digest({ decisionId, appliedAt, result });
+    const old = await this.sql<
+      { payload_hash: string }[]
+    >`SELECT payload_hash FROM application_receipts WHERE idempotency_key=${key}`;
+    if (old[0]) {
+      if (old[0].payload_hash !== hash)
+        throw new ConflictError(
+          "Idempotency key already has different content.",
+        );
+      return "replay";
+    }
+    try {
+      const inserted=await this.sql<{idempotency_key:string}[]>`INSERT INTO application_receipts VALUES(${key},${hash},${decisionId},${appliedAt},${result}) ON CONFLICT DO NOTHING RETURNING idempotency_key`;
+      if(inserted[0])return "created";
+      const raced=await this.sql<{payload_hash:string}[]>`SELECT payload_hash FROM application_receipts WHERE idempotency_key=${key}`;if(raced[0]?.payload_hash===hash)return "replay";throw new ConflictError("Receipt conflict.");
+    } catch (error) {
+      if (isUnique(error)) throw new ConflictError("Receipt conflict.");
+      throw error;
+    }
+  }
+  async decisions(cursor: string | undefined, limit: number, scope?: Scope) {
+    const after = decodeCursor(cursor);
+    const rows = await this.sql<
+      EventRow[]
+    >`SELECT v.sequence,v.decision_id,v.candidate_id,v.round,v.action,v.reviewer,v.reviewed_at,v.next_review_at,c.payload FROM verdict_events v JOIN candidates c USING(candidate_id) WHERE v.sequence>${after} AND (${scope??null}::text IS NULL OR c.payload->>'scope'=${scope??null}) ORDER BY v.sequence ASC LIMIT ${limit}`;
+    const page = rows.slice(0, limit);
+    return {
+      decisions: page.map(toDecision),
+      ...(page.length
+        ? { nextCursor: encodeCursor(page.at(-1)?.sequence ?? after) }
+        : {}),
+    };
+  }
+  async queue(scope: Scope | undefined, now: Date): Promise<QueueItem[]> {
+    const rows = await this.sql<
+      {
+        payload: Candidate;
+        round: number;
+        kind: "initial" | "scheduled";
+        due_at: Date | null;
+      }[]
+    >`SELECT c.payload,r.round,r.kind,r.due_at FROM candidates c JOIN LATERAL (SELECT * FROM review_rounds rr WHERE rr.candidate_id=c.candidate_id AND rr.verdict_id IS NULL ORDER BY round DESC LIMIT 1) r ON true WHERE (${scope ?? null}::text IS NULL OR c.payload->>'scope'=${scope ?? null}) AND (r.due_at IS NULL OR r.due_at<=${now}) ORDER BY COALESCE(r.due_at,c.created_at),c.candidate_id`;
+    return rows.map((r) => ({
+      candidate: r.payload,
+      round: r.round,
+      kind: r.kind,
+      ...(r.due_at ? { dueAt: r.due_at.toISOString() } : {}),
+      status: !r.due_at ? "pending" : r.due_at < now ? "overdue" : "due",
+    }));
+  }
+  async decide(
+    candidateId: string,
+    round: number,
+    input: VerdictInput,
+    now: Date,
+    reviewer: string,
+  ) {
+    return this.sql.begin(async (tx) => {
+      const rows = await tx<
+        {
+          payload: Candidate;
+          kind: "initial" | "scheduled";
+          due_at: Date | null;
+          verdict_id: string | null;
+        }[]
+      >`SELECT c.payload,r.kind,r.due_at,r.verdict_id FROM candidates c JOIN review_rounds r USING(candidate_id) WHERE c.candidate_id=${candidateId} AND r.round=${round} FOR UPDATE`;
+      const row = rows[0];
+      if (!row) throw new Error("Candidate not found.");
+      if (row.verdict_id)
+        throw new ConflictError("Review round is already decided.");
+      if(row.due_at&&row.due_at>now)throw new ConflictError("Review is not due yet.");
+      const allowed =
+        row.kind === "initial"
+          ? ["approve", "reject", "defer"]
+          : ["confirm_valid", "mark_invalid", "defer"];
+      if (!allowed.includes(input.action))
+        throw new Error("Action is not valid for this review round.");
+      let next: Date | undefined;
+      if (input.action === "defer") {
+        next = new Date(input.deferUntil ?? "");
+        if (
+          !Number.isFinite(next.getTime()) ||
+          next <= now ||
+          next > addDays(now, 90)
+        )
+          throw new Error("deferUntil must be within the next 90 days.");
+      } else if (input.action === "approve") next = addDays(now, 7);
+      else if (input.action === "confirm_valid") { const confirmations=await tx<{count:number}[]>`SELECT COUNT(*)::int count FROM verdict_events WHERE candidate_id=${candidateId} AND action='confirm_valid'`;next=addDays(now,(confirmations[0]?.count??0)===0?30:90); }
+      const id = crypto.randomUUID();
+      await tx`INSERT INTO verdict_events(decision_id,candidate_id,round,action,reviewer,reviewed_at,next_review_at) VALUES(${id},${candidateId},${round},${input.action},${reviewer},${now},${next ?? null})`;
+      await tx`UPDATE review_rounds SET verdict_id=${id} WHERE candidate_id=${candidateId} AND round=${round}`;
+      if (next)
+        await tx`INSERT INTO review_rounds(candidate_id,round,kind,due_at) VALUES(${candidateId},${round + 1},${row.kind === "initial" && input.action === "approve" ? "scheduled" : row.kind},${next})`;
+      const c = row.payload;
+      return {
+        decisionId: id,
+        candidateId,
+        round,
+        action: input.action,
+        scope: c.scope,
+        lessonKey: c.lessonKey,
+        title: c.title,
+        body: c.body,
+        evidence:c.evidence,
+        reviewedAt: now.toISOString(),
+        reviewer,
+        ...(next ? { nextReviewAt: next.toISOString() } : {}),
+      };
+    });
+  }
+  async summary(now: Date): Promise<Summary> {
+    const q = await this.queue(undefined, now);
+    return {
+      pending: q.filter((x) => x.status === "pending").length,
+      due: q.filter((x) => x.status === "due").length,
+      overdue: q.filter((x) => x.status === "overdue").length,
+    };
+  }
+  async close() {
+    await this.sql.end();
+  }
 }
-const digest=(value:object)=>crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex"); const isUnique=(e:unknown)=>typeof e==="object"&&e!==null&&"code" in e&&(e as {code?:unknown}).code==="23505";
-function decodeCursor(cursor:string|undefined){if(!cursor)return "0";const value=Buffer.from(cursor,"base64url").toString("utf8");if(!/^\d+$/.test(value))throw new Error("Invalid cursor.");return value;} const encodeCursor=(v:string)=>Buffer.from(v).toString("base64url");
-function toDecision(r:EventRow):Decision{const c=r.payload;return {decisionId:r.decision_id,candidateId:r.candidate_id,round:r.round,action:r.action,scope:c.scope,lessonKey:c.lessonKey,title:c.title,body:c.body,reviewedAt:r.reviewed_at.toISOString(),...(r.next_review_at?{nextReviewAt:r.next_review_at.toISOString()}:{})};}
+const digest = (value: object) =>
+  crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex");
+const isUnique = (e: unknown) =>
+  typeof e === "object" &&
+  e !== null &&
+  "code" in e &&
+  (e as { code?: unknown }).code === "23505";
+function decodeCursor(cursor: string | undefined) {
+  if (!cursor) return "0";
+  const value = Buffer.from(cursor, "base64url").toString("utf8");
+  if (!/^\d+$/.test(value)) throw new Error("Invalid cursor.");
+  return value;
+}
+const encodeCursor = (v: string) => Buffer.from(v).toString("base64url");
+function toDecision(r: EventRow): Decision {
+  const c = r.payload;
+  return {
+    decisionId: r.decision_id,
+    candidateId: r.candidate_id,
+    round: r.round,
+    action: r.action,
+    scope: c.scope,
+    lessonKey: c.lessonKey,
+    title: c.title,
+    body: c.body,
+    evidence:c.evidence,
+    reviewedAt: r.reviewed_at.toISOString(),
+    reviewer:r.reviewer,
+    ...(r.next_review_at
+      ? { nextReviewAt: r.next_review_at.toISOString() }
+      : {}),
+  };
+}
