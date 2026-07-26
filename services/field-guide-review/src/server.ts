@@ -30,6 +30,7 @@ const shutdown = createGracefulShutdown({
     process.exitCode = 1;
   },
   report: (error) => console.error(error),
+  terminate: () => process.exit(1),
 });
 process.once("SIGINT", () => void shutdown());
 process.once("SIGTERM", () => void shutdown());
