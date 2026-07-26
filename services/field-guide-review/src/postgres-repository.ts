@@ -154,21 +154,21 @@ export class PostgresReviewRepository implements ReviewRepository {
               foreign_update_action:string;
               foreign_match_type:string;
             }[]>`
-              SELECT source.relname table_name,constraint.conname name,constraint.contype type,
-                ARRAY(SELECT attribute.attname FROM unnest(constraint.conkey) WITH ORDINALITY key(attnum,position) JOIN pg_attribute attribute ON attribute.attrelid=constraint.conrelid AND attribute.attnum=key.attnum ORDER BY key.position) columns,
+              SELECT source.relname table_name,catalog_constraint.conname name,catalog_constraint.contype type,
+                ARRAY(SELECT attribute.attname FROM unnest(catalog_constraint.conkey) WITH ORDINALITY key(attnum,position) JOIN pg_attribute attribute ON attribute.attrelid=catalog_constraint.conrelid AND attribute.attnum=key.attnum ORDER BY key.position) columns,
                 referenced.relname referenced_table,
                 referenced_namespace.nspname referenced_schema,
-                ARRAY(SELECT attribute.attname FROM unnest(constraint.confkey) WITH ORDINALITY key(attnum,position) JOIN pg_attribute attribute ON attribute.attrelid=constraint.confrelid AND attribute.attnum=key.attnum ORDER BY key.position) referenced_columns,
-                pg_get_constraintdef(constraint.oid) definition,
-                constraint.condeferrable deferrable,
-                constraint.condeferred initially_deferred,
-                constraint.confdeltype foreign_delete_action,
-                constraint.confupdtype foreign_update_action,
-                constraint.confmatchtype foreign_match_type
-              FROM pg_constraint constraint
-              JOIN pg_namespace namespace ON namespace.oid=constraint.connamespace
-              JOIN pg_class source ON source.oid=constraint.conrelid
-              LEFT JOIN pg_class referenced ON referenced.oid=constraint.confrelid
+                ARRAY(SELECT attribute.attname FROM unnest(catalog_constraint.confkey) WITH ORDINALITY key(attnum,position) JOIN pg_attribute attribute ON attribute.attrelid=catalog_constraint.confrelid AND attribute.attnum=key.attnum ORDER BY key.position) referenced_columns,
+                pg_get_constraintdef(catalog_constraint.oid) definition,
+                catalog_constraint.condeferrable deferrable,
+                catalog_constraint.condeferred initially_deferred,
+                catalog_constraint.confdeltype foreign_delete_action,
+                catalog_constraint.confupdtype foreign_update_action,
+                catalog_constraint.confmatchtype foreign_match_type
+              FROM pg_constraint catalog_constraint
+              JOIN pg_namespace namespace ON namespace.oid=catalog_constraint.connamespace
+              JOIN pg_class source ON source.oid=catalog_constraint.conrelid
+              LEFT JOIN pg_class referenced ON referenced.oid=catalog_constraint.confrelid
               LEFT JOIN pg_namespace referenced_namespace ON referenced_namespace.oid=referenced.relnamespace
               WHERE namespace.nspname=${FIELD_GUIDE_SCHEMA}
                 AND source.relname IN ('candidates','review_rounds','verdict_events','application_receipts')
