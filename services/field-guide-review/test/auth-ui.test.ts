@@ -8,7 +8,13 @@ import { reviewConsole } from "../src/ui.js";
 describe("Shoo review UI", () => {
   it("serves PKCE, separate scopes, history, evidence, and valid action controls", async () => {
     const app=express().get(["/review","/review/callback"],reviewConsole);const response=await request(app).get("/review");
-    expect(response.text).toContain("Shoo.startSignIn");expect(response.text).toContain("data-scope=project");expect(response.text).toContain("data-scope=global");expect(response.text).toContain("data-view=history");expect(response.text).toContain("Evidence");expect(response.text).toContain("confirm_valid");expect(response.text).not.toContain("data-action=edit");
+    expect(response.text).toContain("Shoo.startSignIn");
+    expect(response.text).toContain('data-scope="project"');
+    expect(response.text).toContain('data-scope="global"');
+    expect(response.text).toContain('data-view="history"');
+    expect(response.text).toContain("Evidence");
+    expect(response.text).toContain("confirm_valid");
+    expect(response.text).not.toContain('data-action="edit"');
   });
   it("verifies ES256 issuer, audience, verified email, and exact account", async () => {
     const {privateKey,publicKey}=await generateKeyPair("ES256");const jwk=await exportJWK(publicKey);jwk.kid="test";const key=async()=>publicKey;const app=express().get("/",shooAuth({allowedEmail:"owner@example.com",audience:"origin:https://reviews.example",issuer:"https://shoo.dev",jwks:key}),(_q,res)=>res.json({ok:true}));

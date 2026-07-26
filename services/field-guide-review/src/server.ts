@@ -1,5 +1,6 @@
 import { createApp } from "./app.js";
 import express from "express";
+import { fileURLToPath } from "node:url";
 import { agentAuth, shooAuth } from "./auth.js";
 import { loadConfig } from "./config.js";
 import { PostgresReviewRepository } from "./postgres-repository.js";
@@ -18,6 +19,11 @@ const core = createApp({
   publicBaseUrl:config.publicBaseUrl,
 });
 const app = express();
+app.get("/review.css", (_req, res) =>
+  res
+    .set("Cache-Control", "public, max-age=300")
+    .sendFile(fileURLToPath(new URL("../public/review.css", import.meta.url))),
+);
 app.get(["/review", "/review/callback"], reviewConsole);
 app.use(core);
 const server = app.listen(config.port, "0.0.0.0", () =>
