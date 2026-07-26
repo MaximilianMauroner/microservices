@@ -2,6 +2,8 @@ import crypto from "node:crypto";
 import {
   ConflictError,
   ValidationError,
+  decodeCursor,
+  encodeCursor,
   validateVerdict,
   type AmendVerdictInput,
   type Candidate,
@@ -71,33 +73,36 @@ export class MemoryReviewRepository implements ReviewRepository {
   }
 
   async decisions(cursor: string | undefined, limit: number, scope?: Scope) {
-    const offset = decodeCursor(cursor);
-    const filtered = this.projectedEvents().filter(
-      (event) => !scope || event.scope === scope,
+    const after = BigInt(decodeCursor(cursor) ?? "0");
+    const rows = this.sequencedEvents().filter(
+      ({ decision, sequence }) =>
+        sequence > after && (!scope || decision.scope === scope),
     );
-    const decisions = filtered.slice(offset, offset + limit);
-    const next = offset + decisions.length;
+    const page = rows.slice(0, limit);
     return {
-      decisions,
-      ...(decisions.length
-        ? { nextCursor: Buffer.from(String(next)).toString("base64url") }
+      decisions: page.map(({ decision }) => decision),
+      ...(page.length
+        ? { nextCursor: encodeCursor(page.at(-1)?.sequence.toString() ?? "0") }
         : {}),
     };
   }
 
   async history(cursor: string | undefined, limit: number, scope?: Scope) {
-    const offset = decodeCursor(cursor);
-    const filtered = this.projectedEvents().filter(
-      (event) => !scope || event.scope === scope,
-    );
-    const rows = filtered.slice(offset, offset + limit + 1);
-    const decisions = rows.slice(0, limit);
-    const next = offset + decisions.length;
+    const before = decodeCursor(cursor);
+    const rows = this.sequencedEvents()
+      .filter(
+        ({ decision, sequence }) =>
+          (!before || sequence < BigInt(before)) &&
+          (!scope || decision.scope === scope),
+      )
+      .reverse()
+      .slice(0, limit + 1);
+    const page = rows.slice(0, limit);
     return {
-      decisions,
+      decisions: page.map(({ decision }) => decision),
       hasMore: rows.length > limit,
       ...(rows.length > limit
-        ? { nextCursor: Buffer.from(String(next)).toString("base64url") }
+        ? { nextCursor: encodeCursor(page.at(-1)?.sequence.toString() ?? "0") }
         : {}),
     };
   }
@@ -180,12 +185,18 @@ export class MemoryReviewRepository implements ReviewRepository {
     if (!current) throw new Error("Authoritative decision not found.");
     if (current.action === input.action && input.action !== "defer")
       throw new ValidationError("Choose a different verdict.");
-    validateVerdict(
+    const schedule = validateVerdict(
       round.kind,
       input,
       now,
       this.authoritativeConfirmations(state),
     );
+    if (
+      input.action === "defer" &&
+      current.action === "defer" &&
+      schedule.nextReviewAt?.toISOString() === current.nextReviewAt
+    )
+      throw new ValidationError("Choose a different defer date.");
 
     const successor = state.rounds.get(roundNumber + 1);
     if (successor) {
@@ -302,13 +313,11 @@ export class MemoryReviewRepository implements ReviewRepository {
       return { ...event, isCurrent, canAmend: isCurrent && !laterDecided };
     });
   }
-}
 
-function decodeCursor(cursor: string | undefined) {
-  const offset = cursor
-    ? Number(Buffer.from(cursor, "base64url").toString())
-    : 0;
-  if (!Number.isInteger(offset) || offset < 0)
-    throw new Error("Invalid cursor.");
-  return offset;
+  private sequencedEvents() {
+    return this.projectedEvents().map((decision, index) => ({
+      decision,
+      sequence: BigInt(index + 1),
+    }));
+  }
 }

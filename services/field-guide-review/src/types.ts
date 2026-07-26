@@ -146,3 +146,19 @@ export function validateVerdict(
     ...(nextReviewAt ? { nextReviewAt, nextRoundKind } : {}),
   };
 }
+
+export function decodeCursor(cursor: string | undefined): string | undefined {
+  if (cursor === undefined) return undefined;
+  if (!cursor || !/^[A-Za-z0-9_-]+$/.test(cursor))
+    throw new ValidationError("Invalid cursor.");
+  const decoded = Buffer.from(cursor, "base64url").toString("utf8");
+  if (
+    !/^(0|[1-9]\d*)$/.test(decoded) ||
+    Buffer.from(decoded).toString("base64url") !== cursor
+  )
+    throw new ValidationError("Invalid cursor.");
+  return decoded;
+}
+
+export const encodeCursor = (value: string | number) =>
+  Buffer.from(String(value)).toString("base64url");
