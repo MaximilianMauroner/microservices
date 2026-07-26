@@ -246,8 +246,8 @@ describe("Postgres schema contract", () => {
     );
     expect(packageJson.scripts["db:push"]).toBe("drizzle-kit push");
     expect(Object.values(packageJson.scripts).join(" ")).not.toContain("--force");
-    expect(packageJson.dependencies["drizzle-kit"]).toBe("1.0.0-beta.22");
-    expect(packageJson.dependencies["drizzle-orm"]).toBe("1.0.0-beta.22");
+    expect(packageJson.dependencies["drizzle-kit"]).toBe("1.0.0-rc.4");
+    expect(packageJson.dependencies["drizzle-orm"]).toBe("1.0.0-rc.4");
     expect(packageJson.devDependencies["drizzle-kit"]).toBeUndefined();
     expect(railway.deploy).toMatchObject({
       preDeployCommand: ["bun run db:push"],
