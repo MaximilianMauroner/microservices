@@ -1,1 +1,11 @@
-import{readFile}from"node:fs/promises";import{expect,it}from"vitest";it("only advances history UI when the server reports another page",async()=>{const source=await readFile(new URL("../src/ui.ts",import.meta.url),"utf8");expect(source).toContain("d.hasMore?'<button id=more>");expect(source).toContain("S.cursor=window.__nextCursor");expect(source).not.toContain("d.nextCursor?'<button id=more>");expect(source).toContain("projectDisplayName||x.projectKey");});
+import { readFile } from "node:fs/promises";
+import { expect, it } from "vitest";
+
+it("only offers more history when the server reports another page", async () => {
+  const source = await readFile(new URL("../src/ui.ts", import.meta.url), "utf8");
+
+  expect(source).toContain("hasMore?'<button id=\"load-more\"");
+  expect(source).toContain("state.cursor=data.nextCursor||null");
+  expect(source).toContain("loadMore.addEventListener('click',()=>loadReviews(true))");
+  expect(source).toContain("decision.projectDisplayName||decision.projectKey");
+});
