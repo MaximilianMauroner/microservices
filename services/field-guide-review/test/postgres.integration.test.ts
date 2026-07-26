@@ -1,116 +1,184 @@
 import crypto from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import postgres from "postgres";
 import { expect, it } from "vitest";
 import { PostgresReviewRepository } from "../src/postgres-repository.js";
+import { encodeCursor } from "../src/types.js";
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const databaseConfirmed =
   process.env.FIELD_GUIDE_TEST_DATABASE_CONFIRM === "field-guide-review-test";
+const execFileAsync = promisify(execFile);
+const serviceDirectory = fileURLToPath(new URL("..", import.meta.url));
+
+async function pushSchema(url: string) {
+  await execFileAsync("bun", ["run", "db:push"], {
+    cwd: serviceDirectory,
+    env: { ...process.env, DATABASE_URL: url },
+  });
+}
 
 it.skipIf(!databaseUrl || !databaseConfirmed)(
-  "adopts shipped 001 once, migrates existing data, and supports amendments",
+  "direct-pushes the owned schema without losing decisions or amendments",
   async () => {
     const url = databaseUrl!;
     const candidateId = crypto.randomUUID();
-    const decisionId = crypto.randomUUID();
+    const receiptKey = `direct-push-receipt-${crypto.randomUUID()}`;
     const createdAt = new Date("2026-07-26T00:00:00Z");
     const candidate = {
       candidateId,
       scope: "project" as const,
       projectKey: "integration",
       projectDisplayName: "Integration project",
-      lessonKey: "adopt-existing",
-      title: "Adopt existing decisions",
-      body: "Keep existing audit events.",
-      rationale: "Migration safety",
-      evidence: [{ excerpt: "Existing production data", commitHashes: ["abc123"] }],
+      lessonKey: "preserve-existing",
+      title: "Preserve existing decisions",
+      body: "Keep the append-only audit history during schema pushes.",
+      rationale: "Direct-push safety",
+      evidence: [{ excerpt: "Existing test data", commitHashes: ["abc123"] }],
       createdAt: createdAt.toISOString(),
     };
-    let repository = new PostgresReviewRepository(url);
-    const bootstrap = postgres(url, { max: 1 });
+    const database = postgres(url, { max: 1 });
+    let repository: PostgresReviewRepository | undefined;
     try {
-      await bootstrap.unsafe("SET search_path TO public, pg_catalog");
-      await bootstrap.unsafe(
-        "DROP TABLE IF EXISTS public.field_guide_schema_migrations,public.application_receipts,public.verdict_events,public.review_rounds,public.candidates CASCADE",
-      );
-      const initial = await readFile(
-        new URL("../migrations/001_initial.sql", import.meta.url),
-        "utf8",
-      );
-      await bootstrap.unsafe(initial);
-      await bootstrap`INSERT INTO candidates(candidate_id,idempotency_key,payload,payload_hash,created_at) VALUES(${candidateId},${`existing-${candidateId}`},${bootstrap.json(candidate)},${"existing-hash"},${createdAt})`;
-      await bootstrap`INSERT INTO review_rounds(candidate_id,round,kind) VALUES(${candidateId},1,'initial')`;
-      await bootstrap`INSERT INTO verdict_events(decision_id,candidate_id,round,action,reviewer,reviewed_at,next_review_at) VALUES(${decisionId},${candidateId},1,'approve','owner@example.com',${createdAt},${new Date("2026-08-02T00:00:00Z")})`;
-      await bootstrap`UPDATE review_rounds SET verdict_id=${decisionId} WHERE candidate_id=${candidateId} AND round=1`;
-      await bootstrap`INSERT INTO review_rounds(candidate_id,round,kind,due_at) VALUES(${candidateId},2,'scheduled',${new Date("2026-08-02T00:00:00Z")})`;
-
-      await repository.migrate();
-      const firstLedger = await bootstrap<
-        { name: string; checksum: string; adopted: boolean; applied_at: Date }[]
-      >`SELECT name,checksum,adopted,applied_at FROM public.field_guide_schema_migrations ORDER BY name`;
-      expect(firstLedger).toMatchObject([
-        { name: "001_initial.sql", adopted: true },
-        { name: "002_decision_amendments.sql", adopted: false },
-      ]);
-      const originalHistory = await repository.history(undefined, 10, "project");
-      expect(originalHistory.decisions[0]).toMatchObject({
-        decisionId,
-        roundKind: "initial",
-        effect: "activate",
-        isCurrent: true,
-        projectKey: "integration",
-      });
-
-      const amendment = await repository.amendDecision(
+      await pushSchema(url);
+      repository = new PostgresReviewRepository(url);
+      await repository.createCandidate(`direct-push-${candidateId}`, candidate);
+      const original = await repository.decide(
         candidateId,
         1,
-        { expectedDecisionId: decisionId, action: "reject" },
+        { action: "approve" },
+        createdAt,
+        "owner@example.com",
+      );
+      const existingAmendment = await repository.amendDecision(
+        candidateId,
+        1,
+        { expectedDecisionId: original.decisionId, action: "reject" },
         new Date("2026-07-27T00:00:00Z"),
         "owner@example.com",
       );
-      expect(amendment).toMatchObject({
-        effect: "deactivate",
-        amendsDecisionId: decisionId,
-      });
-      expect(await repository.queue(undefined, new Date("2026-08-03T00:00:00Z"))).toHaveLength(0);
-      const history = await repository.history(undefined, 10, "project");
-      expect(history.decisions.map((decision) => decision.decisionId)).toEqual([
-        amendment.decisionId,
-        decisionId,
-      ]);
-      const agentFeed = await repository.decisions(undefined, 10);
-      expect(agentFeed.decisions.map((decision) => decision.decisionId)).toEqual([
-        decisionId,
-        amendment.decisionId,
-      ]);
-
-      await repository.migrate();
-      const secondLedger = await bootstrap<
-        { name: string; checksum: string; adopted: boolean; applied_at: Date }[]
-      >`SELECT name,checksum,adopted,applied_at FROM public.field_guide_schema_migrations ORDER BY name`;
-      expect(
-        secondLedger.map((row) => ({
-          ...row,
-          applied_at: row.applied_at.toISOString(),
-        })),
-      ).toEqual(
-        firstLedger.map((row) => ({
-          ...row,
-          applied_at: row.applied_at.toISOString(),
-        })),
+      await repository.createReceipt(
+        receiptKey,
+        existingAmendment.decisionId,
+        "2026-07-27T00:05:00.000Z",
+        "applied",
       );
+      const beforeEvents = await database<
+        { sequence: string; decision_id: string; amends_decision_id: string | null }[]
+      >`SELECT sequence::text sequence,decision_id,amends_decision_id
+        FROM verdict_events
+        WHERE candidate_id=${candidateId}
+        ORDER BY sequence`;
+      if (!beforeEvents[0]) throw new Error("Original decision was not stored.");
+      const beforePointer = await database<
+        { verdict_id: string | null }[]
+      >`SELECT verdict_id FROM review_rounds
+        WHERE candidate_id=${candidateId} AND round=1`;
+      const beforeReceipt = await database<
+        {
+          idempotency_key: string;
+          payload_hash: string;
+          decision_id: string;
+          applied_at: Date;
+          result: string;
+        }[]
+      >`SELECT idempotency_key,payload_hash,decision_id,applied_at,result
+        FROM application_receipts
+        WHERE idempotency_key=${receiptKey}`;
+
+      await pushSchema(url);
+      const afterEvents = await database<
+        { sequence: string; decision_id: string; amends_decision_id: string | null }[]
+      >`SELECT sequence::text sequence,decision_id,amends_decision_id
+        FROM verdict_events
+        WHERE candidate_id=${candidateId}
+        ORDER BY sequence`;
+      const afterPointer = await database<
+        { verdict_id: string | null }[]
+      >`SELECT verdict_id FROM review_rounds
+        WHERE candidate_id=${candidateId} AND round=1`;
+      const afterReceipt = await database<
+        {
+          idempotency_key: string;
+          payload_hash: string;
+          decision_id: string;
+          applied_at: Date;
+          result: string;
+        }[]
+      >`SELECT idempotency_key,payload_hash,decision_id,applied_at,result
+        FROM application_receipts
+        WHERE idempotency_key=${receiptKey}`;
+      expect(afterEvents).toEqual(beforeEvents);
+      expect(afterEvents).toEqual([
+        {
+          sequence: beforeEvents[0]?.sequence,
+          decision_id: original.decisionId,
+          amends_decision_id: null,
+        },
+        {
+          sequence: beforeEvents[1]?.sequence,
+          decision_id: existingAmendment.decisionId,
+          amends_decision_id: original.decisionId,
+        },
+      ]);
+      expect(afterPointer).toEqual(beforePointer);
+      expect(afterPointer).toEqual([
+        { verdict_id: existingAmendment.decisionId },
+      ]);
+      expect(afterReceipt).toEqual(beforeReceipt);
+      expect(afterReceipt).toHaveLength(1);
+      expect(afterReceipt[0]).toMatchObject({
+        idempotency_key: receiptKey,
+        decision_id: existingAmendment.decisionId,
+        result: "applied",
+      });
+
+      const newAmendment = await repository.amendDecision(
+        candidateId,
+        1,
+        { expectedDecisionId: existingAmendment.decisionId, action: "approve" },
+        new Date("2026-07-28T00:00:00Z"),
+        "owner@example.com",
+      );
+      expect(newAmendment).toMatchObject({
+        effect: "activate",
+        amendsDecisionId: existingAmendment.decisionId,
+      });
+      const history = await repository.history(undefined, 10_000, "project");
+      expect(history.decisions
+        .filter((decision) => decision.candidateId === candidateId)
+        .map((decision) => decision.decisionId)).toEqual([
+        newAmendment.decisionId,
+        existingAmendment.decisionId,
+        original.decisionId,
+      ]);
+      const feed = await repository.decisions(
+        encodeCursor((BigInt(beforeEvents[0].sequence) - 1n).toString()),
+        10,
+        "project",
+      );
+      expect(feed.decisions
+        .filter((decision) => decision.candidateId === candidateId)
+        .map((decision) => decision.decisionId)).toEqual([
+        original.decisionId,
+        existingAmendment.decisionId,
+        newAmendment.decisionId,
+      ]);
     } finally {
-      await repository.close().catch(() => undefined);
-      await bootstrap`
+      await repository?.close().catch(() => undefined);
+      await database`
         DELETE FROM application_receipts
-        WHERE decision_id IN (SELECT decision_id FROM verdict_events WHERE candidate_id=${candidateId})
+        WHERE decision_id IN (
+          SELECT decision_id FROM verdict_events WHERE candidate_id=${candidateId}
+        )
       `.catch(() => undefined);
-      await bootstrap`UPDATE review_rounds SET verdict_id=NULL WHERE candidate_id=${candidateId}`.catch(() => undefined);
-      await bootstrap`DELETE FROM verdict_events WHERE candidate_id=${candidateId}`.catch(() => undefined);
-      await bootstrap`DELETE FROM review_rounds WHERE candidate_id=${candidateId}`.catch(() => undefined);
-      await bootstrap`DELETE FROM candidates WHERE candidate_id=${candidateId}`.catch(() => undefined);
-      await bootstrap.end();
+      await database`UPDATE review_rounds SET verdict_id=NULL WHERE candidate_id=${candidateId}`.catch(() => undefined);
+      await database`DELETE FROM verdict_events WHERE candidate_id=${candidateId}`.catch(() => undefined);
+      await database`DELETE FROM review_rounds WHERE candidate_id=${candidateId}`.catch(() => undefined);
+      await database`DELETE FROM candidates WHERE candidate_id=${candidateId}`.catch(() => undefined);
+      await database.end();
     }
   },
   30_000,
