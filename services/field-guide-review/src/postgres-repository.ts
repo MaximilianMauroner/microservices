@@ -21,13 +21,14 @@ import {
 } from "./types.js";
 type CandidateRow = { payload: Candidate; payload_hash: string };
 type Migration = { name: string; checksum: string; sql: string };
-type BaselineColumn = {
+export type BaselineColumn = {
   tableName: string;
   columnName: string;
   dataType: string;
   notNull: boolean;
 };
-type BaselineConstraint = {
+export type BaselineConstraint = {
+  tableName: string;
   name: string;
   type: "c" | "f" | "p" | "u";
   columns: string[];
@@ -41,6 +42,11 @@ type BaselineConstraint = {
   foreignDeleteAction?: string;
   foreignUpdateAction?: string;
   foreignMatchType?: string;
+};
+export type SequenceDefault = {
+  defaultExpression: string | null;
+  serialSequence: string | null;
+  defaultMatchesSerial: boolean;
 };
 type EventRow = {
   sequence: string;
@@ -134,6 +140,7 @@ export class PostgresReviewRepository implements ReviewRepository {
             `;
             validateBaselineColumns(columns);
             const constraints = await tx<{
+              table_name:string;
               name:string;
               type:BaselineConstraint["type"];
               columns:string[];
@@ -147,7 +154,7 @@ export class PostgresReviewRepository implements ReviewRepository {
               foreign_update_action:string;
               foreign_match_type:string;
             }[]>`
-              SELECT constraint.conname name,constraint.contype type,
+              SELECT source.relname table_name,constraint.conname name,constraint.contype type,
                 ARRAY(SELECT attribute.attname FROM unnest(constraint.conkey) WITH ORDINALITY key(attnum,position) JOIN pg_attribute attribute ON attribute.attrelid=constraint.conrelid AND attribute.attnum=key.attnum ORDER BY key.position) columns,
                 referenced.relname referenced_table,
                 referenced_namespace.nspname referenced_schema,
@@ -160,11 +167,14 @@ export class PostgresReviewRepository implements ReviewRepository {
                 constraint.confmatchtype foreign_match_type
               FROM pg_constraint constraint
               JOIN pg_namespace namespace ON namespace.oid=constraint.connamespace
+              JOIN pg_class source ON source.oid=constraint.conrelid
               LEFT JOIN pg_class referenced ON referenced.oid=constraint.confrelid
               LEFT JOIN pg_namespace referenced_namespace ON referenced_namespace.oid=referenced.relnamespace
               WHERE namespace.nspname=${FIELD_GUIDE_SCHEMA}
+                AND source.relname IN ('candidates','review_rounds','verdict_events','application_receipts')
             `;
             validateBaselineConstraints(constraints.map((constraint)=>({
+              tableName:constraint.table_name,
               name:constraint.name,
               type:constraint.type,
               columns:constraint.columns,
@@ -176,6 +186,33 @@ export class PostgresReviewRepository implements ReviewRepository {
               initiallyDeferred:constraint.initially_deferred,
               ...(constraint.type==="f"?{foreignDeleteAction:constraint.foreign_delete_action,foreignUpdateAction:constraint.foreign_update_action,foreignMatchType:constraint.foreign_match_type}:{}),
             })));
+            const sequence = await tx<{
+              default_expression:string|null;
+              serial_sequence:string|null;
+              default_matches_serial:boolean;
+            }[]>`
+              SELECT pg_get_expr(default_value.adbin,default_value.adrelid) default_expression,
+                pg_get_serial_sequence('public.verdict_events','sequence') serial_sequence,
+                EXISTS(
+                  SELECT 1 FROM pg_depend dependency
+                  WHERE dependency.classid='pg_attrdef'::regclass
+                    AND dependency.objid=default_value.oid
+                    AND dependency.refclassid='pg_class'::regclass
+                    AND dependency.refobjid=to_regclass(pg_get_serial_sequence('public.verdict_events','sequence'))
+                ) default_matches_serial
+              FROM pg_attribute attribute
+              LEFT JOIN pg_attrdef default_value
+                ON default_value.adrelid=attribute.attrelid AND default_value.adnum=attribute.attnum
+              WHERE attribute.attrelid=to_regclass('public.verdict_events')
+                AND attribute.attname='sequence'
+                AND NOT attribute.attisdropped
+            `;
+            const sequenceDefault=sequence[0];
+            validateSequenceDefault(sequenceDefault?{
+              defaultExpression:sequenceDefault.default_expression,
+              serialSequence:sequenceDefault.serial_sequence,
+              defaultMatchesSerial:sequenceDefault.default_matches_serial,
+            }:undefined);
           }
           adopted = present === 4;
         }
@@ -381,7 +418,7 @@ export class PostgresReviewRepository implements ReviewRepository {
   }
 }
 const FIELD_GUIDE_SCHEMA = "public";
-const BASELINE_COLUMNS: readonly BaselineColumn[] = [
+export const BASELINE_COLUMNS: readonly BaselineColumn[] = [
   {tableName:"candidates",columnName:"candidate_id",dataType:"uuid",notNull:true},
   {tableName:"candidates",columnName:"idempotency_key",dataType:"text",notNull:true},
   {tableName:"candidates",columnName:"payload",dataType:"jsonb",notNull:true},
@@ -406,23 +443,23 @@ const BASELINE_COLUMNS: readonly BaselineColumn[] = [
   {tableName:"application_receipts",columnName:"applied_at",dataType:"timestamp with time zone",notNull:true},
   {tableName:"application_receipts",columnName:"result",dataType:"text",notNull:true},
 ];
-const BASELINE_CONSTRAINTS: readonly BaselineConstraint[] = [
-  {name:"candidates_pkey",type:"p",columns:["candidate_id"]},
-  {name:"candidates_idempotency_key_key",type:"u",columns:["idempotency_key"]},
-  {name:"review_rounds_pkey",type:"p",columns:["candidate_id","round"]},
-  {name:"review_rounds_verdict_id_key",type:"u",columns:["verdict_id"]},
-  {name:"review_rounds_candidate_id_fkey",type:"f",columns:["candidate_id"],referencedSchema:"public",referencedTable:"candidates",referencedColumns:["candidate_id"]},
-  {name:"review_rounds_kind_check",type:"c",columns:["kind"],checkValues:["initial","scheduled"]},
-  {name:"verdict_events_pkey",type:"p",columns:["sequence"]},
-  {name:"verdict_events_decision_id_key",type:"u",columns:["decision_id"]},
-  {name:"verdict_events_candidate_id_round_key",type:"u",columns:["candidate_id","round"]},
-  {name:"verdict_events_candidate_id_round_fkey",type:"f",columns:["candidate_id","round"],referencedSchema:"public",referencedTable:"review_rounds",referencedColumns:["candidate_id","round"]},
-  {name:"application_receipts_pkey",type:"p",columns:["idempotency_key"]},
-  {name:"application_receipts_decision_id_fkey",type:"f",columns:["decision_id"],referencedSchema:"public",referencedTable:"verdict_events",referencedColumns:["decision_id"]},
-  {name:"application_receipts_result_check",type:"c",columns:["result"],checkValues:["applied","already_applied"]},
+export const BASELINE_CONSTRAINTS: readonly BaselineConstraint[] = [
+  {tableName:"candidates",name:"candidates_pkey",type:"p",columns:["candidate_id"]},
+  {tableName:"candidates",name:"candidates_idempotency_key_key",type:"u",columns:["idempotency_key"]},
+  {tableName:"review_rounds",name:"review_rounds_pkey",type:"p",columns:["candidate_id","round"]},
+  {tableName:"review_rounds",name:"review_rounds_verdict_id_key",type:"u",columns:["verdict_id"]},
+  {tableName:"review_rounds",name:"review_rounds_candidate_id_fkey",type:"f",columns:["candidate_id"],referencedSchema:"public",referencedTable:"candidates",referencedColumns:["candidate_id"]},
+  {tableName:"review_rounds",name:"review_rounds_kind_check",type:"c",columns:["kind"],checkValues:["initial","scheduled"]},
+  {tableName:"verdict_events",name:"verdict_events_pkey",type:"p",columns:["sequence"]},
+  {tableName:"verdict_events",name:"verdict_events_decision_id_key",type:"u",columns:["decision_id"]},
+  {tableName:"verdict_events",name:"verdict_events_candidate_id_round_key",type:"u",columns:["candidate_id","round"]},
+  {tableName:"verdict_events",name:"verdict_events_candidate_id_round_fkey",type:"f",columns:["candidate_id","round"],referencedSchema:"public",referencedTable:"review_rounds",referencedColumns:["candidate_id","round"]},
+  {tableName:"application_receipts",name:"application_receipts_pkey",type:"p",columns:["idempotency_key"]},
+  {tableName:"application_receipts",name:"application_receipts_decision_id_fkey",type:"f",columns:["decision_id"],referencedSchema:"public",referencedTable:"verdict_events",referencedColumns:["decision_id"]},
+  {tableName:"application_receipts",name:"application_receipts_result_check",type:"c",columns:["result"],checkValues:["applied","already_applied"]},
 ];
 
-function validateBaselineColumns(columns:BaselineColumn[]){
+export function validateBaselineColumns(columns:BaselineColumn[]){
   const actual=new Map(columns.map((column)=>[`${column.tableName}.${column.columnName}`,column]));
   for(const expected of BASELINE_COLUMNS){
     const column=actual.get(`${expected.tableName}.${expected.columnName}`);
@@ -431,10 +468,10 @@ function validateBaselineColumns(columns:BaselineColumn[]){
   }
 }
 
-function validateBaselineConstraints(constraints:BaselineConstraint[]){
-  const actual=new Map(constraints.map((constraint)=>[constraint.name,constraint]));
+export function validateBaselineConstraints(constraints:BaselineConstraint[]){
+  const actual=new Map(constraints.map((constraint)=>[`${constraint.tableName}.${constraint.name}`,constraint]));
   for(const expected of BASELINE_CONSTRAINTS){
-    const constraint=actual.get(expected.name);
+    const constraint=actual.get(`${expected.tableName}.${expected.name}`);
     const checkIsCompatible=!expected.checkValues||(
       constraint?.definition?.includes("= ANY (ARRAY[")===true&&
       sameStrings(quotedValues(constraint.definition),expected.checkValues)
@@ -453,6 +490,12 @@ function validateBaselineConstraints(constraints:BaselineConstraint[]){
   }
 }
 
+export function validateSequenceDefault(sequence:SequenceDefault|undefined){
+  if(!sequence?.serialSequence||!sequence.defaultMatchesSerial||
+    !/^nextval\('[^']+'::regclass\)$/.test(sequence.defaultExpression??""))
+    throw new Error("Cannot adopt an incompatible field-guide schema.");
+}
+
 const sameStrings=(left:readonly string[],right:readonly string[])=>
   left.length===right.length&&left.every((value,index)=>value===right[index]);
 const quotedValues=(definition:string)=>
@@ -464,21 +507,43 @@ const digestText = (value: string) =>
 const MIGRATION_LOCK = 719_873_492;
 export const containsTransactionControl = (sql: string) =>
   /(?:^|;)\s*(?:BEGIN\b|START\s+TRANSACTION\b|COMMIT\b|ROLLBACK\b|ABORT\b|SAVEPOINT\b|RELEASE(?:\s+SAVEPOINT)?\b)/im.test(
-    stripDollarQuotedBodies(sql)
-      .replace(/--[^\r\n]*/g, "")
-      .replace(/\/\*[\s\S]*?\*\//g, ""),
+    sanitizeSql(sql),
   );
-function stripDollarQuotedBodies(sql:string){
-  const delimiter=/\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/g;
-  let result="",offset=0,match:RegExpExecArray|null;
-  while((match=delimiter.exec(sql))!==null){
-    const closing=sql.indexOf(match[0],delimiter.lastIndex);
-    if(closing<0)break;
-    result+=sql.slice(offset,match.index)+" ";
-    offset=closing+match[0].length;
-    delimiter.lastIndex=offset;
+function sanitizeSql(sql:string){
+  let result="",index=0;
+  const blank=(value:string)=>value.replace(/[^\r\n]/g," ");
+  while(index<sql.length){
+    const rest=sql.slice(index);
+    if(rest.startsWith("--")){
+      const end=sql.indexOf("\n",index+2),stop=end<0?sql.length:end;
+      result+=blank(sql.slice(index,stop));index=stop;continue;
+    }
+    if(rest.startsWith("/*")){
+      const end=sql.indexOf("*/",index+2),stop=end<0?sql.length:end+2;
+      result+=blank(sql.slice(index,stop));index=stop;continue;
+    }
+    const quote=sql[index];
+    if(quote==="'"||quote==='"'){
+      let stop=index+1;
+      while(stop<sql.length){
+        if(sql[stop]===quote){
+          if(sql[stop+1]===quote){stop+=2;continue;}
+          stop++;break;
+        }
+        stop++;
+      }
+      result+=blank(sql.slice(index,stop));index=stop;continue;
+    }
+    if(quote==="$"){
+      const delimiter=rest.match(/^\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/)?.[0];
+      if(delimiter){
+        const end=sql.indexOf(delimiter,index+delimiter.length);
+        if(end>=0){const stop=end+delimiter.length;result+=blank(sql.slice(index,stop));index=stop;continue;}
+      }
+    }
+    result+=quote;index++;
   }
-  return result+sql.slice(offset);
+  return result;
 }
 const isUnique = (e: unknown) =>
   typeof e === "object" &&

@@ -57,8 +57,14 @@ describe("Postgres repository contract", () => {
     expect(repository).toContain("pg_get_constraintdef");
     expect(repository).toContain("constraint.condeferrable deferrable");
     expect(repository).toContain("referenced_namespace.nspname referenced_schema");
+    expect(repository).toContain("source.relname table_name");
+    expect(repository).toContain("AND source.relname IN ('candidates','review_rounds','verdict_events','application_receipts')");
+    expect(repository).toContain("`${constraint.tableName}.${constraint.name}`");
     expect(repository).toContain('constraint?.foreignDeleteAction==="a"');
     expect(repository).toContain('constraint.foreignMatchType==="s"');
+    expect(repository).toContain("pg_get_expr(default_value.adbin,default_value.adrelid)");
+    expect(repository).toContain("pg_get_serial_sequence('public.verdict_events','sequence')");
+    expect(repository).toContain("validateSequenceDefault");
     expect(repository).toContain("Cannot adopt an incompatible field-guide schema.");
     expect(repository).toContain("adopted = present === 4");
     expect(repository).toContain("if (!adopted) await tx.unsafe(migration.sql)");
