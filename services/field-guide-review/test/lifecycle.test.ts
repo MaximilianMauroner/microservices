@@ -83,7 +83,8 @@ describe("Bun server shutdown", () => {
     const close = vi.fn(async () => undefined);
     const fail = vi.fn();
     const report = vi.fn();
-    const shutdown = createGracefulShutdown({ stop, close, fail, report });
+    const checkpoint = vi.fn();
+    const shutdown = createGracefulShutdown({ stop, checkpoint, close, fail, report });
 
     const first = shutdown();
     expect(shutdown()).toBe(first);
@@ -91,6 +92,7 @@ describe("Bun server shutdown", () => {
     expect(stop).toHaveBeenCalledOnce();
     expect(stop).toHaveBeenCalledWith(false);
     expect(close).toHaveBeenCalledOnce();
+    expect(checkpoint).toHaveBeenCalledOnce();
     expect(fail).not.toHaveBeenCalled();
     expect(report).not.toHaveBeenCalled();
   });
@@ -152,10 +154,14 @@ describe("Bun server shutdown", () => {
     const stop = vi.fn(async () => undefined);
     const close = vi.fn(() => never);
     const fail = vi.fn();
+    const checkpoint = vi.fn();
+    const terminate = vi.fn();
     const shutdown = createGracefulShutdown({
       stop,
+      checkpoint,
       close,
       fail,
+      terminate,
       report: vi.fn(),
       timeoutMs: 5,
     });
@@ -164,5 +170,7 @@ describe("Bun server shutdown", () => {
     expect(stop.mock.calls).toEqual([[false], [true]]);
     expect(fail).toHaveBeenCalledOnce();
     expect(close).toHaveBeenCalledOnce();
+    expect(checkpoint).toHaveBeenCalledOnce();
+    expect(terminate).toHaveBeenCalledOnce();
   });
 });

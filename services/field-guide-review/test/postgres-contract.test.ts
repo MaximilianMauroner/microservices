@@ -7,7 +7,7 @@ import {
   candidates,
   reviewRounds,
   verdictEvents,
-} from "../src/db/schema.js";
+} from "../src/db/postgres-schema.js";
 
 const dialect = new PgDialect();
 const tables = [
@@ -41,17 +41,15 @@ describe("Postgres schema contract", () => {
     ]);
 
     const config = await readFile(
-      new URL("../drizzle.config.ts", import.meta.url),
+      new URL("../drizzle.postgres.config.ts", import.meta.url),
       "utf8",
     );
     expect(config).toContain('dialect: "postgresql"');
-    expect(config).toContain('schema: "./src/db/schema.ts"');
+    expect(config).toContain('schema: "./src/db/postgres-schema.ts"');
     expect(config).toContain('schemaFilter: ["public"]');
-    expect(config).toContain(
-      'tablesFilter: [\n    "candidates",\n    "review_rounds",\n    "verdict_events",\n    "application_receipts",\n  ]',
-    );
-    expect(config).toContain("DATABASE_URL must be a non-empty PostgreSQL URL.");
-    expect(config).toContain('["postgres:", "postgresql:"]');
+    expect(config).toContain('"field_guide_schema_migrations"');
+    expect(config).toContain("TEST_DATABASE_URL is required");
+    expect(config).toContain("'postgres:'");
   });
 
   it("matches the production columns, keys, checks, and bigserial", () => {
@@ -186,7 +184,7 @@ describe("Postgres schema contract", () => {
     ).toBe('"verdict_events"."amends_decision_id" is not null');
   });
 
-  it("keeps verdict events append-only and removes runtime schema management", async () => {
+  it("keeps verdict events append-only and performs SQLite migrations before serving", async () => {
     const repository = await readFile(
       new URL("../src/postgres-repository.ts", import.meta.url),
       "utf8",
@@ -202,28 +200,13 @@ describe("Postgres schema contract", () => {
     expect(types).not.toContain("migrate():");
     expect(server).not.toContain("repository.migrate");
 
-    const productionSources = (
-      await Promise.all(
-        [
-          "../README.md",
-          "../drizzle.config.ts",
-          "../package.json",
-          "../railway.json",
-          "../src/db/schema.ts",
-          "../src/memory-repository.ts",
-          "../src/postgres-repository.ts",
-          "../src/server.ts",
-          "../src/types.ts",
-        ].map((path) => readFile(new URL(path, import.meta.url), "utf8")),
-      )
-    ).join("\n");
-    expect(productionSources).not.toMatch(
-      /field_guide_schema_migrations|00[12]_[a-z_]+\.sql|pg_advisory_xact_lock|migrations\//,
-    );
-    expect(productionSources).not.toMatch(/\bmigrate\s*\(/);
+    const sqlite = await readFile(new URL("../src/db/sqlite.ts", import.meta.url), "utf8");
+    expect(sqlite).toContain("migrate(drizzle");
+    expect(sqlite).toContain("PRAGMA foreign_keys=ON");
+    expect(server.indexOf("await factory(config)")).toBeLessThan(server.indexOf("Bun.serve"));
   });
 
-  it("runs direct push as Railway's blocking predeploy step", async () => {
+  it("uses committed SQLite migrations at runtime instead of a predeploy push", async () => {
     const packageJson = JSON.parse(
       await readFile(new URL("../package.json", import.meta.url), "utf8"),
     ) as {
@@ -235,25 +218,22 @@ describe("Postgres schema contract", () => {
       await readFile(new URL("../railway.json", import.meta.url), "utf8"),
     ) as {
       deploy: {
-        preDeployCommand: string[];
+        preDeployCommand?: string[];
         startCommand: string;
         healthcheckPath: string;
         restartPolicyType: string;
       };
     };
-    expect(packageJson.scripts["db:plan"]).toBe(
-      "drizzle-kit push --explain --verbose",
-    );
-    expect(packageJson.scripts["db:push"]).toBe("drizzle-kit push");
+    expect(packageJson.scripts["db:generate"]).toBe("drizzle-kit generate");
     expect(Object.values(packageJson.scripts).join(" ")).not.toContain("--force");
     expect(packageJson.dependencies["drizzle-kit"]).toBe("1.0.0-rc.4");
     expect(packageJson.dependencies["drizzle-orm"]).toBe("1.0.0-rc.4");
     expect(packageJson.devDependencies["drizzle-kit"]).toBeUndefined();
     expect(railway.deploy).toMatchObject({
-      preDeployCommand: ["bun run db:push"],
       startCommand: "bun run start",
       healthcheckPath: "/health",
       restartPolicyType: "ON_FAILURE",
     });
+    expect(railway.deploy.preDeployCommand).toBeUndefined();
   });
 });

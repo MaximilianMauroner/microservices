@@ -18,9 +18,9 @@ const execFileAsync = promisify(execFile);
 const serviceDirectory = fileURLToPath(new URL("..", import.meta.url));
 
 async function pushSchema(url: string) {
-  await execFileAsync("bun", ["run", "db:push"], {
+  await execFileAsync("bun", ["x", "drizzle-kit", "push", "--config", "drizzle.postgres.config.ts"], {
     cwd: serviceDirectory,
-    env: { ...process.env, DATABASE_URL: url },
+    env: { ...process.env, TEST_DATABASE_URL: url },
   });
 }
 

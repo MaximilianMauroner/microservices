@@ -1,12 +1,36 @@
 # Field guide review
 
-Review-only service for immutable project and global field-guide candidates. Agents submit candidates and sync verdicts; the Shoo-authenticated owner can approve, reject, defer, confirm, or invalidate them without editing or deleting content.
+Review-only service for immutable project and global field-guide candidates. SQLite on a Railway volume is the production source of truth; PostgreSQL remains available temporarily for cutover import and recovery.
 
-Required variables: `DATABASE_URL`, `AGENT_API_TOKEN`, `SHOO_ALLOWED_EMAIL`, and `PUBLIC_BASE_URL`. `PORT` defaults to `3000`. `src/db/schema.ts` is the canonical database schema.
+## Runtime configuration
 
-Use `bun run db:plan` to inspect a proposed direct push and `bun run db:push` to apply it. Both commands are restricted to the `public` schema and exactly `candidates`, `review_rounds`, `verdict_events`, and `application_receipts`; never add `--force`. Before the first Drizzle production rollout, `bun run db:plan` must be empty: any proposed DDL or schema churn blocks the rollout until it is understood and resolved. Railway runs `db:push` as a blocking predeploy step before starting the service, then checks `/health`.
+Set `DATABASE_BACKEND=sqlite`, `SQLITE_PATH=/app/data/field-guide.sqlite`, `AGENT_API_TOKEN`, `SHOO_ALLOWED_EMAIL`, and `PUBLIC_BASE_URL`. `PORT` defaults to `3000`. Attach exactly one persistent volume at `/app/data` and run exactly one application replica. SQLite uses WAL, foreign-key enforcement, a five-second busy timeout, and `synchronous=NORMAL`.
 
-PostgreSQL integration tests require a dedicated disposable database plus a sentinel that the test never creates, updates, or deletes. Create it manually in that disposable database before setting the opt-in variables:
+Startup opens the volume database, applies committed migrations, verifies foreign keys, and only then binds the HTTP listener. Set `IMPORT_POSTGRES_ON_START=true` plus `DATABASE_URL` only for the controlled first import. A destination with identical counts and logical hashes is an idempotent no-op; a nonempty differing destination fails closed unless `FIELD_GUIDE_IMPORT_ALLOW_OVERWRITE=yes` is explicitly supplied. Remove the import variables after a successful cutover.
+
+The Railway deployment has no pre-deploy database command because the mounted volume is unavailable then. Enable Railway Serverless after cutover; cold starts are accepted. Keep one replica while SQLite is authoritative.
+
+## Cutover
+
+1. Back up PostgreSQL and schedule a brief maintenance window that stops writes.
+2. Attach the volume at `/app/data` and deploy with the SQLite variables, temporary `DATABASE_URL`, and `IMPORT_POSTGRES_ON_START=true`.
+3. Capture the import's table/count/hash/max-sequence report. Confirm all five tables, relationships, representative Unicode/JSON/timestamp values, `/health`, queue/history, decision idempotency, and amendment behavior.
+4. Remove `IMPORT_POSTGRES_ON_START` and `DATABASE_URL`, redeploy, and verify restart plus sleep/wake persistence.
+5. Enable Serverless and observe sleeping state. Keep PostgreSQL during the rollback window; deleting it requires separate approval.
+
+Back up the database only after checkpointing it (`PRAGMA wal_checkpoint(TRUNCATE)`), then copy the SQLite file or take a volume snapshot. A filesystem copy made while writes continue must include the `-wal` and `-shm` files.
+
+## Recovery and rollback
+
+To restore post-cutover writes to a freshly schema-initialized PostgreSQL database, set `RECOVERY_DATABASE_URL` and `FIELD_GUIDE_RECOVERY_CONFIRM=field-guide-review-recovery`, then run `bun run db:recover-postgres`. Recovery fails closed when the target is nonempty unless `FIELD_GUIDE_RECOVERY_ALLOW_NONEMPTY=yes` is deliberately set. It inserts in foreign-key-safe order, preserves event sequences, resets the PostgreSQL sequence, and compares logical hashes before committing.
+
+For application rollback, stop writes, run recovery, set `DATABASE_BACKEND=postgres` and `DATABASE_URL`, then redeploy. Do not delete or detach the SQLite volume until integrity is confirmed.
+
+## Development
+
+Run `bun run db:generate` after changing `src/db/schema.ts`; committed migrations live in `drizzle/`. `src/db/postgres-schema.ts` exists only for gated disposable-PostgreSQL recovery verification. Use `bun run verify` for typechecking and the full test suite. PostgreSQL integration and round-trip tests must use `TEST_DATABASE_URL` and `FIELD_GUIDE_TEST_DATABASE_CONFIRM=field-guide-review-test`; never point them at production.
+
+The disposable PostgreSQL database must contain this sentinel, created manually before tests:
 
 ```sql
 CREATE TABLE public.field_guide_review_test_sentinel (
@@ -17,6 +41,4 @@ INSERT INTO public.field_guide_review_test_sentinel (sentinel_key, sentinel_valu
 VALUES ('database-purpose', 'field-guide-review-disposable-test-database');
 ```
 
-Then set `TEST_DATABASE_URL` to that database, set `FIELD_GUIDE_TEST_DATABASE_CONFIRM=field-guide-review-test`, and run the gated integration test. The verifier requires the sentinel to already be a regular table with that exact key/value; otherwise it stops before invoking Drizzle.
-
-Agent API: `POST /api/agent/candidates`, `GET /api/agent/decisions`, and `POST /api/agent/receipts`. Reviewer API includes `GET /api/review/queue`, paginated `GET /api/review/history?scope=project|global&cursor=...&limit=...`, `POST /api/review/candidates/:id/rounds/:round/verdict`, and append-only `POST /api/review/candidates/:id/rounds/:round/amendments`. There are intentionally no update or delete routes.
+Agent API: `POST /api/agent/candidates`, `GET /api/agent/decisions`, and `POST /api/agent/receipts`. Reviewer API includes queue, paginated history, verdict, and append-only amendment endpoints. There are intentionally no update or delete routes.
