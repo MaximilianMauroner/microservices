@@ -1,14 +1,18 @@
 import crypto from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import postgres, { type Sql } from "postgres";
+import postgres, { type Sql, type TransactionSql } from "postgres";
 import {
-  addDays,
   ConflictError,
+  ValidationError,
+  validateVerdict,
+  type AmendVerdictInput,
   type Candidate,
   type Decision,
+  type Effect,
   type QueueItem,
   type ReviewRepository,
+  type RoundKind,
   type Scope,
   type Summary,
   type VerdictInput,
@@ -20,6 +24,11 @@ type EventRow = {
   candidate_id: string;
   round: number;
   action: Decision["action"];
+  round_kind: RoundKind;
+  effect: Effect;
+  amends_decision_id: string | null;
+  is_current: boolean;
+  can_amend: boolean;
   reviewed_at: Date;
   next_review_at: Date | null;
   reviewer: string;
@@ -31,10 +40,10 @@ export class PostgresReviewRepository implements ReviewRepository {
     this.sql = postgres(url, { max: 5 });
   }
   async migrate() {
-    const path = fileURLToPath(
-      new URL("../migrations/001_initial.sql", import.meta.url),
-    );
-    await this.sql.unsafe(await readFile(path, "utf8"));
+    for (const name of ["001_initial.sql", "002_decision_amendments.sql"]) {
+      const path = fileURLToPath(new URL(`../migrations/${name}`, import.meta.url));
+      await this.sql.unsafe(await readFile(path, "utf8"));
+    }
   }
   async createCandidate(key: string, candidate: Candidate) {
     const hash = digest(candidate);
@@ -90,7 +99,7 @@ export class PostgresReviewRepository implements ReviewRepository {
     const after = decodeCursor(cursor);
     const rows = await this.sql<
       EventRow[]
-    >`SELECT v.sequence,v.decision_id,v.candidate_id,v.round,v.action,v.reviewer,v.reviewed_at,v.next_review_at,c.payload FROM verdict_events v JOIN candidates c USING(candidate_id) WHERE v.sequence>${after} AND (${scope??null}::text IS NULL OR c.payload->>'scope'=${scope??null}) ORDER BY v.sequence ASC LIMIT ${limit}`;
+    >`${eventProjection(this.sql, scope)} AND v.sequence>${after} ORDER BY v.sequence ASC LIMIT ${limit}`;
     const page = rows.slice(0, limit);
     return {
       decisions: page.map(toDecision),
@@ -99,7 +108,7 @@ export class PostgresReviewRepository implements ReviewRepository {
         : {}),
     };
   }
-  async history(cursor:string|undefined,limit:number,scope?:Scope){const after=decodeCursor(cursor);const rows=await this.sql<EventRow[]>`SELECT v.sequence,v.decision_id,v.candidate_id,v.round,v.action,v.reviewer,v.reviewed_at,v.next_review_at,c.payload FROM verdict_events v JOIN candidates c USING(candidate_id) WHERE v.sequence>${after} AND (${scope??null}::text IS NULL OR c.payload->>'scope'=${scope??null}) ORDER BY v.sequence ASC LIMIT ${limit+1}`;const page=rows.slice(0,limit);return{decisions:page.map(toDecision),hasMore:rows.length>limit,...(rows.length>limit?{nextCursor:encodeCursor(page.at(-1)?.sequence??after)}:{})}}
+  async history(cursor:string|undefined,limit:number,scope?:Scope){const after=decodeCursor(cursor);const rows=await this.sql<EventRow[]>`${eventProjection(this.sql,scope)} AND v.sequence>${after} ORDER BY v.sequence ASC LIMIT ${limit+1}`;const page=rows.slice(0,limit);return{decisions:page.map(toDecision),hasMore:rows.length>limit,...(rows.length>limit?{nextCursor:encodeCursor(page.at(-1)?.sequence??after)}:{})}}
   async queue(scope: Scope | undefined, now: Date): Promise<QueueItem[]> {
     const rows = await this.sql<
       {
@@ -138,34 +147,23 @@ export class PostgresReviewRepository implements ReviewRepository {
       if (row.verdict_id)
         throw new ConflictError("Review round is already decided.");
       if(row.due_at&&row.due_at>now)throw new ConflictError("Review is not due yet.");
-      const allowed =
-        row.kind === "initial"
-          ? ["approve", "reject", "defer"]
-          : ["confirm_valid", "mark_invalid", "defer"];
-      if (!allowed.includes(input.action))
-        throw new Error("Action is not valid for this review round.");
-      let next: Date | undefined;
-      if (input.action === "defer") {
-        next = new Date(input.deferUntil ?? "");
-        if (
-          !Number.isFinite(next.getTime()) ||
-          next <= now ||
-          next > addDays(now, 90)
-        )
-          throw new Error("deferUntil must be within the next 90 days.");
-      } else if (input.action === "approve") next = addDays(now, 7);
-      else if (input.action === "confirm_valid") { const confirmations=await tx<{count:number}[]>`SELECT COUNT(*)::int count FROM verdict_events WHERE candidate_id=${candidateId} AND action='confirm_valid'`;next=addDays(now,(confirmations[0]?.count??0)===0?30:90); }
+      const confirmations=await authoritativeConfirmations(tx,candidateId);
+      const schedule=validateVerdict(row.kind,input,now,confirmations);
       const id = crypto.randomUUID();
-      await tx`INSERT INTO verdict_events(decision_id,candidate_id,round,action,reviewer,reviewed_at,next_review_at) VALUES(${id},${candidateId},${round},${input.action},${reviewer},${now},${next ?? null})`;
+      await tx`INSERT INTO verdict_events(decision_id,candidate_id,round,action,round_kind,effect,reviewer,reviewed_at,next_review_at) VALUES(${id},${candidateId},${round},${input.action},${row.kind},${schedule.effect},${reviewer},${now},${schedule.nextReviewAt ?? null})`;
       await tx`UPDATE review_rounds SET verdict_id=${id} WHERE candidate_id=${candidateId} AND round=${round}`;
-      if (next)
-        await tx`INSERT INTO review_rounds(candidate_id,round,kind,due_at) VALUES(${candidateId},${round + 1},${row.kind === "initial" && input.action === "approve" ? "scheduled" : row.kind},${next})`;
+      if (schedule.nextReviewAt && schedule.nextRoundKind)
+        await tx`INSERT INTO review_rounds(candidate_id,round,kind,due_at) VALUES(${candidateId},${round + 1},${schedule.nextRoundKind},${schedule.nextReviewAt})`;
       const c = row.payload;
       return {
         decisionId: id,
         candidateId,
         round,
         action: input.action,
+        roundKind:row.kind,
+        effect:schedule.effect,
+        isCurrent:true,
+        canAmend:true,
         scope: c.scope,
         ...(c.scope==="project"?{projectKey:c.projectKey,projectDisplayName:c.projectDisplayName}:{}),
         lessonKey: c.lessonKey,
@@ -174,8 +172,59 @@ export class PostgresReviewRepository implements ReviewRepository {
         evidence:c.evidence,
         reviewedAt: now.toISOString(),
         reviewer,
-        ...(next ? { nextReviewAt: next.toISOString() } : {}),
+        ...(schedule.nextReviewAt ? { nextReviewAt: schedule.nextReviewAt.toISOString() } : {}),
       };
+    });
+  }
+  async amendDecision(
+    candidateId:string,
+    round:number,
+    input:AmendVerdictInput,
+    now:Date,
+    reviewer:string,
+  ) {
+    return this.sql.begin(async(tx)=>{
+      const rows=await tx<{
+        payload:Candidate;
+        kind:RoundKind;
+        verdict_id:string|null;
+        action:Decision["action"]|null;
+      }[]>`SELECT c.payload,r.kind,r.verdict_id,current.action FROM candidates c JOIN review_rounds r USING(candidate_id) LEFT JOIN verdict_events current ON current.decision_id=r.verdict_id WHERE c.candidate_id=${candidateId} AND r.round=${round} FOR UPDATE OF c,r`;
+      const row=rows[0];
+      if(!row)throw new Error("Candidate not found.");
+      if(!row.verdict_id||!row.action)throw new ConflictError("Review round has no decision to amend.");
+      if(row.verdict_id!==input.expectedDecisionId)throw new ConflictError("Decision changed since it was loaded. Refresh and try again.");
+      const descendants=await tx<{exists:boolean}[]>`SELECT EXISTS(SELECT 1 FROM review_rounds WHERE candidate_id=${candidateId} AND round>${round} AND verdict_id IS NOT NULL) exists`;
+      if(descendants[0]?.exists)throw new ConflictError("This decision cannot be amended after a later round was decided.");
+      if(row.action===input.action&&input.action!=="defer")throw new ValidationError("Choose a different verdict.");
+      const confirmations=await authoritativeConfirmations(tx,candidateId);
+      const schedule=validateVerdict(row.kind,input,now,confirmations);
+      await tx`DELETE FROM review_rounds WHERE candidate_id=${candidateId} AND round=${round+1} AND verdict_id IS NULL`;
+      const decisionId=crypto.randomUUID();
+      await tx`INSERT INTO verdict_events(decision_id,candidate_id,round,action,round_kind,effect,amends_decision_id,reviewer,reviewed_at,next_review_at) VALUES(${decisionId},${candidateId},${round},${input.action},${row.kind},${schedule.effect},${row.verdict_id},${reviewer},${now},${schedule.nextReviewAt??null})`;
+      await tx`UPDATE review_rounds SET verdict_id=${decisionId} WHERE candidate_id=${candidateId} AND round=${round}`;
+      if(schedule.nextReviewAt&&schedule.nextRoundKind)await tx`INSERT INTO review_rounds(candidate_id,round,kind,due_at) VALUES(${candidateId},${round+1},${schedule.nextRoundKind},${schedule.nextReviewAt})`;
+      const candidate=row.payload;
+      return{
+        decisionId,
+        candidateId,
+        round,
+        action:input.action,
+        roundKind:row.kind,
+        effect:schedule.effect,
+        amendsDecisionId:row.verdict_id,
+        isCurrent:true,
+        canAmend:true,
+        scope:candidate.scope,
+        ...(candidate.scope==="project"?{projectKey:candidate.projectKey,projectDisplayName:candidate.projectDisplayName}:{}),
+        lessonKey:candidate.lessonKey,
+        title:candidate.title,
+        body:candidate.body,
+        evidence:candidate.evidence,
+        reviewedAt:now.toISOString(),
+        reviewer,
+        ...(schedule.nextReviewAt?{nextReviewAt:schedule.nextReviewAt.toISOString()}:{}),
+      } satisfies Decision;
     });
   }
   async summary(now: Date): Promise<Summary> {
@@ -211,6 +260,11 @@ function toDecision(r: EventRow): Decision {
     candidateId: r.candidate_id,
     round: r.round,
     action: r.action,
+    roundKind:r.round_kind,
+    effect:r.effect,
+    ...(r.amends_decision_id?{amendsDecisionId:r.amends_decision_id}:{}),
+    isCurrent:r.is_current,
+    canAmend:r.can_amend,
     scope: c.scope,
     ...(c.scope==="project"?{projectKey:c.projectKey,projectDisplayName:c.projectDisplayName}:{}),
     lessonKey: c.lessonKey,
@@ -223,4 +277,13 @@ function toDecision(r: EventRow): Decision {
       ? { nextReviewAt: r.next_review_at.toISOString() }
       : {}),
   };
+}
+
+function eventProjection(sql:Sql,scope:Scope|undefined){
+  return sql`SELECT v.sequence,v.decision_id,v.candidate_id,v.round,v.action,v.round_kind,v.effect,v.amends_decision_id,v.reviewer,v.reviewed_at,v.next_review_at,c.payload,(r.verdict_id=v.decision_id) is_current,((r.verdict_id=v.decision_id) AND NOT EXISTS(SELECT 1 FROM review_rounds later WHERE later.candidate_id=v.candidate_id AND later.round>v.round AND later.verdict_id IS NOT NULL)) can_amend FROM verdict_events v JOIN candidates c USING(candidate_id) JOIN review_rounds r ON r.candidate_id=v.candidate_id AND r.round=v.round WHERE (${scope??null}::text IS NULL OR c.payload->>'scope'=${scope??null})`;
+}
+
+async function authoritativeConfirmations(sql:TransactionSql,candidateId:string){
+  const rows=await sql<{count:number}[]>`SELECT COUNT(*)::int count FROM review_rounds r JOIN verdict_events v ON v.decision_id=r.verdict_id WHERE r.candidate_id=${candidateId} AND v.action='confirm_valid'`;
+  return rows[0]?.count??0;
 }

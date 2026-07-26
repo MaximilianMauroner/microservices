@@ -30,6 +30,7 @@ it.skipIf(!databaseUrl||!databaseConfirmed)(
       };
     const appliedAt=new Date().toISOString();
     let decisionId="";
+    let amendmentId="";
     let repository = new PostgresReviewRepository(url);
     try {
       await repository.migrate();
@@ -51,6 +52,17 @@ it.skipIf(!databaseUrl||!databaseConfirmed)(
           "applied",
         ),
       ).toBe("created");
+      const amendment=await repository.amendDecision(
+        candidateId,
+        1,
+        {expectedDecisionId:decision.decisionId,action:"reject"},
+        new Date(),
+        "owner@example.com",
+      );
+      amendmentId=amendment.decisionId;
+      expect(amendment).toMatchObject({effect:"deactivate",amendsDecisionId:decision.decisionId,isCurrent:true});
+      await expect(repository.amendDecision(candidateId,1,{expectedDecisionId:decision.decisionId,action:"approve"},new Date(),"owner@example.com")).rejects.toThrow("changed since");
+      expect(await repository.createReceipt(`${key}-amendment-receipt`,amendmentId,appliedAt,"applied")).toBe("created");
       await repository.close();
       repository = new PostgresReviewRepository(url);
       await repository.migrate();
@@ -63,13 +75,18 @@ it.skipIf(!databaseUrl||!databaseConfirmed)(
         reviewer: "owner@example.com",
         evidence: candidate.evidence,
       });
+      expect(history.decisions.filter((d)=>d.candidateId===candidateId)).toMatchObject([
+        {decisionId,isCurrent:false,canAmend:false},
+        {decisionId:amendmentId,isCurrent:true,canAmend:true},
+      ]);
       expect(await repository.createCandidate(key, candidate)).toBe("replay");
       expect(await repository.createReceipt(`${key}-receipt`,decisionId,appliedAt,"applied")).toBe("replay");
     } finally {
       await repository.close().catch(() => undefined);
       const sql = postgres(url, { max: 1 });
       try {
-        await sql`DELETE FROM application_receipts WHERE idempotency_key=${`${key}-receipt`}`;
+        await sql`DELETE FROM application_receipts WHERE decision_id IN (SELECT decision_id FROM verdict_events WHERE candidate_id=${candidateId})`;
+        await sql`UPDATE review_rounds SET verdict_id=NULL WHERE candidate_id=${candidateId}`;
         await sql`DELETE FROM verdict_events WHERE candidate_id=${candidateId}`;
         await sql`DELETE FROM review_rounds WHERE candidate_id=${candidateId}`;
         await sql`DELETE FROM candidates WHERE candidate_id=${candidateId}`;

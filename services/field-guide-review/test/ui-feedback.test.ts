@@ -33,4 +33,19 @@ describe("review console feedback", () => {
     expect(html).toContain("item.commitHashes.map");
     expect(html).toContain("escapeHtml(hash)");
   });
+
+  it("offers verdict-only amendments for current history decisions", async () => {
+    const html = await renderReviewConsole();
+
+    expect(html).toContain("Update decision");
+    expect(html).toContain("if(!decision.canAmend)return ''");
+    expect(html).toContain("decision.isCurrent?'Current decision':'Superseded'");
+    expect(html).toContain("action!==decision.action||action==='defer'");
+    expect(html).toContain("expectedDecisionId:row.dataset.decisionId");
+    expect(html).toContain("/amendments");
+    expect(html).toContain("The original remains in history.");
+    expect(html).toContain("This decision changed elsewhere. History was refreshed");
+    expect(html).not.toContain("data-edit-title");
+    expect(html).not.toContain("data-delete-decision");
+  });
 });

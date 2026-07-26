@@ -5,12 +5,13 @@ import express, {
   type Response,
 } from "express";
 import type {
+  AmendVerdictInput,
   Candidate,
   ReviewRepository,
   Scope,
   VerdictInput,
 } from "./types.js";
-import { ConflictError } from "./types.js";
+import { ConflictError, ValidationError } from "./types.js";
 export function createApp(o: {
   repository: ReviewRepository;
   agentAuth: RequestHandler;
@@ -90,24 +91,36 @@ export function createApp(o: {
     "/candidates/:id/rounds/:round/verdict",
     sameOrigin(o.publicBaseUrl),
     asyncRoute(async (req, res) => {
-      const b = record(req.body);
-      const input: VerdictInput = {
-        action: text(b.action, "action", 32) as VerdictInput["action"],
-        ...(b.deferUntil
-          ? { deferUntil: iso(b.deferUntil, "deferUntil") }
-          : {}),
-      };
+      const input = parseVerdict(req.body);
       res
         .status(201)
         .json({
           decision: await o.repository.decide(
             uuid(req.params.id,"candidateId"),
-            Number(req.params.round),
+            parseRound(req.params.round),
             input,
             now(),
             typeof res.locals.shooEmail==="string"?res.locals.shooEmail:"system",
           ),
         });
+    }),
+  );
+  review.post(
+    "/candidates/:id/rounds/:round/amendments",
+    sameOrigin(o.publicBaseUrl),
+    asyncRoute(async (req, res) => {
+      const input = parseAmendment(req.body);
+      res.status(201).json({
+        decision: await o.repository.amendDecision(
+          uuid(req.params.id, "candidateId"),
+          parseRound(req.params.round),
+          input,
+          now(),
+          typeof res.locals.shooEmail === "string"
+            ? res.locals.shooEmail
+            : "system",
+        ),
+      });
     }),
   );
   app.use("/api/review", review);
@@ -120,7 +133,11 @@ export function createApp(o: {
       r.status(409).json({ error: "conflict", message: e.message });
       return;
     }
-    if (e instanceof InputError || e instanceof SyntaxError) {
+    if (
+      e instanceof InputError ||
+      e instanceof ValidationError ||
+      e instanceof SyntaxError
+    ) {
       r.status(400).json({ error: "invalid_request", message: e.message });
       return;
     }
@@ -216,6 +233,43 @@ function parseCandidate(value: unknown) {
   };
 }
 function parseScope(v:unknown):Scope|undefined{if(v===undefined)return undefined;if(v!=="project"&&v!=="global")throw new InputError("Invalid scope.");return v;}
+function parseVerdict(value: unknown): VerdictInput {
+  const body = verdictRecord(value, ["action", "deferUntil"]);
+  return {
+    action: text(body.action, "action", 32) as VerdictInput["action"],
+    ...(body.deferUntil !== undefined
+      ? { deferUntil: iso(body.deferUntil, "deferUntil") }
+      : {}),
+  };
+}
+function parseAmendment(value: unknown): AmendVerdictInput {
+  const body = verdictRecord(value, [
+    "expectedDecisionId",
+    "action",
+    "deferUntil",
+  ]);
+  return {
+    expectedDecisionId: uuid(body.expectedDecisionId, "expectedDecisionId"),
+    action: text(body.action, "action", 32) as VerdictInput["action"],
+    ...(body.deferUntil !== undefined
+      ? { deferUntil: iso(body.deferUntil, "deferUntil") }
+      : {}),
+  };
+}
+function verdictRecord(value: unknown, allowed: readonly string[]) {
+  const body = record(value);
+  if (Object.keys(body).some((key) => !allowed.includes(key)))
+    throw new InputError("Verdict body contains unknown fields.");
+  return body;
+}
+function parseRound(value: unknown) {
+  if (typeof value !== "string" || !/^[1-9]\d*$/.test(value))
+    throw new InputError("round must be a positive integer.");
+  const round = Number(value);
+  if (!Number.isSafeInteger(round))
+    throw new InputError("round must be a positive integer.");
+  return round;
+}
 function uuid(v:unknown,name:string){const value=text(v,name,36);if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value))throw new InputError(`${name} must be a UUID.`);return value;}
 function parseLimit(v: unknown) {
   if (v === undefined) return 50;
