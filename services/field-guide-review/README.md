@@ -4,4 +4,4 @@ Review-only service for immutable project and global field-guide candidates. Age
 
 Required variables: `DATABASE_URL`, `AGENT_API_TOKEN`, `SHOO_ALLOWED_EMAIL`, and `PUBLIC_BASE_URL`. `PORT` defaults to `3000`. Railway uses `railway.json`, runs the owned migration at startup, and checks `/health`.
 
-Agent API: `POST /api/agent/candidates`, `GET /api/agent/decisions`, and `POST /api/agent/receipts`. Reviewer API: `GET /api/review/queue` and `POST /api/review/candidates/:id/rounds/:round/verdict`. There are intentionally no update or delete routes.
+Agent API: `POST /api/agent/candidates`, `GET /api/agent/decisions`, and `POST /api/agent/receipts`. Reviewer API includes `GET /api/review/queue`, paginated `GET /api/review/history?scope=project|global&cursor=...&limit=...`, and `POST /api/review/candidates/:id/rounds/:round/verdict`. There are intentionally no update or delete routes.

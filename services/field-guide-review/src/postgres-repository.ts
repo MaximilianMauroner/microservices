@@ -99,6 +99,7 @@ export class PostgresReviewRepository implements ReviewRepository {
         : {}),
     };
   }
+  async history(cursor:string|undefined,limit:number,scope?:Scope){const after=decodeCursor(cursor);const rows=await this.sql<EventRow[]>`SELECT v.sequence,v.decision_id,v.candidate_id,v.round,v.action,v.reviewer,v.reviewed_at,v.next_review_at,c.payload FROM verdict_events v JOIN candidates c USING(candidate_id) WHERE v.sequence>${after} AND (${scope??null}::text IS NULL OR c.payload->>'scope'=${scope??null}) ORDER BY v.sequence ASC LIMIT ${limit+1}`;const page=rows.slice(0,limit);return{decisions:page.map(toDecision),hasMore:rows.length>limit,...(rows.length>limit?{nextCursor:encodeCursor(page.at(-1)?.sequence??after)}:{})}}
   async queue(scope: Scope | undefined, now: Date): Promise<QueueItem[]> {
     const rows = await this.sql<
       {
@@ -166,6 +167,7 @@ export class PostgresReviewRepository implements ReviewRepository {
         round,
         action: input.action,
         scope: c.scope,
+        ...(c.scope==="project"?{projectKey:c.projectKey,projectDisplayName:c.projectDisplayName}:{}),
         lessonKey: c.lessonKey,
         title: c.title,
         body: c.body,
@@ -210,6 +212,7 @@ function toDecision(r: EventRow): Decision {
     round: r.round,
     action: r.action,
     scope: c.scope,
+    ...(c.scope==="project"?{projectKey:c.projectKey,projectDisplayName:c.projectDisplayName}:{}),
     lessonKey: c.lessonKey,
     title: c.title,
     body: c.body,

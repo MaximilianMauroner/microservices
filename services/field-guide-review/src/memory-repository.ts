@@ -80,6 +80,7 @@ export class MemoryReviewRepository implements ReviewRepository {
         : {}),
     };
   }
+  async history(cursor:string|undefined,limit:number,scope?:Scope){let offset=cursor?Number(Buffer.from(cursor,"base64url").toString()):0;if(!Number.isInteger(offset)||offset<0)throw new Error("Invalid cursor.");const filtered=this.events.filter(e=>!scope||e.scope===scope),rows=filtered.slice(offset,offset+limit+1),decisions=rows.slice(0,limit),next=offset+decisions.length;return{decisions,hasMore:rows.length>limit,...(rows.length>limit?{nextCursor:Buffer.from(String(next)).toString("base64url")}:{})}}
   async queue(scope: Scope | undefined, now: Date) {
     return [...this.candidates.values()]
       .filter(
@@ -135,7 +136,8 @@ export class MemoryReviewRepository implements ReviewRepository {
         candidateId: id,
         round,
         action: input.action,
-        scope: c.scope,
+      scope: c.scope,
+      ...(c.scope==="project"?{projectKey:c.projectKey,projectDisplayName:c.projectDisplayName}:{}),
         lessonKey: c.lessonKey,
         title: c.title,
         body: c.body,

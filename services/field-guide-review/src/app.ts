@@ -85,7 +85,7 @@ export function createApp(o: {
       });
     }),
   );
-  review.get("/history",asyncRoute(async(req,res)=>{const scope=parseScope(req.query.scope);const page=await o.repository.decisions(typeof req.query.cursor==="string"?req.query.cursor:undefined,parseLimit(req.query.limit),scope);res.json({...page,summary:await o.repository.summary(now())});}));
+  review.get("/history",asyncRoute(async(req,res)=>{const scope=parseScope(req.query.scope);const page=await o.repository.history(typeof req.query.cursor==="string"?req.query.cursor:undefined,parseLimit(req.query.limit),scope);res.json({...page,summary:await o.repository.summary(now())});}));
   review.post(
     "/candidates/:id/rounds/:round/verdict",
     sameOrigin(o.publicBaseUrl),
@@ -128,16 +128,6 @@ export function createApp(o: {
     r.status(500).json({ error: "internal_error", message: "Request failed." });
   });
   return app;
-}
-function reviewerOptionalPage(auth: RequestHandler): RequestHandler {
-  return (req, res, next) =>
-    auth(req, res, () => {
-      res
-        .type("html")
-        .send(
-          `<!doctype html><meta name=viewport content="width=device-width"><title>Field guide reviews</title><style>body{font:16px system-ui;max-width:70rem;margin:auto;padding:2rem;background:#111;color:#eee}a{color:#8cf}code{background:#222;padding:.2rem}</style><h1>Field guide reviews</h1><p>Review-only console. Use the authenticated JSON queue for separate <code>project</code> and <code>global</code> candidates, due reviews, evidence and immutable history.</p>`,
-        );
-    });
 }
 function sameOrigin(publicBaseUrl:string): RequestHandler {
   return (req, res, next) => {
