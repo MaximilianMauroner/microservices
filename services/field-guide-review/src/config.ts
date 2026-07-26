@@ -1,5 +1,5 @@
 type SharedConfig = { port:number; agentApiToken:string; allowedEmail:string; publicBaseUrl:string };
-export type Config = SharedConfig & ({ backend:"sqlite"; sqlitePath:string; databaseUrl?:string; importOnStart:boolean } | { backend:"postgres"; databaseUrl:string });
+export type Config = SharedConfig & ({ backend:"sqlite"; sqlitePath:string; databaseUrl?:string; importOnStart:boolean; importAllowOverwrite:boolean } | { backend:"postgres"; databaseUrl:string });
 
 export function loadConfig(env:NodeJS.ProcessEnv=process.env):Config {
   const get=(name:string)=>{const value=env[name]?.trim();if(!value)throw new Error(`Missing required environment variable: ${name}`);return value;};
@@ -15,6 +15,8 @@ export function loadConfig(env:NodeJS.ProcessEnv=process.env):Config {
   const sqlitePath=get("SQLITE_PATH");
   if(!sqlitePath.startsWith("/"))throw new Error("SQLITE_PATH must be an absolute path");
   const databaseUrl=env.DATABASE_URL?.trim();
-  return {...shared,backend,sqlitePath,...(databaseUrl?{databaseUrl}:{}),importOnStart:env.IMPORT_POSTGRES_ON_START==="true"};
+  const overwrite=env.FIELD_GUIDE_IMPORT_ALLOW_OVERWRITE;
+  if(overwrite!==undefined&&overwrite.trim()!=="yes")throw new Error("FIELD_GUIDE_IMPORT_ALLOW_OVERWRITE must be exactly yes when set");
+  return {...shared,backend,sqlitePath,...(databaseUrl?{databaseUrl}:{}),importOnStart:env.IMPORT_POSTGRES_ON_START==="true",importAllowOverwrite:overwrite!==undefined};
 }
 function parsePublicBaseUrl(value:string){let url:URL;try{url=new URL(value);}catch{throw new Error("PUBLIC_BASE_URL must be an HTTP(S) origin");}if(!["http:","https:"].includes(url.protocol)||url.username||url.password||url.pathname!=="/"||url.search||url.hash)throw new Error("PUBLIC_BASE_URL must be an HTTP(S) origin without credentials, path, query, or fragment");return url.origin;}

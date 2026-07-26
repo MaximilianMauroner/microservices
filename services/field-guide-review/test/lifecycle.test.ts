@@ -173,4 +173,12 @@ describe("Bun server shutdown", () => {
     expect(checkpoint).toHaveBeenCalledOnce();
     expect(terminate).toHaveBeenCalledOnce();
   });
+
+  it("invokes forced cleanup synchronously before hard termination", async () => {
+    const events:string[]=[];
+    const never=new Promise<void>(()=>undefined);
+    const shutdown=createGracefulShutdown({stop:(force)=>{events.push(force?"force":"drain");return force?undefined:never;},checkpoint:()=>{events.push("checkpoint");},close:()=>{events.push("close");return never;},fail:()=>{events.push("fail");},terminate:()=>{events.push("terminate");},report:vi.fn(),timeoutMs:5});
+    await shutdown();
+    expect(events).toEqual(["drain","fail","force","checkpoint","close","terminate"]);
+  });
 });
