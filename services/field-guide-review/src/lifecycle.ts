@@ -8,45 +8,57 @@ export function createGracefulShutdown(options: {
   let shutdown: Promise<void> | undefined;
   return () => {
     shutdown ??= (async () => {
-      let timeout: ReturnType<typeof setTimeout> | undefined;
       let failed = false;
       const markFailed = () => {
         if (failed) return;
         failed = true;
         options.fail();
       };
-      let graceful = false;
-      try {
-        const drained = Promise.resolve()
-          .then(() => options.stop(false))
-          .then(() => true);
-        const timedOut = new Promise<false>((resolve) => {
-          timeout = setTimeout(
-            () => resolve(false),
-            options.timeoutMs ?? 10_000,
-          );
-          timeout.unref?.();
-        });
-        graceful = await Promise.race([drained, timedOut]);
-      } catch (error) {
+      const observe = (
+        operation: () => void | Promise<void>,
+        onError?: () => void,
+      ) =>
+        Promise.resolve()
+          .then(operation)
+          .catch((error: unknown) => {
+            onError?.();
+            markFailed();
+            options.report(error);
+          });
+      let closePromise: Promise<void> | undefined;
+      const close = () =>
+        (closePromise ??= observe(() => options.close()));
+      let forcePromise: Promise<void> | undefined;
+      const force = () =>
+        (forcePromise ??= observe(() => options.stop(true)));
+      let drainFailed = false;
+      let timeout: ReturnType<typeof setTimeout> | undefined;
+      const deadline = new Promise<"deadline">((resolve) => {
+        timeout = setTimeout(
+          () => resolve("deadline"),
+          options.timeoutMs ?? 10_000,
+        );
+        timeout.unref?.();
+      });
+      const work = (async () => {
+        await observe(
+          () => options.stop(false),
+          () => {
+            drainFailed = true;
+          },
+        );
+        if (drainFailed) void force();
+        await Promise.all([close(), ...(drainFailed ? [force()] : [])]);
+      })();
+      const outcome = await Promise.race([
+        work.then(() => "complete" as const),
+        deadline,
+      ]);
+      if (timeout) clearTimeout(timeout);
+      if (outcome === "deadline") {
         markFailed();
-        options.report(error);
-      } finally {
-        if (timeout) clearTimeout(timeout);
-      }
-      if (!graceful) {
-        markFailed();
-        try {
-          await options.stop(true);
-        } catch (error) {
-          options.report(error);
-        }
-      }
-      try {
-        await options.close();
-      } catch (error) {
-        markFailed();
-        options.report(error);
+        void force();
+        void close();
       }
     })();
     return shutdown;

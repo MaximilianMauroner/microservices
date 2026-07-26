@@ -58,6 +58,24 @@ describe("review UI and authentication", () => {
         'Bearer realm="field-guide-review"',
       );
     }
+
+    const unicodeRequest = new Request(origin);
+    Object.defineProperty(unicodeRequest, "headers", {
+      value: { get: () => "Bearer 𐍈" },
+    });
+    const unicodeResult = await agentAuth("éx")(unicodeRequest);
+    expect(unicodeResult.ok).toBe(false);
+    if (unicodeResult.ok)
+      throw new Error("Expected Unicode authentication to fail.");
+    const unicode = unicodeResult.response;
+    expect(unicode.status).toBe(401);
+    expect(await responseJson(unicode)).toEqual({
+      error: "agent_auth_required",
+      message: "Valid agent credentials are required.",
+    });
+    expect(unicode.headers.get("www-authenticate")).toBe(
+      'Bearer realm="field-guide-review"',
+    );
   });
 
   it("verifies Shoo ES256 issuer, audience, verified email, and exact account", async () => {

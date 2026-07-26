@@ -63,7 +63,7 @@ export function isJsonMediaType(value: string | null) {
 
 export async function readJson(request: Request): Promise<unknown> {
   const reader = request.body?.getReader();
-  if (!reader) throw new SyntaxError("Unexpected end of JSON input");
+  if (!reader) return undefined;
   const chunks: Uint8Array[] = [];
   let size = 0;
   while (true) {
@@ -82,5 +82,9 @@ export async function readJson(request: Request): Promise<unknown> {
     bytes.set(chunk, offset);
     offset += chunk.byteLength;
   }
-  return JSON.parse(new TextDecoder().decode(bytes));
+  if (bytes.byteLength === 0) return undefined;
+  const source = new TextDecoder().decode(bytes);
+  if (!/^[\s\r\n]*[\[{]/.test(source))
+    throw new SyntaxError("JSON body must be an object or array.");
+  return JSON.parse(source);
 }
