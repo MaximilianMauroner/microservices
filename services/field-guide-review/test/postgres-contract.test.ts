@@ -226,7 +226,11 @@ describe("Postgres schema contract", () => {
   it("runs direct push as Railway's blocking predeploy step", async () => {
     const packageJson = JSON.parse(
       await readFile(new URL("../package.json", import.meta.url), "utf8"),
-    ) as { scripts: Record<string, string> };
+    ) as {
+      scripts: Record<string, string>;
+      dependencies: Record<string, string>;
+      devDependencies: Record<string, string>;
+    };
     const railway = JSON.parse(
       await readFile(new URL("../railway.json", import.meta.url), "utf8"),
     ) as {
@@ -242,6 +246,9 @@ describe("Postgres schema contract", () => {
     );
     expect(packageJson.scripts["db:push"]).toBe("drizzle-kit push");
     expect(Object.values(packageJson.scripts).join(" ")).not.toContain("--force");
+    expect(packageJson.dependencies["drizzle-kit"]).toBe("1.0.0-beta.22");
+    expect(packageJson.dependencies["drizzle-orm"]).toBe("1.0.0-beta.22");
+    expect(packageJson.devDependencies["drizzle-kit"]).toBeUndefined();
     expect(railway.deploy).toMatchObject({
       preDeployCommand: ["bun run db:push"],
       startCommand: "bun run start",

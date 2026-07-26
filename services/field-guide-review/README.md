@@ -4,6 +4,19 @@ Review-only service for immutable project and global field-guide candidates. Age
 
 Required variables: `DATABASE_URL`, `AGENT_API_TOKEN`, `SHOO_ALLOWED_EMAIL`, and `PUBLIC_BASE_URL`. `PORT` defaults to `3000`. `src/db/schema.ts` is the canonical database schema.
 
-Use `bun run db:plan` to inspect a proposed direct push and `bun run db:push` to apply it. Both commands are restricted to the `public` schema and exactly `candidates`, `review_rounds`, `verdict_events`, and `application_receipts`; never add `--force`. Railway runs `db:push` as a blocking predeploy step before starting the service, then checks `/health`.
+Use `bun run db:plan` to inspect a proposed direct push and `bun run db:push` to apply it. Both commands are restricted to the `public` schema and exactly `candidates`, `review_rounds`, `verdict_events`, and `application_receipts`; never add `--force`. Before the first Drizzle production rollout, `bun run db:plan` must be empty: any proposed DDL or schema churn blocks the rollout until it is understood and resolved. Railway runs `db:push` as a blocking predeploy step before starting the service, then checks `/health`.
+
+PostgreSQL integration tests require a dedicated disposable database plus a sentinel that the test never creates, updates, or deletes. Create it manually in that disposable database before setting the opt-in variables:
+
+```sql
+CREATE TABLE public.field_guide_review_test_sentinel (
+  sentinel_key text PRIMARY KEY,
+  sentinel_value text NOT NULL
+);
+INSERT INTO public.field_guide_review_test_sentinel (sentinel_key, sentinel_value)
+VALUES ('database-purpose', 'field-guide-review-disposable-test-database');
+```
+
+Then set `TEST_DATABASE_URL` to that database, set `FIELD_GUIDE_TEST_DATABASE_CONFIRM=field-guide-review-test`, and run the gated integration test. The verifier requires the sentinel to already be a regular table with that exact key/value; otherwise it stops before invoking Drizzle.
 
 Agent API: `POST /api/agent/candidates`, `GET /api/agent/decisions`, and `POST /api/agent/receipts`. Reviewer API includes `GET /api/review/queue`, paginated `GET /api/review/history?scope=project|global&cursor=...&limit=...`, `POST /api/review/candidates/:id/rounds/:round/verdict`, and append-only `POST /api/review/candidates/:id/rounds/:round/amendments`. There are intentionally no update or delete routes.

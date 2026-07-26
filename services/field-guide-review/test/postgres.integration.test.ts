@@ -2,10 +2,14 @@ import crypto from "node:crypto";
 import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import postgres from "postgres";
+import postgres, { type Sql } from "postgres";
 import { expect, it } from "vitest";
 import { PostgresReviewRepository } from "../src/postgres-repository.js";
 import { encodeCursor } from "../src/types.js";
+import {
+  DISPOSABLE_DATABASE_SENTINEL,
+  withVerifiedDisposableDatabase,
+} from "./postgres-test-gate.js";
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const databaseConfirmed =
@@ -18,6 +22,39 @@ async function pushSchema(url: string) {
     cwd: serviceDirectory,
     env: { ...process.env, DATABASE_URL: url },
   });
+}
+
+async function pushVerifiedSchema(
+  database: Sql,
+  url: string,
+  onVerified?: () => void,
+) {
+  await withVerifiedDisposableDatabase(
+    {
+      readRelationKind: async () => {
+        const rows = await database<{ relation_kind: string }[]>`
+          SELECT relation.relkind::text relation_kind
+          FROM pg_class relation
+          JOIN pg_namespace namespace ON namespace.oid=relation.relnamespace
+          WHERE namespace.nspname='public'
+            AND relation.relname=${DISPOSABLE_DATABASE_SENTINEL.relation}
+        `;
+        return rows[0]?.relation_kind;
+      },
+      readValue: async () => {
+        const rows = await database<{ sentinel_value: string }[]>`
+          SELECT sentinel_value
+          FROM public.field_guide_review_test_sentinel
+          WHERE sentinel_key=${DISPOSABLE_DATABASE_SENTINEL.key}
+        `;
+        return rows[0]?.sentinel_value;
+      },
+    },
+    async () => {
+      onVerified?.();
+      await pushSchema(url);
+    },
+  );
 }
 
 it.skipIf(!databaseUrl || !databaseConfirmed)(
@@ -41,8 +78,11 @@ it.skipIf(!databaseUrl || !databaseConfirmed)(
     };
     const database = postgres(url, { max: 1 });
     let repository: PostgresReviewRepository | undefined;
+    let sentinelAccepted = false;
     try {
-      await pushSchema(url);
+      await pushVerifiedSchema(database, url, () => {
+        sentinelAccepted = true;
+      });
       repository = new PostgresReviewRepository(url);
       await repository.createCandidate(`direct-push-${candidateId}`, candidate);
       const original = await repository.decide(
@@ -88,7 +128,10 @@ it.skipIf(!databaseUrl || !databaseConfirmed)(
         FROM application_receipts
         WHERE idempotency_key=${receiptKey}`;
 
-      await pushSchema(url);
+      sentinelAccepted = false;
+      await pushVerifiedSchema(database, url, () => {
+        sentinelAccepted = true;
+      });
       const afterEvents = await database<
         { sequence: string; decision_id: string; amends_decision_id: string | null }[]
       >`SELECT sequence::text sequence,decision_id,amends_decision_id
@@ -168,16 +211,18 @@ it.skipIf(!databaseUrl || !databaseConfirmed)(
       ]);
     } finally {
       await repository?.close().catch(() => undefined);
-      await database`
-        DELETE FROM application_receipts
-        WHERE decision_id IN (
-          SELECT decision_id FROM verdict_events WHERE candidate_id=${candidateId}
-        )
-      `.catch(() => undefined);
-      await database`UPDATE review_rounds SET verdict_id=NULL WHERE candidate_id=${candidateId}`.catch(() => undefined);
-      await database`DELETE FROM verdict_events WHERE candidate_id=${candidateId}`.catch(() => undefined);
-      await database`DELETE FROM review_rounds WHERE candidate_id=${candidateId}`.catch(() => undefined);
-      await database`DELETE FROM candidates WHERE candidate_id=${candidateId}`.catch(() => undefined);
+      if (sentinelAccepted) {
+        await database`
+          DELETE FROM application_receipts
+          WHERE decision_id IN (
+            SELECT decision_id FROM verdict_events WHERE candidate_id=${candidateId}
+          )
+        `.catch(() => undefined);
+        await database`UPDATE review_rounds SET verdict_id=NULL WHERE candidate_id=${candidateId}`.catch(() => undefined);
+        await database`DELETE FROM verdict_events WHERE candidate_id=${candidateId}`.catch(() => undefined);
+        await database`DELETE FROM review_rounds WHERE candidate_id=${candidateId}`.catch(() => undefined);
+        await database`DELETE FROM candidates WHERE candidate_id=${candidateId}`.catch(() => undefined);
+      }
       await database.end();
     }
   },
