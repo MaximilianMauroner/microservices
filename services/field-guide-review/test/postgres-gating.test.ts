@@ -12,8 +12,8 @@ it("requires an explicit isolated test database and confirmation marker", async 
     'process.env.FIELD_GUIDE_TEST_DATABASE_CONFIRM === "field-guide-review-test"',
   );
   expect(source).toContain("skipIf(!databaseUrl || !databaseConfirmed)");
-  expect(source).toContain('["run", "db:push"]');
-  expect(source).toContain("DATABASE_URL: url");
+  expect(source).toContain('"drizzle.postgres.config.ts"');
+  expect(source).toContain("TEST_DATABASE_URL: url");
   expect(source).not.toContain("process.env.DATABASE_URL");
   expect(source).not.toContain("DROP TABLE");
   expect(source).toContain("SELECT relation.relkind::text relation_kind");
@@ -31,7 +31,7 @@ it("requires an explicit isolated test database and confirmation marker", async 
   expect(push).toBeGreaterThan(verification);
   expect(source.match(/await pushSchema\(url\)/g)).toHaveLength(1);
   expect(readme).toContain(
-    "Before the first Drizzle production rollout, `bun run db:plan` must be empty",
+    "PostgreSQL integration and round-trip tests must use",
   );
   expect(readme).toContain(
     "CREATE TABLE public.field_guide_review_test_sentinel",
@@ -39,5 +39,5 @@ it("requires an explicit isolated test database and confirmation marker", async 
   expect(readme).toContain(
     "VALUES ('database-purpose', 'field-guide-review-disposable-test-database')",
   );
-  expect(readme).toContain("never add `--force`");
+  expect(readme).toContain("never point them at production");
 });
