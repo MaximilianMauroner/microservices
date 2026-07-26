@@ -2,8 +2,9 @@ import crypto from "node:crypto";
 import postgres from "postgres";
 import { expect, it } from "vitest";
 import { PostgresReviewRepository } from "../src/postgres-repository.js";
-const databaseUrl = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
-it.skipIf(!databaseUrl)(
+const databaseUrl = process.env.TEST_DATABASE_URL;
+const databaseConfirmed=process.env.FIELD_GUIDE_TEST_DATABASE_CONFIRM==="field-guide-review-test";
+it.skipIf(!databaseUrl||!databaseConfirmed)(
   "persists the complete immutable review flow across reconnects",
   async () => {
     const url = databaseUrl!;
