@@ -24,6 +24,8 @@ export type Decision = {
   round: number;
   action: Action;
   scope: Scope;
+  projectKey?: string;
+  projectDisplayName?: string;
   lessonKey: string;
   title: string;
   body: string;
@@ -42,6 +44,7 @@ export type QueueItem = {
 };
 export type VerdictInput = { action: Action; deferUntil?: string };
 export type Page = { decisions: Decision[]; nextCursor?: string };
+export type HistoryPage = { decisions: Decision[]; nextCursor?: string; hasMore: boolean };
 export interface ReviewRepository {
   createCandidate(
     key: string,
@@ -58,6 +61,7 @@ export interface ReviewRepository {
     limit: number,
     scope?: Scope,
   ): Promise<Page>;
+  history(cursor:string|undefined,limit:number,scope?:Scope):Promise<HistoryPage>;
   queue(scope: Scope | undefined, now: Date): Promise<QueueItem[]>;
   decide(
     candidateId: string,
