@@ -133,6 +133,105 @@ describe("field guide review transport", () => {
     });
   });
 
+  it("promotes and demotes undecided candidates using their recorded origin project", async () => {
+    const reviewerAuth: Authenticator = () => ({
+      ok: true,
+      email: "owner@example.com",
+    });
+    const repository = new MemoryReviewRepository();
+    const app = createApp({
+      repository,
+      agentAuth: passAuth,
+      reviewerAuth,
+      publicBaseUrl: origin,
+      now: () => new Date("2026-07-26T00:00:00Z"),
+    });
+    await callApp(app, "/api/agent/candidates", {
+      method: "POST",
+      json: { idempotencyKey: "scope-key", candidate },
+    });
+    const path = `/api/review/candidates/${candidate.candidateId}/rounds/1/scope`;
+    const promote = await callApp(app, path, {
+      method: "POST",
+      headers: { Origin: origin },
+      json: { scope: "global" },
+    });
+    expect(promote.status).toBe(200);
+    expect(await responseJson(promote)).toMatchObject({
+      candidate: {
+        scope: "global",
+        foundProjectKey: "repo",
+        foundProjectDisplayName: "Repo",
+        scopeChangedBy: "owner@example.com",
+      },
+    });
+    expect((await repository.queue("project", new Date())).length).toBe(0);
+    expect((await repository.queue("global", new Date()))[0]?.candidate)
+      .not.toHaveProperty("projectKey");
+
+    const demote = await callApp(app, path, {
+      method: "POST",
+      headers: { Origin: origin },
+      json: { scope: "project" },
+    });
+    expect(await responseJson(demote)).toMatchObject({
+      candidate: {
+        scope: "project",
+        projectKey: "repo",
+        projectDisplayName: "Repo",
+        foundProjectKey: "repo",
+      },
+    });
+
+    await callApp(
+      app,
+      `/api/review/candidates/${candidate.candidateId}/rounds/1/verdict`,
+      {
+        method: "POST",
+        headers: { Origin: origin },
+        json: { action: "approve" },
+      },
+    );
+    expect(
+      (
+        await callApp(app, path, {
+          method: "POST",
+          headers: { Origin: origin },
+          json: { scope: "global" },
+        })
+      ).status,
+    ).toBe(409);
+  });
+
+  it("refuses to demote a global candidate with no associated project", async () => {
+    const { app } = setup();
+    const globalCandidate = {
+      ...candidate,
+      candidateId: "22222222-2222-4222-8222-222222222222",
+      scope: "global" as const,
+      projectKey: undefined,
+      projectDisplayName: undefined,
+    };
+    await callApp(app, "/api/agent/candidates", {
+      method: "POST",
+      json: { idempotencyKey: "global-key", candidate: globalCandidate },
+    });
+    const response = await callApp(
+      app,
+      `/api/review/candidates/${globalCandidate.candidateId}/rounds/1/scope`,
+      {
+        method: "POST",
+        headers: { Origin: origin },
+        json: { scope: "project" },
+      },
+    );
+    expect(response.status).toBe(400);
+    expect(await responseJson(response)).toEqual({
+      error: "invalid_request",
+      message: "This candidate has no associated project to demote to.",
+    });
+  });
+
   it("parses JSON and enforces its actual streamed byte limit before authentication", async () => {
     let authenticationCalls = 0;
     const reject: Authenticator = () => {
@@ -332,6 +431,19 @@ describe("field guide review transport", () => {
         )
       ).status,
     ).toBe(403);
+    expect(
+      (
+        await callApp(
+          app,
+          `/api/review/candidates/${candidate.candidateId}/rounds/1/scope`,
+          {
+            method: "POST",
+            headers: { Origin: "https://attacker.example" },
+            json: { scope: "global" },
+          },
+        )
+      ).status,
+    ).toBe(403);
   });
 
   it("maps unexpected repository failures without exposing details", async () => {
@@ -348,7 +460,7 @@ describe("field guide review transport", () => {
     logged.mockRestore();
   });
 
-  it("has no candidate mutation APIs", async () => {
+  it("has no agent-side candidate mutation APIs", async () => {
     const { app } = setup();
     expect(
       (await callApp(app, "/api/agent/candidates/c1", { method: "PATCH" }))

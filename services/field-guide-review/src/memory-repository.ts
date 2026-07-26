@@ -156,6 +156,59 @@ export class MemoryReviewRepository implements ReviewRepository {
     );
   }
 
+  async reassignScope(
+    candidateId: string,
+    roundNumber: number,
+    scope: Scope,
+    now: Date,
+    reviewer: string,
+  ) {
+    const state = this.requireCandidate(candidateId);
+    const round = state.rounds.get(roundNumber);
+    if (!round) throw new Error("Candidate not found.");
+    if (
+      roundNumber !== 1 ||
+      round.kind !== "initial" ||
+      round.verdictId ||
+      this.events.some((event) => event.candidateId === candidateId)
+    )
+      throw new ConflictError(
+        "Scope can only change before the initial review is decided.",
+      );
+    if (state.candidate.scope === scope)
+      throw new ValidationError("Candidate already has this scope.");
+    const foundProjectKey =
+      state.candidate.foundProjectKey ?? state.candidate.projectKey;
+    const foundProjectDisplayName =
+      state.candidate.foundProjectDisplayName ??
+      state.candidate.projectDisplayName;
+    if (scope === "project" && (!foundProjectKey || !foundProjectDisplayName))
+      throw new ValidationError(
+        "This candidate has no associated project to demote to.",
+      );
+    const changed: Candidate = {
+      ...state.candidate,
+      scope,
+      ...(scope === "project"
+        ? {
+            projectKey: foundProjectKey,
+            projectDisplayName: foundProjectDisplayName,
+          }
+        : {}),
+      ...(foundProjectKey && foundProjectDisplayName
+        ? { foundProjectKey, foundProjectDisplayName }
+        : {}),
+      scopeChangedAt: now.toISOString(),
+      scopeChangedBy: reviewer,
+    };
+    if (scope === "global") {
+      delete changed.projectKey;
+      delete changed.projectDisplayName;
+    }
+    state.candidate = changed;
+    return state.candidate;
+  }
+
   async amendDecision(
     candidateId: string,
     roundNumber: number,
@@ -269,6 +322,7 @@ export class MemoryReviewRepository implements ReviewRepository {
             projectDisplayName: candidate.projectDisplayName,
           }
         : {}),
+      ...candidateOrigin(candidate),
       lessonKey: candidate.lessonKey,
       title: candidate.title,
       body: candidate.body,
@@ -319,4 +373,13 @@ export class MemoryReviewRepository implements ReviewRepository {
       sequence: BigInt(index + 1),
     }));
   }
+}
+
+function candidateOrigin(candidate: Candidate) {
+  const foundProjectKey = candidate.foundProjectKey ?? candidate.projectKey;
+  const foundProjectDisplayName =
+    candidate.foundProjectDisplayName ?? candidate.projectDisplayName;
+  return foundProjectKey && foundProjectDisplayName
+    ? { foundProjectKey, foundProjectDisplayName }
+    : {};
 }
