@@ -15,17 +15,10 @@ const core = createApp({
   repository,
   agentAuth: agentAuth(config.agentApiToken),
   reviewerAuth: reviewer,
+  publicBaseUrl:config.publicBaseUrl,
 });
 const app = express();
 app.get(["/review", "/review/callback"], reviewConsole);
-app.get("/api/review/history", reviewer, async (req, res) => {
-  const scope = req.query.scope;
-  const page = await repository.decisions(undefined, 100);
-  res.json({
-    decisions: page.decisions.filter((d) => !scope || d.scope === scope),
-    summary: await repository.summary(new Date()),
-  });
-});
 app.use(core);
 const server = app.listen(config.port, "0.0.0.0", () =>
   console.log(`field-guide-review listening on port ${config.port}`),
