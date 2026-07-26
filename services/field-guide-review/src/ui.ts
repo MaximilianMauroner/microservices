@@ -1,11 +1,10 @@
 import crypto from "node:crypto";
-import type { RequestHandler } from "express";
+import { htmlResponse } from "./http.js";
 
-export const reviewConsole: RequestHandler = (_req, res) => {
+export const reviewConsole = (): Response => {
   const nonce = crypto.randomBytes(18).toString("base64");
-
-  return res
-    .set({
+  return htmlResponse(renderPage(nonce), {
+    headers: {
       "Cache-Control": "no-store",
       "Content-Security-Policy": [
         "default-src 'none'",
@@ -18,9 +17,8 @@ export const reviewConsole: RequestHandler = (_req, res) => {
       ].join("; "),
       "Referrer-Policy": "no-referrer",
       "X-Content-Type-Options": "nosniff",
-    })
-    .type("html")
-    .send(renderPage(nonce));
+    },
+  });
 };
 
 function renderPage(nonce: string) {

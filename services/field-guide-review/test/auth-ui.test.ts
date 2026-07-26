@@ -1,29 +1,135 @@
-import express from "express";
-import { exportJWK, generateKeyPair, SignJWT } from "jose";
-import request from "supertest";
+import { generateKeyPair, SignJWT, type JWTPayload } from "jose";
 import { describe, expect, it } from "vitest";
-import { shooAuth } from "../src/auth.js";
+import { agentAuth, shooAuth } from "../src/auth.js";
+import type { Authenticator } from "../src/http.js";
 import { reviewConsole } from "../src/ui.js";
+import { responseJson } from "./http-test.js";
 
-describe("Shoo review UI", () => {
-  it("serves PKCE, separate scopes, history, evidence, and valid action controls", async () => {
-    const app=express().get(["/review","/review/callback"],reviewConsole);const response=await request(app).get("/review");
-    expect(response.text).toContain("Shoo.startSignIn");
-    expect(response.text).toContain('data-scope="project"');
-    expect(response.text).toContain('data-scope="global"');
-    expect(response.text).toContain('data-view="history"');
-    expect(response.text).toContain("Evidence");
-    expect(response.text).toContain("confirm_valid");
-    expect(response.text).not.toContain('data-action="edit"');
+const origin = "https://reviews.example";
+
+function authenticatedRequest(value?: string) {
+  return new Request(origin, {
+    headers: value === undefined ? undefined : { Authorization: value },
   });
-  it("verifies ES256 issuer, audience, verified email, and exact account", async () => {
-    const {privateKey,publicKey}=await generateKeyPair("ES256");const jwk=await exportJWK(publicKey);jwk.kid="test";const key=async()=>publicKey;const app=express().get("/",shooAuth({allowedEmail:"owner@example.com",audience:"origin:https://reviews.example",issuer:"https://shoo.dev",jwks:key}),(_q,res)=>res.json({ok:true}));
-    const token=await new SignJWT({email:"owner@example.com",email_verified:true}).setProtectedHeader({alg:"ES256",kid:jwk.kid}).setIssuer("https://shoo.dev").setAudience("origin:https://reviews.example").setExpirationTime("5m").sign(privateKey);
-    expect((await request(app).get("/").set("Authorization",`Bearer ${token}`)).status).toBe(200);
-    const wrong=await new SignJWT({email:"other@example.com",email_verified:true}).setProtectedHeader({alg:"ES256"}).setIssuer("https://shoo.dev").setAudience("origin:https://reviews.example").setExpirationTime("5m").sign(privateKey);
-    expect((await request(app).get("/").set("Authorization",`Bearer ${wrong}`)).status).toBe(403);
-    const wrongAudience=await new SignJWT({email:"owner@example.com",email_verified:true}).setProtectedHeader({alg:"ES256"}).setIssuer("https://shoo.dev").setAudience("origin:https://wrong.example").setExpirationTime("5m").sign(privateKey);
-    expect((await request(app).get("/").set("Authorization",`Bearer ${wrongAudience}`)).status).toBe(401);
-    expect((await request(app).get("/")).status).toBe(401);
+}
+
+async function expectRejected(
+  auth: Authenticator,
+  authorization: string | undefined,
+  status: number,
+) {
+  const result = await auth(authenticatedRequest(authorization));
+  expect(result.ok).toBe(false);
+  if (result.ok) throw new Error("Expected authentication to fail.");
+  expect(result.response.status).toBe(status);
+  expect(result.response.headers.get("content-type")).toBe(
+    "application/json; charset=utf-8",
+  );
+  return result.response;
+}
+
+describe("review UI and authentication", () => {
+  it("serves PKCE, separate scopes, history, evidence, and valid action controls", async () => {
+    const response = reviewConsole();
+    const html = await response.text();
+    expect(html).toContain("Shoo.startSignIn");
+    expect(html).toContain('data-scope="project"');
+    expect(html).toContain('data-scope="global"');
+    expect(html).toContain('data-view="history"');
+    expect(html).toContain("Evidence");
+    expect(html).toContain("confirm_valid");
+    expect(html).not.toContain('data-action="edit"');
+  });
+
+  it("accepts only an exact agent Bearer credential", async () => {
+    const auth = agentAuth("top-secret");
+    expect((await auth(authenticatedRequest("Bearer top-secret"))).ok).toBe(true);
+    for (const value of [
+      undefined,
+      "top-secret",
+      "bearer top-secret",
+      "Bearer  top-secret",
+      "Bearer\ttop-secret",
+      "Bearer top-secret extra",
+      "Bearer wrong",
+    ]) {
+      const response = await expectRejected(auth, value, 401);
+      expect(response.headers.get("www-authenticate")).toBe(
+        'Bearer realm="field-guide-review"',
+      );
+    }
+  });
+
+  it("verifies Shoo ES256 issuer, audience, verified email, and exact account", async () => {
+    const { privateKey, publicKey } = await generateKeyPair("ES256");
+    const { privateKey: otherPrivateKey } = await generateKeyPair("ES256");
+    const auth = shooAuth({
+      allowedEmail: "Owner@Example.com",
+      audience: `origin:${origin}`,
+      issuer: "https://shoo.dev/path-ignored",
+      jwks: async () => publicKey,
+    });
+    const token = async (
+      payload: JWTPayload,
+      values: {
+        audience?: string;
+        expirationTime?: string | number;
+        issuer?: string;
+        privateKey?: typeof privateKey;
+      } = {},
+    ) =>
+      new SignJWT(payload)
+        .setProtectedHeader({ alg: "ES256", kid: "test" })
+        .setIssuer(values.issuer ?? "https://shoo.dev")
+        .setAudience(values.audience ?? `origin:${origin}`)
+        .setExpirationTime(values.expirationTime ?? "5m")
+        .sign(values.privateKey ?? privateKey);
+
+    const accepted = await auth(
+      authenticatedRequest(
+        `Bearer ${await token({ email: "owner@example.com", email_verified: true })}`,
+      ),
+    );
+    expect(accepted).toEqual({ ok: true, email: "owner@example.com" });
+
+    for (const payload of [
+      { email: "other@example.com", email_verified: true },
+      { email: "owner@example.com", email_verified: false },
+      { email_verified: true },
+    ]) {
+      const response = await expectRejected(
+        auth,
+        `Bearer ${await token(payload)}`,
+        403,
+      );
+      expect(await responseJson(response)).toMatchObject({
+        error: "shoo_email_not_allowed",
+      });
+    }
+
+    for (const invalid of [
+      await token(
+        { email: "owner@example.com", email_verified: true },
+        { audience: "origin:https://wrong.example" },
+      ),
+      await token(
+        { email: "owner@example.com", email_verified: true },
+        { issuer: "https://issuer.example" },
+      ),
+      await token(
+        { email: "owner@example.com", email_verified: true },
+        { privateKey: otherPrivateKey },
+      ),
+      await token(
+        { email: "owner@example.com", email_verified: true },
+        { expirationTime: Math.floor(Date.now() / 1000) - 60 },
+      ),
+    ]) {
+      const response = await expectRejected(auth, `Bearer ${invalid}`, 401);
+      expect(response.headers.get("www-authenticate")).toBe(
+        'Bearer realm="field-guide-review"',
+      );
+    }
+    await expectRejected(auth, undefined, 401);
   });
 });

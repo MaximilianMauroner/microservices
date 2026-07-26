@@ -1,10 +1,8 @@
-import express from "express";
-import request from "supertest";
 import { describe, expect, it } from "vitest";
 import { reviewConsole } from "../src/ui.js";
 
 async function renderReviewConsole(): Promise<string> {
-  return (await request(express().get("/review", reviewConsole)).get("/review")).text;
+  return reviewConsole().text();
 }
 
 describe("review console feedback", () => {
