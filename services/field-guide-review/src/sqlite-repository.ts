@@ -22,6 +22,7 @@ import {
 type CandidateRow = { payload: string; payload_hash: string };
 type RoundRow = { payload: string; kind: RoundKind; due_at: string | null; verdict_id: string | null };
 type AmendRow = RoundRow & { action: Decision["action"] | null; next_review_at: string | null };
+type ScopeRow = RoundRow & { event_count: number };
 type EventRow = {
   sequence: string;
   decision_id: string;
@@ -116,6 +117,28 @@ export class SQLiteReviewRepository implements ReviewRepository {
     });
   }
 
+  async reassignScope(candidateId:string, round:number, scope:Scope, now:Date, reviewer:string) {
+    return this.immediate(() => {
+      const row = this.db.query<ScopeRow, [string, number]>(`
+        SELECT c.payload,r.kind,r.due_at,r.verdict_id,
+          (SELECT COUNT(*) FROM verdict_events v WHERE v.candidate_id=c.candidate_id) event_count
+        FROM candidates c JOIN review_rounds r USING(candidate_id)
+        WHERE c.candidate_id=? AND r.round=?
+      `).get(candidateId, round);
+      if (!row) throw new Error("Candidate not found.");
+      if (round !== 1 || row.kind !== "initial" || row.verdict_id || row.event_count)
+        throw new ConflictError("Scope can only change before the initial review is decided.");
+      const candidate=parseCandidate(row.payload);
+      if(candidate.scope===scope)throw new ValidationError("Candidate already has this scope.");
+      const foundProjectKey=candidate.foundProjectKey??candidate.projectKey;
+      const foundProjectDisplayName=candidate.foundProjectDisplayName??candidate.projectDisplayName;
+      if(scope==="project"&&(!foundProjectKey||!foundProjectDisplayName))throw new ValidationError("This candidate has no associated project to demote to.");
+      const changed:Candidate={...candidate,scope,...(scope==="project"?{projectKey:foundProjectKey,projectDisplayName:foundProjectDisplayName}:{projectKey:undefined,projectDisplayName:undefined}),...(foundProjectKey&&foundProjectDisplayName?{foundProjectKey,foundProjectDisplayName}:{}),scopeChangedAt:now.toISOString(),scopeChangedBy:reviewer};
+      this.db.query("UPDATE candidates SET payload=? WHERE candidate_id=?").run(canonical(changed),candidateId);
+      return changed;
+    });
+  }
+
   async amendDecision(candidateId:string, round:number, input:AmendVerdictInput, now:Date, reviewer:string) {
     return this.immediate(() => {
       const row = this.db.query<AmendRow, [string, number]>("SELECT c.payload,r.kind,r.due_at,r.verdict_id,current.action,current.next_review_at FROM candidates c JOIN review_rounds r USING(candidate_id) LEFT JOIN verdict_events current ON current.decision_id=r.verdict_id WHERE c.candidate_id=? AND r.round=?").get(candidateId, round);
@@ -152,7 +175,7 @@ export class SQLiteReviewRepository implements ReviewRepository {
     this.db.query("UPDATE review_rounds SET verdict_id=? WHERE candidate_id=? AND round=?").run(decisionId,candidateId,round);
     if(schedule.nextReviewAt&&schedule.nextRoundKind)this.db.query("INSERT INTO review_rounds(candidate_id,round,kind,due_at) VALUES(?,?,?,?)").run(candidateId,round+1,schedule.nextRoundKind,internalTimestamp(schedule.nextReviewAt.toISOString()));
     const candidate=parseCandidate(row.payload);
-    return {decisionId,candidateId,round,action:input.action,roundKind:row.kind,effect:schedule.effect,...(amendsDecisionId?{amendsDecisionId}:{}),isCurrent:true,canAmend:true,scope:candidate.scope,...(candidate.scope==="project"?{projectKey:candidate.projectKey,projectDisplayName:candidate.projectDisplayName}:{}),lessonKey:candidate.lessonKey,title:candidate.title,body:candidate.body,evidence:candidate.evidence,reviewedAt:now.toISOString(),reviewer,...(schedule.nextReviewAt?{nextReviewAt:schedule.nextReviewAt.toISOString()}: {})};
+    return {decisionId,candidateId,round,action:input.action,roundKind:row.kind,effect:schedule.effect,...(amendsDecisionId?{amendsDecisionId}:{}),isCurrent:true,canAmend:true,scope:candidate.scope,...(candidate.scope==="project"?{projectKey:candidate.projectKey,projectDisplayName:candidate.projectDisplayName}:{}),...candidateOrigin(candidate),lessonKey:candidate.lessonKey,title:candidate.title,body:candidate.body,evidence:candidate.evidence,reviewedAt:now.toISOString(),reviewer,...(schedule.nextReviewAt?{nextReviewAt:schedule.nextReviewAt.toISOString()}: {})};
   }
 
   private events(predicate:string, cursor:bigint|undefined, limit:number, scope:Scope|undefined, direction:"ASC"|"DESC") {
@@ -169,4 +192,5 @@ const iso=(value:string)=>{const date=new Date(value);if(!Number.isFinite(date.g
 const internalTimestamp=(value:string)=>canonicalTimestamp(value);
 const parseCandidate=(value:string)=>JSON.parse(value) as Candidate;
 const isConstraint=(error:unknown)=>error instanceof Error && /constraint|unique/i.test(error.message);
-function toDecision(row:EventRow):Decision { const candidate=parseCandidate(row.payload); return {decisionId:row.decision_id,candidateId:row.candidate_id,round:row.round,action:row.action,roundKind:row.round_kind,effect:row.effect,...(row.amends_decision_id?{amendsDecisionId:row.amends_decision_id}:{}),isCurrent:Boolean(row.is_current),canAmend:Boolean(row.can_amend),scope:candidate.scope,...(candidate.scope==="project"?{projectKey:candidate.projectKey,projectDisplayName:candidate.projectDisplayName}:{}),lessonKey:candidate.lessonKey,title:candidate.title,body:candidate.body,evidence:candidate.evidence,reviewedAt:apiTimestamp(row.reviewed_at),reviewer:row.reviewer,...(row.next_review_at?{nextReviewAt:apiTimestamp(row.next_review_at)}:{})}; }
+function toDecision(row:EventRow):Decision { const candidate=parseCandidate(row.payload); return {decisionId:row.decision_id,candidateId:row.candidate_id,round:row.round,action:row.action,roundKind:row.round_kind,effect:row.effect,...(row.amends_decision_id?{amendsDecisionId:row.amends_decision_id}:{}),isCurrent:Boolean(row.is_current),canAmend:Boolean(row.can_amend),scope:candidate.scope,...(candidate.scope==="project"?{projectKey:candidate.projectKey,projectDisplayName:candidate.projectDisplayName}:{}),...candidateOrigin(candidate),lessonKey:candidate.lessonKey,title:candidate.title,body:candidate.body,evidence:candidate.evidence,reviewedAt:apiTimestamp(row.reviewed_at),reviewer:row.reviewer,...(row.next_review_at?{nextReviewAt:apiTimestamp(row.next_review_at)}:{})}; }
+function candidateOrigin(candidate:Candidate){const foundProjectKey=candidate.foundProjectKey??candidate.projectKey;const foundProjectDisplayName=candidate.foundProjectDisplayName??candidate.projectDisplayName;return foundProjectKey&&foundProjectDisplayName?{foundProjectKey,foundProjectDisplayName}:{};}
