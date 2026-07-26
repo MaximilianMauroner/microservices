@@ -5,6 +5,8 @@ import postgres, { type Sql, type TransactionSql } from "postgres";
 import {
   ConflictError,
   ValidationError,
+  decodeCursor,
+  encodeCursor,
   validateVerdict,
   type AmendVerdictInput,
   type Candidate,
@@ -18,6 +20,7 @@ import {
   type VerdictInput,
 } from "./types.js";
 type CandidateRow = { payload: Candidate; payload_hash: string };
+type Migration = { name: string; checksum: string; sql: string };
 type EventRow = {
   sequence: string;
   decision_id: string;
@@ -40,10 +43,80 @@ export class PostgresReviewRepository implements ReviewRepository {
     this.sql = postgres(url, { max: 5 });
   }
   async migrate() {
+    const migrations: Migration[] = [];
     for (const name of ["001_initial.sql", "002_decision_amendments.sql"]) {
-      const path = fileURLToPath(new URL(`../migrations/${name}`, import.meta.url));
-      await this.sql.unsafe(await readFile(path, "utf8"));
+      const path = fileURLToPath(
+        new URL(`../migrations/${name}`, import.meta.url),
+      );
+      const sql = await readFile(path, "utf8");
+      if (containsTransactionControl(sql))
+        throw new Error(`${name} must not contain transaction control.`);
+      migrations.push({ name, sql, checksum: digestText(sql) });
     }
+    await this.sql.begin(async (tx) => {
+      await tx`SELECT pg_advisory_xact_lock(${MIGRATION_LOCK})`;
+      const ledger = await tx<{ ledger: string | null }[]>`
+        SELECT to_regclass('schema_migrations')::text ledger
+      `;
+      if (!ledger[0]?.ledger)
+        await tx.unsafe(`CREATE TABLE schema_migrations (
+          name text PRIMARY KEY,
+          checksum text NOT NULL,
+          applied_at timestamptz NOT NULL DEFAULT now(),
+          adopted boolean NOT NULL DEFAULT false
+        )`);
+
+      const recorded = await tx<
+        { name: string; checksum: string }[]
+      >`SELECT name,checksum FROM schema_migrations`;
+      const applied = new Map(recorded.map((row) => [row.name, row.checksum]));
+      for (const migration of migrations) {
+        const checksum = applied.get(migration.name);
+        if (checksum) {
+          if (checksum !== migration.checksum)
+            throw new Error(
+              `Applied migration ${migration.name} has a different checksum.`,
+            );
+          continue;
+        }
+
+        let adopted = false;
+        if (migration.name === "001_initial.sql") {
+          const baseline = await tx<
+            { present: number }[]
+          >`SELECT COUNT(*)::int present FROM (VALUES ('candidates'),('review_rounds'),('verdict_events'),('application_receipts')) expected(name) WHERE to_regclass(expected.name) IS NOT NULL`;
+          const present = baseline[0]?.present ?? 0;
+          if (present !== 0 && present !== 4)
+            throw new Error(
+              "Cannot adopt a partially initialized field-guide schema.",
+            );
+          if (present === 4) {
+            const columns = await tx<{ present: number }[]>`
+              SELECT COUNT(*)::int present
+              FROM (VALUES
+                ('candidates','candidate_id'),('candidates','idempotency_key'),('candidates','payload'),('candidates','payload_hash'),('candidates','created_at'),
+                ('review_rounds','candidate_id'),('review_rounds','round'),('review_rounds','kind'),('review_rounds','due_at'),('review_rounds','verdict_id'),
+                ('verdict_events','sequence'),('verdict_events','decision_id'),('verdict_events','candidate_id'),('verdict_events','round'),('verdict_events','action'),('verdict_events','reviewer'),('verdict_events','reviewed_at'),('verdict_events','next_review_at'),
+                ('application_receipts','idempotency_key'),('application_receipts','payload_hash'),('application_receipts','decision_id'),('application_receipts','applied_at'),('application_receipts','result')
+              ) required(table_name,column_name)
+              WHERE EXISTS (
+                SELECT 1 FROM pg_attribute
+                WHERE attrelid=to_regclass(required.table_name)
+                  AND attname=required.column_name
+                  AND NOT attisdropped
+              )
+            `;
+            if (columns[0]?.present !== 23)
+              throw new Error(
+                "Cannot adopt an incompatible field-guide schema.",
+              );
+          }
+          adopted = present === 4;
+        }
+        if (!adopted) await tx.unsafe(migration.sql);
+        await tx`INSERT INTO schema_migrations(name,checksum,adopted) VALUES(${migration.name},${migration.checksum},${adopted})`;
+      }
+    });
   }
   async createCandidate(key: string, candidate: Candidate) {
     const hash = digest(candidate);
@@ -96,7 +169,7 @@ export class PostgresReviewRepository implements ReviewRepository {
     }
   }
   async decisions(cursor: string | undefined, limit: number, scope?: Scope) {
-    const after = decodeCursor(cursor);
+    const after = decodeCursor(cursor) ?? "0";
     const rows = await this.sql<
       EventRow[]
     >`${eventProjection(this.sql, scope)} AND v.sequence>${after} ORDER BY v.sequence ASC LIMIT ${limit}`;
@@ -108,7 +181,7 @@ export class PostgresReviewRepository implements ReviewRepository {
         : {}),
     };
   }
-  async history(cursor:string|undefined,limit:number,scope?:Scope){const after=decodeCursor(cursor);const rows=await this.sql<EventRow[]>`${eventProjection(this.sql,scope)} AND v.sequence>${after} ORDER BY v.sequence ASC LIMIT ${limit+1}`;const page=rows.slice(0,limit);return{decisions:page.map(toDecision),hasMore:rows.length>limit,...(rows.length>limit?{nextCursor:encodeCursor(page.at(-1)?.sequence??after)}:{})}}
+  async history(cursor:string|undefined,limit:number,scope?:Scope){const before=decodeCursor(cursor);const rows=await this.sql<EventRow[]>`${eventProjection(this.sql,scope)} AND (${before??null}::bigint IS NULL OR v.sequence<${before??null}) ORDER BY v.sequence DESC LIMIT ${limit+1}`;const page=rows.slice(0,limit);return{decisions:page.map(toDecision),hasMore:rows.length>limit,...(rows.length>limit?{nextCursor:encodeCursor(page.at(-1)?.sequence??"0")}:{})}}
   async queue(scope: Scope | undefined, now: Date): Promise<QueueItem[]> {
     const rows = await this.sql<
       {
@@ -189,7 +262,8 @@ export class PostgresReviewRepository implements ReviewRepository {
         kind:RoundKind;
         verdict_id:string|null;
         action:Decision["action"]|null;
-      }[]>`SELECT c.payload,r.kind,r.verdict_id,current.action FROM candidates c JOIN review_rounds r USING(candidate_id) LEFT JOIN verdict_events current ON current.decision_id=r.verdict_id WHERE c.candidate_id=${candidateId} AND r.round=${round} FOR UPDATE OF c,r`;
+        next_review_at:Date|null;
+      }[]>`SELECT c.payload,r.kind,r.verdict_id,current.action,current.next_review_at FROM candidates c JOIN review_rounds r USING(candidate_id) LEFT JOIN verdict_events current ON current.decision_id=r.verdict_id WHERE c.candidate_id=${candidateId} AND r.round=${round} FOR UPDATE OF c,r`;
       const row=rows[0];
       if(!row)throw new Error("Candidate not found.");
       if(!row.verdict_id||!row.action)throw new ConflictError("Review round has no decision to amend.");
@@ -199,6 +273,7 @@ export class PostgresReviewRepository implements ReviewRepository {
       if(row.action===input.action&&input.action!=="defer")throw new ValidationError("Choose a different verdict.");
       const confirmations=await authoritativeConfirmations(tx,candidateId);
       const schedule=validateVerdict(row.kind,input,now,confirmations);
+      if(input.action==="defer"&&row.action==="defer"&&schedule.nextReviewAt?.getTime()===row.next_review_at?.getTime())throw new ValidationError("Choose a different defer date.");
       await tx`DELETE FROM review_rounds WHERE candidate_id=${candidateId} AND round=${round+1} AND verdict_id IS NULL`;
       const decisionId=crypto.randomUUID();
       await tx`INSERT INTO verdict_events(decision_id,candidate_id,round,action,round_kind,effect,amends_decision_id,reviewer,reviewed_at,next_review_at) VALUES(${decisionId},${candidateId},${round},${input.action},${row.kind},${schedule.effect},${row.verdict_id},${reviewer},${now},${schedule.nextReviewAt??null})`;
@@ -241,18 +316,18 @@ export class PostgresReviewRepository implements ReviewRepository {
 }
 const digest = (value: object) =>
   crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex");
+const digestText = (value: string) =>
+  crypto.createHash("sha256").update(value).digest("hex");
+const MIGRATION_LOCK = 719_873_492;
+const containsTransactionControl = (sql: string) =>
+  /^\s*(BEGIN|COMMIT|ROLLBACK)\b/im.test(
+    sql.replace(/\$\$[\s\S]*?\$\$/g, ""),
+  );
 const isUnique = (e: unknown) =>
   typeof e === "object" &&
   e !== null &&
   "code" in e &&
   (e as { code?: unknown }).code === "23505";
-function decodeCursor(cursor: string | undefined) {
-  if (!cursor) return "0";
-  const value = Buffer.from(cursor, "base64url").toString("utf8");
-  if (!/^\d+$/.test(value)) throw new Error("Invalid cursor.");
-  return value;
-}
-const encodeCursor = (v: string) => Buffer.from(v).toString("base64url");
 function toDecision(r: EventRow): Decision {
   const c = r.payload;
   return {

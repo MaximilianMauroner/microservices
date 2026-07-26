@@ -52,7 +52,7 @@ export function createApp(o: {
     asyncRoute(async (req, res) => {
       const limit = parseLimit(req.query.limit);
       const page = await o.repository.decisions(
-        typeof req.query.cursor === "string" ? req.query.cursor : undefined,
+        parseCursorQuery(req.query.cursor),
         limit,
       );
       res.json({ ...page, summary: await o.repository.summary(now()) });
@@ -86,7 +86,7 @@ export function createApp(o: {
       });
     }),
   );
-  review.get("/history",asyncRoute(async(req,res)=>{const scope=parseScope(req.query.scope);const page=await o.repository.history(typeof req.query.cursor==="string"?req.query.cursor:undefined,parseLimit(req.query.limit),scope);res.json({...page,summary:await o.repository.summary(now())});}));
+  review.get("/history",asyncRoute(async(req,res)=>{const scope=parseScope(req.query.scope);const page=await o.repository.history(parseCursorQuery(req.query.cursor),parseLimit(req.query.limit),scope);res.json({...page,summary:await o.repository.summary(now())});}));
   review.post(
     "/candidates/:id/rounds/:round/verdict",
     sameOrigin(o.publicBaseUrl),
@@ -233,6 +233,7 @@ function parseCandidate(value: unknown) {
   };
 }
 function parseScope(v:unknown):Scope|undefined{if(v===undefined)return undefined;if(v!=="project"&&v!=="global")throw new InputError("Invalid scope.");return v;}
+function parseCursorQuery(value:unknown){if(value===undefined)return undefined;if(typeof value!=="string")throw new InputError("Invalid cursor.");return value;}
 function parseVerdict(value: unknown): VerdictInput {
   const body = verdictRecord(value, ["action", "deferUntil"]);
   return {

@@ -76,8 +76,8 @@ it.skipIf(!databaseUrl||!databaseConfirmed)(
         evidence: candidate.evidence,
       });
       expect(history.decisions.filter((d)=>d.candidateId===candidateId)).toMatchObject([
-        {decisionId,isCurrent:false,canAmend:false},
         {decisionId:amendmentId,isCurrent:true,canAmend:true},
+        {decisionId,isCurrent:false,canAmend:false},
       ]);
       expect(await repository.createCandidate(key, candidate)).toBe("replay");
       expect(await repository.createReceipt(`${key}-receipt`,decisionId,appliedAt,"applied")).toBe("replay");

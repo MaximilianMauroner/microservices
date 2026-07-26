@@ -72,13 +72,16 @@ describe("decision amendments", () => {
 
     const history = await repository.history(undefined, 10, "project");
     expect(history.decisions).toHaveLength(2);
-    expect(history.decisions[0]).toMatchObject({
+    expect(history.decisions[1]).toMatchObject({
       decisionId: approved.decisionId,
       isCurrent: false,
       canAmend: false,
       effect: "activate",
     });
-    expect(history.decisions[1].isCurrent).toBe(true);
+    expect(history.decisions[0]).toMatchObject({
+      decisionId: response.body.decision.decisionId,
+      isCurrent: true,
+    });
     expect(await repository.queue(undefined, new Date("2026-08-03"))).toHaveLength(0);
   });
 
@@ -160,6 +163,27 @@ describe("decision amendments", () => {
       "owner@example.com",
     );
     expect(restored.nextReviewAt).toBe("2026-09-03T00:00:00.000Z");
+  });
+
+  it("rejects a defer amendment that normalizes to the current defer time", async () => {
+    const { app, repository } = setup();
+    const approved = await seed(repository);
+    const deferred = await amend(app, {
+      expectedDecisionId: approved.decisionId,
+      action: "defer",
+      deferUntil: "2026-07-30T00:00:00.000Z",
+    });
+    expect(deferred.status).toBe(201);
+    const unchanged = await amend(app, {
+      expectedDecisionId: deferred.body.decision.decisionId,
+      action: "defer",
+      deferUntil: "2026-07-29T20:00:00-04:00",
+    });
+    expect(unchanged.status).toBe(400);
+    expect(unchanged.body.message).toBe("Choose a different defer date.");
+    expect(
+      await repository.queue(undefined, new Date("2026-07-30T00:00:00Z")),
+    ).toMatchObject([{ round: 2, kind: "initial" }]);
   });
 
   it("keeps global amendment metadata free of project identity", async () => {
