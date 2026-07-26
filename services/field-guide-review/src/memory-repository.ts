@@ -226,7 +226,6 @@ export class MemoryReviewRepository implements ReviewRepository {
     };
   }
 
-  async migrate() {}
   async close() {}
 
   private requireCandidate(candidateId: string) {

@@ -86,7 +86,6 @@ export interface ReviewRepository {
     reviewer: string,
   ): Promise<Decision>;
   summary(now: Date): Promise<Summary>;
-  migrate(): Promise<void>;
   close(): Promise<void>;
 }
 export class ConflictError extends Error {}

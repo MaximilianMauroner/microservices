@@ -7,7 +7,6 @@ import { PostgresReviewRepository } from "./postgres-repository.js";
 import { reviewConsole } from "./ui.js";
 const config = loadConfig(),
   repository = new PostgresReviewRepository(config.databaseUrl);
-await repository.migrate();
 const reviewer = shooAuth({
   allowedEmail: config.allowedEmail,
   audience: `origin:${config.publicBaseUrl}`,
