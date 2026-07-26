@@ -151,6 +151,19 @@ describe("field guide review transport", () => {
     expect(malformed.status).toBe(400);
     expect(authenticationCalls).toBe(0);
 
+    for (const primitive of [null, "lesson", 42, true]) {
+      const response = await callApp(app, "/api/agent/candidates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(primitive),
+      });
+      expect(response.status).toBe(400);
+      expect(await responseJson(response)).toMatchObject({
+        error: "invalid_request",
+      });
+      expect(authenticationCalls).toBe(0);
+    }
+
     const oversized = await callApp(app, "/api/agent/candidates", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -162,6 +175,95 @@ describe("field guide review transport", () => {
       error: "payload_too_large",
       message: "JSON body exceeds 128 KiB.",
     });
+
+    const emptyBeforeAuth = await callApp(app, "/api/agent/candidates", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "",
+    });
+    expect(emptyBeforeAuth.status).toBe(401);
+    expect(authenticationCalls).toBe(1);
+
+    const { app: authenticatedApp } = setup();
+    const emptyValidated = await callApp(
+      authenticatedApp,
+      "/api/agent/candidates",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      },
+    );
+    expect(emptyValidated.status).toBe(400);
+    expect(await responseJson(emptyValidated)).toEqual({
+      error: "invalid_request",
+      message: "JSON object required.",
+    });
+  });
+
+  it("supports HEAD, case-insensitive routes, and one optional trailing slash", async () => {
+    const { app } = setup();
+    const getHealth = await callApp(app, "/HeAlTh/");
+    const headHealth = await callApp(app, "/HeAlTh/", { method: "HEAD" });
+    expect(headHealth.status).toBe(getHealth.status);
+    expect([...headHealth.headers]).toEqual([...getHealth.headers]);
+    expect(await headHealth.text()).toBe("");
+
+    const protectedGet = await callApp(
+      app,
+      "/API/ReViEw/QuEuE/?scope=project",
+    );
+    const protectedHead = await callApp(
+      app,
+      "/API/ReViEw/QuEuE/?scope=project",
+      { method: "HEAD" },
+    );
+    expect(protectedHead.status).toBe(protectedGet.status);
+    expect([...protectedHead.headers]).toEqual([...protectedGet.headers]);
+    expect(await protectedHead.text()).toBe("");
+
+    expect(
+      (
+        await callApp(app, "/API/AGENT/CANDIDATES/", {
+          method: "POST",
+          json: { idempotencyKey: "case-key", candidate },
+        })
+      ).status,
+    ).toBe(201);
+    expect(
+      (
+        await callApp(
+          app,
+          `/API/REVIEW/CANDIDATES/${candidate.candidateId}/ROUNDS/1/VeRdIcT/`,
+          {
+            method: "POST",
+            headers: { Origin: origin },
+            json: { action: "approve" },
+          },
+        )
+      ).status,
+    ).toBe(201);
+  });
+
+  it("applies auth to mixed-case protected prefixes but keeps segment boundaries exact", async () => {
+    let authenticationCalls = 0;
+    const reject: Authenticator = () => {
+      authenticationCalls += 1;
+      return {
+        ok: false,
+        response: jsonResponse({ error: "unauthorized" }, { status: 401 }),
+      };
+    };
+    const { app } = setup(reject);
+    const protectedHead = await callApp(app, "/API/AGENT/DECISIONS/", {
+      method: "HEAD",
+    });
+    expect(protectedHead.status).toBe(401);
+    expect(await protectedHead.text()).toBe("");
+    expect(authenticationCalls).toBe(1);
+    expect((await callApp(app, "/API/AGENT/unknown/")).status).toBe(401);
+    expect(authenticationCalls).toBe(2);
+    expect((await callApp(app, "/API/AGENTISH/unknown")).status).toBe(404);
+    expect(authenticationCalls).toBe(2);
   });
 
   it("authenticates protected prefixes before origin checks and prefix 404s", async () => {

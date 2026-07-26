@@ -31,72 +31,96 @@ export function createApp(options: {
   const now = options.now ?? (() => new Date());
   const allowedOrigin = new URL(options.publicBaseUrl).origin;
   return async (request) => {
+    const head = request.method === "HEAD";
+    const method = head ? "GET" : request.method;
+    let response: Response | undefined;
     try {
       const url = new URL(request.url);
       const parsedBody = await parseBody(request);
-      const pathname = url.pathname;
+      const pathname = normalizePath(url.pathname);
 
-      if (request.method === "GET" && pathname === "/health")
-        return jsonResponse({ ok: true });
+      if (method === "GET" && routeIs(pathname, "/health"))
+        response = jsonResponse({ ok: true });
       if (
-        request.method === "GET" &&
-        (pathname === "/review" || pathname === "/review/callback")
+        response === undefined &&
+        method === "GET" &&
+        (routeIs(pathname, "/review") ||
+          routeIs(pathname, "/review/callback"))
       )
-        return reviewConsole();
-      if (request.method === "GET" && pathname === "/review.css") {
-        return new Response(options.stylesheet ?? "", {
+        response = reviewConsole();
+      if (
+        response === undefined &&
+        method === "GET" &&
+        routeIs(pathname, "/review.css")
+      ) {
+        response = new Response(options.stylesheet ?? "", {
           headers: secureHeaders({
             "Cache-Control": "public, max-age=300",
             "Content-Type": "text/css; charset=utf-8",
           }),
         });
       }
-      if (request.method === "GET" && pathname === "/")
-        return new Response(null, {
+      if (
+        response === undefined &&
+        method === "GET" &&
+        routeIs(pathname, "/")
+      )
+        response = new Response(null, {
           status: 302,
           headers: secureHeaders({ Location: "/review" }),
         });
 
-      if (isPrefix(pathname, "/api/agent")) {
+      if (response === undefined && isPrefix(pathname, "/api/agent")) {
         const auth = await options.agentAuth(request);
-        if (!auth.ok) return auth.response;
-        return await handleAgent(
-          request,
-          url,
-          parsedBody,
-          options.repository,
-          now,
-        );
+        response = auth.ok
+          ? await handleAgent(
+              request,
+              method,
+              pathname,
+              url,
+              parsedBody,
+              options.repository,
+              now,
+            )
+          : auth.response;
       }
-      if (isPrefix(pathname, "/api/review")) {
+      if (response === undefined && isPrefix(pathname, "/api/review")) {
         const auth = await options.reviewerAuth(request);
-        if (!auth.ok) return auth.response;
-        return await handleReview(
-          request,
-          url,
-          parsedBody,
-          options.repository,
-          now,
-          allowedOrigin,
-          auth.email ?? "system",
-        );
+        response = auth.ok
+          ? await handleReview(
+              request,
+              method,
+              pathname,
+              url,
+              parsedBody,
+              options.repository,
+              now,
+              allowedOrigin,
+              auth.email ?? "system",
+            )
+          : auth.response;
       }
-      if (pathname.startsWith("/api/")) return notFoundJson();
-      return textResponse("Route not found.", { status: 404 });
+      if (response === undefined)
+        response = url.pathname.toLowerCase().startsWith("/api/")
+          ? notFoundJson()
+          : textResponse("Route not found.", { status: 404 });
     } catch (error) {
-      return mapError(error);
+      response = mapError(error);
     }
+    return head ? headResponse(response) : response;
   };
 }
 
 async function handleAgent(
   request: Request,
+  method: string,
+  pathname: string,
   url: URL,
   body: ParsedBody,
   repository: ReviewRepository,
   now: () => Date,
 ) {
-  if (request.method === "POST" && url.pathname === "/api/agent/candidates") {
+  if (method === "POST" && routeIs(pathname, "/api/agent/candidates")) {
     const parsed = parseCandidate(requireJson(body));
     const result = await repository.createCandidate(
       parsed.idempotencyKey,
@@ -107,14 +131,14 @@ async function handleAgent(
       { status: result === "created" ? 201 : 200 },
     );
   }
-  if (request.method === "GET" && url.pathname === "/api/agent/decisions") {
+  if (method === "GET" && routeIs(pathname, "/api/agent/decisions")) {
     const page = await repository.decisions(
       parseCursorQuery(singleQuery(url, "cursor")),
       parseLimit(singleQuery(url, "limit")),
     );
     return jsonResponse({ ...page, summary: await repository.summary(now()) });
   }
-  if (request.method === "POST" && url.pathname === "/api/agent/receipts") {
+  if (method === "POST" && routeIs(pathname, "/api/agent/receipts")) {
     const value = record(requireJson(body));
     const key = text(value.idempotencyKey, "idempotencyKey", 128);
     const id = uuid(value.decisionId, "decisionId");
@@ -137,6 +161,8 @@ async function handleAgent(
 
 async function handleReview(
   request: Request,
+  method: string,
+  pathname: string,
   url: URL,
   body: ParsedBody,
   repository: ReviewRepository,
@@ -144,14 +170,14 @@ async function handleReview(
   allowedOrigin: string,
   reviewer: string,
 ) {
-  if (request.method === "GET" && url.pathname === "/api/review/queue") {
+  if (method === "GET" && routeIs(pathname, "/api/review/queue")) {
     const scope = parseScope(singleQuery(url, "scope"));
     return jsonResponse({
       items: await repository.queue(scope, now()),
       summary: await repository.summary(now()),
     });
   }
-  if (request.method === "GET" && url.pathname === "/api/review/history") {
+  if (method === "GET" && routeIs(pathname, "/api/review/history")) {
     const page = await repository.history(
       parseCursorQuery(singleQuery(url, "cursor")),
       parseLimit(singleQuery(url, "limit")),
@@ -159,14 +185,14 @@ async function handleReview(
     );
     return jsonResponse({ ...page, summary: await repository.summary(now()) });
   }
-  const mutation = url.pathname.match(
-    /^\/api\/review\/candidates\/([^/]+)\/rounds\/([^/]+)\/(verdict|amendments)$/,
+  const mutation = pathname.match(
+    /^\/api\/review\/candidates\/([^/]+)\/rounds\/([^/]+)\/(verdict|amendments)$/i,
   );
-  if (request.method === "POST" && mutation) {
+  if (method === "POST" && mutation) {
     enforceOrigin(request, allowedOrigin);
     const candidateId = uuid(decodePath(mutation[1] ?? ""), "candidateId");
     const round = parseRound(decodePath(mutation[2] ?? ""));
-    if (mutation[3] === "verdict") {
+    if (mutation[3]?.toLowerCase() === "verdict") {
       const decision = await repository.decide(
         candidateId,
         round,
@@ -204,7 +230,28 @@ function enforceOrigin(request: Request, allowedOrigin: string) {
 }
 
 function isPrefix(pathname: string, prefix: string) {
-  return pathname === prefix || pathname.startsWith(`${prefix}/`);
+  const lower = pathname.toLowerCase();
+  return lower === prefix || lower.startsWith(`${prefix}/`);
+}
+
+function routeIs(pathname: string, route: string) {
+  return pathname.toLowerCase() === route;
+}
+
+function normalizePath(pathname: string) {
+  return pathname.length > 1 &&
+    pathname.endsWith("/") &&
+    !pathname.endsWith("//")
+    ? pathname.slice(0, -1)
+    : pathname;
+}
+
+function headResponse(response: Response) {
+  return new Response(null, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
 }
 
 function singleQuery(url: URL, name: string): string | undefined {

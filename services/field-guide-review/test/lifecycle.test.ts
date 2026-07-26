@@ -146,4 +146,23 @@ describe("Bun server shutdown", () => {
     expect(report).toHaveBeenCalledWith(error);
     expect(close).toHaveBeenCalledOnce();
   });
+
+  it("settles at the total deadline when repository close never resolves", async () => {
+    const never = new Promise<void>(() => undefined);
+    const stop = vi.fn(async () => undefined);
+    const close = vi.fn(() => never);
+    const fail = vi.fn();
+    const shutdown = createGracefulShutdown({
+      stop,
+      close,
+      fail,
+      report: vi.fn(),
+      timeoutMs: 5,
+    });
+
+    await shutdown();
+    expect(stop.mock.calls).toEqual([[false], [true]]);
+    expect(fail).toHaveBeenCalledOnce();
+    expect(close).toHaveBeenCalledOnce();
+  });
 });

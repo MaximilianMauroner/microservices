@@ -10,12 +10,14 @@ const bearer = (request: Request) =>
   request.headers.get("authorization")?.match(/^Bearer ([^\s]+)$/)?.[1];
 
 export function agentAuth(expected: string): Authenticator {
+  const expectedBytes = Buffer.from(expected);
   return (request) => {
     const token = bearer(request);
+    const tokenBytes = token ? Buffer.from(token) : undefined;
     if (
-      !token ||
-      token.length !== expected.length ||
-      !crypto.timingSafeEqual(Buffer.from(token), Buffer.from(expected))
+      !tokenBytes ||
+      tokenBytes.byteLength !== expectedBytes.byteLength ||
+      !crypto.timingSafeEqual(tokenBytes, expectedBytes)
     ) {
       return authError(
         "agent_auth_required",
