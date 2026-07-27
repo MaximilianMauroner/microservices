@@ -40,6 +40,7 @@ export interface AppLogger {
 export function createApp(options: {
   storage: WebStorage;
   access: AccessVerifier;
+  trustedOrigin: string;
   renderer?: PageRenderer;
   logger?: AppLogger;
 }): (request: Request) => Promise<Response> {
@@ -51,7 +52,14 @@ export function createApp(options: {
     const url = new URL(request.url);
     const requestId = crypto.randomUUID();
     try {
-      const response = await route(request, url, options.storage, options.access, renderer);
+      const response = await route(
+        request,
+        url,
+        options.storage,
+        options.access,
+        renderer,
+        options.trustedOrigin
+      );
       logger.info("request.complete", {
         requestId,
         method: request.method,
@@ -79,10 +87,14 @@ async function route(
   url: URL,
   storage: WebStorage,
   access: AccessVerifier,
-  renderer: PageRenderer
+  renderer: PageRenderer,
+  trustedOrigin: string
 ): Promise<Response> {
   if (request.method === "GET" && url.pathname === "/health") {
-    await storage.liveness();
+    await storage.readiness();
+    return json({ ok: true });
+  }
+  if (request.method === "GET" && url.pathname === "/live") {
     return json({ ok: true });
   }
   if (request.method === "GET" && url.pathname === "/api/public/catalog") {
@@ -126,7 +138,41 @@ async function route(
         headers: { "Cache-Control": "private, no-store" }
       });
     }
-    return adminMutation(request, url, storage, actor.id);
+    if (request.method === "GET" && url.pathname === "/api/ops/audit") {
+      return json(
+        await storage.readAuditPage(
+          paginationCursor(url),
+          paginationLimit(url)
+        ),
+        { headers: { "Cache-Control": "private, no-store" } }
+      );
+    }
+    if (request.method === "GET" && url.pathname === "/api/ops/history") {
+      return json(
+        await storage.readHistoryPage(
+          paginationCursor(url),
+          paginationLimit(url)
+        ),
+        { headers: { "Cache-Control": "private, no-store" } }
+      );
+    }
+    if (request.method === "GET" && url.pathname === "/api/ops/incidents") {
+      const cursor = paginationCursor(url);
+      if (cursor !== undefined && !/^\d+$/.test(cursor)) {
+        throw new MutationError("Invalid incident cursor");
+      }
+      return json(
+        await storage.readIncidentPage(cursor, paginationLimit(url)),
+        { headers: { "Cache-Control": "private, no-store" } }
+      );
+    }
+    return adminMutation(
+      request,
+      url,
+      storage,
+      actor.id,
+      trustedOrigin
+    );
   }
 
   return json({ error: "not_found" }, { status: 404 });
@@ -136,11 +182,13 @@ async function adminMutation(
   request: Request,
   url: URL,
   storage: WebStorage,
-  actor: string
+  actor: string,
+  trustedOrigin: string
 ): Promise<Response> {
   if (!["POST", "PUT", "PATCH", "DELETE"].includes(request.method)) {
     return json({ error: "not_found" }, { status: 404 });
   }
+  enforceMutationBoundary(request, trustedOrigin);
   if (request.method === "PUT" && url.pathname === "/api/ops/catalog") {
     if (request.headers.get("if-none-match") !== "*") {
       throw new MutationError("Catalog initialization requires If-None-Match: *");
@@ -589,10 +637,13 @@ function parsePatchedMonitor(
   if (typeof enabled !== "boolean") {
     throw new MutationError("monitor.enabled must be a boolean");
   }
+  if (scope !== "public" && scope !== "tailscale") {
+    throw new MutationError("monitor.scope must be public or tailscale");
+  }
   return {
     enabled,
     paused: current?.paused ?? false,
-    scope: scope === "tailscale" ? "tailscale" : "public",
+    scope,
     url: url.trim()
   };
 }
@@ -624,6 +675,45 @@ function parseIfMatch(request: Request): string {
     throw new MutationError("A valid If-Match catalog revision is required");
   }
   return revision;
+}
+
+function enforceMutationBoundary(
+  request: Request,
+  trustedOrigin: string
+): void {
+  if (request.headers.get("origin") !== trustedOrigin) {
+    throw new CsrfError();
+  }
+  const contentType = request.headers.get("content-type");
+  if (contentType?.split(";", 1)[0]?.trim().toLowerCase() !== "application/json") {
+    throw new MutationError("Content-Type must be application/json");
+  }
+}
+
+class CsrfError extends Error {
+  constructor() {
+    super("Mutation origin is not trusted");
+    this.name = "CsrfError";
+  }
+}
+
+function paginationLimit(url: URL): number {
+  const raw = url.searchParams.get("limit");
+  if (raw === null) return 25;
+  const limit = Number(raw);
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+    throw new MutationError("limit must be an integer from 1 to 100");
+  }
+  return limit;
+}
+
+function paginationCursor(url: URL): string | undefined {
+  const cursor = url.searchParams.get("cursor");
+  if (cursor === null) return undefined;
+  if (!cursor || cursor.length > 2048) {
+    throw new MutationError("Invalid pagination cursor");
+  }
+  return cursor;
 }
 
 function isProtectedPath(path: string): boolean {
@@ -683,6 +773,9 @@ function errorResponse(error: unknown): Response {
   }
   if (error instanceof MutationError) {
     return json({ error: "invalid_request", message: error.message }, { status: error.status });
+  }
+  if (error instanceof CsrfError) {
+    return json({ error: "untrusted_origin" }, { status: 403 });
   }
   if (error instanceof CatalogNotFoundError) {
     return json({ error: "not_initialized" }, { status: 404 });

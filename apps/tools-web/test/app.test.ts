@@ -1,4 +1,8 @@
-import { BUCKET_KEYS } from "@tools-platform/domain";
+import {
+  AUDIT_SCHEMA_VERSION,
+  BUCKET_KEYS,
+  HISTORY_SCHEMA_VERSION
+} from "@tools-platform/domain";
 import { describe, expect, it } from "vitest";
 import { createApp, type AppLogger } from "../src/app.js";
 import { AccessDeniedError, type AccessVerifier } from "../src/auth.js";
@@ -20,17 +24,34 @@ const denied: AccessVerifier = {
 describe("tools web routes", () => {
   it("does no bucket work until a request and checks bucket readability on health", async () => {
     const bucket = seededBucket();
-    const app = createApp({ storage: new WebStorage(bucket), access: denied, logger: quiet });
+    const app = testApp(bucket, denied);
     expect(bucket.reads).toBe(0);
 
     const response = await app(new Request("https://tools.example.test/health"));
     expect(response.status).toBe(200);
-    expect(bucket.reads).toBe(1);
+    expect(bucket.reads).toBe(2);
+  });
+
+  it("separates process liveness from required-object readiness", async () => {
+    const empty = new MemoryBucket();
+    const app = testApp(empty, denied);
+    const live = await app(new Request("https://tools.example.test/live"));
+    expect(live.status).toBe(200);
+    expect(empty.reads).toBe(0);
+    expect(
+      (await app(new Request("https://tools.example.test/health"))).status
+    ).toBe(503);
+
+    empty.seed(BUCKET_KEYS.catalog, catalog, "catalog");
+    empty.seed(BUCKET_KEYS.publicSnapshot, { schemaVersion: 999 }, "snapshot");
+    expect(
+      (await app(new Request("https://tools.example.test/health"))).status
+    ).toBe(503);
   });
 
   it("serves only the prepared public projection from public routes", async () => {
     const bucket = seededBucket();
-    const app = createApp({ storage: new WebStorage(bucket), access: denied, logger: quiet });
+    const app = testApp(bucket, denied);
     for (const path of ["/", "/api/public/catalog"]) {
       const response = await app(new Request(`https://tools.example.test${path}`));
       const text = await response.text();
@@ -50,7 +71,7 @@ describe("tools web routes", () => {
 
   it("serves CSP-safe static assets and renders protected operations state", async () => {
     const bucket = seededBucket();
-    const app = createApp({ storage: new WebStorage(bucket), access: allowed, logger: quiet });
+    const app = testApp(bucket, allowed);
     const css = await app(new Request("https://tools.example.test/assets/tools.css"));
     expect(css.status).toBe(200);
     expect(css.headers.get("content-type")).toContain("text/css");
@@ -68,16 +89,140 @@ describe("tools web routes", () => {
 
   it("requires independently verified Access assertions for all ops routes", async () => {
     const bucket = seededBucket();
-    const app = createApp({ storage: new WebStorage(bucket), access: denied, logger: quiet });
+    const app = testApp(bucket, denied);
     for (const path of ["/ops", "/ops/anything", "/api/ops/catalog"]) {
       const response = await app(new Request(`https://tools.example.test${path}`));
       expect(response.status).toBe(401);
     }
   });
 
+  it("enforces exact-origin JSON CSRF boundaries after Access authentication", async () => {
+    const bucket = seededBucket();
+    let verifications = 0;
+    const access: AccessVerifier = {
+      async verify() {
+        verifications += 1;
+        return { id: "admin@example.test" };
+      }
+    };
+    const app = testApp(bucket, access);
+    const request = (headers: HeadersInit) =>
+      app(
+        new Request("https://tools.example.test/api/ops/groups", {
+          method: "POST",
+          headers: {
+            "If-Match": `"${catalog.revision}"`,
+            ...headers
+          },
+          body: "{}"
+        })
+      );
+
+    expect(
+      (await request({
+        Origin: "https://evil.example",
+        "Content-Type": "application/json"
+      })).status
+    ).toBe(403);
+    expect(
+      (await request({ "Content-Type": "application/json" })).status
+    ).toBe(403);
+    expect(
+      (await request({
+        Origin: "https://tools.example.test",
+        "Content-Type": "text/plain"
+      })).status
+    ).toBe(400);
+    const missingContentType = await app(
+      new Request("https://tools.example.test/api/ops/groups", {
+        method: "POST",
+        headers: {
+          "If-Match": `"${catalog.revision}"`,
+          Origin: "https://tools.example.test"
+        },
+        body: new Uint8Array()
+      })
+    );
+    expect(missingContentType.status).toBe(400);
+    expect(verifications).toBe(4);
+    expect(bucket.writes).toHaveLength(0);
+  });
+
+  it("serves protected paginated audit, history, and incident data only", async () => {
+    const bucket = seededBucket();
+    bucket.seed(
+      "audit/2026/07/2026-07-27T00:00:00.000Z-audit-1.json",
+      {
+        schemaVersion: AUDIT_SCHEMA_VERSION,
+        id: "audit-1",
+        actor: "admin@example.test",
+        occurredAt: "2026-07-27T00:00:00.000Z",
+        action: "entry.archive",
+        targetType: "entry",
+        targetId: "artifact-publisher",
+        catalogRevisionBefore: "revision_0",
+        catalogRevisionAfter: catalog.revision
+      },
+      "audit-etag"
+    );
+    bucket.seed(
+      "history/2026-07-27.json.gz",
+      {
+        schemaVersion: HISTORY_SCHEMA_VERSION,
+        day: "2026-07-27",
+        updatedAt: "2026-07-27T00:00:00.000Z",
+        observations: [],
+        incidents: []
+      },
+      "history-etag"
+    );
+    bucket.seed(
+      BUCKET_KEYS.privateSnapshot,
+      {
+        ...privateSnapshot,
+        state: {
+          ...privateSnapshot.state,
+          incidents: [
+            {
+              id: "incident-1",
+              monitorId: "artifact-publisher",
+              startedAt: "2026-07-27T00:00:00.000Z",
+              openingObservationId: "observation-1",
+              resolvedAt: null,
+              closingObservationId: null
+            }
+          ]
+        }
+      },
+      "private-with-incident"
+    );
+    const app = testApp(bucket, allowed);
+
+    const audit = await app(
+      new Request("https://tools.example.test/api/ops/audit?limit=1")
+    );
+    expect(audit.status).toBe(200);
+    expect(JSON.stringify(await audit.json())).toContain("audit-1");
+    const history = await app(
+      new Request("https://tools.example.test/api/ops/history?limit=1")
+    );
+    expect(history.status).toBe(200);
+    expect(JSON.stringify(await history.json())).toContain("2026-07-27");
+    const incidents = await app(
+      new Request("https://tools.example.test/api/ops/incidents?limit=1")
+    );
+    expect(incidents.status).toBe(200);
+    expect(JSON.stringify(await incidents.json())).toContain("incident-1");
+    expect(
+      (await app(
+        new Request("https://tools.example.test/api/public/history")
+      )).status
+    ).toBe(404);
+  });
+
   it("supports conditional archive/pause/resume/delete CRUD with audit writes", async () => {
     const bucket = seededBucket();
-    const app = createApp({ storage: new WebStorage(bucket), access: allowed, logger: quiet });
+    const app = testApp(bucket, allowed);
     const archived = await app(
       mutationRequest("/api/ops/entries/artifact-publisher/archive", catalog.revision)
     );
@@ -103,15 +248,39 @@ describe("tools web routes", () => {
     await resumed.json();
     expect(JSON.stringify(bucket.objects.get(BUCKET_KEYS.catalog)?.body))
       .toContain('"paused":false');
-    expect(bucket.writes.filter(({ key }) => key.startsWith("audit/"))).toHaveLength(3);
+    expect(bucket.writes.filter(({ key }) =>
+      /^audit\/\d{4}\/\d{2}\//.test(key)
+    )).toHaveLength(3);
     expect(bucket.writes.every(({ key }) =>
       key === BUCKET_KEYS.catalog || key.startsWith("audit/")
     )).toBe(true);
   });
 
+  it("does not turn committed catalog writes into 500s when audit finalization retries", async () => {
+    const bucket = seededBucket();
+    bucket.failCanonicalAuditWrites = 1;
+    const app = testApp(bucket, allowed);
+
+    const mutation = await app(
+      mutationRequest(
+        "/api/ops/entries/artifact-publisher/archive",
+        catalog.revision
+      )
+    );
+    expect(mutation.status).toBe(200);
+    const audit = await app(
+      new Request("https://tools.example.test/api/ops/audit?limit=10")
+    );
+    expect(audit.status).toBe(200);
+    expect(JSON.stringify(await audit.json())).toContain("entry.archive");
+    expect(
+      [...bucket.objects.keys()].some((key) => /^audit\/\d{4}\/\d{2}\//.test(key))
+    ).toBe(true);
+  });
+
   it("creates, replaces, reorders, and deletes catalog resources", async () => {
     const bucket = seededBucket();
-    const app = createApp({ storage: new WebStorage(bucket), access: allowed, logger: quiet });
+    const app = testApp(bucket, allowed);
     let revision = catalog.revision;
 
     const createdGroup = await app(
@@ -166,7 +335,9 @@ describe("tools web routes", () => {
     await deletedEntry.json();
     expect(JSON.stringify(bucket.objects.get(BUCKET_KEYS.catalog)?.body))
       .not.toContain("artifact-publisher");
-    expect(bucket.writes.filter(({ key }) => key.startsWith("audit/"))).toHaveLength(5);
+    expect(bucket.writes.filter(({ key }) =>
+      /^audit\/\d{4}\/\d{2}\//.test(key)
+    )).toHaveLength(5);
   });
 
   it("returns 409 for stale revision writes and does not leak request data to logs", async () => {
@@ -180,14 +351,15 @@ describe("tools web routes", () => {
         logged.push(fields);
       }
     };
-    const app = createApp({ storage: new WebStorage(bucket), access: allowed, logger });
+    const app = testApp(bucket, allowed, logger);
     const response = await app(
       new Request("https://tools.example.test/api/ops/groups", {
         method: "POST",
         headers: {
           "Cf-Access-Jwt-Assertion": "very-secret-token",
           "If-Match": '"stale"',
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
+          Origin: "https://tools.example.test"
         },
         body: JSON.stringify({
           id: "private-secret",
@@ -212,7 +384,7 @@ describe("tools web routes", () => {
 
   it("validates replacement bodies and provides ETags for UI concurrency", async () => {
     const bucket = seededBucket();
-    const app = createApp({ storage: new WebStorage(bucket), access: allowed, logger: quiet });
+    const app = testApp(bucket, allowed);
     const read = await app(new Request("https://tools.example.test/api/ops/catalog"));
     expect(read.headers.get("etag")).toBe(`"${catalog.revision}"`);
 
@@ -221,7 +393,8 @@ describe("tools web routes", () => {
         method: "PUT",
         headers: {
           "If-Match": `"${catalog.revision}"`,
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
+          Origin: "https://tools.example.test"
         },
         body: JSON.stringify({ id: "different-id" })
       })
@@ -231,13 +404,31 @@ describe("tools web routes", () => {
       error: "invalid_request",
       message: "Entry ID cannot change"
     });
+
+    const invalidScope = await app(
+      jsonMutation(
+        "PATCH",
+        "/api/ops/entries/artifact-publisher",
+        catalog.revision,
+        { monitor: { url: "https://example.test/health", scope: "internal" } }
+      )
+    );
+    expect(invalidScope.status).toBe(400);
+    expect(await invalidScope.json()).toEqual({
+      error: "invalid_request",
+      message: "monitor.scope must be public or tailscale"
+    });
   });
 });
 
 function mutationRequest(path: string, revision: string): Request {
   return new Request(`https://tools.example.test${path}`, {
     method: "POST",
-    headers: { "If-Match": `"${revision}"` },
+    headers: {
+      "If-Match": `"${revision}"`,
+      "Content-Type": "application/json",
+      Origin: "https://tools.example.test"
+    },
     body: "{}"
   });
 }
@@ -252,7 +443,8 @@ function jsonMutation(
     method,
     headers: {
       "If-Match": `"${revision}"`,
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
+      Origin: "https://tools.example.test"
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) })
   });
@@ -282,3 +474,16 @@ const quiet: AppLogger = {
   info() {},
   error() {}
 };
+
+function testApp(
+  bucket: MemoryBucket,
+  access: AccessVerifier,
+  logger: AppLogger = quiet
+) {
+  return createApp({
+    storage: new WebStorage(bucket),
+    access,
+    trustedOrigin: "https://tools.example.test",
+    logger
+  });
+}

@@ -1,5 +1,6 @@
 import {
   GetObjectCommand,
+  ListObjectsV2Command,
   PutObjectCommand,
   S3Client
 } from "@aws-sdk/client-s3";
@@ -17,6 +18,11 @@ export interface ConditionalWrite {
 export interface JsonBucket {
   get(key: string): Promise<BucketObject | null>;
   put(key: string, body: unknown, condition?: ConditionalWrite): Promise<string>;
+  list(
+    prefix: string,
+    cursor: string | undefined,
+    limit: number
+  ): Promise<{ keys: string[]; nextCursor?: string }>;
 }
 
 export class BucketConflictError extends Error {
@@ -57,7 +63,10 @@ export function createS3JsonBucket(config: {
           new GetObjectCommand({ Bucket: config.name, Key: key })
         );
         if (!result.Body) throw new BucketReadError("Bucket object has no body");
-        const text = await result.Body.transformToString();
+        const bytes = new Uint8Array(await result.Body.transformToByteArray());
+        const decoded =
+          result.ContentEncoding === "gzip" ? Bun.gunzipSync(bytes) : bytes;
+        const text = new TextDecoder().decode(decoded);
         return {
           body: JSON.parse(text),
           etag: normalizeEtag(result.ETag)
@@ -86,6 +95,29 @@ export function createS3JsonBucket(config: {
       } catch (error) {
         if (isConflict(error)) throw new BucketConflictError();
         throw new Error("Unable to write bucket object");
+      }
+    },
+    async list(prefix, cursor, limit) {
+      try {
+        const result = await client.send(
+          new ListObjectsV2Command({
+            Bucket: config.name,
+            Prefix: prefix,
+            ContinuationToken: cursor,
+            MaxKeys: limit
+          })
+        );
+        const keys = (result.Contents ?? [])
+          .map(({ Key }) => Key)
+          .filter((key): key is string => key !== undefined);
+        return {
+          keys,
+          ...(result.NextContinuationToken
+            ? { nextCursor: result.NextContinuationToken }
+            : {})
+        };
+      } catch {
+        throw new BucketReadError("Unable to list bucket objects");
       }
     }
   };

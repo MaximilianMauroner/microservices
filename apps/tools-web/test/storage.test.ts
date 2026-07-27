@@ -35,9 +35,11 @@ describe("web storage ownership and concurrency", () => {
     );
 
     expect(updated.revision).not.toBe(catalog.revision);
-    expect(bucket.writes[0]?.key).toBe(BUCKET_KEYS.catalog);
-    expect(bucket.writes[0]?.condition).toEqual({ ifMatch: "catalog-etag" });
-    const auditWrite = bucket.writes[1];
+    expect(bucket.writes[0]?.key).toMatch(/^audit\/intents\//);
+    expect(bucket.writes[0]?.condition).toEqual({ ifNoneMatch: "*" });
+    expect(bucket.writes[1]?.key).toBe(BUCKET_KEYS.catalog);
+    expect(bucket.writes[1]?.condition).toEqual({ ifMatch: "catalog-etag" });
+    const auditWrite = bucket.writes[2];
     expect(auditWrite?.key).toMatch(/^audit\/\d{4}\/\d{2}\//);
     expect(auditWrite?.condition).toEqual({ ifNoneMatch: "*" });
     expect(decodeAdminAuditRecord(auditWrite?.body)).toMatchObject({
@@ -58,11 +60,57 @@ describe("web storage ownership and concurrency", () => {
       storage.updateCatalog("stale", "actor", "catalog.reorder", "catalog", null, (value) => value)
     ).rejects.toBeInstanceOf(CatalogConflictError);
 
-    bucket.conflictNextWrite = true;
+    bucket.conflictCatalogWrite = true;
     await expect(
       storage.updateCatalog(catalog.revision, "actor", "catalog.reorder", "catalog", null, (value) => value)
     ).rejects.toBeInstanceOf(CatalogConflictError);
-    expect(bucket.writes).toHaveLength(0);
+    expect(bucket.writes.some(({ key }) => key.startsWith("audit/intents/"))).toBe(true);
+    expect(bucket.writes.some(({ key }) => key.startsWith("audit/cancelled/"))).toBe(true);
+  });
+
+  it("returns catalog success with a durable audit obligation and repairs it later", async () => {
+    const bucket = seededBucket();
+    bucket.failCanonicalAuditWrites = 1;
+    const storage = new WebStorage(bucket);
+
+    const updated = await storage.updateCatalog(
+      catalog.revision,
+      "admin@example.test",
+      "entry.archive",
+      "entry",
+      "artifact-publisher",
+      (value) => value
+    );
+    expect(updated.revision).not.toBe(catalog.revision);
+    expect(
+      [...bucket.objects.keys()].some((key) => key.startsWith("audit/intents/"))
+    ).toBe(true);
+    expect(
+      [...bucket.objects.keys()].some((key) => /^audit\/\d{4}\/\d{2}\//.test(key))
+    ).toBe(false);
+
+    await storage.repairPendingAudits();
+    expect(
+      [...bucket.objects.keys()].some((key) => /^audit\/\d{4}\/\d{2}\//.test(key))
+    ).toBe(true);
+  });
+
+  it("uses the same durable audit protocol for catalog initialization", async () => {
+    const bucket = new MemoryBucket();
+    bucket.failCanonicalAuditWrites = 1;
+    const storage = new WebStorage(bucket);
+
+    await expect(
+      storage.initializeCatalog(catalog, "admin@example.test")
+    ).resolves.toEqual(catalog);
+    expect(bucket.objects.has(BUCKET_KEYS.catalog)).toBe(true);
+    expect(
+      [...bucket.objects.keys()].some((key) => key.startsWith("audit/intents/"))
+    ).toBe(true);
+    await storage.repairPendingAudits();
+    expect(
+      [...bucket.objects.keys()].some((key) => /^audit\/\d{4}\/\d{2}\//.test(key))
+    ).toBe(true);
   });
 });
 
