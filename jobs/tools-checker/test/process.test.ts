@@ -1,5 +1,10 @@
+import { spawn } from "node:child_process";
+import type { Readable } from "node:stream";
 import { describe, expect, it, vi } from "vitest";
-import { CheckerDeadlineError, executeChecker } from "../src/index.js";
+import {
+  CheckerDeadlineError,
+  executeChecker
+} from "../src/index.js";
 import {
   MemoryStore,
   NOW,
@@ -52,4 +57,50 @@ describe("one-shot process", () => {
     ).rejects.toBeInstanceOf(CheckerDeadlineError);
     expect(store.closed).toBe(true);
   });
+
+  it("force-exits a spawned CLI after deadline cleanup despite an active handle", async () => {
+    const fixture = new URL(
+      "./fixtures/active-handle-cli.ts",
+      import.meta.url
+    ).pathname;
+    const child = spawn("bun", [fixture], {
+      cwd: process.cwd(),
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    const stdout = readStream(child.stdout);
+    const stderr = readStream(child.stderr);
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const exitCode = await Promise.race([
+        new Promise<number>((resolve, reject) => {
+          child.once("error", reject);
+          child.once("exit", (code) => resolve(code ?? -1));
+        }),
+        new Promise<never>((_resolve, reject) => {
+          timeout = setTimeout(
+            () => reject(new Error("spawned checker did not force-exit")),
+            2_000
+          );
+        })
+      ]);
+      const [stdoutText, stderrText] = await Promise.all([stdout, stderr]);
+      expect(exitCode).toBe(1);
+      expect(stdoutText).toContain("store.closed");
+      expect(stderrText).toContain("checker_process_terminal");
+      expect(stderrText).toContain("checker_process_force_exit");
+    } finally {
+      if (timeout) clearTimeout(timeout);
+      child.kill();
+    }
+  });
 });
+
+async function readStream(stream: Readable | null): Promise<string> {
+  if (!stream) return "";
+  let text = "";
+  stream.setEncoding("utf8");
+  for await (const chunk of stream) {
+    text += String(chunk);
+  }
+  return text;
+}

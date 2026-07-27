@@ -120,5 +120,53 @@ describe("history retention and ownership", () => {
         ({ monitorId }) => monitorId === "public-a"
       )
     ).toBe(true);
+
+    const writesAfterResolution = store.historyWrites;
+    await runChecker({
+      store,
+      config: configFixture,
+      logger,
+      fetcher: vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(new Response(null, { status: 200 })),
+      now: () => new Date("2026-07-28T00:01:00.000Z")
+    });
+    expect(store.historyWrites).toBe(writesAfterResolution);
+  });
+
+  it("groups a check by checkedAt when it crosses midnight after invocation", async () => {
+    const store = new MemoryStore();
+    store.catalog = {
+      ...store.catalog,
+      value: {
+        ...store.catalog.value,
+        entries: store.catalog.value.entries.filter(
+          ({ id }) => id === "public-a"
+        )
+      }
+    };
+    const beforeMidnight = new Date("2026-07-27T23:59:59.900Z");
+    const afterMidnight = new Date("2026-07-28T00:00:00.100Z");
+    let clockCalls = 0;
+
+    await runChecker({
+      store,
+      config: configFixture,
+      logger,
+      fetcher: vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(new Response(null, { status: 200 })),
+      now: () => (clockCalls++ < 2 ? beforeMidnight : afterMidnight)
+    });
+
+    expect(store.history.has("2026-07-27")).toBe(false);
+    expect(
+      store.history.get("2026-07-28")?.value.observations
+    ).toMatchObject([
+      {
+        checkedAt: afterMidnight.toISOString(),
+        monitorId: "public-a"
+      }
+    ]);
   });
 });
