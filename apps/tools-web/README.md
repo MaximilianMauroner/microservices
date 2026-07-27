@@ -14,7 +14,6 @@ writer ownership enforced in code.
 Required platform Access variables:
 
 - `CF_ACCESS_ISSUER`
-- `CF_ACCESS_AUDIENCE`, an ordered fallback for non-production development only
 - `CF_ACCESS_MANAGE_AUDIENCE`
 - `CF_ACCESS_PUBLISHER_AUDIENCE`
 - `CF_ACCESS_REVIEW_AUDIENCE`

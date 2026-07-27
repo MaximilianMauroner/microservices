@@ -8,17 +8,13 @@ type Environment = Readonly<Record<string, string | undefined>>;
 export function loadPlatformConfig(env: Environment = process.env) {
   const publicOrigin = required(env, "PUBLIC_ORIGIN");
   const port = env.PORT ?? "3000";
-  const audiences = routeAudiences(
-    env,
-    optionalAudience(env.CF_ACCESS_AUDIENCE) ?? []
-  );
+  const audiences = routeAudiences(env);
 
   const tools = loadToolsConfig({
     ...env,
     PORT: port,
     PUBLIC_ORIGIN: publicOrigin,
     CF_ACCESS_AUDIENCE:
-      env.CF_ACCESS_AUDIENCE ??
       [...audiences.manage, ...audiences.publisher, ...audiences.review].join(","),
     ...bucketEnvironment(env, "TOOLS")
   });
@@ -60,44 +56,31 @@ export function loadPlatformConfig(env: Environment = process.env) {
   };
 }
 
-export function routeAudiences(env: Environment, fallback: string[]) {
+export function routeAudiences(env: Environment) {
   const explicit = {
     manage: optionalAudience(env.CF_ACCESS_MANAGE_AUDIENCE),
     publisher: optionalAudience(env.CF_ACCESS_PUBLISHER_AUDIENCE),
     review: optionalAudience(env.CF_ACCESS_REVIEW_AUDIENCE)
   };
-  const configured = Object.values(explicit).filter(
-    (value): value is string[] => value !== undefined
-  );
-  if (env.NODE_ENV === "production" || configured.length > 0) {
-    for (const [family, value] of Object.entries(explicit)) {
-      if (!value) {
-        throw new Error(
-          `CF_ACCESS_${family.toUpperCase()}_AUDIENCE is required when route-family audiences are configured`
-        );
-      }
-      if (value.length !== 1) {
-        throw new Error(
-          `CF_ACCESS_${family.toUpperCase()}_AUDIENCE must contain exactly one audience tag`
-        );
-      }
+  for (const [family, value] of Object.entries(explicit)) {
+    if (!value) {
+      throw new Error(
+        `CF_ACCESS_${family.toUpperCase()}_AUDIENCE is required`
+      );
     }
-    const audiences = {
-      manage: explicit.manage!,
-      publisher: explicit.publisher!,
-      review: explicit.review!
-    };
-    requireDistinctAudiences(audiences);
-    return audiences;
+    if (value.length !== 1) {
+      throw new Error(
+        `CF_ACCESS_${family.toUpperCase()}_AUDIENCE must contain exactly one audience tag`
+      );
+    }
   }
-  if (fallback.length === 0) {
-    throw new Error("CF_ACCESS_AUDIENCE must contain at least one audience tag");
-  }
-  return {
-    manage: [fallback[0]!],
-    publisher: [fallback[1] ?? fallback[0]!],
-    review: [fallback[2] ?? fallback[0]!]
+  const audiences = {
+    manage: explicit.manage!,
+    publisher: explicit.publisher!,
+    review: explicit.review!
   };
+  requireDistinctAudiences(audiences);
+  return audiences;
 }
 
 function optionalAudience(value: string | undefined): string[] | undefined {
