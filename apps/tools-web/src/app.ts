@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import {
   decodeCatalogDocument,
+  validateLiteralTarget,
   type CatalogDocument,
   type PrivateSnapshotDocument,
   type PublicSnapshotDocument
@@ -194,7 +195,7 @@ async function adminMutation(
       throw new MutationError("Catalog initialization requires If-None-Match: *");
     }
     const input = await jsonBody(request);
-    const catalog = decodeCatalogDocument(input);
+    const catalog = decodeAdminCatalog(input);
     return mutationResponse(await storage.initializeCatalog(catalog, actor), 201);
   }
 
@@ -389,7 +390,7 @@ function parseCreatedGroup(
   id: string
 ) {
   const body = inputRecord(input);
-  const decoded = decodeCatalogDocument({
+  const decoded = decodeAdminCatalog({
     ...catalog,
     groups: [
       ...catalog.groups,
@@ -409,6 +410,19 @@ function parseCreatedGroup(
   return group;
 }
 
+function decodeAdminCatalog(input: unknown): CatalogDocument {
+  const catalog = decodeCatalogDocument(input);
+  for (const entry of catalog.entries) {
+    if (!entry.monitor) continue;
+    try {
+      validateLiteralTarget(new URL(entry.monitor.url).hostname);
+    } catch {
+      throw new MutationError("Monitor URL cannot target a blocked literal address");
+    }
+  }
+  return catalog;
+}
+
 function parseCreatedEntry(
   catalog: CatalogDocument,
   input: unknown,
@@ -416,7 +430,7 @@ function parseCreatedEntry(
 ) {
   const body = inputRecord(input);
   const groupId = requiredString(body, "groupId");
-  const decoded = decodeCatalogDocument({
+  const decoded = decodeAdminCatalog({
     ...catalog,
     entries: [
       ...catalog.entries,
@@ -453,7 +467,7 @@ function patchGroupFromInput(
     throw new MutationError("Group not found", 404);
   }
   const body = inputRecord(input);
-  return decodeCatalogDocument({
+  return decodeAdminCatalog({
     ...catalog,
     groups: catalog.groups.map((group) =>
       group.id === id
@@ -485,7 +499,7 @@ function replaceGroupFromInput(
   if (requiredIdentifier(input) !== id) {
     throw new MutationError("Group ID cannot change");
   }
-  return decodeCatalogDocument({
+  return decodeAdminCatalog({
     ...catalog,
     groups: catalog.groups.map((group) => (group.id === id ? input : group))
   });
@@ -507,7 +521,7 @@ function patchEntryFromInput(
   const monitor = monitorFieldsPresent
     ? parsePatchedMonitor(body, current.monitor)
     : current.monitor;
-  return decodeCatalogDocument({
+  return decodeAdminCatalog({
     ...catalog,
     entries: catalog.entries.map((entry) =>
       entry.id === id
@@ -547,7 +561,7 @@ function replaceEntryFromInput(
   if (requiredIdentifier(input) !== id) {
     throw new MutationError("Entry ID cannot change");
   }
-  return decodeCatalogDocument({
+  return decodeAdminCatalog({
     ...catalog,
     entries: catalog.entries.map((entry) => (entry.id === id ? input : entry))
   });

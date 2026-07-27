@@ -19,6 +19,7 @@ describe("static UI assets", () => {
     expect(script).toContain("[data-ops-collection]");
     expect(script).toContain("[data-collection-retry]");
     expect(script).toContain("observation.monitorId");
+    expect(script).toContain("Legacy monitor unknown");
     expect(script).not.toContain("setInterval");
     expect(script).not.toContain("setTimeout");
   });

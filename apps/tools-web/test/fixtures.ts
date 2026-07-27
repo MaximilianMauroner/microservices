@@ -2,6 +2,7 @@ import {
   CATALOG_SCHEMA_VERSION,
   CHECKER_STATE_SCHEMA_VERSION,
   SNAPSHOT_SCHEMA_VERSION,
+  BUCKET_KEYS,
   type CatalogDocument,
   type PrivateSnapshotDocument,
   type PublicSnapshotDocument
@@ -123,6 +124,8 @@ export class MemoryBucket implements JsonBucket {
   readonly writes: Array<{ key: string; body: unknown; condition?: ConditionalWrite }> = [];
   conflictNextWrite = false;
   conflictCatalogWrite = false;
+  failCatalogWrite = false;
+  commitCatalogThenFail = false;
   failCanonicalAuditWrites = 0;
   reads = 0;
 
@@ -139,6 +142,10 @@ export class MemoryBucket implements JsonBucket {
     if (this.conflictCatalogWrite && key === "catalog/current.json") {
       this.conflictCatalogWrite = false;
       throw new BucketConflictError();
+    }
+    if (this.failCatalogWrite && key === BUCKET_KEYS.catalog) {
+      this.failCatalogWrite = false;
+      throw new Error("simulated ambiguous catalog write failure");
     }
     if (
       this.failCanonicalAuditWrites > 0 &&
@@ -165,6 +172,10 @@ export class MemoryBucket implements JsonBucket {
       body,
       ...(condition === undefined ? {} : { condition })
     });
+    if (this.commitCatalogThenFail && key === BUCKET_KEYS.catalog) {
+      this.commitCatalogThenFail = false;
+      throw new Error("simulated lost catalog write response");
+    }
     return etag;
   }
 

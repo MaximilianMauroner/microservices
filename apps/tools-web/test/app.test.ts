@@ -29,7 +29,7 @@ describe("tools web routes", () => {
 
     const response = await app(new Request("https://tools.example.test/health"));
     expect(response.status).toBe(200);
-    expect(bucket.reads).toBe(2);
+    expect(bucket.reads).toBe(3);
   });
 
   it("separates process liveness from required-object readiness", async () => {
@@ -44,6 +44,12 @@ describe("tools web routes", () => {
 
     empty.seed(BUCKET_KEYS.catalog, catalog, "catalog");
     empty.seed(BUCKET_KEYS.publicSnapshot, { schemaVersion: 999 }, "snapshot");
+    expect(
+      (await app(new Request("https://tools.example.test/health"))).status
+    ).toBe(503);
+
+    empty.seed(BUCKET_KEYS.publicSnapshot, publicSnapshot, "public");
+    empty.seed(BUCKET_KEYS.privateSnapshot, { schemaVersion: 999 }, "private");
     expect(
       (await app(new Request("https://tools.example.test/health"))).status
     ).toBe(503);
@@ -441,6 +447,47 @@ describe("tools web routes", () => {
       error: "invalid_request",
       message: "monitor.scope must be public or tailscale"
     });
+  });
+
+  it("rejects blocked literal monitor targets on create, replace, and patch", async () => {
+    const bucket = seededBucket();
+    const app = testApp(bucket, allowed);
+    const existing = catalog.entries[0];
+    if (!existing) throw new Error("Catalog fixture requires an entry");
+    const blockedMonitor = {
+      enabled: true,
+      paused: false,
+      scope: "public",
+      url: "http://127.0.0.1/health"
+    };
+    const requests = [
+      jsonMutation("POST", "/api/ops/entries", catalog.revision, {
+        id: "blocked-service",
+        groupId: "public-tools",
+        name: "Blocked service",
+        description: "Must not be persisted.",
+        visibility: "public",
+        monitor: blockedMonitor
+      }),
+      jsonMutation(
+        "PUT",
+        "/api/ops/entries/artifact-publisher",
+        catalog.revision,
+        { ...existing, monitor: blockedMonitor }
+      ),
+      jsonMutation(
+        "PATCH",
+        "/api/ops/entries/artifact-publisher",
+        catalog.revision,
+        { monitor: blockedMonitor }
+      )
+    ];
+
+    for (const request of requests) {
+      const response = await app(request);
+      expect(response.status).toBe(400);
+    }
+    expect(bucket.writes).toHaveLength(0);
   });
 });
 

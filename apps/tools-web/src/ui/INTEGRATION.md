@@ -24,9 +24,9 @@ errors retain already rendered items and expose a retry control. If the backend
 supplies initial pages to `renderOperationsPage`, the same panels render on the
 server and do not issue their initial request.
 
-History schema v2 persists a monitor ID on every observation. Legacy v0/v1
-partitions decode with the explicit sentinel `monitorId: "unknown"`; the API
-and UI display that value rather than inferring an association.
+History schema v2 persists a monitor ID on new observations. Legacy v0/v1
+partitions decode with `monitorId: null`; the API and UI display “Legacy monitor
+unknown” rather than inferring an association or treating a sentinel as an ID.
 - `PUT /api/ops/order` remains available for complete programmatic ordering;
   the browser uses the directional routes above.
 
