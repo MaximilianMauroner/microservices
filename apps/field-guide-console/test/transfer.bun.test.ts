@@ -1,0 +1,63 @@
+import {afterEach,describe,expect,it}from"bun:test";
+import crypto from"node:crypto";
+import{mkdtempSync,rmSync}from"node:fs";
+import{tmpdir}from"node:os";
+import{join}from"node:path";
+import postgres from"postgres";
+import{openSQLite}from"../src/db/sqlite.js";
+import{hashRows,snapshotReport,snapshotsEqual,sqliteSnapshot,summarize,type LogicalSnapshot}from"../src/db/logical-snapshot.js";
+import{importPostgresToSQLite,postgresSnapshot,recoverSQLiteToPostgres,transferSnapshotToSQLite}from"../src/db/transfer.js";
+import{SQLiteReviewRepository}from"../src/sqlite-repository.js";
+import{createRepository}from"../src/repository.js";
+import{DISPOSABLE_DATABASE_SENTINEL,withVerifiedDisposableDatabase}from"./postgres-test-gate.js";
+
+const directories:string[]=[];afterEach(()=>{for(const path of directories.splice(0))rmSync(path,{recursive:true,force:true});});
+const temporary=()=>{const directory=mkdtempSync(join(tmpdir(),"field-guide-transfer-"));directories.push(directory);return openSQLite(join(directory,"review.sqlite"));};
+const candidate=(id:string,title:string)=>({candidateId:id,scope:"global" as const,lessonKey:`key-${title}`,title,body:"Nested 会議 ✅",rationale:"verification",evidence:[{excerpt:"évidence",sessionRef:"会議",commitHashes:["abc"]}],createdAt:"2026-07-26T00:00:00.123Z"});
+
+describe("logical transfer",()=>{
+  it("bytewise-hashes Unicode rows independently of input order",()=>{const rows=[{"é":"accent",name:"Å"},{"会":"議",name:"🙂"},{"a":"plain",name:"Zulu"}];expect(hashRows(rows)).toBe(hashRows([...rows].reverse()));expect(hashRows(rows)).not.toBe(hashRows(rows.slice(1)));});
+
+  it("preserves the empty sequence's first value",()=>{const source=temporary();const target=temporary();const snapshot=sqliteSnapshot(source.client);expect(snapshot.sequence).toEqual({lastValue:"1",isCalled:false,nextValue:"1"});expect(transferSnapshotToSQLite(target.client,snapshot).sequence.nextValue).toBe("1");source.close();target.close();});
+
+  it("performs idempotent, authorized, atomic SQLite transfers and preserves the actual next sequence",async()=>{
+    const source=temporary();const sourceRepository=new SQLiteReviewRepository(source.client,()=>undefined);
+    const first=candidate("11111111-1111-4111-8111-111111111111","Ångström");const second=candidate("22222222-2222-4222-8222-222222222222","会議🙂");
+    await sourceRepository.createCandidate("clé-é",first);await sourceRepository.createCandidate("鍵-会",second);
+    const parent=await sourceRepository.decide(first.candidateId,1,{action:"approve"},new Date(first.createdAt),"réviseur@example.com");const decision=await sourceRepository.amendDecision(first.candidateId,1,{expectedDecisionId:parent.decisionId,action:"reject"},new Date("2026-07-26T00:00:01.123Z"),"réviseur@example.com");
+    await sourceRepository.createReceipt("receipt",decision.decisionId,"2026-07-26T00:01:00.456Z","applied");
+    source.client.run("INSERT INTO field_guide_schema_migrations VALUES(?,?,?,?)",["001_基準","sha256","2026-07-26T00:00:00.123Z",1]);
+    source.client.run("UPDATE sqlite_sequence SET seq=12 WHERE name='verdict_events'");
+    const snapshot=sqliteSnapshot(source.client);expect(snapshot.sequence).toEqual({lastValue:"12",isCalled:true,nextValue:"13"});const reversed=summarize({...snapshot.tables,verdict_events:[...snapshot.tables.verdict_events].reverse()},snapshot.sequence);expect(reversed.tables.verdict_events[0]?.amends_decision_id).toBe(parent.decisionId);
+
+    const target=temporary();const firstReport=transferSnapshotToSQLite(target.client,reversed);expect(firstReport).toEqual(snapshotReport(sqliteSnapshot(target.client)));expect(transferSnapshotToSQLite(target.client,snapshot)).toEqual(firstReport);expect(snapshotsEqual(snapshot,sqliteSnapshot(target.client))).toBe(true);expect(target.client.query<{parent:string|null},[string]>("SELECT amends_decision_id parent FROM verdict_events WHERE decision_id=?").get(decision.decisionId)?.parent).toBe(parent.decisionId);
+    const targetRepository=new SQLiteReviewRepository(target.client,()=>undefined);const third=candidate("33333333-3333-4333-8333-333333333333","Ωmega");await targetRepository.createCandidate("third",third);const inserted=await targetRepository.decide(third.candidateId,1,{action:"reject"},new Date(third.createdAt),"owner@example.com");expect(target.client.query<{sequence:string},[string]>("SELECT CAST(sequence AS TEXT) sequence FROM verdict_events WHERE decision_id=?").get(inserted.decisionId)?.sequence).toBe("13");
+
+    const differing=temporary();const differingRepository=new SQLiteReviewRepository(differing.client,()=>undefined);const extra=candidate("44444444-4444-4444-8444-444444444444","Different");await differingRepository.createCandidate("different",extra);expect(()=>transferSnapshotToSQLite(differing.client,snapshot)).toThrow("explicit overwrite authorization");transferSnapshotToSQLite(differing.client,snapshot,true);const beforeFailure=sqliteSnapshot(differing.client);
+    const invalidTables={...snapshot.tables,application_receipts:[...snapshot.tables.application_receipts,{idempotency_key:"broken",payload_hash:"hash",decision_id:crypto.randomUUID(),applied_at:"2026-07-26T00:02:00.123456Z",result:"applied"}]};const invalid:LogicalSnapshot=summarize(invalidTables,snapshot.sequence);
+    expect(()=>transferSnapshotToSQLite(differing.client,invalid,true)).toThrow();expect(snapshotsEqual(beforeFailure,sqliteSnapshot(differing.client))).toBe(true);
+    source.close();target.close();differing.close();
+  });
+
+  it("passes strict startup overwrite authorization and exposes only the safe report",async()=>{const handle=temporary();let received:{url:string;allow:boolean}|undefined;const report=snapshotReport(sqliteSnapshot(handle.client));const repositoryHandle=await createRepository({backend:"sqlite",sqlitePath:"/unused",databaseUrl:"postgres://user:secret@db/private",importOnStart:true,importAllowOverwrite:true,port:3000,agentApiToken:"agent-secret",allowedEmail:"owner@example.com",publicBaseUrl:"https://review.example"},{openSQLite:()=>handle,importPostgresToSQLite:async(_database,url,allow)=>{received={url,allow};return report;}});expect(received).toEqual({url:"postgres://user:secret@db/private",allow:true});expect(repositoryHandle.startupReport).toEqual(report);expect(JSON.stringify(report)).not.toContain("secret");expect(JSON.stringify(report)).not.toContain("private");await repositoryHandle.close();});
+});
+
+const databaseUrl=process.env.TEST_DATABASE_URL;const confirmed=process.env.FIELD_GUIDE_TEST_DATABASE_CONFIRM==="field-guide-console-test";const gatedIt=databaseUrl&&confirmed?it:it.skip;
+gatedIt("round-trips PostgreSQL through SQLite with microseconds, authorization, circular FKs, and sequence state",async()=>{
+  const url=databaseUrl;if(!url)throw new Error("TEST_DATABASE_URL is required.");const database=postgres(url,{max:1});let authorized=false;const sqlite=temporary();
+  const clear=async()=>{await database`DELETE FROM application_receipts`;await database`UPDATE review_rounds SET verdict_id=NULL`;await database`DELETE FROM verdict_events`;await database`DELETE FROM review_rounds`;await database`DELETE FROM candidates`;await database`DELETE FROM field_guide_schema_migrations`;};
+  try{
+    await withVerifiedDisposableDatabase({readRelationKind:async()=>{const rows=await database<{kind:string}[]>`SELECT c.relkind::text kind FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname=${DISPOSABLE_DATABASE_SENTINEL.relation}`;return rows[0]?.kind;},readValue:async()=>{const rows=await database<{value:string}[]>`SELECT sentinel_value value FROM field_guide_review_test_sentinel WHERE sentinel_key=${DISPOSABLE_DATABASE_SENTINEL.key}`;return rows[0]?.value;}},async()=>{authorized=true;});
+    if(!authorized)throw new Error("Disposable database was not authorized.");
+    const push=Bun.spawn(["bun","x","drizzle-kit","push","--config","drizzle.postgres.config.ts"],{cwd:new URL("..",import.meta.url).pathname,env:{...process.env,TEST_DATABASE_URL:url},stdout:"pipe",stderr:"pipe"});if(await push.exited!==0)throw new Error(`Disposable schema push failed: ${await new Response(push.stderr).text()}`);
+    await clear();
+    const candidateId="55555555-5555-4555-8555-555555555555";const parentDecisionId="66666666-6666-4666-8666-666666666666";const amendmentId="77777777-7777-4777-8777-777777777777";const payload=candidate(candidateId,"微秒 会議");
+    await database`INSERT INTO candidates VALUES(${candidateId},${"pg-unicode-鍵"},${database.json(payload)},${"hash"},${"2026-07-26T00:00:00.123456Z"})`;await database`INSERT INTO review_rounds(candidate_id,round,kind,due_at,verdict_id) VALUES(${candidateId},1,'initial',NULL,NULL)`;await database`INSERT INTO verdict_events(sequence,decision_id,candidate_id,round,action,reviewer,reviewed_at,next_review_at,round_kind,effect,amends_decision_id) VALUES(7,${parentDecisionId},${candidateId},1,'approve',${"réviseur@example.com"},${"2026-07-26T01:02:03.654321Z"},NULL,'initial','activate',NULL)`;await database`INSERT INTO verdict_events(sequence,decision_id,candidate_id,round,action,reviewer,reviewed_at,next_review_at,round_kind,effect,amends_decision_id) VALUES(9,${amendmentId},${candidateId},1,'reject',${"réviseur@example.com"},${"2026-07-26T01:02:04.654321Z"},NULL,'initial','deactivate',${parentDecisionId})`;await database`UPDATE review_rounds SET verdict_id=${amendmentId} WHERE candidate_id=${candidateId} AND round=1`;await database`INSERT INTO application_receipts VALUES(${"receipt"},${"receipt-hash"},${amendmentId},${"2026-07-26T01:03:04.234567Z"},'applied')`;await database`INSERT INTO field_guide_schema_migrations VALUES(${"001_基準"},${"checksum"},${"2026-07-26T01:04:05.345678Z"},true)`;await database`SELECT setval(pg_get_serial_sequence('verdict_events','sequence'),40,true)`;
+    const source=await postgresSnapshot(database);expect(source.sequence.nextValue).toBe("41");expect((source.tables.candidates[0]?.created_at)).toBe("2026-07-26T00:00:00.123456Z");
+    const imported=await importPostgresToSQLite(sqlite.client,url);expect(imported.sequence.nextValue).toBe("41");expect(await importPostgresToSQLite(sqlite.client,url)).toEqual(imported);
+    sqlite.client.run("INSERT INTO field_guide_schema_migrations VALUES(?,?,?,?)",["different","hash","2026-07-26T00:00:00.000000Z",0]);await expect(importPostgresToSQLite(sqlite.client,url)).rejects.toThrow("explicit overwrite authorization");await importPostgresToSQLite(sqlite.client,url,true);
+    await clear();await recoverSQLiteToPostgres(sqlite.client,url);const recovered=await postgresSnapshot(database);expect(snapshotsEqual(source,recovered)).toBe(true);expect(recovered.tables.verdict_events.find(row=>row.decision_id===parentDecisionId)?.reviewed_at).toBe("2026-07-26T01:02:03.654321Z");expect(recovered.tables.verdict_events.find(row=>row.decision_id===amendmentId)?.amends_decision_id).toBe(parentDecisionId);
+    const differingId=crypto.randomUUID();await database`INSERT INTO candidates VALUES(${differingId},${"different"},${database.json(candidate(differingId,"Different"))},${"hash"},now())`;await expect(recoverSQLiteToPostgres(sqlite.client,url)).rejects.toThrow("explicit recovery authorization");await recoverSQLiteToPostgres(sqlite.client,url,true);
+    const nextCandidate=crypto.randomUUID();const nextDecision=crypto.randomUUID();await database`INSERT INTO candidates VALUES(${nextCandidate},${"next"},${database.json(candidate(nextCandidate,"Next"))},${"hash"},now())`;await database`INSERT INTO review_rounds(candidate_id,round,kind) VALUES(${nextCandidate},1,'initial')`;const rows=await database<{sequence:string}[]>`INSERT INTO verdict_events(decision_id,candidate_id,round,action,reviewer,reviewed_at,round_kind,effect) VALUES(${nextDecision},${nextCandidate},1,'reject','owner',now(),'initial','deactivate') RETURNING sequence::text sequence`;expect(rows[0]?.sequence).toBe("41");
+  }finally{if(authorized)await clear().catch(()=>undefined);sqlite.close();await database.end();}
+},60_000);

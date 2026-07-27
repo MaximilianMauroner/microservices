@@ -1,14 +1,18 @@
-# Microservices
+# Tools Platform
 
-Local and deployed microservices live in `services/*`. Each service owns its runtime code, tests, config, deployment notes, and service-specific README.
+Small hosted utilities and operational consoles live in `apps/*`. Shared pure
+contracts belong in `packages/*`, short-lived jobs in `jobs/*`, and the uptime
+monitor remains temporarily in `services/*` until its checker logic is ported.
+Each component owns its runtime code, tests, configuration, deployment notes,
+and README.
 
-## Services
+## Components
 
 | Service | Path | Runtime | Purpose |
 | --- | --- | --- | --- |
-| Field guide review | `services/field-guide-review` | Railway | Review-only approval and lifecycle history for field-guide lessons. |
-| HTML publisher | `services/html-publisher` | Railway | Sandboxed planning pages, temporary file uploads, resumable downloads, and revocation. |
-| Tailscale port dashboard | `services/tailscale-port-dashboard` | Local VM systemd service | Port-80 dashboard for Tailscale address and listening-port discovery. |
+| Artifact publisher | `apps/artifact-publisher` | Railway | Sandboxed planning pages, temporary file uploads, resumable downloads, and revocation. |
+| Field guide console | `apps/field-guide-console` | Railway | Review-only approval and lifecycle history for field-guide lessons. |
+| Network console | `apps/network-console` | Local VM systemd service | Port-80 dashboard for Tailscale address and listening-port discovery. |
 | Uptime monitor | `services/uptime-monitor` | Cloudflare Workers + D1 | Private HTTP(S) uptime dashboard with Discord incident alerts. |
 
 ## Commands
@@ -19,21 +23,29 @@ bun run test
 bun run verify
 ```
 
-Run an individual service from its package directory, or use the root shortcuts:
+Run an individual component from its package directory, or use the root shortcuts:
 
 ```bash
-bun run start:html-publisher
-bun run start:field-guide-review
-bun run start:tailscale-port-dashboard
+bun run start:artifact-publisher
+bun run start:field-guide-console
+bun run start:network-console
 bun run start:uptime-monitor
 ```
 
-The root is a Bun workspace catalog, not a deployable service. Service deployment config belongs inside each service directory.
+The root is a Bun workspace catalog, not a deployable service. Deployment
+configuration belongs inside each component directory.
 
 ## Deployment Notes
 
-Railway deploys the HTML publisher and field-guide review service from their respective service roots. Each owns a `railway.json`, runs `bun run start`, and checks `/health`.
+Railway deploys the artifact publisher and field-guide console from
+`apps/artifact-publisher` and `apps/field-guide-console`. Each owns a
+`railway.json`, runs `bun run start`, and checks `/health`. Their stable public
+domains and separate persistence and trust boundaries are unchanged.
 
-If a host or deployment system starts from the repo root, use an explicit root shortcut such as `bun run start:html-publisher` instead of treating the workspace root as the service package.
+If a host or deployment system starts from the repository root, use an explicit
+root shortcut such as `bun run start:artifact-publisher` instead of treating the
+workspace root as the service package.
 
-The Tailscale port dashboard is not a Railway service. Install it on the VM with `services/tailscale-port-dashboard/ops/install-systemd.sh`; the unit is enabled for VM boot through `multi-user.target`.
+The network console is not a Railway service. Install it on the VM with
+`apps/network-console/ops/install-systemd.sh`; the `network-console.service`
+unit is enabled for VM boot through `multi-user.target`.
