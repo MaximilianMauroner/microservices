@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   CATALOG_SCHEMA_VERSION,
   CHECKER_STATE_SCHEMA_VERSION,
+  HISTORY_SCHEMA_VERSION,
   SchemaDecodeError,
   decodeAdminAuditRecord,
   decodeCatalogDocument,
@@ -144,10 +145,10 @@ describe("schema decoding and migration", () => {
         observations: [observation]
       })
     ).toEqual({
-      schemaVersion: 1,
+      schemaVersion: HISTORY_SCHEMA_VERSION,
       day: "2026-07-27",
       updatedAt: NOW,
-      observations: [observation],
+      observations: [{ ...observation, monitorId: "unknown" }],
       incidents: []
     });
     expect(() =>

@@ -11,6 +11,13 @@ export interface ExecuteOptions {
   now?: () => Date;
 }
 
+export class CheckerDeadlineError extends Error {
+  constructor(deadlineMs: number) {
+    super(`Checker exceeded its ${deadlineMs} ms execution deadline`);
+    this.name = "CheckerDeadlineError";
+  }
+}
+
 export async function executeChecker(
   options: ExecuteOptions = {}
 ): Promise<void> {
@@ -20,20 +27,35 @@ export async function executeChecker(
   logger.info("checker_process_started", {
     environment: config.environment
   });
+  const controller = new AbortController();
+  let rejectDeadline: (error: CheckerDeadlineError) => void = () => undefined;
+  const deadline = new Promise<never>((_resolve, reject) => {
+    rejectDeadline = reject;
+  });
+  const timer = setTimeout(() => {
+    controller.abort(new CheckerDeadlineError(config.runDeadlineMs));
+    rejectDeadline(new CheckerDeadlineError(config.runDeadlineMs));
+  }, config.runDeadlineMs);
   try {
-    const result = await runChecker({
-      store,
-      config,
-      logger,
-      fetcher: options.fetcher,
-      now: options.now
-    });
+    const result = await Promise.race([
+      runChecker({
+        store,
+        config,
+        logger,
+        fetcher: options.fetcher,
+        now: options.now,
+        signal: controller.signal
+      }),
+      deadline
+    ]);
     logger.info("checker_process_terminal", {
       runId: result.runId,
       outcome: result.duplicate ? "duplicate" : "complete",
       monitorsAttempted: result.attemptedMonitorIds.length
     });
   } finally {
+    clearTimeout(timer);
+    controller.abort();
     store.close();
   }
 }
