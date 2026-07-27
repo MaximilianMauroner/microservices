@@ -7,7 +7,11 @@ import { WebStorage } from "./storage.js";
 const config = loadConfig();
 const storage = new WebStorage(createS3JsonBucket(config.bucket));
 const access = createAccessVerifier(config.access);
-const fetch = createApp({ storage, access });
+const fetch = createApp({
+  storage,
+  access,
+  trustedOrigin: config.trustedOrigin
+});
 
 Bun.serve({
   port: config.port,

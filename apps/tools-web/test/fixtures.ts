@@ -122,6 +122,8 @@ export class MemoryBucket implements JsonBucket {
   readonly objects = new Map<string, Stored>();
   readonly writes: Array<{ key: string; body: unknown; condition?: ConditionalWrite }> = [];
   conflictNextWrite = false;
+  conflictCatalogWrite = false;
+  failCanonicalAuditWrites = 0;
   reads = 0;
 
   seed(key: string, body: unknown, etag: string): void {
@@ -134,6 +136,17 @@ export class MemoryBucket implements JsonBucket {
   }
 
   async put(key: string, body: unknown, condition?: ConditionalWrite) {
+    if (this.conflictCatalogWrite && key === "catalog/current.json") {
+      this.conflictCatalogWrite = false;
+      throw new BucketConflictError();
+    }
+    if (
+      this.failCanonicalAuditWrites > 0 &&
+      /^audit\/\d{4}\/\d{2}\//.test(key)
+    ) {
+      this.failCanonicalAuditWrites -= 1;
+      throw new Error("simulated audit write failure");
+    }
     if (this.conflictNextWrite) {
       this.conflictNextWrite = false;
       throw new BucketConflictError();
@@ -153,5 +166,18 @@ export class MemoryBucket implements JsonBucket {
       ...(condition === undefined ? {} : { condition })
     });
     return etag;
+  }
+
+  async list(prefix: string, cursor: string | undefined, limit: number) {
+    const keys = [...this.objects.keys()]
+      .filter((key) => key.startsWith(prefix))
+      .sort();
+    const offset = cursor === undefined ? 0 : Number(cursor);
+    const page = keys.slice(offset, offset + limit);
+    const next = offset + page.length;
+    return {
+      keys: page,
+      ...(next < keys.length ? { nextCursor: String(next) } : {})
+    };
   }
 }

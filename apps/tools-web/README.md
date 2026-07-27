@@ -7,9 +7,17 @@ requests. The separate `tools-checker` cron owns monitoring work.
 
 ## Railway
 
-Deploy from the repository root using `railway.json`, attach the private shared
-bucket, and enable **Railway Serverless** for the service so it can sleep between
-requests. The deploy health check performs one bucket read.
+Set the Railway service **source root to `apps/tools-web`**. Railway then reads
+this directory's `railway.json` and starts it with exactly `bun run start`.
+Attach the private shared bucket and enable **Railway Serverless** so the
+service can sleep between requests.
+
+`GET /live` is process liveness only. The Railway deploy check uses
+`GET /health`, which decodes both `catalog/current.json` and
+`snapshots/public.json`. Bootstrap the catalog directly into the bucket with a
+create-only write, run Tools Checker once to create the public snapshot, and
+only then deploy Tools Web. Missing or corrupt required objects intentionally
+keep the deployment unready.
 
 Required variables:
 
@@ -19,6 +27,8 @@ Required variables:
 - `CF_ACCESS_ISSUER` (for example `https://team.cloudflareaccess.com`)
 - `CF_ACCESS_AUDIENCE`
 - `CF_ACCESS_JWKS_URL` (optional; defaults to the issuer's Access cert endpoint)
+- `PUBLIC_ORIGIN` (exact public HTTPS origin, such as
+  `https://tools.mauroner.net`; used for mutation CSRF checks)
 - `PORT` (provided by Railway; defaults to `3000`)
 
 Cloudflare Access must protect `/ops*` and `/api/ops/*` at the edge. The
@@ -27,10 +37,16 @@ expiry, and actor itself.
 
 ## Storage ownership
 
-The web process may read `catalog/current.json` and the two prepared snapshots.
-It can write only `catalog/current.json` (conditionally) and new immutable
-`audit/**` records. No API exists here for writing checker state, snapshots, or
-history.
+The web process may read `catalog/current.json`, prepared snapshots,
+`history/**`, and `audit/**`. It can write only `catalog/current.json`
+(conditionally) and immutable `audit/**` protocol records. No API exists here
+for writing checker state, snapshots, or history.
+
+Each mutation first creates an immutable audit intent, conditionally writes the
+catalog, then creates the canonical audit outcome. If the last write fails, the
+catalog response remains successful because the intent is a durable repair
+obligation. The next mutation or audit read repairs it. Failed catalog writes
+create immutable cancellation markers.
 
 See [ROUTES.md](./ROUTES.md) for the UI/backend contract.
 
@@ -41,11 +57,12 @@ seed. It records only the four currently qualifying directory entries. Unknown
 stable links are absent, pre-cutover/unresolved public checks are paused, and
 the Tailnet-only Network Console is explicitly unavailable from Railway.
 
-Initialize an empty bucket through `PUT /api/ops/catalog` with
-`If-None-Match: *` and a valid Cloudflare Access assertion, or upload the file
-as `catalog/current.json` using an S3-compatible client with the equivalent
-create-only condition. A conflict means a catalog already exists; export and
-review it rather than overwriting it. The checker is not a catalog entry.
+Before the first Tools Web deployment, upload the seed as
+`catalog/current.json` using an S3-compatible client with
+`If-None-Match: *`, then run Tools Checker once. After the service is ready,
+the protected `PUT /api/ops/catalog` route is also available for empty
+non-Railway test instances. A conflict means a catalog already exists; export
+and review it rather than overwriting it. The checker is not a catalog entry.
 
 See `docs/tools-platform/preview-and-cutover.md` for preview isolation,
 shadow-checking, D1 revalidation, cutover, and rollback.
