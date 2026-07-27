@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 1,
+  "revision": "seed-2026-07-27",
+  "updatedAt": "2026-07-27T00:00:00.000Z",
+  "groups": [
+    {
+      "id": "tools",
+      "name": "Tools and services",
+      "description": "Curated public utilities and intentionally disclosed restricted consoles.",
+      "order": 0,
+      "visibility": "public"
+    }
+  ],
+  "entries": [
+    {
+      "id": "tools-directory",
+      "groupId": "tools",
+      "name": "Tools Status & Directory",
+      "description": "The public catalog and five-minute status snapshot at tools.mauroner.net.",
+      "order": 0,
+      "visibility": "public",
+      "lifecycle": "active",
+      "links": [
+        {
+          "id": "directory",
+          "label": "Open directory",
+          "url": "https://tools.mauroner.net/",
+          "access": "public"
+        }
+      ],
+      "monitor": {
+        "enabled": true,
+        "paused": true,
+        "scope": "public",
+        "url": "https://tools.mauroner.net/health"
+      },
+      "privateNotes": "Resume monitoring only after the tools.mauroner.net cutover is verified."
+    },
+    {
+      "id": "artifact-publisher",
+      "groupId": "tools",
+      "name": "Artifact Publisher",
+      "description": "Public artifact delivery with restricted upload and administration.",
+      "order": 1,
+      "visibility": "public",
+      "lifecycle": "active",
+      "links": [
+        {
+          "id": "upload",
+          "label": "Upload (DNS pending)",
+          "url": "https://uploads.mauroner.eu/uploads",
+          "access": "restricted"
+        }
+      ],
+      "monitor": {
+        "enabled": true,
+        "paused": true,
+        "scope": "public",
+        "url": "https://uploads.mauroner.eu/health"
+      },
+      "privateNotes": "uploads.mauroner.eu is the intended stable URL but DNS was unresolved during planning. Keep checks paused and do not advertise it as live until DNS and Access are verified."
+    },
+    {
+      "id": "field-guide-console",
+      "groupId": "tools",
+      "name": "Field Guide Console",
+      "description": "Restricted review and approval console. No stable public link is recorded yet.",
+      "order": 2,
+      "visibility": "public",
+      "lifecycle": "active",
+      "links": [],
+      "privateNotes": "Add a restricted link and monitor only after its stable deployment URL is confirmed."
+    },
+    {
+      "id": "network-console",
+      "groupId": "tools",
+      "name": "Network Console",
+      "description": "Restricted Tailscale network and port-service console.",
+      "order": 3,
+      "visibility": "public",
+      "lifecycle": "active",
+      "links": [
+        {
+          "id": "tailnet",
+          "label": "Open on Tailnet",
+          "url": "https://coding.tailbc92d.ts.net/",
+          "access": "restricted"
+        }
+      ],
+      "monitor": {
+        "enabled": true,
+        "paused": false,
+        "scope": "tailscale",
+        "url": "https://coding.tailbc92d.ts.net/health"
+      },
+      "privateNotes": "Railway has no Tailnet route; status must remain unavailable_from_railway rather than down."
+    }
+  ]
+}

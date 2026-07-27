@@ -94,6 +94,51 @@ export function archiveEntry(
   return mapEntry(catalog, id, (entry) => ({ ...entry, lifecycle: "archived" }));
 }
 
+export function restoreEntry(
+  catalog: CatalogDocument,
+  id: string
+): CatalogDocument {
+  return mapEntry(catalog, id, (entry) => ({ ...entry, lifecycle: "active" }));
+}
+
+export function moveGroup(
+  catalog: CatalogDocument,
+  id: string,
+  direction: "up" | "down"
+): CatalogDocument {
+  requireGroup(catalog, id);
+  const ordered = [...catalog.groups].sort(byOrderThenId);
+  return {
+    ...catalog,
+    groups: swapOrder(ordered, id, direction)
+  };
+}
+
+export function moveEntry(
+  catalog: CatalogDocument,
+  id: string,
+  direction: "up" | "down"
+): CatalogDocument {
+  const entry = catalog.entries.find((candidate) => candidate.id === id);
+  if (!entry) throw new MutationError("Entry not found", 404);
+  const peers = catalog.entries
+    .filter(({ groupId }) => groupId === entry.groupId)
+    .sort(byOrderThenId);
+  const moved = new Map(
+    swapOrder(peers, id, direction).map((candidate) => [
+      candidate.id,
+      candidate.order
+    ])
+  );
+  return {
+    ...catalog,
+    entries: catalog.entries.map((candidate) => ({
+      ...candidate,
+      order: moved.get(candidate.id) ?? candidate.order
+    }))
+  };
+}
+
 export function setMonitorPaused(
   catalog: CatalogDocument,
   id: string,
@@ -185,4 +230,29 @@ function assertExactIds(actual: string[], expected: string[], name: string): voi
   ) {
     throw new MutationError(`${name} must contain every ID exactly once`);
   }
+}
+
+function swapOrder<Value extends { id: string; order: number }>(
+  ordered: Value[],
+  id: string,
+  direction: "up" | "down"
+): Value[] {
+  const index = ordered.findIndex((value) => value.id === id);
+  const target = direction === "up" ? index - 1 : index + 1;
+  if (target < 0 || target >= ordered.length) return ordered;
+  const moved = ordered[index];
+  const displaced = ordered[target];
+  if (!moved || !displaced) return ordered;
+  return ordered.map((value, current) => {
+    if (current === index) return { ...value, order: displaced.order };
+    if (current === target) return { ...value, order: moved.order };
+    return value;
+  });
+}
+
+function byOrderThenId(
+  left: { id: string; order: number },
+  right: { id: string; order: number }
+): number {
+  return left.order - right.order || left.id.localeCompare(right.id);
 }

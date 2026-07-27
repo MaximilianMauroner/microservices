@@ -35,11 +35,35 @@ describe("tools web routes", () => {
       const response = await app(new Request(`https://tools.example.test${path}`));
       const text = await response.text();
       expect(response.status).toBe(200);
+      if (path === "/") {
+        expect(response.headers.get("content-type")).toContain("text/html");
+        expect(response.headers.get("content-security-policy")).toContain(
+          "default-src 'none'"
+        );
+      }
       expect(text).toContain("Artifact Publisher");
       expect(text).not.toContain("secret operator note");
       expect(text).not.toContain("/private");
       expect(text).not.toContain("operations");
     }
+  });
+
+  it("serves CSP-safe static assets and renders protected operations state", async () => {
+    const bucket = seededBucket();
+    const app = createApp({ storage: new WebStorage(bucket), access: allowed, logger: quiet });
+    const css = await app(new Request("https://tools.example.test/assets/tools.css"));
+    expect(css.status).toBe(200);
+    expect(css.headers.get("content-type")).toContain("text/css");
+
+    const ops = await app(new Request("https://tools.example.test/ops/catalog"));
+    const html = await ops.text();
+    expect(ops.status).toBe(200);
+    expect(ops.headers.get("content-security-policy")).toContain(
+      "script-src 'self'"
+    );
+    expect(html).toContain("Tools operations");
+    expect(html).toContain(`data-revision="${catalog.revision}"`);
+    expect(html).not.toContain("notification-secret");
   });
 
   it("requires independently verified Access assertions for all ops routes", async () => {
@@ -60,7 +84,8 @@ describe("tools web routes", () => {
     expect(archived.status).toBe(200);
     const archivedBody = await archived.json();
     const archivedRevision = readRevision(archivedBody);
-    expect(JSON.stringify(archivedBody)).toContain('"lifecycle":"archived"');
+    expect(JSON.stringify(bucket.objects.get(BUCKET_KEYS.catalog)?.body))
+      .toContain('"lifecycle":"archived"');
 
     const paused = await app(
       mutationRequest("/api/ops/entries/artifact-publisher/pause", archivedRevision)
@@ -68,13 +93,16 @@ describe("tools web routes", () => {
     expect(paused.status).toBe(200);
     const pausedBody = await paused.json();
     const pausedRevision = readRevision(pausedBody);
-    expect(JSON.stringify(pausedBody)).toContain('"paused":true');
+    expect(JSON.stringify(bucket.objects.get(BUCKET_KEYS.catalog)?.body))
+      .toContain('"paused":true');
 
     const resumed = await app(
       mutationRequest("/api/ops/entries/artifact-publisher/resume", pausedRevision)
     );
     expect(resumed.status).toBe(200);
-    expect(JSON.stringify(await resumed.json())).toContain('"paused":false');
+    await resumed.json();
+    expect(JSON.stringify(bucket.objects.get(BUCKET_KEYS.catalog)?.body))
+      .toContain('"paused":false');
     expect(bucket.writes.filter(({ key }) => key.startsWith("audit/"))).toHaveLength(3);
     expect(bucket.writes.every(({ key }) =>
       key === BUCKET_KEYS.catalog || key.startsWith("audit/")
@@ -122,7 +150,8 @@ describe("tools web routes", () => {
     expect(reordered.status).toBe(200);
     const reorderedBody = await reordered.json();
     revision = readRevision(reorderedBody);
-    expect(JSON.stringify(reorderedBody)).toContain('"id":"experiments","name":"Lab"');
+    expect(JSON.stringify(bucket.objects.get(BUCKET_KEYS.catalog)?.body))
+      .toContain('"id":"experiments","name":"Lab"');
 
     const deletedGroup = await app(
       jsonMutation("DELETE", "/api/ops/groups/experiments", revision)
@@ -134,7 +163,9 @@ describe("tools web routes", () => {
       jsonMutation("DELETE", "/api/ops/entries/artifact-publisher", revision)
     );
     expect(deletedEntry.status).toBe(200);
-    expect(JSON.stringify(await deletedEntry.json())).not.toContain("artifact-publisher");
+    await deletedEntry.json();
+    expect(JSON.stringify(bucket.objects.get(BUCKET_KEYS.catalog)?.body))
+      .not.toContain("artifact-publisher");
     expect(bucket.writes.filter(({ key }) => key.startsWith("audit/"))).toHaveLength(5);
   });
 
@@ -168,6 +199,11 @@ describe("tools web routes", () => {
     );
 
     expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: "revision_conflict",
+      revision: catalog.revision,
+      message: "The catalog changed. Reload and review the latest revision."
+    });
     const serializedLogs = JSON.stringify(logged);
     expect(serializedLogs).not.toContain("very-secret-token");
     expect(serializedLogs).not.toContain("Sensitive internal name");

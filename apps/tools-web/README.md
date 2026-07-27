@@ -33,3 +33,19 @@ It can write only `catalog/current.json` (conditionally) and new immutable
 history.
 
 See [ROUTES.md](./ROUTES.md) for the UI/backend contract.
+
+## Initial catalog
+
+`config/initial-catalog.json` is a schema-validated, deliberately conservative
+seed. It records only the four currently qualifying directory entries. Unknown
+stable links are absent, pre-cutover/unresolved public checks are paused, and
+the Tailnet-only Network Console is explicitly unavailable from Railway.
+
+Initialize an empty bucket through `PUT /api/ops/catalog` with
+`If-None-Match: *` and a valid Cloudflare Access assertion, or upload the file
+as `catalog/current.json` using an S3-compatible client with the equivalent
+create-only condition. A conflict means a catalog already exists; export and
+review it rather than overwriting it. The checker is not a catalog entry.
+
+See `docs/tools-platform/preview-and-cutover.md` for preview isolation,
+shadow-checking, D1 revalidation, cutover, and rollback.

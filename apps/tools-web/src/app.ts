@@ -1,6 +1,8 @@
+import { readFile } from "node:fs/promises";
 import {
   decodeCatalogDocument,
   type CatalogDocument,
+  type PrivateSnapshotDocument,
   type PublicSnapshotDocument
 } from "@tools-platform/domain";
 import { AccessDeniedError, type AccessVerifier } from "./auth.js";
@@ -11,8 +13,11 @@ import {
   archiveEntry,
   deleteEntry,
   deleteGroup,
+  moveEntry,
+  moveGroup,
   MutationError,
   reorder,
+  restoreEntry,
   setMonitorPaused
 } from "./mutations.js";
 import {
@@ -20,10 +25,11 @@ import {
   CatalogNotFoundError,
   type WebStorage
 } from "./storage.js";
+import { renderOperationsPage, renderPublicPage } from "./ui/index.js";
 
 export interface PageRenderer {
-  public(snapshot: PublicSnapshotDocument): Response | Promise<Response>;
-  ops(catalog: CatalogDocument, actor: string): Response | Promise<Response>;
+  public(snapshot: PublicSnapshotDocument): string;
+  ops(snapshot: PrivateSnapshotDocument, actor: string, revision: string): string;
 }
 
 export interface AppLogger {
@@ -85,7 +91,13 @@ async function route(
     });
   }
   if (request.method === "GET" && url.pathname === "/") {
-    return renderer.public(await storage.readPublicSnapshot());
+    return html(renderer.public(await storage.readPublicSnapshot()));
+  }
+  if (
+    request.method === "GET" &&
+    (url.pathname === "/assets/tools.css" || url.pathname === "/assets/ops.js")
+  ) {
+    return asset(url.pathname);
   }
 
   if (isProtectedPath(url.pathname)) {
@@ -94,7 +106,16 @@ async function route(
       request.method === "GET" &&
       (url.pathname === "/ops" || url.pathname.startsWith("/ops/"))
     ) {
-      return renderer.ops((await storage.readCatalog()).catalog, actor.id);
+      const [{ catalog }, prepared] = await Promise.all([
+        storage.readCatalog(),
+        storage.readPrivateSnapshot()
+      ]);
+      const snapshot: PrivateSnapshotDocument = {
+        ...prepared,
+        catalogRevision: catalog.revision,
+        catalog
+      };
+      return html(renderer.ops(snapshot, actor.id, catalog.revision), true);
     }
     if (request.method === "GET" && url.pathname === "/api/ops/catalog") {
       const { catalog } = await storage.readCatalog();
@@ -117,7 +138,7 @@ async function adminMutation(
   storage: WebStorage,
   actor: string
 ): Promise<Response> {
-  if (!["POST", "PUT", "DELETE"].includes(request.method)) {
+  if (!["POST", "PUT", "PATCH", "DELETE"].includes(request.method)) {
     return json({ error: "not_found" }, { status: 404 });
   }
   if (request.method === "PUT" && url.pathname === "/api/ops/catalog") {
@@ -126,32 +147,34 @@ async function adminMutation(
     }
     const input = await jsonBody(request);
     const catalog = decodeCatalogDocument(input);
-    return catalogResponse(await storage.initializeCatalog(catalog, actor), 201);
+    return mutationResponse(await storage.initializeCatalog(catalog, actor), 201);
   }
 
   const expectedRevision = parseIfMatch(request);
   const body = request.method === "DELETE" ? undefined : await jsonBody(request);
 
   if (request.method === "POST" && url.pathname === "/api/ops/groups") {
+    const inputId = identifierOrGenerated(body);
     return writeResponse(
       storage,
       expectedRevision,
       actor,
       "group.create",
       "group",
-      identifier(body),
-      (catalog) => addGroup(catalog, parseAddedGroup(catalog, body))
+      inputId,
+      (catalog) => addGroup(catalog, parseCreatedGroup(catalog, body, inputId))
     );
   }
   if (request.method === "POST" && url.pathname === "/api/ops/entries") {
+    const inputId = identifierOrGenerated(body);
     return writeResponse(
       storage,
       expectedRevision,
       actor,
       "entry.create",
       "entry",
-      identifier(body),
-      (catalog) => addEntry(catalog, parseAddedEntry(catalog, body))
+      inputId,
+      (catalog) => addEntry(catalog, parseCreatedEntry(catalog, body, inputId))
     );
   }
   if (request.method === "PUT" && url.pathname === "/api/ops/order") {
@@ -167,15 +190,19 @@ async function adminMutation(
   }
 
   const match = url.pathname.match(
-    /^\/api\/ops\/(groups|entries)\/([A-Za-z0-9_-]+)(?:\/(archive|pause|resume))?$/
+    /^\/api\/ops\/(groups|entries)\/([A-Za-z0-9_-]+)(?:\/(reorder|archive|restore|pause|resume)|\/monitor\/(pause|resume))?$/
   );
   if (!match) return json({ error: "not_found" }, { status: 404 });
   const kind = match[1];
   const id = match[2];
-  const command = match[3];
+  const command = match[4] ?? match[3];
   if (!kind || !id) return json({ error: "not_found" }, { status: 404 });
 
-  if (kind === "groups" && !command && request.method === "PUT") {
+  if (
+    kind === "groups" &&
+    !command &&
+    (request.method === "PUT" || request.method === "PATCH")
+  ) {
     return writeResponse(
       storage,
       expectedRevision,
@@ -183,7 +210,10 @@ async function adminMutation(
       "group.update",
       "group",
       id,
-      (catalog) => replaceGroupFromInput(catalog, id, body)
+      (catalog) =>
+        request.method === "PATCH"
+          ? patchGroupFromInput(catalog, id, body)
+          : replaceGroupFromInput(catalog, id, body)
     );
   }
   if (kind === "groups" && !command && request.method === "DELETE") {
@@ -197,7 +227,11 @@ async function adminMutation(
       (catalog) => deleteGroup(catalog, id)
     );
   }
-  if (kind === "entries" && !command && request.method === "PUT") {
+  if (
+    kind === "entries" &&
+    !command &&
+    (request.method === "PUT" || request.method === "PATCH")
+  ) {
     return writeResponse(
       storage,
       expectedRevision,
@@ -205,7 +239,10 @@ async function adminMutation(
       "entry.update",
       "entry",
       id,
-      (catalog) => replaceEntryFromInput(catalog, id, body)
+      (catalog) =>
+        request.method === "PATCH"
+          ? patchEntryFromInput(catalog, id, body)
+          : replaceEntryFromInput(catalog, id, body)
     );
   }
   if (kind === "entries" && !command && request.method === "DELETE") {
@@ -228,6 +265,36 @@ async function adminMutation(
       "entry",
       id,
       (catalog) => archiveEntry(catalog, id)
+    );
+  }
+  if (kind === "entries" && request.method === "POST" && command === "restore") {
+    return writeResponse(
+      storage,
+      expectedRevision,
+      actor,
+      "entry.restore",
+      "entry",
+      id,
+      (catalog) => restoreEntry(catalog, id)
+    );
+  }
+  if (
+    request.method === "POST" &&
+    command === "reorder" &&
+    (kind === "groups" || kind === "entries")
+  ) {
+    const direction = reorderDirection(body);
+    return writeResponse(
+      storage,
+      expectedRevision,
+      actor,
+      `${kind === "groups" ? "group" : "entry"}.reorder`,
+      kind === "groups" ? "group" : "entry",
+      id,
+      (catalog) =>
+        kind === "groups"
+          ? moveGroup(catalog, id, direction)
+          : moveEntry(catalog, id, direction)
     );
   }
   if (
@@ -265,29 +332,98 @@ async function writeResponse(
     targetId,
     mutate
   );
-  return catalogResponse(catalog);
+  return mutationResponse(catalog);
 }
 
-function parseAddedGroup(catalog: CatalogDocument, input: unknown) {
-  const id = identifier(input);
+function parseCreatedGroup(
+  catalog: CatalogDocument,
+  input: unknown,
+  id: string
+) {
+  const body = inputRecord(input);
   const decoded = decodeCatalogDocument({
     ...catalog,
-    groups: [...catalog.groups, input]
+    groups: [
+      ...catalog.groups,
+      {
+        id,
+        name: requiredString(body, "name"),
+        ...(optionalString(body, "description") === undefined
+          ? {}
+          : { description: optionalString(body, "description") }),
+        order: nextOrder(catalog.groups),
+        visibility: body.visibility ?? "private"
+      }
+    ]
   });
   const group = decoded.groups.find((candidate) => candidate.id === id);
   if (!group) throw new MutationError("Invalid group");
   return group;
 }
 
-function parseAddedEntry(catalog: CatalogDocument, input: unknown) {
-  const id = identifier(input);
+function parseCreatedEntry(
+  catalog: CatalogDocument,
+  input: unknown,
+  id: string
+) {
+  const body = inputRecord(input);
+  const groupId = requiredString(body, "groupId");
   const decoded = decodeCatalogDocument({
     ...catalog,
-    entries: [...catalog.entries, input]
+    entries: [
+      ...catalog.entries,
+      {
+        id,
+        groupId,
+        name: requiredString(body, "name"),
+        description: requiredString(body, "description"),
+        order: nextOrder(
+          catalog.entries.filter((entry) => entry.groupId === groupId)
+        ),
+        visibility: body.visibility ?? "private",
+        lifecycle: "active",
+        links: body.links ?? [],
+        ...parseOptionalMonitor(body),
+        ...(optionalString(body, "privateNotes") === undefined
+          ? {}
+          : { privateNotes: optionalString(body, "privateNotes") })
+      }
+    ]
   });
   const entry = decoded.entries.find((candidate) => candidate.id === id);
   if (!entry) throw new MutationError("Invalid entry");
   return entry;
+}
+
+function patchGroupFromInput(
+  catalog: CatalogDocument,
+  id: string,
+  input: unknown
+): CatalogDocument {
+  const current = catalog.groups.find((group) => group.id === id);
+  if (!current) {
+    throw new MutationError("Group not found", 404);
+  }
+  const body = inputRecord(input);
+  return decodeCatalogDocument({
+    ...catalog,
+    groups: catalog.groups.map((group) =>
+      group.id === id
+        ? {
+            ...current,
+            ...(body.name === undefined
+              ? {}
+              : { name: requiredString(body, "name") }),
+            ...(body.description === undefined
+              ? {}
+              : { description: requiredString(body, "description", true) }),
+            ...(body.visibility === undefined
+              ? {}
+              : { visibility: body.visibility })
+          }
+        : group
+    )
+  });
 }
 
 function replaceGroupFromInput(
@@ -298,10 +434,57 @@ function replaceGroupFromInput(
   if (!catalog.groups.some((group) => group.id === id)) {
     throw new MutationError("Group not found", 404);
   }
-  if (identifier(input) !== id) throw new MutationError("Group ID cannot change");
+  if (requiredIdentifier(input) !== id) {
+    throw new MutationError("Group ID cannot change");
+  }
   return decodeCatalogDocument({
     ...catalog,
     groups: catalog.groups.map((group) => (group.id === id ? input : group))
+  });
+}
+
+function patchEntryFromInput(
+  catalog: CatalogDocument,
+  id: string,
+  input: unknown
+): CatalogDocument {
+  const current = catalog.entries.find((entry) => entry.id === id);
+  if (!current) {
+    throw new MutationError("Entry not found", 404);
+  }
+  const body = inputRecord(input);
+  const monitorFieldsPresent =
+    body.monitor !== undefined ||
+    Object.keys(body).some((key) => key.startsWith("monitor."));
+  const monitor = monitorFieldsPresent
+    ? parsePatchedMonitor(body, current.monitor)
+    : current.monitor;
+  return decodeCatalogDocument({
+    ...catalog,
+    entries: catalog.entries.map((entry) =>
+      entry.id === id
+        ? {
+            ...current,
+            ...(body.name === undefined
+              ? {}
+              : { name: requiredString(body, "name") }),
+            ...(body.groupId === undefined
+              ? {}
+              : { groupId: requiredString(body, "groupId") }),
+            ...(body.description === undefined
+              ? {}
+              : { description: requiredString(body, "description", true) }),
+            ...(body.visibility === undefined
+              ? {}
+              : { visibility: body.visibility }),
+            ...(body.links === undefined ? {} : { links: body.links }),
+            ...(body.privateNotes === undefined
+              ? {}
+              : { privateNotes: requiredString(body, "privateNotes", true) }),
+            ...(monitor === undefined ? { monitor: undefined } : { monitor })
+          }
+        : entry
+    )
   });
 }
 
@@ -313,24 +496,113 @@ function replaceEntryFromInput(
   if (!catalog.entries.some((entry) => entry.id === id)) {
     throw new MutationError("Entry not found", 404);
   }
-  if (identifier(input) !== id) throw new MutationError("Entry ID cannot change");
+  if (requiredIdentifier(input) !== id) {
+    throw new MutationError("Entry ID cannot change");
+  }
   return decodeCatalogDocument({
     ...catalog,
     entries: catalog.entries.map((entry) => (entry.id === id ? input : entry))
   });
 }
 
-function identifier(input: unknown): string {
-  if (
-    typeof input !== "object" ||
-    input === null ||
-    !("id" in input) ||
-    typeof input.id !== "string" ||
-    !/^[A-Za-z0-9_-]+$/.test(input.id)
-  ) {
+function identifierOrGenerated(input: unknown): string {
+  const body = inputRecord(input);
+  if (body.id !== undefined) {
+    if (typeof body.id !== "string" || !/^[A-Za-z0-9_-]+$/.test(body.id)) {
+      throw new MutationError("id must be a URL-safe identifier");
+    }
+    return body.id;
+  }
+  const base = requiredString(body, "name")
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 40);
+  return `${base || "item"}-${crypto.randomUUID().slice(0, 8)}`;
+}
+
+function requiredIdentifier(input: unknown): string {
+  const body = inputRecord(input);
+  if (typeof body.id !== "string" || !/^[A-Za-z0-9_-]+$/.test(body.id)) {
     throw new MutationError("Body must contain a valid id");
   }
-  return input.id;
+  return body.id;
+}
+
+function inputRecord(input: unknown): Record<string, unknown> {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) {
+    throw new MutationError("Request body must be a JSON object");
+  }
+  return Object.fromEntries(Object.entries(input));
+}
+
+function requiredString(
+  body: Record<string, unknown>,
+  name: string,
+  allowEmpty = false
+): string {
+  const value = body[name];
+  if (
+    typeof value !== "string" ||
+    (!allowEmpty && value.trim().length === 0)
+  ) {
+    throw new MutationError(`${name} must be a non-empty string`);
+  }
+  return value.trim();
+}
+
+function optionalString(
+  body: Record<string, unknown>,
+  name: string
+): string | undefined {
+  if (body[name] === undefined) return undefined;
+  return requiredString(body, name, true);
+}
+
+function nextOrder(values: ReadonlyArray<{ order: number }>): number {
+  return values.reduce((highest, value) => Math.max(highest, value.order), -1) + 1;
+}
+
+function parseOptionalMonitor(
+  body: Record<string, unknown>
+): { monitor?: unknown } {
+  if (body.monitor === undefined) return {};
+  return { monitor: body.monitor };
+}
+
+function parsePatchedMonitor(
+  body: Record<string, unknown>,
+  current: CatalogDocument["entries"][number]["monitor"]
+): CatalogDocument["entries"][number]["monitor"] {
+  const nested =
+    body.monitor === undefined ? {} : inputRecord(body.monitor);
+  const url =
+    nested.url ?? body["monitor.url"] ?? current?.url ?? "";
+  if (typeof url !== "string") {
+    throw new MutationError("monitor.url must be a string");
+  }
+  if (url.trim() === "") return undefined;
+  const enabled =
+    nested.enabled ?? body["monitor.enabled"] ?? current?.enabled ?? false;
+  const scope = nested.scope ?? body["monitor.scope"] ?? current?.scope ?? "public";
+  if (typeof enabled !== "boolean") {
+    throw new MutationError("monitor.enabled must be a boolean");
+  }
+  return {
+    enabled,
+    paused: current?.paused ?? false,
+    scope: scope === "tailscale" ? "tailscale" : "public",
+    url: url.trim()
+  };
+}
+
+function reorderDirection(body: unknown): "up" | "down" {
+  const value = inputRecord(body).direction;
+  if (value !== "up" && value !== "down") {
+    throw new MutationError("direction must be up or down");
+  }
+  return value;
 }
 
 async function jsonBody(request: Request): Promise<unknown> {
@@ -368,6 +640,19 @@ function catalogResponse(catalog: CatalogDocument, status = 200): Response {
   });
 }
 
+function mutationResponse(catalog: CatalogDocument, status = 200): Response {
+  return json(
+    { revision: catalog.revision, reload: true },
+    {
+      status,
+      headers: {
+        ETag: `"${catalog.revision}"`,
+        "Cache-Control": "private, no-store"
+      }
+    }
+  );
+}
+
 function json(body: unknown, init: ResponseInit = {}): Response {
   const headers = new Headers(init.headers);
   headers.set("Content-Type", "application/json; charset=utf-8");
@@ -385,7 +670,16 @@ function errorResponse(error: unknown): Response {
     );
   }
   if (error instanceof CatalogConflictError) {
-    return json({ error: "catalog_conflict" }, { status: 409 });
+    return json(
+      {
+        error: "revision_conflict",
+        ...(error.currentRevision
+          ? { revision: error.currentRevision }
+          : {}),
+        message: "The catalog changed. Reload and review the latest revision."
+      },
+      { status: 409 }
+    );
   }
   if (error instanceof MutationError) {
     return json({ error: "invalid_request", message: error.message }, { status: error.status });
@@ -417,14 +711,49 @@ function withCommonHeaders(response: Response, requestId: string): Response {
 
 const defaultRenderer: PageRenderer = {
   public(snapshot) {
-    return json(snapshot);
+    return renderPublicPage(snapshot);
   },
-  ops(catalog) {
-    return json(catalog, {
-      headers: { "Cache-Control": "private, no-store" }
+  ops(snapshot, actor, revision) {
+    return renderOperationsPage({
+      snapshot,
+      actor,
+      revision
     });
   }
 };
+
+function html(body: string, privatePage = false): Response {
+  return new Response(body, {
+    headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": privatePage ? "private, no-store" : "public, max-age=60",
+      "Content-Security-Policy":
+        "default-src 'none'; style-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+    }
+  });
+}
+
+async function asset(
+  path: "/assets/tools.css" | "/assets/ops.js"
+): Promise<Response> {
+  const file = await readFile(
+    new URL(
+      path === "/assets/tools.css"
+        ? "../public/assets/tools.css"
+        : "../public/assets/ops.js",
+      import.meta.url
+    )
+  );
+  return new Response(file, {
+    headers: {
+      "Content-Type":
+        path.endsWith(".css")
+          ? "text/css; charset=utf-8"
+          : "text/javascript; charset=utf-8",
+      "Cache-Control": "public, max-age=3600"
+    }
+  });
+}
 
 const safeConsoleLogger: AppLogger = {
   info(event, fields) {
