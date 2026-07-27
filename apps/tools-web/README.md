@@ -42,13 +42,15 @@ The web process may read `catalog/current.json`, prepared snapshots,
 (conditionally) and immutable `audit/**` protocol records. No API exists here
 for writing checker state, snapshots, or history.
 
-Each mutation first creates an immutable audit intent, conditionally writes the
-catalog, then creates the canonical audit outcome. If the last write fails, the
-catalog response remains successful because the intent is a durable repair
-obligation. The next mutation or audit read repairs it. Failed catalog writes
-create immutable cancellation markers only after a conclusive conditional-write
-failure. Canonical outcomes retain their established keys and also receive an
-immutable reverse-time index record for scalable, newest-first pagination.
+Each mutation first creates an immutable audit intent and a revision-linked
+obligation, conditionally writes the catalog, then verifies both the canonical
+audit outcome and its reverse-time index record. A writer must finalize the
+obligation for the exact revision it read before advancing that revision.
+Incomplete finalization fails the request while leaving the durable obligation
+for the next mutation or audit read to repair. Failed catalog writes create
+immutable cancellation markers only after a conclusive conditional-write
+failure. Canonical outcomes retain their established keys; a durable migration
+marker records completion of legacy reverse-time indexing.
 
 See [ROUTES.md](./ROUTES.md) for the UI/backend contract.
 
