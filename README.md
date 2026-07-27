@@ -6,6 +6,7 @@ Local and deployed microservices live in `services/*`. Each service owns its run
 
 | Service | Path | Runtime | Purpose |
 | --- | --- | --- | --- |
+| Field guide review | `services/field-guide-review` | Railway | Review-only approval and lifecycle history for field-guide lessons. |
 | HTML publisher | `services/html-publisher` | Railway | Sandboxed planning pages, temporary file uploads, resumable downloads, and revocation. |
 | Tailscale port dashboard | `services/tailscale-port-dashboard` | Local VM systemd service | Port-80 dashboard for Tailscale address and listening-port discovery. |
 | Uptime monitor | `services/uptime-monitor` | Cloudflare Workers + D1 | Private HTTP(S) uptime dashboard with Discord incident alerts. |
@@ -22,6 +23,7 @@ Run an individual service from its package directory, or use the root shortcuts:
 
 ```bash
 bun run start:html-publisher
+bun run start:field-guide-review
 bun run start:tailscale-port-dashboard
 bun run start:uptime-monitor
 ```
@@ -30,7 +32,7 @@ The root is a Bun workspace catalog, not a deployable service. Service deploymen
 
 ## Deployment Notes
 
-Railway deploys only the HTML publisher from `services/html-publisher` as the service root. Its `railway.json` expects that working directory, runs `bun run start`, and checks `/health`.
+Railway deploys the HTML publisher and field-guide review service from their respective service roots. Each owns a `railway.json`, runs `bun run start`, and checks `/health`.
 
 If a host or deployment system starts from the repo root, use an explicit root shortcut such as `bun run start:html-publisher` instead of treating the workspace root as the service package.
 

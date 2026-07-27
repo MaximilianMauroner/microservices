@@ -21,7 +21,7 @@ function apiFailure(error:unknown):Response{
   return problem("internal_error","The request could not be completed",500);
 }
 
-export async function routeApi(request:Request,env:Env,ctx:ExecutionContext):Promise<Response>{
+export async function routeApi(request:Request,env:Env,ctx:Pick<ExecutionContext,"waitUntil"|"passThroughOnException">):Promise<Response>{
   if(!await authorize(request,env))return problem("unauthorized","Cloudflare Access authentication is required",401);
   const url=new URL(request.url); const route=monitorRoute(url.pathname);
   try{

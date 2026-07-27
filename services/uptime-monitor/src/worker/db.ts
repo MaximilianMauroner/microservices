@@ -87,7 +87,7 @@ function incidentStartsBetween(existing:IncidentRow,lower:CheckRow|null,upper:Ch
   return(lower===null||compareChecks(opening,lower)>0)&&(upper===null||compareChecks(opening,upper)<0);
 }
 
-export async function recordObservation(db: D1Database, monitor: MonitorRow, result: CheckResult, checkId=crypto.randomUUID(),observeReads?:(counts:ObservationReadCounts)=>void): Promise<boolean> {
+export async function recordObservation(db: D1Database, monitor: MonitorRow, result: CheckResult, checkId: string=crypto.randomUUID(),observeReads?:(counts:ObservationReadCounts)=>void): Promise<boolean> {
   const candidate:CheckRow={id:checkId,checked_at:result.checkedAt,success:result.success?1:0,status_code:result.statusCode,latency_ms:result.latencyMs,error_code:result.errorCode};
   const select="SELECT id,checked_at,success,status_code,latency_ms,error_code FROM checks";
   const [latest,previousSuccess,nextSuccess,lastSuccess]=await Promise.all([
