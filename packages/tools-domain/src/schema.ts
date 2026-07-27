@@ -1,4 +1,5 @@
 import { SchemaDecodeError } from "./errors.js";
+import { validatedMonitorUrl } from "./url.js";
 import {
   AUDIT_SCHEMA_VERSION,
   CATALOG_SCHEMA_VERSION,
@@ -189,7 +190,7 @@ export function migrateHistoryPartitionDocument(input: unknown): unknown {
         const observation = record(value, `$.observations[${index}]`);
         return {
           ...observation,
-          monitorId: observation.monitorId ?? "unknown"
+          monitorId: observation.monitorId ?? null
         };
       }
     ),
@@ -298,7 +299,7 @@ function parseMonitor(value: unknown, path: string): MonitorConfig {
       ["public", "tailscale"],
       `${path}.scope`
     ),
-    url: httpUrl(item.url, `${path}.url`)
+    url: monitorUrl(item.url, `${path}.url`)
   };
 }
 
@@ -434,7 +435,10 @@ function parseHistoryObservation(
   const item = record(value, path);
   return {
     ...parseObservation(item, path),
-    monitorId: identifier(item.monitorId, `${path}.monitorId`)
+    monitorId:
+      item.monitorId === null
+        ? null
+        : identifier(item.monitorId, `${path}.monitorId`)
   };
 }
 
@@ -729,6 +733,18 @@ function httpUrl(value: unknown, path: string): string {
     throw new SchemaDecodeError(path, "must not contain credentials");
   }
   return url.toString();
+}
+
+function monitorUrl(value: unknown, path: string): string {
+  const result = string(value, path);
+  try {
+    return validatedMonitorUrl(result).toString();
+  } catch {
+    throw new SchemaDecodeError(
+      path,
+      "must be a public HTTP(S) URL without embedded credentials"
+    );
+  }
 }
 
 function literal<const Value extends number>(

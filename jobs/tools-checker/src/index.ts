@@ -18,6 +18,12 @@ export class CheckerDeadlineError extends Error {
   }
 }
 
+export interface CheckerCliOptions extends ExecuteOptions {
+  cleanupGraceMs?: number;
+  forceExit?: (code: number) => void;
+  setExitCode?: (code: number) => void;
+}
+
 export async function executeChecker(
   options: ExecuteOptions = {}
 ): Promise<void> {
@@ -60,8 +66,50 @@ export async function executeChecker(
   }
 }
 
+export async function runCheckerCli(
+  options: CheckerCliOptions = {}
+): Promise<void> {
+  const config = options.config ?? loadConfig();
+  const logger = options.logger ?? consoleLogger;
+  const forceExit = options.forceExit ?? ((code: number) => process.exit(code));
+  const setExitCode =
+    options.setExitCode ?? ((code: number) => {
+      process.exitCode = code;
+    });
+  const cleanupGraceMs = options.cleanupGraceMs ?? 1_000;
+  let keepWatchdog = false;
+  const watchdog = setTimeout(() => {
+    logger.error("checker_process_force_exit", {
+      outcome: "deadline",
+      cleanupGraceMs
+    });
+    forceExit(1);
+  }, config.runDeadlineMs + cleanupGraceMs);
+
+  try {
+    await executeChecker({
+      config,
+      logger,
+      store: options.store,
+      fetcher: options.fetcher,
+      now: options.now
+    });
+  } catch (error) {
+    logger.error("checker_process_terminal", {
+      outcome: "failed",
+      errorType: error instanceof Error ? error.name : "UnknownError"
+    });
+    setExitCode(1);
+    keepWatchdog = error instanceof CheckerDeadlineError;
+  } finally {
+    if (!keepWatchdog) {
+      clearTimeout(watchdog);
+    }
+  }
+}
+
 if (import.meta.main) {
-  void executeChecker().catch((error: unknown) => {
+  void runCheckerCli().catch((error: unknown) => {
     consoleLogger.error("checker_process_terminal", {
       outcome: "failed",
       errorType: error instanceof Error ? error.name : "UnknownError"

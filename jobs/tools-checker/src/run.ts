@@ -67,7 +67,6 @@ export async function runChecker(
       dependencies.store,
       state,
       observations,
-      invokedAt,
       dependencies.signal
     );
     await pruneRawHistory(dependencies.store, invokedAt, dependencies.signal);
@@ -143,7 +142,6 @@ export async function runChecker(
     dependencies.store,
     state,
     historyObservations,
-    invokedAt,
     dependencies.signal
   );
   await pruneRawHistory(dependencies.store, invokedAt, dependencies.signal);
@@ -380,53 +378,74 @@ async function updateHistory(
   store: CheckerStore,
   state: CheckerStateDocument,
   observations: HistoryObservation[],
-  invokedAt: Date,
   signal?: AbortSignal
 ): Promise<void> {
-  const day = invokedAt.toISOString().slice(0, 10);
-  const existing = await store.readHistory(day, signal);
-  const known = new Set(
-    existing?.value.observations.map(({ id }) => id) ?? []
-  );
-  const partition: HistoryPartitionDocument = {
-    schemaVersion: HISTORY_SCHEMA_VERSION,
-    day,
-    updatedAt: state.updatedAt,
-    observations: [
+  const observationsByDay = new Map<string, HistoryObservation[]>();
+  for (const observation of observations) {
+    const day = observation.checkedAt.slice(0, 10);
+    observationsByDay.set(day, [
+      ...(observationsByDay.get(day) ?? []),
+      observation
+    ]);
+  }
+  const days = new Set(observationsByDay.keys());
+  const currentObservationIds = new Set(observations.map(({ id }) => id));
+  for (const incident of state.incidents) {
+    if (
+      currentObservationIds.has(incident.openingObservationId) ||
+      (incident.closingObservationId !== null &&
+        currentObservationIds.has(incident.closingObservationId)) ||
+      incident.resolvedAt !== null
+    ) {
+      days.add(incident.startedAt.slice(0, 10));
+    }
+  }
+
+  for (const day of [...days].sort()) {
+    const existing = await store.readHistory(day, signal);
+    const known = new Set(
+      existing?.value.observations.map(({ id }) => id) ?? []
+    );
+    const mergedObservations = [
       ...(existing?.value.observations ?? []),
-      ...observations.filter(({ id }) => !known.has(id))
-    ],
-    incidents: mergeIncidents(
+      ...(observationsByDay.get(day) ?? []).filter(
+        ({ id }) => !known.has(id)
+      )
+    ].sort(
+      (left, right) =>
+        left.checkedAt.localeCompare(right.checkedAt) ||
+        left.id.localeCompare(right.id)
+    );
+    const mergedIncidents = mergeIncidents(
       (existing?.value.incidents ?? []).filter(
         (incident) => incident.startedAt.slice(0, 10) === day
       ),
       state.incidents.filter(
         (incident) => incident.startedAt.slice(0, 10) === day
       )
-    )
-  };
-  await store.writeHistory(partition, existing?.etag ?? null, signal);
-
-  const resolvedFromEarlierDays = state.incidents.filter(
-    (incident) =>
-      incident.resolvedAt?.slice(0, 10) === day &&
-      incident.startedAt.slice(0, 10) !== day
-  );
-  for (const incident of resolvedFromEarlierDays) {
-    const originDay = incident.startedAt.slice(0, 10);
-    const origin = await store.readHistory(originDay, signal);
-    if (!origin) {
+    );
+    if (
+      existing &&
+      equalJson(existing.value.observations, mergedObservations) &&
+      equalJson(existing.value.incidents, mergedIncidents)
+    ) {
       continue;
     }
-    await store.writeHistory(
-      {
-        ...origin.value,
-        updatedAt: state.updatedAt,
-        incidents: mergeIncidents(origin.value.incidents, [incident])
-      },
-      origin.etag,
-      signal
-    );
+    if (
+      !existing &&
+      mergedObservations.length === 0 &&
+      mergedIncidents.length === 0
+    ) {
+      continue;
+    }
+    const partition: HistoryPartitionDocument = {
+      schemaVersion: HISTORY_SCHEMA_VERSION,
+      day,
+      updatedAt: state.updatedAt,
+      observations: mergedObservations,
+      incidents: mergedIncidents
+    };
+    await store.writeHistory(partition, existing?.etag ?? null, signal);
   }
 }
 
@@ -474,6 +493,10 @@ function mergeIncidents(
   );
 }
 
+function equalJson(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
 async function mapConcurrent<Value, Result>(
   values: readonly Value[],
   concurrency: number,
@@ -513,7 +536,9 @@ function observationsForRun(
       latestObservation ? { ...latestObservation, monitorId } : null
     )
     .filter(
-      (observation): observation is HistoryObservation =>
+      (
+        observation
+      ): observation is Exclude<typeof observation, null> =>
         observation?.runId === runId
     )
     .sort(

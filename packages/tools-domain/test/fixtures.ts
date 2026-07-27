@@ -77,7 +77,7 @@ export function catalogFixture(): CatalogDocument {
           enabled: true,
           paused: false,
           scope: "tailscale",
-          url: "http://100.64.0.1/"
+          url: "https://tailnet.example/"
         }
       },
       {
