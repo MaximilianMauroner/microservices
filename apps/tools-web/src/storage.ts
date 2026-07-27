@@ -160,7 +160,7 @@ export class WebStorage {
   async readAuditPage(
     cursor: string | undefined,
     limit: number
-  ): Promise<{ records: AdminAuditRecord[]; nextCursor?: string }> {
+  ): Promise<{ items: AdminAuditRecord[]; nextCursor: string | null }> {
     await this.repairPendingAudits();
     const page = await this.#bucket.list("audit/", cursor, limit * 4);
     const keys = page.keys
@@ -174,15 +174,15 @@ export class WebStorage {
       )
     );
     return {
-      records,
-      ...(page.nextCursor ? { nextCursor: page.nextCursor } : {})
+      items: records,
+      nextCursor: page.nextCursor ?? null
     };
   }
 
   async readHistoryPage(
     cursor: string | undefined,
     limit: number
-  ): Promise<{ partitions: HistoryPartitionDocument[]; nextCursor?: string }> {
+  ): Promise<{ items: HistoryPartitionDocument[]; nextCursor: string | null }> {
     const page = await this.#bucket.list("history/", cursor, limit);
     const keys = page.keys.filter((key) =>
       /^history\/\d{4}-\d{2}-\d{2}\.json\.gz$/.test(key)
@@ -195,23 +195,23 @@ export class WebStorage {
       )
     );
     return {
-      partitions,
-      ...(page.nextCursor ? { nextCursor: page.nextCursor } : {})
+      items: partitions,
+      nextCursor: page.nextCursor ?? null
     };
   }
 
   async readIncidentPage(
     cursor: string | undefined,
     limit: number
-  ): Promise<{ incidents: Incident[]; nextCursor?: string }> {
+  ): Promise<{ items: Incident[]; nextCursor: string | null }> {
     const offset = parseOffset(cursor);
-    const incidents = [...(await this.readPrivateSnapshot()).state.incidents]
+    const page = [...(await this.readPrivateSnapshot()).state.incidents]
       .sort((left, right) => right.startedAt.localeCompare(left.startedAt))
-      .slice(offset, offset + limit);
-    const next = offset + incidents.length;
+      .slice(offset, offset + limit + 1);
+    const hasMore = page.length > limit;
     return {
-      incidents,
-      ...(incidents.length === limit ? { nextCursor: String(next) } : {})
+      items: page.slice(0, limit),
+      nextCursor: hasMore ? String(offset + limit) : null
     };
   }
 

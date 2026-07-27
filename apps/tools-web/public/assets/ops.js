@@ -134,6 +134,7 @@
           observation === null ||
           typeof observation.id !== "string" ||
           typeof observation.runId !== "string" ||
+          typeof observation.monitorId !== "string" ||
           typeof observation.checkedAt !== "string"
         ) {
           throw new Error("Invalid observation response");
@@ -141,8 +142,8 @@
         const item = element("li");
         const identity = element("div");
         identity.append(
-          element("strong", observation.id),
-          element("span", `Run ${observation.runId}`)
+          element("strong", observation.monitorId),
+          element("span", `Observation ${observation.id} · Run ${observation.runId}`)
         );
         const succeeded = observation.success === true;
         const state = element(

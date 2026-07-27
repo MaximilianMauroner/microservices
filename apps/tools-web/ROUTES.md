@@ -27,9 +27,9 @@ Every `/ops`, `/ops/*`, and `/api/ops/*` request requires a valid
 | `GET` | `/ops`, `/ops/*` | Server-rendered operations UI from the latest catalog plus prepared private checker state. |
 | `GET` | `/api/ops/catalog` | Full `CatalogDocument` plus an `ETag` containing its revision. |
 | `GET` | `/api/ops/snapshot` | Decoded `PrivateSnapshotDocument`. |
-| `GET` | `/api/ops/audit?limit=&cursor=` | Canonical immutable audit records and opaque continuation cursor; also repairs durable pending audit intents. |
-| `GET` | `/api/ops/history?limit=&cursor=` | Decoded daily history partitions, including each observation's monitor association when present/migrated by the domain decoder. |
-| `GET` | `/api/ops/incidents?limit=&cursor=` | Incidents newest-first from the prepared private snapshot. |
+| `GET` | `/api/ops/audit?limit=&cursor=` | `{ "items": AdminAuditRecord[], "nextCursor": string \| null }`; canonical immutable records, and the read repairs durable pending audit intents. |
+| `GET` | `/api/ops/history?limit=&cursor=` | `{ "items": HistoryPartitionDocument[], "nextCursor": string \| null }`; every v2 observation has `monitorId` and migrated legacy observations use `"unknown"`. |
+| `GET` | `/api/ops/incidents?limit=&cursor=` | `{ "items": Incident[], "nextCursor": string \| null }`; incidents newest-first from the prepared private snapshot. |
 | `PUT` | `/api/ops/catalog` | Initialize from a complete `CatalogDocument`; requires `If-None-Match: *`. |
 | `POST` | `/api/ops/groups` | Create a complete `CatalogGroup`. |
 | `PATCH` | `/api/ops/groups/:id` | Update UI-editable group fields. |

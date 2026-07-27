@@ -42,5 +42,9 @@ describe("configuration", () => {
       .toThrow("S3_FORCE_PATH_STYLE must be either true or false");
     expect(() => loadConfig({ ...valid, CF_ACCESS_AUDIENCE: "" }))
       .toThrow("Missing required environment variable: CF_ACCESS_AUDIENCE");
+    expect(() => loadConfig({ ...valid, PUBLIC_ORIGIN: "https://tools.example.test/ops" }))
+      .toThrow("PUBLIC_ORIGIN must be an HTTPS origin");
+    expect(() => loadConfig({ ...valid, PUBLIC_ORIGIN: "" }))
+      .toThrow("Missing required environment variable: PUBLIC_ORIGIN");
   });
 });

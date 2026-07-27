@@ -5,27 +5,30 @@
 Never point a preview service at the production bucket.
 
 1. Create a preview bucket and distinct `TOOLS_ENVIRONMENT` value.
-2. Create `tools-web` with source root `/apps/tools-web`, config path
-   `/apps/tools-web/railway.json`, and start command `bun run start`. Enable
-   Railway Serverless and attach only a preview domain.
-3. Create `tools-checker` with source root `/jobs/tools-checker`, config path
+2. Create `tools-checker` with source root `/jobs/tools-checker`, config path
    `/jobs/tools-checker/railway.json`, and start command `bun run start`. Keep
    its cron disabled until the manual validation pass.
-4. As proposed preview limits, set each service to **0.25 vCPU and 256 MB RAM**.
+3. As proposed preview limits, set each service to **0.25 vCPU and 256 MB RAM**.
    Set a project usage alert at **$2/month**, owned by the Railway project owner
    (Maximilian). These are external console gates, not settings completed by
    this repository. Record screenshots or an exported Railway configuration in
    the release evidence.
-5. Create a separate Cloudflare Access application and audience for `/ops*` and
+4. Create a separate Cloudflare Access application and audience for `/ops*` and
    `/api/ops/*`; configure that audience and team issuer in the preview service.
-6. Upload `apps/tools-web/config/initial-catalog.json` to
-   `catalog/current.json` with an S3 `If-None-Match: *` conditional write, or
-   send it to `PUT /api/ops/catalog` with `If-None-Match: *` and a valid preview
-   Access assertion. A `409` means the bucket is already initialized; inspect it
-   instead of overwriting it.
-7. Leave `DISCORD_WEBHOOK_URL` unset. Run the checker manually once against the
-   preview bucket, then verify all four generated object families decode.
-8. Enable the preview cron only after the manual pass succeeds.
+5. Upload `apps/tools-web/config/initial-catalog.json` directly to
+   `catalog/current.json` with an S3 `If-None-Match: *` conditional write. A
+   conflict means the bucket is already initialized; inspect it instead of
+   overwriting it. The protected catalog API is not a bootstrap path because
+   strict Tools Web readiness requires the catalog and public snapshot first.
+6. Leave `DISCORD_WEBHOOK_URL` unset. Run the checker manually once against the
+   preview bucket, then verify state, public/private snapshots, and today's
+   history partition all decode.
+7. Create `tools-web` with source root `/apps/tools-web`, config path
+   `/apps/tools-web/railway.json`, and start command `bun run start`. Set
+   `PUBLIC_ORIGIN` to the exact preview HTTPS origin, enable Railway Serverless,
+   attach only the preview domain, and verify `/health`.
+8. Enable the preview checker cron only after the manual pass and Tools Web
+   readiness both succeed.
 
 “Shadow mode” is an operational procedure, not a hidden application flag:
 use the isolated preview bucket, keep notifications disabled, and leave
@@ -66,18 +69,21 @@ cutover-dependent monitors paused. Never shadow-write production state.
 
 1. Export the production bucket before every mutation; see bucket recovery.
 2. Initialize `catalog/current.json` conditionally from the reviewed seed.
-3. Deploy `tools-web`, enable Railway Serverless, attach the production bucket,
-   and verify `/health` plus the Railway deployment health check.
-4. Deploy `tools-checker` with cron `*/5 * * * *`, notifications still unset,
-   and run one manual pass.
-5. Inspect `state/current.json`, both snapshots, today's gzip history, and the
-   public/private pages. Tailscale monitoring must say
+3. Deploy `tools-checker` with its cron still disabled and notifications unset,
+   then run one manual pass.
+4. Inspect `state/current.json`, both snapshots, and today's gzip history.
+   Tailscale monitoring must say
    `unavailable_from_railway`, not `down`.
-6. Configure the Discord webhook only after state and incident transitions are
+5. Deploy `tools-web`, set `PUBLIC_ORIGIN` to
+   `https://tools.mauroner.net`, enable Railway Serverless, attach the
+   production bucket, and verify `/health`, the Railway deployment health
+   check, and the public/private pages.
+6. Enable the checker cron at `*/5 * * * *`.
+7. Configure the Discord webhook only after state and incident transitions are
    verified. Observe two cron slots.
-7. Point `tools.mauroner.net` at `tools-web`; verify TLS, public cache behavior,
+8. Point `tools.mauroner.net` at `tools-web`; verify TLS, public cache behavior,
    Access path matching, and application-level Access rejection.
-8. Keep the Tools Directory intentionally unmonitored: a five-minute self-probe
+9. Keep the Tools Directory intentionally unmonitored: a five-minute self-probe
    would prevent the Serverless origin from sleeping. Resume the Artifact
    Publisher only after its intended stable DNS and health route work.
 
@@ -102,13 +108,20 @@ If a run remains active at the next slot:
 
 ## Audit repair
 
-Catalog and audit writes are separate object-store operations. A release must
-not claim atomic audit coverage unless the backend implements a durable repair
-protocol. If a catalog revision exists without its audit object, remove web
-write credentials, export the catalog and audit prefix, record an operator
-incident, and run the backend's idempotent audit-repair procedure. Never rewrite
-or delete an existing audit object. Restore admin writes only after the missing
-revision is represented and a create-only collision test succeeds.
+Catalog and audit writes are separate object-store operations, coordinated by a
+durable intent protocol. Each mutation creates an immutable intent before the
+conditional catalog write, then creates the canonical audit object. Failed
+catalog writes create immutable cancellation markers. A canonical-write failure
+does not turn a committed catalog mutation into an HTTP 500: the next mutation
+or protected `GET /api/ops/audit` repairs eligible pending intents
+idempotently.
+
+If a catalog revision appears without its canonical audit object, remove web
+write credentials, export the catalog and complete `audit/**` prefix, and
+record an operator incident. Issue an authenticated audit read to invoke repair,
+then confirm the canonical object exists and the operations UI lists it. Never
+rewrite or delete an existing audit object. Restore admin writes only after the
+missing revision is represented and a create-only collision test succeeds.
 
 ## Trusted-admin DNS risk
 

@@ -144,7 +144,7 @@ function renderHistoryPartition(partition: HistoryPartitionDocument): string {
       : `<ul class="history-list" role="list">${partition.observations
           .map(
             (observation) => `<li>
-              <div><strong>${escapeHtml(observation.id)}</strong><span>Run ${escapeHtml(observation.runId)}</span></div>
+              <div><strong>${escapeHtml(observation.monitorId)}</strong><span>Observation ${escapeHtml(observation.id)} · Run ${escapeHtml(observation.runId)}</span></div>
               <span class="status ${observation.success ? "status--up" : "status--down"}">${observation.success ? "Succeeded" : escapeHtml(observation.errorCode ?? "Failed")}</span>
               <span>${observation.latencyMs} ms${observation.statusCode === null ? "" : ` · HTTP ${observation.statusCode}`}</span>
               <time datetime="${escapeHtml(observation.checkedAt)}">${formatTimestamp(observation.checkedAt)}</time>
