@@ -134,7 +134,8 @@
           observation === null ||
           typeof observation.id !== "string" ||
           typeof observation.runId !== "string" ||
-          typeof observation.monitorId !== "string" ||
+          (observation.monitorId !== null &&
+            typeof observation.monitorId !== "string") ||
           typeof observation.checkedAt !== "string"
         ) {
           throw new Error("Invalid observation response");
@@ -142,7 +143,12 @@
         const item = element("li");
         const identity = element("div");
         identity.append(
-          element("strong", observation.monitorId),
+          element(
+            "strong",
+            observation.monitorId === null
+              ? "Legacy monitor unknown"
+              : observation.monitorId
+          ),
           element("span", `Observation ${observation.id} · Run ${observation.runId}`)
         );
         const succeeded = observation.success === true;

@@ -23,9 +23,20 @@ export interface OperationsPageModel {
 }
 
 export interface OperationsHistoryPage {
-  items: HistoryPartitionDocument[];
+  items: OperationsHistoryPartition[];
   nextCursor: string | null;
 }
+
+type OperationsHistoryPartition = Omit<
+  HistoryPartitionDocument,
+  "observations"
+> & {
+  observations: Array<
+    Omit<HistoryPartitionDocument["observations"][number], "monitorId"> & {
+      monitorId: string | null;
+    }
+  >;
+};
 
 export interface OperationsAuditPage {
   items: AdminAuditRecord[];
@@ -137,14 +148,14 @@ function renderAuditSection(page: OperationsAuditPage | undefined): string {
       </section>`;
 }
 
-function renderHistoryPartition(partition: HistoryPartitionDocument): string {
+function renderHistoryPartition(partition: OperationsHistoryPartition): string {
   const observations =
     partition.observations.length === 0
       ? '<p class="empty-row">No raw checks retained for this day.</p>'
       : `<ul class="history-list" role="list">${partition.observations
           .map(
             (observation) => `<li>
-              <div><strong>${escapeHtml(observation.monitorId)}</strong><span>Observation ${escapeHtml(observation.id)} · Run ${escapeHtml(observation.runId)}</span></div>
+              <div><strong>${escapeHtml(historyMonitorLabel(observation.monitorId))}</strong><span>Observation ${escapeHtml(observation.id)} · Run ${escapeHtml(observation.runId)}</span></div>
               <span class="status ${observation.success ? "status--up" : "status--down"}">${observation.success ? "Succeeded" : escapeHtml(observation.errorCode ?? "Failed")}</span>
               <span>${observation.latencyMs} ms${observation.statusCode === null ? "" : ` · HTTP ${observation.statusCode}`}</span>
               <time datetime="${escapeHtml(observation.checkedAt)}">${formatTimestamp(observation.checkedAt)}</time>
@@ -171,6 +182,10 @@ function renderHistoryPartition(partition: HistoryPartitionDocument): string {
           <section aria-label="Incidents for ${escapeHtml(partition.day)}"><h4>Incidents</h4>${incidents}</section>
         </div>
       </article>`;
+}
+
+function historyMonitorLabel(monitorId: string | null): string {
+  return monitorId === null ? "Legacy monitor unknown" : monitorId;
 }
 
 function renderAuditRecord(record: AdminAuditRecord): string {
