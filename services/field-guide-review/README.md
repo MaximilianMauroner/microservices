@@ -1,6 +1,6 @@
 # Field guide review
 
-Review-only service for immutable project and global field-guide candidates. SQLite on a Railway volume is the production source of truth; PostgreSQL remains available temporarily for cutover import and recovery.
+Review-only service for project and global field-guide candidates. Candidate content stays immutable; an initial undecided candidate may be reassigned between project and global scope using its recorded origin project. SQLite on a Railway volume is the production source of truth; PostgreSQL remains available temporarily for cutover import and recovery.
 
 ## Runtime configuration
 
@@ -57,4 +57,4 @@ INSERT INTO public.field_guide_review_test_sentinel (sentinel_key, sentinel_valu
 VALUES ('database-purpose', 'field-guide-review-disposable-test-database');
 ```
 
-Agent API: `POST /api/agent/candidates`, `GET /api/agent/decisions`, and `POST /api/agent/receipts`. Reviewer API includes queue, paginated history, verdict, and append-only amendment endpoints. There are intentionally no update or delete routes.
+Agent API: `POST /api/agent/candidates`, `GET /api/agent/decisions`, and `POST /api/agent/receipts`. Reviewer API includes queue, paginated history, verdict, append-only amendment, and pre-approval scope-reassignment endpoints. Candidate content and recorded decisions have no update or delete routes.

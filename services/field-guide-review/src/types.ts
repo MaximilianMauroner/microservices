@@ -9,6 +9,10 @@ export type Candidate = {
   scope: Scope;
   projectKey?: string;
   projectDisplayName?: string;
+  foundProjectKey?: string;
+  foundProjectDisplayName?: string;
+  scopeChangedAt?: string;
+  scopeChangedBy?: string;
   lessonKey: string;
   title: string;
   body: string;
@@ -33,6 +37,8 @@ export type Decision = {
   scope: Scope;
   projectKey?: string;
   projectDisplayName?: string;
+  foundProjectKey?: string;
+  foundProjectDisplayName?: string;
   lessonKey: string;
   title: string;
   body: string;
@@ -85,6 +91,13 @@ export interface ReviewRepository {
     now: Date,
     reviewer: string,
   ): Promise<Decision>;
+  reassignScope(
+    candidateId: string,
+    round: number,
+    scope: Scope,
+    now: Date,
+    reviewer: string,
+  ): Promise<Candidate>;
   summary(now: Date): Promise<Summary>;
   close(): Promise<void>;
 }
