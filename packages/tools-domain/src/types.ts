@@ -1,7 +1,7 @@
 export const CATALOG_SCHEMA_VERSION = 1 as const;
 export const CHECKER_STATE_SCHEMA_VERSION = 1 as const;
 export const SNAPSHOT_SCHEMA_VERSION = 1 as const;
-export const HISTORY_SCHEMA_VERSION = 1 as const;
+export const HISTORY_SCHEMA_VERSION = 2 as const;
 export const AUDIT_SCHEMA_VERSION = 1 as const;
 
 export type RunId = string;
@@ -98,10 +98,13 @@ export interface Incident {
 export interface NotificationDelivery {
   id: string;
   incidentId: string;
+  displayName: string | null;
   kind: NotificationKind;
   status: NotificationDeliveryStatus;
   attempts: number;
   nextAttemptAt: string | null;
+  claimToken: string | null;
+  claimedUntil: string | null;
   deliveredAt: string | null;
   lastErrorCode: string | null;
 }
@@ -168,8 +171,12 @@ export interface HistoryPartitionDocument {
   schemaVersion: typeof HISTORY_SCHEMA_VERSION;
   day: string;
   updatedAt: string;
-  observations: CheckObservation[];
+  observations: HistoryObservation[];
   incidents: Incident[];
+}
+
+export interface HistoryObservation extends CheckObservation {
+  monitorId: string;
 }
 
 export interface AdminAuditRecord {

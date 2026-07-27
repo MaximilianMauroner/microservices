@@ -8,6 +8,7 @@ import {
   type CatalogEntry,
   type CheckObservation,
   type CheckerStateDocument,
+  type HistoryObservation,
   type HistoryPartitionDocument,
   type Incident,
   type MonitorState,
@@ -25,6 +26,7 @@ export interface RunDependencies {
   logger: SafeLogger;
   fetcher?: typeof fetch;
   now?: () => Date;
+  signal?: AbortSignal;
 }
 
 export interface CheckerRunResult {
@@ -41,24 +43,53 @@ export async function runChecker(
   const invokedAt = now();
   const runId = createRunId(dependencies.config.environment, invokedAt);
   const [catalogObject, stateObject] = await Promise.all([
-    dependencies.store.readCatalog(),
-    dependencies.store.readState()
+    dependencies.store.readCatalog(dependencies.signal),
+    dependencies.store.readState(dependencies.signal)
   ]);
   const catalog = catalogObject.value;
   const initialState = stateObject?.value ?? emptyState(invokedAt);
+  let state = synchronizeMonitorStates(initialState, catalog.entries, invokedAt);
 
   if (initialState.lastRunId === runId) {
+    let stateEtag = stateObject?.etag;
+    if (!stateEtag) {
+      throw new Error("Duplicate run state is missing an ETag");
+    }
+    if (state !== initialState) {
+      stateEtag = await dependencies.store.writeState(
+        state,
+        stateEtag,
+        dependencies.signal
+      );
+    }
+    const observations = observationsForRun(state, runId);
+    await updateHistory(
+      dependencies.store,
+      state,
+      observations,
+      invokedAt,
+      dependencies.signal
+    );
+    await pruneRawHistory(dependencies.store, invokedAt, dependencies.signal);
+    await publishSnapshots(dependencies.store, catalog, state, dependencies.signal);
     const drained = await drainNotifications(
-      initialState,
+      state,
       catalog,
       dependencies.config.discordWebhookUrl,
+      {
+        expectedEtag: stateEtag,
+        maxAttempts: dependencies.config.notificationAttemptLimit,
+        persist: (value, expectedEtag, signal) =>
+          dependencies.store.writeState(value, expectedEtag, signal),
+        signal: dependencies.signal
+      },
       dependencies.fetcher,
       now
     );
-    if (drained.attempted > 0) {
-      await dependencies.store.writeState(drained.state, stateObject?.etag ?? null);
+    if (drained.attempted > 0 || drained.etag !== stateEtag) {
       await dependencies.store.writePrivateSnapshot(
-        projectPrivateSnapshot(catalog, drained.state, now().toISOString())
+        projectPrivateSnapshot(catalog, drained.state, now().toISOString()),
+        dependencies.signal
       );
     }
     dependencies.logger.info("checker_run_duplicate", {
@@ -73,7 +104,6 @@ export async function runChecker(
     };
   }
 
-  let state = synchronizeMonitorStates(initialState, catalog.entries);
   const enabledEntries = catalog.entries
     .filter(
       (entry) =>
@@ -85,8 +115,13 @@ export async function runChecker(
   const observations = await mapConcurrent(
     enabledEntries,
     dependencies.config.concurrency,
-    (entry) => observeEntry(entry, runId, dependencies, now)
+    (entry) => observeEntry(entry, runId, dependencies, now),
+    dependencies.signal
   );
+  const historyObservations = observations.map((observation, index) => ({
+    ...observation,
+    monitorId: enabledEntries[index].id
+  }));
 
   for (let index = 0; index < enabledEntries.length; index += 1) {
     state = foldObservation(state, enabledEntries[index], observations[index]);
@@ -99,36 +134,40 @@ export async function runChecker(
     lastRunId: runId
   };
 
-  await updateHistory(dependencies.store, state, observations, invokedAt);
-  await pruneRawHistory(dependencies.store, invokedAt);
-  await Promise.all([
-    dependencies.store.writePublicSnapshot(
-      projectPublicSnapshot(catalog, state, completedAt)
-    ),
-    dependencies.store.writePrivateSnapshot(
-      projectPrivateSnapshot(catalog, state, completedAt)
-    )
-  ]);
-  let stateEtag = await dependencies.store.writeState(
+  const stateEtag = await dependencies.store.writeState(
     state,
-    stateObject?.etag ?? null
+    stateObject?.etag ?? null,
+    dependencies.signal
   );
+  await updateHistory(
+    dependencies.store,
+    state,
+    historyObservations,
+    invokedAt,
+    dependencies.signal
+  );
+  await pruneRawHistory(dependencies.store, invokedAt, dependencies.signal);
+  await publishSnapshots(dependencies.store, catalog, state, dependencies.signal);
 
   const drained = await drainNotifications(
     state,
     catalog,
     dependencies.config.discordWebhookUrl,
+    {
+      expectedEtag: stateEtag,
+      maxAttempts: dependencies.config.notificationAttemptLimit,
+      persist: (value, expectedEtag, signal) =>
+        dependencies.store.writeState(value, expectedEtag, signal),
+      signal: dependencies.signal
+    },
     dependencies.fetcher,
     now
   );
-  if (drained.attempted > 0) {
-    state = {
-      ...drained.state,
-      updatedAt: now().toISOString()
-    };
-    stateEtag = await dependencies.store.writeState(state, stateEtag);
+  if (drained.attempted > 0 || drained.etag !== stateEtag) {
+    state = drained.state;
     await dependencies.store.writePrivateSnapshot(
-      projectPrivateSnapshot(catalog, state, state.updatedAt)
+      projectPrivateSnapshot(catalog, state, state.updatedAt),
+      dependencies.signal
     );
   }
 
@@ -172,31 +211,60 @@ function emptyState(now: Date): CheckerStateDocument {
 
 function synchronizeMonitorStates(
   state: CheckerStateDocument,
-  entries: CatalogEntry[]
+  entries: CatalogEntry[],
+  now: Date
 ): CheckerStateDocument {
-  const monitors = { ...state.monitors };
+  const monitoredEntryIds = new Set(
+    entries.filter(({ monitor }) => monitor !== undefined).map(({ id }) => id)
+  );
+  const removedMonitorIds = new Set(
+    Object.keys(state.monitors).filter((id) => !monitoredEntryIds.has(id))
+  );
+  const monitors = Object.fromEntries(
+    Object.entries(state.monitors).filter(([id]) => monitoredEntryIds.has(id))
+  );
+  let changed = removedMonitorIds.size > 0;
   for (const entry of entries) {
     if (!entry.monitor) {
       continue;
     }
-    const existing = monitors[entry.id] ?? initialMonitor(entry.id);
+    const existingMonitor = monitors[entry.id];
+    const existing = existingMonitor ?? initialMonitor(entry.id);
+    changed ||= existingMonitor === undefined;
     if (
       !entry.monitor.enabled ||
       entry.monitor.paused ||
       entry.lifecycle === "archived"
     ) {
-      monitors[entry.id] = { ...existing, status: "paused" };
+      const updated = { ...existing, status: "paused" as const };
+      monitors[entry.id] = updated;
+      changed ||= updated.status !== existing.status;
     } else if (existing.status === "paused") {
       monitors[entry.id] = {
         ...existing,
         status: "checking",
         consecutiveFailures: 0
       };
+      changed = true;
     } else {
       monitors[entry.id] = existing;
     }
   }
-  return { ...state, monitors };
+  const incidents = state.incidents.map((incident) =>
+    removedMonitorIds.has(incident.monitorId) && incident.resolvedAt === null
+      ? {
+          ...incident,
+          resolvedAt: now.toISOString(),
+          closingObservationId: null
+        }
+      : incident
+  );
+  changed ||= incidents.some(
+    (incident, index) => incident !== state.incidents[index]
+  );
+  return changed
+    ? { ...state, updatedAt: now.toISOString(), monitors, incidents }
+    : state;
 }
 
 function initialMonitor(monitorId: string): MonitorState {
@@ -236,7 +304,8 @@ async function observeEntry(
     now: () => now().getTime(),
     timeoutMs: dependencies.config.probeTimeoutMs,
     observationId,
-    runId
+    runId,
+    signal: dependencies.signal
   });
 }
 
@@ -291,7 +360,8 @@ function foldObservation(
             transition.queuedNotification.incidentId,
             transition.queuedNotification.kind
           ),
-          ...transition.queuedNotification
+          ...transition.queuedNotification,
+          displayName: entry.name
         }
       ]
     : state.notifications;
@@ -309,11 +379,12 @@ function foldObservation(
 async function updateHistory(
   store: CheckerStore,
   state: CheckerStateDocument,
-  observations: CheckObservation[],
-  invokedAt: Date
+  observations: HistoryObservation[],
+  invokedAt: Date,
+  signal?: AbortSignal
 ): Promise<void> {
   const day = invokedAt.toISOString().slice(0, 10);
-  const existing = await store.readHistory(day);
+  const existing = await store.readHistory(day, signal);
   const known = new Set(
     existing?.value.observations.map(({ id }) => id) ?? []
   );
@@ -325,24 +396,54 @@ async function updateHistory(
       ...(existing?.value.observations ?? []),
       ...observations.filter(({ id }) => !known.has(id))
     ],
-    incidents: mergeIncidents(existing?.value.incidents ?? [], state.incidents)
+    incidents: mergeIncidents(
+      (existing?.value.incidents ?? []).filter(
+        (incident) => incident.startedAt.slice(0, 10) === day
+      ),
+      state.incidents.filter(
+        (incident) => incident.startedAt.slice(0, 10) === day
+      )
+    )
   };
-  await store.writeHistory(partition, existing?.etag ?? null);
+  await store.writeHistory(partition, existing?.etag ?? null, signal);
+
+  const resolvedFromEarlierDays = state.incidents.filter(
+    (incident) =>
+      incident.resolvedAt?.slice(0, 10) === day &&
+      incident.startedAt.slice(0, 10) !== day
+  );
+  for (const incident of resolvedFromEarlierDays) {
+    const originDay = incident.startedAt.slice(0, 10);
+    const origin = await store.readHistory(originDay, signal);
+    if (!origin) {
+      continue;
+    }
+    await store.writeHistory(
+      {
+        ...origin.value,
+        updatedAt: state.updatedAt,
+        incidents: mergeIncidents(origin.value.incidents, [incident])
+      },
+      origin.etag,
+      signal
+    );
+  }
 }
 
 async function pruneRawHistory(
   store: CheckerStore,
-  invokedAt: Date
+  invokedAt: Date,
+  signal?: AbortSignal
 ): Promise<void> {
   const cutoff = new Date(invokedAt);
   cutoff.setUTCDate(cutoff.getUTCDate() - 30);
   const cutoffDay = cutoff.toISOString().slice(0, 10);
-  const days = await store.listHistoryDays();
+  const days = await store.listHistoryDays(signal);
   for (const day of days) {
     if (day >= cutoffDay) {
       continue;
     }
-    const existing = await store.readHistory(day);
+    const existing = await store.readHistory(day, signal);
     if (!existing || existing.value.observations.length === 0) {
       continue;
     }
@@ -352,7 +453,8 @@ async function pruneRawHistory(
         updatedAt: invokedAt.toISOString(),
         observations: []
       },
-      existing.etag
+      existing.etag,
+      signal
     );
   }
 }
@@ -375,7 +477,8 @@ function mergeIncidents(
 async function mapConcurrent<Value, Result>(
   values: readonly Value[],
   concurrency: number,
-  mapper: (value: Value) => Promise<Result>
+  mapper: (value: Value) => Promise<Result>,
+  signal?: AbortSignal
 ): Promise<Result[]> {
   const results = new Array<Result>(values.length);
   let cursor = 0;
@@ -383,6 +486,7 @@ async function mapConcurrent<Value, Result>(
     { length: Math.min(concurrency, values.length) },
     async () => {
       while (cursor < values.length) {
+        signal?.throwIfAborted();
         const index = cursor;
         cursor += 1;
         results[index] = await mapper(values[index]);
@@ -398,6 +502,43 @@ function stableId(prefix: string, ...parts: string[]): string {
     .update(parts.join("\0"))
     .digest("hex")
     .slice(0, 24)}`;
+}
+
+function observationsForRun(
+  state: CheckerStateDocument,
+  runId: string
+): HistoryObservation[] {
+  return Object.entries(state.monitors)
+    .map(([monitorId, { latestObservation }]) =>
+      latestObservation ? { ...latestObservation, monitorId } : null
+    )
+    .filter(
+      (observation): observation is HistoryObservation =>
+        observation?.runId === runId
+    )
+    .sort(
+      (left, right) =>
+        left.checkedAt.localeCompare(right.checkedAt) ||
+        left.id.localeCompare(right.id)
+    );
+}
+
+async function publishSnapshots(
+  store: CheckerStore,
+  catalog: Parameters<typeof projectPublicSnapshot>[0],
+  state: CheckerStateDocument,
+  signal?: AbortSignal
+): Promise<void> {
+  await Promise.all([
+    store.writePublicSnapshot(
+      projectPublicSnapshot(catalog, state, state.updatedAt),
+      signal
+    ),
+    store.writePrivateSnapshot(
+      projectPrivateSnapshot(catalog, state, state.updatedAt),
+      signal
+    )
+  ]);
 }
 
 export type { NotificationDelivery };

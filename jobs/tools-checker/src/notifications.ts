@@ -7,58 +7,103 @@ import type {
 
 export interface NotificationDrainResult {
   state: CheckerStateDocument;
+  etag: string;
   attempted: number;
+}
+
+export interface NotificationDrainOptions {
+  expectedEtag: string;
+  maxAttempts: number;
+  persist(
+    state: CheckerStateDocument,
+    expectedEtag: string,
+    signal?: AbortSignal
+  ): Promise<string>;
+  signal?: AbortSignal;
 }
 
 export async function drainNotifications(
   state: CheckerStateDocument,
   catalog: CatalogDocument,
   webhookUrl: string | undefined,
+  options: NotificationDrainOptions,
   fetcher: typeof fetch = fetch,
   now: () => Date = () => new Date()
 ): Promise<NotificationDrainResult> {
   if (!webhookUrl) {
-    return { state, attempted: 0 };
+    return { state, etag: options.expectedEtag, attempted: 0 };
   }
 
-  const notifications = [...state.notifications];
+  let currentState = state;
+  let currentEtag = options.expectedEtag;
   let attempted = 0;
-  for (let index = 0; index < notifications.length; index += 1) {
-    const delivery = notifications[index];
+  for (
+    let index = 0;
+    index < currentState.notifications.length &&
+    attempted < options.maxAttempts;
+    index += 1
+  ) {
+    options.signal?.throwIfAborted();
+    const delivery = currentState.notifications[index];
     const currentTime = now();
     if (
       delivery.status === "delivered" ||
       (delivery.nextAttemptAt !== null &&
-        Date.parse(delivery.nextAttemptAt) > currentTime.getTime())
+        Date.parse(delivery.nextAttemptAt) > currentTime.getTime()) ||
+      (delivery.claimedUntil !== null &&
+        Date.parse(delivery.claimedUntil) > currentTime.getTime())
     ) {
       continue;
     }
-    const incident = state.incidents.find(
+    const incident = currentState.incidents.find(
       ({ id }) => id === delivery.incidentId
     );
     if (!incident) {
-      throw new Error(`Notification references missing incident: ${delivery.id}`);
+      currentState = withoutNotification(currentState, delivery.id, currentTime);
+      currentEtag = await options.persist(
+        currentState,
+        currentEtag,
+        options.signal
+      );
+      continue;
     }
     const entry = catalog.entries.find(({ id }) => id === incident.monitorId);
-    if (!entry) {
-      throw new Error(`Incident references missing catalog entry: ${incident.id}`);
-    }
+    const displayName = delivery.displayName ?? entry?.name ?? incident.monitorId;
+    const claimToken = crypto.randomUUID();
+    const claimed: NotificationDelivery = {
+      ...delivery,
+      displayName,
+      attempts: delivery.attempts + 1,
+      claimToken,
+      claimedUntil: new Date(currentTime.getTime() + 30_000).toISOString()
+    };
+    currentState = replaceNotification(currentState, claimed, currentTime);
+    currentEtag = await options.persist(
+      currentState,
+      currentEtag,
+      options.signal
+    );
 
     attempted += 1;
-    notifications[index] = await deliver(
-      delivery,
+    const result = await deliver(
+      claimed,
       incident,
-      entry.name,
+      displayName,
       webhookUrl,
       fetcher,
-      currentTime
+      currentTime,
+      options.signal
+    );
+    currentState = replaceNotification(currentState, result, now());
+    currentEtag = await options.persist(
+      currentState,
+      currentEtag,
+      options.signal
     );
   }
   return {
-    state: {
-      ...state,
-      notifications
-    },
+    state: currentState,
+    etag: currentEtag,
     attempted
   };
 }
@@ -91,16 +136,19 @@ async function deliver(
   name: string,
   webhookUrl: string,
   fetcher: typeof fetch,
-  now: Date
+  now: Date,
+  outerSignal?: AbortSignal
 ): Promise<NotificationDelivery> {
-  const attempts = delivery.attempts + 1;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 10_000);
+  const signal = outerSignal
+    ? AbortSignal.any([controller.signal, outerSignal])
+    : controller.signal;
   let response: Response;
   try {
     response = await fetcher(withWait(webhookUrl), {
       method: "POST",
-      signal: controller.signal,
+      signal,
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         embeds: [
@@ -121,9 +169,8 @@ async function deliver(
   } catch {
     return failedDelivery(
       delivery,
-      attempts,
       now,
-      backoffSeconds(attempts),
+      backoffSeconds(delivery.attempts),
       "discord_network_error"
     );
   } finally {
@@ -135,34 +182,34 @@ async function deliver(
     return {
       ...delivery,
       status: "delivered",
-      attempts,
       nextAttemptAt: null,
+      claimToken: null,
+      claimedUntil: null,
       deliveredAt: now.toISOString(),
       lastErrorCode: null
     };
   }
   return failedDelivery(
     delivery,
-    attempts,
     now,
-    retryDelaySeconds(response, attempts, now.getTime()),
+    retryDelaySeconds(response, delivery.attempts, now.getTime()),
     `discord_http_${response.status}`
   );
 }
 
 function failedDelivery(
   delivery: NotificationDelivery,
-  attempts: number,
   now: Date,
   delaySeconds: number,
   errorCode: string
 ): NotificationDelivery {
   return {
     ...delivery,
-    attempts,
     nextAttemptAt: new Date(
       now.getTime() + delaySeconds * 1000
     ).toISOString(),
+    claimToken: null,
+    claimedUntil: null,
     deliveredAt: null,
     lastErrorCode: errorCode
   };
@@ -174,4 +221,32 @@ function backoffSeconds(attempts: number): number {
 
 function withWait(webhookUrl: string): string {
   return `${webhookUrl}${webhookUrl.includes("?") ? "&" : "?"}wait=true`;
+}
+
+function replaceNotification(
+  state: CheckerStateDocument,
+  delivery: NotificationDelivery,
+  now: Date
+): CheckerStateDocument {
+  return {
+    ...state,
+    updatedAt: now.toISOString(),
+    notifications: state.notifications.map((candidate) =>
+      candidate.id === delivery.id ? delivery : candidate
+    )
+  };
+}
+
+function withoutNotification(
+  state: CheckerStateDocument,
+  id: string,
+  now: Date
+): CheckerStateDocument {
+  return {
+    ...state,
+    updatedAt: now.toISOString(),
+    notifications: state.notifications.filter(
+      (candidate) => candidate.id !== id
+    )
+  };
 }

@@ -14,6 +14,7 @@ import {
   type CheckObservation,
   type Incident,
   type HistoryPartitionDocument,
+  type HistoryObservation,
   type MonitorConfig,
   type MonitorState,
   type NotificationDelivery,
@@ -160,8 +161,7 @@ export function decodeHistoryPartitionDocument(
     day: calendarDay(root.day, "$.day"),
     updatedAt: timestamp(root.updatedAt, "$.updatedAt"),
     observations: array(root.observations, "$.observations").map(
-      (observation, index) =>
-        parseObservation(observation, `$.observations[${index}]`)
+      parseHistoryObservation
     ),
     incidents: array(root.incidents, "$.incidents").map((incident, index) =>
       parseIncidentAt(incident, `$.incidents[${index}]`)
@@ -175,7 +175,7 @@ export function migrateHistoryPartitionDocument(input: unknown): unknown {
   if (version === HISTORY_SCHEMA_VERSION) {
     return input;
   }
-  if (version !== 0) {
+  if (version !== 0 && version !== 1) {
     throw new SchemaDecodeError(
       "$.schemaVersion",
       `unsupported history schema version ${version}`
@@ -184,6 +184,15 @@ export function migrateHistoryPartitionDocument(input: unknown): unknown {
   return {
     ...root,
     schemaVersion: HISTORY_SCHEMA_VERSION,
+    observations: array(root.observations, "$.observations").map(
+      (value, index) => {
+        const observation = record(value, `$.observations[${index}]`);
+        return {
+          ...observation,
+          monitorId: observation.monitorId ?? "unknown"
+        };
+      }
+    ),
     incidents: root.incidents ?? []
   };
 }
@@ -417,6 +426,18 @@ function parseObservation(value: unknown, path: string): CheckObservation {
   };
 }
 
+function parseHistoryObservation(
+  value: unknown,
+  index: number
+): HistoryObservation {
+  const path = `$.observations[${index}]`;
+  const item = record(value, path);
+  return {
+    ...parseObservation(item, path),
+    monitorId: identifier(item.monitorId, `${path}.monitorId`)
+  };
+}
+
 function parseMonitorState(value: unknown, path: string): MonitorState {
   const item = record(value, path);
   return {
@@ -500,6 +521,10 @@ function parseNotification(
   return {
     id: identifier(item.id, `${path}.id`),
     incidentId: identifier(item.incidentId, `${path}.incidentId`),
+    displayName:
+      item.displayName === undefined || item.displayName === null
+        ? null
+        : nonempty(item.displayName, `${path}.displayName`),
     kind: enumeration(item.kind, ["down", "recovery"], `${path}.kind`),
     status: enumeration(
       item.status,
@@ -511,6 +536,14 @@ function parseNotification(
       item.nextAttemptAt === null
         ? null
         : timestamp(item.nextAttemptAt, `${path}.nextAttemptAt`),
+    claimToken:
+      item.claimToken === undefined || item.claimToken === null
+        ? null
+        : identifier(item.claimToken, `${path}.claimToken`),
+    claimedUntil:
+      item.claimedUntil === undefined || item.claimedUntil === null
+        ? null
+        : timestamp(item.claimedUntil, `${path}.claimedUntil`),
     deliveredAt:
       item.deliveredAt === null
         ? null
