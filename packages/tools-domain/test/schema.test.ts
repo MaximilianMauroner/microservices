@@ -148,7 +148,7 @@ describe("schema decoding and migration", () => {
       schemaVersion: HISTORY_SCHEMA_VERSION,
       day: "2026-07-27",
       updatedAt: NOW,
-      observations: [{ ...observation, monitorId: "unknown" }],
+      observations: [{ ...observation, monitorId: null }],
       incidents: []
     });
     expect(() =>
@@ -161,6 +161,31 @@ describe("schema decoding and migration", () => {
       })
     ).toThrow(/valid YYYY-MM-DD/);
   });
+
+  it.each(["http://127.0.0.1/", "http://[::1]/"])(
+    "rejects blocked literal monitor URL %s at the catalog boundary",
+    (url) => {
+      const catalog = catalogFixture();
+      expect(() =>
+        decodeCatalogDocument({
+          ...catalog,
+          entries: catalog.entries.map((entry, index) =>
+            index === 0
+              ? {
+                  ...entry,
+                  monitor: {
+                    enabled: true,
+                    paused: false,
+                    scope: "public",
+                    url
+                  }
+                }
+              : entry
+          )
+        })
+      ).toThrow(/public HTTP\(S\) URL/);
+    }
+  );
 
   it("decodes safe audit metadata without authentication material", () => {
     expect(
