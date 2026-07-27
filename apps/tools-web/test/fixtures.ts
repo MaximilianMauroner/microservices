@@ -110,7 +110,8 @@ export const privateSnapshot: PrivateSnapshotDocument = {
     lastRunId: null,
     monitors: {},
     incidents: [],
-    notifications: []
+    notifications: [],
+    historyPending: []
   }
 };
 

@@ -117,7 +117,7 @@ const privateSnapshot: PrivateSnapshotDocument = {
     ]
   },
   state: {
-    schemaVersion: 1,
+    schemaVersion: 2,
     revision: "state-1",
     updatedAt: generatedAt,
     lastRunId: "run-1",
@@ -137,7 +137,8 @@ const privateSnapshot: PrivateSnapshotDocument = {
         claimToken: null,
         claimedUntil: null
       }
-    ]
+    ],
+    historyPending: []
   }
 };
 
