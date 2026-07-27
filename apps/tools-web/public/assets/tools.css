@@ -192,6 +192,40 @@ h1 { margin-bottom: 26px; font-size: clamp(3rem, 8vw, 6.7rem); }
 .notice--pending { background: var(--amber-soft); color: var(--amber); }
 .notice--success { background: var(--accent-soft); color: var(--accent); }
 .notice--error { background: var(--red-soft); color: var(--red); }
+.collection-state { color: var(--muted); font-family: var(--mono); font-size: .78rem; }
+.timeline { display: grid; gap: 14px; margin-bottom: 14px; }
+.history-day { padding: 22px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow); }
+.history-day h3 { margin-bottom: 18px; font: 800 .9rem var(--mono); }
+.history-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px; }
+.history-columns h4 { margin: 0 0 10px; color: var(--muted); font-size: .72rem; letter-spacing: .08em; text-transform: uppercase; }
+.history-list, .incident-list, .audit-list { margin: 0; padding: 0; list-style: none; }
+.history-list, .incident-list { display: grid; gap: 8px; }
+.history-list li, .incident-list li {
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--muted);
+  font: .72rem var(--mono);
+}
+.history-list li > div, .audit-record > div { display: grid; gap: 2px; min-width: 0; }
+.history-list strong, .incident-list strong, .audit-record strong { color: var(--ink); overflow-wrap: anywhere; }
+.audit-list { display: grid; gap: 8px; margin-bottom: 14px; }
+.audit-record {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, .8fr) minmax(120px, .5fr);
+  gap: 18px;
+  align-items: center;
+  padding: 15px 17px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  font-size: .78rem;
+}
+.audit-record span, .audit-record time { color: var(--muted); }
+.audit-record code { overflow-wrap: anywhere; font-size: .7rem; }
 .modal { width: min(520px, calc(100% - 30px)); padding: 28px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--ink); box-shadow: 0 24px 80px rgba(0,0,0,.25); }
 .modal::backdrop { background: rgba(12, 18, 14, .58); }
 .modal label { display: grid; gap: 6px; margin: 20px 0; font-size: .8rem; font-weight: 700; }
@@ -206,6 +240,7 @@ h1 { margin-bottom: 26px; font-size: clamp(3rem, 8vw, 6.7rem); }
   .tool-card__top, .editor-card__heading { align-items: flex-start; flex-direction: column; }
   .ops-heading { grid-template-columns: 1fr; }
   .edit-form { grid-template-columns: 1fr; }
+  .history-columns, .audit-record { grid-template-columns: 1fr; }
   .span-all { grid-column: auto; }
   .editor-card__heading .status-detail { text-align: left; }
 }

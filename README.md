@@ -39,8 +39,16 @@ configuration belongs inside each component directory.
 
 ## Deployment Notes
 
-Railway deploys the artifact publisher, field-guide console, Tools Web, and
-Tools Checker from their component directories. Each owns its `railway.json`.
+Railway deploys each component with the following explicit source root and
+start command:
+
+| Service | Railway source root | Config path | Start command |
+| --- | --- | --- | --- |
+| Artifact Publisher | `/apps/artifact-publisher` | `/apps/artifact-publisher/railway.json` | `bun run start` |
+| Field Guide Console | `/apps/field-guide-console` | `/apps/field-guide-console/railway.json` | `bun run start` |
+| Tools Web | `/apps/tools-web` | `/apps/tools-web/railway.json` | `bun run start` |
+| Tools Checker | `/jobs/tools-checker` | `/jobs/tools-checker/railway.json` | `bun run start` |
+
 Tools Web must have Railway Serverless enabled and contains no background work.
 Tools Checker is a `*/5 * * * *` cron with no listener or restart loop.
 
