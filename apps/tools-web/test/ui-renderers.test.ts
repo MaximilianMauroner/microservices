@@ -4,6 +4,8 @@ import type {
   PublicSnapshotDocument
 } from "@tools-platform/domain";
 import {
+  renderOperationsAuditPage,
+  renderOperationsHistoryPage,
   renderOperationsPage,
   renderPublicPage
 } from "../src/ui/index.js";
@@ -200,6 +202,10 @@ describe("operations page", () => {
     expect(html).toContain('data-delete-name="Port service"');
     expect(html).toContain("Type the exact name");
     expect(html).toContain("The catalog changed elsewhere");
+    expect(html).toContain('data-endpoint="/api/ops/history"');
+    expect(html).toContain('data-endpoint="/api/ops/audit"');
+    expect(html).toContain("Loading protected history");
+    expect(html).toContain("Loading protected audit events");
     expect(html).toContain('<script src="/assets/ops.js" defer></script>');
   });
 
@@ -217,5 +223,64 @@ describe("operations page", () => {
     expect(html).not.toContain("</textarea><script>");
     expect(html).not.toContain("raw-discord-error");
     expect(html).not.toContain("notification-secret");
+  });
+
+  test("renders accessible protected history and audit pages without leaking publicly", () => {
+    const history = renderOperationsHistoryPage({
+      items: [
+        {
+          schemaVersion: 1,
+          day: "2026-07-27",
+          updatedAt: generatedAt,
+          observations: [
+            {
+              id: "observation-1",
+              runId: "run-1",
+              checkedAt: generatedAt,
+              success: false,
+              statusCode: 503,
+              latencyMs: 91,
+              errorCode: "http_error"
+            }
+          ],
+          incidents: [
+            {
+              id: "incident-1",
+              monitorId: "artifact-publisher",
+              startedAt: generatedAt,
+              openingObservationId: "observation-1",
+              resolvedAt: null,
+              closingObservationId: null
+            }
+          ]
+        }
+      ],
+      nextCursor: "older"
+    });
+    const audit = renderOperationsAuditPage({
+      items: [
+        {
+          schemaVersion: 1,
+          id: "audit-1",
+          actor: "operator@example.test",
+          occurredAt: generatedAt,
+          action: "entry.archive",
+          targetType: "entry",
+          targetId: "artifact-publisher",
+          catalogRevisionBefore: "revision-1",
+          catalogRevisionAfter: "revision-2"
+        }
+      ],
+      nextCursor: null
+    });
+    const publicHtml = renderPublicPage(publicSnapshot);
+
+    expect(history).toContain('aria-label="Checks for 2026-07-27"');
+    expect(history).toContain("http_error");
+    expect(history).toContain("Open incident");
+    expect(audit).toContain("entry.archive");
+    expect(audit).toContain("operator@example.test");
+    expect(publicHtml).not.toContain("entry.archive");
+    expect(publicHtml).not.toContain("incident-1");
   });
 });

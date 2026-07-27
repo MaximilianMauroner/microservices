@@ -15,6 +15,10 @@ compromised.
    value.
 4. Export `catalog/current.json` and `audit/**`; compare revisions and actors
    with the last known-good deployment.
+5. If a catalog revision has no corresponding audit object, keep web write
+   credentials removed and follow the audit-repair gate in
+   `preview-and-cutover.md`. A failed HTTP response does not prove the catalog
+   write failed.
 
 ## Diagnose
 

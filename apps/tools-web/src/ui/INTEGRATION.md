@@ -12,6 +12,21 @@ Operations routes are same-origin JSON endpoints protected by Cloudflare Access 
 - `POST /api/ops/entries/:id/reorder` with `{ "direction": "up" | "down" }`
 - `POST /api/ops/entries/:id/archive|restore`
 - `POST /api/ops/entries/:id/monitor/pause|resume`
+- `GET /api/ops/history?cursor=<opaque>` returns `{ "items": HistoryPartitionDocument[], "nextCursor": string | null }`
+- `GET /api/ops/audit?cursor=<opaque>` returns `{ "items": AdminAuditRecord[], "nextCursor": string | null }`
+
+History and audit are loaded once when the protected operations page is opened,
+then only when the operator explicitly requests an older page or retries an
+error. There is no polling. Cursors are opaque, pages are newest-first, and both
+routes return `Cache-Control: private, no-store`. An empty page is successful;
+errors retain already rendered items and expose a retry control. If the backend
+supplies initial pages to `renderOperationsPage`, the same panels render on the
+server and do not issue their initial request.
+
+The current history schema identifies observations by observation/run ID but
+does not persist a monitor ID on each observation. The API must not invent that
+association. Until the storage schema adds it, the UI displays the identifiers
+honestly; incidents retain their monitor ID.
 - `PUT /api/ops/order` remains available for complete programmatic ordering;
   the browser uses the directional routes above.
 
