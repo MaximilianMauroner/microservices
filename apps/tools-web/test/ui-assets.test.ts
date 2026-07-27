@@ -12,8 +12,28 @@ describe("static UI assets", () => {
     expect(script).toContain("showConflict(payload)");
     expect(script).toContain("data-delete-confirmation");
     expect(script).toContain("window.location.reload()");
+    expect(script).toContain('deleteDialog.returnValue = ""');
+    expect(script.indexOf('deleteDialog.returnValue = ""')).toBeLessThan(
+      script.indexOf("deleteDialog.showModal()")
+    );
+    expect(script).toContain("[data-ops-collection]");
+    expect(script).toContain("[data-collection-retry]");
     expect(script).not.toContain("setInterval");
     expect(script).not.toContain("setTimeout");
+  });
+
+  test("resets destructive confirmation before reopen and leaves Escape non-destructive", async () => {
+    const script = await Bun.file(new URL("ops.js", assets)).text();
+
+    const openFlow = script.slice(
+      script.indexOf("const deleteButton"),
+      script.indexOf("if (deleteDialog instanceof HTMLDialogElement)")
+    );
+    expect(openFlow).toContain('deleteDialog.returnValue = ""');
+    expect(openFlow.indexOf('deleteDialog.returnValue = ""')).toBeLessThan(
+      openFlow.indexOf("deleteDialog.showModal()")
+    );
+    expect(script).toContain('if (deleteDialog.returnValue !== "confirm") return;');
   });
 
   test("assets contain no inline-handler dependency and respect reduced motion", async () => {
