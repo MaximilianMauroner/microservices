@@ -1,15 +1,20 @@
-# Microservices
+# Tools Platform
 
-Local and deployed microservices live in `services/*`. Each service owns its runtime code, tests, config, deployment notes, and service-specific README.
+Small hosted utilities and operational consoles live in `apps/*`. Shared pure
+contracts belong in `packages/*`, and short-lived jobs in `jobs/*`.
+Each component owns its runtime code, tests, configuration, deployment notes,
+and README.
 
-## Services
+## Components
 
 | Service | Path | Runtime | Purpose |
 | --- | --- | --- | --- |
-| Field guide review | `services/field-guide-review` | Railway | Review-only approval and lifecycle history for field-guide lessons. |
-| HTML publisher | `services/html-publisher` | Railway | Sandboxed planning pages, temporary file uploads, resumable downloads, and revocation. |
-| Tailscale port dashboard | `services/tailscale-port-dashboard` | Local VM systemd service | Port-80 dashboard for Tailscale address and listening-port discovery. |
-| Uptime monitor | `services/uptime-monitor` | Cloudflare Workers + D1 | Private HTTP(S) uptime dashboard with Discord incident alerts. |
+| Artifact publisher | `apps/artifact-publisher` | Railway | Sandboxed planning pages, temporary file uploads, resumable downloads, and revocation. |
+| Field guide console | `apps/field-guide-console` | Railway | Review-only approval and lifecycle history for field-guide lessons. |
+| Network console | `apps/network-console` | Local VM systemd service | Port-80 dashboard for Tailscale address and listening-port discovery. |
+| Tools Web | `apps/tools-web` | Railway Serverless | Public tools directory and Cloudflare Access-protected catalog operations. Sleeps between requests. |
+| Tools Checker | `jobs/tools-checker` | Railway cron | One bounded status/incident/notification pass every five minutes, then exits. |
+| Tools Domain | `packages/tools-domain` | Pure TypeScript | Shared schemas, safe projections, URL/IP validation, transitions, and bucket keys. |
 
 ## Commands
 
@@ -19,21 +24,48 @@ bun run test
 bun run verify
 ```
 
-Run an individual service from its package directory, or use the root shortcuts:
+Run an individual component from its package directory, or use the root shortcuts:
 
 ```bash
-bun run start:html-publisher
-bun run start:field-guide-review
-bun run start:tailscale-port-dashboard
-bun run start:uptime-monitor
+bun run start:artifact-publisher
+bun run start:field-guide-console
+bun run start:network-console
+bun run start:tools-web
+bun run start:tools-checker
 ```
 
-The root is a Bun workspace catalog, not a deployable service. Service deployment config belongs inside each service directory.
+The root is a Bun workspace catalog, not a deployable service. Deployment
+configuration belongs inside each component directory.
 
 ## Deployment Notes
 
-Railway deploys the HTML publisher and field-guide review service from their respective service roots. Each owns a `railway.json`, runs `bun run start`, and checks `/health`.
+Railway deploys each component with the following explicit source root and
+start command:
 
-If a host or deployment system starts from the repo root, use an explicit root shortcut such as `bun run start:html-publisher` instead of treating the workspace root as the service package.
+| Service | Railway source root | Config path | Start command |
+| --- | --- | --- | --- |
+| Artifact Publisher | `/apps/artifact-publisher` | `/apps/artifact-publisher/railway.json` | `bun run start` |
+| Field Guide Console | `/apps/field-guide-console` | `/apps/field-guide-console/railway.json` | `bun run start` |
+| Tools Web | `/apps/tools-web` | `/apps/tools-web/railway.json` | `bun run start` |
+| Tools Checker | `/jobs/tools-checker` | `/jobs/tools-checker/railway.json` | `bun run start` |
 
-The Tailscale port dashboard is not a Railway service. Install it on the VM with `services/tailscale-port-dashboard/ops/install-systemd.sh`; the unit is enabled for VM boot through `multi-user.target`.
+Tools Web must have Railway Serverless enabled and contains no background work.
+Tools Checker is a `*/5 * * * *` cron with no listener or restart loop.
+
+Tools Web and Tools Checker share one private bucket with disjoint writer
+ownership enforced in code. See [Tools Platform operations](docs/tools-platform/README.md)
+for preview isolation, initial catalog bootstrap, cutover, rollback, recovery,
+Access incidents, cost controls, and Cloudflare Worker retirement.
+
+If a host or deployment system starts from the repository root, use an explicit
+root shortcut such as `bun run start:artifact-publisher` instead of treating the
+workspace root as the service package.
+
+The network console is not a Railway service. Install it on the VM with
+`apps/network-console/ops/install-systemd.sh`; the `network-console.service`
+unit is enabled for VM boot through `multi-user.target`.
+
+The legacy Cloudflare uptime Worker source was removed after the required
+monitoring behavior was ported and audited. Its deployed Worker, route, Access
+application, and D1 database are external resources and are not removed by this
+repository change.
