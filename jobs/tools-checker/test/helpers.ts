@@ -26,7 +26,9 @@ export const configFixture: CheckerConfig = {
     forcePathStyle: false
   },
   concurrency: 2,
-  probeTimeoutMs: 10_000
+  probeTimeoutMs: 10_000,
+  runDeadlineMs: 240_000,
+  notificationAttemptLimit: 8
 };
 
 export function catalogFixture(): CatalogDocument {

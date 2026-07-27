@@ -27,21 +27,39 @@ export interface Versioned<Value> {
 }
 
 export interface CheckerStore {
-  readCatalog(): Promise<Versioned<CatalogDocument>>;
-  readState(): Promise<Versioned<CheckerStateDocument> | null>;
-  readHistory(day: string): Promise<Versioned<HistoryPartitionDocument> | null>;
-  listHistoryDays(): Promise<string[]>;
+  readCatalog(signal?: AbortSignal): Promise<Versioned<CatalogDocument>>;
+  readState(signal?: AbortSignal): Promise<Versioned<CheckerStateDocument> | null>;
+  readHistory(
+    day: string,
+    signal?: AbortSignal
+  ): Promise<Versioned<HistoryPartitionDocument> | null>;
+  listHistoryDays(signal?: AbortSignal): Promise<string[]>;
   writeState(
     value: CheckerStateDocument,
-    expectedEtag: string | null
+    expectedEtag: string | null,
+    signal?: AbortSignal
   ): Promise<string>;
   writeHistory(
     value: HistoryPartitionDocument,
-    expectedEtag: string | null
+    expectedEtag: string | null,
+    signal?: AbortSignal
   ): Promise<string>;
-  writePublicSnapshot(value: PublicSnapshotDocument): Promise<void>;
-  writePrivateSnapshot(value: PrivateSnapshotDocument): Promise<void>;
+  writePublicSnapshot(
+    value: PublicSnapshotDocument,
+    signal?: AbortSignal
+  ): Promise<void>;
+  writePrivateSnapshot(
+    value: PrivateSnapshotDocument,
+    signal?: AbortSignal
+  ): Promise<void>;
   close(): void;
+}
+
+export class CheckerConflictError extends Error {
+  constructor(public readonly key: string) {
+    super(`Checker object changed since it was read: ${key}`);
+    this.name = "CheckerConflictError";
+  }
 }
 
 export function createS3CheckerStore(
@@ -59,20 +77,22 @@ export function createS3CheckerStore(
   });
 
   return {
-    async readCatalog() {
+    async readCatalog(signal) {
       const object = await requiredObject(
         client,
         config.name,
-        BUCKET_KEYS.catalog
+        BUCKET_KEYS.catalog,
+        signal
       );
       return decodeObject(object, BUCKET_KEYS.catalog, decodeCatalogDocument);
     },
 
-    async readState() {
+    async readState(signal) {
       const object = await optionalObject(
         client,
         config.name,
-        BUCKET_KEYS.checkerState
+        BUCKET_KEYS.checkerState,
+        signal
       );
       return object
         ? decodeObject(
@@ -83,15 +103,15 @@ export function createS3CheckerStore(
         : null;
     },
 
-    async readHistory(day) {
+    async readHistory(day, signal) {
       const key = historyKey(day);
-      const object = await optionalObject(client, config.name, key);
+      const object = await optionalObject(client, config.name, key, signal);
       return object
         ? decodeObject(object, key, decodeHistoryPartitionDocument)
         : null;
     },
 
-    async listHistoryDays() {
+    async listHistoryDays(signal) {
       const days: string[] = [];
       let continuationToken: string | undefined;
       do {
@@ -100,7 +120,8 @@ export function createS3CheckerStore(
             Bucket: config.name,
             Prefix: "history/",
             ContinuationToken: continuationToken
-          })
+          }),
+          requestOptions(signal)
         );
         for (const object of result.Contents ?? []) {
           const match = object.Key?.match(
@@ -115,7 +136,7 @@ export function createS3CheckerStore(
       return [...new Set(days)].sort();
     },
 
-    async writeState(value, expectedEtag) {
+    async writeState(value, expectedEtag, signal) {
       decodeCheckerStateDocument(value);
       return guardedWrite(
         client,
@@ -124,11 +145,13 @@ export function createS3CheckerStore(
         encodeJson(value),
         "application/json",
         expectedEtag,
-        now
+        now,
+        undefined,
+        signal
       );
     },
 
-    async writeHistory(value, expectedEtag) {
+    async writeHistory(value, expectedEtag, signal) {
       decodeHistoryPartitionDocument(value);
       const bytes = Bun.gzipSync(encodeJson(value));
       return guardedWrite(
@@ -139,29 +162,36 @@ export function createS3CheckerStore(
         "application/json",
         expectedEtag,
         now,
-        "gzip"
+        "gzip",
+        signal
       );
     },
 
-    async writePublicSnapshot(value) {
+    async writePublicSnapshot(value, signal) {
       decodePublicSnapshotDocument(value);
       await ownedWrite(
         client,
         config.name,
         BUCKET_KEYS.publicSnapshot,
         encodeJson(value),
-        "application/json"
+        "application/json",
+        undefined,
+        undefined,
+        signal
       );
     },
 
-    async writePrivateSnapshot(value) {
+    async writePrivateSnapshot(value, signal) {
       decodePrivateSnapshotDocument(value);
       await ownedWrite(
         client,
         config.name,
         BUCKET_KEYS.privateSnapshot,
         encodeJson(value),
-        "application/json"
+        "application/json",
+        undefined,
+        undefined,
+        signal
       );
     },
 
@@ -180,9 +210,10 @@ interface BucketObject {
 async function requiredObject(
   client: S3Client,
   bucket: string,
-  key: string
+  key: string,
+  signal?: AbortSignal
 ): Promise<BucketObject> {
-  const result = await optionalObject(client, bucket, key);
+  const result = await optionalObject(client, bucket, key, signal);
   if (!result) {
     throw new Error(`Required bucket object is missing: ${key}`);
   }
@@ -192,11 +223,13 @@ async function requiredObject(
 async function optionalObject(
   client: S3Client,
   bucket: string,
-  key: string
+  key: string,
+  signal?: AbortSignal
 ): Promise<BucketObject | null> {
   try {
     const result = await client.send(
-      new GetObjectCommand({ Bucket: bucket, Key: key })
+      new GetObjectCommand({ Bucket: bucket, Key: key }),
+      requestOptions(signal)
     );
     if (!result.Body || !result.ETag) {
       throw new Error(`Bucket object is incomplete: ${key}`);
@@ -247,9 +280,10 @@ async function guardedWrite(
   contentType: string,
   expectedEtag: string | null,
   now: () => Date,
-  contentEncoding?: string
+  contentEncoding?: string,
+  signal?: AbortSignal
 ): Promise<string> {
-  const previous = await optionalObject(client, bucket, key);
+  const previous = await optionalObject(client, bucket, key, signal);
   if (previous) {
     const stamp = now().toISOString().replaceAll(":", "-");
     await ownedWrite(
@@ -258,7 +292,9 @@ async function guardedWrite(
       recoveryKey(`${stamp}/${key}`),
       previous.bytes,
       "application/json",
-      previous.encoding
+      previous.encoding,
+      undefined,
+      signal
     );
   }
   const etag = await ownedWrite(
@@ -268,7 +304,8 @@ async function guardedWrite(
     bytes,
     contentType,
     contentEncoding,
-    expectedEtag
+    expectedEtag,
+    signal
   );
   if (!etag) {
     throw new Error(`Bucket write did not return an ETag: ${key}`);
@@ -283,24 +320,33 @@ async function ownedWrite(
   bytes: Uint8Array,
   contentType: string,
   contentEncoding?: string,
-  expectedEtag?: string | null
+  expectedEtag?: string | null,
+  signal?: AbortSignal
 ): Promise<string> {
   assertCheckerOwnedKey(key);
-  const result = await client.send(
-    new PutObjectCommand({
-      Bucket: bucket,
-      Key: key,
-      Body: bytes,
-      ContentType: contentType,
-      ...(contentEncoding ? { ContentEncoding: contentEncoding } : {}),
-      ...(expectedEtag === null
-        ? { IfNoneMatch: "*" }
-        : expectedEtag
-          ? { IfMatch: expectedEtag }
-          : {})
-    })
-  );
-  return result.ETag ?? "";
+  try {
+    const result = await client.send(
+      new PutObjectCommand({
+        Bucket: bucket,
+        Key: key,
+        Body: bytes,
+        ContentType: contentType,
+        ...(contentEncoding ? { ContentEncoding: contentEncoding } : {}),
+        ...(expectedEtag === null
+          ? { IfNoneMatch: "*" }
+          : expectedEtag
+            ? { IfMatch: expectedEtag }
+            : {})
+      }),
+      requestOptions(signal)
+    );
+    return result.ETag ?? "";
+  } catch (error) {
+    if (isConflict(error)) {
+      throw new CheckerConflictError(key);
+    }
+    throw error;
+  }
 }
 
 export function assertCheckerOwnedKey(key: string): void {
@@ -331,4 +377,22 @@ function isMissing(error: unknown): boolean {
     candidate.name === "NotFound" ||
     candidate.Code === "NoSuchKey"
   );
+}
+
+function isConflict(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) {
+    return false;
+  }
+  const candidate = error as { name?: unknown; Code?: unknown };
+  return (
+    candidate.name === "PreconditionFailed" ||
+    candidate.name === "ConditionalRequestConflict" ||
+    candidate.Code === "PreconditionFailed"
+  );
+}
+
+function requestOptions(
+  signal: AbortSignal | undefined
+): { abortSignal: AbortSignal } | undefined {
+  return signal ? { abortSignal: signal } : undefined;
 }

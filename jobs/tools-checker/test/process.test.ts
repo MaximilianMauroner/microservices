@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { executeChecker } from "../src/index.js";
+import { CheckerDeadlineError, executeChecker } from "../src/index.js";
 import {
   MemoryStore,
   NOW,
@@ -35,6 +35,21 @@ describe("one-shot process", () => {
         now: () => new Date(NOW)
       })
     ).rejects.toThrow("bucket unavailable");
+    expect(store.closed).toBe(true);
+  });
+
+  it("aborts a hung run at the whole-process deadline and closes the store", async () => {
+    const store = new MemoryStore();
+    store.readCatalog = async () => new Promise(() => undefined);
+
+    await expect(
+      executeChecker({
+        store,
+        config: { ...configFixture, runDeadlineMs: 20 },
+        logger,
+        now: () => new Date(NOW)
+      })
+    ).rejects.toBeInstanceOf(CheckerDeadlineError);
     expect(store.closed).toBe(true);
   });
 });
