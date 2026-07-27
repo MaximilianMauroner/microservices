@@ -128,11 +128,14 @@ const privateSnapshot: PrivateSnapshotDocument = {
         id: "notification-secret",
         incidentId: "incident-secret",
         kind: "down",
+        displayName: "Private console",
         status: "pending",
         attempts: 1,
         nextAttemptAt: null,
         deliveredAt: null,
-        lastErrorCode: "raw-discord-error"
+        lastErrorCode: "raw-discord-error",
+        claimToken: null,
+        claimedUntil: null
       }
     ]
   }
@@ -229,13 +232,14 @@ describe("operations page", () => {
     const history = renderOperationsHistoryPage({
       items: [
         {
-          schemaVersion: 1,
+          schemaVersion: 2,
           day: "2026-07-27",
           updatedAt: generatedAt,
           observations: [
             {
               id: "observation-1",
               runId: "run-1",
+              monitorId: "artifact-publisher",
               checkedAt: generatedAt,
               success: false,
               statusCode: 503,
@@ -276,6 +280,9 @@ describe("operations page", () => {
     const publicHtml = renderPublicPage(publicSnapshot);
 
     expect(history).toContain('aria-label="Checks for 2026-07-27"');
+    expect(history).toContain(
+      "<strong>artifact-publisher</strong><span>Observation observation-1 · Run run-1</span>"
+    );
     expect(history).toContain("http_error");
     expect(history).toContain("Open incident");
     expect(audit).toContain("entry.archive");

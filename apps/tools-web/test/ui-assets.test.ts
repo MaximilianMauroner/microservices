@@ -18,12 +18,13 @@ describe("static UI assets", () => {
     );
     expect(script).toContain("[data-ops-collection]");
     expect(script).toContain("[data-collection-retry]");
+    expect(script).toContain("observation.monitorId");
     expect(script).not.toContain("setInterval");
     expect(script).not.toContain("setTimeout");
   });
 
   test("resets destructive confirmation before reopen and leaves Escape non-destructive", async () => {
-    const script = await Bun.file(new URL("ops.js", assets)).text();
+    const script = await readFile(new URL("ops.js", assets), "utf8");
 
     const openFlow = script.slice(
       script.indexOf("const deleteButton"),

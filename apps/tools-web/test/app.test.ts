@@ -171,7 +171,18 @@ describe("tools web routes", () => {
         schemaVersion: HISTORY_SCHEMA_VERSION,
         day: "2026-07-27",
         updatedAt: "2026-07-27T00:00:00.000Z",
-        observations: [],
+        observations: [
+          {
+            id: "observation-1",
+            runId: "run-1",
+            monitorId: "artifact-publisher",
+            checkedAt: "2026-07-27T00:00:00.000Z",
+            success: true,
+            statusCode: 200,
+            latencyMs: 20,
+            errorCode: null
+          }
+        ],
         incidents: []
       },
       "history-etag"
@@ -202,17 +213,29 @@ describe("tools web routes", () => {
       new Request("https://tools.example.test/api/ops/audit?limit=1")
     );
     expect(audit.status).toBe(200);
-    expect(JSON.stringify(await audit.json())).toContain("audit-1");
+    expect(await audit.json()).toMatchObject({
+      items: [{ id: "audit-1" }],
+      nextCursor: null
+    });
     const history = await app(
       new Request("https://tools.example.test/api/ops/history?limit=1")
     );
     expect(history.status).toBe(200);
-    expect(JSON.stringify(await history.json())).toContain("2026-07-27");
+    expect(await history.json()).toMatchObject({
+      items: [{
+        day: "2026-07-27",
+        observations: [{ monitorId: "artifact-publisher" }]
+      }],
+      nextCursor: null
+    });
     const incidents = await app(
       new Request("https://tools.example.test/api/ops/incidents?limit=1")
     );
     expect(incidents.status).toBe(200);
-    expect(JSON.stringify(await incidents.json())).toContain("incident-1");
+    expect(await incidents.json()).toMatchObject({
+      items: [{ id: "incident-1" }],
+      nextCursor: null
+    });
     expect(
       (await app(
         new Request("https://tools.example.test/api/public/history")
