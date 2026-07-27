@@ -186,13 +186,14 @@ async function handleReview(
     return jsonResponse({ ...page, summary: await repository.summary(now()) });
   }
   const mutation = pathname.match(
-    /^\/api\/review\/candidates\/([^/]+)\/rounds\/([^/]+)\/(verdict|amendments)$/i,
+    /^\/api\/review\/candidates\/([^/]+)\/rounds\/([^/]+)\/(verdict|amendments|scope)$/i,
   );
   if (method === "POST" && mutation) {
     enforceOrigin(request, allowedOrigin);
     const candidateId = uuid(decodePath(mutation[1] ?? ""), "candidateId");
     const round = parseRound(decodePath(mutation[2] ?? ""));
-    if (mutation[3]?.toLowerCase() === "verdict") {
+    const operation = mutation[3]?.toLowerCase();
+    if (operation === "verdict") {
       const decision = await repository.decide(
         candidateId,
         round,
@@ -201,6 +202,16 @@ async function handleReview(
         reviewer,
       );
       return jsonResponse({ decision }, { status: 201 });
+    }
+    if (operation === "scope") {
+      const candidate = await repository.reassignScope(
+        candidateId,
+        round,
+        parseScopeChange(requireJson(body)),
+        now(),
+        reviewer,
+      );
+      return jsonResponse({ candidate });
     }
     const decision = await repository.amendDecision(
       candidateId,
@@ -339,11 +350,13 @@ function parseCandidate(value: unknown) {
   const scope = candidateValue.scope;
   if (scope !== "project" && scope !== "global")
     throw new InputError("Invalid scope.");
+  const foundProjectKey = candidateValue.foundProjectKey;
+  const foundProjectDisplayName = candidateValue.foundProjectDisplayName;
   if (
-    scope === "project" &&
-    (!candidateValue.projectKey || !candidateValue.projectDisplayName)
+    (foundProjectKey === undefined) !==
+    (foundProjectDisplayName === undefined)
   )
-    throw new InputError("Project fields are required.");
+    throw new InputError("Found project fields must be provided together.");
   if (
     scope === "global" &&
     (candidateValue.projectKey || candidateValue.projectDisplayName)
@@ -369,19 +382,43 @@ function parseCandidate(value: unknown) {
       ),
     };
   });
+  const project = scope === "project"
+    ? {
+        projectKey: text(candidateValue.projectKey, "projectKey", 128),
+        projectDisplayName: text(
+          candidateValue.projectDisplayName,
+          "projectDisplayName",
+          256,
+        ),
+      }
+    : undefined;
+  const foundProject = foundProjectKey !== undefined
+    ? {
+        foundProjectKey: text(foundProjectKey, "foundProjectKey", 128),
+        foundProjectDisplayName: text(
+          foundProjectDisplayName,
+          "foundProjectDisplayName",
+          256,
+        ),
+      }
+    : project
+      ? {
+          foundProjectKey: project.projectKey,
+          foundProjectDisplayName: project.projectDisplayName,
+        }
+      : undefined;
+  if (
+    project &&
+    foundProject &&
+    (project.projectKey !== foundProject.foundProjectKey ||
+      project.projectDisplayName !== foundProject.foundProjectDisplayName)
+  )
+    throw new InputError("Project and found project fields must match.");
   const candidate: Candidate = {
     candidateId: uuid(candidateValue.candidateId, "candidateId"),
     scope,
-    ...(scope === "project"
-      ? {
-          projectKey: text(candidateValue.projectKey, "projectKey", 128),
-          projectDisplayName: text(
-            candidateValue.projectDisplayName,
-            "projectDisplayName",
-            256,
-          ),
-        }
-      : {}),
+    ...project,
+    ...foundProject,
     lessonKey: text(candidateValue.lessonKey, "lessonKey", 128),
     title: text(candidateValue.title, "title", 256),
     body: text(candidateValue.body, "body", 10_000),
@@ -393,6 +430,16 @@ function parseCandidate(value: unknown) {
     idempotencyKey: text(body.idempotencyKey, "idempotencyKey", 128),
     candidate,
   };
+}
+
+function parseScopeChange(value: unknown): Scope {
+  const body = record(value);
+  if (Object.keys(body).some((key) => key !== "scope"))
+    throw new InputError("Scope body contains unknown fields.");
+  const scope = body.scope;
+  if (scope !== "project" && scope !== "global")
+    throw new InputError("Invalid scope.");
+  return scope;
 }
 
 function parseScope(value: unknown): Scope | undefined {

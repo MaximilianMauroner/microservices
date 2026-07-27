@@ -46,4 +46,19 @@ describe("review console feedback", () => {
     expect(html).not.toContain("data-edit-title");
     expect(html).not.toContain("data-delete-decision");
   });
+
+  it("offers origin-aware promotion and demotion before initial approval", async () => {
+    const html = await renderReviewConsole();
+
+    expect(html).toContain("Promote to global");
+    expect(html).toContain("Demote to project");
+    expect(html).toContain("No associated project. This candidate was found globally.");
+    expect(html).toContain('disabled data-always-disabled aria-disabled="true" title="No associated project"');
+    expect(html).toContain("disabled:cursor-not-allowed disabled:opacity-40");
+    expect(html).toContain("if(kind!=='initial')return ''");
+    expect(html).toContain("busy||control.hasAttribute('data-always-disabled')");
+    expect(html).toContain("/scope");
+    expect(html).toContain("Candidate promoted to the global guide.");
+    expect(html).toContain("Candidate demoted to its project guide.");
+  });
 });
