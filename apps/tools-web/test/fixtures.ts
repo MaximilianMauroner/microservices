@@ -127,6 +127,7 @@ export class MemoryBucket implements JsonBucket {
   failCatalogWrite = false;
   commitCatalogThenFail = false;
   failCanonicalAuditWrites = 0;
+  beforeNextCatalogRead: (() => void) | undefined;
   reads = 0;
 
   seed(key: string, body: unknown, etag: string): void {
@@ -135,6 +136,11 @@ export class MemoryBucket implements JsonBucket {
 
   async get(key: string) {
     this.reads += 1;
+    if (key === BUCKET_KEYS.catalog && this.beforeNextCatalogRead) {
+      const callback = this.beforeNextCatalogRead;
+      this.beforeNextCatalogRead = undefined;
+      callback();
+    }
     return this.objects.get(key) ?? null;
   }
 
@@ -190,5 +196,15 @@ export class MemoryBucket implements JsonBucket {
       keys: page,
       ...(next < keys.length ? { nextCursor: String(next) } : {})
     };
+  }
+
+  async listAfter(prefix: string, after: string | undefined, limit: number) {
+    return [...this.objects.keys()]
+      .filter(
+        (key) =>
+          key.startsWith(prefix) && (after === undefined || key > after)
+      )
+      .sort()
+      .slice(0, limit);
   }
 }

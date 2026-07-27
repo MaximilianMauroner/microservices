@@ -285,7 +285,7 @@ describe("tools web routes", () => {
     )).toBe(true);
   });
 
-  it("does not turn committed catalog writes into 500s when audit finalization retries", async () => {
+  it("reports incomplete audit finalization and repairs it on audit read", async () => {
     const bucket = seededBucket();
     bucket.failCanonicalAuditWrites = 1;
     const app = testApp(bucket, allowed);
@@ -296,7 +296,7 @@ describe("tools web routes", () => {
         catalog.revision
       )
     );
-    expect(mutation.status).toBe(200);
+    expect(mutation.status).toBe(500);
     const audit = await app(
       new Request("https://tools.example.test/api/ops/audit?limit=10")
     );

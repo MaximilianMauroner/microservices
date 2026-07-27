@@ -53,7 +53,10 @@ verification still happens first. Cross-origin/missing-origin requests return
 `403`; non-JSON requests return `400`. Except initialization and reads,
 mutations also require `If-Match: "<revision>"`.
 Successful writes return `{ "revision": "...", "reload": true }` and the new
-revision `ETag`. A stale revision returns
+revision `ETag` only after its canonical audit outcome and audit index are
+verified. If catalog storage commits but audit finalization remains incomplete,
+the request fails and a durable revision-linked obligation blocks a subsequent
+writer from advancing until repair succeeds. A stale revision returns
 `409 {"error":"revision_conflict","revision":"...","message":"..."}`; if an
 S3 race prevents the follow-up revision read, `revision` may be absent. The UI
 does not retry and offers explicit reload/dismiss actions. Every successful
