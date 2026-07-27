@@ -10,6 +10,7 @@ import { drainOneNotification,retryDelay } from "../src/worker/notifications";
 import { runRetentionOnceDaily } from "../src/worker/retention";
 import { routeApi } from "../src/worker/router";
 import { runScheduled } from "../src/worker/scheduler";
+type ExecutionContext = Pick<globalThis.ExecutionContext,"waitUntil"|"passThroughOnException">;
 
 const instances:Miniflare[]=[];
 async function database():Promise<D1Database>{
