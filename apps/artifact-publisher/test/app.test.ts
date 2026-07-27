@@ -708,7 +708,7 @@ describe("html publisher", () => {
     }
   });
 
-  it("keeps external uploads unavailable until Shoo is configured", async () => {
+  it("keeps external uploads unavailable until browser access is configured", async () => {
     const { app } = setup();
 
     await request(app)
@@ -720,44 +720,46 @@ describe("html publisher", () => {
       });
   });
 
-  it("serves the Shoo upload website with restrictive browser headers", async () => {
+  it("serves the Access-protected upload website with restrictive browser headers", async () => {
     const { app } = setup({
       externalUploadAuth: (_req, _res, next) => next()
     });
 
-    const page = await request(app).get("/uploads").expect(200);
+    const page = await request(app).get("/publish").expect(200);
     expect(page.headers["content-security-policy"]).toContain("default-src 'none'");
     expect(page.headers["content-security-policy"]).toContain("frame-ancestors 'none'");
     expect(page.headers["x-frame-options"]).toBe("DENY");
     expect(page.headers["cache-control"]).toBe("private, no-store");
     expect(page.text).toContain("Temporary uploads");
     expect(page.text).toContain("Files expire after 3 days.");
-    expect(page.text).toContain("https://shoo.dev/shoo.js");
-    expect(page.text).toContain(
-      'data-shoo-redirect-uri="https://html.example/uploads/callback"'
-    );
-    expect(page.text).toContain("Continue with Google");
+    expect(page.text).not.toContain("https://shoo.dev");
+    expect(page.text).toContain("Cloudflare Access");
+    expect(page.text).toContain('aria-current="page">Publish');
+    expect(page.text).toContain('class="suite-skip skip-link"');
+    expect(page.text).not.toContain("Operator sign-in");
     const scriptPath = page.text.match(
-      /\/uploads\/assets\/[a-f0-9]{16}\/app\.js/
+      /\/publish\/assets\/[a-f0-9]{16}\/app\.js/
     )?.[0];
     const stylePath = page.text.match(
-      /\/uploads\/assets\/[a-f0-9]{16}\/app\.css/
+      /\/publish\/assets\/[a-f0-9]{16}\/app\.css/
     )?.[0];
     expect(scriptPath).toBeDefined();
     expect(stylePath).toBeDefined();
 
-    await request(app).get("/uploads/callback").expect(200);
+    await request(app).get("/publish/callback").expect(200);
+    await request(app).get("/uploads").expect(200);
 
     await request(app)
       .get(stylePath ?? "")
       .expect("content-type", /text\/css/)
       .expect("Cache-Control", "private, max-age=31536000, immutable")
       .expect(200);
-    await request(app)
+    const script = await request(app)
       .get(scriptPath ?? "")
       .expect("content-type", /javascript/)
       .expect("Cache-Control", "private, max-age=31536000, immutable")
       .expect(200);
+    expect(script.text).toContain('location.assign("/cdn-cgi/access/logout")');
     await request(app)
       .get("/uploads/app.js")
       .expect("Cache-Control", "private, no-store")
@@ -787,7 +789,7 @@ describe("html publisher", () => {
       filename: "shared.html",
       contentType: "text/html",
       url: expect.stringMatching(
-        /^https:\/\/html\.example\/f\/[A-Za-z0-9_-]{32}\/shared\.html$/
+        /^https:\/\/html\.example\/files\/[A-Za-z0-9_-]{32}\/shared\.html$/
       ),
       expiresAt: "2026-07-26T12:00:00.000Z"
     });
@@ -845,14 +847,14 @@ describe("html publisher", () => {
           id: plan.body.id,
           kind: "html",
           filename: planName,
-          url: `https://html.example/p/${plan.body.id}`,
+          url: `https://html.example/artifacts/${plan.body.id}`,
           updatedAt: now.toISOString()
         }),
         expect.objectContaining({
           id: file.body.id,
           kind: "file",
           filename: "notes.txt",
-          url: `https://html.example/f/${file.body.id}/notes.txt`,
+          url: `https://html.example/files/${file.body.id}/notes.txt`,
           expiresAt: "2026-07-26T12:00:00.000Z"
         })
       ])
@@ -931,7 +933,7 @@ describe("html publisher", () => {
       kind: "file",
       filename: "note.txt",
       contentType: "text/plain",
-      url: expect.stringMatching(/^https:\/\/html\.example\/f\/[A-Za-z0-9_-]{32}\/note\.txt$/),
+      url: expect.stringMatching(/^https:\/\/html\.example\/files\/[A-Za-z0-9_-]{32}\/note\.txt$/),
       bytes: text.length,
       expiresAt: "2026-07-10T12:00:00.000Z",
       sha256: crypto.createHash("sha256").update(text).digest("hex")
@@ -979,7 +981,7 @@ describe("html publisher", () => {
 
     expect(uploadResponse.body.filename).toBe(filename);
     expect(new URL(uploadResponse.body.url).pathname).toBe(
-      `/f/${uploadResponse.body.id}/${encodeURIComponent(filename)}`
+      `/files/${uploadResponse.body.id}/${encodeURIComponent(filename)}`
     );
     expect(storage.files.get(uploadResponse.body.id)?.metadata.originalName).toBe(filename);
 
@@ -1194,7 +1196,7 @@ describe("html publisher", () => {
       kind: "html",
       filename: "page.html",
       contentType: "text/html; charset=utf-8",
-      url: expect.stringMatching(/^https:\/\/html\.example\/p\/[A-Za-z0-9_-]{32}$/),
+      url: expect.stringMatching(/^https:\/\/html\.example\/artifacts\/[A-Za-z0-9_-]{32}$/),
       bytes: html.length,
       sha256: crypto.createHash("sha256").update(html).digest("hex")
     });
@@ -1414,7 +1416,7 @@ describe("html publisher", () => {
       .expect(201);
 
     expect(uploadResponse.body).toMatchObject({
-      url: expect.stringMatching(/^https:\/\/html\.example\/f\/[A-Za-z0-9_-]{32}\/release\.apk$/),
+      url: expect.stringMatching(/^https:\/\/html\.example\/files\/[A-Za-z0-9_-]{32}\/release\.apk$/),
       bytes: apk.length,
       expiresAt: "2026-07-10T12:00:00.000Z",
       sha256: crypto.createHash("sha256").update(apk).digest("hex")
@@ -1460,7 +1462,9 @@ describe("html publisher", () => {
       })
       .expect(201);
 
-    const response = await request(app).get(`/p/${uploadResponse.body.id}`).expect(200);
+    const response = await request(app)
+      .get(`/artifacts/${uploadResponse.body.id}`)
+      .expect(200);
 
     expect(response.text).toBe(html);
     expect(response.headers["content-type"]).toContain("text/html");
@@ -1474,12 +1478,14 @@ describe("html publisher", () => {
     expect(response.headers["content-length"]).toBe(String(Buffer.byteLength(html)));
     expect(response.headers.etag).toBe(`"sha256-${uploadResponse.body.sha256}"`);
 
-    const headResponse = await request(app).head(`/p/${uploadResponse.body.id}`).expect(200);
+    const headResponse = await request(app)
+      .head(`/artifacts/${uploadResponse.body.id}`)
+      .expect(200);
     expect(headResponse.headers["content-length"]).toBe(String(Buffer.byteLength(html)));
     expect(headResponse.text).toBeUndefined();
 
     await request(app)
-      .get(`/p/${uploadResponse.body.id}`)
+      .get(`/artifacts/${uploadResponse.body.id}`)
       .set("If-None-Match", response.headers.etag)
       .expect(304);
   });
@@ -1488,8 +1494,10 @@ describe("html publisher", () => {
     const { app } = setup();
 
     await request(app).get("/p/not-valid").expect(404);
+    await request(app).get("/artifacts/not-valid").expect(404);
     await request(app).get("/p/0123456789abcdefghijklmnopqrstuv").expect(404);
     await request(app).get("/f/not-valid/release.apk").expect(404);
+    await request(app).get("/files/not-valid/release.apk").expect(404);
   });
 
   it("maps malformed path encoding to capability-safe client errors", async () => {

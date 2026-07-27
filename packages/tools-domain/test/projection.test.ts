@@ -50,14 +50,22 @@ describe("snapshot projection", () => {
       status: "up",
       checkedAt: NOW,
       latencyMs: 42,
-      statusCode: 200
+      statusCode: 200,
+      uptimeDays: [
+        {
+          day: "2026-07-27",
+          successfulChecks: 99,
+          totalChecks: 100
+        }
+      ]
     });
     expect(snapshot.statuses["tailnet-tool"]).toEqual({
       monitorId: "tailnet-tool",
       status: "unavailable",
       checkedAt: null,
       latencyMs: null,
-      statusCode: null
+      statusCode: null,
+      uptimeDays: []
     });
   });
 

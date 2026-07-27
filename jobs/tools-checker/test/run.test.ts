@@ -34,8 +34,16 @@ describe("checker run", () => {
     expect(store.state?.value.monitors["paused-a"].status).toBe("paused");
     expect(store.publicSnapshot?.statuses["tailnet-a"]).toMatchObject({
       status: "unavailable",
-      checkedAt: null
+      checkedAt: null,
+      uptimeDays: []
     });
+    expect(store.publicSnapshot?.statuses["public-a"].uptimeDays).toEqual([
+      {
+        day: "2026-07-27",
+        successfulChecks: 1,
+        totalChecks: 1
+      }
+    ]);
 
     const duplicate = await runChecker({
       store,
@@ -50,6 +58,11 @@ describe("checker run", () => {
       attemptedMonitorIds: []
     });
     expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(store.publicSnapshot?.statuses["public-a"].uptimeDays?.[0]).toEqual({
+      day: "2026-07-27",
+      successfulChecks: 1,
+      totalChecks: 1
+    });
     expect(
       store.history.get("2026-07-27")?.value.observations
     ).toHaveLength(2);
@@ -98,6 +111,54 @@ describe("checker run", () => {
     expect(store.state?.value.notifications.map(({ kind }) => kind)).toEqual([
       "down",
       "recovery"
+    ]);
+    expect(store.publicSnapshot?.statuses["public-a"].uptimeDays).toEqual([
+      {
+        day: "2026-07-27",
+        successfulChecks: 1,
+        totalChecks: 3
+      }
+    ]);
+  });
+
+  it("keeps a rolling 90-day uptime window", async () => {
+    const store = new MemoryStore();
+    store.catalog.value.entries = store.catalog.value.entries.filter(
+      ({ id }) => id === "public-a"
+    );
+    store.state = {
+      etag: "state-old",
+      value: {
+        ...emptyState(),
+        monitors: {
+          "public-a": {
+            monitorId: "public-a",
+            status: "up",
+            consecutiveFailures: 0,
+            latestObservation: null,
+            openIncidentId: null,
+            uptimeDays: [
+              { day: "2026-04-01", successfulChecks: 2, totalChecks: 3 },
+              { day: "2026-05-01", successfulChecks: 4, totalChecks: 4 }
+            ]
+          }
+        }
+      }
+    };
+
+    await runChecker({
+      store,
+      config: configFixture,
+      logger,
+      fetcher: vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(null, { status: 200 })
+      ),
+      now: () => new Date(NOW)
+    });
+
+    expect(store.publicSnapshot?.statuses["public-a"].uptimeDays).toEqual([
+      { day: "2026-05-01", successfulChecks: 4, totalChecks: 4 },
+      { day: "2026-07-27", successfulChecks: 1, totalChecks: 1 }
     ]);
   });
 

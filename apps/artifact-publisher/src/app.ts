@@ -65,9 +65,9 @@ const PUBLIC_HTML_CSP =
   "sandbox allow-scripts allow-forms allow-modals allow-popups allow-downloads";
 const EXTERNAL_UPLOAD_CSP = [
   "default-src 'none'",
-  "connect-src 'self' https://shoo.dev",
+  "connect-src 'self'",
   "img-src 'self'",
-  "script-src 'self' https://shoo.dev",
+  "script-src 'self'",
   "style-src 'self'",
   "base-uri 'none'",
   "form-action 'self'",
@@ -182,9 +182,14 @@ export function createApp(options: CreateAppOptions) {
         })
       );
   };
-  app.get(["/uploads", "/uploads/callback"], serveExternalUploadPage);
+  app.get(
+    ["/publish", "/publish/callback", "/uploads", "/uploads/callback"],
+    serveExternalUploadPage
+  );
   app.get(
     [
+      "/publish/app.css",
+      `/publish/assets/${EXTERNAL_UPLOAD_ASSET_VERSION}/app.css`,
       "/uploads/app.css",
       `/uploads/assets/${EXTERNAL_UPLOAD_ASSET_VERSION}/app.css`
     ],
@@ -207,6 +212,8 @@ export function createApp(options: CreateAppOptions) {
   );
   app.get(
     [
+      "/publish/app.js",
+      `/publish/assets/${EXTERNAL_UPLOAD_ASSET_VERSION}/app.js`,
       "/uploads/app.js",
       `/uploads/assets/${EXTERNAL_UPLOAD_ASSET_VERSION}/app.js`
     ],
@@ -257,8 +264,8 @@ export function createApp(options: CreateAppOptions) {
               contentType: upload.contentType,
               url:
                 upload.kind === "html"
-                  ? `${baseUrl}/p/${upload.id}`
-                  : `${baseUrl}/f/${upload.id}/${encodeURIComponent(upload.originalName)}`,
+                  ? `${baseUrl}/artifacts/${upload.id}`
+                  : `${baseUrl}/files/${upload.id}/${encodeURIComponent(upload.originalName)}`,
               bytes: upload.bytes,
               updatedAt: upload.updatedAt.toISOString(),
               ...(upload.expiresAt
@@ -329,7 +336,7 @@ export function createApp(options: CreateAppOptions) {
     }
   }));
 
-  app.get("/p/:id", trackedAsyncHandler(activityTracker, async (req, res, next) => {
+  app.get(["/artifacts/:id", "/p/:id"], trackedAsyncHandler(activityTracker, async (req, res, next) => {
     let body: Readable | undefined;
     const requestAbort = observeRequestAbort(req, res);
     try {
@@ -377,7 +384,7 @@ export function createApp(options: CreateAppOptions) {
     }
   }));
 
-  app.get("/f/:id/:filename", trackedAsyncHandler(activityTracker, async (req, res, next) => {
+  app.get(["/files/:id/:filename", "/f/:id/:filename"], trackedAsyncHandler(activityTracker, async (req, res, next) => {
     let body: Readable | undefined;
     const requestAbort = observeRequestAbort(req, res);
     try {
@@ -764,7 +771,7 @@ async function handleUpload(
         kind: "html",
         filename: originalName,
         contentType: HTML_CONTENT_TYPE,
-        url: `${baseUrl}/p/${id}`,
+        url: `${baseUrl}/artifacts/${id}`,
         bytes: file.size,
         sha256
       });
@@ -794,7 +801,7 @@ async function handleUpload(
       kind: "file",
       filename: originalName,
       contentType: uploadType.contentType,
-      url: `${baseUrl}/f/${id}/${encodeURIComponent(originalName)}`,
+      url: `${baseUrl}/files/${id}/${encodeURIComponent(originalName)}`,
       bytes: file.size,
       expiresAt: expiresAt.toISOString(),
       sha256

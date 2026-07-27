@@ -7,24 +7,27 @@ All JSON responses have `Content-Type: application/json`, an `X-Request-Id`,
 
 | Method | Path | Response |
 |---|---|---|
-| `GET` | `/` | Server-rendered public directory from `PublicSnapshotDocument` only. |
+| `GET`, `HEAD` | `/` | Server-rendered public Tools directory from `PublicSnapshotDocument` only. |
+| `GET`, `HEAD` | `/status` | Current state and exactly 90 rolling UTC days of recorded check history; unknown days remain unknown. |
 | `GET` | `/api/public/catalog` | Decoded `PublicSnapshotDocument`; cacheable for 60 seconds. |
 | `GET` | `/live` | Process liveness; no bucket access. |
 | `GET` | `/health` | Readiness; decodes the required catalog plus public and private snapshots, otherwise `503`. |
-| `GET` | `/assets/tools.css`, `/assets/ops.js` | Fixed CSP-compatible assets; no arbitrary file paths. |
+| `GET` | `/assets/tools.css` | Public fixed CSP-compatible stylesheet. |
+| `GET` | `/assets/ops.js` | Protected fixed management script. |
 
 Public routes read only `snapshots/public.json`. They never project from the
 private catalog in the request process.
 
 ## Protected
 
-Every `/ops`, `/ops/*`, and `/api/ops/*` request requires a valid
+Every `/manage`, `/manage/*`, legacy `/ops`, legacy `/ops/*`, and `/api/ops/*` request requires a valid
 `Cf-Access-Jwt-Assertion`. Authentication failures return
 `401 {"error":"access_required"}`.
 
 | Method | Path | Response / operation |
 |---|---|---|
-| `GET` | `/ops`, `/ops/*` | Server-rendered operations UI from the latest catalog plus prepared private checker state. |
+| `GET` | `/manage`, `/manage/*` | Server-rendered management UI from the latest catalog plus prepared private checker state. |
+| `GET`, `HEAD` | `/ops`, `/ops/*` | Authenticated `308` redirect to the corresponding `/manage` path with query preserved. |
 | `GET` | `/api/ops/catalog` | Full `CatalogDocument` plus an `ETag` containing its revision. |
 | `GET` | `/api/ops/snapshot` | Decoded `PrivateSnapshotDocument`. |
 | `GET` | `/api/ops/audit?limit=&cursor=` | `{ "items": AdminAuditRecord[], "nextCursor": string \| null }`; newest-first canonical immutable records with opaque lossless cursors, and the read repairs durable pending audit intents. |

@@ -26,10 +26,15 @@ import {
   CatalogNotFoundError,
   type WebStorage
 } from "./storage.js";
-import { renderOperationsPage, renderPublicPage } from "./ui/index.js";
+import {
+  renderOperationsPage,
+  renderPublicPage,
+  renderStatusPage
+} from "./ui/index.js";
 
 export interface PageRenderer {
   public(snapshot: PublicSnapshotDocument): string;
+  status(snapshot: PublicSnapshotDocument): string;
   ops(snapshot: PrivateSnapshotDocument, actor: string, revision: string): string;
 }
 
@@ -98,16 +103,20 @@ async function route(
   if (request.method === "GET" && url.pathname === "/live") {
     return json({ ok: true });
   }
-  if (request.method === "GET" && url.pathname === "/api/public/catalog") {
+  const readMethod = request.method === "GET" || request.method === "HEAD";
+  if (readMethod && url.pathname === "/api/public/catalog") {
     return json(await storage.readPublicSnapshot(), {
       headers: { "Cache-Control": "public, max-age=60, stale-while-revalidate=240" }
     });
   }
-  if (request.method === "GET" && url.pathname === "/") {
+  if (readMethod && url.pathname === "/") {
     return html(renderer.public(await storage.readPublicSnapshot()));
   }
+  if (readMethod && url.pathname === "/status") {
+    return html(renderer.status(await storage.readPublicSnapshot()));
+  }
   if (
-    request.method === "GET" &&
+    readMethod &&
     (url.pathname === "/assets/tools.css" || url.pathname === "/assets/ops.js")
   ) {
     return asset(url.pathname);
@@ -117,7 +126,8 @@ async function route(
     const actor = await access.verify(request);
     if (
       request.method === "GET" &&
-      (url.pathname === "/ops" || url.pathname.startsWith("/ops/"))
+      (url.pathname === "/manage" || url.pathname.startsWith("/manage/") ||
+        url.pathname === "/ops" || url.pathname.startsWith("/ops/"))
     ) {
       const [{ catalog }, prepared] = await Promise.all([
         storage.readCatalog(),
@@ -728,7 +738,11 @@ function paginationCursor(url: URL): string | undefined {
 }
 
 function isProtectedPath(path: string): boolean {
-  return path === "/ops" || path.startsWith("/ops/") || path.startsWith("/api/ops/");
+  return path === "/manage" ||
+    path.startsWith("/manage/") ||
+    path === "/ops" ||
+    path.startsWith("/ops/") ||
+    path.startsWith("/api/ops/");
 }
 
 function catalogResponse(catalog: CatalogDocument, status = 200): Response {
@@ -816,6 +830,9 @@ function withCommonHeaders(response: Response, requestId: string): Response {
 const defaultRenderer: PageRenderer = {
   public(snapshot) {
     return renderPublicPage(snapshot);
+  },
+  status(snapshot) {
+    return renderStatusPage(snapshot);
   },
   ops(snapshot, actor, revision) {
     return renderOperationsPage({

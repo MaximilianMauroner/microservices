@@ -11,7 +11,7 @@ export type Authenticator = (
 export const MAX_JSON_BYTES = 128 * 1024;
 
 const DEFAULT_CSP =
-  "default-src 'none'; style-src 'self'; script-src 'self' https://shoo.dev; connect-src 'self' https://shoo.dev; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
+  "default-src 'none'; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
 
 export class PayloadTooLargeError extends Error {}
 

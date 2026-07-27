@@ -38,7 +38,7 @@
         {
           "id": "upload",
           "label": "Open uploader",
-          "url": "https://html-publisher-production-a236.up.railway.app/uploads",
+          "url": "https://tools.mauroner.net/publish",
           "access": "restricted"
         }
       ],
@@ -46,9 +46,9 @@
         "enabled": true,
         "paused": false,
         "scope": "public",
-        "url": "https://html-publisher-production-a236.up.railway.app/health"
+        "url": "https://tools.mauroner.net/health"
       },
-      "privateNotes": "The Railway service domain is the current restricted upload URL."
+      "privateNotes": "Runs inside the unified platform service behind Cloudflare Access."
     },
     {
       "id": "field-guide-console",
@@ -62,7 +62,7 @@
         {
           "id": "console",
           "label": "Open Field Guide",
-          "url": "https://field-guide-review-production.up.railway.app/",
+          "url": "https://tools.mauroner.net/review",
           "access": "restricted"
         }
       ],
@@ -70,9 +70,9 @@
         "enabled": true,
         "paused": false,
         "scope": "public",
-        "url": "https://field-guide-review-production.up.railway.app/health"
+        "url": "https://tools.mauroner.net/health"
       },
-      "privateNotes": "The Railway service domain is the current restricted Field Guide URL."
+      "privateNotes": "Runs inside the unified platform service behind Cloudflare Access."
     },
     {
       "id": "tools-directory",
@@ -88,9 +88,21 @@
           "label": "Open directory",
           "url": "https://tools.mauroner.net/",
           "access": "public"
+        },
+        {
+          "id": "status",
+          "label": "View status",
+          "url": "https://tools.mauroner.net/status",
+          "access": "public"
+        },
+        {
+          "id": "manage",
+          "label": "Manage catalog",
+          "url": "https://tools.mauroner.net/manage",
+          "access": "restricted"
         }
       ],
-      "privateNotes": "Intentionally has no self-monitor. A five-minute origin probe would prevent Railway Serverless from sleeping."
+      "privateNotes": "The unified platform stays awake because it owns the checker scheduler."
     },
     {
       "id": "network-console",
@@ -103,7 +115,7 @@
       "links": [
         {
           "id": "tailnet",
-          "label": "Open on Tailnet",
+          "label": "Open on Tailscale",
           "url": "https://coding.tailbc92d.ts.net/",
           "access": "restricted"
         }

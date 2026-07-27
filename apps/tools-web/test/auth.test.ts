@@ -62,6 +62,22 @@ describe("Cloudflare Access verification", () => {
       ).rejects.toBeInstanceOf(AccessDeniedError);
     }
   });
+
+  it("accepts assertions issued for any configured Access application", async () => {
+    const issuer = "https://team.cloudflareaccess.com";
+    const { privateKey, publicKey } = await generateKeyPair("RS256");
+    const verifier = createAccessVerifier({
+      issuer,
+      audience: ["ops-audience", "review-audience"],
+      jwksUrl: `${issuer}/cdn-cgi/access/certs`,
+      key: async () => publicKey
+    });
+    const token = await signed(privateKey, issuer, "review-audience", "5m");
+
+    await expect(verifier.verify(new Request("https://tools.example.test/review", {
+      headers: { "Cf-Access-Jwt-Assertion": token }
+    }))).resolves.toEqual({ id: "admin@example.test" });
+  });
 });
 
 async function signed(

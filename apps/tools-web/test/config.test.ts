@@ -27,10 +27,17 @@ describe("configuration", () => {
       },
       access: {
         issuer: "https://team.cloudflareaccess.com",
-        audience: "audience",
+        audience: ["audience"],
         jwksUrl: "https://team.cloudflareaccess.com/cdn-cgi/access/certs"
       }
     });
+  });
+
+  it("accepts multiple Access application audiences", () => {
+    expect(loadConfig({
+      ...valid,
+      CF_ACCESS_AUDIENCE: "ops-audience, artifact-audience, ops-audience"
+    }).access.audience).toEqual(["ops-audience", "artifact-audience"]);
   });
 
   it("rejects insecure or ambiguous settings", () => {

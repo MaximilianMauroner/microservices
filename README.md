@@ -1,19 +1,19 @@
 # Tools Platform
 
-Small hosted utilities and operational consoles live in `apps/*`. Shared pure
-contracts belong in `packages/*`, and short-lived jobs in `jobs/*`.
-Each component owns its runtime code, tests, configuration, deployment notes,
-and README.
+Small hosted utilities and operational consoles live in `apps/*`. Their runtime
+modules are mounted by one production service so compute and authentication
+share a single boundary. Shared pure contracts belong in `packages/*`.
 
 ## Components
 
 | Service | Path | Runtime | Purpose |
 | --- | --- | --- | --- |
+| Platform service | `apps/platform-service` | Railway | Single HTTP process, checker scheduler, and Cloudflare Access boundary for all hosted tools. |
 | Artifact publisher | `apps/artifact-publisher` | Railway | Sandboxed planning pages, temporary file uploads, resumable downloads, and revocation. |
 | Field guide console | `apps/field-guide-console` | Railway | Review-only approval and lifecycle history for field-guide lessons. |
 | Network console | `apps/network-console` | Local VM systemd service | Port-80 dashboard for Tailscale address and listening-port discovery. |
 | Tools Web | `apps/tools-web` | Railway Serverless | Public tools directory and Cloudflare Access-protected catalog operations. Sleeps between requests. |
-| Tools Checker | `jobs/tools-checker` | Railway cron | One bounded status/incident/notification pass every five minutes, then exits. |
+| Tools Checker | `jobs/tools-checker` | In-process module | One bounded status/incident/notification pass every five minutes. |
 | Tools Domain | `packages/tools-domain` | Pure TypeScript | Shared schemas, safe projections, URL/IP validation, transitions, and bucket keys. |
 
 ## Commands
@@ -34,23 +34,23 @@ bun run start:tools-web
 bun run start:tools-checker
 ```
 
-The root is a Bun workspace catalog, not a deployable service. Deployment
-configuration belongs inside each component directory.
+The root deploys `apps/platform-service` using `/railway.json`. Individual app
+entry points remain useful for focused local development but are not separate
+production services.
 
 ## Deployment Notes
 
-Railway deploys each component with the following explicit source root and
-start command:
+Railway deploys the workspace once:
 
 | Service | Railway source root | Config path | Start command |
 | --- | --- | --- | --- |
-| Artifact Publisher | `/apps/artifact-publisher` | `/apps/artifact-publisher/railway.json` | `bun run start` |
-| Field Guide Console | `/apps/field-guide-console` | `/apps/field-guide-console/railway.json` | `bun run start` |
-| Tools Web | `/apps/tools-web` | `/apps/tools-web/railway.json` | `bun run start` |
-| Tools Checker | `/jobs/tools-checker` | `/jobs/tools-checker/railway.json` | `bun run start` |
+| Platform Service | `/` | `/railway.json` | `bun run --cwd apps/platform-service start` |
 
-Tools Web must have Railway Serverless enabled and contains no background work.
-Tools Checker is a `*/5 * * * *` cron with no listener or restart loop.
+The platform service must remain awake because it owns the five-minute checker
+scheduler. The redacted Tools home and `/status` surface are public;
+Cloudflare Access protects Publisher, artifact/file delivery, Review, Manage,
+and their legacy browser aliases. The application also verifies the Access
+assertion before dispatching any protected route.
 
 Tools Web and Tools Checker share one private bucket with disjoint writer
 ownership enforced in code. See [Tools Platform operations](docs/tools-platform/README.md)

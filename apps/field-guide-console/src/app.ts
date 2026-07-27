@@ -16,7 +16,7 @@ import {
   type Authenticator,
   type FetchHandler,
 } from "./http.js";
-import { reviewConsole } from "./ui.js";
+import { reviewConsole, reviewSuiteStyles } from "./ui.js";
 
 type ParsedBody = { json: boolean; value?: unknown };
 
@@ -54,6 +54,18 @@ export function createApp(options: {
         routeIs(pathname, "/review.css")
       ) {
         response = new Response(options.stylesheet ?? "", {
+          headers: secureHeaders({
+            "Cache-Control": "public, max-age=300",
+            "Content-Type": "text/css; charset=utf-8",
+          }),
+        });
+      }
+      if (
+        response === undefined &&
+        method === "GET" &&
+        routeIs(pathname, "/review-suite.css")
+      ) {
+        response = new Response(reviewSuiteStyles, {
           headers: secureHeaders({
             "Cache-Control": "public, max-age=300",
             "Content-Type": "text/css; charset=utf-8",

@@ -58,11 +58,11 @@ describe("tools web routes", () => {
   it("serves only the prepared public projection from public routes", async () => {
     const bucket = seededBucket();
     const app = testApp(bucket, denied);
-    for (const path of ["/", "/api/public/catalog"]) {
+    for (const path of ["/", "/status", "/api/public/catalog"]) {
       const response = await app(new Request(`https://tools.example.test${path}`));
       const text = await response.text();
       expect(response.status).toBe(200);
-      if (path === "/") {
+      if (path === "/" || path === "/status") {
         expect(response.headers.get("content-type")).toContain("text/html");
         expect(response.headers.get("content-security-policy")).toContain(
           "default-src 'none'"
@@ -71,7 +71,7 @@ describe("tools web routes", () => {
       expect(text).toContain("Artifact Publisher");
       expect(text).not.toContain("secret operator note");
       expect(text).not.toContain("/private");
-      expect(text).not.toContain("operations");
+      expect(text).not.toContain('id="group-operations"');
     }
   });
 
@@ -91,12 +91,24 @@ describe("tools web routes", () => {
     expect(html).toContain("Tools operations");
     expect(html).toContain(`data-revision="${catalog.revision}"`);
     expect(html).not.toContain("notification-secret");
+
+    const manage = await app(
+      new Request("https://tools.example.test/manage/catalog")
+    );
+    expect(manage.status).toBe(200);
+    expect(await manage.text()).toContain('aria-current="page">Manage');
   });
 
   it("requires independently verified Access assertions for all ops routes", async () => {
     const bucket = seededBucket();
     const app = testApp(bucket, denied);
-    for (const path of ["/ops", "/ops/anything", "/api/ops/catalog"]) {
+    for (const path of [
+      "/manage",
+      "/manage/anything",
+      "/ops",
+      "/ops/anything",
+      "/api/ops/catalog"
+    ]) {
       const response = await app(new Request(`https://tools.example.test${path}`));
       expect(response.status).toBe(401);
     }

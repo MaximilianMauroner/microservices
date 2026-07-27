@@ -25,15 +25,17 @@ Required variables:
 - `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`
 - `S3_FORCE_PATH_STYLE` (`true` or `false`, optional)
 - `CF_ACCESS_ISSUER` (for example `https://team.cloudflareaccess.com`)
-- `CF_ACCESS_AUDIENCE`
+- `CF_ACCESS_AUDIENCE` (one audience tag or a comma-separated list when route
+  families use separate Access applications)
 - `CF_ACCESS_JWKS_URL` (optional; defaults to the issuer's Access cert endpoint)
 - `PUBLIC_ORIGIN` (exact public HTTPS origin, such as
   `https://tools.mauroner.net`; used for mutation CSRF checks)
 - `PORT` (provided by Railway; defaults to `3000`)
 
-Cloudflare Access must protect `/ops*` and `/api/ops/*` at the edge. The
-application also verifies every Access assertion's signature, issuer, audience,
-expiry, and actor itself.
+Cloudflare Access must protect `/manage`, `/manage/*`, legacy `/ops`,
+legacy `/ops/*`, and `/api/ops/*` at the edge.
+The application also verifies every Access assertion's signature, issuer,
+configured audience, expiry, and actor itself.
 
 ## Storage ownership
 

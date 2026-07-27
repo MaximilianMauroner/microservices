@@ -51,7 +51,7 @@ describe("field guide review transport", () => {
       "text/html; charset=utf-8",
     );
     expect(await (await callApp(app, "/review/callback")).text()).toContain(
-      "data-shoo-callback-path",
+      "Cloudflare Access protects this review desk",
     );
     const css = await callApp(app, "/review.css");
     expect(css.headers.get("cache-control")).toBe("public, max-age=300");

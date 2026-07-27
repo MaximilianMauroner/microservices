@@ -78,7 +78,12 @@ export function projectPublicSnapshot(
         : (monitor?.latestObservation?.latencyMs ?? null),
       statusCode: unavailable
         ? null
-        : (monitor?.latestObservation?.statusCode ?? null)
+        : (monitor?.latestObservation?.statusCode ?? null),
+      uptimeDays: unavailable
+        ? []
+        : [...(monitor?.uptimeDays ?? [])].sort((left, right) =>
+            left.day.localeCompare(right.day)
+          )
     };
   }
 
