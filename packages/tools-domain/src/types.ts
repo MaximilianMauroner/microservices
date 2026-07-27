@@ -1,5 +1,5 @@
 export const CATALOG_SCHEMA_VERSION = 1 as const;
-export const CHECKER_STATE_SCHEMA_VERSION = 1 as const;
+export const CHECKER_STATE_SCHEMA_VERSION = 2 as const;
 export const SNAPSHOT_SCHEMA_VERSION = 1 as const;
 export const HISTORY_SCHEMA_VERSION = 2 as const;
 export const AUDIT_SCHEMA_VERSION = 1 as const;
@@ -109,6 +109,11 @@ export interface NotificationDelivery {
   lastErrorCode: string | null;
 }
 
+export interface HistoryReconciliation {
+  day: string;
+  incidentIds: string[];
+}
+
 export interface CheckerStateDocument {
   schemaVersion: typeof CHECKER_STATE_SCHEMA_VERSION;
   revision: string;
@@ -117,6 +122,7 @@ export interface CheckerStateDocument {
   monitors: Record<string, MonitorState>;
   incidents: Incident[];
   notifications: NotificationDelivery[];
+  historyPending: HistoryReconciliation[];
 }
 
 export interface PublicLink {

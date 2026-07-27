@@ -48,27 +48,50 @@ export async function runChecker(
   ]);
   const catalog = catalogObject.value;
   const initialState = stateObject?.value ?? emptyState(invokedAt);
-  let state = synchronizeMonitorStates(initialState, catalog.entries, invokedAt);
+  let state = initialState;
+  let stateEtag = stateObject?.etag ?? null;
 
-  if (initialState.lastRunId === runId) {
-    let stateEtag = stateObject?.etag;
-    if (!stateEtag) {
-      throw new Error("Duplicate run state is missing an ETag");
-    }
-    if (state !== initialState) {
+  if (state.historyPending.length > 0) {
+    const repaired = await reconcilePendingHistory(
+      dependencies.store,
+      state,
+      requireStateEtag(stateEtag),
+      observationsForLastRun(state),
+      dependencies.signal
+    );
+    state = repaired.state;
+    stateEtag = repaired.etag;
+  }
+
+  const beforeSynchronization = state;
+  state = synchronizeMonitorStates(state, catalog.entries, invokedAt);
+  if (state.historyPending.length > 0) {
+    if (state !== beforeSynchronization) {
       stateEtag = await dependencies.store.writeState(
         state,
         stateEtag,
         dependencies.signal
       );
     }
-    const observations = observationsForRun(state, runId);
-    await updateHistory(
+    const repaired = await reconcilePendingHistory(
       dependencies.store,
       state,
-      observations,
+      requireStateEtag(stateEtag),
+      observationsForLastRun(state),
       dependencies.signal
     );
+    state = repaired.state;
+    stateEtag = repaired.etag;
+  }
+
+  if (initialState.lastRunId === runId) {
+    if (state !== beforeSynchronization) {
+      stateEtag = await dependencies.store.writeState(
+        state,
+        stateEtag,
+        dependencies.signal
+      );
+    }
     await pruneRawHistory(dependencies.store, invokedAt, dependencies.signal);
     await publishSnapshots(dependencies.store, catalog, state, dependencies.signal);
     const drained = await drainNotifications(
@@ -76,7 +99,7 @@ export async function runChecker(
       catalog,
       dependencies.config.discordWebhookUrl,
       {
-        expectedEtag: stateEtag,
+        expectedEtag: requireStateEtag(stateEtag),
         maxAttempts: dependencies.config.notificationAttemptLimit,
         persist: (value, expectedEtag, signal) =>
           dependencies.store.writeState(value, expectedEtag, signal),
@@ -132,18 +155,28 @@ export async function runChecker(
     updatedAt: completedAt,
     lastRunId: runId
   };
-
-  const stateEtag = await dependencies.store.writeState(
+  state = withPendingHistory(
     state,
-    stateObject?.etag ?? null,
+    historyObservations.map(({ checkedAt }) => ({
+      day: checkedAt.slice(0, 10),
+      incidentIds: []
+    }))
+  );
+
+  stateEtag = await dependencies.store.writeState(
+    state,
+    stateEtag,
     dependencies.signal
   );
-  await updateHistory(
+  const reconciled = await reconcilePendingHistory(
     dependencies.store,
     state,
+    requireStateEtag(stateEtag),
     historyObservations,
     dependencies.signal
   );
+  state = reconciled.state;
+  stateEtag = reconciled.etag;
   await pruneRawHistory(dependencies.store, invokedAt, dependencies.signal);
   await publishSnapshots(dependencies.store, catalog, state, dependencies.signal);
 
@@ -152,7 +185,7 @@ export async function runChecker(
     catalog,
     dependencies.config.discordWebhookUrl,
     {
-      expectedEtag: stateEtag,
+      expectedEtag: requireStateEtag(stateEtag),
       maxAttempts: dependencies.config.notificationAttemptLimit,
       persist: (value, expectedEtag, signal) =>
         dependencies.store.writeState(value, expectedEtag, signal),
@@ -203,7 +236,8 @@ function emptyState(now: Date): CheckerStateDocument {
     lastRunId: null,
     monitors: {},
     incidents: [],
-    notifications: []
+    notifications: [],
+    historyPending: []
   };
 }
 
@@ -248,20 +282,40 @@ function synchronizeMonitorStates(
       monitors[entry.id] = existing;
     }
   }
-  const incidents = state.incidents.map((incident) =>
-    removedMonitorIds.has(incident.monitorId) && incident.resolvedAt === null
-      ? {
-          ...incident,
-          resolvedAt: now.toISOString(),
-          closingObservationId: null
-        }
-      : incident
-  );
+  const incidents =
+    removedMonitorIds.size === 0
+      ? state.incidents
+      : state.incidents.map((incident) =>
+          removedMonitorIds.has(incident.monitorId) &&
+          incident.resolvedAt === null
+            ? {
+                ...incident,
+                resolvedAt: now.toISOString(),
+                closingObservationId: null
+              }
+            : incident
+        );
   changed ||= incidents.some(
     (incident, index) => incident !== state.incidents[index]
   );
+  const historyPending = mergedPendingHistory(
+    state.historyPending,
+    incidents
+      .filter((incident, index) => incident !== state.incidents[index])
+      .map((incident) => ({
+        day: incident.startedAt.slice(0, 10),
+        incidentIds: [incident.id]
+      }))
+  );
+  changed ||= historyPending.length !== state.historyPending.length;
   return changed
-    ? { ...state, updatedAt: now.toISOString(), monitors, incidents }
+    ? {
+        ...state,
+        updatedAt: now.toISOString(),
+        monitors,
+        incidents,
+        historyPending
+      }
     : state;
 }
 
@@ -363,7 +417,7 @@ function foldObservation(
         }
       ]
     : state.notifications;
-  return {
+  const nextState: CheckerStateDocument = {
     ...state,
     monitors: {
       ...state.monitors,
@@ -372,14 +426,25 @@ function foldObservation(
     incidents,
     notifications
   };
+  const changedIncident =
+    transition.openedIncident ?? transition.resolvedIncident;
+  return changedIncident
+    ? withPendingHistory(nextState, [
+        {
+          day: changedIncident.startedAt.slice(0, 10),
+          incidentIds: [changedIncident.id]
+        }
+      ])
+    : nextState;
 }
 
-async function updateHistory(
+async function reconcilePendingHistory(
   store: CheckerStore,
   state: CheckerStateDocument,
+  expectedEtag: string,
   observations: HistoryObservation[],
   signal?: AbortSignal
-): Promise<void> {
+): Promise<{ state: CheckerStateDocument; etag: string }> {
   const observationsByDay = new Map<string, HistoryObservation[]>();
   for (const observation of observations) {
     const day = observation.checkedAt.slice(0, 10);
@@ -388,20 +453,10 @@ async function updateHistory(
       observation
     ]);
   }
-  const days = new Set(observationsByDay.keys());
-  const currentObservationIds = new Set(observations.map(({ id }) => id));
-  for (const incident of state.incidents) {
-    if (
-      currentObservationIds.has(incident.openingObservationId) ||
-      (incident.closingObservationId !== null &&
-        currentObservationIds.has(incident.closingObservationId)) ||
-      incident.resolvedAt !== null
-    ) {
-      days.add(incident.startedAt.slice(0, 10));
-    }
-  }
-
-  for (const day of [...days].sort()) {
+  let currentState = state;
+  let currentEtag = expectedEtag;
+  for (const pending of state.historyPending) {
+    const day = pending.day;
     const existing = await store.readHistory(day, signal);
     const known = new Set(
       existing?.value.observations.map(({ id }) => id) ?? []
@@ -420,33 +475,44 @@ async function updateHistory(
       (existing?.value.incidents ?? []).filter(
         (incident) => incident.startedAt.slice(0, 10) === day
       ),
-      state.incidents.filter(
-        (incident) => incident.startedAt.slice(0, 10) === day
-      )
+      pending.incidentIds
+        .map((id) =>
+          state.incidents.find((incident) => incident.id === id)
+        )
+        .filter((incident): incident is Incident => incident !== undefined)
     );
-    if (
-      existing &&
+    const unchanged =
+      existing !== null &&
       equalJson(existing.value.observations, mergedObservations) &&
-      equalJson(existing.value.incidents, mergedIncidents)
-    ) {
-      continue;
-    }
+      equalJson(existing.value.incidents, mergedIncidents);
     if (
-      !existing &&
-      mergedObservations.length === 0 &&
-      mergedIncidents.length === 0
+      !unchanged &&
+      (existing !== null ||
+        mergedObservations.length > 0 ||
+        mergedIncidents.length > 0)
     ) {
-      continue;
+      const partition: HistoryPartitionDocument = {
+        schemaVersion: HISTORY_SCHEMA_VERSION,
+        day,
+        updatedAt: state.updatedAt,
+        observations: mergedObservations,
+        incidents: mergedIncidents
+      };
+      await store.writeHistory(partition, existing?.etag ?? null, signal);
     }
-    const partition: HistoryPartitionDocument = {
-      schemaVersion: HISTORY_SCHEMA_VERSION,
-      day,
-      updatedAt: state.updatedAt,
-      observations: mergedObservations,
-      incidents: mergedIncidents
+    currentState = {
+      ...currentState,
+      historyPending: currentState.historyPending.filter(
+        ({ day: pendingDay }) => pendingDay !== day
+      )
     };
-    await store.writeHistory(partition, existing?.etag ?? null, signal);
+    currentEtag = await store.writeState(
+      currentState,
+      currentEtag,
+      signal
+    );
   }
+  return { state: currentState, etag: currentEtag };
 }
 
 async function pruneRawHistory(
@@ -497,6 +563,62 @@ function equalJson(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
+function mergedPendingHistory(
+  previous: CheckerStateDocument["historyPending"],
+  added: CheckerStateDocument["historyPending"]
+): CheckerStateDocument["historyPending"] {
+  const byDay = new Map(
+    previous.map((pending) => [
+      pending.day,
+      new Set(pending.incidentIds)
+    ])
+  );
+  for (const pending of added) {
+    const incidentIds = byDay.get(pending.day) ?? new Set<string>();
+    for (const incidentId of pending.incidentIds) {
+      incidentIds.add(incidentId);
+    }
+    if (incidentIds.size > 256) {
+      throw new Error(
+        `History reconciliation for ${pending.day} exceeds 256 incidents`
+      );
+    }
+    byDay.set(pending.day, incidentIds);
+  }
+  const merged = [...byDay]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([day, incidentIds]) => ({
+      day,
+      incidentIds: [...incidentIds].sort()
+    }));
+  if (merged.length > 256) {
+    throw new Error(
+      "History reconciliation queue exceeds 256 pending partitions"
+    );
+  }
+  return merged;
+}
+
+function withPendingHistory(
+  state: CheckerStateDocument,
+  added: CheckerStateDocument["historyPending"]
+): CheckerStateDocument {
+  const historyPending = mergedPendingHistory(
+    state.historyPending,
+    added
+  );
+  return equalJson(historyPending, state.historyPending)
+    ? state
+    : { ...state, historyPending };
+}
+
+function requireStateEtag(etag: string | null): string {
+  if (!etag) {
+    throw new Error("Persisted checker state is missing an ETag");
+  }
+  return etag;
+}
+
 async function mapConcurrent<Value, Result>(
   values: readonly Value[],
   concurrency: number,
@@ -525,6 +647,14 @@ function stableId(prefix: string, ...parts: string[]): string {
     .update(parts.join("\0"))
     .digest("hex")
     .slice(0, 24)}`;
+}
+
+function observationsForLastRun(
+  state: CheckerStateDocument
+): HistoryObservation[] {
+  return state.lastRunId
+    ? observationsForRun(state, state.lastRunId)
+    : [];
 }
 
 function observationsForRun(

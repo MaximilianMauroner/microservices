@@ -92,7 +92,7 @@ export function migrateCatalogDocument(input: unknown): unknown {
 export function decodeCheckerStateDocument(
   input: unknown
 ): CheckerStateDocument {
-  return parseCheckerStateV1(migrateCheckerStateDocument(input));
+  return parseCheckerStateV2(migrateCheckerStateDocument(input));
 }
 
 export function migrateCheckerStateDocument(input: unknown): unknown {
@@ -101,7 +101,7 @@ export function migrateCheckerStateDocument(input: unknown): unknown {
   if (version === CHECKER_STATE_SCHEMA_VERSION) {
     return input;
   }
-  if (version !== 0) {
+  if (version !== 0 && version !== 1) {
     throw new SchemaDecodeError(
       "$.schemaVersion",
       `unsupported checker-state schema version ${version}`
@@ -111,7 +111,8 @@ export function migrateCheckerStateDocument(input: unknown): unknown {
     ...root,
     schemaVersion: CHECKER_STATE_SCHEMA_VERSION,
     lastRunId: root.lastRunId ?? null,
-    notifications: root.notifications ?? []
+    notifications: root.notifications ?? [],
+    historyPending: []
   };
 }
 
@@ -336,7 +337,7 @@ function parseEntry(value: unknown, index: number): CatalogEntry {
   };
 }
 
-function parseCheckerStateV1(input: unknown): CheckerStateDocument {
+function parseCheckerStateV2(input: unknown): CheckerStateDocument {
   const root = record(input, "$");
   literal(
     root.schemaVersion,
@@ -356,8 +357,19 @@ function parseCheckerStateV1(input: unknown): CheckerStateDocument {
   const notifications = array(root.notifications, "$.notifications").map(
     parseNotification
   );
+  const historyPending = array(
+    root.historyPending,
+    "$.historyPending"
+  ).map(parseHistoryReconciliation);
   unique(incidents.map(({ id }) => id), "$.incidents");
   unique(notifications.map(({ id }) => id), "$.notifications");
+  unique(historyPending.map(({ day }) => day), "$.historyPending");
+  if (historyPending.length > 256) {
+    throw new SchemaDecodeError(
+      "$.historyPending",
+      "must not contain more than 256 pending partitions"
+    );
+  }
   const incidentsById = new Map(incidents.map((incident) => [incident.id, incident]));
   for (const [id, monitor] of Object.entries(monitors)) {
     if (monitor.openIncidentId === null) {
@@ -393,7 +405,31 @@ function parseCheckerStateV1(input: unknown): CheckerStateDocument {
         : identifier(root.lastRunId, "$.lastRunId"),
     monitors,
     incidents,
-    notifications
+    notifications,
+    historyPending
+  };
+}
+
+function parseHistoryReconciliation(
+  value: unknown,
+  index: number
+): CheckerStateDocument["historyPending"][number] {
+  const path = `$.historyPending[${index}]`;
+  const item = record(value, path);
+  const incidentIds = array(item.incidentIds, `${path}.incidentIds`).map(
+    (id, incidentIndex) =>
+      identifier(id, `${path}.incidentIds[${incidentIndex}]`)
+  );
+  unique(incidentIds, `${path}.incidentIds`);
+  if (incidentIds.length > 256) {
+    throw new SchemaDecodeError(
+      `${path}.incidentIds`,
+      "must not contain more than 256 incident IDs"
+    );
+  }
+  return {
+    day: calendarDay(item.day, `${path}.day`),
+    incidentIds
   };
 }
 

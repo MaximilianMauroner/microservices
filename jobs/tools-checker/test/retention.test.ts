@@ -1,5 +1,7 @@
 import {
+  CHECKER_STATE_SCHEMA_VERSION,
   HISTORY_SCHEMA_VERSION,
+  type Incident,
   type HistoryPartitionDocument
 } from "@tools-platform/domain";
 import { describe, expect, it, vi } from "vitest";
@@ -7,7 +9,9 @@ import { assertCheckerOwnedKey } from "../src/bucket.js";
 import { runChecker } from "../src/run.js";
 import {
   MemoryStore,
+  NOW,
   configFixture,
+  emptyState,
   logger
 } from "./helpers.js";
 
@@ -122,6 +126,7 @@ describe("history retention and ownership", () => {
     ).toBe(true);
 
     const writesAfterResolution = store.historyWrites;
+    const readsAfterResolution = store.historyReads.length;
     await runChecker({
       store,
       config: configFixture,
@@ -132,6 +137,78 @@ describe("history retention and ownership", () => {
       now: () => new Date("2026-07-28T00:01:00.000Z")
     });
     expect(store.historyWrites).toBe(writesAfterResolution);
+    expect(store.historyReads).toHaveLength(readsAfterResolution);
+    expect(store.state?.value.historyPending).toEqual([]);
+  });
+
+  it("does not read opening-day partitions for old resolved incidents", async () => {
+    const store = new MemoryStore();
+    const incidents: Incident[] = Array.from({ length: 100 }, (_, index) => ({
+      id: `old-incident-${index}`,
+      monitorId: `deleted-monitor-${index}`,
+      startedAt: `2025-01-${String((index % 28) + 1).padStart(2, "0")}T00:00:00.000Z`,
+      openingObservationId: `old-opening-${index}`,
+      resolvedAt: "2025-02-01T00:00:00.000Z",
+      closingObservationId: `old-closing-${index}`
+    }));
+    store.state = {
+      etag: "state-old",
+      value: {
+        ...emptyState(),
+        schemaVersion: CHECKER_STATE_SCHEMA_VERSION,
+        incidents
+      }
+    };
+
+    await runChecker({
+      store,
+      config: configFixture,
+      logger,
+      fetcher: vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(null, { status: 200 })
+      ),
+      now: () => new Date(NOW)
+    });
+
+    expect(store.historyReads).toEqual(["2026-07-27"]);
+  });
+
+  it("persists a failed history obligation and clears it on same-slot retry", async () => {
+    const store = new MemoryStore();
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response(null, { status: 200 }));
+    store.historyWriteError = new Error("history unavailable");
+
+    await expect(
+      runChecker({
+        store,
+        config: configFixture,
+        logger,
+        fetcher,
+        now: () => new Date(NOW)
+      })
+    ).rejects.toThrow("history unavailable");
+    expect(store.state?.value.historyPending).toEqual([
+      { day: "2026-07-27", incidentIds: [] }
+    ]);
+
+    store.historyWriteError = null;
+    const retry = await runChecker({
+      store,
+      config: configFixture,
+      logger,
+      fetcher,
+      now: () => new Date(NOW)
+    });
+
+    expect(retry.duplicate).toBe(true);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(store.state?.value.historyPending).toEqual([]);
+    expect(
+      store.history.get("2026-07-27")?.value.observations
+    ).toHaveLength(2);
+    expect(store.historyWrites).toBe(1);
   });
 
   it("groups a check by checkedAt when it crosses midnight after invocation", async () => {

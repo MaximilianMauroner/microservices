@@ -63,7 +63,7 @@ describe("schema decoding and migration", () => {
     });
   });
 
-  it("migrates explicit v0 checker state defaults to v1", () => {
+  it("migrates explicit v0 checker state defaults to the current version", () => {
     const state = stateFixture();
     const legacy = {
       schemaVersion: 0,
@@ -75,7 +75,24 @@ describe("schema decoding and migration", () => {
     expect(decodeCheckerStateDocument(legacy)).toMatchObject({
       schemaVersion: CHECKER_STATE_SCHEMA_VERSION,
       lastRunId: null,
-      notifications: []
+      notifications: [],
+      historyPending: []
+    });
+  });
+
+  it("migrates v1 checker state with an empty history queue", () => {
+    const {
+      historyPending: _historyPending,
+      ...legacyState
+    } = stateFixture();
+    expect(
+      decodeCheckerStateDocument({
+        ...legacyState,
+        schemaVersion: 1
+      })
+    ).toMatchObject({
+      schemaVersion: CHECKER_STATE_SCHEMA_VERSION,
+      historyPending: []
     });
   });
 

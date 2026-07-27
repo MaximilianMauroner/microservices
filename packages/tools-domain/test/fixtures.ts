@@ -129,6 +129,7 @@ export function stateFixture(): CheckerStateDocument {
       }
     },
     incidents: [],
-    notifications: []
+    notifications: [],
+    historyPending: []
   };
 }

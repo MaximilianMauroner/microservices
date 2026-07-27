@@ -101,6 +101,8 @@ export class MemoryStore implements CheckerStore {
   privateSnapshot: PrivateSnapshotDocument | null = null;
   stateWrites = 0;
   historyWrites = 0;
+  historyReads: string[] = [];
+  historyWriteError: Error | null = null;
   closed = false;
 
   async readCatalog() {
@@ -112,6 +114,7 @@ export class MemoryStore implements CheckerStore {
   }
 
   async readHistory(day: string) {
+    this.historyReads.push(day);
     return this.history.get(day) ?? null;
   }
 
@@ -133,6 +136,9 @@ export class MemoryStore implements CheckerStore {
     value: HistoryPartitionDocument,
     expectedEtag: string | null
   ) {
+    if (this.historyWriteError) {
+      throw this.historyWriteError;
+    }
     expectEtag(this.history.get(value.day)?.etag ?? null, expectedEtag);
     const etag = `history-${++this.historyWrites}`;
     this.history.set(value.day, { value, etag });
@@ -160,7 +166,8 @@ export function emptyState(): CheckerStateDocument {
     lastRunId: null,
     monitors: {},
     incidents: [],
-    notifications: []
+    notifications: [],
+    historyPending: []
   };
 }
 
