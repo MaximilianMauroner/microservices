@@ -26,6 +26,8 @@ Both use one private bucket, but ownership is enforced in code. Web writes only
 state, snapshots, history, recovery, and export prefixes.
 
 The low-traffic planning estimate is roughly $0.30–$1.50/month incremental, not
-a billing guarantee. Configure Railway CPU/RAM limits, project usage alerts,
-and a monthly spend cap where the account supports one. Review actual usage
-after 24 hours and again after one billing week.
+a billing guarantee. The proposed preview cap is 0.25 vCPU and 256 MB RAM per
+Tools service, with a $2/month project usage alert owned by Maximilian. These
+are external Railway gates, not configuration completed in this repository.
+Capture evidence before cutover and review actual usage after 24 hours and
+again after one billing week.

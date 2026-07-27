@@ -15,13 +15,30 @@ describe("initial catalog", () => {
       )
     );
     const catalog = decodeCatalogDocument(input);
-    expect(catalog.entries.map(({ id }) => id)).toEqual([
-      "tools-directory",
+    expect(
+      [...catalog.groups]
+        .sort((left, right) => left.order - right.order)
+        .map(({ id, name }) => ({ id, name }))
+    ).toEqual([
+      { id: "publishing", name: "Publishing & sharing" },
+      { id: "review", name: "Review & feedback" },
+      { id: "operations", name: "Operations" }
+    ]);
+    expect(catalog.entries.map(({ id }) => id).sort()).toEqual([
       "artifact-publisher",
       "field-guide-console",
-      "network-console"
+      "network-console",
+      "tools-directory"
     ]);
+    expect(catalog.entries).toHaveLength(4);
     expect(catalog.entries.some(({ id }) => id === "tools-checker")).toBe(false);
+    expect(
+      catalog.entries.find(({ id }) => id === "tools-directory")?.monitor
+    ).toBeUndefined();
+    expect(
+      catalog.entries.find(({ id }) => id === "artifact-publisher")?.monitor
+        ?.paused
+    ).toBe(true);
 
     const projected = projectPublicSnapshot(
       catalog,

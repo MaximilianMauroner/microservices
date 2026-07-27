@@ -1,6 +1,8 @@
 import type {
+  AdminAuditRecord,
   CatalogEntry,
   CatalogGroup,
+  HistoryPartitionDocument,
   PrivateSnapshotDocument
 } from "@tools-platform/domain";
 import { escapeHtml, jsonForDataAttribute } from "./escape.js";
@@ -16,6 +18,18 @@ export interface OperationsPageModel {
   snapshot: PrivateSnapshotDocument;
   actor: string;
   revision: string;
+  history?: OperationsHistoryPage;
+  audit?: OperationsAuditPage;
+}
+
+export interface OperationsHistoryPage {
+  items: HistoryPartitionDocument[];
+  nextCursor: string | null;
+}
+
+export interface OperationsAuditPage {
+  items: AdminAuditRecord[];
+  nextCursor: string | null;
 }
 
 export function renderOperationsPage(model: OperationsPageModel): string {
@@ -62,6 +76,9 @@ export function renderOperationsPage(model: OperationsPageModel): string {
         ${renderNewEntry(groups)}
         <div class="ops-list">${entries.length === 0 ? '<p class="empty-row">No entries in the catalog.</p>' : entries.map((entry) => renderEntryEditor(entry, groups, model.snapshot)).join("")}</div>
       </section>
+
+      ${renderHistorySection(model.history)}
+      ${renderAuditSection(model.audit)}
     </main>
     ${renderDeleteDialog()}
     ${renderConflictDialog()}`;
@@ -72,6 +89,96 @@ export function renderOperationsPage(model: OperationsPageModel): string {
     body,
     operations: true
   });
+}
+
+export function renderOperationsHistoryPage(
+  page: OperationsHistoryPage
+): string {
+  if (page.items.length === 0) {
+    return '<p class="empty-row" data-collection-empty>No check or incident history is available yet.</p>';
+  }
+  return page.items.map(renderHistoryPartition).join("");
+}
+
+export function renderOperationsAuditPage(page: OperationsAuditPage): string {
+  if (page.items.length === 0) {
+    return '<li class="empty-row" data-collection-empty>No catalog audit events are available yet.</li>';
+  }
+  return page.items.map(renderAuditRecord).join("");
+}
+
+function renderHistorySection(page: OperationsHistoryPage | undefined): string {
+  return `<section class="ops-section" aria-labelledby="history-title" data-ops-collection="history" data-endpoint="/api/ops/history"${page?.nextCursor ? ` data-next-cursor="${escapeHtml(page.nextCursor)}"` : ""}>
+        <div class="section-heading">
+          <div><p class="eyebrow">Monitoring</p><h2 id="history-title">Check & incident history</h2></div>
+        </div>
+        <p class="collection-state" role="status" aria-live="polite" data-collection-loading${page ? " hidden" : ""}>Loading protected history…</p>
+        <div class="notice notice--error" role="alert" data-collection-error hidden>
+          <span data-collection-error-message>History could not be loaded.</span>
+          <button class="button" type="button" data-collection-retry>Try again</button>
+        </div>
+        <div class="timeline" data-collection-items>${page ? renderOperationsHistoryPage(page) : ""}</div>
+        <button class="button" type="button" data-collection-more${page?.nextCursor ? "" : " hidden"}>Load older history</button>
+      </section>`;
+}
+
+function renderAuditSection(page: OperationsAuditPage | undefined): string {
+  return `<section class="ops-section" aria-labelledby="audit-title" data-ops-collection="audit" data-endpoint="/api/ops/audit"${page?.nextCursor ? ` data-next-cursor="${escapeHtml(page.nextCursor)}"` : ""}>
+        <div class="section-heading">
+          <div><p class="eyebrow">Accountability</p><h2 id="audit-title">Catalog audit</h2></div>
+        </div>
+        <p class="collection-state" role="status" aria-live="polite" data-collection-loading${page ? " hidden" : ""}>Loading protected audit events…</p>
+        <div class="notice notice--error" role="alert" data-collection-error hidden>
+          <span data-collection-error-message>Audit events could not be loaded.</span>
+          <button class="button" type="button" data-collection-retry>Try again</button>
+        </div>
+        <ol class="audit-list" data-collection-items>${page ? renderOperationsAuditPage(page) : ""}</ol>
+        <button class="button" type="button" data-collection-more${page?.nextCursor ? "" : " hidden"}>Load older audit events</button>
+      </section>`;
+}
+
+function renderHistoryPartition(partition: HistoryPartitionDocument): string {
+  const observations =
+    partition.observations.length === 0
+      ? '<p class="empty-row">No raw checks retained for this day.</p>'
+      : `<ul class="history-list" role="list">${partition.observations
+          .map(
+            (observation) => `<li>
+              <div><strong>${escapeHtml(observation.id)}</strong><span>Run ${escapeHtml(observation.runId)}</span></div>
+              <span class="status ${observation.success ? "status--up" : "status--down"}">${observation.success ? "Succeeded" : escapeHtml(observation.errorCode ?? "Failed")}</span>
+              <span>${observation.latencyMs} ms${observation.statusCode === null ? "" : ` · HTTP ${observation.statusCode}`}</span>
+              <time datetime="${escapeHtml(observation.checkedAt)}">${formatTimestamp(observation.checkedAt)}</time>
+            </li>`
+          )
+          .join("")}</ul>`;
+  const incidents =
+    partition.incidents.length === 0
+      ? '<p class="empty-row">No incidents recorded for this day.</p>'
+      : `<ul class="incident-list" role="list">${partition.incidents
+          .map(
+            (incident) => `<li>
+              <strong>${escapeHtml(incident.monitorId)}</strong>
+              <span>${incident.resolvedAt === null ? "Open incident" : "Resolved incident"}</span>
+              <time datetime="${escapeHtml(incident.startedAt)}">Opened ${formatTimestamp(incident.startedAt)}</time>
+              ${incident.resolvedAt === null ? "" : `<time datetime="${escapeHtml(incident.resolvedAt)}">Resolved ${formatTimestamp(incident.resolvedAt)}</time>`}
+            </li>`
+          )
+          .join("")}</ul>`;
+  return `<article class="history-day">
+        <h3><time datetime="${escapeHtml(partition.day)}">${escapeHtml(partition.day)}</time></h3>
+        <div class="history-columns">
+          <section aria-label="Checks for ${escapeHtml(partition.day)}"><h4>Checks</h4>${observations}</section>
+          <section aria-label="Incidents for ${escapeHtml(partition.day)}"><h4>Incidents</h4>${incidents}</section>
+        </div>
+      </article>`;
+}
+
+function renderAuditRecord(record: AdminAuditRecord): string {
+  return `<li class="audit-record">
+      <div><strong>${escapeHtml(record.action)}</strong><span>${escapeHtml(record.targetType)}${record.targetId ? ` · ${escapeHtml(record.targetId)}` : ""}</span></div>
+      <div><span>${escapeHtml(record.actor)}</span><time datetime="${escapeHtml(record.occurredAt)}">${formatTimestamp(record.occurredAt)}</time></div>
+      <code title="Catalog revision">${escapeHtml(record.catalogRevisionAfter)}</code>
+    </li>`;
 }
 
 function renderGroupEditor(group: CatalogGroup): string {

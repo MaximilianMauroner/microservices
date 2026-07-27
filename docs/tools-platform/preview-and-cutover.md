@@ -5,17 +5,27 @@
 Never point a preview service at the production bucket.
 
 1. Create a preview bucket and distinct `TOOLS_ENVIRONMENT` value.
-2. Deploy `tools-web` with Railway Serverless enabled and a preview-only domain.
-3. Create a separate Cloudflare Access application and audience for `/ops*` and
+2. Create `tools-web` with source root `/apps/tools-web`, config path
+   `/apps/tools-web/railway.json`, and start command `bun run start`. Enable
+   Railway Serverless and attach only a preview domain.
+3. Create `tools-checker` with source root `/jobs/tools-checker`, config path
+   `/jobs/tools-checker/railway.json`, and start command `bun run start`. Keep
+   its cron disabled until the manual validation pass.
+4. As proposed preview limits, set each service to **0.25 vCPU and 256 MB RAM**.
+   Set a project usage alert at **$2/month**, owned by the Railway project owner
+   (Maximilian). These are external console gates, not settings completed by
+   this repository. Record screenshots or an exported Railway configuration in
+   the release evidence.
+5. Create a separate Cloudflare Access application and audience for `/ops*` and
    `/api/ops/*`; configure that audience and team issuer in the preview service.
-4. Upload `apps/tools-web/config/initial-catalog.json` to
+6. Upload `apps/tools-web/config/initial-catalog.json` to
    `catalog/current.json` with an S3 `If-None-Match: *` conditional write, or
    send it to `PUT /api/ops/catalog` with `If-None-Match: *` and a valid preview
    Access assertion. A `409` means the bucket is already initialized; inspect it
    instead of overwriting it.
-5. Leave `DISCORD_WEBHOOK_URL` unset. Run the checker manually once against the
+7. Leave `DISCORD_WEBHOOK_URL` unset. Run the checker manually once against the
    preview bucket, then verify all four generated object families decode.
-6. Enable the preview cron only after the manual pass succeeds.
+8. Enable the preview cron only after the manual pass succeeds.
 
 “Shadow mode” is an operational procedure, not a hidden application flag:
 use the isolated preview bucket, keep notifications disabled, and leave
@@ -24,6 +34,12 @@ cutover-dependent monitors paused. Never shadow-write production state.
 ## Pre-cutover gates
 
 - Confirm `tools-web` sleeps between requests and has no background traffic.
+  Do **not** probe `/health`, `/`, or any origin route during this observation:
+  an external probe would itself reset the inactivity window. Keep the Tools
+  Directory entry unmonitored, use Railway replica/CPU metrics and logs to
+  observe scale-to-zero after the documented inactivity window, then make one
+  operator request and record the cold-start/scale-up. Disable third-party
+  uptime probes and synthetic browser checks during this gate.
 - Confirm `tools-checker` runs at `*/5 * * * *`, logs one terminal event, closes
   its S3 client, and exits successfully.
 - Confirm the public HTML and `/api/public/catalog` contain no private notes,
@@ -42,6 +58,9 @@ cutover-dependent monitors paused. Never shadow-write production state.
   Run this using an authenticated Cloudflare environment. The planning-time
   result was empty, but that is not permission to assume it remains empty. If
   any count is non-zero, stop and export/migrate the rows before retirement.
+  Record the command timestamp, database identity, three counts, and operator
+  in release evidence. This is an external cutover gate; the repository does
+  not prove it has been performed.
 
 ## Production cutover
 
@@ -58,8 +77,48 @@ cutover-dependent monitors paused. Never shadow-write production state.
    verified. Observe two cron slots.
 7. Point `tools.mauroner.net` at `tools-web`; verify TLS, public cache behavior,
    Access path matching, and application-level Access rejection.
-8. Resume the Tools Directory monitor after the new domain is live. Resume the
-   Artifact Publisher only after its intended stable DNS and health route work.
+8. Keep the Tools Directory intentionally unmonitored: a five-minute self-probe
+   would prevent the Serverless origin from sleeping. Resume the Artifact
+   Publisher only after its intended stable DNS and health route work.
+
+## Stuck checker recovery
+
+The checker release must include a whole-process deadline shorter than the
+five-minute schedule interval. Before enabling cron, force a probe timeout and a
+storage failure and verify a non-zero terminal deployment event is logged and
+the process exits. Configure a Railway deployment alert owned by Maximilian for
+failed or non-terminal cron executions.
+
+If a run remains active at the next slot:
+
+1. Disable the cron schedule; do not start another manual run.
+2. Capture the deployment ID, start time, last sanitized event, and current
+   object ETags without downloading secrets into logs.
+3. Stop the stuck deployment from Railway.
+4. Verify `state/current.json` and both snapshots refer to a coherent completed
+   run. Restore from `recovery/**` if they do not.
+5. Deploy the previous known-good checker and run it once manually with Discord
+   unset. Re-enable cron only after its terminal event and process exit.
+
+## Audit repair
+
+Catalog and audit writes are separate object-store operations. A release must
+not claim atomic audit coverage unless the backend implements a durable repair
+protocol. If a catalog revision exists without its audit object, remove web
+write credentials, export the catalog and audit prefix, record an operator
+incident, and run the backend's idempotent audit-repair procedure. Never rewrite
+or delete an existing audit object. Restore admin writes only after the missing
+revision is represented and a create-only collision test succeeds.
+
+## Trusted-admin DNS risk
+
+Public monitor URLs are entered only by trusted, Access-authenticated
+administrators. The checker rejects private/reserved **literal** addresses and
+revalidates redirect literals, but it does not resolve and pin DNS answers.
+DNS rebinding between validation and connection is therefore an accepted
+residual risk for this trusted-admin deployment model; documentation must not
+claim DNS pinning. Revisit the model before granting catalog administration to
+untrusted users or accepting monitor URLs from another system.
 
 ## Retire the Cloudflare Worker
 
