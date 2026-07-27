@@ -13,11 +13,11 @@ Attach the private shared bucket and enable **Railway Serverless** so the
 service can sleep between requests.
 
 `GET /live` is process liveness only. The Railway deploy check uses
-`GET /health`, which decodes both `catalog/current.json` and
-`snapshots/public.json`. Bootstrap the catalog directly into the bucket with a
-create-only write, run Tools Checker once to create the public snapshot, and
-only then deploy Tools Web. Missing or corrupt required objects intentionally
-keep the deployment unready.
+`GET /health`, which decodes `catalog/current.json`,
+`snapshots/public.json`, and `snapshots/private.json`. Bootstrap the catalog
+directly into the bucket with a create-only write, run Tools Checker once to
+create both snapshots, and only then deploy Tools Web. Missing or corrupt
+required objects intentionally keep the deployment unready.
 
 Required variables:
 
@@ -46,7 +46,9 @@ Each mutation first creates an immutable audit intent, conditionally writes the
 catalog, then creates the canonical audit outcome. If the last write fails, the
 catalog response remains successful because the intent is a durable repair
 obligation. The next mutation or audit read repairs it. Failed catalog writes
-create immutable cancellation markers.
+create immutable cancellation markers only after a conclusive conditional-write
+failure. Canonical outcomes retain their established keys and also receive an
+immutable reverse-time index record for scalable, newest-first pagination.
 
 See [ROUTES.md](./ROUTES.md) for the UI/backend contract.
 

@@ -10,7 +10,7 @@ All JSON responses have `Content-Type: application/json`, an `X-Request-Id`,
 | `GET` | `/` | Server-rendered public directory from `PublicSnapshotDocument` only. |
 | `GET` | `/api/public/catalog` | Decoded `PublicSnapshotDocument`; cacheable for 60 seconds. |
 | `GET` | `/live` | Process liveness; no bucket access. |
-| `GET` | `/health` | Readiness; decodes required catalog and public snapshot, otherwise `503`. |
+| `GET` | `/health` | Readiness; decodes the required catalog plus public and private snapshots, otherwise `503`. |
 | `GET` | `/assets/tools.css`, `/assets/ops.js` | Fixed CSP-compatible assets; no arbitrary file paths. |
 
 Public routes read only `snapshots/public.json`. They never project from the
@@ -27,8 +27,8 @@ Every `/ops`, `/ops/*`, and `/api/ops/*` request requires a valid
 | `GET` | `/ops`, `/ops/*` | Server-rendered operations UI from the latest catalog plus prepared private checker state. |
 | `GET` | `/api/ops/catalog` | Full `CatalogDocument` plus an `ETag` containing its revision. |
 | `GET` | `/api/ops/snapshot` | Decoded `PrivateSnapshotDocument`. |
-| `GET` | `/api/ops/audit?limit=&cursor=` | `{ "items": AdminAuditRecord[], "nextCursor": string \| null }`; canonical immutable records, and the read repairs durable pending audit intents. |
-| `GET` | `/api/ops/history?limit=&cursor=` | `{ "items": HistoryPartitionDocument[], "nextCursor": string \| null }`; every v2 observation has `monitorId` and migrated legacy observations use `"unknown"`. |
+| `GET` | `/api/ops/audit?limit=&cursor=` | `{ "items": AdminAuditRecord[], "nextCursor": string \| null }`; newest-first canonical immutable records with opaque lossless cursors, and the read repairs durable pending audit intents. |
+| `GET` | `/api/ops/history?limit=&cursor=` | `{ "items": HistoryPartitionDocument[], "nextCursor": string \| null }`; newest-first daily partitions; new observations identify their monitor and migrated legacy observations use `null`. |
 | `GET` | `/api/ops/incidents?limit=&cursor=` | `{ "items": Incident[], "nextCursor": string \| null }`; incidents newest-first from the prepared private snapshot. |
 | `PUT` | `/api/ops/catalog` | Initialize from a complete `CatalogDocument`; requires `If-None-Match: *`. |
 | `POST` | `/api/ops/groups` | Create a complete `CatalogGroup`. |
