@@ -245,6 +245,16 @@ describe("operations page", () => {
               statusCode: 503,
               latencyMs: 91,
               errorCode: "http_error"
+            },
+            {
+              id: "legacy-observation",
+              runId: "legacy-run",
+              monitorId: null,
+              checkedAt: generatedAt,
+              success: false,
+              statusCode: null,
+              latencyMs: 0,
+              errorCode: "network_error"
             }
           ],
           incidents: [
@@ -282,6 +292,9 @@ describe("operations page", () => {
     expect(history).toContain('aria-label="Checks for 2026-07-27"');
     expect(history).toContain(
       "<strong>artifact-publisher</strong><span>Observation observation-1 · Run run-1</span>"
+    );
+    expect(history).toContain(
+      "<strong>Legacy monitor unknown</strong><span>Observation legacy-observation · Run legacy-run</span>"
     );
     expect(history).toContain("http_error");
     expect(history).toContain("Open incident");
