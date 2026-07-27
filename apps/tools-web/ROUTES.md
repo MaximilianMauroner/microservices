@@ -9,7 +9,8 @@ All JSON responses have `Content-Type: application/json`, an `X-Request-Id`,
 |---|---|---|
 | `GET` | `/` | Server-rendered public directory from `PublicSnapshotDocument` only. |
 | `GET` | `/api/public/catalog` | Decoded `PublicSnapshotDocument`; cacheable for 60 seconds. |
-| `GET` | `/health` | `{"ok":true}` after a real bucket read; `503` if storage cannot be read. |
+| `GET` | `/live` | Process liveness; no bucket access. |
+| `GET` | `/health` | Readiness; decodes required catalog and public snapshot, otherwise `503`. |
 | `GET` | `/assets/tools.css`, `/assets/ops.js` | Fixed CSP-compatible assets; no arbitrary file paths. |
 
 Public routes read only `snapshots/public.json`. They never project from the
@@ -26,6 +27,9 @@ Every `/ops`, `/ops/*`, and `/api/ops/*` request requires a valid
 | `GET` | `/ops`, `/ops/*` | Server-rendered operations UI from the latest catalog plus prepared private checker state. |
 | `GET` | `/api/ops/catalog` | Full `CatalogDocument` plus an `ETag` containing its revision. |
 | `GET` | `/api/ops/snapshot` | Decoded `PrivateSnapshotDocument`. |
+| `GET` | `/api/ops/audit?limit=&cursor=` | Canonical immutable audit records and opaque continuation cursor; also repairs durable pending audit intents. |
+| `GET` | `/api/ops/history?limit=&cursor=` | Decoded daily history partitions, including each observation's monitor association when present/migrated by the domain decoder. |
+| `GET` | `/api/ops/incidents?limit=&cursor=` | Incidents newest-first from the prepared private snapshot. |
 | `PUT` | `/api/ops/catalog` | Initialize from a complete `CatalogDocument`; requires `If-None-Match: *`. |
 | `POST` | `/api/ops/groups` | Create a complete `CatalogGroup`. |
 | `PATCH` | `/api/ops/groups/:id` | Update UI-editable group fields. |
@@ -43,7 +47,11 @@ Every `/ops`, `/ops/*`, and `/api/ops/*` request requires a valid
 | `POST` | `/api/ops/entries/:id/monitor/resume` | Resume the entry monitor. |
 | `PUT` | `/api/ops/order` | Reorder all groups and entries. |
 
-Except initialization and reads, mutations require `If-Match: "<revision>"`.
+Every mutation requires an `Origin` exactly equal to configured
+`PUBLIC_ORIGIN` and an `application/json` content type; Cloudflare Access JWT
+verification still happens first. Cross-origin/missing-origin requests return
+`403`; non-JSON requests return `400`. Except initialization and reads,
+mutations also require `If-Match: "<revision>"`.
 Successful writes return `{ "revision": "...", "reload": true }` and the new
 revision `ETag`. A stale revision returns
 `409 {"error":"revision_conflict","revision":"...","message":"..."}`; if an

@@ -1,5 +1,6 @@
 export interface ToolsWebConfig {
   port: number;
+  trustedOrigin: string;
   bucket: {
     endpoint: string;
     region: string;
@@ -26,6 +27,10 @@ export function loadConfig(
 
   return {
     port,
+    trustedOrigin: parseOrigin(
+      required(env, "PUBLIC_ORIGIN"),
+      "PUBLIC_ORIGIN"
+    ),
     bucket: {
       endpoint: parseOrigin(required(env, "S3_ENDPOINT"), "S3_ENDPOINT"),
       region: required(env, "S3_REGION"),

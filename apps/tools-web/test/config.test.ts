@@ -8,13 +8,15 @@ const valid = {
   S3_ACCESS_KEY_ID: "key",
   S3_SECRET_ACCESS_KEY: "secret",
   CF_ACCESS_ISSUER: "https://team.cloudflareaccess.com",
-  CF_ACCESS_AUDIENCE: "audience"
+  CF_ACCESS_AUDIENCE: "audience",
+  PUBLIC_ORIGIN: "https://tools.example.test"
 };
 
 describe("configuration", () => {
   it("loads strict bucket and Access settings", () => {
     expect(loadConfig(valid)).toEqual({
       port: 3000,
+      trustedOrigin: "https://tools.example.test",
       bucket: {
         endpoint: "https://bucket.example.test",
         region: "auto",
