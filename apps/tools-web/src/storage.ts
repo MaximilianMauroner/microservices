@@ -131,6 +131,7 @@ export class WebStorage {
     if (stored.catalog.revision !== expectedRevision) {
       throw new CatalogConflictError(stored.catalog.revision);
     }
+    await this.ensureRevisionAudit(stored.catalog.revision);
     const now = new Date().toISOString();
     const candidate = decodeCatalogDocument({
       ...mutate(structuredClone(stored.catalog)),
@@ -178,36 +179,20 @@ export class WebStorage {
     limit: number
   ): Promise<{ items: AdminAuditRecord[]; nextCursor: string | null }> {
     await this.repairPendingAudits();
-    const position = decodeAuditCursor(cursor);
-    if (position.source === "legacy") {
-      return this.readLegacyAuditPage(position.offset, limit);
-    }
-
-    const indexed = await this.#bucket.list(
+    await this.ensureAuditIndexMigration();
+    const position = decodeKeyCursor(cursor, "audit");
+    const keys = await this.#bucket.listAfter(
       AUDIT_INDEX_PREFIX,
-      position.token,
-      limit
+      position.after,
+      limit + 1
     );
-    const items = await this.readAuditRecords(indexed.keys);
-    if (indexed.nextCursor) {
-      return {
-        items,
-        nextCursor: encodeAuditCursor({
-          source: "index",
-          token: indexed.nextCursor
-        })
-      };
-    }
-
-    const legacy = await this.legacyAuditRecords();
-    const remaining = limit - items.length;
-    const appended = legacy.slice(0, remaining);
-    const consumed = appended.length;
+    const selected = keys.slice(0, limit);
+    const lastSelected = selected.at(-1);
     return {
-      items: [...items, ...appended],
+      items: await this.readAuditRecords(selected),
       nextCursor:
-        consumed < legacy.length
-          ? encodeAuditCursor({ source: "legacy", offset: consumed })
+        keys.length > limit && lastSelected
+          ? encodeKeyCursor("audit", lastSelected)
           : null
     };
   }
@@ -216,11 +201,13 @@ export class WebStorage {
     cursor: string | undefined,
     limit: number
   ): Promise<{ items: HistoryPartitionDocument[]; nextCursor: string | null }> {
-    const offset = decodeOffsetCursor(cursor);
+    const position = decodeKeyCursor(cursor, "history");
     const keys = (await this.listAllKeys("history/"))
       .filter((key) => /^history\/\d{4}-\d{2}-\d{2}\.json\.gz$/.test(key))
-      .sort((left, right) => right.localeCompare(left));
-    const selected = keys.slice(offset, offset + limit);
+      .sort((left, right) => right.localeCompare(left))
+      .filter((key) => position.after === undefined || key < position.after);
+    const selected = keys.slice(0, limit);
+    const lastSelected = selected.at(-1);
     const partitions = await Promise.all(
       selected.map(async (key) =>
         decodeHistoryPartitionDocument(
@@ -231,8 +218,8 @@ export class WebStorage {
     return {
       items: partitions,
       nextCursor:
-        offset + selected.length < keys.length
-          ? encodeOffsetCursor(offset + selected.length)
+        selected.length < keys.length && lastSelected
+          ? encodeKeyCursor("history", lastSelected)
           : null
     };
   }
@@ -241,14 +228,26 @@ export class WebStorage {
     cursor: string | undefined,
     limit: number
   ): Promise<{ items: Incident[]; nextCursor: string | null }> {
-    const offset = parseOffset(cursor);
+    const position = decodeIncidentCursor(cursor);
     const page = [...(await this.readPrivateSnapshot()).state.incidents]
-      .sort((left, right) => right.startedAt.localeCompare(left.startedAt))
-      .slice(offset, offset + limit + 1);
+      .sort(compareIncidentsNewestFirst)
+      .filter(
+        (incident) =>
+          position === null || isIncidentOlderThan(incident, position)
+      )
+      .slice(0, limit + 1);
     const hasMore = page.length > limit;
+    const items = page.slice(0, limit);
+    const last = items.at(-1);
     return {
-      items: page.slice(0, limit),
-      nextCursor: hasMore ? String(offset + limit) : null
+      items,
+      nextCursor:
+        hasMore && last
+          ? encodeIncidentCursor({
+              startedAt: last.startedAt,
+              id: last.id
+            })
+          : null
     };
   }
 
@@ -264,17 +263,29 @@ export class WebStorage {
           intent.record.occurredAt,
           intent.record.id
         );
+        if (await this.#bucket.get(cancelledAuditKey(intent.record.id))) continue;
         if (await this.#bucket.get(canonical)) {
           await this.ensureAuditIndex(intent.record);
+          await this.ensureImmutableObject(
+            revisionAuditKey(intent.record.catalogRevisionAfter),
+            intent,
+            decodeAuditIntent,
+            sameAuditIntent
+          );
           continue;
         }
-        if (await this.#bucket.get(cancelledAuditKey(intent.record.id))) continue;
         const catalog = await this.readCatalog().catch(() => null);
         if (
           catalog?.catalog.revision ===
           intent.record.catalogRevisionAfter
         ) {
           await this.finalizeAudit(intent.record);
+          await this.ensureImmutableObject(
+            revisionAuditKey(intent.record.catalogRevisionAfter),
+            intent,
+            decodeAuditIntent,
+            sameAuditIntent
+          );
         }
       }
       cursor = page.nextCursor;
@@ -287,9 +298,23 @@ export class WebStorage {
       mutationId: record.id,
       record
     };
-    await this.#bucket.put(intentAuditKey(record.id), intent, {
-      ifNoneMatch: "*"
-    });
+    await this.ensureImmutableObject(
+      intentAuditKey(record.id),
+      intent,
+      decodeAuditIntent,
+      sameAuditIntent
+    );
+    try {
+      await this.ensureImmutableObject(
+        revisionAuditKey(record.catalogRevisionAfter),
+        intent,
+        decodeAuditIntent,
+        sameAuditIntent
+      );
+    } catch (error) {
+      await this.cancelIntent(record.id);
+      throw error;
+    }
   }
 
   private async cancelIntent(id: string): Promise<void> {
@@ -303,20 +328,48 @@ export class WebStorage {
   }
 
   private async finalizeAudit(record: AdminAuditRecord): Promise<void> {
-    try {
-      await this.#bucket.put(auditKey(record.occurredAt, record.id), record, {
-        ifNoneMatch: "*"
-      });
-    } catch (error) {
-      if (!(error instanceof BucketConflictError)) return;
-    }
+    await this.ensureImmutableObject(
+      auditKey(record.occurredAt, record.id),
+      record,
+      decodeAdminAuditRecord,
+      sameAuditRecord
+    );
     await this.ensureAuditIndex(record);
   }
 
   private async ensureAuditIndex(record: AdminAuditRecord): Promise<void> {
-    await this.#bucket
-      .put(auditIndexKey(record), record, { ifNoneMatch: "*" })
-      .catch(() => undefined);
+    await this.ensureImmutableObject(
+      auditIndexKey(record),
+      record,
+      decodeAdminAuditRecord,
+      sameAuditRecord
+    );
+  }
+
+  private async ensureRevisionAudit(revision: string): Promise<void> {
+    const linked = await this.#bucket.get(revisionAuditKey(revision));
+    if (linked) {
+      const intent = decodeAuditIntent(linked.body);
+      if (intent.record.catalogRevisionAfter !== revision) {
+        throw new Error("Revision audit obligation mismatch");
+      }
+      if (await this.#bucket.get(cancelledAuditKey(intent.record.id))) {
+        throw new Error("Committed catalog revision has a cancelled audit");
+      }
+      await this.finalizeAudit(intent.record);
+      return;
+    }
+
+    const legacy = await this.findIntentForRevision(revision);
+    if (legacy) {
+      await this.finalizeAudit(legacy.record);
+      await this.ensureImmutableObject(
+        revisionAuditKey(revision),
+        legacy,
+        decodeAuditIntent,
+        sameAuditIntent
+      );
+    }
   }
 
   private async catalogHasRevision(revision: string): Promise<boolean> {
@@ -335,43 +388,53 @@ export class WebStorage {
     );
   }
 
-  private async readLegacyAuditPage(
-    offset: number,
-    limit: number
-  ): Promise<{ items: AdminAuditRecord[]; nextCursor: string | null }> {
-    const records = await this.legacyAuditRecords();
-    const items = records.slice(offset, offset + limit);
-    return {
-      items,
-      nextCursor:
-        offset + items.length < records.length
-          ? encodeAuditCursor({
-              source: "legacy",
-              offset: offset + items.length
-            })
-          : null
-    };
-  }
-
-  private async legacyAuditRecords(): Promise<AdminAuditRecord[]> {
+  private async ensureAuditIndexMigration(): Promise<void> {
+    if (await this.#bucket.get(AUDIT_INDEX_MIGRATION_KEY)) return;
     const keys = (await this.listAllKeys("audit/")).filter((key) =>
       /^audit\/\d{4}\/\d{2}\//.test(key)
     );
     const records = await this.readAuditRecords(keys);
-    const legacy = await Promise.all(
-      records.map(async (record) => ({
-        record,
-        indexed: (await this.#bucket.get(auditIndexKey(record))) !== null
-      }))
+    await Promise.all(records.map((record) => this.ensureAuditIndex(record)));
+    await this.ensureImmutableObject(
+      AUDIT_INDEX_MIGRATION_KEY,
+      AUDIT_INDEX_MIGRATION,
+      decodeAuditIndexMigration,
+      sameAuditIndexMigration
     );
-    return legacy
-      .filter(({ indexed }) => !indexed)
-      .map(({ record }) => record)
-      .sort(
-        (left, right) =>
-          right.occurredAt.localeCompare(left.occurredAt) ||
-          right.id.localeCompare(left.id)
+  }
+
+  private async findIntentForRevision(
+    revision: string
+  ): Promise<AuditIntent | null> {
+    const keys = await this.listAllKeys("audit/intents/");
+    for (const key of keys) {
+      const intent = decodeAuditIntent(
+        requireObject(await this.#bucket.get(key), "Audit intent").body
       );
+      if (
+        intent.record.catalogRevisionAfter === revision &&
+        !(await this.#bucket.get(cancelledAuditKey(intent.record.id)))
+      ) {
+        return intent;
+      }
+    }
+    return null;
+  }
+
+  private async ensureImmutableObject<Value>(
+    key: string,
+    value: Value,
+    decode: (input: unknown) => Value,
+    equal: (left: Value, right: Value) => boolean
+  ): Promise<void> {
+    try {
+      await this.#bucket.put(key, value, { ifNoneMatch: "*" });
+      return;
+    } catch (error) {
+      const existing = await this.#bucket.get(key);
+      if (existing && equal(decode(existing.body), value)) return;
+      throw error;
+    }
   }
 
   private async listAllKeys(prefix: string): Promise<string[]> {
@@ -393,10 +456,25 @@ interface AuditIntent {
 }
 
 const AUDIT_INDEX_PREFIX = "audit/records/";
+const AUDIT_INDEX_MIGRATION_KEY = "audit/migrations/reverse-index-v1.json";
+const AUDIT_INDEX_MIGRATION = {
+  protocolVersion: 1 as const,
+  complete: true as const
+};
 
-type AuditCursor =
-  | { source: "index"; token?: string }
-  | { source: "legacy"; offset: number };
+interface AuditIndexMigration {
+  protocolVersion: 1;
+  complete: true;
+}
+
+interface KeyCursor {
+  after?: string;
+}
+
+interface IncidentCursor {
+  startedAt: string;
+  id: string;
+}
 
 function createAudit(
   actor: string,
@@ -427,6 +505,10 @@ function cancelledAuditKey(id: string): string {
   return `audit/cancelled/${id}.json`;
 }
 
+function revisionAuditKey(revision: string): string {
+  return `audit/revisions/${Buffer.from(revision, "utf8").toString("base64url")}.json`;
+}
+
 function auditIndexKey(record: AdminAuditRecord): string {
   const timestamp = Date.parse(record.occurredAt);
   if (!Number.isSafeInteger(timestamp) || timestamp < 0) {
@@ -439,57 +521,51 @@ function auditIndexKey(record: AdminAuditRecord): string {
   return `${AUDIT_INDEX_PREFIX}${reverseTimestamp}-${record.id}.json`;
 }
 
-function encodeAuditCursor(cursor: AuditCursor): string {
+function encodeKeyCursor(scope: "audit" | "history", after: string): string {
   return Buffer.from(
-    JSON.stringify({ version: 1, ...cursor }),
+    JSON.stringify({ version: 2, scope, after }),
     "utf8"
   ).toString("base64url");
 }
 
-function decodeAuditCursor(cursor: string | undefined): AuditCursor {
-  if (cursor === undefined) return { source: "index" };
+function decodeKeyCursor(
+  cursor: string | undefined,
+  scope: "audit" | "history"
+): KeyCursor {
+  if (cursor === undefined) return {};
   const value = decodeCursorObject(cursor);
-  if (value.version !== 1 || typeof value.source !== "string") {
-    throw new Error("Invalid audit pagination cursor");
-  }
-  if (value.source === "index") {
-    if (value.token !== undefined && typeof value.token !== "string") {
-      throw new Error("Invalid audit pagination cursor");
-    }
-    return value.token === undefined
-      ? { source: "index" }
-      : { source: "index", token: value.token };
-  }
   if (
-    value.source === "legacy" &&
-    typeof value.offset === "number" &&
-    Number.isSafeInteger(value.offset) &&
-    value.offset >= 0
+    value.version === 2 &&
+    value.scope === scope &&
+    typeof value.after === "string" &&
+    value.after !== ""
   ) {
-    return { source: "legacy", offset: value.offset };
+    return { after: value.after };
   }
-  throw new Error("Invalid audit pagination cursor");
+  throw new Error("Invalid pagination cursor");
 }
 
-function encodeOffsetCursor(offset: number): string {
+function encodeIncidentCursor(cursor: IncidentCursor): string {
   return Buffer.from(
-    JSON.stringify({ version: 1, offset }),
+    JSON.stringify({ version: 2, scope: "incidents", ...cursor }),
     "utf8"
   ).toString("base64url");
 }
 
-function decodeOffsetCursor(cursor: string | undefined): number {
-  if (cursor === undefined) return 0;
+function decodeIncidentCursor(cursor: string | undefined): IncidentCursor | null {
+  if (cursor === undefined) return null;
   const value = decodeCursorObject(cursor);
   if (
-    value.version !== 1 ||
-    typeof value.offset !== "number" ||
-    !Number.isSafeInteger(value.offset) ||
-    value.offset < 0
+    value.version !== 2 ||
+    value.scope !== "incidents" ||
+    typeof value.startedAt !== "string" ||
+    typeof value.id !== "string" ||
+    value.startedAt === "" ||
+    value.id === ""
   ) {
     throw new Error("Invalid pagination cursor");
   }
-  return value.offset;
+  return { startedAt: value.startedAt, id: value.id };
 }
 
 function decodeCursorObject(cursor: string): Record<string, unknown> {
@@ -525,13 +601,60 @@ function decodeAuditIntent(input: unknown): AuditIntent {
   return { protocolVersion: 1, mutationId: input.mutationId, record };
 }
 
-function parseOffset(cursor: string | undefined): number {
-  if (cursor === undefined) return 0;
-  const value = Number(cursor);
-  if (!Number.isSafeInteger(value) || value < 0) {
-    throw new Error("Invalid pagination cursor");
+function sameAuditRecord(
+  left: AdminAuditRecord,
+  right: AdminAuditRecord
+): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function sameAuditIntent(left: AuditIntent, right: AuditIntent): boolean {
+  return (
+    left.protocolVersion === right.protocolVersion &&
+    left.mutationId === right.mutationId &&
+    sameAuditRecord(left.record, right.record)
+  );
+}
+
+function decodeAuditIndexMigration(input: unknown): AuditIndexMigration {
+  if (
+    typeof input !== "object" ||
+    input === null ||
+    !("protocolVersion" in input) ||
+    input.protocolVersion !== 1 ||
+    !("complete" in input) ||
+    input.complete !== true
+  ) {
+    throw new Error("Invalid audit index migration marker");
   }
-  return value;
+  return AUDIT_INDEX_MIGRATION;
+}
+
+function sameAuditIndexMigration(
+  left: AuditIndexMigration,
+  right: AuditIndexMigration
+): boolean {
+  return (
+    left.protocolVersion === right.protocolVersion &&
+    left.complete === right.complete
+  );
+}
+
+function compareIncidentsNewestFirst(left: Incident, right: Incident): number {
+  return (
+    right.startedAt.localeCompare(left.startedAt) ||
+    right.id.localeCompare(left.id)
+  );
+}
+
+function isIncidentOlderThan(
+  incident: Incident,
+  cursor: IncidentCursor
+): boolean {
+  return (
+    incident.startedAt < cursor.startedAt ||
+    (incident.startedAt === cursor.startedAt && incident.id < cursor.id)
+  );
 }
 
 function requireObject(
