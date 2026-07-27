@@ -1,10 +1,11 @@
-import { describe, expect, test } from "bun:test";
+import { readFile } from "node:fs/promises";
+import { describe, expect, test } from "vitest";
 
 const assets = new URL("../public/assets/", import.meta.url);
 
 describe("static UI assets", () => {
   test("operations script uses conditional writes and explicit conflicts", async () => {
-    const script = await Bun.file(new URL("ops.js", assets)).text();
+    const script = await readFile(new URL("ops.js", assets), "utf8");
 
     expect(script).toContain('"If-Match": `"${currentRevision()}"`');
     expect(script).toContain("response.status === 409");
@@ -16,8 +17,8 @@ describe("static UI assets", () => {
   });
 
   test("assets contain no inline-handler dependency and respect reduced motion", async () => {
-    const css = await Bun.file(new URL("tools.css", assets)).text();
-    const script = await Bun.file(new URL("ops.js", assets)).text();
+    const css = await readFile(new URL("tools.css", assets), "utf8");
+    const script = await readFile(new URL("ops.js", assets), "utf8");
 
     expect(css).toContain("@media (prefers-reduced-motion: reduce)");
     expect(css).toContain(":focus-visible");

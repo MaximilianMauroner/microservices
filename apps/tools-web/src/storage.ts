@@ -29,7 +29,7 @@ export class CatalogNotFoundError extends Error {
 }
 
 export class CatalogConflictError extends Error {
-  constructor() {
+  constructor(public readonly currentRevision?: string) {
     super("Catalog revision conflict");
     this.name = "CatalogConflictError";
   }
@@ -98,7 +98,7 @@ export class WebStorage {
   ): Promise<CatalogDocument> {
     const stored = await this.readCatalog();
     if (stored.catalog.revision !== expectedRevision) {
-      throw new CatalogConflictError();
+      throw new CatalogConflictError(stored.catalog.revision);
     }
     const now = new Date().toISOString();
     const candidate = decodeCatalogDocument({
@@ -112,7 +112,15 @@ export class WebStorage {
         ifMatch: stored.objectEtag
       });
     } catch (error) {
-      if (error instanceof BucketConflictError) throw new CatalogConflictError();
+      if (error instanceof BucketConflictError) {
+        let currentRevision: string | undefined;
+        try {
+          currentRevision = (await this.readCatalog()).catalog.revision;
+        } catch {
+          // A conflict remains actionable even if the follow-up read fails.
+        }
+        throw new CatalogConflictError(currentRevision);
+      }
       throw error;
     }
     await this.writeAudit(

@@ -12,8 +12,10 @@ Operations routes are same-origin JSON endpoints protected by Cloudflare Access 
 - `POST /api/ops/entries/:id/reorder` with `{ "direction": "up" | "down" }`
 - `POST /api/ops/entries/:id/archive|restore`
 - `POST /api/ops/entries/:id/monitor/pause|resume`
+- `PUT /api/ops/order` remains available for complete programmatic ordering;
+  the browser uses the directional routes above.
 
-Every mutation receives `Content-Type: application/json`, `Accept: application/json`, and `If-Match: "<revision>"`. Successful responses return `{ "revision": "...", "reload": true }`; the current UI reloads after success so server projections remain authoritative. A stale write returns HTTP 409 with `{ "error": "revision_conflict", "revision": "...", "message": "..." }`. The UI never retries a conflict and offers explicit reload or dismiss actions. Validation failures use 400 or 422 and `{ "message": "..." }`.
+Every mutation receives `Content-Type: application/json`, `Accept: application/json`, and `If-Match: "<revision>"`. Successful responses return `{ "revision": "...", "reload": true }`; the current UI reloads after success so server projections remain authoritative. A stale write returns HTTP 409 with `{ "error": "revision_conflict", "revision": "...", "message": "..." }`. The `revision` field can be absent only when the S3 race is followed by a failed catalog read. The UI never retries a conflict and offers explicit reload or dismiss actions. Validation failures use 400 and `{ "error": "invalid_request", "message": "..." }`.
 
 HTML form names are dotted for nested monitor fields. The client converts unchecked checkboxes to `false` and parses the `links` field as JSON before sending. Delete requires typing the exact displayed record name into a modal before a `DELETE` request is sent.
 
