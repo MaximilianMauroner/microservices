@@ -167,6 +167,15 @@ describe("checker run", () => {
 
     expect(store.state?.value.monitors["public-a"]).toBeUndefined();
     expect(store.state?.value.incidents[0].resolvedAt).not.toBeNull();
+    expect(store.state?.value.historyPending).toEqual([]);
+    expect(
+      store.history.get("2026-07-27")?.value.incidents
+    ).toMatchObject([
+      {
+        id: "incident-deleted",
+        resolvedAt: "2026-07-27T12:06:00.000Z"
+      }
+    ]);
     expect(store.state?.value.notifications[0]).toMatchObject({
       displayName: "Deleted Tool",
       status: "delivered"
