@@ -173,6 +173,73 @@ export class PostgresReviewRepository implements ReviewRepository {
       };
     });
   }
+  async reassignScope(
+    candidateId: string,
+    round: number,
+    scope: Scope,
+    now: Date,
+    reviewer: string,
+  ) {
+    return this.sql.begin(async (tx) => {
+      const rows = await tx<
+        {
+          payload: Candidate;
+          kind: RoundKind;
+          verdict_id: string | null;
+          event_count: number;
+        }[]
+      >`SELECT c.payload,r.kind,r.verdict_id,
+          (SELECT COUNT(*)::int FROM verdict_events v WHERE v.candidate_id=c.candidate_id) event_count
+        FROM candidates c JOIN review_rounds r USING(candidate_id)
+        WHERE c.candidate_id=${candidateId} AND r.round=${round}
+        FOR UPDATE OF c,r`;
+      const row = rows[0];
+      if (!row) throw new Error("Candidate not found.");
+      if (
+        round !== 1 ||
+        row.kind !== "initial" ||
+        row.verdict_id ||
+        row.event_count
+      ) {
+        throw new ConflictError(
+          "Scope can only change before the initial review is decided.",
+        );
+      }
+      const candidate = row.payload;
+      if (candidate.scope === scope) {
+        throw new ValidationError("Candidate already has this scope.");
+      }
+      const foundProjectKey =
+        candidate.foundProjectKey ?? candidate.projectKey;
+      const foundProjectDisplayName =
+        candidate.foundProjectDisplayName ?? candidate.projectDisplayName;
+      if (scope === "project" && (!foundProjectKey || !foundProjectDisplayName)) {
+        throw new ValidationError(
+          "This candidate has no associated project to demote to.",
+        );
+      }
+      const changed: Candidate = {
+        ...candidate,
+        scope,
+        ...(scope === "project"
+          ? {
+              projectKey: foundProjectKey,
+              projectDisplayName: foundProjectDisplayName,
+            }
+          : {
+              projectKey: undefined,
+              projectDisplayName: undefined,
+            }),
+        ...(foundProjectKey && foundProjectDisplayName
+          ? { foundProjectKey, foundProjectDisplayName }
+          : {}),
+        scopeChangedAt: now.toISOString(),
+        scopeChangedBy: reviewer,
+      };
+      await tx`UPDATE candidates SET payload=${tx.json(changed)} WHERE candidate_id=${candidateId}`;
+      return changed;
+    });
+  }
   async amendDecision(
     candidateId:string,
     round:number,
