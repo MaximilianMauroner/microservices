@@ -63,9 +63,6 @@ export function renderStatusPage(snapshot: PublicSnapshotDocument): string {
   const entries = [...snapshot.entries].sort(byOrderThenId);
   const overall = overallState(entries, snapshot.statuses);
   const summary = overallSummary(overall);
-  const platformStatus = snapshot.statuses["tools-directory"]
-    ?? snapshot.statuses["artifact-publisher"]
-    ?? snapshot.statuses["field-guide-console"];
   const body = `<div class="status-page status-page--${overall}">
     <main id="main" class="status-wrap status-main">
       <section class="status-hero" aria-labelledby="status-title">
@@ -79,7 +76,7 @@ export function renderStatusPage(snapshot: PublicSnapshotDocument): string {
           <h2 id="services-title">Current status by service</h2>
           <span class="overall-badge overall-badge--${overall}">${statusMark(overall, false)}${summary.badge}</span>
         </header>
-        ${entries.length === 0 ? emptyState() : `<ul class="service-list" role="list">${entries.map((entry) => renderEntry(entry, entry.id === "tools-directory" ? platformStatus : snapshot.statuses[entry.id], snapshot.generatedAt)).join("")}</ul>`}
+        ${entries.length === 0 ? emptyState() : `<ul class="service-list" role="list">${entries.map((entry) => renderEntry(entry, snapshot.statuses[entry.id], snapshot.generatedAt)).join("")}</ul>`}
       </section>
     </main>
     <footer class="status-footer">
@@ -166,7 +163,7 @@ function renderEntry(
         ${statusMark(state, false)}
         <h3>${escapeHtml(entry.name)}</h3>
       </div>
-      <span class="service-state service-state--${uptime.percentage === null ? state : "operational"}">${uptime.label}</span>
+      <span class="service-state service-state--${state}">${uptime.label}</span>
     </div>
     <p class="service-description">${escapeHtml(entry.description)}</p>
     ${uptimeBar(status, generatedAt, uptime)}
@@ -222,8 +219,19 @@ function uptimeSummary(status: PublicMonitorStatus | undefined): UptimeSummary {
     { successfulChecks: 0, totalChecks: 0 }
   );
   if (totals.totalChecks === 0) {
+    const label = status === undefined
+      ? "Not monitored"
+      : status.status === "unavailable"
+        ? "Not measured"
+        : status.status === "down"
+          ? "Unavailable"
+          : status.status === "checking"
+            ? "Checking"
+            : status.status === "paused"
+              ? "Monitoring paused"
+              : "Collecting uptime";
     return {
-      label: status?.status === "unavailable" ? "Not measured" : "Collecting uptime",
+      label,
       percentage: null,
       totalChecks: 0
     };
@@ -258,14 +266,14 @@ function statusDetails(status: PublicMonitorStatus | undefined): string {
   }
   if (!status.checkedAt) {
     return status.status === "unavailable"
-      ? "Checked from its private network"
+      ? "No public check available"
       : "Awaiting first check";
   }
   const metrics = [
     status.latencyMs === null ? null : `${status.latencyMs} ms`,
     status.statusCode === null ? null : `HTTP ${status.statusCode}`
   ].filter((value): value is string => value !== null);
-  return metrics.length > 0 ? metrics.join(" · ") : "Latest check completed";
+  return `Latest check <time datetime="${escapeHtml(status.checkedAt)}">${formatTimestamp(status.checkedAt)}</time>${metrics.length > 0 ? ` · ${metrics.join(" · ")}` : ""}`;
 }
 
 function serviceState(
@@ -299,7 +307,11 @@ function overallState(
   if (monitored.some(({ status }) => status === "checking")) {
     return "attention";
   }
-  if (monitored.some(({ status }) => status === "up")) {
+  if (
+    entries.length > 0 &&
+    monitored.length === entries.length &&
+    monitored.every(({ status }) => status === "up")
+  ) {
     return "operational";
   }
   return "unknown";

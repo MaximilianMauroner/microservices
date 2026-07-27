@@ -19,7 +19,6 @@ export function loadPlatformConfig(env: Environment = process.env) {
     ...env,
     PORT: port,
     PUBLIC_BASE_URL: publicOrigin,
-    SHOO_ALLOWED_EMAIL: undefined,
     ...bucketEnvironment(env, "ARTIFACT")
   });
   const fieldGuide = loadFieldGuideConfig({
@@ -27,9 +26,7 @@ export function loadPlatformConfig(env: Environment = process.env) {
     PORT: port,
     PUBLIC_BASE_URL: publicOrigin,
     DATABASE_BACKEND: "postgres",
-    DATABASE_URL: required(env, "FIELD_GUIDE_DATABASE_URL"),
-    SHOO_ALLOWED_EMAIL:
-      env.FIELD_GUIDE_REVIEWER_EMAIL ?? "access-managed@example.invalid"
+    DATABASE_URL: required(env, "FIELD_GUIDE_DATABASE_URL")
   });
   const checker = loadCheckerConfig({
     ...env,
@@ -39,7 +36,11 @@ export function loadPlatformConfig(env: Environment = process.env) {
   return {
     port: tools.port,
     publicOrigin: tools.trustedOrigin,
-    access: tools.access,
+    access: {
+      issuer: tools.access.issuer,
+      jwksUrl: tools.access.jwksUrl,
+      audience: routeAudiences(env, tools.access.audience)
+    },
     tools,
     artifact,
     fieldGuide,
@@ -50,6 +51,28 @@ export function loadPlatformConfig(env: Environment = process.env) {
       "CHECKER_INTERVAL_MS"
     )
   };
+}
+
+export function routeAudiences(env: Environment, fallback: string[]) {
+  return {
+    manage: optionalAudience(env.CF_ACCESS_MANAGE_AUDIENCE) ?? [fallback[0]!],
+    publisher:
+      optionalAudience(env.CF_ACCESS_PUBLISHER_AUDIENCE) ??
+      [fallback[1] ?? fallback[0]!],
+    review:
+      optionalAudience(env.CF_ACCESS_REVIEW_AUDIENCE) ??
+      [fallback[2] ?? fallback[0]!]
+  };
+}
+
+function optionalAudience(value: string | undefined): string[] | undefined {
+  if (value === undefined) return undefined;
+  const audiences = [...new Set(value.split(",").map((item) => item.trim()))]
+    .filter(Boolean);
+  if (audiences.length === 0) {
+    throw new Error("Route-family Access audience must not be empty");
+  }
+  return audiences;
 }
 
 function bucketEnvironment(env: Environment, prefix: "TOOLS" | "ARTIFACT") {

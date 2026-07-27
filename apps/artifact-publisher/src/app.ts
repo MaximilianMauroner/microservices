@@ -1173,7 +1173,12 @@ function errorHandler(error: unknown, req: Request, res: Response, next: NextFun
       res.status(400).json({ error: "invalid_upload_id", message: "Upload ID is invalid." });
       return;
     }
-    if (pathname.startsWith("/p/") || pathname.startsWith("/f/")) {
+    if (
+      pathname.startsWith("/p/") ||
+      pathname.startsWith("/f/") ||
+      pathname.startsWith("/artifacts/") ||
+      pathname.startsWith("/files/")
+    ) {
       res.sendStatus(404);
       return;
     }

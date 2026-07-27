@@ -1506,6 +1506,8 @@ describe("html publisher", () => {
 
     await request(app).get("/p/%ZZ").expect(404);
     await request(app).get(`/f/${id}/%ZZ`).expect(404);
+    await request(app).get("/artifacts/%ZZ").expect(404);
+    await request(app).get(`/files/${id}/%ZZ`).expect(404);
 
     await request(app).delete("/api/uploads/%ZZ").expect(401);
     const deleteResponse = await request(app)

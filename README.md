@@ -12,7 +12,7 @@ share a single boundary. Shared pure contracts belong in `packages/*`.
 | Artifact publisher | `apps/artifact-publisher` | Railway | Sandboxed planning pages, temporary file uploads, resumable downloads, and revocation. |
 | Field guide console | `apps/field-guide-console` | Railway | Review-only approval and lifecycle history for field-guide lessons. |
 | Network console | `apps/network-console` | Local VM systemd service | Port-80 dashboard for Tailscale address and listening-port discovery. |
-| Tools Web | `apps/tools-web` | Railway Serverless | Public tools directory and Cloudflare Access-protected catalog operations. Sleeps between requests. |
+| Tools Web | `apps/tools-web` | In-process module | Public tools directory and Cloudflare Access-protected catalog operations. |
 | Tools Checker | `jobs/tools-checker` | In-process module | One bounded status/incident/notification pass every five minutes. |
 | Tools Domain | `packages/tools-domain` | Pure TypeScript | Shared schemas, safe projections, URL/IP validation, transitions, and bucket keys. |
 
@@ -24,7 +24,8 @@ bun run test
 bun run verify
 ```
 
-Run an individual component from its package directory, or use the root shortcuts:
+Run an individual component's tests from its package directory. The following
+standalone shortcuts are retained for machine-API and focused development work:
 
 ```bash
 bun run start:artifact-publisher
@@ -34,9 +35,9 @@ bun run start:tools-web
 bun run start:tools-checker
 ```
 
-The root deploys `apps/platform-service` using `/railway.json`. Individual app
-entry points remain useful for focused local development but are not separate
-production services.
+The root deploys `apps/platform-service` using `/railway.json`. Standalone
+Publisher and Field Guide processes do not provide browser authentication:
+their browser routes fail with `503`; use the unified service for browser work.
 
 ## Deployment Notes
 

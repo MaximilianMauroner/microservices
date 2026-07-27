@@ -46,7 +46,7 @@
         "enabled": true,
         "paused": false,
         "scope": "public",
-        "url": "https://tools.mauroner.net/health"
+        "url": "https://tools.mauroner.net/health/publisher"
       },
       "privateNotes": "Runs inside the unified platform service behind Cloudflare Access."
     },
@@ -70,7 +70,7 @@
         "enabled": true,
         "paused": false,
         "scope": "public",
-        "url": "https://tools.mauroner.net/health"
+        "url": "https://tools.mauroner.net/health/review"
       },
       "privateNotes": "Runs inside the unified platform service behind Cloudflare Access."
     },
@@ -102,6 +102,12 @@
           "access": "restricted"
         }
       ],
+      "monitor": {
+        "enabled": true,
+        "paused": false,
+        "scope": "public",
+        "url": "https://tools.mauroner.net/health/tools"
+      },
       "privateNotes": "The unified platform stays awake because it owns the checker scheduler."
     },
     {

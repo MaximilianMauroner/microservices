@@ -15,12 +15,23 @@ import type { Authentication, FetchHandler } from "../../field-guide-console/src
 
 const MAX_FETCH_BODY_BYTES = 512 * 1024;
 
+export interface PlatformAccess {
+  manage: AccessVerifier;
+  publisher: AccessVerifier;
+  review: AccessVerifier;
+}
+
 export function createPlatformApp(options: {
-  access: AccessVerifier;
+  access: PlatformAccess;
   artifact: RequestHandler;
   fieldGuide: FetchHandler;
   tools: FetchHandler;
   health: () => Promise<void>;
+  componentHealth?: {
+    tools: () => Promise<void>;
+    publisher: () => Promise<void>;
+    review: () => Promise<void>;
+  };
   publicOrigin: string;
 }) {
   const app = express();
@@ -41,14 +52,34 @@ export function createPlatformApp(options: {
         .json({ ok: false, error: "dependency_unavailable" });
     }
   });
+  if (options.componentHealth) {
+    for (const [component, check] of Object.entries(options.componentHealth)) {
+      app.get(`/health/${component}`, async (_request, response) => {
+        try {
+          await check();
+          response.set("Cache-Control", "no-store").status(200).json({ ok: true });
+        } catch {
+          response
+            .set("Cache-Control", "no-store")
+            .status(503)
+            .json({ ok: false, error: "dependency_unavailable" });
+        }
+      });
+    }
+  }
 
-  const requireAccess = accessMiddleware(options.access);
+  const requireAccess = {
+    manage: accessMiddleware(options.access.manage),
+    publisher: accessMiddleware(options.access.publisher),
+    review: accessMiddleware(options.access.review)
+  };
   app.use((request, response, next) => {
-    if (isPublicPath(request.path)) {
+    const family = accessFamily(request.path);
+    if (!family) {
       next();
       return;
     }
-    requireAccess(request, response, next);
+    requireAccess[family](request, response, next);
   });
   app.use((request, response, next) => {
     const redirect = legacyBrowserRedirect(request);
@@ -160,6 +191,22 @@ function isPublicPath(path: string): boolean {
     "/assets/tools.css",
     "/api/public/catalog"
   ].includes(path);
+}
+
+function isMachineApiPath(path: string): boolean {
+  return path === "/api/uploads" ||
+    path.startsWith("/api/uploads/") ||
+    path === "/api/agent" ||
+    path.startsWith("/api/agent/");
+}
+
+function accessFamily(
+  path: string
+): keyof PlatformAccess | undefined {
+  if (isPublicPath(path) || isMachineApiPath(path)) return undefined;
+  if (isArtifactPath(path)) return "publisher";
+  if (isFieldGuidePath(path)) return "review";
+  return "manage";
 }
 
 function isFieldGuidePath(path: string): boolean {

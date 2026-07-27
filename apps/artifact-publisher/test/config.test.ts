@@ -64,36 +64,4 @@ describe("runtime config", () => {
     ).toThrow("RAILWAY_PUBLIC_DOMAIN must be a valid domain");
   });
 
-  it("derives Shoo settings from the public URL and allowed email", () => {
-    expect(loadConfig(validConfigEnv()).shoo).toBeUndefined();
-
-    const config = loadConfig(
-      validConfigEnv({
-        PUBLIC_BASE_URL: "https://uploads.example",
-        SHOO_ALLOWED_EMAIL: " Owner@Example.com "
-      })
-    );
-    expect(config.shoo).toEqual({
-      allowedEmail: "owner@example.com",
-      audience: "origin:https://uploads.example",
-      redirectUri: "https://uploads.example/uploads/callback"
-    });
-  });
-
-  it("rejects invalid or originless Shoo settings", () => {
-    expect(() =>
-      loadConfig(validConfigEnv({ SHOO_ALLOWED_EMAIL: "not-an-email" }))
-    ).toThrow(
-      "SHOO_ALLOWED_EMAIL must be a valid email address"
-    );
-    expect(() =>
-      loadConfig(
-        validConfigEnv({
-          SHOO_ALLOWED_EMAIL: "owner@example.com"
-        })
-      )
-    ).toThrow(
-      "PUBLIC_BASE_URL or RAILWAY_PUBLIC_DOMAIN is required when SHOO_ALLOWED_EMAIL is set"
-    );
-  });
 });

@@ -17,7 +17,7 @@ compromised.
    with the last known-good deployment.
 5. If a catalog revision has no corresponding audit object, keep web write
    credentials removed and follow the audit-repair gate in
-   `preview-and-cutover.md`. A failed HTTP response does not prove the catalog
+   `bucket-recovery.md`. A failed HTTP response does not prove the catalog
    write failed.
 
 ## Diagnose
@@ -25,8 +25,8 @@ compromised.
 - Verify the Access applications cover `/publish*`, `/artifacts/*`, `/files/*`,
   `/review*`, `/manage*`, all legacy page aliases, and their protected APIs.
 - Verify `CF_ACCESS_ISSUER` is the exact `*.cloudflareaccess.com` team origin and
-  every comma-separated `CF_ACCESS_AUDIENCE` value belongs to an intended
-  route-family application.
+  `CF_ACCESS_MANAGE_AUDIENCE`, `CF_ACCESS_PUBLISHER_AUDIENCE`, and
+  `CF_ACCESS_REVIEW_AUDIENCE` match their intended route-family applications.
 - Verify the app rejects missing, expired, wrong-issuer, wrong-audience, and
   incorrectly signed assertions. Edge headers alone are never sufficient.
 - Review sanitized request events by request ID. Logs intentionally omit

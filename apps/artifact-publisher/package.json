@@ -19,7 +19,6 @@
     "@tools-platform/suite-chrome": "workspace:*",
     "@aws-sdk/client-s3": "^3.717.0",
     "express": "^4.21.2",
-    "jose": "^6.2.4",
     "multer": "^2.2.0"
   },
   "devDependencies": {

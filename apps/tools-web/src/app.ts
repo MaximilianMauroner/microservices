@@ -125,7 +125,7 @@ async function route(
   if (isProtectedPath(url.pathname)) {
     const actor = await access.verify(request);
     if (
-      request.method === "GET" &&
+      readMethod &&
       (url.pathname === "/manage" || url.pathname.startsWith("/manage/") ||
         url.pathname === "/ops" || url.pathname.startsWith("/ops/"))
     ) {

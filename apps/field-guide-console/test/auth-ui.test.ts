@@ -1,6 +1,5 @@
-import { generateKeyPair, SignJWT, type JWTPayload } from "jose";
 import { describe, expect, it } from "vitest";
-import { agentAuth, shooAuth } from "../src/auth.js";
+import { agentAuth } from "../src/auth.js";
 import type { Authenticator } from "../src/http.js";
 import { reviewConsole } from "../src/ui.js";
 import { responseJson } from "./http-test.js";
@@ -80,76 +79,4 @@ describe("review UI and authentication", () => {
     );
   });
 
-  it("verifies Shoo ES256 issuer, audience, verified email, and exact account", async () => {
-    const { privateKey, publicKey } = await generateKeyPair("ES256");
-    const { privateKey: otherPrivateKey } = await generateKeyPair("ES256");
-    const auth = shooAuth({
-      allowedEmail: "Owner@Example.com",
-      audience: `origin:${origin}`,
-      issuer: "https://shoo.dev/path-ignored",
-      jwks: async () => publicKey,
-    });
-    const token = async (
-      payload: JWTPayload,
-      values: {
-        audience?: string;
-        expirationTime?: string | number;
-        issuer?: string;
-        privateKey?: typeof privateKey;
-      } = {},
-    ) =>
-      new SignJWT(payload)
-        .setProtectedHeader({ alg: "ES256", kid: "test" })
-        .setIssuer(values.issuer ?? "https://shoo.dev")
-        .setAudience(values.audience ?? `origin:${origin}`)
-        .setExpirationTime(values.expirationTime ?? "5m")
-        .sign(values.privateKey ?? privateKey);
-
-    const accepted = await auth(
-      authenticatedRequest(
-        `Bearer ${await token({ email: "owner@example.com", email_verified: true })}`,
-      ),
-    );
-    expect(accepted).toEqual({ ok: true, email: "owner@example.com" });
-
-    for (const payload of [
-      { email: "other@example.com", email_verified: true },
-      { email: "owner@example.com", email_verified: false },
-      { email_verified: true },
-    ]) {
-      const response = await expectRejected(
-        auth,
-        `Bearer ${await token(payload)}`,
-        403,
-      );
-      expect(await responseJson(response)).toMatchObject({
-        error: "shoo_email_not_allowed",
-      });
-    }
-
-    for (const invalid of [
-      await token(
-        { email: "owner@example.com", email_verified: true },
-        { audience: "origin:https://wrong.example" },
-      ),
-      await token(
-        { email: "owner@example.com", email_verified: true },
-        { issuer: "https://issuer.example" },
-      ),
-      await token(
-        { email: "owner@example.com", email_verified: true },
-        { privateKey: otherPrivateKey },
-      ),
-      await token(
-        { email: "owner@example.com", email_verified: true },
-        { expirationTime: Math.floor(Date.now() / 1000) - 60 },
-      ),
-    ]) {
-      const response = await expectRejected(auth, `Bearer ${invalid}`, 401);
-      expect(response.headers.get("www-authenticate")).toBe(
-        'Bearer realm="field-guide-console"',
-      );
-    }
-    await expectRejected(auth, undefined, 401);
-  });
 });

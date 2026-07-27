@@ -1,14 +1,12 @@
-type SharedConfig = { port:number; agentApiToken:string; allowedEmail:string; publicBaseUrl:string };
+type SharedConfig = { port:number; agentApiToken:string; publicBaseUrl:string };
 export type Config = SharedConfig & ({ backend:"sqlite"; sqlitePath:string; databaseUrl?:string; importOnStart:boolean; importAllowOverwrite:boolean } | { backend:"postgres"; databaseUrl:string });
 
 export function loadConfig(env:NodeJS.ProcessEnv=process.env):Config {
   const get=(name:string)=>{const value=env[name]?.trim();if(!value)throw new Error(`Missing required environment variable: ${name}`);return value;};
   const publicBaseUrl=parsePublicBaseUrl(get("PUBLIC_BASE_URL"));
-  const allowedEmail=get("SHOO_ALLOWED_EMAIL").toLowerCase();
-  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(allowedEmail))throw new Error("SHOO_ALLOWED_EMAIL must be a valid email address");
   const port=env.PORT?Number(env.PORT):3000;
   if(!Number.isInteger(port)||port<1||port>65535)throw new Error("PORT must be a valid port");
-  const shared={port,agentApiToken:get("AGENT_API_TOKEN"),allowedEmail,publicBaseUrl};
+  const shared={port,agentApiToken:get("AGENT_API_TOKEN"),publicBaseUrl};
   const backend=env.DATABASE_BACKEND?.trim()||"sqlite";
   if(backend==="postgres")return {...shared,backend,databaseUrl:get("DATABASE_URL")};
   if(backend!=="sqlite")throw new Error("DATABASE_BACKEND must be sqlite or postgres");

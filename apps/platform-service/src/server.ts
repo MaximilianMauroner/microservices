@@ -15,7 +15,23 @@ import { loadPlatformConfig } from "./config.ts";
 import { startAlignedScheduler } from "./scheduler.ts";
 
 const config = loadPlatformConfig();
-const access = createAccessVerifier(config.access);
+const access = {
+  manage: createAccessVerifier({
+    issuer: config.access.issuer,
+    jwksUrl: config.access.jwksUrl,
+    audience: config.access.audience.manage
+  }),
+  publisher: createAccessVerifier({
+    issuer: config.access.issuer,
+    jwksUrl: config.access.jwksUrl,
+    audience: config.access.audience.publisher
+  }),
+  review: createAccessVerifier({
+    issuer: config.access.issuer,
+    jwksUrl: config.access.jwksUrl,
+    audience: config.access.audience.review
+  })
+};
 const toolsStorage = new WebStorage(createS3JsonBucket(config.tools.bucket));
 const artifactStorage = createS3UploadStorage(config.artifact.s3);
 const activityTracker = new ActivityTracker();
@@ -26,7 +42,7 @@ const stylesheet = await readFile(
 
 const tools = createToolsApp({
   storage: toolsStorage,
-  access,
+  access: access.manage,
   trustedOrigin: config.publicOrigin
 });
 const fieldGuide = createFieldGuideApp({
@@ -34,7 +50,7 @@ const fieldGuide = createFieldGuideApp({
   agentAuth: (await import("../../field-guide-console/src/auth.ts")).agentAuth(
     config.fieldGuide.agentApiToken
   ),
-  reviewerAuth: accessAuthentication(access),
+  reviewerAuth: accessAuthentication(access.review),
   publicBaseUrl: config.publicOrigin,
   stylesheet
 });
@@ -59,6 +75,15 @@ const app = createPlatformApp({
   fieldGuide,
   tools,
   publicOrigin: config.publicOrigin,
+  componentHealth: {
+    tools: () => toolsStorage.readiness(),
+    publisher: async () => {
+      await artifactStorage.listUploads(new Date(), { limit: 1 });
+    },
+    review: async () => {
+      await fieldGuideHandle.repository.summary(new Date());
+    }
+  },
   health: async () => {
     await Promise.all([
       toolsStorage.readiness(),

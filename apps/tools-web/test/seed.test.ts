@@ -33,8 +33,14 @@ describe("initial catalog", () => {
     expect(catalog.entries).toHaveLength(4);
     expect(catalog.entries.some(({ id }) => id === "tools-checker")).toBe(false);
     expect(
-      catalog.entries.find(({ id }) => id === "tools-directory")?.monitor
-    ).toBeUndefined();
+      Object.fromEntries(
+        catalog.entries.map(({ id, monitor }) => [id, monitor?.url]),
+      ),
+    ).toMatchObject({
+      "artifact-publisher": "https://tools.mauroner.net/health/publisher",
+      "field-guide-console": "https://tools.mauroner.net/health/review",
+      "tools-directory": "https://tools.mauroner.net/health/tools",
+    });
     expect(
       catalog.entries.find(({ id }) => id === "artifact-publisher")?.monitor
         ?.paused

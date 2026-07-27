@@ -25,6 +25,7 @@ export function createApp(options: {
   agentAuth: Authenticator;
   reviewerAuth: Authenticator;
   publicBaseUrl: string;
+  browserUi?: boolean;
   stylesheet?: BodyInit | Blob;
   now?: () => Date;
 }): FetchHandler {
@@ -38,9 +39,23 @@ export function createApp(options: {
       const url = new URL(request.url);
       const parsedBody = await parseBody(request);
       const pathname = normalizePath(url.pathname);
+      const browserUi = options.browserUi !== false;
 
       if (method === "GET" && routeIs(pathname, "/health"))
         response = jsonResponse({ ok: true });
+      if (
+        response === undefined &&
+        !browserUi &&
+        (routeIs(pathname, "/") ||
+          isPrefix(pathname, "/review") ||
+          routeIs(pathname, "/review.css") ||
+          routeIs(pathname, "/review-suite.css") ||
+          isPrefix(pathname, "/api/review"))
+      )
+        response = textResponse(
+          "The review browser is available only through the unified Mauroner Tools service.",
+          { status: 503 },
+        );
       if (
         response === undefined &&
         method === "GET" &&

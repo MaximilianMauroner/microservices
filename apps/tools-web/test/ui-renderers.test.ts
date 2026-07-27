@@ -172,13 +172,16 @@ describe("public page", () => {
     expect(html).toContain('aria-labelledby="status-title"');
     expect(html).toContain('aria-labelledby="services-title"');
     expect(html).toContain('role="list"');
-    expect(html).toContain("All services are operational");
+    expect(html).toContain("Status is being prepared");
+    expect(html).not.toContain("All services are operational");
     expect(html).toContain("Operational");
     expect(html).toContain("Private check");
     expect(html).toContain("98% uptime");
     expect(html).toContain("100 checks");
     expect(html).toContain('href="/status" aria-current="page"');
     expect(html).toContain("Access protected");
+    expect(html).toContain("No public check available");
+    expect(html).toContain('datetime="2026-07-27T12:00:00.000Z"');
     expect((html.match(/class="uptime-day /g) ?? [])).toHaveLength(180);
     expect(html).not.toContain('<script src="/assets/ops.js"');
     expect(html).not.toContain("Operator sign-in");
@@ -217,7 +220,7 @@ describe("public page", () => {
     expect(html).not.toContain("raw-discord-error");
   });
 
-  test("uses the consolidated platform check for the Tools Directory row", () => {
+  test("does not borrow another component status for the Tools Directory row", () => {
     const html = renderStatusPage({
       ...publicSnapshot,
       entries: [
@@ -235,12 +238,30 @@ describe("public page", () => {
 
     expect(html).toContain("Tools Status &amp; Directory");
     expect(html).toMatch(
-      /<h3>Tools Status &amp; Directory<\/h3>[\s\S]*?<span class="service-state[^"]*">98% uptime<\/span>/
+      /<h3>Tools Status &amp; Directory<\/h3>[\s\S]*?<span class="service-state[^"]*">Not monitored<\/span>/
     );
-    expect(html).not.toContain("Collecting uptime");
+    expect(html).toContain("Status is being prepared");
   });
 
-  test("promotes an unavailable monitor to the page-level incident state", () => {
+  test("uses operational overall state only when every listed service is known up", () => {
+    const html = renderStatusPage({
+      ...publicSnapshot,
+      statuses: {
+        ...publicSnapshot.statuses,
+        "network-console": {
+          ...publicSnapshot.statuses["network-console"],
+          status: "up",
+          checkedAt: generatedAt,
+          latencyMs: 51,
+          statusCode: 200
+        }
+      }
+    });
+
+    expect(html).toContain("All services are operational");
+  });
+
+  test("promotes an outage and zero-percent history without operational styling", () => {
     const html = renderStatusPage({
       ...publicSnapshot,
       statuses: {
@@ -262,6 +283,33 @@ describe("public page", () => {
     expect(html).toContain("Some services are unavailable");
     expect(html).toContain("Service interruption");
     expect(html).toContain("uptime-day--outage");
+    expect(html).toMatch(
+      /<span class="service-state service-state--outage">0% uptime<\/span>/
+    );
+    expect(html).not.toMatch(
+      /<span class="service-state service-state--operational">0% uptime<\/span>/
+    );
+  });
+
+  test("distinguishes stale service observations from snapshot generation", () => {
+    const html = renderStatusPage({
+      ...publicSnapshot,
+      generatedAt: "2026-07-27T15:30:00.000Z",
+      statuses: {
+        ...publicSnapshot.statuses,
+        "artifact-publisher": {
+          ...publicSnapshot.statuses["artifact-publisher"],
+          checkedAt: "2026-07-26T09:15:00.000Z"
+        }
+      }
+    });
+
+    expect(html).toContain(
+      'Last updated <time datetime="2026-07-27T15:30:00.000Z"'
+    );
+    expect(html).toContain(
+      'Latest check <time datetime="2026-07-26T09:15:00.000Z"'
+    );
   });
 });
 
