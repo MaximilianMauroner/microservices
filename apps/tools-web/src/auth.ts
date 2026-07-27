@@ -21,7 +21,7 @@ export class AccessDeniedError extends Error {
 
 export function createAccessVerifier(config: {
   issuer: string;
-  audience: string;
+  audience: string | string[];
   jwksUrl: string;
   key?: JWTVerifyGetKey;
 }): AccessVerifier {

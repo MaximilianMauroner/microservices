@@ -84,6 +84,13 @@ export interface MonitorState {
   consecutiveFailures: number;
   latestObservation: CheckObservation | null;
   openIncidentId: string | null;
+  uptimeDays?: UptimeDay[];
+}
+
+export interface UptimeDay {
+  day: string;
+  successfulChecks: number;
+  totalChecks: number;
 }
 
 export interface Incident {
@@ -154,6 +161,7 @@ export interface PublicMonitorStatus {
   checkedAt: string | null;
   latencyMs: number | null;
   statusCode: number | null;
+  uptimeDays?: UptimeDay[];
 }
 
 export interface PublicSnapshotDocument {

@@ -29,8 +29,9 @@ production export in place.
 
 ## Recovery
 
-1. Disable the checker cron and place the admin UI in read-only operational
-   mode by removing its bucket write credentials.
+1. Stop the unified `platform-service` deployment to halt its in-process
+   scheduler and all web writes. Route the public origin to a maintenance
+   response; do not run a second platform replica during recovery.
 2. Export the damaged state before changing it.
 3. Select a recovery object whose schema version is supported and whose catalog
    revision matches the intended snapshot.
@@ -39,8 +40,9 @@ production export in place.
 5. Re-read and decode the object, then compare its ETag/hash.
 6. For catalog recovery, preserve existing audit objects and append an operator
    incident note outside the bucket; audit objects are immutable.
-7. Run one manual checker pass with Discord unset. Verify public/private
-   projections before restoring notifications and cron.
+7. Restart one unified platform replica with Discord unset. Wait for one
+   aligned in-process checker pass, then verify the public/private projections.
+   Restore notifications and normal traffic only after that pass succeeds.
 
 If `catalog/current.json` is missing, initialize it from the reviewed seed with
 a create-only conditional write. Never use the seed to overwrite an existing

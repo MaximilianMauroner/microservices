@@ -501,7 +501,10 @@ function parseMonitorState(value: unknown, path: string): MonitorState {
     openIncidentId:
       item.openIncidentId === null
         ? null
-        : identifier(item.openIncidentId, `${path}.openIncidentId`)
+        : identifier(item.openIncidentId, `${path}.openIncidentId`),
+    ...(item.uptimeDays === undefined
+      ? {}
+      : { uptimeDays: parseUptimeDays(item.uptimeDays, `${path}.uptimeDays`) })
   };
 }
 
@@ -663,8 +666,45 @@ function parsePublicStatus(
     statusCode:
       item.statusCode === null
         ? null
-        : nonnegativeInteger(item.statusCode, `${path}.statusCode`)
+        : nonnegativeInteger(item.statusCode, `${path}.statusCode`),
+    ...(item.uptimeDays === undefined
+      ? {}
+      : { uptimeDays: parseUptimeDays(item.uptimeDays, `${path}.uptimeDays`) })
   };
+}
+
+function parseUptimeDays(
+  value: unknown,
+  path: string
+): NonNullable<MonitorState["uptimeDays"]> {
+  const days = array(value, path).map((dayValue, index) => {
+    const dayPath = `${path}[${index}]`;
+    const item = record(dayValue, dayPath);
+    const successfulChecks = nonnegativeInteger(
+      item.successfulChecks,
+      `${dayPath}.successfulChecks`
+    );
+    const totalChecks = nonnegativeInteger(
+      item.totalChecks,
+      `${dayPath}.totalChecks`
+    );
+    if (totalChecks === 0 || successfulChecks > totalChecks) {
+      throw new SchemaDecodeError(
+        dayPath,
+        "must contain between zero and totalChecks successful checks, with at least one total check"
+      );
+    }
+    return {
+      day: calendarDay(item.day, `${dayPath}.day`),
+      successfulChecks,
+      totalChecks
+    };
+  });
+  unique(days.map(({ day }) => day), path);
+  if (days.length > 90) {
+    throw new SchemaDecodeError(path, "must not contain more than 90 days");
+  }
+  return days.sort((left, right) => left.day.localeCompare(right.day));
 }
 
 function record(value: unknown, path: string): JsonRecord {

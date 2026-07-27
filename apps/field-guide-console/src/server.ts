@@ -1,5 +1,5 @@
 import { createApp } from "./app.js";
-import { agentAuth, shooAuth } from "./auth.js";
+import { agentAuth } from "./auth.js";
 import { loadConfig, type Config } from "./config.js";
 import { createGracefulShutdown } from "./lifecycle.js";
 import type { RepositoryHandle } from "./repository.js";
@@ -40,11 +40,18 @@ export async function startServer(
     const app = createApp({
       repository: handle.repository,
       agentAuth: agentAuth(config.agentApiToken),
-      reviewerAuth: shooAuth({
-        allowedEmail: config.allowedEmail,
-        audience: `origin:${config.publicBaseUrl}`,
+      reviewerAuth: () => ({
+        ok: false,
+        response: new Response(
+          JSON.stringify({ error: "unified_browser_required" }),
+          {
+            status: 503,
+            headers: { "Content-Type": "application/json; charset=utf-8" },
+          },
+        ),
       }),
       publicBaseUrl: config.publicBaseUrl,
+      browserUi: false,
       stylesheet,
     });
     const serve: Serve = dependencies.serve ?? ((options) => Bun.serve(options));

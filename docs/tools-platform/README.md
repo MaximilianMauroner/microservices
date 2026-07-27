@@ -3,8 +3,8 @@
 These runbooks cover the migration from the Cloudflare uptime Worker to the
 Railway Tools Platform:
 
-- [preview-and-cutover.md](./preview-and-cutover.md) — isolated preview,
-  checker shadow operation, production cutover, Worker retirement, and rollback.
+- [preview-and-cutover.md](./preview-and-cutover.md) — short migration notice
+  pointing old split-deployment operators to the unified runbook.
 - [bucket-recovery.md](./bucket-recovery.md) — object ownership, export, restore,
   and corruption recovery.
 - [access-incident.md](./access-incident.md) — Cloudflare Access containment and
@@ -13,21 +13,21 @@ Railway Tools Platform:
   changes without breaking stable URLs.
 - [uptime-parity-audit.md](./uptime-parity-audit.md) — evidence used before
   deleting the legacy Worker source.
+- [consolidation-cutover.md](./consolidation-cutover.md) — current
+  single-service deployment, Access routing, verification, and rollback.
 
-The architecture has two deliberately different Railway processes:
+The production architecture has one Railway process: `platform-service` mounts
+the catalog, publisher, and field-guide routes and runs the bounded checker on
+five-minute boundaries. The redacted Tools home and status surface are public;
+Cloudflare Access is the outer authentication layer for Publish,
+artifact/file delivery, Review, Manage, and their legacy browser aliases.
+Native upload and agent automation routes bypass browser Access and continue to
+use their existing bearer credentials.
 
-- `tools-web` is a Serverless-enabled request/response service. It has no
-  scheduler, background polling, analytics, or telemetry loop and can sleep.
-- `tools-checker` is a short-lived cron process scheduled at `*/5 * * * *`. It
-  performs one bounded pass and exits.
-
-Both use one private bucket, but ownership is enforced in code. Web writes only
+The catalog and checker use one private bucket, but ownership is enforced in code. Web writes only
 `catalog/current.json` and immutable `audit/**` objects. Checker writes only
 state, snapshots, history, recovery, and export prefixes.
 
-The low-traffic planning estimate is roughly $0.30–$1.50/month incremental, not
-a billing guarantee. The proposed preview cap is 0.25 vCPU and 256 MB RAM per
-Tools service, with a $2/month project usage alert owned by Maximilian. These
-are external Railway gates, not configuration completed in this repository.
-Capture evidence before cutover and review actual usage after 24 hours and
-again after one billing week.
+The unified service cannot use Railway Serverless sleep because it owns the
+checker schedule. Review actual usage after 24 hours and again after one
+billing week.

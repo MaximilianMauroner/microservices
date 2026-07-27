@@ -50,15 +50,44 @@ describe("snapshot projection", () => {
       status: "up",
       checkedAt: NOW,
       latencyMs: 42,
-      statusCode: 200
+      statusCode: 200,
+      uptimeDays: [
+        {
+          day: "2026-07-27",
+          successfulChecks: 99,
+          totalChecks: 100
+        }
+      ]
     });
     expect(snapshot.statuses["tailnet-tool"]).toEqual({
       monitorId: "tailnet-tool",
       status: "unavailable",
       checkedAt: null,
       latencyMs: null,
-      statusCode: null
+      statusCode: null,
+      uptimeDays: []
     });
+  });
+
+  it("projects only the current rolling 90 UTC days for paused monitors", () => {
+    const state = stateFixture();
+    const monitor = state.monitors["public-tool"];
+    if (!monitor) throw new Error("Fixture monitor is missing");
+    monitor.status = "paused";
+    monitor.uptimeDays = [
+      { day: "2026-04-28", successfulChecks: 100, totalChecks: 100 },
+      { day: "2026-04-29", successfulChecks: 1, totalChecks: 2 },
+      { day: "2026-07-27", successfulChecks: 2, totalChecks: 2 },
+      { day: "2026-07-28", successfulChecks: 100, totalChecks: 100 },
+    ];
+
+    expect(
+      projectPublicSnapshot(catalogFixture(), state, NOW)
+        .statuses["public-tool"]?.uptimeDays,
+    ).toEqual([
+      { day: "2026-04-29", successfulChecks: 1, totalChecks: 2 },
+      { day: "2026-07-27", successfulChecks: 2, totalChecks: 2 },
+    ]);
   });
 
   it("retains full admin state only in the private snapshot", () => {

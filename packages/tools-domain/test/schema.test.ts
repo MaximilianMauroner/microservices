@@ -148,6 +148,44 @@ describe("schema decoding and migration", () => {
     ).toMatchObject({ generatedAt: NOW });
   });
 
+  it("validates bounded per-day uptime aggregates", () => {
+    const snapshot = {
+      schemaVersion: 1,
+      generatedAt: NOW,
+      catalogRevision: "catalog-1",
+      groups: [],
+      entries: [],
+      statuses: {
+        tool: {
+          monitorId: "tool",
+          status: "up",
+          checkedAt: NOW,
+          latencyMs: 10,
+          statusCode: 200,
+          uptimeDays: [
+            { day: "2026-07-27", successfulChecks: 11, totalChecks: 12 }
+          ]
+        }
+      }
+    };
+    expect(
+      decodePublicSnapshotDocument(snapshot).statuses.tool.uptimeDays
+    ).toEqual(snapshot.statuses.tool.uptimeDays);
+    expect(() =>
+      decodePublicSnapshotDocument({
+        ...snapshot,
+        statuses: {
+          tool: {
+            ...snapshot.statuses.tool,
+            uptimeDays: [
+              { day: "2026-07-27", successfulChecks: 13, totalChecks: 12 }
+            ]
+          }
+        }
+      })
+    ).toThrow(/successful checks/);
+  });
+
   it("migrates and decodes daily history partitions", () => {
     const observation =
       stateFixture().monitors["public-tool"].latestObservation;

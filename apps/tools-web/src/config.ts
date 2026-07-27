@@ -11,7 +11,7 @@ export interface ToolsWebConfig {
   };
   access: {
     issuer: string;
-    audience: string;
+    audience: string[];
     jwksUrl: string;
   };
 }
@@ -41,12 +41,21 @@ export function loadConfig(
     },
     access: {
       issuer,
-      audience: required(env, "CF_ACCESS_AUDIENCE"),
+      audience: parseAudience(required(env, "CF_ACCESS_AUDIENCE")),
       jwksUrl: env.CF_ACCESS_JWKS_URL
         ? parseHttpsUrl(env.CF_ACCESS_JWKS_URL, "CF_ACCESS_JWKS_URL")
         : new URL("/cdn-cgi/access/certs", issuer).toString()
     }
   };
+}
+
+function parseAudience(value: string): string[] {
+  const audiences = [...new Set(value.split(",").map((item) => item.trim()))]
+    .filter(Boolean);
+  if (audiences.length === 0) {
+    throw new Error("CF_ACCESS_AUDIENCE must contain at least one audience tag");
+  }
+  return audiences;
 }
 
 function required(
