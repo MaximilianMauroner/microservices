@@ -7,14 +7,23 @@
   ],
   "scripts": {
     "build": "cd services/html-publisher && bun run build",
+    "lint": "bun run lint:uptime-monitor",
+    "lint:uptime-monitor": "cd services/uptime-monitor && bun run lint",
+    "start:field-guide-review": "cd services/field-guide-review && bun run start",
     "start:html-publisher": "cd services/html-publisher && bun run start",
     "start:tailscale-port-dashboard": "cd services/tailscale-port-dashboard && bun run start",
-    "test": "bun run test:html-publisher && bun run test:tailscale-port-dashboard",
+    "start:uptime-monitor": "cd services/uptime-monitor && bun run dev",
+    "test": "bun run test:field-guide-review && bun run test:html-publisher && bun run test:tailscale-port-dashboard && bun run test:uptime-monitor",
+    "test:field-guide-review": "cd services/field-guide-review && bun run test",
     "test:html-publisher": "cd services/html-publisher && bun run test",
     "test:tailscale-port-dashboard": "cd services/tailscale-port-dashboard && bun run test",
-    "typecheck": "bun run typecheck:html-publisher && bun run typecheck:tailscale-port-dashboard",
+    "test:uptime-monitor": "cd services/uptime-monitor && bun run test",
+    "typecheck": "bun run typecheck:field-guide-review && bun run typecheck:html-publisher && bun run typecheck:tailscale-port-dashboard && bun run typecheck:uptime-monitor",
+    "typecheck:field-guide-review": "cd services/field-guide-review && bun run typecheck",
     "typecheck:html-publisher": "cd services/html-publisher && bun run typecheck",
-    "typecheck:tailscale-port-dashboard": "cd services/tailscale-port-dashboard && bun run typecheck"
+    "typecheck:tailscale-port-dashboard": "cd services/tailscale-port-dashboard && bun run typecheck",
+    "typecheck:uptime-monitor": "cd services/uptime-monitor && bun run typecheck",
+    "verify": "bun run lint && bun run typecheck && bun run test"
   },
   "devDependencies": {
     "@typescript/native": "npm:typescript@7.0.2",

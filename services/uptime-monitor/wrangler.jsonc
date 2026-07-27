@@ -1,0 +1,28 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "uptime-monitor-local-dev",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-07-15",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": { "directory": "./dist/client", "binding": "ASSETS", "run_worker_first": ["/api/*"] },
+  "workers_dev": false,
+  "d1_databases": [{ "binding": "DB", "database_name": "uptime-monitor-local", "database_id": "local", "migrations_dir": "migrations" }],
+  "vars": { "ENVIRONMENT": "local", "ACCESS_TEAM_DOMAIN": "https://local.invalid", "ACCESS_AUD": "local", "DASHBOARD_URL": "http://localhost:5173" },
+  "env": {
+    "preview": {
+      "name": "uptime-monitor-preview",
+      "workers_dev": false,
+      "triggers": { "crons": ["* * * * *"] },
+      "d1_databases": [{ "binding": "DB", "database_name": "uptime-monitor-preview", "database_id": "REPLACE_WITH_PREVIEW_D1_ID", "migrations_dir": "migrations" }],
+      "vars": { "ENVIRONMENT": "preview", "ACCESS_TEAM_DOMAIN": "https://REPLACE_WITH_TEAM.cloudflareaccess.com", "ACCESS_AUD": "REPLACE_WITH_PREVIEW_ACCESS_AUD", "DASHBOARD_URL": "https://REPLACE_WITH_PREVIEW_HOST" }
+    },
+    "production": {
+      "name": "uptime-monitor",
+      "workers_dev": false,
+      "routes": [{ "pattern": "uptime.mauroner.eu", "custom_domain": true }],
+      "triggers": { "crons": ["* * * * *"] },
+      "d1_databases": [{ "binding": "DB", "database_name": "uptime-monitor", "database_id": "b8334e4d-d77f-4b60-9045-c1e21464925b", "migrations_dir": "migrations" }],
+      "vars": { "ENVIRONMENT": "production", "ACCESS_TEAM_DOMAIN": "https://tt-dl.cloudflareaccess.com", "ACCESS_AUD": "20fce5cc10bad892621167c46ab17992835e40fc9fc899f21e423da6d5745c37", "DASHBOARD_URL": "https://uptime.mauroner.eu" }
+    }
+  }
+}
