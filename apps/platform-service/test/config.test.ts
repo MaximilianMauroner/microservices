@@ -10,7 +10,7 @@ describe("platform route-family Access audiences", () => {
     });
   });
 
-  it("uses the first legacy audience when older config provides only one", () => {
+  it("keeps a shared legacy audience available only outside production", () => {
     expect(routeAudiences({}, ["shared"])).toEqual({
       manage: ["shared"],
       publisher: ["shared"],
@@ -18,26 +18,61 @@ describe("platform route-family Access audiences", () => {
     });
   });
 
-  it("prefers explicit, deduplicated route-family overrides", () => {
+  it("accepts explicit, distinct route-family audiences", () => {
     expect(
       routeAudiences(
         {
-          CF_ACCESS_MANAGE_AUDIENCE: "manage-a, manage-b, manage-a",
+          CF_ACCESS_MANAGE_AUDIENCE: "manage",
           CF_ACCESS_PUBLISHER_AUDIENCE: "publisher",
           CF_ACCESS_REVIEW_AUDIENCE: "review",
         },
         ["legacy"],
       ),
     ).toEqual({
-      manage: ["manage-a", "manage-b"],
+      manage: ["manage"],
       publisher: ["publisher"],
       review: ["review"],
     });
   });
 
-  it("rejects empty explicit overrides", () => {
+  it("fails closed when production family audiences are missing or incomplete", () => {
     expect(() =>
-      routeAudiences({ CF_ACCESS_REVIEW_AUDIENCE: " , " }, ["legacy"]),
-    ).toThrow("Route-family Access audience must not be empty");
+      routeAudiences({ NODE_ENV: "production" }, ["legacy-a", "legacy-b", "legacy-c"]),
+    ).toThrow("CF_ACCESS_MANAGE_AUDIENCE is required");
+    expect(() =>
+      routeAudiences(
+        {
+          NODE_ENV: "production",
+          CF_ACCESS_MANAGE_AUDIENCE: "manage",
+          CF_ACCESS_PUBLISHER_AUDIENCE: "publisher",
+        },
+        ["legacy-a", "legacy-b", "legacy-c"],
+      ),
+    ).toThrow("CF_ACCESS_REVIEW_AUDIENCE is required");
+  });
+
+  it("rejects ambiguous or overlapping explicit family audiences", () => {
+    expect(() =>
+      routeAudiences(
+        {
+          NODE_ENV: "production",
+          CF_ACCESS_MANAGE_AUDIENCE: "manage-a,manage-b",
+          CF_ACCESS_PUBLISHER_AUDIENCE: "publisher",
+          CF_ACCESS_REVIEW_AUDIENCE: "review",
+        },
+        [],
+      ),
+    ).toThrow("must contain exactly one audience tag");
+    expect(() =>
+      routeAudiences(
+        {
+          NODE_ENV: "production",
+          CF_ACCESS_MANAGE_AUDIENCE: "shared",
+          CF_ACCESS_PUBLISHER_AUDIENCE: "shared",
+          CF_ACCESS_REVIEW_AUDIENCE: "review",
+        },
+        [],
+      ),
+    ).toThrow("overlaps manage and publisher");
   });
 });

@@ -181,8 +181,12 @@ describe("platform gateway", () => {
       ["/publish", "manage-audience"],
       ["/publish", "review-audience"],
       ["/artifacts/01234567890123456789012345678901", "review-audience"],
+      ["/uploads", "manage-audience"],
+      ["/p/01234567890123456789012345678901", "review-audience"],
+      ["/f/01234567890123456789012345678901/report.pdf", "manage-audience"],
       ["/review", "manage-audience"],
-      ["/review", "publisher-audience"]
+      ["/review", "publisher-audience"],
+      ["/ops", "publisher-audience"]
     ] as const;
     for (const [path, audience] of cases) {
       await request(app())

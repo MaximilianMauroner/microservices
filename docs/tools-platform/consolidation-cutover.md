@@ -10,20 +10,18 @@ bucket, artifact bucket, and field-guide PostgreSQL database remain in place.
    redacted catalog, current monitor state, and aggregated 90-day check counts.
 2. Self-hosted Access applications group routes that share a browser session:
    Manage (`/manage`, `/manage/*`, legacy `/ops*`, `/api/ops/*`), Publisher
-   (`/publish`, `/publish/*`, legacy `/uploads*`,
-   `/api/external-uploads`), Artifact Content (`/artifacts/*`, `/files/*`,
-   legacy `/p/*`, legacy `/f/*`), and Field Guide (`/review`, `/review/*`,
-   `/review.css`, `/review-suite.css`, `/api/review/*`).
-   This split stays within Cloudflare's five-destination limit while keeping
-   each UI with its APIs.
+   (`/publish`, `/publish/*`, legacy `/uploads*`, `/api/external-uploads`,
+   `/artifacts/*`, `/files/*`, legacy `/p/*`, legacy `/f/*`), and Field Guide
+   (`/review`, `/review/*`, `/review.css`, `/review-suite.css`,
+   `/api/review/*`). These are the same three families enforced by the origin.
 3. The human Allow policy includes only the intended operator identity. Opening
    `/manage` from the public Tools page therefore starts the Cloudflare Access
    identity-provider flow before the request reaches Railway.
 4. Railway validates the `Cf-Access-Jwt-Assertion` signature, issuer, and the
    route-family audience again at the origin. Set
    `CF_ACCESS_MANAGE_AUDIENCE`, `CF_ACCESS_PUBLISHER_AUDIENCE`, and
-   `CF_ACCESS_REVIEW_AUDIENCE`; `CF_ACCESS_AUDIENCE` is only the ordered
-   compatibility fallback. Cross-family assertions fail closed.
+   `CF_ACCESS_REVIEW_AUDIENCE` to one distinct tag each. Production startup
+   rejects missing, multiple, or overlapping family tags.
 5. `/api/uploads*` and `/api/agent*` are machine APIs. Do not put them behind
    browser Access; they retain their native upload and agent bearer tokens.
 6. The checker probes `/health/tools`, `/health/publisher`, and

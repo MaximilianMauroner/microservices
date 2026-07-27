@@ -33,7 +33,6 @@ describe("review UI and authentication", () => {
     const html = await response.text();
     expect(html).toContain("Cloudflare Access protects this review desk");
     expect(html).toContain("/cdn-cgi/access/logout");
-    expect(html).not.toContain("Shoo.startSignIn");
     expect(html).toContain('data-scope="project"');
     expect(html).toContain('data-scope="global"');
     expect(html).toContain('data-view="history"');

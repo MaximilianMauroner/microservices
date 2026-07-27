@@ -175,12 +175,11 @@ describe("public page", () => {
     expect(html).toContain("Status is being prepared");
     expect(html).not.toContain("All services are operational");
     expect(html).toContain("Operational");
-    expect(html).toContain("Private check");
+    expect(html).toContain("Not checkable from Railway");
     expect(html).toContain("98% uptime");
     expect(html).toContain("100 checks");
     expect(html).toContain('href="/status" aria-current="page"');
     expect(html).toContain("Access protected");
-    expect(html).toContain("No public check available");
     expect(html).toContain('datetime="2026-07-27T12:00:00.000Z"');
     expect((html.match(/class="uptime-day /g) ?? [])).toHaveLength(180);
     expect(html).not.toContain('<script src="/assets/ops.js"');
@@ -289,6 +288,29 @@ describe("public page", () => {
     expect(html).not.toMatch(
       /<span class="service-state service-state--operational">0% uptime<\/span>/
     );
+  });
+
+  test("excludes stale and future checks from paused rolling uptime", () => {
+    const html = renderStatusPage({
+      ...publicSnapshot,
+      statuses: {
+        ...publicSnapshot.statuses,
+        "artifact-publisher": {
+          ...publicSnapshot.statuses["artifact-publisher"],
+          status: "paused",
+          uptimeDays: [
+            { day: "2026-04-28", successfulChecks: 100, totalChecks: 100 },
+            { day: "2026-04-29", successfulChecks: 1, totalChecks: 2 },
+            { day: "2026-07-27", successfulChecks: 2, totalChecks: 2 },
+            { day: "2026-07-28", successfulChecks: 100, totalChecks: 100 },
+          ],
+        },
+      },
+    });
+
+    expect(html).toContain("75% uptime");
+    expect(html).toContain("across 4 checks");
+    expect(html).not.toContain("across 204 checks");
   });
 
   test("distinguishes stale service observations from snapshot generation", () => {

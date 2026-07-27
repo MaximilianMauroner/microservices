@@ -14,13 +14,14 @@ writer ownership enforced in code.
 Required platform Access variables:
 
 - `CF_ACCESS_ISSUER`
-- `CF_ACCESS_AUDIENCE`, retained as an ordered compatibility fallback
+- `CF_ACCESS_AUDIENCE`, an ordered fallback for non-production development only
 - `CF_ACCESS_MANAGE_AUDIENCE`
 - `CF_ACCESS_PUBLISHER_AUDIENCE`
 - `CF_ACCESS_REVIEW_AUDIENCE`
 - `CF_ACCESS_JWKS_URL`, optional
 
-Configure distinct route-family audiences in production. The application
+Production fails startup unless all three route-family variables contain one
+unique tag each. The application
 validates the signature, issuer, family audience, expiry, and actor before
 dispatching protected browser routes. Native-token `/api/uploads*` and
 `/api/agent*` routes intentionally bypass browser Access and still require

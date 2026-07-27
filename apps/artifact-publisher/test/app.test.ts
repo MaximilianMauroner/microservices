@@ -519,8 +519,7 @@ function setup(
     uploadToken: "test-upload-token",
     externalUpload: options.externalUploadAuth
       ? {
-          auth: options.externalUploadAuth,
-          redirectUri: "https://html.example/uploads/callback"
+          auth: options.externalUploadAuth
         }
       : undefined,
     publicBaseUrl: "https://html.example",
@@ -732,7 +731,6 @@ describe("html publisher", () => {
     expect(page.headers["cache-control"]).toBe("private, no-store");
     expect(page.text).toContain("Temporary uploads");
     expect(page.text).toContain("Files expire after 3 days.");
-    expect(page.text).not.toContain("https://shoo.dev");
     expect(page.text).toContain("Cloudflare Access");
     expect(page.text).toContain('aria-current="page">Publish');
     expect(page.text).toContain('class="suite-skip skip-link"');

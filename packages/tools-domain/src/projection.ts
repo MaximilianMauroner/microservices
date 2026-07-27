@@ -81,8 +81,8 @@ export function projectPublicSnapshot(
         : (monitor?.latestObservation?.statusCode ?? null),
       uptimeDays: unavailable
         ? []
-        : [...(monitor?.uptimeDays ?? [])].sort((left, right) =>
-            left.day.localeCompare(right.day)
+        : rollingUptimeDays(monitor?.uptimeDays ?? [], generatedAt).sort(
+            (left, right) => left.day.localeCompare(right.day)
           )
     };
   }
@@ -95,6 +95,19 @@ export function projectPublicSnapshot(
     entries,
     statuses
   };
+}
+
+function rollingUptimeDays(
+  days: NonNullable<CheckerStateDocument["monitors"][string]["uptimeDays"]>,
+  generatedAt: string
+) {
+  const end = new Date(generatedAt);
+  end.setUTCHours(0, 0, 0, 0);
+  const start = new Date(end);
+  start.setUTCDate(start.getUTCDate() - 89);
+  const startDay = start.toISOString().slice(0, 10);
+  const endDay = end.toISOString().slice(0, 10);
+  return days.filter(({ day }) => day >= startDay && day <= endDay);
 }
 
 export function projectPrivateSnapshot(

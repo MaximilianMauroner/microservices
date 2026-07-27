@@ -8,11 +8,18 @@ type Environment = Readonly<Record<string, string | undefined>>;
 export function loadPlatformConfig(env: Environment = process.env) {
   const publicOrigin = required(env, "PUBLIC_ORIGIN");
   const port = env.PORT ?? "3000";
+  const audiences = routeAudiences(
+    env,
+    optionalAudience(env.CF_ACCESS_AUDIENCE) ?? []
+  );
 
   const tools = loadToolsConfig({
     ...env,
     PORT: port,
     PUBLIC_ORIGIN: publicOrigin,
+    CF_ACCESS_AUDIENCE:
+      env.CF_ACCESS_AUDIENCE ??
+      [...audiences.manage, ...audiences.publisher, ...audiences.review].join(","),
     ...bucketEnvironment(env, "TOOLS")
   });
   const artifact = loadArtifactConfig({
@@ -39,7 +46,7 @@ export function loadPlatformConfig(env: Environment = process.env) {
     access: {
       issuer: tools.access.issuer,
       jwksUrl: tools.access.jwksUrl,
-      audience: routeAudiences(env, tools.access.audience)
+      audience: audiences
     },
     tools,
     artifact,
@@ -54,14 +61,42 @@ export function loadPlatformConfig(env: Environment = process.env) {
 }
 
 export function routeAudiences(env: Environment, fallback: string[]) {
+  const explicit = {
+    manage: optionalAudience(env.CF_ACCESS_MANAGE_AUDIENCE),
+    publisher: optionalAudience(env.CF_ACCESS_PUBLISHER_AUDIENCE),
+    review: optionalAudience(env.CF_ACCESS_REVIEW_AUDIENCE)
+  };
+  const configured = Object.values(explicit).filter(
+    (value): value is string[] => value !== undefined
+  );
+  if (env.NODE_ENV === "production" || configured.length > 0) {
+    for (const [family, value] of Object.entries(explicit)) {
+      if (!value) {
+        throw new Error(
+          `CF_ACCESS_${family.toUpperCase()}_AUDIENCE is required when route-family audiences are configured`
+        );
+      }
+      if (value.length !== 1) {
+        throw new Error(
+          `CF_ACCESS_${family.toUpperCase()}_AUDIENCE must contain exactly one audience tag`
+        );
+      }
+    }
+    const audiences = {
+      manage: explicit.manage!,
+      publisher: explicit.publisher!,
+      review: explicit.review!
+    };
+    requireDistinctAudiences(audiences);
+    return audiences;
+  }
+  if (fallback.length === 0) {
+    throw new Error("CF_ACCESS_AUDIENCE must contain at least one audience tag");
+  }
   return {
-    manage: optionalAudience(env.CF_ACCESS_MANAGE_AUDIENCE) ?? [fallback[0]!],
-    publisher:
-      optionalAudience(env.CF_ACCESS_PUBLISHER_AUDIENCE) ??
-      [fallback[1] ?? fallback[0]!],
-    review:
-      optionalAudience(env.CF_ACCESS_REVIEW_AUDIENCE) ??
-      [fallback[2] ?? fallback[0]!]
+    manage: [fallback[0]!],
+    publisher: [fallback[1] ?? fallback[0]!],
+    review: [fallback[2] ?? fallback[0]!]
   };
 }
 
@@ -73,6 +108,25 @@ function optionalAudience(value: string | undefined): string[] | undefined {
     throw new Error("Route-family Access audience must not be empty");
   }
   return audiences;
+}
+
+function requireDistinctAudiences(audiences: {
+  manage: string[];
+  publisher: string[];
+  review: string[];
+}) {
+  const owner = new Map<string, string>();
+  for (const [family, values] of Object.entries(audiences)) {
+    for (const value of values) {
+      const existing = owner.get(value);
+      if (existing) {
+        throw new Error(
+          `Cloudflare Access audience ${value} overlaps ${existing} and ${family}`
+        );
+      }
+      owner.set(value, family);
+    }
+  }
 }
 
 function bucketEnvironment(env: Environment, prefix: "TOOLS" | "ARTIFACT") {

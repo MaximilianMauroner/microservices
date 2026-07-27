@@ -20,7 +20,7 @@ const STATUS_LABELS: Record<MonitorStatus, string> = {
   up: "Operational",
   down: "Unavailable",
   paused: "Monitoring paused",
-  unavailable: "Private check"
+  unavailable: "Not checkable from Railway"
 };
 
 export function renderPublicPage(snapshot: PublicSnapshotDocument): string {
@@ -142,7 +142,7 @@ function renderEntry(
   generatedAt: string
 ): string {
   const state = serviceState(status);
-  const uptime = uptimeSummary(status);
+  const uptime = uptimeSummary(status, generatedAt);
   const links = entry.links
     .map((link) => {
       const url = safeHttpUrl(link.url);
@@ -210,14 +210,20 @@ interface UptimeSummary {
   totalChecks: number;
 }
 
-function uptimeSummary(status: PublicMonitorStatus | undefined): UptimeSummary {
-  const totals = (status?.uptimeDays ?? []).reduce(
-    (result, day) => ({
-      successfulChecks: result.successfulChecks + day.successfulChecks,
-      totalChecks: result.totalChecks + day.totalChecks
-    }),
-    { successfulChecks: 0, totalChecks: 0 }
-  );
+function uptimeSummary(
+  status: PublicMonitorStatus | undefined,
+  generatedAt: string
+): UptimeSummary {
+  const rollingWindow = new Set(rollingDays(generatedAt));
+  const totals = (status?.uptimeDays ?? [])
+    .filter(({ day }) => rollingWindow.has(day))
+    .reduce(
+      (result, day) => ({
+        successfulChecks: result.successfulChecks + day.successfulChecks,
+        totalChecks: result.totalChecks + day.totalChecks
+      }),
+      { successfulChecks: 0, totalChecks: 0 }
+    );
   if (totals.totalChecks === 0) {
     const label = status === undefined
       ? "Not monitored"
@@ -266,7 +272,7 @@ function statusDetails(status: PublicMonitorStatus | undefined): string {
   }
   if (!status.checkedAt) {
     return status.status === "unavailable"
-      ? "No public check available"
+      ? "Not checkable from Railway"
       : "Awaiting first check";
   }
   const metrics = [

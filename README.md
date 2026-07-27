@@ -53,6 +53,17 @@ Cloudflare Access protects Publisher, artifact/file delivery, Review, Manage,
 and their legacy browser aliases. The application also verifies the Access
 assertion before dispatching any protected route.
 
+Production requires three distinct Access audiences:
+`CF_ACCESS_MANAGE_AUDIENCE`, `CF_ACCESS_PUBLISHER_AUDIENCE`, and
+`CF_ACCESS_REVIEW_AUDIENCE`. Publisher covers `/publish`, `/uploads`,
+`/artifacts*`, `/files*`, `/p*`, `/f*`, and its browser API. The native-token
+`/api/uploads*` and `/api/agent*` machine APIs bypass browser Access but remain
+protected by their upload and agent bearer tokens.
+
+`/health` checks all dependencies. `/health/tools`, `/health/publisher`, and
+`/health/review` expose public, component-specific readiness for the in-process
+checker without borrowing another component's result.
+
 Tools Web and Tools Checker share one private bucket with disjoint writer
 ownership enforced in code. See [Tools Platform operations](docs/tools-platform/README.md)
 for preview isolation, initial catalog bootstrap, cutover, rollback, recovery,

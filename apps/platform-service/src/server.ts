@@ -59,8 +59,7 @@ const artifact = createArtifactApp({
   storage: artifactStorage,
   uploadToken: config.artifact.uploadToken,
   externalUpload: {
-    auth: (_request, _response, next) => next(),
-    redirectUri: new URL("/uploads", config.publicOrigin).toString()
+    auth: (_request, _response, next) => next()
   },
   publicBaseUrl: config.publicOrigin,
   maxUploadBytes: config.artifact.maxUploadBytes,

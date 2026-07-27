@@ -87,7 +87,6 @@ export type CreateAppOptions = {
   uploadToken: string;
   externalUpload?: {
     auth: RequestHandler;
-    redirectUri: string;
   };
   publicBaseUrl?: string;
   maxUploadBytes?: number;
@@ -177,8 +176,7 @@ export function createApp(options: CreateAppOptions) {
       .send(
         renderExternalUploadPage({
           assetVersion: EXTERNAL_UPLOAD_ASSET_VERSION,
-          retentionLabel: formatRetention(temporaryFileRetentionMs),
-          shooRedirectUri: options.externalUpload.redirectUri
+          retentionLabel: formatRetention(temporaryFileRetentionMs)
         })
       );
   };

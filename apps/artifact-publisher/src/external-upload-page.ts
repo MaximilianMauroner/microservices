@@ -3,7 +3,6 @@ import { renderSuiteChrome } from "@tools-platform/suite-chrome";
 export function renderExternalUploadPage(options: {
   assetVersion: string;
   retentionLabel: string;
-  shooRedirectUri: string;
 }) {
   return `<!doctype html>
 <html lang="en">
