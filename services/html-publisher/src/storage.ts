@@ -17,9 +17,28 @@ import {
 } from "./file-metadata.js";
 
 const TEMPORARY_FILE_PREFIX = "files/";
+const HTML_PREFIX = "pages/";
+const PAGE_ID_PATTERN = /^[A-Za-z0-9_-]{32}$/;
+const LIST_METADATA_CONCURRENCY = 8;
 
 export type StorageOperationOptions = {
   signal?: AbortSignal;
+};
+
+export type UploadListCursor = {
+  updatedAt: Date;
+  key: string;
+};
+
+export type ListUploadsOptions = StorageOperationOptions & {
+  limit: number;
+  kind?: StoredUploadSummary["kind"];
+  cursor?: UploadListCursor;
+};
+
+export type StoredUploadPage = {
+  uploads: StoredUploadSummary[];
+  nextCursor?: UploadListCursor;
 };
 
 export type PutHtmlOptions = StorageOperationOptions & {
@@ -67,6 +86,16 @@ export type PutTemporaryFileMetadata = {
   expiresAt: Date;
 };
 
+export type StoredUploadSummary = {
+  id: string;
+  kind: "html" | "file";
+  originalName: string;
+  bytes: number;
+  contentType: string;
+  updatedAt: Date;
+  expiresAt?: Date;
+};
+
 export interface UploadStorage {
   putHtml(
     id: string,
@@ -85,6 +114,10 @@ export interface UploadStorage {
     id: string,
     options?: GetTemporaryFileOptions
   ): Promise<StoredTemporaryFile | null>;
+  listUploads(
+    asOf: Date,
+    options: ListUploadsOptions
+  ): Promise<StoredUploadPage>;
   deleteUpload(id: string, options?: StorageOperationOptions): Promise<void>;
   deleteExpiredTemporaryFiles(
     expiresAtOrBefore: Date,
@@ -280,6 +313,68 @@ export function createS3UploadStorage(config: S3UploadStorageConfig): UploadStor
       }
     },
 
+    async listUploads(asOf, options) {
+      const prefixes =
+        options.kind === "html"
+          ? ([[HTML_PREFIX, "html"]] as const)
+          : options.kind === "file"
+            ? ([[TEMPORARY_FILE_PREFIX, "file"]] as const)
+            : ([
+                [HTML_PREFIX, "html"],
+                [TEMPORARY_FILE_PREFIX, "file"]
+              ] as const);
+      const candidates = (
+        await Promise.all(
+          prefixes.map(([prefix, kind]) =>
+            listUploadCandidates(client, config.bucket, prefix, kind, options)
+          )
+        )
+      )
+        .flat()
+        .sort(compareUploadCandidates)
+        .filter(
+          (candidate) =>
+            !options.cursor || isCandidateAfterCursor(candidate, options.cursor)
+        );
+      const uploads: StoredUploadSummary[] = [];
+      let processed = 0;
+
+      while (processed < candidates.length && uploads.length < options.limit) {
+        const remainingSlots = options.limit - uploads.length;
+        const chunkSize = Math.min(
+          LIST_METADATA_CONCURRENCY,
+          remainingSlots,
+          candidates.length - processed
+        );
+        const chunk = candidates.slice(processed, processed + chunkSize);
+        const summaries = await mapWithConcurrency(
+          chunk,
+          LIST_METADATA_CONCURRENCY,
+          (candidate) =>
+            headUploadSummary(client, config.bucket, candidate, asOf, options)
+        );
+        processed += chunk.length;
+        uploads.push(
+          ...summaries.filter(
+            (upload): upload is StoredUploadSummary => upload !== null
+          )
+        );
+      }
+
+      const lastProcessed = candidates[processed - 1];
+      return {
+        uploads,
+        ...(lastProcessed && processed < candidates.length
+          ? {
+              nextCursor: {
+                updatedAt: lastProcessed.updatedAt,
+                key: lastProcessed.key
+              }
+            }
+          : {})
+      };
+    },
+
     async deleteUpload(id, options) {
       const errors: unknown[] = [];
 
@@ -353,11 +448,166 @@ export function createS3UploadStorage(config: S3UploadStorageConfig): UploadStor
 }
 
 export function htmlKey(id: string) {
-  return `pages/${id}.html`;
+  return `${HTML_PREFIX}${id}.html`;
 }
 
 export function temporaryFileKey(id: string) {
   return `${TEMPORARY_FILE_PREFIX}${id}`;
+}
+
+type UploadCandidate = {
+  id: string;
+  kind: StoredUploadSummary["kind"];
+  key: string;
+  updatedAt: Date;
+};
+
+async function listUploadCandidates(
+  client: S3Client,
+  bucket: string,
+  prefix: string,
+  kind: StoredUploadSummary["kind"],
+  options?: StorageOperationOptions
+) {
+  const candidates: UploadCandidate[] = [];
+  let continuationToken: string | undefined;
+
+  do {
+    const result = await client.send(
+      new ListObjectsV2Command({
+        Bucket: bucket,
+        Prefix: prefix,
+        ContinuationToken: continuationToken
+      }),
+      requestOptions(options)
+    );
+
+    for (const object of result.Contents ?? []) {
+      if (!object.Key || !object.LastModified) {
+        continue;
+      }
+      const id = uploadIdFromKey(object.Key, kind);
+      if (!id) {
+        continue;
+      }
+      candidates.push({
+        id,
+        key: object.Key,
+        kind,
+        updatedAt: object.LastModified
+      });
+    }
+    continuationToken = result.NextContinuationToken;
+  } while (continuationToken);
+
+  return candidates;
+}
+
+function compareUploadCandidates(left: UploadCandidate, right: UploadCandidate) {
+  return (
+    right.updatedAt.getTime() - left.updatedAt.getTime() ||
+    left.key.localeCompare(right.key)
+  );
+}
+
+function isCandidateAfterCursor(
+  candidate: UploadCandidate,
+  cursor: UploadListCursor
+) {
+  const candidateTime = candidate.updatedAt.getTime();
+  const cursorTime = cursor.updatedAt.getTime();
+  return candidateTime < cursorTime ||
+    (candidateTime === cursorTime && candidate.key > cursor.key);
+}
+
+async function headUploadSummary(
+  client: S3Client,
+  bucket: string,
+  candidate: UploadCandidate,
+  asOf: Date,
+  options?: StorageOperationOptions
+): Promise<StoredUploadSummary | null> {
+  try {
+    const result = await client.send(
+      new HeadObjectCommand({
+        Bucket: bucket,
+        Key: candidate.key
+      }),
+      requestOptions(options)
+    );
+    const metadata = result.Metadata ?? {};
+    const updatedAt = result.LastModified ?? candidate.updatedAt;
+
+    if (candidate.kind === "html") {
+      return {
+        id: candidate.id,
+        kind: "html",
+        originalName: readOriginalNameMetadata(
+          metadata,
+          `${candidate.id}.html`
+        ),
+        bytes: result.ContentLength ?? 0,
+        contentType: result.ContentType ?? "text/html; charset=utf-8",
+        updatedAt
+      };
+    }
+
+    const expiresAt =
+      parseMetadataDate(metadata["expires-at"]) ?? result.Expires;
+    if (!expiresAt || expiresAt <= asOf) {
+      return null;
+    }
+    return {
+      id: candidate.id,
+      kind: "file",
+      originalName: readOriginalNameMetadata(metadata, `${candidate.id}.bin`),
+      bytes: result.ContentLength ?? 0,
+      contentType: result.ContentType ?? "application/octet-stream",
+      updatedAt,
+      expiresAt
+    };
+  } catch (error) {
+    if (isNotFoundError(error)) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+function uploadIdFromKey(
+  key: string,
+  kind: StoredUploadSummary["kind"]
+) {
+  const value =
+    kind === "html"
+      ? key.startsWith(HTML_PREFIX) && key.endsWith(".html")
+        ? key.slice(HTML_PREFIX.length, -".html".length)
+        : ""
+      : key.startsWith(TEMPORARY_FILE_PREFIX)
+        ? key.slice(TEMPORARY_FILE_PREFIX.length)
+        : "";
+  return PAGE_ID_PATTERN.test(value) ? value : null;
+}
+
+async function mapWithConcurrency<T, Result>(
+  values: T[],
+  concurrency: number,
+  mapper: (value: T) => Promise<Result>
+) {
+  const results = new Array<Result>(values.length);
+  let nextIndex = 0;
+  const workers = Array.from(
+    { length: Math.min(concurrency, values.length) },
+    async () => {
+      while (nextIndex < values.length) {
+        const index = nextIndex;
+        nextIndex += 1;
+        results[index] = await mapper(values[index]);
+      }
+    }
+  );
+  await Promise.all(workers);
+  return results;
 }
 
 async function getObjectExpiry(

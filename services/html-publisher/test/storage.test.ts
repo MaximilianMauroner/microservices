@@ -171,6 +171,109 @@ describe("S3 upload storage", () => {
     storage.close?.();
   });
 
+  it("lists plans and unexpired files by most recent metadata", async () => {
+    const pageId = "p".repeat(32);
+    const fileId = "f".repeat(32);
+    const expiredId = "e".repeat(32);
+    vi.spyOn(S3Client.prototype, "send").mockImplementation(async (command) => {
+      if (command instanceof ListObjectsV2Command) {
+        return command.input.Prefix === "pages/"
+          ? ({
+              Contents: [
+                {
+                  Key: `pages/${pageId}.html`,
+                  LastModified: new Date("2026-07-22T10:00:00.000Z")
+                },
+                { Key: "pages/not-an-upload.html" }
+              ]
+            } as never)
+          : ({
+              Contents: [
+                {
+                  Key: `files/${fileId}`,
+                  LastModified: new Date("2026-07-23T10:00:00.000Z")
+                },
+                {
+                  Key: `files/${expiredId}`,
+                  LastModified: new Date("2026-07-24T10:00:00.000Z")
+                }
+              ]
+            } as never);
+      }
+      if (command instanceof HeadObjectCommand) {
+        if (command.input.Key === `pages/${pageId}.html`) {
+          return {
+            ContentLength: 120,
+            ContentType: "text/html; charset=utf-8",
+            LastModified: new Date("2026-07-22T10:00:00.000Z"),
+            Metadata: { "original-name": "agent-browser-plan-123.html" }
+          } as never;
+        }
+        if (command.input.Key === `files/${fileId}`) {
+          return {
+            ContentLength: 45,
+            ContentType: "text/plain",
+            LastModified: new Date("2026-07-23T10:00:00.000Z"),
+            Metadata: {
+              "expires-at": "2026-07-26T10:00:00.000Z",
+              "original-name": "notes.txt"
+            }
+          } as never;
+        }
+        return {
+          LastModified: new Date("2026-07-24T10:00:00.000Z"),
+          Metadata: {
+            "expires-at": "2026-07-22T10:00:00.000Z",
+            "original-name": "expired.zip"
+          }
+        } as never;
+      }
+      throw new Error("Unexpected S3 command");
+    });
+    const storage = createS3UploadStorage(storageConfig);
+
+    const firstPage = await storage.listUploads(
+      new Date("2026-07-23T12:00:00.000Z"),
+      { limit: 1 }
+    );
+    expect(firstPage).toEqual({
+      uploads: [
+        {
+          id: fileId,
+          kind: "file",
+          originalName: "notes.txt",
+          bytes: 45,
+          contentType: "text/plain",
+          updatedAt: new Date("2026-07-23T10:00:00.000Z"),
+          expiresAt: new Date("2026-07-26T10:00:00.000Z")
+        }
+      ],
+      nextCursor: {
+        updatedAt: new Date("2026-07-23T10:00:00.000Z"),
+        key: `files/${fileId}`
+      }
+    });
+
+    await expect(
+      storage.listUploads(new Date("2026-07-23T12:00:00.000Z"), {
+        limit: 1,
+        cursor: firstPage.nextCursor
+      })
+    ).resolves.toEqual({
+      uploads: [
+        {
+          id: pageId,
+          kind: "html",
+          originalName: "agent-browser-plan-123.html",
+          bytes: 120,
+          contentType: "text/html; charset=utf-8",
+          updatedAt: new Date("2026-07-22T10:00:00.000Z")
+        }
+      ]
+    });
+    storage.close?.();
+  });
+
   it("attempts both upload keys before reporting deletion failures", async () => {
     const attemptedKeys: string[] = [];
     vi.spyOn(S3Client.prototype, "send").mockImplementation(async (command) => {

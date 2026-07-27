@@ -13,7 +13,7 @@ type HandleFileCallback = (
 export type MultipartStagingOptions = {
   destination: string;
   filename: (file: Express.Multer.File) => string;
-  isHtmlUpload: (file: Express.Multer.File) => boolean;
+  isHtmlUpload: (req: Request, file: Express.Multer.File) => boolean;
   maxHtmlUploadBytes: number;
 };
 
@@ -49,7 +49,7 @@ class MultipartStagingStorage implements multer.StorageEngine {
 
   constructor(private readonly options: MultipartStagingOptions) {}
 
-  _handleFile(_req: Request, file: Express.Multer.File, callback: HandleFileCallback) {
+  _handleFile(req: Request, file: Express.Multer.File, callback: HandleFileCallback) {
     let filename: string;
     let maxBytes: number | undefined;
     try {
@@ -57,7 +57,7 @@ class MultipartStagingStorage implements multer.StorageEngine {
       if (!filename || filename === "." || filename === "..") {
         throw new Error("Multipart staging filename is invalid");
       }
-      maxBytes = this.options.isHtmlUpload(file)
+      maxBytes = this.options.isHtmlUpload(req, file)
         ? this.options.maxHtmlUploadBytes
         : undefined;
     } catch (error) {

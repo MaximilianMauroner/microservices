@@ -1,6 +1,7 @@
 import { createApp } from "./app.js";
 import { ActivityTracker } from "./activity-tracker.js";
 import { loadConfig } from "./config.js";
+import { createShooAuth } from "./shoo-auth.js";
 import { createS3UploadStorage, type UploadStorage } from "./storage.js";
 
 const config = loadConfig();
@@ -10,6 +11,12 @@ const app = createApp({
   activityTracker,
   storage,
   uploadToken: config.uploadToken,
+  externalUpload: config.shoo
+    ? {
+        auth: createShooAuth(config.shoo),
+        redirectUri: config.shoo.redirectUri
+      }
+    : undefined,
   publicBaseUrl: config.publicBaseUrl,
   maxUploadBytes: config.maxUploadBytes,
   maxHtmlUploadBytes: config.maxHtmlUploadBytes,

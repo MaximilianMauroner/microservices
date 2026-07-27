@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { Readable } from "node:stream";
+import type { RequestHandler } from "express";
 import { describe, expect, it, vi } from "vitest";
 import request from "supertest";
 import { ActivityTracker } from "../src/activity-tracker.js";
@@ -18,12 +19,14 @@ import { loadConfig } from "../src/config.js";
 import type {
   GetTemporaryFileOptions,
   GetStoredObjectOptions,
+  ListUploadsOptions,
   PutHtmlMetadata,
   PutHtmlOptions,
   PutTemporaryFileMetadata,
   StorageOperationOptions,
   StoredHtml,
   StoredTemporaryFile,
+  StoredUploadSummary,
   UploadStorage
 } from "../src/storage.js";
 import { HtmlUpdateConflictError, RangeNotSatisfiableError } from "../src/storage.js";
@@ -106,6 +109,68 @@ class MemoryUploadStorage implements UploadStorage {
       originalName: file.metadata.originalName,
       sha256: file.metadata.sha256,
       lastModified: file.lastModified
+    };
+  }
+
+  async listUploads(asOf: Date, options: ListUploadsOptions) {
+    const pages = Array.from(this.pages, ([id, page]) => ({
+      key: `pages/${id}.html`,
+      summary: {
+        id,
+        kind: "html" as const,
+        originalName: page.metadata.originalName,
+        bytes: page.metadata.bytes,
+        contentType: "text/html; charset=utf-8",
+        updatedAt: page.lastModified
+      }
+    }));
+    const files = Array.from(this.files, ([id, file]) => ({
+      key: `files/${id}`,
+      summary: {
+        id,
+        kind: "file" as const,
+        originalName: file.metadata.originalName,
+        bytes: file.metadata.bytes,
+        contentType: file.metadata.contentType,
+        updatedAt: file.lastModified,
+        expiresAt: file.metadata.expiresAt
+      }
+    })).filter(({ summary }) => summary.expiresAt > asOf);
+    const entries: Array<{ key: string; summary: StoredUploadSummary }> = [
+      ...pages,
+      ...files
+    ];
+    const cursor = options.cursor;
+    const candidates = entries
+      .filter(({ summary }) => !options.kind || summary.kind === options.kind)
+      .sort(
+        (left, right) =>
+          right.summary.updatedAt.getTime() -
+            left.summary.updatedAt.getTime() ||
+          left.key.localeCompare(right.key)
+      )
+      .filter(({ key, summary }) => {
+        if (!cursor) {
+          return true;
+        }
+        const updatedAt = summary.updatedAt.getTime();
+        const cursorUpdatedAt = cursor.updatedAt.getTime();
+        return updatedAt < cursorUpdatedAt ||
+          (updatedAt === cursorUpdatedAt && key > cursor.key);
+      });
+    const page = candidates.slice(0, options.limit);
+    const last = page.at(-1);
+
+    return {
+      uploads: page.map(({ summary }) => summary),
+      ...(last && page.length < candidates.length
+        ? {
+            nextCursor: {
+              updatedAt: last.summary.updatedAt,
+              key: last.key
+            }
+          }
+        : {})
     };
   }
 
@@ -443,6 +508,7 @@ function setup(
     maxUploadBytes?: number;
     maxHtmlUploadBytes?: number;
     maxConcurrentUploads?: number;
+    externalUploadAuth?: RequestHandler;
     now?: () => Date;
     temporaryFileRetentionMs?: number;
   } = {}
@@ -451,6 +517,12 @@ function setup(
   const app = createApp({
     storage,
     uploadToken: "test-upload-token",
+    externalUpload: options.externalUploadAuth
+      ? {
+          auth: options.externalUploadAuth,
+          redirectUri: "https://html.example/uploads/callback"
+        }
+      : undefined,
     publicBaseUrl: "https://html.example",
     maxUploadBytes: options.maxUploadBytes,
     maxHtmlUploadBytes: options.maxHtmlUploadBytes,
@@ -634,6 +706,208 @@ describe("html publisher", () => {
       }
       expect(body.toString("utf8")).toContain("<svg");
     }
+  });
+
+  it("keeps external uploads unavailable until Shoo is configured", async () => {
+    const { app } = setup();
+
+    await request(app)
+      .get("/uploads")
+      .expect(503)
+      .expect({
+        error: "external_upload_unavailable",
+        message: "External uploads are not configured."
+      });
+  });
+
+  it("serves the Shoo upload website with restrictive browser headers", async () => {
+    const { app } = setup({
+      externalUploadAuth: (_req, _res, next) => next()
+    });
+
+    const page = await request(app).get("/uploads").expect(200);
+    expect(page.headers["content-security-policy"]).toContain("default-src 'none'");
+    expect(page.headers["content-security-policy"]).toContain("frame-ancestors 'none'");
+    expect(page.headers["x-frame-options"]).toBe("DENY");
+    expect(page.headers["cache-control"]).toBe("private, no-store");
+    expect(page.text).toContain("Temporary uploads");
+    expect(page.text).toContain("Files expire after 3 days.");
+    expect(page.text).toContain("https://shoo.dev/shoo.js");
+    expect(page.text).toContain(
+      'data-shoo-redirect-uri="https://html.example/uploads/callback"'
+    );
+    expect(page.text).toContain("Continue with Google");
+    const scriptPath = page.text.match(
+      /\/uploads\/assets\/[a-f0-9]{16}\/app\.js/
+    )?.[0];
+    const stylePath = page.text.match(
+      /\/uploads\/assets\/[a-f0-9]{16}\/app\.css/
+    )?.[0];
+    expect(scriptPath).toBeDefined();
+    expect(stylePath).toBeDefined();
+
+    await request(app).get("/uploads/callback").expect(200);
+
+    await request(app)
+      .get(stylePath ?? "")
+      .expect("content-type", /text\/css/)
+      .expect("Cache-Control", "private, max-age=31536000, immutable")
+      .expect(200);
+    await request(app)
+      .get(scriptPath ?? "")
+      .expect("content-type", /javascript/)
+      .expect("Cache-Control", "private, max-age=31536000, immutable")
+      .expect(200);
+    await request(app)
+      .get("/uploads/app.js")
+      .expect("Cache-Control", "private, no-store")
+      .expect(200);
+  });
+
+  it("stores authenticated external uploads as expiring files in the same storage", async () => {
+    const now = new Date("2026-07-23T12:00:00.000Z");
+    const { app, storage } = setup({
+      externalUploadAuth: (_req, _res, next) => next(),
+      maxHtmlUploadBytes: 4,
+      now: () => now
+    });
+
+    const response = await request(app)
+      .post("/api/external-uploads")
+      .set("Host", "uploads.example")
+      .set("Origin", "http://uploads.example")
+      .attach("file", Buffer.from("<!doctype html><title>Shared</title>"), {
+        filename: "shared.html",
+        contentType: "text/html"
+      })
+      .expect(201);
+
+    expect(response.body).toMatchObject({
+      kind: "file",
+      filename: "shared.html",
+      contentType: "text/html",
+      url: expect.stringMatching(
+        /^https:\/\/html\.example\/f\/[A-Za-z0-9_-]{32}\/shared\.html$/
+      ),
+      expiresAt: "2026-07-26T12:00:00.000Z"
+    });
+    expect(storage.files.has(response.body.id)).toBe(true);
+    expect(storage.pages.has(response.body.id)).toBe(false);
+  });
+
+  it("lists plans and files for the authenticated upload website", async () => {
+    const now = new Date("2026-07-23T12:00:00.000Z");
+    const { app } = setup({
+      externalUploadAuth: (_req, _res, next) => next(),
+      now: () => now
+    });
+    const planName =
+      "recent-upload-browser-550e8400-e29b-41d4-a716-446655440000.html";
+
+    const plan = await request(app)
+      .post("/api/uploads")
+      .set("Authorization", "Bearer test-upload-token")
+      .attach("file", Buffer.from("<!doctype html><title>Recent</title>"), {
+        filename: planName,
+        contentType: "text/html"
+      })
+      .expect(201);
+    const file = await request(app)
+      .post("/api/external-uploads")
+      .set("Host", "uploads.example")
+      .set("Origin", "http://uploads.example")
+      .attach("file", Buffer.from("notes"), {
+        filename: "notes.txt",
+        contentType: "text/plain"
+      })
+      .expect(201);
+
+    const firstPage = await request(app)
+      .get("/api/external-uploads?limit=1&kind=all")
+      .expect("Cache-Control", "private, no-store")
+      .expect(200);
+    expect(firstPage.body.uploads).toHaveLength(1);
+    expect(firstPage.body.nextCursor).toEqual(expect.any(String));
+
+    const secondPage = await request(app)
+      .get(
+        `/api/external-uploads?limit=1&kind=all&cursor=${encodeURIComponent(firstPage.body.nextCursor)}`
+      )
+      .expect(200);
+    expect(secondPage.body.uploads).toHaveLength(1);
+    expect(secondPage.body.nextCursor).toBeUndefined();
+    expect([
+      ...firstPage.body.uploads,
+      ...secondPage.body.uploads
+    ]).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: plan.body.id,
+          kind: "html",
+          filename: planName,
+          url: `https://html.example/p/${plan.body.id}`,
+          updatedAt: now.toISOString()
+        }),
+        expect.objectContaining({
+          id: file.body.id,
+          kind: "file",
+          filename: "notes.txt",
+          url: `https://html.example/f/${file.body.id}/notes.txt`,
+          expiresAt: "2026-07-26T12:00:00.000Z"
+        })
+      ])
+    );
+
+    const plans = await request(app)
+      .get("/api/external-uploads?limit=25&kind=html")
+      .expect(200);
+    expect(plans.body).toMatchObject({
+      uploads: [
+        expect.objectContaining({
+          id: plan.body.id,
+          kind: "html"
+        })
+      ]
+    });
+    expect(plans.body.nextCursor).toBeUndefined();
+  });
+
+  it("rejects invalid upload listing pagination", async () => {
+    const { app } = setup({
+      externalUploadAuth: (_req, _res, next) => next()
+    });
+
+    await request(app)
+      .get("/api/external-uploads?limit=101")
+      .expect(400, {
+        error: "invalid_pagination",
+        message: "limit must be an integer between 1 and 100."
+      });
+    await request(app)
+      .get("/api/external-uploads?cursor=not-a-cursor")
+      .expect(400, {
+        error: "invalid_pagination",
+        message: "cursor is invalid."
+      });
+  });
+
+  it("rejects cross-origin requests to the external upload endpoint", async () => {
+    const { app, storage } = setup({
+      externalUploadAuth: (_req, _res, next) => next()
+    });
+
+    const response = await request(app)
+      .post("/api/external-uploads")
+      .set("Host", "uploads.example")
+      .set("Origin", "https://attacker.example")
+      .attach("file", Buffer.from("private"), {
+        filename: "private.txt",
+        contentType: "text/plain"
+      })
+      .expect(403);
+
+    expect(response.body).toMatchObject({ error: "invalid_origin" });
+    expect(storage.files.size).toBe(0);
   });
 
   it("stores an arbitrary file upload and returns an expiring download url", async () => {

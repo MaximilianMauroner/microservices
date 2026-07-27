@@ -5,9 +5,19 @@ import os from "node:os";
 import path from "node:path";
 import type { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import express, { type NextFunction, type Request, type Response } from "express";
+import express, {
+  type NextFunction,
+  type Request,
+  type RequestHandler,
+  type Response
+} from "express";
 import multer from "multer";
 import { ActivityTracker } from "./activity-tracker.js";
+import {
+  EXTERNAL_UPLOAD_SCRIPT,
+  EXTERNAL_UPLOAD_STYLES,
+  renderExternalUploadPage
+} from "./external-upload-page.js";
 import {
   attachmentDisposition,
   normalizeMimeType,
@@ -20,6 +30,8 @@ import {
 import {
   HtmlUpdateConflictError,
   RangeNotSatisfiableError,
+  type ListUploadsOptions,
+  type UploadListCursor,
   type UploadStorage
 } from "./storage.js";
 
@@ -35,6 +47,11 @@ const HTML_MIME_TYPES = new Set(["text/html", "application/xhtml+xml"]);
 const HTML_EXTENSIONS = new Set([".html", ".htm"]);
 const HTML_CONTENT_TYPE = "text/html; charset=utf-8";
 const SINGLE_BYTE_RANGE_PATTERN = /^bytes=(?:\d+-\d*|-\d+)$/i;
+const DEFAULT_UPLOAD_LIST_LIMIT = 25;
+const MAX_UPLOAD_LIST_LIMIT = 100;
+const MAX_UPLOAD_LIST_CURSOR_LENGTH = 512;
+const UPLOAD_KEY_PATTERN =
+  /^(?:pages\/[A-Za-z0-9_-]{32}\.html|files\/[A-Za-z0-9_-]{32})$/;
 const FAVICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
   <rect x=".75" y=".75" width="30.5" height="30.5" rx="7" fill="#f6f8fa" stroke="#d0d7de" stroke-width="1.5"/>
   <path d="M10 10h8a4 4 0 0 1 4 4v8" fill="none" stroke="#59636e" stroke-width="2.25" stroke-linecap="round"/>
@@ -46,11 +63,32 @@ const FAVICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"
 </svg>`;
 const PUBLIC_HTML_CSP =
   "sandbox allow-scripts allow-forms allow-modals allow-popups allow-downloads";
+const EXTERNAL_UPLOAD_CSP = [
+  "default-src 'none'",
+  "connect-src 'self' https://shoo.dev",
+  "img-src 'self'",
+  "script-src 'self' https://shoo.dev",
+  "style-src 'self'",
+  "base-uri 'none'",
+  "form-action 'self'",
+  "frame-ancestors 'none'"
+].join("; ");
+const EXTERNAL_UPLOAD_ASSET_VERSION = crypto
+  .createHash("sha256")
+  .update(EXTERNAL_UPLOAD_STYLES)
+  .update("\0")
+  .update(EXTERNAL_UPLOAD_SCRIPT)
+  .digest("hex")
+  .slice(0, 16);
 
 export type CreateAppOptions = {
   activityTracker?: ActivityTracker;
   storage: UploadStorage;
   uploadToken: string;
+  externalUpload?: {
+    auth: RequestHandler;
+    redirectUri: string;
+  };
   publicBaseUrl?: string;
   maxUploadBytes?: number;
   maxHtmlUploadBytes?: number;
@@ -96,7 +134,9 @@ export function createApp(options: CreateAppOptions) {
     storage: createMultipartStagingStorage({
       destination: os.tmpdir(),
       filename: () => `html-publisher-${crypto.randomBytes(16).toString("hex")}`,
-      isHtmlUpload: (file) => classifyUpload(file).kind === "html",
+      isHtmlUpload: (req, file) =>
+        req.path !== "/api/external-uploads" &&
+        classifyUpload(file).kind === "html",
       maxHtmlUploadBytes
     }),
     limits: {
@@ -122,6 +162,129 @@ export function createApp(options: CreateAppOptions) {
   app.get("/health", (_req, res) => {
     res.set("Cache-Control", "no-store").status(200).json({ ok: true });
   });
+
+  const externalUploadAuth =
+    options.externalUpload?.auth ?? externalUploadUnavailable;
+  const serveExternalUploadPage: RequestHandler = (_req, res) => {
+    if (!options.externalUpload) {
+      externalUploadUnavailable(_req, res);
+      return;
+    }
+    applyExternalUploadHeaders(res);
+    res
+      .set("Cache-Control", "private, no-store")
+      .type("html")
+      .send(
+        renderExternalUploadPage({
+          assetVersion: EXTERNAL_UPLOAD_ASSET_VERSION,
+          retentionLabel: formatRetention(temporaryFileRetentionMs),
+          shooRedirectUri: options.externalUpload.redirectUri
+        })
+      );
+  };
+  app.get(["/uploads", "/uploads/callback"], serveExternalUploadPage);
+  app.get(
+    [
+      "/uploads/app.css",
+      `/uploads/assets/${EXTERNAL_UPLOAD_ASSET_VERSION}/app.css`
+    ],
+    (req, res) => {
+    if (!options.externalUpload) {
+      externalUploadUnavailable(req, res);
+      return;
+    }
+    applyExternalUploadHeaders(res);
+    res
+      .set(
+        "Cache-Control",
+        req.path === "/uploads/app.css"
+          ? "private, no-store"
+          : "private, max-age=31536000, immutable"
+      )
+      .type("text/css")
+      .send(EXTERNAL_UPLOAD_STYLES);
+    }
+  );
+  app.get(
+    [
+      "/uploads/app.js",
+      `/uploads/assets/${EXTERNAL_UPLOAD_ASSET_VERSION}/app.js`
+    ],
+    (req, res) => {
+    if (!options.externalUpload) {
+      externalUploadUnavailable(req, res);
+      return;
+    }
+    applyExternalUploadHeaders(res);
+    res
+      .set(
+        "Cache-Control",
+        req.path === "/uploads/app.js"
+          ? "private, no-store"
+          : "private, max-age=31536000, immutable"
+      )
+      .type("text/javascript")
+      .send(EXTERNAL_UPLOAD_SCRIPT);
+    }
+  );
+  app.get(
+    "/api/external-uploads",
+    externalUploadAuth,
+    trackedAsyncHandler(activityTracker, async (req, res, next) => {
+      const requestAbort = observeRequestAbort(req, res);
+      try {
+        const pagination = parseUploadListOptions(req.query);
+        if (!pagination.ok) {
+          res.status(400).json({
+            error: "invalid_pagination",
+            message: pagination.message
+          });
+          return;
+        }
+        const baseUrl = getPublicBaseUrl(req, options.publicBaseUrl);
+        const page = await options.storage.listUploads(getNow(options), {
+          ...pagination.options,
+          signal: requestAbort.signal
+        });
+        res
+          .set("Cache-Control", "private, no-store")
+          .status(200)
+          .json({
+            uploads: page.uploads.map((upload) => ({
+              id: upload.id,
+              kind: upload.kind,
+              filename: upload.originalName,
+              contentType: upload.contentType,
+              url:
+                upload.kind === "html"
+                  ? `${baseUrl}/p/${upload.id}`
+                  : `${baseUrl}/f/${upload.id}/${encodeURIComponent(upload.originalName)}`,
+              bytes: upload.bytes,
+              updatedAt: upload.updatedAt.toISOString(),
+              ...(upload.expiresAt
+                ? { expiresAt: upload.expiresAt.toISOString() }
+                : {})
+            })),
+            ...(page.nextCursor
+              ? { nextCursor: encodeUploadListCursor(page.nextCursor) }
+              : {})
+          });
+      } catch (error) {
+        if (!requestAbort.signal.aborted) {
+          next(error);
+        }
+      } finally {
+        requestAbort.stop();
+      }
+    })
+  );
+  app.post(
+    "/api/external-uploads",
+    externalUploadAuth,
+    requireSameOrigin,
+    requireMultipartUpload,
+    startUpload({ kind: "create", temporaryOnly: true })
+  );
 
   app.post(
     "/api/uploads",
@@ -376,7 +539,110 @@ export function createApp(options: CreateAppOptions) {
   return app;
 }
 
-type UploadMode = { kind: "create" } | { id: string; kind: "update" };
+type ParsedUploadListOptions =
+  | { ok: true; options: Omit<ListUploadsOptions, "signal"> }
+  | { ok: false; message: string };
+
+function parseUploadListOptions(
+  query: Request["query"]
+): ParsedUploadListOptions {
+  const rawLimit = query.limit;
+  const rawKind = query.kind;
+  const rawCursor = query.cursor;
+  if (
+    (rawLimit !== undefined && typeof rawLimit !== "string") ||
+    (rawKind !== undefined && typeof rawKind !== "string") ||
+    (rawCursor !== undefined && typeof rawCursor !== "string")
+  ) {
+    return { ok: false, message: "Pagination parameters must be single values." };
+  }
+
+  const limit = rawLimit === undefined ? DEFAULT_UPLOAD_LIST_LIMIT : Number(rawLimit);
+  if (
+    !Number.isSafeInteger(limit) ||
+    limit < 1 ||
+    limit > MAX_UPLOAD_LIST_LIMIT
+  ) {
+    return {
+      ok: false,
+      message: `limit must be an integer between 1 and ${MAX_UPLOAD_LIST_LIMIT}.`
+    };
+  }
+
+  if (
+    rawKind !== undefined &&
+    rawKind !== "all" &&
+    rawKind !== "html" &&
+    rawKind !== "file"
+  ) {
+    return { ok: false, message: "kind must be all, html, or file." };
+  }
+
+  let cursor: UploadListCursor | undefined;
+  if (rawCursor !== undefined) {
+    const decodedCursor = decodeUploadListCursor(rawCursor);
+    if (!decodedCursor) {
+      return { ok: false, message: "cursor is invalid." };
+    }
+    cursor = decodedCursor;
+  }
+
+  return {
+    ok: true,
+    options: {
+      limit,
+      ...(rawKind && rawKind !== "all" ? { kind: rawKind } : {}),
+      ...(cursor ? { cursor } : {})
+    }
+  };
+}
+
+function encodeUploadListCursor(cursor: UploadListCursor) {
+  return Buffer.from(
+    JSON.stringify({
+      updatedAt: cursor.updatedAt.toISOString(),
+      key: cursor.key
+    }),
+    "utf8"
+  ).toString("base64url");
+}
+
+function decodeUploadListCursor(value: string): UploadListCursor | null {
+  if (!value || value.length > MAX_UPLOAD_LIST_CURSOR_LENGTH) {
+    return null;
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(
+      Buffer.from(value, "base64url").toString("utf8")
+    );
+    if (!parsed || typeof parsed !== "object") {
+      return null;
+    }
+    const candidate = parsed as { updatedAt?: unknown; key?: unknown };
+    if (
+      typeof candidate.updatedAt !== "string" ||
+      typeof candidate.key !== "string" ||
+      !UPLOAD_KEY_PATTERN.test(candidate.key)
+    ) {
+      return null;
+    }
+    const updatedAt = new Date(candidate.updatedAt);
+    if (
+      Number.isNaN(updatedAt.getTime()) ||
+      updatedAt.toISOString() !== candidate.updatedAt
+    ) {
+      return null;
+    }
+    return { updatedAt, key: candidate.key };
+  } catch {
+    return null;
+  }
+}
+
+type UploadMode =
+  | { kind: "create"; temporaryOnly?: boolean }
+  | { id: string; kind: "update" };
 
 function trackedAsyncHandler(
   activityTracker: ActivityTracker,
@@ -412,7 +678,10 @@ async function handleUpload(
       return;
     }
 
-    const uploadType = classifyUpload(file);
+    const uploadType =
+      mode.kind === "create" && mode.temporaryOnly
+        ? classifyTemporaryUpload(file)
+        : classifyUpload(file);
     if (mode.kind === "update" && uploadType.kind !== "html") {
       operation.complete();
       res.status(400).json({
@@ -568,6 +837,46 @@ function requireUploadToken(uploadToken: string) {
   };
 }
 
+function externalUploadUnavailable(_req: Request, res: Response) {
+  res.status(503).json({
+    error: "external_upload_unavailable",
+    message: "External uploads are not configured."
+  });
+}
+
+function requireSameOrigin(req: Request, res: Response, next: NextFunction) {
+  const origin = req.get("origin");
+  const host = req.get("host");
+  if (!origin || !host || !isValidHost(host)) {
+    res.status(403).json({
+      error: "invalid_origin",
+      message: "External uploads must come from the upload website."
+    });
+    return;
+  }
+
+  let requestOrigin: string;
+  try {
+    requestOrigin = new URL(origin).origin;
+  } catch {
+    res.status(403).json({
+      error: "invalid_origin",
+      message: "External uploads must come from the upload website."
+    });
+    return;
+  }
+
+  if (requestOrigin !== `${req.protocol}://${host}`) {
+    res.status(403).json({
+      error: "invalid_origin",
+      message: "External uploads must come from the upload website."
+    });
+    return;
+  }
+
+  next();
+}
+
 function requireMultipartUpload(req: Request, res: Response, next: NextFunction) {
   const contentType = req.get("content-type") ?? "";
   const hasBoundary = /(?:^|;)\s*boundary=(?:"[^"]+"|[^;\s]+)/i.test(contentType);
@@ -612,6 +921,15 @@ function classifyUpload(file: Express.Multer.File): UploadClassification {
   };
 }
 
+function classifyTemporaryUpload(
+  file: Express.Multer.File
+): UploadClassification {
+  return {
+    contentType: normalizeMimeType(file.mimetype),
+    kind: "temporary"
+  };
+}
+
 function generatePageId() {
   return crypto.randomBytes(24).toString("base64url");
 }
@@ -634,6 +952,29 @@ function applySandboxHeaders(res: Response) {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Referrer-Policy", "no-referrer");
   res.setHeader("X-Robots-Tag", "noindex, nofollow");
+}
+
+function applyExternalUploadHeaders(res: Response) {
+  res.setHeader("Content-Security-Policy", EXTERNAL_UPLOAD_CSP);
+  res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("X-Robots-Tag", "noindex, nofollow");
+}
+
+function formatRetention(retentionMs: number) {
+  const dayMs = 24 * 60 * 60 * 1000;
+  const hourMs = 60 * 60 * 1000;
+  if (retentionMs % dayMs === 0) {
+    const days = retentionMs / dayMs;
+    return `${days} ${days === 1 ? "day" : "days"}`;
+  }
+  if (retentionMs % hourMs === 0) {
+    const hours = retentionMs / hourMs;
+    return `${hours} ${hours === 1 ? "hour" : "hours"}`;
+  }
+  return "the configured retention period";
 }
 
 function applyRepresentationHeaders(

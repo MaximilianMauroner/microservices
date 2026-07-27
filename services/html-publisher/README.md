@@ -5,6 +5,8 @@ Publishes self-contained HTML plans and temporary file downloads from a private 
 - HTML plans use sandboxed, browser-viewable `/p/:id` URLs and remain available until revoked.
 - Other files use `/f/:id/:filename` download URLs and expire after 3 days by default.
 - Upload, update, and deletion APIs require the bearer token. Public reads do not.
+- One allowed Google account can upload temporary files through a Shoo-authenticated
+  website without receiving the service bearer token.
 
 ## Required environment
 
@@ -14,6 +16,14 @@ Publishes self-contained HTML plans and temporary file downloads from a private 
 - `S3_REGION`: bucket region
 - `S3_ACCESS_KEY_ID`: bucket access key
 - `S3_SECRET_ACCESS_KEY`: bucket secret key
+
+External upload website:
+
+- `SHOO_ALLOWED_EMAIL`: the one Google account email allowed to upload
+
+When this value is unset, `/uploads` and `/api/external-uploads` fail closed
+with `503`. Shoo uses the configured public origin as the OAuth audience and
+`/uploads/callback` as its redirect URI, so a public URL value is also required.
 
 Public URL selection:
 
@@ -76,6 +86,40 @@ Temporary file response:
 
 Uploads are staged on local temporary storage, hashed, and sent with one S3 `PutObject` request. The HTML cap is enforced while staging, and partial files from rejected uploads are removed. The concurrency gate protects temporary disk from parallel 5 GB uploads, but slow large uploads can still exceed the hosting platform's HTTP timeout. A future direct-to-bucket multipart API is the appropriate path above this compatibility endpoint's operational limits.
 
+## External upload website
+
+`GET /uploads` serves a browser uploader authenticated through
+[Shoo](https://shoo.dev). Shoo handles Google OAuth with PKCE and returns an
+origin-scoped ES256 identity token. The browser posts that token to
+`POST /api/external-uploads`, which:
+
+- verifies the token against Shoo's JWKS, issuer, origin-derived audience, and
+  expiration;
+- requires a verified email claim exactly matching `SHOO_ALLOWED_EMAIL`;
+- requires a same-origin browser request;
+- uses the same storage binding, concurrency gate, and cleanup process as
+  `POST /api/uploads`;
+- always stores the upload as a temporary file, including `.html` files; and
+- returns the existing public `/f/:id/:filename` URL with its expiry and SHA-256.
+
+The authenticated site's Recent view calls `GET /api/external-uploads`. It
+lists persistent plans and unexpired temporary files from the same bucket,
+ordered by the object's latest update time. Results use an opaque cursor with
+25 items per page in the browser. The API accepts `limit` from 1 to 100,
+`kind=all|html|file`, and a returned `cursor`; filtering happens before the page
+is filled. Original filenames, sizes, types, URLs, and expiry times come from S3
+object metadata; expired files and unrecognized bucket keys are omitted. Object
+keys are still enumerated to establish update order, but only enough metadata
+requests to fill the current page are made.
+
+No OAuth application registration or client secret is required. Keep
+`PUBLIC_BASE_URL` set to the hostname people use for `/uploads`; Shoo scopes the
+identity token to that origin. Returned `/f/*` URLs remain unguessable public
+capability URLs so local agents can download them without an OAuth session.
+
+The original bearer-token upload endpoint remains separate and unchanged for
+the local `temporary-file-upload` skill.
+
 ## Update an HTML page
 
 Replace an existing HTML page without changing its ID or public URL:
@@ -133,12 +177,16 @@ Errors use JSON with stable `error` and `message` fields.
 | --- | --- | --- |
 | `400` | `missing_file`, `invalid_multipart_upload`, `invalid_upload_id`, `html_upload_required` | Invalid client input or a non-HTML update body |
 | `401` | `unauthorized` | Missing or invalid bearer token |
+| `401` | `shoo_auth_required` | Missing, invalid, expired, or revoked Shoo identity token |
+| `403` | `shoo_email_not_allowed` | Google account does not match the configured exact email |
+| `403` | `invalid_origin` | External upload did not originate from the authenticated website |
 | `404` | `not_found`, `upload_not_found` | Unknown API route or missing update target; missing or expired public reads use a plain 404 response |
 | `409` | `upload_conflict` | The HTML page changed or was revoked while an update was in progress |
 | `413` | `payload_too_large`, `html_payload_too_large` | Configured size limit exceeded |
 | `415` | `unsupported_media_type` | Request is not valid multipart form data |
 | `416` | `range_not_satisfiable` | Download byte range cannot be served |
 | `503` | `upload_capacity_reached` | Concurrency gate is full; retry after the `Retry-After` delay |
+| `503` | `external_upload_unavailable` | `SHOO_ALLOWED_EMAIL` is not configured |
 
 ## Cleanup and deployment
 

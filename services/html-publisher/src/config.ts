@@ -14,6 +14,11 @@ export type RuntimeConfig = {
   port: number;
   uploadToken: string;
   publicBaseUrl?: string;
+  shoo?: {
+    allowedEmail: string;
+    audience: string;
+    redirectUri: string;
+  };
   maxUploadBytes: number;
   maxHtmlUploadBytes: number;
   maxConcurrentUploads: number;
@@ -48,10 +53,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): RuntimeConfig 
     throw new Error("PUBLIC_BASE_URL is required when NODE_ENV=production");
   }
 
+  const shoo = parseShoo(env, publicBaseUrl);
+
   return {
     port: parseBoundedPositiveInteger(env.PORT, 3000, "PORT", 65_535),
     uploadToken: requireEnv(env, "UPLOAD_TOKEN"),
     publicBaseUrl,
+    shoo,
     maxUploadBytes,
     maxHtmlUploadBytes,
     maxConcurrentUploads: parseBoundedPositiveInteger(
@@ -80,6 +88,31 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): RuntimeConfig 
       secretAccessKey: requireEnv(env, "S3_SECRET_ACCESS_KEY"),
       forcePathStyle: parseBoolean(env.S3_FORCE_PATH_STYLE, "S3_FORCE_PATH_STYLE", false)
     }
+  };
+}
+
+function parseShoo(
+  env: NodeJS.ProcessEnv,
+  publicBaseUrl: string | undefined
+) {
+  const allowedEmail = env.SHOO_ALLOWED_EMAIL?.trim().toLowerCase();
+  if (!allowedEmail) {
+    return undefined;
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(allowedEmail)) {
+    throw new Error("SHOO_ALLOWED_EMAIL must be a valid email address");
+  }
+  if (!publicBaseUrl) {
+    throw new Error(
+      "PUBLIC_BASE_URL or RAILWAY_PUBLIC_DOMAIN is required when SHOO_ALLOWED_EMAIL is set"
+    );
+  }
+
+  const origin = new URL(publicBaseUrl).origin;
+  return {
+    allowedEmail,
+    audience: `origin:${origin}`,
+    redirectUri: new URL("/uploads/callback", origin).toString()
   };
 }
 
