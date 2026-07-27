@@ -53,6 +53,7 @@ describe("checker run", () => {
     expect(
       store.history.get("2026-07-27")?.value.observations
     ).toHaveLength(2);
+    expect(store.historyWrites).toBe(1);
   });
 
   it("opens on the second failure and resolves on one success", async () => {

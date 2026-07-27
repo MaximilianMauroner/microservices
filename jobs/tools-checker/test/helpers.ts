@@ -82,7 +82,10 @@ function entry(
       enabled: true,
       paused: false,
       scope,
-      url: scope === "public" ? `https://${id}.example/` : "http://100.64.0.1/"
+      url:
+        scope === "public"
+          ? `https://${id}.example/`
+          : "https://tailnet.example/"
     }
   };
 }

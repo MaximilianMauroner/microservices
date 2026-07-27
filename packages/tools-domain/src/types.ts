@@ -176,7 +176,7 @@ export interface HistoryPartitionDocument {
 }
 
 export interface HistoryObservation extends CheckObservation {
-  monitorId: string;
+  monitorId: string | null;
 }
 
 export interface AdminAuditRecord {
