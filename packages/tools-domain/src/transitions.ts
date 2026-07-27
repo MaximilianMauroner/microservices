@@ -111,6 +111,9 @@ function pendingNotification(
     status: "pending",
     attempts: 0,
     nextAttemptAt,
+    displayName: null,
+    claimToken: null,
+    claimedUntil: null,
     deliveredAt: null,
     lastErrorCode: null
   };

@@ -12,6 +12,7 @@ export interface ProbeOptions {
   timeoutMs?: number;
   observationId: string;
   runId: string;
+  signal?: AbortSignal;
 }
 
 export async function probeTarget(
@@ -26,6 +27,9 @@ export async function probeTarget(
     () => controller.abort(),
     options.timeoutMs ?? 10_000
   );
+  const signal = options.signal
+    ? AbortSignal.any([controller.signal, options.signal])
+    : controller.signal;
   let statusCode: number | null = null;
 
   try {
@@ -34,7 +38,7 @@ export async function probeTarget(
       const response = await fetcher(url, {
         method: "GET",
         redirect: "manual",
-        signal: controller.signal,
+        signal,
         headers: {
           "user-agent": "ToolsChecker/1.0",
           accept: "*/*"
@@ -70,6 +74,9 @@ export async function probeTarget(
     }
     throw new CheckError("too_many_redirects", "More than one redirect");
   } catch (error) {
+    if (options.signal?.aborted) {
+      throw options.signal.reason ?? error;
+    }
     return observation({
       options,
       checkedAt: now(),

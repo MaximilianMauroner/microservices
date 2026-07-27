@@ -21,6 +21,8 @@ describe("checker config", () => {
       environment: "preview",
       concurrency: 6,
       probeTimeoutMs: 10_000,
+      runDeadlineMs: 240_000,
+      notificationAttemptLimit: 8,
       discordWebhookUrl: "https://discord.example/webhook/secret/"
     });
   });

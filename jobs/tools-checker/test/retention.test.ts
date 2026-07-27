@@ -21,6 +21,7 @@ describe("history retention and ownership", () => {
       observations: [
         {
           id: "old-observation",
+          monitorId: "public-a",
           runId: "old-run",
           checkedAt: "2026-06-01T12:00:00.000Z",
           success: false,
@@ -67,5 +68,57 @@ describe("history retention and ownership", () => {
     expect(() => assertCheckerOwnedKey("audit/2026/07/x.json")).toThrow(
       /cannot write/
     );
+  });
+
+  it("keeps a cross-midnight incident canonical in its opening-day partition", async () => {
+    const store = new MemoryStore();
+    store.catalog = {
+      ...store.catalog,
+      value: {
+        ...store.catalog.value,
+        entries: store.catalog.value.entries.filter(
+          ({ id }) => id === "public-a"
+        )
+      }
+    };
+    const failing = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response(null, { status: 503 }));
+    await runChecker({
+      store,
+      config: configFixture,
+      logger,
+      fetcher: failing,
+      now: () => new Date("2026-07-27T23:51:00.000Z")
+    });
+    await runChecker({
+      store,
+      config: configFixture,
+      logger,
+      fetcher: failing,
+      now: () => new Date("2026-07-27T23:56:00.000Z")
+    });
+    await runChecker({
+      store,
+      config: configFixture,
+      logger,
+      fetcher: vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(new Response(null, { status: 200 })),
+      now: () => new Date("2026-07-28T00:01:00.000Z")
+    });
+
+    const openingDay = store.history.get("2026-07-27")?.value;
+    const recoveryDay = store.history.get("2026-07-28")?.value;
+    expect(openingDay?.incidents).toHaveLength(1);
+    expect(openingDay?.incidents[0].resolvedAt).toBe(
+      "2026-07-28T00:01:00.000Z"
+    );
+    expect(recoveryDay?.incidents).toEqual([]);
+    expect(
+      recoveryDay?.observations.every(
+        ({ monitorId }) => monitorId === "public-a"
+      )
+    ).toBe(true);
   });
 });

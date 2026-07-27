@@ -11,6 +11,8 @@ export interface CheckerConfig {
   discordWebhookUrl?: string;
   concurrency: number;
   probeTimeoutMs: number;
+  runDeadlineMs: number;
+  notificationAttemptLimit: number;
 }
 
 export function loadConfig(
@@ -45,6 +47,20 @@ export function loadConfig(
       1_000,
       60_000,
       "PROBE_TIMEOUT_MS"
+    ),
+    runDeadlineMs: boundedInteger(
+      env.RUN_DEADLINE_MS,
+      240_000,
+      30_000,
+      270_000,
+      "RUN_DEADLINE_MS"
+    ),
+    notificationAttemptLimit: boundedInteger(
+      env.NOTIFICATION_ATTEMPT_LIMIT,
+      8,
+      1,
+      16,
+      "NOTIFICATION_ATTEMPT_LIMIT"
     )
   };
 }
