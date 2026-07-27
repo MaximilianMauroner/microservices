@@ -37,29 +37,42 @@
       "links": [
         {
           "id": "upload",
-          "label": "Upload (restricted; DNS pending)",
-          "url": "https://uploads.mauroner.eu/uploads",
+          "label": "Open uploader",
+          "url": "https://html-publisher-production-a236.up.railway.app/uploads",
           "access": "restricted"
         }
       ],
       "monitor": {
         "enabled": true,
-        "paused": true,
+        "paused": false,
         "scope": "public",
-        "url": "https://uploads.mauroner.eu/health"
+        "url": "https://html-publisher-production-a236.up.railway.app/health"
       },
-      "privateNotes": "uploads.mauroner.eu is the intended stable URL but DNS was unresolved during planning. Keep checks paused and do not advertise it as live until DNS and Access are verified."
+      "privateNotes": "The Railway service domain is the current restricted upload URL."
     },
     {
       "id": "field-guide-console",
       "groupId": "review",
       "name": "Field Guide Console",
-      "description": "Restricted review and approval console. No stable link is published yet.",
+      "description": "Restricted review and approval console.",
       "order": 0,
       "visibility": "public",
       "lifecycle": "active",
-      "links": [],
-      "privateNotes": "Add a restricted link and monitor only after its stable deployment URL is confirmed."
+      "links": [
+        {
+          "id": "console",
+          "label": "Open Field Guide",
+          "url": "https://field-guide-review-production.up.railway.app/",
+          "access": "restricted"
+        }
+      ],
+      "monitor": {
+        "enabled": true,
+        "paused": false,
+        "scope": "public",
+        "url": "https://field-guide-review-production.up.railway.app/health"
+      },
+      "privateNotes": "The Railway service domain is the current restricted Field Guide URL."
     },
     {
       "id": "tools-directory",

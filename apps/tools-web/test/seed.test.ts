@@ -38,7 +38,7 @@ describe("initial catalog", () => {
     expect(
       catalog.entries.find(({ id }) => id === "artifact-publisher")?.monitor
         ?.paused
-    ).toBe(true);
+    ).toBe(false);
 
     const projected = projectPublicSnapshot(
       catalog,
