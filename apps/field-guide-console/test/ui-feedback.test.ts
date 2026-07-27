@@ -16,12 +16,12 @@ describe("review console feedback", () => {
     expect(html).not.toContain("status.classList");
     expect(html).not.toContain("signin.onclick");
     expect(html).not.toContain("signout.onclick");
-    expect(html).toContain("if(!identity.userId||!identity.token)");
+    expect(html).toContain("state.token='cloudflare-access'");
     expect(html).toContain("Choose a future date before deferring.");
     expect(html.indexOf("if(!input.value")).toBeLessThan(html.indexOf("submitVerdict(card,'defer'"));
     expect(html).toContain("setCardBusy(card,false)");
     expect(html).toContain("Review saved.");
-    expect(html).toContain("Authentication failed.");
+    expect(html).toContain("/cdn-cgi/access/logout");
   });
 
   it("escapes session and commit provenance in history", async () => {

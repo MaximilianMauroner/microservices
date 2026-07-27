@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { renderSuiteChrome } from "@tools-platform/suite-chrome";
 import { htmlResponse } from "./http.js";
 
 export const reviewConsole = (): Response => {
@@ -9,8 +10,8 @@ export const reviewConsole = (): Response => {
       "Content-Security-Policy": [
         "default-src 'none'",
         "style-src 'self'",
-        `script-src 'nonce-${nonce}' https://shoo.dev`,
-        "connect-src 'self' https://shoo.dev",
+        `script-src 'nonce-${nonce}'`,
+        "connect-src 'self'",
         "frame-ancestors 'none'",
         "base-uri 'none'",
         "form-action 'self'",
@@ -30,9 +31,10 @@ function renderPage(nonce: string) {
     <meta name="color-scheme" content="dark">
     <title>Field guide reviews</title>
     <link rel="stylesheet" href="/review.css">
-    <script src="https://shoo.dev/shoo.js" nonce="${nonce}" data-shoo-callback-path="/review/callback" data-shoo-pii="true" data-shoo-auto-callback="false" defer></script>
+    <link rel="stylesheet" href="/review-suite.css">
   </head>
   <body class="min-h-screen bg-stone-950 text-stone-200 antialiased selection:bg-amber-300 selection:text-stone-950">
+    ${renderSuiteChrome("review")}
     <header class="sticky top-0 z-30 border-b border-stone-800 bg-stone-950/95 backdrop-blur">
       <div class="mx-auto flex max-w-3xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
         <a href="/review" class="group flex min-w-0 items-center gap-3" aria-label="Field guide reviews home">
@@ -44,7 +46,6 @@ function renderPage(nonce: string) {
         </a>
         <div class="flex items-center gap-2">
           <span id="account-label" class="hidden max-w-48 truncate text-xs text-stone-500 sm:block"></span>
-          <button data-sign-in class="button-primary">Sign in</button>
           <button id="sign-out" class="button-quiet hidden">Sign out</button>
         </div>
       </div>
@@ -60,16 +61,15 @@ function renderPage(nonce: string) {
       </nav>
     </header>
 
-    <main class="mx-auto max-w-3xl px-4 py-10 sm:px-6 sm:py-14">
-      <section id="signed-out" class="mx-auto max-w-xl border-y border-stone-800 py-14 text-center sm:py-20">
+    <main id="main" class="mx-auto max-w-3xl px-4 py-10 sm:px-6 sm:py-14">
+      <section id="signed-out" class="mx-auto hidden max-w-xl border-y border-stone-800 py-14 text-center sm:py-20">
         <p class="eyebrow">Private review queue</p>
         <h1 class="mt-4 font-serif text-4xl leading-tight text-stone-100 sm:text-5xl">Decide what your agents remember.</h1>
-        <p class="mx-auto mt-5 max-w-md text-sm leading-7 text-stone-400">Candidate lessons stay inactive until you approve them. Sign in with the configured Google account to review project and global guidance.</p>
-        <button data-sign-in class="button-primary mt-8 px-5 py-3">Sign in with Google</button>
+        <p class="mx-auto mt-5 max-w-md text-sm leading-7 text-stone-400">Candidate lessons stay inactive until you approve them. Cloudflare Access protects this review desk.</p>
         <p id="auth-message" class="mt-4 min-h-5 text-sm text-stone-500" role="status" aria-live="polite"></p>
       </section>
 
-      <section id="workspace" class="hidden">
+      <section id="workspace">
         <div class="mb-8 flex items-end justify-between gap-4 border-b border-stone-800 pb-5">
           <div>
             <p id="view-eyebrow" class="eyebrow">Project field guide</p>
@@ -93,7 +93,6 @@ function renderPage(nonce: string) {
 
     <script nonce="${nonce}">
 const elements={account:document.getElementById('account-label'),authMessage:document.getElementById('auth-message'),nav:document.getElementById('review-nav'),reviewList:document.getElementById('review-list'),signedOut:document.getElementById('signed-out'),signOut:document.getElementById('sign-out'),summary:document.getElementById('summary'),toast:document.getElementById('toast'),toastClose:document.getElementById('toast-close'),toastMark:document.getElementById('toast-mark'),toastMessage:document.getElementById('toast-message'),viewEyebrow:document.getElementById('view-eyebrow'),viewTitle:document.getElementById('view-title'),workspace:document.getElementById('workspace')};
-const callbackUrl=location.origin+'/review/callback';
 const params=new URLSearchParams(location.search);
 const state={scope:params.get('scope')==='global'?'global':'project',view:params.get('view')==='history'?'history':'queue',token:null,identity:null,cursor:null,historyItems:[],loadVersion:0,controller:null,toastTimer:null};
 const escapeHtml=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
@@ -116,7 +115,7 @@ function amendmentControls(decision){if(!decision.canAmend)return '';const actio
 function historyRow(decision){const project=decision.projectDisplayName||decision.projectKey||'Global',authority=decision.isCurrent?'Current decision':'Superseded',lineage=decision.amendsDecisionId?' · replaces '+escapeHtml(decision.amendsDecisionId.slice(0,8)):'',effect=decision.effect==='activate'?'lesson active':'lesson archived';return '<article class="history-row '+(decision.isCurrent?'history-row-current':'history-row-superseded')+'" data-id="'+escapeHtml(decision.candidateId)+'" data-round="'+decision.round+'" data-decision-id="'+escapeHtml(decision.decisionId)+'"><div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-stone-500"><span class="scope-label">'+escapeHtml(project)+'</span><span aria-hidden="true">·</span><span>'+escapeHtml(humanAction[decision.action]||decision.action)+'</span><span aria-hidden="true">·</span><span class="'+(decision.isCurrent?'text-amber-300':'text-stone-600')+'">'+authority+'</span><span aria-hidden="true">·</span><span title="'+escapeHtml(decision.reviewedAt)+'">'+escapeHtml(relativeTime(decision.reviewedAt))+'</span></div><h2 class="mt-3 font-serif text-xl text-stone-200">'+escapeHtml(decision.title)+'</h2><p class="mt-2 text-xs text-stone-500">Round '+decision.round+' · '+effect+lineage+' · reviewed by '+escapeHtml(decision.reviewer)+'</p><details class="evidence group mt-4"><summary><span class="evidence-chevron" aria-hidden="true">›</span> Review evidence <span class="text-stone-600">('+decision.evidence.length+')</span></summary><div class="mt-4 space-y-4">'+evidenceMarkup(decision.evidence)+'</div></details>'+amendmentControls(decision)+'</article>'}
 function renderQueue(items){if(items.length===0){renderEmpty();return}elements.reviewList.innerHTML=items.map(queueCard).join('');bindQueueControls()}
 function renderHistory(decisions,hasMore,append){state.historyItems=append?state.historyItems.concat(decisions):decisions;if(state.historyItems.length===0){renderEmpty();return}elements.reviewList.innerHTML=state.historyItems.map(historyRow).join('')+(hasMore?'<button id="load-more" class="button-secondary mx-auto flex">Load older decisions</button>':'<p class="py-3 text-center text-xs text-stone-600">End of history</p>');const loadMore=document.getElementById('load-more');if(loadMore)loadMore.addEventListener('click',()=>loadReviews(true));bindHistoryControls()}
-async function api(path,options={}){const response=await fetch(path,{...options,signal:options.signal,headers:{Authorization:'Bearer '+state.token,'Content-Type':'application/json'}}),text=await response.text();let payload={};try{payload=text?JSON.parse(text):{}}catch{payload={message:'The service returned an unreadable response.'}}if(!response.ok){const error=new Error(payload.message||('Request failed with status '+response.status+'.'));error.status=response.status;error.code=payload.error;throw error}return payload}
+async function api(path,options={}){const response=await fetch(path,{...options,signal:options.signal,headers:{'Content-Type':'application/json'}}),text=await response.text();let payload={};try{payload=text?JSON.parse(text):{}}catch{payload={message:'The service returned an unreadable response.'}}if(!response.ok){const error=new Error(payload.message||('Request failed with status '+response.status+'.'));error.status=response.status;error.code=payload.error;throw error}return payload}
 function friendlyError(error){if(error.name==='AbortError')return null;if(error.status===401)return 'Your session expired. Sign in again to continue.';if(error.code==='origin_forbidden')return 'This deployment origin does not match PUBLIC_BASE_URL.';if(error.status===409)return 'A verdict was already recorded for this review. The queue has been refreshed.';return error.message||'Something went wrong. Please try again.'}
 async function loadReviews(append=false){if(!state.token)return;const version=++state.loadVersion;if(!append){state.controller?.abort();state.controller=new AbortController();renderSkeletons()}updateNavigation();try{const cursor=append&&state.cursor?'&cursor='+encodeURIComponent(state.cursor):'',data=await api('/api/review/'+state.view+'?scope='+state.scope+cursor,{signal:state.controller?.signal});if(version!==state.loadVersion)return;renderSummary(data.summary);if(state.view==='history'){state.cursor=data.nextCursor||null;renderHistory(data.decisions,data.hasMore,append)}else{state.cursor=null;state.historyItems=[];renderQueue(data.items)}}catch(error){const message=friendlyError(error);if(!message)return;if(error.status===401){state.token=null;state.identity=null;setAuthenticated(false);showAuthMessage(message,true)}else{showToast(message,'error',true);if(!append&&elements.reviewList.children.length===0)renderEmpty()}}}
 function setDeferDate(input,days){const date=new Date(Date.now()+days*86400000);input.value=new Date(date.getTime()-date.getTimezoneOffset()*60000).toISOString().slice(0,16)}
@@ -126,10 +125,27 @@ async function submitScopeChange(card,scope){setCardBusy(card,true);showToast(sc
 function bindQueueControls(){document.querySelectorAll('[data-scope-target]:not([disabled])').forEach(button=>button.addEventListener('click',()=>submitScopeChange(button.closest('article'),button.dataset.scopeTarget)));document.querySelectorAll('[data-show-defer]').forEach(button=>button.addEventListener('click',()=>{const card=button.closest('article'),panel=card.querySelector('[data-defer-panel]'),input=card.querySelector('[data-defer-date]');panel.classList.toggle('hidden');if(!panel.classList.contains('hidden')){if(!input.value)setDeferDate(input,7);input.focus()}}));document.querySelectorAll('[data-preset-days]').forEach(button=>button.addEventListener('click',()=>setDeferDate(button.closest('article').querySelector('[data-defer-date]'),Number(button.dataset.presetDays))));document.querySelectorAll('[data-verdict]').forEach(button=>button.addEventListener('click',()=>submitVerdict(button.closest('article'),button.dataset.verdict)));document.querySelectorAll('[data-confirm-defer]').forEach(button=>button.addEventListener('click',()=>{const card=button.closest('article'),input=card.querySelector('[data-defer-date]'),date=new Date(input.value);if(!input.value||!Number.isFinite(date.getTime())||date.getTime()<=Date.now()){showToast('Choose a future date before deferring.','error',true);input.focus();return}submitVerdict(card,'defer',date.toISOString())}))}
 async function submitAmendment(row,action,deferUntil){setCardBusy(row,true);showToast('Updating decision…','info',true);try{await api('/api/review/candidates/'+encodeURIComponent(row.dataset.id)+'/rounds/'+encodeURIComponent(row.dataset.round)+'/amendments',{method:'POST',body:JSON.stringify({expectedDecisionId:row.dataset.decisionId,action,...(deferUntil?{deferUntil}:{})})});showToast('Decision updated. The original remains in history.','success');state.cursor=null;state.historyItems=[];await loadReviews(false)}catch(error){setCardBusy(row,false);if(error.status===409){showToast('This decision changed elsewhere. History was refreshed; review the current verdict before trying again.','error',true);state.cursor=null;state.historyItems=[];await loadReviews(false);return}const message=friendlyError(error);if(message)showToast(message,'error',true)}}
 function bindHistoryControls(){document.querySelectorAll('[data-update-decision]').forEach(button=>button.addEventListener('click',()=>button.closest('article').querySelector('[data-amendment-panel]').classList.toggle('hidden')));document.querySelectorAll('[data-amend-action]').forEach(button=>button.addEventListener('click',()=>submitAmendment(button.closest('article'),button.dataset.amendAction)));document.querySelectorAll('[data-show-amend-defer]').forEach(button=>button.addEventListener('click',()=>{const row=button.closest('article'),panel=row.querySelector('[data-amend-defer-panel]'),input=row.querySelector('[data-amend-defer-date]');panel.classList.toggle('hidden');if(!panel.classList.contains('hidden')){if(!input.value)setDeferDate(input,7);input.focus()}}));document.querySelectorAll('[data-amend-preset-days]').forEach(button=>button.addEventListener('click',()=>setDeferDate(button.closest('article').querySelector('[data-amend-defer-date]'),Number(button.dataset.amendPresetDays))));document.querySelectorAll('[data-confirm-amend-defer]').forEach(button=>button.addEventListener('click',()=>{const row=button.closest('article'),input=row.querySelector('[data-amend-defer-date]'),date=new Date(input.value),latest=new Date(Date.now()+90*86400000);if(!input.value||!Number.isFinite(date.getTime())||date.getTime()<=Date.now()||date>latest){showToast('Choose a future date within 90 days.','error',true);input.focus();return}submitAmendment(row,'defer',date.toISOString())}))}
-async function startSignIn(){if(!window.Shoo){showAuthMessage('Google sign-in is unavailable. Refresh and try again.',true);return}try{showAuthMessage('Opening secure sign-in…');await window.Shoo.startSignIn({redirectUri:callbackUrl,requestPii:true})}catch(error){showAuthMessage(error.message||'Sign in failed.',true)}}
-async function boot(){setAuthenticated(false);if(!window.Shoo){showAuthMessage('Google sign-in could not load. Refresh and try again.',true);return}try{const callback=window.Shoo.parseCallback();if(callback){await window.Shoo.handleCallback({redirectUri:callbackUrl,redirectTo:'/review'});return}updateNavigation();const identity=window.Shoo.getIdentity();if(!identity.userId||!identity.token){showAuthMessage('Sign in to review lessons.');return}state.identity=identity;state.token=identity.token;elements.account.textContent='Reviewer';setAuthenticated(true);await loadReviews(false)}catch(error){showAuthMessage(error.message||'Authentication failed.',true)}}
-document.querySelectorAll('[data-sign-in]').forEach(button=>button.addEventListener('click',startSignIn));elements.signOut.addEventListener('click',()=>{if(window.Shoo)window.Shoo.clearIdentity();location.assign('/review')});elements.toastClose.addEventListener('click',()=>setHidden(elements.toast,true));document.querySelectorAll('[data-scope]').forEach(button=>button.addEventListener('click',()=>{if(!state.token)return;state.scope=button.dataset.scope;state.cursor=null;state.historyItems=[];loadReviews(false)}));document.querySelectorAll('[data-view]').forEach(button=>button.addEventListener('click',()=>{if(!state.token)return;state.view=button.dataset.view;state.cursor=null;state.historyItems=[];loadReviews(false)}));addEventListener('load',boot);
+async function boot(){state.token='cloudflare-access';state.identity={provider:'cloudflare-access'};elements.account.textContent='Access protected';setAuthenticated(true);updateNavigation();await loadReviews(false)}
+elements.signOut.addEventListener('click',()=>location.assign('/cdn-cgi/access/logout'));elements.toastClose.addEventListener('click',()=>setHidden(elements.toast,true));document.querySelectorAll('[data-scope]').forEach(button=>button.addEventListener('click',()=>{if(!state.token)return;state.scope=button.dataset.scope;state.cursor=null;state.historyItems=[];loadReviews(false)}));document.querySelectorAll('[data-view]').forEach(button=>button.addEventListener('click',()=>{if(!state.token)return;state.view=button.dataset.view;state.cursor=null;state.historyItems=[];loadReviews(false)}));addEventListener('load',boot);
     </script>
   </body>
 </html>`;
 }
+
+export const reviewSuiteStyles = String.raw`
+.visually-hidden{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.suite-skip{position:fixed;z-index:100;top:8px;left:8px;padding:9px 12px;transform:translateY(-160%);border-radius:6px;background:#fafaf9;color:#0c0a09}
+.suite-skip:focus{transform:translateY(0)}
+.suite-header{border-bottom:1px solid #292524;background:#0c0a09;color:#e7e5e4}
+.suite-header__inner{width:min(100% - 32px,1080px);min-height:64px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:24px}
+.suite-brand{display:inline-flex;flex:0 0 auto;align-items:center;gap:9px;font-weight:700;text-decoration:none}
+.suite-brand>span{width:28px;height:28px;display:grid;place-items:center;border-radius:6px;background:#fcd34d;color:#1c1917;font-size:13px}
+.suite-nav{display:flex;min-width:0;align-items:center;gap:4px;overflow-x:auto;scrollbar-width:thin}
+.suite-nav a{display:inline-flex;min-height:38px;flex:0 0 auto;align-items:center;gap:7px;padding:8px 10px;border-radius:6px;color:#a8a29e;font-size:13px;font-weight:650;text-decoration:none}
+.suite-nav a:hover{color:#fafaf9;background:#1c1917}
+.suite-nav a[aria-current=page]{color:#fafaf9;background:#292524}
+.suite-lock{position:relative;width:9px;height:8px;display:inline-block;border:1.5px solid currentColor;border-radius:2px;opacity:.65}
+.suite-lock:before{content:"";position:absolute;left:1px;bottom:5px;width:4px;height:4px;border:1.5px solid currentColor;border-bottom:0;border-radius:4px 4px 0 0}
+@media(max-width:620px){.suite-header__inner{width:100%;min-height:auto;align-items:stretch;flex-direction:column;gap:4px;padding:12px}.suite-brand{padding-left:4px}.suite-nav{width:100%;flex-wrap:wrap;overflow-x:visible;padding-bottom:2px}#account-label{display:none!important}#sign-out{white-space:nowrap}}
+@media(prefers-reduced-motion:reduce){.suite-skip{transition:none}}
+`;

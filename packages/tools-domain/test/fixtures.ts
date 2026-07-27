@@ -125,7 +125,14 @@ export function stateFixture(): CheckerStateDocument {
           latencyMs: 42,
           errorCode: null
         },
-        openIncidentId: null
+        openIncidentId: null,
+        uptimeDays: [
+          {
+            day: "2026-07-27",
+            successfulChecks: 99,
+            totalChecks: 100
+          }
+        ]
       }
     },
     incidents: [],

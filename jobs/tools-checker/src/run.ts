@@ -325,7 +325,8 @@ function initialMonitor(monitorId: string): MonitorState {
     status: "checking",
     consecutiveFailures: 0,
     latestObservation: null,
-    openIncidentId: null
+    openIncidentId: null,
+    uptimeDays: []
   };
 }
 
@@ -352,6 +353,7 @@ async function observeEntry(
     };
   }
   return probeTarget(monitor.url, {
+    access: dependencies.config.access,
     fetcher: dependencies.fetcher,
     now: () => now().getTime(),
     timeoutMs: dependencies.config.probeTimeoutMs,
@@ -421,7 +423,7 @@ function foldObservation(
     ...state,
     monitors: {
       ...state.monitors,
-      [entry.id]: transition.monitor
+      [entry.id]: recordUptimeObservation(transition.monitor, observation)
     },
     incidents,
     notifications
@@ -436,6 +438,33 @@ function foldObservation(
         }
       ])
     : nextState;
+}
+
+function recordUptimeObservation(
+  monitor: MonitorState,
+  observation: CheckObservation
+): MonitorState {
+  const day = observation.checkedAt.slice(0, 10);
+  const cutoff = new Date(observation.checkedAt);
+  cutoff.setUTCDate(cutoff.getUTCDate() - 89);
+  const cutoffDay = cutoff.toISOString().slice(0, 10);
+  const days = new Map(
+    (monitor.uptimeDays ?? [])
+      .filter((item) => item.day >= cutoffDay && item.day <= day)
+      .map((item) => [item.day, item])
+  );
+  const current = days.get(day);
+  days.set(day, {
+    day,
+    successfulChecks: (current?.successfulChecks ?? 0) + (observation.success ? 1 : 0),
+    totalChecks: (current?.totalChecks ?? 0) + 1
+  });
+  return {
+    ...monitor,
+    uptimeDays: [...days.values()]
+      .sort((left, right) => left.day.localeCompare(right.day))
+      .slice(-90)
+  };
 }
 
 async function reconcilePendingHistory(

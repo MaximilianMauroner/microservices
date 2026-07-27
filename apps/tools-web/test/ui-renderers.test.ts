@@ -7,7 +7,8 @@ import {
   renderOperationsAuditPage,
   renderOperationsHistoryPage,
   renderOperationsPage,
-  renderPublicPage
+  renderPublicPage,
+  renderStatusPage
 } from "../src/ui/index.js";
 
 const generatedAt = "2026-07-27T12:00:00.000Z";
@@ -61,7 +62,14 @@ const publicSnapshot: PublicSnapshotDocument = {
       status: "up",
       checkedAt: generatedAt,
       latencyMs: 42,
-      statusCode: 200
+      statusCode: 200,
+      uptimeDays: [
+        {
+          day: "2026-07-27",
+          successfulChecks: 98,
+          totalChecks: 100
+        }
+      ]
     },
     "network-console": {
       monitorId: "network-console",
@@ -143,17 +151,39 @@ const privateSnapshot: PrivateSnapshotDocument = {
 };
 
 describe("public page", () => {
-  test("renders semantic grouped cards, status, and labeled restricted links", () => {
+  test("renders a categorized Tools directory with access and availability labels", () => {
     const html = renderPublicPage(publicSnapshot);
 
     expect(html).toContain('<main id="main"');
-    expect(html).toContain('aria-labelledby="group-publishing"');
-    expect(html).toContain('role="list"');
+    expect(html).toContain('aria-current="page">Tools');
+    expect(html).toContain("Publishing &amp; sharing");
+    expect(html).toContain("Cloudflare Access");
+    expect(html).toContain("Tailscale required");
     expect(html).toContain("Operational");
     expect(html).toContain("Unavailable from Railway");
-    expect(html).toContain("Restricted");
-    expect(html).toContain("restricted access");
+    expect(html).not.toContain("Operator sign-in");
     expect(html).not.toContain('<script src="/assets/ops.js"');
+  });
+
+  test("renders the status summary, exact history bars, and labeled restricted links", () => {
+    const html = renderStatusPage(publicSnapshot);
+
+    expect(html).toContain('<main id="main"');
+    expect(html).toContain('aria-labelledby="status-title"');
+    expect(html).toContain('aria-labelledby="services-title"');
+    expect(html).toContain('role="list"');
+    expect(html).toContain("Status is being prepared");
+    expect(html).not.toContain("All services are operational");
+    expect(html).toContain("Operational");
+    expect(html).toContain("Not checkable from Railway");
+    expect(html).toContain("98% uptime");
+    expect(html).toContain("100 checks");
+    expect(html).toContain('href="/status" aria-current="page"');
+    expect(html).toContain("Access protected");
+    expect(html).toContain('datetime="2026-07-27T12:00:00.000Z"');
+    expect((html.match(/class="uptime-day /g) ?? [])).toHaveLength(180);
+    expect(html).not.toContain('<script src="/assets/ops.js"');
+    expect(html).not.toContain("Operator sign-in");
   });
 
   test("escapes content and allows only HTTP destination links", () => {
@@ -187,6 +217,121 @@ describe("public page", () => {
     expect(html).not.toContain("privateNotes");
     expect(html).not.toContain("notification-secret");
     expect(html).not.toContain("raw-discord-error");
+  });
+
+  test("does not borrow another component status for the Tools Directory row", () => {
+    const html = renderStatusPage({
+      ...publicSnapshot,
+      entries: [
+        ...publicSnapshot.entries,
+        {
+          id: "tools-directory",
+          groupId: "publishing",
+          name: "Tools Status & Directory",
+          description: "The unified service itself.",
+          order: 2,
+          links: []
+        }
+      ]
+    });
+
+    expect(html).toContain("Tools Status &amp; Directory");
+    expect(html).toMatch(
+      /<h3>Tools Status &amp; Directory<\/h3>[\s\S]*?<span class="service-state[^"]*">Not monitored<\/span>/
+    );
+    expect(html).toContain("Status is being prepared");
+  });
+
+  test("uses operational overall state only when every listed service is known up", () => {
+    const html = renderStatusPage({
+      ...publicSnapshot,
+      statuses: {
+        ...publicSnapshot.statuses,
+        "network-console": {
+          ...publicSnapshot.statuses["network-console"],
+          status: "up",
+          checkedAt: generatedAt,
+          latencyMs: 51,
+          statusCode: 200
+        }
+      }
+    });
+
+    expect(html).toContain("All services are operational");
+  });
+
+  test("promotes an outage and zero-percent history without operational styling", () => {
+    const html = renderStatusPage({
+      ...publicSnapshot,
+      statuses: {
+        ...publicSnapshot.statuses,
+        "artifact-publisher": {
+          ...publicSnapshot.statuses["artifact-publisher"],
+          status: "down",
+          uptimeDays: [
+            {
+              day: "2026-07-27",
+              successfulChecks: 0,
+              totalChecks: 2
+            }
+          ]
+        }
+      }
+    });
+
+    expect(html).toContain("Some services are unavailable");
+    expect(html).toContain("Service interruption");
+    expect(html).toContain("uptime-day--outage");
+    expect(html).toMatch(
+      /<span class="service-state service-state--outage">0% uptime<\/span>/
+    );
+    expect(html).not.toMatch(
+      /<span class="service-state service-state--operational">0% uptime<\/span>/
+    );
+  });
+
+  test("excludes stale and future checks from paused rolling uptime", () => {
+    const html = renderStatusPage({
+      ...publicSnapshot,
+      statuses: {
+        ...publicSnapshot.statuses,
+        "artifact-publisher": {
+          ...publicSnapshot.statuses["artifact-publisher"],
+          status: "paused",
+          uptimeDays: [
+            { day: "2026-04-28", successfulChecks: 100, totalChecks: 100 },
+            { day: "2026-04-29", successfulChecks: 1, totalChecks: 2 },
+            { day: "2026-07-27", successfulChecks: 2, totalChecks: 2 },
+            { day: "2026-07-28", successfulChecks: 100, totalChecks: 100 },
+          ],
+        },
+      },
+    });
+
+    expect(html).toContain("75% uptime");
+    expect(html).toContain("across 4 checks");
+    expect(html).not.toContain("across 204 checks");
+  });
+
+  test("distinguishes stale service observations from snapshot generation", () => {
+    const html = renderStatusPage({
+      ...publicSnapshot,
+      generatedAt: "2026-07-27T15:30:00.000Z",
+      statuses: {
+        ...publicSnapshot.statuses,
+        "artifact-publisher": {
+          ...publicSnapshot.statuses["artifact-publisher"],
+          checkedAt: "2026-07-26T09:15:00.000Z"
+        }
+      }
+    });
+
+    expect(html).toContain(
+      'Last updated <time datetime="2026-07-27T15:30:00.000Z"'
+    );
+    expect(html).toContain(
+      'Latest check <time datetime="2026-07-26T09:15:00.000Z"'
+    );
   });
 });
 

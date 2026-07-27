@@ -7,4 +7,4 @@ export {
   type OperationsHistoryPage,
   type OperationsPageModel
 } from "./ops-page.js";
-export { renderPublicPage } from "./public-page.js";
+export { renderPublicPage, renderStatusPage } from "./public-page.js";

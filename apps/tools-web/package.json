@@ -10,6 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@tools-platform/suite-chrome": "workspace:*",
     "@aws-sdk/client-s3": "^3.717.0",
     "@tools-platform/domain": "workspace:*",
     "jose": "^6.2.4"

@@ -87,4 +87,33 @@ describe("HTTP probing", () => {
     });
     expect(redirected.errorCode).toBe("too_many_redirects");
   });
+
+  it("sends Access credentials only to explicitly protected origins", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response(null, {
+          status: 302,
+          headers: { location: "https://public.example/health" }
+        })
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 200 }));
+    await probeTarget("https://tools.example/health", {
+      ...options,
+      fetcher,
+      access: {
+        clientId: "client-id",
+        clientSecret: "client-secret",
+        protectedOrigins: new Set(["https://tools.example"])
+      }
+    });
+
+    expect(fetcher.mock.calls[0][1]?.headers).toMatchObject({
+      "CF-Access-Client-Id": "client-id",
+      "CF-Access-Client-Secret": "client-secret"
+    });
+    expect(fetcher.mock.calls[1][1]?.headers).not.toHaveProperty(
+      "CF-Access-Client-Id"
+    );
+  });
 });

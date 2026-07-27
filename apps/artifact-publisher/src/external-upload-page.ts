@@ -1,7 +1,8 @@
+import { renderSuiteChrome } from "@tools-platform/suite-chrome";
+
 export function renderExternalUploadPage(options: {
   assetVersion: string;
   retentionLabel: string;
-  shooRedirectUri: string;
 }) {
   return `<!doctype html>
 <html lang="en">
@@ -11,18 +12,19 @@ export function renderExternalUploadPage(options: {
   <meta name="robots" content="noindex, nofollow">
   <title>Temporary uploads</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/uploads/assets/${escapeHtml(options.assetVersion)}/app.css">
+  <link rel="stylesheet" href="/publish/assets/${escapeHtml(options.assetVersion)}/app.css">
 </head>
 <body>
+  ${renderSuiteChrome("publish")}
   <header class="topbar">
     <div class="topbar__inner">
-      <a class="brand" href="/uploads" aria-label="Temporary uploads">
+      <a class="brand" href="/publish" aria-label="Temporary uploads">
         <img src="/favicon.svg" alt="" width="28" height="28">
         <span>Temporary uploads</span>
       </a>
-      <div class="identity" id="identity" hidden>
+      <div class="identity" id="identity">
         <span class="identity__status" aria-hidden="true"></span>
-        <span class="identity__email" id="identity-email"></span>
+        <span class="identity__email" id="identity-email">Cloudflare Access</span>
         <button class="identity__signout" id="sign-out" type="button" aria-label="Sign out" title="Sign out">
           <svg aria-hidden="true" viewBox="0 0 24 24">
             <path d="M10 17l5-5-5-5"></path>
@@ -34,22 +36,22 @@ export function renderExternalUploadPage(options: {
     </div>
   </header>
 
-  <main>
-    <section class="auth-panel" id="auth-panel" aria-labelledby="auth-heading">
+  <main id="main">
+    <section class="auth-panel" id="auth-panel" aria-labelledby="auth-heading" hidden>
       <span class="auth-panel__icon">
         <svg aria-hidden="true" viewBox="0 0 24 24">
           <path d="M12 3 5 6v5c0 4.6 2.8 8.2 7 10 4.2-1.8 7-5.4 7-10V6z"></path>
           <path d="m9 12 2 2 4-4"></path>
         </svg>
       </span>
-      <h1 id="auth-heading">Sign in to upload</h1>
-      <p id="auth-message">Use the approved Google account to continue.</p>
+      <h1 id="auth-heading">Access session required</h1>
+      <p id="auth-message">Refresh to continue through Cloudflare Access.</p>
       <button class="button button--primary auth-panel__button" id="sign-in" type="button">
-        Continue with Google
+        Refresh sign-in
       </button>
     </section>
 
-    <div id="authenticated-app" hidden>
+    <div id="authenticated-app">
       <nav class="view-tabs" role="tablist" aria-label="Upload views">
         <button class="view-tab is-active" id="upload-tab" type="button" role="tab" aria-selected="true" aria-controls="upload-view">
           <svg aria-hidden="true" viewBox="0 0 24 24">
@@ -216,17 +218,7 @@ export function renderExternalUploadPage(options: {
     </div>
   </main>
 
-  <script
-    src="https://shoo.dev/shoo.js"
-    data-shoo-callback-path="/uploads/callback"
-    data-shoo-redirect-uri="${escapeHtml(options.shooRedirectUri)}"
-    data-shoo-pii="true"
-    data-shoo-auto-callback="false"
-    data-shoo-auto-session-monitor="false"
-    data-shoo-auto-links="false"
-    defer
-  ></script>
-  <script src="/uploads/assets/${escapeHtml(options.assetVersion)}/app.js" defer></script>
+  <script src="/publish/assets/${escapeHtml(options.assetVersion)}/app.js" defer></script>
 </body>
 </html>`;
 }
@@ -245,6 +237,19 @@ body { min-width: 320px; min-height: 100vh; margin: 0; background: #f4f6f8; }
 button, input { font: inherit; }
 button, label, a { -webkit-tap-highlight-color: transparent; }
 [hidden] { display: none !important; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.suite-skip { position: fixed; z-index: 100; top: 8px; left: 8px; padding: 9px 12px; transform: translateY(-160%); border-radius: 6px; background: #17212b; color: #fff; }
+.suite-skip:focus { transform: translateY(0); }
+.suite-header { border-bottom: 1px solid #d9e0e5; background: #fff; }
+.suite-header__inner { width: min(100% - 32px, 1080px); min-height: 64px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+.suite-brand { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 9px; color: #1d2935; font-weight: 760; text-decoration: none; }
+.suite-brand > span { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 6px; background: #17212b; color: #fff; font-size: 13px; }
+.suite-nav { display: flex; min-width: 0; align-items: center; gap: 4px; overflow-x: auto; scrollbar-width: thin; }
+.suite-nav a { display: inline-flex; min-height: 38px; flex: 0 0 auto; align-items: center; gap: 7px; padding: 8px 10px; border-radius: 6px; color: #64717d; font-size: 13px; font-weight: 650; text-decoration: none; }
+.suite-nav a:hover { color: #17212b; background: #f1f4f5; }
+.suite-nav a[aria-current="page"] { color: #17212b; background: #e9eef1; }
+.suite-lock { position: relative; width: 9px; height: 8px; display: inline-block; border: 1.5px solid currentColor; border-radius: 2px; opacity: .65; }
+.suite-lock::before { content: ""; position: absolute; left: 1px; bottom: 5px; width: 4px; height: 4px; border: 1.5px solid currentColor; border-bottom: 0; border-radius: 4px 4px 0 0; }
 
 .topbar { height: 56px; border-bottom: 1px solid #d9e0e5; background: #fff; }
 .topbar__inner {
@@ -370,6 +375,9 @@ form { padding: 28px; }
 }
 
 @media (max-width: 620px) {
+  .suite-header__inner { width: 100%; min-height: auto; align-items: stretch; flex-direction: column; gap: 4px; padding: 12px; }
+  .suite-brand { padding-left: 4px; }
+  .suite-nav { width: 100%; flex-wrap: wrap; overflow-x: visible; padding-bottom: 2px; }
   .topbar__inner, main { width: min(100% - 24px, 820px); }
   .identity__email { max-width: 124px; }
   main { padding: 24px 0 48px; }
@@ -489,7 +497,7 @@ export const EXTERNAL_UPLOAD_SCRIPT = `
     authPanel.hidden = false;
     authenticatedApp.hidden = true;
     identity.hidden = true;
-    authMessage.textContent = message || "Use the approved Google account to continue.";
+    authMessage.textContent = message || "Sign in through Cloudflare Access to continue.";
     signIn.disabled = false;
   };
 
@@ -498,7 +506,7 @@ export const EXTERNAL_UPLOAD_SCRIPT = `
     authPanel.hidden = true;
     authenticatedApp.hidden = false;
     identity.hidden = false;
-    identityEmail.textContent = claims.email || "Google account";
+    identityEmail.textContent = claims.email || "Cloudflare Access";
   };
 
   const setView = (view) => {
@@ -640,13 +648,11 @@ export const EXTERNAL_UPLOAD_SCRIPT = `
       const response = await fetch(url, {
         headers: {
           Accept: "application/json",
-          Authorization: "Bearer " + authToken
         }
       });
       const payload = await response.json();
       if (response.status === 401) {
-        if (window.Shoo) window.Shoo.clearIdentity();
-        showSignedOut("Your session expired. Sign in again.");
+        showSignedOut("Your Cloudflare Access session expired. Refresh to sign in again.");
         return;
       }
       if (!response.ok || !payload || !Array.isArray(payload.uploads)) {
@@ -675,67 +681,13 @@ export const EXTERNAL_UPLOAD_SCRIPT = `
   };
 
   const initializeAuth = async () => {
-    if (!window.Shoo) {
-      showSignedOut("Authentication could not be loaded. Refresh and try again.");
-      signIn.disabled = true;
-      return;
-    }
-
-    if (window.Shoo.parseCallback()) {
-      signIn.disabled = true;
-      authMessage.textContent = "Finishing sign-in...";
-      try {
-        await window.Shoo.handleCallback({ redirectTo: "/uploads" });
-      } catch {
-        window.Shoo.clearIdentity();
-        showSignedOut("Sign-in failed. Try again.");
-      }
-      return;
-    }
-
-    const storedIdentity = window.Shoo.getIdentity();
-    if (!storedIdentity || typeof storedIdentity.token !== "string") {
-      showSignedOut();
-      return;
-    }
-
-    const claims = window.Shoo.decodeIdentityClaims(storedIdentity.token);
-    if (!claims || claims.email_verified !== true || typeof claims.email !== "string") {
-      window.Shoo.clearIdentity();
-      showSignedOut("Shoo did not return a verified email address.");
-      return;
-    }
-
-    if (
-      typeof claims.exp !== "number" ||
-      claims.exp * 1000 <= Date.now()
-    ) {
-      window.Shoo.clearIdentity();
-      showSignedOut("Your session expired. Sign in again.");
-      return;
-    }
-
-    showSignedIn(storedIdentity.token, claims);
+    showSignedIn("cloudflare-access", { email: "Cloudflare Access" });
   };
 
-  signIn.addEventListener("click", async () => {
-    if (!window.Shoo) return;
-    signIn.disabled = true;
-    authMessage.textContent = "Opening Google sign-in...";
-    try {
-      await window.Shoo.startSignIn({
-        requestPii: true,
-        returnTo: "/uploads"
-      });
-    } catch {
-      showSignedOut("Could not start sign-in. Try again.");
-    }
-  });
+  signIn.addEventListener("click", () => location.reload());
 
   signOut.addEventListener("click", () => {
-    if (window.Shoo) window.Shoo.clearIdentity();
-    reset();
-    showSignedOut();
+    location.assign("/cdn-cgi/access/logout");
   });
 
   uploadTab.addEventListener("click", () => setView("upload"));
@@ -813,7 +765,6 @@ export const EXTERNAL_UPLOAD_SCRIPT = `
 
       if (request.status < 200 || request.status >= 300 || !payload || !payload.url) {
         if (request.status === 401) {
-          if (window.Shoo) window.Shoo.clearIdentity();
           reset();
           showSignedOut("Your session expired. Sign in again.");
           return;
@@ -853,7 +804,6 @@ export const EXTERNAL_UPLOAD_SCRIPT = `
 
     request.open("POST", "/api/external-uploads");
     request.setRequestHeader("Accept", "application/json");
-    request.setRequestHeader("Authorization", "Bearer " + authToken);
     request.send(body);
   });
 

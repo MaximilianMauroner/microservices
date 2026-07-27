@@ -35,6 +35,27 @@ function setup(authentication: Authenticator = passAuth) {
 }
 
 describe("field guide review transport", () => {
+  it("makes the unsupported standalone browser mode explicit", async () => {
+    const repository = new MemoryReviewRepository();
+    const app = createApp({
+      repository,
+      agentAuth: passAuth,
+      reviewerAuth: passAuth,
+      publicBaseUrl: origin,
+      browserUi: false,
+    });
+
+    for (const path of ["/", "/review", "/review.css", "/api/review/queue"]) {
+      const response = await callApp(app, path);
+      expect(response.status).toBe(503);
+      expect(await response.text()).toContain(
+        "available only through the unified Mauroner Tools service",
+      );
+    }
+    expect((await callApp(app, "/health")).status).toBe(200);
+    expect((await callApp(app, "/api/agent/decisions")).status).toBe(200);
+  });
+
   it("serves public routes and deterministic not-found responses", async () => {
     const { app } = setup();
     const health = await callApp(app, "/health");
@@ -51,7 +72,7 @@ describe("field guide review transport", () => {
       "text/html; charset=utf-8",
     );
     expect(await (await callApp(app, "/review/callback")).text()).toContain(
-      "data-shoo-callback-path",
+      "Cloudflare Access protects this review desk",
     );
     const css = await callApp(app, "/review.css");
     expect(css.headers.get("cache-control")).toBe("public, max-age=300");

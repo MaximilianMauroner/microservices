@@ -47,19 +47,12 @@ export function renderOperationsPage(model: OperationsPageModel): string {
   const { catalog, state } = model.snapshot;
   const groups = [...catalog.groups].sort(byOrderThenId);
   const entries = [...catalog.entries].sort(byOrderThenId);
-  const body = `<header class="site-header site-header--ops">
-      <div class="wrap masthead">
-        <a class="wordmark" href="/" aria-label="Public tools directory">Tools<span>.</span></a>
-        <p><strong>Operations</strong> <span class="environment">Access protected</span></p>
-        <p class="actor">Signed in as ${escapeHtml(model.actor)}</p>
-      </div>
-    </header>
-    <main id="main" class="wrap ops" data-ops-root data-revision="${escapeHtml(model.revision)}">
+  const body = `<main id="main" class="wrap ops" data-ops-root data-revision="${escapeHtml(model.revision)}">
       <section class="ops-heading" aria-labelledby="ops-title">
         <div>
           <p class="eyebrow">Catalog administration</p>
           <h1 id="ops-title">Tools operations</h1>
-          <p>Edit the curated directory and monitor settings. Changes use optimistic concurrency and are never retried automatically.</p>
+          <p><span class="environment">Cloudflare Access protected</span> · Signed in as ${escapeHtml(model.actor)}. Edit the curated directory and monitor settings. Changes use optimistic concurrency and are never retried automatically.</p>
         </div>
         <dl class="snapshot-meta">
           <div><dt>Catalog revision</dt><dd data-current-revision>${escapeHtml(model.revision)}</dd></div>
@@ -98,7 +91,8 @@ export function renderOperationsPage(model: OperationsPageModel): string {
     title: "Operations — Tools",
     description: "Protected Tools Platform catalog administration.",
     body,
-    operations: true
+    operations: true,
+    active: "manage"
   });
 }
 

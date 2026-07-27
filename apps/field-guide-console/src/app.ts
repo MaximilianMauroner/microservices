@@ -16,7 +16,7 @@ import {
   type Authenticator,
   type FetchHandler,
 } from "./http.js";
-import { reviewConsole } from "./ui.js";
+import { reviewConsole, reviewSuiteStyles } from "./ui.js";
 
 type ParsedBody = { json: boolean; value?: unknown };
 
@@ -25,6 +25,7 @@ export function createApp(options: {
   agentAuth: Authenticator;
   reviewerAuth: Authenticator;
   publicBaseUrl: string;
+  browserUi?: boolean;
   stylesheet?: BodyInit | Blob;
   now?: () => Date;
 }): FetchHandler {
@@ -38,9 +39,23 @@ export function createApp(options: {
       const url = new URL(request.url);
       const parsedBody = await parseBody(request);
       const pathname = normalizePath(url.pathname);
+      const browserUi = options.browserUi !== false;
 
       if (method === "GET" && routeIs(pathname, "/health"))
         response = jsonResponse({ ok: true });
+      if (
+        response === undefined &&
+        !browserUi &&
+        (routeIs(pathname, "/") ||
+          isPrefix(pathname, "/review") ||
+          routeIs(pathname, "/review.css") ||
+          routeIs(pathname, "/review-suite.css") ||
+          isPrefix(pathname, "/api/review"))
+      )
+        response = textResponse(
+          "The review browser is available only through the unified Mauroner Tools service.",
+          { status: 503 },
+        );
       if (
         response === undefined &&
         method === "GET" &&
@@ -54,6 +69,18 @@ export function createApp(options: {
         routeIs(pathname, "/review.css")
       ) {
         response = new Response(options.stylesheet ?? "", {
+          headers: secureHeaders({
+            "Cache-Control": "public, max-age=300",
+            "Content-Type": "text/css; charset=utf-8",
+          }),
+        });
+      }
+      if (
+        response === undefined &&
+        method === "GET" &&
+        routeIs(pathname, "/review-suite.css")
+      ) {
+        response = new Response(reviewSuiteStyles, {
           headers: secureHeaders({
             "Cache-Control": "public, max-age=300",
             "Content-Type": "text/css; charset=utf-8",

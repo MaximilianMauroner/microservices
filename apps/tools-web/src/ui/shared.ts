@@ -1,4 +1,8 @@
 import type { MonitorStatus, PublicMonitorStatus } from "@tools-platform/domain";
+import {
+  renderSuiteChrome,
+  type SuiteDestination
+} from "@tools-platform/suite-chrome";
 import { escapeHtml } from "./escape.js";
 
 export function pageShell(input: {
@@ -6,6 +10,7 @@ export function pageShell(input: {
   description: string;
   body: string;
   operations?: boolean;
+  active: SuiteDestination;
 }): string {
   const script = input.operations
     ? '\n    <script src="/assets/ops.js" defer></script>'
@@ -20,7 +25,7 @@ export function pageShell(input: {
     <link rel="stylesheet" href="/assets/tools.css">${script}
   </head>
   <body>
-    <a class="skip-link" href="#main">Skip to content</a>
+    ${renderSuiteChrome(input.active)}
     ${input.body}
   </body>
 </html>`;
