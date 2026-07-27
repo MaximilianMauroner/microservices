@@ -1,0 +1,107 @@
+{
+  "schemaVersion": 1,
+  "revision": "seed-2026-07-27",
+  "updatedAt": "2026-07-27T00:00:00.000Z",
+  "groups": [
+    {
+      "id": "publishing",
+      "name": "Publishing & sharing",
+      "description": "Small services for publishing and sharing durable artifacts.",
+      "order": 0,
+      "visibility": "public"
+    },
+    {
+      "id": "review",
+      "name": "Review & feedback",
+      "description": "Focused consoles for reviewing and approving work.",
+      "order": 1,
+      "visibility": "public"
+    },
+    {
+      "id": "operations",
+      "name": "Operations",
+      "description": "Status and restricted infrastructure orientation.",
+      "order": 2,
+      "visibility": "public"
+    }
+  ],
+  "entries": [
+    {
+      "id": "artifact-publisher",
+      "groupId": "publishing",
+      "name": "Artifact Publisher",
+      "description": "Public artifact delivery with restricted upload and administration.",
+      "order": 0,
+      "visibility": "public",
+      "lifecycle": "active",
+      "links": [
+        {
+          "id": "upload",
+          "label": "Upload (restricted; DNS pending)",
+          "url": "https://uploads.mauroner.eu/uploads",
+          "access": "restricted"
+        }
+      ],
+      "monitor": {
+        "enabled": true,
+        "paused": true,
+        "scope": "public",
+        "url": "https://uploads.mauroner.eu/health"
+      },
+      "privateNotes": "uploads.mauroner.eu is the intended stable URL but DNS was unresolved during planning. Keep checks paused and do not advertise it as live until DNS and Access are verified."
+    },
+    {
+      "id": "field-guide-console",
+      "groupId": "review",
+      "name": "Field Guide Console",
+      "description": "Restricted review and approval console. No stable link is published yet.",
+      "order": 0,
+      "visibility": "public",
+      "lifecycle": "active",
+      "links": [],
+      "privateNotes": "Add a restricted link and monitor only after its stable deployment URL is confirmed."
+    },
+    {
+      "id": "tools-directory",
+      "groupId": "operations",
+      "name": "Tools Status & Directory",
+      "description": "The public catalog and five-minute status snapshots at tools.mauroner.net.",
+      "order": 0,
+      "visibility": "public",
+      "lifecycle": "active",
+      "links": [
+        {
+          "id": "directory",
+          "label": "Open directory",
+          "url": "https://tools.mauroner.net/",
+          "access": "public"
+        }
+      ],
+      "privateNotes": "Intentionally has no self-monitor. A five-minute origin probe would prevent Railway Serverless from sleeping."
+    },
+    {
+      "id": "network-console",
+      "groupId": "operations",
+      "name": "Network Console",
+      "description": "Restricted Tailscale network and port-service console.",
+      "order": 1,
+      "visibility": "public",
+      "lifecycle": "active",
+      "links": [
+        {
+          "id": "tailnet",
+          "label": "Open on Tailnet",
+          "url": "https://coding.tailbc92d.ts.net/",
+          "access": "restricted"
+        }
+      ],
+      "monitor": {
+        "enabled": true,
+        "paused": false,
+        "scope": "tailscale",
+        "url": "https://coding.tailbc92d.ts.net/health"
+      },
+      "privateNotes": "Railway has no Tailnet route; status must remain unavailable_from_railway rather than down."
+    }
+  ]
+}

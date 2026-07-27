@@ -1,0 +1,35 @@
+{
+  "name": "field-guide-console",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "bun run build:css && tsc -p tsconfig.build.json",
+    "build:css": "tailwindcss -i ./src/review.css -o ./public/review.css --minify",
+    "db:generate": "drizzle-kit generate",
+    "db:import-postgres": "bun src/import-postgres.ts",
+    "db:recover-postgres": "bun src/recover-postgres.ts",
+    "dev": "bun --watch src/server.ts",
+    "start": "bun dist/server.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run && bun test test/sqlite-repository.bun.test.ts test/transfer.bun.test.ts",
+    "verify": "bun run typecheck && bun run test"
+  },
+  "dependencies": {
+    "drizzle-kit": "1.0.0-rc.4",
+    "drizzle-orm": "1.0.0-rc.4",
+    "jose": "^6.1.3",
+    "postgres": "^3.4.7"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.3.3",
+    "@types/bun": "^1.3.14",
+    "@types/node": "^22.10.2",
+    "tailwindcss": "^4.3.3",
+    "typescript": "7.0.2",
+    "vitest": "^4.1.9"
+  }
+}
