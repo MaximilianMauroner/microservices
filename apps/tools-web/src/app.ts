@@ -159,9 +159,6 @@ async function route(
     }
     if (request.method === "GET" && url.pathname === "/api/ops/incidents") {
       const cursor = paginationCursor(url);
-      if (cursor !== undefined && !/^\d+$/.test(cursor)) {
-        throw new MutationError("Invalid incident cursor");
-      }
       return json(
         await storage.readIncidentPage(cursor, paginationLimit(url)),
         { headers: { "Cache-Control": "private, no-store" } }

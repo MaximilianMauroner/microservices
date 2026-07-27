@@ -23,6 +23,7 @@ export interface JsonBucket {
     cursor: string | undefined,
     limit: number
   ): Promise<{ keys: string[]; nextCursor?: string }>;
+  listAfter(prefix: string, after: string | undefined, limit: number): Promise<string[]>;
 }
 
 export class BucketConflictError extends Error {
@@ -116,6 +117,23 @@ export function createS3JsonBucket(config: {
             ? { nextCursor: result.NextContinuationToken }
             : {})
         };
+      } catch {
+        throw new BucketReadError("Unable to list bucket objects");
+      }
+    },
+    async listAfter(prefix, after, limit) {
+      try {
+        const result = await client.send(
+          new ListObjectsV2Command({
+            Bucket: config.name,
+            Prefix: prefix,
+            ...(after === undefined ? {} : { StartAfter: after }),
+            MaxKeys: limit
+          })
+        );
+        return (result.Contents ?? [])
+          .map(({ Key }) => Key)
+          .filter((key): key is string => key !== undefined);
       } catch {
         throw new BucketReadError("Unable to list bucket objects");
       }
