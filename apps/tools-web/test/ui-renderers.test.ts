@@ -179,8 +179,10 @@ describe("public page", () => {
     expect(html).toContain("1 service not measured");
     expect(html).toContain("Operational");
     expect(html).toContain("Not checkable from Railway");
-    expect(html).toContain("98% uptime");
+    expect(html).toContain("Observed uptime: 98%");
     expect(html).toContain("100 checks");
+    expect(html).toContain("Recorded checks");
+    expect(html).toContain("No data");
     expect(html).toContain('href="/status" aria-current="page"');
     expect(html).toContain("Access protected");
     expect(html).toContain('datetime="2026-07-27T12:00:00.000Z"');
@@ -294,10 +296,10 @@ describe("public page", () => {
     expect(html).toContain("Service interruption");
     expect(html).toContain("uptime-day--outage");
     expect(html).toMatch(
-      /<span class="service-state service-state--outage">0% uptime<\/span>/
+      /<span class="service-state service-state--outage">Observed uptime: 0%<\/span>/
     );
     expect(html).not.toMatch(
-      /<span class="service-state service-state--operational">0% uptime<\/span>/
+      /<span class="service-state service-state--operational">Observed uptime: 0%<\/span>/
     );
   });
 
@@ -340,9 +342,65 @@ describe("public page", () => {
       },
     });
 
-    expect(html).toContain("75% uptime");
+    expect(html).toContain("Observed uptime: 75%");
     expect(html).toContain("across 4 checks");
     expect(html).not.toContain("across 204 checks");
+  });
+
+  test("labels exact rolling-window coverage, percentages, and check grammar", () => {
+    const zero = renderStatusPage({
+      ...publicSnapshot,
+      statuses: {
+        ...publicSnapshot.statuses,
+        "artifact-publisher": {
+          ...publicSnapshot.statuses["artifact-publisher"],
+          status: "down",
+          uptimeDays: [
+            { day: "2026-04-28", successfulChecks: 10, totalChecks: 10 },
+            { day: "2026-04-29", successfulChecks: 0, totalChecks: 1 },
+            { day: "2026-07-28", successfulChecks: 10, totalChecks: 10 }
+          ]
+        }
+      }
+    });
+    expect(zero).toContain("Observed uptime: 0%");
+    expect(zero).toContain("1 check ·");
+    expect(zero).toContain("Observed since 2026-04-29");
+    expect(zero).toContain(
+      "Observed uptime: 0% across 1 check; 1 recorded day and 89 no-data days; earliest recorded day 2026-04-29."
+    );
+    expect(zero).not.toContain("across 21 checks");
+
+    const complete = renderStatusPage({
+      ...publicSnapshot,
+      statuses: {
+        ...publicSnapshot.statuses,
+        "artifact-publisher": {
+          ...publicSnapshot.statuses["artifact-publisher"],
+          uptimeDays: [
+            { day: "2026-04-29", successfulChecks: 1, totalChecks: 1 },
+            { day: "2026-07-27", successfulChecks: 2, totalChecks: 2 }
+          ]
+        }
+      }
+    });
+    expect(complete).toContain("Observed uptime: 100%");
+    expect(complete).toContain("across 3 checks; 2 recorded days and 88 no-data days");
+
+    const noData = renderStatusPage({
+      ...publicSnapshot,
+      statuses: {
+        ...publicSnapshot.statuses,
+        "artifact-publisher": {
+          ...publicSnapshot.statuses["artifact-publisher"],
+          uptimeDays: []
+        }
+      }
+    });
+    expect(noData).toContain(
+      "Observed uptime is not available. 0 recorded days and 90 no-data days."
+    );
+    expect(noData).toContain("No checks recorded");
   });
 
   test("distinguishes stale service observations from snapshot generation", () => {

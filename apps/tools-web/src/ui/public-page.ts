@@ -179,6 +179,7 @@ function renderEntry(
     </div>
     <p class="service-description">${escapeHtml(entry.description)}</p>
     ${uptimeBar(status, generatedAt, uptime)}
+    <div class="uptime-legend" aria-hidden="true"><span><i class="uptime-key uptime-key--recorded"></i>Recorded checks</span><span><i class="uptime-key uptime-key--unknown"></i>No data</span></div>
     <div class="service-meta">
       <span>${uptime.firstObservedDay ? `Observed since ${escapeHtml(uptime.firstObservedDay)}` : "No checks recorded"}</span>
       <span>${uptime.totalChecks > 0 ? `${uptime.totalChecks} ${uptime.totalChecks === 1 ? "check" : "checks"} · ` : ""}${statusDetails(status)}</span>
@@ -211,8 +212,8 @@ function uptimeBar(
     return `<span class="uptime-day uptime-day--${state}" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}"></span>`;
   }).join("");
   const label = summary.percentage === null
-    ? `Observed uptime is not available. Latest monitor state: ${status ? STATUS_LABELS[status.status] : "not monitored"}. No-data days are shown separately.`
-    : `Observed uptime: ${summary.label} across ${summary.totalChecks} ${summary.totalChecks === 1 ? "check" : "checks"}, since ${summary.firstObservedDay}. No-data days are shown separately.`;
+    ? `Observed uptime is not available. 0 recorded days and ${summary.noDataDays} no-data days. Latest monitor state: ${status ? STATUS_LABELS[status.status] : "not monitored"}.`
+    : `${summary.label} across ${summary.totalChecks} ${summary.totalChecks === 1 ? "check" : "checks"}; ${summary.recordedDays} ${summary.recordedDays === 1 ? "recorded day" : "recorded days"} and ${summary.noDataDays} ${summary.noDataDays === 1 ? "no-data day" : "no-data days"}; earliest recorded day ${summary.firstObservedDay}.`;
   return `<div class="uptime-bar" role="img" aria-label="${escapeHtml(label)}"><span class="visually-hidden">${escapeHtml(label)}</span>${bars}</div>`;
 }
 
@@ -221,6 +222,8 @@ interface UptimeSummary {
   percentage: number | null;
   totalChecks: number;
   firstObservedDay: string | null;
+  recordedDays: number;
+  noDataDays: number;
 }
 
 function uptimeSummary(
@@ -253,17 +256,22 @@ function uptimeSummary(
       label,
       percentage: null,
       totalChecks: 0,
-      firstObservedDay: null
+      firstObservedDay: null,
+      recordedDays: 0,
+      noDataDays: 90
     };
   }
+  const observedDays = (status?.uptimeDays ?? [])
+    .filter(({ day, totalChecks }) => rollingWindow.has(day) && totalChecks > 0)
+    .map(({ day }) => day)
+    .sort();
   return {
-    label: `${formatPercentage(totals.successfulChecks, totals.totalChecks)} uptime`,
+    label: `Observed uptime: ${formatPercentage(totals.successfulChecks, totals.totalChecks)}`,
     percentage: (totals.successfulChecks / totals.totalChecks) * 100,
     totalChecks: totals.totalChecks,
-    firstObservedDay: (status?.uptimeDays ?? [])
-      .filter(({ day, totalChecks }) => rollingWindow.has(day) && totalChecks > 0)
-      .map(({ day }) => day)
-      .sort()[0] ?? null
+    firstObservedDay: observedDays[0] ?? null,
+    recordedDays: observedDays.length,
+    noDataDays: 90 - observedDays.length
   };
 }
 

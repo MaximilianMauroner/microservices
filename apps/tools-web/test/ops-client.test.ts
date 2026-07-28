@@ -13,11 +13,16 @@ type FetchHandler = (
   signal: AbortSignal
 ) => Promise<FakeResponse>;
 
+type FakeEvent = {
+  target: FakeElement;
+  preventDefault(): void;
+};
+
 class FakeElement {
   readonly attributes = new Map<string, string>();
   readonly children: FakeElement[] = [];
   readonly dataset: Record<string, string> = {};
-  readonly listeners = new Map<string, Array<() => void>>();
+  readonly listeners = new Map<string, Array<(event: FakeEvent) => void>>();
   readonly selectorMap = new Map<string, FakeElement>();
   className = "";
   dateTime = "";
@@ -43,7 +48,7 @@ class FakeElement {
     return this.children.at(-1) ?? null;
   }
 
-  addEventListener(type: string, listener: () => void): void {
+  addEventListener(type: string, listener: (event: FakeEvent) => void): void {
     const listeners = this.listeners.get(type) ?? [];
     listeners.push(listener);
     this.listeners.set(type, listeners);
@@ -61,7 +66,21 @@ class FakeElement {
   }
 
   click(): void {
-    for (const listener of this.listeners.get("click") ?? []) listener();
+    this.dispatch("click");
+  }
+
+  closest(selector: string): FakeElement | null {
+    let current: FakeElement | null = this;
+    while (current) {
+      if (current.matches(selector)) return current;
+      current = current.parent;
+    }
+    return null;
+  }
+
+  dispatch(type: string): void {
+    const event = { target: this, preventDefault() {} };
+    for (const listener of this.listeners.get(type) ?? []) listener(event);
   }
 
   focus(): void {
@@ -75,14 +94,15 @@ class FakeElement {
     }
     const configured = this.selectorMap.get(selector);
     if (configured) return configured;
-    if (selector === "[data-collection-empty]") {
-      return this.find((element) => element.attributes.has("data-collection-empty"));
-    }
-    return null;
+    return this.find((element) => element.matches(selector));
   }
 
-  querySelectorAll(_selector: string): FakeElement[] {
-    return [];
+  querySelectorAll(selector: string): FakeElement[] {
+    const matches: FakeElement[] = [];
+    this.visit((element) => {
+      if (element.matches(selector)) matches.push(element);
+    });
+    return matches;
   }
 
   remove(): void {
@@ -96,8 +116,27 @@ class FakeElement {
     this.attributes.delete(name);
   }
 
+  replaceChildren(...nodes: FakeElement[]): void {
+    for (const child of this.children) child.parent = null;
+    this.children.splice(0);
+    this.append(...nodes);
+  }
+
   setAttribute(name: string, value: string): void {
     this.attributes.set(name, value);
+    if (name.startsWith("data-")) {
+      const key = name.slice(5).replace(/-([a-z])/g, (_match, letter: string) => letter.toUpperCase());
+      this.dataset[key] = value;
+    }
+    if (name === "class") this.className = value;
+    if (
+      name === "name" &&
+      (this instanceof FakeInput || this instanceof FakeSelect || this instanceof FakeTextArea)
+    ) this.name = value;
+  }
+
+  matches(selector: string): boolean {
+    return selector.split(",").some((part) => this.matchesOne(part.trim()));
   }
 
   private find(predicate: (element: FakeElement) => boolean): FakeElement | null {
@@ -107,6 +146,47 @@ class FakeElement {
       if (descendant) return descendant;
     }
     return null;
+  }
+
+  private visit(visitor: (element: FakeElement) => void): void {
+    for (const child of this.children) {
+      visitor(child);
+      child.visit(visitor);
+    }
+  }
+
+  private matchesOne(selector: string): boolean {
+    let simple = selector;
+    const notSelectors = [...simple.matchAll(/:not\(([^)]+)\)/g)].map((match) => match[1] ?? "");
+    simple = simple.replace(/:not\([^)]+\)/g, "");
+    if (notSelectors.some((notSelector) => this.matchesOne(notSelector))) return false;
+
+    const tag = simple.match(/^[a-z]+/i)?.[0];
+    if (tag && this.tagName.toLowerCase() !== tag.toLowerCase()) return false;
+    for (const className of [...simple.matchAll(/\.([A-Za-z0-9_-]+)/g)].map((match) => match[1] ?? "")) {
+      if (!this.className.split(/\s+/).includes(className)) return false;
+    }
+    for (const attribute of simple.matchAll(/\[([^\]=]+)(?:="([^"]*)")?\]/g)) {
+      const name = attribute[1] ?? "";
+      const expected = attribute[2];
+      const actual = this.attributeValue(name);
+      if (actual === undefined || (expected !== undefined && actual !== expected)) return false;
+    }
+    return true;
+  }
+
+  private attributeValue(name: string): string | undefined {
+    if (name === "hidden") return this.hidden ? "" : undefined;
+    if (
+      name === "name" &&
+      (this instanceof FakeInput || this instanceof FakeSelect || this instanceof FakeTextArea)
+    ) return this.name || undefined;
+    if (name === "type") return this.type || undefined;
+    if (name.startsWith("data-")) {
+      const key = name.slice(5).replace(/-([a-z])/g, (_match, letter: string) => letter.toUpperCase());
+      return this.attributes.get(name) ?? this.dataset[key];
+    }
+    return this.attributes.get(name);
   }
 }
 
@@ -126,12 +206,16 @@ class FakeInput extends FakeElement {
 }
 
 class FakeSelect extends FakeElement {
+  name = "";
+
   constructor() {
     super("select");
   }
 }
 
 class FakeTextArea extends FakeElement {
+  name = "";
+
   constructor() {
     super("textarea");
   }
@@ -160,6 +244,7 @@ class FakeDialog extends FakeElement {
 }
 
 class FakeDocument {
+  readonly listeners = new Map<string, Array<(event: FakeEvent) => void>>();
   readonly root = new FakeElement("main");
   readonly section = new FakeElement("section");
   readonly container = new FakeElement("ol");
@@ -168,9 +253,11 @@ class FakeDocument {
   readonly errorMessage = new FakeElement("span");
   readonly more = new FakeButton();
   readonly retry = new FakeButton();
+  readonly status = new FakeElement("p");
 
   constructor() {
     this.root.dataset.revision = "revision-1";
+    this.root.dataset.opsRoot = "";
     this.section.dataset.endpoint = "/api/ops/audit";
     this.section.dataset.opsCollection = "audit";
     this.error.hidden = true;
@@ -181,9 +268,21 @@ class FakeDocument {
     this.section.selectorMap.set("[data-collection-error-message]", this.errorMessage);
     this.section.selectorMap.set("[data-collection-more]", this.more);
     this.section.selectorMap.set("[data-collection-retry]", this.retry);
+    this.status.dataset.mutationStatus = "";
+    this.status.hidden = true;
+    this.root.append(this.status, this.section);
   }
 
-  addEventListener(_type: string, _listener: () => void): void {}
+  addEventListener(type: string, listener: (event: FakeEvent) => void): void {
+    const listeners = this.listeners.get(type) ?? [];
+    listeners.push(listener);
+    this.listeners.set(type, listeners);
+  }
+
+  dispatch(type: string, target: FakeElement): void {
+    const event = { target, preventDefault() {} };
+    for (const listener of this.listeners.get(type) ?? []) listener(event);
+  }
 
   createDocumentFragment(): FakeElement {
     return new FakeElement("fragment", true);
@@ -200,7 +299,7 @@ class FakeDocument {
   }
 
   getElementById(_id: string): FakeElement | null {
-    return null;
+    return this.root.querySelector(`[id="${_id}"]`);
   }
 
   querySelector(selector: string): FakeElement | null {
@@ -208,11 +307,11 @@ class FakeDocument {
     if (selector === "[data-collection-loading]:not([hidden])") {
       return this.loading.hidden ? null : this.loading;
     }
-    return null;
+    return this.root.querySelector(selector);
   }
 
   querySelectorAll(selector: string): FakeElement[] {
-    return selector === "[data-ops-collection]" ? [this.section] : [];
+    return this.root.querySelectorAll(selector);
   }
 }
 
@@ -222,14 +321,21 @@ type Harness = {
   fetchCalls(): number;
 };
 
+type HarnessOptions = {
+  beforeRun?: (document: FakeDocument) => void;
+  session?: Record<string, string>;
+};
+
 const scriptUrl = new URL("../public/assets/ops.js", import.meta.url);
 
-async function startHarness(handler: FetchHandler): Promise<Harness> {
+async function startHarness(handler: FetchHandler, options: HarnessOptions = {}): Promise<Harness> {
   const script = await readFile(scriptUrl, "utf8");
   const document = new FakeDocument();
+  options.beforeRun?.(document);
   const signals: AbortSignal[] = [];
   let calls = 0;
   const storage = new Map<string, string>();
+  for (const [key, value] of Object.entries(options.session ?? {})) storage.set(key, value);
   const sessionStorage = {
     getItem(key: string) {
       return storage.get(key) ?? null;
@@ -299,6 +405,40 @@ function audit(id: string): Record<string, string> {
     occurredAt: "2026-07-28T10:00:00.000Z",
     targetType: "entry"
   };
+}
+
+function linkRow(
+  document: FakeDocument,
+  link: { id: string; label: string; url: string; access: string }
+): FakeElement {
+  const row = document.createElement("div");
+  row.setAttribute("data-link-row", "");
+  for (const [name, value] of Object.entries(link)) {
+    const field = name === "access"
+      ? document.createElement("select")
+      : document.createElement("input");
+    field.setAttribute("data-link-field", name);
+    field.value = value;
+    row.append(field);
+  }
+  return row;
+}
+
+function linkEditor(
+  document: FakeDocument,
+  link: { id: string; label: string; url: string; access: string }
+): { editor: FakeElement; rows: FakeElement; textarea: FakeTextArea; row: FakeElement } {
+  const editor = document.createElement("div");
+  editor.setAttribute("data-link-editor", "");
+  const rows = document.createElement("div");
+  rows.setAttribute("data-link-rows", "");
+  const row = linkRow(document, link);
+  rows.append(row);
+  const textarea = document.createElement("textarea") as FakeTextArea;
+  textarea.setAttribute("name", "links");
+  textarea.value = JSON.stringify([link]);
+  editor.append(rows, textarea);
+  return { editor, rows, textarea, row };
 }
 
 async function settle(): Promise<void> {
@@ -382,5 +522,218 @@ describe("operations collection client", () => {
     harness.document.retry.click();
     await settle();
     expect(harness.document.container.childElementCount).toBe(1);
+  });
+
+  it("preserves structured rows and explains invalid advanced access values", async () => {
+    let controls: ReturnType<typeof linkEditor> | undefined;
+    const harness = await startHarness(
+      () => Promise.resolve(response(200, { items: [], nextCursor: null })),
+      {
+        beforeRun(document) {
+          controls = linkEditor(document, {
+            id: "docs",
+            label: "Docs",
+            url: "https://docs.example.test/",
+            access: "private"
+          });
+          document.root.append(controls.editor);
+        }
+      }
+    );
+    await settle();
+    if (!controls) throw new Error("Expected link editor controls");
+
+    controls.textarea.value = JSON.stringify([{
+      id: "docs",
+      label: "Docs",
+      url: "https://docs.example.test/",
+      access: "members-only"
+    }]);
+    controls.textarea.dispatch("change");
+
+    expect(controls.rows.children).toEqual([controls.row]);
+    expect(harness.document.status.textContent).toContain(
+      "access must be public, restricted, or private"
+    );
+    expect(controls.textarea.focused).toBe(true);
+  });
+
+  it("synchronizes valid advanced JSON and later structured edits", async () => {
+    let controls: ReturnType<typeof linkEditor> | undefined;
+    const harness = await startHarness(
+      () => Promise.resolve(response(200, { items: [], nextCursor: null })),
+      {
+        beforeRun(document) {
+          controls = linkEditor(document, {
+            id: "old",
+            label: "Old",
+            url: "https://old.example.test/",
+            access: "private"
+          });
+          document.root.append(controls.editor);
+        }
+      }
+    );
+    await settle();
+    if (!controls) throw new Error("Expected link editor controls");
+
+    controls.textarea.value = JSON.stringify([{
+      id: "docs",
+      label: "Docs",
+      url: "https://docs.example.test/path",
+      access: "private"
+    }]);
+    controls.textarea.dispatch("change");
+    expect(controls.rows.children).toHaveLength(1);
+    expect(JSON.parse(controls.textarea.value)).toEqual([{
+      id: "docs",
+      label: "Docs",
+      url: "https://docs.example.test/path",
+      access: "private"
+    }]);
+
+    const label = controls.rows.querySelector('[data-link-field="label"]');
+    if (!label) throw new Error("Expected imported label field");
+    label.value = "Documentation";
+    harness.document.dispatch("input", label);
+    expect(JSON.parse(controls.textarea.value)).toEqual([{
+      id: "docs",
+      label: "Documentation",
+      url: "https://docs.example.test/path",
+      access: "private"
+    }]);
+  });
+
+  it("rejects credential-bearing structured URLs, focuses the URL, and keeps the form local", async () => {
+    let form: FakeForm | undefined;
+    let urlInput: FakeElement | undefined;
+    const harness = await startHarness(
+      () => Promise.resolve(response(200, { items: [], nextCursor: null })),
+      {
+        beforeRun(document) {
+          form = document.createElement("form") as FakeForm;
+          form.setAttribute("data-json-form", "");
+          const controls = linkEditor(document, {
+            id: "docs",
+            label: "Docs",
+            url: "https://user:secret@docs.example.test/",
+            access: "private"
+          });
+          urlInput = controls.row.querySelector('[data-link-field="url"]') ?? undefined;
+          form.append(controls.editor);
+          document.root.append(form);
+        }
+      }
+    );
+    await settle();
+    const collectionCalls = harness.fetchCalls();
+    if (!form || !urlInput) throw new Error("Expected credential validation controls");
+
+    harness.document.dispatch("submit", form);
+
+    expect(harness.fetchCalls()).toBe(collectionCalls);
+    expect(harness.document.status.textContent).toBe(
+      "Link URLs cannot contain a username or password."
+    );
+    expect(urlInput.focused).toBe(true);
+  });
+
+  it("filters record buttons by search, kind, and active state", async () => {
+    let search: FakeInput | undefined;
+    let kind: FakeSelect | undefined;
+    let state: FakeSelect | undefined;
+    let activePage: FakeButton | undefined;
+    let inactiveFile: FakeButton | undefined;
+    await startHarness(
+      () => Promise.resolve(response(200, { items: [], nextCursor: null })),
+      {
+        beforeRun(document) {
+          search = document.createElement("input") as FakeInput;
+          search.setAttribute("data-record-search", "");
+          kind = document.createElement("select") as FakeSelect;
+          kind.setAttribute("data-record-kind", "");
+          kind.value = "all";
+          state = document.createElement("select") as FakeSelect;
+          state.setAttribute("data-record-status", "");
+          state.value = "all";
+          activePage = document.createElement("button") as FakeButton;
+          activePage.className = "record-button";
+          activePage.dataset.recordSearch = "launch plan";
+          activePage.dataset.recordKind = "html";
+          activePage.dataset.recordStatus = "active";
+          inactiveFile = document.createElement("button") as FakeButton;
+          inactiveFile.className = "record-button";
+          inactiveFile.dataset.recordSearch = "archive notes";
+          inactiveFile.dataset.recordKind = "file";
+          inactiveFile.dataset.recordStatus = "inactive expiring";
+          document.root.append(search, kind, state, activePage, inactiveFile);
+        }
+      }
+    );
+    await settle();
+    if (!search || !kind || !state || !activePage || !inactiveFile) {
+      throw new Error("Expected record filter controls");
+    }
+
+    search.value = "archive";
+    search.dispatch("input");
+    expect(activePage.hidden).toBe(true);
+    expect(inactiveFile.hidden).toBe(false);
+
+    search.value = "";
+    kind.value = "html";
+    state.value = "inactive";
+    state.dispatch("change");
+    expect(activePage.hidden).toBe(true);
+    expect(inactiveFile.hidden).toBe(true);
+  });
+
+  it("restores the selected editor, preserves edits across selection, and announces moves", async () => {
+    let firstPanel: FakeElement | undefined;
+    let secondPanel: FakeElement | undefined;
+    let firstButton: FakeButton | undefined;
+    let secondButton: FakeButton | undefined;
+    let firstInput: FakeInput | undefined;
+    let secondInput: FakeInput | undefined;
+    const harness = await startHarness(
+      () => Promise.resolve(response(200, { items: [], nextCursor: null })),
+      {
+        session: {
+          "ops:selected": "second",
+          "ops:announcement": "Moved Archive to position 2 of 3"
+        },
+        beforeRun(document) {
+          firstPanel = document.createElement("section");
+          firstPanel.dataset.editorPanel = "first";
+          firstInput = document.createElement("input") as FakeInput;
+          firstPanel.append(firstInput);
+          secondPanel = document.createElement("section");
+          secondPanel.dataset.editorPanel = "second";
+          secondPanel.hidden = true;
+          secondInput = document.createElement("input") as FakeInput;
+          secondPanel.append(secondInput);
+          firstButton = document.createElement("button") as FakeButton;
+          firstButton.dataset.editorTarget = "first";
+          secondButton = document.createElement("button") as FakeButton;
+          secondButton.dataset.editorTarget = "second";
+          document.root.append(firstButton, secondButton, firstPanel, secondPanel);
+        }
+      }
+    );
+    await settle();
+    if (!firstPanel || !secondPanel || !firstButton || !secondButton || !firstInput || !secondInput) {
+      throw new Error("Expected editor selection controls");
+    }
+
+    expect(firstPanel.hidden).toBe(true);
+    expect(secondPanel.hidden).toBe(false);
+    expect(secondInput.focused).toBe(true);
+    expect(harness.document.status.textContent).toBe("Moved Archive to position 2 of 3");
+    expect(harness.document.status.className).toContain("notice--success");
+
+    secondInput.value = "unfinished edit";
+    harness.document.dispatch("click", firstButton);
+    harness.document.dispatch("click", secondButton);
+    expect(secondInput.value).toBe("unfinished edit");
   });
 });

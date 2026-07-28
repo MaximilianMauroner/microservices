@@ -624,10 +624,19 @@ function parseUploadListOptions(
     if (!decodedCursor) {
       return { ok: false, message: "cursor is invalid." };
     }
-    if (decodedCursor.criteria !== criteria) {
+    const legacyCompatible = q === "" && kind === "all" && expiry === "all" && sort === "newest";
+    if (decodedCursor.version === undefined && !legacyCompatible) {
+      return { ok: false, message: "legacy cursor requires default listing criteria." };
+    }
+    if (decodedCursor.criteria !== undefined && decodedCursor.criteria !== criteria) {
       return { ok: false, message: "cursor does not match the current filters." };
     }
-    cursor = decodedCursor;
+    cursor = {
+      ...decodedCursor,
+      version: 1,
+      criteria,
+      originalName: decodedCursor.originalName ?? decodedCursor.key
+    };
   }
 
   return {
@@ -676,11 +685,8 @@ function decodeUploadListCursor(value: string): UploadListCursor | null {
     }
     const candidate = parsed as { version?: unknown; criteria?: unknown; updatedAt?: unknown; key?: unknown; originalName?: unknown; expiresAt?: unknown };
     if (
-      candidate.version !== 1 ||
-      typeof candidate.criteria !== "string" ||
       typeof candidate.updatedAt !== "string" ||
       typeof candidate.key !== "string" ||
-      typeof candidate.originalName !== "string" ||
       !UPLOAD_KEY_PATTERN.test(candidate.key)
     ) {
       return null;
@@ -690,6 +696,13 @@ function decodeUploadListCursor(value: string): UploadListCursor | null {
       Number.isNaN(updatedAt.getTime()) ||
       updatedAt.toISOString() !== candidate.updatedAt
     ) {
+      return null;
+    }
+    if (candidate.version === undefined) {
+      if (candidate.criteria !== undefined || candidate.originalName !== undefined || candidate.expiresAt !== undefined) return null;
+      return { updatedAt, key: candidate.key };
+    }
+    if (candidate.version !== 1 || typeof candidate.criteria !== "string" || typeof candidate.originalName !== "string") {
       return null;
     }
     let expiresAt: Date | undefined;

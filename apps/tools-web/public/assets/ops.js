@@ -122,10 +122,17 @@
       }
       let parsed;
       try { parsed = new URL(url); } catch { parsed = null; }
-      if (!parsed || !["http:", "https:"].includes(parsed.protocol) || urls.has(parsed.href)) {
+      const hasCredentials = Boolean(parsed && (parsed.username || parsed.password));
+      if (!parsed || !["http:", "https:"].includes(parsed.protocol) || hasCredentials || urls.has(parsed.href)) {
         const input = row.querySelector('[data-link-field="url"]');
         if (input instanceof HTMLElement) input.focus();
-        throw new Error(urls.has(parsed && parsed.href) ? "Link URLs must be unique." : "Each link URL must use HTTP or HTTPS.");
+        throw new Error(
+          hasCredentials
+            ? "Link URLs cannot contain a username or password."
+            : urls.has(parsed && parsed.href)
+              ? "Link URLs must be unique."
+              : "Each link URL must use HTTP or HTTPS."
+        );
       }
       if (!value.label) {
         const input = row.querySelector('[data-link-field="label"]');
@@ -143,6 +150,40 @@
     const textarea = editor.querySelector('textarea[name="links"]');
     if (!(textarea instanceof HTMLTextAreaElement)) return;
     textarea.value = JSON.stringify(linkValues(editor), null, 2);
+  };
+
+  const importedLinks = (value) => {
+    if (!Array.isArray(value)) throw new Error("Links JSON must be an array.");
+    const ids = new Set();
+    const urls = new Set();
+    return value.map((link, index) => {
+      if (!link || typeof link !== "object" || Array.isArray(link)) {
+        throw new Error(`Link ${index + 1} must be an object.`);
+      }
+      const id = typeof link.id === "string" ? link.id.trim() : "";
+      const label = typeof link.label === "string" ? link.label.trim() : "";
+      const url = typeof link.url === "string" ? link.url.trim() : "";
+      const access = link.access;
+      if (!id || !/^[A-Za-z0-9_-]+$/.test(id) || ids.has(id)) {
+        throw new Error(ids.has(id) ? "Link IDs must be unique." : `Link ${index + 1} needs a URL-safe ID.`);
+      }
+      if (!label) throw new Error(`Link ${index + 1} needs a label.`);
+      if (!["public", "restricted", "private"].includes(access)) {
+        throw new Error(`Link ${index + 1} access must be public, restricted, or private.`);
+      }
+      let parsed;
+      try { parsed = new URL(url); } catch { parsed = null; }
+      if (!parsed || !["http:", "https:"].includes(parsed.protocol)) {
+        throw new Error(`Link ${index + 1} URL must use HTTP or HTTPS.`);
+      }
+      if (parsed.username || parsed.password) {
+        throw new Error(`Link ${index + 1} URL cannot contain a username or password.`);
+      }
+      if (urls.has(parsed.href)) throw new Error("Link URLs must be unique.");
+      ids.add(id);
+      urls.add(parsed.href);
+      return { id, label, url: parsed.href, access };
+    });
   };
 
   const createLinkRow = (link = { id: "", label: "", url: "", access: "private" }) => {
@@ -626,14 +667,16 @@
       const rows = editor && editor.querySelector("[data-link-rows]");
       if (!(editor instanceof HTMLElement) || !(rows instanceof HTMLElement)) return;
       try {
-        const links = JSON.parse(textarea.value);
-        if (!Array.isArray(links)) throw new Error();
+        const links = importedLinks(JSON.parse(textarea.value));
         const fragment = document.createDocumentFragment();
         for (const link of links) fragment.append(createLinkRow(link));
         rows.replaceChildren(fragment);
         syncLinks(editor);
-      } catch {
-        setStatus("Advanced links JSON is invalid.", "error");
+      } catch (cause) {
+        setStatus(
+          cause instanceof Error ? cause.message : "Advanced links JSON is invalid.",
+          "error"
+        );
         textarea.focus();
       }
     });

@@ -342,6 +342,17 @@ export function createS3UploadStorage(config: S3UploadStorageConfig): UploadStor
         )
       )
         .flat();
+      const sort = options.sort ?? "newest";
+      if (!requiresFullMetadataScan(options)) {
+        return listUploadsFast(
+          client,
+          config.bucket,
+          candidates,
+          asOf,
+          options,
+          sort === "oldest" ? "oldest" : "newest"
+        );
+      }
       const summaries = (await mapWithConcurrency(
         candidates,
         LIST_METADATA_CONCURRENCY,
@@ -354,10 +365,10 @@ export function createS3UploadStorage(config: S3UploadStorageConfig): UploadStor
       const filtered = summaries
         .filter((upload) => !normalizedQuery || upload.originalName.normalize("NFKC").toLowerCase().includes(normalizedQuery))
         .filter((upload) => matchesExpiry(upload, options.expiry ?? "all", asOf))
-        .sort(uploadComparator(options.sort ?? "newest"));
+        .sort(uploadComparator(sort));
       const listCursor = options.cursor;
       const afterCursor = listCursor
-        ? filtered.filter((upload) => uploadComparator(options.sort ?? "newest")(upload, cursorUpload(listCursor)) > 0)
+        ? filtered.filter((upload) => uploadComparator(sort)(upload, cursorUpload(listCursor)) > 0)
         : filtered;
       const page = afterCursor.slice(0, options.limit + 1);
       const uploads = page.slice(0, options.limit);
@@ -467,6 +478,79 @@ type UploadCandidate = {
 };
 
 type ListedUploadSummary = StoredUploadSummary & { key: string };
+
+function requiresFullMetadataScan(options: ListUploadsOptions): boolean {
+  const sort = options.sort ?? "newest";
+  return Boolean(options.q) ||
+    (options.expiry ?? "all") !== "all" ||
+    sort === "filename" ||
+    sort === "expiry";
+}
+
+async function listUploadsFast(
+  client: S3Client,
+  bucket: string,
+  candidates: UploadCandidate[],
+  asOf: Date,
+  options: ListUploadsOptions,
+  sort: "newest" | "oldest"
+): Promise<StoredUploadPage> {
+  const ordered = [...candidates]
+    .sort((left, right) => compareCandidates(left, right, sort))
+    .filter((candidate) => !options.cursor || candidateAfterCursor(candidate, options.cursor, sort));
+  const uploads: ListedUploadSummary[] = [];
+  let processed = 0;
+  while (processed < ordered.length && uploads.length <= options.limit) {
+    const chunk = ordered.slice(processed, processed + LIST_METADATA_CONCURRENCY);
+    const summaries = await mapWithConcurrency(
+      chunk,
+      LIST_METADATA_CONCURRENCY,
+      async (candidate) => {
+        const summary = await headUploadSummary(client, bucket, candidate, asOf, options);
+        return summary ? { ...summary, key: candidate.key } : null;
+      }
+    );
+    processed += chunk.length;
+    uploads.push(...summaries.filter((summary): summary is ListedUploadSummary => summary !== null));
+  }
+  const page = uploads.slice(0, options.limit);
+  const last = page.at(-1);
+  return {
+    uploads: page.map(({ key: _key, ...upload }) => upload),
+    ...(last && uploads.length > options.limit
+      ? {
+          nextCursor: {
+            version: 1,
+            criteria: options.criteria ?? "legacy:newest",
+            updatedAt: last.updatedAt,
+            key: last.key,
+            originalName: last.originalName,
+            ...(last.expiresAt ? { expiresAt: last.expiresAt } : {})
+          }
+        }
+      : {})
+  };
+}
+
+function compareCandidates(
+  left: UploadCandidate,
+  right: UploadCandidate,
+  sort: "newest" | "oldest"
+): number {
+  const time = left.updatedAt.getTime() - right.updatedAt.getTime();
+  return (sort === "oldest" ? time : -time) || left.key.localeCompare(right.key);
+}
+
+function candidateAfterCursor(
+  candidate: UploadCandidate,
+  cursor: UploadListCursor,
+  sort: "newest" | "oldest"
+): boolean {
+  const time = candidate.updatedAt.getTime() - cursor.updatedAt.getTime();
+  return sort === "oldest"
+    ? time > 0 || (time === 0 && candidate.key > cursor.key)
+    : time < 0 || (time === 0 && candidate.key > cursor.key);
+}
 
 async function listUploadCandidates(
   client: S3Client,

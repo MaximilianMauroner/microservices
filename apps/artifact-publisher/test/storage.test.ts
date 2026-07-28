@@ -282,6 +282,101 @@ describe("S3 upload storage", () => {
     storage.close?.();
   });
 
+  it("bounds metadata reads for default chronological listings and scans only for metadata filters", async () => {
+    let headCalls = 0;
+    const candidates = Array.from({ length: 40 }, (_value, index) => {
+      const id = String(index).padStart(32, "0");
+      return {
+        Key: `pages/${id}.html`,
+        LastModified: new Date(Date.UTC(2026, 6, 23, 0, index))
+      };
+    });
+    vi.spyOn(S3Client.prototype, "send").mockImplementation(async (command) => {
+      if (command instanceof ListObjectsV2Command) {
+        return {
+          Contents: command.input.Prefix === "pages/" ? candidates : []
+        } as never;
+      }
+      if (command instanceof HeadObjectCommand) {
+        headCalls += 1;
+        const key = command.input.Key ?? "";
+        const listed = candidates.find((candidate) => candidate.Key === key);
+        return {
+          ContentLength: 10,
+          ContentType: "text/html; charset=utf-8",
+          LastModified: listed?.LastModified,
+          Metadata: { "original-name": `${key.slice(6, 10)}-plan.html` }
+        } as never;
+      }
+      throw new Error("Unexpected S3 command");
+    });
+    const storage = createS3UploadStorage(storageConfig);
+    const asOf = new Date("2026-07-24T00:00:00.000Z");
+
+    const newest = await storage.listUploads(asOf, { limit: 1 });
+    expect(newest.uploads[0]?.id).toBe(String(39).padStart(32, "0"));
+    expect(newest.nextCursor).toBeDefined();
+    expect(headCalls).toBeLessThanOrEqual(8);
+
+    headCalls = 0;
+    const oldest = await storage.listUploads(asOf, { limit: 1, sort: "oldest" });
+    expect(oldest.uploads[0]?.id).toBe(String(0).padStart(32, "0"));
+    expect(oldest.nextCursor).toBeDefined();
+    expect(headCalls).toBeLessThanOrEqual(8);
+
+    headCalls = 0;
+    await storage.listUploads(asOf, { limit: 1, q: "plan" });
+    expect(headCalls).toBe(40);
+    storage.close?.();
+  });
+
+  it("continues bounded chunks past expired files without returning them", async () => {
+    let headCalls = 0;
+    const candidates = Array.from({ length: 10 }, (_value, index) => {
+      const id = String(index).padStart(32, "0");
+      return {
+        Key: `files/${id}`,
+        LastModified: new Date(Date.UTC(2026, 6, 23, 0, index))
+      };
+    });
+    vi.spyOn(S3Client.prototype, "send").mockImplementation(async (command) => {
+      if (command instanceof ListObjectsV2Command) {
+        return {
+          Contents: command.input.Prefix === "files/" ? candidates : []
+        } as never;
+      }
+      if (command instanceof HeadObjectCommand) {
+        headCalls += 1;
+        const key = command.input.Key ?? "";
+        const index = Number(key.slice("files/".length));
+        const expired = index >= 2;
+        return {
+          ContentLength: 5,
+          ContentType: "text/plain",
+          LastModified: candidates[index]?.LastModified,
+          Metadata: {
+            "original-name": `${index}.txt`,
+            "expires-at": expired
+              ? "2026-07-23T11:00:00.000Z"
+              : "2026-07-25T12:00:00.000Z"
+          }
+        } as never;
+      }
+      throw new Error("Unexpected S3 command");
+    });
+    const storage = createS3UploadStorage(storageConfig);
+
+    const listed = await storage.listUploads(
+      new Date("2026-07-23T12:00:00.000Z"),
+      { limit: 1 }
+    );
+    expect(listed.uploads).toHaveLength(1);
+    expect(listed.uploads[0]?.id).toBe(String(1).padStart(32, "0"));
+    expect(listed.uploads[0]?.expiresAt).toEqual(new Date("2026-07-25T12:00:00.000Z"));
+    expect(headCalls).toBe(10);
+    storage.close?.();
+  });
+
   it("attempts both upload keys before reporting deletion failures", async () => {
     const attemptedKeys: string[] = [];
     vi.spyOn(S3Client.prototype, "send").mockImplementation(async (command) => {

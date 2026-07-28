@@ -63,6 +63,10 @@ The public status page reports **Observed uptime** only over recorded checks;
 the 90-cell calendar marks days without data separately and names the earliest
 observed day. Its aggregate gives outages and checking states precedence, then
 reports healthy measured services separately from services not measured.
+Directory destinations on the current browser origin use a chevron and open
+in the current tab. Cross-origin destinations use an external arrow, open in a
+new tab with `rel=noreferrer`, and announce that behavior to assistive
+technology.
 
 Manage uses a searchable/filterable record list and one focused editor. Links
 are edited as validated structured rows with an optional synchronized JSON

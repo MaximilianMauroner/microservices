@@ -170,7 +170,7 @@ export function renderExternalUploadPage(options: {
           </button>
         </div>
         <div class="result__actions">
-          <a class="button button--secondary" id="open-url" href="#" target="_blank" rel="noreferrer">
+          <a class="button button--secondary" id="open-url" href="#">
             <svg aria-hidden="true" viewBox="0 0 24 24">
               <path d="M14 5h5v5"></path>
               <path d="m10 14 9-9"></path>
@@ -431,6 +431,7 @@ form { padding: 28px; }
 .upload-row { border-bottom-color: #e2e1da; }
 .upload-row__name { color: var(--ink); }
 .upload-row__name:hover { color: var(--blue); }
+.link-affordance { margin-left: 5px; }
 
 @keyframes spin {
   to { transform: rotate(360deg); }
@@ -616,6 +617,44 @@ export const EXTERNAL_UPLOAD_SCRIPT = `
     }
   };
 
+  const configureDestination = (link, value, label) => {
+    const destination = new URL(value, window.location.href);
+    const external = destination.origin !== window.location.origin;
+    link.href = destination.href;
+    if (external) {
+      link.target = "_blank";
+      link.rel = "noreferrer";
+      link.setAttribute("aria-label", label + " (opens in a new tab)");
+    } else {
+      link.removeAttribute("target");
+      link.removeAttribute("rel");
+      link.setAttribute("aria-label", label);
+    }
+    return external;
+  };
+
+  const appendDestinationAffordance = (link, external) => {
+    const affordance = document.createElement("span");
+    affordance.className = "link-affordance";
+    affordance.setAttribute("aria-hidden", "true");
+    affordance.textContent = external ? "↗" : "›";
+    link.append(affordance);
+    if (external) {
+      const announcement = document.createElement("span");
+      announcement.className = "visually-hidden";
+      announcement.textContent = " (opens in a new tab)";
+      link.append(announcement);
+    }
+  };
+
+  const renderOpenLink = (link, value, label) => {
+    const external = configureDestination(link, value, label);
+    link.innerHTML = external
+      ? '<svg aria-hidden="true" viewBox="0 0 24 24"><path d="M14 5h5v5"></path><path d="m10 14 9-9"></path><path d="M19 14v5H5V5h5"></path></svg>'
+      : '<svg aria-hidden="true" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"></path></svg>';
+    link.append(document.createTextNode(label));
+  };
+
   const renderUploads = () => {
     uploadList.replaceChildren();
     const label =
@@ -652,9 +691,12 @@ export const EXTERNAL_UPLOAD_SCRIPT = `
       details.className = "upload-row__details";
       const name = document.createElement("a");
       name.className = "upload-row__name";
-      name.href = upload.url;
       name.textContent = upload.filename;
       name.title = upload.filename;
+      appendDestinationAffordance(
+        name,
+        configureDestination(name, upload.url, upload.filename)
+      );
       const meta = document.createElement("div");
       meta.className = "upload-row__meta";
       meta.textContent =
@@ -681,10 +723,8 @@ export const EXTERNAL_UPLOAD_SCRIPT = `
       copy.addEventListener("click", () => void copyText(upload.url, copy));
       const open = document.createElement("a");
       open.className = "icon-button";
-      open.href = upload.url;
-      open.setAttribute("aria-label", "Open upload");
       open.setAttribute("title", "Open upload");
-      open.innerHTML = '<svg aria-hidden="true" viewBox="0 0 24 24"><path d="M14 5h5v5"></path><path d="m10 14 9-9"></path><path d="M19 14v5H5V5h5"></path></svg>';
+      renderOpenLink(open, upload.url, "Open upload");
       actions.append(copy, open);
       row.append(main, date, actions);
       uploadList.append(row);
@@ -869,7 +909,7 @@ export const EXTERNAL_UPLOAD_SCRIPT = `
       form.hidden = true;
       result.hidden = false;
       resultUrl.value = payload.url;
-      openUrl.href = payload.url;
+      renderOpenLink(openUrl, payload.url, "Open");
       const expiry = payload.expiresAt
         ? "Expires " + new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(payload.expiresAt))
         : "Uploaded";

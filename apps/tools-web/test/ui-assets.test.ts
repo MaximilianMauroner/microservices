@@ -55,4 +55,14 @@ describe("static UI assets", () => {
     expect(script).not.toContain("innerHTML");
     expect(script).not.toContain("eval(");
   });
+
+  test("keeps the shared navigation and hero usable at compact widths", async () => {
+    const css = await readFile(new URL("tools.css", assets), "utf8");
+
+    expect(css).toContain("@media (max-width: 439px)");
+    expect(css).toContain(".suite-nav { width: 100%; flex-wrap: wrap; overflow-x: visible;");
+    expect(css).toContain(".suite-nav a { flex: 1 1 calc(33.333% - 4px);");
+    expect(css).toContain("font-size: 2.125rem");
+    expect(css).toContain(".browse-tools { margin-top: 14px;");
+  });
 });

@@ -346,6 +346,10 @@ h1 { margin-bottom: 26px; font-size: clamp(3rem, 8vw, 6.7rem); }
 .uptime-day--attention { background: var(--status-amber); }
 .uptime-day--outage { background: var(--status-red); }
 .uptime-day--unknown { background: repeating-linear-gradient(135deg, #d7d8d2 0 3px, #f0efe9 3px 6px); }
+.uptime-legend { margin: 7px 0 0; display: flex; justify-content: flex-end; gap: 12px; color: var(--status-muted); font-size: .66rem; }
+.uptime-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.uptime-key { width: 16px; height: 5px; display: inline-block; border-radius: 2px; background: var(--status-green); }
+.uptime-key--unknown { background: repeating-linear-gradient(135deg, #d7d8d2 0 3px, #f0efe9 3px 6px); }
 .service-meta {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
