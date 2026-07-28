@@ -32,7 +32,7 @@ function renderPage(nonce: string) {
     <meta name="robots" content="noindex, nofollow">
     <title>Field guide reviews</title>
     <link rel="stylesheet" href="/review.css">
-    <link rel="stylesheet" href="/review-suite.css?v=20260728-design-2">
+    <link rel="stylesheet" href="/review-suite.css?v=4b98adb">
   </head>
   <body class="min-h-screen bg-stone-950 text-stone-200 antialiased selection:bg-amber-300 selection:text-stone-950">
     ${renderSuiteChrome("review")}
