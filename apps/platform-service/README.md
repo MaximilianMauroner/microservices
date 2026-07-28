@@ -13,10 +13,13 @@ moving their data:
 | in-process, every five minutes | Tools checker |
 
 The redacted Tools and status routes (`/`, `/status`, `/assets/tools.css`, and
-`/api/public/catalog`) are public. Artifact/file `GET`/`HEAD` delivery is also
-public and unlisted: the unguessable URL is the read capability, and the
-backing bucket remains private. Publish, Review, Manage, upload/list/revoke
-surfaces, and non-read delivery requests require a valid
+`/api/public/catalog`) are public. The exact `/assets/ops.js` browser dependency
+is also public so an authenticated Manage page can load its client behavior;
+the script contains no privileged data and is not a trust boundary. Manage HTML,
+data under `/api/ops/*`, and all mutations remain Access-protected. Artifact/file
+`GET`/`HEAD` delivery is public and unlisted: the unguessable URL is the read
+capability, and the backing bucket remains private. Publish, Review, Manage,
+upload/list/revoke surfaces, and non-read delivery requests require a valid
 `Cf-Access-Jwt-Assertion`. Legacy `/p/*` and `/f/*` capability reads redirect
 with `308` before Access verification; protected `/uploads` and `/ops/*`
 redirects occur only after verification.
