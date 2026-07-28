@@ -34,3 +34,14 @@ guard. PDF export uses the browser print dialog and a print-only preview.
 The shipped Cloudflare `_headers` file keeps capability URLs out of referrers
 and search indexes, denies framing, disables MIME sniffing, and restricts
 frontend connections to this app and its production Convex deployment.
+
+### Legacy capability retirement
+
+The deployed alpha frontend still sends client-generated UUID capabilities, so
+`documents.create` temporarily accepts that optional argument and records a
+content-free permanent `legacy` claim. Server-generated capabilities use a
+transient Convex seed ID and leave no claim row. After the legacy frontend has
+been replaced everywhere, remove the optional `token` create argument first;
+only after that deployment is live may an operator delete legacy claim rows (or
+drop `capabilityClaims`) because callers can no longer select a previously used
+capability. Do not purge those claims while the compatibility path is active.

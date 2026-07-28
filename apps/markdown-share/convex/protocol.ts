@@ -163,8 +163,8 @@ export async function documentAtVersion(
     version += serializedSteps.length;
   }
 
-  assertMarkdownSize(transform.doc.textContent);
-  return transform.doc;
+  const canonical = parseSnapshot(JSON.stringify(transform.doc.toJSON()));
+  return canonical.node;
 }
 
 export async function validateSubmittedSteps(
@@ -190,7 +190,10 @@ export async function validateSubmittedSteps(
       throw invalidProtocol("Editor step cannot be applied to this document.");
     }
   }
-  assertMarkdownSize(transform.doc.textContent);
+  // Steps such as AttrStep can apply successfully while changing the document
+  // to a schema shape the Markdown client does not support. Re-validate the
+  // complete result with the exact same canonical invariant as snapshots.
+  parseSnapshot(JSON.stringify(transform.doc.toJSON()));
 }
 
 export async function validateSubmittedSnapshot(

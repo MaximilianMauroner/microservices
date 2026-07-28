@@ -59,6 +59,14 @@ describe("capability lifecycle", () => {
 
     expect(first.token).not.toBe(second.token);
     expect(first.token.length).toBeGreaterThanOrEqual(20);
+    const claims = await test.run(async (ctx) => {
+      return await ctx.db.query("capabilityClaims").collect();
+    });
+    const seeds = await test.run(async (ctx) => {
+      return await ctx.db.query("capabilitySeeds").collect();
+    });
+    expect(claims).toEqual([]);
+    expect(seeds).toEqual([]);
   });
 
   it("never allows a legacy capability to be reused after cleanup", async () => {
@@ -83,6 +91,12 @@ describe("capability lifecycle", () => {
         token: LEGACY_TOKEN,
       }),
     ).rejects.toThrow("already been used");
+    const claims = await test.run(async (ctx) => {
+      return await ctx.db.query("capabilityClaims").collect();
+    });
+    expect(claims).toMatchObject([
+      { token: LEGACY_TOKEN, kind: "legacy" },
+    ]);
   });
 });
 
@@ -238,6 +252,21 @@ describe("editor protocol and retention", () => {
         ],
       }),
     ).rejects.toThrow("cannot be applied");
+    await expect(
+      test.mutation(api.editor.submitSteps, {
+        id: created.token,
+        version: 1,
+        clientId: "test-client",
+        steps: [
+          JSON.stringify({
+            stepType: "attr",
+            pos: 0,
+            attr: "language",
+            value: "javascript",
+          }),
+        ],
+      }),
+    ).rejects.toThrow("Code block attributes are not supported");
   });
 
   it("rejects a valid step whose result exceeds the Markdown limit", async () => {
