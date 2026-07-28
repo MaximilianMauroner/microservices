@@ -420,7 +420,9 @@
             ? "Loading timed out after 8 seconds. Check your connection and try again."
             : cause instanceof TypeError
               ? "Protected data could not be reached. Check your connection and try again."
-              : cause instanceof Error ? cause.message : "Protected data could not be loaded.";
+              : cause instanceof Error && cause.message.startsWith("Invalid ")
+                ? "The server returned malformed data. Try again."
+                : cause instanceof Error ? cause.message : "Protected data could not be loaded.";
       }
       const retry = section.querySelector("[data-collection-retry]");
       if (retry instanceof HTMLButtonElement) retry.focus();
