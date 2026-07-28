@@ -507,7 +507,9 @@ async function listUploadsFast(
       LIST_METADATA_CONCURRENCY,
       async (candidate) => {
         const summary = await headUploadSummary(client, bucket, candidate, asOf, options);
-        return summary ? { ...summary, key: candidate.key } : null;
+        return summary
+          ? { ...summary, updatedAt: candidate.updatedAt, key: candidate.key }
+          : null;
       }
     );
     processed += chunk.length;

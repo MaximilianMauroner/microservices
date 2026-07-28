@@ -330,6 +330,82 @@ describe("S3 upload storage", () => {
     storage.close?.();
   });
 
+  it("keeps fast-path pagination on the LIST snapshot when HEAD timestamps change", async () => {
+    const candidates = [
+      { id: "a".repeat(32), listedAt: new Date("2026-07-23T03:00:00.000Z"), headAt: new Date("2027-01-03T00:00:00.000Z") },
+      { id: "b".repeat(32), listedAt: new Date("2026-07-23T02:00:00.000Z"), headAt: new Date("2025-01-02T00:00:00.000Z") },
+      { id: "c".repeat(32), listedAt: new Date("2026-07-23T01:00:00.000Z"), headAt: new Date("2027-01-01T00:00:00.000Z") }
+    ];
+    vi.spyOn(S3Client.prototype, "send").mockImplementation(async (command) => {
+      if (command instanceof ListObjectsV2Command) {
+        return {
+          Contents: command.input.Prefix === "pages/"
+            ? candidates.map(({ id, listedAt }) => ({
+                Key: `pages/${id}.html`,
+                LastModified: listedAt
+              }))
+            : []
+        } as never;
+      }
+      if (command instanceof HeadObjectCommand) {
+        const candidate = candidates.find(({ id }) => command.input.Key === `pages/${id}.html`);
+        if (!candidate) throw new Error("Unexpected HEAD key");
+        return {
+          ContentLength: 10,
+          ContentType: "text/html; charset=utf-8",
+          LastModified: candidate.headAt,
+          Metadata: { "original-name": `${candidate.id[0]}.html` }
+        } as never;
+      }
+      throw new Error("Unexpected S3 command");
+    });
+    const storage = createS3UploadStorage(storageConfig);
+    const asOf = new Date("2026-07-24T00:00:00.000Z");
+
+    const newestFirst = await storage.listUploads(asOf, { limit: 1 });
+    expect(newestFirst.uploads).toMatchObject([{
+      id: "a".repeat(32),
+      updatedAt: new Date("2026-07-23T03:00:00.000Z")
+    }]);
+    expect(newestFirst.nextCursor?.updatedAt).toEqual(new Date("2026-07-23T03:00:00.000Z"));
+    if (!newestFirst.nextCursor) throw new Error("Expected newest continuation cursor");
+    const newestSecond = await storage.listUploads(asOf, {
+      limit: 1,
+      cursor: newestFirst.nextCursor
+    });
+    expect(newestSecond.uploads[0]?.id).toBe("b".repeat(32));
+    if (!newestSecond.nextCursor) throw new Error("Expected second newest continuation cursor");
+    const newestThird = await storage.listUploads(asOf, {
+      limit: 1,
+      cursor: newestSecond.nextCursor
+    });
+    expect(newestThird.uploads[0]?.id).toBe("c".repeat(32));
+    expect(newestThird.nextCursor).toBeUndefined();
+
+    const oldestFirst = await storage.listUploads(asOf, { limit: 1, sort: "oldest" });
+    expect(oldestFirst.uploads).toMatchObject([{
+      id: "c".repeat(32),
+      updatedAt: new Date("2026-07-23T01:00:00.000Z")
+    }]);
+    expect(oldestFirst.nextCursor?.updatedAt).toEqual(new Date("2026-07-23T01:00:00.000Z"));
+    if (!oldestFirst.nextCursor) throw new Error("Expected oldest continuation cursor");
+    const oldestSecond = await storage.listUploads(asOf, {
+      limit: 1,
+      sort: "oldest",
+      cursor: oldestFirst.nextCursor
+    });
+    expect(oldestSecond.uploads[0]?.id).toBe("b".repeat(32));
+    if (!oldestSecond.nextCursor) throw new Error("Expected second oldest continuation cursor");
+    const oldestThird = await storage.listUploads(asOf, {
+      limit: 1,
+      sort: "oldest",
+      cursor: oldestSecond.nextCursor
+    });
+    expect(oldestThird.uploads[0]?.id).toBe("a".repeat(32));
+    expect(oldestThird.nextCursor).toBeUndefined();
+    storage.close?.();
+  });
+
   it("continues bounded chunks past expired files without returning them", async () => {
     let headCalls = 0;
     const candidates = Array.from({ length: 10 }, (_value, index) => {

@@ -955,40 +955,61 @@ describe("html publisher", () => {
 
   it("promotes legacy cursors only for default listing criteria and emits v1 cursors", async () => {
     const now = new Date("2026-07-23T12:00:00.000Z");
-    const { app } = setup({
+    const { app, storage } = setup({
       externalUploadAuth: (_req, _res, next) => next(),
       now: () => now
     });
-    const ids: string[] = [];
-    for (const filename of ["alpha.html", "beta.html", "gamma.html"]) {
-      const uploaded = await request(app)
-        .post("/api/uploads")
-        .set("Authorization", "Bearer test-upload-token")
-        .attach("file", Buffer.from("<!doctype html>"), { filename, contentType: "text/html" })
-        .expect(201);
-      ids.push(uploaded.body.id);
+    for (const id of ["a".repeat(32), "b".repeat(32), "c".repeat(32)]) {
+      storage.pages.set(id, {
+        body: Buffer.from("<!doctype html>"),
+        etag: `"${id}"`,
+        lastModified: now,
+        metadata: { bytes: 15, originalName: `${id[0]}.html`, sha256: id.repeat(2) }
+      });
     }
-    const firstKey = `pages/${ids.sort()[0]}.html`;
-    const legacy = Buffer.from(JSON.stringify({
+    for (const id of ["x".repeat(32), "y".repeat(32), "z".repeat(32)]) {
+      storage.files.set(id, {
+        body: Buffer.from("file"),
+        lastModified: now,
+        metadata: {
+          bytes: 4,
+          originalName: `${id[0]}.txt`,
+          sha256: id.repeat(2),
+          contentType: "text/plain",
+          expiresAt: new Date("2026-07-26T12:00:00.000Z")
+        }
+      });
+    }
+    const encodeLegacy = (key: string) => Buffer.from(JSON.stringify({
       updatedAt: now.toISOString(),
-      key: firstKey
+      key
     })).toString("base64url");
+    const cases = [
+      { kind: "all", key: `files/${"x".repeat(32)}` },
+      { kind: "html", key: `pages/${"a".repeat(32)}.html` },
+      { kind: "file", key: `files/${"x".repeat(32)}` }
+    ] as const;
 
-    const promoted = await request(app)
-      .get(`/api/external-uploads?limit=1&cursor=${encodeURIComponent(legacy)}`)
-      .expect(200);
-    expect(promoted.body.uploads).toHaveLength(1);
-    expect(promoted.body.nextCursor).toEqual(expect.any(String));
-    const decoded = JSON.parse(
-      Buffer.from(promoted.body.nextCursor, "base64url").toString("utf8")
-    ) as { version: number; criteria: string; originalName: string };
-    expect(decoded).toMatchObject({
-      version: 1,
-      criteria: JSON.stringify({ q: "", kind: "all", expiry: "all", sort: "newest" })
-    });
-    expect(decoded.originalName).toEqual(expect.any(String));
+    for (const { kind, key } of cases) {
+      const legacy = encodeLegacy(key);
+      const promoted = await request(app)
+        .get(`/api/external-uploads?limit=1&kind=${kind}&cursor=${encodeURIComponent(legacy)}`)
+        .expect(200);
+      expect(promoted.body.uploads).toHaveLength(1);
+      expect(promoted.body.uploads[0].kind).toBe(kind === "all" ? "file" : kind);
+      expect(promoted.body.nextCursor).toEqual(expect.any(String));
+      const decoded = JSON.parse(
+        Buffer.from(promoted.body.nextCursor, "base64url").toString("utf8")
+      ) as { version: number; criteria: string; originalName: string };
+      expect(decoded).toMatchObject({
+        version: 1,
+        criteria: JSON.stringify({ q: "", kind, expiry: "all", sort: "newest" })
+      });
+      expect(decoded.originalName).toEqual(expect.any(String));
+    }
 
-    for (const criteria of ["q=alpha", "kind=html", "expiry=persistent", "sort=oldest"]) {
+    const legacy = encodeLegacy(`files/${"x".repeat(32)}`);
+    for (const criteria of ["q=alpha", "expiry=persistent", "sort=oldest"]) {
       await request(app)
         .get(`/api/external-uploads?${criteria}&cursor=${encodeURIComponent(legacy)}`)
         .expect(400, {

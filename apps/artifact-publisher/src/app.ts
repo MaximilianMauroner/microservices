@@ -624,7 +624,7 @@ function parseUploadListOptions(
     if (!decodedCursor) {
       return { ok: false, message: "cursor is invalid." };
     }
-    const legacyCompatible = q === "" && kind === "all" && expiry === "all" && sort === "newest";
+    const legacyCompatible = q === "" && expiry === "all" && sort === "newest";
     if (decodedCursor.version === undefined && !legacyCompatible) {
       return { ok: false, message: "legacy cursor requires default listing criteria." };
     }
