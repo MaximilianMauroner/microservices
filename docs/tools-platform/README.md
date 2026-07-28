@@ -18,11 +18,13 @@ Railway Tools Platform:
 
 The production architecture has one Railway process: `platform-service` mounts
 the catalog, publisher, and field-guide routes and runs the bounded checker on
-five-minute boundaries. The redacted Tools home and status surface are public;
-Cloudflare Access is the outer authentication layer for Publish,
-artifact/file delivery, Review, Manage, and their legacy browser aliases.
-Native upload and agent automation routes bypass browser Access and continue to
-use their existing bearer credentials.
+five-minute boundaries. The redacted Tools home and status surface are public.
+Artifact/file `GET`/`HEAD` delivery is public and unlisted: possession of an
+unguessable URL grants read access while the backing bucket stays private.
+Cloudflare Access remains the outer authentication layer for Publish
+upload/list/revoke surfaces, Review, Manage, and their protected legacy browser
+aliases. Native upload and agent automation routes bypass browser Access and
+continue to use their existing bearer credentials.
 
 The catalog and checker use one private bucket, but ownership is enforced in code. Web writes only
 `catalog/current.json` and immutable `audit/**` objects. Checker writes only

@@ -17,7 +17,9 @@ in-process checker, and verify:
 - component-specific health endpoints;
 - cross-family Access assertion rejection;
 - native-token access to `/api/uploads*` and `/api/agent*`;
-- canonical and legacy browser routes, including `GET` and `HEAD`;
+- public unlisted canonical and legacy artifact/file capability reads,
+  including `GET`, `HEAD`, safe `404` responses, and preserved redirects;
+- protected upload/list/revoke routes and non-read delivery methods;
 - redaction of private catalog, Access, and notification data.
 
 Production cutover, legacy alias observation, explicit retirement approval,
