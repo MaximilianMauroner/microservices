@@ -1,0 +1,40 @@
+{
+  "name": "markdown-share",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "convex:dev": "convex dev",
+    "convex:deploy": "convex deploy",
+    "deploy": "wrangler deploy",
+    "dev": "vite --host 0.0.0.0",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@convex-dev/presence": "0.4.0",
+    "@convex-dev/prosemirror-sync": "0.2.5",
+    "@tiptap/core": "3.29.2",
+    "@tiptap/extension-code-block": "3.29.2",
+    "@tiptap/extension-document": "3.29.2",
+    "@tiptap/extension-text": "3.29.2",
+    "@tiptap/react": "3.29.2",
+    "convex": "1.42.3",
+    "prosemirror-model": "1.25.4",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "react-markdown": "10.1.0",
+    "remark-gfm": "4.0.1"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "latest",
+    "jsdom": "latest",
+    "typescript": "7.0.2",
+    "vite": "latest",
+    "vitest": "latest",
+    "wrangler": "latest"
+  }
+}
