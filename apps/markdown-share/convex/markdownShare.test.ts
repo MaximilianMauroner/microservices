@@ -69,6 +69,33 @@ describe("capability lifecycle", () => {
     expect(seeds).toEqual([]);
   });
 
+  it("does not tombstone server capabilities during backfill or cleanup", async () => {
+    vi.useFakeTimers({ now: 1_500 });
+    const test = setup();
+    const created = await test.mutation(api.documents.create, {
+      filename: "server-cleanup.md",
+      markdown: "server generated",
+    });
+
+    await test.mutation(internal.claims.backfill, {});
+    expect(
+      await test.run(async (ctx) => {
+        return await ctx.db.query("capabilityClaims").collect();
+      }),
+    ).toEqual([]);
+
+    vi.setSystemTime(created.expiresAt);
+    await test.mutation(internal.cleanup.expire, {
+      token: created.token,
+      expectedExpiresAt: created.expiresAt,
+    });
+    expect(
+      await test.run(async (ctx) => {
+        return await ctx.db.query("capabilityClaims").collect();
+      }),
+    ).toEqual([]);
+  });
+
   it("never allows a legacy capability to be reused after cleanup", async () => {
     vi.useFakeTimers({ now: 2_000 });
     const test = setup();

@@ -1,6 +1,7 @@
 import { internalMutation } from "./_generated/server";
 import { v } from "convex/values";
 import { ensureCapabilityClaim } from "./capabilities";
+import { LEGACY_TOKEN_PATTERN } from "./constants";
 
 export const backfill = internalMutation({
   args: {},
@@ -8,7 +9,9 @@ export const backfill = internalMutation({
   handler: async (ctx) => {
     const documents = await ctx.db.query("documents").take(500);
     for (const document of documents) {
-      await ensureCapabilityClaim(ctx, document.token, document.createdAt);
+      if (LEGACY_TOKEN_PATTERN.test(document.token)) {
+        await ensureCapabilityClaim(ctx, document.token, document.createdAt);
+      }
     }
     return documents.length;
   },
