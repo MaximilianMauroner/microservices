@@ -165,7 +165,7 @@ describe("public page", () => {
     expect(html).toContain("Operational");
     expect(html).toContain("Unavailable from Railway");
     expect(html).not.toContain("Operator sign-in");
-    expect(html).toContain('<link rel="icon" href="/favicon.svg" type="image/svg+xml">');
+    expect(html).toContain('<link rel="icon" href="/favicon.svg?v=90e2a71" type="image/svg+xml">');
     expect(html).toContain('<link rel="stylesheet" href="/assets/tools.css?v=90e2a71">');
     expect(html).toContain('src="/assets/icons/artifact-publisher.png"');
     expect(html).toContain('src="/assets/icons/network-console.png"');

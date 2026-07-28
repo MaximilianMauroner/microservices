@@ -11,7 +11,7 @@ export function renderExternalUploadPage(options: {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex, nofollow">
   <title>Temporary uploads</title>
-  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/favicon.svg?v=90e2a71" type="image/svg+xml">
   <link rel="stylesheet" href="/publish/assets/${escapeHtml(options.assetVersion)}/app.css">
 </head>
 <body>
@@ -19,7 +19,7 @@ export function renderExternalUploadPage(options: {
   <header class="topbar">
     <div class="topbar__inner">
       <a class="brand" href="/publish" aria-label="Temporary uploads">
-        <img src="/favicon.svg" alt="" width="28" height="28">
+        <img src="/favicon.svg?v=90e2a71" alt="" width="28" height="28">
         <span>Temporary uploads</span>
       </a>
       <div class="identity" id="identity">
