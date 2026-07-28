@@ -8,6 +8,7 @@
     "convex:dev": "convex dev",
     "convex:deploy": "convex deploy",
     "deploy": "wrangler deploy",
+    "deploy:production": "convex deploy --cmd 'heavy-check -- bun run build' --cmd-url-env-var-name VITE_CONVEX_URL && wrangler deploy",
     "dev": "vite --host 0.0.0.0",
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json"
@@ -22,6 +23,7 @@
     "@tiptap/react": "3.29.2",
     "convex": "1.42.3",
     "prosemirror-model": "1.25.4",
+    "prosemirror-transform": "1.12.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-markdown": "10.1.0",
@@ -31,6 +33,7 @@
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "latest",
+    "convex-test": "0.0.53",
     "jsdom": "latest",
     "typescript": "7.0.2",
     "vite": "latest",

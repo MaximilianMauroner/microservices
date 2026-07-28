@@ -23,10 +23,14 @@ accepted editor change.
 ```sh
 bun run typecheck
 bun run test
-bunx convex deploy
-bun run build
-bunx wrangler deploy
+bun run deploy:production
 ```
 
-The build must receive the production `VITE_CONVEX_URL` when deploying the
-frontend. PDF export uses the browser print dialog and a print-only preview.
+`deploy:production` uses Convex's `--cmd-url-env-var-name` flow to inject the
+production `VITE_CONVEX_URL` into the frontend build, then deploys that exact
+artifact with Wrangler. Its build runs through the repository's `heavy-check`
+guard. PDF export uses the browser print dialog and a print-only preview.
+
+The shipped Cloudflare `_headers` file keeps capability URLs out of referrers
+and search indexes, denies framing, disables MIME sniffing, and restricts
+frontend connections to this app and its production Convex deployment.

@@ -3,6 +3,11 @@ import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { RETENTION_MS } from "./constants";
 import { requireLiveDocument } from "./documentAccess";
+import {
+  parseSnapshot,
+  validateSubmittedSnapshot,
+  validateSubmittedSteps,
+} from "./protocol";
 
 const clientIdValidator = v.union(v.string(), v.number());
 const snapshotValidator = v.union(
@@ -28,7 +33,14 @@ export const getSnapshot = query({
   returns: snapshotValidator,
   handler: async (ctx, args) => {
     await requireLiveDocument(ctx, args.id);
-    return await ctx.runQuery(components.prosemirrorSync.lib.getSnapshot, args);
+    const snapshot = await ctx.runQuery(
+      components.prosemirrorSync.lib.getSnapshot,
+      args,
+    );
+    if (snapshot.content !== null) {
+      parseSnapshot(snapshot.content);
+    }
+    return snapshot;
   },
 });
 
@@ -58,6 +70,12 @@ export const submitSnapshot = mutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     await requireLiveDocument(ctx, args.id);
+    await validateSubmittedSnapshot(
+      ctx,
+      args.id,
+      args.version,
+      args.content,
+    );
     await ctx.runMutation(components.prosemirrorSync.lib.submitSnapshot, {
       ...args,
       pruneSnapshots: true,
@@ -76,6 +94,7 @@ export const submitSteps = mutation({
   returns: submitStepsValidator,
   handler: async (ctx, args) => {
     const document = await requireLiveDocument(ctx, args.id);
+    await validateSubmittedSteps(ctx, args.id, args.version, args.steps);
     const result = await ctx.runMutation(
       components.prosemirrorSync.lib.submitSteps,
       args,

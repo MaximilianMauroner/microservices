@@ -4,12 +4,16 @@ import { internal, components } from "./_generated/api";
 import { mutation, query } from "./_generated/server";
 import {
   FILENAME_PATTERN,
+  LEGACY_TOKEN_PATTERN,
   MAX_FILENAME_LENGTH,
   MAX_MARKDOWN_LENGTH,
   RETENTION_MS,
-  TOKEN_PATTERN,
 } from "./constants";
 import { findDocument } from "./documentAccess";
+import {
+  claimLegacyCapability,
+  createServerCapability,
+} from "./capabilities";
 
 const prosemirrorSync = new ProsemirrorSync(components.prosemirrorSync);
 
@@ -21,7 +25,7 @@ const publicDocument = v.object({
   expiresAt: v.number(),
 });
 
-function validateCreateInput(filename: string, token: string, markdown: string) {
+function validateCreateInput(filename: string, markdown: string) {
   if (
     filename.length > MAX_FILENAME_LENGTH ||
     !FILENAME_PATTERN.test(filename)
@@ -29,12 +33,6 @@ function validateCreateInput(filename: string, token: string, markdown: string) 
     throw new ConvexError({
       code: "INVALID_FILENAME",
       message: "Use a short URL-safe filename ending in .md.",
-    });
-  }
-  if (!TOKEN_PATTERN.test(token)) {
-    throw new ConvexError({
-      code: "INVALID_TOKEN",
-      message: "The document link token is invalid.",
     });
   }
   if (markdown.length > MAX_MARKDOWN_LENGTH) {
@@ -64,31 +62,45 @@ function toPublicDocument(document: {
 export const create = mutation({
   args: {
     filename: v.string(),
-    token: v.string(),
+    // Temporary compatibility for the already-deployed alpha bundle. New
+    // clients omit this and receive a server-generated capability.
+    token: v.optional(v.string()),
     markdown: v.string(),
   },
   returns: publicDocument,
   handler: async (ctx, args) => {
-    validateCreateInput(args.filename, args.token, args.markdown);
-
-    if (await findDocument(ctx, args.token)) {
-      throw new ConvexError({
-        code: "TOKEN_COLLISION",
-        message: "Please create the document again to generate a new link.",
-      });
-    }
+    validateCreateInput(args.filename, args.markdown);
 
     const now = Date.now();
+    let token: string;
+    if (args.token !== undefined) {
+      if (!LEGACY_TOKEN_PATTERN.test(args.token)) {
+        throw new ConvexError({
+          code: "INVALID_TOKEN",
+          message: "The legacy document link token is invalid.",
+        });
+      }
+      if (await findDocument(ctx, args.token)) {
+        throw new ConvexError({
+          code: "TOKEN_ALREADY_USED",
+          message: "This document capability has already been used.",
+        });
+      }
+      await claimLegacyCapability(ctx, args.token, now);
+      token = args.token;
+    } else {
+      token = await createServerCapability(ctx, now);
+    }
     const expiresAt = now + RETENTION_MS;
     const documentId = await ctx.db.insert("documents", {
-      token: args.token,
+      token,
       filename: args.filename,
       createdAt: now,
       updatedAt: now,
       expiresAt,
     });
 
-    await prosemirrorSync.create(ctx, args.token, {
+    await prosemirrorSync.create(ctx, token, {
       type: "doc",
       content: [
         {
@@ -104,12 +116,12 @@ export const create = mutation({
     const cleanupJobId = await ctx.scheduler.runAt(
       expiresAt,
       internal.cleanup.expire,
-      { token: args.token, expectedExpiresAt: expiresAt },
+      { token, expectedExpiresAt: expiresAt },
     );
     await ctx.db.patch(documentId, { cleanupJobId });
 
     return toPublicDocument({
-      token: args.token,
+      token,
       filename: args.filename,
       createdAt: now,
       updatedAt: now,
@@ -122,10 +134,6 @@ export const get = query({
   args: { token: v.string() },
   returns: v.union(publicDocument, v.null()),
   handler: async (ctx, args) => {
-    if (!TOKEN_PATTERN.test(args.token)) {
-      return null;
-    }
-
     const document = await findDocument(ctx, args.token);
     if (!document || document.expiresAt <= Date.now()) {
       return null;

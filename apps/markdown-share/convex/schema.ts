@@ -12,4 +12,8 @@ export default defineSchema({
   })
     .index("by_token", ["token"])
     .index("by_expires_at", ["expiresAt"]),
+  capabilityClaims: defineTable({
+    token: v.optional(v.string()),
+    claimedAt: v.number(),
+  }).index("by_token", ["token"]),
 });

@@ -3,6 +3,7 @@ import { internalMutation } from "./_generated/server";
 import { v } from "convex/values";
 import { findDocument } from "./documentAccess";
 import { presence } from "./presence";
+import { ensureCapabilityClaim } from "./capabilities";
 
 export const expire = internalMutation({
   args: { token: v.string(), expectedExpiresAt: v.number() },
@@ -18,6 +19,7 @@ export const expire = internalMutation({
       return null;
     }
 
+    await ensureCapabilityClaim(ctx, args.token, document.createdAt);
     await ctx.runMutation(components.prosemirrorSync.lib.deleteDocument, {
       id: args.token,
     });

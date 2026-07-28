@@ -23,6 +23,14 @@ describe("document links", () => {
     });
   });
 
+  it("accepts a server-generated Convex capability postfix", () => {
+    const token = "j57dzxnpat8g9sbksewde1dznh8bczet";
+    expect(parseDocumentRoute(documentPath("server.md", token))).toEqual({
+      filename: "server.md",
+      token,
+    });
+  });
+
   it("rejects missing and non-v4 tokens", () => {
     expect(parseDocumentRoute("/d/notes.md--guessable")).toBeNull();
     expect(

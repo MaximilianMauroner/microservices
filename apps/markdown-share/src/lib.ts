@@ -1,5 +1,5 @@
 export const TOKEN_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+  /^(?:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|[a-z0-9]{20,64})$/;
 
 export type DocumentRoute = {
   filename: string;
@@ -25,7 +25,7 @@ export function documentPath(filename: string, token: string): string {
 }
 
 export function parseDocumentRoute(pathname: string): DocumentRoute | null {
-  const match = pathname.match(/^\/d\/([^/]+)--([0-9a-f-]+)\/?$/i);
+  const match = pathname.match(/^\/d\/([^/]+)--([a-z0-9-]+)\/?$/i);
   if (!match?.[1] || !match[2]) {
     return null;
   }
@@ -108,17 +108,29 @@ const PRESENCE_NAMES = [
   "Violet Lynx",
 ] as const;
 
-export function getAnonymousName(): string {
-  const storageKey = "markdown-share:anonymous-name";
-  const existing = sessionStorage.getItem(storageKey);
-  if (existing) {
-    return existing;
+export type PresenceIdentity = {
+  userId: string;
+  displayName: string;
+};
+
+export function getPresenceIdentity(): PresenceIdentity {
+  const userIdKey = "markdown-share:presence-user-id";
+  const nameKey = "markdown-share:anonymous-name";
+  let userId = sessionStorage.getItem(userIdKey);
+  if (!userId) {
+    userId = crypto.randomUUID();
+    sessionStorage.setItem(userIdKey, userId);
+  }
+
+  const existingName = sessionStorage.getItem(nameKey);
+  if (existingName) {
+    return { userId, displayName: existingName };
   }
 
   const random = new Uint32Array(1);
   crypto.getRandomValues(random);
   const value = random[0] ?? 0;
-  const name = `${PRESENCE_NAMES[value % PRESENCE_NAMES.length]} ${String(value % 100).padStart(2, "0")}`;
-  sessionStorage.setItem(storageKey, name);
-  return name;
+  const displayName = `${PRESENCE_NAMES[value % PRESENCE_NAMES.length]} ${String(value % 100).padStart(2, "0")}`;
+  sessionStorage.setItem(nameKey, displayName);
+  return { userId, displayName };
 }

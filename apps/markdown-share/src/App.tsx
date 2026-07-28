@@ -13,7 +13,7 @@ import { api } from "../convex/_generated/api";
 import {
   documentPath,
   formatExpiry,
-  getAnonymousName,
+  getPresenceIdentity,
   initialMarkdown,
   markdownFromJson,
   normalizeFilename,
@@ -38,17 +38,15 @@ function LandingPage() {
   const handleCreate = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const filename = normalizeFilename(name);
-    const token = crypto.randomUUID();
     setIsCreating(true);
     setError(null);
 
     try {
-      await createDocument({
+      const created = await createDocument({
         filename,
-        token,
         markdown: initialMarkdown(filename),
       });
-      window.location.assign(documentPath(filename, token));
+      window.location.assign(documentPath(created.filename, created.token));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Creation failed.");
       setIsCreating(false);
@@ -127,11 +125,12 @@ type PublicDocument = {
 };
 
 function LiveDocument({ document }: { document: PublicDocument }) {
-  const anonymousName = useMemo(getAnonymousName, []);
+  const identity = useMemo(getPresenceIdentity, []);
+  const setDisplayName = useMutation(api.presence.setDisplayName);
   const presence = usePresence(
     api.presence,
     document.token,
-    anonymousName,
+    identity.userId,
   );
   const sync = useTiptapSync(api.editor, document.token, {
     snapshotDebounceMs: 800,
@@ -144,6 +143,23 @@ function LiveDocument({ document }: { document: PublicDocument }) {
     }
     documentTitle(document.filename);
   }, [document.filename, document.token]);
+
+  useEffect(() => {
+    const self = presence?.find((entry) => entry.userId === identity.userId);
+    if (self && self.name !== identity.displayName) {
+      void setDisplayName({
+        roomId: document.token,
+        userId: identity.userId,
+        name: identity.displayName,
+      });
+    }
+  }, [
+    document.token,
+    identity.displayName,
+    identity.userId,
+    presence,
+    setDisplayName,
+  ]);
 
   if (sync.isLoading) {
     return <CenteredStatus label="Loading editor history…" />;
@@ -160,7 +176,7 @@ function LiveDocument({ document }: { document: PublicDocument }) {
   return (
     <EditorWorkspace
       document={document}
-      anonymousName={anonymousName}
+      anonymousName={identity.displayName}
       presence={presence ?? []}
       syncExtension={sync.extension}
       initialContent={sync.initialContent}
@@ -176,6 +192,7 @@ type PresenceEntry = {
   userId: string;
   online: boolean;
   lastDisconnected: number;
+  name?: string;
 };
 
 type SyncExtension = NonNullable<
@@ -271,9 +288,9 @@ function EditorWorkspace({
               <span
                 className="presence-avatar"
                 key={entry.userId}
-                title={entry.userId}
+                title={entry.name ?? "Anonymous collaborator"}
               >
-                {entry.userId.slice(0, 1)}
+                {(entry.name ?? "Anonymous").slice(0, 1)}
               </span>
             ))}
             <span className="presence-label">
