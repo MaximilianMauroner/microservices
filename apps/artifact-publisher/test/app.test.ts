@@ -734,6 +734,9 @@ describe("html publisher", () => {
     expect(page.text).toContain("Cloudflare Access");
     expect(page.text).toContain('aria-current="page">Publish');
     expect(page.text).toContain('class="suite-skip skip-link"');
+    expect(page.text).toContain('id="upload-search"');
+    expect(page.text).toContain('id="upload-expiry"');
+    expect(page.text).toContain('id="upload-sort"');
     expect(page.text).not.toContain("Operator sign-in");
     const scriptPath = page.text.match(
       /\/publish\/assets\/[a-f0-9]{16}\/app\.js/
@@ -759,9 +762,20 @@ describe("html publisher", () => {
       .expect(200);
     expect(script.text).toContain('location.assign("/cdn-cgi/access/logout")');
     await request(app)
+      .get((stylePath ?? "").replace("/publish/", "/uploads/"))
+      .expect("Cache-Control", "private, max-age=31536000, immutable")
+      .expect(200);
+    await request(app)
+      .get((scriptPath ?? "").replace("/publish/", "/uploads/"))
+      .expect("Cache-Control", "private, max-age=31536000, immutable")
+      .expect(200);
+    await request(app)
       .get("/uploads/app.js")
       .expect("Cache-Control", "private, no-store")
       .expect(200);
+    for (const path of ["/publish/app.css", "/publish/app.js", "/uploads/app.css", "/uploads/app.js"]) {
+      await request(app).get(path).expect("Cache-Control", "private, no-store").expect(200);
+    }
   });
 
   it("stores authenticated external uploads as expiring files in the same storage", async () => {
@@ -889,6 +903,28 @@ describe("html publisher", () => {
         error: "invalid_pagination",
         message: "cursor is invalid."
       });
+    for (const query of ["expiry=month", "sort=random", "q=x&q=y"]) {
+      await request(app).get(`/api/external-uploads?${query}`).expect(400);
+    }
+  });
+
+  it("binds upload cursors to normalized listing criteria", async () => {
+    const { app } = setup({ externalUploadAuth: (_req, _res, next) => next() });
+    await request(app)
+      .post("/api/uploads")
+      .set("Authorization", "Bearer test-upload-token")
+      .attach("file", Buffer.from("<!doctype html>"), { filename: "plan.html", contentType: "text/html" })
+      .expect(201);
+    await request(app)
+      .post("/api/external-uploads")
+      .set("Host", "uploads.example")
+      .set("Origin", "http://uploads.example")
+      .attach("file", Buffer.from("notes"), { filename: "notes.txt", contentType: "text/plain" })
+      .expect(201);
+    const first = await request(app).get("/api/external-uploads?limit=1").expect(200);
+    await request(app)
+      .get(`/api/external-uploads?limit=1&q=notes&cursor=${encodeURIComponent(first.body.nextCursor)}`)
+      .expect(400, { error: "invalid_pagination", message: "cursor does not match the current filters." });
   });
 
   it("rejects cross-origin requests to the external upload endpoint", async () => {

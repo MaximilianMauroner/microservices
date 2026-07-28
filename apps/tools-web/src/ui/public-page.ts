@@ -23,7 +23,10 @@ const STATUS_LABELS: Record<MonitorStatus, string> = {
   unavailable: "Not checkable from Railway"
 };
 
-export function renderPublicPage(snapshot: PublicSnapshotDocument): string {
+export function renderPublicPage(
+  snapshot: PublicSnapshotDocument,
+  publicOrigin = "https://tools.mauroner.net"
+): string {
   const groups = [...snapshot.groups].sort(byOrderThenId);
   const entries = [...snapshot.entries].sort(byOrderThenId);
   const body = `<main id="main" class="tools-home">
@@ -31,9 +34,10 @@ export function renderPublicPage(snapshot: PublicSnapshotDocument): string {
         <p class="eyebrow">Useful, focused services</p>
         <h1 id="tools-title">Tools for publishing, review, and operations.</h1>
         <p class="lede">A curated directory of Mauroner services, with clear access requirements and live availability.</p>
+        <a class="browse-tools" href="#catalog">Browse tools <span aria-hidden="true">↓</span></a>
         <p class="freshness">Catalog updated <time datetime="${escapeHtml(snapshot.generatedAt)}">${formatTimestamp(snapshot.generatedAt)}</time></p>
       </section>
-      <section class="catalog wrap" aria-label="Tool directory">
+      <section id="catalog" class="catalog wrap" aria-label="Tool directory">
         ${groups.length === 0 ? directoryEmptyState() : groups.map((group, index) => {
           const groupEntries = entries.filter((entry) => entry.groupId === group.id);
           if (groupEntries.length === 0) return "";
@@ -45,7 +49,7 @@ export function renderPublicPage(snapshot: PublicSnapshotDocument): string {
                 ${group.description ? `<p>${escapeHtml(group.description)}</p>` : ""}
               </div>
             </header>
-            <ul class="tool-grid" role="list">${groupEntries.map((entry) => renderToolCard(entry, snapshot.statuses[entry.id])).join("")}</ul>
+            <ul class="tool-grid" role="list">${groupEntries.map((entry) => renderToolCard(entry, snapshot.statuses[entry.id], publicOrigin)).join("")}</ul>
           </section>`;
         }).join("")}
       </section>
@@ -55,20 +59,25 @@ export function renderPublicPage(snapshot: PublicSnapshotDocument): string {
     title: "Mauroner Tools",
     description: "Publishing, review, status, and operations tools.",
     body,
-    active: "tools"
+    active: "tools",
+    canonicalUrl: new URL("/", publicOrigin).toString()
   });
 }
 
-export function renderStatusPage(snapshot: PublicSnapshotDocument): string {
+export function renderStatusPage(
+  snapshot: PublicSnapshotDocument,
+  publicOrigin = "https://tools.mauroner.net"
+): string {
   const entries = [...snapshot.entries].sort(byOrderThenId);
   const overall = overallState(entries, snapshot.statuses);
-  const summary = overallSummary(overall);
+  const unmeasuredCount = entries.filter((entry) => snapshot.statuses[entry.id]?.status !== "up" && snapshot.statuses[entry.id]?.status !== "down" && snapshot.statuses[entry.id]?.status !== "checking").length;
+  const summary = overallSummary(overall, unmeasuredCount);
   const body = `<div class="status-page status-page--${overall}">
     <main id="main" class="status-wrap status-main">
       <section class="status-hero" aria-labelledby="status-title">
         ${statusMark(overall, true)}
         <h1 id="status-title">${summary.title}</h1>
-        <p>${summary.detail}</p>
+        <p>${summary.detail}</p>${summary.coverage ? `<p class="status-coverage">${summary.coverage}</p>` : ""}
         <p class="status-updated">Last updated <time datetime="${escapeHtml(snapshot.generatedAt)}">${formatTimestamp(snapshot.generatedAt)}</time></p>
       </section>
       <section id="services" class="status-card" aria-labelledby="services-title">
@@ -76,7 +85,7 @@ export function renderStatusPage(snapshot: PublicSnapshotDocument): string {
           <h2 id="services-title">Current status by service</h2>
           <span class="overall-badge overall-badge--${overall}">${statusMark(overall, false)}${summary.badge}</span>
         </header>
-        ${entries.length === 0 ? emptyState() : `<ul class="service-list" role="list">${entries.map((entry) => renderEntry(entry, snapshot.statuses[entry.id], snapshot.generatedAt)).join("")}</ul>`}
+        ${entries.length === 0 ? emptyState() : `<ul class="service-list" role="list">${entries.map((entry) => renderEntry(entry, snapshot.statuses[entry.id], snapshot.generatedAt, publicOrigin)).join("")}</ul>`}
       </section>
     </main>
     <footer class="status-footer">
@@ -88,13 +97,15 @@ export function renderStatusPage(snapshot: PublicSnapshotDocument): string {
     title: "Status — Mauroner Tools",
     description: "Current availability of Mauroner tools and services.",
     body,
-    active: "status"
+    active: "status",
+    canonicalUrl: new URL("/status", publicOrigin).toString()
   });
 }
 
 function renderToolCard(
   entry: PublicCatalogEntry,
-  status: PublicMonitorStatus | undefined
+  status: PublicMonitorStatus | undefined,
+  publicOrigin: string
 ): string {
   const accessLabels = entry.id === "network-console"
     ? ["Tailscale required"]
@@ -114,7 +125,7 @@ function renderToolCard(
     .map((link) => {
       const url = safeHttpUrl(link.url);
       if (!url) return "";
-      return `<a class="tool-link" href="${escapeHtml(url)}" rel="noreferrer">${escapeHtml(link.label)}<span aria-hidden="true">↗</span></a>`;
+      return renderDirectoryLink(url, link.label, "tool-link", publicOrigin);
     })
     .filter(Boolean)
     .join("");
@@ -139,7 +150,8 @@ function directoryEmptyState(): string {
 function renderEntry(
   entry: PublicCatalogEntry,
   status: PublicMonitorStatus | undefined,
-  generatedAt: string
+  generatedAt: string,
+  publicOrigin: string
 ): string {
   const state = serviceState(status);
   const uptime = uptimeSummary(status, generatedAt);
@@ -152,7 +164,7 @@ function renderEntry(
       const access = link.access === "restricted"
         ? `<span class="service-access">${entry.id === "network-console" ? "Tailscale required" : "Access protected"}</span>`
         : "";
-      return `<a class="service-link" href="${escapeHtml(url)}" rel="noreferrer"><span>${escapeHtml(link.label)}</span>${access}<span aria-hidden="true">↗</span></a>`;
+      return renderDirectoryLink(url, link.label, "service-link", publicOrigin, access);
     })
     .filter(Boolean)
     .join("");
@@ -168,8 +180,8 @@ function renderEntry(
     <p class="service-description">${escapeHtml(entry.description)}</p>
     ${uptimeBar(status, generatedAt, uptime)}
     <div class="service-meta">
-      <span>90 days ago</span>
-      <span>${uptime.totalChecks > 0 ? `${uptime.totalChecks} checks · ` : ""}${statusDetails(status)}</span>
+      <span>${uptime.firstObservedDay ? `Observed since ${escapeHtml(uptime.firstObservedDay)}` : "No checks recorded"}</span>
+      <span>${uptime.totalChecks > 0 ? `${uptime.totalChecks} ${uptime.totalChecks === 1 ? "check" : "checks"} · ` : ""}${statusDetails(status)}</span>
       <span>Today</span>
     </div>
     ${links ? `<div class="service-links" aria-label="${escapeHtml(entry.name)} links">${links}</div>` : ""}
@@ -194,13 +206,13 @@ function uptimeBar(
           ? "outage"
           : "attention";
     const title = uptime === undefined
-      ? `${day}: no checks recorded`
-      : `${day}: ${formatPercentage(uptime.successfulChecks, uptime.totalChecks)} uptime across ${uptime.totalChecks} checks`;
-    return `<span class="uptime-day uptime-day--${state}" title="${escapeHtml(title)}" aria-hidden="true"></span>`;
+      ? `${day}: no data`
+      : `${day}: ${formatPercentage(uptime.successfulChecks, uptime.totalChecks)} uptime across ${uptime.totalChecks} ${uptime.totalChecks === 1 ? "check" : "checks"}`;
+    return `<span class="uptime-day uptime-day--${state}" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}"></span>`;
   }).join("");
   const label = summary.percentage === null
-    ? `90-day uptime is not available. Latest monitor state: ${status ? STATUS_LABELS[status.status] : "not monitored"}.`
-    : `90-day uptime: ${summary.label} across ${summary.totalChecks} checks.`;
+    ? `Observed uptime is not available. Latest monitor state: ${status ? STATUS_LABELS[status.status] : "not monitored"}. No-data days are shown separately.`
+    : `Observed uptime: ${summary.label} across ${summary.totalChecks} ${summary.totalChecks === 1 ? "check" : "checks"}, since ${summary.firstObservedDay}. No-data days are shown separately.`;
   return `<div class="uptime-bar" role="img" aria-label="${escapeHtml(label)}"><span class="visually-hidden">${escapeHtml(label)}</span>${bars}</div>`;
 }
 
@@ -208,6 +220,7 @@ interface UptimeSummary {
   label: string;
   percentage: number | null;
   totalChecks: number;
+  firstObservedDay: string | null;
 }
 
 function uptimeSummary(
@@ -239,13 +252,18 @@ function uptimeSummary(
     return {
       label,
       percentage: null,
-      totalChecks: 0
+      totalChecks: 0,
+      firstObservedDay: null
     };
   }
   return {
     label: `${formatPercentage(totals.successfulChecks, totals.totalChecks)} uptime`,
     percentage: (totals.successfulChecks / totals.totalChecks) * 100,
-    totalChecks: totals.totalChecks
+    totalChecks: totals.totalChecks,
+    firstObservedDay: (status?.uptimeDays ?? [])
+      .filter(({ day, totalChecks }) => rollingWindow.has(day) && totalChecks > 0)
+      .map(({ day }) => day)
+      .sort()[0] ?? null
   };
 }
 
@@ -314,46 +332,71 @@ function overallState(
     return "attention";
   }
   if (
-    entries.length > 0 &&
-    monitored.length === entries.length &&
-    monitored.every(({ status }) => status === "up")
+    monitored.some(({ status }) => status === "up") &&
+    monitored.every(({ status }) =>
+      status === "up" || status === "paused" || status === "unavailable"
+    )
   ) {
     return "operational";
   }
   return "unknown";
 }
 
-function overallSummary(state: OverallState): {
+function overallSummary(state: OverallState, unmeasuredCount: number): {
   title: string;
   detail: string;
   badge: string;
+  coverage: string;
 } {
   if (state === "outage") {
     return {
       title: "Some services are unavailable",
       detail: "The monitor has detected an active service interruption.",
-      badge: "Service interruption"
+      badge: "Service interruption",
+      coverage: unmeasuredLabel(unmeasuredCount)
     };
   }
   if (state === "attention") {
     return {
       title: "Service checks are in progress",
       detail: "A fresh availability result will appear shortly.",
-      badge: "Checking"
+      badge: "Checking",
+      coverage: unmeasuredLabel(unmeasuredCount)
     };
   }
   if (state === "operational") {
     return {
-      title: "All services are operational",
+      title: "All monitored services operational",
       detail: "No service interruptions have been detected.",
-      badge: "Operational"
+      badge: "Operational",
+      coverage: unmeasuredLabel(unmeasuredCount)
     };
   }
   return {
-    title: "Status is being prepared",
-    detail: "Some services are private or do not have an automated check.",
-    badge: "Limited visibility"
+    title: "Monitoring visibility is limited",
+    detail: "No service currently has a measured availability result.",
+    badge: "Limited visibility",
+    coverage: unmeasuredLabel(unmeasuredCount)
   };
+}
+
+function unmeasuredLabel(count: number): string {
+  return count === 0 ? "" : `${count} ${count === 1 ? "service" : "services"} not measured`;
+}
+
+function renderDirectoryLink(
+  url: string,
+  label: string,
+  className: string,
+  publicOrigin: string,
+  extra = ""
+): string {
+  const destination = new URL(url);
+  const sameOrigin = destination.origin === new URL(publicOrigin).origin;
+  const external = sameOrigin
+    ? '<span aria-hidden="true">›</span>'
+    : '<span aria-hidden="true">↗</span><span class="visually-hidden"> (opens in a new tab)</span>';
+  return `<a class="${className}" href="${escapeHtml(url)}"${sameOrigin ? "" : ' target="_blank" rel="noreferrer"'}><span>${escapeHtml(label)}</span>${extra}${external}</a>`;
 }
 
 function statusMark(state: OverallState, large: boolean): string {

@@ -21,7 +21,14 @@ describe("static UI assets", () => {
     expect(script).toContain("observation.monitorId");
     expect(script).toContain("Legacy monitor unknown");
     expect(script).not.toContain("setInterval");
-    expect(script).not.toContain("setTimeout");
+    expect(script).toContain("8000");
+    expect(script).toContain("AbortController");
+    expect(script).toContain("collectionRequests");
+    expect(script).toContain("Loading timed out after 8 seconds");
+    expect(script).toContain("Your Access session expired");
+    expect(script).toContain("The server returned malformed data");
+    expect(script).toContain("document.createDocumentFragment()");
+    expect(script).toContain("Link IDs must be unique");
   });
 
   test("resets destructive confirmation before reopen and leaves Escape non-destructive", async () => {

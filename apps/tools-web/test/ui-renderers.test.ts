@@ -155,6 +155,9 @@ describe("public page", () => {
     const html = renderPublicPage(publicSnapshot);
 
     expect(html).toContain('<main id="main"');
+    expect(html).toContain('<link rel="canonical" href="https://tools.mauroner.net/">');
+    expect(html).toContain('property="og:type" content="website"');
+    expect(html).toContain('href="#catalog">Browse tools');
     expect(html).toContain('aria-current="page">Tools');
     expect(html).toContain("Publishing &amp; sharing");
     expect(html).toContain("Cloudflare Access");
@@ -172,8 +175,8 @@ describe("public page", () => {
     expect(html).toContain('aria-labelledby="status-title"');
     expect(html).toContain('aria-labelledby="services-title"');
     expect(html).toContain('role="list"');
-    expect(html).toContain("Status is being prepared");
-    expect(html).not.toContain("All services are operational");
+    expect(html).toContain("All monitored services operational");
+    expect(html).toContain("1 service not measured");
     expect(html).toContain("Operational");
     expect(html).toContain("Not checkable from Railway");
     expect(html).toContain("98% uptime");
@@ -211,6 +214,13 @@ describe("public page", () => {
     expect(html).not.toContain("javascript:");
   });
 
+  test("distinguishes same-origin navigation from external destinations", () => {
+    const html = renderPublicPage(publicSnapshot, "https://uploads.example.test");
+    expect(html).toContain('href="https://uploads.example.test/path?a=1&amp;b=2"><span>Open</span><span aria-hidden="true">›</span>');
+    expect(html).toContain('href="https://admin.example.test/" target="_blank" rel="noreferrer"');
+    expect(html).toContain("opens in a new tab");
+  });
+
   test("cannot render private-only fields because its input is a public projection", () => {
     const html = renderPublicPage(publicSnapshot);
 
@@ -239,7 +249,8 @@ describe("public page", () => {
     expect(html).toMatch(
       /<h3>Tools Status &amp; Directory<\/h3>[\s\S]*?<span class="service-state[^"]*">Not monitored<\/span>/
     );
-    expect(html).toContain("Status is being prepared");
+    expect(html).toContain("All monitored services operational");
+    expect(html).toContain("2 services not measured");
   });
 
   test("uses operational overall state only when every listed service is known up", () => {
@@ -257,7 +268,7 @@ describe("public page", () => {
       }
     });
 
-    expect(html).toContain("All services are operational");
+    expect(html).toContain("All monitored services operational");
   });
 
   test("promotes an outage and zero-percent history without operational styling", () => {
@@ -288,6 +299,27 @@ describe("public page", () => {
     expect(html).not.toMatch(
       /<span class="service-state service-state--operational">0% uptime<\/span>/
     );
+  });
+
+  test("gives checking precedence and reports limited visibility with no measured services", () => {
+    const checking = renderStatusPage({
+      ...publicSnapshot,
+      statuses: {
+        ...publicSnapshot.statuses,
+        "artifact-publisher": {
+          ...publicSnapshot.statuses["artifact-publisher"],
+          status: "checking"
+        }
+      }
+    });
+    expect(checking).toContain("Service checks are in progress");
+
+    const limited = renderStatusPage({
+      ...publicSnapshot,
+      statuses: Object.fromEntries(Object.entries(publicSnapshot.statuses).map(([id, status]) => [id, { ...status, status: "paused" }]))
+    });
+    expect(limited).toContain("Monitoring visibility is limited");
+    expect(limited).toContain("2 services not measured");
   });
 
   test("excludes stale and future checks from paused rolling uptime", () => {
@@ -344,6 +376,11 @@ describe("operations page", () => {
     });
 
     expect(html).toContain("Access protected");
+    expect(html).toContain('<meta name="robots" content="noindex, nofollow">');
+    expect(html).toContain('data-record-search');
+    expect(html).toContain('data-focused-editor');
+    expect(html).toContain('data-link-row');
+    expect(html).toContain('disabled title="Already first"');
     expect(html).toContain('data-revision="revision-1"');
     expect(html).toContain('action="/api/ops/entries/secret"');
     expect(html).toContain("/monitor/pause");

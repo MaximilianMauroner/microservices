@@ -249,8 +249,12 @@ describe("S3 upload storage", () => {
         }
       ],
       nextCursor: {
+        version: 1,
+        criteria: "legacy:newest",
         updatedAt: new Date("2026-07-23T10:00:00.000Z"),
-        key: `files/${fileId}`
+        key: `files/${fileId}`,
+        originalName: "notes.txt",
+        expiresAt: new Date("2026-07-26T10:00:00.000Z")
       }
     });
 
@@ -271,6 +275,10 @@ describe("S3 upload storage", () => {
         }
       ]
     });
+    await expect(storage.listUploads(new Date("2026-07-23T12:00:00.000Z"), { limit: 1, q: " NOTES " })).resolves.toMatchObject({ uploads: [{ originalName: "notes.txt" }] });
+    await expect(storage.listUploads(new Date("2026-07-23T12:00:00.000Z"), { limit: 1, expiry: "persistent" })).resolves.toMatchObject({ uploads: [{ kind: "html" }] });
+    await expect(storage.listUploads(new Date("2026-07-23T12:00:00.000Z"), { limit: 10, sort: "oldest" })).resolves.toMatchObject({ uploads: [{ kind: "html" }, { kind: "file" }] });
+    await expect(storage.listUploads(new Date("2026-07-23T12:00:00.000Z"), { limit: 10, sort: "expiry" })).resolves.toMatchObject({ uploads: [{ kind: "file" }, { kind: "html" }] });
     storage.close?.();
   });
 
