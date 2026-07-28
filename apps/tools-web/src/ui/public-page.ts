@@ -15,6 +15,13 @@ import {
 
 type OverallState = "operational" | "attention" | "outage" | "unknown";
 
+const TOOL_ICON_PATHS: Readonly<Record<string, string>> = {
+  "artifact-publisher": "/assets/icons/artifact-publisher.png",
+  "field-guide-console": "/assets/icons/field-guide-console.png",
+  "tools-directory": "/assets/icons/tools-status-directory.png",
+  "network-console": "/assets/icons/network-console.png"
+};
+
 const STATUS_LABELS: Record<MonitorStatus, string> = {
   checking: "Checking",
   up: "Operational",
@@ -129,11 +136,15 @@ function renderToolCard(
     })
     .filter(Boolean)
     .join("");
+  const iconPath = TOOL_ICON_PATHS[entry.id];
   return `<li class="tool-card">
       <div class="tool-card__top">
-        <div>
-          <p class="access-label access-label--${accessClass}">${accessLabels.includes("Cloudflare Access") ? '<span class="suite-lock" aria-hidden="true"></span>' : ""}${escapeHtml(accessLabels.join(" · "))}</p>
-          <h3>${escapeHtml(entry.name)}</h3>
+        <div class="tool-card__identity">
+          ${iconPath ? `<img class="tool-card__icon" src="${iconPath}" alt="" width="48" height="48">` : ""}
+          <div>
+            <p class="access-label access-label--${accessClass}">${accessLabels.includes("Cloudflare Access") ? '<span class="suite-lock" aria-hidden="true"></span>' : ""}${escapeHtml(accessLabels.join(" · "))}</p>
+            <h3>${escapeHtml(entry.name)}</h3>
+          </div>
         </div>
         ${statusBadge(status)}
       </div>

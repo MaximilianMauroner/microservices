@@ -32,6 +32,35 @@ import {
   renderStatusPage
 } from "./ui/index.js";
 
+const STATIC_ASSETS = {
+  "/assets/tools.css": {
+    file: "../public/assets/tools.css",
+    contentType: "text/css; charset=utf-8"
+  },
+  "/assets/ops.js": {
+    file: "../public/assets/ops.js",
+    contentType: "text/javascript; charset=utf-8"
+  },
+  "/assets/icons/artifact-publisher.png": {
+    file: "../public/assets/icons/artifact-publisher.png",
+    contentType: "image/png"
+  },
+  "/assets/icons/field-guide-console.png": {
+    file: "../public/assets/icons/field-guide-console.png",
+    contentType: "image/png"
+  },
+  "/assets/icons/tools-status-directory.png": {
+    file: "../public/assets/icons/tools-status-directory.png",
+    contentType: "image/png"
+  },
+  "/assets/icons/network-console.png": {
+    file: "../public/assets/icons/network-console.png",
+    contentType: "image/png"
+  }
+} as const;
+
+type StaticAssetPath = keyof typeof STATIC_ASSETS;
+
 export interface PageRenderer {
   public(snapshot: PublicSnapshotDocument, publicOrigin: string): string;
   status(snapshot: PublicSnapshotDocument, publicOrigin: string): string;
@@ -115,10 +144,7 @@ async function route(
   if (readMethod && url.pathname === "/status") {
     return html(renderer.status(await storage.readPublicSnapshot(), trustedOrigin));
   }
-  if (
-    readMethod &&
-    (url.pathname === "/assets/tools.css" || url.pathname === "/assets/ops.js")
-  ) {
+  if (readMethod && isStaticAssetPath(url.pathname)) {
     return asset(url.pathname);
   }
 
@@ -854,23 +880,16 @@ function html(body: string, privatePage = false): Response {
   });
 }
 
-async function asset(
-  path: "/assets/tools.css" | "/assets/ops.js"
-): Promise<Response> {
-  const file = await readFile(
-    new URL(
-      path === "/assets/tools.css"
-        ? "../public/assets/tools.css"
-        : "../public/assets/ops.js",
-      import.meta.url
-    )
-  );
+function isStaticAssetPath(path: string): path is StaticAssetPath {
+  return path in STATIC_ASSETS;
+}
+
+async function asset(path: StaticAssetPath): Promise<Response> {
+  const metadata = STATIC_ASSETS[path];
+  const file = await readFile(new URL(metadata.file, import.meta.url));
   return new Response(file, {
     headers: {
-      "Content-Type":
-        path.endsWith(".css")
-          ? "text/css; charset=utf-8"
-          : "text/javascript; charset=utf-8",
+      "Content-Type": metadata.contentType,
       "Cache-Control": "public, max-age=3600"
     }
   });

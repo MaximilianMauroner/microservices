@@ -55,13 +55,15 @@ const MAX_UPLOAD_LIST_CURSOR_LENGTH = 2048;
 const UPLOAD_KEY_PATTERN =
   /^(?:pages\/[A-Za-z0-9_-]{32}\.html|files\/[A-Za-z0-9_-]{32})$/;
 const FAVICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <rect x=".75" y=".75" width="30.5" height="30.5" rx="7" fill="#f6f8fa" stroke="#d0d7de" stroke-width="1.5"/>
-  <path d="M10 10h8a4 4 0 0 1 4 4v8" fill="none" stroke="#59636e" stroke-width="2.25" stroke-linecap="round"/>
-  <path d="M10 22h12" fill="none" stroke="#0969da" stroke-width="2.25" stroke-linecap="round"/>
-  <rect x="6" y="6" width="8" height="8" rx="2" fill="#ffffff" stroke="#30363d" stroke-width="1.5"/>
-  <rect x="18" y="18" width="8" height="8" rx="2" fill="#ffffff" stroke="#30363d" stroke-width="1.5"/>
-  <circle cx="10" cy="10" r="2.25" fill="#0969da"/>
-  <rect x="21" y="21" width="4" height="4" rx="1" fill="#0969da"/>
+  <rect width="32" height="32" rx="7" fill="#f3f1e9"/>
+  <path d="M16 6.5 24 11v10l-8 4.5L8 21V11l8-4.5Z" fill="none" stroke="#087451" stroke-width="3" stroke-linejoin="round"/>
+  <circle cx="16" cy="6.5" r="3.4" fill="#f3f1e9" stroke="#087451" stroke-width="2.6"/>
+  <circle cx="8" cy="21" r="3.4" fill="#f3f1e9" stroke="#087451" stroke-width="2.6"/>
+  <circle cx="24" cy="21" r="3.4" fill="#f3f1e9" stroke="#087451" stroke-width="2.6"/>
+  <circle cx="16" cy="6.5" r="1.25" fill="#18211c"/>
+  <circle cx="8" cy="21" r="1.25" fill="#18211c"/>
+  <circle cx="24" cy="21" r="1.25" fill="#18211c"/>
+  <path d="m16 13.5 2 1.2v2.6l-2 1.2-2-1.2v-2.6l2-1.2Z" fill="#18211c"/>
 </svg>`;
 const PUBLIC_HTML_CSP =
   "sandbox allow-scripts allow-forms allow-modals allow-popups allow-downloads";

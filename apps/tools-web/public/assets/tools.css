@@ -177,6 +177,8 @@ h1 { margin-bottom: 26px; font-size: clamp(3rem, 8vw, 6.7rem); }
 }
 .tool-card:hover { transform: translateY(-2px); border-color: #bec9c0; box-shadow: 0 22px 56px rgba(24, 33, 28, .09); }
 .tool-card__top { display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; }
+.tool-card__identity { min-width: 0; display: flex; align-items: flex-start; gap: 14px; }
+.tool-card__icon { width: 48px; height: 48px; flex: 0 0 auto; border-radius: var(--radius); }
 .tool-card h3 { margin-bottom: 12px; font-size: 1.35rem; }
 .tool-card > p { color: var(--muted); }
 .status {
