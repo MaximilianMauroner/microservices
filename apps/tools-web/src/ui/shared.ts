@@ -30,7 +30,8 @@ export function pageShell(input: {
     <meta property="og:type" content="website">` : ""}
     <meta name="theme-color" content="${escapeHtml(input.themeColor ?? "#f3f1e9")}">
     <title>${escapeHtml(input.title)}</title>
-    <link rel="stylesheet" href="/assets/tools.css?v=4b98adb">${script}
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/assets/tools.css?v=90e2a71">${script}
   </head>
   <body>
     ${renderSuiteChrome(input.active)}

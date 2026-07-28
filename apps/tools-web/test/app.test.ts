@@ -82,6 +82,12 @@ describe("tools web routes", () => {
     expect(css.status).toBe(200);
     expect(css.headers.get("content-type")).toContain("text/css");
 
+    const icon = await app(
+      new Request("https://tools.example.test/assets/icons/artifact-publisher.png")
+    );
+    expect(icon.status).toBe(200);
+    expect(icon.headers.get("content-type")).toBe("image/png");
+
     const ops = await app(new Request("https://tools.example.test/ops/catalog"));
     const html = await ops.text();
     expect(ops.status).toBe(200);

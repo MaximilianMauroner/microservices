@@ -739,6 +739,8 @@ describe("html publisher", () => {
         throw new Error("Expected favicon response body to be a Buffer");
       }
       expect(body.toString("utf8")).toContain("<svg");
+      expect(body.toString("utf8")).toContain("#087451");
+      expect(body.toString("utf8")).not.toContain("#0969da");
     }
   });
 

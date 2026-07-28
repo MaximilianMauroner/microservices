@@ -190,6 +190,10 @@ function isPublicPath(path: string): boolean {
     "/favicon.svg",
     "/assets/ops.js",
     "/assets/tools.css",
+    "/assets/icons/artifact-publisher.png",
+    "/assets/icons/field-guide-console.png",
+    "/assets/icons/tools-status-directory.png",
+    "/assets/icons/network-console.png",
     "/api/public/catalog"
   ].includes(path);
 }
