@@ -108,6 +108,10 @@ export function moveGroup(
 ): CatalogDocument {
   requireGroup(catalog, id);
   const ordered = [...catalog.groups].sort(byOrderThenId);
+  const index = ordered.findIndex((group) => group.id === id);
+  if ((direction === "up" && index === 0) || (direction === "down" && index === ordered.length - 1)) {
+    return catalog;
+  }
   return {
     ...catalog,
     groups: swapOrder(ordered, id, direction)
@@ -124,6 +128,10 @@ export function moveEntry(
   const peers = catalog.entries
     .filter(({ groupId }) => groupId === entry.groupId)
     .sort(byOrderThenId);
+  const index = peers.findIndex((candidate) => candidate.id === id);
+  if ((direction === "up" && index === 0) || (direction === "down" && index === peers.length - 1)) {
+    return catalog;
+  }
   const moved = new Map(
     swapOrder(peers, id, direction).map((candidate) => [
       candidate.id,

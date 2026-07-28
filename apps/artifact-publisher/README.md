@@ -78,6 +78,19 @@ through same-origin `/api/external-uploads`. Cloudflare Access is validated at
 the platform route-family boundary; the browser never receives the native
 upload token.
 
+`GET /api/external-uploads` accepts `kind=all|html|file`, a normalized
+case-insensitive filename `q`, `expiry=all|24h|7d|persistent`, and
+`sort=newest|oldest|filename|expiry`. Filtering and sorting cover the complete
+candidate set before pagination. Cursors are opaque versioned positions bound
+to normalized criteria; changing any criterion requires a fresh listing.
+Recent-upload destinations on the current browser origin use an internal
+chevron and open in the current tab. Cross-origin destinations use an external
+arrow, open in a new tab with `rel=noreferrer`, and include an accessible
+new-tab announcement.
+Unversioned `/publish|uploads/app.css|app.js` aliases are private `no-store`;
+only versioned `/publish|uploads/assets/:version/app.css|app.js` responses use
+private one-year immutable caching.
+
 HTML is streamed from the private bucket with sandbox, no-referrer, no-sniff,
 and no-index headers. Temporary downloads support `HEAD` and one standard byte
 range. Missing, revoked, and expired capability URLs return `404`. Malformed

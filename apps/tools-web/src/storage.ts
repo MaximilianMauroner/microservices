@@ -131,10 +131,14 @@ export class WebStorage {
     if (stored.catalog.revision !== expectedRevision) {
       throw new CatalogConflictError(stored.catalog.revision);
     }
+    const mutated = decodeCatalogDocument(mutate(structuredClone(stored.catalog)));
+    if (JSON.stringify(mutated) === JSON.stringify(stored.catalog)) {
+      return stored.catalog;
+    }
     await this.ensureRevisionAudit(stored.catalog.revision);
     const now = new Date().toISOString();
     const candidate = decodeCatalogDocument({
-      ...mutate(structuredClone(stored.catalog)),
+      ...mutated,
       schemaVersion: stored.catalog.schemaVersion,
       revision: crypto.randomUUID(),
       updatedAt: now

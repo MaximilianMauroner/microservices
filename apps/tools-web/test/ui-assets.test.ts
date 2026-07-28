@@ -21,7 +21,14 @@ describe("static UI assets", () => {
     expect(script).toContain("observation.monitorId");
     expect(script).toContain("Legacy monitor unknown");
     expect(script).not.toContain("setInterval");
-    expect(script).not.toContain("setTimeout");
+    expect(script).toContain("8000");
+    expect(script).toContain("AbortController");
+    expect(script).toContain("collectionRequests");
+    expect(script).toContain("Loading timed out after 8 seconds");
+    expect(script).toContain("Your Access session expired");
+    expect(script).toContain("The server returned malformed data");
+    expect(script).toContain("document.createDocumentFragment()");
+    expect(script).toContain("Link IDs must be unique");
   });
 
   test("resets destructive confirmation before reopen and leaves Escape non-destructive", async () => {
@@ -47,5 +54,15 @@ describe("static UI assets", () => {
     expect(script).toContain("addEventListener");
     expect(script).not.toContain("innerHTML");
     expect(script).not.toContain("eval(");
+  });
+
+  test("keeps the shared navigation and hero usable at compact widths", async () => {
+    const css = await readFile(new URL("tools.css", assets), "utf8");
+
+    expect(css).toContain("@media (max-width: 439px)");
+    expect(css).toContain(".suite-nav { width: 100%; flex-wrap: wrap; overflow-x: visible;");
+    expect(css).toContain(".suite-nav a { flex: 1 1 calc(33.333% - 4px);");
+    expect(css).toContain("font-size: 2.125rem");
+    expect(css).toContain(".browse-tools { margin-top: 14px;");
   });
 });

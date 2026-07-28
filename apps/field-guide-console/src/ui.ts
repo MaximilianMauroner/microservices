@@ -28,10 +28,11 @@ function renderPage(nonce: string) {
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="color-scheme" content="dark">
+    <meta name="color-scheme" content="light">
+    <meta name="robots" content="noindex, nofollow">
     <title>Field guide reviews</title>
     <link rel="stylesheet" href="/review.css">
-    <link rel="stylesheet" href="/review-suite.css">
+    <link rel="stylesheet" href="/review-suite.css?v=20260728-design-2">
   </head>
   <body class="min-h-screen bg-stone-950 text-stone-200 antialiased selection:bg-amber-300 selection:text-stone-950">
     ${renderSuiteChrome("review")}
@@ -133,19 +134,51 @@ elements.signOut.addEventListener('click',()=>location.assign('/cdn-cgi/access/l
 }
 
 export const reviewSuiteStyles = String.raw`
+:root{
+  color-scheme:light;
+  --color-stone-950:#f3f1e9;
+  --color-stone-900:#fffdf7;
+  --color-stone-800:#d9d8cf;
+  --color-stone-700:#c2c7bf;
+  --color-stone-600:#8b948c;
+  --color-stone-500:#667068;
+  --color-stone-400:#4f5b53;
+  --color-stone-300:#34413a;
+  --color-stone-200:#253129;
+  --color-stone-100:#18211c;
+  --color-white:#0f1813;
+  --color-black:#18211c;
+  --color-amber-300:#8c5b11;
+  --color-amber-400:#975e08;
+  --color-emerald-400:#087451;
+  --color-red-950:#fae7e5;
+  --color-red-900:#e2aaa4;
+  --color-red-400:#b64e49;
+  --color-red-300:#9a3d3a;
+}
+html{background:#f3f1e9}
+body.bg-stone-950{background:radial-gradient(circle at 88% 0%,rgba(8,116,81,.07),transparent 32rem),#f3f1e9}
 .visually-hidden{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
-.suite-skip{position:fixed;z-index:100;top:8px;left:8px;padding:9px 12px;transform:translateY(-160%);border-radius:6px;background:#fafaf9;color:#0c0a09}
+.suite-skip{position:fixed;z-index:100;top:8px;left:8px;padding:9px 12px;transform:translateY(-160%);border-radius:6px;background:#18211c;color:#fffdf7}
 .suite-skip:focus{transform:translateY(0)}
-.suite-header{border-bottom:1px solid #292524;background:#0c0a09;color:#e7e5e4}
+.suite-header{position:relative;z-index:40;border-bottom:1px solid rgba(24,33,28,.12);background:rgba(255,253,247,.92);color:#18211c;backdrop-filter:blur(16px)}
 .suite-header__inner{width:min(100% - 32px,1080px);min-height:64px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:24px}
-.suite-brand{display:inline-flex;flex:0 0 auto;align-items:center;gap:9px;font-weight:700;text-decoration:none}
-.suite-brand>span{width:28px;height:28px;display:grid;place-items:center;border-radius:6px;background:#fcd34d;color:#1c1917;font-size:13px}
+.suite-brand{display:inline-flex;flex:0 0 auto;align-items:center;gap:9px;font-weight:800;text-decoration:none}
+.suite-brand>span{width:28px;height:28px;display:grid;place-items:center;border-radius:6px;background:#087451;color:#fff;font-size:13px}
 .suite-nav{display:flex;min-width:0;align-items:center;gap:4px;overflow-x:auto;scrollbar-width:thin}
-.suite-nav a{display:inline-flex;min-height:38px;flex:0 0 auto;align-items:center;gap:7px;padding:8px 10px;border-radius:6px;color:#a8a29e;font-size:13px;font-weight:650;text-decoration:none}
-.suite-nav a:hover{color:#fafaf9;background:#1c1917}
-.suite-nav a[aria-current=page]{color:#fafaf9;background:#292524}
+.suite-nav a{display:inline-flex;min-height:38px;flex:0 0 auto;align-items:center;gap:7px;padding:8px 10px;border-radius:6px;color:#667068;font-size:13px;font-weight:700;text-decoration:none}
+.suite-nav a:hover{color:#18211c;background:#ecece7}
+.suite-nav a[aria-current=page]{color:#07583f;background:#dff2e8}
 .suite-lock{position:relative;width:9px;height:8px;display:inline-block;border:1.5px solid currentColor;border-radius:2px;opacity:.65}
 .suite-lock:before{content:"";position:absolute;left:1px;bottom:5px;width:4px;height:4px;border:1.5px solid currentColor;border-bottom:0;border-radius:4px 4px 0 0}
-@media(max-width:620px){.suite-header__inner{width:100%;min-height:auto;align-items:stretch;flex-direction:column;gap:4px;padding:12px}.suite-brand{padding-left:4px}.suite-nav{width:100%;flex-wrap:wrap;overflow-x:visible;padding-bottom:2px}#account-label{display:none!important}#sign-out{white-space:nowrap}}
+.suite-header+header{border-color:#d9d8cf;background:rgba(243,241,233,.92)}
+.suite-header+header a[aria-label="Field guide reviews home"]>span:first-child{border-color:#c2c7bf;background:#fffdf7;color:#087451}
+.review-card{border-radius:12px;box-shadow:0 18px 50px rgba(24,33,28,.06)}
+.amendment-panel,.defer-panel{border-radius:8px}
+.date-field{color-scheme:light}
+.segmented-control{border-radius:8px}
+.empty-state{border-radius:12px}
+@media(max-width:620px){.suite-header__inner{width:100%;min-height:auto;align-items:stretch;flex-direction:column;gap:4px;padding:12px}.suite-brand{padding-left:4px}.suite-nav{width:100%;flex-wrap:wrap;overflow-x:visible;padding-bottom:2px}.suite-nav a{padding-inline:7px;font-size:12px}#account-label{display:none!important}#sign-out{white-space:nowrap}}
+@media(max-width:439px){.suite-nav a{flex:1 1 calc(33.333% - 4px);justify-content:center}}
 @media(prefers-reduced-motion:reduce){.suite-skip{transition:none}}
 `;

@@ -26,13 +26,24 @@ export type StorageOperationOptions = {
 };
 
 export type UploadListCursor = {
+  version?: 1;
+  criteria?: string;
   updatedAt: Date;
   key: string;
+  originalName?: string;
+  expiresAt?: Date;
 };
+
+export type UploadListSort = "newest" | "oldest" | "filename" | "expiry";
+export type UploadExpiryFilter = "all" | "24h" | "7d" | "persistent";
 
 export type ListUploadsOptions = StorageOperationOptions & {
   limit: number;
   kind?: StoredUploadSummary["kind"];
+  q?: string;
+  expiry?: UploadExpiryFilter;
+  sort?: UploadListSort;
+  criteria?: string;
   cursor?: UploadListCursor;
 };
 
@@ -330,45 +341,49 @@ export function createS3UploadStorage(config: S3UploadStorageConfig): UploadStor
           )
         )
       )
-        .flat()
-        .sort(compareUploadCandidates)
-        .filter(
-          (candidate) =>
-            !options.cursor || isCandidateAfterCursor(candidate, options.cursor)
-        );
-      const uploads: StoredUploadSummary[] = [];
-      let processed = 0;
-
-      while (processed < candidates.length && uploads.length < options.limit) {
-        const remainingSlots = options.limit - uploads.length;
-        const chunkSize = Math.min(
-          LIST_METADATA_CONCURRENCY,
-          remainingSlots,
-          candidates.length - processed
-        );
-        const chunk = candidates.slice(processed, processed + chunkSize);
-        const summaries = await mapWithConcurrency(
-          chunk,
-          LIST_METADATA_CONCURRENCY,
-          (candidate) =>
-            headUploadSummary(client, config.bucket, candidate, asOf, options)
-        );
-        processed += chunk.length;
-        uploads.push(
-          ...summaries.filter(
-            (upload): upload is StoredUploadSummary => upload !== null
-          )
+        .flat();
+      const sort = options.sort ?? "newest";
+      if (!requiresFullMetadataScan(options)) {
+        return listUploadsFast(
+          client,
+          config.bucket,
+          candidates,
+          asOf,
+          options,
+          sort === "oldest" ? "oldest" : "newest"
         );
       }
-
-      const lastProcessed = candidates[processed - 1];
+      const summaries = (await mapWithConcurrency(
+        candidates,
+        LIST_METADATA_CONCURRENCY,
+        async (candidate) => {
+          const summary = await headUploadSummary(client, config.bucket, candidate, asOf, options);
+          return summary ? { ...summary, key: candidate.key } : null;
+        }
+      )).filter((summary): summary is ListedUploadSummary => summary !== null);
+      const normalizedQuery = options.q?.trim().normalize("NFKC").toLowerCase() ?? "";
+      const filtered = summaries
+        .filter((upload) => !normalizedQuery || upload.originalName.normalize("NFKC").toLowerCase().includes(normalizedQuery))
+        .filter((upload) => matchesExpiry(upload, options.expiry ?? "all", asOf))
+        .sort(uploadComparator(sort));
+      const listCursor = options.cursor;
+      const afterCursor = listCursor
+        ? filtered.filter((upload) => uploadComparator(sort)(upload, cursorUpload(listCursor)) > 0)
+        : filtered;
+      const page = afterCursor.slice(0, options.limit + 1);
+      const uploads = page.slice(0, options.limit);
+      const last = uploads.at(-1);
       return {
-        uploads,
-        ...(lastProcessed && processed < candidates.length
+        uploads: uploads.map(({ key: _key, ...upload }) => upload),
+        ...(last && page.length > options.limit
           ? {
               nextCursor: {
-                updatedAt: lastProcessed.updatedAt,
-                key: lastProcessed.key
+                version: 1,
+                criteria: options.criteria ?? "legacy:newest",
+                updatedAt: last.updatedAt,
+                key: last.key,
+                originalName: last.originalName,
+                ...(last.expiresAt ? { expiresAt: last.expiresAt } : {})
               }
             }
           : {})
@@ -462,6 +477,83 @@ type UploadCandidate = {
   updatedAt: Date;
 };
 
+type ListedUploadSummary = StoredUploadSummary & { key: string };
+
+function requiresFullMetadataScan(options: ListUploadsOptions): boolean {
+  const sort = options.sort ?? "newest";
+  return Boolean(options.q) ||
+    (options.expiry ?? "all") !== "all" ||
+    sort === "filename" ||
+    sort === "expiry";
+}
+
+async function listUploadsFast(
+  client: S3Client,
+  bucket: string,
+  candidates: UploadCandidate[],
+  asOf: Date,
+  options: ListUploadsOptions,
+  sort: "newest" | "oldest"
+): Promise<StoredUploadPage> {
+  const ordered = [...candidates]
+    .sort((left, right) => compareCandidates(left, right, sort))
+    .filter((candidate) => !options.cursor || candidateAfterCursor(candidate, options.cursor, sort));
+  const uploads: ListedUploadSummary[] = [];
+  let processed = 0;
+  while (processed < ordered.length && uploads.length <= options.limit) {
+    const chunk = ordered.slice(processed, processed + LIST_METADATA_CONCURRENCY);
+    const summaries = await mapWithConcurrency(
+      chunk,
+      LIST_METADATA_CONCURRENCY,
+      async (candidate) => {
+        const summary = await headUploadSummary(client, bucket, candidate, asOf, options);
+        return summary
+          ? { ...summary, updatedAt: candidate.updatedAt, key: candidate.key }
+          : null;
+      }
+    );
+    processed += chunk.length;
+    uploads.push(...summaries.filter((summary): summary is ListedUploadSummary => summary !== null));
+  }
+  const page = uploads.slice(0, options.limit);
+  const last = page.at(-1);
+  return {
+    uploads: page.map(({ key: _key, ...upload }) => upload),
+    ...(last && uploads.length > options.limit
+      ? {
+          nextCursor: {
+            version: 1,
+            criteria: options.criteria ?? "legacy:newest",
+            updatedAt: last.updatedAt,
+            key: last.key,
+            originalName: last.originalName,
+            ...(last.expiresAt ? { expiresAt: last.expiresAt } : {})
+          }
+        }
+      : {})
+  };
+}
+
+function compareCandidates(
+  left: UploadCandidate,
+  right: UploadCandidate,
+  sort: "newest" | "oldest"
+): number {
+  const time = left.updatedAt.getTime() - right.updatedAt.getTime();
+  return (sort === "oldest" ? time : -time) || left.key.localeCompare(right.key);
+}
+
+function candidateAfterCursor(
+  candidate: UploadCandidate,
+  cursor: UploadListCursor,
+  sort: "newest" | "oldest"
+): boolean {
+  const time = candidate.updatedAt.getTime() - cursor.updatedAt.getTime();
+  return sort === "oldest"
+    ? time > 0 || (time === 0 && candidate.key > cursor.key)
+    : time < 0 || (time === 0 && candidate.key > cursor.key);
+}
+
 async function listUploadCandidates(
   client: S3Client,
   bucket: string,
@@ -503,21 +595,40 @@ async function listUploadCandidates(
   return candidates;
 }
 
-function compareUploadCandidates(left: UploadCandidate, right: UploadCandidate) {
-  return (
-    right.updatedAt.getTime() - left.updatedAt.getTime() ||
-    left.key.localeCompare(right.key)
-  );
+function uploadComparator(sort: UploadListSort) {
+  return (left: ListedUploadSummary, right: ListedUploadSummary): number => {
+    if (sort === "oldest") {
+      return left.updatedAt.getTime() - right.updatedAt.getTime() || left.key.localeCompare(right.key);
+    }
+    if (sort === "filename") {
+      return left.originalName.localeCompare(right.originalName, undefined, { sensitivity: "base" }) || left.key.localeCompare(right.key);
+    }
+    if (sort === "expiry") {
+      return (left.expiresAt?.getTime() ?? Number.POSITIVE_INFINITY) - (right.expiresAt?.getTime() ?? Number.POSITIVE_INFINITY) || left.key.localeCompare(right.key);
+    }
+    return right.updatedAt.getTime() - left.updatedAt.getTime() || left.key.localeCompare(right.key);
+  };
 }
 
-function isCandidateAfterCursor(
-  candidate: UploadCandidate,
-  cursor: UploadListCursor
-) {
-  const candidateTime = candidate.updatedAt.getTime();
-  const cursorTime = cursor.updatedAt.getTime();
-  return candidateTime < cursorTime ||
-    (candidateTime === cursorTime && candidate.key > cursor.key);
+function cursorUpload(cursor: UploadListCursor): ListedUploadSummary {
+  return {
+    id: "cursor",
+    key: cursor.key,
+    kind: cursor.key.startsWith(HTML_PREFIX) ? "html" : "file",
+    originalName: cursor.originalName ?? cursor.key,
+    bytes: 0,
+    contentType: "application/octet-stream",
+    updatedAt: cursor.updatedAt,
+    ...(cursor.expiresAt ? { expiresAt: cursor.expiresAt } : {})
+  };
+}
+
+function matchesExpiry(upload: ListedUploadSummary, filter: UploadExpiryFilter, asOf: Date): boolean {
+  if (filter === "all") return true;
+  if (filter === "persistent") return upload.kind === "html";
+  if (!upload.expiresAt) return false;
+  const windowMs = filter === "24h" ? 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000;
+  return upload.expiresAt.getTime() <= asOf.getTime() + windowMs;
 }
 
 async function headUploadSummary(

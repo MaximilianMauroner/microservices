@@ -13,7 +13,7 @@ All JSON responses have `Content-Type: application/json`, an `X-Request-Id`,
 | `GET` | `/live` | Process liveness; no bucket access. |
 | `GET` | `/health` | Readiness; decodes the required catalog plus public and private snapshots, otherwise `503`. |
 | `GET` | `/assets/tools.css` | Public fixed CSP-compatible stylesheet. |
-| `GET` | `/assets/ops.js` | Protected fixed management script. |
+| `GET`, `HEAD` | `/assets/ops.js` | Public fixed management script; it contains no credentials and all Manage data and mutations remain protected. |
 
 Public routes read only `snapshots/public.json`. They never project from the
 private catalog in the request process.
@@ -55,7 +55,7 @@ Every mutation requires an `Origin` exactly equal to configured
 verification still happens first. Cross-origin/missing-origin requests return
 `403`; non-JSON requests return `400`. Except initialization and reads,
 mutations also require `If-Match: "<revision>"`.
-Successful writes return `{ "revision": "...", "reload": true }` and the new
+Successful changed writes return `{ "revision": "...", "reload": true, "changed": true }` and the new
 revision `ETag` only after its canonical audit outcome and audit index are
 verified. If catalog storage commits but audit finalization remains incomplete,
 the request fails and a durable revision-linked obligation blocks a subsequent
@@ -66,6 +66,9 @@ does not retry and offers explicit reload/dismiss actions. Every successful
 admin write appends one
 audit object containing only actor, timestamp, action, target type/ID, and
 before/after catalog revisions.
+Structurally unchanged mutations return the existing revision with
+`{ "reload": false, "changed": false }` and create neither a catalog revision
+nor an audit record.
 
 The reorder body is:
 

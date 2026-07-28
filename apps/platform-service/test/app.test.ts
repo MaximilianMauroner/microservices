@@ -133,6 +133,25 @@ describe("platform gateway", () => {
     await request(app()).get("/api/public/catalog").expect(200, "tools");
   });
 
+  it("serves only the exact Manage browser asset publicly", async () => {
+    await request(app()).get("/assets/ops.js").expect(200, "tools");
+    expect(
+      (await request(app()).head("/assets/ops.js").expect(200)).text
+    ).toBeUndefined();
+
+    for (const path of [
+      "/manage",
+      "/api/ops/catalog",
+      "/assets/ops.js.map",
+      "/assets/other.js"
+    ]) {
+      await request(app()).get(path).expect(401, { error: "access_required" });
+    }
+    await request(app())
+      .post("/assets/ops.js")
+      .expect(401, { error: "access_required" });
+  });
+
   it("rejects direct-origin access to protected browser pages and APIs", async () => {
     for (const path of [
       "/publish",

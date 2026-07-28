@@ -31,7 +31,9 @@ import {
   HtmlUpdateConflictError,
   RangeNotSatisfiableError,
   type ListUploadsOptions,
+  type UploadExpiryFilter,
   type UploadListCursor,
+  type UploadListSort,
   type UploadStorage
 } from "./storage.js";
 
@@ -49,7 +51,7 @@ const HTML_CONTENT_TYPE = "text/html; charset=utf-8";
 const SINGLE_BYTE_RANGE_PATTERN = /^bytes=(?:\d+-\d*|-\d+)$/i;
 const DEFAULT_UPLOAD_LIST_LIMIT = 25;
 const MAX_UPLOAD_LIST_LIMIT = 100;
-const MAX_UPLOAD_LIST_CURSOR_LENGTH = 512;
+const MAX_UPLOAD_LIST_CURSOR_LENGTH = 2048;
 const UPLOAD_KEY_PATTERN =
   /^(?:pages\/[A-Za-z0-9_-]{32}\.html|files\/[A-Za-z0-9_-]{32})$/;
 const FAVICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
@@ -200,9 +202,9 @@ export function createApp(options: CreateAppOptions) {
     res
       .set(
         "Cache-Control",
-        req.path === "/uploads/app.css"
-          ? "private, no-store"
-          : "private, max-age=31536000, immutable"
+        req.path.includes("/assets/")
+          ? "private, max-age=31536000, immutable"
+          : "private, no-store"
       )
       .type("text/css")
       .send(EXTERNAL_UPLOAD_STYLES);
@@ -224,9 +226,9 @@ export function createApp(options: CreateAppOptions) {
     res
       .set(
         "Cache-Control",
-        req.path === "/uploads/app.js"
-          ? "private, no-store"
-          : "private, max-age=31536000, immutable"
+        req.path.includes("/assets/")
+          ? "private, max-age=31536000, immutable"
+          : "private, no-store"
       )
       .type("text/javascript")
       .send(EXTERNAL_UPLOAD_SCRIPT);
@@ -271,7 +273,11 @@ export function createApp(options: CreateAppOptions) {
                 : {})
             })),
             ...(page.nextCursor
-              ? { nextCursor: encodeUploadListCursor(page.nextCursor) }
+              ? { nextCursor: encodeUploadListCursor(
+                  page.nextCursor,
+                  pagination.options.criteria ?? "legacy:newest",
+                  page.uploads.at(-1)?.originalName ?? page.nextCursor.key
+                ) }
               : {})
           });
       } catch (error) {
@@ -554,10 +560,16 @@ function parseUploadListOptions(
   const rawLimit = query.limit;
   const rawKind = query.kind;
   const rawCursor = query.cursor;
+  const rawQuery = query.q;
+  const rawExpiry = query.expiry;
+  const rawSort = query.sort;
   if (
     (rawLimit !== undefined && typeof rawLimit !== "string") ||
     (rawKind !== undefined && typeof rawKind !== "string") ||
-    (rawCursor !== undefined && typeof rawCursor !== "string")
+    (rawCursor !== undefined && typeof rawCursor !== "string") ||
+    (rawQuery !== undefined && typeof rawQuery !== "string") ||
+    (rawExpiry !== undefined && typeof rawExpiry !== "string") ||
+    (rawSort !== undefined && typeof rawSort !== "string")
   ) {
     return { ok: false, message: "Pagination parameters must be single values." };
   }
@@ -574,6 +586,29 @@ function parseUploadListOptions(
     };
   }
 
+  if (rawQuery !== undefined && rawQuery.length > 200) {
+    return { ok: false, message: "q must be at most 200 characters." };
+  }
+  const q = rawQuery?.trim().normalize("NFKC").toLowerCase() ?? "";
+  const expiry: UploadExpiryFilter = rawExpiry === undefined || rawExpiry === "all"
+    ? "all"
+    : rawExpiry === "24h" || rawExpiry === "7d" || rawExpiry === "persistent"
+      ? rawExpiry
+      : "all";
+  if (rawExpiry !== undefined && !["all", "24h", "7d", "persistent"].includes(rawExpiry)) {
+    return { ok: false, message: "expiry must be all, 24h, 7d, or persistent." };
+  }
+  const sort: UploadListSort = rawSort === undefined
+    ? "newest"
+    : rawSort === "newest" || rawSort === "oldest" || rawSort === "filename" || rawSort === "expiry"
+      ? rawSort
+      : "newest";
+  if (rawSort !== undefined && !["newest", "oldest", "filename", "expiry"].includes(rawSort)) {
+    return { ok: false, message: "sort must be newest, oldest, filename, or expiry." };
+  }
+  const kind: "all" | "html" | "file" = rawKind === "html" || rawKind === "file" ? rawKind : "all";
+  const criteria = JSON.stringify({ q, kind, expiry, sort });
+
   if (
     rawKind !== undefined &&
     rawKind !== "all" &&
@@ -589,24 +624,48 @@ function parseUploadListOptions(
     if (!decodedCursor) {
       return { ok: false, message: "cursor is invalid." };
     }
-    cursor = decodedCursor;
+    const legacyCompatible = q === "" && expiry === "all" && sort === "newest";
+    if (decodedCursor.version === undefined && !legacyCompatible) {
+      return { ok: false, message: "legacy cursor requires default listing criteria." };
+    }
+    if (decodedCursor.criteria !== undefined && decodedCursor.criteria !== criteria) {
+      return { ok: false, message: "cursor does not match the current filters." };
+    }
+    cursor = {
+      ...decodedCursor,
+      version: 1,
+      criteria,
+      originalName: decodedCursor.originalName ?? decodedCursor.key
+    };
   }
 
   return {
     ok: true,
     options: {
       limit,
-      ...(rawKind && rawKind !== "all" ? { kind: rawKind } : {}),
+      criteria,
+      ...(kind !== "all" ? { kind } : {}),
+      ...(q ? { q } : {}),
+      expiry,
+      sort,
       ...(cursor ? { cursor } : {})
     }
   };
 }
 
-function encodeUploadListCursor(cursor: UploadListCursor) {
+function encodeUploadListCursor(
+  cursor: UploadListCursor,
+  criteria = cursor.criteria ?? "legacy:newest",
+  originalName = cursor.originalName ?? cursor.key
+) {
   return Buffer.from(
     JSON.stringify({
+      version: 1,
+      criteria,
       updatedAt: cursor.updatedAt.toISOString(),
-      key: cursor.key
+      key: cursor.key,
+      originalName,
+      ...(cursor.expiresAt ? { expiresAt: cursor.expiresAt.toISOString() } : {})
     }),
     "utf8"
   ).toString("base64url");
@@ -624,7 +683,7 @@ function decodeUploadListCursor(value: string): UploadListCursor | null {
     if (!parsed || typeof parsed !== "object") {
       return null;
     }
-    const candidate = parsed as { updatedAt?: unknown; key?: unknown };
+    const candidate = parsed as { version?: unknown; criteria?: unknown; updatedAt?: unknown; key?: unknown; originalName?: unknown; expiresAt?: unknown };
     if (
       typeof candidate.updatedAt !== "string" ||
       typeof candidate.key !== "string" ||
@@ -639,7 +698,27 @@ function decodeUploadListCursor(value: string): UploadListCursor | null {
     ) {
       return null;
     }
-    return { updatedAt, key: candidate.key };
+    if (candidate.version === undefined) {
+      if (candidate.criteria !== undefined || candidate.originalName !== undefined || candidate.expiresAt !== undefined) return null;
+      return { updatedAt, key: candidate.key };
+    }
+    if (candidate.version !== 1 || typeof candidate.criteria !== "string" || typeof candidate.originalName !== "string") {
+      return null;
+    }
+    let expiresAt: Date | undefined;
+    if (candidate.expiresAt !== undefined) {
+      if (typeof candidate.expiresAt !== "string") return null;
+      expiresAt = new Date(candidate.expiresAt);
+      if (Number.isNaN(expiresAt.getTime()) || expiresAt.toISOString() !== candidate.expiresAt) return null;
+    }
+    return {
+      version: 1,
+      criteria: candidate.criteria,
+      updatedAt,
+      key: candidate.key,
+      originalName: candidate.originalName,
+      ...(expiresAt ? { expiresAt } : {})
+    };
   } catch {
     return null;
   }

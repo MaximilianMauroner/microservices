@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { agentAuth } from "../src/auth.js";
 import type { Authenticator } from "../src/http.js";
-import { reviewConsole } from "../src/ui.js";
+import { reviewConsole, reviewSuiteStyles } from "../src/ui.js";
 import { responseJson } from "./http-test.js";
 
 const origin = "https://reviews.example";
@@ -39,6 +39,9 @@ describe("review UI and authentication", () => {
     expect(html).toContain("Evidence");
     expect(html).toContain("confirm_valid");
     expect(html).not.toContain('data-action="edit"');
+    expect(reviewSuiteStyles).toContain("@media(max-width:439px)");
+    expect(reviewSuiteStyles).toContain("flex-wrap:wrap");
+    expect(reviewSuiteStyles).toContain("flex:1 1 calc(33.333% - 4px)");
   });
 
   it("accepts only an exact agent Bearer credential", async () => {

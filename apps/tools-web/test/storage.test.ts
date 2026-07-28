@@ -11,6 +11,15 @@ import { describe, expect, it } from "vitest";
 import { CatalogConflictError, WebStorage } from "../src/storage.js";
 import { catalog, MemoryBucket, privateSnapshot, publicSnapshot } from "./fixtures.js";
 
+function harmlessChange(value: typeof catalog): typeof catalog {
+  return {
+    ...value,
+    groups: value.groups.map((group, index) => index === 0
+      ? { ...group, description: `${group.description ?? ""} updated` }
+      : group)
+  };
+}
+
 describe("web storage ownership and concurrency", () => {
   it("reads prepared projections without exposing generic bucket access", async () => {
     const bucket = seededBucket();
@@ -68,6 +77,22 @@ describe("web storage ownership and concurrency", () => {
     expect(page.nextCursor).toBeNull();
   });
 
+  it("does not create a catalog revision or audit for a structural no-op", async () => {
+    const bucket = seededBucket();
+    const storage = new WebStorage(bucket);
+    const unchanged = await storage.updateCatalog(
+      catalog.revision,
+      "admin@example.test",
+      "group.reorder",
+      "group",
+      catalog.groups[0]?.id ?? null,
+      (current) => current
+    );
+
+    expect(unchanged.revision).toBe(catalog.revision);
+    expect(bucket.writes).toEqual([]);
+  });
+
   it("maps stale revisions and conditional object failures to catalog conflicts", async () => {
     const bucket = seededBucket();
     const storage = new WebStorage(bucket);
@@ -77,7 +102,7 @@ describe("web storage ownership and concurrency", () => {
 
     bucket.conflictCatalogWrite = true;
     await expect(
-      storage.updateCatalog(catalog.revision, "actor", "catalog.reorder", "catalog", null, (value) => value)
+      storage.updateCatalog(catalog.revision, "actor", "catalog.reorder", "catalog", null, harmlessChange)
     ).rejects.toBeInstanceOf(CatalogConflictError);
     expect(bucket.writes.some(({ key }) => key.startsWith("audit/intents/"))).toBe(true);
     expect(bucket.writes.some(({ key }) => key.startsWith("audit/cancelled/"))).toBe(true);
@@ -95,7 +120,7 @@ describe("web storage ownership and concurrency", () => {
         "entry.archive",
         "entry",
         "artifact-publisher",
-        (value) => value
+        harmlessChange
       )
     ).rejects.toThrow("simulated audit write failure");
     const committed = decodeCatalogFromBucket(bucket);
@@ -150,7 +175,7 @@ describe("web storage ownership and concurrency", () => {
           "entry.archive",
           "entry",
           "artifact-publisher",
-          (value) => value
+          harmlessChange
         )
       ).rejects.toThrow("simulated audit write failure");
       expect(decodeCatalogFromBucket(bucket).revision).toBe(revisionA);
@@ -162,7 +187,7 @@ describe("web storage ownership and concurrency", () => {
       "entry.archive",
       "entry",
       "artifact-publisher",
-      (value) => value
+      harmlessChange
     );
     expect(revisionB.revision).not.toBe(revisionA);
     expect(
@@ -193,7 +218,7 @@ describe("web storage ownership and concurrency", () => {
       "entry.archive",
       "entry",
       "artifact-publisher",
-      (value) => value
+      harmlessChange
     );
 
     expect(updated.revision).not.toBe(catalog.revision);
@@ -220,7 +245,7 @@ describe("web storage ownership and concurrency", () => {
         "entry.archive",
         "entry",
         "artifact-publisher",
-        (value) => value
+        harmlessChange
       )
     ).rejects.toThrow("simulated ambiguous catalog write failure");
 

@@ -63,22 +63,30 @@ export function renderOperationsPage(model: OperationsPageModel): string {
 
       <div class="notice notice--pending" role="status" aria-live="polite" data-mutation-status hidden></div>
 
-      <section class="ops-section" aria-labelledby="groups-title">
+      <section class="ops-section manage-workspace" aria-labelledby="records-title">
         <div class="section-heading">
-          <div><p class="eyebrow">Structure</p><h2 id="groups-title">Groups</h2></div>
-          <button class="button button--primary" type="button" data-reveal="new-group">Add group</button>
+          <div><p class="eyebrow">Catalog</p><h2 id="records-title">Find and edit a record</h2></div>
+          <div class="form-actions"><button class="button button--primary" type="button" data-editor-target="new-group">Add group</button><button class="button button--primary" type="button" data-editor-target="new-entry">Add entry</button></div>
         </div>
-        ${renderNewGroup()}
-        <div class="ops-list">${groups.map(renderGroupEditor).join("")}</div>
-      </section>
-
-      <section class="ops-section" aria-labelledby="entries-title">
-        <div class="section-heading">
-          <div><p class="eyebrow">Directory</p><h2 id="entries-title">Entries</h2></div>
-          <button class="button button--primary" type="button" data-reveal="new-entry">Add entry</button>
+        <div class="record-toolbar">
+          <label>Search <input type="search" data-record-search placeholder="Name, ID, or group"></label>
+          <label>Kind <select data-record-kind><option value="all">All</option><option value="group">Groups</option><option value="entry">Entries</option></select></label>
+          <label>Status <select data-record-status><option value="all">All</option><option value="active">Active</option><option value="archived">Archived</option><option value="public">Public</option><option value="private">Private</option></select></label>
         </div>
-        ${renderNewEntry(groups)}
-        <div class="ops-list">${entries.length === 0 ? '<p class="empty-row">No entries in the catalog.</p>' : entries.map((entry) => renderEntryEditor(entry, groups, model.snapshot)).join("")}</div>
+        <div class="manage-layout">
+          <nav class="record-list" aria-label="Catalog records" data-record-list>
+            ${groups.map((group) => renderRecordButton("group", group.id, group.name, `${group.id} ${group.name}`, group.visibility)).join("")}
+            ${entries.map((entry) => renderRecordButton("entry", entry.id, entry.name, `${entry.id} ${entry.name} ${entry.groupId}`, `${entry.lifecycle} ${entry.visibility}`)).join("")}
+            <p class="empty-row" data-record-empty hidden>No records match these filters.</p>
+          </nav>
+          <div class="focused-editor" data-focused-editor>
+            ${renderNewGroup()}
+            ${renderNewEntry(groups)}
+            ${groups.map((group, index) => renderGroupEditor(group, index, groups.length, index !== 0)).join("")}
+            ${entries.map((entry, index) => renderEntryEditor(entry, groups, model.snapshot, index, entries.filter((candidate) => candidate.groupId === entry.groupId), groups.length > 0 || index !== 0)).join("")}
+            ${groups.length === 0 && entries.length === 0 ? '<p class="empty-row">Add a group to begin.</p>' : ""}
+          </div>
+        </div>
       </section>
 
       ${renderHistorySection(model.history)}
@@ -190,13 +198,13 @@ function renderAuditRecord(record: AdminAuditRecord): string {
     </li>`;
 }
 
-function renderGroupEditor(group: CatalogGroup): string {
-  return `<article class="editor-card">
+function renderGroupEditor(group: CatalogGroup, index: number, count: number, hidden: boolean): string {
+  return `<article class="editor-card" data-editor-panel="group:${escapeHtml(group.id)}"${hidden ? " hidden" : ""}>
           <div class="editor-card__heading">
             <div><p class="record-type">Group</p><h3>${escapeHtml(group.name)}</h3></div>
             <div class="order-controls" aria-label="Reorder ${escapeHtml(group.name)}">
-              <button class="icon-button" type="button" data-json-action="/api/ops/groups/${escapeHtml(group.id)}/reorder" data-json-method="POST" data-json-body="${jsonForDataAttribute({ direction: "up" })}" aria-label="Move ${escapeHtml(group.name)} up">↑</button>
-              <button class="icon-button" type="button" data-json-action="/api/ops/groups/${escapeHtml(group.id)}/reorder" data-json-method="POST" data-json-body="${jsonForDataAttribute({ direction: "down" })}" aria-label="Move ${escapeHtml(group.name)} down">↓</button>
+              <button class="icon-button" type="button" data-json-action="/api/ops/groups/${escapeHtml(group.id)}/reorder" data-json-method="POST" data-json-body="${jsonForDataAttribute({ direction: "up" })}" data-move-name="${escapeHtml(group.name)}" data-move-position="${index + 1}" data-move-count="${count}" aria-label="Move ${escapeHtml(group.name)} up"${index === 0 ? ' disabled title="Already first"' : ""}>↑</button>
+              <button class="icon-button" type="button" data-json-action="/api/ops/groups/${escapeHtml(group.id)}/reorder" data-json-method="POST" data-json-body="${jsonForDataAttribute({ direction: "down" })}" data-move-name="${escapeHtml(group.name)}" data-move-position="${index + 1}" data-move-count="${count}" aria-label="Move ${escapeHtml(group.name)} down"${index === count - 1 ? ' disabled title="Already last"' : ""}>↓</button>
             </div>
           </div>
           <form class="edit-form" data-json-form action="/api/ops/groups/${escapeHtml(group.id)}" method="post">
@@ -220,7 +228,10 @@ function renderGroupEditor(group: CatalogGroup): string {
 function renderEntryEditor(
   entry: CatalogEntry,
   groups: CatalogGroup[],
-  snapshot: PrivateSnapshotDocument
+  snapshot: PrivateSnapshotDocument,
+  index: number,
+  peers: CatalogEntry[],
+  hidden: boolean
 ): string {
   const monitor = snapshot.state.monitors[entry.id];
   const publicStatus = monitor
@@ -244,7 +255,8 @@ function renderEntryEditor(
     entry.monitor && (entry.monitor.paused || monitor?.status === "paused")
       ? { label: "Resume checks", action: "resume" }
       : { label: "Pause checks", action: "pause" };
-  return `<article class="editor-card${entry.lifecycle === "archived" ? " editor-card--archived" : ""}">
+  const peerIndex = peers.findIndex((candidate) => candidate.id === entry.id);
+  return `<article class="editor-card${entry.lifecycle === "archived" ? " editor-card--archived" : ""}" data-editor-panel="entry:${escapeHtml(entry.id)}"${hidden ? " hidden" : ""} data-entry-index="${index}">
           <div class="editor-card__heading">
             <div>
               <p class="record-type">${entry.lifecycle === "archived" ? "Archived entry" : "Entry"}</p>
@@ -268,11 +280,11 @@ function renderEntryEditor(
             </label>
             <label class="checkbox"><input name="monitor.enabled" type="checkbox"${entry.monitor?.enabled ? " checked" : ""}> Monitoring enabled</label>
             <label class="span-all">Operator note <textarea name="privateNotes" rows="2">${escapeHtml(entry.privateNotes ?? "")}</textarea></label>
-            <label class="span-all">Links JSON <textarea name="links" rows="4" spellcheck="false">${escapeHtml(JSON.stringify(entry.links, null, 2))}</textarea></label>
+            <fieldset class="span-all link-editor" data-link-editor><legend>Links</legend><div data-link-rows>${entry.links.map(renderLinkRow).join("")}</div><button class="button" type="button" data-link-add>Add link</button><details><summary>Advanced JSON</summary><label>Links JSON <textarea name="links" rows="4" spellcheck="false">${escapeHtml(JSON.stringify(entry.links, null, 2))}</textarea></label></details></fieldset>
             <div class="form-actions span-all">
               <button class="button" type="submit">Save entry</button>
-              <button class="button" type="button" data-json-action="/api/ops/entries/${escapeHtml(entry.id)}/reorder" data-json-method="POST" data-json-body="${jsonForDataAttribute({ direction: "up" })}">Move up</button>
-              <button class="button" type="button" data-json-action="/api/ops/entries/${escapeHtml(entry.id)}/reorder" data-json-method="POST" data-json-body="${jsonForDataAttribute({ direction: "down" })}">Move down</button>
+              <button class="button" type="button" data-json-action="/api/ops/entries/${escapeHtml(entry.id)}/reorder" data-json-method="POST" data-json-body="${jsonForDataAttribute({ direction: "up" })}" data-move-name="${escapeHtml(entry.name)}" data-move-position="${peerIndex + 1}" data-move-count="${peers.length}"${peerIndex === 0 ? ' disabled title="Already first in this group"' : ""}>Move up</button>
+              <button class="button" type="button" data-json-action="/api/ops/entries/${escapeHtml(entry.id)}/reorder" data-json-method="POST" data-json-body="${jsonForDataAttribute({ direction: "down" })}" data-move-name="${escapeHtml(entry.name)}" data-move-position="${peerIndex + 1}" data-move-count="${peers.length}"${peerIndex === peers.length - 1 ? ' disabled title="Already last in this group"' : ""}>Move down</button>
               ${entry.monitor ? `<button class="button" type="button" data-json-action="/api/ops/entries/${escapeHtml(entry.id)}/monitor/${monitorAction.action}" data-json-method="POST" data-json-body="{}">${monitorAction.label}</button>` : ""}
               <button class="button" type="button" data-json-action="/api/ops/entries/${escapeHtml(entry.id)}/${entry.lifecycle === "archived" ? "restore" : "archive"}" data-json-method="POST" data-json-body="{}">${entry.lifecycle === "archived" ? "Restore" : "Archive"}</button>
               <button class="button button--danger" type="button" data-delete-action="/api/ops/entries/${escapeHtml(entry.id)}" data-delete-name="${escapeHtml(entry.name)}">Delete</button>
@@ -282,7 +294,7 @@ function renderEntryEditor(
 }
 
 function renderNewGroup(): string {
-  return `<form class="edit-form create-form" id="new-group" data-json-form action="/api/ops/groups" method="post" hidden>
+  return `<form class="edit-form create-form" id="new-group" data-editor-panel="new-group" data-json-form action="/api/ops/groups" method="post" hidden>
           <label>Name <input name="name" required></label>
           <label>Description <input name="description"></label>
           <label>Visibility <select name="visibility"><option value="private">Private</option><option value="public">Public</option></select></label>
@@ -291,13 +303,27 @@ function renderNewGroup(): string {
 }
 
 function renderNewEntry(groups: CatalogGroup[]): string {
-  return `<form class="edit-form create-form" id="new-entry" data-json-form action="/api/ops/entries" method="post" hidden>
+  return `<form class="edit-form create-form" id="new-entry" data-editor-panel="new-entry" data-json-form action="/api/ops/entries" method="post" hidden>
           <label>Name <input name="name" required></label>
           <label>Group <select name="groupId" required><option value="">Choose a group</option>${groups.map((group) => `<option value="${escapeHtml(group.id)}">${escapeHtml(group.name)}</option>`).join("")}</select></label>
           <label class="span-all">Description <textarea name="description" rows="2" required></textarea></label>
           <label>Visibility <select name="visibility"><option value="private">Private</option><option value="public">Public</option></select></label>
           <div class="form-actions span-all"><button class="button button--primary" type="submit">Create entry</button><button class="button" type="button" data-hide="new-entry">Cancel</button></div>
         </form>`;
+}
+
+function renderRecordButton(
+  kind: "group" | "entry",
+  id: string,
+  name: string,
+  search: string,
+  status: string
+): string {
+  return `<button type="button" class="record-button" data-editor-target="${kind}:${escapeHtml(id)}" data-record-kind="${kind}" data-record-search="${escapeHtml(search.toLowerCase())}" data-record-status="${escapeHtml(status)}"><span>${escapeHtml(name)}</span><code>${escapeHtml(id)}</code></button>`;
+}
+
+function renderLinkRow(link: CatalogEntry["links"][number]): string {
+  return `<div class="link-row" data-link-row><label>ID <input data-link-field="id" value="${escapeHtml(link.id)}" required></label><label>Label <input data-link-field="label" value="${escapeHtml(link.label)}" required></label><label>URL <input data-link-field="url" type="url" inputmode="url" value="${escapeHtml(link.url)}" required></label><label>Access <select data-link-field="access">${option("public", link.access)}${option("restricted", link.access)}${option("private", link.access)}</select></label><button class="button" type="button" data-link-remove>Remove</button></div>`;
 }
 
 function renderDeleteDialog(): string {
