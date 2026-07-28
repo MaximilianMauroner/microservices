@@ -22,8 +22,11 @@ compromised.
 
 ## Diagnose
 
-- Verify the Access applications cover `/publish*`, `/artifacts/*`, `/files/*`,
-  `/review*`, `/manage*`, all legacy page aliases, and their protected APIs.
+- Verify the Access applications cover `/publish*`, `/uploads*`,
+  `/api/external-uploads`, `/review*`, `/manage*`, protected legacy page
+  aliases, and their protected APIs. Ensure Access does not intercept public
+  `GET`/`HEAD` capability delivery at `/artifacts/*`, `/files/*`, `/p/*`, or
+  `/f/*`; the origin still protects non-read methods on those paths.
 - Verify `CF_ACCESS_ISSUER` is the exact `*.cloudflareaccess.com` team origin and
   `CF_ACCESS_MANAGE_AUDIENCE`, `CF_ACCESS_PUBLISHER_AUDIENCE`, and
   `CF_ACCESS_REVIEW_AUDIENCE` match their intended route-family applications.
