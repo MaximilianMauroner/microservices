@@ -46,10 +46,29 @@ decisions have no update or delete routes.
 ## Development
 
 Run `bun run db:generate` after changing `src/db/schema.ts`; migrations live in
-`drizzle/`. PostgreSQL integration and round-trip tests require
-`TEST_DATABASE_URL` and
-`FIELD_GUIDE_TEST_DATABASE_CONFIRM=field-guide-console-test`. Never point them
-at production.
+`drizzle/`.
+
+PostgreSQL integration and round-trip tests must use a disposable database that
+is dedicated to Field Guide Console tests. Configure both:
+
+- `TEST_DATABASE_URL`
+- `FIELD_GUIDE_TEST_DATABASE_CONFIRM=field-guide-console-test`
+
+The test database must also contain this sentinel before the tests run:
+
+```sql
+CREATE TABLE public.field_guide_review_test_sentinel (
+  sentinel_key text PRIMARY KEY,
+  sentinel_value text NOT NULL
+);
+
+INSERT INTO public.field_guide_review_test_sentinel (sentinel_key, sentinel_value)
+VALUES ('database-purpose', 'field-guide-console-disposable-test-database');
+```
+
+These tests verify the confirmation marker, table type, and sentinel value
+before applying the schema. They can modify data in the configured database;
+never point them at production.
 
 For recovery into PostgreSQL, set `RECOVERY_DATABASE_URL` and
 `FIELD_GUIDE_RECOVERY_CONFIRM=field-guide-console-recovery`, then run

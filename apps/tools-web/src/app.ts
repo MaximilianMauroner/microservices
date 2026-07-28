@@ -33,8 +33,8 @@ import {
 } from "./ui/index.js";
 
 export interface PageRenderer {
-  public(snapshot: PublicSnapshotDocument): string;
-  status(snapshot: PublicSnapshotDocument): string;
+  public(snapshot: PublicSnapshotDocument, publicOrigin: string): string;
+  status(snapshot: PublicSnapshotDocument, publicOrigin: string): string;
   ops(snapshot: PrivateSnapshotDocument, actor: string, revision: string): string;
 }
 
@@ -110,10 +110,10 @@ async function route(
     });
   }
   if (readMethod && url.pathname === "/") {
-    return html(renderer.public(await storage.readPublicSnapshot()));
+    return html(renderer.public(await storage.readPublicSnapshot(), trustedOrigin));
   }
   if (readMethod && url.pathname === "/status") {
-    return html(renderer.status(await storage.readPublicSnapshot()));
+    return html(renderer.status(await storage.readPublicSnapshot(), trustedOrigin));
   }
   if (
     readMethod &&
@@ -388,7 +388,7 @@ async function writeResponse(
     targetId,
     mutate
   );
-  return mutationResponse(catalog);
+  return mutationResponse(catalog, 200, catalog.revision !== revision);
 }
 
 function parseCreatedGroup(
@@ -755,9 +755,9 @@ function catalogResponse(catalog: CatalogDocument, status = 200): Response {
   });
 }
 
-function mutationResponse(catalog: CatalogDocument, status = 200): Response {
+function mutationResponse(catalog: CatalogDocument, status = 200, changed = true): Response {
   return json(
-    { revision: catalog.revision, reload: true },
+    { revision: catalog.revision, reload: changed, changed },
     {
       status,
       headers: {
@@ -828,11 +828,11 @@ function withCommonHeaders(response: Response, requestId: string): Response {
 }
 
 const defaultRenderer: PageRenderer = {
-  public(snapshot) {
-    return renderPublicPage(snapshot);
+  public(snapshot, publicOrigin) {
+    return renderPublicPage(snapshot, publicOrigin);
   },
-  status(snapshot) {
-    return renderStatusPage(snapshot);
+  status(snapshot, publicOrigin) {
+    return renderStatusPage(snapshot, publicOrigin);
   },
   ops(snapshot, actor, revision) {
     return renderOperationsPage({

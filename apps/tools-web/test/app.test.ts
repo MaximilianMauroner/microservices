@@ -381,6 +381,37 @@ describe("tools web routes", () => {
     )).toHaveLength(5);
   });
 
+  it("returns an unchanged response for a boundary reorder without writing", async () => {
+    const bucket = seededBucket();
+    const app = testApp(bucket, allowed);
+    const writesBefore = bucket.writes.length;
+    const response = await app(jsonMutation(
+      "POST",
+      "/api/ops/groups/public-tools/reorder",
+      catalog.revision,
+      { direction: "up" }
+    ));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      revision: catalog.revision,
+      reload: false,
+      changed: false
+    });
+    const lastResponse = await app(jsonMutation(
+      "POST",
+      "/api/ops/groups/operations/reorder",
+      catalog.revision,
+      { direction: "down" }
+    ));
+    expect(await lastResponse.json()).toEqual({
+      revision: catalog.revision,
+      reload: false,
+      changed: false
+    });
+    expect(bucket.writes).toHaveLength(writesBefore);
+  });
+
   it("returns 409 for stale revision writes and does not leak request data to logs", async () => {
     const bucket = seededBucket();
     const logged: Array<Readonly<Record<string, string | number>>> = [];

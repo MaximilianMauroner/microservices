@@ -188,6 +188,7 @@ function isPublicPath(path: string): boolean {
     "/status",
     "/favicon.ico",
     "/favicon.svg",
+    "/assets/ops.js",
     "/assets/tools.css",
     "/api/public/catalog"
   ].includes(path);
@@ -210,7 +211,13 @@ function accessFamily(
   path: string,
   method: string
 ): keyof PlatformAccess | undefined {
-  if (isPublicPath(path) || isMachineApiPath(path)) return undefined;
+  if (
+    (isPublicPath(path) &&
+      (path !== "/assets/ops.js" || method === "GET" || method === "HEAD")) ||
+    isMachineApiPath(path)
+  ) {
+    return undefined;
+  }
   if (
     isArtifactDeliveryPath(path) &&
     (method === "GET" || method === "HEAD")

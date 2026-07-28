@@ -11,6 +11,8 @@ export function pageShell(input: {
   body: string;
   operations?: boolean;
   active: SuiteDestination;
+  canonicalUrl?: string;
+  themeColor?: string;
 }): string {
   const script = input.operations
     ? '\n    <script src="/assets/ops.js" defer></script>'
@@ -21,8 +23,14 @@ export function pageShell(input: {
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="${escapeHtml(input.description)}">
+    ${input.operations ? '<meta name="robots" content="noindex, nofollow">' : input.canonicalUrl ? `<link rel="canonical" href="${escapeHtml(input.canonicalUrl)}">
+    <meta property="og:title" content="${escapeHtml(input.title)}">
+    <meta property="og:description" content="${escapeHtml(input.description)}">
+    <meta property="og:url" content="${escapeHtml(input.canonicalUrl)}">
+    <meta property="og:type" content="website">` : ""}
+    <meta name="theme-color" content="${escapeHtml(input.themeColor ?? "#f3f1e9")}">
     <title>${escapeHtml(input.title)}</title>
-    <link rel="stylesheet" href="/assets/tools.css">${script}
+    <link rel="stylesheet" href="/assets/tools.css?v=20260728-design-2">${script}
   </head>
   <body>
     ${renderSuiteChrome(input.active)}

@@ -155,6 +155,9 @@ describe("public page", () => {
     const html = renderPublicPage(publicSnapshot);
 
     expect(html).toContain('<main id="main"');
+    expect(html).toContain('<link rel="canonical" href="https://tools.mauroner.net/">');
+    expect(html).toContain('property="og:type" content="website"');
+    expect(html).toContain('href="#catalog">Browse tools');
     expect(html).toContain('aria-current="page">Tools');
     expect(html).toContain("Publishing &amp; sharing");
     expect(html).toContain("Cloudflare Access");
@@ -172,12 +175,14 @@ describe("public page", () => {
     expect(html).toContain('aria-labelledby="status-title"');
     expect(html).toContain('aria-labelledby="services-title"');
     expect(html).toContain('role="list"');
-    expect(html).toContain("Status is being prepared");
-    expect(html).not.toContain("All services are operational");
+    expect(html).toContain("All monitored services operational");
+    expect(html).toContain("1 service not measured");
     expect(html).toContain("Operational");
     expect(html).toContain("Not checkable from Railway");
-    expect(html).toContain("98% uptime");
+    expect(html).toContain("Observed uptime: 98%");
     expect(html).toContain("100 checks");
+    expect(html).toContain("Recorded checks");
+    expect(html).toContain("No data");
     expect(html).toContain('href="/status" aria-current="page"');
     expect(html).toContain("Access protected");
     expect(html).toContain('datetime="2026-07-27T12:00:00.000Z"');
@@ -211,6 +216,13 @@ describe("public page", () => {
     expect(html).not.toContain("javascript:");
   });
 
+  test("distinguishes same-origin navigation from external destinations", () => {
+    const html = renderPublicPage(publicSnapshot, "https://uploads.example.test");
+    expect(html).toContain('href="https://uploads.example.test/path?a=1&amp;b=2"><span>Open</span><span aria-hidden="true">›</span>');
+    expect(html).toContain('href="https://admin.example.test/" target="_blank" rel="noreferrer"');
+    expect(html).toContain("opens in a new tab");
+  });
+
   test("cannot render private-only fields because its input is a public projection", () => {
     const html = renderPublicPage(publicSnapshot);
 
@@ -239,7 +251,8 @@ describe("public page", () => {
     expect(html).toMatch(
       /<h3>Tools Status &amp; Directory<\/h3>[\s\S]*?<span class="service-state[^"]*">Not monitored<\/span>/
     );
-    expect(html).toContain("Status is being prepared");
+    expect(html).toContain("All monitored services operational");
+    expect(html).toContain("2 services not measured");
   });
 
   test("uses operational overall state only when every listed service is known up", () => {
@@ -257,7 +270,7 @@ describe("public page", () => {
       }
     });
 
-    expect(html).toContain("All services are operational");
+    expect(html).toContain("All monitored services operational");
   });
 
   test("promotes an outage and zero-percent history without operational styling", () => {
@@ -283,11 +296,32 @@ describe("public page", () => {
     expect(html).toContain("Service interruption");
     expect(html).toContain("uptime-day--outage");
     expect(html).toMatch(
-      /<span class="service-state service-state--outage">0% uptime<\/span>/
+      /<span class="service-state service-state--outage">Observed uptime: 0%<\/span>/
     );
     expect(html).not.toMatch(
-      /<span class="service-state service-state--operational">0% uptime<\/span>/
+      /<span class="service-state service-state--operational">Observed uptime: 0%<\/span>/
     );
+  });
+
+  test("gives checking precedence and reports limited visibility with no measured services", () => {
+    const checking = renderStatusPage({
+      ...publicSnapshot,
+      statuses: {
+        ...publicSnapshot.statuses,
+        "artifact-publisher": {
+          ...publicSnapshot.statuses["artifact-publisher"],
+          status: "checking"
+        }
+      }
+    });
+    expect(checking).toContain("Service checks are in progress");
+
+    const limited = renderStatusPage({
+      ...publicSnapshot,
+      statuses: Object.fromEntries(Object.entries(publicSnapshot.statuses).map(([id, status]) => [id, { ...status, status: "paused" }]))
+    });
+    expect(limited).toContain("Monitoring visibility is limited");
+    expect(limited).toContain("2 services not measured");
   });
 
   test("excludes stale and future checks from paused rolling uptime", () => {
@@ -308,9 +342,65 @@ describe("public page", () => {
       },
     });
 
-    expect(html).toContain("75% uptime");
+    expect(html).toContain("Observed uptime: 75%");
     expect(html).toContain("across 4 checks");
     expect(html).not.toContain("across 204 checks");
+  });
+
+  test("labels exact rolling-window coverage, percentages, and check grammar", () => {
+    const zero = renderStatusPage({
+      ...publicSnapshot,
+      statuses: {
+        ...publicSnapshot.statuses,
+        "artifact-publisher": {
+          ...publicSnapshot.statuses["artifact-publisher"],
+          status: "down",
+          uptimeDays: [
+            { day: "2026-04-28", successfulChecks: 10, totalChecks: 10 },
+            { day: "2026-04-29", successfulChecks: 0, totalChecks: 1 },
+            { day: "2026-07-28", successfulChecks: 10, totalChecks: 10 }
+          ]
+        }
+      }
+    });
+    expect(zero).toContain("Observed uptime: 0%");
+    expect(zero).toContain("1 check ·");
+    expect(zero).toContain("Observed since 2026-04-29");
+    expect(zero).toContain(
+      "Observed uptime: 0% across 1 check; 1 recorded day and 89 no-data days; earliest recorded day 2026-04-29."
+    );
+    expect(zero).not.toContain("across 21 checks");
+
+    const complete = renderStatusPage({
+      ...publicSnapshot,
+      statuses: {
+        ...publicSnapshot.statuses,
+        "artifact-publisher": {
+          ...publicSnapshot.statuses["artifact-publisher"],
+          uptimeDays: [
+            { day: "2026-04-29", successfulChecks: 1, totalChecks: 1 },
+            { day: "2026-07-27", successfulChecks: 2, totalChecks: 2 }
+          ]
+        }
+      }
+    });
+    expect(complete).toContain("Observed uptime: 100%");
+    expect(complete).toContain("across 3 checks; 2 recorded days and 88 no-data days");
+
+    const noData = renderStatusPage({
+      ...publicSnapshot,
+      statuses: {
+        ...publicSnapshot.statuses,
+        "artifact-publisher": {
+          ...publicSnapshot.statuses["artifact-publisher"],
+          uptimeDays: []
+        }
+      }
+    });
+    expect(noData).toContain(
+      "Observed uptime is not available. 0 recorded days and 90 no-data days."
+    );
+    expect(noData).toContain("No checks recorded");
   });
 
   test("distinguishes stale service observations from snapshot generation", () => {
@@ -344,6 +434,11 @@ describe("operations page", () => {
     });
 
     expect(html).toContain("Access protected");
+    expect(html).toContain('<meta name="robots" content="noindex, nofollow">');
+    expect(html).toContain('data-record-search');
+    expect(html).toContain('data-focused-editor');
+    expect(html).toContain('data-link-row');
+    expect(html).toContain('disabled title="Already first"');
     expect(html).toContain('data-revision="revision-1"');
     expect(html).toContain('action="/api/ops/entries/secret"');
     expect(html).toContain("/monitor/pause");

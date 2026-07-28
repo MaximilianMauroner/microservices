@@ -141,23 +141,25 @@ class MemoryUploadStorage implements UploadStorage {
       ...files
     ];
     const cursor = options.cursor;
+    const sort = options.sort ?? "newest";
+    const query = options.q?.trim().normalize("NFKC").toLowerCase() ?? "";
     const candidates = entries
       .filter(({ summary }) => !options.kind || summary.kind === options.kind)
-      .sort(
-        (left, right) =>
-          right.summary.updatedAt.getTime() -
-            left.summary.updatedAt.getTime() ||
-          left.key.localeCompare(right.key)
-      )
-      .filter(({ key, summary }) => {
-        if (!cursor) {
-          return true;
+      .filter(({ summary }) => !query || summary.originalName.normalize("NFKC").toLowerCase().includes(query))
+      .filter(({ summary }) => matchesMemoryExpiry(summary, options.expiry ?? "all", asOf))
+      .sort(memoryUploadComparator(sort))
+      .filter((entry) => !cursor || memoryUploadComparator(sort)(entry, {
+        key: cursor.key,
+        summary: {
+          id: "cursor",
+          kind: cursor.key.startsWith("pages/") ? "html" : "file",
+          originalName: cursor.originalName ?? cursor.key,
+          bytes: 0,
+          contentType: "application/octet-stream",
+          updatedAt: cursor.updatedAt,
+          ...(cursor.expiresAt ? { expiresAt: cursor.expiresAt } : {})
         }
-        const updatedAt = summary.updatedAt.getTime();
-        const cursorUpdatedAt = cursor.updatedAt.getTime();
-        return updatedAt < cursorUpdatedAt ||
-          (updatedAt === cursorUpdatedAt && key > cursor.key);
-      });
+      }) > 0);
     const page = candidates.slice(0, options.limit);
     const last = page.at(-1);
 
@@ -166,8 +168,12 @@ class MemoryUploadStorage implements UploadStorage {
       ...(last && page.length < candidates.length
         ? {
             nextCursor: {
+              version: 1 as const,
+              criteria: options.criteria ?? "legacy:newest",
               updatedAt: last.summary.updatedAt,
-              key: last.key
+              key: last.key,
+              originalName: last.summary.originalName,
+              ...(last.summary.expiresAt ? { expiresAt: last.summary.expiresAt } : {})
             }
           }
         : {})
@@ -193,6 +199,35 @@ class MemoryUploadStorage implements UploadStorage {
 
     return deleted;
   }
+}
+
+type MemoryUploadEntry = { key: string; summary: StoredUploadSummary };
+
+function memoryUploadComparator(sort: NonNullable<ListUploadsOptions["sort"]>) {
+  return (left: MemoryUploadEntry, right: MemoryUploadEntry): number => {
+    if (sort === "oldest") {
+      return left.summary.updatedAt.getTime() - right.summary.updatedAt.getTime() || left.key.localeCompare(right.key);
+    }
+    if (sort === "filename") {
+      return left.summary.originalName.localeCompare(right.summary.originalName, undefined, { sensitivity: "base" }) || left.key.localeCompare(right.key);
+    }
+    if (sort === "expiry") {
+      return (left.summary.expiresAt?.getTime() ?? Number.POSITIVE_INFINITY) - (right.summary.expiresAt?.getTime() ?? Number.POSITIVE_INFINITY) || left.key.localeCompare(right.key);
+    }
+    return right.summary.updatedAt.getTime() - left.summary.updatedAt.getTime() || left.key.localeCompare(right.key);
+  };
+}
+
+function matchesMemoryExpiry(
+  upload: StoredUploadSummary,
+  expiry: NonNullable<ListUploadsOptions["expiry"]>,
+  asOf: Date
+): boolean {
+  if (expiry === "all") return true;
+  if (expiry === "persistent") return upload.kind === "html";
+  if (!upload.expiresAt) return false;
+  const windowMs = expiry === "24h" ? 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000;
+  return upload.expiresAt.getTime() <= asOf.getTime() + windowMs;
 }
 
 class BlockingUploadStorage extends MemoryUploadStorage {
@@ -734,6 +769,9 @@ describe("html publisher", () => {
     expect(page.text).toContain("Cloudflare Access");
     expect(page.text).toContain('aria-current="page">Publish');
     expect(page.text).toContain('class="suite-skip skip-link"');
+    expect(page.text).toContain('id="upload-search"');
+    expect(page.text).toContain('id="upload-expiry"');
+    expect(page.text).toContain('id="upload-sort"');
     expect(page.text).not.toContain("Operator sign-in");
     const scriptPath = page.text.match(
       /\/publish\/assets\/[a-f0-9]{16}\/app\.js/
@@ -747,7 +785,7 @@ describe("html publisher", () => {
     await request(app).get("/publish/callback").expect(200);
     await request(app).get("/uploads").expect(200);
 
-    await request(app)
+    const style = await request(app)
       .get(stylePath ?? "")
       .expect("content-type", /text\/css/)
       .expect("Cache-Control", "private, max-age=31536000, immutable")
@@ -758,10 +796,31 @@ describe("html publisher", () => {
       .expect("Cache-Control", "private, max-age=31536000, immutable")
       .expect(200);
     expect(script.text).toContain('location.assign("/cdn-cgi/access/logout")');
+    expect(script.text).toContain("destination.origin !== window.location.origin");
+    expect(script.text).toContain('link.target = "_blank"');
+    expect(script.text).toContain('link.rel = "noreferrer"');
+    expect(script.text).toContain('link.removeAttribute("target")');
+    expect(script.text).toContain("opens in a new tab");
+    expect(script.text).toContain('affordance.textContent = external ? "↗" : "›"');
+    expect(() => new Function(script.text)).not.toThrow();
+    expect(page.text).not.toContain('id="open-url" href="#" target="_blank"');
+    expect(style.text).toContain("@media (max-width: 439px)");
+    expect(style.text).toContain("flex-wrap: wrap");
+    await request(app)
+      .get((stylePath ?? "").replace("/publish/", "/uploads/"))
+      .expect("Cache-Control", "private, max-age=31536000, immutable")
+      .expect(200);
+    await request(app)
+      .get((scriptPath ?? "").replace("/publish/", "/uploads/"))
+      .expect("Cache-Control", "private, max-age=31536000, immutable")
+      .expect(200);
     await request(app)
       .get("/uploads/app.js")
       .expect("Cache-Control", "private, no-store")
       .expect(200);
+    for (const path of ["/publish/app.css", "/publish/app.js", "/uploads/app.css", "/uploads/app.js"]) {
+      await request(app).get(path).expect("Cache-Control", "private, no-store").expect(200);
+    }
   });
 
   it("stores authenticated external uploads as expiring files in the same storage", async () => {
@@ -889,6 +948,159 @@ describe("html publisher", () => {
         error: "invalid_pagination",
         message: "cursor is invalid."
       });
+    for (const query of ["expiry=month", "sort=random", "q=x&q=y"]) {
+      await request(app).get(`/api/external-uploads?${query}`).expect(400);
+    }
+  });
+
+  it("promotes legacy cursors only for default listing criteria and emits v1 cursors", async () => {
+    const now = new Date("2026-07-23T12:00:00.000Z");
+    const { app, storage } = setup({
+      externalUploadAuth: (_req, _res, next) => next(),
+      now: () => now
+    });
+    for (const id of ["a".repeat(32), "b".repeat(32), "c".repeat(32)]) {
+      storage.pages.set(id, {
+        body: Buffer.from("<!doctype html>"),
+        etag: `"${id}"`,
+        lastModified: now,
+        metadata: { bytes: 15, originalName: `${id[0]}.html`, sha256: id.repeat(2) }
+      });
+    }
+    for (const id of ["x".repeat(32), "y".repeat(32), "z".repeat(32)]) {
+      storage.files.set(id, {
+        body: Buffer.from("file"),
+        lastModified: now,
+        metadata: {
+          bytes: 4,
+          originalName: `${id[0]}.txt`,
+          sha256: id.repeat(2),
+          contentType: "text/plain",
+          expiresAt: new Date("2026-07-26T12:00:00.000Z")
+        }
+      });
+    }
+    const encodeLegacy = (key: string) => Buffer.from(JSON.stringify({
+      updatedAt: now.toISOString(),
+      key
+    })).toString("base64url");
+    const cases = [
+      { kind: "all", key: `files/${"x".repeat(32)}` },
+      { kind: "html", key: `pages/${"a".repeat(32)}.html` },
+      { kind: "file", key: `files/${"x".repeat(32)}` }
+    ] as const;
+
+    for (const { kind, key } of cases) {
+      const legacy = encodeLegacy(key);
+      const promoted = await request(app)
+        .get(`/api/external-uploads?limit=1&kind=${kind}&cursor=${encodeURIComponent(legacy)}`)
+        .expect(200);
+      expect(promoted.body.uploads).toHaveLength(1);
+      expect(promoted.body.uploads[0].kind).toBe(kind === "all" ? "file" : kind);
+      expect(promoted.body.nextCursor).toEqual(expect.any(String));
+      const decoded = JSON.parse(
+        Buffer.from(promoted.body.nextCursor, "base64url").toString("utf8")
+      ) as { version: number; criteria: string; originalName: string };
+      expect(decoded).toMatchObject({
+        version: 1,
+        criteria: JSON.stringify({ q: "", kind, expiry: "all", sort: "newest" })
+      });
+      expect(decoded.originalName).toEqual(expect.any(String));
+    }
+
+    const legacy = encodeLegacy(`files/${"x".repeat(32)}`);
+    for (const criteria of ["q=alpha", "expiry=persistent", "sort=oldest"]) {
+      await request(app)
+        .get(`/api/external-uploads?${criteria}&cursor=${encodeURIComponent(legacy)}`)
+        .expect(400, {
+          error: "invalid_pagination",
+          message: "legacy cursor requires default listing criteria."
+        });
+    }
+  });
+
+  it("binds upload cursors to normalized listing criteria", async () => {
+    const { app } = setup({ externalUploadAuth: (_req, _res, next) => next() });
+    await request(app)
+      .post("/api/uploads")
+      .set("Authorization", "Bearer test-upload-token")
+      .attach("file", Buffer.from("<!doctype html>"), { filename: "plan.html", contentType: "text/html" })
+      .expect(201);
+    await request(app)
+      .post("/api/external-uploads")
+      .set("Host", "uploads.example")
+      .set("Origin", "http://uploads.example")
+      .attach("file", Buffer.from("notes"), { filename: "notes.txt", contentType: "text/plain" })
+      .expect(201);
+    const first = await request(app).get("/api/external-uploads?limit=1").expect(200);
+    await request(app)
+      .get(`/api/external-uploads?limit=1&q=notes&cursor=${encodeURIComponent(first.body.nextCursor)}`)
+      .expect(400, { error: "invalid_pagination", message: "cursor does not match the current filters." });
+  });
+
+  it("applies search, expiry, kind, sorting, ties, and filtered pagination in the API test double", async () => {
+    const now = new Date("2026-07-23T12:00:00.000Z");
+    const { app, storage } = setup({
+      externalUploadAuth: (_req, _res, next) => next(),
+      now: () => now
+    });
+    const addPage = (id: string, filename: string, updatedAt: string) => {
+      storage.pages.set(id, {
+        body: Buffer.from("<!doctype html>"),
+        etag: `"${id}"`,
+        lastModified: new Date(updatedAt),
+        metadata: { bytes: 15, originalName: filename, sha256: id.repeat(2) }
+      });
+    };
+    const addFile = (id: string, filename: string, updatedAt: string, expiresAt: string) => {
+      storage.files.set(id, {
+        body: Buffer.from("file"),
+        lastModified: new Date(updatedAt),
+        metadata: {
+          bytes: 4,
+          originalName: filename,
+          sha256: id.repeat(2),
+          contentType: "text/plain",
+          expiresAt: new Date(expiresAt)
+        }
+      });
+    };
+    addPage("a".repeat(32), "Zulu Plan.html", "2026-07-23T10:00:00.000Z");
+    addPage("b".repeat(32), "Alpha Plan.html", "2026-07-23T09:00:00.000Z");
+    addFile("c".repeat(32), "Beta Notes.txt", "2026-07-23T11:00:00.000Z", "2026-07-24T00:00:00.000Z");
+    addFile("d".repeat(32), "Beta Archive.txt", "2026-07-23T09:00:00.000Z", "2026-07-26T12:00:00.000Z");
+    addFile("e".repeat(32), "Expired.txt", "2026-07-23T12:00:00.000Z", "2026-07-23T11:59:59.000Z");
+
+    const filenames = async (query: string) => {
+      const listed = await request(app).get(`/api/external-uploads?limit=100&${query}`).expect(200);
+      return (listed.body.uploads as Array<{ filename: string }>).map(({ filename }) => filename);
+    };
+    await expect(filenames("q=%20BETA%20")).resolves.toEqual(["Beta Notes.txt", "Beta Archive.txt"]);
+    await expect(filenames("kind=html&sort=filename")).resolves.toEqual(["Alpha Plan.html", "Zulu Plan.html"]);
+    await expect(filenames("expiry=24h&sort=expiry")).resolves.toEqual(["Beta Notes.txt"]);
+    await expect(filenames("expiry=7d&sort=expiry")).resolves.toEqual(["Beta Notes.txt", "Beta Archive.txt"]);
+    await expect(filenames("expiry=persistent&sort=oldest")).resolves.toEqual(["Alpha Plan.html", "Zulu Plan.html"]);
+    await expect(filenames("sort=newest")).resolves.toEqual(["Beta Notes.txt", "Zulu Plan.html", "Beta Archive.txt", "Alpha Plan.html"]);
+    await expect(filenames("sort=oldest")).resolves.toEqual(["Beta Archive.txt", "Alpha Plan.html", "Zulu Plan.html", "Beta Notes.txt"]);
+    await expect(filenames("sort=filename")).resolves.toEqual(["Alpha Plan.html", "Beta Archive.txt", "Beta Notes.txt", "Zulu Plan.html"]);
+
+    const first = await request(app)
+      .get("/api/external-uploads?limit=2&sort=filename&q=plan")
+      .expect(200);
+    expect(first.body.uploads.map(({ filename }: { filename: string }) => filename)).toEqual([
+      "Alpha Plan.html",
+      "Zulu Plan.html"
+    ]);
+    expect(first.body.nextCursor).toBeUndefined();
+
+    const tiedFirst = await request(app)
+      .get("/api/external-uploads?limit=1&sort=oldest")
+      .expect(200);
+    const tiedSecond = await request(app)
+      .get(`/api/external-uploads?limit=1&sort=oldest&cursor=${encodeURIComponent(tiedFirst.body.nextCursor)}`)
+      .expect(200);
+    expect(tiedFirst.body.uploads[0].filename).toBe("Beta Archive.txt");
+    expect(tiedSecond.body.uploads[0].filename).toBe("Alpha Plan.html");
   });
 
   it("rejects cross-origin requests to the external upload endpoint", async () => {

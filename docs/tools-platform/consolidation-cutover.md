@@ -6,8 +6,9 @@ bucket, artifact bucket, and field-guide PostgreSQL database remain in place.
 ## Required Cloudflare state
 
 1. The Tools home at `tools.mauroner.net/`, Status at `/status`, the public
-   stylesheet, and `/api/public/catalog` remain public. They expose only the
-   redacted catalog, current monitor state, and aggregated 90-day check counts.
+   stylesheet, fixed `/assets/ops.js`, and `/api/public/catalog` remain public.
+   They expose only the redacted catalog, current monitor state, and observed
+   check aggregates; no-data days are not counted as monitoring history.
 2. Self-hosted Access applications group protected routes that share a browser
    session: Manage (`/manage`, `/manage/*`, legacy `/ops*`, `/api/ops/*`),
    Publisher (`/publish`, `/publish/*`, legacy `/uploads*`,

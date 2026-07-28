@@ -30,6 +30,12 @@ The catalog and checker use one private bucket, but ownership is enforced in cod
 `catalog/current.json` and immutable `audit/**` objects. Checker writes only
 state, snapshots, history, recovery, and export prefixes.
 
+The fixed `/assets/ops.js` browser asset is public so authenticated Manage HTML
+can boot after routing through the gateway; it is not an authentication
+boundary. `/manage`, all `/api/ops/*` data and mutations, Publisher upload/list
+surfaces, and Review remain protected. Public directory and status pages emit
+canonical/Open Graph metadata; protected pages are no-store and noindex.
+
 The unified service cannot use Railway Serverless sleep because it owns the
 checker schedule. Review actual usage after 24 hours and again after one
 billing week.

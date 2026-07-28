@@ -56,3 +56,20 @@ reviewed rather than overwritten. See
 `docs/tools-platform/consolidation-cutover.md` for rollout and rollback.
 
 See `ROUTES.md` for the UI/backend contract.
+
+## UI behavior
+
+The public status page reports **Observed uptime** only over recorded checks;
+the 90-cell calendar marks days without data separately and names the earliest
+observed day. Its aggregate gives outages and checking states precedence, then
+reports healthy measured services separately from services not measured.
+Directory destinations on the current browser origin use a chevron and open
+in the current tab. Cross-origin destinations use an external arrow, open in a
+new tab with `rel=noreferrer`, and announce that behavior to assistive
+technology.
+
+Manage uses a searchable/filterable record list and one focused editor. Links
+are edited as validated structured rows with an optional synchronized JSON
+view. History and audit requests have an eight-second timeout and explicit
+accessible retry; mutations are never retried automatically. Structural no-op
+mutations return the current revision without catalog or audit writes.
