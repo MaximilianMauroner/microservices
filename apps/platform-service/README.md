@@ -7,16 +7,19 @@ moving their data:
 | Route | Module |
 | --- | --- |
 | `/`, `/status`, `/manage`, `/api/ops/*` | Tools catalog, status, and management |
-| `/publish`, `/artifacts/*`, `/files/*` | Artifact publisher browser routes |
+| `/publish`, `/artifacts/*`, `/files/*` | Artifact publisher browser and public capability-read routes |
 | `/review`, `/api/review/*` | Field-guide review browser routes |
 | `/api/uploads*`, `/api/agent*` | Native-token machine APIs |
 | in-process, every five minutes | Tools checker |
 
 The redacted Tools and status routes (`/`, `/status`, `/assets/tools.css`, and
-`/api/public/catalog`) are public. Publish, artifact/file delivery, Review, and
-Manage require a valid `Cf-Access-Jwt-Assertion`. Legacy browser `GET`/`HEAD`
-routes (`/uploads`, `/p/*`, `/f/*`, and `/ops/*`) redirect with `308` only
-after Access verification; API and mutation routes are unchanged.
+`/api/public/catalog`) are public. Artifact/file `GET`/`HEAD` delivery is also
+public and unlisted: the unguessable URL is the read capability, and the
+backing bucket remains private. Publish, Review, Manage, upload/list/revoke
+surfaces, and non-read delivery requests require a valid
+`Cf-Access-Jwt-Assertion`. Legacy `/p/*` and `/f/*` capability reads redirect
+with `308` before Access verification; protected `/uploads` and `/ops/*`
+redirects occur only after verification.
 
 `/api/uploads*` and `/api/agent*` intentionally bypass browser Access so
 automation does not need a browser assertion. They remain protected by their

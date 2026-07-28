@@ -74,7 +74,7 @@ export function createPlatformApp(options: {
     review: accessMiddleware(options.access.review)
   };
   app.use((request, response, next) => {
-    const family = accessFamily(request.path);
+    const family = accessFamily(request.path, request.method);
     if (!family) {
       next();
       return;
@@ -200,10 +200,23 @@ function isMachineApiPath(path: string): boolean {
     path.startsWith("/api/agent/");
 }
 
+function isArtifactDeliveryPath(path: string): boolean {
+  return ["/artifacts", "/files", "/p", "/f"].some(
+    (prefix) => path === prefix || path.startsWith(`${prefix}/`)
+  );
+}
+
 function accessFamily(
-  path: string
+  path: string,
+  method: string
 ): keyof PlatformAccess | undefined {
   if (isPublicPath(path) || isMachineApiPath(path)) return undefined;
+  if (
+    isArtifactDeliveryPath(path) &&
+    (method === "GET" || method === "HEAD")
+  ) {
+    return undefined;
+  }
   if (isArtifactPath(path)) return "publisher";
   if (isFieldGuidePath(path)) return "review";
   return "manage";

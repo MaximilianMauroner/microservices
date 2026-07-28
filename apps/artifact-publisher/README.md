@@ -1,11 +1,14 @@
 # Artifact Publisher
 
 Artifact Publisher stores self-contained HTML plans and temporary downloads in
-a private S3-compatible bucket. Production browser routes are mounted by
-`apps/platform-service` under the Publisher Cloudflare Access audience.
+a private S3-compatible bucket. Production routes are mounted by
+`apps/platform-service`; unguessable delivery URLs are public, unlisted read
+capabilities, while upload/list/revoke surfaces use the Publisher Cloudflare
+Access audience or native bearer authentication.
 
 - Canonical HTML URLs are `/artifacts/:id`; legacy `/p/:id` aliases redirect.
 - Canonical file URLs are `/files/:id/:filename`; legacy `/f/*` aliases redirect.
+- Canonical and legacy delivery support unauthenticated `GET` and `HEAD` only.
 - HTML persists until revoked.
 - Other files expire after three days by default.
 - `/api/uploads*` requires the native upload bearer token and intentionally
@@ -75,9 +78,10 @@ through same-origin `/api/external-uploads`. Cloudflare Access is validated at
 the platform route-family boundary; the browser never receives the native
 upload token.
 
-HTML is streamed with sandbox, no-referrer, no-sniff, and no-index headers.
-Temporary downloads support `HEAD` and one standard byte range. Expired URLs
-return `404`. Malformed canonical or legacy percent encoding returns `404`.
+HTML is streamed from the private bucket with sandbox, no-referrer, no-sniff,
+and no-index headers. Temporary downloads support `HEAD` and one standard byte
+range. Missing, revoked, and expired capability URLs return `404`. Malformed
+canonical or legacy percent encoding returns `404`.
 
 Errors use JSON with stable `error` and `message` fields. Notable statuses are
 `401 unauthorized`, `403 invalid_origin`, `404 upload_not_found`, `409

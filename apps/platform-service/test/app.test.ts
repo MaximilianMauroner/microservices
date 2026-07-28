@@ -133,14 +133,11 @@ describe("platform gateway", () => {
     await request(app()).get("/api/public/catalog").expect(200, "tools");
   });
 
-  it("rejects direct-origin access to protected canonical and legacy pages", async () => {
+  it("rejects direct-origin access to protected browser pages and APIs", async () => {
     for (const path of [
       "/publish",
       "/uploads",
-      "/artifacts/01234567890123456789012345678901",
-      "/p/01234567890123456789012345678901",
-      "/files/01234567890123456789012345678901/report%20one.pdf",
-      "/f/01234567890123456789012345678901/report%20one.pdf",
+      "/api/external-uploads",
       "/review",
       "/manage",
       "/ops"
@@ -161,14 +158,6 @@ describe("platform gateway", () => {
       .set("Cf-Access-Jwt-Assertion", "publisher-audience")
       .expect(200, "artifact");
     await request(app())
-      .get("/artifacts/01234567890123456789012345678901")
-      .set("Cf-Access-Jwt-Assertion", "publisher-audience")
-      .expect(200, "artifact");
-    await request(app())
-      .get("/files/01234567890123456789012345678901/report.pdf")
-      .set("Cf-Access-Jwt-Assertion", "publisher-audience")
-      .expect(200, "artifact");
-    await request(app())
       .get("/manage")
       .set("Cf-Access-Jwt-Assertion", "manage-audience")
       .expect(200, "tools");
@@ -180,10 +169,7 @@ describe("platform gateway", () => {
       ["/manage", "review-audience"],
       ["/publish", "manage-audience"],
       ["/publish", "review-audience"],
-      ["/artifacts/01234567890123456789012345678901", "review-audience"],
       ["/uploads", "manage-audience"],
-      ["/p/01234567890123456789012345678901", "review-audience"],
-      ["/f/01234567890123456789012345678901/report.pdf", "manage-audience"],
       ["/review", "manage-audience"],
       ["/review", "publisher-audience"],
       ["/ops", "publisher-audience"]
@@ -196,7 +182,30 @@ describe("platform gateway", () => {
     }
   });
 
-  it("redirects authenticated legacy browser routes and preserves path data and queries", async () => {
+  it("serves canonical capability reads publicly for GET and HEAD", async () => {
+    await request(app())
+      .get("/artifacts/01234567890123456789012345678901")
+      .expect(200, "artifact");
+    expect(
+      (
+        await request(app())
+          .head("/artifacts/01234567890123456789012345678901")
+          .expect(200)
+      ).text
+    ).toBeUndefined();
+    await request(app())
+      .get("/files/01234567890123456789012345678901/report%20one.pdf")
+      .expect(200, "artifact");
+    expect(
+      (
+        await request(app())
+          .head("/files/01234567890123456789012345678901/report%20one.pdf")
+          .expect(200)
+      ).text
+    ).toBeUndefined();
+  });
+
+  it("redirects legacy capability reads publicly and preserves path data and queries", async () => {
     const publisherHeader = {
       "Cf-Access-Jwt-Assertion": "publisher-audience"
     };
@@ -207,7 +216,6 @@ describe("platform gateway", () => {
       .expect("Location", "/publish?view=recent");
     await request(app())
       .get("/p/01234567890123456789012345678901?download=0")
-      .set(publisherHeader)
       .expect(308)
       .expect(
         "Location",
@@ -215,7 +223,6 @@ describe("platform gateway", () => {
       );
     const headRedirect = await request(app())
       .head("/f/01234567890123456789012345678901/report%20one.pdf?download=1")
-      .set(publisherHeader)
       .expect(308)
       .expect(
         "Location",
@@ -229,6 +236,21 @@ describe("platform gateway", () => {
       .expect("Location", "/manage/catalog?tab=history");
   });
 
+  it("keeps non-read requests to capability paths Publisher-Access protected", async () => {
+    for (const path of [
+      "/artifacts/01234567890123456789012345678901",
+      "/files/01234567890123456789012345678901/report.pdf",
+      "/p/01234567890123456789012345678901",
+      "/f/01234567890123456789012345678901/report.pdf"
+    ]) {
+      await request(app()).post(path).expect(401, { error: "access_required" });
+      await request(app())
+        .post(path)
+        .set("Cf-Access-Jwt-Assertion", "publisher-audience")
+        .expect(200, "artifact");
+    }
+  });
+
   it("keeps browser-protected API and mutation requests on their stable handlers", async () => {
     await request(app())
       .post("/api/ops/groups")
@@ -238,16 +260,27 @@ describe("platform gateway", () => {
       .post("/uploads")
       .set("Cf-Access-Jwt-Assertion", "publisher-audience")
       .expect(200, "artifact");
+    await request(app())
+      .post("/api/external-uploads")
+      .set("Cf-Access-Jwt-Assertion", "publisher-audience")
+      .expect(200, "artifact");
   });
 
   it("preserves native token-only machine APIs without weakening their guards", async () => {
-    await request(appWithNativeTokens())
-      .post("/api/uploads")
-      .set("Authorization", "Bearer upload-token")
-      .expect(200, "artifact-token-ok");
-    await request(appWithNativeTokens())
-      .post("/api/uploads")
-      .expect(401, { error: "invalid_upload_token" });
+    const uploadRequests = [
+      ["post", "/api/uploads"],
+      ["put", "/api/uploads/01234567890123456789012345678901"],
+      ["delete", "/api/uploads/01234567890123456789012345678901"]
+    ] as const;
+    for (const [method, path] of uploadRequests) {
+      await request(appWithNativeTokens())
+        [method](path)
+        .set("Authorization", "Bearer upload-token")
+        .expect(200, "artifact-token-ok");
+      await request(appWithNativeTokens())
+        [method](path)
+        .expect(401, { error: "invalid_upload_token" });
+    }
     await request(appWithNativeTokens())
       .post("/api/agent/candidates")
       .set("Authorization", "Bearer agent-token")
@@ -274,12 +307,10 @@ describe("platform gateway", () => {
   it("keeps malformed legacy capability paths safe after canonical redirect", async () => {
     await request(app())
       .get("/p/%ZZ")
-      .set("Cf-Access-Jwt-Assertion", "publisher-audience")
       .redirects(1)
       .expect(404);
     await request(app())
       .get(`/f/${"a".repeat(32)}/%ZZ`)
-      .set("Cf-Access-Jwt-Assertion", "publisher-audience")
       .redirects(1)
       .expect(404);
   });

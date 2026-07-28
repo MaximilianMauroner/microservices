@@ -49,16 +49,20 @@ Railway deploys the workspace once:
 
 The platform service must remain awake because it owns the five-minute checker
 scheduler. The redacted Tools home and `/status` surface are public;
-Cloudflare Access protects Publisher, artifact/file delivery, Review, Manage,
-and their legacy browser aliases. The application also verifies the Access
-assertion before dispatching any protected route.
+Cloudflare Access protects Publisher upload/list/revoke surfaces, Review,
+Manage, and their protected legacy browser aliases. Artifact and file delivery
+uses public, unlisted capability URLs: possession of an unguessable URL grants
+read access, while the backing bucket remains private. The application also
+verifies the Access assertion before dispatching any protected route.
 
 Production requires three distinct Access audiences:
 `CF_ACCESS_MANAGE_AUDIENCE`, `CF_ACCESS_PUBLISHER_AUDIENCE`, and
-`CF_ACCESS_REVIEW_AUDIENCE`. Publisher covers `/publish`, `/uploads`,
-`/artifacts*`, `/files*`, `/p*`, `/f*`, and its browser API. The native-token
-`/api/uploads*` and `/api/agent*` machine APIs bypass browser Access but remain
-protected by their upload and agent bearer tokens.
+`CF_ACCESS_REVIEW_AUDIENCE`. Publisher covers `/publish`, `/uploads`, and
+`/api/external-uploads`; non-read requests to delivery paths also fail closed
+behind that audience. Unauthenticated `GET`/`HEAD` requests may read
+`/artifacts*`, `/files*`, `/p*`, and `/f*`. The native-token `/api/uploads*`
+and `/api/agent*` machine APIs bypass browser Access but remain protected by
+their upload and agent bearer tokens.
 
 `/health` checks all dependencies. `/health/tools`, `/health/publisher`, and
 `/health/review` expose public, component-specific readiness for the in-process

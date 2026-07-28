@@ -8,12 +8,15 @@ bucket, artifact bucket, and field-guide PostgreSQL database remain in place.
 1. The Tools home at `tools.mauroner.net/`, Status at `/status`, the public
    stylesheet, and `/api/public/catalog` remain public. They expose only the
    redacted catalog, current monitor state, and aggregated 90-day check counts.
-2. Self-hosted Access applications group routes that share a browser session:
-   Manage (`/manage`, `/manage/*`, legacy `/ops*`, `/api/ops/*`), Publisher
-   (`/publish`, `/publish/*`, legacy `/uploads*`, `/api/external-uploads`,
-   `/artifacts/*`, `/files/*`, legacy `/p/*`, legacy `/f/*`), and Field Guide
+2. Self-hosted Access applications group protected routes that share a browser
+   session: Manage (`/manage`, `/manage/*`, legacy `/ops*`, `/api/ops/*`),
+   Publisher (`/publish`, `/publish/*`, legacy `/uploads*`,
+   `/api/external-uploads`), and Field Guide
    (`/review`, `/review/*`, `/review.css`, `/review-suite.css`,
    `/api/review/*`). These are the same three families enforced by the origin.
+   Do not place `GET`/`HEAD` delivery at `/artifacts/*`, `/files/*`, legacy
+   `/p/*`, or legacy `/f/*` behind Access: each unguessable URL is an unlisted
+   read capability. The artifact bucket itself remains private.
 3. The human Allow policy includes only the intended operator identity. Opening
    `/manage` from the public Tools page therefore starts the Cloudflare Access
    identity-provider flow before the request reaches Railway.
@@ -31,13 +34,14 @@ bucket, artifact bucket, and field-guide PostgreSQL database remain in place.
 
 1. Configure the Access applications without changing DNS.
 2. Deploy `platform-service` to the existing `tools-web` Railway service.
-3. Verify `/health` on the Railway domain. Confirm `/` and `/status` load
-   without a session; `/publish`, `/artifacts/*`, `/files/*`, `/review`, and
-   `/manage` start the Cloudflare Access flow; direct-origin requests without
-   a valid assertion fail closed.
-4. Confirm authenticated `GET`/`HEAD` redirects from `/uploads`, `/p/*`,
-   `/f/*`, and `/ops/*` preserve IDs, encoded filenames, subpaths, and queries.
-   Confirm API and mutation methods are not redirected.
+3. Verify `/health` on the Railway domain. Confirm `/`, `/status`, and known
+   `/artifacts/*` and `/files/*` capabilities load without a session;
+   `/publish`, `/review`, and `/manage` start the Cloudflare Access flow.
+   Confirm missing, revoked, and expired capabilities return `404`.
+4. Confirm public `GET`/`HEAD` redirects from `/p/*` and `/f/*`, plus protected
+   redirects from `/uploads` and `/ops/*`, preserve IDs, encoded filenames,
+   subpaths, and queries. Confirm API and mutation methods are not redirected
+   and remain protected.
 5. Update the live catalog to the canonical `tools.mauroner.net` URLs and wait
    for a successful checker pass against all three component health endpoints.
 6. Stop the old checker cron, field-guide app, and publisher app. Keep all
