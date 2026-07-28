@@ -15,7 +15,7 @@ export function pageShell(input: {
   themeColor?: string;
 }): string {
   const script = input.operations
-    ? '\n    <script src="/assets/ops.js" defer></script>'
+    ? '\n    <script src="/assets/ops.js?v=4b98adb" defer></script>'
     : "";
   return `<!doctype html>
 <html lang="en">
@@ -30,7 +30,7 @@ export function pageShell(input: {
     <meta property="og:type" content="website">` : ""}
     <meta name="theme-color" content="${escapeHtml(input.themeColor ?? "#f3f1e9")}">
     <title>${escapeHtml(input.title)}</title>
-    <link rel="stylesheet" href="/assets/tools.css?v=20260728-design-2">${script}
+    <link rel="stylesheet" href="/assets/tools.css?v=4b98adb">${script}
   </head>
   <body>
     ${renderSuiteChrome(input.active)}
