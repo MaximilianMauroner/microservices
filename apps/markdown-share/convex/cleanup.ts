@@ -4,6 +4,7 @@ import { v } from "convex/values";
 import { findDocument } from "./documentAccess";
 import { presence } from "./presence";
 import { ensureCapabilityClaim } from "./capabilities";
+import { LEGACY_TOKEN_PATTERN } from "./constants";
 
 export const expire = internalMutation({
   args: { token: v.string(), expectedExpiresAt: v.number() },
@@ -19,7 +20,9 @@ export const expire = internalMutation({
       return null;
     }
 
-    await ensureCapabilityClaim(ctx, args.token, document.createdAt);
+    if (LEGACY_TOKEN_PATTERN.test(args.token)) {
+      await ensureCapabilityClaim(ctx, args.token, document.createdAt);
+    }
     await ctx.runMutation(components.prosemirrorSync.lib.deleteDocument, {
       id: args.token,
     });
