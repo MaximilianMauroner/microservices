@@ -13,3 +13,16 @@ export const backfill = internalMutation({
     return documents.length;
   },
 });
+
+export const removeObsoleteServerClaims = internalMutation({
+  args: {},
+  returns: v.number(),
+  handler: async (ctx) => {
+    const claims = await ctx.db.query("capabilityClaims").take(500);
+    const obsolete = claims.filter((claim) => claim.token === undefined);
+    for (const claim of obsolete) {
+      await ctx.db.delete(claim._id);
+    }
+    return obsolete.length;
+  },
+});
