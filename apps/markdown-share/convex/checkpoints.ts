@@ -5,7 +5,7 @@ import {
   MAX_CHECKPOINTS,
   MAX_MARKDOWN_LENGTH,
 } from "./constants";
-import { requireDocument, requireLiveDocument } from "./documentAccess";
+import { requireLiveDocument } from "./documentAccess";
 
 const checkpointSummary = v.object({
   _id: v.id("checkpoints"),
@@ -89,7 +89,7 @@ export const list = query({
   args: { token: v.string() },
   returns: v.array(checkpointSummary),
   handler: async (ctx, args) => {
-    const document = await requireDocument(ctx, args.token);
+    const document = await requireLiveDocument(ctx, args.token);
     const checkpoints = await ctx.db
       .query("checkpoints")
       .withIndex("by_document_and_created_at", (index) =>
@@ -118,7 +118,7 @@ export const compare = query({
     newer: checkpointWithContent,
   }),
   handler: async (ctx, args) => {
-    const document = await requireDocument(ctx, args.token);
+    const document = await requireLiveDocument(ctx, args.token);
     if (args.olderId === args.newerId) {
       throw invalidCheckpoint("Choose two different checkpoints.");
     }

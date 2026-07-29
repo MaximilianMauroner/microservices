@@ -12,6 +12,7 @@
   --line: #d9d3c7;
   --accent: #ea5b34;
   --green: #2b8467;
+  --app-height: 100dvh;
 }
 
 * {
@@ -197,6 +198,7 @@ button:disabled {
 .editor-shell {
   height: 100vh;
   height: 100dvh;
+  height: var(--app-height, 100dvh);
   overflow: hidden;
   display: grid;
   grid-template-rows: 44px minmax(0, 1fr);
@@ -490,6 +492,7 @@ button:disabled {
 .editor-shell.preview-only {
   height: 100vh;
   height: 100dvh;
+  height: var(--app-height, 100dvh);
   overflow: hidden;
   grid-template-rows: minmax(0, 1fr);
 }
@@ -516,6 +519,7 @@ button:disabled {
 .preview-only #print-preview {
   height: 100vh;
   height: 100dvh;
+  height: var(--app-height, 100dvh);
 }
 
 .preview-mode-exit {
@@ -876,6 +880,7 @@ button:disabled {
   .editor-shell {
     height: 100svh;
     height: 100dvh;
+    height: var(--app-height, 100dvh);
     min-height: 0;
     grid-template-rows: calc(44px + env(safe-area-inset-top)) minmax(0, 1fr);
     overflow: hidden;
@@ -1053,6 +1058,10 @@ button:disabled {
     right: max(8px, env(safe-area-inset-right));
   }
 
+  .editor-shell.preview-only #print-preview {
+    padding-top: calc(62px + env(safe-area-inset-top));
+  }
+
   .editor-scroll,
   .preview-scroll {
     height: 100%;
@@ -1065,10 +1074,6 @@ button:disabled {
 }
 
 @media (max-width: 600px) {
-  .editor-shell.preview-only #print-preview {
-    padding-top: 70px;
-  }
-
   .landing-shell,
   .status-shell {
     padding: 18px;
@@ -1149,6 +1154,10 @@ button:disabled {
     height: auto;
     overflow: visible;
     background: white;
+  }
+
+  .editor-shell .preview-panel.mobile-inactive {
+    display: block !important;
   }
 
   .topbar,
