@@ -204,7 +204,36 @@ describe("checkpoint history", () => {
 });
 
 describe("editor protocol and retention", () => {
-  it("blocks public document, editor, and checkpoint reads at expiry", async () => {
+  it("schedules one expiry transition at document creation", async () => {
+    vi.useFakeTimers({ now: 8_000 });
+    const test = setup();
+    const created = await test.mutation(api.documents.create, {
+      filename: "scheduled-expiry.md",
+      markdown: "temporary",
+    });
+
+    const scheduled = await test.run(async (ctx) =>
+      await ctx.db.system.query("_scheduled_functions").collect(),
+    );
+    expect(scheduled).toMatchObject([
+      {
+        name: "cleanup:expire",
+        scheduledTime: created.expiresAt,
+        args: [{ token: created.token }],
+        state: { kind: "pending" },
+      },
+    ]);
+
+    await test.finishAllScheduledFunctions(() => vi.runAllTimers());
+    await expect(
+      test.query(api.documents.get, { token: created.token }),
+    ).resolves.toBeNull();
+    await expect(
+      test.query(api.editor.getSnapshot, { id: created.token }),
+    ).rejects.toThrow("expired");
+  });
+
+  it("keeps reads database-driven until the expiry transition", async () => {
     vi.useFakeTimers({ now: 9_000 });
     const test = setup();
     const created = await test.mutation(api.documents.create, {
@@ -223,6 +252,18 @@ describe("editor protocol and retention", () => {
     });
 
     vi.setSystemTime(created.expiresAt);
+
+    await expect(
+      test.query(api.documents.get, { token: created.token }),
+    ).resolves.not.toBeNull();
+    await expect(
+      test.query(api.checkpoints.list, { token: created.token }),
+    ).resolves.toHaveLength(2);
+
+    await test.mutation(internal.cleanup.expire, {
+      token: created.token,
+      expectedExpiresAt: created.expiresAt,
+    });
 
     await expect(
       test.query(api.documents.get, { token: created.token }),
@@ -248,7 +289,7 @@ describe("editor protocol and retention", () => {
     ).rejects.toThrow("expired");
   });
 
-  it("extends expiry only after accepted steps and ignores stale cleanup", async () => {
+  it("extends expiry and reschedules once at the previous deadline", async () => {
     vi.useFakeTimers({ now: 10_000 });
     const test = setup();
     const markdown = "hello";
@@ -258,7 +299,7 @@ describe("editor protocol and retention", () => {
     });
     const oldDeadline = created.expiresAt;
 
-    vi.setSystemTime(25_000);
+    vi.advanceTimersByTime(15_000);
     await expect(
       test.mutation(api.editor.submitSteps, {
         id: created.token,
@@ -272,15 +313,36 @@ describe("editor protocol and retention", () => {
       token: created.token,
     });
     expect(extended?.expiresAt).toBe(25_000 + RETENTION_MS);
+    const scheduledBeforeDeadline = await test.run(async (ctx) =>
+      await ctx.db.system.query("_scheduled_functions").collect(),
+    );
+    expect(
+      scheduledBeforeDeadline.filter((job) => job.state.kind === "pending"),
+    ).toHaveLength(1);
 
-    vi.setSystemTime(oldDeadline);
-    await test.mutation(internal.cleanup.expire, {
-      token: created.token,
-      expectedExpiresAt: oldDeadline,
-    });
+    vi.advanceTimersByTime(oldDeadline - 25_000);
+    await test.finishInProgressScheduledFunctions();
     expect(
       await test.query(api.documents.get, { token: created.token }),
     ).not.toBeNull();
+    const scheduledAfterDeadline = await test.run(async (ctx) =>
+      await ctx.db.system.query("_scheduled_functions").collect(),
+    );
+    expect(
+      scheduledAfterDeadline.filter((job) => job.state.kind === "pending"),
+    ).toMatchObject([
+      {
+        name: "cleanup:expire",
+        scheduledTime: extended?.expiresAt,
+        args: [{ token: created.token }],
+      },
+    ]);
+
+    vi.advanceTimersByTime((extended?.expiresAt ?? oldDeadline) - oldDeadline);
+    await test.finishInProgressScheduledFunctions();
+    await expect(
+      test.query(api.documents.get, { token: created.token }),
+    ).resolves.toBeNull();
   });
 
   it("rejects expired edits and removes metadata, sync data, and presence", async () => {
@@ -306,6 +368,10 @@ describe("editor protocol and retention", () => {
     ).toMatchObject([{ userId: "per-tab-id", name: "Amber Fox 12" }]);
 
     vi.setSystemTime(created.expiresAt + 1);
+    await test.mutation(internal.cleanup.expire, {
+      token: created.token,
+      expectedExpiresAt: created.expiresAt,
+    });
     await expect(
       test.mutation(api.editor.submitSteps, {
         id: created.token,
@@ -315,10 +381,6 @@ describe("editor protocol and retention", () => {
       }),
     ).rejects.toThrow("expired");
 
-    await test.mutation(internal.cleanup.expire, {
-      token: created.token,
-      expectedExpiresAt: created.expiresAt,
-    });
     expect(
       await test.query(api.documents.get, { token: created.token }),
     ).toBeNull();

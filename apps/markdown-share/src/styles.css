@@ -1160,6 +1160,10 @@ button:disabled {
     display: block !important;
   }
 
+  .editor-shell.preview-only #print-preview {
+    padding: 0;
+  }
+
   .topbar,
   .mobile-workspace-rail,
   .source-panel,

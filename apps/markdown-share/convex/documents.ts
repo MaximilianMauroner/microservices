@@ -9,7 +9,7 @@ import {
   MAX_MARKDOWN_LENGTH,
   RETENTION_MS,
 } from "./constants";
-import { findDocument, findLiveDocument } from "./documentAccess";
+import { findDocument } from "./documentAccess";
 import {
   claimLegacyCapability,
   createServerCapability,
@@ -92,7 +92,7 @@ export const create = mutation({
       token = await createServerCapability(ctx, now);
     }
     const expiresAt = now + RETENTION_MS;
-    const documentId = await ctx.db.insert("documents", {
+    await ctx.db.insert("documents", {
       token,
       filename: args.filename,
       createdAt: now,
@@ -113,12 +113,7 @@ export const create = mutation({
       ],
     });
 
-    const cleanupJobId = await ctx.scheduler.runAt(
-      expiresAt,
-      internal.cleanup.expire,
-      { token, expectedExpiresAt: expiresAt },
-    );
-    await ctx.db.patch("documents", documentId, { cleanupJobId });
+    await ctx.scheduler.runAt(expiresAt, internal.cleanup.expire, { token });
 
     return toPublicDocument({
       token,
@@ -134,7 +129,7 @@ export const get = query({
   args: { token: v.string() },
   returns: v.union(publicDocument, v.null()),
   handler: async (ctx, args) => {
-    const document = await findLiveDocument(ctx, args.token);
+    const document = await findDocument(ctx, args.token);
     if (!document) {
       return null;
     }

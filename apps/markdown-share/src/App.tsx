@@ -604,7 +604,23 @@ function EditorWorkspace({
   const closeCheckpointComparison = useCallback(() => {
     setIsComparing(false);
     window.requestAnimationFrame(() => {
-      comparisonOpenerRef.current?.focus();
+      const storedOpener = comparisonOpenerRef.current;
+      const visibleHistoryTrigger = [
+        desktopHistoryRef.current,
+        mobileHistoryRef.current,
+      ]
+        .map((control) =>
+          control?.querySelector<HTMLElement>(".history-trigger"),
+        )
+        .find(
+          (trigger): trigger is HTMLElement =>
+            trigger !== undefined && trigger.offsetParent !== null,
+        );
+      const focusTarget =
+        storedOpener !== null && storedOpener.offsetParent !== null
+          ? storedOpener
+          : visibleHistoryTrigger;
+      focusTarget?.focus();
       comparisonOpenerRef.current = null;
     });
   }, []);
