@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "revision": "seed-2026-07-27",
-  "updatedAt": "2026-07-27T00:00:00.000Z",
+  "revision": "seed-2026-07-29",
+  "updatedAt": "2026-07-29T00:00:00.000Z",
   "groups": [
     {
       "id": "publishing",
@@ -49,6 +49,36 @@
         "url": "https://tools.mauroner.net/health/publisher"
       },
       "privateNotes": "Runs inside the unified platform service behind Cloudflare Access."
+    },
+    {
+      "id": "markdown-share",
+      "groupId": "publishing",
+      "name": "Markdown Share",
+      "description": "Temporary collaborative Markdown documents with live preview, checkpoints, and clean PDF export.",
+      "order": 1,
+      "visibility": "public",
+      "lifecycle": "active",
+      "links": [
+        {
+          "id": "editor",
+          "label": "Open Markdown Share",
+          "url": "https://markdown-share-alpha.mauroner.workers.dev/",
+          "access": "public"
+        },
+        {
+          "id": "documents",
+          "label": "View documents",
+          "url": "https://tools.mauroner.net/manage/documents",
+          "access": "restricted"
+        }
+      ],
+      "monitor": {
+        "enabled": true,
+        "paused": false,
+        "scope": "public",
+        "url": "https://markdown-share-alpha.mauroner.workers.dev/"
+      },
+      "privateNotes": "Documents expire seven days after the latest accepted edit; the inventory is restricted by Cloudflare Access."
     },
     {
       "id": "field-guide-console",
