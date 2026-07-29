@@ -10,6 +10,7 @@ export function pageShell(input: {
   description: string;
   body: string;
   operations?: boolean;
+  privatePage?: boolean;
   active: SuiteDestination;
   canonicalUrl?: string;
   themeColor?: string;
@@ -23,7 +24,7 @@ export function pageShell(input: {
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="${escapeHtml(input.description)}">
-    ${input.operations ? '<meta name="robots" content="noindex, nofollow">' : input.canonicalUrl ? `<link rel="canonical" href="${escapeHtml(input.canonicalUrl)}">
+    ${input.operations || input.privatePage ? '<meta name="robots" content="noindex, nofollow">' : input.canonicalUrl ? `<link rel="canonical" href="${escapeHtml(input.canonicalUrl)}">
     <meta property="og:title" content="${escapeHtml(input.title)}">
     <meta property="og:description" content="${escapeHtml(input.description)}">
     <meta property="og:url" content="${escapeHtml(input.canonicalUrl)}">

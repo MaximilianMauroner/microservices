@@ -53,6 +53,7 @@ export function renderOperationsPage(model: OperationsPageModel): string {
           <p class="eyebrow">Catalog administration</p>
           <h1 id="ops-title">Tools operations</h1>
           <p><span class="environment">Cloudflare Access protected</span> · Signed in as ${escapeHtml(model.actor)}. Edit the curated directory and monitor settings. Changes use optimistic concurrency and are never retried automatically.</p>
+          <div class="form-actions admin-heading-actions"><a class="button button-link" href="/manage/documents">View Markdown documents</a></div>
         </div>
         <dl class="snapshot-meta">
           <div><dt>Catalog revision</dt><dd data-current-revision>${escapeHtml(model.revision)}</dd></div>

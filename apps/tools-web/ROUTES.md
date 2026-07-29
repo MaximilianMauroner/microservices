@@ -26,6 +26,7 @@ Every `/manage`, `/manage/*`, legacy `/ops`, legacy `/ops/*`, and `/api/ops/*` r
 
 | Method | Path | Response / operation |
 |---|---|---|
+| `GET`, `HEAD` | `/manage/documents` | Read-only active Markdown Share inventory fetched server-side from the bearer-protected Convex admin endpoint. |
 | `GET` | `/manage`, `/manage/*` | Server-rendered management UI from the latest catalog plus prepared private checker state. |
 | `GET`, `HEAD` | `/ops`, `/ops/*` | Authenticated `308` redirect to the corresponding `/manage` path with query preserved. |
 | `GET` | `/api/ops/catalog` | Full `CatalogDocument` plus an `ETag` containing its revision. |

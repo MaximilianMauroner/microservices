@@ -465,6 +465,7 @@ h1 { margin-bottom: 26px; font-size: clamp(3rem, 8vw, 6.7rem); }
   font-size: .78rem;
   font-weight: 800;
 }
+.button-link { display: inline-flex; align-items: center; justify-content: center; gap: 6px; text-decoration: none; }
 .button:hover { border-color: var(--ink); }
 .button--primary { border-color: var(--ink); background: var(--ink); color: white; }
 .button--danger { border-color: #d7a19d; color: var(--red); }
@@ -473,6 +474,28 @@ h1 { margin-bottom: 26px; font-size: clamp(3rem, 8vw, 6.7rem); }
 .notice--pending { background: var(--amber-soft); color: var(--amber); }
 .notice--success { background: var(--accent-soft); color: var(--accent); }
 .notice--error { background: var(--red-soft); color: var(--red); }
+.admin-heading-actions { margin-top: 18px; }
+.markdown-documents { margin-top: 42px; }
+.markdown-document-list { display: grid; gap: 10px; }
+.markdown-document-card {
+  display: grid;
+  grid-template-columns: minmax(180px, .8fr) minmax(420px, 1.6fr) auto;
+  gap: 22px;
+  align-items: center;
+  padding: 17px 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.markdown-document-card__name { min-width: 0; }
+.markdown-document-card__name h3 { margin: 0 0 4px; font: 800 .9rem var(--mono); overflow-wrap: anywhere; }
+.markdown-document-card__name span { color: var(--muted); font-size: .72rem; }
+.markdown-document-meta { display: grid; grid-template-columns: .55fr 1fr .8fr; gap: 18px; margin: 0; }
+.markdown-document-meta div { min-width: 0; }
+.markdown-document-meta dt { margin-bottom: 3px; color: var(--muted); font-size: .66rem; font-weight: 750; letter-spacing: .06em; text-transform: uppercase; }
+.markdown-document-meta dd { margin: 0; font: .73rem var(--mono); overflow-wrap: anywhere; }
+.markdown-empty { padding: 42px 20px; border: 1px dashed var(--line); border-radius: var(--radius); text-align: center; }
 .collection-state { color: var(--muted); font-family: var(--mono); font-size: .78rem; }
 .timeline { display: grid; gap: 14px; margin-bottom: 14px; }
 .history-day { padding: 22px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow); }
@@ -532,9 +555,19 @@ h1 { margin-bottom: 26px; font-size: clamp(3rem, 8vw, 6.7rem); }
   .tool-grid { margin-left: 42px; grid-template-columns: 1fr; }
   .tool-card__top, .editor-card__heading { align-items: flex-start; flex-direction: column; }
   .ops-heading { grid-template-columns: 1fr; }
+  .markdown-admin { padding-top: 30px; }
+  .markdown-admin .ops-heading { gap: 20px; }
+  .markdown-admin .ops-heading h1 { margin-bottom: 10px; font-size: clamp(2.35rem, 12vw, 3.2rem); }
+  .markdown-admin .admin-heading-actions { margin-top: 14px; }
+  .markdown-admin .snapshot-meta { padding: 14px; }
+  .markdown-admin .snapshot-meta div { padding-block: 4px; }
+  .markdown-admin .markdown-documents { margin-top: 28px; }
+  .markdown-admin .section-heading { align-items: start; margin-bottom: 12px; }
   .edit-form { grid-template-columns: 1fr; }
   .record-toolbar, .manage-layout, .link-row { grid-template-columns: 1fr; }
   .history-columns, .audit-record { grid-template-columns: 1fr; }
+  .markdown-document-card { grid-template-columns: 1fr auto; gap: 14px; }
+  .markdown-document-meta { grid-column: 1 / -1; grid-row: 2; }
   .span-all { grid-column: auto; }
   .editor-card__heading .status-detail { text-align: left; }
   .status-wrap { width: min(100% - 24px, 1074px); }
@@ -574,6 +607,10 @@ h1 { margin-bottom: 26px; font-size: clamp(3rem, 8vw, 6.7rem); }
     text-align: left;
   }
   .service-meta > :last-child { grid-column: 2; grid-row: 1; }
+  .markdown-document-card { grid-template-columns: 1fr; }
+  .markdown-document-meta { grid-column: auto; grid-row: auto; grid-template-columns: 1fr 1fr; }
+  .markdown-document-meta > :last-child { grid-column: 1 / -1; }
+  .markdown-document-card > .button { width: 100%; }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -6,6 +6,10 @@ import {
 import { describe, expect, it } from "vitest";
 import { createApp, type AppLogger } from "../src/app.js";
 import { AccessDeniedError, type AccessVerifier } from "../src/auth.js";
+import {
+  MarkdownAdminUnavailableError,
+  type MarkdownAdminReader
+} from "../src/markdown-admin.js";
 import { WebStorage } from "../src/storage.js";
 import { catalog, MemoryBucket, privateSnapshot, publicSnapshot } from "./fixtures.js";
 
@@ -18,6 +22,25 @@ const allowed: AccessVerifier = {
 const denied: AccessVerifier = {
   async verify() {
     throw new AccessDeniedError();
+  }
+};
+
+const markdownAdmin: MarkdownAdminReader = {
+  async list() {
+    return {
+      generatedAt: Date.UTC(2026, 6, 29, 9),
+      truncated: false,
+      documents: [
+        {
+          token: "j57dzxnpat8g9sbksewde1dznh8bczet",
+          filename: "private-notes.md",
+          createdAt: Date.UTC(2026, 6, 28, 9),
+          updatedAt: Date.UTC(2026, 6, 29, 8),
+          expiresAt: Date.UTC(2026, 7, 5, 8),
+          checkpointCount: 2
+        }
+      ]
+    };
   }
 };
 
@@ -103,6 +126,19 @@ describe("tools web routes", () => {
     );
     expect(manage.status).toBe(200);
     expect(await manage.text()).toContain('aria-current="page">Manage');
+
+    const admin = await app(
+      new Request("https://tools.example.test/manage/documents")
+    );
+    const adminHtml = await admin.text();
+    expect(admin.status).toBe(200);
+    expect(admin.headers.get("cache-control")).toBe("private, no-store");
+    expect(adminHtml).toContain("Markdown documents");
+    expect(adminHtml).toContain("private-notes.md");
+    expect(adminHtml).toContain(
+      "https://markdown.example.test/d/private-notes.md--j57dzxnpat8g9sbksewde1dznh8bczet"
+    );
+    expect(adminHtml).not.toContain("document body");
   });
 
   it("requires independently verified Access assertions for all ops routes", async () => {
@@ -111,6 +147,7 @@ describe("tools web routes", () => {
     for (const path of [
       "/manage",
       "/manage/anything",
+      "/manage/documents",
       "/ops",
       "/ops/anything",
       "/api/ops/catalog"
@@ -118,6 +155,23 @@ describe("tools web routes", () => {
       const response = await app(new Request(`https://tools.example.test${path}`));
       expect(response.status).toBe(401);
     }
+  });
+
+  it("fails closed when the private Markdown inventory is unavailable", async () => {
+    const bucket = seededBucket();
+    const unavailable: MarkdownAdminReader = {
+      async list() {
+        throw new MarkdownAdminUnavailableError();
+      }
+    };
+    const app = testApp(bucket, allowed, quiet, unavailable);
+    const response = await app(
+      new Request("https://tools.example.test/manage/documents")
+    );
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      error: "markdown_admin_unavailable"
+    });
   });
 
   it("enforces exact-origin JSON CSRF boundaries after Access authentication", async () => {
@@ -597,11 +651,14 @@ const quiet: AppLogger = {
 function testApp(
   bucket: MemoryBucket,
   access: AccessVerifier,
-  logger: AppLogger = quiet
+  logger: AppLogger = quiet,
+  markdownReader: MarkdownAdminReader = markdownAdmin
 ) {
   return createApp({
     storage: new WebStorage(bucket),
     access,
+    markdownAdmin: markdownReader,
+    markdownSharePublicOrigin: "https://markdown.example.test",
     trustedOrigin: "https://tools.example.test",
     logger
   });

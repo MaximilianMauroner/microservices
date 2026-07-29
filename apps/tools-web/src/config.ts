@@ -14,6 +14,11 @@ export interface ToolsWebConfig {
     audience: string[];
     jwksUrl: string;
   };
+  markdownShare: {
+    adminEndpoint: string;
+    adminToken: string;
+    publicOrigin: string;
+  };
 }
 
 export function loadConfig(
@@ -45,6 +50,20 @@ export function loadConfig(
       jwksUrl: env.CF_ACCESS_JWKS_URL
         ? parseHttpsUrl(env.CF_ACCESS_JWKS_URL, "CF_ACCESS_JWKS_URL")
         : new URL("/cdn-cgi/access/certs", issuer).toString()
+    },
+    markdownShare: {
+      adminEndpoint: parseHttpsUrl(
+        required(env, "MARKDOWN_SHARE_ADMIN_ENDPOINT"),
+        "MARKDOWN_SHARE_ADMIN_ENDPOINT"
+      ),
+      adminToken: parseSecret(
+        required(env, "MARKDOWN_SHARE_ADMIN_TOKEN"),
+        "MARKDOWN_SHARE_ADMIN_TOKEN"
+      ),
+      publicOrigin: parseOrigin(
+        required(env, "MARKDOWN_SHARE_PUBLIC_ORIGIN"),
+        "MARKDOWN_SHARE_PUBLIC_ORIGIN"
+      )
     }
   };
 }
@@ -100,10 +119,17 @@ function parseHttpsUrl(value: string, name: string): string {
   } catch {
     throw new Error(`${name} must be an HTTPS URL`);
   }
-  if (url.protocol !== "https:" || url.username || url.password) {
+  if (url.protocol !== "https:" || url.username || url.password || url.hash) {
     throw new Error(`${name} must be an HTTPS URL`);
   }
   return url.toString();
+}
+
+function parseSecret(value: string, name: string): string {
+  if (value.length < 32 || value.length > 512) {
+    throw new Error(`${name} must contain between 32 and 512 characters`);
+  }
+  return value;
 }
 
 function optionalBoolean(value: string | undefined, name: string): boolean {

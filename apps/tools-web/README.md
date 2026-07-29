@@ -19,6 +19,12 @@ Required platform Access variables:
 - `CF_ACCESS_REVIEW_AUDIENCE`
 - `CF_ACCESS_JWKS_URL`, optional
 
+The private Markdown inventory also requires:
+
+- `MARKDOWN_SHARE_ADMIN_ENDPOINT`, the production Convex HTTP Action URL
+- `MARKDOWN_SHARE_ADMIN_TOKEN`, a 32+ character service secret shared with Convex
+- `MARKDOWN_SHARE_PUBLIC_ORIGIN`, the Markdown Share browser origin
+
 Production fails startup unless all three route-family variables contain one
 unique tag each. The application
 validates the signature, issuer, family audience, expiry, and actor before
@@ -73,3 +79,6 @@ are edited as validated structured rows with an optional synchronized JSON
 view. History and audit requests have an eight-second timeout and explicit
 accessible retry; mutations are never retried automatically. Structural no-op
 mutations return the current revision without catalog or audit writes.
+`/manage/documents` is a read-only Markdown Share inventory. It is protected by the same
+Manage Access audience, fetches active document metadata through a bearer-
+protected Convex HTTP Action, and never retrieves document bodies.

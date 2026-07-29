@@ -9,7 +9,10 @@ const valid = {
   S3_SECRET_ACCESS_KEY: "secret",
   CF_ACCESS_ISSUER: "https://team.cloudflareaccess.com",
   CF_ACCESS_AUDIENCE: "audience",
-  PUBLIC_ORIGIN: "https://tools.example.test"
+  PUBLIC_ORIGIN: "https://tools.example.test",
+  MARKDOWN_SHARE_ADMIN_ENDPOINT: "https://convex.example.test/admin/documents",
+  MARKDOWN_SHARE_ADMIN_TOKEN: "a".repeat(32),
+  MARKDOWN_SHARE_PUBLIC_ORIGIN: "https://markdown.example.test"
 };
 
 describe("configuration", () => {
@@ -29,6 +32,11 @@ describe("configuration", () => {
         issuer: "https://team.cloudflareaccess.com",
         audience: ["audience"],
         jwksUrl: "https://team.cloudflareaccess.com/cdn-cgi/access/certs"
+      },
+      markdownShare: {
+        adminEndpoint: "https://convex.example.test/admin/documents",
+        adminToken: "a".repeat(32),
+        publicOrigin: "https://markdown.example.test"
       }
     });
   });
@@ -53,5 +61,9 @@ describe("configuration", () => {
       .toThrow("PUBLIC_ORIGIN must be an HTTPS origin");
     expect(() => loadConfig({ ...valid, PUBLIC_ORIGIN: "" }))
       .toThrow("Missing required environment variable: PUBLIC_ORIGIN");
+    expect(() => loadConfig({ ...valid, MARKDOWN_SHARE_ADMIN_TOKEN: "short" }))
+      .toThrow("MARKDOWN_SHARE_ADMIN_TOKEN must contain between 32 and 512 characters");
+    expect(() => loadConfig({ ...valid, MARKDOWN_SHARE_PUBLIC_ORIGIN: "https://markdown.example.test/path" }))
+      .toThrow("MARKDOWN_SHARE_PUBLIC_ORIGIN must be an HTTPS origin");
   });
 });
