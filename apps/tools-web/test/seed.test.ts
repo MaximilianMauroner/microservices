@@ -27,10 +27,11 @@ describe("initial catalog", () => {
     expect(catalog.entries.map(({ id }) => id).sort()).toEqual([
       "artifact-publisher",
       "field-guide-console",
+      "markdown-share",
       "network-console",
       "tools-directory"
     ]);
-    expect(catalog.entries).toHaveLength(4);
+    expect(catalog.entries).toHaveLength(5);
     expect(catalog.entries.some(({ id }) => id === "tools-checker")).toBe(false);
     expect(
       Object.fromEntries(
@@ -39,6 +40,7 @@ describe("initial catalog", () => {
     ).toMatchObject({
       "artifact-publisher": "https://tools.mauroner.net/health/publisher",
       "field-guide-console": "https://tools.mauroner.net/health/review",
+      "markdown-share": "https://markdown-share-alpha.mauroner.workers.dev/",
       "tools-directory": "https://tools.mauroner.net/health/tools",
     });
     expect(
