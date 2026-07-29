@@ -1,4 +1,4 @@
-import { components, internal } from "./_generated/api";
+import { components } from "./_generated/api";
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { RETENTION_MS } from "./constants";
@@ -104,18 +104,9 @@ export const submitSteps = mutation({
       const now = Date.now();
       const expiresAt = now + RETENTION_MS;
 
-      if (document.cleanupJobId) {
-        await ctx.scheduler.cancel(document.cleanupJobId);
-      }
-      const cleanupJobId = await ctx.scheduler.runAt(
-        expiresAt,
-        internal.cleanup.expire,
-        { token: args.id, expectedExpiresAt: expiresAt },
-      );
       await ctx.db.patch("documents", document._id, {
         updatedAt: now,
         expiresAt,
-        cleanupJobId,
       });
     }
 
