@@ -9,6 +9,11 @@ import {
 import { AccessDeniedError, type AccessVerifier } from "./auth.js";
 import { BucketReadError } from "./bucket.js";
 import {
+  MarkdownAdminUnavailableError,
+  type MarkdownAdminReader,
+  type MarkdownAdminSnapshot
+} from "./markdown-admin.js";
+import {
   addEntry,
   addGroup,
   archiveEntry,
@@ -27,6 +32,7 @@ import {
   type WebStorage
 } from "./storage.js";
 import {
+  renderMarkdownAdminPage,
   renderOperationsPage,
   renderPublicPage,
   renderStatusPage
@@ -65,6 +71,11 @@ export interface PageRenderer {
   public(snapshot: PublicSnapshotDocument, publicOrigin: string): string;
   status(snapshot: PublicSnapshotDocument, publicOrigin: string): string;
   ops(snapshot: PrivateSnapshotDocument, actor: string, revision: string): string;
+  markdownDocuments(
+    snapshot: MarkdownAdminSnapshot,
+    actor: string,
+    publicOrigin: string
+  ): string;
 }
 
 export interface AppLogger {
@@ -75,6 +86,8 @@ export interface AppLogger {
 export function createApp(options: {
   storage: WebStorage;
   access: AccessVerifier;
+  markdownAdmin: MarkdownAdminReader;
+  markdownSharePublicOrigin: string;
   trustedOrigin: string;
   renderer?: PageRenderer;
   logger?: AppLogger;
@@ -92,6 +105,8 @@ export function createApp(options: {
         url,
         options.storage,
         options.access,
+        options.markdownAdmin,
+        options.markdownSharePublicOrigin,
         renderer,
         options.trustedOrigin
       );
@@ -122,6 +137,8 @@ async function route(
   url: URL,
   storage: WebStorage,
   access: AccessVerifier,
+  markdownAdmin: MarkdownAdminReader,
+  markdownSharePublicOrigin: string,
   renderer: PageRenderer,
   trustedOrigin: string
 ): Promise<Response> {
@@ -150,6 +167,19 @@ async function route(
 
   if (isProtectedPath(url.pathname)) {
     const actor = await access.verify(request);
+    if (
+      readMethod &&
+      url.pathname === "/manage/documents"
+    ) {
+      return html(
+        renderer.markdownDocuments(
+          await markdownAdmin.list(),
+          actor.id,
+          markdownSharePublicOrigin
+        ),
+        true
+      );
+    }
     if (
       readMethod &&
       (url.pathname === "/manage" || url.pathname.startsWith("/manage/") ||
@@ -834,6 +864,9 @@ function errorResponse(error: unknown): Response {
   if (error instanceof BucketReadError) {
     return json({ error: "storage_unavailable" }, { status: 503 });
   }
+  if (error instanceof MarkdownAdminUnavailableError) {
+    return json({ error: "markdown_admin_unavailable" }, { status: 503 });
+  }
   if (error instanceof Error && error.name === "SchemaDecodeError") {
     return json({ error: "invalid_catalog" }, { status: 400 });
   }
@@ -866,6 +899,9 @@ const defaultRenderer: PageRenderer = {
       actor,
       revision
     });
+  },
+  markdownDocuments(snapshot, actor, publicOrigin) {
+    return renderMarkdownAdminPage({ snapshot, actor, publicOrigin });
   }
 };
 

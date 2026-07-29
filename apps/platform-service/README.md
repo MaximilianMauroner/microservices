@@ -6,7 +6,7 @@ moving their data:
 
 | Route | Module |
 | --- | --- |
-| `/`, `/status`, `/manage`, `/api/ops/*` | Tools catalog, status, and management |
+| `/`, `/status`, `/manage`, `/api/ops/*` | Tools catalog, status, management, and private Markdown inventory |
 | `/publish`, `/artifacts/*`, `/files/*` | Artifact publisher browser and public capability-read routes |
 | `/review`, `/api/review/*` | Field-guide review browser routes |
 | `/api/uploads*`, `/api/agent*` | Native-token machine APIs |
@@ -23,6 +23,10 @@ upload/list/revoke surfaces, and non-read delivery requests require a valid
 `Cf-Access-Jwt-Assertion`. Legacy `/p/*` and `/f/*` capability reads redirect
 with `308` before Access verification; protected `/uploads` and `/ops/*`
 redirects occur only after verification.
+
+`/manage/documents` uses the existing Manage Access application and renders a
+read-only Markdown Share inventory. The platform calls a bearer-protected
+Convex HTTP Action server-to-server and does not request Markdown bodies.
 
 `/api/uploads*` and `/api/agent*` intentionally bypass browser Access so
 automation does not need a browser assertion. They remain protected by their

@@ -47,6 +47,7 @@ export function loadPlatformConfig(env: Environment = process.env) {
     tools,
     artifact,
     fieldGuide,
+    markdownShare: tools.markdownShare,
     checker,
     checkerIntervalMs: positiveInteger(
       env.CHECKER_INTERVAL_MS,

@@ -767,6 +767,7 @@ button:disabled {
 .markdown-body {
   color: #282723;
   font: 400 1rem/1.72 "Manrope", sans-serif;
+  font-synthesis: style;
   overflow-wrap: anywhere;
 }
 
@@ -1134,7 +1135,21 @@ button:disabled {
 
 @media print {
   @page {
-    margin: 18mm;
+    margin: 10mm 12mm 14mm;
+
+    @bottom-center {
+      content: counter(page) " / " counter(pages);
+      color: #666;
+      font: 500 8pt/1 Arial, sans-serif;
+    }
+  }
+
+  body > :not(#root),
+  #root > :not(.editor-shell),
+  .editor-shell > :not(.workspace),
+  .workspace > :not(.preview-panel),
+  .preview-panel > :not(#print-preview) {
+    display: none !important;
   }
 
   html,
@@ -1186,7 +1201,114 @@ button:disabled {
   }
 
   #print-preview a {
-    color: inherit;
+    color: #b84328;
     text-decoration: underline;
+  }
+
+  #print-preview.markdown-body {
+    color: #282723;
+    font: 400 10.5pt/1.62 "Manrope", sans-serif;
+    orphans: 3;
+    print-color-adjust: exact;
+    widows: 3;
+    -webkit-print-color-adjust: exact;
+  }
+
+  #print-preview.markdown-body > :first-child {
+    margin-top: 0;
+  }
+
+  #print-preview.markdown-body h1,
+  #print-preview.markdown-body h2,
+  #print-preview.markdown-body h3 {
+    break-after: avoid-page;
+    margin: 1.1em 0 0.42em;
+    font-family: "Newsreader", serif;
+    line-height: 1.06;
+    letter-spacing: -0.025em;
+  }
+
+  #print-preview.markdown-body h1 {
+    padding-bottom: 0.25em;
+    border-bottom: 2px solid #24231f;
+    font-size: 28pt;
+  }
+
+  #print-preview.markdown-body h2 {
+    font-size: 20pt;
+  }
+
+  #print-preview.markdown-body h3 {
+    font-size: 15pt;
+  }
+
+  #print-preview.markdown-body p,
+  #print-preview.markdown-body ul,
+  #print-preview.markdown-body ol,
+  #print-preview.markdown-body blockquote,
+  #print-preview.markdown-body pre,
+  #print-preview.markdown-body table {
+    margin-top: 0;
+    margin-bottom: 0.8em;
+  }
+
+  #print-preview.markdown-body ul,
+  #print-preview.markdown-body ol {
+    padding-left: 1.6em;
+  }
+
+  #print-preview.markdown-body li + li {
+    margin-top: 0.2em;
+  }
+
+  #print-preview.markdown-body blockquote {
+    padding-left: 1em;
+    border-left: 3px solid #ea5b34;
+    color: #625f57;
+  }
+
+  #print-preview.markdown-body pre,
+  #print-preview.markdown-body table,
+  #print-preview.markdown-body img {
+    break-inside: avoid-page;
+  }
+
+  #print-preview.markdown-body pre {
+    padding: 14px;
+    color: #f1ede4;
+    background: #292a27;
+    font: 400 9pt/1.5 "DM Mono", monospace;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  #print-preview.markdown-body code {
+    padding: 0.12em 0.32em;
+    background: #eee9df;
+    font-family: "DM Mono", monospace;
+    font-size: 0.86em;
+  }
+
+  #print-preview.markdown-body pre code {
+    padding: 0;
+    color: inherit;
+    background: transparent;
+    font: inherit;
+  }
+
+  #print-preview.markdown-body th,
+  #print-preview.markdown-body td {
+    padding: 6px 8px;
+    border-color: #d9d3c7;
+  }
+
+  #print-preview.markdown-body th {
+    background: #f3eee5;
+  }
+
+  #print-preview.markdown-body hr {
+    margin: 1.2em 0;
+    border: 0;
+    border-top: 1px solid #d9d3c7;
   }
 }

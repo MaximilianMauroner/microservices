@@ -254,6 +254,8 @@ function EditorWorkspace({
   const mobileHistoryRef = useRef<HTMLDivElement>(null);
   const comparisonOpenerRef = useRef<HTMLElement | null>(null);
   const scrollProgressRef = useRef(0);
+  const pendingScrollPaneRef = useRef<WorkspacePane | null>(null);
+  const scrollSyncFrameRef = useRef<number | null>(null);
   const ignoredScrollPaneRef = useRef<WorkspacePane | null>(null);
   const ignoredScrollFrameRef = useRef<number | null>(null);
   const checkpoints = useQuery(api.checkpoints.list, {
@@ -498,6 +500,9 @@ function EditorWorkspace({
 
   useEffect(
     () => () => {
+      if (scrollSyncFrameRef.current !== null) {
+        window.cancelAnimationFrame(scrollSyncFrameRef.current);
+      }
       if (ignoredScrollFrameRef.current !== null) {
         window.cancelAnimationFrame(ignoredScrollFrameRef.current);
       }
@@ -510,40 +515,62 @@ function EditorWorkspace({
       return;
     }
 
-    const source =
-      pane === "source" ? sourceScrollRef.current : previewScrollRef.current;
-    const targetPane: WorkspacePane = pane === "source" ? "preview" : "source";
-    const target =
-      targetPane === "source"
-        ? sourceScrollRef.current
-        : previewScrollRef.current;
-    if (!source) {
+    pendingScrollPaneRef.current = pane;
+    if (scrollSyncFrameRef.current !== null) {
       return;
     }
 
-    const progress = getScrollProgress(
-      source.scrollTop,
-      source.scrollHeight,
-      source.clientHeight,
-    );
-    scrollProgressRef.current = progress;
+    scrollSyncFrameRef.current = window.requestAnimationFrame(() => {
+      scrollSyncFrameRef.current = null;
+      const activePane = pendingScrollPaneRef.current;
+      pendingScrollPaneRef.current = null;
+      if (!activePane) {
+        return;
+      }
 
-    if (!target || target.clientHeight === 0) {
-      return;
-    }
+      const source =
+        activePane === "source"
+          ? sourceScrollRef.current
+          : previewScrollRef.current;
+      const targetPane: WorkspacePane =
+        activePane === "source" ? "preview" : "source";
+      const target =
+        targetPane === "source"
+          ? sourceScrollRef.current
+          : previewScrollRef.current;
+      if (!source) {
+        return;
+      }
 
-    ignoredScrollPaneRef.current = targetPane;
-    target.scrollTop = getScrollTop(
-      progress,
-      target.scrollHeight,
-      target.clientHeight,
-    );
-    if (ignoredScrollFrameRef.current !== null) {
-      window.cancelAnimationFrame(ignoredScrollFrameRef.current);
-    }
-    ignoredScrollFrameRef.current = window.requestAnimationFrame(() => {
-      ignoredScrollPaneRef.current = null;
-      ignoredScrollFrameRef.current = null;
+      const progress = getScrollProgress(
+        source.scrollTop,
+        source.scrollHeight,
+        source.clientHeight,
+      );
+      scrollProgressRef.current = progress;
+
+      if (!target || target.clientHeight === 0) {
+        return;
+      }
+
+      const nextScrollTop = getScrollTop(
+        progress,
+        target.scrollHeight,
+        target.clientHeight,
+      );
+      if (Math.abs(target.scrollTop - nextScrollTop) < 1) {
+        return;
+      }
+
+      ignoredScrollPaneRef.current = targetPane;
+      target.scrollTop = nextScrollTop;
+      if (ignoredScrollFrameRef.current !== null) {
+        window.cancelAnimationFrame(ignoredScrollFrameRef.current);
+      }
+      ignoredScrollFrameRef.current = window.requestAnimationFrame(() => {
+        ignoredScrollPaneRef.current = null;
+        ignoredScrollFrameRef.current = null;
+      });
     });
   };
 
@@ -614,7 +641,7 @@ function EditorWorkspace({
         )
         .find(
           (trigger): trigger is HTMLElement =>
-            trigger !== undefined && trigger.offsetParent !== null,
+            trigger != null && trigger.offsetParent !== null,
         );
       const focusTarget =
         storedOpener !== null && storedOpener.offsetParent !== null

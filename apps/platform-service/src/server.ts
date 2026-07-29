@@ -8,6 +8,7 @@ import { createRepository } from "../../field-guide-console/src/repository.ts";
 import { createApp as createToolsApp } from "../../tools-web/src/app.ts";
 import { createAccessVerifier } from "../../tools-web/src/auth.ts";
 import { createS3JsonBucket } from "../../tools-web/src/bucket.ts";
+import { createMarkdownAdminClient } from "../../tools-web/src/markdown-admin.ts";
 import { WebStorage } from "../../tools-web/src/storage.ts";
 import { executeChecker } from "../../../jobs/tools-checker/src/index.ts";
 import { createPlatformApp, accessAuthentication } from "./app.ts";
@@ -33,6 +34,10 @@ const access = {
   })
 };
 const toolsStorage = new WebStorage(createS3JsonBucket(config.tools.bucket));
+const markdownAdmin = createMarkdownAdminClient({
+  endpoint: config.markdownShare.adminEndpoint,
+  token: config.markdownShare.adminToken
+});
 const artifactStorage = createS3UploadStorage(config.artifact.s3);
 const activityTracker = new ActivityTracker();
 const fieldGuideHandle = await createRepository(config.fieldGuide);
@@ -43,6 +48,8 @@ const stylesheet = await readFile(
 const tools = createToolsApp({
   storage: toolsStorage,
   access: access.manage,
+  markdownAdmin,
+  markdownSharePublicOrigin: config.markdownShare.publicOrigin,
   trustedOrigin: config.publicOrigin
 });
 const fieldGuide = createFieldGuideApp({

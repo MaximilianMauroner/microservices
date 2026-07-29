@@ -203,6 +203,71 @@ describe("checkpoint history", () => {
   });
 });
 
+describe("private admin inventory", () => {
+  it("lists only active documents with checkpoint counts and newest edits first", async () => {
+    vi.useFakeTimers({ now: 10_000 });
+    const test = setup();
+    const older = await test.mutation(api.documents.create, {
+      filename: "older.md",
+      markdown: "old",
+    });
+    await test.mutation(api.checkpoints.create, {
+      token: older.token,
+      markdown: "old",
+      createdBy: "Amber Fox 12",
+    });
+    vi.setSystemTime(20_000);
+    const newer = await test.mutation(api.documents.create, {
+      filename: "newer.md",
+      markdown: "new",
+    });
+
+    expect(
+      await test.query(internal.admin.listActiveDocuments, {
+        now: 20_000,
+        limit: 10,
+      }),
+    ).toEqual({
+      documents: [
+        {
+          token: newer.token,
+          filename: "newer.md",
+          createdAt: 20_000,
+          updatedAt: 20_000,
+          expiresAt: 20_000 + RETENTION_MS,
+          checkpointCount: 0,
+        },
+        {
+          token: older.token,
+          filename: "older.md",
+          createdAt: 10_000,
+          updatedAt: 10_000,
+          expiresAt: 10_000 + RETENTION_MS,
+          checkpointCount: 1,
+        },
+      ],
+      truncated: false,
+    });
+
+    expect(
+      await test.query(internal.admin.listActiveDocuments, {
+        now: newer.expiresAt,
+        limit: 10,
+      }),
+    ).toEqual({ documents: [], truncated: false });
+  });
+
+  it("caps inventory reads", async () => {
+    const test = setup();
+    await expect(
+      test.query(internal.admin.listActiveDocuments, {
+        now: 0,
+        limit: 201,
+      }),
+    ).rejects.toThrow("between 1 and 200");
+  });
+});
+
 describe("editor protocol and retention", () => {
   it("schedules one expiry transition at document creation", async () => {
     vi.useFakeTimers({ now: 8_000 });

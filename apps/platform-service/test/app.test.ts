@@ -180,10 +180,16 @@ describe("platform gateway", () => {
       .get("/manage")
       .set("Cf-Access-Jwt-Assertion", "manage-audience")
       .expect(200, "tools");
+    await request(app())
+      .get("/manage/documents")
+      .set("Cf-Access-Jwt-Assertion", "manage-audience")
+      .expect(200, "tools");
   });
 
   it("rejects cross-audience assertion replay between protected route families", async () => {
     const cases = [
+      ["/manage/documents", "publisher-audience"],
+      ["/manage/documents", "review-audience"],
       ["/manage", "publisher-audience"],
       ["/manage", "review-audience"],
       ["/publish", "manage-audience"],
