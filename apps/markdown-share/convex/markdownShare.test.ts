@@ -127,6 +127,82 @@ describe("capability lifecycle", () => {
   });
 });
 
+describe("checkpoint history", () => {
+  it("stores lightweight metadata and compares two immutable snapshots", async () => {
+    vi.useFakeTimers({ now: 5_000 });
+    const test = setup();
+    const created = await test.mutation(api.documents.create, {
+      filename: "history.md",
+      markdown: "one\ntwo\n",
+    });
+
+    const older = await test.mutation(api.checkpoints.create, {
+      token: created.token,
+      markdown: "one\ntwo\n",
+      createdBy: "Amber Fox 12",
+    });
+    vi.setSystemTime(6_000);
+    const newer = await test.mutation(api.checkpoints.create, {
+      token: created.token,
+      markdown: "one\nthree\n",
+      createdBy: "Blue Finch 07",
+    });
+
+    expect(
+      await test.query(api.checkpoints.list, { token: created.token }),
+    ).toEqual([
+      { ...newer, charCount: 10 },
+      { ...older, charCount: 8 },
+    ]);
+    expect(
+      await test.query(api.checkpoints.compare, {
+        token: created.token,
+        olderId: older._id,
+        newerId: newer._id,
+      }),
+    ).toEqual({
+      older: {
+        _id: older._id,
+        createdAt: older.createdAt,
+        createdBy: older.createdBy,
+        markdown: "one\ntwo\n",
+      },
+      newer: {
+        _id: newer._id,
+        createdAt: newer.createdAt,
+        createdBy: newer.createdBy,
+        markdown: "one\nthree\n",
+      },
+    });
+  });
+
+  it("deletes checkpoint metadata and content with the document", async () => {
+    vi.useFakeTimers({ now: 7_000 });
+    const test = setup();
+    const created = await test.mutation(api.documents.create, {
+      filename: "temporary-history.md",
+      markdown: "temporary",
+    });
+    await test.mutation(api.checkpoints.create, {
+      token: created.token,
+      markdown: "temporary",
+      createdBy: "Cedar Otter 31",
+    });
+
+    vi.setSystemTime(created.expiresAt);
+    await test.mutation(internal.cleanup.expire, {
+      token: created.token,
+      expectedExpiresAt: created.expiresAt,
+    });
+
+    const remaining = await test.run(async (ctx) => ({
+      checkpoints: await ctx.db.query("checkpoints").collect(),
+      contents: await ctx.db.query("checkpointContents").collect(),
+    }));
+    expect(remaining).toEqual({ checkpoints: [], contents: [] });
+  });
+});
+
 describe("editor protocol and retention", () => {
   it("extends expiry only after accepted steps and ignores stale cleanup", async () => {
     vi.useFakeTimers({ now: 10_000 });

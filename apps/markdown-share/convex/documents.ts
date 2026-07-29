@@ -118,7 +118,7 @@ export const create = mutation({
       internal.cleanup.expire,
       { token, expectedExpiresAt: expiresAt },
     );
-    await ctx.db.patch(documentId, { cleanupJobId });
+    await ctx.db.patch("documents", documentId, { cleanupJobId });
 
     return toPublicDocument({
       token,
@@ -135,7 +135,7 @@ export const get = query({
   returns: v.union(publicDocument, v.null()),
   handler: async (ctx, args) => {
     const document = await findDocument(ctx, args.token);
-    if (!document || document.expiresAt <= Date.now()) {
+    if (!document) {
       return null;
     }
     return toPublicDocument(document);

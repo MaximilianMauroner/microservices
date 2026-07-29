@@ -59,7 +59,7 @@ export async function ensureCapabilityClaim(
     .unique();
   if (existing) {
     if (existing.kind !== "legacy") {
-      await ctx.db.patch(existing._id, { kind: "legacy" });
+      await ctx.db.patch("capabilityClaims", existing._id, { kind: "legacy" });
     }
     return;
   }

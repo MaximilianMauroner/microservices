@@ -3,16 +3,22 @@ import { useTiptapSync } from "@convex-dev/prosemirror-sync/tiptap";
 import CodeBlock from "@tiptap/extension-code-block";
 import Document from "@tiptap/extension-document";
 import Text from "@tiptap/extension-text";
+import { UndoRedo } from "@tiptap/extensions/undo-redo";
 import { EditorContent, useEditor } from "@tiptap/react";
 import type { Content } from "@tiptap/core";
 import { useMutation, useQuery } from "convex/react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { api } from "../convex/_generated/api";
+import type { Id } from "../convex/_generated/dataModel";
 import {
+  buildDiffRows,
   documentPath,
   formatExpiry,
+  formatViewerCount,
+  getScrollProgress,
+  getScrollTop,
   getPresenceIdentity,
   initialMarkdown,
   markdownFromJson,
@@ -199,6 +205,20 @@ type SyncExtension = NonNullable<
   ReturnType<typeof useTiptapSync>["extension"]
 >;
 
+type CheckpointSummary = {
+  _id: Id<"checkpoints">;
+  createdAt: number;
+  createdBy: string;
+  charCount: number;
+};
+
+type CheckpointComparison = {
+  older: Omit<CheckpointSummary, "charCount"> & { markdown: string };
+  newer: Omit<CheckpointSummary, "charCount"> & { markdown: string };
+};
+
+type WorkspacePane = "source" | "preview";
+
 function EditorWorkspace({
   document,
   anonymousName,
@@ -216,7 +236,37 @@ function EditorWorkspace({
     markdownFromJson(initialContent),
   );
   const [copied, setCopied] = useState(false);
+  const [checkpointStatus, setCheckpointStatus] = useState("Save as checkpoint");
+  const [isSavingCheckpoint, setIsSavingCheckpoint] = useState(false);
+  const [isComparing, setIsComparing] = useState(false);
+  const [isPreviewOnly, setIsPreviewOnly] = useState(false);
+  const [mobilePane, setMobilePane] = useState<WorkspacePane>("source");
+  const [topbarMenuOpen, setTopbarMenuOpen] = useState(false);
+  const [historyMenuPlacement, setHistoryMenuPlacement] = useState<
+    "desktop" | "mobile" | null
+  >(null);
+  const [olderId, setOlderId] = useState<Id<"checkpoints"> | null>(null);
+  const [newerId, setNewerId] = useState<Id<"checkpoints"> | null>(null);
+  const sourceScrollRef = useRef<HTMLDivElement>(null);
+  const previewScrollRef = useRef<HTMLElement>(null);
+  const topbarMenuRef = useRef<HTMLDivElement>(null);
+  const desktopHistoryRef = useRef<HTMLDivElement>(null);
+  const mobileHistoryRef = useRef<HTMLDivElement>(null);
+  const scrollProgressRef = useRef(0);
+  const ignoredScrollPaneRef = useRef<WorkspacePane | null>(null);
+  const ignoredScrollFrameRef = useRef<number | null>(null);
+  const checkpoints = useQuery(api.checkpoints.list, {
+    token: document.token,
+  });
+  const saveCheckpoint = useMutation(api.checkpoints.create);
+  const comparison = useQuery(
+    api.checkpoints.compare,
+    isComparing && olderId && newerId && olderId !== newerId
+      ? { token: document.token, olderId, newerId }
+      : "skip",
+  );
   const online = presence.filter((entry) => entry.online);
+  const viewerCount = Math.max(1, online.length);
   const editor = useEditor({
     extensions: [
       Document,
@@ -225,6 +275,7 @@ function EditorWorkspace({
         exitOnArrowDown: false,
         exitOnTripleEnter: false,
       }),
+      UndoRedo,
       syncExtension,
     ],
     content: initialContent,
@@ -263,27 +314,325 @@ function EditorWorkspace({
     };
   }, [editor]);
 
+  useEffect(() => {
+    if (!checkpoints || checkpoints.length < 2) {
+      return;
+    }
+    const availableIds = new Set(checkpoints.map((checkpoint) => checkpoint._id));
+    if (!newerId || !availableIds.has(newerId)) {
+      setNewerId(checkpoints[0]?._id ?? null);
+    }
+    if (!olderId || !availableIds.has(olderId)) {
+      setOlderId(checkpoints[1]?._id ?? null);
+    }
+  }, [checkpoints, newerId, olderId]);
+
+  useEffect(() => {
+    if (!isPreviewOnly) {
+      return;
+    }
+    const exitOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsPreviewOnly(false);
+      }
+    };
+    window.addEventListener("keydown", exitOnEscape);
+    return () => window.removeEventListener("keydown", exitOnEscape);
+  }, [isPreviewOnly]);
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      const element =
+        isPreviewOnly
+          ? previewScrollRef.current
+          : mobilePane === "source"
+          ? sourceScrollRef.current
+          : previewScrollRef.current;
+      if (!element || element.clientHeight === 0) {
+        return;
+      }
+      element.scrollTop = getScrollTop(
+        scrollProgressRef.current,
+        element.scrollHeight,
+        element.clientHeight,
+      );
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [isPreviewOnly, mobilePane]);
+
+  useEffect(() => {
+    let frame: number | null = null;
+    const restoreProportionalScroll = () => {
+      if (frame !== null) {
+        window.cancelAnimationFrame(frame);
+      }
+      frame = window.requestAnimationFrame(() => {
+        for (const element of [
+          sourceScrollRef.current,
+          previewScrollRef.current,
+        ]) {
+          if (element && element.clientHeight > 0) {
+            element.scrollTop = getScrollTop(
+              scrollProgressRef.current,
+              element.scrollHeight,
+              element.clientHeight,
+            );
+          }
+        }
+      });
+    };
+    const viewport = window.visualViewport;
+    window.addEventListener("resize", restoreProportionalScroll);
+    viewport?.addEventListener("resize", restoreProportionalScroll);
+    return () => {
+      window.removeEventListener("resize", restoreProportionalScroll);
+      viewport?.removeEventListener("resize", restoreProportionalScroll);
+      if (frame !== null) {
+        window.cancelAnimationFrame(frame);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!topbarMenuOpen && historyMenuPlacement === null) {
+      return;
+    }
+    const historyRef =
+      historyMenuPlacement === "desktop"
+        ? desktopHistoryRef
+        : mobileHistoryRef;
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) {
+        return;
+      }
+      if (topbarMenuOpen && !topbarMenuRef.current?.contains(target)) {
+        setTopbarMenuOpen(false);
+      }
+      if (
+        historyMenuPlacement !== null &&
+        !historyRef.current?.contains(target)
+      ) {
+        setHistoryMenuPlacement(null);
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") {
+        return;
+      }
+      if (topbarMenuOpen) {
+        setTopbarMenuOpen(false);
+        topbarMenuRef.current?.querySelector<HTMLButtonElement>(
+          ".overflow-trigger",
+        )?.focus();
+      }
+      if (historyMenuPlacement !== null) {
+        setHistoryMenuPlacement(null);
+        historyRef.current?.querySelector<HTMLButtonElement>(
+          ".history-trigger",
+        )?.focus();
+      }
+    };
+    window.addEventListener("pointerdown", closeOnOutsidePointer);
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      window.removeEventListener("pointerdown", closeOnOutsidePointer);
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [historyMenuPlacement, topbarMenuOpen]);
+
+  useEffect(() => {
+    if (!topbarMenuOpen && historyMenuPlacement === null) {
+      return;
+    }
+    const frame = window.requestAnimationFrame(() => {
+      const container = topbarMenuOpen
+        ? topbarMenuRef.current
+        : historyMenuPlacement === "desktop"
+          ? desktopHistoryRef.current
+          : mobileHistoryRef.current;
+      container
+        ?.querySelector<HTMLButtonElement>('[role="menu"] button:not(:disabled)')
+        ?.focus();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [historyMenuPlacement, topbarMenuOpen]);
+
+  useEffect(
+    () => () => {
+      if (ignoredScrollFrameRef.current !== null) {
+        window.cancelAnimationFrame(ignoredScrollFrameRef.current);
+      }
+    },
+    [],
+  );
+
+  const handlePaneScroll = (pane: WorkspacePane) => {
+    if (ignoredScrollPaneRef.current === pane) {
+      return;
+    }
+
+    const source =
+      pane === "source" ? sourceScrollRef.current : previewScrollRef.current;
+    const targetPane: WorkspacePane = pane === "source" ? "preview" : "source";
+    const target =
+      targetPane === "source"
+        ? sourceScrollRef.current
+        : previewScrollRef.current;
+    if (!source) {
+      return;
+    }
+
+    const progress = getScrollProgress(
+      source.scrollTop,
+      source.scrollHeight,
+      source.clientHeight,
+    );
+    scrollProgressRef.current = progress;
+
+    if (!target || target.clientHeight === 0) {
+      return;
+    }
+
+    ignoredScrollPaneRef.current = targetPane;
+    target.scrollTop = getScrollTop(
+      progress,
+      target.scrollHeight,
+      target.clientHeight,
+    );
+    if (ignoredScrollFrameRef.current !== null) {
+      window.cancelAnimationFrame(ignoredScrollFrameRef.current);
+    }
+    ignoredScrollFrameRef.current = window.requestAnimationFrame(() => {
+      ignoredScrollPaneRef.current = null;
+      ignoredScrollFrameRef.current = null;
+    });
+  };
+
+  const handleMobileTabKeyDown = (
+    event: React.KeyboardEvent<HTMLButtonElement>,
+  ) => {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
+      return;
+    }
+    event.preventDefault();
+    const nextPane: WorkspacePane =
+      mobilePane === "source" ? "preview" : "source";
+    setMobilePane(nextPane);
+    window.requestAnimationFrame(() => {
+      window.document.getElementById(`mobile-${nextPane}-tab`)?.focus();
+    });
+  };
+
   const copyLink = async () => {
     await navigator.clipboard.writeText(window.location.href);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1500);
   };
 
-  return (
-    <main className="editor-shell">
-      <header className="topbar">
-        <a className="wordmark" href="/" aria-label="Markdown Share home">
-          <span className="wordmark-icon">M↓</span>
-          <span>Markdown Share</span>
-        </a>
+  const handleSaveCheckpoint = async () => {
+    setIsSavingCheckpoint(true);
+    setCheckpointStatus("Saving…");
+    try {
+      await saveCheckpoint({
+        token: document.token,
+        markdown,
+        createdBy: anonymousName,
+      });
+      setCheckpointStatus("Saved");
+      window.setTimeout(() => setCheckpointStatus("Save as checkpoint"), 1600);
+    } catch (caught) {
+      setCheckpointStatus(
+        caught instanceof Error ? "Couldn’t save" : "Save failed",
+      );
+    } finally {
+      setIsSavingCheckpoint(false);
+    }
+  };
 
-        <div className="document-identity">
-          <strong>{document.filename}</strong>
-          <span>expires in {formatExpiry(document.expiresAt)}</span>
+  const openCheckpointComparison = () => {
+    setHistoryMenuPlacement(null);
+    setTopbarMenuOpen(false);
+    setIsComparing(true);
+  };
+
+  const renderHistoryControl = (placement: "desktop" | "mobile") => {
+    const isOpen = historyMenuPlacement === placement;
+    const ref = placement === "desktop" ? desktopHistoryRef : mobileHistoryRef;
+    return (
+      <div
+        className={`history-control history-control-${placement}`}
+        ref={ref}
+      >
+        <button
+          className="history-trigger"
+          type="button"
+          aria-haspopup="menu"
+          aria-expanded={isOpen}
+          aria-controls={`${placement}-history-menu`}
+          onClick={() =>
+            setHistoryMenuPlacement(isOpen ? null : placement)
+          }
+        >
+          History{checkpoints?.length ? ` · ${checkpoints.length}` : ""}
+        </button>
+        {isOpen ? (
+          <div
+            id={`${placement}-history-menu`}
+            className="action-menu history-menu"
+            role="menu"
+            aria-label="Document history"
+          >
+            <p role="presentation">Document history</p>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => void handleSaveCheckpoint()}
+              disabled={isSavingCheckpoint}
+            >
+              {checkpointStatus}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={openCheckpointComparison}
+              disabled={!checkpoints || checkpoints.length < 2}
+            >
+              Compare checkpoints
+            </button>
+          </div>
+        ) : null}
+      </div>
+    );
+  };
+
+  return (
+    <main className={`editor-shell${isPreviewOnly ? " preview-only" : ""}`}>
+      <header className="topbar">
+        <div className="topbar-identity">
+          <a className="wordmark" href="/" aria-label="Markdown Share home">
+            <span className="wordmark-icon">M↓</span>
+            <span className="wordmark-name">Markdown Share</span>
+          </a>
+          <div className="document-identity">
+            <strong title={document.filename}>{document.filename}</strong>
+            <span className="expiry-full">
+              expires in {formatExpiry(document.expiresAt)}
+            </span>
+            <span className="expiry-compact" aria-label={`expires in ${formatExpiry(document.expiresAt)}`}>
+              · {formatExpiry(document.expiresAt)}
+            </span>
+          </div>
         </div>
 
         <div className="topbar-actions">
-          <div className="presence-cluster" aria-label={`${online.length} online`}>
+          <div
+            className="presence-cluster"
+            aria-label={formatViewerCount(viewerCount)}
+            title={online
+              .map((entry) => entry.name ?? "Anonymous collaborator")
+              .join(", ")}
+          >
             {online.slice(0, 3).map((entry) => (
               <span
                 className="presence-avatar"
@@ -293,51 +642,292 @@ function EditorWorkspace({
                 {(entry.name ?? "Anonymous").slice(0, 1)}
               </span>
             ))}
-            <span className="presence-label">
-              {online.length || 1} online
+            <span className="viewer-dot" aria-hidden="true" />
+            <span className="presence-label presence-label-full">
+              {formatViewerCount(viewerCount)}
+            </span>
+            <span className="presence-label presence-label-compact" aria-hidden="true">
+              {viewerCount}
             </span>
           </div>
-          <button className="button-secondary" type="button" onClick={copyLink}>
+          <button className="button-secondary direct-copy" type="button" onClick={copyLink}>
             {copied ? "Copied" : "Copy link"}
           </button>
           <button
-            className="button-primary"
+            className="button-primary direct-pdf"
             type="button"
             onClick={() => window.print()}
           >
             Export PDF
           </button>
+          <div className="topbar-overflow" ref={topbarMenuRef}>
+            <button
+              className="overflow-trigger"
+              type="button"
+              aria-label="More document actions"
+              aria-haspopup="menu"
+              aria-expanded={topbarMenuOpen}
+              aria-controls="document-actions-menu"
+              onClick={() => setTopbarMenuOpen((open) => !open)}
+            >
+              <span aria-hidden="true">•••</span>
+            </button>
+            {topbarMenuOpen ? (
+              <div
+                id="document-actions-menu"
+                className="action-menu topbar-action-menu"
+                role="menu"
+                aria-label="Document actions"
+              >
+                <button type="button" role="menuitem" onClick={() => void copyLink()}>
+                  {copied ? "Link copied" : "Copy link"}
+                </button>
+                <button type="button" role="menuitem" onClick={() => window.print()}>
+                  Export PDF
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setTopbarMenuOpen(false);
+                    setIsPreviewOnly(true);
+                  }}
+                >
+                  Full screen preview
+                </button>
+              </div>
+            ) : null}
+          </div>
         </div>
       </header>
 
-      <div className="retention-note">
-        <span className="live-dot" />
-        Editing as <strong>{anonymousName}</strong>. Each accepted edit renews
-        the seven-day window.
-      </div>
-
       <section className="workspace">
-        <section className="panel source-panel">
-          <header className="panel-toolbar">
-            <span>Markdown</span>
-            <span className="panel-meta">literal source</span>
-          </header>
-          <div className="editor-scroll">
+        <div className="mobile-workspace-rail">
+          <div className="mobile-view-tabs" role="tablist" aria-label="Document view">
+            <button
+              id="mobile-source-tab"
+              className="mobile-view-tab"
+              type="button"
+              role="tab"
+              aria-selected={mobilePane === "source"}
+              aria-controls="source-panel"
+              tabIndex={mobilePane === "source" ? 0 : -1}
+              onClick={() => setMobilePane("source")}
+              onKeyDown={handleMobileTabKeyDown}
+            >
+              Markdown
+            </button>
+            <button
+              id="mobile-preview-tab"
+              className="mobile-view-tab"
+              type="button"
+              role="tab"
+              aria-selected={mobilePane === "preview"}
+              aria-controls="preview-panel"
+              tabIndex={mobilePane === "preview" ? 0 : -1}
+              onClick={() => setMobilePane("preview")}
+              onKeyDown={handleMobileTabKeyDown}
+            >
+              Preview
+            </button>
+          </div>
+          {renderHistoryControl("mobile")}
+        </div>
+
+        <section
+          id="source-panel"
+          className={`panel source-panel mobile-${mobilePane === "source" ? "active" : "inactive"}`}
+        >
+          <span className="pane-label" aria-hidden="true">Markdown</span>
+          {renderHistoryControl("desktop")}
+          <div
+            className="editor-scroll"
+            ref={sourceScrollRef}
+            onScroll={() => handlePaneScroll("source")}
+          >
             <EditorContent editor={editor} />
           </div>
         </section>
 
-        <section className="panel preview-panel">
-          <header className="panel-toolbar">
-            <span>Preview</span>
-            <span className="panel-meta">GitHub-flavored</span>
-          </header>
-          <article id="print-preview" className="preview-scroll markdown-body">
+        <section
+          id="preview-panel"
+          className={`panel preview-panel mobile-${mobilePane === "preview" ? "active" : "inactive"}`}
+        >
+          <span className="pane-label" aria-hidden="true">Preview</span>
+          <button
+            className="panel-overlay-action preview-overlay-action"
+            type="button"
+            onClick={() => setIsPreviewOnly(true)}
+          >
+            Full screen preview
+          </button>
+          <article
+            id="print-preview"
+            className="preview-scroll markdown-body"
+            ref={previewScrollRef}
+            onScroll={() => handlePaneScroll("preview")}
+          >
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{markdown}</ReactMarkdown>
           </article>
         </section>
       </section>
+
+      {isPreviewOnly ? (
+        <button
+          className="preview-mode-exit"
+          type="button"
+          onClick={() => setIsPreviewOnly(false)}
+          autoFocus
+        >
+          Exit preview
+        </button>
+      ) : null}
+
+      {isComparing && checkpoints ? (
+        <CheckpointCompareDialog
+          checkpoints={checkpoints}
+          olderId={olderId}
+          newerId={newerId}
+          comparison={comparison}
+          onOlderChange={setOlderId}
+          onNewerChange={setNewerId}
+          onClose={() => setIsComparing(false)}
+        />
+      ) : null}
     </main>
+  );
+}
+
+function checkpointLabel(checkpoint: CheckpointSummary): string {
+  const created = new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(checkpoint.createdAt);
+  return `${created} · ${checkpoint.createdBy} · ${checkpoint.charCount.toLocaleString()} chars`;
+}
+
+function CheckpointCompareDialog({
+  checkpoints,
+  olderId,
+  newerId,
+  comparison,
+  onOlderChange,
+  onNewerChange,
+  onClose,
+}: {
+  checkpoints: CheckpointSummary[];
+  olderId: Id<"checkpoints"> | null;
+  newerId: Id<"checkpoints"> | null;
+  comparison: CheckpointComparison | undefined;
+  onOlderChange: (id: Id<"checkpoints">) => void;
+  onNewerChange: (id: Id<"checkpoints">) => void;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [onClose]);
+
+  return (
+    <div className="checkpoint-backdrop" role="presentation">
+      <section
+        className="checkpoint-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="checkpoint-dialog-title"
+      >
+        <header className="checkpoint-dialog-header">
+          <div>
+            <p className="eyebrow">Document history</p>
+            <h2 id="checkpoint-dialog-title">Compare checkpoints</h2>
+          </div>
+          <button className="dialog-close" type="button" onClick={onClose}>
+            Close
+          </button>
+        </header>
+
+        <div className="checkpoint-selectors">
+          <label>
+            Older
+            <select
+              value={olderId ?? ""}
+              onChange={(event) =>
+                onOlderChange(event.target.value as Id<"checkpoints">)
+              }
+            >
+              {checkpoints.map((checkpoint) => (
+                <option key={checkpoint._id} value={checkpoint._id}>
+                  {checkpointLabel(checkpoint)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <span className="compare-arrow" aria-hidden="true">→</span>
+          <label>
+            Newer
+            <select
+              value={newerId ?? ""}
+              onChange={(event) =>
+                onNewerChange(event.target.value as Id<"checkpoints">)
+              }
+            >
+              {checkpoints.map((checkpoint) => (
+                <option key={checkpoint._id} value={checkpoint._id}>
+                  {checkpointLabel(checkpoint)}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        {olderId === newerId ? (
+          <div className="diff-status">Choose two different checkpoints.</div>
+        ) : comparison === undefined ? (
+          <div className="diff-status">Loading changes…</div>
+        ) : (
+          <CheckpointDiff comparison={comparison} />
+        )}
+      </section>
+    </div>
+  );
+}
+
+function CheckpointDiff({ comparison }: { comparison: CheckpointComparison }) {
+  const rows = useMemo(
+    () => buildDiffRows(comparison.older.markdown, comparison.newer.markdown),
+    [comparison.newer.markdown, comparison.older.markdown],
+  );
+  const additions = rows.filter((row) => row.kind === "added").length;
+  const removals = rows.filter((row) => row.kind === "removed").length;
+
+  return (
+    <div className="diff-shell">
+      <div className="diff-summary">
+        <span className="diff-added">+{additions} lines</span>
+        <span className="diff-removed">−{removals} lines</span>
+      </div>
+      <div className="diff-table" role="table" aria-label="Checkpoint changes">
+        {rows.length === 0 ? (
+          <div className="diff-status">No changes between these checkpoints.</div>
+        ) : (
+          rows.map((row, index) => (
+            <div className={`diff-row diff-row-${row.kind}`} role="row" key={`${index}-${row.kind}`}>
+              <span className="diff-line-number" role="cell">{row.oldLine ?? ""}</span>
+              <span className="diff-line-number" role="cell">{row.newLine ?? ""}</span>
+              <span className="diff-marker" role="cell">
+                {row.kind === "added" ? "+" : row.kind === "removed" ? "−" : " "}
+              </span>
+              <code role="cell">{row.value || " "}</code>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
   );
 }
 

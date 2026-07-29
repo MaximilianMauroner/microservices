@@ -24,7 +24,7 @@ export const removeObsoleteServerClaims = internalMutation({
     const claims = await ctx.db.query("capabilityClaims").take(500);
     const obsolete = claims.filter((claim) => claim.token === undefined);
     for (const claim of obsolete) {
-      await ctx.db.delete(claim._id);
+      await ctx.db.delete("capabilityClaims", claim._id);
     }
     return obsolete.length;
   },
