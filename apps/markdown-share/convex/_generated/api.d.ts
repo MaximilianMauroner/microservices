@@ -9,6 +9,7 @@
  */
 
 import type * as capabilities from "../capabilities.js";
+import type * as checkpoints from "../checkpoints.js";
 import type * as claims from "../claims.js";
 import type * as cleanup from "../cleanup.js";
 import type * as constants from "../constants.js";
@@ -26,6 +27,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   capabilities: typeof capabilities;
+  checkpoints: typeof checkpoints;
   claims: typeof claims;
   cleanup: typeof cleanup;
   constants: typeof constants;

@@ -2,7 +2,7 @@ import { components, internal } from "./_generated/api";
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { RETENTION_MS } from "./constants";
-import { requireLiveDocument } from "./documentAccess";
+import { requireDocument, requireLiveDocument } from "./documentAccess";
 import {
   parseSnapshot,
   validateSubmittedSnapshot,
@@ -32,7 +32,7 @@ export const getSnapshot = query({
   args: { id: v.string(), version: v.optional(v.number()) },
   returns: snapshotValidator,
   handler: async (ctx, args) => {
-    await requireLiveDocument(ctx, args.id);
+    await requireDocument(ctx, args.id);
     const snapshot = await ctx.runQuery(
       components.prosemirrorSync.lib.getSnapshot,
       args,
@@ -48,7 +48,7 @@ export const latestVersion = query({
   args: { id: v.string() },
   returns: v.union(v.null(), v.number()),
   handler: async (ctx, args) => {
-    await requireLiveDocument(ctx, args.id);
+    await requireDocument(ctx, args.id);
     return await ctx.runQuery(
       components.prosemirrorSync.lib.latestVersion,
       args,
@@ -60,7 +60,7 @@ export const getSteps = query({
   args: { id: v.string(), version: v.number() },
   returns: stepsValidator,
   handler: async (ctx, args) => {
-    await requireLiveDocument(ctx, args.id);
+    await requireDocument(ctx, args.id);
     return await ctx.runQuery(components.prosemirrorSync.lib.getSteps, args);
   },
 });
@@ -112,7 +112,7 @@ export const submitSteps = mutation({
         internal.cleanup.expire,
         { token: args.id, expectedExpiresAt: expiresAt },
       );
-      await ctx.db.patch(document._id, {
+      await ctx.db.patch("documents", document._id, {
         updatedAt: now,
         expiresAt,
         cleanupJobId,

@@ -15,12 +15,28 @@ export async function findDocument(
 }
 
 export async function requireLiveDocument(
+  ctx: Pick<MutationCtx, "db">,
+  token: string,
+): Promise<Doc<"documents">> {
+  const document = await requireDocument(ctx, token);
+
+  if (document.expiresAt <= Date.now()) {
+    throw new ConvexError({
+      code: "DOCUMENT_UNAVAILABLE",
+      message: "This document does not exist or has expired.",
+    });
+  }
+
+  return document;
+}
+
+export async function requireDocument(
   ctx: ReadContext,
   token: string,
 ): Promise<Doc<"documents">> {
   const document = await findDocument(ctx, token);
 
-  if (!document || document.expiresAt <= Date.now()) {
+  if (!document) {
     throw new ConvexError({
       code: "DOCUMENT_UNAVAILABLE",
       message: "This document does not exist or has expired.",

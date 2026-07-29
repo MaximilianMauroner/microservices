@@ -20,4 +20,14 @@ export default defineSchema({
   capabilitySeeds: defineTable({
     createdAt: v.number(),
   }),
+  checkpoints: defineTable({
+    documentId: v.id("documents"),
+    contentId: v.id("checkpointContents"),
+    createdAt: v.number(),
+    createdBy: v.string(),
+    charCount: v.number(),
+  }).index("by_document_and_created_at", ["documentId", "createdAt"]),
+  checkpointContents: defineTable({
+    markdown: v.string(),
+  }),
 });
