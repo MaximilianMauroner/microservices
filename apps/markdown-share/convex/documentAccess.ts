@@ -14,28 +14,19 @@ export async function findDocument(
     .unique();
 }
 
-export async function requireLiveDocument(
-  ctx: Pick<MutationCtx, "db">,
+export async function findLiveDocument(
+  ctx: ReadContext,
   token: string,
-): Promise<Doc<"documents">> {
-  const document = await requireDocument(ctx, token);
-
-  if (document.expiresAt <= Date.now()) {
-    throw new ConvexError({
-      code: "DOCUMENT_UNAVAILABLE",
-      message: "This document does not exist or has expired.",
-    });
-  }
-
-  return document;
+): Promise<Doc<"documents"> | null> {
+  const document = await findDocument(ctx, token);
+  return document && document.expiresAt > Date.now() ? document : null;
 }
 
-export async function requireDocument(
+export async function requireLiveDocument(
   ctx: ReadContext,
   token: string,
 ): Promise<Doc<"documents">> {
-  const document = await findDocument(ctx, token);
-
+  const document = await findLiveDocument(ctx, token);
   if (!document) {
     throw new ConvexError({
       code: "DOCUMENT_UNAVAILABLE",

@@ -204,6 +204,50 @@ describe("checkpoint history", () => {
 });
 
 describe("editor protocol and retention", () => {
+  it("blocks public document, editor, and checkpoint reads at expiry", async () => {
+    vi.useFakeTimers({ now: 9_000 });
+    const test = setup();
+    const created = await test.mutation(api.documents.create, {
+      filename: "expired-reads.md",
+      markdown: "temporary",
+    });
+    const older = await test.mutation(api.checkpoints.create, {
+      token: created.token,
+      markdown: "older",
+      createdBy: "Amber Fox 12",
+    });
+    const newer = await test.mutation(api.checkpoints.create, {
+      token: created.token,
+      markdown: "newer",
+      createdBy: "Blue Finch 07",
+    });
+
+    vi.setSystemTime(created.expiresAt);
+
+    await expect(
+      test.query(api.documents.get, { token: created.token }),
+    ).resolves.toBeNull();
+    await expect(
+      test.query(api.editor.getSnapshot, { id: created.token }),
+    ).rejects.toThrow("expired");
+    await expect(
+      test.query(api.editor.latestVersion, { id: created.token }),
+    ).rejects.toThrow("expired");
+    await expect(
+      test.query(api.editor.getSteps, { id: created.token, version: 1 }),
+    ).rejects.toThrow("expired");
+    await expect(
+      test.query(api.checkpoints.list, { token: created.token }),
+    ).rejects.toThrow("expired");
+    await expect(
+      test.query(api.checkpoints.compare, {
+        token: created.token,
+        olderId: older._id,
+        newerId: newer._id,
+      }),
+    ).rejects.toThrow("expired");
+  });
+
   it("extends expiry only after accepted steps and ignores stale cleanup", async () => {
     vi.useFakeTimers({ now: 10_000 });
     const test = setup();

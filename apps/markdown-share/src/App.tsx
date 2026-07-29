@@ -7,7 +7,7 @@ import { UndoRedo } from "@tiptap/extensions/undo-redo";
 import { EditorContent, useEditor } from "@tiptap/react";
 import type { Content } from "@tiptap/core";
 import { useMutation, useQuery } from "convex/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { api } from "../convex/_generated/api";
@@ -252,6 +252,7 @@ function EditorWorkspace({
   const topbarMenuRef = useRef<HTMLDivElement>(null);
   const desktopHistoryRef = useRef<HTMLDivElement>(null);
   const mobileHistoryRef = useRef<HTMLDivElement>(null);
+  const comparisonOpenerRef = useRef<HTMLElement | null>(null);
   const scrollProgressRef = useRef(0);
   const ignoredScrollPaneRef = useRef<WorkspacePane | null>(null);
   const ignoredScrollFrameRef = useRef<number | null>(null);
@@ -362,6 +363,24 @@ function EditorWorkspace({
 
   useEffect(() => {
     let frame: number | null = null;
+    const viewport = window.visualViewport;
+    let previousWindowWidth = window.innerWidth;
+    let previousViewportWidth = viewport?.width ?? window.innerWidth;
+
+    const syncAppHeight = () => {
+      window.document.documentElement.style.setProperty(
+        "--app-height",
+        `${viewport?.height ?? window.innerHeight}px`,
+      );
+    };
+    const editableTargetIsFocused = () => {
+      const activeElement = window.document.activeElement;
+      return (
+        activeElement instanceof HTMLElement &&
+        (activeElement.isContentEditable ||
+          activeElement.matches("input, textarea, select"))
+      );
+    };
     const restoreProportionalScroll = () => {
       if (frame !== null) {
         window.cancelAnimationFrame(frame);
@@ -381,12 +400,31 @@ function EditorWorkspace({
         }
       });
     };
-    const viewport = window.visualViewport;
-    window.addEventListener("resize", restoreProportionalScroll);
-    viewport?.addEventListener("resize", restoreProportionalScroll);
+    const handleWindowResize = () => {
+      const widthChanged = window.innerWidth !== previousWindowWidth;
+      previousWindowWidth = window.innerWidth;
+      syncAppHeight();
+      if (widthChanged || !editableTargetIsFocused()) {
+        restoreProportionalScroll();
+      }
+    };
+    const handleViewportResize = () => {
+      const width = viewport?.width ?? window.innerWidth;
+      const widthChanged = width !== previousViewportWidth;
+      previousViewportWidth = width;
+      syncAppHeight();
+      if (widthChanged || !editableTargetIsFocused()) {
+        restoreProportionalScroll();
+      }
+    };
+
+    syncAppHeight();
+    window.addEventListener("resize", handleWindowResize);
+    viewport?.addEventListener("resize", handleViewportResize);
     return () => {
-      window.removeEventListener("resize", restoreProportionalScroll);
-      viewport?.removeEventListener("resize", restoreProportionalScroll);
+      window.removeEventListener("resize", handleWindowResize);
+      viewport?.removeEventListener("resize", handleViewportResize);
+      window.document.documentElement.style.removeProperty("--app-height");
       if (frame !== null) {
         window.cancelAnimationFrame(frame);
       }
@@ -551,10 +589,25 @@ function EditorWorkspace({
   };
 
   const openCheckpointComparison = () => {
+    const historyRef =
+      historyMenuPlacement === "desktop"
+        ? desktopHistoryRef
+        : mobileHistoryRef;
+    comparisonOpenerRef.current =
+      historyRef.current?.querySelector<HTMLElement>(".history-trigger") ??
+      null;
     setHistoryMenuPlacement(null);
     setTopbarMenuOpen(false);
     setIsComparing(true);
   };
+
+  const closeCheckpointComparison = useCallback(() => {
+    setIsComparing(false);
+    window.requestAnimationFrame(() => {
+      comparisonOpenerRef.current?.focus();
+      comparisonOpenerRef.current = null;
+    });
+  }, []);
 
   const renderHistoryControl = (placement: "desktop" | "mobile") => {
     const isOpen = historyMenuPlacement === placement;
@@ -791,7 +844,7 @@ function EditorWorkspace({
           comparison={comparison}
           onOlderChange={setOlderId}
           onNewerChange={setNewerId}
-          onClose={() => setIsComparing(false)}
+          onClose={closeCheckpointComparison}
         />
       ) : null}
     </main>
@@ -823,30 +876,104 @@ function CheckpointCompareDialog({
   onNewerChange: (id: Id<"checkpoints">) => void;
   onClose: () => void;
 }) {
+  const backdropRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+
   useEffect(() => {
-    const closeOnEscape = (event: KeyboardEvent) => {
+    const backdrop = backdropRef.current;
+    const shell = backdrop?.parentElement;
+    const isolatedSiblings = shell
+      ? Array.from(shell.children)
+          .filter(
+            (element): element is HTMLElement =>
+              element instanceof HTMLElement && element !== backdrop,
+          )
+          .map((element) => ({
+            element,
+            wasInert: element.hasAttribute("inert"),
+            ariaHidden: element.getAttribute("aria-hidden"),
+          }))
+      : [];
+    for (const { element } of isolatedSiblings) {
+      element.setAttribute("inert", "");
+      element.setAttribute("aria-hidden", "true");
+    }
+    closeButtonRef.current?.focus();
+
+    const containFocus = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
         onClose();
+        return;
+      }
+      if (event.key !== "Tab") {
+        return;
+      }
+      const focusable = Array.from(
+        dialogRef.current?.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), select:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ) ?? [],
+      ).filter((element) => element.offsetParent !== null);
+      const first = focusable[0];
+      const last = focusable.at(-1);
+      if (!first || !last) {
+        event.preventDefault();
+        return;
+      }
+      const activeElement = window.document.activeElement;
+      if (!dialogRef.current?.contains(activeElement)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      } else if (event.shiftKey && activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && activeElement === last) {
+        event.preventDefault();
+        first.focus();
       }
     };
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
+    window.document.addEventListener("keydown", containFocus, true);
+    return () => {
+      window.document.removeEventListener("keydown", containFocus, true);
+      for (const { element, wasInert, ariaHidden } of isolatedSiblings) {
+        if (!wasInert) {
+          element.removeAttribute("inert");
+        }
+        if (ariaHidden === null) {
+          element.removeAttribute("aria-hidden");
+        } else {
+          element.setAttribute("aria-hidden", ariaHidden);
+        }
+      }
+    };
   }, [onClose]);
 
   return (
-    <div className="checkpoint-backdrop" role="presentation">
+    <div
+      className="checkpoint-backdrop"
+      role="presentation"
+      ref={backdropRef}
+    >
       <section
         className="checkpoint-dialog"
         role="dialog"
         aria-modal="true"
         aria-labelledby="checkpoint-dialog-title"
+        ref={dialogRef}
       >
         <header className="checkpoint-dialog-header">
           <div>
             <p className="eyebrow">Document history</p>
             <h2 id="checkpoint-dialog-title">Compare checkpoints</h2>
           </div>
-          <button className="dialog-close" type="button" onClick={onClose}>
+          <button
+            className="dialog-close"
+            type="button"
+            onClick={onClose}
+            ref={closeButtonRef}
+          >
             Close
           </button>
         </header>

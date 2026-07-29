@@ -9,7 +9,7 @@ import {
   MAX_MARKDOWN_LENGTH,
   RETENTION_MS,
 } from "./constants";
-import { findDocument } from "./documentAccess";
+import { findDocument, findLiveDocument } from "./documentAccess";
 import {
   claimLegacyCapability,
   createServerCapability,
@@ -134,7 +134,7 @@ export const get = query({
   args: { token: v.string() },
   returns: v.union(publicDocument, v.null()),
   handler: async (ctx, args) => {
-    const document = await findDocument(ctx, args.token);
+    const document = await findLiveDocument(ctx, args.token);
     if (!document) {
       return null;
     }
