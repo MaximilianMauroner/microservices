@@ -25,6 +25,7 @@ import {
   normalizeFilename,
   parseDocumentRoute,
 } from "./lib";
+import { remarkPreserveExtraBlankLines } from "./markdown";
 
 export function App() {
   const route = parseDocumentRoute(window.location.pathname);
@@ -863,7 +864,11 @@ function EditorWorkspace({
             ref={previewScrollRef}
             onScroll={() => handlePaneScroll("preview")}
           >
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{markdown}</ReactMarkdown>
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm, remarkPreserveExtraBlankLines]}
+            >
+              {markdown}
+            </ReactMarkdown>
           </article>
         </section>
       </section>
