@@ -1,3 +1,4 @@
+import { isIP } from "node:net";
 import type {
   AmendVerdictInput,
   Candidate,
@@ -224,7 +225,7 @@ async function handleReview(
   }
   if (method === "POST" && routeIs(pathname, "/api/review/decision-records/promotions")) {
     enforceOrigin(request, allowedOrigin);
-    const parsed = await parseDecisionPromotion(requireJson(body), repository, now());
+    const parsed = await parseDecisionPromotion(requireJson(body), repository, now(), decisionRecordArchiveDays);
     const result = await repository.promoteDecisionRecords(
       parsed.idempotencyKey,
       parsed.decisionRecordIds,
@@ -240,7 +241,7 @@ async function handleReview(
   if (decisionRecordRoute) {
     const decisionRecordId = uuid(decodePath(decisionRecordRoute[1] ?? ""), "decisionRecordId");
     if (method === "GET" && !decisionRecordRoute[2])
-      return jsonResponse(await repository.decisionRecord(decisionRecordId, now()));
+      return jsonResponse(await repository.decisionRecord(decisionRecordId, now(), decisionRecordArchiveDays));
     if (method === "POST" && decisionRecordRoute[2]) {
       enforceOrigin(request, allowedOrigin);
       const feedback = await repository.addDecisionFeedback(
@@ -551,7 +552,7 @@ function parseDecisionRecord(value: unknown) {
     : undefined;
   if (scope === "global" && (source.projectKey !== undefined || source.projectDisplayName !== undefined))
     throw new InputError("Global decision records forbid project fields.");
-  if (!Array.isArray(source.options) || source.options.length < 1 || source.options.length > 10)
+  if (!Array.isArray(source.options) || source.options.length < 2 || source.options.length > 10)
     throw new InputError("options is invalid.");
   const options = source.options.map((value) => {
     const option = record(value);
@@ -650,7 +651,7 @@ function optionalQuery(url: URL, name: "projectKey" | "taskId" | "device" | "har
   return value === undefined ? {} : { [name]: text(value, name, 256) };
 }
 
-async function parseDecisionPromotion(value: unknown, repository: ReviewRepository, now: Date) {
+async function parseDecisionPromotion(value: unknown, repository: ReviewRepository, now: Date, archiveAfterDays: number) {
   const body = record(value);
   if (!Array.isArray(body.decisionRecordIds) || body.decisionRecordIds.length < 1 || body.decisionRecordIds.length > 20)
     throw new InputError("decisionRecordIds is invalid.");
@@ -666,7 +667,7 @@ async function parseDecisionPromotion(value: unknown, repository: ReviewReposito
         projectDisplayName: text(draft.projectDisplayName, "projectDisplayName", 256),
       }
     : undefined;
-  const items = await Promise.all(decisionRecordIds.map((id) => repository.decisionRecord(id, now)));
+  const items = await Promise.all(decisionRecordIds.map((id) => repository.decisionRecord(id, now, archiveAfterDays)));
   if (items.some((item) => !item.currentFeedback))
     throw new InputError("Every promoted decision record must be reviewed.");
   if (project && items.some((item) => item.record.projectKey !== project.projectKey))
@@ -705,11 +706,78 @@ function rejectSensitiveContent(value: object) {
     /\b(?:password|passwd|secret|token|api[_-]?key)\s*[:=]\s*["']?[^\s,"'}]{8,}/i,
     /\bBearer\s+[A-Za-z0-9._~+\/-]{12,}={0,2}\b/i,
     /\b(?:ghp|github_pat|sk-(?:proj-)?)[A-Za-z0-9_-]{12,}\b/,
-    /https?:\/\/(?:localhost|127\.\d+\.\d+\.\d+|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(?:1[6-9]|2\d|3[01])\.\d+\.\d+)(?::\d+)?\b/i,
-    /https?:\/\/[^\s/@]+:[^\s/@]+@/i,
   ];
-  if (secretPatterns.some((pattern) => pattern.test(serialized)))
+  if (secretPatterns.some((pattern) => pattern.test(serialized)) || containsPrivateUrl(serialized))
     throw new InputError("Decision content contains a secret-like value or private URL.");
+}
+
+function containsPrivateUrl(value: string) {
+  const candidates = value.match(/https?:\/\/[^\s"'<>\\]+/gi) ?? [];
+  return candidates.some((candidate) => {
+    let url: URL;
+    try {
+      url = new URL(candidate);
+    } catch {
+      return false;
+    }
+    return Boolean(url.username || url.password || privateHostname(url.hostname));
+  });
+}
+
+function privateHostname(value: string) {
+  const hostname = value.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
+  const version = isIP(hostname);
+  if (version === 4) return privateIpv4(hostname);
+  if (version === 6) return privateIpv6(hostname);
+  if (
+    !hostname.includes(".") ||
+    hostname === "localhost" ||
+    hostname.endsWith(".localhost") ||
+    hostname.endsWith(".local") ||
+    hostname.endsWith(".internal") ||
+    hostname.endsWith(".home") ||
+    hostname.endsWith(".lan")
+  ) return true;
+  return false;
+}
+
+function privateIpv4(value: string) {
+  const [a = 0, b = 0, c = 0] = value.split(".").map(Number);
+  return a === 0 || a === 10 || a === 127 || a >= 224 ||
+    (a === 100 && b >= 64 && b <= 127) ||
+    (a === 169 && b === 254) ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && (b === 0 || b === 168)) ||
+    (a === 192 && b === 88 && c === 99) ||
+    (a === 198 && (b === 18 || b === 19 || b === 51)) ||
+    (a === 203 && b === 0);
+}
+
+function privateIpv6(value: string) {
+  const words = ipv6Words(value);
+  if (!words) return true;
+  const [first, second] = words;
+  const unspecifiedOrCompatible = words.slice(0, 6).every((word) => word === 0);
+  if (unspecifiedOrCompatible) return true;
+  if (words.slice(0, 5).every((word) => word === 0) && words[5] === 0xffff)
+    return privateIpv4(`${words[6] >> 8}.${words[6] & 255}.${words[7] >> 8}.${words[7] & 255}`);
+  return (first & 0xe000) !== 0x2000 ||
+    (first === 0x2001 && (second < 0x0200 || second === 0x0db8)) ||
+    first === 0x2002 ||
+    (first === 0x3fff && second <= 0x0fff);
+}
+
+function ipv6Words(value: string) {
+  const [left = "", right = ""] = value.split("::");
+  if (value.split("::").length > 2) return undefined;
+  const before = left ? left.split(":") : [];
+  const after = right ? right.split(":") : [];
+  const missing = 8 - before.length - after.length;
+  if ((value.includes("::") ? missing < 1 : missing !== 0)) return undefined;
+  const words = [...before, ...Array<string>(missing).fill("0"), ...after].map((word) => Number.parseInt(word, 16));
+  return words.length === 8 && words.every((word) => Number.isInteger(word) && word >= 0 && word <= 0xffff)
+    ? words
+    : undefined;
 }
 
 function parseScopeChange(value: unknown): Scope {

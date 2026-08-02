@@ -27,6 +27,8 @@ CREATE TABLE `decision_feedback_events` (
   CONSTRAINT `decision_feedback_events_action_check` CHECK(`action` in ('up', 'down', 'dismiss'))
 );
 --> statement-breakpoint
+CREATE INDEX `decision_feedback_events_record_sequence_idx` ON `decision_feedback_events` (`decision_record_id`,`sequence` DESC);
+--> statement-breakpoint
 CREATE TABLE `decision_promotions` (
   `candidate_id` text PRIMARY KEY NOT NULL,
   `idempotency_key` text NOT NULL,

@@ -184,7 +184,11 @@ export interface ReviewRepository {
     record: DecisionRecord,
   ): Promise<"created" | "replay">;
   decisionRecords(filters: DecisionRecordFilters): Promise<DecisionRecordPage>;
-  decisionRecord(id: string, now: Date): Promise<DecisionRecordItem>;
+  decisionRecord(
+    id: string,
+    now: Date,
+    archiveAfterDays: number,
+  ): Promise<DecisionRecordItem>;
   addDecisionFeedback(
     decisionRecordId: string,
     input: DecisionFeedbackInput,

@@ -106,7 +106,7 @@ export class SQLiteDecisionRecordStore {
       "SELECT COUNT(*) count FROM decision_records d WHERE NOT EXISTS(SELECT 1 FROM decision_feedback_events f WHERE f.decision_record_id=d.decision_record_id)",
     ).get()?.count ?? 0;
     return {
-      items: page.map((row) => this.itemFromRow(row, filters.now, false)),
+      items: page.map((row) => this.itemFromRow(row, filters.now, filters.archiveAfterDays, false)),
       pending,
       hasMore: rows.length > filters.limit,
       ...(rows.length > filters.limit
@@ -115,10 +115,10 @@ export class SQLiteDecisionRecordStore {
     };
   }
 
-  get(id: string, now: Date) {
+  get(id: string, now: Date, archiveAfterDays: number) {
     const row = this.recordRow(id);
     if (!row) throw new NotFoundError("Decision record not found.");
-    return this.itemFromRow(row, now, true);
+    return this.itemFromRow(row, now, archiveAfterDays, true);
   }
 
   feedback(decisionRecordId: string, input: DecisionFeedbackInput, now: Date, reviewer: string) {
@@ -202,7 +202,7 @@ export class SQLiteDecisionRecordStore {
     `).get(id);
   }
 
-  private itemFromRow(row: RecordRow, now: Date, fullHistory: boolean): DecisionRecordItem {
+  private itemFromRow(row: RecordRow, now: Date, archiveAfterDays: number, fullHistory: boolean): DecisionRecordItem {
     const record = JSON.parse(row.payload) as DecisionRecord;
     const currentFeedback = row.feedback_id && row.action && row.reviewer && row.reviewed_at
       ? toFeedback({
@@ -223,7 +223,7 @@ export class SQLiteDecisionRecordStore {
       ...(currentFeedback ? { currentFeedback } : {}),
       feedbackHistory,
       ...(row.promotion_candidate_id ? { promotionCandidateId: row.promotion_candidate_id } : {}),
-      archived: Boolean(currentFeedback && now.getTime() - new Date(currentFeedback.reviewedAt).getTime() >= 90 * 86_400_000),
+      archived: Boolean(currentFeedback && now.getTime() - new Date(currentFeedback.reviewedAt).getTime() >= archiveAfterDays * 86_400_000),
     };
   }
 

@@ -338,10 +338,10 @@ export class MemoryReviewRepository implements ReviewRepository {
     };
   }
 
-  async decisionRecord(id: string, now: Date) {
+  async decisionRecord(id: string, now: Date, archiveAfterDays: number) {
     const record = this.decisionRecordValues.find((value) => value.decisionRecordId === id);
     if (!record) throw new NotFoundError("Decision record not found.");
-    return this.decisionRecordItem(record, now);
+    return this.decisionRecordItem(record, now, archiveAfterDays);
   }
 
   async addDecisionFeedback(

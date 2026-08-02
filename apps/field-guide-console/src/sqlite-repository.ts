@@ -162,10 +162,10 @@ export class SQLiteReviewRepository implements ReviewRepository {
     });
   }
 
-  async summary(now:Date): Promise<Summary> { const queue = await this.queue(undefined, now); return {pending:queue.filter(x=>x.status==="pending").length,due:queue.filter(x=>x.status==="due").length,overdue:queue.filter(x=>x.status==="overdue").length}; }
+  async summary(now:Date): Promise<Summary> { this.db.query("SELECT 1 FROM decision_records LIMIT 1").get(); const queue = await this.queue(undefined, now); return {pending:queue.filter(x=>x.status==="pending").length,due:queue.filter(x=>x.status==="due").length,overdue:queue.filter(x=>x.status==="overdue").length}; }
   async createDecisionRecord(key:string,record:DecisionRecord){return this.decisionRecordStore.create(key,record);}
   async decisionRecords(filters:DecisionRecordFilters){return this.decisionRecordStore.page(filters);}
-  async decisionRecord(id:string,now:Date){return this.decisionRecordStore.get(id,now);}
+  async decisionRecord(id:string,now:Date,archiveAfterDays:number){return this.decisionRecordStore.get(id,now,archiveAfterDays);}
   async addDecisionFeedback(id:string,input:DecisionFeedbackInput,now:Date,reviewer:string){return this.decisionRecordStore.feedback(id,input,now,reviewer);}
   async promoteDecisionRecords(key:string,ids:string[],candidate:Candidate,now:Date,reviewer:string){return this.decisionRecordStore.promote(key,ids,candidate,now,reviewer);}
   async close() { this.closeDatabase(); }
