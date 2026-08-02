@@ -17,8 +17,8 @@ describe("review console feedback", () => {
     expect(html).not.toContain("signin.onclick");
     expect(html).not.toContain("signout.onclick");
     expect(html).toContain("state.token='cloudflare-access'");
-    expect(html).toContain("Choose a future date before deferring.");
-    expect(html.indexOf("if(!input.value")).toBeLessThan(html.indexOf("submitVerdict(card,'defer'"));
+    expect(html).toContain("Choose a future date and time before deferring.");
+    expect(html.indexOf("if(!date||date.getTime()<=Date.now())")).toBeLessThan(html.indexOf("submitVerdict(card,'defer'"));
     expect(html).toContain("setCardBusy(card,false)");
     expect(html).toContain("Review saved.");
     expect(html).toContain("/cdn-cgi/access/logout");
