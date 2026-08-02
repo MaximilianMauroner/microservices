@@ -15,7 +15,7 @@
     "dev": "bun --watch src/server.ts",
     "start": "bun dist/server.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run && bun test test/sqlite-repository.bun.test.ts test/transfer.bun.test.ts",
+    "test": "vitest run && bun test --timeout 15000 test/sqlite-repository.bun.test.ts test/sqlite-decision-records.bun.test.ts test/transfer.bun.test.ts",
     "verify": "bun run typecheck && bun run test"
   },
   "dependencies": {

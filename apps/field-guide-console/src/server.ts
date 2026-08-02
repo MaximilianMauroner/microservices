@@ -53,6 +53,7 @@ export async function startServer(
       publicBaseUrl: config.publicBaseUrl,
       browserUi: false,
       stylesheet,
+      decisionRecordArchiveDays: config.decisionRecordArchiveDays,
     });
     const serve: Serve = dependencies.serve ?? ((options) => Bun.serve(options));
     server = serve({ hostname: "0.0.0.0", port: config.port, fetch: app });

@@ -1,11 +1,14 @@
 import type {
   AmendVerdictInput,
   Candidate,
+  DecisionFeedbackInput,
+  DecisionRecord,
+  DecisionRecordFilters,
   ReviewRepository,
   Scope,
   VerdictInput,
 } from "./types.js";
-import { ConflictError, ValidationError } from "./types.js";
+import { ConflictError, NotFoundError, ValidationError } from "./types.js";
 import {
   PayloadTooLargeError,
   isJsonMediaType,
@@ -27,9 +30,12 @@ export function createApp(options: {
   publicBaseUrl: string;
   browserUi?: boolean;
   stylesheet?: BodyInit | Blob;
+  decisionRecordArchiveDays?: number;
+  decisionRecordRateLimitPerMinute?: number;
   now?: () => Date;
 }): FetchHandler {
   const now = options.now ?? (() => new Date());
+  const consumeDecisionRecord = rateLimiter(options.decisionRecordRateLimitPerMinute ?? 120, now);
   const allowedOrigin = new URL(options.publicBaseUrl).origin;
   return async (request) => {
     const head = request.method === "HEAD";
@@ -108,6 +114,7 @@ export function createApp(options: {
               parsedBody,
               options.repository,
               now,
+              consumeDecisionRecord,
             )
           : auth.response;
       }
@@ -124,6 +131,7 @@ export function createApp(options: {
               now,
               allowedOrigin,
               auth.email ?? "system",
+              options.decisionRecordArchiveDays ?? 90,
             )
           : auth.response;
       }
@@ -146,6 +154,7 @@ async function handleAgent(
   body: ParsedBody,
   repository: ReviewRepository,
   now: () => Date,
+  consumeDecisionRecord: () => void,
 ) {
   if (method === "POST" && routeIs(pathname, "/api/agent/candidates")) {
     const parsed = parseCandidate(requireJson(body));
@@ -155,6 +164,18 @@ async function handleAgent(
     );
     return jsonResponse(
       { status: result },
+      { status: result === "created" ? 201 : 200 },
+    );
+  }
+  if (method === "POST" && routeIs(pathname, "/api/agent/decision-records")) {
+    consumeDecisionRecord();
+    const parsed = parseDecisionRecord(requireJson(body));
+    const result = await repository.createDecisionRecord(
+      parsed.idempotencyKey,
+      parsed.record,
+    );
+    return jsonResponse(
+      { status: result, decisionRecordId: parsed.record.decisionRecordId },
       { status: result === "created" ? 201 : 200 },
     );
   }
@@ -196,7 +217,41 @@ async function handleReview(
   now: () => Date,
   allowedOrigin: string,
   reviewer: string,
+  decisionRecordArchiveDays: number,
 ) {
+  if (method === "GET" && routeIs(pathname, "/api/review/decision-records")) {
+    return jsonResponse(await repository.decisionRecords(parseDecisionRecordFilters(url, now(), decisionRecordArchiveDays)));
+  }
+  if (method === "POST" && routeIs(pathname, "/api/review/decision-records/promotions")) {
+    enforceOrigin(request, allowedOrigin);
+    const parsed = await parseDecisionPromotion(requireJson(body), repository, now());
+    const result = await repository.promoteDecisionRecords(
+      parsed.idempotencyKey,
+      parsed.decisionRecordIds,
+      parsed.candidate,
+      now(),
+      reviewer,
+    );
+    return jsonResponse(result, { status: result.status === "created" ? 201 : 200 });
+  }
+  const decisionRecordRoute = pathname.match(
+    /^\/api\/review\/decision-records\/([^/]+)(?:\/(feedback))?$/i,
+  );
+  if (decisionRecordRoute) {
+    const decisionRecordId = uuid(decodePath(decisionRecordRoute[1] ?? ""), "decisionRecordId");
+    if (method === "GET" && !decisionRecordRoute[2])
+      return jsonResponse(await repository.decisionRecord(decisionRecordId, now()));
+    if (method === "POST" && decisionRecordRoute[2]) {
+      enforceOrigin(request, allowedOrigin);
+      const feedback = await repository.addDecisionFeedback(
+        decisionRecordId,
+        parseDecisionFeedback(requireJson(body)),
+        now(),
+        reviewer,
+      );
+      return jsonResponse({ feedback }, { status: 201 });
+    }
+  }
   if (method === "GET" && routeIs(pathname, "/api/review/queue")) {
     const scope = parseScope(singleQuery(url, "scope"));
     return jsonResponse({
@@ -314,6 +369,11 @@ function notFoundJson() {
 }
 
 function mapError(error: unknown) {
+  if (error instanceof NotFoundError)
+    return jsonResponse(
+      { error: "not_found", message: error.message },
+      { status: 404 },
+    );
   if (error instanceof ConflictError)
     return jsonResponse(
       { error: "conflict", message: error.message },
@@ -328,6 +388,11 @@ function mapError(error: unknown) {
     return jsonResponse(
       { error: "payload_too_large", message: error.message },
       { status: 413 },
+    );
+  if (error instanceof RateLimitError)
+    return jsonResponse(
+      { error: "rate_limited", message: error.message },
+      { status: 429, headers: { "Retry-After": "60" } },
     );
   if (
     error instanceof InputError ||
@@ -347,6 +412,19 @@ function mapError(error: unknown) {
 
 class InputError extends Error {}
 class OriginError extends Error {}
+class RateLimitError extends Error {}
+
+function rateLimiter(limit: number, now: () => Date) {
+  const timestamps: number[] = [];
+  return () => {
+    const current = now().getTime();
+    while (timestamps[0] !== undefined && timestamps[0] <= current - 60_000)
+      timestamps.shift();
+    if (timestamps.length >= limit)
+      throw new RateLimitError("Decision record ingestion rate limit exceeded.");
+    timestamps.push(current);
+  };
+}
 
 const record = (value: unknown): Record<string, unknown> => {
   if (typeof value !== "object" || value === null || Array.isArray(value))
@@ -457,6 +535,181 @@ function parseCandidate(value: unknown) {
     idempotencyKey: text(body.idempotencyKey, "idempotencyKey", 128),
     candidate,
   };
+}
+
+function parseDecisionRecord(value: unknown) {
+  const body = record(value);
+  const source = record(body.record);
+  if (source.schemaVersion !== 1) throw new InputError("Unsupported decision record schemaVersion.");
+  const scope = source.scope;
+  if (scope !== "project" && scope !== "global") throw new InputError("Invalid scope.");
+  const project = scope === "project"
+    ? {
+        projectKey: text(source.projectKey, "projectKey", 128),
+        projectDisplayName: text(source.projectDisplayName, "projectDisplayName", 256),
+      }
+    : undefined;
+  if (scope === "global" && (source.projectKey !== undefined || source.projectDisplayName !== undefined))
+    throw new InputError("Global decision records forbid project fields.");
+  if (!Array.isArray(source.options) || source.options.length < 1 || source.options.length > 10)
+    throw new InputError("options is invalid.");
+  const options = source.options.map((value) => {
+    const option = record(value);
+    return {
+      label: text(option.label, "option.label", 512),
+      ...(option.rejectedBecause !== undefined
+        ? { rejectedBecause: text(option.rejectedBecause, "option.rejectedBecause", 1000) }
+        : {}),
+    };
+  });
+  if (!Array.isArray(source.consequences) || source.consequences.length > 10)
+    throw new InputError("consequences is invalid.");
+  const consequences = source.consequences.map((value) => text(value, "consequence", 1000));
+  if (!Array.isArray(source.evidence) || source.evidence.length > 5)
+    throw new InputError("evidence is invalid.");
+  const evidence = source.evidence.map((value) => {
+    const item = record(value);
+    if (!Array.isArray(item.commitHashes) || item.commitHashes.length > 20)
+      throw new InputError("Commit hashes are invalid.");
+    return {
+      excerpt: text(item.excerpt, "evidence.excerpt", 1000),
+      commitHashes: item.commitHashes.map((hash) => text(hash, "commitHash", 64)),
+    };
+  });
+  if (source.confidence !== "low" && source.confidence !== "medium" && source.confidence !== "high")
+    throw new InputError("confidence is invalid.");
+  const parsed: DecisionRecord = {
+    schemaVersion: 1,
+    decisionRecordId: uuid(source.decisionRecordId, "decisionRecordId"),
+    taskId: text(source.taskId, "taskId", 256),
+    scope,
+    ...project,
+    summary: text(source.summary, "summary", 512),
+    context: text(source.context, "context", 4000),
+    options,
+    choice: text(source.choice, "choice", 2000),
+    rationale: text(source.rationale, "rationale", 4000),
+    consequences,
+    confidence: source.confidence,
+    evidence,
+    ...(source.device !== undefined ? { device: text(source.device, "device", 128) } : {}),
+    ...(source.harness !== undefined ? { harness: text(source.harness, "harness", 128) } : {}),
+    ...(source.skill !== undefined ? { skill: text(source.skill, "skill", 128) } : {}),
+    createdAt: iso(source.createdAt, "createdAt"),
+  };
+  rejectSensitiveContent(parsed);
+  return {
+    idempotencyKey: text(body.idempotencyKey, "idempotencyKey", 128),
+    record: parsed,
+  };
+}
+
+function parseDecisionFeedback(value: unknown): DecisionFeedbackInput {
+  const body = record(value);
+  if (Object.keys(body).some((key) => !["action", "comment", "expectedFeedbackId"].includes(key)))
+    throw new InputError("Feedback body contains unknown fields.");
+  if (body.action !== "up" && body.action !== "down" && body.action !== "dismiss")
+    throw new InputError("Invalid feedback action.");
+  const feedback: DecisionFeedbackInput = {
+    action: body.action,
+    ...(body.comment !== undefined ? { comment: text(body.comment, "comment", 4000) } : {}),
+    ...(body.expectedFeedbackId !== undefined
+      ? { expectedFeedbackId: uuid(body.expectedFeedbackId, "expectedFeedbackId") }
+      : {}),
+  };
+  rejectSensitiveContent(feedback);
+  return feedback;
+}
+
+function parseDecisionRecordFilters(url: URL, now: Date, archiveAfterDays: number): DecisionRecordFilters {
+  const reviewState = singleQuery(url, "reviewState") ?? "unreviewed";
+  if (reviewState !== "unreviewed" && reviewState !== "reviewed" && reviewState !== "all")
+    throw new InputError("Invalid reviewState.");
+  const includeArchivedValue = singleQuery(url, "includeArchived");
+  if (includeArchivedValue !== undefined && includeArchivedValue !== "true" && includeArchivedValue !== "false")
+    throw new InputError("includeArchived must be true or false.");
+  return {
+    cursor: parseCursorQuery(singleQuery(url, "cursor")),
+    limit: parseLimit(singleQuery(url, "limit")),
+    reviewState,
+    ...optionalQuery(url, "projectKey"),
+    ...optionalQuery(url, "taskId"),
+    ...optionalQuery(url, "device"),
+    ...optionalQuery(url, "harness"),
+    ...optionalQuery(url, "skill"),
+    ...(singleQuery(url, "from") ? { from: iso(singleQuery(url, "from"), "from") } : {}),
+    ...(singleQuery(url, "to") ? { to: iso(singleQuery(url, "to"), "to") } : {}),
+    includeArchived: includeArchivedValue === "true",
+    archiveAfterDays,
+    now,
+  };
+}
+
+function optionalQuery(url: URL, name: "projectKey" | "taskId" | "device" | "harness" | "skill") {
+  const value = singleQuery(url, name);
+  return value === undefined ? {} : { [name]: text(value, name, 256) };
+}
+
+async function parseDecisionPromotion(value: unknown, repository: ReviewRepository, now: Date) {
+  const body = record(value);
+  if (!Array.isArray(body.decisionRecordIds) || body.decisionRecordIds.length < 1 || body.decisionRecordIds.length > 20)
+    throw new InputError("decisionRecordIds is invalid.");
+  const decisionRecordIds = [...new Set(body.decisionRecordIds.map((id) => uuid(id, "decisionRecordId")))];
+  if (decisionRecordIds.length !== body.decisionRecordIds.length)
+    throw new InputError("decisionRecordIds contains duplicates.");
+  const draft = record(body.candidate);
+  const scope = draft.scope;
+  if (scope !== "project" && scope !== "global") throw new InputError("Invalid scope.");
+  const project = scope === "project"
+    ? {
+        projectKey: text(draft.projectKey, "projectKey", 128),
+        projectDisplayName: text(draft.projectDisplayName, "projectDisplayName", 256),
+      }
+    : undefined;
+  const items = await Promise.all(decisionRecordIds.map((id) => repository.decisionRecord(id, now)));
+  if (items.some((item) => !item.currentFeedback))
+    throw new InputError("Every promoted decision record must be reviewed.");
+  if (project && items.some((item) => item.record.projectKey !== project.projectKey))
+    throw new InputError("Project candidate scope must match every source record.");
+  const evidence = items.map((item) => ({
+    excerpt: [item.record.summary, `Choice: ${item.record.choice}`, item.currentFeedback?.comment ? `Feedback: ${item.currentFeedback.comment}` : undefined]
+      .filter(Boolean).join("\n").slice(0, 2000),
+    commitHashes: [...new Set(item.record.evidence.flatMap((entry) => entry.commitHashes))].slice(0, 20),
+  }));
+  const candidate: Candidate = {
+    candidateId: uuid(draft.candidateId, "candidateId"),
+    scope,
+    ...project,
+    ...(items[0]?.record.projectKey && items[0]?.record.projectDisplayName
+      ? { foundProjectKey: items[0].record.projectKey, foundProjectDisplayName: items[0].record.projectDisplayName }
+      : {}),
+    lessonKey: text(draft.lessonKey, "lessonKey", 128),
+    title: text(draft.title, "title", 256),
+    body: text(draft.body, "body", 10_000),
+    rationale: text(draft.rationale, "rationale", 4000),
+    evidence,
+    createdAt: iso(draft.createdAt, "createdAt"),
+  };
+  rejectSensitiveContent(candidate);
+  return {
+    idempotencyKey: text(body.idempotencyKey, "idempotencyKey", 128),
+    decisionRecordIds,
+    candidate,
+  };
+}
+
+function rejectSensitiveContent(value: object) {
+  const serialized = JSON.stringify(value);
+  const secretPatterns = [
+    /-----BEGIN [A-Z ]*PRIVATE KEY-----/i,
+    /\b(?:password|passwd|secret|token|api[_-]?key)\s*[:=]\s*["']?[^\s,"'}]{8,}/i,
+    /\bBearer\s+[A-Za-z0-9._~+\/-]{12,}={0,2}\b/i,
+    /\b(?:ghp|github_pat|sk-(?:proj-)?)[A-Za-z0-9_-]{12,}\b/,
+    /https?:\/\/(?:localhost|127\.\d+\.\d+\.\d+|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(?:1[6-9]|2\d|3[01])\.\d+\.\d+)(?::\d+)?\b/i,
+    /https?:\/\/[^\s/@]+:[^\s/@]+@/i,
+  ];
+  if (secretPatterns.some((pattern) => pattern.test(serialized)))
+    throw new InputError("Decision content contains a secret-like value or private URL.");
 }
 
 function parseScopeChange(value: unknown): Scope {

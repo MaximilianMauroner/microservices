@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import postgres, { type Sql, type TransactionSql } from "postgres";
+import { PostgresDecisionRecordStore } from "./postgres-decision-records.js";
 import {
   ConflictError,
   ValidationError,
@@ -9,6 +10,9 @@ import {
   type AmendVerdictInput,
   type Candidate,
   type Decision,
+  type DecisionFeedbackInput,
+  type DecisionRecord,
+  type DecisionRecordFilters,
   type Effect,
   type QueueItem,
   type ReviewRepository,
@@ -36,11 +40,13 @@ type EventRow = {
 };
 export class PostgresReviewRepository implements ReviewRepository {
   private readonly sql: Sql;
+  private readonly decisionRecordStore: PostgresDecisionRecordStore;
   constructor(url: string) {
     this.sql = postgres(url, {
       max: 5,
       connection: { search_path: FIELD_GUIDE_SCHEMA },
     });
+    this.decisionRecordStore = new PostgresDecisionRecordStore(this.sql);
   }
   async createCandidate(key: string, candidate: Candidate) {
     const hash = digest(candidate);
@@ -301,6 +307,11 @@ export class PostgresReviewRepository implements ReviewRepository {
       overdue: q.filter((x) => x.status === "overdue").length,
     };
   }
+  async createDecisionRecord(key:string,record:DecisionRecord){return this.decisionRecordStore.create(key,record);}
+  async decisionRecords(filters:DecisionRecordFilters){return this.decisionRecordStore.page(filters);}
+  async decisionRecord(id:string,now:Date){return this.decisionRecordStore.get(id,now);}
+  async addDecisionFeedback(id:string,input:DecisionFeedbackInput,now:Date,reviewer:string){return this.decisionRecordStore.feedback(id,input,now,reviewer);}
+  async promoteDecisionRecords(key:string,ids:string[],candidate:Candidate,now:Date,reviewer:string){return this.decisionRecordStore.promote(key,ids,candidate,now,reviewer);}
   async close() {
     await this.sql.end();
   }

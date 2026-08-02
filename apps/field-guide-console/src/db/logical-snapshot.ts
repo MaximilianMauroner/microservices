@@ -1,13 +1,13 @@
 import crypto from "node:crypto";
 import type { Database } from "bun:sqlite";
 
-export const TABLES = ["candidates", "review_rounds", "verdict_events", "application_receipts", "field_guide_schema_migrations"] as const;
+export const TABLES = ["candidates", "review_rounds", "verdict_events", "application_receipts", "field_guide_schema_migrations", "decision_records", "decision_feedback_events", "decision_promotions", "decision_promotion_records"] as const;
 export type TableName = (typeof TABLES)[number];
 export type SequenceState = { lastValue:string; isCalled:boolean; nextValue:string };
 export type LogicalSnapshot = { tables:Record<TableName,readonly Record<string,unknown>[]>;counts:Record<TableName,number>;hashes:Record<TableName,string>;maxSequence:string;sequence:SequenceState };
 export type SnapshotReport = {schema:1;tables:Record<TableName,{count:number;hash:string}>;maxSequence:string;sequence:SequenceState};
 
-const TIMESTAMPS=new Set(["created_at","due_at","reviewed_at","next_review_at","applied_at"]);
+const TIMESTAMPS=new Set(["created_at","due_at","reviewed_at","next_review_at","applied_at","received_at","promoted_at"]);
 const bytewise=(left:string,right:string)=>Buffer.compare(Buffer.from(left),Buffer.from(right));
 
 export function canonicalJson(value:unknown):string {
@@ -21,7 +21,7 @@ export function sqliteSequence(db:Database):SequenceState {const row=db.query<{s
 export function sqliteSnapshot(db:Database):LogicalSnapshot {
   const read=(table:TableName)=>db.query<Record<string,unknown>,[]>(`SELECT * FROM ${table}`).all().map(normalizeRow);
   const verdictEvents=db.query<Record<string,unknown>,[]>("SELECT CAST(sequence AS TEXT) sequence,decision_id,candidate_id,round,action,reviewer,reviewed_at,next_review_at,round_kind,effect,amends_decision_id FROM verdict_events").all().map(normalizeRow);
-  return summarize({candidates:read("candidates"),review_rounds:read("review_rounds"),verdict_events:verdictEvents,application_receipts:read("application_receipts"),field_guide_schema_migrations:read("field_guide_schema_migrations")},sqliteSequence(db));
+  return summarize({candidates:read("candidates"),review_rounds:read("review_rounds"),verdict_events:verdictEvents,application_receipts:read("application_receipts"),field_guide_schema_migrations:read("field_guide_schema_migrations"),decision_records:read("decision_records"),decision_feedback_events:read("decision_feedback_events"),decision_promotions:read("decision_promotions"),decision_promotion_records:read("decision_promotion_records")},sqliteSequence(db));
 }
 export function normalizeRow(row:Record<string,unknown>):Record<string,unknown>{return Object.fromEntries(Object.entries(row).map(([key,value])=>[key,normalizeValue(key,value)]));}
 function normalizeValue(key:string,value:unknown):unknown {if(value===null)return null;if(key==="payload")return typeof value==="string"?JSON.parse(value) as unknown:value;if(key==="sequence")return String(value);if(key==="adopted")return typeof value==="boolean"?value:Number(value)===1;if(TIMESTAMPS.has(key))return canonicalTimestamp(String(value));return value;}

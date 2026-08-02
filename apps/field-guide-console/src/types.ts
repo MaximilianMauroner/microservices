@@ -59,6 +59,86 @@ export type VerdictInput = { action: Action; deferUntil?: string };
 export type AmendVerdictInput = VerdictInput & { expectedDecisionId: string };
 export type Page = { decisions: Decision[]; nextCursor?: string };
 export type HistoryPage = { decisions: Decision[]; nextCursor?: string; hasMore: boolean };
+
+export type DecisionConfidence = "low" | "medium" | "high";
+export type DecisionRecordOption = {
+  label: string;
+  rejectedBecause?: string;
+};
+export type DecisionRecordEvidence = {
+  excerpt: string;
+  commitHashes: string[];
+};
+export type DecisionRecord = {
+  schemaVersion: 1;
+  decisionRecordId: string;
+  taskId: string;
+  scope: Scope;
+  projectKey?: string;
+  projectDisplayName?: string;
+  summary: string;
+  context: string;
+  options: DecisionRecordOption[];
+  choice: string;
+  rationale: string;
+  consequences: string[];
+  confidence: DecisionConfidence;
+  evidence: DecisionRecordEvidence[];
+  device?: string;
+  harness?: string;
+  skill?: string;
+  createdAt: string;
+};
+export type DecisionFeedbackAction = "up" | "down" | "dismiss";
+export type DecisionFeedback = {
+  feedbackId: string;
+  decisionRecordId: string;
+  action: DecisionFeedbackAction;
+  comment?: string;
+  reviewer: string;
+  reviewedAt: string;
+  amendsFeedbackId?: string;
+};
+export type DecisionRecordItem = {
+  record: DecisionRecord;
+  currentFeedback?: DecisionFeedback;
+  feedbackHistory: DecisionFeedback[];
+  promotionCandidateId?: string;
+  archived: boolean;
+};
+export type DecisionReviewState = "unreviewed" | "reviewed" | "all";
+export type DecisionRecordFilters = {
+  cursor?: string;
+  limit: number;
+  projectKey?: string;
+  taskId?: string;
+  reviewState: DecisionReviewState;
+  device?: string;
+  harness?: string;
+  skill?: string;
+  from?: string;
+  to?: string;
+  includeArchived: boolean;
+  archiveAfterDays: number;
+  now: Date;
+};
+export type DecisionRecordPage = {
+  items: DecisionRecordItem[];
+  pending: number;
+  hasMore: boolean;
+  nextCursor?: string;
+};
+export type DecisionFeedbackInput = {
+  action: DecisionFeedbackAction;
+  comment?: string;
+  expectedFeedbackId?: string;
+};
+export type DecisionPromotion = {
+  candidateId: string;
+  decisionRecordIds: string[];
+  promotedAt: string;
+  promotedBy: string;
+};
 export interface ReviewRepository {
   createCandidate(
     key: string,
@@ -99,10 +179,30 @@ export interface ReviewRepository {
     reviewer: string,
   ): Promise<Candidate>;
   summary(now: Date): Promise<Summary>;
+  createDecisionRecord(
+    key: string,
+    record: DecisionRecord,
+  ): Promise<"created" | "replay">;
+  decisionRecords(filters: DecisionRecordFilters): Promise<DecisionRecordPage>;
+  decisionRecord(id: string, now: Date): Promise<DecisionRecordItem>;
+  addDecisionFeedback(
+    decisionRecordId: string,
+    input: DecisionFeedbackInput,
+    now: Date,
+    reviewer: string,
+  ): Promise<DecisionFeedback>;
+  promoteDecisionRecords(
+    key: string,
+    decisionRecordIds: string[],
+    candidate: Candidate,
+    now: Date,
+    reviewer: string,
+  ): Promise<{ status: "created" | "replay"; promotion: DecisionPromotion }>;
   close(): Promise<void>;
 }
 export class ConflictError extends Error {}
 export class ValidationError extends Error {}
+export class NotFoundError extends Error {}
 export const addDays = (d: Date, n: number) =>
   new Date(d.getTime() + n * 86_400_000);
 
