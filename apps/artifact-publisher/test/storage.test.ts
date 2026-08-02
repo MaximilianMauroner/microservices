@@ -23,6 +23,37 @@ afterEach(() => {
 });
 
 describe("S3 upload storage", () => {
+  it("does not enable optional AWS streaming checksums for S3-compatible storage", async () => {
+    let requestChecksumCalculation: string | undefined;
+    let putCommand: PutObjectCommand | undefined;
+    vi.spyOn(S3Client.prototype, "send").mockImplementation(async function (
+      this: S3Client,
+      command
+    ) {
+      requestChecksumCalculation = await this.config.requestChecksumCalculation();
+      if (!(command instanceof PutObjectCommand)) {
+        throw new Error("Unexpected S3 command");
+      }
+      putCommand = command;
+      return {} as never;
+    });
+    const storage = createS3UploadStorage(storageConfig);
+
+    await storage.putTemporaryFile("file-id", "/dev/null", {
+      bytes: 0,
+      contentType: "application/octet-stream",
+      expiresAt: new Date("2026-07-13T12:00:00.000Z"),
+      originalName: "release.apk",
+      sha256: "a".repeat(64)
+    });
+
+    expect(requestChecksumCalculation).toBe("WHEN_REQUIRED");
+    if (putCommand?.input.Body instanceof Readable) {
+      putCommand.input.Body.destroy();
+    }
+    storage.close?.();
+  });
+
   it("overwrites the same HTML key with refreshed metadata", async () => {
     const commands: PutObjectCommand[] = [];
     vi.spyOn(S3Client.prototype, "send").mockImplementation(async (command) => {

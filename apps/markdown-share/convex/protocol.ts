@@ -167,6 +167,15 @@ export async function documentAtVersion(
   return canonical.node;
 }
 
+export async function markdownAtVersion(
+  ctx: Pick<MutationCtx, "runQuery">,
+  id: string,
+  targetVersion: number,
+): Promise<string> {
+  const document = await documentAtVersion(ctx, id, targetVersion);
+  return parseSnapshot(JSON.stringify(document.toJSON())).markdown;
+}
+
 export async function validateSubmittedSteps(
   ctx: Pick<MutationCtx, "runQuery">,
   id: string,

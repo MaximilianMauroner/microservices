@@ -8,6 +8,10 @@ import {
   createPlatformApp,
   type PlatformAccess
 } from "../src/app.ts";
+import {
+  InvalidHeartbeatTokenError,
+  type TowerHeartbeat
+} from "../src/tower-heartbeat.ts";
 
 function verifier(audience: string): AccessVerifier {
   return {
@@ -124,6 +128,44 @@ describe("platform gateway", () => {
     expect(checks).toEqual(["tools", "publisher", "review"]);
   });
 
+  it("accepts authenticated Tower heartbeats and exposes only current health", async () => {
+    let healthy = false;
+    const towerHeartbeat: TowerHeartbeat = {
+      async receive(authorization) {
+        if (authorization !== "Bearer tower-token") {
+          throw new InvalidHeartbeatTokenError();
+        }
+        healthy = true;
+      },
+      async isHealthy() {
+        return healthy;
+      }
+    };
+    const heartbeatApp = createPlatformApp({
+      access,
+      artifact: (_request, response) => response.sendStatus(404),
+      fieldGuide: async () => new Response("field-guide"),
+      tools: async () => new Response("tools"),
+      towerHeartbeat,
+      health: async () => undefined,
+      publicOrigin: "https://tools.example.test"
+    });
+
+    await request(heartbeatApp)
+      .get("/health/tower")
+      .expect(503, { ok: false, error: "heartbeat_stale" });
+    await request(heartbeatApp)
+      .post("/api/heartbeat/tower")
+      .expect(401, { error: "invalid_heartbeat_token" });
+    await request(heartbeatApp)
+      .post("/api/heartbeat/tower")
+      .set("Authorization", "Bearer tower-token")
+      .expect(204);
+    await request(heartbeatApp)
+      .get("/health/tower")
+      .expect(200, { ok: true });
+  });
+
   it("keeps the Tools and status surfaces public for GET and HEAD", async () => {
     await request(app()).get("/").expect(200, "tools");
     expect((await request(app()).head("/").expect(200)).text).toBeUndefined();
@@ -133,11 +175,14 @@ describe("platform gateway", () => {
     await request(app()).get("/api/public/catalog").expect(200, "tools");
   });
 
-  it("serves only the exact Manage browser asset publicly", async () => {
-    await request(app()).get("/assets/ops.js").expect(200, "tools");
-    expect(
-      (await request(app()).head("/assets/ops.js").expect(200)).text
-    ).toBeUndefined();
+  it("serves only the exact Manage browser assets publicly", async () => {
+    for (const path of ["/assets/markdown-admin.js", "/assets/ops.js"]) {
+      await request(app()).get(path).expect(200, "tools");
+      expect((await request(app()).head(path).expect(200)).text).toBeUndefined();
+      await request(app())
+        .post(path)
+        .expect(401, { error: "access_required" });
+    }
 
     for (const path of [
       "/manage",
@@ -147,9 +192,6 @@ describe("platform gateway", () => {
     ]) {
       await request(app()).get(path).expect(401, { error: "access_required" });
     }
-    await request(app())
-      .post("/assets/ops.js")
-      .expect(401, { error: "access_required" });
   });
 
   it("rejects direct-origin access to protected browser pages and APIs", async () => {

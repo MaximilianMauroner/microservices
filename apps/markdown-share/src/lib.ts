@@ -83,6 +83,10 @@ export function markdownFromJson(content: unknown): string {
     .join("");
 }
 
+export function markdownSourceLines(markdown: string): string[] {
+  return markdown.split("\n");
+}
+
 export function formatExpiry(expiresAt: number, now = Date.now()): string {
   const remaining = Math.max(0, expiresAt - now);
   const totalMinutes = Math.ceil(remaining / 60_000);

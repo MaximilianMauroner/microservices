@@ -19,7 +19,12 @@ if (!convexUrl) {
     </main>,
   );
 } else {
-  const convex = new ConvexReactClient(convexUrl);
+  const convex = new ConvexReactClient(convexUrl, {
+    // The editor has its own precise pending-step guard. The client-wide guard
+    // also counts background mutations (presence, snapshots, checkpoints),
+    // which can otherwise produce a misleading leave-page prompt.
+    unsavedChangesWarning: false,
+  });
   createRoot(rootElement).render(
     <ConvexProvider client={convex}>
       <App />
