@@ -63,8 +63,8 @@ describe("Postgres schema contract", () => {
     expect(config).toContain('schema: "./src/db/postgres-schema.ts"');
     expect(config).toContain('schemaFilter: ["public"]');
     expect(config).toContain('"field_guide_schema_migrations"');
-    expect(config).toContain("PostgreSQL schema push must run through the guarded db:push-postgres command");
-    expect(config).toContain('"postgres:"');
+    expect(config).toContain("consumePushHandoff(process.env)");
+    expect(config).not.toContain("PUSH_AUTHORIZATION");
   });
 
   it("matches the production columns, keys, checks, and bigserial", () => {
