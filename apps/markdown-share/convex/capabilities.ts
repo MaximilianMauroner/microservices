@@ -1,6 +1,4 @@
 import type { MutationCtx } from "./_generated/server";
-import { ConvexError } from "convex/values";
-import { LEGACY_TOKEN_PATTERN } from "./constants";
 
 export async function createServerCapability(
   ctx: Pick<MutationCtx, "db">,
@@ -14,34 +12,6 @@ export async function createServerCapability(
   });
   await ctx.db.delete("capabilitySeeds", seedId);
   return seedId;
-}
-
-export async function claimLegacyCapability(
-  ctx: Pick<MutationCtx, "db">,
-  token: string,
-  claimedAt: number,
-): Promise<void> {
-  if (!LEGACY_TOKEN_PATTERN.test(token)) {
-    throw new ConvexError({
-      code: "INVALID_TOKEN",
-      message: "The legacy document link token is invalid.",
-    });
-  }
-  const existing = await ctx.db
-    .query("capabilityClaims")
-    .withIndex("by_token", (query) => query.eq("token", token))
-    .unique();
-  if (existing) {
-    throw new ConvexError({
-      code: "TOKEN_ALREADY_USED",
-      message: "This document capability has already been used.",
-    });
-  }
-  await ctx.db.insert("capabilityClaims", {
-    token,
-    kind: "legacy",
-    claimedAt,
-  });
 }
 
 export async function ensureCapabilityClaim(

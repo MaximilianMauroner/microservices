@@ -1,8 +1,10 @@
 import { components } from "./_generated/api";
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
-import { RETENTION_MS } from "./constants";
-import { requireLiveDocument } from "./documentAccess";
+import {
+  renewDocumentRetention,
+  requireLiveDocument,
+} from "./documentLifecycle";
 import {
   parseSnapshot,
   validateSubmittedSnapshot,
@@ -101,13 +103,7 @@ export const submitSteps = mutation({
     );
 
     if (result.status === "synced" && args.steps.length > 0) {
-      const now = Date.now();
-      const expiresAt = now + RETENTION_MS;
-
-      await ctx.db.patch("documents", document._id, {
-        updatedAt: now,
-        expiresAt,
-      });
+      await renewDocumentRetention(ctx, document);
     }
 
     return result;

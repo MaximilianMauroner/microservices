@@ -14,7 +14,7 @@ import type * as checkpoints from "../checkpoints.js";
 import type * as claims from "../claims.js";
 import type * as cleanup from "../cleanup.js";
 import type * as constants from "../constants.js";
-import type * as documentAccess from "../documentAccess.js";
+import type * as documentLifecycle from "../documentLifecycle.js";
 import type * as documents from "../documents.js";
 import type * as editor from "../editor.js";
 import type * as http from "../http.js";
@@ -34,7 +34,7 @@ declare const fullApi: ApiFromModules<{
   claims: typeof claims;
   cleanup: typeof cleanup;
   constants: typeof constants;
-  documentAccess: typeof documentAccess;
+  documentLifecycle: typeof documentLifecycle;
   documents: typeof documents;
   editor: typeof editor;
   http: typeof http;

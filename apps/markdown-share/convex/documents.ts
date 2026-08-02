@@ -1,21 +1,11 @@
-import { ProsemirrorSync } from "@convex-dev/prosemirror-sync";
 import { ConvexError, v } from "convex/values";
-import { internal, components } from "./_generated/api";
 import { mutation, query } from "./_generated/server";
 import {
   FILENAME_PATTERN,
-  LEGACY_TOKEN_PATTERN,
   MAX_FILENAME_LENGTH,
   MAX_MARKDOWN_LENGTH,
-  RETENTION_MS,
 } from "./constants";
-import { findDocument } from "./documentAccess";
-import {
-  claimLegacyCapability,
-  createServerCapability,
-} from "./capabilities";
-
-const prosemirrorSync = new ProsemirrorSync(components.prosemirrorSync);
+import { createDocument, findDocument } from "./documentLifecycle";
 
 const publicDocument = v.object({
   token: v.string(),
@@ -62,66 +52,17 @@ function toPublicDocument(document: {
 export const create = mutation({
   args: {
     filename: v.string(),
-    // Temporary compatibility for the already-deployed alpha bundle. New
-    // clients omit this and receive a server-generated capability.
-    token: v.optional(v.string()),
     markdown: v.string(),
   },
   returns: publicDocument,
   handler: async (ctx, args) => {
     validateCreateInput(args.filename, args.markdown);
 
-    const now = Date.now();
-    let token: string;
-    if (args.token !== undefined) {
-      if (!LEGACY_TOKEN_PATTERN.test(args.token)) {
-        throw new ConvexError({
-          code: "INVALID_TOKEN",
-          message: "The legacy document link token is invalid.",
-        });
-      }
-      if (await findDocument(ctx, args.token)) {
-        throw new ConvexError({
-          code: "TOKEN_ALREADY_USED",
-          message: "This document capability has already been used.",
-        });
-      }
-      await claimLegacyCapability(ctx, args.token, now);
-      token = args.token;
-    } else {
-      token = await createServerCapability(ctx, now);
-    }
-    const expiresAt = now + RETENTION_MS;
-    await ctx.db.insert("documents", {
-      token,
+    const document = await createDocument(ctx, {
       filename: args.filename,
-      createdAt: now,
-      updatedAt: now,
-      expiresAt,
+      markdown: args.markdown,
     });
-
-    await prosemirrorSync.create(ctx, token, {
-      type: "doc",
-      content: [
-        {
-          type: "codeBlock",
-          content:
-            args.markdown.length > 0
-              ? [{ type: "text", text: args.markdown }]
-              : undefined,
-        },
-      ],
-    });
-
-    await ctx.scheduler.runAt(expiresAt, internal.cleanup.expire, { token });
-
-    return toPublicDocument({
-      token,
-      filename: args.filename,
-      createdAt: now,
-      updatedAt: now,
-      expiresAt,
-    });
+    return toPublicDocument(document);
   },
 });
 

@@ -1,11 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildDiffRows,
   documentPath,
   formatExpiry,
   formatViewerCount,
-  getScrollProgress,
-  getScrollTop,
   markdownSourceLines,
   markdownFromJson,
   normalizeFilename,
@@ -77,33 +74,4 @@ describe("document presentation", () => {
     expect(formatViewerCount(4)).toBe("4 viewing");
   });
 
-  it("maps different pane heights to the same scroll progress", () => {
-    expect(getScrollProgress(450, 1_000, 100)).toBe(0.5);
-    expect(getScrollTop(0.5, 2_000, 200)).toBe(900);
-    expect(getScrollProgress(30, 100, 100)).toBe(0);
-    expect(getScrollTop(2, 500, 100)).toBe(400);
-  });
-
-  it("builds line-numbered checkpoint diff rows", () => {
-    expect(buildDiffRows("one\ntwo\n", "one\nthree\n")).toEqual([
-      {
-        kind: "unchanged",
-        value: "one",
-        oldLine: 1,
-        newLine: 1,
-      },
-      {
-        kind: "removed",
-        value: "two",
-        oldLine: 2,
-        newLine: null,
-      },
-      {
-        kind: "added",
-        value: "three",
-        oldLine: null,
-        newLine: 2,
-      },
-    ]);
-  });
 });

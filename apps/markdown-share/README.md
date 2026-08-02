@@ -37,11 +37,12 @@ frontend connections to this app and its production Convex deployment.
 
 ### Legacy capability retirement
 
-The deployed alpha frontend still sends client-generated UUID capabilities, so
-`documents.create` temporarily accepts that optional argument and records a
-content-free permanent `legacy` claim. Server-generated capabilities use a
-transient Convex seed ID and leave no claim row. After the legacy frontend has
-been replaced everywhere, remove the optional `token` create argument first;
-only after that deployment is live may an operator delete legacy claim rows (or
-drop `capabilityClaims`) because callers can no longer select a previously used
-capability. Do not purge those claims while the compatibility path is active.
+The public frontend no longer sends client-generated UUID capabilities, and
+`documents.create` now accepts only server-generated capabilities. Deploy this
+source state before removing the remaining compatibility data. Server-generated
+capabilities use a transient Convex seed ID and leave no claim row.
+
+After that deployment is confirmed live, an operator may delete legacy claim
+rows and remove `capabilityClaims`, its backfill mutations, and legacy cleanup
+branches. Do not purge those claims before the create-argument removal is live,
+because an old backend could still accept a previously used capability.
