@@ -42,4 +42,22 @@ describe("private URL policy", () => {
     expect(containsPrivateUrl("See http://service.corp/internal")).toBe(true);
     expect(containsPrivateUrl("See https://example.com/reference")).toBe(false);
   });
+
+  it.each([
+    "See http://127.0.0.1).",
+    "See http://10.0.0.1, then continue",
+    "See https://[::1].",
+    "See https://[::1]).",
+    "See http://service.corp];",
+  ])("ignores ordinary prose terminators around private URL %s", (value) => {
+    expect(containsPrivateUrl(value)).toBe(true);
+  });
+
+  it.each([
+    "See https://example.com/docs_(v2).",
+    "See https://example.com/path?next=(ok)",
+    "See https://example.com/items;version=2",
+  ])("retains valid public URL punctuation in %s", (value) => {
+    expect(containsPrivateUrl(value)).toBe(false);
+  });
 });

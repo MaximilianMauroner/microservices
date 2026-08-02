@@ -824,7 +824,7 @@ function uuid(value: unknown, name: string) {
     )
   )
     throw new InputError(`${name} must be a UUID.`);
-  return string;
+  return string.toLowerCase();
 }
 
 function parseLimit(value: unknown) {
