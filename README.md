@@ -10,7 +10,7 @@ share a single boundary. Shared pure contracts belong in `packages/*`.
 | --- | --- | --- | --- |
 | Platform service | `apps/platform-service` | Railway | Single HTTP process, checker scheduler, and Cloudflare Access boundary for all hosted tools. |
 | Artifact publisher | `apps/artifact-publisher` | Railway | Sandboxed planning pages, temporary file uploads, resumable downloads, and revocation. |
-| Field guide console | `apps/field-guide-console` | Railway | Review-only approval and lifecycle history for field-guide lessons. |
+| Field guide console | `apps/field-guide-console` | Railway | Agent decision inbox plus review-only approval and lifecycle history for field-guide lessons. |
 | Network console | `apps/network-console` | Local VM systemd service | Port-80 dashboard for Tailscale address and listening-port discovery. |
 | Tools Web | `apps/tools-web` | In-process module | Public tools directory and Cloudflare Access-protected catalog operations. |
 | Tools Checker | `jobs/tools-checker` | In-process module | One bounded status/incident/notification pass every five minutes. |

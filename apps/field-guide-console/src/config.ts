@@ -1,4 +1,4 @@
-type SharedConfig = { port:number; agentApiToken:string; publicBaseUrl:string };
+type SharedConfig = { port:number; agentApiToken:string; publicBaseUrl:string; decisionRecordArchiveDays?:number };
 export type Config = SharedConfig & ({ backend:"sqlite"; sqlitePath:string; databaseUrl?:string; importOnStart:boolean; importAllowOverwrite:boolean } | { backend:"postgres"; databaseUrl:string });
 
 export function loadConfig(env:NodeJS.ProcessEnv=process.env):Config {
@@ -6,7 +6,9 @@ export function loadConfig(env:NodeJS.ProcessEnv=process.env):Config {
   const publicBaseUrl=parsePublicBaseUrl(get("PUBLIC_BASE_URL"));
   const port=env.PORT?Number(env.PORT):3000;
   if(!Number.isInteger(port)||port<1||port>65535)throw new Error("PORT must be a valid port");
-  const shared={port,agentApiToken:get("AGENT_API_TOKEN"),publicBaseUrl};
+  const decisionRecordArchiveDays=env.DECISION_RECORD_ARCHIVE_DAYS?Number(env.DECISION_RECORD_ARCHIVE_DAYS):90;
+  if(!Number.isInteger(decisionRecordArchiveDays)||decisionRecordArchiveDays<1||decisionRecordArchiveDays>3650)throw new Error("DECISION_RECORD_ARCHIVE_DAYS must be between 1 and 3650");
+  const shared={port,agentApiToken:get("AGENT_API_TOKEN"),publicBaseUrl,decisionRecordArchiveDays};
   const backend=env.DATABASE_BACKEND?.trim()||"sqlite";
   if(backend==="postgres")return {...shared,backend,databaseUrl:get("DATABASE_URL")};
   if(backend!=="sqlite")throw new Error("DATABASE_BACKEND must be sqlite or postgres");

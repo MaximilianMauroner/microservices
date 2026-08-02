@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import type { Database } from "bun:sqlite";
 import { apiTimestamp, canonicalTimestamp } from "./db/logical-snapshot.js";
+import { SQLiteDecisionRecordStore } from "./sqlite-decision-records.js";
 import {
   ConflictError,
   ValidationError,
@@ -10,6 +11,9 @@ import {
   type AmendVerdictInput,
   type Candidate,
   type Decision,
+  type DecisionFeedbackInput,
+  type DecisionRecord,
+  type DecisionRecordFilters,
   type Effect,
   type QueueItem,
   type ReviewRepository,
@@ -41,7 +45,10 @@ type EventRow = {
 };
 
 export class SQLiteReviewRepository implements ReviewRepository {
-  constructor(private readonly db: Database, private readonly closeDatabase: () => void = () => db.close()) {}
+  private readonly decisionRecordStore: SQLiteDecisionRecordStore;
+  constructor(private readonly db: Database, private readonly closeDatabase: () => void = () => db.close()) {
+    this.decisionRecordStore = new SQLiteDecisionRecordStore(db);
+  }
 
   async createCandidate(key: string, candidate: Candidate) {
     return this.immediate(() => {
@@ -156,6 +163,11 @@ export class SQLiteReviewRepository implements ReviewRepository {
   }
 
   async summary(now:Date): Promise<Summary> { const queue = await this.queue(undefined, now); return {pending:queue.filter(x=>x.status==="pending").length,due:queue.filter(x=>x.status==="due").length,overdue:queue.filter(x=>x.status==="overdue").length}; }
+  async createDecisionRecord(key:string,record:DecisionRecord){return this.decisionRecordStore.create(key,record);}
+  async decisionRecords(filters:DecisionRecordFilters){return this.decisionRecordStore.page(filters);}
+  async decisionRecord(id:string,now:Date){return this.decisionRecordStore.get(id,now);}
+  async addDecisionFeedback(id:string,input:DecisionFeedbackInput,now:Date,reviewer:string){return this.decisionRecordStore.feedback(id,input,now,reviewer);}
+  async promoteDecisionRecords(key:string,ids:string[],candidate:Candidate,now:Date,reviewer:string){return this.decisionRecordStore.promote(key,ids,candidate,now,reviewer);}
   async close() { this.closeDatabase(); }
 
   private immediate<T>(operation: () => T): T {
