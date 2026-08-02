@@ -407,6 +407,43 @@ describe("decision record review", () => {
     expect(await responseJson(response)).toMatchObject({ message: "Promoted decision records must share one source project." });
   });
 
+  it("rejects project candidate identity that contradicts source provenance", async () => {
+    const { app } = setup();
+    await callApp(app, "/api/agent/decision-records", {
+      method: "POST",
+      json: { idempotencyKey: "project-source", record },
+    });
+    await callApp(app, `/api/review/decision-records/${record.decisionRecordId}/feedback`, {
+      method: "POST",
+      headers: { Origin: origin },
+      json: { action: "up" },
+    });
+    const response = await callApp(app, "/api/review/decision-records/promotions", {
+      method: "POST",
+      headers: { Origin: origin },
+      json: {
+        idempotencyKey: "contradictory-project-name",
+        decisionRecordIds: [record.decisionRecordId],
+        candidate: {
+          candidateId: crypto.randomUUID(),
+          scope: "project",
+          projectKey: record.projectKey,
+          projectDisplayName: "A different repository",
+          lessonKey: "source-identity",
+          title: "Keep source identity",
+          body: "Derive project identity from the source record.",
+          rationale: "Client labels cannot rewrite provenance.",
+          createdAt: now.toISOString(),
+        },
+      },
+    });
+    expect(response.status).toBe(400);
+    expect(await responseJson(response)).toMatchObject({
+      message: "Project candidate identity must match source project provenance.",
+    });
+    expect((await responseJson<{ items: unknown[] }>(await callApp(app, "/api/review/queue?scope=project"))).items).toEqual([]);
+  });
+
   it("canonicalizes UUIDs before persistence and promotion duplicate checks", async () => {
     const { app } = setup();
     const lowercaseId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";

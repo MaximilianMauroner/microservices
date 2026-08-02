@@ -705,6 +705,11 @@ async function parseDecisionPromotion(value: unknown, repository: ReviewReposito
       (item.record.foundProjectKey ?? item.record.projectKey) !== sourceProject.foundProjectKey ||
       (item.record.foundProjectDisplayName ?? item.record.projectDisplayName) !== sourceProject.foundProjectDisplayName)
   ) throw new InputError("Promoted decision records must share one source project.");
+  if (
+    project &&
+    (project.projectKey !== sourceProject.foundProjectKey ||
+      project.projectDisplayName !== sourceProject.foundProjectDisplayName)
+  ) throw new InputError("Project candidate identity must match source project provenance.");
   const evidence = items.map((item) => ({
     excerpt: [item.record.summary, `Choice: ${item.record.choice}`]
       .join("\n").slice(0, 2000),
@@ -713,7 +718,12 @@ async function parseDecisionPromotion(value: unknown, repository: ReviewReposito
   const candidate: Candidate = {
     candidateId: uuid(draft.candidateId, "candidateId"),
     scope,
-    ...project,
+    ...(project
+      ? {
+          projectKey: sourceProject.foundProjectKey,
+          projectDisplayName: sourceProject.foundProjectDisplayName,
+        }
+      : {}),
     foundProjectKey: sourceProject.foundProjectKey,
     foundProjectDisplayName: sourceProject.foundProjectDisplayName,
     lessonKey: text(draft.lessonKey, "lessonKey", 128),
