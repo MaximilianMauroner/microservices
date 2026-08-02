@@ -38,8 +38,11 @@ describe("review UI and authentication", () => {
     expect(html).toContain('data-view="history"');
     expect(html).toContain("Evidence");
     expect(html).toContain("confirm_valid");
-    expect(html).toContain('<link rel="stylesheet" href="/review-suite.css?v=4b98adb">');
+    expect(html).toContain('<link rel="stylesheet" href="/review-suite.css?v=c08f4a2">');
+    expect(html).toContain("Start review session");
+    expect(html).toContain("handleDecisionShortcut");
     expect(html).not.toContain('data-action="edit"');
+    expect(html).not.toContain('style="');
     expect(reviewSuiteStyles).toContain("@media(max-width:439px)");
     expect(reviewSuiteStyles).toContain("flex-wrap:wrap");
     expect(reviewSuiteStyles).toContain("flex:1 1 calc(33.333% - 4px)");
