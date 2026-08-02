@@ -56,6 +56,18 @@ describe("static UI assets", () => {
     expect(script).not.toContain("eval(");
   });
 
+  test("document inventory client filters, sorts, and copies links without unsafe DOM writes", async () => {
+    const script = await readFile(new URL("markdown-admin.js", assets), "utf8");
+
+    expect(script).toContain("[data-document-search]");
+    expect(script).toContain("[data-document-checkpoints]");
+    expect(script).toContain("[data-document-expiry]");
+    expect(script).toContain("navigator.clipboard.writeText");
+    expect(script).toContain("localeCompare");
+    expect(script).not.toContain("innerHTML");
+    expect(script).not.toContain("eval(");
+  });
+
   test("keeps the shared navigation and hero usable at compact widths", async () => {
     const css = await readFile(new URL("tools.css", assets), "utf8");
 

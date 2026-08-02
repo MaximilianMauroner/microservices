@@ -26,6 +26,7 @@ export default defineSchema({
     createdAt: v.number(),
     createdBy: v.string(),
     charCount: v.number(),
+    version: v.optional(v.number()),
   }).index("by_document_and_created_at", ["documentId", "createdAt"]),
   checkpointContents: defineTable({
     markdown: v.string(),

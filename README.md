@@ -49,7 +49,8 @@ Railway deploys the workspace once:
 
 The platform service must remain awake because it owns the five-minute checker
 scheduler. The redacted Tools home and `/status` surface are public;
-Cloudflare Access protects Publisher upload/list/revoke surfaces, Review,
+`/manage/status` uses the Manage Access audience. Cloudflare Access protects
+Publisher upload/list/revoke surfaces, Review,
 Manage, and their protected legacy browser aliases. Artifact and file delivery
 uses public, unlisted capability URLs: possession of an unguessable URL grants
 read access, while the backing bucket remains private. The application also

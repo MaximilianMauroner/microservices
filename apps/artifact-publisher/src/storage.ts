@@ -168,6 +168,10 @@ export function createS3UploadStorage(config: S3UploadStorageConfig): UploadStor
     endpoint: config.endpoint,
     region: config.region,
     forcePathStyle: config.forcePathStyle,
+    // Optional streaming checksums use the AWS-specific `aws-chunked`
+    // encoding, which is not implemented consistently by S3-compatible
+    // providers. The publisher already computes and stores SHA-256 metadata.
+    requestChecksumCalculation: "WHEN_REQUIRED",
     credentials: {
       accessKeyId: config.accessKeyId,
       secretAccessKey: config.secretAccessKey

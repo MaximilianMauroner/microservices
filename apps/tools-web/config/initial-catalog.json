@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "revision": "seed-2026-07-29",
-  "updatedAt": "2026-07-29T00:00:00.000Z",
+  "revision": "seed-2026-07-31-heartbeats",
+  "updatedAt": "2026-07-31T07:00:00.000Z",
   "groups": [
     {
       "id": "publishing",
@@ -23,6 +23,13 @@
       "description": "Status and restricted infrastructure orientation.",
       "order": 2,
       "visibility": "public"
+    },
+    {
+      "id": "private-infrastructure",
+      "name": "Private infrastructure",
+      "description": "Private availability checks for home infrastructure.",
+      "order": 3,
+      "visibility": "private"
     }
   ],
   "entries": [
@@ -163,6 +170,54 @@
         "url": "https://coding.tailbc92d.ts.net/health"
       },
       "privateNotes": "Railway has no Tailnet route; status must remain unavailable_from_railway rather than down."
+    },
+    {
+      "id": "tower",
+      "groupId": "private-infrastructure",
+      "name": "Tower",
+      "description": "Unraid host availability reported by an authenticated outbound heartbeat.",
+      "order": 0,
+      "visibility": "private",
+      "lifecycle": "active",
+      "links": [
+        {
+          "id": "tower",
+          "label": "Open Tower on Tailscale",
+          "url": "https://tower.tailbc92d.ts.net:5443/",
+          "access": "private"
+        }
+      ],
+      "monitor": {
+        "enabled": true,
+        "paused": false,
+        "scope": "public",
+        "url": "https://tools.mauroner.net/health/tower"
+      },
+      "privateNotes": "Tower posts a bearer-authenticated heartbeat every minute; health becomes stale after three minutes."
+    },
+    {
+      "id": "home-assistant",
+      "groupId": "private-infrastructure",
+      "name": "Home Assistant",
+      "description": "Home Assistant availability through its public Cloudflare Tunnel hostname.",
+      "order": 1,
+      "visibility": "private",
+      "lifecycle": "active",
+      "links": [
+        {
+          "id": "home-assistant",
+          "label": "Open Home Assistant",
+          "url": "https://homeassistant.mauroner.net/",
+          "access": "private"
+        }
+      ],
+      "monitor": {
+        "enabled": true,
+        "paused": false,
+        "scope": "public",
+        "url": "https://homeassistant.mauroner.net/"
+      },
+      "privateNotes": "Private catalog entry; its status and destination are excluded from public projections."
     }
   ]
 }

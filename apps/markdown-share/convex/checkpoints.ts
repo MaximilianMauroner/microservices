@@ -1,17 +1,19 @@
 import { ConvexError, v } from "convex/values";
+import { components } from "./_generated/api";
 import { mutation, query } from "./_generated/server";
 import {
   MAX_CHECKPOINT_AUTHOR_LENGTH,
   MAX_CHECKPOINTS,
-  MAX_MARKDOWN_LENGTH,
 } from "./constants";
 import { requireLiveDocument } from "./documentAccess";
+import { markdownAtVersion } from "./protocol";
 
 const checkpointSummary = v.object({
   _id: v.id("checkpoints"),
   createdAt: v.number(),
   createdBy: v.string(),
   charCount: v.number(),
+  version: v.optional(v.number()),
 });
 
 const checkpointWithContent = v.object({
@@ -19,6 +21,7 @@ const checkpointWithContent = v.object({
   createdAt: v.number(),
   createdBy: v.string(),
   markdown: v.string(),
+  version: v.optional(v.number()),
 });
 
 function invalidCheckpoint(message: string): ConvexError<{
@@ -28,21 +31,18 @@ function invalidCheckpoint(message: string): ConvexError<{
   return new ConvexError({ code: "INVALID_CHECKPOINT", message });
 }
 
+function optionalVersion(version: number | undefined): { version?: number } {
+  return version === undefined ? {} : { version };
+}
+
 export const create = mutation({
   args: {
     token: v.string(),
-    markdown: v.string(),
     createdBy: v.string(),
   },
   returns: checkpointSummary,
   handler: async (ctx, args) => {
     const document = await requireLiveDocument(ctx, args.token);
-    if (args.markdown.length > MAX_MARKDOWN_LENGTH) {
-      throw invalidCheckpoint(
-        "Markdown checkpoints are limited to 500,000 characters.",
-      );
-    }
-
     const createdBy = args.createdBy.trim();
     if (
       createdBy.length === 0 ||
@@ -64,23 +64,34 @@ export const create = mutation({
       });
     }
 
+    const version = await ctx.runQuery(
+      components.prosemirrorSync.lib.latestVersion,
+      { id: args.token },
+    );
+    if (version === null) {
+      throw invalidCheckpoint("Editor history is unavailable.");
+    }
+    const markdown = await markdownAtVersion(ctx, args.token, version);
+
     const createdAt = Date.now();
     const contentId = await ctx.db.insert("checkpointContents", {
-      markdown: args.markdown,
+      markdown,
     });
     const checkpointId = await ctx.db.insert("checkpoints", {
       documentId: document._id,
       contentId,
       createdAt,
       createdBy,
-      charCount: args.markdown.length,
+      charCount: markdown.length,
+      version,
     });
 
     return {
       _id: checkpointId,
       createdAt,
       createdBy,
-      charCount: args.markdown.length,
+      charCount: markdown.length,
+      version,
     };
   },
 });
@@ -98,12 +109,15 @@ export const list = query({
       .order("desc")
       .take(MAX_CHECKPOINTS);
 
-    return checkpoints.map(({ _id, createdAt, createdBy, charCount }) => ({
-      _id,
-      createdAt,
-      createdBy,
-      charCount,
-    }));
+    return checkpoints.map(
+      ({ _id, createdAt, createdBy, charCount, version }) => ({
+        _id,
+        createdAt,
+        createdBy,
+        charCount,
+        ...optionalVersion(version),
+      }),
+    );
   },
 });
 
@@ -150,12 +164,14 @@ export const compare = query({
         createdAt: older.createdAt,
         createdBy: older.createdBy,
         markdown: olderContent.markdown,
+        ...optionalVersion(older.version),
       },
       newer: {
         _id: newer._id,
         createdAt: newer.createdAt,
         createdBy: newer.createdBy,
         markdown: newerContent.markdown,
+        ...optionalVersion(newer.version),
       },
     };
   },

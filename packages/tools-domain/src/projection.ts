@@ -83,6 +83,12 @@ export function projectPublicSnapshot(
         ? []
         : rollingUptimeDays(monitor?.uptimeDays ?? [], generatedAt).sort(
             (left, right) => left.day.localeCompare(right.day)
+          ),
+      downtimeRecords: unavailable
+        ? []
+        : rollingDowntimeRecords(
+            state.incidents.filter(({ monitorId }) => monitorId === entry.id),
+            generatedAt
           )
     };
   }
@@ -95,6 +101,25 @@ export function projectPublicSnapshot(
     entries,
     statuses
   };
+}
+
+function rollingDowntimeRecords(
+  incidents: CheckerStateDocument["incidents"],
+  generatedAt: string
+) {
+  const end = new Date(generatedAt);
+  const start = new Date(end);
+  start.setUTCHours(0, 0, 0, 0);
+  start.setUTCDate(start.getUTCDate() - 89);
+  const startTimestamp = start.toISOString();
+  return incidents
+    .filter(
+      ({ startedAt, resolvedAt }) =>
+        startedAt <= generatedAt &&
+        (resolvedAt === null || resolvedAt >= startTimestamp)
+    )
+    .map(({ startedAt, resolvedAt }) => ({ startedAt, resolvedAt }))
+    .sort((left, right) => left.startedAt.localeCompare(right.startedAt));
 }
 
 function rollingUptimeDays(

@@ -128,31 +128,42 @@ describe("capability lifecycle", () => {
 });
 
 describe("checkpoint history", () => {
-  it("stores lightweight metadata and compares two immutable snapshots", async () => {
+  it("stores canonical content at the accepted editor version", async () => {
     vi.useFakeTimers({ now: 5_000 });
     const test = setup();
+    const markdown = "one\ntwo\n";
     const created = await test.mutation(api.documents.create, {
       filename: "history.md",
-      markdown: "one\ntwo\n",
+      markdown,
     });
 
     const older = await test.mutation(api.checkpoints.create, {
       token: created.token,
-      markdown: "one\ntwo\n",
       createdBy: "Amber Fox 12",
     });
+    expect(older).toMatchObject({ version: 1, charCount: markdown.length });
+
+    await expect(
+      test.mutation(api.editor.submitSteps, {
+        id: created.token,
+        version: 1,
+        clientId: "checkpoint-test-client",
+        steps: [insertStep(markdown, "three\n")],
+      }),
+    ).resolves.toEqual({ status: "synced" });
+
     vi.setSystemTime(6_000);
     const newer = await test.mutation(api.checkpoints.create, {
       token: created.token,
-      markdown: "one\nthree\n",
       createdBy: "Blue Finch 07",
     });
+    expect(newer).toMatchObject({ version: 2, charCount: 14 });
 
     expect(
       await test.query(api.checkpoints.list, { token: created.token }),
     ).toEqual([
-      { ...newer, charCount: 10 },
-      { ...older, charCount: 8 },
+      newer,
+      older,
     ]);
     expect(
       await test.query(api.checkpoints.compare, {
@@ -165,15 +176,97 @@ describe("checkpoint history", () => {
         _id: older._id,
         createdAt: older.createdAt,
         createdBy: older.createdBy,
-        markdown: "one\ntwo\n",
+        markdown,
+        version: 1,
       },
       newer: {
         _id: newer._id,
         createdAt: newer.createdAt,
         createdBy: newer.createdBy,
-        markdown: "one\nthree\n",
+        markdown: "one\ntwo\nthree\n",
+        version: 2,
       },
     });
+  });
+
+  it("keeps legacy checkpoints without version metadata readable", async () => {
+    vi.useFakeTimers({ now: 6_500 });
+    const test = setup();
+    const created = await test.mutation(api.documents.create, {
+      filename: "legacy-history.md",
+      markdown: "current",
+    });
+    const legacy = await test.run(async (ctx) => {
+      const document = await ctx.db
+        .query("documents")
+        .withIndex("by_token", (index) => index.eq("token", created.token))
+        .unique();
+      if (!document) {
+        throw new Error("Expected the document fixture to exist.");
+      }
+      const markdown = "legacy";
+      const contentId = await ctx.db.insert("checkpointContents", { markdown });
+      const _id = await ctx.db.insert("checkpoints", {
+        documentId: document._id,
+        contentId,
+        createdAt: 6_400,
+        createdBy: "Legacy Author",
+        charCount: markdown.length,
+      });
+      return { _id, createdAt: 6_400, createdBy: "Legacy Author", markdown };
+    });
+    const current = await test.mutation(api.checkpoints.create, {
+      token: created.token,
+      createdBy: "Current Author",
+    });
+
+    expect(
+      await test.query(api.checkpoints.list, { token: created.token }),
+    ).toEqual([
+      current,
+      {
+        _id: legacy._id,
+        createdAt: legacy.createdAt,
+        createdBy: legacy.createdBy,
+        charCount: legacy.markdown.length,
+      },
+    ]);
+    expect(
+      await test.query(api.checkpoints.compare, {
+        token: created.token,
+        olderId: legacy._id,
+        newerId: current._id,
+      }),
+    ).toEqual({
+      older: legacy,
+      newer: {
+        _id: current._id,
+        createdAt: current.createdAt,
+        createdBy: current.createdBy,
+        markdown: "current",
+        version: 1,
+      },
+    });
+  });
+
+  it("rejects forged client checkpoint content", async () => {
+    const test = setup();
+    const created = await test.mutation(api.documents.create, {
+      filename: "forged-checkpoint.md",
+      markdown: "canonical",
+    });
+    const forgedArgs = {
+      token: created.token,
+      createdBy: "Amber Fox 12",
+      markdown: "forged",
+    };
+
+    await expect(
+      test.mutation(api.checkpoints.create, forgedArgs),
+    ).rejects.toThrow();
+    await expect(
+      test.query(api.checkpoints.list, { token: created.token }),
+    ).resolves.toEqual([]);
   });
 
   it("deletes checkpoint metadata and content with the document", async () => {
@@ -185,7 +278,6 @@ describe("checkpoint history", () => {
     });
     await test.mutation(api.checkpoints.create, {
       token: created.token,
-      markdown: "temporary",
       createdBy: "Cedar Otter 31",
     });
 
@@ -213,7 +305,6 @@ describe("private admin inventory", () => {
     });
     await test.mutation(api.checkpoints.create, {
       token: older.token,
-      markdown: "old",
       createdBy: "Amber Fox 12",
     });
     vi.setSystemTime(20_000);
@@ -307,12 +398,10 @@ describe("editor protocol and retention", () => {
     });
     const older = await test.mutation(api.checkpoints.create, {
       token: created.token,
-      markdown: "older",
       createdBy: "Amber Fox 12",
     });
     const newer = await test.mutation(api.checkpoints.create, {
       token: created.token,
-      markdown: "newer",
       createdBy: "Blue Finch 07",
     });
 

@@ -14,6 +14,7 @@ describe("bucket key contract", () => {
       checkerState: "state/current.json",
       publicSnapshot: "snapshots/public.json",
       privateSnapshot: "snapshots/private.json",
+      towerHeartbeat: "heartbeats/tower.json",
       recoveryPrefix: "recovery/",
       exportPrefix: "exports/"
     });

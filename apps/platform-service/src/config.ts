@@ -49,12 +49,28 @@ export function loadPlatformConfig(env: Environment = process.env) {
     fieldGuide,
     markdownShare: tools.markdownShare,
     checker,
+    towerHeartbeatToken: secret(
+      required(env, "TOWER_HEARTBEAT_TOKEN"),
+      "TOWER_HEARTBEAT_TOKEN"
+    ),
+    towerHeartbeatStaleAfterMs: positiveInteger(
+      env.TOWER_HEARTBEAT_STALE_AFTER_MS,
+      3 * 60 * 1000,
+      "TOWER_HEARTBEAT_STALE_AFTER_MS"
+    ),
     checkerIntervalMs: positiveInteger(
       env.CHECKER_INTERVAL_MS,
       5 * 60 * 1000,
       "CHECKER_INTERVAL_MS"
     )
   };
+}
+
+function secret(value: string, name: string): string {
+  if (value.length < 32 || /\s/.test(value)) {
+    throw new Error(`${name} must be at least 32 non-whitespace characters`);
+  }
+  return value;
 }
 
 export function routeAudiences(env: Environment) {

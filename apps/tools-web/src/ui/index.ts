@@ -7,7 +7,11 @@ export {
   type OperationsHistoryPage,
   type OperationsPageModel
 } from "./ops-page.js";
-export { renderPublicPage, renderStatusPage } from "./public-page.js";
+export {
+  renderPrivateStatusPage,
+  renderPublicPage,
+  renderStatusPage
+} from "./public-page.js";
 export {
   renderMarkdownAdminPage,
   type MarkdownAdminPageModel,

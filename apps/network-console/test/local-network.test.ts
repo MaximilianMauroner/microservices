@@ -47,6 +47,7 @@ function createFixtureRunner(): CommandRunner {
         }
       })
     ],
+    ["tailscale serve status --json", "{}"],
     ["ss -H -lntup", SS_OUTPUT],
     ["ps -o pid=,etimes= -p 863", "863 3600\n"]
   ]);
@@ -179,6 +180,96 @@ describe("local network dashboard", () => {
     });
   });
 
+  it("discovers HTTPS and path-mounted websites from Tailscale Serve", async () => {
+    const baseRunner = createFixtureRunner();
+    const runner: CommandRunner = async (command, args) => {
+      const key = `${command} ${args.join(" ")}`;
+      if (key === "tailscale serve status --json") {
+        return {
+          stdout: JSON.stringify({
+            Web: {
+              [`${TEST_TAILSCALE_DNS}:41731`]: {
+                Handlers: {
+                  "/": { Proxy: "http://127.0.0.1:41731" }
+                }
+              },
+              [`${TEST_TAILSCALE_DNS}:443`]: {
+                Handlers: {
+                  "/": { Proxy: `http://${TEST_TAILSCALE_IPV4}:80` },
+                  "/tokdash": { Proxy: "http://127.0.0.1:55423" }
+                }
+              },
+              [`${TEST_TAILSCALE_DNS}:8443`]: {
+                Handlers: {
+                  "/": { Proxy: "http://127.0.0.1:3001" }
+                }
+              }
+            }
+          }),
+          stderr: ""
+        };
+      }
+      if (key === "ss -H -lntup") {
+        return {
+          stdout: [
+            SS_OUTPUT,
+            'tcp LISTEN 0 511 127.0.0.1:41731 0.0.0.0:* users:(("node",pid=41731,fd=21))',
+            'tcp LISTEN 0 511 127.0.0.1:55423 0.0.0.0:* users:(("python",pid=55423,fd=14))'
+          ].join("\n"),
+          stderr: ""
+        };
+      }
+      if (key === "ps -o pid=,etimes= -p 41731,55423") {
+        return { stdout: "41731 600\n55423 1200\n", stderr: "" };
+      }
+      return baseRunner(command, args);
+    };
+    const candidates: Parameters<WebsiteProbe>[0][] = [];
+    const websiteProbe: WebsiteProbe = async (candidate) => {
+      candidates.push(candidate);
+      if (candidate.publicUrl === `https://${TEST_TAILSCALE_DNS}:41731/`) {
+        return { path: "/", status: 200, title: "T3 Code" };
+      }
+      if (candidate.publicUrl === `https://${TEST_TAILSCALE_DNS}/tokdash`) {
+        return { path: "/tokdash", status: 200, title: "Tokdash" };
+      }
+      return null;
+    };
+
+    const snapshot = await collectNetworkSnapshot({
+      dashboardPort: 80,
+      now: () => new Date("2026-07-08T12:00:00.000Z"),
+      runner,
+      websiteProbe
+    });
+
+    expect(candidates.map(({ probeUrl }) => probeUrl)).toContain(
+      `https://${TEST_TAILSCALE_DNS}:41731/`
+    );
+    expect(candidates.map(({ probeUrl }) => probeUrl)).toContain(
+      `https://${TEST_TAILSCALE_DNS}/tokdash`
+    );
+    expect(candidates.map(({ probeUrl }) => probeUrl)).not.toContain(
+      `https://${TEST_TAILSCALE_DNS}/`
+    );
+    expect(snapshot.websites).toEqual([
+      expect.objectContaining({
+        onlineSince: "2026-07-08T11:40:00.000Z",
+        port: 443,
+        scopeLabel: "Tailscale Serve",
+        title: "Tokdash",
+        url: `https://${TEST_TAILSCALE_DNS}/tokdash`
+      }),
+      expect.objectContaining({
+        onlineSince: "2026-07-08T11:50:00.000Z",
+        port: 41731,
+        scopeLabel: "Tailscale Serve",
+        title: "T3 Code",
+        url: `https://${TEST_TAILSCALE_DNS}:41731/`
+      })
+    ]);
+  });
+
   it("warns when tailscale status returns malformed json", async () => {
     const runner: CommandRunner = async (command, args) => {
       const key = `${command} ${args.join(" ")}`;
@@ -190,6 +281,9 @@ describe("local network dashboard", () => {
       }
       if (key === "tailscale status --json") {
         return { stdout: "{not-json", stderr: "" };
+      }
+      if (key === "tailscale serve status --json") {
+        return { stdout: "{}", stderr: "" };
       }
       if (key === "ss -H -lntup") {
         return { stdout: "", stderr: "" };

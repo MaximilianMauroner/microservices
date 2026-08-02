@@ -7,11 +7,30 @@ import { UndoRedo } from "@tiptap/extensions/undo-redo";
 import { EditorContent, useEditor } from "@tiptap/react";
 import type { Content } from "@tiptap/core";
 import { useMutation, useQuery } from "convex/react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { sendableSteps } from "prosemirror-collab";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { api } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
+import {
+  DEFAULT_DISPLAY_SETTINGS,
+  FONT_SCALE_MAX,
+  FONT_SCALE_MIN,
+  FONT_SCALE_STEP,
+  LINE_SPACING_MAX,
+  LINE_SPACING_MIN,
+  LINE_SPACING_STEP,
+  parseDisplaySettings,
+  type DisplaySettings,
+} from "./display-settings";
 import {
   buildDiffRows,
   documentPath,
@@ -21,11 +40,39 @@ import {
   getScrollTop,
   getPresenceIdentity,
   initialMarkdown,
+  markdownSourceLines,
   markdownFromJson,
   normalizeFilename,
   parseDocumentRoute,
 } from "./lib";
 import { remarkPreserveExtraBlankLines } from "./markdown";
+import {
+  forgetRecentDocument,
+  readRecentDocuments,
+  rememberRecentDocument,
+  type RecentDocument,
+} from "./recent-documents";
+import {
+  editorSaveLabel,
+  editorSaveStatus,
+  type EditorSaveStatus,
+} from "./sync-status";
+import {
+  classifySyncError,
+  type SyncFailure,
+} from "./sync-error";
+
+const DISPLAY_SETTINGS_STORAGE_KEY = "markdown-share:display-settings";
+
+function loadDisplaySettings(): DisplaySettings {
+  try {
+    return parseDisplaySettings(
+      window.localStorage.getItem(DISPLAY_SETTINGS_STORAGE_KEY),
+    );
+  } catch {
+    return DEFAULT_DISPLAY_SETTINGS;
+  }
+}
 
 export function App() {
   const route = parseDocumentRoute(window.location.pathname);
@@ -41,6 +88,8 @@ function LandingPage() {
   const [name, setName] = useState("notes.md");
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [recentDocuments, setRecentDocuments] =
+    useState<RecentDocument[]>(readRecentDocuments);
 
   const handleCreate = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -52,6 +101,12 @@ function LandingPage() {
       const created = await createDocument({
         filename,
         markdown: initialMarkdown(filename),
+      });
+      rememberRecentDocument({
+        token: created.token,
+        filename: created.filename,
+        expiresAt: created.expiresAt,
+        lastOpenedAt: Date.now(),
       });
       window.location.assign(documentPath(created.filename, created.token));
     } catch (caught) {
@@ -70,7 +125,8 @@ function LandingPage() {
         <h1>Write Markdown.<br />Share one quiet link.</h1>
         <p className="landing-copy">
           Edit together in real time, preview as you type, and export a clean
-          PDF. No account. No document list. Gone seven days after the last edit.
+          PDF. No account. Links stay private to this browser. Gone seven days
+          after the last edit.
         </p>
 
         <form className="create-form" onSubmit={handleCreate}>
@@ -95,6 +151,38 @@ function LandingPage() {
           {error ? <p className="form-error">{error}</p> : null}
         </form>
 
+        <section className="recent-documents" aria-labelledby="recent-documents-title">
+          <div className="recent-documents-heading">
+            <h2 id="recent-documents-title">Your document links</h2>
+            <span>Saved in this browser</span>
+          </div>
+          {recentDocuments.length > 0 ? (
+            <ul>
+              {recentDocuments.map((document) => (
+                <li key={document.token}>
+                  <a href={documentPath(document.filename, document.token)}>
+                    <strong>{document.filename}</strong>
+                    <span>Expires in {formatExpiry(document.expiresAt)}</span>
+                  </a>
+                  <button
+                    type="button"
+                    aria-label={`Remove ${document.filename} from this browser`}
+                    onClick={() =>
+                      setRecentDocuments(forgetRecentDocument(document.token))
+                    }
+                  >
+                    Remove
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="recent-documents-empty">
+              Documents you create or open will appear here.
+            </p>
+          )}
+        </section>
+
         <div className="promise-row" aria-label="Product features">
           <span>Convex realtime</span>
           <span>7-day retention</span>
@@ -107,6 +195,12 @@ function LandingPage() {
 
 function DocumentPage({ routeToken }: { routeToken: string }) {
   const document = useQuery(api.documents.get, { token: routeToken });
+
+  useEffect(() => {
+    if (document === null) {
+      forgetRecentDocument(routeToken);
+    }
+  }, [document, routeToken]);
 
   if (document === undefined) {
     return <CenteredStatus label="Opening shared document…" />;
@@ -133,6 +227,13 @@ type PublicDocument = {
 
 function LiveDocument({ document }: { document: PublicDocument }) {
   const identity = useMemo(getPresenceIdentity, []);
+  const [syncFailure, setSyncFailure] = useState<SyncFailure | null>(null);
+  const handleSyncError = useCallback((error: Error) => {
+    const nextFailure = classifySyncError(error);
+    setSyncFailure((current) =>
+      current?.kind === "document-unavailable" ? current : nextFailure,
+    );
+  }, []);
   const setDisplayName = useMutation(api.presence.setDisplayName);
   const presence = usePresence(
     api.presence,
@@ -141,6 +242,7 @@ function LiveDocument({ document }: { document: PublicDocument }) {
   );
   const sync = useTiptapSync(api.editor, document.token, {
     snapshotDebounceMs: 800,
+    onSyncError: handleSyncError,
   });
 
   useEffect(() => {
@@ -149,7 +251,13 @@ function LiveDocument({ document }: { document: PublicDocument }) {
       window.history.replaceState(null, "", canonicalPath);
     }
     documentTitle(document.filename);
-  }, [document.filename, document.token]);
+    rememberRecentDocument({
+      token: document.token,
+      filename: document.filename,
+      expiresAt: document.expiresAt,
+      lastOpenedAt: Date.now(),
+    });
+  }, [document.expiresAt, document.filename, document.token]);
 
   useEffect(() => {
     const self = presence?.find((entry) => entry.userId === identity.userId);
@@ -187,6 +295,7 @@ function LiveDocument({ document }: { document: PublicDocument }) {
       presence={presence ?? []}
       syncExtension={sync.extension}
       initialContent={sync.initialContent}
+      syncFailure={syncFailure}
     />
   );
 }
@@ -211,6 +320,7 @@ type CheckpointSummary = {
   createdAt: number;
   createdBy: string;
   charCount: number;
+  version?: number;
 };
 
 type CheckpointComparison = {
@@ -226,12 +336,14 @@ function EditorWorkspace({
   presence,
   syncExtension,
   initialContent,
+  syncFailure,
 }: {
   document: PublicDocument;
   anonymousName: string;
   presence: PresenceEntry[];
   syncExtension: SyncExtension;
   initialContent: Content;
+  syncFailure: SyncFailure | null;
 }) {
   const [markdown, setMarkdown] = useState(() =>
     markdownFromJson(initialContent),
@@ -243,6 +355,9 @@ function EditorWorkspace({
   const [isPreviewOnly, setIsPreviewOnly] = useState(false);
   const [mobilePane, setMobilePane] = useState<WorkspacePane>("source");
   const [topbarMenuOpen, setTopbarMenuOpen] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<EditorSaveStatus>("saved");
+  const [displaySettings, setDisplaySettings] =
+    useState<DisplaySettings>(loadDisplaySettings);
   const [historyMenuPlacement, setHistoryMenuPlacement] = useState<
     "desktop" | "mobile" | null
   >(null);
@@ -271,6 +386,9 @@ function EditorWorkspace({
   );
   const online = presence.filter((entry) => entry.online);
   const viewerCount = Math.max(1, online.length);
+  const isDocumentUnavailable =
+    syncFailure?.kind === "document-unavailable";
+  const sourceLines = useMemo(() => markdownSourceLines(markdown), [markdown]);
   const editor = useEditor({
     extensions: [
       Document,
@@ -304,19 +422,37 @@ function EditorWorkspace({
   });
 
   useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        DISPLAY_SETTINGS_STORAGE_KEY,
+        JSON.stringify(displaySettings),
+      );
+    } catch {
+      // The settings remain active for this session when storage is unavailable.
+    }
+  }, [displaySettings]);
+
+  useEffect(() => {
     if (!editor) {
       return;
     }
     const updatePreview = () => {
+      const hasPendingSteps = sendableSteps(editor.state) !== null;
       setMarkdown(
         editor.state.doc.textBetween(0, editor.state.doc.content.size, "\n"),
       );
+      setSaveStatus(editorSaveStatus(hasPendingSteps, syncFailure !== null));
     };
     editor.on("transaction", updatePreview);
+    updatePreview();
     return () => {
       editor.off("transaction", updatePreview);
     };
-  }, [editor]);
+  }, [editor, syncFailure]);
+
+  useEffect(() => {
+    editor?.setEditable(!isDocumentUnavailable);
+  }, [editor, isDocumentUnavailable]);
 
   useEffect(() => {
     if (!checkpoints || checkpoints.length < 2) {
@@ -493,7 +629,7 @@ function EditorWorkspace({
           ? desktopHistoryRef.current
           : mobileHistoryRef.current;
       container
-        ?.querySelector<HTMLButtonElement>('[role="menu"] button:not(:disabled)')
+        ?.querySelector<HTMLButtonElement>(".action-menu button:not(:disabled)")
         ?.focus();
     });
     return () => window.cancelAnimationFrame(frame);
@@ -596,13 +732,20 @@ function EditorWorkspace({
     window.setTimeout(() => setCopied(false), 1500);
   };
 
+  const printDocument = async () => {
+    await window.document.fonts.ready;
+    window.print();
+  };
+
   const handleSaveCheckpoint = async () => {
+    if (isDocumentUnavailable) {
+      return;
+    }
     setIsSavingCheckpoint(true);
     setCheckpointStatus("Saving…");
     try {
       await saveCheckpoint({
         token: document.token,
-        markdown,
         createdBy: anonymousName,
       });
       setCheckpointStatus("Saved");
@@ -685,7 +828,7 @@ function EditorWorkspace({
               type="button"
               role="menuitem"
               onClick={() => void handleSaveCheckpoint()}
-              disabled={isSavingCheckpoint}
+              disabled={isSavingCheckpoint || isDocumentUnavailable}
             >
               {checkpointStatus}
             </button>
@@ -704,7 +847,15 @@ function EditorWorkspace({
   };
 
   return (
-    <main className={`editor-shell${isPreviewOnly ? " preview-only" : ""}`}>
+    <main
+      className={`editor-shell${isPreviewOnly ? " preview-only" : ""}${syncFailure ? " has-sync-error" : ""}`}
+      style={
+        {
+          "--preview-font-scale": displaySettings.fontScale,
+          "--preview-line-height": displaySettings.lineSpacing,
+        } as React.CSSProperties
+      }
+    >
       <header className="topbar">
         <div className="topbar-identity">
           <a className="wordmark" href="/" aria-label="Markdown Share home">
@@ -723,6 +874,21 @@ function EditorWorkspace({
         </div>
 
         <div className="topbar-actions">
+          <div
+            className={`save-status save-status-${saveStatus}`}
+            role="status"
+            aria-live="polite"
+            title={
+              saveStatus === "error"
+                ? syncFailure?.message ?? "The latest changes could not be saved."
+                : editorSaveLabel(saveStatus)
+            }
+          >
+            <span className="save-status-dot" aria-hidden="true" />
+            <span className="save-status-label">
+              {editorSaveLabel(saveStatus)}
+            </span>
+          </div>
           <div
             className="presence-cluster"
             aria-label={formatViewerCount(viewerCount)}
@@ -753,7 +919,7 @@ function EditorWorkspace({
           <button
             className="button-primary direct-pdf"
             type="button"
-            onClick={() => window.print()}
+            onClick={() => void printDocument()}
           >
             Export PDF
           </button>
@@ -762,7 +928,7 @@ function EditorWorkspace({
               className="overflow-trigger"
               type="button"
               aria-label="More document actions"
-              aria-haspopup="menu"
+              aria-haspopup="dialog"
               aria-expanded={topbarMenuOpen}
               aria-controls="document-actions-menu"
               onClick={() => setTopbarMenuOpen((open) => !open)}
@@ -773,18 +939,17 @@ function EditorWorkspace({
               <div
                 id="document-actions-menu"
                 className="action-menu topbar-action-menu"
-                role="menu"
-                aria-label="Document actions"
+                role="dialog"
+                aria-label="Document options"
               >
-                <button type="button" role="menuitem" onClick={() => void copyLink()}>
+                <button type="button" onClick={() => void copyLink()}>
                   {copied ? "Link copied" : "Copy link"}
                 </button>
-                <button type="button" role="menuitem" onClick={() => window.print()}>
+                <button type="button" onClick={() => void printDocument()}>
                   Export PDF
                 </button>
                 <button
                   type="button"
-                  role="menuitem"
                   onClick={() => {
                     setTopbarMenuOpen(false);
                     setIsPreviewOnly(true);
@@ -792,11 +957,70 @@ function EditorWorkspace({
                 >
                   Full screen preview
                 </button>
+                <div className="display-settings">
+                  <p>Display settings</p>
+                  <label>
+                    <span>
+                      Font size
+                      <output>{Math.round(displaySettings.fontScale * 100)}%</output>
+                    </span>
+                    <input
+                      type="range"
+                      min={FONT_SCALE_MIN}
+                      max={FONT_SCALE_MAX}
+                      step={FONT_SCALE_STEP}
+                      value={displaySettings.fontScale}
+                      onChange={(event) => {
+                        const fontScale = Number(event.currentTarget.value);
+                        setDisplaySettings((current) => ({
+                          ...current,
+                          fontScale,
+                        }));
+                      }}
+                    />
+                  </label>
+                  <label>
+                    <span>
+                      Line spacing
+                      <output>{displaySettings.lineSpacing.toFixed(1)}</output>
+                    </span>
+                    <input
+                      type="range"
+                      min={LINE_SPACING_MIN}
+                      max={LINE_SPACING_MAX}
+                      step={LINE_SPACING_STEP}
+                      value={displaySettings.lineSpacing}
+                      onChange={(event) => {
+                        const lineSpacing = Number(event.currentTarget.value);
+                        setDisplaySettings((current) => ({
+                          ...current,
+                          lineSpacing,
+                        }));
+                      }}
+                    />
+                  </label>
+                  <button
+                    className="display-settings-reset"
+                    type="button"
+                    onClick={() => setDisplaySettings(DEFAULT_DISPLAY_SETTINGS)}
+                  >
+                    Reset display
+                  </button>
+                </div>
               </div>
             ) : null}
           </div>
         </div>
       </header>
+
+      {syncFailure ? (
+        <div
+          className={`sync-error-banner sync-error-${syncFailure.kind}`}
+          role="alert"
+        >
+          {syncFailure.message}
+        </div>
+      ) : null}
 
       <section className="workspace">
         <div className="mobile-workspace-rail">
@@ -842,7 +1066,21 @@ function EditorWorkspace({
             ref={sourceScrollRef}
             onScroll={() => handlePaneScroll("source")}
           >
-            <EditorContent editor={editor} />
+            <div className="editor-document">
+              <div className="line-number-layout" aria-hidden="true">
+                {sourceLines.map((line, index) => (
+                  <Fragment key={index}>
+                    <span className="line-number">{index + 1}</span>
+                    <span className="line-wrap-measure">
+                      {line || "\u200b"}
+                    </span>
+                  </Fragment>
+                ))}
+              </div>
+              <div className="editor-source">
+                <EditorContent editor={editor} />
+              </div>
+            </div>
           </div>
         </section>
 

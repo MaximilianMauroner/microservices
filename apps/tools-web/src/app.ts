@@ -34,6 +34,7 @@ import {
 import {
   renderMarkdownAdminPage,
   renderOperationsPage,
+  renderPrivateStatusPage,
   renderPublicPage,
   renderStatusPage
 } from "./ui/index.js";
@@ -45,6 +46,14 @@ const STATIC_ASSETS = {
   },
   "/assets/ops.js": {
     file: "../public/assets/ops.js",
+    contentType: "text/javascript; charset=utf-8"
+  },
+  "/assets/markdown-admin.js": {
+    file: "../public/assets/markdown-admin.js",
+    contentType: "text/javascript; charset=utf-8"
+  },
+  "/assets/local-time.js": {
+    file: "../public/assets/local-time.js",
     contentType: "text/javascript; charset=utf-8"
   },
   "/assets/icons/artifact-publisher.png": {
@@ -70,6 +79,11 @@ type StaticAssetPath = keyof typeof STATIC_ASSETS;
 export interface PageRenderer {
   public(snapshot: PublicSnapshotDocument, publicOrigin: string): string;
   status(snapshot: PublicSnapshotDocument, publicOrigin: string): string;
+  privateStatus(
+    snapshot: PrivateSnapshotDocument,
+    actor: string,
+    publicOrigin: string
+  ): string;
   ops(snapshot: PrivateSnapshotDocument, actor: string, revision: string): string;
   markdownDocuments(
     snapshot: MarkdownAdminSnapshot,
@@ -167,6 +181,19 @@ async function route(
 
   if (isProtectedPath(url.pathname)) {
     const actor = await access.verify(request);
+    if (
+      readMethod &&
+      (url.pathname === "/manage/status" || url.pathname === "/status/private")
+    ) {
+      return html(
+        renderer.privateStatus(
+          await storage.readPrivateSnapshot(),
+          actor.id,
+          trustedOrigin
+        ),
+        true
+      );
+    }
     if (
       readMethod &&
       url.pathname === "/manage/documents"
@@ -794,7 +821,8 @@ function paginationCursor(url: URL): string | undefined {
 }
 
 function isProtectedPath(path: string): boolean {
-  return path === "/manage" ||
+  return path === "/status/private" ||
+    path === "/manage" ||
     path.startsWith("/manage/") ||
     path === "/ops" ||
     path.startsWith("/ops/") ||
@@ -892,6 +920,9 @@ const defaultRenderer: PageRenderer = {
   },
   status(snapshot, publicOrigin) {
     return renderStatusPage(snapshot, publicOrigin);
+  },
+  privateStatus(snapshot, actor, publicOrigin) {
+    return renderPrivateStatusPage(snapshot, actor, publicOrigin);
   },
   ops(snapshot, actor, revision) {
     return renderOperationsPage({

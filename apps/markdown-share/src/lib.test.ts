@@ -6,6 +6,7 @@ import {
   formatViewerCount,
   getScrollProgress,
   getScrollTop,
+  markdownSourceLines,
   markdownFromJson,
   normalizeFilename,
   parseDocumentRoute,
@@ -55,6 +56,14 @@ describe("document presentation", () => {
         ],
       }),
     ).toBe("# Hi");
+  });
+
+  it("numbers every Markdown source line, including a trailing blank line", () => {
+    expect(markdownSourceLines("first\nsecond\n")).toEqual([
+      "first",
+      "second",
+      "",
+    ]);
   });
 
   it("formats the seven day deadline compactly", () => {

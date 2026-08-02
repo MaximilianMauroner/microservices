@@ -92,6 +92,12 @@ describe("checker run", () => {
     });
     expect(store.state?.value.monitors["public-a"].status).toBe("down");
     expect(store.state?.value.incidents).toHaveLength(1);
+    expect(store.publicSnapshot?.statuses["public-a"].downtimeRecords).toEqual([
+      {
+        startedAt: "2026-07-27T12:06:00.000Z",
+        resolvedAt: null
+      }
+    ]);
     expect(store.state?.value.notifications[0]).toMatchObject({
       kind: "down",
       status: "pending"
@@ -117,6 +123,12 @@ describe("checker run", () => {
         day: "2026-07-27",
         successfulChecks: 1,
         totalChecks: 3
+      }
+    ]);
+    expect(store.publicSnapshot?.statuses["public-a"].downtimeRecords).toEqual([
+      {
+        startedAt: "2026-07-27T12:06:00.000Z",
+        resolvedAt: "2026-07-27T12:11:00.000Z"
       }
     ]);
   });

@@ -4,6 +4,7 @@ import {
   decodeMarkdownAdminSnapshot,
   MarkdownAdminUnavailableError
 } from "../src/markdown-admin.js";
+import { renderMarkdownAdminPage } from "../src/ui/markdown-admin-page.js";
 
 const snapshot = {
   generatedAt: 1_000,
@@ -55,5 +56,52 @@ describe("Markdown admin client", () => {
     await expect(client.list()).rejects.toBeInstanceOf(
       MarkdownAdminUnavailableError
     );
+  });
+});
+
+describe("Markdown document inventory page", () => {
+  it("renders operational metrics and controls from the protected snapshot", () => {
+    const now = Date.UTC(2026, 6, 29, 12);
+    const html = renderMarkdownAdminPage({
+      snapshot: {
+        generatedAt: now,
+        truncated: false,
+        documents: [
+          {
+            token: "j57dzxnpat8g9sbksewde1dznh8bczet",
+            filename: "recent-notes.md",
+            createdAt: now - 2 * 60 * 60 * 1000,
+            updatedAt: now - 30 * 60 * 1000,
+            expiresAt: now + 12 * 60 * 60 * 1000,
+            checkpointCount: 3
+          },
+          {
+            token: "v7xz9ynpat8g9sbksewde1dznh8bczet",
+            filename: "older-plan.md",
+            createdAt: now - 4 * 24 * 60 * 60 * 1000,
+            updatedAt: now - 2 * 24 * 60 * 60 * 1000,
+            expiresAt: now + 3 * 24 * 60 * 60 * 1000,
+            checkpointCount: 0
+          }
+        ]
+      },
+      actor: 'operator<admin@example.test>',
+      publicOrigin: "https://markdown.example.test"
+    });
+
+    expect(html).toContain("Document inventory");
+    expect(html).toContain("Edited in 24 hours");
+    expect(html).toContain("Checkpoint versions");
+    expect(html).toContain("3</strong>");
+    expect(html).toContain("in 12h");
+    expect(html).toContain("30m ago");
+    expect(html).toContain("3 versions");
+    expect(html).toContain("0 versions");
+    expect(html).toContain("data-document-search");
+    expect(html).toContain("data-document-sort");
+    expect(html).toContain("data-copy-link");
+    expect(html).toContain('<script src="/assets/markdown-admin.js?v=5e41cd2" defer></script>');
+    expect(html).toContain("operator&lt;admin@example.test&gt;");
+    expect(html).not.toContain("operator<admin@example.test>");
   });
 });

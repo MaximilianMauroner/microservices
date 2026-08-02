@@ -11,13 +11,16 @@ export function pageShell(input: {
   body: string;
   operations?: boolean;
   privatePage?: boolean;
+  markdownAdmin?: boolean;
   active: SuiteDestination;
   canonicalUrl?: string;
   themeColor?: string;
 }): string {
   const script = input.operations
     ? '\n    <script src="/assets/ops.js?v=4b98adb" defer></script>'
-    : "";
+    : input.markdownAdmin
+      ? '\n    <script src="/assets/markdown-admin.js?v=5e41cd2" defer></script>'
+      : "";
   return `<!doctype html>
 <html lang="en">
   <head>
@@ -32,7 +35,8 @@ export function pageShell(input: {
     <meta name="theme-color" content="${escapeHtml(input.themeColor ?? "#f3f1e9")}">
     <title>${escapeHtml(input.title)}</title>
     <link rel="icon" href="/favicon.svg?v=90e2a71" type="image/svg+xml">
-    <link rel="stylesheet" href="/assets/tools.css?v=90e2a71">${script}
+    <link rel="stylesheet" href="/assets/tools.css?v=8dca720">
+    <script src="/assets/local-time.js?v=2b6fd61" defer></script>${script}
   </head>
   <body>
     ${renderSuiteChrome(input.active)}
