@@ -68,6 +68,9 @@ live in `drizzle/`. Production PostgreSQL schema changes are applied from
 `src/db/postgres-schema.ts` with `bun run db:push-postgres`. A production push
 requires `DATABASE_URL` and
 `FIELD_GUIDE_SCHEMA_PUSH_CONFIRM=field-guide-console-production`.
+Disposable test workflows use `bun run db:push-postgres:test`; that command
+requires the test confirmation and verifies the sentinel before Drizzle starts.
+The Drizzle config rejects direct invocation so both paths remain fail closed.
 
 PostgreSQL integration and round-trip tests must use a disposable database that
 is dedicated to Field Guide Console tests. Configure both:

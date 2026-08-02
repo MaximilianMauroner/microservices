@@ -98,6 +98,9 @@ describe("decision record review", () => {
     const { app } = setup();
     for (const context of [
       "token=super-secret-value-12345",
+      'password: "super-secret-value-12345"',
+      "secret: 'super-secret-value-12345'",
+      'api_key: "super-secret-value-12345"',
       "See http://192.168.1.12/internal",
       "See http://169.254.169.254/latest/meta-data",
       "See http://100.64.0.1/internal",
@@ -129,9 +132,35 @@ describe("decision record review", () => {
     const feedback = await callApp(app, `/api/review/decision-records/${record.decisionRecordId}/feedback`, {
       method: "POST",
       headers: { Origin: origin },
-      json: { action: "down", comment: "password=super-secret-value-123" },
+      json: { action: "down", comment: 'password: "super-secret-value-123"' },
     });
     expect(feedback.status).toBe(400);
+
+    await callApp(app, `/api/review/decision-records/${record.decisionRecordId}/feedback`, {
+      method: "POST",
+      headers: { Origin: origin },
+      json: { action: "up" },
+    });
+    const promotion = await callApp(app, "/api/review/decision-records/promotions", {
+      method: "POST",
+      headers: { Origin: origin },
+      json: {
+        idempotencyKey: "quoted-secret-promotion",
+        decisionRecordIds: [record.decisionRecordId],
+        candidate: {
+          candidateId: crypto.randomUUID(),
+          scope: "project",
+          projectKey: "microservices",
+          projectDisplayName: "Microservices",
+          lessonKey: "never-store-secrets",
+          title: "Never store secrets",
+          body: "Keep credentials out of decision records.",
+          rationale: 'token: "super-secret-value-123"',
+          createdAt: now.toISOString(),
+        },
+      },
+    });
+    expect(promotion.status).toBe(400);
   });
 
   it("uses configured retention for list and detail archive flags", async () => {

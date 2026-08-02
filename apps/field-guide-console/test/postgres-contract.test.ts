@@ -5,6 +5,11 @@ import { describe, expect, it } from "vitest";
 import {
   applicationReceipts,
   candidates,
+  decisionFeedbackEvents,
+  decisionPromotionRecords,
+  decisionPromotions,
+  decisionRecords,
+  fieldGuideSchemaMigrations,
   reviewRounds,
   verdictEvents,
 } from "../src/db/postgres-schema.js";
@@ -15,6 +20,11 @@ const tables = [
   reviewRounds,
   verdictEvents,
   applicationReceipts,
+  fieldGuideSchemaMigrations,
+  decisionRecords,
+  decisionFeedbackEvents,
+  decisionPromotions,
+  decisionPromotionRecords,
 ];
 
 function foreignKeys(table: (typeof tables)[number]) {
@@ -32,12 +42,17 @@ function foreignKeys(table: (typeof tables)[number]) {
 }
 
 describe("Postgres schema contract", () => {
-  it("owns exactly the four filtered public tables", async () => {
+  it("owns exactly the filtered public tables", async () => {
     expect(tables.map((table) => getTableConfig(table).name)).toEqual([
       "candidates",
       "review_rounds",
       "verdict_events",
       "application_receipts",
+      "field_guide_schema_migrations",
+      "decision_records",
+      "decision_feedback_events",
+      "decision_promotions",
+      "decision_promotion_records",
     ]);
 
     const config = await readFile(
@@ -48,8 +63,8 @@ describe("Postgres schema contract", () => {
     expect(config).toContain('schema: "./src/db/postgres-schema.ts"');
     expect(config).toContain('schemaFilter: ["public"]');
     expect(config).toContain('"field_guide_schema_migrations"');
-    expect(config).toContain("TEST_DATABASE_URL or DATABASE_URL is required");
-    expect(config).toContain("'postgres:'");
+    expect(config).toContain("PostgreSQL schema push must run through the guarded db:push-postgres command");
+    expect(config).toContain('"postgres:"');
   });
 
   it("matches the production columns, keys, checks, and bigserial", () => {
