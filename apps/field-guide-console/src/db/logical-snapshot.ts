@@ -59,7 +59,35 @@ export function sqliteSnapshot(db: Database): LogicalSnapshot {
   const verdictEvents = db.query<Record<string, unknown>, []>("SELECT CAST(sequence AS TEXT) sequence,decision_id,candidate_id,round,action,reviewer,reviewed_at,next_review_at,round_kind,effect,amends_decision_id FROM verdict_events").all().map(normalizeRow);
   const decisionRecords = db.query<Record<string, unknown>, []>("SELECT CAST(sequence AS TEXT) sequence,decision_record_id,idempotency_key,payload,payload_hash,created_at,received_at FROM decision_records").all().map(normalizeRow);
   const decisionFeedbackEvents = db.query<Record<string, unknown>, []>("SELECT CAST(sequence AS TEXT) sequence,feedback_id,decision_record_id,action,comment,reviewer,reviewed_at,amends_feedback_id FROM decision_feedback_events").all().map(normalizeRow);
-  return summarize({ candidates: read("candidates"), review_rounds: read("review_rounds"), verdict_events: verdictEvents, application_receipts: read("application_receipts"), field_guide_schema_migrations: read("field_guide_schema_migrations"), decision_records: decisionRecords, decision_feedback_events: decisionFeedbackEvents, decision_promotions: read("decision_promotions"), decision_promotion_records: read("decision_promotion_records") }, sqliteSequences(db));
+  const snapshot = summarize({ candidates: read("candidates"), review_rounds: read("review_rounds"), verdict_events: verdictEvents, application_receipts: read("application_receipts"), field_guide_schema_migrations: read("field_guide_schema_migrations"), decision_records: decisionRecords, decision_feedback_events: decisionFeedbackEvents, decision_promotions: read("decision_promotions"), decision_promotion_records: read("decision_promotion_records") }, sqliteSequences(db));
+  assertCanonicalDecisionUuids(snapshot);
+  return snapshot;
+}
+
+export function assertCanonicalDecisionUuids(snapshot: LogicalSnapshot) {
+  for (const row of snapshot.tables.decision_records) {
+    const id = canonicalSnapshotUuid(row.decision_record_id, "decision_records.decision_record_id");
+    const payload = row.payload as { decisionRecordId?: unknown } | undefined;
+    if (payload?.decisionRecordId !== id)
+      throw new Error("Decision record snapshot column and payload IDs must match canonically.");
+  }
+  for (const row of snapshot.tables.decision_feedback_events) {
+    canonicalSnapshotUuid(row.feedback_id, "decision_feedback_events.feedback_id");
+    canonicalSnapshotUuid(row.decision_record_id, "decision_feedback_events.decision_record_id");
+    if (row.amends_feedback_id !== null)
+      canonicalSnapshotUuid(row.amends_feedback_id, "decision_feedback_events.amends_feedback_id");
+  }
+  for (const row of snapshot.tables.decision_promotion_records)
+    canonicalSnapshotUuid(row.decision_record_id, "decision_promotion_records.decision_record_id");
+}
+
+function canonicalSnapshotUuid(value: unknown, name: string) {
+  const uuid = String(value);
+  if (
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(uuid) ||
+    uuid !== uuid.toLowerCase()
+  ) throw new Error(`${name} must be a canonical UUID.`);
+  return uuid;
 }
 
 export function normalizeRow(row: Record<string, unknown>): Record<string, unknown> {

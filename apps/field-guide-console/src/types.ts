@@ -209,6 +209,12 @@ export interface ReviewRepository {
 export class ConflictError extends Error {}
 export class ValidationError extends Error {}
 export class NotFoundError extends Error {}
+
+export function canonicalUuid(value: string, name = "UUID") {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value))
+    throw new ValidationError(`${name} must be a UUID.`);
+  return value.toLowerCase();
+}
 export const addDays = (d: Date, n: number) =>
   new Date(d.getTime() + n * 86_400_000);
 

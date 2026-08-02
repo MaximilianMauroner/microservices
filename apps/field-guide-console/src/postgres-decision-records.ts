@@ -4,6 +4,7 @@ import {
   ConflictError,
   NotFoundError,
   ValidationError,
+  canonicalUuid,
   decodeCursor,
   encodeCursor,
   type Candidate,
@@ -40,7 +41,11 @@ export class PostgresDecisionRecordStore {
   constructor(private readonly sql: Sql) {}
 
   async create(key: string, record: DecisionRecord) {
-    const hash = digest(record);
+    const normalizedRecord = {
+      ...record,
+      decisionRecordId: canonicalUuid(record.decisionRecordId, "decisionRecordId"),
+    };
+    const hash = digest(normalizedRecord);
     return this.sql.begin(async (tx) => {
       const old = await tx<{ payload_hash: string }[]>`SELECT payload_hash FROM decision_records WHERE idempotency_key=${key}`;
       if (old[0]) {
@@ -50,7 +55,7 @@ export class PostgresDecisionRecordStore {
       }
       const inserted = await tx<{ decision_record_id: string }[]>`
         INSERT INTO decision_records(decision_record_id,idempotency_key,payload,payload_hash,created_at,received_at)
-        VALUES(${record.decisionRecordId},${key},${tx.json(record)},${hash},${record.createdAt},${new Date()})
+        VALUES(${normalizedRecord.decisionRecordId},${key},${tx.json(normalizedRecord)},${hash},${normalizedRecord.createdAt},${new Date()})
         ON CONFLICT DO NOTHING RETURNING decision_record_id`;
       if (inserted[0]) return "created" as const;
       const raced = await tx<{ payload_hash: string }[]>`SELECT payload_hash FROM decision_records WHERE idempotency_key=${key}`;
@@ -99,6 +104,7 @@ export class PostgresDecisionRecordStore {
   }
 
   async get(id: string, now: Date, archiveAfterDays: number) {
+    id = canonicalUuid(id, "decisionRecordId");
     const rows = await this.sql<RecordRow[]>`
       SELECT d.sequence::text sequence,d.payload,
         f.feedback_id,f.action,f.comment,f.reviewer,f.reviewed_at,f.amends_feedback_id,
@@ -116,6 +122,10 @@ export class PostgresDecisionRecordStore {
   }
 
   async feedback(decisionRecordId: string, input: DecisionFeedbackInput, now: Date, reviewer: string) {
+    decisionRecordId = canonicalUuid(decisionRecordId, "decisionRecordId");
+    const expectedFeedbackId = input.expectedFeedbackId === undefined
+      ? undefined
+      : canonicalUuid(input.expectedFeedbackId, "expectedFeedbackId");
     return this.sql.begin(async (tx) => {
       const record = await tx<{ decision_record_id: string }[]>`SELECT decision_record_id FROM decision_records WHERE decision_record_id=${decisionRecordId} FOR UPDATE`;
       if (!record[0]) throw new NotFoundError("Decision record not found.");
@@ -123,9 +133,9 @@ export class PostgresDecisionRecordStore {
         SELECT feedback_id,decision_record_id,action,comment,reviewer,reviewed_at,amends_feedback_id
         FROM decision_feedback_events WHERE decision_record_id=${decisionRecordId} ORDER BY sequence DESC LIMIT 1`;
       const current = rows[0];
-      if (input.expectedFeedbackId !== undefined && input.expectedFeedbackId !== current?.feedback_id)
+      if (expectedFeedbackId !== undefined && expectedFeedbackId !== current?.feedback_id)
         throw new ConflictError("Feedback changed since it was loaded. Refresh and try again.");
-      if (current && input.expectedFeedbackId === undefined)
+      if (current && expectedFeedbackId === undefined)
         throw new ConflictError("Feedback already exists. Amend the current feedback instead.");
       const feedbackId = crypto.randomUUID();
       await tx`INSERT INTO decision_feedback_events(feedback_id,decision_record_id,action,comment,reviewer,reviewed_at,amends_feedback_id) VALUES(${feedbackId},${decisionRecordId},${input.action},${input.comment ?? null},${reviewer},${now},${current?.feedback_id ?? null})`;
@@ -142,6 +152,10 @@ export class PostgresDecisionRecordStore {
   }
 
   async promote(key: string, ids: string[], candidate: Candidate, now: Date, reviewer: string) {
+    ids = ids.map((id) => canonicalUuid(id, "decisionRecordId"));
+    if (new Set(ids).size !== ids.length)
+      throw new ValidationError("decisionRecordIds contains duplicates.");
+    candidate = { ...candidate, candidateId: canonicalUuid(candidate.candidateId, "candidateId") };
     const hash = digest({ decisionRecordIds: ids, candidate });
     try {
       return await this.sql.begin(async (tx) => {

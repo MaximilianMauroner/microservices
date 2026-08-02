@@ -3,6 +3,7 @@ import {
   ConflictError,
   NotFoundError,
   ValidationError,
+  canonicalUuid,
   decodeCursor,
   encodeCursor,
   validateVerdict,
@@ -292,17 +293,21 @@ export class MemoryReviewRepository implements ReviewRepository {
   }
 
   async createDecisionRecord(key: string, record: DecisionRecord) {
-    const serialized = JSON.stringify(record);
+    const normalizedRecord = {
+      ...record,
+      decisionRecordId: canonicalUuid(record.decisionRecordId, "decisionRecordId"),
+    };
+    const serialized = JSON.stringify(normalizedRecord);
     const existing = this.decisionRecordKeys.get(key);
     if (existing) {
       if (existing !== serialized)
         throw new ConflictError("Idempotency key already has different content.");
       return "replay" as const;
     }
-    if (this.decisionRecordValues.some((value) => value.decisionRecordId === record.decisionRecordId))
+    if (this.decisionRecordValues.some((value) => value.decisionRecordId === normalizedRecord.decisionRecordId))
       throw new ConflictError("Decision record already exists.");
     this.decisionRecordKeys.set(key, serialized);
-    this.decisionRecordValues.push(record);
+    this.decisionRecordValues.push(normalizedRecord);
     return "created" as const;
   }
 
@@ -339,6 +344,7 @@ export class MemoryReviewRepository implements ReviewRepository {
   }
 
   async decisionRecord(id: string, now: Date, archiveAfterDays: number) {
+    id = canonicalUuid(id, "decisionRecordId");
     const record = this.decisionRecordValues.find((value) => value.decisionRecordId === id);
     if (!record) throw new NotFoundError("Decision record not found.");
     return this.decisionRecordItem(record, now, archiveAfterDays);
@@ -350,12 +356,16 @@ export class MemoryReviewRepository implements ReviewRepository {
     now: Date,
     reviewer: string,
   ) {
+    decisionRecordId = canonicalUuid(decisionRecordId, "decisionRecordId");
+    const expectedFeedbackId = input.expectedFeedbackId === undefined
+      ? undefined
+      : canonicalUuid(input.expectedFeedbackId, "expectedFeedbackId");
     if (!this.decisionRecordValues.some((record) => record.decisionRecordId === decisionRecordId))
       throw new NotFoundError("Decision record not found.");
     const current = this.currentFeedback(decisionRecordId);
-    if (input.expectedFeedbackId !== undefined && input.expectedFeedbackId !== current?.feedbackId)
+    if (expectedFeedbackId !== undefined && expectedFeedbackId !== current?.feedbackId)
       throw new ConflictError("Feedback changed since it was loaded. Refresh and try again.");
-    if (current && input.expectedFeedbackId === undefined)
+    if (current && expectedFeedbackId === undefined)
       throw new ConflictError("Feedback already exists. Amend the current feedback instead.");
     const feedback: DecisionFeedback = {
       feedbackId: crypto.randomUUID(),
@@ -377,6 +387,10 @@ export class MemoryReviewRepository implements ReviewRepository {
     now: Date,
     reviewer: string,
   ) {
+    decisionRecordIds = decisionRecordIds.map((id) => canonicalUuid(id, "decisionRecordId"));
+    if (new Set(decisionRecordIds).size !== decisionRecordIds.length)
+      throw new ValidationError("decisionRecordIds contains duplicates.");
+    candidate = { ...candidate, candidateId: canonicalUuid(candidate.candidateId, "candidateId") };
     const serialized = JSON.stringify({ decisionRecordIds, candidate });
     const existing = this.promotionKeys.get(key);
     if (existing) {
