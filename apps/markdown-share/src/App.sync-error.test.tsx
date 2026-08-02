@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { ConvexError } from "convex/values";
-import { getFunctionName, type AnyFunctionReference } from "convex/server";
+import { getFunctionName, type FunctionReference } from "convex/server";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -26,7 +26,7 @@ vi.mock("@convex-dev/presence/react", () => ({
 
 vi.mock("convex/react", () => ({
   useMutation: () => async () => null,
-  useQuery: (reference: AnyFunctionReference) => {
+  useQuery: (reference: FunctionReference<"query">) => {
     switch (getFunctionName(reference)) {
       case "documents:get":
         return publicDocument;

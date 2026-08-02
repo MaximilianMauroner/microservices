@@ -96,31 +96,37 @@ describe("capability lifecycle", () => {
     ).toEqual([]);
   });
 
-  it("never allows a legacy capability to be reused after cleanup", async () => {
+  it("rejects caller-selected legacy capabilities", async () => {
     vi.useFakeTimers({ now: 2_000 });
     const test = setup();
-    const created = await test.mutation(api.documents.create, {
+    const legacyCreate = {
       filename: "legacy.md",
       markdown: "legacy",
       token: LEGACY_TOKEN,
-    });
-
-    vi.setSystemTime(created.expiresAt);
-    await test.mutation(internal.cleanup.expire, {
-      token: created.token,
-      expectedExpiresAt: created.expiresAt,
-    });
+    };
 
     await expect(
-      test.mutation(api.documents.create, {
-        filename: "legacy-again.md",
-        markdown: "new content",
+      test.mutation(api.documents.create, legacyCreate),
+    ).rejects.toThrow();
+  });
+
+  it("keeps claims for legacy documents created by old deployments", async () => {
+    vi.useFakeTimers({ now: 2_500 });
+    const test = setup();
+    await test.run(async (ctx) => {
+      await ctx.db.insert("documents", {
         token: LEGACY_TOKEN,
-      }),
-    ).rejects.toThrow("already been used");
-    const claims = await test.run(async (ctx) => {
-      return await ctx.db.query("capabilityClaims").collect();
+        filename: "legacy.md",
+        createdAt: 1_500,
+        updatedAt: 1_500,
+        expiresAt: 1_500 + RETENTION_MS,
+      });
     });
+
+    await test.mutation(internal.claims.backfill, {});
+    const claims = await test.run(async (ctx) =>
+      await ctx.db.query("capabilityClaims").collect(),
+    );
     expect(claims).toMatchObject([
       { token: LEGACY_TOKEN, kind: "legacy" },
     ]);

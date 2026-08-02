@@ -5,7 +5,7 @@ import {
   MAX_CHECKPOINT_AUTHOR_LENGTH,
   MAX_CHECKPOINTS,
 } from "./constants";
-import { requireLiveDocument } from "./documentAccess";
+import { requireLiveDocument } from "./documentLifecycle";
 import { markdownAtVersion } from "./protocol";
 
 const checkpointSummary = v.object({

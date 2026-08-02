@@ -1,5 +1,3 @@
-import { diffLines } from "diff";
-
 export const TOKEN_PATTERN =
   /^(?:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|[a-z0-9]{20,64})$/;
 
@@ -106,67 +104,6 @@ export function formatExpiry(expiresAt: number, now = Date.now()): string {
 export function formatViewerCount(count: number): string {
   const viewers = Math.max(1, Math.floor(count));
   return `${viewers} viewing`;
-}
-
-export function getScrollProgress(
-  scrollTop: number,
-  scrollHeight: number,
-  clientHeight: number,
-): number {
-  const scrollableHeight = Math.max(0, scrollHeight - clientHeight);
-  if (scrollableHeight === 0) {
-    return 0;
-  }
-  return Math.min(1, Math.max(0, scrollTop / scrollableHeight));
-}
-
-export function getScrollTop(
-  progress: number,
-  scrollHeight: number,
-  clientHeight: number,
-): number {
-  const scrollableHeight = Math.max(0, scrollHeight - clientHeight);
-  return Math.min(1, Math.max(0, progress)) * scrollableHeight;
-}
-
-export type DiffRow = {
-  kind: "added" | "removed" | "unchanged";
-  value: string;
-  oldLine: number | null;
-  newLine: number | null;
-};
-
-export function buildDiffRows(older: string, newer: string): DiffRow[] {
-  let oldLine = 1;
-  let newLine = 1;
-
-  return diffLines(older, newer).flatMap((part) => {
-    const lines = part.value.split("\n");
-    if (lines.at(-1) === "") {
-      lines.pop();
-    }
-
-    return lines.map((value) => {
-      const kind = part.added
-        ? "added"
-        : part.removed
-          ? "removed"
-          : "unchanged";
-      const row: DiffRow = {
-        kind,
-        value,
-        oldLine: kind === "added" ? null : oldLine,
-        newLine: kind === "removed" ? null : newLine,
-      };
-      if (kind !== "added") {
-        oldLine += 1;
-      }
-      if (kind !== "removed") {
-        newLine += 1;
-      }
-      return row;
-    });
-  });
 }
 
 const PRESENCE_NAMES = [
