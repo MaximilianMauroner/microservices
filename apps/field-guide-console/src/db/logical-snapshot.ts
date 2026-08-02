@@ -79,6 +79,16 @@ export function assertCanonicalDecisionUuids(snapshot: LogicalSnapshot) {
   }
   for (const row of snapshot.tables.decision_promotion_records)
     canonicalSnapshotUuid(row.decision_record_id, "decision_promotion_records.decision_record_id");
+  const candidates = new Map(snapshot.tables.candidates.map((row) => [row.candidate_id, row]));
+  for (const row of snapshot.tables.decision_promotions) {
+    const candidateId = canonicalSnapshotUuid(row.candidate_id, "decision_promotions.candidate_id");
+    const candidate = candidates.get(candidateId);
+    const payload = candidate?.payload as { candidateId?: unknown } | undefined;
+    if (!candidate || payload?.candidateId !== candidateId)
+      throw new Error("Promotion candidate snapshot column and payload IDs must match canonically.");
+  }
+  for (const row of snapshot.tables.decision_promotion_records)
+    canonicalSnapshotUuid(row.candidate_id, "decision_promotion_records.candidate_id");
 }
 
 function canonicalSnapshotUuid(value: unknown, name: string) {

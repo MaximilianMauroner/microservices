@@ -147,6 +147,7 @@ describe("decision record review", () => {
       "secret: 'super-secret-value-12345'",
       'api_key: "super-secret-value-12345"',
       "See http://192.168.1.12/internal",
+      "See http://192.0.2.10/internal",
       "See http://169.254.169.254/latest/meta-data",
       "See http://100.64.0.1/internal",
       "See http://[::1]/internal",
