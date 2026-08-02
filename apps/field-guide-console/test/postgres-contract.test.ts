@@ -48,7 +48,7 @@ describe("Postgres schema contract", () => {
     expect(config).toContain('schema: "./src/db/postgres-schema.ts"');
     expect(config).toContain('schemaFilter: ["public"]');
     expect(config).toContain('"field_guide_schema_migrations"');
-    expect(config).toContain("TEST_DATABASE_URL is required");
+    expect(config).toContain("TEST_DATABASE_URL or DATABASE_URL is required");
     expect(config).toContain("'postgres:'");
   });
 
