@@ -10,9 +10,10 @@ import{importPostgresToSQLite,postgresSnapshot,recoverSQLiteToPostgres,transferS
 import{SQLiteReviewRepository}from"../src/sqlite-repository.js";
 import{createRepository}from"../src/repository.js";
 import{DISPOSABLE_DATABASE_SENTINEL,withVerifiedDisposableDatabase}from"./postgres-test-gate.js";
+import{prepareSQLiteTestDatabase}from"./sqlite-push-fixture.js";
 
 const directories:string[]=[];afterEach(()=>{for(const path of directories.splice(0))rmSync(path,{recursive:true,force:true});});
-const temporary=()=>{const directory=mkdtempSync(join(tmpdir(),"field-guide-transfer-"));directories.push(directory);return openSQLite(join(directory,"review.sqlite"));};
+const temporary=()=>{const directory=mkdtempSync(join(tmpdir(),"field-guide-transfer-"));directories.push(directory);const path=join(directory,"review.sqlite");prepareSQLiteTestDatabase(path);return openSQLite(path);};
 const candidate=(id:string,title:string)=>({candidateId:id,scope:"global" as const,lessonKey:`key-${title}`,title,body:"Nested 会議 ✅",rationale:"verification",evidence:[{excerpt:"évidence",sessionRef:"会議",commitHashes:["abc"]}],createdAt:"2026-07-26T00:00:00.123Z"});
 const decisionRecord=(id:string)=>({schemaVersion:1 as const,decisionRecordId:id,taskId:"transfer",scope:"global" as const,summary:"Preserve feedback history",context:"Restore parents before amendments.",options:[{label:"Unordered"},{label:"Sequence ordered"}],choice:"Sequence ordered",rationale:"The foreign key is immediate.",consequences:[],confidence:"high" as const,evidence:[],createdAt:"2026-07-26T00:00:00.123Z"});
 

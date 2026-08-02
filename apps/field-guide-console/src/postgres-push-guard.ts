@@ -66,7 +66,8 @@ export function createPushHandoff(environment: Environment, mode: PushMode): Pus
   const directory = mkdtempSync(join(tmpdir(), "field-guide-schema-push-"));
   const path = join(directory, "handoff.json");
   const nonce = crypto.randomBytes(32).toString("hex");
-  writeFileSync(path, JSON.stringify({ nonce, mode, url }), { encoding: "utf8", flag: "wx", mode: 0o600 });
+  const databaseHash = crypto.createHash("sha256").update(url).digest("hex");
+  writeFileSync(path, JSON.stringify({ nonce, mode, databaseHash }), { encoding: "utf8", flag: "wx", mode: 0o600 });
   return { directory, path, nonce, mode };
 }
 
@@ -87,7 +88,7 @@ export function consumePushHandoff(environment: Environment) {
   }
   const source = readFileSync(path, "utf8");
   unlinkSync(path);
-  const payload = JSON.parse(source) as { nonce?: unknown; mode?: unknown; url?: unknown };
+  const payload = JSON.parse(source) as { nonce?: unknown; mode?: unknown; databaseHash?: unknown };
   const expectedNonce = Buffer.from(nonce);
   const actualNonce = Buffer.from(typeof payload.nonce === "string" ? payload.nonce : "");
   if (
@@ -98,6 +99,7 @@ export function consumePushHandoff(environment: Environment) {
     throw new Error("PostgreSQL schema push handoff is invalid.");
   }
   const url = resolvePushDatabase(environment, mode);
-  if (payload.url !== url) throw new Error("PostgreSQL schema push handoff database does not match.");
+  const databaseHash = crypto.createHash("sha256").update(url).digest("hex");
+  if (payload.databaseHash !== databaseHash) throw new Error("PostgreSQL schema push handoff database does not match.");
   return url;
 }

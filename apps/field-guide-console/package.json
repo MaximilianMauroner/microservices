@@ -9,7 +9,7 @@
   "scripts": {
     "build": "bun run build:css && tsc -p tsconfig.build.json",
     "build:css": "tailwindcss -i ./src/review.css -o ./public/review.css --minify",
-    "db:generate": "drizzle-kit generate",
+    "db:push-sqlite": "bun src/push-sqlite.ts",
     "db:import-postgres": "bun src/import-postgres.ts",
     "db:push-postgres": "bun src/push-postgres.ts production",
     "db:push-postgres:test": "bun src/push-postgres.ts test",

@@ -1,4 +1,3 @@
-import { isIP } from "node:net";
 import type {
   AmendVerdictInput,
   Candidate,
@@ -21,6 +20,7 @@ import {
   type FetchHandler,
 } from "./http.js";
 import { reviewConsole, reviewSuiteStyles } from "./ui.js";
+import { containsPrivateUrl } from "./private-url-policy.js";
 
 type ParsedBody = { json: boolean; value?: unknown };
 
@@ -552,6 +552,25 @@ function parseDecisionRecord(value: unknown) {
     : undefined;
   if (scope === "global" && (source.projectKey !== undefined || source.projectDisplayName !== undefined))
     throw new InputError("Global decision records forbid project fields.");
+  if ((source.foundProjectKey === undefined) !== (source.foundProjectDisplayName === undefined))
+    throw new InputError("Found project fields must be provided together.");
+  const foundProject = source.foundProjectKey !== undefined
+    ? {
+        foundProjectKey: text(source.foundProjectKey, "foundProjectKey", 128),
+        foundProjectDisplayName: text(source.foundProjectDisplayName, "foundProjectDisplayName", 256),
+      }
+    : project
+      ? {
+          foundProjectKey: project.projectKey,
+          foundProjectDisplayName: project.projectDisplayName,
+        }
+      : undefined;
+  if (!foundProject) throw new InputError("Global decision records require found project fields.");
+  if (
+    project &&
+    (project.projectKey !== foundProject.foundProjectKey ||
+      project.projectDisplayName !== foundProject.foundProjectDisplayName)
+  ) throw new InputError("Project and found project fields must match.");
   if (!Array.isArray(source.options) || source.options.length < 2 || source.options.length > 10)
     throw new InputError("options is invalid.");
   const options = source.options.map((value) => {
@@ -585,6 +604,7 @@ function parseDecisionRecord(value: unknown) {
     taskId: text(source.taskId, "taskId", 256),
     scope,
     ...project,
+    ...(source.foundProjectKey !== undefined ? foundProject : {}),
     summary: text(source.summary, "summary", 512),
     context: text(source.context, "context", 4000),
     options,
@@ -674,6 +694,17 @@ async function parseDecisionPromotion(value: unknown, repository: ReviewReposito
     throw new InputError("Every promoted decision record must be reviewed.");
   if (project && items.some((item) => item.record.projectKey !== project.projectKey))
     throw new InputError("Project candidate scope must match every source record.");
+  const sourceProject = {
+    foundProjectKey: items[0]?.record.foundProjectKey ?? items[0]?.record.projectKey,
+    foundProjectDisplayName: items[0]?.record.foundProjectDisplayName ?? items[0]?.record.projectDisplayName,
+  };
+  if (
+    !sourceProject.foundProjectKey ||
+    !sourceProject.foundProjectDisplayName ||
+    items.some((item) =>
+      (item.record.foundProjectKey ?? item.record.projectKey) !== sourceProject.foundProjectKey ||
+      (item.record.foundProjectDisplayName ?? item.record.projectDisplayName) !== sourceProject.foundProjectDisplayName)
+  ) throw new InputError("Promoted decision records must share one source project.");
   const evidence = items.map((item) => ({
     excerpt: [item.record.summary, `Choice: ${item.record.choice}`]
       .join("\n").slice(0, 2000),
@@ -683,9 +714,8 @@ async function parseDecisionPromotion(value: unknown, repository: ReviewReposito
     candidateId: uuid(draft.candidateId, "candidateId"),
     scope,
     ...project,
-    ...(items[0]?.record.projectKey && items[0]?.record.projectDisplayName
-      ? { foundProjectKey: items[0].record.projectKey, foundProjectDisplayName: items[0].record.projectDisplayName }
-      : {}),
+    foundProjectKey: sourceProject.foundProjectKey,
+    foundProjectDisplayName: sourceProject.foundProjectDisplayName,
     lessonKey: text(draft.lessonKey, "lessonKey", 128),
     title: text(draft.title, "title", 256),
     body: text(draft.body, "body", 10_000),
@@ -720,78 +750,6 @@ function stringValues(value: unknown): string[] {
   if (Array.isArray(value)) return value.flatMap(stringValues);
   if (value && typeof value === "object") return Object.values(value).flatMap(stringValues);
   return [];
-}
-
-function containsPrivateUrl(value: string) {
-  const candidates = value.match(/https?:\/\/[^\s"'<>\\]+/gi) ?? [];
-  return candidates.some((candidate) => {
-    let url: URL;
-    try {
-      url = new URL(candidate);
-    } catch {
-      return false;
-    }
-    return Boolean(url.username || url.password || privateHostname(url.hostname));
-  });
-}
-
-function privateHostname(value: string) {
-  const hostname = value.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
-  const version = isIP(hostname);
-  if (version === 4) return privateIpv4(hostname);
-  if (version === 6) return privateIpv6(hostname);
-  if (/^(?:0x[0-9a-f]+|[0-9]+)(?:\.(?:0x[0-9a-f]+|[0-9]+)){0,3}$/i.test(hostname))
-    return true;
-  if (
-    !hostname.includes(".") ||
-    hostname === "localhost" ||
-    hostname.endsWith(".localhost") ||
-    hostname.endsWith(".local") ||
-    hostname.endsWith(".internal") ||
-    hostname.endsWith(".lan") ||
-    hostname.endsWith(".corp") ||
-    hostname.endsWith(".home.arpa")
-  ) return true;
-  return false;
-}
-
-function privateIpv4(value: string) {
-  const [a = 0, b = 0, c = 0] = value.split(".").map(Number);
-  return a === 0 || a === 10 || a === 127 || a >= 224 ||
-    (a === 100 && b >= 64 && b <= 127) ||
-    (a === 169 && b === 254) ||
-    (a === 172 && b >= 16 && b <= 31) ||
-    (a === 192 && (b === 0 || b === 168)) ||
-    (a === 192 && b === 88 && c === 99) ||
-    (a === 198 && (b === 18 || b === 19 || b === 51)) ||
-    (a === 203 && b === 0);
-}
-
-function privateIpv6(value: string) {
-  const words = ipv6Words(value);
-  if (!words) return true;
-  const [first, second] = words;
-  const unspecifiedOrCompatible = words.slice(0, 6).every((word) => word === 0);
-  if (unspecifiedOrCompatible) return true;
-  if (words.slice(0, 5).every((word) => word === 0) && words[5] === 0xffff)
-    return privateIpv4(`${words[6] >> 8}.${words[6] & 255}.${words[7] >> 8}.${words[7] & 255}`);
-  return (first & 0xe000) !== 0x2000 ||
-    (first === 0x2001 && (second < 0x0200 || second === 0x0db8)) ||
-    first === 0x2002 ||
-    (first === 0x3fff && second <= 0x0fff);
-}
-
-function ipv6Words(value: string) {
-  const [left = "", right = ""] = value.split("::");
-  if (value.split("::").length > 2) return undefined;
-  const before = left ? left.split(":") : [];
-  const after = right ? right.split(":") : [];
-  const missing = 8 - before.length - after.length;
-  if ((value.includes("::") ? missing < 1 : missing !== 0)) return undefined;
-  const words = [...before, ...Array<string>(missing).fill("0"), ...after].map((word) => Number.parseInt(word, 16));
-  return words.length === 8 && words.every((word) => Number.isInteger(word) && word >= 0 && word <= 0xffff)
-    ? words
-    : undefined;
 }
 
 function parseScopeChange(value: unknown): Scope {

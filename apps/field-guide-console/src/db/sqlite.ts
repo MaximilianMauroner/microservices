@@ -1,8 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { Database } from "bun:sqlite";
-import { drizzle } from "drizzle-orm/bun-sqlite";
-import { migrate } from "drizzle-orm/bun-sqlite/migrator";
 
 export type SQLiteHandle = {
   client: Database;
@@ -17,7 +15,6 @@ export function openSQLite(path: string): SQLiteHandle {
   client.exec("PRAGMA busy_timeout=5000");
   client.exec("PRAGMA journal_mode=WAL");
   client.exec("PRAGMA synchronous=NORMAL");
-  migrate(drizzle({ client }), { migrationsFolder: new URL("../../drizzle", import.meta.url).pathname });
   if (Number(client.query<{ foreign_keys:number }, []>("PRAGMA foreign_keys").get()?.foreign_keys) !== 1) {
     client.close();
     throw new Error("SQLite foreign key enforcement is unavailable.");
