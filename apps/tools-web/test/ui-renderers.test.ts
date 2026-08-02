@@ -7,6 +7,7 @@ import {
   renderOperationsAuditPage,
   renderOperationsHistoryPage,
   renderOperationsPage,
+  renderPrivateStatusPage,
   renderPublicPage,
   renderStatusPage
 } from "../src/ui/index.js";
@@ -166,7 +167,7 @@ describe("public page", () => {
     expect(html).toContain("Unavailable from Railway");
     expect(html).not.toContain("Operator sign-in");
     expect(html).toContain('<link rel="icon" href="/favicon.svg?v=90e2a71" type="image/svg+xml">');
-    expect(html).toContain('<link rel="stylesheet" href="/assets/tools.css?v=90e2a71">');
+    expect(html).toContain('<link rel="stylesheet" href="/assets/tools.css?v=8dca720">');
     expect(html).toContain('src="/assets/icons/artifact-publisher.png"');
     expect(html).toContain('src="/assets/icons/network-console.png"');
     expect(html).not.toContain('<script src="/assets/ops.js"');
@@ -185,13 +186,15 @@ describe("public page", () => {
     expect(html).toContain("Not checkable from Railway");
     expect(html).toContain("Observed uptime: 98%");
     expect(html).toContain("100 checks");
-    expect(html).toContain("Recorded checks");
+    expect(html).toContain("Partial outage");
     expect(html).toContain("No data");
     expect(html).toContain('href="/status" aria-current="page"');
     expect(html).toContain("Access protected");
+    expect(html).toContain("Private service status");
+    expect(html).toContain('href="/manage/status"');
     expect(html).toContain('datetime="2026-07-27T12:00:00.000Z"');
     expect((html.match(/class="uptime-day /g) ?? [])).toHaveLength(180);
-    expect(html).toContain('<link rel="stylesheet" href="/assets/tools.css?v=90e2a71">');
+    expect(html).toContain('<link rel="stylesheet" href="/assets/tools.css?v=8dca720">');
     expect(html).not.toContain('<script src="/assets/ops.js"');
     expect(html).not.toContain("Operator sign-in");
   });
@@ -233,6 +236,23 @@ describe("public page", () => {
 
     expect(html).not.toContain("privateNotes");
     expect(html).not.toContain("notification-secret");
+    expect(html).not.toContain("raw-discord-error");
+  });
+
+  test("renders private-only service status for an authenticated actor", () => {
+    const html = renderPrivateStatusPage(
+      privateSnapshot,
+      "operator@example.test"
+    );
+
+    expect(html).toContain("Private services");
+    expect(html).toContain("Port service");
+    expect(html).toContain("Private tool");
+    expect(html).toContain("Signed in as operator@example.test");
+    expect(html).toContain('href="/status">← Public status</a>');
+    expect(html).toContain('<meta name="robots" content="noindex, nofollow">');
+    expect(html).not.toContain("Artifact &lt;Publisher&gt;");
+    expect(html).not.toContain("privateNotes");
     expect(html).not.toContain("raw-discord-error");
   });
 
@@ -408,6 +428,49 @@ describe("public page", () => {
     expect(noData).toContain("No checks recorded");
   });
 
+  test("shows daily uptime and exact downtime on hover with interruption records", () => {
+    const html = renderStatusPage({
+      ...publicSnapshot,
+      generatedAt: "2026-07-27T12:00:00.000Z",
+      statuses: {
+        ...publicSnapshot.statuses,
+        "artifact-publisher": {
+          ...publicSnapshot.statuses["artifact-publisher"],
+          uptimeDays: [
+            { day: "2026-07-27", successfulChecks: 2, totalChecks: 3 }
+          ],
+          downtimeRecords: [
+            {
+              startedAt: "2026-07-27T08:00:00.000Z",
+              resolvedAt: "2026-07-27T08:07:00.000Z"
+            },
+            {
+              startedAt: "2026-07-27T10:30:00.000Z",
+              resolvedAt: null
+            }
+          ]
+        }
+      }
+    });
+
+    expect(html).toContain(
+      "2026-07-27 · 66.667% uptime · 1h 37m recorded downtime · 3 checks"
+    );
+    expect(html).toContain('class="uptime-popover"');
+    expect(html).toContain("Jul 27, 2026");
+    expect(html).toContain("66.667% uptime");
+    expect(html).toContain("Recorded downtime");
+    expect(html).toContain("2 interruptions recorded");
+    expect(html).toContain("Downtime records");
+    expect(html).toContain("2 interruptions · 1h 37m total");
+    expect(html).toContain("08:00–08:07 UTC");
+    expect(html).toContain("10:30–ongoing UTC");
+    expect(html).toContain('data-local-time-range data-start="2026-07-27T08:00:00.000Z" data-end="2026-07-27T08:07:00.000Z"');
+    expect(html).toContain('data-local-time-range data-start="2026-07-27T10:30:00.000Z"');
+    expect(html).toContain('class="downtime-duration">7 min</span>');
+    expect(html).toContain('class="downtime-duration">1h 30m</span>');
+  });
+
   test("distinguishes stale service observations from snapshot generation", () => {
     const html = renderStatusPage({
       ...publicSnapshot,
@@ -422,10 +485,10 @@ describe("public page", () => {
     });
 
     expect(html).toContain(
-      'Last updated <time datetime="2026-07-27T15:30:00.000Z"'
+      'Last updated <time datetime="2026-07-27T15:30:00.000Z" data-local-timestamp'
     );
     expect(html).toContain(
-      'Latest check <time datetime="2026-07-26T09:15:00.000Z"'
+      'Latest check <time datetime="2026-07-26T09:15:00.000Z" data-local-timestamp'
     );
   });
 });
@@ -455,7 +518,7 @@ describe("operations page", () => {
     expect(html).toContain('data-endpoint="/api/ops/audit"');
     expect(html).toContain("Loading protected history");
     expect(html).toContain("Loading protected audit events");
-    expect(html).toContain('<link rel="stylesheet" href="/assets/tools.css?v=90e2a71">');
+    expect(html).toContain('<link rel="stylesheet" href="/assets/tools.css?v=8dca720">');
     expect(html).toContain('<script src="/assets/ops.js?v=4b98adb" defer></script>');
   });
 

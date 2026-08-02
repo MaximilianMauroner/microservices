@@ -41,8 +41,9 @@ session so the checker can report each component truthfully.
 
 The web module may read `catalog/current.json`, prepared snapshots,
 `history/**`, and `audit/**`. It can write only `catalog/current.json`
-conditionally and immutable `audit/**` protocol records. No API writes checker
-state, snapshots, or history.
+conditionally and immutable `audit/**` protocol records. The platform gateway
+separately owns the single `heartbeats/tower.json` last-seen record. No API
+writes checker state, snapshots, or history.
 
 Each mutation creates an immutable audit intent and revision-linked obligation
 before the conditional catalog write. It then verifies the canonical outcome
@@ -69,6 +70,10 @@ The public status page reports **Observed uptime** only over recorded checks;
 the 90-cell calendar marks days without data separately and names the earliest
 observed day. Its aggregate gives outages and checking states precedence, then
 reports healthy measured services separately from services not measured.
+Below the public services it links to `/manage/status`, which uses the Manage
+Access audience and renders only active services excluded from the public
+projection. The protected response is non-cacheable and does not render
+operator notes, notification delivery details, or monitor target URLs.
 Directory destinations on the current browser origin use a chevron and open
 in the current tab. Cross-origin destinations use an external arrow, open in a
 new tab with `rel=noreferrer`, and announce that behavior to assistive

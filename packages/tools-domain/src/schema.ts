@@ -508,6 +508,29 @@ function parseMonitorState(value: unknown, path: string): MonitorState {
   };
 }
 
+function parsePublicDowntimeRecords(
+  value: unknown,
+  path: string
+): NonNullable<PublicMonitorStatus["downtimeRecords"]> {
+  return array(value, path)
+    .map((recordValue, index) => {
+      const recordPath = `${path}[${index}]`;
+      const item = record(recordValue, recordPath);
+      const startedAt = timestamp(item.startedAt, `${recordPath}.startedAt`);
+      const resolvedAt = item.resolvedAt === null
+        ? null
+        : timestamp(item.resolvedAt, `${recordPath}.resolvedAt`);
+      if (resolvedAt !== null && resolvedAt < startedAt) {
+        throw new SchemaDecodeError(
+          `${recordPath}.resolvedAt`,
+          "must not precede startedAt"
+        );
+      }
+      return { startedAt, resolvedAt };
+    })
+    .sort((left, right) => left.startedAt.localeCompare(right.startedAt));
+}
+
 function parseIncident(value: unknown, index: number): Incident {
   return parseIncidentAt(value, `$.incidents[${index}]`);
 }
@@ -669,7 +692,15 @@ function parsePublicStatus(
         : nonnegativeInteger(item.statusCode, `${path}.statusCode`),
     ...(item.uptimeDays === undefined
       ? {}
-      : { uptimeDays: parseUptimeDays(item.uptimeDays, `${path}.uptimeDays`) })
+      : { uptimeDays: parseUptimeDays(item.uptimeDays, `${path}.uptimeDays`) }),
+    ...(item.downtimeRecords === undefined
+      ? {}
+      : {
+          downtimeRecords: parsePublicDowntimeRecords(
+            item.downtimeRecords,
+            `${path}.downtimeRecords`
+          )
+        })
   };
 }
 

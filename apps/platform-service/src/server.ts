@@ -14,6 +14,7 @@ import { executeChecker } from "../../../jobs/tools-checker/src/index.ts";
 import { createPlatformApp, accessAuthentication } from "./app.ts";
 import { loadPlatformConfig } from "./config.ts";
 import { startAlignedScheduler } from "./scheduler.ts";
+import { createTowerHeartbeat } from "./tower-heartbeat.ts";
 
 const config = loadPlatformConfig();
 const access = {
@@ -33,7 +34,13 @@ const access = {
     audience: config.access.audience.review
   })
 };
-const toolsStorage = new WebStorage(createS3JsonBucket(config.tools.bucket));
+const toolsBucket = createS3JsonBucket(config.tools.bucket);
+const toolsStorage = new WebStorage(toolsBucket);
+const towerHeartbeat = createTowerHeartbeat({
+  bucket: toolsBucket,
+  token: config.towerHeartbeatToken,
+  staleAfterMs: config.towerHeartbeatStaleAfterMs
+});
 const markdownAdmin = createMarkdownAdminClient({
   endpoint: config.markdownShare.adminEndpoint,
   token: config.markdownShare.adminToken
@@ -81,6 +88,7 @@ const app = createPlatformApp({
   artifact,
   fieldGuide,
   tools,
+  towerHeartbeat,
   publicOrigin: config.publicOrigin,
   componentHealth: {
     tools: () => toolsStorage.readiness(),

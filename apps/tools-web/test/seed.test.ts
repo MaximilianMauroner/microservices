@@ -22,16 +22,19 @@ describe("initial catalog", () => {
     ).toEqual([
       { id: "publishing", name: "Publishing & sharing" },
       { id: "review", name: "Review & feedback" },
-      { id: "operations", name: "Operations" }
+      { id: "operations", name: "Operations" },
+      { id: "private-infrastructure", name: "Private infrastructure" }
     ]);
     expect(catalog.entries.map(({ id }) => id).sort()).toEqual([
       "artifact-publisher",
       "field-guide-console",
+      "home-assistant",
       "markdown-share",
       "network-console",
-      "tools-directory"
+      "tools-directory",
+      "tower"
     ]);
-    expect(catalog.entries).toHaveLength(5);
+    expect(catalog.entries).toHaveLength(7);
     expect(catalog.entries.some(({ id }) => id === "tools-checker")).toBe(false);
     expect(
       Object.fromEntries(
@@ -41,6 +44,8 @@ describe("initial catalog", () => {
       "artifact-publisher": "https://tools.mauroner.net/health/publisher",
       "field-guide-console": "https://tools.mauroner.net/health/review",
       "markdown-share": "https://markdown-share-alpha.mauroner.workers.dev/",
+      "home-assistant": "https://homeassistant.mauroner.net/",
+      tower: "https://tools.mauroner.net/health/tower",
       "tools-directory": "https://tools.mauroner.net/health/tools",
     });
     expect(
@@ -66,6 +71,8 @@ describe("initial catalog", () => {
     expect(serialized).not.toContain("privateNotes");
     expect(serialized).not.toContain("stable deployment URL");
     expect(serialized).not.toContain("uploads.mauroner.eu is");
+    expect(serialized).not.toContain("Home Assistant");
+    expect(serialized).not.toContain("tower.tailbc92d.ts.net");
     expect(projected.statuses["network-console"]?.status).toBe("unavailable");
   });
 });

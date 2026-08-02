@@ -21,6 +21,11 @@ export interface MarkdownAdminReader {
   list(): Promise<MarkdownAdminSnapshot>;
 }
 
+export type MarkdownAdminFetch = (
+  input: URL | RequestInfo,
+  init?: RequestInit
+) => Promise<Response>;
+
 export class MarkdownAdminUnavailableError extends Error {
   constructor() {
     super("Markdown Share admin inventory is unavailable");
@@ -31,7 +36,7 @@ export class MarkdownAdminUnavailableError extends Error {
 export function createMarkdownAdminClient(config: {
   endpoint: string;
   token: string;
-  fetch?: typeof fetch;
+  fetch?: MarkdownAdminFetch;
   timeoutMs?: number;
 }): MarkdownAdminReader {
   const request = config.fetch ?? fetch;

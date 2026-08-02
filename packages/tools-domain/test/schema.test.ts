@@ -162,6 +162,12 @@ describe("schema decoding and migration", () => {
           checkedAt: NOW,
           latencyMs: 10,
           statusCode: 200,
+          downtimeRecords: [
+            {
+              startedAt: "2026-07-27T08:00:00.000Z",
+              resolvedAt: "2026-07-27T08:07:00.000Z"
+            }
+          ],
           uptimeDays: [
             { day: "2026-07-27", successfulChecks: 11, totalChecks: 12 }
           ]
@@ -171,6 +177,9 @@ describe("schema decoding and migration", () => {
     expect(
       decodePublicSnapshotDocument(snapshot).statuses.tool.uptimeDays
     ).toEqual(snapshot.statuses.tool.uptimeDays);
+    expect(
+      decodePublicSnapshotDocument(snapshot).statuses.tool.downtimeRecords
+    ).toEqual(snapshot.statuses.tool.downtimeRecords);
     expect(() =>
       decodePublicSnapshotDocument({
         ...snapshot,
@@ -184,6 +193,22 @@ describe("schema decoding and migration", () => {
         }
       })
     ).toThrow(/successful checks/);
+    expect(() =>
+      decodePublicSnapshotDocument({
+        ...snapshot,
+        statuses: {
+          tool: {
+            ...snapshot.statuses.tool,
+            downtimeRecords: [
+              {
+                startedAt: "2026-07-27T08:07:00.000Z",
+                resolvedAt: "2026-07-27T08:00:00.000Z"
+              }
+            ]
+          }
+        }
+      })
+    ).toThrow(/must not precede startedAt/);
   });
 
   it("migrates and decodes daily history partitions", () => {
