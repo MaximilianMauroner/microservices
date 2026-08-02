@@ -5,6 +5,7 @@ import {
   ConflictError,
   NotFoundError,
   ValidationError,
+  canonicalUuid,
   decodeCursor,
   encodeCursor,
   type Candidate,
@@ -42,7 +43,11 @@ export class SQLiteDecisionRecordStore {
 
   create(key: string, record: DecisionRecord) {
     return this.immediate(() => {
-      const hash = digest(record);
+      const normalizedRecord = {
+        ...record,
+        decisionRecordId: canonicalUuid(record.decisionRecordId, "decisionRecordId"),
+      };
+      const hash = digest(normalizedRecord);
       const old = this.db.query<{ payload_hash: string }, [string]>(
         "SELECT payload_hash FROM decision_records WHERE idempotency_key=?",
       ).get(key);
@@ -54,7 +59,7 @@ export class SQLiteDecisionRecordStore {
       try {
         const now = canonicalTimestamp(new Date().toISOString());
         this.db.query("INSERT INTO decision_records(decision_record_id,idempotency_key,payload,payload_hash,created_at,received_at) VALUES(?,?,?,?,?,?)")
-          .run(record.decisionRecordId, key, canonical(record), hash, canonicalTimestamp(record.createdAt), now);
+          .run(normalizedRecord.decisionRecordId, key, canonical(normalizedRecord), hash, canonicalTimestamp(normalizedRecord.createdAt), now);
         return "created" as const;
       } catch (error) {
         if (isConstraint(error)) throw new ConflictError("Decision record already exists.");
@@ -119,19 +124,23 @@ export class SQLiteDecisionRecordStore {
   }
 
   get(id: string, now: Date, archiveAfterDays: number) {
-    const row = this.recordRow(id);
+    const row = this.recordRow(canonicalUuid(id, "decisionRecordId"));
     if (!row) throw new NotFoundError("Decision record not found.");
     return this.itemFromRow(row, now, archiveAfterDays, true);
   }
 
   feedback(decisionRecordId: string, input: DecisionFeedbackInput, now: Date, reviewer: string) {
     return this.immediate(() => {
+      decisionRecordId = canonicalUuid(decisionRecordId, "decisionRecordId");
+      const expectedFeedbackId = input.expectedFeedbackId === undefined
+        ? undefined
+        : canonicalUuid(input.expectedFeedbackId, "expectedFeedbackId");
       if (!this.db.query("SELECT 1 FROM decision_records WHERE decision_record_id=?").get(decisionRecordId))
         throw new NotFoundError("Decision record not found.");
       const current = this.latestFeedback(decisionRecordId);
-      if (input.expectedFeedbackId !== undefined && input.expectedFeedbackId !== current?.feedback_id)
+      if (expectedFeedbackId !== undefined && expectedFeedbackId !== current?.feedback_id)
         throw new ConflictError("Feedback changed since it was loaded. Refresh and try again.");
-      if (current && input.expectedFeedbackId === undefined)
+      if (current && expectedFeedbackId === undefined)
         throw new ConflictError("Feedback already exists. Amend the current feedback instead.");
       const feedbackId = crypto.randomUUID();
       this.db.query("INSERT INTO decision_feedback_events(feedback_id,decision_record_id,action,comment,reviewer,reviewed_at,amends_feedback_id) VALUES(?,?,?,?,?,?,?)")
@@ -150,7 +159,14 @@ export class SQLiteDecisionRecordStore {
 
   promote(key: string, ids: string[], candidate: Candidate, now: Date, reviewer: string) {
     return this.immediate(() => {
-      const hash = digest({ decisionRecordIds: ids, candidate });
+      const decisionRecordIds = ids.map((id) => canonicalUuid(id, "decisionRecordId"));
+      if (new Set(decisionRecordIds).size !== decisionRecordIds.length)
+        throw new ValidationError("decisionRecordIds contains duplicates.");
+      const normalizedCandidate = {
+        ...candidate,
+        candidateId: canonicalUuid(candidate.candidateId, "candidateId"),
+      };
+      const hash = digest({ decisionRecordIds, candidate: normalizedCandidate });
       const old = this.db.query<{ candidate_id: string; payload_hash: string; promoted_at: string; promoted_by: string }, [string]>(
         "SELECT candidate_id,payload_hash,promoted_at,promoted_by FROM decision_promotions WHERE idempotency_key=?",
       ).get(key);
@@ -162,7 +178,7 @@ export class SQLiteDecisionRecordStore {
           promotion: this.promotion(old.candidate_id, old.promoted_at, old.promoted_by),
         };
       }
-      for (const id of ids) {
+      for (const id of decisionRecordIds) {
         if (!this.db.query("SELECT 1 FROM decision_records WHERE decision_record_id=?").get(id))
           throw new NotFoundError("Decision record not found.");
         if (!this.latestFeedback(id))
@@ -172,11 +188,11 @@ export class SQLiteDecisionRecordStore {
       }
       try {
         this.db.query("INSERT INTO candidates(candidate_id,idempotency_key,payload,payload_hash,created_at) VALUES(?,?,?,?,?)")
-          .run(candidate.candidateId, `promotion:${key}`, canonical(candidate), digest(candidate), canonicalTimestamp(candidate.createdAt));
-        this.db.query("INSERT INTO review_rounds(candidate_id,round,kind) VALUES(?,1,'initial')").run(candidate.candidateId);
+          .run(normalizedCandidate.candidateId, `promotion:${key}`, canonical(normalizedCandidate), digest(normalizedCandidate), canonicalTimestamp(normalizedCandidate.createdAt));
+        this.db.query("INSERT INTO review_rounds(candidate_id,round,kind) VALUES(?,1,'initial')").run(normalizedCandidate.candidateId);
         this.db.query("INSERT INTO decision_promotions(candidate_id,idempotency_key,payload_hash,promoted_at,promoted_by) VALUES(?,?,?,?,?)")
-          .run(candidate.candidateId, key, hash, canonicalTimestamp(now.toISOString()), reviewer);
-        ids.forEach((id, ordinal) => this.db.query("INSERT INTO decision_promotion_records(candidate_id,decision_record_id,ordinal) VALUES(?,?,?)").run(candidate.candidateId, id, ordinal));
+          .run(normalizedCandidate.candidateId, key, hash, canonicalTimestamp(now.toISOString()), reviewer);
+        decisionRecordIds.forEach((id, ordinal) => this.db.query("INSERT INTO decision_promotion_records(candidate_id,decision_record_id,ordinal) VALUES(?,?,?)").run(normalizedCandidate.candidateId, id, ordinal));
       } catch (error) {
         if (isConstraint(error)) throw new ConflictError("Candidate or decision record has already been promoted.");
         throw error;
@@ -184,8 +200,8 @@ export class SQLiteDecisionRecordStore {
       return {
         status: "created" as const,
         promotion: {
-          candidateId: candidate.candidateId,
-          decisionRecordIds: ids,
+          candidateId: normalizedCandidate.candidateId,
+          decisionRecordIds,
           promotedAt: now.toISOString(),
           promotedBy: reviewer,
         } satisfies DecisionPromotion,

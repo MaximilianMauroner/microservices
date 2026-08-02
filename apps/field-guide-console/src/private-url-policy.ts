@@ -45,7 +45,8 @@ const publicIpv6 = blockList([["2000::", 3]], "ipv6");
 const nonPublicIpv6 = blockList(NON_PUBLIC_IPV6_SUBNETS, "ipv6");
 
 export function containsPrivateUrl(value: string) {
-  const candidates = value.match(/https?:\/\/[^\s"'<>\\]+/gi) ?? [];
+  const candidates = [...value.matchAll(/(?=https?:\/\/)/gi)]
+    .flatMap((match) => value.slice(match.index).match(/^https?:\/\/[^\s"'<>\\]+/i) ?? []);
   return candidates.some((candidate) =>
     [...new Set([candidate, trimProseTerminator(candidate)])].some((variant) => {
       try {

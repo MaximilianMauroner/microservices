@@ -60,4 +60,12 @@ describe("private URL policy", () => {
   ])("retains valid public URL punctuation in %s", (value) => {
     expect(containsPrivateUrl(value)).toBe(false);
   });
+
+  it.each([
+    "See https://example.com/?next=http://127.0.0.1/admin",
+    "See https://example.com/http://service.corp/internal",
+    "See https://example.com/?next=https://user:password@internal.corp/",
+  ])("scans every nested URL scheme in %s", (value) => {
+    expect(containsPrivateUrl(value)).toBe(true);
+  });
 });

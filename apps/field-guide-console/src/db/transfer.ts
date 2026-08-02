@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
 import postgres,{type Sql,type TransactionSql}from"postgres";
 import type { Candidate, DecisionRecord } from "../types.js";
-import {normalizeRow,SEQUENCED_TABLES,snapshotReport,snapshotsEqual,sqliteSnapshot,summarize,type LogicalSnapshot,type SequenceState,type SnapshotReport,type TableName}from"./logical-snapshot.js";
+import {assertCanonicalDecisionUuids,normalizeRow,SEQUENCED_TABLES,snapshotReport,snapshotsEqual,sqliteSnapshot,summarize,type LogicalSnapshot,type SequenceState,type SnapshotReport,type TableName}from"./logical-snapshot.js";
 
 const UTC_FORMAT=`'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'`;
 const PROJECTIONS:Record<TableName,string>={
@@ -20,13 +20,13 @@ export async function postgresSnapshot(sql:Sql|TransactionSql):Promise<LogicalSn
   const read=async(table:TableName)=>(await sql.unsafe<Record<string,unknown>[]>(`SELECT ${PROJECTIONS[table]} FROM ${table}`)).map(normalizeRow);
   const entries=await Promise.all(SEQUENCED_TABLES.map(async table=>[table,await postgresSequence(sql,table)] as const));
   const sequences=Object.fromEntries(entries) as LogicalSnapshot["sequences"];
-  return summarize({candidates:await read("candidates"),review_rounds:await read("review_rounds"),verdict_events:await read("verdict_events"),application_receipts:await read("application_receipts"),field_guide_schema_migrations:await read("field_guide_schema_migrations"),decision_records:await read("decision_records"),decision_feedback_events:await read("decision_feedback_events"),decision_promotions:await read("decision_promotions"),decision_promotion_records:await read("decision_promotion_records")},sequences);
+  const snapshot=summarize({candidates:await read("candidates"),review_rounds:await read("review_rounds"),verdict_events:await read("verdict_events"),application_receipts:await read("application_receipts"),field_guide_schema_migrations:await read("field_guide_schema_migrations"),decision_records:await read("decision_records"),decision_feedback_events:await read("decision_feedback_events"),decision_promotions:await read("decision_promotions"),decision_promotion_records:await read("decision_promotion_records")},sequences);assertCanonicalDecisionUuids(snapshot);return snapshot;
 }
 
 async function postgresSequence(sql:Sql|TransactionSql,table:(typeof SEQUENCED_TABLES)[number]):Promise<SequenceState>{const rows=await sql.unsafe<{last_value:string;is_called:boolean}[]>(`SELECT last_value::text last_value,is_called FROM ${table}_sequence_seq`);const row=rows[0];if(!row)throw new Error(`PostgreSQL ${table} sequence state is unavailable.`);return{lastValue:row.last_value,isCalled:row.is_called,nextValue:(BigInt(row.last_value)+(row.is_called?1n:0n)).toString()};}
 
 export function transferSnapshotToSQLite(db:Database,source:LogicalSnapshot,allowOverwrite=false):SnapshotReport{
-  validateSequence(source);
+  validateSequence(source);assertCanonicalDecisionUuids(source);
   const destination=sqliteSnapshot(db);
   if(total(destination)>0&&snapshotsEqual(source,destination))return snapshotReport(destination);
   if(total(destination)>0&&!allowOverwrite)throw new Error("SQLite destination is nonempty and differs from source; explicit overwrite authorization is required.");

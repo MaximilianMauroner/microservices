@@ -78,6 +78,19 @@ describe("Postgres schema contract", () => {
     expect(memoryStore).toContain("(record.foundProjectKey ?? record.projectKey) === filters.projectKey");
   });
 
+  it("canonicalizes decision UUIDs at every repository boundary", async () => {
+    const [postgresStore, sqliteStore, memoryStore] = await Promise.all([
+      readFile(new URL("../src/postgres-decision-records.ts", import.meta.url), "utf8"),
+      readFile(new URL("../src/sqlite-decision-records.ts", import.meta.url), "utf8"),
+      readFile(new URL("../src/memory-repository.ts", import.meta.url), "utf8"),
+    ]);
+    for (const source of [postgresStore, sqliteStore, memoryStore]) {
+      expect(source).toContain('canonicalUuid(record.decisionRecordId, "decisionRecordId")');
+      expect(source).toContain('canonicalUuid(id, "decisionRecordId")');
+      expect(source).toContain('canonicalUuid(candidate.candidateId, "candidateId")');
+    }
+  });
+
   it("matches the production columns, keys, checks, and bigserial", () => {
     const candidateConfig = getTableConfig(candidates);
     expect(candidateConfig.columns.map((column) => [

@@ -161,6 +161,8 @@ describe("decision record review", () => {
       "See http://user:password@example.com/private",
       "Do not expose http://127.0.0.1). in output",
       "Do not expose https://[::1]. in output",
+      "Do not redirect through https://example.com/?next=http://127.0.0.1/admin",
+      "Do not embed https://example.com/http://service.corp/internal",
     ]) {
       const response = await callApp(app, "/api/agent/decision-records", {
         method: "POST",
