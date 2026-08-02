@@ -159,6 +159,8 @@ describe("decision record review", () => {
       "See http://0x7f.0.0.1/internal",
       "See http://intranet/service",
       "See http://user:password@example.com/private",
+      "Do not expose http://127.0.0.1). in output",
+      "Do not expose https://[::1]. in output",
     ]) {
       const response = await callApp(app, "/api/agent/decision-records", {
         method: "POST",
@@ -400,5 +402,47 @@ describe("decision record review", () => {
     });
     expect(response.status).toBe(400);
     expect(await responseJson(response)).toMatchObject({ message: "Promoted decision records must share one source project." });
+  });
+
+  it("canonicalizes UUIDs before persistence and promotion duplicate checks", async () => {
+    const { app } = setup();
+    const lowercaseId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const uppercaseId = lowercaseId.toUpperCase();
+    const ingested = await callApp(app, "/api/agent/decision-records", {
+      method: "POST",
+      json: { idempotencyKey: "uppercase-record", record: { ...record, decisionRecordId: uppercaseId } },
+    });
+    expect(ingested.status).toBe(201);
+    expect(await responseJson(ingested)).toMatchObject({ decisionRecordId: lowercaseId });
+    const detail = await responseJson<{ record: { decisionRecordId: string } }>(
+      await callApp(app, `/api/review/decision-records/${uppercaseId}`),
+    );
+    expect(detail.record.decisionRecordId).toBe(lowercaseId);
+    await callApp(app, `/api/review/decision-records/${uppercaseId}/feedback`, {
+      method: "POST",
+      headers: { Origin: origin },
+      json: { action: "up" },
+    });
+    const promotion = await callApp(app, "/api/review/decision-records/promotions", {
+      method: "POST",
+      headers: { Origin: origin },
+      json: {
+        idempotencyKey: "case-variant-duplicates",
+        decisionRecordIds: [lowercaseId, uppercaseId],
+        candidate: {
+          candidateId: crypto.randomUUID(),
+          scope: "project",
+          projectKey: "microservices",
+          projectDisplayName: "Microservices",
+          lessonKey: "canonical-uuids",
+          title: "Canonicalize UUIDs",
+          body: "Normalize before comparison.",
+          rationale: "UUID hex casing is not identity.",
+          createdAt: now.toISOString(),
+        },
+      },
+    });
+    expect(promotion.status).toBe(400);
+    expect(await responseJson(promotion)).toMatchObject({ message: "decisionRecordIds contains duplicates." });
   });
 });

@@ -46,15 +46,36 @@ const nonPublicIpv6 = blockList(NON_PUBLIC_IPV6_SUBNETS, "ipv6");
 
 export function containsPrivateUrl(value: string) {
   const candidates = value.match(/https?:\/\/[^\s"'<>\\]+/gi) ?? [];
-  return candidates.some((candidate) => {
-    let url: URL;
-    try {
-      url = new URL(candidate);
-    } catch {
-      return false;
+  return candidates.some((candidate) =>
+    [...new Set([candidate, trimProseTerminator(candidate)])].some((variant) => {
+      try {
+        const url = new URL(variant);
+        return Boolean(url.username || url.password || privateHostname(url.hostname));
+      } catch {
+        return false;
+      }
+    }),
+  );
+}
+
+function trimProseTerminator(value: string) {
+  let trimmed = value.replace(/[.,;:!?]+$/g, "");
+  const pairs = [["(", ")"], ["[", "]"], ["{", "}"]] as const;
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const [open, close] of pairs) {
+      if (trimmed.endsWith(close) && occurrences(trimmed, close) > occurrences(trimmed, open)) {
+        trimmed = trimmed.slice(0, -1).replace(/[.,;:!?]+$/g, "");
+        changed = true;
+      }
     }
-    return Boolean(url.username || url.password || privateHostname(url.hostname));
-  });
+  }
+  return trimmed;
+}
+
+function occurrences(value: string, character: string) {
+  return [...value].filter((candidate) => candidate === character).length;
 }
 
 export function privateHostname(value: string) {
