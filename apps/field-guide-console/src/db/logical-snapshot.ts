@@ -57,7 +57,9 @@ export function sqliteSequences(db: Database): LogicalSnapshot["sequences"] {
 export function sqliteSnapshot(db: Database): LogicalSnapshot {
   const read = (table: TableName) => db.query<Record<string, unknown>, []>(`SELECT * FROM ${table}`).all().map(normalizeRow);
   const verdictEvents = db.query<Record<string, unknown>, []>("SELECT CAST(sequence AS TEXT) sequence,decision_id,candidate_id,round,action,reviewer,reviewed_at,next_review_at,round_kind,effect,amends_decision_id FROM verdict_events").all().map(normalizeRow);
-  return summarize({ candidates: read("candidates"), review_rounds: read("review_rounds"), verdict_events: verdictEvents, application_receipts: read("application_receipts"), field_guide_schema_migrations: read("field_guide_schema_migrations"), decision_records: read("decision_records"), decision_feedback_events: read("decision_feedback_events"), decision_promotions: read("decision_promotions"), decision_promotion_records: read("decision_promotion_records") }, sqliteSequences(db));
+  const decisionRecords = db.query<Record<string, unknown>, []>("SELECT CAST(sequence AS TEXT) sequence,decision_record_id,idempotency_key,payload,payload_hash,created_at,received_at FROM decision_records").all().map(normalizeRow);
+  const decisionFeedbackEvents = db.query<Record<string, unknown>, []>("SELECT CAST(sequence AS TEXT) sequence,feedback_id,decision_record_id,action,comment,reviewer,reviewed_at,amends_feedback_id FROM decision_feedback_events").all().map(normalizeRow);
+  return summarize({ candidates: read("candidates"), review_rounds: read("review_rounds"), verdict_events: verdictEvents, application_receipts: read("application_receipts"), field_guide_schema_migrations: read("field_guide_schema_migrations"), decision_records: decisionRecords, decision_feedback_events: decisionFeedbackEvents, decision_promotions: read("decision_promotions"), decision_promotion_records: read("decision_promotion_records") }, sqliteSequences(db));
 }
 
 export function normalizeRow(row: Record<string, unknown>): Record<string, unknown> {

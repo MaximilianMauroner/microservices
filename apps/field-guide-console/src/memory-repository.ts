@@ -312,7 +312,7 @@ export class MemoryReviewRepository implements ReviewRepository {
       .map((record, index) => ({ record, sequence: BigInt(index + 1) }))
       .filter(({ record, sequence }) =>
         (!before || sequence < BigInt(before)) &&
-        (!filters.projectKey || record.projectKey === filters.projectKey) &&
+        (!filters.projectKey || (record.foundProjectKey ?? record.projectKey) === filters.projectKey) &&
         (!filters.taskId || record.taskId === filters.taskId) &&
         (!filters.device || record.device === filters.device) &&
         (!filters.harness || record.harness === filters.harness) &&

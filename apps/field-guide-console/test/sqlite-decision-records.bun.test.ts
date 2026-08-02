@@ -29,4 +29,12 @@ describe("SQLite decision records",()=>{
     expect(plan.some((row)=>row.detail.includes("decision_feedback_events_record_sequence_idx"))).toBe(true);
     await repository.close();
   });
+
+  it("filters global records by their source project",async()=>{
+    const{repository}=setup();const value={...record(),scope:"global" as const,projectKey:undefined,projectDisplayName:undefined,foundProjectKey:"org/global-source",foundProjectDisplayName:"global-source"};
+    await repository.createDecisionRecord("global-source",value);
+    const page=await repository.decisionRecords({limit:50,reviewState:"all",projectKey:"org/global-source",includeArchived:false,archiveAfterDays:90,now});
+    expect(page.items.map((item)=>item.record.decisionRecordId)).toEqual([value.decisionRecordId]);
+    await repository.close();
+  });
 });
