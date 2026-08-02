@@ -1,8 +1,9 @@
-export const DISPOSABLE_DATABASE_SENTINEL = {
-  relation: "field_guide_review_test_sentinel",
-  key: "database-purpose",
-  value: "field-guide-console-disposable-test-database",
-} as const;
+import {
+  DISPOSABLE_DATABASE_SENTINEL,
+  verifyDisposableDatabase,
+} from "../src/postgres-push-guard.js";
+
+export { DISPOSABLE_DATABASE_SENTINEL };
 
 type SentinelLookups = {
   readRelationKind: () => Promise<string | undefined>;
@@ -13,15 +14,6 @@ export async function withVerifiedDisposableDatabase(
   lookups: SentinelLookups,
   run: () => Promise<void>,
 ) {
-  const relationKind = await lookups.readRelationKind();
-  if (relationKind !== "r") {
-    throw new Error(
-      "Disposable database sentinel must be an existing regular table.",
-    );
-  }
-  const value = await lookups.readValue();
-  if (value !== DISPOSABLE_DATABASE_SENTINEL.value) {
-    throw new Error("Disposable database sentinel value is missing or invalid.");
-  }
+  await verifyDisposableDatabase(lookups);
   await run();
 }

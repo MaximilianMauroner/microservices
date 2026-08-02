@@ -59,7 +59,8 @@ const fieldGuide = createFieldGuideApp({
   ),
   reviewerAuth: accessAuthentication(access.review),
   publicBaseUrl: config.publicOrigin,
-  stylesheet
+  stylesheet,
+  decisionRecordArchiveDays: config.fieldGuide.decisionRecordArchiveDays
 });
 const artifact = createArtifactApp({
   activityTracker,

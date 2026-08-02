@@ -5,6 +5,11 @@ import { describe, expect, it } from "vitest";
 import {
   applicationReceipts,
   candidates,
+  decisionFeedbackEvents,
+  decisionPromotionRecords,
+  decisionPromotions,
+  decisionRecords,
+  fieldGuideSchemaMigrations,
   reviewRounds,
   verdictEvents,
 } from "../src/db/postgres-schema.js";
@@ -15,6 +20,11 @@ const tables = [
   reviewRounds,
   verdictEvents,
   applicationReceipts,
+  fieldGuideSchemaMigrations,
+  decisionRecords,
+  decisionFeedbackEvents,
+  decisionPromotions,
+  decisionPromotionRecords,
 ];
 
 function foreignKeys(table: (typeof tables)[number]) {
@@ -32,12 +42,17 @@ function foreignKeys(table: (typeof tables)[number]) {
 }
 
 describe("Postgres schema contract", () => {
-  it("owns exactly the four filtered public tables", async () => {
+  it("owns exactly the filtered public tables", async () => {
     expect(tables.map((table) => getTableConfig(table).name)).toEqual([
       "candidates",
       "review_rounds",
       "verdict_events",
       "application_receipts",
+      "field_guide_schema_migrations",
+      "decision_records",
+      "decision_feedback_events",
+      "decision_promotions",
+      "decision_promotion_records",
     ]);
 
     const config = await readFile(
@@ -48,8 +63,32 @@ describe("Postgres schema contract", () => {
     expect(config).toContain('schema: "./src/db/postgres-schema.ts"');
     expect(config).toContain('schemaFilter: ["public"]');
     expect(config).toContain('"field_guide_schema_migrations"');
-    expect(config).toContain("TEST_DATABASE_URL is required");
-    expect(config).toContain("'postgres:'");
+    expect(config).toContain("consumePushHandoff(process.env)");
+    expect(config).not.toContain("PUSH_AUTHORIZATION");
+  });
+
+  it("filters decision records by effective source-project provenance", async () => {
+    const [postgresStore, sqliteStore, memoryStore] = await Promise.all([
+      readFile(new URL("../src/postgres-decision-records.ts", import.meta.url), "utf8"),
+      readFile(new URL("../src/sqlite-decision-records.ts", import.meta.url), "utf8"),
+      readFile(new URL("../src/memory-repository.ts", import.meta.url), "utf8"),
+    ]);
+    expect(postgresStore).toContain("COALESCE(d.payload->>'foundProjectKey',d.payload->>'projectKey')");
+    expect(sqliteStore).toContain("COALESCE(json_extract(d.payload,'$.foundProjectKey'),json_extract(d.payload,'$.projectKey'))");
+    expect(memoryStore).toContain("(record.foundProjectKey ?? record.projectKey) === filters.projectKey");
+  });
+
+  it("canonicalizes decision UUIDs at every repository boundary", async () => {
+    const [postgresStore, sqliteStore, memoryStore] = await Promise.all([
+      readFile(new URL("../src/postgres-decision-records.ts", import.meta.url), "utf8"),
+      readFile(new URL("../src/sqlite-decision-records.ts", import.meta.url), "utf8"),
+      readFile(new URL("../src/memory-repository.ts", import.meta.url), "utf8"),
+    ]);
+    for (const source of [postgresStore, sqliteStore, memoryStore]) {
+      expect(source).toContain('canonicalUuid(record.decisionRecordId, "decisionRecordId")');
+      expect(source).toContain('canonicalUuid(id, "decisionRecordId")');
+      expect(source).toContain('canonicalUuid(candidate.candidateId, "candidateId")');
+    }
   });
 
   it("matches the production columns, keys, checks, and bigserial", () => {
@@ -184,7 +223,7 @@ describe("Postgres schema contract", () => {
     ).toBe('"verdict_events"."amends_decision_id" is not null');
   });
 
-  it("keeps verdict events append-only and performs SQLite migrations before serving", async () => {
+  it("keeps verdict events append-only and never changes SQLite schema during startup", async () => {
     const repository = await readFile(
       new URL("../src/postgres-repository.ts", import.meta.url),
       "utf8",
@@ -201,12 +240,12 @@ describe("Postgres schema contract", () => {
     expect(server).not.toContain("repository.migrate");
 
     const sqlite = await readFile(new URL("../src/db/sqlite.ts", import.meta.url), "utf8");
-    expect(sqlite).toContain("migrate(drizzle");
+    expect(sqlite).not.toMatch(/\bmigrate\b/);
     expect(sqlite).toContain("PRAGMA foreign_keys=ON");
     expect(server.indexOf("await factory(config)")).toBeLessThan(server.indexOf("Bun.serve"));
   });
 
-  it("uses committed SQLite migrations at runtime instead of a predeploy push", async () => {
+  it("uses an explicit guarded SQLite push instead of runtime migrations", async () => {
     const packageJson = JSON.parse(
       await readFile(new URL("../package.json", import.meta.url), "utf8"),
     ) as {
@@ -224,7 +263,8 @@ describe("Postgres schema contract", () => {
         restartPolicyType: string;
       };
     };
-    expect(packageJson.scripts["db:generate"]).toBe("drizzle-kit generate");
+    expect(packageJson.scripts["db:push-sqlite"]).toBe("bun src/push-sqlite.ts");
+    expect(packageJson.scripts["db:generate"]).toBeUndefined();
     expect(Object.values(packageJson.scripts).join(" ")).not.toContain("--force");
     expect(packageJson.dependencies["drizzle-kit"]).toBe("1.0.0-rc.4");
     expect(packageJson.dependencies["drizzle-orm"]).toBe("1.0.0-rc.4");

@@ -9,13 +9,15 @@
   "scripts": {
     "build": "bun run build:css && tsc -p tsconfig.build.json",
     "build:css": "tailwindcss -i ./src/review.css -o ./public/review.css --minify",
-    "db:generate": "drizzle-kit generate",
+    "db:push-sqlite": "bun src/push-sqlite.ts",
     "db:import-postgres": "bun src/import-postgres.ts",
+    "db:push-postgres": "bun src/push-postgres.ts production",
+    "db:push-postgres:test": "bun src/push-postgres.ts test",
     "db:recover-postgres": "bun src/recover-postgres.ts",
     "dev": "bun --watch src/server.ts",
     "start": "bun dist/server.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run && bun test test/sqlite-repository.bun.test.ts test/transfer.bun.test.ts",
+    "test": "vitest run && bun test --timeout 15000 test/sqlite-repository.bun.test.ts test/sqlite-decision-records.bun.test.ts test/transfer.bun.test.ts",
     "verify": "bun run typecheck && bun run test"
   },
   "dependencies": {
