@@ -4,7 +4,6 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import postgres from "postgres";
 import { expect, it } from "vitest";
-import { migratePostgres } from "../src/migrate-postgres.js";
 import { PostgresReviewRepository } from "../src/postgres-repository.js";
 import type { Candidate, DecisionRecord } from "../src/types.js";
 import { DISPOSABLE_DATABASE_SENTINEL, withVerifiedDisposableDatabase } from "./postgres-test-gate.js";
@@ -15,7 +14,7 @@ const execFileAsync = promisify(execFile);
 const serviceDirectory = fileURLToPath(new URL("..", import.meta.url));
 const now = new Date("2026-08-02T12:00:00.000Z");
 
-it.skipIf(!databaseUrl || !confirmed)("migrates the old PostgreSQL schema idempotently and supports decision workflows", async () => {
+it.skipIf(!databaseUrl || !confirmed)("pushes the PostgreSQL schema and supports decision workflows", async () => {
   const url = databaseUrl!;
   const database = postgres(url, { max: 2 });
   let authorized = false;
@@ -35,21 +34,15 @@ it.skipIf(!databaseUrl || !confirmed)("migrates the old PostgreSQL schema idempo
       cwd: serviceDirectory,
       env: { ...process.env, TEST_DATABASE_URL: url },
     });
-    await database`DROP TABLE decision_promotion_records,decision_promotions,decision_feedback_events,decision_records`;
-    await database`DELETE FROM field_guide_schema_migrations WHERE name='20260802120000_decision_records_postgres'`;
-
-    await migratePostgres(database);
-    await migratePostgres(database);
-    expect((await database<{ count: number }[]>`SELECT COUNT(*)::int count FROM field_guide_schema_migrations WHERE name='20260802120000_decision_records_postgres'`)[0]?.count).toBe(1);
     expect((await database<{ name: string }[]>`SELECT indexname name FROM pg_indexes WHERE schemaname='public' AND indexname='decision_feedback_events_record_sequence_idx'`)[0]?.name).toBe("decision_feedback_events_record_sequence_idx");
 
     repository = new PostgresReviewRepository(url);
     const first = record();
     const second = record();
     ids.push(first.decisionRecordId, second.decisionRecordId);
-    expect(await repository.createDecisionRecord("migration-first", first)).toBe("created");
-    expect(await repository.createDecisionRecord("migration-first", first)).toBe("replay");
-    await repository.createDecisionRecord("migration-second", second);
+    expect(await repository.createDecisionRecord("schema-push-first", first)).toBe("created");
+    expect(await repository.createDecisionRecord("schema-push-first", first)).toBe("replay");
+    await repository.createDecisionRecord("schema-push-second", second);
     const oldReview = new Date(now.getTime() - 45 * 86_400_000);
     const firstFeedback = await repository.addDecisionFeedback(first.decisionRecordId, { action: "up" }, oldReview, "max@example.com");
     await repository.addDecisionFeedback(first.decisionRecordId, { action: "down", expectedFeedbackId: firstFeedback.feedbackId }, oldReview, "max@example.com");
@@ -60,7 +53,7 @@ it.skipIf(!databaseUrl || !confirmed)("migrates the old PostgreSQL schema idempo
     const firstCandidate = candidate();
     const concurrentCandidate = candidate();
     ids.push(firstCandidate.candidateId, concurrentCandidate.candidateId);
-    const promoted = await repository.promoteDecisionRecords("migration-promotion", [first.decisionRecordId], firstCandidate, now, "max@example.com");
+    const promoted = await repository.promoteDecisionRecords("schema-push-promotion", [first.decisionRecordId], firstCandidate, now, "max@example.com");
     expect(promoted.status).toBe("created");
     const concurrent = await Promise.all([
       repository.promoteDecisionRecords("concurrent-promotion", [second.decisionRecordId], concurrentCandidate, now, "max@example.com"),
@@ -85,14 +78,14 @@ function record(): DecisionRecord {
   return {
     schemaVersion: 1,
     decisionRecordId: crypto.randomUUID(),
-    taskId: "postgres-migration",
+    taskId: "postgres-schema-push",
     scope: "project",
     projectKey: "microservices",
     projectDisplayName: "Microservices",
-    summary: "Exercise migrated storage",
-    context: "The production migration must create every access path.",
-    options: [{ label: "Skip migration" }, { label: "Run migration" }],
-    choice: "Run migration",
+    summary: "Exercise pushed storage",
+    context: "The production schema push must create every access path.",
+    options: [{ label: "Skip schema push" }, { label: "Run schema push" }],
+    choice: "Run schema push",
     rationale: "Schema must precede traffic.",
     consequences: [],
     confidence: "high",
@@ -107,9 +100,9 @@ function candidate(): Candidate {
     scope: "project",
     projectKey: "microservices",
     projectDisplayName: "Microservices",
-    lessonKey: `migration-${crypto.randomUUID()}`,
-    title: "Run schema migrations before traffic",
-    body: "Apply committed migrations during pre-deploy.",
+    lessonKey: `schema-push-${crypto.randomUUID()}`,
+    title: "Push the schema before traffic",
+    body: "Apply the Drizzle schema during pre-deploy.",
     rationale: "Readiness must see the new tables.",
     evidence: [],
     createdAt: now.toISOString(),

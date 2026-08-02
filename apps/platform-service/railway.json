@@ -4,7 +4,7 @@
     "builder": "RAILPACK"
   },
   "deploy": {
-    "preDeployCommand": ["bun run --cwd apps/field-guide-console db:migrate-postgres"],
+    "preDeployCommand": ["FIELD_GUIDE_SCHEMA_PUSH_CONFIRM=field-guide-console-production DATABASE_URL=\"$FIELD_GUIDE_DATABASE_URL\" bun run --cwd apps/field-guide-console db:push-postgres"],
     "startCommand": "bun run --cwd apps/platform-service start",
     "healthcheckPath": "/health",
     "healthcheckTimeout": 60,
