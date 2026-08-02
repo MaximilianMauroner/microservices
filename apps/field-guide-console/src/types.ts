@@ -76,6 +76,8 @@ export type DecisionRecord = {
   scope: Scope;
   projectKey?: string;
   projectDisplayName?: string;
+  foundProjectKey?: string;
+  foundProjectDisplayName?: string;
   summary: string;
   context: string;
   options: DecisionRecordOption[];

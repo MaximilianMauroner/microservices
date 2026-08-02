@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 describe("decision inbox client behavior", () => {
   it("groups repository-local task IDs by project identity", async () => {
     const source = await readFile(new URL("../src/ui.ts", import.meta.url), "utf8");
-    expect(source).toContain("JSON.stringify(['project',record.projectKey||'',record.taskId])");
+    expect(source).toContain("JSON.stringify([record.foundProjectKey||record.projectKey||record.decisionRecordId,record.taskId])");
     expect(source).toContain("data-task-key");
     expect(source).not.toContain("const key=item.record.taskId");
   });
@@ -19,9 +19,9 @@ describe("decision inbox client behavior", () => {
     expect(source).toContain("Loading lesson draft…");
   });
 
-  it("uses record identity for global task groups so repository-local task ids cannot collide", async () => {
+  it("uses source-project provenance for global task groups", async () => {
     const source = await readFile(new URL("../src/ui.ts", import.meta.url), "utf8");
-    expect(source).toContain("record.scope==='global'?JSON.stringify(['global',record.decisionRecordId])");
+    expect(source).toContain("record.foundProjectKey||record.projectKey||record.decisionRecordId");
   });
 
   it("refreshes authoritative state after feedback conflicts", async () => {

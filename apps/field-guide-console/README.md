@@ -63,8 +63,11 @@ content and submitted decision records have no update or delete routes.
 
 ## Development
 
-Run `bun run db:generate` after changing `src/db/schema.ts`; SQLite migrations
-live in `drizzle/`. Production PostgreSQL schema changes are applied from
+SQLite schema changes are applied directly from `src/db/schema.ts` with
+`bun run db:push-sqlite`. The command requires an explicit absolute
+`SQLITE_PATH` and
+`FIELD_GUIDE_SQLITE_PUSH_CONFIRM=field-guide-console-sqlite`; startup never
+changes the schema. Production PostgreSQL schema changes are applied from
 `src/db/postgres-schema.ts` with `bun run db:push-postgres`. A production push
 requires `DATABASE_URL` and
 `FIELD_GUIDE_SCHEMA_PUSH_CONFIRM=field-guide-console-production`.

@@ -5,10 +5,11 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "bun:test";
 import { openSQLite } from "../src/db/sqlite.js";
 import { SQLiteReviewRepository } from "../src/sqlite-repository.js";
+import { prepareSQLiteTestDatabase } from "./sqlite-push-fixture.js";
 
 const directories:string[]=[];
 afterEach(()=>{for(const directory of directories.splice(0))rmSync(directory,{recursive:true,force:true});});
-function setup(){const directory=mkdtempSync(join(tmpdir(),"decision-records-sqlite-"));directories.push(directory);const handle=openSQLite(join(directory,"review.sqlite"));return{handle,repository:new SQLiteReviewRepository(handle.client,handle.close)};}
+function setup(){const directory=mkdtempSync(join(tmpdir(),"decision-records-sqlite-"));directories.push(directory);const path=join(directory,"review.sqlite");prepareSQLiteTestDatabase(path);const handle=openSQLite(path);return{handle,repository:new SQLiteReviewRepository(handle.client,handle.close)};}
 const now=new Date("2026-08-02T12:00:00.000Z");
 function record(id=crypto.randomUUID()){return{schemaVersion:1 as const,decisionRecordId:id,taskId:"task-1",scope:"project" as const,projectKey:"repo",projectDisplayName:"Repo",summary:"Choose the safe boundary",context:"Two owners share this target.",options:[{label:"Replace all",rejectedBecause:"Crosses ownership"},{label:"Replace owned entries"}],choice:"Replace owned entries",rationale:"Preserves unrelated content.",consequences:[],confidence:"high" as const,evidence:[{excerpt:"bounded",commitHashes:["abc"]}],createdAt:"2026-08-02T11:00:00.000Z"};}
 function candidate(id=crypto.randomUUID()){return{candidateId:id,scope:"project" as const,projectKey:"repo",projectDisplayName:"Repo",lessonKey:"ownership",title:"Preserve ownership boundaries",body:"Replace only owned entries.",rationale:"Separate systems own the target.",evidence:[{excerpt:"source decision",commitHashes:["abc"]}],createdAt:now.toISOString()};}

@@ -63,6 +63,45 @@ describe("decision record review", () => {
     });
   });
 
+  it("preserves source-project identity for global task grouping and promotion", async () => {
+    const { app } = setup();
+    const globalRecord = {
+      ...record,
+      decisionRecordId: crypto.randomUUID(),
+      scope: "global" as const,
+      projectKey: undefined,
+      projectDisplayName: undefined,
+      foundProjectKey: "max/example",
+      foundProjectDisplayName: "example",
+    };
+    expect((await callApp(app, "/api/agent/decision-records", {
+      method: "POST",
+      json: { idempotencyKey: globalRecord.decisionRecordId, record: globalRecord },
+    })).status).toBe(201);
+    const detail = await responseJson<{ record: typeof globalRecord }>(
+      await callApp(app, `/api/review/decision-records/${globalRecord.decisionRecordId}`),
+    );
+    expect(detail.record).toMatchObject({
+      taskId: record.taskId,
+      foundProjectKey: "max/example",
+      foundProjectDisplayName: "example",
+    });
+
+    const missingProvenance = await callApp(app, "/api/agent/decision-records", {
+      method: "POST",
+      json: {
+        idempotencyKey: crypto.randomUUID(),
+        record: {
+          ...globalRecord,
+          decisionRecordId: crypto.randomUUID(),
+          foundProjectKey: undefined,
+          foundProjectDisplayName: undefined,
+        },
+      },
+    });
+    expect(missingProvenance.status).toBe(400);
+  });
+
   it("bounds decision record ingestion independently from the existing agent API", async () => {
     const repository = new MemoryReviewRepository();
     const app = createApp({ repository, agentAuth: passAuth, reviewerAuth: passAuth, publicBaseUrl: origin, now: () => now, decisionRecordRateLimitPerMinute: 1 });
@@ -309,5 +348,51 @@ describe("decision record review", () => {
       await callApp(app, `/api/review/decision-records/${record.decisionRecordId}`),
     );
     expect(detail.promotionCandidateId).toBe(candidate.candidateId);
+  });
+
+  it("rejects a global promotion assembled from different source projects", async () => {
+    const { app } = setup();
+    const records = [
+      { ...record, decisionRecordId: crypto.randomUUID() },
+      {
+        ...record,
+        decisionRecordId: crypto.randomUUID(),
+        scope: "global" as const,
+        projectKey: undefined,
+        projectDisplayName: undefined,
+        foundProjectKey: "another/repository",
+        foundProjectDisplayName: "repository",
+      },
+    ];
+    for (const value of records) {
+      await callApp(app, "/api/agent/decision-records", {
+        method: "POST",
+        json: { idempotencyKey: value.decisionRecordId, record: value },
+      });
+      await callApp(app, `/api/review/decision-records/${value.decisionRecordId}/feedback`, {
+        method: "POST",
+        headers: { Origin: origin },
+        json: { action: "up" },
+      });
+    }
+    const response = await callApp(app, "/api/review/decision-records/promotions", {
+      method: "POST",
+      headers: { Origin: origin },
+      json: {
+        idempotencyKey: crypto.randomUUID(),
+        decisionRecordIds: records.map((value) => value.decisionRecordId),
+        candidate: {
+          candidateId: crypto.randomUUID(),
+          scope: "global",
+          lessonKey: "shared-source-only",
+          title: "Keep one source project",
+          body: "Do not erase provenance.",
+          rationale: "A candidate can store one source project.",
+          createdAt: now.toISOString(),
+        },
+      },
+    });
+    expect(response.status).toBe(400);
+    expect(await responseJson(response)).toMatchObject({ message: "Promoted decision records must share one source project." });
   });
 });
