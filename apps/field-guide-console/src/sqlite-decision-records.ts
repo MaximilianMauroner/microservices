@@ -68,8 +68,11 @@ export class SQLiteDecisionRecordStore {
     const parameters: Array<string | number | bigint> = [];
     const before = decodeCursor(filters.cursor);
     if (before) { where.push("d.sequence < ?"); parameters.push(BigInt(before)); }
+    if (filters.projectKey) {
+      where.push("COALESCE(json_extract(d.payload,'$.foundProjectKey'),json_extract(d.payload,'$.projectKey')) = ?");
+      parameters.push(filters.projectKey);
+    }
     for (const [field, value] of [
-      ["projectKey", filters.projectKey],
       ["taskId", filters.taskId],
       ["device", filters.device],
       ["harness", filters.harness],

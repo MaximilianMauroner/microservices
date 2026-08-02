@@ -74,7 +74,7 @@ export class PostgresDecisionRecordStore {
       ) f ON true
       LEFT JOIN decision_promotion_records pr ON pr.decision_record_id=d.decision_record_id
       WHERE (${before ?? null}::bigint IS NULL OR d.sequence<${before ?? null})
-        AND (${filters.projectKey ?? null}::text IS NULL OR d.payload->>'projectKey'=${filters.projectKey ?? null})
+        AND (${filters.projectKey ?? null}::text IS NULL OR COALESCE(d.payload->>'foundProjectKey',d.payload->>'projectKey')=${filters.projectKey ?? null})
         AND (${filters.taskId ?? null}::text IS NULL OR d.payload->>'taskId'=${filters.taskId ?? null})
         AND (${filters.device ?? null}::text IS NULL OR d.payload->>'device'=${filters.device ?? null})
         AND (${filters.harness ?? null}::text IS NULL OR d.payload->>'harness'=${filters.harness ?? null})

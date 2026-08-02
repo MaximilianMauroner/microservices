@@ -67,6 +67,17 @@ describe("Postgres schema contract", () => {
     expect(config).not.toContain("PUSH_AUTHORIZATION");
   });
 
+  it("filters decision records by effective source-project provenance", async () => {
+    const [postgresStore, sqliteStore, memoryStore] = await Promise.all([
+      readFile(new URL("../src/postgres-decision-records.ts", import.meta.url), "utf8"),
+      readFile(new URL("../src/sqlite-decision-records.ts", import.meta.url), "utf8"),
+      readFile(new URL("../src/memory-repository.ts", import.meta.url), "utf8"),
+    ]);
+    expect(postgresStore).toContain("COALESCE(d.payload->>'foundProjectKey',d.payload->>'projectKey')");
+    expect(sqliteStore).toContain("COALESCE(json_extract(d.payload,'$.foundProjectKey'),json_extract(d.payload,'$.projectKey'))");
+    expect(memoryStore).toContain("(record.foundProjectKey ?? record.projectKey) === filters.projectKey");
+  });
+
   it("matches the production columns, keys, checks, and bigserial", () => {
     const candidateConfig = getTableConfig(candidates);
     expect(candidateConfig.columns.map((column) => [

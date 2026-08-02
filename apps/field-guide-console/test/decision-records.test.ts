@@ -86,6 +86,12 @@ describe("decision record review", () => {
       foundProjectKey: "max/example",
       foundProjectDisplayName: "example",
     });
+    const filtered = await responseJson<{ items: Array<{ record: { decisionRecordId: string } }> }>(
+      await callApp(app, "/api/review/decision-records?projectKey=max%2Fexample"),
+    );
+    expect(filtered.items.map((item) => item.record.decisionRecordId)).toEqual([
+      globalRecord.decisionRecordId,
+    ]);
 
     const missingProvenance = await callApp(app, "/api/agent/decision-records", {
       method: "POST",

@@ -22,6 +22,8 @@ describe("decision inbox client behavior", () => {
   it("uses source-project provenance for global task groups", async () => {
     const source = await readFile(new URL("../src/ui.ts", import.meta.url), "utf8");
     expect(source).toContain("record.foundProjectKey||record.projectKey||record.decisionRecordId");
+    expect(source).toContain("record.foundProjectDisplayName||record.foundProjectKey||record.projectDisplayName||record.projectKey||'Global'");
+    expect(source).toContain("escapeHtml(decisionProject(records[0].record))");
   });
 
   it("refreshes authoritative state after feedback conflicts", async () => {
