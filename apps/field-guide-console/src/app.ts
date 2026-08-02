@@ -599,8 +599,10 @@ function parseDecisionRecord(value: unknown) {
     createdAt: iso(source.createdAt, "createdAt"),
   };
   rejectSensitiveContent(parsed);
+  const idempotencyKey = text(body.idempotencyKey, "idempotencyKey", 128);
+  rejectSensitiveContent({ idempotencyKey });
   return {
-    idempotencyKey: text(body.idempotencyKey, "idempotencyKey", 128),
+    idempotencyKey,
     record: parsed,
   };
 }
@@ -673,8 +675,8 @@ async function parseDecisionPromotion(value: unknown, repository: ReviewReposito
   if (project && items.some((item) => item.record.projectKey !== project.projectKey))
     throw new InputError("Project candidate scope must match every source record.");
   const evidence = items.map((item) => ({
-    excerpt: [item.record.summary, `Choice: ${item.record.choice}`, item.currentFeedback?.comment ? `Feedback: ${item.currentFeedback.comment}` : undefined]
-      .filter(Boolean).join("\n").slice(0, 2000),
+    excerpt: [item.record.summary, `Choice: ${item.record.choice}`]
+      .join("\n").slice(0, 2000),
     commitHashes: [...new Set(item.record.evidence.flatMap((entry) => entry.commitHashes))].slice(0, 20),
   }));
   const candidate: Candidate = {
@@ -692,8 +694,10 @@ async function parseDecisionPromotion(value: unknown, repository: ReviewReposito
     createdAt: iso(draft.createdAt, "createdAt"),
   };
   rejectSensitiveContent(candidate);
+  const idempotencyKey = text(body.idempotencyKey, "idempotencyKey", 128);
+  rejectSensitiveContent({ idempotencyKey });
   return {
-    idempotencyKey: text(body.idempotencyKey, "idempotencyKey", 128),
+    idempotencyKey,
     decisionRecordIds,
     candidate,
   };
@@ -736,14 +740,17 @@ function privateHostname(value: string) {
   const version = isIP(hostname);
   if (version === 4) return privateIpv4(hostname);
   if (version === 6) return privateIpv6(hostname);
+  if (/^(?:0x[0-9a-f]+|[0-9]+)(?:\.(?:0x[0-9a-f]+|[0-9]+)){0,3}$/i.test(hostname))
+    return true;
   if (
     !hostname.includes(".") ||
     hostname === "localhost" ||
     hostname.endsWith(".localhost") ||
     hostname.endsWith(".local") ||
     hostname.endsWith(".internal") ||
-    hostname.endsWith(".home") ||
-    hostname.endsWith(".lan")
+    hostname.endsWith(".lan") ||
+    hostname.endsWith(".corp") ||
+    hostname.endsWith(".home.arpa")
   ) return true;
   return false;
 }

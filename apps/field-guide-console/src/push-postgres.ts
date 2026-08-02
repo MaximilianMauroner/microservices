@@ -1,7 +1,8 @@
 import postgres from "postgres";
+import { rm } from "node:fs/promises";
 import {
+  createPushHandoff,
   DISPOSABLE_DATABASE_SENTINEL,
-  PUSH_AUTHORIZATION,
   resolvePushDatabase,
   verifyDisposableDatabase,
   type PushMode,
@@ -29,15 +30,19 @@ if (mode === "test") {
   }
 }
 
+const handoff = createPushHandoff(process.env, mode);
 const push = Bun.spawn(["bun", "x", "drizzle-kit", "push", "--config", "drizzle.postgres.config.ts"], {
   cwd: new URL("..", import.meta.url).pathname,
   env: {
     ...process.env,
-    FIELD_GUIDE_SCHEMA_PUSH_URL: url,
-    FIELD_GUIDE_SCHEMA_PUSH_AUTHORIZATION: PUSH_AUTHORIZATION,
+    FIELD_GUIDE_SCHEMA_PUSH_HANDOFF: handoff.path,
+    FIELD_GUIDE_SCHEMA_PUSH_NONCE: handoff.nonce,
+    FIELD_GUIDE_SCHEMA_PUSH_MODE: handoff.mode,
   },
   stdin: "inherit",
   stdout: "inherit",
   stderr: "inherit",
 });
-process.exit(await push.exited);
+const exitCode = await push.exited;
+await rm(handoff.directory, { recursive: true, force: true });
+process.exit(exitCode);

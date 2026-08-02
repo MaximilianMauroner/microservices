@@ -108,6 +108,10 @@ describe("decision record review", () => {
       "See http://[fd00::1]/internal",
       "See http://[fe80::1]/internal",
       "See http://metadata.google.internal/computeMetadata/v1",
+      "See http://service.corp/internal",
+      "See http://router.home.arpa/internal",
+      "See http://127.1/internal",
+      "See http://0x7f.0.0.1/internal",
       "See http://intranet/service",
       "See http://user:password@example.com/private",
     ]) {
@@ -161,6 +165,38 @@ describe("decision record review", () => {
       },
     });
     expect(promotion.status).toBe(400);
+
+    for (const idempotencyKey of [
+      "token=super-secret-value-12345",
+      "http://169.254.169.254/latest/meta-data",
+      "http://service.corp/internal",
+    ]) {
+      const rejectedRecord = await callApp(app, "/api/agent/decision-records", {
+        method: "POST",
+        json: { idempotencyKey, record: { ...record, decisionRecordId: crypto.randomUUID() } },
+      });
+      expect(rejectedRecord.status).toBe(400);
+      const rejectedPromotion = await callApp(app, "/api/review/decision-records/promotions", {
+        method: "POST",
+        headers: { Origin: origin },
+        json: {
+          idempotencyKey,
+          decisionRecordIds: [record.decisionRecordId],
+          candidate: {
+            candidateId: crypto.randomUUID(),
+            scope: "project",
+            projectKey: "microservices",
+            projectDisplayName: "Microservices",
+            lessonKey: "safe-key",
+            title: "Safe title",
+            body: "Safe body",
+            rationale: "Safe rationale",
+            createdAt: now.toISOString(),
+          },
+        },
+      });
+      expect(rejectedPromotion.status).toBe(400);
+    }
   });
 
   it("uses configured retention for list and detail archive flags", async () => {
@@ -251,6 +287,18 @@ describe("decision record review", () => {
       json: promotionBody,
     });
     expect((await promote()).status).toBe(201);
+    const detailBeforeAmendment = await responseJson<{ currentFeedback: { feedbackId: string } }>(
+      await callApp(app, `/api/review/decision-records/${record.decisionRecordId}`),
+    );
+    await callApp(app, `/api/review/decision-records/${record.decisionRecordId}/feedback`, {
+      method: "POST",
+      headers: { Origin: origin },
+      json: {
+        action: "up",
+        comment: "A later re-frame must not change promotion identity.",
+        expectedFeedbackId: detailBeforeAmendment.currentFeedback.feedbackId,
+      },
+    });
     expect((await promote()).status).toBe(200);
 
     const queue = await responseJson<{ items: Array<{ candidate: { candidateId: string } }> }>(

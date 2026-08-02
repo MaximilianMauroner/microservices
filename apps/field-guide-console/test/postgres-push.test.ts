@@ -1,9 +1,14 @@
 import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { readFile } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
-import { resolvePushDatabase, verifyDisposableDatabase } from "../src/postgres-push-guard.js";
+import {
+  consumePushHandoff,
+  createPushHandoff,
+  resolvePushDatabase,
+  verifyDisposableDatabase,
+} from "../src/postgres-push-guard.js";
 
 const execFileAsync = promisify(execFile);
 const serviceDirectory = fileURLToPath(new URL("..", import.meta.url));
@@ -26,8 +31,37 @@ describe("PostgreSQL schema push", () => {
     })).rejects.toMatchObject({ code: 1 });
     await expect(execFileAsync("bun", ["-e", "import('./drizzle.postgres.config.ts')"], {
       cwd: serviceDirectory,
-      env: { ...process.env, FIELD_GUIDE_SCHEMA_PUSH_AUTHORIZATION: "", FIELD_GUIDE_SCHEMA_PUSH_URL: "", TEST_DATABASE_URL: "postgres://user:pass@example.com/not_disposable" },
+      env: {
+        ...process.env,
+        FIELD_GUIDE_SCHEMA_PUSH_AUTHORIZATION: "field-guide-console-authorized-schema-push",
+        FIELD_GUIDE_SCHEMA_PUSH_URL: "postgres://user:pass@example.com/not_disposable",
+        FIELD_GUIDE_SCHEMA_PUSH_CONFIRM: "field-guide-console-production",
+        DATABASE_URL: "postgres://user:pass@example.com/not_disposable",
+        FIELD_GUIDE_SCHEMA_PUSH_HANDOFF: "",
+        FIELD_GUIDE_SCHEMA_PUSH_NONCE: "",
+        FIELD_GUIDE_SCHEMA_PUSH_MODE: "",
+      },
     })).rejects.toMatchObject({ code: 1 });
+  });
+
+  it("issues a private, single-use handoff bound to the confirmed mode and URL", async () => {
+    const environment = {
+      DATABASE_URL: "postgres://user:pass@production.example/field_guide",
+      FIELD_GUIDE_SCHEMA_PUSH_CONFIRM: "field-guide-console-production",
+    };
+    const handoff = createPushHandoff(environment, "production");
+    const authorized = {
+      ...environment,
+      FIELD_GUIDE_SCHEMA_PUSH_HANDOFF: handoff.path,
+      FIELD_GUIDE_SCHEMA_PUSH_NONCE: handoff.nonce,
+      FIELD_GUIDE_SCHEMA_PUSH_MODE: handoff.mode,
+    };
+    try {
+      expect(consumePushHandoff(authorized)).toBe(environment.DATABASE_URL);
+      expect(() => consumePushHandoff(authorized)).toThrow();
+    } finally {
+      await rm(handoff.directory, { recursive: true, force: true });
+    }
   });
 
   it("is wired before platform startup", async () => {
