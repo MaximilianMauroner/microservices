@@ -1,13 +1,21 @@
 import crypto from "node:crypto";
 import {
   ConflictError,
+  NotFoundError,
   ValidationError,
+  canonicalUuid,
   decodeCursor,
   encodeCursor,
   validateVerdict,
   type AmendVerdictInput,
   type Candidate,
   type Decision,
+  type DecisionFeedback,
+  type DecisionFeedbackInput,
+  type DecisionPromotion,
+  type DecisionRecord,
+  type DecisionRecordFilters,
+  type DecisionRecordItem,
   type QueueItem,
   type ReviewRepository,
   type RoundKind,
@@ -30,6 +38,11 @@ export class MemoryReviewRepository implements ReviewRepository {
   private keys = new Map<string, string>();
   private events: Decision[] = [];
   private receipts = new Map<string, string>();
+  private decisionRecordKeys = new Map<string, string>();
+  private decisionRecordValues: DecisionRecord[] = [];
+  private decisionFeedback = new Map<string, DecisionFeedback[]>();
+  private decisionPromotions = new Map<string, DecisionPromotion>();
+  private promotionKeys = new Map<string, string>();
 
   async createCandidate(key: string, candidate: Candidate) {
     const serialized = JSON.stringify(candidate);
@@ -279,6 +292,134 @@ export class MemoryReviewRepository implements ReviewRepository {
     };
   }
 
+  async createDecisionRecord(key: string, record: DecisionRecord) {
+    const normalizedRecord = {
+      ...record,
+      decisionRecordId: canonicalUuid(record.decisionRecordId, "decisionRecordId"),
+    };
+    const serialized = JSON.stringify(normalizedRecord);
+    const existing = this.decisionRecordKeys.get(key);
+    if (existing) {
+      if (existing !== serialized)
+        throw new ConflictError("Idempotency key already has different content.");
+      return "replay" as const;
+    }
+    if (this.decisionRecordValues.some((value) => value.decisionRecordId === normalizedRecord.decisionRecordId))
+      throw new ConflictError("Decision record already exists.");
+    this.decisionRecordKeys.set(key, serialized);
+    this.decisionRecordValues.push(normalizedRecord);
+    return "created" as const;
+  }
+
+  async decisionRecords(filters: DecisionRecordFilters) {
+    const before = decodeCursor(filters.cursor);
+    const rows = this.decisionRecordValues
+      .map((record, index) => ({ record, sequence: BigInt(index + 1) }))
+      .filter(({ record, sequence }) =>
+        (!before || sequence < BigInt(before)) &&
+        (!filters.projectKey || (record.foundProjectKey ?? record.projectKey) === filters.projectKey) &&
+        (!filters.taskId || record.taskId === filters.taskId) &&
+        (!filters.device || record.device === filters.device) &&
+        (!filters.harness || record.harness === filters.harness) &&
+        (!filters.skill || record.skill === filters.skill) &&
+        (!filters.from || record.createdAt >= filters.from) &&
+        (!filters.to || record.createdAt <= filters.to),
+      )
+      .map(({ record, sequence }) => ({ item: this.decisionRecordItem(record, filters.now, filters.archiveAfterDays), sequence }))
+      .filter(({ item }) =>
+        filters.reviewState === "all" ||
+        (filters.reviewState === "reviewed") === Boolean(item.currentFeedback),
+      )
+      .filter(({ item }) => filters.includeArchived || !item.archived)
+      .sort((left, right) => Number(right.sequence - left.sequence));
+    const page = rows.slice(0, filters.limit);
+    return {
+      items: page.map(({ item }) => item),
+      pending: this.decisionRecordValues.filter((record) => !this.currentFeedback(record.decisionRecordId)).length,
+      hasMore: rows.length > filters.limit,
+      ...(rows.length > filters.limit
+        ? { nextCursor: encodeCursor(page.at(-1)?.sequence.toString() ?? "0") }
+        : {}),
+    };
+  }
+
+  async decisionRecord(id: string, now: Date, archiveAfterDays: number) {
+    id = canonicalUuid(id, "decisionRecordId");
+    const record = this.decisionRecordValues.find((value) => value.decisionRecordId === id);
+    if (!record) throw new NotFoundError("Decision record not found.");
+    return this.decisionRecordItem(record, now, archiveAfterDays);
+  }
+
+  async addDecisionFeedback(
+    decisionRecordId: string,
+    input: DecisionFeedbackInput,
+    now: Date,
+    reviewer: string,
+  ) {
+    decisionRecordId = canonicalUuid(decisionRecordId, "decisionRecordId");
+    const expectedFeedbackId = input.expectedFeedbackId === undefined
+      ? undefined
+      : canonicalUuid(input.expectedFeedbackId, "expectedFeedbackId");
+    if (!this.decisionRecordValues.some((record) => record.decisionRecordId === decisionRecordId))
+      throw new NotFoundError("Decision record not found.");
+    const current = this.currentFeedback(decisionRecordId);
+    if (expectedFeedbackId !== undefined && expectedFeedbackId !== current?.feedbackId)
+      throw new ConflictError("Feedback changed since it was loaded. Refresh and try again.");
+    if (current && expectedFeedbackId === undefined)
+      throw new ConflictError("Feedback already exists. Amend the current feedback instead.");
+    const feedback: DecisionFeedback = {
+      feedbackId: crypto.randomUUID(),
+      decisionRecordId,
+      action: input.action,
+      ...(input.comment ? { comment: input.comment } : {}),
+      reviewer,
+      reviewedAt: now.toISOString(),
+      ...(current ? { amendsFeedbackId: current.feedbackId } : {}),
+    };
+    this.decisionFeedback.set(decisionRecordId, [...(this.decisionFeedback.get(decisionRecordId) ?? []), feedback]);
+    return feedback;
+  }
+
+  async promoteDecisionRecords(
+    key: string,
+    decisionRecordIds: string[],
+    candidate: Candidate,
+    now: Date,
+    reviewer: string,
+  ) {
+    decisionRecordIds = decisionRecordIds.map((id) => canonicalUuid(id, "decisionRecordId"));
+    if (new Set(decisionRecordIds).size !== decisionRecordIds.length)
+      throw new ValidationError("decisionRecordIds contains duplicates.");
+    candidate = { ...candidate, candidateId: canonicalUuid(candidate.candidateId, "candidateId") };
+    const serialized = JSON.stringify({ decisionRecordIds, candidate });
+    const existing = this.promotionKeys.get(key);
+    if (existing) {
+      if (existing !== serialized)
+        throw new ConflictError("Idempotency key already has different content.");
+      const promotion = this.decisionPromotions.get(candidate.candidateId);
+      if (!promotion) throw new Error("Promotion state is inconsistent.");
+      return { status: "replay" as const, promotion };
+    }
+    for (const id of decisionRecordIds) {
+      if (!this.decisionRecordValues.some((record) => record.decisionRecordId === id))
+        throw new NotFoundError("Decision record not found.");
+      if (!this.currentFeedback(id))
+        throw new ValidationError("Every promoted decision record must be reviewed.");
+      if ([...this.decisionPromotions.values()].some((promotion) => promotion.decisionRecordIds.includes(id)))
+        throw new ConflictError("Decision record has already been promoted.");
+    }
+    await this.createCandidate(`promotion:${key}`, candidate);
+    const promotion: DecisionPromotion = {
+      candidateId: candidate.candidateId,
+      decisionRecordIds,
+      promotedAt: now.toISOString(),
+      promotedBy: reviewer,
+    };
+    this.promotionKeys.set(key, serialized);
+    this.decisionPromotions.set(candidate.candidateId, promotion);
+    return { status: "created" as const, promotion };
+  }
+
   async close() {}
 
   private requireCandidate(candidateId: string) {
@@ -372,6 +513,25 @@ export class MemoryReviewRepository implements ReviewRepository {
       decision,
       sequence: BigInt(index + 1),
     }));
+  }
+
+  private currentFeedback(decisionRecordId: string) {
+    return this.decisionFeedback.get(decisionRecordId)?.at(-1);
+  }
+
+  private decisionRecordItem(record: DecisionRecord, now: Date, archiveAfterDays = 90): DecisionRecordItem {
+    const feedbackHistory = this.decisionFeedback.get(record.decisionRecordId) ?? [];
+    const currentFeedback = feedbackHistory.at(-1);
+    const promotion = [...this.decisionPromotions.values()].find((value) =>
+      value.decisionRecordIds.includes(record.decisionRecordId),
+    );
+    return {
+      record,
+      ...(currentFeedback ? { currentFeedback } : {}),
+      feedbackHistory,
+      ...(promotion ? { promotionCandidateId: promotion.candidateId } : {}),
+      archived: Boolean(currentFeedback && now.getTime() - new Date(currentFeedback.reviewedAt).getTime() >= archiveAfterDays * 86_400_000),
+    };
   }
 }
 

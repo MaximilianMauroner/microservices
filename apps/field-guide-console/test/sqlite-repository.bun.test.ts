@@ -5,10 +5,11 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "bun:test";
 import { openSQLite } from "../src/db/sqlite.js";
 import { SQLiteReviewRepository } from "../src/sqlite-repository.js";
+import { prepareSQLiteTestDatabase } from "./sqlite-push-fixture.js";
 
 const directories:string[]=[];
 afterEach(()=>{for(const directory of directories.splice(0))rmSync(directory,{recursive:true,force:true});});
-function setup(){const directory=mkdtempSync(join(tmpdir(),"field-guide-sqlite-"));directories.push(directory);const handle=openSQLite(join(directory,"review.sqlite"));return {handle,repository:new SQLiteReviewRepository(handle.client,handle.close)};}
+function setup(){const directory=mkdtempSync(join(tmpdir(),"field-guide-sqlite-"));directories.push(directory);const path=join(directory,"review.sqlite");prepareSQLiteTestDatabase(path);const handle=openSQLite(path);return {handle,repository:new SQLiteReviewRepository(handle.client,handle.close)};}
 function candidate(id=crypto.randomUUID()){return {candidateId:id,scope:"project" as const,projectKey:"unicode",projectDisplayName:"Nested 🚂",lessonKey:"sqlite",title:"SQLite ✅",body:"Store nested JSON",rationale:"Lower idle cost",evidence:[{excerpt:"nested",sessionRef:"会議",commitHashes:["abc", "déf"]}],createdAt:"2026-07-26T00:00:00.123Z"};}
 
 describe("SQLite repository",()=>{

@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   check,
   foreignKey,
+  index,
   integer,
   primaryKey,
   sqliteTable,
@@ -9,7 +10,7 @@ import {
   uniqueIndex,
   type AnySQLiteColumn,
 } from "drizzle-orm/sqlite-core";
-import type { Candidate } from "../types.js";
+import type { Candidate, DecisionRecord } from "../types.js";
 
 function verdictDecisionId(): AnySQLiteColumn {
   return verdictEvents.decisionId;
@@ -133,3 +134,49 @@ export const fieldGuideSchemaMigrations = sqliteTable(
     check("field_guide_schema_migrations_adopted_check", sql`${table.adopted} in (0, 1)`),
   ],
 );
+
+export const decisionRecords = sqliteTable("decision_records", {
+  sequence: integer("sequence").primaryKey({ autoIncrement: true }),
+  decisionRecordId: text("decision_record_id").notNull().unique("decision_records_record_id_key"),
+  idempotencyKey: text("idempotency_key").notNull().unique("decision_records_idempotency_key_key"),
+  payload: text("payload", { mode: "json" }).$type<DecisionRecord>().notNull(),
+  payloadHash: text("payload_hash").notNull(),
+  createdAt: text("created_at").notNull(),
+  receivedAt: text("received_at").notNull(),
+}, (table) => [check("decision_records_payload_json_check", sql`json_valid(${table.payload})`)]);
+
+export const decisionFeedbackEvents = sqliteTable("decision_feedback_events", {
+  sequence: integer("sequence").primaryKey({ autoIncrement: true }),
+  feedbackId: text("feedback_id").notNull().unique("decision_feedback_events_feedback_id_key"),
+  decisionRecordId: text("decision_record_id").notNull(),
+  action: text("action").notNull(),
+  comment: text("comment"),
+  reviewer: text("reviewer").notNull(),
+  reviewedAt: text("reviewed_at").notNull(),
+  amendsFeedbackId: text("amends_feedback_id").unique("decision_feedback_events_amends_key"),
+}, (table) => [
+  foreignKey({ name: "decision_feedback_events_record_fkey", columns: [table.decisionRecordId], foreignColumns: [decisionRecords.decisionRecordId] }),
+  foreignKey({ name: "decision_feedback_events_amends_fkey", columns: [table.amendsFeedbackId], foreignColumns: [table.feedbackId] }),
+  check("decision_feedback_events_action_check", sql`${table.action} in ('up', 'down', 'dismiss')`),
+  index("decision_feedback_events_record_sequence_idx").on(table.decisionRecordId, sql`${table.sequence} desc`),
+]);
+
+export const decisionPromotions = sqliteTable("decision_promotions", {
+  candidateId: text("candidate_id").primaryKey(),
+  idempotencyKey: text("idempotency_key").notNull().unique("decision_promotions_idempotency_key_key"),
+  payloadHash: text("payload_hash").notNull(),
+  promotedAt: text("promoted_at").notNull(),
+  promotedBy: text("promoted_by").notNull(),
+}, (table) => [
+  foreignKey({ name: "decision_promotions_candidate_fkey", columns: [table.candidateId], foreignColumns: [candidates.candidateId] }),
+]);
+
+export const decisionPromotionRecords = sqliteTable("decision_promotion_records", {
+  candidateId: text("candidate_id").notNull(),
+  decisionRecordId: text("decision_record_id").notNull().unique("decision_promotion_records_record_key"),
+  ordinal: integer("ordinal").notNull(),
+}, (table) => [
+  primaryKey({ name: "decision_promotion_records_pkey", columns: [table.candidateId, table.decisionRecordId] }),
+  foreignKey({ name: "decision_promotion_records_candidate_fkey", columns: [table.candidateId], foreignColumns: [decisionPromotions.candidateId] }),
+  foreignKey({ name: "decision_promotion_records_record_fkey", columns: [table.decisionRecordId], foreignColumns: [decisionRecords.decisionRecordId] }),
+]);
