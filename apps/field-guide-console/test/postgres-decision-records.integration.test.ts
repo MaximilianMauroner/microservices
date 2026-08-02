@@ -30,9 +30,9 @@ it.skipIf(!databaseUrl || !confirmed)("pushes the PostgreSQL schema and supports
         WHERE sentinel_key=${DISPOSABLE_DATABASE_SENTINEL.key}`)[0]?.value,
     }, async () => { authorized = true; });
     if (!authorized) throw new Error("Disposable database was not authorized.");
-    await execFileAsync("bun", ["x", "drizzle-kit", "push", "--config", "drizzle.postgres.config.ts"], {
+    await execFileAsync("bun", ["run", "db:push-postgres:test"], {
       cwd: serviceDirectory,
-      env: { ...process.env, TEST_DATABASE_URL: url },
+      env: { ...process.env, TEST_DATABASE_URL: url, FIELD_GUIDE_TEST_DATABASE_CONFIRM: "field-guide-console-test" },
     });
     expect((await database<{ name: string }[]>`SELECT indexname name FROM pg_indexes WHERE schemaname='public' AND indexname='decision_feedback_events_record_sequence_idx'`)[0]?.name).toBe("decision_feedback_events_record_sequence_idx");
 

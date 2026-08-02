@@ -12,8 +12,9 @@ it("requires an explicit isolated test database and confirmation marker", async 
     'process.env.FIELD_GUIDE_TEST_DATABASE_CONFIRM === "field-guide-console-test"',
   );
   expect(source).toContain("skipIf(!databaseUrl || !databaseConfirmed)");
-  expect(source).toContain('"drizzle.postgres.config.ts"');
+  expect(source).toContain('"db:push-postgres:test"');
   expect(source).toContain("TEST_DATABASE_URL: url");
+  expect(source).toContain('FIELD_GUIDE_TEST_DATABASE_CONFIRM: "field-guide-console-test"');
   expect(source).not.toContain("process.env.DATABASE_URL");
   expect(source).not.toContain("DROP TABLE");
   expect(source).toContain("SELECT relation.relkind::text relation_kind");

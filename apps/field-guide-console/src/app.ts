@@ -700,15 +700,22 @@ async function parseDecisionPromotion(value: unknown, repository: ReviewReposito
 }
 
 function rejectSensitiveContent(value: object) {
-  const serialized = JSON.stringify(value);
   const secretPatterns = [
     /-----BEGIN [A-Z ]*PRIVATE KEY-----/i,
-    /\b(?:password|passwd|secret|token|api[_-]?key)\s*[:=]\s*["']?[^\s,"'}]{8,}/i,
+    /\b(?:password|passwd|secret|token|api[_-]?key)\s*[:=]\s*(?:"[^"\r\n]{8,}"|'[^'\r\n]{8,}'|[^\s,"'}]{8,})/i,
     /\bBearer\s+[A-Za-z0-9._~+\/-]{12,}={0,2}\b/i,
     /\b(?:ghp|github_pat|sk-(?:proj-)?)[A-Za-z0-9_-]{12,}\b/,
   ];
-  if (secretPatterns.some((pattern) => pattern.test(serialized)) || containsPrivateUrl(serialized))
+  const strings = stringValues(value);
+  if (strings.some((text) => secretPatterns.some((pattern) => pattern.test(text)) || containsPrivateUrl(text)))
     throw new InputError("Decision content contains a secret-like value or private URL.");
+}
+
+function stringValues(value: unknown): string[] {
+  if (typeof value === "string") return [value];
+  if (Array.isArray(value)) return value.flatMap(stringValues);
+  if (value && typeof value === "object") return Object.values(value).flatMap(stringValues);
+  return [];
 }
 
 function containsPrivateUrl(value: string) {
