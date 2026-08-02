@@ -27,10 +27,13 @@ It also requires `AGENT_API_TOKEN` and `PUBLIC_BASE_URL`. `PORT` defaults to
 `3000`. `DECISION_RECORD_ARCHIVE_DAYS` controls when reviewed records leave the
 active inbox and defaults to `90`; unresolved records are retained indefinitely.
 
-Startup applies migrations, verifies repository readiness, and only then binds
-the listener. PostgreSQL is the production database used by the unified
-service. SQLite support remains for focused development, import, and recovery
-work; it is not a separate production browser deployment.
+Railway runs `bun run --cwd apps/field-guide-console db:migrate-postgres` in
+its pre-deploy phase. The command uses `FIELD_GUIDE_DATABASE_URL`, a migration
+checksum ledger, a transaction, and a database lock. The platform readiness
+check touches both the existing review queue and the decision-record schema
+before a deployment is accepted. PostgreSQL is the production database used by
+the unified service. SQLite support remains for focused development, import,
+and recovery work; it is not a separate production browser deployment.
 
 ## APIs
 
@@ -59,8 +62,9 @@ content and submitted decision records have no update or delete routes.
 
 ## Development
 
-Run `bun run db:generate` after changing `src/db/schema.ts`; migrations live in
-`drizzle/`.
+Run `bun run db:generate` after changing `src/db/schema.ts`; SQLite migrations
+live in `drizzle/`. Committed production PostgreSQL migrations live in
+`postgres-migrations/` and are applied only by `bun run db:migrate-postgres`.
 
 PostgreSQL integration and round-trip tests must use a disposable database that
 is dedicated to Field Guide Console tests. Configure both:

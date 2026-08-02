@@ -29,7 +29,7 @@ const record = {
   createdAt: "2026-08-02T11:00:00.000Z",
 };
 
-function setup() {
+function setup(decisionRecordArchiveDays = 90) {
   const repository = new MemoryReviewRepository();
   return {
     repository,
@@ -39,6 +39,7 @@ function setup() {
       reviewerAuth: () => ({ ok: true, email: "max@example.com" }),
       publicBaseUrl: origin,
       now: () => now,
+      decisionRecordArchiveDays,
     }),
   };
 }
@@ -71,11 +72,41 @@ describe("decision record review", () => {
     expect(limited.headers.get("retry-after")).toBe("60");
   });
 
+  it.each([
+    [0, 400],
+    [1, 400],
+    [2, 201],
+    [10, 201],
+    [11, 400],
+  ])("enforces the 2-10 option boundary (%i)", async (count, status) => {
+    const { app } = setup();
+    const response = await callApp(app, "/api/agent/decision-records", {
+      method: "POST",
+      json: {
+        idempotencyKey: crypto.randomUUID(),
+        record: {
+          ...record,
+          decisionRecordId: crypto.randomUUID(),
+          options: Array.from({ length: count }, (_, index) => ({ label: `Option ${index + 1}` })),
+        },
+      },
+    });
+    expect(response.status).toBe(status);
+  });
+
   it("rejects secret-like values and private URLs", async () => {
     const { app } = setup();
     for (const context of [
       "token=super-secret-value-12345",
       "See http://192.168.1.12/internal",
+      "See http://169.254.169.254/latest/meta-data",
+      "See http://100.64.0.1/internal",
+      "See http://[::1]/internal",
+      "See http://[fd00::1]/internal",
+      "See http://[fe80::1]/internal",
+      "See http://metadata.google.internal/computeMetadata/v1",
+      "See http://intranet/service",
+      "See http://user:password@example.com/private",
     ]) {
       const response = await callApp(app, "/api/agent/decision-records", {
         method: "POST",
@@ -84,6 +115,13 @@ describe("decision record review", () => {
       expect(response.status).toBe(400);
       expect(await responseJson(response)).toMatchObject({ error: "invalid_request" });
     }
+    expect((await callApp(app, "/api/agent/decision-records", {
+      method: "POST",
+      json: {
+        idempotencyKey: "public-url",
+        record: { ...record, decisionRecordId: crypto.randomUUID(), context: "See https://example.com/reference and https://[2606:4700:4700::1111]/dns-query" },
+      },
+    })).status).toBe(201);
     await callApp(app, "/api/agent/decision-records", {
       method: "POST",
       json: { idempotencyKey: "record", record },
@@ -94,6 +132,29 @@ describe("decision record review", () => {
       json: { action: "down", comment: "password=super-secret-value-123" },
     });
     expect(feedback.status).toBe(400);
+  });
+
+  it("uses configured retention for list and detail archive flags", async () => {
+    const { app, repository } = setup(30);
+    await repository.createDecisionRecord("record", record);
+    await repository.addDecisionFeedback(
+      record.decisionRecordId,
+      { action: "up" },
+      new Date(now.getTime() - 45 * 86_400_000),
+      "max@example.com",
+    );
+    const normal = await responseJson<{ items: unknown[] }>(
+      await callApp(app, "/api/review/decision-records?reviewState=reviewed"),
+    );
+    expect(normal.items).toEqual([]);
+    const archived = await responseJson<{ items: Array<{ archived: boolean }> }>(
+      await callApp(app, "/api/review/decision-records?reviewState=reviewed&includeArchived=true"),
+    );
+    expect(archived.items[0]?.archived).toBe(true);
+    const detail = await responseJson<{ archived: boolean }>(
+      await callApp(app, `/api/review/decision-records/${record.decisionRecordId}`),
+    );
+    expect(detail.archived).toBe(true);
   });
 
   it("keeps feedback revisions auditable without mutating submitted content", async () => {

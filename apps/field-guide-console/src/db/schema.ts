@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   check,
   foreignKey,
+  index,
   integer,
   primaryKey,
   sqliteTable,
@@ -157,6 +158,7 @@ export const decisionFeedbackEvents = sqliteTable("decision_feedback_events", {
   foreignKey({ name: "decision_feedback_events_record_fkey", columns: [table.decisionRecordId], foreignColumns: [decisionRecords.decisionRecordId] }),
   foreignKey({ name: "decision_feedback_events_amends_fkey", columns: [table.amendsFeedbackId], foreignColumns: [table.feedbackId] }),
   check("decision_feedback_events_action_check", sql`${table.action} in ('up', 'down', 'dismiss')`),
+  index("decision_feedback_events_record_sequence_idx").on(table.decisionRecordId, sql`${table.sequence} desc`),
 ]);
 
 export const decisionPromotions = sqliteTable("decision_promotions", {

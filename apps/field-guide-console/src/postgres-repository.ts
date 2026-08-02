@@ -300,6 +300,7 @@ export class PostgresReviewRepository implements ReviewRepository {
     });
   }
   async summary(now: Date): Promise<Summary> {
+    await this.sql`SELECT 1 FROM decision_records LIMIT 1`;
     const q = await this.queue(undefined, now);
     return {
       pending: q.filter((x) => x.status === "pending").length,
@@ -309,7 +310,7 @@ export class PostgresReviewRepository implements ReviewRepository {
   }
   async createDecisionRecord(key:string,record:DecisionRecord){return this.decisionRecordStore.create(key,record);}
   async decisionRecords(filters:DecisionRecordFilters){return this.decisionRecordStore.page(filters);}
-  async decisionRecord(id:string,now:Date){return this.decisionRecordStore.get(id,now);}
+  async decisionRecord(id:string,now:Date,archiveAfterDays:number){return this.decisionRecordStore.get(id,now,archiveAfterDays);}
   async addDecisionFeedback(id:string,input:DecisionFeedbackInput,now:Date,reviewer:string){return this.decisionRecordStore.feedback(id,input,now,reviewer);}
   async promoteDecisionRecords(key:string,ids:string[],candidate:Candidate,now:Date,reviewer:string){return this.decisionRecordStore.promote(key,ids,candidate,now,reviewer);}
   async close() {

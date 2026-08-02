@@ -89,7 +89,7 @@ export class PostgresDecisionRecordStore {
       SELECT COUNT(*)::int count FROM decision_records d
       WHERE NOT EXISTS(SELECT 1 FROM decision_feedback_events f WHERE f.decision_record_id=d.decision_record_id)`;
     return {
-      items: page.map((row) => this.itemFromRow(row, filters.now, [])),
+      items: page.map((row) => this.itemFromRow(row, filters.now, filters.archiveAfterDays, [])),
       pending: pendingRows[0]?.count ?? 0,
       hasMore: rows.length > filters.limit,
       ...(rows.length > filters.limit
@@ -98,7 +98,7 @@ export class PostgresDecisionRecordStore {
     };
   }
 
-  async get(id: string, now: Date) {
+  async get(id: string, now: Date, archiveAfterDays: number) {
     const rows = await this.sql<RecordRow[]>`
       SELECT d.sequence::text sequence,d.payload,
         f.feedback_id,f.action,f.comment,f.reviewer,f.reviewed_at,f.amends_feedback_id,
@@ -112,7 +112,7 @@ export class PostgresDecisionRecordStore {
     const feedback = await this.sql<FeedbackRow[]>`
       SELECT feedback_id,decision_record_id,action,comment,reviewer,reviewed_at,amends_feedback_id
       FROM decision_feedback_events WHERE decision_record_id=${id} ORDER BY sequence ASC`;
-    return this.itemFromRow(row, now, feedback.map(toFeedback));
+    return this.itemFromRow(row, now, archiveAfterDays, feedback.map(toFeedback));
   }
 
   async feedback(decisionRecordId: string, input: DecisionFeedbackInput, now: Date, reviewer: string) {
@@ -145,6 +145,7 @@ export class PostgresDecisionRecordStore {
     const hash = digest({ decisionRecordIds: ids, candidate });
     try {
       return await this.sql.begin(async (tx) => {
+        await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`decision-promotion:${key}`}, 0))`;
         const old = await tx<{ candidate_id: string; payload_hash: string; promoted_at: Date; promoted_by: string }[]>`
           SELECT candidate_id,payload_hash,promoted_at,promoted_by FROM decision_promotions WHERE idempotency_key=${key}`;
         if (old[0]) {
@@ -182,7 +183,7 @@ export class PostgresDecisionRecordStore {
     }
   }
 
-  private itemFromRow(row: RecordRow, now: Date, history: DecisionFeedback[]): DecisionRecordItem {
+  private itemFromRow(row: RecordRow, now: Date, archiveAfterDays: number, history: DecisionFeedback[]): DecisionRecordItem {
     const currentFeedback = row.feedback_id && row.action && row.reviewer && row.reviewed_at
       ? toFeedback({ feedback_id: row.feedback_id, decision_record_id: row.payload.decisionRecordId, action: row.action, comment: row.comment, reviewer: row.reviewer, reviewed_at: row.reviewed_at, amends_feedback_id: row.amends_feedback_id })
       : undefined;
@@ -191,7 +192,7 @@ export class PostgresDecisionRecordStore {
       ...(currentFeedback ? { currentFeedback } : {}),
       feedbackHistory: history.length ? history : currentFeedback ? [currentFeedback] : [],
       ...(row.promotion_candidate_id ? { promotionCandidateId: row.promotion_candidate_id } : {}),
-      archived: Boolean(currentFeedback && now.getTime() - new Date(currentFeedback.reviewedAt).getTime() >= 90 * 86_400_000),
+      archived: Boolean(currentFeedback && now.getTime() - new Date(currentFeedback.reviewedAt).getTime() >= archiveAfterDays * 86_400_000),
     };
   }
 
