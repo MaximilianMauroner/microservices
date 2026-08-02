@@ -93,9 +93,27 @@ describe("tools web routes", () => {
       }
       expect(text).toContain("Artifact Publisher");
       expect(text).not.toContain("secret operator note");
-      expect(text).not.toContain("/private");
+      expect(text).not.toContain("uploads.example.test/private");
       expect(text).not.toContain('id="group-operations"');
     }
+  });
+
+  it("serves private status only after Access authentication", async () => {
+    const bucket = seededBucket();
+    const unauthenticated = await testApp(bucket, denied)(
+      new Request("https://tools.example.test/manage/status")
+    );
+    expect(unauthenticated.status).toBe(401);
+
+    const authenticated = await testApp(bucket, allowed)(
+      new Request("https://tools.example.test/manage/status")
+    );
+    const html = await authenticated.text();
+    expect(authenticated.status).toBe(200);
+    expect(authenticated.headers.get("cache-control")).toBe("private, no-store");
+    expect(html).toContain("Private services");
+    expect(html).toContain("admin@example.test");
+    expect(html).not.toContain("secret operator note");
   });
 
   it("serves CSP-safe static assets and renders protected operations state", async () => {
@@ -104,6 +122,12 @@ describe("tools web routes", () => {
     const css = await app(new Request("https://tools.example.test/assets/tools.css"));
     expect(css.status).toBe(200);
     expect(css.headers.get("content-type")).toContain("text/css");
+
+    const localTime = await app(
+      new Request("https://tools.example.test/assets/local-time.js")
+    );
+    expect(localTime.status).toBe(200);
+    expect(localTime.headers.get("content-type")).toContain("text/javascript");
 
     const icon = await app(
       new Request("https://tools.example.test/assets/icons/artifact-publisher.png")
@@ -150,6 +174,8 @@ describe("tools web routes", () => {
       "/manage/documents",
       "/ops",
       "/ops/anything",
+      "/manage/status",
+      "/status/private",
       "/api/ops/catalog"
     ]) {
       const response = await app(new Request(`https://tools.example.test${path}`));

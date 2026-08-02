@@ -162,6 +162,12 @@ export interface PublicMonitorStatus {
   latencyMs: number | null;
   statusCode: number | null;
   uptimeDays?: UptimeDay[];
+  downtimeRecords?: PublicDowntimeRecord[];
+}
+
+export interface PublicDowntimeRecord {
+  startedAt: string;
+  resolvedAt: string | null;
 }
 
 export interface PublicSnapshotDocument {

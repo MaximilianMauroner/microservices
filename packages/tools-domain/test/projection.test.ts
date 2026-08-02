@@ -57,7 +57,8 @@ describe("snapshot projection", () => {
           successfulChecks: 99,
           totalChecks: 100
         }
-      ]
+      ],
+      downtimeRecords: []
     });
     expect(snapshot.statuses["tailnet-tool"]).toEqual({
       monitorId: "tailnet-tool",
@@ -65,8 +66,52 @@ describe("snapshot projection", () => {
       checkedAt: null,
       latencyMs: null,
       statusCode: null,
-      uptimeDays: []
+      uptimeDays: [],
+      downtimeRecords: []
     });
+  });
+
+  it("projects only redacted downtime records overlapping the rolling window", () => {
+    const state = stateFixture();
+    state.incidents = [
+      {
+        id: "incident-public",
+        monitorId: "public-tool",
+        startedAt: "2026-07-27T08:00:00.000Z",
+        openingObservationId: "observation-private-opening",
+        resolvedAt: "2026-07-27T08:07:00.000Z",
+        closingObservationId: "observation-private-closing"
+      },
+      {
+        id: "incident-too-old",
+        monitorId: "public-tool",
+        startedAt: "2026-04-01T08:00:00.000Z",
+        openingObservationId: "observation-old-opening",
+        resolvedAt: "2026-04-01T08:07:00.000Z",
+        closingObservationId: "observation-old-closing"
+      },
+      {
+        id: "incident-private-monitor",
+        monitorId: "private-tool",
+        startedAt: "2026-07-27T09:00:00.000Z",
+        openingObservationId: "observation-private-monitor",
+        resolvedAt: null,
+        closingObservationId: null
+      }
+    ];
+
+    const records = projectPublicSnapshot(catalogFixture(), state, NOW)
+      .statuses["public-tool"]?.downtimeRecords;
+    expect(records).toEqual([
+      {
+        startedAt: "2026-07-27T08:00:00.000Z",
+        resolvedAt: "2026-07-27T08:07:00.000Z"
+      }
+    ]);
+    const serialized = JSON.stringify(records);
+    expect(serialized).not.toContain("incident-public");
+    expect(serialized).not.toContain("observation-private");
+    expect(serialized).not.toContain("private-tool");
   });
 
   it("projects only the current rolling 90 UTC days for paused monitors", () => {

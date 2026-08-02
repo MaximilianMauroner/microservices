@@ -79,6 +79,13 @@ export type WebsiteProbe = (
   candidate: WebsiteProbeCandidate
 ) => Promise<WebsiteProbeResult | null>;
 
+type TailscaleServeRoute = {
+  path: string;
+  port: number;
+  proxyUrl: string;
+  publicUrl: string;
+};
+
 export type NetworkSnapshot = {
   generatedAt: string;
   hostname: string;
@@ -183,9 +190,10 @@ export async function collectNetworkSnapshot(
 ): Promise<NetworkSnapshot> {
   const runner = options.runner ?? runCommand;
   const now = options.now ?? (() => new Date());
-  const [tailscale, parsedPorts] = await Promise.all([
+  const [tailscale, parsedPorts, serveRoutes] = await Promise.all([
     collectTailscaleStatus(runner),
-    collectParsedPortListeners(runner)
+    collectParsedPortListeners(runner),
+    collectTailscaleServeRoutes(runner)
   ]);
   const currentUser = options.currentUser ?? os.userInfo().username;
   const ports = parsedPorts.map((listener) => enrichPortListener(listener, tailscale, currentUser));
@@ -193,7 +201,8 @@ export async function collectNetworkSnapshot(
     ports,
     tailscale,
     options.dashboardPort ?? 80,
-    options.websiteProbe ?? probeWebsite
+    options.websiteProbe ?? probeWebsite,
+    serveRoutes
   );
   const generatedAt = now();
   const processStartTimes = await collectProcessStartTimes(runner, detectedWebsites, generatedAt);
@@ -291,6 +300,64 @@ async function collectParsedPortListeners(runner: CommandRunner): Promise<Parsed
   }
 
   return parseSsListeners(result.result.stdout);
+}
+
+async function collectTailscaleServeRoutes(
+  runner: CommandRunner
+): Promise<TailscaleServeRoute[]> {
+  const result = await safeRun(runner, "tailscale", ["serve", "status", "--json"]);
+  if (!result.result || !result.result.stdout.trim()) {
+    return [];
+  }
+
+  try {
+    return parseTailscaleServeRoutes(JSON.parse(result.result.stdout));
+  } catch {
+    return [];
+  }
+}
+
+function parseTailscaleServeRoutes(value: unknown): TailscaleServeRoute[] {
+  const web = getRecordProperty(value, "Web");
+  if (!web) {
+    return [];
+  }
+
+  const routes: TailscaleServeRoute[] = [];
+  for (const [authority, site] of Object.entries(web)) {
+    const handlers = getRecordProperty(site, "Handlers");
+    if (!handlers) {
+      continue;
+    }
+
+    let origin: URL;
+    try {
+      origin = new URL(`https://${authority}`);
+    } catch {
+      continue;
+    }
+    const port = Number.parseInt(origin.port || "443", 10);
+    if (!Number.isSafeInteger(port) || port <= 0 || port > 65_535) {
+      continue;
+    }
+
+    for (const [path, handler] of Object.entries(handlers)) {
+      const proxyUrl = getStringProperty(isRecord(handler) ? handler : undefined, "Proxy");
+      if (!proxyUrl || !isHttpUrl(proxyUrl)) {
+        continue;
+      }
+
+      const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+      routes.push({
+        path: normalizedPath,
+        port,
+        proxyUrl,
+        publicUrl: new URL(normalizedPath, origin).toString()
+      });
+    }
+  }
+
+  return routes;
 }
 
 type SafeRunResult =
@@ -513,7 +580,8 @@ async function discoverWebsites(
   ports: PortListener[],
   tailscale: TailscaleStatus,
   dashboardPort: number,
-  probe: WebsiteProbe
+  probe: WebsiteProbe,
+  serveRoutes: TailscaleServeRoute[]
 ): Promise<Website[]> {
   const publicHost = getPublicTailscaleHost(tailscale);
   if (!publicHost) {
@@ -536,7 +604,7 @@ async function discoverWebsites(
     listenersByPort.set(listener.port, listeners);
   }
 
-  const websites = await Promise.all(
+  const directWebsites = await Promise.all(
     [...listenersByPort.entries()].map(async ([port, listeners]): Promise<Website | null> => {
       const probeHost = getWebsiteProbeHost(listeners, tailscale);
       if (!probeHost) {
@@ -567,9 +635,74 @@ async function discoverWebsites(
     })
   );
 
-  return websites
+  const servedWebsites = await Promise.all(
+    serveRoutes
+      .filter((route) => !isDashboardServeRoute(route, dashboardPort))
+      .map(async (route): Promise<Website | null> => {
+        const result = await probe({
+          port: route.port,
+          probeUrl: route.publicUrl,
+          publicUrl: route.publicUrl
+        });
+        if (!result) {
+          return null;
+        }
+
+        const targetPort = getUrlPort(route.proxyUrl);
+        const processes = targetPort === null
+          ? []
+          : uniqueProcesses(
+              ports
+                .filter((listener) => listener.protocol === "tcp" && listener.port === targetPort)
+                .flatMap((listener) => listener.processes)
+            );
+        const websiteUrl = new URL(result.path, route.publicUrl).toString();
+        return {
+          faviconUrl: buildWebsiteFaviconUrl(result.faviconPath, websiteUrl),
+          port: route.port,
+          processes,
+          scopeLabel: "Tailscale Serve",
+          status: result.status,
+          title: result.title || `Website on port ${route.port}`,
+          url: websiteUrl
+        };
+      })
+  );
+
+  const websitesByUrl = new Map(
+    [...directWebsites, ...servedWebsites]
     .filter((website): website is Website => website !== null)
-    .sort((left, right) => left.port - right.port);
+    .map((website) => [website.url, website])
+  );
+  return [...websitesByUrl.values()].sort(
+    (left, right) => left.port - right.port || left.url.localeCompare(right.url)
+  );
+}
+
+function isDashboardServeRoute(route: TailscaleServeRoute, dashboardPort: number) {
+  return route.path === "/" && getUrlPort(route.proxyUrl) === dashboardPort;
+}
+
+function getUrlPort(value: string): number | null {
+  try {
+    const url = new URL(value);
+    const port = Number.parseInt(
+      url.port || (url.protocol === "https:" ? "443" : "80"),
+      10
+    );
+    return Number.isSafeInteger(port) ? port : null;
+  } catch {
+    return null;
+  }
+}
+
+function isHttpUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 function getWebsiteProbeHost(listeners: PortListener[], tailscale: TailscaleStatus) {

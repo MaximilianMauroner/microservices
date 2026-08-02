@@ -12,6 +12,10 @@ import {
   type AccessVerifier
 } from "../../tools-web/src/auth.ts";
 import type { Authentication, FetchHandler } from "../../field-guide-console/src/http.ts";
+import {
+  InvalidHeartbeatTokenError,
+  type TowerHeartbeat
+} from "./tower-heartbeat.ts";
 
 const MAX_FETCH_BODY_BYTES = 512 * 1024;
 
@@ -26,6 +30,7 @@ export function createPlatformApp(options: {
   artifact: RequestHandler;
   fieldGuide: FetchHandler;
   tools: FetchHandler;
+  towerHeartbeat?: TowerHeartbeat;
   health: () => Promise<void>;
   componentHealth?: {
     tools: () => Promise<void>;
@@ -52,6 +57,40 @@ export function createPlatformApp(options: {
         .json({ ok: false, error: "dependency_unavailable" });
     }
   });
+  if (options.towerHeartbeat) {
+    app.post("/api/heartbeat/tower", async (request, response) => {
+      try {
+        await options.towerHeartbeat?.receive(request.get("authorization"));
+        response.set("Cache-Control", "no-store").sendStatus(204);
+      } catch (error) {
+        if (error instanceof InvalidHeartbeatTokenError) {
+          response
+            .set("Cache-Control", "no-store")
+            .status(401)
+            .json({ error: "invalid_heartbeat_token" });
+          return;
+        }
+        response
+          .set("Cache-Control", "no-store")
+          .status(503)
+          .json({ error: "heartbeat_storage_unavailable" });
+      }
+    });
+    app.get("/health/tower", async (_request, response) => {
+      try {
+        const healthy = await options.towerHeartbeat?.isHealthy();
+        response
+          .set("Cache-Control", "no-store")
+          .status(healthy ? 200 : 503)
+          .json(healthy ? { ok: true } : { ok: false, error: "heartbeat_stale" });
+      } catch {
+        response
+          .set("Cache-Control", "no-store")
+          .status(503)
+          .json({ ok: false, error: "dependency_unavailable" });
+      }
+    });
+  }
   if (options.componentHealth) {
     for (const [component, check] of Object.entries(options.componentHealth)) {
       app.get(`/health/${component}`, async (_request, response) => {
@@ -188,6 +227,7 @@ function isPublicPath(path: string): boolean {
     "/status",
     "/favicon.ico",
     "/favicon.svg",
+    "/assets/markdown-admin.js",
     "/assets/ops.js",
     "/assets/tools.css",
     "/assets/icons/artifact-publisher.png",
@@ -217,7 +257,9 @@ function accessFamily(
 ): keyof PlatformAccess | undefined {
   if (
     (isPublicPath(path) &&
-      (path !== "/assets/ops.js" || method === "GET" || method === "HEAD")) ||
+      (!["/assets/markdown-admin.js", "/assets/ops.js"].includes(path) ||
+        method === "GET" ||
+        method === "HEAD")) ||
     isMachineApiPath(path)
   ) {
     return undefined;
