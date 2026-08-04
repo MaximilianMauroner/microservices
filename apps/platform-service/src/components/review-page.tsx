@@ -20,7 +20,7 @@ import { Button } from "./ui/button.js";
 import { ButtonGroup } from "./ui/button-group.js";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card.js";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./ui/dialog.js";
-import { Empty as EmptyRoot, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "./ui/empty.js";
+import { Empty as EmptyRoot, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "./ui/empty.js";
 import { Input } from "./ui/input.js";
 import { Label } from "./ui/label.js";
 import { Popover, PopoverContent, PopoverDescription, PopoverHeader, PopoverTitle, PopoverTrigger } from "./ui/popover.js";
@@ -105,6 +105,7 @@ function DecisionWorkspace({ data, search, setData, setNotice, onLoadMore }: { d
   const [selectedId, setSelectedId] = useState(data.decisions.items[0]?.record.decisionRecordId);
   const [sheetOpen, setSheetOpen] = useState(false);
   const selected = data.decisions.items.find((item) => item.record.decisionRecordId === selectedId) ?? data.decisions.items[0];
+  const emptyState = decisionEmptyState(data.decisions, search.reviewState);
 
   function updateItem(updated: DecisionRecordItem) {
     const reviewedId = updated.record.decisionRecordId;
@@ -131,7 +132,7 @@ function DecisionWorkspace({ data, search, setData, setNotice, onLoadMore }: { d
       </div>
       <DecisionFilters search={search} />
     </div>
-    {!data.decisions.items.length ? <Empty title={`No ${search.reviewState} decisions`} body={search.reviewState === "unreviewed" ? "Every uploaded decision has been reviewed." : "Decision records will appear here."} /> : <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(22rem,.75fr)]">
+    {!data.decisions.items.length ? <Empty title={emptyState.title} body={emptyState.body} action={emptyState.canLoadMore ? <Button type="button" variant="outline" size="sm" onClick={onLoadMore}>Load next page</Button> : undefined} /> : <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(22rem,.75fr)]">
       <Card className="gap-0 py-0" aria-labelledby="decision-list-title">
         <CardHeader className="border-b py-4">
           <CardTitle id="decision-list-title">Decision records</CardTitle>
@@ -168,6 +169,22 @@ export function reconcileReviewedDecision(
     ...decisions,
     pending: removed ? Math.max(0, decisions.pending - 1) : decisions.pending,
     items: decisions.items.filter((item) => item.record.decisionRecordId !== reviewedId)
+  };
+}
+
+export function decisionEmptyState(
+  decisions: NonNullable<ReviewPageData["decisions"]>,
+  reviewState: DecisionReviewState
+) {
+  const canLoadMore = Boolean(decisions.nextCursor);
+  return {
+    canLoadMore,
+    title: canLoadMore ? "No decisions on this page" : `No ${reviewState} decisions`,
+    body: canLoadMore
+      ? "More matching decisions are available on the next page."
+      : reviewState === "unreviewed"
+        ? "Every uploaded decision has been reviewed."
+        : "Decision records will appear here."
   };
 }
 
@@ -287,7 +304,7 @@ function HistoryCard({ decision, onNotice }: { decision: Decision; onNotice: (no
   return <Card className={`history-row${decision.isCurrent ? "" : " history-row--superseded"}`}><div className="queue-card__meta"><span>{decision.projectDisplayName ?? decision.projectKey ?? "Global"}</span><span>·</span><span>{humanAction(decision.action)}</span><span>·</span><span>{decision.isCurrent ? "Current decision" : "Superseded"}</span><span>·</span><time dateTime={decision.reviewedAt} suppressHydrationWarning>{relativeTime(decision.reviewedAt)}</time></div><h2>{decision.title}</h2><p className="app-muted">Round {decision.round} · lesson {decision.effect === "activate" ? "active" : "archived"} · reviewed by {decision.reviewer}</p><div className="review-evidence">{decision.evidence.map((evidence) => <blockquote key={evidence.excerpt}>{evidence.excerpt}</blockquote>)}</div>{decision.canAmend ? <><div className="review-actions"><Button type="button" variant="ghost" size="sm" onClick={() => setOpen((value) => !value)}>Update decision</Button></div>{open ? <div className="review-actions"><AppSelect value={action} onValueChange={setAction} options={[{ value: decision.roundKind === "initial" ? "approve" : "confirm_valid", label: decision.roundKind === "initial" ? "Approve" : "Still valid" }, { value: decision.roundKind === "initial" ? "reject" : "mark_invalid", label: decision.roundKind === "initial" ? "Reject" : "No longer valid" }, { value: "defer", label: "Defer" }]} />{action === "defer" ? <Input type="datetime-local" value={deferUntil} onChange={(event) => setDeferUntil(event.currentTarget.value)} /> : null}<Button type="button" variant="secondary" size="sm" disabled={busy || (action === "defer" && !deferUntil)} onClick={() => void amend()}>Save amendment</Button></div> : null}</> : null}</Card>;
 }
 
-function Empty({ title, body }: { title: string; body: string }) { return <EmptyRoot className="border"><EmptyHeader><EmptyMedia variant="icon"><InboxIcon /></EmptyMedia><EmptyTitle>{title}</EmptyTitle><EmptyDescription>{body}</EmptyDescription></EmptyHeader></EmptyRoot>; }
+function Empty({ title, body, action }: { title: string; body: string; action?: React.ReactNode }) { return <EmptyRoot className="border"><EmptyHeader><EmptyMedia variant="icon"><InboxIcon /></EmptyMedia><EmptyTitle>{title}</EmptyTitle><EmptyDescription>{body}</EmptyDescription></EmptyHeader>{action ? <EmptyContent>{action}</EmptyContent> : null}</EmptyRoot>; }
 
 function reviewTitle(search: ReviewSearch) { return search.view === "decisions" ? "Decision inbox" : search.view === "queue" ? "Pending candidates" : "Decision history"; }
 function summaryLabel(data: ReviewPageData, search: ReviewSearch) { if (search.view === "decisions") return `${data.decisions?.pending ?? 0} unresolved`; if (search.view === "queue") return `${data.queue?.summary.pending ?? 0} pending`; return `${data.history?.decisions.length ?? 0} loaded`; }
