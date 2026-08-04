@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { Link } from "@tanstack/react-router";
-import { CalendarIcon, FilterIcon, InboxIcon } from "lucide-react";
+import { CalendarIcon, FilterIcon, InboxIcon, SearchIcon } from "lucide-react";
 import { format, parseISO, subDays } from "date-fns";
 import type { DateRange } from "react-day-picker";
 import type {
@@ -28,9 +28,11 @@ import { Input } from "./ui/input.js";
 import { Label } from "./ui/label.js";
 import { Popover, PopoverContent, PopoverDescription, PopoverHeader, PopoverTitle, PopoverTrigger } from "./ui/popover.js";
 import { Separator } from "./ui/separator.js";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "./ui/sheet.js";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table.js";
 import { Tabs, TabsList, TabsTrigger } from "./ui/tabs.js";
 import { Textarea } from "./ui/textarea.js";
+import { useIsMobile } from "./ui/use-mobile.js";
 import type { ReviewPageData, ReviewView } from "../protected-data.js";
 
 export type ReviewSearch = {
@@ -44,6 +46,10 @@ export type ReviewSearch = {
   skill?: string;
   from?: string;
   to?: string;
+  queueProject?: string;
+  queueKind?: "all" | "initial" | "scheduled";
+  queueStatus?: "all" | "pending" | "due" | "overdue";
+  queueQuery?: string;
 };
 
 type DecisionsPageData = ReviewPageData & { decisions: NonNullable<ReviewPageData["decisions"]> };
@@ -330,11 +336,79 @@ function DecisionReviewPanel({ item, onNotice, onUpdated }: { item: DecisionReco
 }
 
 function QueueWorkspace({ data, search, setData, setNotice }: { data: QueuePageData; search: ReviewSearch; setData: (data: ReviewPageData) => void; setNotice: (notice: { text: string; tone: "success" | "error" }) => void }) {
-  const items = data.queue.items;
-  return <><ReviewScopeTabs search={search} /><div className="review-list">{items.length === 0 ? <Empty title="Nothing to review" body="Every candidate in this scope has been handled." /> : items.map((item) => <QueueCard key={`${item.candidate.candidateId}-${item.round}`} item={item} onComplete={() => setData({ ...data, queue: { ...data.queue, items: data.queue.items.filter((candidate) => candidate !== item) } })} onNotice={setNotice} />)}</div></>;
+  const items = filterQueueItems(data.queue.items, search);
+  const [selectedId, setSelectedId] = useState(items[0]?.candidate.candidateId);
+  const [mobileInspectorOpen, setMobileInspectorOpen] = useState(false);
+  const isMobile = useIsMobile();
+  const selected = items.find((item) => item.candidate.candidateId === selectedId) ?? items[0];
+  const projects = queueProjectOptions(data.queue.items);
+
+  function select(item: QueueItem) {
+    setSelectedId(item.candidate.candidateId);
+    if (isMobile) setMobileInspectorOpen(true);
+  }
+
+  function complete(item: QueueItem) {
+    const remaining = data.queue.items.filter((candidate) => candidate !== item);
+    setData({ ...data, queue: { ...data.queue, items: remaining } });
+    setSelectedId(filterQueueItems(remaining, search)[0]?.candidate.candidateId);
+    setMobileInspectorOpen(false);
+  }
+
+  const inspector = selected ? <QueueInspector item={selected} onComplete={() => complete(selected)} onNotice={setNotice} /> : null;
+  return <>
+    <div className="candidate-toolbar">
+      <ReviewScopeTabs search={search} />
+      <QueueFilters search={search} projects={projects} />
+    </div>
+    {data.queue.items.length === 0 ? <Empty title="Nothing to review" body="Every candidate in this scope has been handled." /> : items.length === 0 ? <Empty title="No matching candidates" body="Clear or change the filters to see another part of the queue." action={<Button nativeButton={false} variant="outline" size="sm" render={<Link to="/review" search={{ scope: search.scope, view: "queue", reviewState: search.reviewState }} reloadDocument />}>Clear filters</Button>} /> : <div className="candidate-workbench">
+      <Card className="candidate-table-card gap-0 py-0">
+        <div className="candidate-table-summary"><div><strong>{items.length}</strong> candidate{items.length === 1 ? "" : "s"}</div><span>{projects.length} projects in queue</span></div>
+        <Table>
+          <TableHeader><TableRow><TableHead>Candidate</TableHead><TableHead className="hidden sm:table-cell">Project</TableHead><TableHead className="hidden lg:table-cell">Kind</TableHead><TableHead>Status</TableHead><TableHead><span className="sr-only">Open</span></TableHead></TableRow></TableHeader>
+          <TableBody>{items.map((item) => {
+            const active = item.candidate.candidateId === selected?.candidate.candidateId;
+            return <TableRow key={`${item.candidate.candidateId}-${item.round}`} data-state={active ? "selected" : undefined}>
+              <TableCell className="min-w-56 max-w-sm whitespace-normal"><Button type="button" variant="link" className="h-auto max-w-full justify-start px-0 text-left font-medium whitespace-normal" onClick={() => select(item)}>{item.candidate.title}</Button><span className="mt-1 block text-xs text-muted-foreground">Round {item.round}{item.dueAt ? ` · ${relativeTime(item.dueAt)}` : ""}</span></TableCell>
+              <TableCell className="hidden sm:table-cell"><Badge variant="outline">{queueProject(item)}</Badge></TableCell>
+              <TableCell className="hidden text-xs text-muted-foreground lg:table-cell">{item.kind === "initial" ? "New" : "Revalidation"}</TableCell>
+              <TableCell><Badge variant={item.status === "overdue" ? "destructive" : item.status === "due" ? "secondary" : "outline"}>{item.status}</Badge></TableCell>
+              <TableCell className="text-right"><Button type="button" variant="ghost" size="sm" onClick={() => select(item)}>Review</Button></TableCell>
+            </TableRow>;
+          })}</TableBody>
+        </Table>
+      </Card>
+      {!isMobile ? <aside className="candidate-inspector" aria-label="Selected candidate">{inspector}</aside> : null}
+    </div>}
+    {isMobile ? <Sheet open={mobileInspectorOpen} onOpenChange={setMobileInspectorOpen}><SheetContent className="w-[min(42rem,100%)] overflow-y-auto sm:max-w-xl"><SheetHeader className="border-b"><SheetTitle>Review candidate</SheetTitle><SheetDescription>Inspect the guidance and record a verdict.</SheetDescription></SheetHeader><div className="p-4 pt-0">{inspector}</div></SheetContent></Sheet> : null}
+  </>;
 }
 
-function QueueCard({ item, onComplete, onNotice }: { item: QueueItem; onComplete: () => void; onNotice: (notice: { text: string; tone: "success" | "error" }) => void }) {
+function QueueFilters({ search, projects }: { search: ReviewSearch; projects: string[] }) {
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const next: ReviewSearch = { ...search };
+    for (const key of ["queueProject", "queueKind", "queueStatus", "queueQuery"] as const) {
+      const value = String(form.get(key) ?? "").trim();
+      if (value && value !== "all") Object.assign(next, { [key]: value }); else delete next[key];
+    }
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(next)) if (value) params.set(key, value);
+    window.location.assign(`/review?${params}`);
+  }
+  const count = [search.queueProject, search.queueKind, search.queueStatus, search.queueQuery].filter(Boolean).length;
+  return <form className="candidate-filters" onSubmit={submit} aria-label="Candidate filters">
+    <Label className="candidate-search"><span className="sr-only">Search candidates</span><SearchIcon aria-hidden="true" /><Input name="queueQuery" defaultValue={search.queueQuery ?? ""} placeholder="Search candidates" /></Label>
+    <Label className="candidate-filter-field"><span>Project</span><AppSelect name="queueProject" defaultValue={search.queueProject ?? "all"} aria-label="Project" options={[{ value: "all", label: "All projects" }, ...projects.map((project) => ({ value: project, label: project }))]} /></Label>
+    <Label className="candidate-filter-field"><span>Kind</span><AppSelect name="queueKind" defaultValue={search.queueKind ?? "all"} aria-label="Candidate kind" options={[{ value: "all", label: "All kinds" }, { value: "initial", label: "New candidates" }, { value: "scheduled", label: "Revalidations" }]} /></Label>
+    <Label className="candidate-filter-field"><span>Due</span><AppSelect name="queueStatus" defaultValue={search.queueStatus ?? "all"} aria-label="Due status" options={[{ value: "all", label: "Any due state" }, { value: "pending", label: "Pending" }, { value: "due", label: "Due" }, { value: "overdue", label: "Overdue" }]} /></Label>
+    <Button type="submit" variant="secondary" size="sm"><FilterIcon />Apply{count ? <Badge variant="outline">{count}</Badge> : null}</Button>
+    {count ? <Button nativeButton={false} variant="ghost" size="sm" render={<Link to="/review" search={{ scope: search.scope, view: "queue", reviewState: search.reviewState }} reloadDocument />}>Clear</Button> : null}
+  </form>;
+}
+
+function QueueInspector({ item, onComplete, onNotice }: { item: QueueItem; onComplete: () => void; onNotice: (notice: { text: string; tone: "success" | "error" }) => void }) {
   const [busy, setBusy] = useState(false);
   const [deferOpen, setDeferOpen] = useState(false);
   const [deferUntil, setDeferUntil] = useState("");
@@ -361,8 +435,26 @@ function QueueCard({ item, onComplete, onNotice }: { item: QueueItem; onComplete
       window.location.reload();
     } catch (error) { onNotice({ text: error instanceof Error ? error.message : "Scope update failed.", tone: "error" }); setBusy(false); }
   }
-  return <Card className={`queue-card queue-card--${item.status}`}><div className="queue-card__meta"><span>{candidate.projectDisplayName ?? candidate.projectKey ?? "Global"}</span><span>·</span><span>{item.kind === "initial" ? "New candidate" : "Revalidation"}</span><span>·</span><span>Round {item.round}</span>{item.dueAt ? <><span>·</span><time dateTime={item.dueAt} suppressHydrationWarning>{relativeTime(item.dueAt)}</time></> : null}</div><h2>{candidate.title}</h2><p className="queue-card__body">{candidate.body}</p><div className="queue-card__rationale"><span className="eyebrow">Why remember this</span><p>{candidate.rationale}</p></div><div className="review-evidence">{candidate.evidence.map((evidence) => <blockquote key={evidence.excerpt}>{evidence.excerpt}<div className="app-mono">{evidence.commitHashes.join(" · ")}</div></blockquote>)}</div><div className="queue-card__footer"><div>{actions.map(({ action, label, variant }) => <Button key={action} type="button" variant={variant} size="sm" disabled={busy} onClick={() => void verdict(action)}>{label}</Button>)}<Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => setDeferOpen((open) => !open)}>Defer</Button></div>{item.kind === "initial" ? <Button type="button" variant="ghost" size="sm" disabled={busy || (candidate.scope === "global" && !candidate.foundProjectKey)} onClick={() => void changeScope()}>{candidate.scope === "project" ? "Promote to global" : "Demote to project"}</Button> : null}</div>{deferOpen ? <div className="review-actions"><Label>Review again after<Input type="datetime-local" value={deferUntil} onChange={(event) => setDeferUntil(event.currentTarget.value)} /></Label><Button type="button" variant="secondary" size="sm" disabled={!deferUntil || busy} onClick={() => void verdict("defer", deferUntil)}>Confirm defer</Button></div> : null}</Card>;
+  return <Card className={`queue-card queue-card--${item.status}`}><div className="queue-card__meta"><Badge variant="outline">{queueProject(item)}</Badge><span>{item.kind === "initial" ? "New candidate" : "Revalidation"}</span><span>Round {item.round}</span>{item.dueAt ? <time dateTime={item.dueAt} suppressHydrationWarning>{relativeTime(item.dueAt)}</time> : null}</div><h2>{candidate.title}</h2><p className="queue-card__body">{candidate.body}</p><div className="queue-card__rationale"><span className="eyebrow">Why remember this</span><p>{candidate.rationale}</p></div>{candidate.evidence.length ? <Accordion multiple><AccordionItem value="evidence"><AccordionTrigger>Evidence <Badge variant="outline">{candidate.evidence.length}</Badge></AccordionTrigger><AccordionContent><div className="review-evidence">{candidate.evidence.map((evidence) => <blockquote key={evidence.excerpt}>{evidence.excerpt}<div className="app-mono">{evidence.commitHashes.join(" · ")}</div></blockquote>)}</div></AccordionContent></AccordionItem></Accordion> : null}<div className="queue-card__footer"><div>{actions.map(({ action, label, variant }) => <Button key={action} type="button" variant={variant} size="sm" disabled={busy} onClick={() => void verdict(action)}>{label}</Button>)}<Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => setDeferOpen((open) => !open)}>Defer</Button></div>{item.kind === "initial" ? <Button type="button" variant="ghost" size="sm" disabled={busy || (candidate.scope === "global" && !candidate.foundProjectKey)} onClick={() => void changeScope()}>{candidate.scope === "project" ? "Promote to global" : "Demote to project"}</Button> : null}</div>{deferOpen ? <div className="review-actions"><Label>Review again after<Input type="datetime-local" value={deferUntil} onChange={(event) => setDeferUntil(event.currentTarget.value)} /></Label><Button type="button" variant="secondary" size="sm" disabled={!deferUntil || busy} onClick={() => void verdict("defer", deferUntil)}>Confirm defer</Button></div> : null}</Card>;
 }
+
+export function filterQueueItems(items: QueueItem[], search: Pick<ReviewSearch, "queueProject" | "queueKind" | "queueStatus" | "queueQuery">) {
+  const queryTokens = search.queueQuery?.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean) ?? [];
+  return items.filter((item) => {
+    if (search.queueProject && queueProject(item) !== search.queueProject) return false;
+    if (search.queueKind && item.kind !== search.queueKind) return false;
+    if (search.queueStatus && item.status !== search.queueStatus) return false;
+    if (!queryTokens.length) return true;
+    const searchable = [item.candidate.title, item.candidate.body, item.candidate.rationale, queueProject(item)].join(" ").toLocaleLowerCase();
+    return queryTokens.every((token) => searchable.includes(token));
+  });
+}
+
+export function queueProjectOptions(items: QueueItem[]) {
+  return [...new Set(items.map(queueProject))].sort((left, right) => left.localeCompare(right));
+}
+
+function queueProject(item: QueueItem) { return item.candidate.projectDisplayName ?? item.candidate.projectKey ?? "Global"; }
 
 function HistoryWorkspace({ data, search, onLoadMore, setNotice }: { data: ReviewPageData; search: ReviewSearch; onLoadMore: () => void; setNotice: (notice: { text: string; tone: "success" | "error" }) => void }) {
   return <><ReviewScopeTabs search={search} /><div className="review-list">{!data.history?.decisions.length ? <Empty title="No decisions yet" body="Reviewed lessons will appear here as an immutable ledger." /> : data.history.decisions.map((decision) => <HistoryCard key={decision.decisionId} decision={decision} onNotice={setNotice} />)}{data.history?.nextCursor ? <div className="review-actions"><Button type="button" variant="ghost" onClick={onLoadMore}>Load older history</Button></div> : null}</div></>;

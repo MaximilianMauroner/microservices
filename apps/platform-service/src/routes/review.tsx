@@ -13,7 +13,11 @@ export const Route = createFileRoute("/review")({
     ...optionalSearch(search, "harness"),
     ...optionalSearch(search, "skill"),
     ...optionalSearch(search, "from"),
-    ...optionalSearch(search, "to")
+    ...optionalSearch(search, "to"),
+    ...optionalSearch(search, "queueProject"),
+    ...enumSearch(search, "queueKind", ["initial", "scheduled"] as const),
+    ...enumSearch(search, "queueStatus", ["pending", "due", "overdue"] as const),
+    ...optionalSearch(search, "queueQuery")
   }),
   loaderDeps: ({ search }) => ({
     scope: search.scope,
@@ -42,6 +46,11 @@ export const Route = createFileRoute("/review")({
 
 function ReviewRoute() {
   return <ReviewPage initial={Route.useLoaderData()} search={Route.useSearch()} />;
+}
+
+function enumSearch<const Value extends string>(search: Record<string, unknown>, key: string, values: readonly Value[]) {
+  const value = search[key];
+  return typeof value === "string" && values.includes(value as Value) ? { [key]: value as Value } : {};
 }
 
 function optionalSearch(search: Record<string, unknown>, key: string) {
