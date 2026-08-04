@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
+import { FilterIcon, InboxIcon } from "lucide-react";
 import type {
   Candidate,
   Decision,
@@ -12,12 +13,20 @@ import type {
 import { AppShell } from "./app-shell.js";
 import { AppSelect } from "./form-controls.js";
 import { Alert } from "./ui/alert.js";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "./ui/accordion.js";
 import { Badge } from "./ui/badge.js";
 import { Button } from "./ui/button.js";
-import { Card } from "./ui/card.js";
+import { ButtonGroup } from "./ui/button-group.js";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card.js";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./ui/dialog.js";
+import { Empty as EmptyRoot, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "./ui/empty.js";
 import { Input } from "./ui/input.js";
 import { Label } from "./ui/label.js";
+import { Popover, PopoverContent, PopoverDescription, PopoverHeader, PopoverTitle, PopoverTrigger } from "./ui/popover.js";
+import { ScrollArea } from "./ui/scroll-area.js";
+import { Separator } from "./ui/separator.js";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "./ui/sheet.js";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table.js";
 import { Tabs, TabsList, TabsTrigger } from "./ui/tabs.js";
 import { Textarea } from "./ui/textarea.js";
 import type { ReviewPageData, ReviewView } from "../protected-data.js";
@@ -63,19 +72,20 @@ export function ReviewPage({ initial, search }: { initial: ReviewPageData; searc
   return (
     <>
       <AppShell active="review" />
-      <header className="app-subheader">
-        <div className="app-page app-subheader__inner">
-          <a className="app-subheader__brand" href="/review" aria-label="Field guide reviews home"><span>F</span><div><strong>Field guide</strong><small>Review desk</small></div></a>
-          <div className="app-subheader__account"><span>{data.actor}</span><Button variant="ghost" size="sm" render={<a href="/cdn-cgi/access/logout" />}>Sign out</Button></div>
-        </div>
-        <div className="app-page app-subheader__nav"><ReviewNav search={search} /></div>
-      </header>
-      <main id="main" className="app-page review-page">
-        <section className="app-heading" aria-labelledby="review-title">
-          <div><p className="eyebrow">{search.view === "decisions" ? "Agent judgment" : search.scope === "project" ? "Project field guide" : "Global field guide"}</p><h1 id="review-title">{reviewTitle(search)}</h1><p>Access protected review workspace.</p></div>
-          <div className="app-heading__actions"><Badge variant={search.view === "decisions" && data.decisions?.pending ? "secondary" : "default"}>{summaryLabel(data, search)}</Badge></div>
-        </section>
-        {notice ? <Alert variant={notice.tone === "error" ? "destructive" : "default"} data-tone={notice.tone}>{notice.text}</Alert> : null}
+      <main id="main" className="mx-auto w-[min(1180px,calc(100%_-_2rem))] py-8 sm:py-10">
+        <header className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between" aria-labelledby="review-title">
+          <div>
+            <h1 id="review-title" className="text-2xl font-semibold tracking-tight">{reviewTitle(search)}</h1>
+            <p className="mt-1 text-sm text-muted-foreground">{search.view === "decisions" ? "Review agent decisions before they become field guide candidates." : search.view === "queue" ? "Approve, reject, or defer pending field guide candidates." : "Inspect the immutable decision history."}</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant={search.view === "decisions" && data.decisions?.pending ? "secondary" : "default"}>{summaryLabel(data, search)}</Badge>
+            <span className="hidden text-xs text-muted-foreground md:inline">{data.actor}</span>
+            <Button variant="ghost" size="sm" render={<a href="/cdn-cgi/access/logout" />}>Sign out</Button>
+          </div>
+        </header>
+        <div className="mb-5"><ReviewNav search={search} /></div>
+        {notice ? <Alert className="mb-4" variant={notice.tone === "error" ? "destructive" : "default"} data-tone={notice.tone}>{notice.text}</Alert> : null}
         {search.view === "decisions" ? <DecisionWorkspace data={{ ...data, decisions: data.decisions! }} search={search} setData={setData} setNotice={setNotice} onLoadMore={() => void loadMore()} /> : null}
         {search.view === "queue" ? <QueueWorkspace data={{ ...data, queue: data.queue! }} search={search} setData={setData} setNotice={setNotice} /> : null}
         {search.view === "history" ? <HistoryWorkspace data={data} search={search} onLoadMore={() => void loadMore()} setNotice={setNotice} /> : null}
@@ -85,23 +95,61 @@ export function ReviewPage({ initial, search }: { initial: ReviewPageData; searc
 }
 
 function ReviewNav({ search }: { search: ReviewSearch }) {
-  return <Tabs value={search.view}><TabsList>{(["decisions", "queue", "history"] as const).map((view) => <TabsTrigger key={view} value={view} render={<a href={reviewHref({ ...search, view })} />}>{view === "decisions" ? "Decision inbox" : view === "queue" ? "Candidates" : "History"}</TabsTrigger>)}</TabsList></Tabs>;
+  return <Tabs value={search.view}><TabsList>{(["decisions", "queue", "history"] as const).map((view) => <TabsTrigger key={view} value={view} render={<a href={reviewHref({ ...search, view })} />}>{view === "decisions" ? "Decisions" : view === "queue" ? "Candidates" : "History"}</TabsTrigger>)}</TabsList></Tabs>;
 }
 
 function DecisionWorkspace({ data, search, setData, setNotice, onLoadMore }: { data: DecisionsPageData; search: ReviewSearch; setData: (data: ReviewPageData) => void; setNotice: (notice: { text: string; tone: "success" | "error" }) => void; onLoadMore: () => void }) {
+  const [selectedId, setSelectedId] = useState(data.decisions.items[0]?.record.decisionRecordId);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const selected = data.decisions.items.find((item) => item.record.decisionRecordId === selectedId) ?? data.decisions.items[0];
+
+  function updateItem(updated: DecisionRecordItem) {
+    setData({ ...data, decisions: { ...data.decisions, items: data.decisions.items.map((item) => item.record.decisionRecordId === updated.record.decisionRecordId ? updated : item) } });
+  }
+
+  function selectItem(item: DecisionRecordItem, openSheet = false) {
+    setSelectedId(item.record.decisionRecordId);
+    if (openSheet) setSheetOpen(true);
+  }
+
   return <>
-    <ReviewScopeTabs search={search} />
-    <DecisionFilters search={search} />
-    <section className="app-card review-list" aria-labelledby="decision-list-title">
-      <div className="app-card__header"><div><p className="eyebrow">{data.decisions?.pending ?? 0} unresolved</p><h2 id="decision-list-title">Decision records</h2><p>Immutable agent decisions awaiting human feedback.</p></div><span className="app-mono">Newest first</span></div>
-      {!data.decisions.items.length ? <Empty title={`No ${search.reviewState} decisions`} body={search.reviewState === "unreviewed" ? "Every uploaded decision has been reviewed." : "Decision records will appear here."} /> : data.decisions.items.map((item) => <DecisionRecordCard key={item.record.decisionRecordId} item={item} onNotice={setNotice} onUpdated={(updated) => setData({ ...data, decisions: { ...data.decisions, items: data.decisions.items.map((candidate) => candidate.record.decisionRecordId === updated.record.decisionRecordId ? updated : candidate) } })} />)}
-      {data.decisions?.nextCursor ? <div className="review-actions"><Button type="button" variant="ghost" onClick={onLoadMore}>Load older decisions</Button></div> : null}
-    </section>
+    <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+      <div className="flex flex-wrap items-center gap-2">
+        <ReviewScopeTabs search={search} />
+        <Tabs value={search.reviewState}><TabsList>{(["unreviewed", "reviewed", "all"] as const).map((reviewState) => <TabsTrigger key={reviewState} value={reviewState} render={<a href={reviewHref({ ...search, reviewState })} />}>{reviewState === "all" ? "All" : reviewState === "reviewed" ? "Reviewed" : "Unreviewed"}</TabsTrigger>)}</TabsList></Tabs>
+      </div>
+      <DecisionFilters search={search} />
+    </div>
+    {!data.decisions.items.length ? <Empty title={`No ${search.reviewState} decisions`} body={search.reviewState === "unreviewed" ? "Every uploaded decision has been reviewed." : "Decision records will appear here."} /> : <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(22rem,.75fr)]">
+      <Card className="gap-0 py-0" aria-labelledby="decision-list-title">
+        <CardHeader className="border-b py-4">
+          <CardTitle id="decision-list-title">Decision records</CardTitle>
+          <CardDescription>{data.decisions.pending} unresolved · newest first</CardDescription>
+        </CardHeader>
+        <Table>
+          <TableHeader><TableRow><TableHead>Decision</TableHead><TableHead className="hidden md:table-cell">Project</TableHead><TableHead className="hidden lg:table-cell">Confidence</TableHead><TableHead>State</TableHead><TableHead><span className="sr-only">Actions</span></TableHead></TableRow></TableHeader>
+          <TableBody>{data.decisions.items.map((item) => {
+            const record = item.record;
+            const selectedRow = record.decisionRecordId === selected?.record.decisionRecordId;
+            return <TableRow key={record.decisionRecordId} data-state={selectedRow ? "selected" : undefined}>
+              <TableCell className="min-w-52 max-w-md whitespace-normal"><Button type="button" variant="link" className="h-auto max-w-full justify-start px-0 text-left font-medium whitespace-normal" onClick={() => selectItem(item)}>{record.summary}</Button><span className="mt-1 block truncate font-mono text-[0.68rem] text-muted-foreground">{formatDate(record.createdAt)} · {record.decisionRecordId}</span></TableCell>
+              <TableCell className="hidden md:table-cell"><Badge variant="outline">{decisionProject(record)}</Badge></TableCell>
+              <TableCell className="hidden font-mono text-xs text-muted-foreground lg:table-cell">{record.confidence}</TableCell>
+              <TableCell><Badge variant={item.currentFeedback ? item.currentFeedback.action === "down" ? "destructive" : "outline" : "secondary"}>{item.currentFeedback ? feedbackLabel(item.currentFeedback.action) : "Unreviewed"}</Badge></TableCell>
+              <TableCell className="text-right"><Button type="button" variant="ghost" size="sm" className="xl:hidden" onClick={() => selectItem(item, true)}>Review</Button><Button type="button" variant="ghost" size="sm" className="hidden xl:inline-flex" onClick={() => selectItem(item)}>Open</Button></TableCell>
+            </TableRow>;
+          })}</TableBody>
+        </Table>
+        {data.decisions.nextCursor ? <div className="flex justify-center border-t p-3"><Button type="button" variant="ghost" size="sm" onClick={onLoadMore}>Load older decisions</Button></div> : null}
+      </Card>
+      {selected ? <div className="hidden xl:block"><DecisionReviewPanel key={selected.record.decisionRecordId} item={selected} onNotice={setNotice} onUpdated={updateItem} /></div> : null}
+    </div>}
+    <Sheet open={sheetOpen} onOpenChange={setSheetOpen}><SheetContent className="w-full gap-0 overflow-hidden p-0 sm:max-w-xl" side="right">{selected ? <><SheetHeader className="sr-only"><SheetTitle>{selected.record.summary}</SheetTitle><SheetDescription>{decisionProject(selected.record)} · {selected.record.confidence} confidence · {formatDate(selected.record.createdAt)}</SheetDescription></SheetHeader><ScrollArea className="min-h-0 flex-1"><div className="p-4"><DecisionReviewPanel key={selected.record.decisionRecordId} item={selected} onNotice={setNotice} onUpdated={updateItem} embedded /></div></ScrollArea></> : null}</SheetContent></Sheet>
   </>;
 }
 
 function ReviewScopeTabs({ search }: { search: ReviewSearch }) {
-  return <div className="review-scope-tabs"><Tabs value={search.scope}><TabsList><TabsTrigger value="project" render={<a href={reviewHref({ ...search, scope: "project" })} />}>Project</TabsTrigger><TabsTrigger value="global" render={<a href={reviewHref({ ...search, scope: "global" })} />}>Global</TabsTrigger></TabsList></Tabs></div>;
+  return <Tabs value={search.scope}><TabsList><TabsTrigger value="project" render={<a href={reviewHref({ ...search, scope: "project" })} />}>Project</TabsTrigger><TabsTrigger value="global" render={<a href={reviewHref({ ...search, scope: "global" })} />}>Global</TabsTrigger></TabsList></Tabs>;
 }
 
 function DecisionFilters({ search }: { search: ReviewSearch }) {
@@ -115,11 +163,12 @@ function DecisionFilters({ search }: { search: ReviewSearch }) {
     }
     window.location.assign(reviewHref(next));
   }
-  return <form className="app-toolbar" onSubmit={submit} aria-label="Decision filters"><Label>Project<Input name="projectKey" defaultValue={search.projectKey ?? ""} placeholder="Project key" /></Label><Label>Task<Input name="taskId" defaultValue={search.taskId ?? ""} placeholder="Task ID" /></Label><Label>Device<Input name="device" defaultValue={search.device ?? ""} placeholder="Device" /></Label><Label>Harness<Input name="harness" defaultValue={search.harness ?? ""} placeholder="Harness" /></Label><Label>Skill<Input name="skill" defaultValue={search.skill ?? ""} placeholder="Skill" /></Label><Label>From<Input name="from" type="date" defaultValue={search.from ?? ""} /></Label><Label>To<Input name="to" type="date" defaultValue={search.to ?? ""} /></Label><div className="app-toolbar__actions"><Button type="submit" variant="default" size="sm">Apply filters</Button><Button variant="ghost" size="sm" render={<a href={reviewHref({ scope: search.scope, view: search.view, reviewState: search.reviewState })} />}>Clear</Button></div></form>;
+  const filterCount = (["projectKey", "taskId", "device", "harness", "skill", "from", "to"] as const).filter((key) => search[key]).length;
+  return <Popover><PopoverTrigger render={<Button variant="outline" size="sm" />}><FilterIcon />Filters{filterCount ? <Badge variant="secondary">{filterCount}</Badge> : null}</PopoverTrigger><PopoverContent align="end" className="w-[min(28rem,calc(100vw_-_2rem))]"><PopoverHeader><PopoverTitle>Filter decisions</PopoverTitle><PopoverDescription>Filters are stored in the URL and apply to loaded decision records.</PopoverDescription></PopoverHeader><form className="grid grid-cols-1 gap-3 sm:grid-cols-2" onSubmit={submit} aria-label="Decision filters"><Label className="sm:col-span-2">Project<Input name="projectKey" defaultValue={search.projectKey ?? ""} placeholder="Project key" /></Label><Label>Task<Input name="taskId" defaultValue={search.taskId ?? ""} placeholder="Task ID" /></Label><Label>Device<Input name="device" defaultValue={search.device ?? ""} placeholder="Device" /></Label><Label>Harness<Input name="harness" defaultValue={search.harness ?? ""} placeholder="Harness" /></Label><Label>Skill<Input name="skill" defaultValue={search.skill ?? ""} placeholder="Skill" /></Label><Label>From<Input name="from" type="date" defaultValue={search.from ?? ""} /></Label><Label>To<Input name="to" type="date" defaultValue={search.to ?? ""} /></Label><div className="flex justify-end gap-2 pt-1 sm:col-span-2"><Button variant="ghost" size="sm" render={<a href={reviewHref({ scope: search.scope, view: search.view, reviewState: search.reviewState })} />}>Clear</Button><Button type="submit" size="sm">Apply filters</Button></div></form></PopoverContent></Popover>;
 }
 
-function DecisionRecordCard({ item, onNotice, onUpdated }: { item: DecisionRecordItem; onNotice: (notice: { text: string; tone: "success" | "error" }) => void; onUpdated: (item: DecisionRecordItem) => void }) {
-  const [feedback, setFeedback] = useState(item.currentFeedback);
+function DecisionReviewPanel({ item, onNotice, onUpdated, embedded = false }: { item: DecisionRecordItem; onNotice: (notice: { text: string; tone: "success" | "error" }) => void; onUpdated: (item: DecisionRecordItem) => void; embedded?: boolean }) {
+  const feedback = item.currentFeedback;
   const [comment, setComment] = useState(item.currentFeedback?.comment ?? "");
   const [busy, setBusy] = useState(false);
   const [promotionOpen, setPromotionOpen] = useState(false);
@@ -133,7 +182,7 @@ function DecisionRecordCard({ item, onNotice, onUpdated }: { item: DecisionRecor
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(typeof payload.message === "string" ? payload.message : `Feedback failed (HTTP ${response.status}).`);
       const next = payload.feedback as DecisionFeedback;
-      setFeedback(next); onUpdated({ ...item, currentFeedback: next, feedbackHistory: [...item.feedbackHistory, next] }); onNotice({ text: "Feedback saved.", tone: "success" });
+      onUpdated({ ...item, currentFeedback: next, feedbackHistory: [...item.feedbackHistory, next] }); onNotice({ text: "Feedback saved.", tone: "success" });
     } catch (error) { onNotice({ text: error instanceof Error ? error.message : "Feedback could not be saved.", tone: "error" }); }
     finally { setBusy(false); }
   }
@@ -154,7 +203,8 @@ function DecisionRecordCard({ item, onNotice, onUpdated }: { item: DecisionRecor
   }
 
   const feedbackVariant = feedback ? feedback.action === "down" ? "destructive" : feedback.action === "dismiss" ? "outline" : "default" : "secondary";
-  return <Card className="review-record"><div className="review-row"><span className="review-row__mark" aria-hidden="true" /><div><strong>{record.summary}</strong><small>{decisionProject(record)} · {record.confidence} confidence · {formatDate(record.createdAt)}</small></div><span className="review-row__meta">{feedback ? feedbackLabel(feedback.action) : "Unreviewed"}</span><div className="review-row__actions"><Badge variant={feedbackVariant}>{feedback ? feedbackLabel(feedback.action) : "Unreviewed"}</Badge></div></div><div className="review-detail"><h3>{record.choice}</h3><p>{record.context}</p><div className="review-evidence">{record.evidence.map((evidence) => <blockquote key={`${record.decisionRecordId}-${evidence.excerpt}`}>{evidence.excerpt}<div className="app-mono">{evidence.commitHashes.join(" · ")}</div></blockquote>)}</div><Label className="review-comment-field">Reviewer comment<Textarea value={comment} onChange={(event) => setComment(event.currentTarget.value)} placeholder="Optional context for this feedback" /></Label><div className="review-actions"><Button type="button" variant="default" size="sm" disabled={busy} onClick={() => void giveFeedback("up")}>Reasonable here</Button><Button type="button" variant="destructive" size="sm" disabled={busy} onClick={() => void giveFeedback("down")}>Should not repeat</Button><Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => void giveFeedback("dismiss")}>Dismiss</Button>{feedback && !item.promotionCandidateId ? <Button type="button" variant="secondary" size="sm" onClick={() => setPromotionOpen(true)}>Draft candidate</Button> : null}</div>{item.promotionCandidateId ? <Alert variant="default" data-tone="success">Candidate drafted · {item.promotionCandidateId}</Alert> : null}</div><Dialog open={promotionOpen} onOpenChange={setPromotionOpen}><DialogContent><DialogHeader><DialogTitle>Draft a field-guide candidate</DialogTitle><DialogDescription>This creates an inactive candidate. It does not change active guidance.</DialogDescription></DialogHeader><form className="manage-form" onSubmit={promote}><Label>Lesson key<Input name="lessonKey" defaultValue={slugify(record.summary)} required /></Label><Label>Title<Input name="title" defaultValue={record.summary} required /></Label><Label className="manage-form__wide">Guidance<Textarea name="body" defaultValue={record.choice} required /></Label><Label className="manage-form__wide">Rationale<Textarea name="rationale" defaultValue={feedback?.comment ?? record.rationale} required /></Label><div className="manage-actions"><Button type="submit" variant="secondary" disabled={promotionBusy}>{promotionBusy ? "Drafting…" : "Create inactive candidate"}</Button><Button type="button" variant="ghost" onClick={() => setPromotionOpen(false)}>Cancel</Button></div></form></DialogContent></Dialog></Card>;
+  const content = <><CardHeader className={embedded ? "px-0 pt-0" : "border-b"}><CardTitle className="pr-16 text-base leading-snug">{record.summary}</CardTitle><CardDescription>{decisionProject(record)} · {record.confidence} confidence · {formatDate(record.createdAt)}</CardDescription><CardAction><Badge variant={feedbackVariant}>{feedback ? feedbackLabel(feedback.action) : "Unreviewed"}</Badge></CardAction></CardHeader><CardContent className={embedded ? "space-y-5 px-0" : "space-y-5"}><section><p className="text-xs font-medium text-muted-foreground">Choice</p><h3 className="mt-1 text-sm font-medium leading-6">{record.choice}</h3><p className="mt-3 text-sm leading-6 text-muted-foreground">{record.context}</p></section><Separator /><Accordion defaultValue={record.evidence.length ? ["evidence"] : []} multiple><AccordionItem value="evidence"><AccordionTrigger>Evidence <Badge variant="outline">{record.evidence.length}</Badge></AccordionTrigger><AccordionContent className="space-y-2">{record.evidence.length ? record.evidence.map((evidence) => <blockquote className="border-l-2 pl-3 text-sm text-muted-foreground" key={`${record.decisionRecordId}-${evidence.excerpt}`}>{evidence.excerpt}{evidence.commitHashes.length ? <div className="mt-2 font-mono text-[0.68rem] text-muted-foreground">{evidence.commitHashes.join(" · ")}</div> : null}</blockquote>) : <p>No evidence excerpts were attached.</p>}</AccordionContent></AccordionItem></Accordion><Label>Reviewer comment<Textarea className="mt-2" value={comment} onChange={(event) => setComment(event.currentTarget.value)} placeholder="Optional context for this feedback" /></Label><div className="flex flex-wrap gap-2"><ButtonGroup><Button type="button" variant="default" size="sm" disabled={busy} onClick={() => void giveFeedback("up")}>Reasonable here</Button><Button type="button" variant="destructive" size="sm" disabled={busy} onClick={() => void giveFeedback("down")}>Should not repeat</Button></ButtonGroup><Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void giveFeedback("dismiss")}>Dismiss</Button>{feedback && !item.promotionCandidateId ? <Button type="button" variant="secondary" size="sm" onClick={() => setPromotionOpen(true)}>Draft candidate</Button> : null}</div>{item.promotionCandidateId ? <Alert variant="default" data-tone="success">Candidate drafted · {item.promotionCandidateId}</Alert> : null}</CardContent></>;
+  return <>{embedded ? content : <Card className="sticky top-4">{content}</Card>}<Dialog open={promotionOpen} onOpenChange={setPromotionOpen}><DialogContent><DialogHeader><DialogTitle>Draft a field-guide candidate</DialogTitle><DialogDescription>This creates an inactive candidate. It does not change active guidance.</DialogDescription></DialogHeader><form className="grid grid-cols-1 gap-4 sm:grid-cols-2" onSubmit={promote}><Label>Lesson key<Input name="lessonKey" defaultValue={slugify(record.summary)} required /></Label><Label>Title<Input name="title" defaultValue={record.summary} required /></Label><Label className="sm:col-span-2">Guidance<Textarea name="body" defaultValue={record.choice} required /></Label><Label className="sm:col-span-2">Rationale<Textarea name="rationale" defaultValue={feedback?.comment ?? record.rationale} required /></Label><div className="flex justify-end gap-2 sm:col-span-2"><Button type="button" variant="ghost" onClick={() => setPromotionOpen(false)}>Cancel</Button><Button type="submit" variant="secondary" disabled={promotionBusy}>{promotionBusy ? "Drafting…" : "Create inactive candidate"}</Button></div></form></DialogContent></Dialog></>;
 }
 
 function QueueWorkspace({ data, search, setData, setNotice }: { data: QueuePageData; search: ReviewSearch; setData: (data: ReviewPageData) => void; setNotice: (notice: { text: string; tone: "success" | "error" }) => void }) {
@@ -213,7 +263,7 @@ function HistoryCard({ decision, onNotice }: { decision: Decision; onNotice: (no
   return <Card className={`history-row${decision.isCurrent ? "" : " history-row--superseded"}`}><div className="queue-card__meta"><span>{decision.projectDisplayName ?? decision.projectKey ?? "Global"}</span><span>·</span><span>{humanAction(decision.action)}</span><span>·</span><span>{decision.isCurrent ? "Current decision" : "Superseded"}</span><span>·</span><time dateTime={decision.reviewedAt} suppressHydrationWarning>{relativeTime(decision.reviewedAt)}</time></div><h2>{decision.title}</h2><p className="app-muted">Round {decision.round} · lesson {decision.effect === "activate" ? "active" : "archived"} · reviewed by {decision.reviewer}</p><div className="review-evidence">{decision.evidence.map((evidence) => <blockquote key={evidence.excerpt}>{evidence.excerpt}</blockquote>)}</div>{decision.canAmend ? <><div className="review-actions"><Button type="button" variant="ghost" size="sm" onClick={() => setOpen((value) => !value)}>Update decision</Button></div>{open ? <div className="review-actions"><AppSelect value={action} onValueChange={setAction} options={[{ value: decision.roundKind === "initial" ? "approve" : "confirm_valid", label: decision.roundKind === "initial" ? "Approve" : "Still valid" }, { value: decision.roundKind === "initial" ? "reject" : "mark_invalid", label: decision.roundKind === "initial" ? "Reject" : "No longer valid" }, { value: "defer", label: "Defer" }]} />{action === "defer" ? <Input type="datetime-local" value={deferUntil} onChange={(event) => setDeferUntil(event.currentTarget.value)} /> : null}<Button type="button" variant="secondary" size="sm" disabled={busy || (action === "defer" && !deferUntil)} onClick={() => void amend()}>Save amendment</Button></div> : null}</> : null}</Card>;
 }
 
-function Empty({ title, body }: { title: string; body: string }) { return <div className="app-empty"><h2>{title}</h2><p>{body}</p></div>; }
+function Empty({ title, body }: { title: string; body: string }) { return <EmptyRoot className="border"><EmptyHeader><EmptyMedia variant="icon"><InboxIcon /></EmptyMedia><EmptyTitle>{title}</EmptyTitle><EmptyDescription>{body}</EmptyDescription></EmptyHeader></EmptyRoot>; }
 
 function reviewTitle(search: ReviewSearch) { return search.view === "decisions" ? "Decision inbox" : search.view === "queue" ? "Pending candidates" : "Decision history"; }
 function summaryLabel(data: ReviewPageData, search: ReviewSearch) { if (search.view === "decisions") return `${data.decisions?.pending ?? 0} unresolved`; if (search.view === "queue") return `${data.queue?.summary.pending ?? 0} pending`; return `${data.history?.decisions.length ?? 0} loaded`; }
