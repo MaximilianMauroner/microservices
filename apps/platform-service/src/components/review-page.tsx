@@ -99,7 +99,7 @@ export function ReviewPage({ initial, search }: { initial: ReviewPageData; searc
 }
 
 function ReviewNav({ search }: { search: ReviewSearch }) {
-  return <Tabs value={search.view}><TabsList>{(["decisions", "queue", "history"] as const).map((view) => <TabsTrigger key={view} value={view} render={<Link to="/review" search={{ ...search, view }} />}>{view === "decisions" ? "Decisions" : view === "queue" ? "Candidates" : "History"}</TabsTrigger>)}</TabsList></Tabs>;
+  return <Tabs value={search.view}><TabsList>{(["decisions", "queue", "history"] as const).map((view) => <TabsTrigger key={view} value={view} render={<Link to="/review" search={{ ...search, view }} reloadDocument />}>{view === "decisions" ? "Decisions" : view === "queue" ? "Candidates" : "History"}</TabsTrigger>)}</TabsList></Tabs>;
 }
 
 function DecisionWorkspace({ data, search, setData, setNotice, onLoadMore }: { data: DecisionsPageData; search: ReviewSearch; setData: (data: ReviewPageData) => void; setNotice: (notice: { text: string; tone: "success" | "error" }) => void; onLoadMore: () => void }) {
@@ -126,7 +126,7 @@ function DecisionWorkspace({ data, search, setData, setNotice, onLoadMore }: { d
     <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
       <div className="flex flex-wrap items-center gap-2">
         <ReviewScopeTabs search={search} />
-        <Tabs value={search.reviewState}><TabsList>{(["unreviewed", "reviewed", "all"] as const).map((reviewState) => <TabsTrigger key={reviewState} value={reviewState} render={<Link to="/review" search={{ ...search, reviewState }} />}>{reviewState === "all" ? "All" : reviewState === "reviewed" ? "Reviewed" : "Unreviewed"}</TabsTrigger>)}</TabsList></Tabs>
+        <Tabs value={search.reviewState}><TabsList>{(["unreviewed", "reviewed", "all"] as const).map((reviewState) => <TabsTrigger key={reviewState} value={reviewState} render={<Link to="/review" search={{ ...search, reviewState }} reloadDocument />}>{reviewState === "all" ? "All" : reviewState === "reviewed" ? "Reviewed" : "Unreviewed"}</TabsTrigger>)}</TabsList></Tabs>
       </div>
       <DecisionFilters search={search} />
     </div>
@@ -186,7 +186,7 @@ export function decisionEmptyState(
 }
 
 function ReviewScopeTabs({ search }: { search: ReviewSearch }) {
-  return <Tabs value={search.scope}><TabsList><TabsTrigger value="project" render={<Link to="/review" search={{ ...search, scope: "project" }} />}>Project</TabsTrigger><TabsTrigger value="global" render={<Link to="/review" search={{ ...search, scope: "global" }} />}>Global</TabsTrigger></TabsList></Tabs>;
+  return <Tabs value={search.scope}><TabsList><TabsTrigger value="project" render={<Link to="/review" search={{ ...search, scope: "project" }} reloadDocument />}>Project</TabsTrigger><TabsTrigger value="global" render={<Link to="/review" search={{ ...search, scope: "global" }} reloadDocument />}>Global</TabsTrigger></TabsList></Tabs>;
 }
 
 function DecisionFilters({ search }: { search: ReviewSearch }) {
@@ -225,7 +225,7 @@ function DecisionFilters({ search }: { search: ReviewSearch }) {
           <Label>Skill<Input name="skill" defaultValue={search.skill ?? ""} placeholder="Skill" /></Label>
           <DateRangeFilter initialFrom={search.from} initialTo={search.to} />
           <div className="flex justify-end gap-2 pt-1 sm:col-span-2">
-            <Button nativeButton={false} variant="ghost" size="sm" render={<Link to="/review" search={{ scope: search.scope, view: search.view, reviewState: search.reviewState }} />}>Clear</Button>
+            <Button nativeButton={false} variant="ghost" size="sm" render={<Link to="/review" search={{ scope: search.scope, view: search.view, reviewState: search.reviewState }} reloadDocument />}>Clear</Button>
             <Button type="submit" size="sm">Apply filters</Button>
           </div>
         </form>
