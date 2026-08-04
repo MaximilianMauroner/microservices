@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { FilterIcon, InboxIcon } from "lucide-react";
 import type {
   Candidate,
@@ -51,6 +52,8 @@ export function ReviewPage({ initial, search }: { initial: ReviewPageData; searc
   const [data, setData] = useState(initial);
   const [notice, setNotice] = useState<{ text: string; tone: "success" | "error" }>();
 
+  useEffect(() => setData(initial), [initial]);
+
   async function loadMore() {
     if (data.view === "decisions" && data.decisions?.nextCursor) {
       const params = new URLSearchParams({ reviewState: data.reviewState, limit: "25", cursor: data.decisions.nextCursor });
@@ -95,7 +98,7 @@ export function ReviewPage({ initial, search }: { initial: ReviewPageData; searc
 }
 
 function ReviewNav({ search }: { search: ReviewSearch }) {
-  return <Tabs value={search.view}><TabsList>{(["decisions", "queue", "history"] as const).map((view) => <TabsTrigger key={view} value={view} render={<a href={reviewHref({ ...search, view })} />}>{view === "decisions" ? "Decisions" : view === "queue" ? "Candidates" : "History"}</TabsTrigger>)}</TabsList></Tabs>;
+  return <Tabs value={search.view}><TabsList>{(["decisions", "queue", "history"] as const).map((view) => <TabsTrigger key={view} value={view} render={<Link to="/review" search={{ ...search, view }} />}>{view === "decisions" ? "Decisions" : view === "queue" ? "Candidates" : "History"}</TabsTrigger>)}</TabsList></Tabs>;
 }
 
 function DecisionWorkspace({ data, search, setData, setNotice, onLoadMore }: { data: DecisionsPageData; search: ReviewSearch; setData: (data: ReviewPageData) => void; setNotice: (notice: { text: string; tone: "success" | "error" }) => void; onLoadMore: () => void }) {
@@ -104,7 +107,15 @@ function DecisionWorkspace({ data, search, setData, setNotice, onLoadMore }: { d
   const selected = data.decisions.items.find((item) => item.record.decisionRecordId === selectedId) ?? data.decisions.items[0];
 
   function updateItem(updated: DecisionRecordItem) {
-    setData({ ...data, decisions: { ...data.decisions, items: data.decisions.items.map((item) => item.record.decisionRecordId === updated.record.decisionRecordId ? updated : item) } });
+    const reviewedId = updated.record.decisionRecordId;
+    if (search.reviewState === "unreviewed" && updated.currentFeedback) {
+      const decisions = reconcileReviewedDecision(data.decisions, reviewedId);
+      setData({ ...data, decisions });
+      setSelectedId(decisions.items[0]?.record.decisionRecordId);
+      setSheetOpen(false);
+      return;
+    }
+    setData({ ...data, decisions: { ...data.decisions, items: data.decisions.items.map((item) => item.record.decisionRecordId === reviewedId ? updated : item) } });
   }
 
   function selectItem(item: DecisionRecordItem, openSheet = false) {
@@ -116,7 +127,7 @@ function DecisionWorkspace({ data, search, setData, setNotice, onLoadMore }: { d
     <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
       <div className="flex flex-wrap items-center gap-2">
         <ReviewScopeTabs search={search} />
-        <Tabs value={search.reviewState}><TabsList>{(["unreviewed", "reviewed", "all"] as const).map((reviewState) => <TabsTrigger key={reviewState} value={reviewState} render={<a href={reviewHref({ ...search, reviewState })} />}>{reviewState === "all" ? "All" : reviewState === "reviewed" ? "Reviewed" : "Unreviewed"}</TabsTrigger>)}</TabsList></Tabs>
+        <Tabs value={search.reviewState}><TabsList>{(["unreviewed", "reviewed", "all"] as const).map((reviewState) => <TabsTrigger key={reviewState} value={reviewState} render={<Link to="/review" search={{ ...search, reviewState }} />}>{reviewState === "all" ? "All" : reviewState === "reviewed" ? "Reviewed" : "Unreviewed"}</TabsTrigger>)}</TabsList></Tabs>
       </div>
       <DecisionFilters search={search} />
     </div>
@@ -148,11 +159,24 @@ function DecisionWorkspace({ data, search, setData, setNotice, onLoadMore }: { d
   </>;
 }
 
+export function reconcileReviewedDecision(
+  decisions: NonNullable<ReviewPageData["decisions"]>,
+  reviewedId: string
+) {
+  const removed = decisions.items.some((item) => item.record.decisionRecordId === reviewedId);
+  return {
+    ...decisions,
+    pending: removed ? Math.max(0, decisions.pending - 1) : decisions.pending,
+    items: decisions.items.filter((item) => item.record.decisionRecordId !== reviewedId)
+  };
+}
+
 function ReviewScopeTabs({ search }: { search: ReviewSearch }) {
-  return <Tabs value={search.scope}><TabsList><TabsTrigger value="project" render={<a href={reviewHref({ ...search, scope: "project" })} />}>Project</TabsTrigger><TabsTrigger value="global" render={<a href={reviewHref({ ...search, scope: "global" })} />}>Global</TabsTrigger></TabsList></Tabs>;
+  return <Tabs value={search.scope}><TabsList><TabsTrigger value="project" render={<Link to="/review" search={{ ...search, scope: "project" }} />}>Project</TabsTrigger><TabsTrigger value="global" render={<Link to="/review" search={{ ...search, scope: "global" }} />}>Global</TabsTrigger></TabsList></Tabs>;
 }
 
 function DecisionFilters({ search }: { search: ReviewSearch }) {
+  const navigate = useNavigate({ from: "/review" });
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -161,10 +185,10 @@ function DecisionFilters({ search }: { search: ReviewSearch }) {
       const value = String(form.get(key) ?? "").trim();
       if (value) next[key] = value; else delete next[key];
     }
-    window.location.assign(reviewHref(next));
+    void navigate({ search: next });
   }
   const filterCount = (["projectKey", "taskId", "device", "harness", "skill", "from", "to"] as const).filter((key) => search[key]).length;
-  return <Popover><PopoverTrigger render={<Button variant="outline" size="sm" />}><FilterIcon />Filters{filterCount ? <Badge variant="secondary">{filterCount}</Badge> : null}</PopoverTrigger><PopoverContent align="end" className="w-[min(28rem,calc(100vw_-_2rem))]"><PopoverHeader><PopoverTitle>Filter decisions</PopoverTitle><PopoverDescription>Filters are stored in the URL and apply to loaded decision records.</PopoverDescription></PopoverHeader><form className="grid grid-cols-1 gap-3 sm:grid-cols-2" onSubmit={submit} aria-label="Decision filters"><Label className="sm:col-span-2">Project<Input name="projectKey" defaultValue={search.projectKey ?? ""} placeholder="Project key" /></Label><Label>Task<Input name="taskId" defaultValue={search.taskId ?? ""} placeholder="Task ID" /></Label><Label>Device<Input name="device" defaultValue={search.device ?? ""} placeholder="Device" /></Label><Label>Harness<Input name="harness" defaultValue={search.harness ?? ""} placeholder="Harness" /></Label><Label>Skill<Input name="skill" defaultValue={search.skill ?? ""} placeholder="Skill" /></Label><Label>From<Input name="from" type="date" defaultValue={search.from ?? ""} /></Label><Label>To<Input name="to" type="date" defaultValue={search.to ?? ""} /></Label><div className="flex justify-end gap-2 pt-1 sm:col-span-2"><Button variant="ghost" size="sm" render={<a href={reviewHref({ scope: search.scope, view: search.view, reviewState: search.reviewState })} />}>Clear</Button><Button type="submit" size="sm">Apply filters</Button></div></form></PopoverContent></Popover>;
+  return <Popover><PopoverTrigger render={<Button variant="outline" size="sm" />}><FilterIcon />Filters{filterCount ? <Badge variant="secondary">{filterCount}</Badge> : null}</PopoverTrigger><PopoverContent align="end" className="w-[min(28rem,calc(100vw_-_2rem))]"><PopoverHeader><PopoverTitle>Filter decisions</PopoverTitle><PopoverDescription>Filters are stored in the URL and apply to all matching decision records.</PopoverDescription></PopoverHeader><form className="grid grid-cols-1 gap-3 sm:grid-cols-2" onSubmit={submit} aria-label="Decision filters"><Label className="sm:col-span-2">Project<Input name="projectKey" defaultValue={search.projectKey ?? ""} placeholder="Project key" /></Label><Label>Task<Input name="taskId" defaultValue={search.taskId ?? ""} placeholder="Task ID" /></Label><Label>Device<Input name="device" defaultValue={search.device ?? ""} placeholder="Device" /></Label><Label>Harness<Input name="harness" defaultValue={search.harness ?? ""} placeholder="Harness" /></Label><Label>Skill<Input name="skill" defaultValue={search.skill ?? ""} placeholder="Skill" /></Label><Label>From<Input name="from" type="date" defaultValue={search.from ?? ""} /></Label><Label>To<Input name="to" type="date" defaultValue={search.to ?? ""} /></Label><div className="flex justify-end gap-2 pt-1 sm:col-span-2"><Button variant="ghost" size="sm" render={<Link to="/review" search={{ scope: search.scope, view: search.view, reviewState: search.reviewState }} />}>Clear</Button><Button type="submit" size="sm">Apply filters</Button></div></form></PopoverContent></Popover>;
 }
 
 function DecisionReviewPanel({ item, onNotice, onUpdated, embedded = false }: { item: DecisionRecordItem; onNotice: (notice: { text: string; tone: "success" | "error" }) => void; onUpdated: (item: DecisionRecordItem) => void; embedded?: boolean }) {
@@ -273,5 +297,4 @@ function humanAction(action: Decision["action"]) { return action === "approve" ?
 function relativeTime(value: string) { const time = new Date(value).getTime(); if (!Number.isFinite(time)) return value; const minutes = Math.round((time - Date.now()) / 60_000); const absolute = Math.abs(minutes); const formatter = new Intl.RelativeTimeFormat("en", { numeric: "auto" }); if (absolute < 60) return formatter.format(minutes, "minute"); const hours = Math.round(minutes / 60); if (Math.abs(hours) < 24) return formatter.format(hours, "hour"); return formatter.format(Math.round(hours / 24), "day"); }
 function formatDate(value: string) { return new Intl.DateTimeFormat("en", { dateStyle: "medium", timeZone: "UTC" }).format(new Date(value)); }
 function slugify(value: string) { return value.toLocaleLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80) || "field-guide-lesson"; }
-function reviewHref(search: ReviewSearch) { const params = new URLSearchParams({ scope: search.scope, view: search.view }); if (search.view === "decisions") params.set("reviewState", search.reviewState); addSearchFilters(params, search); return `/review?${params}`; }
 function addSearchFilters(params: URLSearchParams, search: ReviewSearch) { for (const key of ["projectKey", "taskId", "device", "harness", "skill", "from", "to"] as const) if (search[key]) params.set(key, search[key]!); }

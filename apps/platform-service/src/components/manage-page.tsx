@@ -43,7 +43,7 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
     ];
   }, [entries, groups, kind, lifecycle, query]);
 
-  async function mutate({ path, method, body }: Mutation) {
+  async function mutate({ path, method, body }: Mutation): Promise<boolean> {
     setNotice(undefined);
     const headers = new Headers({ Accept: "application/json", "If-Match": `"${revision}"` });
     if (body !== undefined) headers.set("Content-Type", "application/json");
@@ -55,7 +55,11 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
       if (typeof payload.revision === "string") setRevision(payload.revision);
       setNotice({ text: payload.reload === false ? "Nothing changed." : "Saved. Refreshing the catalog…", tone: "success" });
       if (payload.reload !== false) window.location.reload();
-    } catch (error) { setNotice({ text: error instanceof Error ? error.message : "The catalog change failed.", tone: "error" }); }
+      return true;
+    } catch (error) {
+      setNotice({ text: error instanceof Error ? error.message : "The catalog change failed.", tone: "error" });
+      return false;
+    }
   }
 
   async function createRecord(event: FormEvent<HTMLFormElement>, recordKind: "group" | "entry") {
@@ -83,24 +87,24 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
             <DialogTitle>Delete {deleteTarget?.name ?? "record"}?</DialogTitle>
             <DialogDescription>This cannot be undone. Type the exact name to continue.</DialogDescription>
           </DialogHeader>
-          {deleteTarget ? <DeleteForm target={deleteTarget} onCancel={() => setDeleteTarget(undefined)} onDelete={async () => { await mutate({ path: `/api/ops/${deleteTarget.kind}/${deleteTarget.id}`, method: "DELETE" }); setDeleteTarget(undefined); }} /> : null}
+          {deleteTarget ? <DeleteForm target={deleteTarget} onCancel={() => setDeleteTarget(undefined)} onDelete={async () => { const deleted = await mutate({ path: `/api/ops/${deleteTarget.kind}/${deleteTarget.id}`, method: "DELETE" }); if (deleted) setDeleteTarget(undefined); return deleted; }} /> : null}
         </DialogContent>
       </Dialog>
     </>
   );
 }
 
-function GroupEditor({ group, onMutate, onDelete }: { group: CatalogGroup; onMutate: (mutation: Mutation) => Promise<void>; onDelete: () => void }) {
+function GroupEditor({ group, onMutate, onDelete }: { group: CatalogGroup; onMutate: (mutation: Mutation) => Promise<boolean>; onDelete: () => void }) {
   return <Card className="manage-editor"><EditorHeading type="Group" name={group.name} status={group.visibility === "public" ? "Public" : "Private"} /><form className="manage-form" onSubmit={(event) => { event.preventDefault(); const body = Object.fromEntries(new FormData(event.currentTarget).entries()); void onMutate({ path: `/api/ops/groups/${group.id}`, method: "PATCH", body }); }}><Label>Name<Input name="name" defaultValue={group.name} required /></Label><Label>Visibility<AppSelect name="visibility" defaultValue={group.visibility} options={[{ value: "public", label: "Public" }, { value: "private", label: "Private" }]} /></Label><Label className="manage-form__wide">Description<Textarea name="description" defaultValue={group.description ?? ""} /></Label><EditorActions onDelete={onDelete} /></form></Card>;
 }
 
-function EntryEditor({ entry, groups, snapshot, onMutate, onDelete }: { entry: CatalogEntry; groups: CatalogGroup[]; snapshot: PrivateSnapshotDocument; onMutate: (mutation: Mutation) => Promise<void>; onDelete: () => void }) {
+function EntryEditor({ entry, groups, snapshot, onMutate, onDelete }: { entry: CatalogEntry; groups: CatalogGroup[]; snapshot: PrivateSnapshotDocument; onMutate: (mutation: Mutation) => Promise<boolean>; onDelete: () => void }) {
   const monitor = snapshot.state.monitors[entry.id];
   const monitorStatus: string = monitor?.status ?? (entry.monitor ? "checking" : "unmonitored");
   return <Card className={`manage-editor${entry.lifecycle === "archived" ? " editor-card--archived" : ""}`}><EditorHeading type={entry.lifecycle === "archived" ? "Archived entry" : "Entry"} name={entry.name} status={monitorStatus === "unmonitored" ? "Not monitored" : monitorStatus === "up" ? "Operational" : monitorStatus === "paused" ? "Paused" : "Needs attention"} /><form className="manage-form" onSubmit={(event) => { event.preventDefault(); const form = new FormData(event.currentTarget); let links: unknown; try { links = JSON.parse(String(form.get("links") ?? "[]")); } catch { window.alert("Links JSON must be valid JSON."); return; } const monitorUrl = String(form.get("monitorUrl") ?? "").trim(); const body = { name: String(form.get("name") ?? ""), groupId: String(form.get("groupId") ?? ""), description: String(form.get("description") ?? ""), visibility: String(form.get("visibility") ?? "private"), privateNotes: String(form.get("privateNotes") ?? ""), links, monitor: monitorUrl ? { url: monitorUrl, enabled: form.get("monitorEnabled") === "on", scope: String(form.get("monitorScope") ?? "public") } : { url: "" } }; void onMutate({ path: `/api/ops/entries/${entry.id}`, method: "PATCH", body }); }}><Label>Name<Input name="name" defaultValue={entry.name} required /></Label><Label>Group<AppSelect name="groupId" defaultValue={entry.groupId} options={groups.map((group) => ({ value: group.id, label: group.name }))} /></Label><Label className="manage-form__wide">Description<Textarea name="description" defaultValue={entry.description} required /></Label><Label>Visibility<AppSelect name="visibility" defaultValue={entry.visibility} options={[{ value: "public", label: "Public" }, { value: "private", label: "Private" }]} /></Label><Label>Monitor URL<Input name="monitorUrl" type="url" defaultValue={entry.monitor?.url ?? ""} placeholder="https://example.test/health" /></Label><Label>Monitor scope<AppSelect name="monitorScope" defaultValue={entry.monitor?.scope ?? "public"} options={[{ value: "public", label: "Public" }, { value: "tailscale", label: "Tailscale" }]} /></Label><Label className="manage-checkbox"><Checkbox name="monitorEnabled" defaultChecked={entry.monitor?.enabled ?? false} /> Monitoring enabled</Label><Label className="manage-form__wide">Operator note<Textarea name="privateNotes" defaultValue={entry.privateNotes ?? ""} /></Label><div className="manage-links"><h3>Links JSON</h3><Textarea name="links" defaultValue={JSON.stringify(entry.links, null, 2)} spellCheck={false} /></div><EditorActions entry={entry} onMutate={onMutate} onDelete={onDelete} /></form></Card>;
 }
 
-function EditorActions({ entry, onMutate, onDelete }: { entry?: CatalogEntry; onMutate?: (mutation: Mutation) => Promise<void>; onDelete: () => void }) {
+function EditorActions({ entry, onMutate, onDelete }: { entry?: CatalogEntry; onMutate?: (mutation: Mutation) => Promise<boolean>; onDelete: () => void }) {
   const monitor = entry?.monitor;
   return <div className="manage-actions"><Button type="submit" variant="default">Save {entry ? "entry" : "group"}</Button>{entry && onMutate ? <><Button type="button" variant="ghost" onClick={() => void onMutate({ path: `/api/ops/entries/${entry.id}/reorder`, method: "POST", body: { direction: "up" } })}>Move up</Button><Button type="button" variant="ghost" onClick={() => void onMutate({ path: `/api/ops/entries/${entry.id}/reorder`, method: "POST", body: { direction: "down" } })}>Move down</Button>{monitor ? <Button type="button" variant="ghost" onClick={() => void onMutate({ path: `/api/ops/entries/${entry.id}/monitor/${monitor.paused ? "resume" : "pause"}`, method: "POST", body: {} })}>{monitor.paused ? "Resume checks" : "Pause checks"}</Button> : null}<Button type="button" variant="ghost" onClick={() => void onMutate({ path: `/api/ops/entries/${entry.id}/${entry.lifecycle === "archived" ? "restore" : "archive"}`, method: "POST", body: {} })}>{entry.lifecycle === "archived" ? "Restore" : "Archive"}</Button></> : null}<Button type="button" variant="destructive" onClick={onDelete}>Delete</Button></div>;
 }
@@ -108,7 +112,7 @@ function EditorActions({ entry, onMutate, onDelete }: { entry?: CatalogEntry; on
 function CreateGroup({ onSubmit, onCancel }: { onSubmit: (event: FormEvent<HTMLFormElement>) => void; onCancel: () => void }) { return <Card className="manage-editor"><EditorHeading type="New record" name="Create group" status="Draft" /><form className="manage-form" onSubmit={onSubmit}><Label>Name<Input name="name" required /></Label><Label>Visibility<AppSelect name="visibility" defaultValue="private" options={[{ value: "private", label: "Private" }, { value: "public", label: "Public" }]} /></Label><Label className="manage-form__wide">Description<Textarea name="description" /></Label><div className="manage-actions"><Button type="submit" variant="default">Create group</Button><Button type="button" variant="ghost" onClick={onCancel}>Cancel</Button></div></form></Card>; }
 function CreateEntry({ groups, onSubmit, onCancel }: { groups: CatalogGroup[]; onSubmit: (event: FormEvent<HTMLFormElement>) => void; onCancel: () => void }) { return <Card className="manage-editor"><EditorHeading type="New record" name="Create entry" status="Draft" /><form className="manage-form" onSubmit={onSubmit}><Label>Name<Input name="name" required /></Label><Label>Group<AppSelect name="groupId" required placeholder="Choose a group" options={groups.map((group) => ({ value: group.id, label: group.name }))} /></Label><Label className="manage-form__wide">Description<Textarea name="description" required /></Label><Label>Visibility<AppSelect name="visibility" defaultValue="private" options={[{ value: "private", label: "Private" }, { value: "public", label: "Public" }]} /></Label><div className="manage-actions"><Button type="submit" variant="default">Create entry</Button><Button type="button" variant="ghost" onClick={onCancel}>Cancel</Button></div></form></Card>; }
 
-function DeleteForm({ target, onCancel, onDelete }: { target: { name: string }; onCancel: () => void; onDelete: () => Promise<void> }) { const [value, setValue] = useState(""); const [busy, setBusy] = useState(false); return <div><Label>Confirmation name<Input value={value} onChange={(event) => setValue(event.currentTarget.value)} autoComplete="off" /></Label><div className="manage-actions"><Button type="button" variant="ghost" onClick={onCancel}>Cancel</Button><Button type="button" variant="destructive" disabled={value !== target.name || busy} onClick={() => { setBusy(true); void onDelete(); }}>{busy ? "Deleting…" : "Delete permanently"}</Button></div></div>; }
+function DeleteForm({ target, onCancel, onDelete }: { target: { name: string }; onCancel: () => void; onDelete: () => Promise<boolean> }) { const [value, setValue] = useState(""); const [busy, setBusy] = useState(false); return <div><Label>Confirmation name<Input value={value} onChange={(event) => setValue(event.currentTarget.value)} autoComplete="off" /></Label><div className="manage-actions"><Button type="button" variant="ghost" disabled={busy} onClick={onCancel}>Cancel</Button><Button type="button" variant="destructive" disabled={value !== target.name || busy} onClick={() => { setBusy(true); void onDelete().then((deleted) => { if (!deleted) setBusy(false); }); }}>{busy ? "Deleting…" : "Delete permanently"}</Button></div></div>; }
 
 function EditorHeading({ type, name, status }: { type: string; name: string; status: string }) { const variant = status === "Operational" || status === "Public" ? "default" : status === "Needs attention" ? "destructive" : status === "Paused" ? "secondary" : "outline"; return <div className="manage-editor__heading"><div><p className="eyebrow">{type}</p><h2>{name}</h2></div><Badge variant={variant}>{status}</Badge></div>; }
 function Metric({ label, value }: { label: string; value: number }) { return <div className="manage-metric"><span>{label}</span><strong>{value}</strong></div>; }

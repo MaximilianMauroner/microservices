@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent, DragEvent } from "react";
 import { AppShell } from "./app-shell.js";
 import { AppSelect } from "./form-controls.js";
@@ -25,26 +25,30 @@ export function PublishPage({ initial }: { initial: UploadPageData }) {
   const [dragging, setDragging] = useState(false);
   const [message, setMessage] = useState<{ text: string; tone: "success" | "error" }>();
   const fileInput = useRef<HTMLInputElement>(null);
+  const firstCriteriaRequest = useRef(true);
 
-  const visibleUploads = useMemo(() => {
-    const now = Date.now();
-    return uploads
-      .filter((upload) => filter === "all" || upload.kind === filter)
-      .filter((upload) => upload.filename.toLocaleLowerCase().includes(search.toLocaleLowerCase()))
-      .filter((upload) => {
-        if (expiry === "all") return true;
-        if (expiry === "persistent") return !upload.expiresAt;
-        if (!upload.expiresAt) return false;
-        const limit = expiry === "24h" ? 86_400_000 : 7 * 86_400_000;
-        return new Date(upload.expiresAt).getTime() - now <= limit;
-      })
-      .sort((left, right) => {
-        if (sort === "filename") return left.filename.localeCompare(right.filename);
-        if (sort === "expiry") return (left.expiresAt ?? "9999").localeCompare(right.expiresAt ?? "9999");
-        const direction = sort === "oldest" ? 1 : -1;
-        return direction * (new Date(left.updatedAt).getTime() - new Date(right.updatedAt).getTime());
-      });
-  }, [expiry, filter, search, sort, uploads]);
+  useEffect(() => {
+    if (firstCriteriaRequest.current) {
+      firstCriteriaRequest.current = false;
+      return;
+    }
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      void fetchUploads({ filter, expiry, sort, search }, controller.signal)
+        .then((payload) => {
+          setUploads(payload.uploads);
+          setNextCursor(payload.nextCursor);
+        })
+        .catch((error: unknown) => {
+          if (error instanceof DOMException && error.name === "AbortError") return;
+          setMessage({ text: error instanceof Error ? error.message : "The upload inventory could not be filtered.", tone: "error" });
+        });
+    }, 250);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [expiry, filter, search, sort]);
 
   async function uploadFile(file: File) {
     setBusy(true);
@@ -60,10 +64,9 @@ export function PublishPage({ initial }: { initial: UploadPageData }) {
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(typeof payload.message === "string" ? payload.message : `Upload failed (HTTP ${response.status}).`);
       const uploaded = payload as UploadSummary & { sha256?: string };
-      setUploads((current) => [
-        { ...uploaded, updatedAt: new Date().toISOString() },
-        ...current.filter((item) => item.id !== uploaded.id)
-      ]);
+      const refreshed = await fetchUploads({ filter, expiry, sort, search });
+      setUploads(refreshed.uploads);
+      setNextCursor(refreshed.nextCursor);
       setMessage({ text: `${uploaded.filename} is ready to share.`, tone: "success" });
     } catch (error) {
       setMessage({ text: error instanceof Error ? error.message : "The upload failed.", tone: "error" });
@@ -88,9 +91,7 @@ export function PublishPage({ initial }: { initial: UploadPageData }) {
   async function refresh() {
     setBusy(true);
     try {
-      const response = await fetch("/api/external-uploads?limit=25", { credentials: "same-origin" });
-      if (!response.ok) throw new Error(`Refresh failed (HTTP ${response.status}).`);
-      const payload = await response.json() as UploadPageData;
+      const payload = await fetchUploads({ filter, expiry, sort, search });
       setUploads(payload.uploads);
       setNextCursor(payload.nextCursor);
       setMessage({ text: "Recent uploads refreshed.", tone: "success" });
@@ -103,11 +104,16 @@ export function PublishPage({ initial }: { initial: UploadPageData }) {
 
   async function loadMore() {
     if (!nextCursor) return;
-    const response = await fetch(`/api/external-uploads?limit=25&cursor=${encodeURIComponent(nextCursor)}`, { credentials: "same-origin" });
-    if (!response.ok) return;
-    const payload = await response.json() as UploadPageData;
-    setUploads((current) => [...current, ...payload.uploads]);
-    setNextCursor(payload.nextCursor);
+    setBusy(true);
+    try {
+      const payload = await fetchUploads({ filter, expiry, sort, search }, undefined, nextCursor);
+      setUploads((current) => [...current, ...payload.uploads]);
+      setNextCursor(payload.nextCursor);
+    } catch (error) {
+      setMessage({ text: error instanceof Error ? error.message : "Older uploads could not be loaded.", tone: "error" });
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -164,13 +170,34 @@ export function PublishPage({ initial }: { initial: UploadPageData }) {
             <AppSelect value={sort} onValueChange={(value) => setSort(value as SortOrder)} aria-label="Sort uploads" options={[{ value: "newest", label: "Newest" }, { value: "oldest", label: "Oldest" }, { value: "filename", label: "Filename" }, { value: "expiry", label: "Expiry" }]} />
           </Tabs>
           <div className="app-card publish-list__body">
-            {visibleUploads.length === 0 ? <div className="app-empty"><h2>No uploads match</h2><p>Try another filter or upload a new artifact.</p></div> : visibleUploads.map((upload) => <UploadRow key={upload.id} upload={upload} onMessage={setMessage} />)}
-            {nextCursor ? <div className="review-actions"><Button type="button" variant="ghost" onClick={() => void loadMore()}>Load older uploads</Button></div> : null}
+            {uploads.length === 0 ? <div className="app-empty"><h2>No uploads match</h2><p>Try another filter or upload a new artifact.</p></div> : uploads.map((upload) => <UploadRow key={upload.id} upload={upload} onMessage={setMessage} />)}
+            {nextCursor ? <div className="review-actions"><Button type="button" variant="ghost" disabled={busy} onClick={() => void loadMore()}>Load older uploads</Button></div> : null}
           </div>
         </section>
       </main>
     </>
   );
+}
+
+type UploadCriteria = { filter: UploadFilter; expiry: ExpiryFilter; sort: SortOrder; search: string };
+
+export function uploadListUrl(criteria: UploadCriteria, cursor?: string) {
+  const query = new URLSearchParams({
+    limit: "25",
+    kind: criteria.filter,
+    expiry: criteria.expiry,
+    sort: criteria.sort
+  });
+  const search = criteria.search.trim();
+  if (search) query.set("q", search);
+  if (cursor) query.set("cursor", cursor);
+  return `/api/external-uploads?${query}`;
+}
+
+async function fetchUploads(criteria: UploadCriteria, signal?: AbortSignal, cursor?: string) {
+  const response = await fetch(uploadListUrl(criteria, cursor), { credentials: "same-origin", signal });
+  if (!response.ok) throw new Error(`Upload inventory request failed (HTTP ${response.status}).`);
+  return response.json() as Promise<UploadPageData>;
 }
 
 function UploadRow({ upload, onMessage }: { upload: UploadSummary; onMessage: (message: { text: string; tone: "success" | "error" }) => void }) {
