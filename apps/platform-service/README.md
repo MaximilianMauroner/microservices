@@ -52,9 +52,16 @@ The service preserves the two S3 buckets and existing field-guide PostgreSQL
 database. Their variables are namespaced as `TOOLS_S3_*`, `ARTIFACT_S3_*`, and
 `FIELD_GUIDE_DATABASE_URL` so credentials cannot be confused.
 
+The HTTP composition root is TanStack Start on Nitro's Bun preset. File-based
+route handlers live in `src/routes`, and `src/start.ts` applies the central
+Access policy before any route delegate runs. The production build writes the
+Nitro bundle to `.output/`; the process must start from this package directory
+so the mounted Field Guide stylesheet resolves from the sibling app.
+
 ## Commands
 
 ```bash
+bun run build
 bun run typecheck
 bun run test
 bun run start
