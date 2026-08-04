@@ -12,6 +12,7 @@ describe("central platform route policy", () => {
     expect(classifyRoute("/api/heartbeat/tower", "POST")).toEqual({ kind: "machine", service: "heartbeat" });
     expect(classifyRoute("/api/review/queue", "GET")).toEqual({ kind: "access", family: "review" });
     expect(classifyRoute("/manage/status", "GET")).toEqual({ kind: "access", family: "manage" });
+    expect(classifyRoute("/_serverFn/getPublicPageData", "GET")).toEqual({ kind: "server-function" });
   });
 
   it("does not widen exact public asset exceptions", () => {

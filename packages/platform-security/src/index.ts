@@ -77,7 +77,10 @@ export type AccessFamily = "manage" | "publisher" | "review";
 export type RouteAccess =
   | { kind: "public" }
   | { kind: "machine"; service: "uploads" | "agent" | "heartbeat" }
+  | { kind: "server-function" }
   | { kind: "access"; family: AccessFamily };
+
+export const SERVER_FUNCTION_BASE_PATH = "/_serverFn";
 
 const PUBLIC_PATHS = new Set([
   "/",
@@ -125,6 +128,10 @@ export function classifyRoute(pathname: string, method: string): RouteAccess {
     };
   }
 
+  if (isServerFunctionPath(pathname)) {
+    return { kind: "server-function" };
+  }
+
   if (isArtifactDeliveryPath(pathname) && isReadMethod(normalizedMethod)) {
     return { kind: "public" };
   }
@@ -136,6 +143,16 @@ export function classifyRoute(pathname: string, method: string): RouteAccess {
     return { kind: "access", family: "review" };
   }
   return { kind: "access", family: "manage" };
+}
+
+export function isServerFunctionPath(
+  pathname: string,
+  basePath = SERVER_FUNCTION_BASE_PATH
+): boolean {
+  const normalizedBasePath = basePath.endsWith("/")
+    ? basePath.slice(0, -1)
+    : basePath;
+  return matchesPrefix(pathname, [normalizedBasePath]);
 }
 
 export function isArtifactPath(pathname: string): boolean {

@@ -13,7 +13,12 @@ import type {
   Scope,
   Summary
 } from "@tools-platform/field-guide";
+import { createPlatformAccessFunctionMiddleware } from "./access-middleware.js";
 import { internalPlatformRequest, readPlatformJson } from "./server-data.js";
+
+const reviewAccessMiddleware = createPlatformAccessFunctionMiddleware("review");
+const publisherAccessMiddleware = createPlatformAccessFunctionMiddleware("publisher");
+const manageAccessMiddleware = createPlatformAccessFunctionMiddleware("manage");
 
 export type ReviewView = "decisions" | "queue" | "history";
 
@@ -43,6 +48,7 @@ export type ReviewPageData = {
 };
 
 export const getReviewPageData = createServerFn({ method: "GET" })
+  .middleware([reviewAccessMiddleware])
   .validator((input: ReviewLoaderInput) => input)
   .handler(async ({ data }): Promise<ReviewPageData> => {
     const { context } = internalPlatformRequest("/api/review/queue");
@@ -85,12 +91,14 @@ export type UploadPageData = {
   nextCursor?: string;
 };
 
-export const getPublishPageData = createServerFn({ method: "GET" }).handler(async (): Promise<UploadPageData> => {
-  const { context, request } = internalPlatformRequest("/api/external-uploads?limit=25");
-  const response = await context.runtime.artifact(request);
-  if (!response.ok) throw new Error(`Upload inventory request failed: ${response.status}`);
-  return response.json() as Promise<UploadPageData>;
-});
+export const getPublishPageData = createServerFn({ method: "GET" })
+  .middleware([publisherAccessMiddleware])
+  .handler(async (): Promise<UploadPageData> => {
+    const { context, request } = internalPlatformRequest("/api/external-uploads?limit=25");
+    const response = await context.runtime.artifact(request);
+    if (!response.ok) throw new Error(`Upload inventory request failed: ${response.status}`);
+    return response.json() as Promise<UploadPageData>;
+  });
 
 export type ManagePageData = {
   actor: string;
@@ -105,28 +113,32 @@ export type PrivateStatusPageData = {
   snapshot: PrivateSnapshotDocument;
 };
 
-export const getPrivateStatusPageData = createServerFn({ method: "GET" }).handler(async (): Promise<PrivateStatusPageData> => {
-  const { context } = internalPlatformRequest("/api/ops/snapshot");
-  return {
-    actor: context.accessActor?.id ?? "Access protected",
-    publicOrigin: context.runtime.publicOrigin,
-    snapshot: await readPlatformJson<PrivateSnapshotDocument>(context.runtime.tools, "/api/ops/snapshot")
-  };
-});
+export const getPrivateStatusPageData = createServerFn({ method: "GET" })
+  .middleware([manageAccessMiddleware])
+  .handler(async (): Promise<PrivateStatusPageData> => {
+    const { context } = internalPlatformRequest("/api/ops/snapshot");
+    return {
+      actor: context.accessActor?.id ?? "Access protected",
+      publicOrigin: context.runtime.publicOrigin,
+      snapshot: await readPlatformJson<PrivateSnapshotDocument>(context.runtime.tools, "/api/ops/snapshot")
+    };
+  });
 
-export const getManagePageData = createServerFn({ method: "GET" }).handler(async (): Promise<ManagePageData> => {
-  const { context } = internalPlatformRequest("/api/ops/catalog");
-  const [catalog, snapshot] = await Promise.all([
-    readPlatformJson<CatalogDocument>(context.runtime.tools, "/api/ops/catalog"),
-    readPlatformJson<PrivateSnapshotDocument>(context.runtime.tools, "/api/ops/snapshot")
-  ]);
-  return {
-    actor: context.accessActor?.id ?? "Access protected",
-    revision: catalog.revision,
-    catalog,
-    snapshot: { ...snapshot, catalog, catalogRevision: catalog.revision }
-  };
-});
+export const getManagePageData = createServerFn({ method: "GET" })
+  .middleware([manageAccessMiddleware])
+  .handler(async (): Promise<ManagePageData> => {
+    const { context } = internalPlatformRequest("/api/ops/catalog");
+    const [catalog, snapshot] = await Promise.all([
+      readPlatformJson<CatalogDocument>(context.runtime.tools, "/api/ops/catalog"),
+      readPlatformJson<PrivateSnapshotDocument>(context.runtime.tools, "/api/ops/snapshot")
+    ]);
+    return {
+      actor: context.accessActor?.id ?? "Access protected",
+      revision: catalog.revision,
+      catalog,
+      snapshot: { ...snapshot, catalog, catalogRevision: catalog.revision }
+    };
+  });
 
 export type ReviewDetailData = DecisionRecordItem;
 export type ReviewHistoryDecision = Decision;
