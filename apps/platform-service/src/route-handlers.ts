@@ -13,6 +13,10 @@ export function tools({ request, context }: PlatformRouteInput) {
   return context.runtime.tools(request);
 }
 
+export function readOnly() {
+  return json({ error: "read_only" }, 405, { Allow: "GET, HEAD" });
+}
+
 export function fieldGuide({ request, context }: PlatformRouteInput) {
   return context.runtime.fieldGuide(request);
 }
@@ -110,12 +114,13 @@ export async function towerHeartbeat({ request, context }: PlatformRouteInput) {
   }
 }
 
-function json(body: unknown, status = 200) {
+function json(body: unknown, status = 200, extraHeaders?: HeadersInit) {
   return new Response(JSON.stringify(body), {
     status,
     headers: {
       "Cache-Control": "no-store",
-      "Content-Type": "application/json; charset=utf-8"
+      "Content-Type": "application/json; charset=utf-8",
+      ...Object.fromEntries(new Headers(extraHeaders))
     }
   });
 }

@@ -365,15 +365,15 @@ function QueueWorkspace({ data, search, setData, setNotice }: { data: QueuePageD
       <Card className="candidate-table-card gap-0 py-0">
         <div className="candidate-table-summary"><div><strong>{items.length}</strong> candidate{items.length === 1 ? "" : "s"}</div><span>{projects.length} projects in queue</span></div>
         <Table>
-          <TableHeader><TableRow><TableHead>Candidate</TableHead><TableHead className="hidden sm:table-cell">Project</TableHead><TableHead className="hidden lg:table-cell">Kind</TableHead><TableHead>Status</TableHead><TableHead><span className="sr-only">Open</span></TableHead></TableRow></TableHeader>
+          <TableHeader><TableRow><TableHead>Candidate</TableHead><TableHead className="hidden xl:table-cell">Project</TableHead><TableHead className="hidden 2xl:table-cell">Kind</TableHead><TableHead>Status</TableHead><TableHead className="w-20"><span className="sr-only">Open</span></TableHead></TableRow></TableHeader>
           <TableBody>{items.map((item) => {
             const active = item.candidate.candidateId === selected?.candidate.candidateId;
             return <TableRow key={`${item.candidate.candidateId}-${item.round}`} data-state={active ? "selected" : undefined}>
               <TableCell className="min-w-56 max-w-sm whitespace-normal"><Button type="button" variant="link" className="h-auto max-w-full justify-start px-0 text-left font-medium whitespace-normal" onClick={() => select(item)}>{item.candidate.title}</Button><span className="mt-1 block text-xs text-muted-foreground">Round {item.round}{item.dueAt ? ` · ${relativeTime(item.dueAt)}` : ""}</span></TableCell>
-              <TableCell className="hidden sm:table-cell"><Badge variant="outline">{queueProject(item)}</Badge></TableCell>
-              <TableCell className="hidden text-xs text-muted-foreground lg:table-cell">{item.kind === "initial" ? "New" : "Revalidation"}</TableCell>
+              <TableCell className="hidden xl:table-cell"><Badge variant="outline">{queueProject(item)}</Badge></TableCell>
+              <TableCell className="hidden text-xs text-muted-foreground 2xl:table-cell">{item.kind === "initial" ? "New" : "Revalidation"}</TableCell>
               <TableCell><Badge variant={item.status === "overdue" ? "destructive" : item.status === "due" ? "secondary" : "outline"}>{item.status}</Badge></TableCell>
-              <TableCell className="text-right"><Button type="button" variant="ghost" size="sm" onClick={() => select(item)}>Review</Button></TableCell>
+              <TableCell className="w-20 text-right"><Button type="button" variant="ghost" size="sm" onClick={() => select(item)}>Review</Button></TableCell>
             </TableRow>;
           })}</TableBody>
         </Table>
