@@ -235,7 +235,7 @@ function renderToolCard(
     : [
         ...(entry.links.some((link) => link.access === "public") ? ["Public"] : []),
         ...(entry.links.some((link) => link.access === "restricted")
-          ? ["Cloudflare Access"]
+          ? ["Access protected"]
           : [])
       ];
   if (accessLabels.length === 0) accessLabels.push("Public");
@@ -258,7 +258,7 @@ function renderToolCard(
         <div class="tool-card__identity">
           ${iconPath ? `<img class="tool-card__icon" src="${iconPath}" alt="" width="48" height="48">` : ""}
           <div>
-            <p class="access-label access-label--${accessClass}">${accessLabels.includes("Cloudflare Access") ? '<span class="suite-lock" aria-hidden="true"></span>' : ""}${escapeHtml(accessLabels.join(" · "))}</p>
+            <p class="access-label access-label--${accessClass}">${accessLabels.includes("Access protected") ? '<span class="suite-lock" aria-hidden="true"></span>' : ""}${escapeHtml(accessLabels.join(" · "))}</p>
             <h3>${escapeHtml(entry.name)}</h3>
           </div>
         </div>
@@ -347,7 +347,7 @@ function uptimeBar(
       ? `${day} · No check data`
       : `${day} · ${formatPercentage(uptime.successfulChecks, uptime.totalChecks)} uptime · ${downtime === null ? "Downtime unavailable" : `${formatDuration(downtime)} recorded downtime`} · ${uptime.totalChecks} ${uptime.totalChecks === 1 ? "check" : "checks"}`;
     if (uptime === undefined) {
-      return `<span class="uptime-day uptime-day--unknown" role="img" aria-label="${escapeHtml(title)}" title="${escapeHtml(title)}"></span>`;
+      return `<span class="uptime-day uptime-day--unknown" aria-hidden="true" title="${escapeHtml(title)}"></span>`;
     }
     const percentage = formatPercentage(
       uptime.successfulChecks,
@@ -364,7 +364,7 @@ function uptimeBar(
       : interruptionCount === 0
         ? "No interruptions recorded"
         : `${interruptionCount} ${interruptionCount === 1 ? "interruption" : "interruptions"} recorded`;
-    return `<span class="uptime-day uptime-day--${state}" role="img" tabindex="0" aria-label="${escapeHtml(title)}">
+    return `<span class="uptime-day uptime-day--${state}" aria-hidden="true" title="${escapeHtml(title)}">
       <span class="uptime-popover" role="tooltip" aria-hidden="true">
         <span class="uptime-popover__header">
           <span>${escapeHtml(formatUptimeDate(day))}</span>
@@ -382,7 +382,7 @@ function uptimeBar(
   const label = summary.percentage === null
     ? `Observed uptime is not available. 0 recorded days and ${summary.noDataDays} no-data days. Latest monitor state: ${status ? STATUS_LABELS[status.status] : "not monitored"}.`
     : `${summary.label} across ${summary.totalChecks} ${summary.totalChecks === 1 ? "check" : "checks"}; ${summary.recordedDays} ${summary.recordedDays === 1 ? "recorded day" : "recorded days"} and ${summary.noDataDays} ${summary.noDataDays === 1 ? "no-data day" : "no-data days"}; earliest recorded day ${summary.firstObservedDay}.`;
-  return `<div class="uptime-bar" role="group" aria-label="${escapeHtml(label)}"><span class="visually-hidden">${escapeHtml(label)}</span>${bars}</div>`;
+  return `<div class="uptime-bar" role="img" aria-label="${escapeHtml(label)}">${bars}</div>`;
 }
 
 function downtimeHistory(

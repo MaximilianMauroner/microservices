@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
-import { Link, useNavigate } from "@tanstack/react-router";
-import { FilterIcon, InboxIcon } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { CalendarIcon, FilterIcon, InboxIcon } from "lucide-react";
+import { format, parseISO, subDays } from "date-fns";
+import type { DateRange } from "react-day-picker";
 import type {
   Candidate,
   Decision,
@@ -18,15 +20,14 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "./
 import { Badge } from "./ui/badge.js";
 import { Button } from "./ui/button.js";
 import { ButtonGroup } from "./ui/button-group.js";
+import { Calendar } from "./ui/calendar.js";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card.js";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./ui/dialog.js";
 import { Empty as EmptyRoot, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "./ui/empty.js";
 import { Input } from "./ui/input.js";
 import { Label } from "./ui/label.js";
 import { Popover, PopoverContent, PopoverDescription, PopoverHeader, PopoverTitle, PopoverTrigger } from "./ui/popover.js";
-import { ScrollArea } from "./ui/scroll-area.js";
 import { Separator } from "./ui/separator.js";
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "./ui/sheet.js";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table.js";
 import { Tabs, TabsList, TabsTrigger } from "./ui/tabs.js";
 import { Textarea } from "./ui/textarea.js";
@@ -84,7 +85,7 @@ export function ReviewPage({ initial, search }: { initial: ReviewPageData; searc
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant={search.view === "decisions" && data.decisions?.pending ? "secondary" : "default"}>{summaryLabel(data, search)}</Badge>
             <span className="hidden text-xs text-muted-foreground md:inline">{data.actor}</span>
-            <Button variant="ghost" size="sm" render={<a href="/cdn-cgi/access/logout" />}>Sign out</Button>
+            <Button nativeButton={false} variant="ghost" size="sm" render={<a href="/cdn-cgi/access/logout" />}>Sign out</Button>
           </div>
         </header>
         <div className="mb-5"><ReviewNav search={search} /></div>
@@ -103,7 +104,6 @@ function ReviewNav({ search }: { search: ReviewSearch }) {
 
 function DecisionWorkspace({ data, search, setData, setNotice, onLoadMore }: { data: DecisionsPageData; search: ReviewSearch; setData: (data: ReviewPageData) => void; setNotice: (notice: { text: string; tone: "success" | "error" }) => void; onLoadMore: () => void }) {
   const [selectedId, setSelectedId] = useState(data.decisions.items[0]?.record.decisionRecordId);
-  const [sheetOpen, setSheetOpen] = useState(false);
   const selected = data.decisions.items.find((item) => item.record.decisionRecordId === selectedId) ?? data.decisions.items[0];
   const emptyState = decisionEmptyState(data.decisions, search.reviewState);
 
@@ -113,15 +113,13 @@ function DecisionWorkspace({ data, search, setData, setNotice, onLoadMore }: { d
       const decisions = reconcileReviewedDecision(data.decisions, reviewedId);
       setData({ ...data, decisions });
       setSelectedId(decisions.items[0]?.record.decisionRecordId);
-      setSheetOpen(false);
       return;
     }
     setData({ ...data, decisions: { ...data.decisions, items: data.decisions.items.map((item) => item.record.decisionRecordId === reviewedId ? updated : item) } });
   }
 
-  function selectItem(item: DecisionRecordItem, openSheet = false) {
+  function selectItem(item: DecisionRecordItem) {
     setSelectedId(item.record.decisionRecordId);
-    if (openSheet) setSheetOpen(true);
   }
 
   return <>
@@ -132,11 +130,12 @@ function DecisionWorkspace({ data, search, setData, setNotice, onLoadMore }: { d
       </div>
       <DecisionFilters search={search} />
     </div>
-    {!data.decisions.items.length ? <Empty title={emptyState.title} body={emptyState.body} action={emptyState.canLoadMore ? <Button type="button" variant="outline" size="sm" onClick={onLoadMore}>Load next page</Button> : undefined} /> : <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(22rem,.75fr)]">
+    {!data.decisions.items.length ? <Empty title={emptyState.title} body={emptyState.body} action={emptyState.canLoadMore ? <Button type="button" variant="outline" size="sm" onClick={onLoadMore}>Load next page</Button> : undefined} /> : <div className="flex flex-col gap-6">
+      {selected ? <section className="mx-auto w-full max-w-3xl" aria-label="Current review task"><DecisionReviewPanel key={selected.record.decisionRecordId} item={selected} onNotice={setNotice} onUpdated={updateItem} /></section> : null}
       <Card className="gap-0 py-0" aria-labelledby="decision-list-title">
         <CardHeader className="border-b py-4">
-          <CardTitle id="decision-list-title">Decision records</CardTitle>
-          <CardDescription>{data.decisions.pending} unresolved · newest first</CardDescription>
+          <CardTitle id="decision-list-title">Up next</CardTitle>
+          <CardDescription>{data.decisions.pending} unresolved · select another decision to review</CardDescription>
         </CardHeader>
         <Table>
           <TableHeader><TableRow><TableHead>Decision</TableHead><TableHead className="hidden md:table-cell">Project</TableHead><TableHead className="hidden lg:table-cell">Confidence</TableHead><TableHead>State</TableHead><TableHead><span className="sr-only">Actions</span></TableHead></TableRow></TableHeader>
@@ -148,15 +147,13 @@ function DecisionWorkspace({ data, search, setData, setNotice, onLoadMore }: { d
               <TableCell className="hidden md:table-cell"><Badge variant="outline">{decisionProject(record)}</Badge></TableCell>
               <TableCell className="hidden font-mono text-xs text-muted-foreground lg:table-cell">{record.confidence}</TableCell>
               <TableCell><Badge variant={item.currentFeedback ? item.currentFeedback.action === "down" ? "destructive" : "outline" : "secondary"}>{item.currentFeedback ? feedbackLabel(item.currentFeedback.action) : "Unreviewed"}</Badge></TableCell>
-              <TableCell className="text-right"><Button type="button" variant="ghost" size="sm" className="xl:hidden" onClick={() => selectItem(item, true)}>Review</Button><Button type="button" variant="ghost" size="sm" className="hidden xl:inline-flex" onClick={() => selectItem(item)}>Open</Button></TableCell>
+              <TableCell className="text-right"><Button type="button" variant="ghost" size="sm" onClick={() => selectItem(item)}>Review</Button></TableCell>
             </TableRow>;
           })}</TableBody>
         </Table>
         {data.decisions.nextCursor ? <div className="flex justify-center border-t p-3"><Button type="button" variant="ghost" size="sm" onClick={onLoadMore}>Load older decisions</Button></div> : null}
       </Card>
-      {selected ? <div className="hidden xl:block"><DecisionReviewPanel key={selected.record.decisionRecordId} item={selected} onNotice={setNotice} onUpdated={updateItem} /></div> : null}
     </div>}
-    <Sheet open={sheetOpen} onOpenChange={setSheetOpen}><SheetContent className="w-full gap-0 overflow-hidden p-0 sm:max-w-xl" side="right">{selected ? <><SheetHeader className="sr-only"><SheetTitle>{selected.record.summary}</SheetTitle><SheetDescription>{decisionProject(selected.record)} · {selected.record.confidence} confidence · {formatDate(selected.record.createdAt)}</SheetDescription></SheetHeader><ScrollArea className="min-h-0 flex-1"><div className="p-4"><DecisionReviewPanel key={selected.record.decisionRecordId} item={selected} onNotice={setNotice} onUpdated={updateItem} embedded /></div></ScrollArea></> : null}</SheetContent></Sheet>
   </>;
 }
 
@@ -193,7 +190,6 @@ function ReviewScopeTabs({ search }: { search: ReviewSearch }) {
 }
 
 function DecisionFilters({ search }: { search: ReviewSearch }) {
-  const navigate = useNavigate({ from: "/review" });
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -202,13 +198,98 @@ function DecisionFilters({ search }: { search: ReviewSearch }) {
       const value = String(form.get(key) ?? "").trim();
       if (value) next[key] = value; else delete next[key];
     }
-    void navigate({ search: next });
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(next)) {
+      if (value) params.set(key, value);
+    }
+    window.location.assign(`/review?${params}`);
   }
   const filterCount = (["projectKey", "taskId", "device", "harness", "skill", "from", "to"] as const).filter((key) => search[key]).length;
-  return <Popover><PopoverTrigger render={<Button variant="outline" size="sm" />}><FilterIcon />Filters{filterCount ? <Badge variant="secondary">{filterCount}</Badge> : null}</PopoverTrigger><PopoverContent align="end" className="w-[min(28rem,calc(100vw_-_2rem))]"><PopoverHeader><PopoverTitle>Filter decisions</PopoverTitle><PopoverDescription>Filters are stored in the URL and apply to all matching decision records.</PopoverDescription></PopoverHeader><form className="grid grid-cols-1 gap-3 sm:grid-cols-2" onSubmit={submit} aria-label="Decision filters"><Label className="sm:col-span-2">Project<Input name="projectKey" defaultValue={search.projectKey ?? ""} placeholder="Project key" /></Label><Label>Task<Input name="taskId" defaultValue={search.taskId ?? ""} placeholder="Task ID" /></Label><Label>Device<Input name="device" defaultValue={search.device ?? ""} placeholder="Device" /></Label><Label>Harness<Input name="harness" defaultValue={search.harness ?? ""} placeholder="Harness" /></Label><Label>Skill<Input name="skill" defaultValue={search.skill ?? ""} placeholder="Skill" /></Label><Label>From<Input name="from" type="date" defaultValue={search.from ?? ""} /></Label><Label>To<Input name="to" type="date" defaultValue={search.to ?? ""} /></Label><div className="flex justify-end gap-2 pt-1 sm:col-span-2"><Button variant="ghost" size="sm" render={<Link to="/review" search={{ scope: search.scope, view: search.view, reviewState: search.reviewState }} />}>Clear</Button><Button type="submit" size="sm">Apply filters</Button></div></form></PopoverContent></Popover>;
+  return (
+    <Popover>
+      <PopoverTrigger render={<Button variant="outline" size="sm" />}>
+        <FilterIcon />
+        Filters
+        {filterCount ? <Badge variant="secondary">{filterCount}</Badge> : null}
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-[min(28rem,calc(100vw_-_2rem))]">
+        <PopoverHeader>
+          <PopoverTitle>Filter decisions</PopoverTitle>
+          <PopoverDescription>Filters are stored in the URL and apply to all matching decision records.</PopoverDescription>
+        </PopoverHeader>
+        <form className="grid grid-cols-1 gap-3 sm:grid-cols-2" onSubmit={submit} aria-label="Decision filters">
+          <Label className="sm:col-span-2">Project<Input name="projectKey" defaultValue={search.projectKey ?? ""} placeholder="Project key" /></Label>
+          <Label>Task<Input name="taskId" defaultValue={search.taskId ?? ""} placeholder="Task ID" /></Label>
+          <Label>Device<Input name="device" defaultValue={search.device ?? ""} placeholder="Device" /></Label>
+          <Label>Harness<Input name="harness" defaultValue={search.harness ?? ""} placeholder="Harness" /></Label>
+          <Label>Skill<Input name="skill" defaultValue={search.skill ?? ""} placeholder="Skill" /></Label>
+          <DateRangeFilter initialFrom={search.from} initialTo={search.to} />
+          <div className="flex justify-end gap-2 pt-1 sm:col-span-2">
+            <Button nativeButton={false} variant="ghost" size="sm" render={<Link to="/review" search={{ scope: search.scope, view: search.view, reviewState: search.reviewState }} />}>Clear</Button>
+            <Button type="submit" size="sm">Apply filters</Button>
+          </div>
+        </form>
+      </PopoverContent>
+    </Popover>
+  );
 }
 
-function DecisionReviewPanel({ item, onNotice, onUpdated, embedded = false }: { item: DecisionRecordItem; onNotice: (notice: { text: string; tone: "success" | "error" }) => void; onUpdated: (item: DecisionRecordItem) => void; embedded?: boolean }) {
+function DateRangeFilter({ initialFrom, initialTo }: { initialFrom?: string; initialTo?: string }) {
+  const [range, setRange] = useState<DateRange | undefined>(() => ({
+    from: initialFrom ? parseISO(initialFrom) : undefined,
+    to: initialTo ? parseISO(initialTo) : undefined
+  }));
+
+  const label = range?.from
+    ? range.to
+      ? `${format(range.from, "dd MMM yyyy")} – ${format(range.to, "dd MMM yyyy")}`
+      : format(range.from, "dd MMM yyyy")
+    : "Choose date range";
+
+  function selectQuickRange(days: number) {
+    const to = new Date();
+    setRange({ from: subDays(to, days), to });
+  }
+
+  return (
+    <div className="space-y-2 sm:col-span-2">
+      <Label>Date range</Label>
+      <input type="hidden" name="from" value={range?.from ? format(range.from, "yyyy-MM-dd") : ""} />
+      <input type="hidden" name="to" value={range?.to ? format(range.to, "yyyy-MM-dd") : ""} />
+      <Popover>
+        <PopoverTrigger render={<Button type="button" variant="outline" className="w-full justify-start font-normal" />}>
+          <CalendarIcon />
+          <span className={range?.from ? "" : "text-muted-foreground"}>{label}</span>
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-auto gap-2 p-0">
+          <Calendar
+            mode="range"
+            selected={range}
+            onSelect={setRange}
+            numberOfMonths={2}
+            defaultMonth={range?.from}
+            className="hidden sm:block"
+          />
+          <Calendar
+            mode="range"
+            selected={range}
+            onSelect={setRange}
+            defaultMonth={range?.from}
+            className="sm:hidden"
+          />
+          <div className="flex flex-wrap items-center gap-1 border-t p-2">
+            <Button type="button" variant="ghost" size="sm" onClick={() => selectQuickRange(1)}>24h</Button>
+            <Button type="button" variant="ghost" size="sm" onClick={() => selectQuickRange(7)}>7d</Button>
+            <Button type="button" variant="ghost" size="sm" onClick={() => selectQuickRange(30)}>30d</Button>
+            <Button type="button" variant="ghost" size="sm" className="ml-auto" onClick={() => setRange(undefined)}>Clear dates</Button>
+          </div>
+        </PopoverContent>
+      </Popover>
+    </div>
+  );
+}
+
+function DecisionReviewPanel({ item, onNotice, onUpdated }: { item: DecisionRecordItem; onNotice: (notice: { text: string; tone: "success" | "error" }) => void; onUpdated: (item: DecisionRecordItem) => void }) {
   const feedback = item.currentFeedback;
   const [comment, setComment] = useState(item.currentFeedback?.comment ?? "");
   const [busy, setBusy] = useState(false);
@@ -244,8 +325,8 @@ function DecisionReviewPanel({ item, onNotice, onUpdated, embedded = false }: { 
   }
 
   const feedbackVariant = feedback ? feedback.action === "down" ? "destructive" : feedback.action === "dismiss" ? "outline" : "default" : "secondary";
-  const content = <><CardHeader className={embedded ? "px-0 pt-0" : "border-b"}><CardTitle className="pr-16 text-base leading-snug">{record.summary}</CardTitle><CardDescription>{decisionProject(record)} · {record.confidence} confidence · {formatDate(record.createdAt)}</CardDescription><CardAction><Badge variant={feedbackVariant}>{feedback ? feedbackLabel(feedback.action) : "Unreviewed"}</Badge></CardAction></CardHeader><CardContent className={embedded ? "space-y-5 px-0" : "space-y-5"}><section><p className="text-xs font-medium text-muted-foreground">Choice</p><h3 className="mt-1 text-sm font-medium leading-6">{record.choice}</h3><p className="mt-3 text-sm leading-6 text-muted-foreground">{record.context}</p></section><Separator /><Accordion defaultValue={record.evidence.length ? ["evidence"] : []} multiple><AccordionItem value="evidence"><AccordionTrigger>Evidence <Badge variant="outline">{record.evidence.length}</Badge></AccordionTrigger><AccordionContent className="space-y-2">{record.evidence.length ? record.evidence.map((evidence) => <blockquote className="border-l-2 pl-3 text-sm text-muted-foreground" key={`${record.decisionRecordId}-${evidence.excerpt}`}>{evidence.excerpt}{evidence.commitHashes.length ? <div className="mt-2 font-mono text-[0.68rem] text-muted-foreground">{evidence.commitHashes.join(" · ")}</div> : null}</blockquote>) : <p>No evidence excerpts were attached.</p>}</AccordionContent></AccordionItem></Accordion><Label>Reviewer comment<Textarea className="mt-2" value={comment} onChange={(event) => setComment(event.currentTarget.value)} placeholder="Optional context for this feedback" /></Label><div className="flex flex-wrap gap-2"><ButtonGroup><Button type="button" variant="default" size="sm" disabled={busy} onClick={() => void giveFeedback("up")}>Reasonable here</Button><Button type="button" variant="destructive" size="sm" disabled={busy} onClick={() => void giveFeedback("down")}>Should not repeat</Button></ButtonGroup><Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void giveFeedback("dismiss")}>Dismiss</Button>{feedback && !item.promotionCandidateId ? <Button type="button" variant="secondary" size="sm" onClick={() => setPromotionOpen(true)}>Draft candidate</Button> : null}</div>{item.promotionCandidateId ? <Alert variant="default" data-tone="success">Candidate drafted · {item.promotionCandidateId}</Alert> : null}</CardContent></>;
-  return <>{embedded ? content : <Card className="sticky top-4">{content}</Card>}<Dialog open={promotionOpen} onOpenChange={setPromotionOpen}><DialogContent><DialogHeader><DialogTitle>Draft a field-guide candidate</DialogTitle><DialogDescription>This creates an inactive candidate. It does not change active guidance.</DialogDescription></DialogHeader><form className="grid grid-cols-1 gap-4 sm:grid-cols-2" onSubmit={promote}><Label>Lesson key<Input name="lessonKey" defaultValue={slugify(record.summary)} required /></Label><Label>Title<Input name="title" defaultValue={record.summary} required /></Label><Label className="sm:col-span-2">Guidance<Textarea name="body" defaultValue={record.choice} required /></Label><Label className="sm:col-span-2">Rationale<Textarea name="rationale" defaultValue={feedback?.comment ?? record.rationale} required /></Label><div className="flex justify-end gap-2 sm:col-span-2"><Button type="button" variant="ghost" onClick={() => setPromotionOpen(false)}>Cancel</Button><Button type="submit" variant="secondary" disabled={promotionBusy}>{promotionBusy ? "Drafting…" : "Create inactive candidate"}</Button></div></form></DialogContent></Dialog></>;
+  const content = <><CardHeader className="border-b"><CardTitle className="pr-16 text-base leading-snug">{record.summary}</CardTitle><CardDescription>{decisionProject(record)} · {record.confidence} confidence · {formatDate(record.createdAt)}</CardDescription><CardAction><Badge variant={feedbackVariant}>{feedback ? feedbackLabel(feedback.action) : "Unreviewed"}</Badge></CardAction></CardHeader><CardContent className="space-y-5"><section><p className="text-xs font-medium text-muted-foreground">Choice</p><h3 className="mt-1 text-sm font-medium leading-6">{record.choice}</h3><p className="mt-3 text-sm leading-6 text-muted-foreground">{record.context}</p></section><Separator /><Accordion defaultValue={record.evidence.length ? ["evidence"] : []} multiple><AccordionItem value="evidence"><AccordionTrigger>Evidence <Badge variant="outline">{record.evidence.length}</Badge></AccordionTrigger><AccordionContent className="space-y-2">{record.evidence.length ? record.evidence.map((evidence) => <blockquote className="border-l-2 pl-3 text-sm text-muted-foreground" key={`${record.decisionRecordId}-${evidence.excerpt}`}>{evidence.excerpt}{evidence.commitHashes.length ? <div className="mt-2 font-mono text-[0.68rem] text-muted-foreground">{evidence.commitHashes.join(" · ")}</div> : null}</blockquote>) : <p>No evidence excerpts were attached.</p>}</AccordionContent></AccordionItem></Accordion><Label>Reviewer comment<Textarea className="mt-2" value={comment} onChange={(event) => setComment(event.currentTarget.value)} placeholder="Optional context for this feedback" /></Label><div className="flex flex-wrap gap-2"><ButtonGroup><Button type="button" variant="default" size="sm" disabled={busy} onClick={() => void giveFeedback("up")}>Reasonable here</Button><Button type="button" variant="destructive" size="sm" disabled={busy} onClick={() => void giveFeedback("down")}>Should not repeat</Button></ButtonGroup><Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void giveFeedback("dismiss")}>Dismiss</Button>{feedback && !item.promotionCandidateId ? <Button type="button" variant="secondary" size="sm" onClick={() => setPromotionOpen(true)}>Draft candidate</Button> : null}</div>{item.promotionCandidateId ? <Alert variant="default" data-tone="success">Candidate drafted · {item.promotionCandidateId}</Alert> : null}</CardContent></>;
+  return <><Card>{content}</Card><Dialog open={promotionOpen} onOpenChange={setPromotionOpen}><DialogContent><DialogHeader><DialogTitle>Draft a field-guide candidate</DialogTitle><DialogDescription>This creates an inactive candidate. It does not change active guidance.</DialogDescription></DialogHeader><form className="grid grid-cols-1 gap-4 sm:grid-cols-2" onSubmit={promote}><Label>Lesson key<Input name="lessonKey" defaultValue={slugify(record.summary)} required /></Label><Label>Title<Input name="title" defaultValue={record.summary} required /></Label><Label className="sm:col-span-2">Guidance<Textarea name="body" defaultValue={record.choice} required /></Label><Label className="sm:col-span-2">Rationale<Textarea name="rationale" defaultValue={feedback?.comment ?? record.rationale} required /></Label><div className="flex justify-end gap-2 sm:col-span-2"><Button type="button" variant="ghost" onClick={() => setPromotionOpen(false)}>Cancel</Button><Button type="submit" variant="secondary" disabled={promotionBusy}>{promotionBusy ? "Drafting…" : "Create inactive candidate"}</Button></div></form></DialogContent></Dialog></>;
 }
 
 function QueueWorkspace({ data, search, setData, setNotice }: { data: QueuePageData; search: ReviewSearch; setData: (data: ReviewPageData) => void; setNotice: (notice: { text: string; tone: "success" | "error" }) => void }) {

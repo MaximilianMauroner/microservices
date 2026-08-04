@@ -1,4 +1,7 @@
 import { readFile } from "node:fs/promises";
+import { dirname, resolve, posix, sep } from "node:path";
+import { fileURLToPath } from "node:url";
+import { suiteChromeStyles } from "@tools-platform/suite-chrome";
 import {
   decodeCatalogDocument,
   validateLiteralTarget,
@@ -175,6 +178,14 @@ async function route(
   if (readMethod && url.pathname === "/status") {
     return html(renderer.status(await storage.readPublicSnapshot(), trustedOrigin));
   }
+  if (readMethod && url.pathname === "/assets/suite.css") {
+    return new Response(suiteChromeStyles, {
+      headers: {
+        "Content-Type": "text/css; charset=utf-8",
+        "Cache-Control": "public, max-age=300"
+      }
+    });
+  }
   if (readMethod && isStaticAssetPath(url.pathname)) {
     return asset(url.pathname);
   }
@@ -205,6 +216,15 @@ async function route(
           markdownSharePublicOrigin
         ),
         true
+      );
+    }
+    if (request.method === "GET" && url.pathname === "/api/ops/documents") {
+      return json(
+        {
+          ...await markdownAdmin.list(),
+          publicOrigin: markdownSharePublicOrigin
+        },
+        { headers: { "Cache-Control": "private, no-store" } }
       );
     }
     if (
@@ -737,6 +757,8 @@ function parsePatchedMonitor(
   if (url.trim() === "") return undefined;
   const enabled =
     nested.enabled ?? body["monitor.enabled"] ?? current?.enabled ?? false;
+  const tracking =
+    nested.tracking ?? body["monitor.tracking"] ?? current?.tracking ?? "http";
   const scope = nested.scope ?? body["monitor.scope"] ?? current?.scope ?? "public";
   if (typeof enabled !== "boolean") {
     throw new MutationError("monitor.enabled must be a boolean");
@@ -744,7 +766,11 @@ function parsePatchedMonitor(
   if (scope !== "public" && scope !== "tailscale") {
     throw new MutationError("monitor.scope must be public or tailscale");
   }
+  if (tracking !== "http" && tracking !== "heartbeat") {
+    throw new MutationError("monitor.tracking must be http or heartbeat");
+  }
   return {
+    tracking,
     enabled,
     paused: current?.paused ?? false,
     scope,
@@ -947,19 +973,50 @@ function html(body: string, privatePage = false): Response {
   });
 }
 
-function isStaticAssetPath(path: string): path is StaticAssetPath {
-  return path in STATIC_ASSETS;
+function isStaticAssetPath(pathname: string): pathname is StaticAssetPath {
+  return pathname in STATIC_ASSETS;
 }
 
 async function asset(path: StaticAssetPath): Promise<Response> {
   const metadata = STATIC_ASSETS[path];
-  const file = await readFile(new URL(metadata.file, import.meta.url));
-  return new Response(file, {
-    headers: {
-      "Content-Type": metadata.contentType,
-      "Cache-Control": "public, max-age=3600"
+  const modulePath = fileURLToPath(import.meta.url);
+  const moduleDir = dirname(modulePath);
+  const assetPath = metadata.file;
+  const withoutParent = assetPath.replace(/^\.\.\//, "");
+  const relativeWithoutLeadingPublic = withoutParent.replace(/^public\//, "");
+  const candidateFiles = new Set([
+    resolve(moduleDir, "..", withoutParent),
+    resolve(process.cwd(), withoutParent),
+    resolve(process.cwd(), "apps", "tools-web", withoutParent),
+    resolve(process.cwd(), "..", "tools-web", withoutParent)
+  ]);
+  if (
+    modulePath.includes(`${sep}.output${sep}server${sep}`) ||
+    modulePath.includes(`${sep}.output${sep}server`) ||
+    modulePath.includes(`${posix.sep}.output${posix.sep}server${posix.sep}`) ||
+    modulePath.includes(`${posix.sep}.output${posix.sep}server`)
+  ) {
+    candidateFiles.add(
+      resolve(moduleDir, "..", "..", "public", relativeWithoutLeadingPublic)
+    );
+  }
+
+  let lastError: unknown;
+  for (const filePath of candidateFiles) {
+    try {
+      const file = await readFile(filePath);
+      return new Response(file, {
+        headers: {
+          "Content-Type": metadata.contentType,
+          "Cache-Control": "public, max-age=3600"
+        }
+      });
+    } catch (error) {
+      lastError = error;
     }
-  });
+  }
+  if (lastError instanceof Error) throw lastError;
+  throw new Error("Unable to resolve static asset");
 }
 
 const safeConsoleLogger: AppLogger = {

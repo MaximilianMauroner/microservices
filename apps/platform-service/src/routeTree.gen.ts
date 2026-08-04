@@ -20,8 +20,6 @@ import { Route as OpsRouteImport } from './routes/ops'
 import { Route as PRouteImport } from './routes/p'
 import { Route as PublishRouteImport } from './routes/publish'
 import { Route as ReviewRouteImport } from './routes/review'
-import { Route as ReviewSuiteDotcssRouteImport } from './routes/review-suite[.]css'
-import { Route as ReviewDotcssRouteImport } from './routes/review[.]css'
 import { Route as StatusRouteImport } from './routes/status'
 import { Route as UploadsRouteImport } from './routes/uploads'
 import { Route as ApiAgentRouteImport } from './routes/api/agent'
@@ -34,14 +32,13 @@ import { Route as AssetsSplatRouteImport } from './routes/assets/$'
 import { Route as FIdRouteImport } from './routes/f/$id'
 import { Route as FilesIdRouteImport } from './routes/files/$id'
 import { Route as HealthComponentRouteImport } from './routes/health/$component'
-import { Route as ManageSplatRouteImport } from './routes/manage/$'
+import { Route as ManageIndexRouteImport } from './routes/manage/index'
+import { Route as ManageDocumentsRouteImport } from './routes/manage/documents'
 import { Route as ManageStatusRouteImport } from './routes/manage/status'
 import { Route as OpsSplatRouteImport } from './routes/ops/$'
 import { Route as PSplatRouteImport } from './routes/p/$'
 import { Route as PIdRouteImport } from './routes/p/$id'
-import { Route as PublishSplatRouteImport } from './routes/publish/$'
 import { Route as PublishCallbackRouteImport } from './routes/publish/callback'
-import { Route as ReviewSplatRouteImport } from './routes/review/$'
 import { Route as ReviewCallbackRouteImport } from './routes/review/callback'
 import { Route as StatusPrivateRouteImport } from './routes/status/private'
 import { Route as UploadsSplatRouteImport } from './routes/uploads/$'
@@ -110,16 +107,6 @@ const ReviewRoute = ReviewRouteImport.update({
   path: '/review',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ReviewSuiteDotcssRoute = ReviewSuiteDotcssRouteImport.update({
-  id: '/review-suite.css',
-  path: '/review-suite.css',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ReviewDotcssRoute = ReviewDotcssRouteImport.update({
-  id: '/review.css',
-  path: '/review.css',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const StatusRoute = StatusRouteImport.update({
   id: '/status',
   path: '/status',
@@ -180,9 +167,14 @@ const HealthComponentRoute = HealthComponentRouteImport.update({
   path: '/$component',
   getParentRoute: () => HealthRoute,
 } as any)
-const ManageSplatRoute = ManageSplatRouteImport.update({
-  id: '/$',
-  path: '/$',
+const ManageIndexRoute = ManageIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ManageRoute,
+} as any)
+const ManageDocumentsRoute = ManageDocumentsRouteImport.update({
+  id: '/documents',
+  path: '/documents',
   getParentRoute: () => ManageRoute,
 } as any)
 const ManageStatusRoute = ManageStatusRouteImport.update({
@@ -205,20 +197,10 @@ const PIdRoute = PIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => PRoute,
 } as any)
-const PublishSplatRoute = PublishSplatRouteImport.update({
-  id: '/$',
-  path: '/$',
-  getParentRoute: () => PublishRoute,
-} as any)
 const PublishCallbackRoute = PublishCallbackRouteImport.update({
   id: '/callback',
   path: '/callback',
   getParentRoute: () => PublishRoute,
-} as any)
-const ReviewSplatRoute = ReviewSplatRouteImport.update({
-  id: '/$',
-  path: '/$',
-  getParentRoute: () => ReviewRoute,
 } as any)
 const ReviewCallbackRoute = ReviewCallbackRouteImport.update({
   id: '/callback',
@@ -293,8 +275,6 @@ export interface FileRoutesByFullPath {
   '/p': typeof PRouteWithChildren
   '/publish': typeof PublishRouteWithChildren
   '/review': typeof ReviewRouteWithChildren
-  '/review-suite.css': typeof ReviewSuiteDotcssRoute
-  '/review.css': typeof ReviewDotcssRoute
   '/status': typeof StatusRouteWithChildren
   '/uploads': typeof UploadsRouteWithChildren
   '/api/agent': typeof ApiAgentRouteWithChildren
@@ -307,17 +287,16 @@ export interface FileRoutesByFullPath {
   '/f/$id': typeof FIdRouteWithChildren
   '/files/$id': typeof FilesIdRouteWithChildren
   '/health/$component': typeof HealthComponentRoute
-  '/manage/$': typeof ManageSplatRoute
+  '/manage/documents': typeof ManageDocumentsRoute
   '/manage/status': typeof ManageStatusRoute
   '/ops/$': typeof OpsSplatRoute
   '/p/$': typeof PSplatRoute
   '/p/$id': typeof PIdRoute
-  '/publish/$': typeof PublishSplatRoute
   '/publish/callback': typeof PublishCallbackRoute
-  '/review/$': typeof ReviewSplatRoute
   '/review/callback': typeof ReviewCallbackRoute
   '/status/private': typeof StatusPrivateRoute
   '/uploads/$': typeof UploadsSplatRoute
+  '/manage/': typeof ManageIndexRoute
   '/api/agent/$': typeof ApiAgentSplatRoute
   '/api/external-uploads/$': typeof ApiExternalUploadsSplatRoute
   '/api/heartbeat/tower': typeof ApiHeartbeatTowerRoute
@@ -335,13 +314,10 @@ export interface FileRoutesByTo {
   '/favicon.svg': typeof FaviconDotsvgRoute
   '/health': typeof HealthRouteWithChildren
   '/live': typeof LiveRoute
-  '/manage': typeof ManageRouteWithChildren
   '/ops': typeof OpsRouteWithChildren
   '/p': typeof PRouteWithChildren
   '/publish': typeof PublishRouteWithChildren
   '/review': typeof ReviewRouteWithChildren
-  '/review-suite.css': typeof ReviewSuiteDotcssRoute
-  '/review.css': typeof ReviewDotcssRoute
   '/status': typeof StatusRouteWithChildren
   '/uploads': typeof UploadsRouteWithChildren
   '/api/agent': typeof ApiAgentRouteWithChildren
@@ -354,17 +330,16 @@ export interface FileRoutesByTo {
   '/f/$id': typeof FIdRouteWithChildren
   '/files/$id': typeof FilesIdRouteWithChildren
   '/health/$component': typeof HealthComponentRoute
-  '/manage/$': typeof ManageSplatRoute
+  '/manage/documents': typeof ManageDocumentsRoute
   '/manage/status': typeof ManageStatusRoute
   '/ops/$': typeof OpsSplatRoute
   '/p/$': typeof PSplatRoute
   '/p/$id': typeof PIdRoute
-  '/publish/$': typeof PublishSplatRoute
   '/publish/callback': typeof PublishCallbackRoute
-  '/review/$': typeof ReviewSplatRoute
   '/review/callback': typeof ReviewCallbackRoute
   '/status/private': typeof StatusPrivateRoute
   '/uploads/$': typeof UploadsSplatRoute
+  '/manage': typeof ManageIndexRoute
   '/api/agent/$': typeof ApiAgentSplatRoute
   '/api/external-uploads/$': typeof ApiExternalUploadsSplatRoute
   '/api/heartbeat/tower': typeof ApiHeartbeatTowerRoute
@@ -388,8 +363,6 @@ export interface FileRoutesById {
   '/p': typeof PRouteWithChildren
   '/publish': typeof PublishRouteWithChildren
   '/review': typeof ReviewRouteWithChildren
-  '/review-suite.css': typeof ReviewSuiteDotcssRoute
-  '/review.css': typeof ReviewDotcssRoute
   '/status': typeof StatusRouteWithChildren
   '/uploads': typeof UploadsRouteWithChildren
   '/api/agent': typeof ApiAgentRouteWithChildren
@@ -402,17 +375,16 @@ export interface FileRoutesById {
   '/f/$id': typeof FIdRouteWithChildren
   '/files/$id': typeof FilesIdRouteWithChildren
   '/health/$component': typeof HealthComponentRoute
-  '/manage/$': typeof ManageSplatRoute
+  '/manage/documents': typeof ManageDocumentsRoute
   '/manage/status': typeof ManageStatusRoute
   '/ops/$': typeof OpsSplatRoute
   '/p/$': typeof PSplatRoute
   '/p/$id': typeof PIdRoute
-  '/publish/$': typeof PublishSplatRoute
   '/publish/callback': typeof PublishCallbackRoute
-  '/review/$': typeof ReviewSplatRoute
   '/review/callback': typeof ReviewCallbackRoute
   '/status/private': typeof StatusPrivateRoute
   '/uploads/$': typeof UploadsSplatRoute
+  '/manage/': typeof ManageIndexRoute
   '/api/agent/$': typeof ApiAgentSplatRoute
   '/api/external-uploads/$': typeof ApiExternalUploadsSplatRoute
   '/api/heartbeat/tower': typeof ApiHeartbeatTowerRoute
@@ -437,8 +409,6 @@ export interface FileRouteTypes {
     | '/p'
     | '/publish'
     | '/review'
-    | '/review-suite.css'
-    | '/review.css'
     | '/status'
     | '/uploads'
     | '/api/agent'
@@ -451,17 +421,16 @@ export interface FileRouteTypes {
     | '/f/$id'
     | '/files/$id'
     | '/health/$component'
-    | '/manage/$'
+    | '/manage/documents'
     | '/manage/status'
     | '/ops/$'
     | '/p/$'
     | '/p/$id'
-    | '/publish/$'
     | '/publish/callback'
-    | '/review/$'
     | '/review/callback'
     | '/status/private'
     | '/uploads/$'
+    | '/manage/'
     | '/api/agent/$'
     | '/api/external-uploads/$'
     | '/api/heartbeat/tower'
@@ -479,13 +448,10 @@ export interface FileRouteTypes {
     | '/favicon.svg'
     | '/health'
     | '/live'
-    | '/manage'
     | '/ops'
     | '/p'
     | '/publish'
     | '/review'
-    | '/review-suite.css'
-    | '/review.css'
     | '/status'
     | '/uploads'
     | '/api/agent'
@@ -498,17 +464,16 @@ export interface FileRouteTypes {
     | '/f/$id'
     | '/files/$id'
     | '/health/$component'
-    | '/manage/$'
+    | '/manage/documents'
     | '/manage/status'
     | '/ops/$'
     | '/p/$'
     | '/p/$id'
-    | '/publish/$'
     | '/publish/callback'
-    | '/review/$'
     | '/review/callback'
     | '/status/private'
     | '/uploads/$'
+    | '/manage'
     | '/api/agent/$'
     | '/api/external-uploads/$'
     | '/api/heartbeat/tower'
@@ -531,8 +496,6 @@ export interface FileRouteTypes {
     | '/p'
     | '/publish'
     | '/review'
-    | '/review-suite.css'
-    | '/review.css'
     | '/status'
     | '/uploads'
     | '/api/agent'
@@ -545,17 +508,16 @@ export interface FileRouteTypes {
     | '/f/$id'
     | '/files/$id'
     | '/health/$component'
-    | '/manage/$'
+    | '/manage/documents'
     | '/manage/status'
     | '/ops/$'
     | '/p/$'
     | '/p/$id'
-    | '/publish/$'
     | '/publish/callback'
-    | '/review/$'
     | '/review/callback'
     | '/status/private'
     | '/uploads/$'
+    | '/manage/'
     | '/api/agent/$'
     | '/api/external-uploads/$'
     | '/api/heartbeat/tower'
@@ -579,8 +541,6 @@ export interface RootRouteChildren {
   PRoute: typeof PRouteWithChildren
   PublishRoute: typeof PublishRouteWithChildren
   ReviewRoute: typeof ReviewRouteWithChildren
-  ReviewSuiteDotcssRoute: typeof ReviewSuiteDotcssRoute
-  ReviewDotcssRoute: typeof ReviewDotcssRoute
   StatusRoute: typeof StatusRouteWithChildren
   UploadsRoute: typeof UploadsRouteWithChildren
   ApiAgentRoute: typeof ApiAgentRouteWithChildren
@@ -675,20 +635,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ReviewRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/review-suite.css': {
-      id: '/review-suite.css'
-      path: '/review-suite.css'
-      fullPath: '/review-suite.css'
-      preLoaderRoute: typeof ReviewSuiteDotcssRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/review.css': {
-      id: '/review.css'
-      path: '/review.css'
-      fullPath: '/review.css'
-      preLoaderRoute: typeof ReviewDotcssRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/status': {
       id: '/status'
       path: '/status'
@@ -773,11 +719,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HealthComponentRouteImport
       parentRoute: typeof HealthRoute
     }
-    '/manage/$': {
-      id: '/manage/$'
-      path: '/$'
-      fullPath: '/manage/$'
-      preLoaderRoute: typeof ManageSplatRouteImport
+    '/manage/': {
+      id: '/manage/'
+      path: '/'
+      fullPath: '/manage/'
+      preLoaderRoute: typeof ManageIndexRouteImport
+      parentRoute: typeof ManageRoute
+    }
+    '/manage/documents': {
+      id: '/manage/documents'
+      path: '/documents'
+      fullPath: '/manage/documents'
+      preLoaderRoute: typeof ManageDocumentsRouteImport
       parentRoute: typeof ManageRoute
     }
     '/manage/status': {
@@ -808,26 +761,12 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PIdRouteImport
       parentRoute: typeof PRoute
     }
-    '/publish/$': {
-      id: '/publish/$'
-      path: '/$'
-      fullPath: '/publish/$'
-      preLoaderRoute: typeof PublishSplatRouteImport
-      parentRoute: typeof PublishRoute
-    }
     '/publish/callback': {
       id: '/publish/callback'
       path: '/callback'
       fullPath: '/publish/callback'
       preLoaderRoute: typeof PublishCallbackRouteImport
       parentRoute: typeof PublishRoute
-    }
-    '/review/$': {
-      id: '/review/$'
-      path: '/$'
-      fullPath: '/review/$'
-      preLoaderRoute: typeof ReviewSplatRouteImport
-      parentRoute: typeof ReviewRoute
     }
     '/review/callback': {
       id: '/review/callback'
@@ -948,13 +887,15 @@ const HealthRouteWithChildren =
   HealthRoute._addFileChildren(HealthRouteChildren)
 
 interface ManageRouteChildren {
-  ManageSplatRoute: typeof ManageSplatRoute
+  ManageDocumentsRoute: typeof ManageDocumentsRoute
   ManageStatusRoute: typeof ManageStatusRoute
+  ManageIndexRoute: typeof ManageIndexRoute
 }
 
 const ManageRouteChildren: ManageRouteChildren = {
-  ManageSplatRoute: ManageSplatRoute,
+  ManageDocumentsRoute: ManageDocumentsRoute,
   ManageStatusRoute: ManageStatusRoute,
+  ManageIndexRoute: ManageIndexRoute,
 }
 
 const ManageRouteWithChildren =
@@ -983,12 +924,10 @@ const PRouteChildren: PRouteChildren = {
 const PRouteWithChildren = PRoute._addFileChildren(PRouteChildren)
 
 interface PublishRouteChildren {
-  PublishSplatRoute: typeof PublishSplatRoute
   PublishCallbackRoute: typeof PublishCallbackRoute
 }
 
 const PublishRouteChildren: PublishRouteChildren = {
-  PublishSplatRoute: PublishSplatRoute,
   PublishCallbackRoute: PublishCallbackRoute,
 }
 
@@ -996,12 +935,10 @@ const PublishRouteWithChildren =
   PublishRoute._addFileChildren(PublishRouteChildren)
 
 interface ReviewRouteChildren {
-  ReviewSplatRoute: typeof ReviewSplatRoute
   ReviewCallbackRoute: typeof ReviewCallbackRoute
 }
 
 const ReviewRouteChildren: ReviewRouteChildren = {
-  ReviewSplatRoute: ReviewSplatRoute,
   ReviewCallbackRoute: ReviewCallbackRoute,
 }
 
@@ -1100,8 +1037,6 @@ const rootRouteChildren: RootRouteChildren = {
   PRoute: PRouteWithChildren,
   PublishRoute: PublishRouteWithChildren,
   ReviewRoute: ReviewRouteWithChildren,
-  ReviewSuiteDotcssRoute: ReviewSuiteDotcssRoute,
-  ReviewDotcssRoute: ReviewDotcssRoute,
   StatusRoute: StatusRouteWithChildren,
   UploadsRoute: UploadsRouteWithChildren,
   ApiAgentRoute: ApiAgentRouteWithChildren,

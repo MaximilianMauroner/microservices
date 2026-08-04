@@ -58,6 +58,7 @@ export function catalogFixture(): CatalogDocument {
           }
         ],
         monitor: {
+          tracking: "http",
           enabled: true,
           paused: false,
           scope: "public",
@@ -74,6 +75,7 @@ export function catalogFixture(): CatalogDocument {
         lifecycle: "active",
         links: [],
         monitor: {
+          tracking: "http",
           enabled: true,
           paused: false,
           scope: "tailscale",

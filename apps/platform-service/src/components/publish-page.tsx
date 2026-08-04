@@ -119,49 +119,47 @@ export function PublishPage({ initial }: { initial: UploadPageData }) {
   return (
     <>
       <AppShell active="publish" />
-      <main id="main" className="app-page">
-        <section className="app-heading" aria-labelledby="publish-title">
+      <main id="main" className="mx-auto w-[min(1180px,calc(100%_-_2rem))] py-8 sm:py-10">
+        <section className="mb-6 flex flex-col gap-4 border-b pb-6 sm:flex-row sm:items-end sm:justify-between" aria-labelledby="publish-title">
           <div>
-            <p className="eyebrow">Artifact publisher</p>
-            <h1 id="publish-title">Upload a durable artifact.</h1>
-            <p>Files are private until their generated link is shared.</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Artifact publisher</p>
+            <h1 id="publish-title" className="mt-2 text-3xl font-semibold tracking-tight">Share a new artifact.</h1>
+            <p className="mt-2 text-sm text-muted-foreground">Files are private until their generated link is shared.</p>
           </div>
-          <div className="app-heading__actions">
-            <Badge variant="default">Publisher online</Badge>
-          </div>
+          <Badge variant="default">Publisher online</Badge>
         </section>
 
-        {message ? <Alert variant={message.tone === "error" ? "destructive" : "default"} data-tone={message.tone}>{message.text}</Alert> : null}
+        {message ? <Alert className="mb-4" variant={message.tone === "error" ? "destructive" : "default"} data-tone={message.tone}>{message.text}</Alert> : null}
 
-        <section className="publish-layout" aria-label="Upload workspace">
-          <Card className={`publish-dropzone${dragging ? " is-dragging" : ""}`} onDragEnter={(event) => { event.preventDefault(); setDragging(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setDragging(false)} onDrop={dropFile}>
-            <div>
-              <div className="publish-icon" aria-hidden="true">↑</div>
-              <strong>{busy ? "Uploading…" : "Drop a file here"}</strong>
-              <p>HTML plans become previewable artifacts. Other files remain downloads.</p>
-              <Input ref={fileInput} type="file" onChange={chooseFile} aria-label="Choose a file to upload" />
+        <section className="grid gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(16rem,.5fr)]" aria-label="Upload workspace">
+          <Card className={`grid min-h-64 place-items-center border-dashed text-center transition-colors ${dragging ? "border-foreground bg-secondary" : ""}`} onDragEnter={(event) => { event.preventDefault(); setDragging(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setDragging(false)} onDrop={dropFile}>
+            <div className="max-w-md p-6">
+              <div className="mx-auto mb-4 grid size-10 place-items-center rounded-full border text-lg" aria-hidden="true">↑</div>
+              <strong className="text-lg">{busy ? "Uploading…" : "Drop a file here"}</strong>
+              <p className="mt-2 text-sm text-muted-foreground">HTML plans become previewable artifacts. Other files remain downloads.</p>
+              <Input className="sr-only" ref={fileInput} type="file" onChange={chooseFile} aria-label="Choose a file to upload" />
               <Button type="button" variant="default" size="sm" onClick={() => fileInput.current?.click()} disabled={busy}>
                 {busy ? "Working…" : "Choose file"}
               </Button>
             </div>
           </Card>
-          <aside className="publish-policy" aria-label="Upload policy">
-            <h2>Upload policy</h2>
-            <p>Generated URLs are unlisted capability links. Temporary uploads expire automatically.</p>
-            <dl>
-              <dt>Delivery</dt><dd>Preview or download</dd>
-              <dt>Access</dt><dd>Unlisted URL</dd>
-              <dt>Inventory</dt><dd>{uploads.length} loaded</dd>
+          <aside className="rounded-lg border bg-card p-5" aria-label="Upload policy">
+            <h2 className="font-semibold">Upload policy</h2>
+            <p className="mt-2 text-sm text-muted-foreground">Generated URLs are unlisted capability links. Temporary uploads expire automatically.</p>
+            <dl className="mt-5 grid gap-3 text-xs">
+              <div><dt className="text-muted-foreground">Delivery</dt><dd className="mt-1 font-medium">Preview or download</dd></div>
+              <div><dt className="text-muted-foreground">Access</dt><dd className="mt-1 font-medium">Unlisted URL</dd></div>
+              <div><dt className="text-muted-foreground">Inventory</dt><dd className="mt-1 font-medium">{uploads.length} loaded</dd></div>
             </dl>
           </aside>
         </section>
 
-        <section className="publish-list" aria-labelledby="recent-uploads-title">
-          <div className="publish-list__heading">
-            <div><p className="eyebrow">Shared bucket</p><h2 id="recent-uploads-title">Recent uploads</h2></div>
+        <section className="mt-8 overflow-hidden rounded-lg border" aria-labelledby="recent-uploads-title">
+          <div className="flex items-end justify-between gap-3 border-b p-5">
+            <div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Shared bucket</p><h2 className="mt-1 font-semibold" id="recent-uploads-title">Recent uploads</h2></div>
             <Button type="button" variant="ghost" size="sm" onClick={() => void refresh()} disabled={busy}>↻ Refresh</Button>
           </div>
-          <Tabs className="publish-filters" value={filter} onValueChange={(value) => setFilter(value as UploadFilter)}>
+          <Tabs className="grid gap-2 border-b p-3 lg:grid-cols-[auto_minmax(12rem,1fr)_11rem_10rem]" value={filter} onValueChange={(value) => setFilter(value as UploadFilter)}>
             <TabsList>
               {(["all", "html", "file"] as const).map((value) => <TabsTrigger key={value} value={value}>{value === "all" ? "All" : value === "html" ? "Plans" : "Files"}</TabsTrigger>)}
             </TabsList>
@@ -169,9 +167,9 @@ export function PublishPage({ initial }: { initial: UploadPageData }) {
             <AppSelect value={expiry} onValueChange={(value) => setExpiry(value as ExpiryFilter)} aria-label="Filter by expiry" options={[{ value: "all", label: "All expiry" }, { value: "24h", label: "Next 24 hours" }, { value: "7d", label: "Next 7 days" }, { value: "persistent", label: "Persistent" }]} />
             <AppSelect value={sort} onValueChange={(value) => setSort(value as SortOrder)} aria-label="Sort uploads" options={[{ value: "newest", label: "Newest" }, { value: "oldest", label: "Oldest" }, { value: "filename", label: "Filename" }, { value: "expiry", label: "Expiry" }]} />
           </Tabs>
-          <div className="app-card publish-list__body">
-            {uploads.length === 0 ? <div className="app-empty"><h2>No uploads match</h2><p>Try another filter or upload a new artifact.</p></div> : uploads.map((upload) => <UploadRow key={upload.id} upload={upload} onMessage={setMessage} />)}
-            {nextCursor ? <div className="review-actions"><Button type="button" variant="ghost" disabled={busy} onClick={() => void loadMore()}>Load older uploads</Button></div> : null}
+          <div>
+            {uploads.length === 0 ? <div className="grid min-h-52 place-items-center p-8 text-center"><div><h2 className="font-semibold">No uploads match</h2><p className="mt-1 text-sm text-muted-foreground">Try another filter or upload a new artifact.</p></div></div> : uploads.map((upload) => <UploadRow key={upload.id} upload={upload} onMessage={setMessage} />)}
+            {nextCursor ? <div className="flex justify-center border-t p-3"><Button type="button" variant="ghost" disabled={busy} onClick={() => void loadMore()}>Load older uploads</Button></div> : null}
           </div>
         </section>
       </main>
@@ -210,10 +208,10 @@ function UploadRow({ upload, onMessage }: { upload: UploadSummary; onMessage: (m
     }
   }
   return (
-    <div className="upload-row">
-      <div className="upload-row__identity"><span className="upload-row__icon" aria-hidden="true">{upload.kind === "html" ? "▤" : "⇩"}</span><div><strong>{upload.filename}</strong><small>{upload.kind === "html" ? "Plan" : "File"} · {formatBytes(upload.bytes)}</small></div></div>
-      <time className="upload-row__date" dateTime={upload.updatedAt}>Uploaded {formatDate(upload.updatedAt)}</time>
-      <div className="upload-row__actions"><Button type="button" variant="ghost" size="sm" onClick={() => void copyUrl()}>Copy</Button><Button variant="secondary" size="sm" render={<a href={upload.url} target="_blank" rel="noreferrer" />}>Open ↗</Button></div>
+    <div className="grid gap-3 border-b p-4 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center">
+      <div className="flex min-w-0 items-center gap-3"><span className="grid size-9 shrink-0 place-items-center rounded-md border text-muted-foreground" aria-hidden="true">{upload.kind === "html" ? "▤" : "⇩"}</span><div className="min-w-0"><strong className="block truncate text-sm">{upload.filename}</strong><small className="text-xs text-muted-foreground">{upload.kind === "html" ? "Plan" : "File"} · {formatBytes(upload.bytes)}{upload.expiresAt ? ` · expires ${formatDate(upload.expiresAt)}` : " · persistent"}</small></div></div>
+      <time className="text-xs text-muted-foreground" dateTime={upload.updatedAt}>Uploaded {formatDate(upload.updatedAt)}</time>
+      <div className="flex justify-end gap-1"><Button type="button" variant="ghost" size="sm" onClick={() => void copyUrl()}>Copy</Button><Button nativeButton={false} variant="secondary" size="sm" render={<a href={upload.url} target="_blank" rel="noreferrer" />}>Open ↗</Button></div>
     </div>
   );
 }

@@ -31,10 +31,21 @@ export type PlatformServices = {
  */
 export async function authenticatePlatformRequest(
   request: Request,
-  access: PlatformAccess
+  access: PlatformAccess,
+  options: { readOnly?: boolean; localAuth?: boolean } = {}
 ): Promise<{ actor?: AccessActor; response?: Response }> {
   const route = classifyRoute(new URL(request.url).pathname, request.method);
   if (route.kind !== "access") return {};
+
+  if (
+    options.localAuth ||
+    (options.readOnly &&
+      (request.method === "GET" || request.method === "HEAD"))
+  ) {
+    const actor = { id: options.localAuth ? "local@localhost" : "design@local.invalid" };
+    attachAccessActor(request, actor);
+    return { actor };
+  }
 
   try {
     const actor = await access[route.family].verify(request);

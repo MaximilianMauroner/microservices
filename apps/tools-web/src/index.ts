@@ -4,4 +4,8 @@ export type { ConditionalWrite, JsonBucket } from "./bucket.js";
 export { loadConfig } from "./config.js";
 export { createMarkdownAdminClient } from "./markdown-admin.js";
 export { WebStorage } from "./storage.js";
-export type { MarkdownAdminReader } from "./markdown-admin.js";
+export type {
+  MarkdownAdminDocument,
+  MarkdownAdminReader,
+  MarkdownAdminSnapshot
+} from "./markdown-admin.js";
