@@ -21,7 +21,7 @@ export function renderSuiteChrome(active) {
     return `<a href="${destination.href}"${destination.id === active ? ' aria-current="page"' : ""}>${destination.label}${access}</a>`;
   }).join("");
   return `<a class="suite-skip skip-link" href="#main">Skip to content</a>
-    <header class="suite-header">
+    <header class="suite-header" data-suite-shell="command-deck">
       <div class="suite-header__inner">
         <a class="suite-brand" href="/" aria-label="Mauroner Tools home"><span aria-hidden="true">M</span>Mauroner Tools</a>
         <nav class="suite-nav" aria-label="Mauroner Tools">${links}</nav>

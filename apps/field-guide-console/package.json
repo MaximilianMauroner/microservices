@@ -1,8 +1,38 @@
 {
-  "name": "field-guide-console",
+  "name": "@tools-platform/field-guide",
   "version": "1.0.0",
   "private": true,
   "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    },
+    "./app": {
+      "types": "./src/app.ts",
+      "import": "./src/app.ts"
+    },
+    "./auth": {
+      "types": "./src/auth.ts",
+      "import": "./src/auth.ts"
+    },
+    "./config": {
+      "types": "./src/config.ts",
+      "import": "./src/config.ts"
+    },
+    "./http": {
+      "types": "./src/http.ts",
+      "import": "./src/http.ts"
+    },
+    "./repository": {
+      "types": "./src/repository.ts",
+      "import": "./src/repository.ts"
+    },
+    "./stylesheet": {
+      "types": "./src/stylesheet.ts",
+      "import": "./src/stylesheet.ts"
+    }
+  },
   "engines": {
     "node": ">=20"
   },

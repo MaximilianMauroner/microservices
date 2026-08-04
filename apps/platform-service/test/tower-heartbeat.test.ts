@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type {
   ConditionalWrite,
   JsonBucket
-} from "../../tools-web/src/bucket.ts";
+} from "@tools-platform/web";
 import {
   createTowerHeartbeat,
   InvalidHeartbeatTokenError
