@@ -28,7 +28,9 @@ services:
       - minio-data:/data
 
   postgres-migrate:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.local
     depends_on:
       postgres:
         condition: service_healthy
@@ -39,7 +41,9 @@ services:
     command: ["bun", "run", "--cwd", "apps/field-guide-console", "db:push-postgres"]
 
   minio-seed:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.local
     depends_on:
       minio:
         condition: service_started
@@ -67,7 +71,9 @@ services:
     command: ["bun", "run", "--cwd", "jobs/tools-checker", "seed-local"]
 
   markdown-mock:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.local
     environment:
       PORT: 8787
       MARKDOWN_SHARE_ADMIN_TOKEN: local-markdown-admin-token-local-development-001
@@ -79,7 +85,9 @@ services:
         condition: service_started
 
   platform:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.local
     depends_on:
       minio-seed:
         condition: service_completed_successfully
