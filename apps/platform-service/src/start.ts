@@ -1,10 +1,11 @@
-import { createMiddleware, createStart } from "@tanstack/react-start";
+import { createCsrfMiddleware, createMiddleware, createStart } from "@tanstack/react-start";
 import type { AccessActor } from "@tools-platform/security";
 import { authenticatePlatformRequest } from "./app.js";
 import { getPlatformRuntime, type PlatformRuntime } from "./runtime.js";
 
 export type PlatformRequestContext = {
   runtime: PlatformRuntime;
+  request: Request;
   accessActor?: AccessActor;
   nonce?: string;
 };
@@ -18,6 +19,7 @@ const platformRequestMiddleware = createMiddleware().server(
     const result = await next({
       context: {
         runtime,
+        request,
         nonce,
         ...(authentication.actor ? { accessActor: authentication.actor } : {})
       }
@@ -33,7 +35,7 @@ const platformRequestMiddleware = createMiddleware().server(
     ) {
       headers.set(
         "Content-Security-Policy",
-        `default-src 'none'; style-src 'self'; script-src 'self' 'nonce-${nonce}'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`
+        `default-src 'none'; style-src 'self' 'nonce-${nonce}'; script-src 'self' 'nonce-${nonce}'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`
       );
     }
     if (
@@ -54,8 +56,12 @@ const platformRequestMiddleware = createMiddleware().server(
   }
 );
 
+const csrfMiddleware = createCsrfMiddleware({
+  filter: ({ handlerType }) => handlerType === "serverFn"
+});
+
 export const startInstance = createStart(() => ({
-  requestMiddleware: [platformRequestMiddleware]
+  requestMiddleware: [csrfMiddleware, platformRequestMiddleware]
 }));
 
 declare module "@tanstack/react-router" {
