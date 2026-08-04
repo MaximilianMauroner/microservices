@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { DecisionRecordItem } from "@tools-platform/field-guide";
 import { uploadListUrl } from "../src/components/publish-page.js";
-import { reconcileReviewedDecision } from "../src/components/review-page.js";
+import { decisionEmptyState, reconcileReviewedDecision } from "../src/components/review-page.js";
 
 describe("publish inventory criteria", () => {
   it("binds every active criterion and the cursor into the backend request", () => {
@@ -34,6 +34,20 @@ describe("unreviewed decision reconciliation", () => {
 
     expect(updated).toEqual({ items: [second], pending: 1, hasMore: true, nextCursor: "next" });
     expect(unchanged.pending).toBe(1);
+  });
+
+  it("keeps the next page reachable after reviewing the final loaded row", () => {
+    const page = { items: [decisionItem("last-loaded")], pending: 2, hasMore: true, nextCursor: "next" };
+
+    const updated = reconcileReviewedDecision(page, "last-loaded");
+    const emptyState = decisionEmptyState(updated, "unreviewed");
+
+    expect(updated).toEqual({ items: [], pending: 1, hasMore: true, nextCursor: "next" });
+    expect(emptyState).toEqual({
+      canLoadMore: true,
+      title: "No decisions on this page",
+      body: "More matching decisions are available on the next page."
+    });
   });
 });
 
