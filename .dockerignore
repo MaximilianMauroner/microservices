@@ -1,0 +1,13 @@
+.agent
+.field-guide
+.git
+.DS_Store
+.env
+.idea
+.next
+.turbo
+dist
+coverage
+node_modules
+node_modules/
+playwright/.cache

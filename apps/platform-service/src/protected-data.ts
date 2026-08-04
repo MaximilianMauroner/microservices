@@ -3,6 +3,7 @@ import type {
   CatalogDocument,
   PrivateSnapshotDocument
 } from "@tools-platform/domain";
+import type { MarkdownAdminSnapshot } from "@tools-platform/web";
 import type {
   DecisionRecordPage,
   DecisionRecordItem,
@@ -113,6 +114,11 @@ export type PrivateStatusPageData = {
   snapshot: PrivateSnapshotDocument;
 };
 
+export type DocumentsPageData = MarkdownAdminSnapshot & {
+  actor: string;
+  publicOrigin: string;
+};
+
 export const getPrivateStatusPageData = createServerFn({ method: "GET" })
   .middleware([manageAccessMiddleware])
   .handler(async (): Promise<PrivateStatusPageData> => {
@@ -137,6 +143,20 @@ export const getManagePageData = createServerFn({ method: "GET" })
       revision: catalog.revision,
       catalog,
       snapshot: { ...snapshot, catalog, catalogRevision: catalog.revision }
+    };
+  });
+
+export const getDocumentsPageData = createServerFn({ method: "GET" })
+  .middleware([manageAccessMiddleware])
+  .handler(async (): Promise<DocumentsPageData> => {
+    const { context } = internalPlatformRequest("/api/ops/documents");
+    const result = await readPlatformJson<MarkdownAdminSnapshot & { publicOrigin: string }>(
+      context.runtime.tools,
+      "/api/ops/documents"
+    );
+    return {
+      ...result,
+      actor: context.accessActor?.id ?? "Access protected"
     };
   });
 

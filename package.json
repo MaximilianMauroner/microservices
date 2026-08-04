@@ -10,6 +10,9 @@
   "scripts": {
     "build": "bun run build:platform",
     "build:platform": "bun run --cwd apps/field-guide-console build:css && bun run --cwd apps/platform-service build",
+    "docker:up": "docker compose up --build",
+    "docker:down": "docker compose down",
+    "docker:reset": "docker compose down -v",
     "lint": "bun run typecheck",
     "start:artifact-publisher": "cd apps/artifact-publisher && bun run start",
     "start:field-guide-console": "cd apps/field-guide-console && bun run start",

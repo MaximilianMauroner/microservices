@@ -52,6 +52,14 @@ describe("initial catalog", () => {
       catalog.entries.find(({ id }) => id === "artifact-publisher")?.monitor
         ?.paused
     ).toBe(false);
+    expect(
+      Object.fromEntries(
+        catalog.entries.map(({ id, monitor }) => [id, monitor?.tracking])
+      )
+    ).toMatchObject({
+      tower: "heartbeat",
+      "home-assistant": "http"
+    });
 
     const projected = projectPublicSnapshot(
       catalog,

@@ -7,8 +7,8 @@ import type { ReviewRepository } from "./types.js";
 import type { SnapshotReport } from "./db/logical-snapshot.js";
 
 export type RepositoryHandle = { repository:ReviewRepository; checkpoint:()=>void; close:()=>Promise<void>; startupReport?:SnapshotReport };
-export async function createRepository(config:Config,dependencies:{openSQLite?:typeof openSQLite;importPostgresToSQLite?:typeof importPostgresToSQLite}={}):Promise<RepositoryHandle> {
-  if(config.backend==="postgres") { const repository=new PostgresReviewRepository(config.databaseUrl); return {repository,checkpoint:()=>undefined,close:()=>repository.close()}; }
+export async function createRepository(config:Config,dependencies:{openSQLite?:typeof openSQLite;importPostgresToSQLite?:typeof importPostgresToSQLite;readOnly?:boolean}={}):Promise<RepositoryHandle> {
+  if(config.backend==="postgres") { const repository=new PostgresReviewRepository(config.databaseUrl,{readOnly:dependencies.readOnly}); return {repository,checkpoint:()=>undefined,close:()=>repository.close()}; }
   const sqlite=(dependencies.openSQLite??openSQLite)(config.sqlitePath);
   try {
     let startupReport:SnapshotReport|undefined;

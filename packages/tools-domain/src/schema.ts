@@ -293,6 +293,11 @@ function parseLink(
 function parseMonitor(value: unknown, path: string): MonitorConfig {
   const item = record(value, path);
   return {
+    tracking: enumeration(
+      item.tracking ?? "http",
+      ["http", "heartbeat"],
+      `${path}.tracking`
+    ),
     enabled: boolean(item.enabled, `${path}.enabled`),
     paused: boolean(item.paused, `${path}.paused`),
     scope: enumeration(

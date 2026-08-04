@@ -106,6 +106,16 @@ describe("schema decoding and migration", () => {
     expect(() =>
       decodeCatalogDocument({
         ...catalogFixture(),
+        entries: catalogFixture().entries.map((entry, index) =>
+          index === 0 && entry.monitor
+            ? { ...entry, monitor: { ...entry.monitor, tracking: "socket" } }
+            : entry
+        )
+      })
+    ).toThrow(/tracking/);
+    expect(() =>
+      decodeCatalogDocument({
+        ...catalogFixture(),
         entries: [
           {
             ...catalogFixture().entries[0],

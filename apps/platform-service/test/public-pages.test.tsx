@@ -65,7 +65,7 @@ const privateSnapshot: PrivateSnapshotDocument = {
         visibility: "private",
         lifecycle: "active",
         links: [{ id: "console", label: "Open console", url: "https://private.example.test", access: "private" }],
-        monitor: { enabled: true, paused: false, scope: "tailscale", url: "https://private.example.test/health" }
+        monitor: { tracking: "http", enabled: true, paused: false, scope: "tailscale", url: "https://private.example.test/health" }
       },
       {
         id: "public-console",
@@ -111,7 +111,8 @@ describe("TanStack Start public pages", () => {
 
     expect(html).toContain("All monitored services operational");
     expect(html).toContain('aria-label="Observed uptime: 100% across 1 checks; 1 recorded days and 89 no-data days."');
-    expect(html.match(/class="uptime-day /g)).toHaveLength(90);
+    expect(html).toContain('data-slot="chart"');
+    expect(html).not.toContain('class="uptime-day ');
   });
 
   it("renders the private status view from the same status surface", () => {

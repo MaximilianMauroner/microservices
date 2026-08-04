@@ -1,10 +1,6 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { ManagePage } from "../components/manage-page.js";
-import { getManagePageData } from "../protected-data.js";
-import { tools } from "../route-handlers.js";
+import { Outlet, createFileRoute } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/manage")({
-  loader: () => getManagePageData(),
   head: () => ({
     meta: [
       { title: "Manage — Mauroner Tools" },
@@ -12,10 +8,9 @@ export const Route = createFileRoute("/manage")({
       { name: "robots", content: "noindex, nofollow" }
     ]
   }),
-  component: ManageRoute,
-  server: { handlers: { HEAD: tools } }
+  component: ManageLayout
 });
 
-function ManageRoute() {
-  return <ManagePage initial={Route.useLoaderData()} />;
+function ManageLayout() {
+  return <Outlet />;
 }

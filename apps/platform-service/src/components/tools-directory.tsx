@@ -5,6 +5,7 @@ import type {
   PublicSnapshotDocument
 } from "@tools-platform/domain";
 import { AppShell } from "./app-shell.js";
+import { formatUtcTimestamp } from "./date-format.js";
 import { LocalTimestamp } from "./local-time.js";
 import { Badge } from "./ui/badge.js";
 import { Button } from "./ui/button.js";
@@ -38,39 +39,39 @@ export function ToolsDirectory({
   return (
     <>
       <AppShell active="tools" />
-      <main id="main" className="tools-home">
-        <section className="tools-intro wrap" aria-labelledby="tools-title">
-          <p className="eyebrow">Useful, focused services</p>
-          <h1 id="tools-title">Tools for publishing, review, and operations.</h1>
-          <p className="lede">
+      <main id="main" className="mx-auto w-[min(1180px,calc(100%_-_2rem))] py-10 sm:py-14">
+        <section className="max-w-3xl border-b pb-10" aria-labelledby="tools-title">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Useful, focused services</p>
+          <h1 id="tools-title" className="mt-3 text-4xl font-semibold tracking-[-0.04em] sm:text-5xl">Tools for publishing, review, and operations.</h1>
+          <p className="mt-4 max-w-2xl text-base text-muted-foreground">
             A curated directory of Mauroner services, with clear access requirements and live availability.
           </p>
-          <Button variant="default" render={<a href="#catalog" />}>
+          <Button className="mt-6" nativeButton={false} variant="default" render={<a href="#catalog" />}>
             Browse tools <span aria-hidden="true">↓</span>
           </Button>
-          <p className="freshness">
+          <p className="mt-4 text-xs text-muted-foreground">
             Catalog updated <LocalTimestamp value={snapshot.generatedAt} fallback={formatTimestamp(snapshot.generatedAt)} />
           </p>
         </section>
-        <section id="catalog" className="catalog wrap" aria-label="Tool directory">
+        <section id="catalog" className="mt-10 space-y-10" aria-label="Tool directory">
           {groups.length === 0 ? (
-            <div className="empty-state">
-              <h2>No tools published yet</h2>
-              <p>The public catalog is ready for its first entry.</p>
+            <div className="rounded-lg border p-8 text-center">
+              <h2 className="font-semibold">No tools published yet</h2>
+              <p className="mt-1 text-sm text-muted-foreground">The public catalog is ready for its first entry.</p>
             </div>
           ) : groups.map((group, index) => {
             const groupEntries = entries.filter((entry) => entry.groupId === group.id);
             if (groupEntries.length === 0) return null;
             return (
-              <section key={group.id} className="catalog-group" aria-labelledby={`group-${group.id}`}>
-                <header className="group-header">
-                  <p className="group-index">{String(index + 1).padStart(2, "0")}</p>
+              <section key={group.id} aria-labelledby={`group-${group.id}`}>
+                <header className="mb-4 flex items-start gap-4">
+                  <p className="font-mono text-xs text-muted-foreground">{String(index + 1).padStart(2, "0")}</p>
                   <div>
-                    <h2 id={`group-${group.id}`}>{group.name}</h2>
-                    {group.description ? <p>{group.description}</p> : null}
+                    <h2 className="font-semibold" id={`group-${group.id}`}>{group.name}</h2>
+                    {group.description ? <p className="mt-1 text-sm text-muted-foreground">{group.description}</p> : null}
                   </div>
                 </header>
-                <ul className="tool-grid" role="list">
+                <ul className="grid list-none gap-3 p-0 sm:grid-cols-2" role="list">
                   {groupEntries.map((entry) => (
                     <ToolCard
                       key={entry.id}
@@ -85,8 +86,8 @@ export function ToolsDirectory({
           })}
         </section>
       </main>
-      <footer className="site-footer">
-        <div className="wrap">Mauroner Tools · Availability updates every five minutes</div>
+      <footer className="border-t">
+        <div className="mx-auto w-[min(1180px,calc(100%_-_2rem))] py-6 text-xs text-muted-foreground">Mauroner Tools · Availability updates every five minutes</div>
       </footer>
     </>
   );
@@ -108,11 +109,6 @@ function ToolCard({
         ...(entry.links.some((link) => link.access === "restricted") ? ["Cloudflare Access"] : [])
       ];
   if (accessLabels.length === 0) accessLabels.push("Public");
-  const accessClass = entry.id === "network-console"
-    ? "tailscale"
-    : accessLabels.includes("Public")
-      ? "public"
-      : "access";
   const iconPath = iconPaths[entry.id];
   const links = entry.links.flatMap((link) => {
     const destination = safeHttpUrl(link.url);
@@ -121,24 +117,23 @@ function ToolCard({
 
   return (
     <li>
-      <Card className="tool-card">
-        <CardHeader>
-          <div className="tool-card__identity">
-            {iconPath ? <img className="tool-card__icon" src={iconPath} alt="" width="48" height="48" /> : null}
+      <Card className="h-full gap-4 p-5">
+        <CardHeader className="flex-row items-start justify-between gap-4 p-0">
+          <div className="flex items-center gap-3">
+            {iconPath ? <img className="size-10 rounded-md border object-cover" src={iconPath} alt="" width="40" height="40" /> : null}
             <div>
-              <p className={`access-label access-label--${accessClass}`}>
-                {accessLabels.includes("Cloudflare Access") ? <span className="suite-lock" aria-hidden="true" /> : null}
+              <p className="text-[0.68rem] font-semibold uppercase tracking-wider text-muted-foreground">
                 {accessLabels.join(" · ")}
               </p>
-              <h3>{entry.name}</h3>
+              <h3 className="mt-1 font-semibold">{entry.name}</h3>
             </div>
           </div>
           <StatusBadge status={status} />
         </CardHeader>
-        <p>{entry.description}</p>
-        <p className="status-detail">{statusDetails(status)}</p>
+        <p className="text-sm text-muted-foreground">{entry.description}</p>
+        <p className="font-mono text-[0.68rem] text-muted-foreground">{statusDetails(status)}</p>
         {links.length > 0 ? (
-          <div className="tool-links" role="group" aria-label={`${entry.name} links`}>
+          <div className="mt-auto flex flex-wrap gap-2" role="group" aria-label={`${entry.name} links`}>
             {links.map((link) => (
               <DirectoryLink
                 key={link.id}
@@ -148,7 +143,7 @@ function ToolCard({
               />
             ))}
           </div>
-        ) : <p className="no-link">No browser entry point is published.</p>}
+        ) : <p className="text-xs text-muted-foreground">No browser entry point is published.</p>}
       </Card>
     </li>
   );
@@ -159,6 +154,7 @@ function DirectoryLink({ href, label, publicOrigin }: { href: string; label: str
   const sameOrigin = resolvedHref !== href;
   return (
     <Button
+      nativeButton={false}
       variant="outline"
       render={<a href={resolvedHref} {...(sameOrigin ? {} : { target: "_blank", rel: "noreferrer" })} />}
     >
@@ -209,13 +205,7 @@ export function statusDetails(status: PublicMonitorStatus | undefined) {
 }
 
 export function formatTimestamp(value: string) {
-  const timestamp = new Date(value);
-  if (Number.isNaN(timestamp.getTime())) return value;
-  return new Intl.DateTimeFormat("en", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "UTC"
-  }).format(timestamp) + " UTC";
+  return formatUtcTimestamp(value);
 }
 
 function byOrderThenId<T extends { id: string; order: number }>(left: T, right: T) {

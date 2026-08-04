@@ -22,7 +22,6 @@ function RootDocument() {
       <head>
         <HeadContent />
         <link rel="icon" href="/favicon.svg?v=90e2a71" type="image/svg+xml" />
-        <link rel="stylesheet" href="/assets/tools.css?v=0e2b9bf78fe6" />
       </head>
       <body>
         <Outlet />

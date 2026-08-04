@@ -50,6 +50,7 @@
         }
       ],
       "monitor": {
+        "tracking": "http",
         "enabled": true,
         "paused": false,
         "scope": "public",
@@ -80,6 +81,7 @@
         }
       ],
       "monitor": {
+        "tracking": "http",
         "enabled": true,
         "paused": false,
         "scope": "public",
@@ -104,6 +106,7 @@
         }
       ],
       "monitor": {
+        "tracking": "http",
         "enabled": true,
         "paused": false,
         "scope": "public",
@@ -140,6 +143,7 @@
         }
       ],
       "monitor": {
+        "tracking": "http",
         "enabled": true,
         "paused": false,
         "scope": "public",
@@ -164,6 +168,7 @@
         }
       ],
       "monitor": {
+        "tracking": "http",
         "enabled": true,
         "paused": false,
         "scope": "tailscale",
@@ -188,6 +193,7 @@
         }
       ],
       "monitor": {
+        "tracking": "heartbeat",
         "enabled": true,
         "paused": false,
         "scope": "public",
@@ -212,6 +218,7 @@
         }
       ],
       "monitor": {
+        "tracking": "http",
         "enabled": true,
         "paused": false,
         "scope": "public",

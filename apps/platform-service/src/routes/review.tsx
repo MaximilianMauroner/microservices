@@ -1,7 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { ReviewPage, type ReviewSearch } from "../components/review-page.js";
 import { getReviewPageData } from "../protected-data.js";
-import { fieldGuide } from "../route-handlers.js";
 
 export const Route = createFileRoute("/review")({
   validateSearch: (search): ReviewSearch => ({
@@ -38,8 +37,7 @@ export const Route = createFileRoute("/review")({
       { name: "robots", content: "noindex, nofollow" }
     ]
   }),
-  component: ReviewRoute,
-  server: { handlers: { HEAD: fieldGuide } }
+  component: ReviewRoute
 });
 
 function ReviewRoute() {

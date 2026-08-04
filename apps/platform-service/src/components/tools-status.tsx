@@ -5,11 +5,15 @@ import type {
   PublicSnapshotDocument,
   PrivateSnapshotDocument
 } from "@tools-platform/domain";
+import { Bar, BarChart, Cell, XAxis } from "recharts";
 import { AppShell } from "./app-shell.js";
+import { formatUtcClock, formatUtcDate, formatUtcShortDate } from "./date-format.js";
 import { LocalDate, LocalTimeRange, LocalTimestamp } from "./local-time.js";
 import { Badge } from "./ui/badge.js";
 import { Button } from "./ui/button.js";
 import { Card } from "./ui/card.js";
+import { ChartContainer, ChartTooltip, type ChartConfig } from "./ui/chart.js";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "./ui/collapsible.js";
 import { formatTimestamp, resolveBrowserLink } from "./tools-directory.js";
 
 type OverallState = "operational" | "attention" | "outage" | "unknown";
@@ -78,7 +82,7 @@ function ToolsStatusView({ snapshot, publicOrigin, privateView = false, actor }:
                 <h2 id="private-status-title">Private service status</h2>
                 <p>Sign in with Cloudflare Access to view availability for internal services.</p>
               </div>
-              <Button variant="link" render={<a href="/manage/status" />}>
+              <Button nativeButton={false} variant="link" render={<a href="/manage/status" />}>
                 View private status <span aria-hidden="true">›</span>
               </Button>
             </section>
@@ -140,6 +144,7 @@ function ServiceLink({ href, label, restricted, publicOrigin }: { href: string; 
   const sameOrigin = resolvedHref !== href;
   return (
     <Button
+      nativeButton={false}
       variant="secondary"
       className="service-link"
       render={<a href={resolvedHref} {...(sameOrigin ? {} : { target: "_blank", rel: "noreferrer" })} />}
@@ -157,10 +162,7 @@ function UptimeBar({ status, generatedAt, summary }: { status: PublicMonitorStat
   const label = summary.percentage === null
     ? `Observed uptime is not available. 0 recorded days and ${summary.noDataDays} no-data days.`
     : `${summary.label} across ${summary.totalChecks} checks; ${summary.recordedDays} recorded days and ${summary.noDataDays} no-data days.`;
-  return (
-    <div className="uptime-bar" role="group" aria-label={label}>
-      <span className="visually-hidden">{label}</span>
-      {days.map((day) => {
+  const data = days.map((day) => {
         const uptime = knownDays.get(day);
         const dayRecords = status?.downtimeRecords === undefined
           ? null
@@ -170,27 +172,16 @@ function UptimeBar({ status, generatedAt, summary }: { status: PublicMonitorStat
           : dayRecords.reduce((sum, record) => sum + downtimeForDay(day, record, generatedAt), 0);
         const state = uptime === undefined ? "unknown" : uptime.successfulChecks === uptime.totalChecks ? "operational" : uptime.successfulChecks === 0 ? "outage" : "attention";
         const title = uptime === undefined ? `${day} · No check data` : `${day} · ${formatPercentage(uptime.successfulChecks, uptime.totalChecks)} uptime · ${downtime === null ? "Downtime unavailable" : `${formatDuration(downtime)} recorded downtime`} · ${uptime.totalChecks} checks`;
-        const interruptionCount = dayRecords?.length ?? null;
-        const interruptionLabel = interruptionCount === null
-          ? "Interruption history unavailable"
-          : interruptionCount === 0
-            ? "No interruptions recorded"
-            : `${interruptionCount} ${interruptionCount === 1 ? "interruption" : "interruptions"} recorded`;
-        return uptime === undefined ? (
-          <span key={day} className="uptime-day uptime-day--unknown" role="img" aria-label={title} title={title} />
-        ) : (
-          <span key={day} className={`uptime-day uptime-day--${state}`} role="img" tabIndex={0} aria-label={title}>
-            <span className="uptime-popover" role="tooltip" aria-hidden="true">
-              <span className="uptime-popover__header"><span>{formatUptimeDate(day)}</span><span className={`uptime-popover__state uptime-popover__state--${state}`}>{state === "operational" ? "Operational" : state === "outage" ? "Outage" : "Partial outage"}</span></span>
-              <strong className="uptime-popover__percentage">{formatPercentage(uptime.successfulChecks, uptime.totalChecks)} uptime</strong>
-              <span className="uptime-popover__metrics"><span><small>Recorded downtime</small><b>{downtime === null ? "Unavailable" : formatDuration(downtime)}</b></span><span><small>Checks</small><b>{uptime.totalChecks}</b></span></span>
-              <span className="uptime-popover__footer">{interruptionLabel}</span>
-            </span>
-          </span>
-        );
-      })}
-    </div>
-  );
+        return { day, value: 1, state, title, uptime: uptime ? formatPercentage(uptime.successfulChecks, uptime.totalChecks) : "No data", checks: uptime?.totalChecks ?? 0, downtime: downtime === null ? "Unavailable" : formatDuration(downtime) };
+      });
+  const config = { value: { label: "Availability" } } satisfies ChartConfig;
+  return <ChartContainer config={config} className="mt-4 h-20 w-full aspect-auto" role="img" aria-label={label} initialDimension={{ width: 900, height: 80 }}>
+    <BarChart data={data} margin={{ top: 4, right: 0, bottom: 0, left: 0 }} barCategoryGap={1}>
+      <XAxis dataKey="day" hide />
+      <ChartTooltip cursor={false} content={({ active, payload }) => active && payload?.[0] ? <div className="grid min-w-44 gap-1 rounded-md border bg-popover p-2 text-xs shadow-xl"><strong>{formatUptimeDate(String(payload[0].payload.day))}</strong><span>{String(payload[0].payload.uptime)} uptime · {String(payload[0].payload.checks)} checks</span><span className="text-muted-foreground">{String(payload[0].payload.downtime)} recorded downtime</span></div> : null} />
+      <Bar dataKey="value" radius={2} isAnimationActive={false}>{data.map((item) => <Cell key={item.day} fill={item.state === "operational" ? "#22c55e" : item.state === "attention" ? "#eab308" : item.state === "outage" ? "#ef4444" : "#27272a"} />)}</Bar>
+    </BarChart>
+  </ChartContainer>;
 }
 
 function DowntimeHistory({ status, generatedAt }: { status: PublicMonitorStatus | undefined; generatedAt: string }) {
@@ -199,9 +190,9 @@ function DowntimeHistory({ status, generatedAt }: { status: PublicMonitorStatus 
   const generatedTime = new Date(generatedAt).getTime();
   const total = records.reduce((sum, record) => sum + downtimeDuration(record, generatedTime), 0);
   return (
-    <section className="downtime-history" aria-label="Downtime records">
-      <div className="downtime-history__heading"><h4>Downtime records</h4><span>{records.length} {records.length === 1 ? "interruption" : "interruptions"} · {formatDuration(total)} total</span></div>
-      <ol>{[...records].sort((a, b) => b.startedAt.localeCompare(a.startedAt)).map((record) => {
+    <Collapsible className="downtime-history" aria-label="Downtime records">
+      <CollapsibleTrigger className="downtime-history__heading w-full text-left"><h4>Downtime records</h4><span>{records.length} {records.length === 1 ? "interruption" : "interruptions"} · {formatDuration(total)} total · Show details</span></CollapsibleTrigger>
+      <CollapsibleContent><ol>{[...records].sort((a, b) => b.startedAt.localeCompare(a.startedAt)).map((record) => {
         const startedAt = new Date(record.startedAt);
         const resolvedAt = record.resolvedAt ? new Date(record.resolvedAt) : null;
         return (
@@ -211,8 +202,8 @@ function DowntimeHistory({ status, generatedAt }: { status: PublicMonitorStatus 
             <span className="downtime-duration">{formatDuration(downtimeDuration(record, generatedTime))}</span>
           </li>
         );
-      })}</ol>
-    </section>
+      })}</ol></CollapsibleContent>
+    </Collapsible>
   );
 }
 
@@ -274,14 +265,14 @@ function uptimeSummary(status: PublicMonitorStatus | undefined, generatedAt: str
 
 function rollingDays(generatedAt: string) { const end = new Date(generatedAt); end.setUTCHours(0, 0, 0, 0); return Array.from({ length: 90 }, (_, index) => { const day = new Date(end); day.setUTCDate(day.getUTCDate() - (89 - index)); return day.toISOString().slice(0, 10); }); }
 function formatPercentage(successful: number, total: number) { const value = successful / total * 100; return value === 100 ? "100%" : `${value.toFixed(3).replace(/0+$/, "").replace(/\.$/, "")}%`; }
-function formatUptimeDate(day: string) { return new Intl.DateTimeFormat("en", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }).format(new Date(`${day}T00:00:00.000Z`)); }
+function formatUptimeDate(day: string) { return formatUtcDate(new Date(`${day}T00:00:00.000Z`)); }
 function downtimeRecordsForDay(day: string, records: PublicDowntimeRecord[], generatedAt: string) { return records.filter((record) => downtimeForDay(day, record, generatedAt) > 0); }
 function downtimeForDay(day: string, record: PublicDowntimeRecord, generatedAt: string) { const start = new Date(`${day}T00:00:00.000Z`).getTime(); return downtimeDurationInRange(record, new Date(generatedAt).getTime(), start, start + 86400000); }
 function downtimeDuration(record: PublicDowntimeRecord, generatedTime: number) { return downtimeDurationInRange(record, generatedTime, new Date(record.startedAt).getTime(), generatedTime); }
 function downtimeDurationInRange(record: PublicDowntimeRecord, generatedTime: number, rangeStart: number, rangeEnd: number) { const start = new Date(record.startedAt).getTime(); const end = record.resolvedAt ? new Date(record.resolvedAt).getTime() : generatedTime; return Math.max(0, Math.min(end, rangeEnd, generatedTime) - Math.max(start, rangeStart)); }
 function formatDuration(ms: number) { const seconds = Math.max(0, Math.round(ms / 1000)); if (seconds < 60) return `${seconds}s`; const minutes = Math.floor(seconds / 60); if (minutes < 60) return seconds % 60 ? `${minutes}m ${seconds % 60}s` : `${minutes} min`; return `${Math.floor(minutes / 60)}h${minutes % 60 ? ` ${minutes % 60}m` : ""}`; }
-function formatClock(value: Date) { return new Intl.DateTimeFormat("en", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: "UTC" }).format(value); }
-function formatShortDate(value: Date) { return new Intl.DateTimeFormat("en", { month: "short", day: "numeric", timeZone: "UTC" }).format(value); }
+function formatClock(value: Date) { return formatUtcClock(value); }
+function formatShortDate(value: Date) { return formatUtcShortDate(value); }
 function byOrderThenId<T extends { id: string; order: number }>(a: T, b: T) { return a.order - b.order || a.id.localeCompare(b.id); }
 function safeHttpUrl(value: string) { try { const url = new URL(value); return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : null; } catch { return null; } }
 

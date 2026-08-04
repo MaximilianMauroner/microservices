@@ -55,6 +55,7 @@ export const catalog: CatalogDocument = {
         }
       ],
       monitor: {
+        tracking: "http",
         enabled: true,
         paused: false,
         scope: "public",

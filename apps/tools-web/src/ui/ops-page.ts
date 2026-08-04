@@ -51,9 +51,9 @@ export function renderOperationsPage(model: OperationsPageModel): string {
       <section class="ops-heading" aria-labelledby="ops-title">
         <div>
           <p class="eyebrow">Catalog administration</p>
-          <h1 id="ops-title">Tools operations</h1>
-          <p><span class="environment">Cloudflare Access protected</span> · Signed in as ${escapeHtml(model.actor)}. Edit the curated directory and monitor settings. Changes use optimistic concurrency and are never retried automatically.</p>
-          <div class="form-actions admin-heading-actions"><a class="button button-link" href="/manage/documents">View Markdown documents</a></div>
+          <h1 id="ops-title">Catalog</h1>
+          <p><span class="environment">Access protected</span> · Signed in as ${escapeHtml(model.actor)}. Edit directory records and monitor settings. Changes use optimistic concurrency.</p>
+          <div class="form-actions admin-heading-actions"><a class="button button-link" href="/manage/documents">Documents</a><a class="button button-link" href="/manage/status">Private status</a></div>
         </div>
         <dl class="snapshot-meta">
           <div><dt>Catalog revision</dt><dd data-current-revision>${escapeHtml(model.revision)}</dd></div>
@@ -67,7 +67,7 @@ export function renderOperationsPage(model: OperationsPageModel): string {
       <section class="ops-section manage-workspace" aria-labelledby="records-title">
         <div class="section-heading">
           <div><p class="eyebrow">Catalog</p><h2 id="records-title">Find and edit a record</h2></div>
-          <div class="form-actions"><button class="button button--primary" type="button" data-editor-target="new-group">Add group</button><button class="button button--primary" type="button" data-editor-target="new-entry">Add entry</button></div>
+          <div class="form-actions"><button class="button" type="button" data-editor-target="new-group">Add group</button><button class="button button--primary" type="button" data-editor-target="new-entry">Add entry</button></div>
         </div>
         <div class="record-toolbar">
           <label>Search <input type="search" data-record-search placeholder="Name, ID, or group"></label>
@@ -97,7 +97,7 @@ export function renderOperationsPage(model: OperationsPageModel): string {
     ${renderConflictDialog()}`;
 
   return pageShell({
-    title: "Operations — Tools",
+    title: "Manage · Mauroner Tools",
     description: "Protected Tools Platform catalog administration.",
     body,
     operations: true,
@@ -219,7 +219,7 @@ function renderGroupEditor(group: CatalogGroup, index: number, count: number, hi
               </select>
             </label>
             <div class="form-actions">
-              <button class="button" type="submit">Save group</button>
+              <button class="button button--primary" type="submit">Save group</button>
               <button class="button button--danger" type="button" data-delete-action="/api/ops/groups/${escapeHtml(group.id)}" data-delete-name="${escapeHtml(group.name)}">Delete</button>
             </div>
           </form>
@@ -275,6 +275,7 @@ function renderEntryEditor(
             <label>Visibility
               <select name="visibility">${option("public", entry.visibility)}${option("private", entry.visibility)}</select>
             </label>
+            <label>Tracking source <select name="monitor.tracking">${option("http", entry.monitor?.tracking ?? "http")}${option("heartbeat", entry.monitor?.tracking ?? "http")}</select></label>
             <label>Monitor URL <input name="monitor.url" type="url" value="${escapeHtml(entry.monitor?.url ?? "")}" placeholder="https://example.test/health"></label>
             <label>Monitor scope
               <select name="monitor.scope">${option("public", entry.monitor?.scope ?? "public")}${option("tailscale", entry.monitor?.scope ?? "public")}</select>
@@ -283,7 +284,7 @@ function renderEntryEditor(
             <label class="span-all">Operator note <textarea name="privateNotes" rows="2">${escapeHtml(entry.privateNotes ?? "")}</textarea></label>
             <fieldset class="span-all link-editor" data-link-editor><legend>Links</legend><div data-link-rows>${entry.links.map(renderLinkRow).join("")}</div><button class="button" type="button" data-link-add>Add link</button><details><summary>Advanced JSON</summary><label>Links JSON <textarea name="links" rows="4" spellcheck="false">${escapeHtml(JSON.stringify(entry.links, null, 2))}</textarea></label></details></fieldset>
             <div class="form-actions span-all">
-              <button class="button" type="submit">Save entry</button>
+              <button class="button button--primary" type="submit">Save entry</button>
               <button class="button" type="button" data-json-action="/api/ops/entries/${escapeHtml(entry.id)}/reorder" data-json-method="POST" data-json-body="${jsonForDataAttribute({ direction: "up" })}" data-move-name="${escapeHtml(entry.name)}" data-move-position="${peerIndex + 1}" data-move-count="${peers.length}"${peerIndex === 0 ? ' disabled title="Already first in this group"' : ""}>Move up</button>
               <button class="button" type="button" data-json-action="/api/ops/entries/${escapeHtml(entry.id)}/reorder" data-json-method="POST" data-json-body="${jsonForDataAttribute({ direction: "down" })}" data-move-name="${escapeHtml(entry.name)}" data-move-position="${peerIndex + 1}" data-move-count="${peers.length}"${peerIndex === peers.length - 1 ? ' disabled title="Already last in this group"' : ""}>Move down</button>
               ${entry.monitor ? `<button class="button" type="button" data-json-action="/api/ops/entries/${escapeHtml(entry.id)}/monitor/${monitorAction.action}" data-json-method="POST" data-json-body="{}">${monitorAction.label}</button>` : ""}
