@@ -702,11 +702,23 @@ function renderDirectoryLink(
   extra = ""
 ): string {
   const destination = new URL(url);
-  const sameOrigin = destination.origin === new URL(publicOrigin).origin;
+  const href = localBrowserPath(destination, publicOrigin) ?? url;
+  const sameOrigin = href !== url;
   const external = sameOrigin
     ? '<span aria-hidden="true">›</span>'
     : '<span aria-hidden="true">↗</span><span class="visually-hidden"> (opens in a new tab)</span>';
-  return `<a class="${className}" href="${escapeHtml(url)}"${sameOrigin ? "" : ' target="_blank" rel="noreferrer"'}><span>${escapeHtml(label)}</span>${extra}${external}</a>`;
+  return `<a class="${className}" href="${escapeHtml(href)}"${sameOrigin ? "" : ' target="_blank" rel="noreferrer"'}><span>${escapeHtml(label)}</span>${extra}${external}</a>`;
+}
+
+function localBrowserPath(destination: URL, publicOrigin: string): string | undefined {
+  if (destination.origin === new URL(publicOrigin).origin) {
+    return `${destination.pathname}${destination.search}${destination.hash}`;
+  }
+  if (destination.pathname.startsWith("/cdn-cgi/access/login/")) {
+    const redirect = destination.searchParams.get("redirect_url");
+    if (redirect?.startsWith("/") && !redirect.startsWith("//")) return redirect;
+  }
+  return undefined;
 }
 
 function statusMark(state: OverallState, large: boolean): string {

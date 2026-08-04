@@ -165,9 +165,11 @@ describe("public page", () => {
     expect(html).toContain("Tailscale required");
     expect(html).toContain("Operational");
     expect(html).toContain("Unavailable from Railway");
+    expect(html).toContain('<meta name="theme-color" content="#000000">');
+    expect(html).toContain('<header class="suite-header" data-suite-shell="command-deck">');
     expect(html).not.toContain("Operator sign-in");
     expect(html).toContain('<link rel="icon" href="/favicon.svg?v=90e2a71" type="image/svg+xml">');
-    expect(html).toContain('<link rel="stylesheet" href="/assets/tools.css?v=8dca720">');
+    expect(html).toContain('<link rel="stylesheet" href="/assets/tools.css?v=0e2b9bf78fe6">');
     expect(html).toContain('src="/assets/icons/artifact-publisher.png"');
     expect(html).toContain('src="/assets/icons/network-console.png"');
     expect(html).not.toContain('<script src="/assets/ops.js"');
@@ -194,7 +196,7 @@ describe("public page", () => {
     expect(html).toContain('href="/manage/status"');
     expect(html).toContain('datetime="2026-07-27T12:00:00.000Z"');
     expect((html.match(/class="uptime-day /g) ?? [])).toHaveLength(180);
-    expect(html).toContain('<link rel="stylesheet" href="/assets/tools.css?v=8dca720">');
+    expect(html).toContain('<link rel="stylesheet" href="/assets/tools.css?v=0e2b9bf78fe6">');
     expect(html).not.toContain('<script src="/assets/ops.js"');
     expect(html).not.toContain("Operator sign-in");
   });
@@ -226,7 +228,7 @@ describe("public page", () => {
 
   test("distinguishes same-origin navigation from external destinations", () => {
     const html = renderPublicPage(publicSnapshot, "https://uploads.example.test");
-    expect(html).toContain('href="https://uploads.example.test/path?a=1&amp;b=2"><span>Open</span><span aria-hidden="true">›</span>');
+    expect(html).toContain('href="/path?a=1&amp;b=2"><span>Open</span><span aria-hidden="true">›</span>');
     expect(html).toContain('href="https://admin.example.test/" target="_blank" rel="noreferrer"');
     expect(html).toContain("opens in a new tab");
   });
@@ -518,7 +520,7 @@ describe("operations page", () => {
     expect(html).toContain('data-endpoint="/api/ops/audit"');
     expect(html).toContain("Loading protected history");
     expect(html).toContain("Loading protected audit events");
-    expect(html).toContain('<link rel="stylesheet" href="/assets/tools.css?v=8dca720">');
+    expect(html).toContain('<link rel="stylesheet" href="/assets/tools.css?v=0e2b9bf78fe6">');
     expect(html).toContain('<script src="/assets/ops.js?v=4b98adb" defer></script>');
   });
 
