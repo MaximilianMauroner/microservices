@@ -1,7 +1,7 @@
-import { loadConfig as loadArtifactConfig } from "../../artifact-publisher/src/config.ts";
-import { loadConfig as loadFieldGuideConfig } from "../../field-guide-console/src/config.ts";
-import { loadConfig as loadToolsConfig } from "../../tools-web/src/config.ts";
-import { loadConfig as loadCheckerConfig } from "../../../jobs/tools-checker/src/config.ts";
+import { loadConfig as loadArtifactConfig } from "@tools-platform/artifact-publisher";
+import { loadConfig as loadFieldGuideConfig } from "@tools-platform/field-guide/config";
+import { loadConfig as loadToolsConfig } from "@tools-platform/web";
+import { loadConfig as loadCheckerConfig } from "@tools-platform/tools-checker/config";
 
 type Environment = Readonly<Record<string, string | undefined>>;
 

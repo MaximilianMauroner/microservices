@@ -1,6 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
-import type { JsonBucket } from "../../tools-web/src/bucket.ts";
-import { BUCKET_KEYS } from "../../../packages/tools-domain/src/keys.ts";
+import type { JsonBucket } from "@tools-platform/web";
+import { BUCKET_KEYS } from "@tools-platform/domain";
 
 const HEARTBEAT_SCHEMA_VERSION = 1;
 
