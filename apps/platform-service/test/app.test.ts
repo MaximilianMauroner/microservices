@@ -6,7 +6,8 @@ import {
 import {
   accessAuthentication,
   createPlatformHandler,
-  type PlatformAccess
+  type PlatformAccess,
+  type PlatformHandler
 } from "../src/app.js";
 
 function verifier(audience: string): AccessVerifier {
@@ -26,6 +27,12 @@ const access: PlatformAccess = {
   review: verifier("review-audience")
 };
 
+const mounted = (handle: PlatformHandler) => ({
+  handle,
+  readiness: async () => {},
+  close: () => {}
+});
+
 function request(
   app: ReturnType<typeof createPlatformHandler>,
   path: string,
@@ -38,9 +45,9 @@ function app() {
   return createPlatformHandler({
     access,
     services: {
-      artifact: async () => new Response("artifact"),
-      fieldGuide: async () => new Response("field-guide"),
-      tools: async () => new Response("tools")
+      publisher: mounted(async () => new Response("artifact")),
+      review: mounted(async () => new Response("field-guide")),
+      manage: mounted(async () => new Response("tools"))
     },
     publicOrigin: "https://tools.example.test"
   });
@@ -93,15 +100,15 @@ describe("platform fetch gateway", () => {
     const platform = createPlatformHandler({
       access,
       services: {
-        artifact: async (request) =>
+        publisher: mounted(async (request) =>
           request.headers.get("authorization") === "Bearer upload-token"
             ? new Response("upload-ok")
-            : new Response(JSON.stringify({ error: "invalid_upload_token" }), { status: 401 }),
-        fieldGuide: async (request) =>
+            : new Response(JSON.stringify({ error: "invalid_upload_token" }), { status: 401 })),
+        review: mounted(async (request) =>
           request.headers.get("authorization") === "Bearer agent-token"
             ? new Response("agent-ok")
-            : new Response(JSON.stringify({ error: "invalid_agent_token" }), { status: 401 }),
-        tools: async () => new Response("tools")
+            : new Response(JSON.stringify({ error: "invalid_agent_token" }), { status: 401 })),
+        manage: mounted(async () => new Response("tools"))
       },
       publicOrigin: "https://tools.example.test"
     });

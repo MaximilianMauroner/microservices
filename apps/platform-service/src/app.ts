@@ -3,8 +3,7 @@ import {
   attachAccessActor,
   classifyRoute,
   getAttachedAccessActor,
-  isArtifactPath,
-  isFieldGuidePath,
+  serviceForPath,
   type AccessActor,
   type AccessFamily,
   type AccessVerifier
@@ -19,11 +18,13 @@ export interface PlatformAccess {
 
 export type PlatformHandler = (request: Request) => Promise<Response>;
 
-export type PlatformServices = {
-  artifact: PlatformHandler;
-  fieldGuide: FetchHandler;
-  tools: FetchHandler;
+export type MountedService = {
+  handle: FetchHandler;
+  readiness: () => Promise<void>;
+  close: () => void | Promise<void>;
 };
+
+export type PlatformServices = Record<AccessFamily, MountedService>;
 
 /**
  * Authenticates one request using the central route-family policy and stores
@@ -86,11 +87,7 @@ export function createPlatformHandler(options: {
     if (authentication.response) return authentication.response;
 
     const pathname = new URL(request.url).pathname;
-    const handler = isArtifactPath(pathname)
-      ? options.services.artifact
-      : isFieldGuidePath(pathname)
-        ? options.services.fieldGuide
-        : options.services.tools;
+    const handler = options.services[serviceForPath(pathname)].handle;
     const redirect = legacyBrowserRedirect(request);
     if (redirect) {
       return new Response(null, {

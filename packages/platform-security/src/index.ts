@@ -74,6 +74,13 @@ export function createAccessVerifier(config: {
 
 export type AccessFamily = "manage" | "publisher" | "review";
 
+/** Returns the mounted service that owns a path, independently of its access mode. */
+export function serviceForPath(pathname: string): AccessFamily {
+  if (isArtifactPath(pathname)) return "publisher";
+  if (isFieldGuidePath(pathname)) return "review";
+  return "manage";
+}
+
 export type RouteAccess =
   | { kind: "public" }
   | { kind: "machine"; service: "uploads" | "agent" | "heartbeat" }

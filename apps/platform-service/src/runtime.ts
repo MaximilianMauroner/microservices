@@ -12,7 +12,7 @@ import {
 import { createAccessVerifier } from "@tools-platform/security";
 import { executeChecker } from "@tools-platform/tools-checker";
 import type { PublicSnapshotDocument } from "@tools-platform/domain";
-import { accessAuthentication, contextAwareAccessVerifier, type PlatformAccess, type PlatformHandler } from "./app.js";
+import { accessAuthentication, contextAwareAccessVerifier, type PlatformAccess, type PlatformServices } from "./app.js";
 import { loadPlatformConfig } from "./config.js";
 import { startAlignedScheduler } from "./scheduler.js";
 import { createTowerHeartbeat, type TowerHeartbeat } from "./tower-heartbeat.js";
@@ -23,16 +23,9 @@ export type PlatformRuntime = {
   readOnly: boolean;
   localAuth: boolean;
   access: PlatformAccess;
-  artifact: PlatformHandler;
-  fieldGuide: (request: Request) => Promise<Response>;
-  tools: (request: Request) => Promise<Response>;
+  services: PlatformServices;
   publicSnapshot: () => Promise<PublicSnapshotDocument>;
   health: () => Promise<void>;
-  componentHealth: {
-    tools: () => Promise<void>;
-    publisher: () => Promise<void>;
-    review: () => Promise<void>;
-  };
   towerHeartbeat: TowerHeartbeat;
   stop: () => Promise<void>;
 };
@@ -128,6 +121,23 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
           config.artifact.temporaryFileCleanupIntervalMs
         );
     let stopped = false;
+    const services: PlatformServices = {
+      manage: {
+        handle: tools,
+        readiness: () => toolsStorage.readiness(),
+        close: () => {}
+      },
+      publisher: {
+        handle: artifact,
+        readiness: async () => { await artifactStorage.listUploads(new Date(), { limit: 1 }); },
+        close: () => artifactStorage.close?.()
+      },
+      review: {
+        handle: fieldGuide,
+        readiness: async () => { await fieldGuideHandle.repository.summary(new Date()); },
+        close: () => fieldGuideHandle.close()
+      }
+    };
     const stop = async () => {
       if (stopped) return;
       stopped = true;
@@ -137,9 +147,8 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
         checker?.wait() ?? Promise.resolve(),
         cleanup?.wait() ?? Promise.resolve(),
         activityTracker.waitForIdle(),
-        fieldGuideHandle.close()
+        ...Object.values(services).map((service) => service.close())
       ]);
-      artifactStorage.close?.();
     };
 
     if (fieldGuideHandle.startupReport) {
@@ -158,26 +167,11 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
       readOnly: config.readOnly,
       localAuth: config.localAuth,
       access,
-      artifact,
-      fieldGuide,
-      tools,
+      services,
       publicSnapshot: () => toolsStorage.readPublicSnapshot(),
       towerHeartbeat,
-      componentHealth: {
-        tools: () => toolsStorage.readiness(),
-        publisher: async () => {
-          await artifactStorage.listUploads(new Date(), { limit: 1 });
-        },
-        review: async () => {
-          await fieldGuideHandle.repository.summary(new Date());
-        }
-      },
       health: async () => {
-        await Promise.all([
-          toolsStorage.readiness(),
-          artifactStorage.listUploads(new Date(), { limit: 1 }),
-          fieldGuideHandle.repository.summary(new Date())
-        ]);
+        await Promise.all(Object.values(services).map((service) => service.readiness()));
       },
       stop
     };
