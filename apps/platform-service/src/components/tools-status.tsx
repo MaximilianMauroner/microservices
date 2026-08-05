@@ -78,7 +78,7 @@ function ToolsStatusView({ snapshot, publicOrigin, privateView = false, actor }:
                 <h2 id="private-status-title">Private service status</h2>
                 <p>Sign in with Cloudflare Access to view availability for internal services.</p>
               </div>
-              <Button variant="link" render={<a href="/manage/status" />}>
+              <Button variant="secondary" className="private-status-link" render={<a href="/manage/status" />}>
                 View private status <span aria-hidden="true">›</span>
               </Button>
             </section>
@@ -112,6 +112,7 @@ function ServiceRow({ entry, status, generatedAt, publicOrigin }: {
       </div>
       <p className="service-description">{entry.description}</p>
       <UptimeBar status={status} generatedAt={generatedAt} summary={uptime} />
+      <p className="uptime-scroll-hint">Swipe horizontally to inspect daily checks.</p>
       <div className="uptime-legend" aria-hidden="true">
         <span><i className="uptime-key uptime-key--operational" />Operational</span>
         <span><i className="uptime-key uptime-key--attention" />Partial outage</span>
@@ -141,7 +142,7 @@ function ServiceLink({ href, label, restricted, publicOrigin }: { href: string; 
   return (
     <Button
       variant="secondary"
-      className="service-link"
+      className="service-link directory-action"
       render={<a href={resolvedHref} {...(sameOrigin ? {} : { target: "_blank", rel: "noreferrer" })} />}
     >
       <span>{label}</span>
@@ -158,8 +159,9 @@ function UptimeBar({ status, generatedAt, summary }: { status: PublicMonitorStat
     ? `Observed uptime is not available. 0 recorded days and ${summary.noDataDays} no-data days.`
     : `${summary.label} across ${summary.totalChecks} checks; ${summary.recordedDays} recorded days and ${summary.noDataDays} no-data days.`;
   return (
-    <div className="uptime-bar" role="group" aria-label={label}>
-      <span className="visually-hidden">{label}</span>
+    <div className="uptime-bar-scroll" role="region" aria-label="90-day uptime history" tabIndex={0}>
+      <div className="uptime-bar" role="group" aria-label={label}>
+        <span className="visually-hidden">{label}</span>
       {days.map((day) => {
         const uptime = knownDays.get(day);
         const dayRecords = status?.downtimeRecords === undefined
@@ -179,7 +181,7 @@ function UptimeBar({ status, generatedAt, summary }: { status: PublicMonitorStat
         return uptime === undefined ? (
           <span key={day} className="uptime-day uptime-day--unknown" role="img" aria-label={title} title={title} />
         ) : (
-          <span key={day} className={`uptime-day uptime-day--${state}`} role="img" tabIndex={0} aria-label={title}>
+          <span key={day} className={`uptime-day uptime-day--${state}`} role="img" tabIndex={0} aria-label={title} title={title}>
             <span className="uptime-popover" role="tooltip" aria-hidden="true">
               <span className="uptime-popover__header"><span>{formatUptimeDate(day)}</span><span className={`uptime-popover__state uptime-popover__state--${state}`}>{state === "operational" ? "Operational" : state === "outage" ? "Outage" : "Partial outage"}</span></span>
               <strong className="uptime-popover__percentage">{formatPercentage(uptime.successfulChecks, uptime.totalChecks)} uptime</strong>
@@ -189,6 +191,7 @@ function UptimeBar({ status, generatedAt, summary }: { status: PublicMonitorStat
           </span>
         );
       })}
+      </div>
     </div>
   );
 }

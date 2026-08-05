@@ -76,5 +76,9 @@ describe("static UI assets", () => {
     expect(css).toContain(".suite-nav a { flex: 1 1 calc(33.333% - 4px);");
     expect(css).toContain("font-size: 2.125rem");
     expect(css).toContain(".browse-tools { margin-top: 14px;");
+    expect(css).toContain(".directory-primary-action");
+    expect(css).toContain(".directory-action");
+    expect(css).toContain(".uptime-bar-scroll");
+    expect(css).toContain("min-width: 540px");
   });
 });

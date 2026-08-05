@@ -72,22 +72,40 @@ vi.mock("@convex-dev/prosemirror-sync/tiptap", async () => {
   };
 });
 
-import { App } from "./App";
+import { CollaborativeWorkspace } from "./collaborative-workspace";
 
-describe("sync error UI", () => {
+describe("collaborative workspace", () => {
   let container: HTMLDivElement;
   let root: Root;
 
   beforeEach(async () => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     reportSyncError = undefined;
-    window.history.replaceState(null, "", `/d/sync-errors.md--${TOKEN}`);
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
     await act(async () => {
-      root.render(<App />);
+      root.render(<CollaborativeWorkspace document={publicDocument} />);
     });
+  });
+
+  it("switches between the source and preview panes", async () => {
+    const sourcePanel = container.querySelector("#source-panel");
+    const previewPanel = container.querySelector("#preview-panel");
+    const previewTab = container.querySelector<HTMLButtonElement>(
+      "#mobile-preview-tab",
+    );
+
+    expect(sourcePanel?.classList.contains("mobile-active")).toBe(true);
+    expect(previewPanel?.classList.contains("mobile-inactive")).toBe(true);
+
+    await act(async () => {
+      previewTab?.click();
+    });
+
+    expect(sourcePanel?.classList.contains("mobile-inactive")).toBe(true);
+    expect(previewPanel?.classList.contains("mobile-active")).toBe(true);
+    expect(previewTab?.getAttribute("aria-selected")).toBe("true");
   });
 
   afterEach(async () => {

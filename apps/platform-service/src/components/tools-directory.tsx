@@ -45,7 +45,7 @@ export function ToolsDirectory({
           <p className="lede">
             A curated directory of Mauroner services, with clear access requirements and live availability.
           </p>
-          <Button variant="default" render={<a href="#catalog" />}>
+          <Button variant="default" className="directory-primary-action" render={<a href="#catalog" />}>
             Browse tools <span aria-hidden="true">↓</span>
           </Button>
           <p className="freshness">
@@ -160,6 +160,7 @@ function DirectoryLink({ href, label, publicOrigin }: { href: string; label: str
   return (
     <Button
       variant="outline"
+      className="directory-action"
       render={<a href={resolvedHref} {...(sameOrigin ? {} : { target: "_blank", rel: "noreferrer" })} />}
     >
       <span>{label}</span>
