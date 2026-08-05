@@ -1,0 +1,138 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: field_guide
+      POSTGRES_USER: local
+      POSTGRES_PASSWORD: local
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U local -d field_guide"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  minio:
+    image: minio/minio:latest
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: local-minio
+      MINIO_ROOT_PASSWORD: local-minio-password
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+
+  postgres-migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    environment:
+      DATABASE_URL: postgres://local:local@postgres:5432/field_guide
+      FIELD_GUIDE_SCHEMA_PUSH_CONFIRM: field-guide-console-production
+    command: ["bun", "run", "--cwd", "apps/field-guide-console", "db:push-postgres"]
+
+  minio-seed:
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+    depends_on:
+      minio:
+        condition: service_started
+      postgres-migrate:
+        condition: service_completed_successfully
+    restart: "no"
+    environment:
+      TOOLS_S3_BUCKET: tools
+      TOOLS_S3_ENDPOINT: http://minio:9000
+      TOOLS_S3_REGION: us-east-1
+      TOOLS_S3_ACCESS_KEY_ID: local-minio
+      TOOLS_S3_SECRET_ACCESS_KEY: local-minio-password
+      TOOLS_S3_FORCE_PATH_STYLE: true
+      ARTIFACT_S3_BUCKET: artifacts
+      ARTIFACT_S3_ENDPOINT: http://minio:9000
+      ARTIFACT_S3_REGION: us-east-1
+      ARTIFACT_S3_ACCESS_KEY_ID: local-minio
+      ARTIFACT_S3_SECRET_ACCESS_KEY: local-minio-password
+      ARTIFACT_S3_FORCE_PATH_STYLE: true
+      LOCAL_PLATFORM_BROWSER_ORIGIN: http://localhost:3000
+      LOCAL_PLATFORM_INTERNAL_ORIGIN: http://platform:3000
+      LOCAL_MARKDOWN_PUBLIC_ORIGIN: http://localhost:8787
+      LOCAL_MARKDOWN_INTERNAL_ORIGIN: http://markdown-mock:8787
+      SEED_RETRY_ATTEMPTS: 30
+    command: ["bun", "run", "--cwd", "jobs/tools-checker", "seed-local"]
+
+  markdown-mock:
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+    environment:
+      PORT: 8787
+      MARKDOWN_SHARE_ADMIN_TOKEN: local-markdown-admin-token-local-development-001
+    command: ["bun", "run", "--cwd", "jobs/tools-checker", "markdown-mock"]
+    ports:
+      - "8787:8787"
+    depends_on:
+      minio:
+        condition: service_started
+
+  platform:
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+    depends_on:
+      minio-seed:
+        condition: service_completed_successfully
+      markdown-mock:
+        condition: service_started
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      PUBLIC_ORIGIN: http://localhost:3000
+      PLATFORM_LOCAL_AUTH: true
+      PLATFORM_READ_ONLY: false
+      FIELD_GUIDE_DATABASE_URL: postgres://local:local@postgres:5432/field_guide
+      CF_ACCESS_ISSUER: https://local.cloudflareaccess.com
+      CF_ACCESS_MANAGE_AUDIENCE: local-manage
+      CF_ACCESS_PUBLISHER_AUDIENCE: local-publisher
+      CF_ACCESS_REVIEW_AUDIENCE: local-review
+      TOOLS_S3_BUCKET: tools
+      TOOLS_S3_ENDPOINT: http://minio:9000
+      TOOLS_S3_REGION: us-east-1
+      TOOLS_S3_ACCESS_KEY_ID: local-minio
+      TOOLS_S3_SECRET_ACCESS_KEY: local-minio-password
+      TOOLS_S3_FORCE_PATH_STYLE: true
+      ARTIFACT_S3_BUCKET: artifacts
+      ARTIFACT_S3_ENDPOINT: http://minio:9000
+      ARTIFACT_S3_REGION: us-east-1
+      ARTIFACT_S3_ACCESS_KEY_ID: local-minio
+      ARTIFACT_S3_SECRET_ACCESS_KEY: local-minio-password
+      ARTIFACT_S3_FORCE_PATH_STYLE: true
+      UPLOAD_TOKEN: local-upload-token-00000000000000000000000000
+      AGENT_API_TOKEN: local-agent-api-token-000000000000000000
+      MARKDOWN_SHARE_ADMIN_ENDPOINT: http://markdown-mock:8787/admin/documents
+      MARKDOWN_SHARE_ADMIN_TOKEN: local-markdown-admin-token-local-development-001
+      MARKDOWN_SHARE_PUBLIC_ORIGIN: http://localhost:8787
+      TOWER_HEARTBEAT_TOKEN: local-tower-heartbeat-token-000000000000000
+      TOOLS_ENVIRONMENT: local
+      CHECKER_INTERVAL_MS: 300000
+    command: ["bun", "run", "--cwd", "apps/platform-service", "start"]
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD", "bun", "-e", "await fetch('http://localhost:3000/live').then((response) => { if (!response.ok) process.exit(1); }).catch(() => process.exit(1));"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  postgres-data:
+  minio-data:

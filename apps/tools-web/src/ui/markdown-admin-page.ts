@@ -83,7 +83,7 @@ export function renderMarkdownAdminPage(
     </main>`;
 
   return pageShell({
-    title: "Document inventory — Tools",
+    title: "Documents · Mauroner Tools",
     description: "Protected Markdown Share document inventory.",
     body,
     privatePage: true,

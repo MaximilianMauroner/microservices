@@ -6,6 +6,7 @@ coverage/
 .DS_Store
 /.field-guide/sessions/
 /.review/
+/.agent/sessions/
 /.agent/artifacts/
 /.agent/review/
 apps/platform-service/.output/

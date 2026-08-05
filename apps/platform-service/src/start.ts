@@ -2,6 +2,7 @@ import { createCsrfMiddleware, createMiddleware, createStart } from "@tanstack/r
 import type { AccessActor } from "@tools-platform/security";
 import { authenticatePlatformRequest } from "./app.js";
 import { getPlatformRuntime, type PlatformRuntime } from "./runtime.js";
+import { PLATFORM_UI_BUILD } from "./build-identity.js";
 
 export type PlatformRequestContext = {
   runtime: PlatformRuntime;
@@ -13,7 +14,21 @@ export type PlatformRequestContext = {
 const platformRequestMiddleware = createMiddleware().server(
   async ({ request, next }) => {
     const runtime = await getPlatformRuntime();
-    const authentication = await authenticatePlatformRequest(request, runtime.access);
+    if (runtime.readOnly && request.method !== "GET" && request.method !== "HEAD") {
+      return new Response(JSON.stringify({ error: "read_only_local_mode" }), {
+        status: 405,
+        headers: {
+          Allow: "GET, HEAD",
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json; charset=utf-8"
+        }
+      });
+    }
+    const authentication = await authenticatePlatformRequest(
+      request,
+      runtime.access,
+      { readOnly: runtime.readOnly, localAuth: runtime.localAuth }
+    );
     if (authentication.response) return authentication.response;
     const nonce = crypto.randomUUID().replaceAll("-", "");
     const result = await next({
@@ -33,10 +48,16 @@ const platformRequestMiddleware = createMiddleware().server(
       headers.get("Content-Type")?.startsWith("text/html") &&
       !headers.has("Content-Security-Policy")
     ) {
+      const styleSources = process.env.NODE_ENV === "development"
+        ? "'self' 'unsafe-inline'"
+        : "'self'";
       headers.set(
         "Content-Security-Policy",
-        `default-src 'none'; style-src 'self' 'nonce-${nonce}'; script-src 'self' 'nonce-${nonce}'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`
+        `default-src 'none'; style-src ${styleSources} 'nonce-${nonce}'; style-src-attr 'unsafe-inline'; script-src 'self' 'nonce-${nonce}'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`
       );
+    }
+    if (headers.get("Content-Type")?.startsWith("text/html")) {
+      headers.set("X-Platform-UI-Build", PLATFORM_UI_BUILD);
     }
     if (
       (request.method === "GET" || request.method === "HEAD") &&

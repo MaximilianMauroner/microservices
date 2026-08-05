@@ -16,6 +16,8 @@
   "packageManager": "bun@1.3.14",
   "scripts": {
     "start": "bun src/index.ts",
+    "seed-local": "bun src/local-seed.ts",
+    "markdown-mock": "bun src/markdown-mock.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },

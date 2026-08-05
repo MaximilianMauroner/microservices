@@ -79,6 +79,7 @@ function entry(
     lifecycle: "active",
     links: [],
     monitor: {
+      tracking: "http",
       enabled: true,
       paused: false,
       scope,

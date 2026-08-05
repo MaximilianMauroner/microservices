@@ -34,10 +34,15 @@ export function loadConfig(
     port,
     trustedOrigin: parseOrigin(
       required(env, "PUBLIC_ORIGIN"),
-      "PUBLIC_ORIGIN"
+      "PUBLIC_ORIGIN",
+      env.NODE_ENV === "development"
     ),
     bucket: {
-      endpoint: parseOrigin(required(env, "S3_ENDPOINT"), "S3_ENDPOINT"),
+      endpoint: parseOrigin(
+        required(env, "S3_ENDPOINT"),
+        "S3_ENDPOINT",
+        env.NODE_ENV === "development"
+      ),
       region: required(env, "S3_REGION"),
       name: required(env, "S3_BUCKET"),
       accessKeyId: required(env, "S3_ACCESS_KEY_ID"),
@@ -54,7 +59,8 @@ export function loadConfig(
     markdownShare: {
       adminEndpoint: parseHttpsUrl(
         required(env, "MARKDOWN_SHARE_ADMIN_ENDPOINT"),
-        "MARKDOWN_SHARE_ADMIN_ENDPOINT"
+        "MARKDOWN_SHARE_ADMIN_ENDPOINT",
+        env.NODE_ENV === "development"
       ),
       adminToken: parseSecret(
         required(env, "MARKDOWN_SHARE_ADMIN_TOKEN"),
@@ -62,7 +68,8 @@ export function loadConfig(
       ),
       publicOrigin: parseOrigin(
         required(env, "MARKDOWN_SHARE_PUBLIC_ORIGIN"),
-        "MARKDOWN_SHARE_PUBLIC_ORIGIN"
+        "MARKDOWN_SHARE_PUBLIC_ORIGIN",
+        env.NODE_ENV === "development"
       )
     }
   };
@@ -86,22 +93,25 @@ function required(
   return value;
 }
 
-function parseOrigin(value: string, name: string): string {
+function parseOrigin(value: string, name: string, allowHttp = false): string {
   let url: URL;
   try {
     url = new URL(value);
   } catch {
-    throw new Error(`${name} must be an HTTPS origin`);
+    const protocolLabel = allowHttp ? "HTTP(S)" : "HTTPS";
+    throw new Error(`${name} must be an ${protocolLabel} origin`);
   }
   if (
-    url.protocol !== "https:" ||
+    (!allowHttp && url.protocol !== "https:") ||
+    (allowHttp && !["http:", "https:"].includes(url.protocol)) ||
     url.username ||
     url.password ||
     url.pathname !== "/" ||
     url.search ||
     url.hash
   ) {
-    throw new Error(`${name} must be an HTTPS origin`);
+    const protocolLabel = allowHttp ? "HTTP(S)" : "HTTPS";
+    throw new Error(`${name} must be an ${protocolLabel} origin`);
   }
   if (
     name === "CF_ACCESS_ISSUER" &&
@@ -112,15 +122,17 @@ function parseOrigin(value: string, name: string): string {
   return url.origin;
 }
 
-function parseHttpsUrl(value: string, name: string): string {
+function parseHttpsUrl(value: string, name: string, allowHttp = false): string {
   let url: URL;
   try {
     url = new URL(value);
   } catch {
     throw new Error(`${name} must be an HTTPS URL`);
   }
-  if (url.protocol !== "https:" || url.username || url.password || url.hash) {
-    throw new Error(`${name} must be an HTTPS URL`);
+  if ((!allowHttp && url.protocol !== "https:") ||
+      (allowHttp && !["http:", "https:"].includes(url.protocol)) ||
+      url.username || url.password || url.hash) {
+    throw new Error(`${name} must be an HTTP(S) URL`);
   }
   return url.toString();
 }

@@ -24,6 +24,37 @@ bun run test
 bun run verify
 ```
 
+## Local Docker stack
+
+Run a local prod-mirroring stack (PostgreSQL, MinIO, Markdown mock, seed job,
+platform service) with:
+
+```bash
+bun run docker:up
+```
+
+Then open:
+
+- `http://localhost:3000` for the local platform service
+- `http://localhost:9001` for MinIO console
+- `http://localhost:8787` for the Markdown mock service
+
+Stop the stack:
+
+```bash
+bun run docker:down
+```
+
+Reset local database and object storage state:
+
+```bash
+bun run docker:reset
+```
+
+The local stack sets `PLATFORM_LOCAL_AUTH=true` so every route is available for
+development without Cloudflare Access.
+
+
 Run an individual component's tests from its package directory. The following
 standalone shortcuts are retained for machine-API and focused development work:
 

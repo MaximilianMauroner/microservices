@@ -41,6 +41,7 @@ export interface CatalogLink {
 }
 
 export interface MonitorConfig {
+  tracking: "http" | "heartbeat";
   enabled: boolean;
   paused: boolean;
   scope: MonitorScope;
