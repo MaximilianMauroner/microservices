@@ -100,8 +100,8 @@ describe("TanStack Start public pages", () => {
     expect(html).toContain('data-slot="card"');
     expect(html).toContain('data-slot="badge"');
     expect(html).toContain('data-variant="default"');
-    expect(html).toContain("directory-primary-action");
-    expect(html).toContain("directory-action");
+    expect(html).toContain('href="#catalog"');
+    expect(html).toContain("Browse tools");
     expect(html).toContain('href="/publish"');
     expect(html).not.toContain('href="https://tools.mauroner.net/publish"');
   });
