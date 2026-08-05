@@ -6,19 +6,11 @@ import { nitro } from "nitro/vite";
 import { defineConfig } from "vite";
 
 export default defineConfig({
+  publicDir: "../tools-web/public",
   plugins: [
     tailwindcss(),
     tanstackStart({ serverFns: { base: SERVER_FUNCTION_BASE_PATH } }),
-    nitro({
-      preset: "bun",
-      publicAssets: [
-        {
-          baseURL: "/assets",
-          dir: "../tools-web/public/assets",
-          maxAge: 3600
-        }
-      ]
-    }),
+    nitro({ preset: "bun" }),
     react()
   ],
   resolve: {

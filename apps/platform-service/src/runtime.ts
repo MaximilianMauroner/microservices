@@ -16,9 +16,12 @@ import { accessAuthentication, contextAwareAccessVerifier, type PlatformAccess, 
 import { loadPlatformConfig } from "./config.js";
 import { startAlignedScheduler } from "./scheduler.js";
 import { createTowerHeartbeat, type TowerHeartbeat } from "./tower-heartbeat.js";
+import { PLATFORM_UI_BUILD } from "./build-identity.js";
 
 export type PlatformRuntime = {
   publicOrigin: string;
+  readOnly: boolean;
+  localAuth: boolean;
   access: PlatformAccess;
   artifact: PlatformHandler;
   fieldGuide: (request: Request) => Promise<Response>;
@@ -73,7 +76,9 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
   });
   const artifactStorage = createS3UploadStorage(config.artifact.s3);
   const activityTracker = new ActivityTracker();
-  const fieldGuideHandle = await createRepository(config.fieldGuide);
+  const fieldGuideHandle = await createRepository(config.fieldGuide, {
+    readOnly: config.readOnly
+  });
 
   try {
     const stylesheet = await readReviewStylesheet();
@@ -106,27 +111,31 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
       temporaryFileRetentionMs: config.artifact.temporaryFileRetentionMs
     });
 
-    const checker = startAlignedScheduler({
-      intervalMs: config.checkerIntervalMs,
-      run: () => executeChecker({ config: config.checker }),
-      logger: {
-        info: (event, fields = {}) => console.info(JSON.stringify({ event, ...fields })),
-        error: (event, fields = {}) => console.error(JSON.stringify({ event, ...fields }))
-      }
-    });
-    const cleanup = startArtifactCleanup(
-      artifactStorage,
-      config.artifact.temporaryFileCleanupIntervalMs
-    );
+    const checker = config.readOnly
+      ? undefined
+      : startAlignedScheduler({
+          intervalMs: config.checkerIntervalMs,
+          run: () => executeChecker({ config: config.checker }),
+          logger: {
+            info: (event, fields = {}) => console.info(JSON.stringify({ event, ...fields })),
+            error: (event, fields = {}) => console.error(JSON.stringify({ event, ...fields }))
+          }
+        });
+    const cleanup = config.readOnly
+      ? undefined
+      : startArtifactCleanup(
+          artifactStorage,
+          config.artifact.temporaryFileCleanupIntervalMs
+        );
     let stopped = false;
     const stop = async () => {
       if (stopped) return;
       stopped = true;
-      checker.stop();
-      cleanup.stop();
+      checker?.stop();
+      cleanup?.stop();
       await Promise.all([
-        checker.wait(),
-        cleanup.wait(),
+        checker?.wait() ?? Promise.resolve(),
+        cleanup?.wait() ?? Promise.resolve(),
         activityTracker.waitForIdle(),
         fieldGuideHandle.close()
       ]);
@@ -136,10 +145,18 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
     if (fieldGuideHandle.startupReport) {
       console.info(JSON.stringify({ event: "postgres_import", ...fieldGuideHandle.startupReport }));
     }
-    console.info(JSON.stringify({ event: "platform.runtime_ready", origin: config.publicOrigin }));
+    console.info(JSON.stringify({
+      event: "platform.runtime_ready",
+      origin: config.publicOrigin,
+      readOnly: config.readOnly,
+      localAuth: config.localAuth,
+      uiBuild: PLATFORM_UI_BUILD
+    }));
 
     return {
       publicOrigin: config.publicOrigin,
+      readOnly: config.readOnly,
+      localAuth: config.localAuth,
       access,
       artifact,
       fieldGuide,

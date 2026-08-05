@@ -41,10 +41,13 @@ type EventRow = {
 export class PostgresReviewRepository implements ReviewRepository {
   private readonly sql: Sql;
   private readonly decisionRecordStore: PostgresDecisionRecordStore;
-  constructor(url: string) {
+  constructor(url: string, options: { readOnly?: boolean } = {}) {
     this.sql = postgres(url, {
       max: 5,
-      connection: { search_path: FIELD_GUIDE_SCHEMA },
+      connection: {
+        search_path: FIELD_GUIDE_SCHEMA,
+        ...(options.readOnly ? { default_transaction_read_only: true } : {})
+      },
     });
     this.decisionRecordStore = new PostgresDecisionRecordStore(this.sql);
   }

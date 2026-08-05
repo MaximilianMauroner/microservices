@@ -123,6 +123,12 @@ describe("tools web routes", () => {
     expect(css.status).toBe(200);
     expect(css.headers.get("content-type")).toContain("text/css");
 
+    const suiteCss = await app(
+      new Request("https://tools.example.test/assets/suite.css")
+    );
+    expect(suiteCss.status).toBe(200);
+    expect(await suiteCss.text()).toContain("--background: #000");
+
     const localTime = await app(
       new Request("https://tools.example.test/assets/local-time.js")
     );
@@ -141,7 +147,7 @@ describe("tools web routes", () => {
     expect(ops.headers.get("content-security-policy")).toContain(
       "script-src 'self'"
     );
-    expect(html).toContain("Tools operations");
+    expect(html).toContain('<h1 id="ops-title">Catalog</h1>');
     expect(html).toContain(`data-revision="${catalog.revision}"`);
     expect(html).not.toContain("notification-secret");
 

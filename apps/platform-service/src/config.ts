@@ -9,6 +9,14 @@ export function loadPlatformConfig(env: Environment = process.env) {
   const publicOrigin = required(env, "PUBLIC_ORIGIN");
   const port = env.PORT ?? "3000";
   const audiences = routeAudiences(env);
+  const readOnly = optionalBoolean(env.PLATFORM_READ_ONLY, "PLATFORM_READ_ONLY");
+  const localAuth = optionalBoolean(env.PLATFORM_LOCAL_AUTH, "PLATFORM_LOCAL_AUTH");
+  if (readOnly && env.NODE_ENV === "production") {
+    throw new Error("PLATFORM_READ_ONLY is unavailable in production");
+  }
+  if (localAuth && env.NODE_ENV === "production") {
+    throw new Error("PLATFORM_LOCAL_AUTH is unavailable in production");
+  }
 
   const tools = loadToolsConfig({
     ...env,
@@ -38,6 +46,8 @@ export function loadPlatformConfig(env: Environment = process.env) {
 
   return {
     port: tools.port,
+    readOnly,
+    localAuth,
     publicOrigin: tools.trustedOrigin,
     access: {
       issuer: tools.access.issuer,
@@ -156,4 +166,11 @@ function positiveInteger(
     throw new Error(`${name} must be a positive integer`);
   }
   return parsed;
+}
+
+function optionalBoolean(value: string | undefined, name: string): boolean {
+  if (value === undefined || value === "") return false;
+  if (value === "true") return true;
+  if (value === "false") return false;
+  throw new Error(`${name} must be either true or false`);
 }

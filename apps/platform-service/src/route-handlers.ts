@@ -1,6 +1,8 @@
 import { InvalidHeartbeatTokenError } from "./tower-heartbeat.js";
 import type { PlatformRequestContext } from "./start.js";
 
+const FAVICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#000"/><path d="M7 24V8l9 10 9-10v16" fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="3"/></svg>`;
+
 export type PlatformRouteInput = {
   request: Request;
   context: PlatformRequestContext;
@@ -11,12 +13,25 @@ export function tools({ request, context }: PlatformRouteInput) {
   return context.runtime.tools(request);
 }
 
+export function readOnly() {
+  return json({ error: "read_only" }, 405, { Allow: "GET, HEAD" });
+}
+
 export function fieldGuide({ request, context }: PlatformRouteInput) {
   return context.runtime.fieldGuide(request);
 }
 
 export function artifact({ request, context }: PlatformRouteInput) {
   return context.runtime.artifact(request);
+}
+
+export function favicon() {
+  return new Response(FAVICON_SVG, {
+    headers: {
+      "Cache-Control": "public, max-age=3600",
+      "Content-Type": "image/svg+xml; charset=utf-8"
+    }
+  });
 }
 
 export function redirectTo(pathname: string) {
@@ -99,12 +114,13 @@ export async function towerHeartbeat({ request, context }: PlatformRouteInput) {
   }
 }
 
-function json(body: unknown, status = 200) {
+function json(body: unknown, status = 200, extraHeaders?: HeadersInit) {
   return new Response(JSON.stringify(body), {
     status,
     headers: {
       "Cache-Control": "no-store",
-      "Content-Type": "application/json; charset=utf-8"
+      "Content-Type": "application/json; charset=utf-8",
+      ...Object.fromEntries(new Headers(extraHeaders))
     }
   });
 }

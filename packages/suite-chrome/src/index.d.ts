@@ -6,3 +6,5 @@ export type SuiteDestination =
   | "manage";
 
 export function renderSuiteChrome(active: SuiteDestination): string;
+
+export const suiteChromeStyles: string;

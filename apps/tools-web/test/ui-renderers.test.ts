@@ -116,6 +116,7 @@ const privateSnapshot: PrivateSnapshotDocument = {
           }
         ],
         monitor: {
+          tracking: "http",
           enabled: true,
           paused: false,
           scope: "tailscale",
