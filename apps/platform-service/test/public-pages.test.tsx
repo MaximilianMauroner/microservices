@@ -100,6 +100,8 @@ describe("TanStack Start public pages", () => {
     expect(html).toContain('data-slot="card"');
     expect(html).toContain('data-slot="badge"');
     expect(html).toContain('data-variant="default"');
+    expect(html).toContain("directory-primary-action");
+    expect(html).toContain("directory-action");
     expect(html).toContain('href="/publish"');
     expect(html).not.toContain('href="https://tools.mauroner.net/publish"');
   });
@@ -111,6 +113,9 @@ describe("TanStack Start public pages", () => {
 
     expect(html).toContain("All monitored services operational");
     expect(html).toContain('aria-label="Observed uptime: 100% across 1 checks; 1 recorded days and 89 no-data days."');
+    expect(html).toContain('class="uptime-bar-scroll"');
+    expect(html).toContain("uptime-scroll-hint");
+    expect(html).toContain("private-status-link");
     expect(html.match(/class="uptime-day /g)).toHaveLength(90);
   });
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { DecisionRecordItem } from "@tools-platform/field-guide";
+import type { DecisionRecordItem, QueueItem } from "@tools-platform/field-guide";
 import { uploadListUrl } from "../src/components/publish-page.js";
-import { decisionEmptyState, reconcileReviewedDecision } from "../src/components/review-page.js";
+import { decisionEmptyState, filterQueueItems, queueProjectOptions, reconcileCompletedCandidate, reconcileReviewedDecision } from "../src/components/review-page.js";
 
 describe("publish inventory criteria", () => {
   it("binds every active criterion and the cursor into the backend request", () => {
@@ -20,6 +20,39 @@ describe("publish inventory criteria", () => {
       q: "quarterly plan",
       cursor: "criteria-bound-cursor"
     });
+  });
+});
+
+describe("candidate workbench filters", () => {
+  const items = [queueItem("Project B", "pending", "initial"), queueItem("Project A", "overdue", "scheduled")];
+
+  it("builds stable project choices from the loaded queue", () => {
+    expect(queueProjectOptions(items)).toEqual(["Project A", "Project B"]);
+  });
+
+  it("combines project, kind, due state, and text criteria", () => {
+    expect(filterQueueItems(items, {
+      queueProject: "Project A",
+      queueKind: "scheduled",
+      queueStatus: "overdue",
+      queueQuery: "guidance project"
+    })).toEqual([items[1]]);
+  });
+
+  it("derives the visible project count from filtered candidates", () => {
+    const filtered = filterQueueItems(items, { queueStatus: "overdue" });
+
+    expect(queueProjectOptions(filtered)).toEqual(["Project A"]);
+  });
+
+  it("removes completed candidates and updates their summary bucket once", () => {
+    const queue = { items, summary: { pending: 1, due: 0, overdue: 1 } };
+
+    const updated = reconcileCompletedCandidate(queue, items[0]!);
+    const unchanged = reconcileCompletedCandidate(updated, items[0]!);
+
+    expect(updated).toEqual({ items: [items[1]], summary: { pending: 0, due: 0, overdue: 1 } });
+    expect(unchanged).toBe(updated);
   });
 });
 
@@ -76,5 +109,25 @@ function decisionItem(decisionRecordId: string): DecisionRecordItem {
     feedbackHistory: [],
     promotionCandidateId: undefined,
     archived: false
+  };
+}
+
+function queueItem(projectDisplayName: string, status: QueueItem["status"], kind: QueueItem["kind"]): QueueItem {
+  return {
+    candidate: {
+      candidateId: crypto.randomUUID(),
+      scope: "project",
+      projectKey: projectDisplayName.toLocaleLowerCase().replace(" ", "-"),
+      projectDisplayName,
+      lessonKey: "guidance",
+      title: `${projectDisplayName} guidance`,
+      body: "Body",
+      rationale: "Rationale",
+      evidence: [],
+      createdAt: "2026-08-04T00:00:00.000Z"
+    },
+    round: 1,
+    kind,
+    status
   };
 }

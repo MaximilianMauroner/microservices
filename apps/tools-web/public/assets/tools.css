@@ -1266,3 +1266,57 @@ h1, h2, h3 { letter-spacing: -.025em; }
   .dashboard-metric { padding: 12px; }
   .document-toolbar { grid-template-columns: 1fr; }
 }
+
+/* Public shell action tokens and mobile uptime affordance. */
+.directory-primary-action {
+  border: 1px solid #fafafa !important;
+  background: #fafafa !important;
+  color: #000 !important;
+}
+.directory-primary-action:hover {
+  border-color: #fff !important;
+  background: #fff !important;
+  color: #000 !important;
+}
+.directory-action,
+.private-status-callout > .private-status-link {
+  border: 1px solid #3f3f46 !important;
+  border-radius: 6px;
+  background: #111113 !important;
+  color: #fafafa !important;
+  text-decoration: none;
+}
+.directory-action:hover,
+.private-status-callout > .private-status-link:hover {
+  border-color: #a1a1aa !important;
+  background: #18181b !important;
+  color: #fff !important;
+}
+.private-status-callout > .private-status-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px;
+  font-size: .75rem;
+  font-weight: 700;
+}
+.uptime-bar-scroll {
+  min-width: 0;
+  width: 100%;
+  overflow-x: auto;
+  scrollbar-color: #3f3f46 #09090b;
+  scrollbar-width: thin;
+}
+.uptime-bar-scroll .uptime-bar { min-width: 0; }
+.uptime-scroll-hint {
+  display: none;
+  margin: 5px 0 0;
+  color: #71717a;
+  font-size: .65rem;
+}
+
+@media (max-width: 760px) {
+  .uptime-bar-scroll { padding-bottom: 4px; }
+  .uptime-bar-scroll .uptime-bar { min-width: 540px; }
+  .uptime-scroll-hint { display: block; }
+}

@@ -43,7 +43,7 @@ export function renderPublicPage(
         <p class="eyebrow">Useful, focused services</p>
         <h1 id="tools-title">Tools for publishing, review, and operations.</h1>
         <p class="lede">A curated directory of Mauroner services, with clear access requirements and live availability.</p>
-        <a class="browse-tools" href="#catalog">Browse tools <span aria-hidden="true">↓</span></a>
+        <a class="browse-tools directory-primary-action" href="#catalog">Browse tools <span aria-hidden="true">↓</span></a>
         <p class="freshness">Catalog updated <time datetime="${escapeHtml(snapshot.generatedAt)}" data-local-timestamp>${formatTimestamp(snapshot.generatedAt)}</time></p>
       </section>
       <section id="catalog" class="catalog wrap" aria-label="Tool directory">
@@ -150,7 +150,7 @@ function privateStatusCallout(): string {
       <h2 id="private-status-title">Private service status</h2>
       <p>Sign in with Cloudflare Access to view availability for internal services.</p>
     </div>
-    <a href="/manage/status">View private status <span aria-hidden="true">›</span></a>
+    <a class="private-status-link" href="/manage/status">View private status <span aria-hidden="true">›</span></a>
   </section>`;
 }
 
@@ -248,7 +248,7 @@ function renderToolCard(
     .map((link) => {
       const url = safeHttpUrl(link.url);
       if (!url) return "";
-      return renderDirectoryLink(url, link.label, "tool-link", publicOrigin);
+      return renderDirectoryLink(url, link.label, "tool-link directory-action", publicOrigin);
     })
     .filter(Boolean)
     .join("");
@@ -291,7 +291,7 @@ function renderEntry(
       const access = link.access === "restricted"
         ? `<span class="service-access">${entry.id === "network-console" ? "Tailscale required" : "Access protected"}</span>`
         : "";
-      return renderDirectoryLink(url, link.label, "service-link", publicOrigin, access);
+      return renderDirectoryLink(url, link.label, "service-link directory-action", publicOrigin, access);
     })
     .filter(Boolean)
     .join("");
@@ -364,7 +364,7 @@ function uptimeBar(
       : interruptionCount === 0
         ? "No interruptions recorded"
         : `${interruptionCount} ${interruptionCount === 1 ? "interruption" : "interruptions"} recorded`;
-    return `<span class="uptime-day uptime-day--${state}" role="img" tabindex="0" aria-label="${escapeHtml(title)}">
+    return `<span class="uptime-day uptime-day--${state}" role="img" tabindex="0" aria-label="${escapeHtml(title)}" title="${escapeHtml(title)}">
       <span class="uptime-popover" role="tooltip" aria-hidden="true">
         <span class="uptime-popover__header">
           <span>${escapeHtml(formatUptimeDate(day))}</span>
@@ -382,7 +382,7 @@ function uptimeBar(
   const label = summary.percentage === null
     ? `Observed uptime is not available. 0 recorded days and ${summary.noDataDays} no-data days. Latest monitor state: ${status ? STATUS_LABELS[status.status] : "not monitored"}.`
     : `${summary.label} across ${summary.totalChecks} ${summary.totalChecks === 1 ? "check" : "checks"}; ${summary.recordedDays} ${summary.recordedDays === 1 ? "recorded day" : "recorded days"} and ${summary.noDataDays} ${summary.noDataDays === 1 ? "no-data day" : "no-data days"}; earliest recorded day ${summary.firstObservedDay}.`;
-  return `<div class="uptime-bar" role="group" aria-label="${escapeHtml(label)}"><span class="visually-hidden">${escapeHtml(label)}</span>${bars}</div>`;
+  return `<div class="uptime-bar-scroll" role="region" aria-label="90-day uptime history" tabindex="0"><div class="uptime-bar" role="group" aria-label="${escapeHtml(label)}"><span class="visually-hidden">${escapeHtml(label)}</span>${bars}</div></div><p class="uptime-scroll-hint">Swipe horizontally to inspect daily checks.</p>`;
 }
 
 function downtimeHistory(

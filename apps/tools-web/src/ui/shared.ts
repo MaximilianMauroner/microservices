@@ -35,7 +35,7 @@ export function pageShell(input: {
     <meta name="theme-color" content="${escapeHtml(input.themeColor ?? "#000000")}">
     <title>${escapeHtml(input.title)}</title>
     <link rel="icon" href="/favicon.svg?v=90e2a71" type="image/svg+xml">
-    <link rel="stylesheet" href="/assets/tools.css?v=0e2b9bf78fe6">
+    <link rel="stylesheet" href="/assets/tools.css?v=be38fb8a48fb">
     <script src="/assets/local-time.js?v=2b6fd61" defer></script>${script}
   </head>
   <body>
