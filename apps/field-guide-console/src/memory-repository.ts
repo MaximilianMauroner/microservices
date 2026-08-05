@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { planAmendment, planScopeReassignment, planVerdict } from "./candidate-lifecycle.js";
 import {
   ConflictError,
   NotFoundError,
@@ -6,7 +7,6 @@ import {
   canonicalUuid,
   decodeCursor,
   encodeCursor,
-  validateVerdict,
   type AmendVerdictInput,
   type Candidate,
   type Decision,
@@ -155,10 +155,7 @@ export class MemoryReviewRepository implements ReviewRepository {
     const state = this.requireCandidate(candidateId);
     const round = state.rounds.get(roundNumber);
     if (!round) throw new Error("Candidate not found.");
-    if (round.verdictId)
-      throw new ConflictError("Review round is already decided.");
-    if (round.dueAt && new Date(round.dueAt) > now)
-      throw new ConflictError("Review is not due yet.");
+    planVerdict({ kind: round.kind, input, now, confirmations: this.authoritativeConfirmations(state), verdictId: round.verdictId, dueAt: round.dueAt ? new Date(round.dueAt) : null });
     return this.appendDecision(
       state,
       roundNumber,
@@ -179,45 +176,7 @@ export class MemoryReviewRepository implements ReviewRepository {
     const state = this.requireCandidate(candidateId);
     const round = state.rounds.get(roundNumber);
     if (!round) throw new Error("Candidate not found.");
-    if (
-      roundNumber !== 1 ||
-      round.kind !== "initial" ||
-      round.verdictId ||
-      this.events.some((event) => event.candidateId === candidateId)
-    )
-      throw new ConflictError(
-        "Scope can only change before the initial review is decided.",
-      );
-    if (state.candidate.scope === scope)
-      throw new ValidationError("Candidate already has this scope.");
-    const foundProjectKey =
-      state.candidate.foundProjectKey ?? state.candidate.projectKey;
-    const foundProjectDisplayName =
-      state.candidate.foundProjectDisplayName ??
-      state.candidate.projectDisplayName;
-    if (scope === "project" && (!foundProjectKey || !foundProjectDisplayName))
-      throw new ValidationError(
-        "This candidate has no associated project to demote to.",
-      );
-    const changed: Candidate = {
-      ...state.candidate,
-      scope,
-      ...(scope === "project"
-        ? {
-            projectKey: foundProjectKey,
-            projectDisplayName: foundProjectDisplayName,
-          }
-        : {}),
-      ...(foundProjectKey && foundProjectDisplayName
-        ? { foundProjectKey, foundProjectDisplayName }
-        : {}),
-      scopeChangedAt: now.toISOString(),
-      scopeChangedBy: reviewer,
-    };
-    if (scope === "global") {
-      delete changed.projectKey;
-      delete changed.projectDisplayName;
-    }
+    const changed = planScopeReassignment({ candidate: state.candidate, round: roundNumber, kind: round.kind, verdictId: round.verdictId, hasEvents: this.events.some((event) => event.candidateId === candidateId), scope, now, reviewer });
     state.candidate = changed;
     return state.candidate;
   }
@@ -231,38 +190,12 @@ export class MemoryReviewRepository implements ReviewRepository {
   ) {
     const state = this.requireCandidate(candidateId);
     const round = state.rounds.get(roundNumber);
-    if (!round?.verdictId)
-      throw new ConflictError("Review round has no decision to amend.");
-    if (round.verdictId !== input.expectedDecisionId)
-      throw new ConflictError(
-        "Decision changed since it was loaded. Refresh and try again.",
-      );
-    if (
-      [...state.rounds.entries()].some(
-        ([number, later]) => number > roundNumber && later.verdictId,
-      )
-    )
-      throw new ConflictError(
-        "This decision cannot be amended after a later round was decided.",
-      );
+    if (!round) throw new ConflictError("Review round has no decision to amend.");
     const current = this.events.find(
       (event) => event.decisionId === round.verdictId,
     );
     if (!current) throw new Error("Authoritative decision not found.");
-    if (current.action === input.action && input.action !== "defer")
-      throw new ValidationError("Choose a different verdict.");
-    const schedule = validateVerdict(
-      round.kind,
-      input,
-      now,
-      this.authoritativeConfirmations(state),
-    );
-    if (
-      input.action === "defer" &&
-      current.action === "defer" &&
-      schedule.nextReviewAt?.toISOString() === current.nextReviewAt
-    )
-      throw new ValidationError("Choose a different defer date.");
+    planAmendment({ kind: round.kind, input, now, confirmations: this.authoritativeConfirmations(state), currentDecisionId: round.verdictId, currentAction: current.action, currentNextReviewAt: current.nextReviewAt ? new Date(current.nextReviewAt) : null, hasDecidedDescendant: [...state.rounds.entries()].some(([number, later]) => number > roundNumber && Boolean(later.verdictId)) });
 
     const successor = state.rounds.get(roundNumber + 1);
     if (successor) {
@@ -438,12 +371,7 @@ export class MemoryReviewRepository implements ReviewRepository {
     amendsDecisionId?: string,
   ) {
     const confirmations = this.authoritativeConfirmations(state);
-    const schedule = validateVerdict(
-      round.kind,
-      input,
-      now,
-      confirmations,
-    );
+    const schedule = planVerdict({ kind: round.kind, input, now, confirmations });
     const decisionId = crypto.randomUUID();
     const candidate = state.candidate;
     const decision: Decision = {

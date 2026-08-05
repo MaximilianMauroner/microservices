@@ -2,12 +2,12 @@ import crypto from "node:crypto";
 import type { Database } from "bun:sqlite";
 import { apiTimestamp, canonicalTimestamp } from "./db/logical-snapshot.js";
 import { SQLiteDecisionRecordStore } from "./sqlite-decision-records.js";
+import { planAmendment, planScopeReassignment, planVerdict } from "./candidate-lifecycle.js";
 import {
   ConflictError,
   ValidationError,
   decodeCursor,
   encodeCursor,
-  validateVerdict,
   type AmendVerdictInput,
   type Candidate,
   type Decision,
@@ -133,14 +133,8 @@ export class SQLiteReviewRepository implements ReviewRepository {
         WHERE c.candidate_id=? AND r.round=?
       `).get(candidateId, round);
       if (!row) throw new Error("Candidate not found.");
-      if (round !== 1 || row.kind !== "initial" || row.verdict_id || row.event_count)
-        throw new ConflictError("Scope can only change before the initial review is decided.");
       const candidate=parseCandidate(row.payload);
-      if(candidate.scope===scope)throw new ValidationError("Candidate already has this scope.");
-      const foundProjectKey=candidate.foundProjectKey??candidate.projectKey;
-      const foundProjectDisplayName=candidate.foundProjectDisplayName??candidate.projectDisplayName;
-      if(scope==="project"&&(!foundProjectKey||!foundProjectDisplayName))throw new ValidationError("This candidate has no associated project to demote to.");
-      const changed:Candidate={...candidate,scope,...(scope==="project"?{projectKey:foundProjectKey,projectDisplayName:foundProjectDisplayName}:{projectKey:undefined,projectDisplayName:undefined}),...(foundProjectKey&&foundProjectDisplayName?{foundProjectKey,foundProjectDisplayName}:{}),scopeChangedAt:now.toISOString(),scopeChangedBy:reviewer};
+      const changed=planScopeReassignment({candidate,round,kind:row.kind,verdictId:row.verdict_id,hasEvents:Boolean(row.event_count),scope,now,reviewer});
       this.db.query("UPDATE candidates SET payload=? WHERE candidate_id=?").run(canonical(changed),candidateId);
       return changed;
     });
@@ -150,15 +144,10 @@ export class SQLiteReviewRepository implements ReviewRepository {
     return this.immediate(() => {
       const row = this.db.query<AmendRow, [string, number]>("SELECT c.payload,r.kind,r.due_at,r.verdict_id,current.action,current.next_review_at FROM candidates c JOIN review_rounds r USING(candidate_id) LEFT JOIN verdict_events current ON current.decision_id=r.verdict_id WHERE c.candidate_id=? AND r.round=?").get(candidateId, round);
       if (!row) throw new Error("Candidate not found.");
-      if (!row.verdict_id || !row.action) throw new ConflictError("Review round has no decision to amend.");
-      if (row.verdict_id !== input.expectedDecisionId) throw new ConflictError("Decision changed since it was loaded. Refresh and try again.");
       const descendant = this.db.query<{ found:number }, [string, number]>("SELECT EXISTS(SELECT 1 FROM review_rounds WHERE candidate_id=? AND round>? AND verdict_id IS NOT NULL) found").get(candidateId, round);
-      if (descendant?.found) throw new ConflictError("This decision cannot be amended after a later round was decided.");
-      if (row.action === input.action && input.action !== "defer") throw new ValidationError("Choose a different verdict.");
-      const schedule = validateVerdict(row.kind, input, now, this.confirmations(candidateId));
-      if (input.action === "defer" && row.action === "defer" && schedule.nextReviewAt && internalTimestamp(schedule.nextReviewAt.toISOString()) === row.next_review_at) throw new ValidationError("Choose a different defer date.");
+      const { currentDecisionId } = planAmendment({kind:row.kind,input,now,confirmations:this.confirmations(candidateId),currentDecisionId:row.verdict_id,currentAction:row.action,currentNextReviewAt:row.next_review_at?new Date(apiTimestamp(row.next_review_at)):null,hasDecidedDescendant:Boolean(descendant?.found)});
       this.db.query("DELETE FROM review_rounds WHERE candidate_id=? AND round=? AND verdict_id IS NULL").run(candidateId, round + 1);
-      return this.appendDecision(candidateId, round, row, input, now, reviewer, row.verdict_id);
+      return this.appendDecision(candidateId, round, row, input, now, reviewer, currentDecisionId);
     });
   }
 
@@ -181,7 +170,7 @@ export class SQLiteReviewRepository implements ReviewRepository {
   }
 
   private appendDecision(candidateId:string, round:number, row:RoundRow, input:VerdictInput, now:Date, reviewer:string, amendsDecisionId?:string): Decision {
-    const schedule=validateVerdict(row.kind,input,now,this.confirmations(candidateId));
+    const schedule=planVerdict({kind:row.kind,input,now,confirmations:this.confirmations(candidateId)});
     const decisionId=crypto.randomUUID();
     this.db.query("INSERT INTO verdict_events(decision_id,candidate_id,round,action,round_kind,effect,amends_decision_id,reviewer,reviewed_at,next_review_at) VALUES(?,?,?,?,?,?,?,?,?,?)").run(decisionId,candidateId,round,input.action,row.kind,schedule.effect,amendsDecisionId??null,reviewer,internalTimestamp(now.toISOString()),schedule.nextReviewAt?internalTimestamp(schedule.nextReviewAt.toISOString()):null);
     this.db.query("UPDATE review_rounds SET verdict_id=? WHERE candidate_id=? AND round=?").run(decisionId,candidateId,round);

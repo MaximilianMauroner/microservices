@@ -1,12 +1,12 @@
 import crypto from "node:crypto";
 import postgres, { type Sql, type TransactionSql } from "postgres";
 import { PostgresDecisionRecordStore } from "./postgres-decision-records.js";
+import { planAmendment, planScopeReassignment, planVerdict } from "./candidate-lifecycle.js";
 import {
   ConflictError,
   ValidationError,
   decodeCursor,
   encodeCursor,
-  validateVerdict,
   type AmendVerdictInput,
   type Candidate,
   type Decision,
@@ -154,7 +154,7 @@ export class PostgresReviewRepository implements ReviewRepository {
         throw new ConflictError("Review round is already decided.");
       if(row.due_at&&row.due_at>now)throw new ConflictError("Review is not due yet.");
       const confirmations=await authoritativeConfirmations(tx,candidateId);
-      const schedule=validateVerdict(row.kind,input,now,confirmations);
+      const schedule=planVerdict({kind:row.kind,input,now,confirmations});
       const id = crypto.randomUUID();
       await tx`INSERT INTO verdict_events(decision_id,candidate_id,round,action,round_kind,effect,reviewer,reviewed_at,next_review_at) VALUES(${id},${candidateId},${round},${input.action},${row.kind},${schedule.effect},${reviewer},${now},${schedule.nextReviewAt ?? null})`;
       await tx`UPDATE review_rounds SET verdict_id=${id} WHERE candidate_id=${candidateId} AND round=${round}`;
@@ -204,47 +204,8 @@ export class PostgresReviewRepository implements ReviewRepository {
         FOR UPDATE OF c,r`;
       const row = rows[0];
       if (!row) throw new Error("Candidate not found.");
-      if (
-        round !== 1 ||
-        row.kind !== "initial" ||
-        row.verdict_id ||
-        row.event_count
-      ) {
-        throw new ConflictError(
-          "Scope can only change before the initial review is decided.",
-        );
-      }
       const candidate = row.payload;
-      if (candidate.scope === scope) {
-        throw new ValidationError("Candidate already has this scope.");
-      }
-      const foundProjectKey =
-        candidate.foundProjectKey ?? candidate.projectKey;
-      const foundProjectDisplayName =
-        candidate.foundProjectDisplayName ?? candidate.projectDisplayName;
-      if (scope === "project" && (!foundProjectKey || !foundProjectDisplayName)) {
-        throw new ValidationError(
-          "This candidate has no associated project to demote to.",
-        );
-      }
-      const changed: Candidate = {
-        ...candidate,
-        scope,
-        ...(scope === "project"
-          ? {
-              projectKey: foundProjectKey,
-              projectDisplayName: foundProjectDisplayName,
-            }
-          : {
-              projectKey: undefined,
-              projectDisplayName: undefined,
-            }),
-        ...(foundProjectKey && foundProjectDisplayName
-          ? { foundProjectKey, foundProjectDisplayName }
-          : {}),
-        scopeChangedAt: now.toISOString(),
-        scopeChangedBy: reviewer,
-      };
+      const changed = planScopeReassignment({ candidate, round, kind: row.kind, verdictId: row.verdict_id, hasEvents: Boolean(row.event_count), scope, now, reviewer });
       await tx`UPDATE candidates SET payload=${tx.json(changed)} WHERE candidate_id=${candidateId}`;
       return changed;
     });
@@ -266,17 +227,12 @@ export class PostgresReviewRepository implements ReviewRepository {
       }[]>`SELECT c.payload,r.kind,r.verdict_id,current.action,current.next_review_at FROM candidates c JOIN review_rounds r USING(candidate_id) LEFT JOIN verdict_events current ON current.decision_id=r.verdict_id WHERE c.candidate_id=${candidateId} AND r.round=${round} FOR UPDATE OF c,r`;
       const row=rows[0];
       if(!row)throw new Error("Candidate not found.");
-      if(!row.verdict_id||!row.action)throw new ConflictError("Review round has no decision to amend.");
-      if(row.verdict_id!==input.expectedDecisionId)throw new ConflictError("Decision changed since it was loaded. Refresh and try again.");
       const descendants=await tx<{exists:boolean}[]>`SELECT EXISTS(SELECT 1 FROM review_rounds WHERE candidate_id=${candidateId} AND round>${round} AND verdict_id IS NOT NULL) exists`;
-      if(descendants[0]?.exists)throw new ConflictError("This decision cannot be amended after a later round was decided.");
-      if(row.action===input.action&&input.action!=="defer")throw new ValidationError("Choose a different verdict.");
       const confirmations=await authoritativeConfirmations(tx,candidateId);
-      const schedule=validateVerdict(row.kind,input,now,confirmations);
-      if(input.action==="defer"&&row.action==="defer"&&schedule.nextReviewAt?.getTime()===row.next_review_at?.getTime())throw new ValidationError("Choose a different defer date.");
+      const { currentDecisionId, schedule }=planAmendment({kind:row.kind,input,now,confirmations,currentDecisionId:row.verdict_id,currentAction:row.action,currentNextReviewAt:row.next_review_at,hasDecidedDescendant:Boolean(descendants[0]?.exists)});
       await tx`DELETE FROM review_rounds WHERE candidate_id=${candidateId} AND round=${round+1} AND verdict_id IS NULL`;
       const decisionId=crypto.randomUUID();
-      await tx`INSERT INTO verdict_events(decision_id,candidate_id,round,action,round_kind,effect,amends_decision_id,reviewer,reviewed_at,next_review_at) VALUES(${decisionId},${candidateId},${round},${input.action},${row.kind},${schedule.effect},${row.verdict_id},${reviewer},${now},${schedule.nextReviewAt??null})`;
+      await tx`INSERT INTO verdict_events(decision_id,candidate_id,round,action,round_kind,effect,amends_decision_id,reviewer,reviewed_at,next_review_at) VALUES(${decisionId},${candidateId},${round},${input.action},${row.kind},${schedule.effect},${currentDecisionId},${reviewer},${now},${schedule.nextReviewAt??null})`;
       await tx`UPDATE review_rounds SET verdict_id=${decisionId} WHERE candidate_id=${candidateId} AND round=${round}`;
       if(schedule.nextReviewAt&&schedule.nextRoundKind)await tx`INSERT INTO review_rounds(candidate_id,round,kind,due_at) VALUES(${candidateId},${round+1},${schedule.nextRoundKind},${schedule.nextReviewAt})`;
       const candidate=row.payload;
@@ -287,7 +243,7 @@ export class PostgresReviewRepository implements ReviewRepository {
         action:input.action,
         roundKind:row.kind,
         effect:schedule.effect,
-        amendsDecisionId:row.verdict_id,
+        amendsDecisionId:currentDecisionId,
         isCurrent:true,
         canAmend:true,
         scope:candidate.scope,

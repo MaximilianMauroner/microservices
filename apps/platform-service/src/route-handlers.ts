@@ -10,7 +10,7 @@ export type PlatformRouteInput = {
 };
 
 export function tools({ request, context }: PlatformRouteInput) {
-  return context.runtime.tools(request);
+  return context.runtime.services.manage.handle(request);
 }
 
 export function readOnly() {
@@ -18,11 +18,11 @@ export function readOnly() {
 }
 
 export function fieldGuide({ request, context }: PlatformRouteInput) {
-  return context.runtime.fieldGuide(request);
+  return context.runtime.services.review.handle(request);
 }
 
 export function artifact({ request, context }: PlatformRouteInput) {
-  return context.runtime.artifact(request);
+  return context.runtime.services.publisher.handle(request);
 }
 
 export function favicon() {
@@ -76,12 +76,14 @@ export async function health({ context }: PlatformRouteInput) {
 }
 
 export async function componentHealth({ context, params }: PlatformRouteInput) {
-  const check = context.runtime.componentHealth[
-    params.component as keyof PlatformRequestContext["runtime"]["componentHealth"]
-  ];
-  if (!check) return json({ error: "not_found" }, 404);
+  const service = params.component === "tools"
+    ? context.runtime.services.manage
+    : params.component === "publisher" || params.component === "review"
+      ? context.runtime.services[params.component]
+      : undefined;
+  if (!service) return json({ error: "not_found" }, 404);
   try {
-    await check();
+    await service.readiness();
     return json({ ok: true });
   } catch {
     return json({ ok: false, error: "dependency_unavailable" }, 503);
