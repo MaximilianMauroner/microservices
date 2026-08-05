@@ -45,6 +45,10 @@ const platformRequestMiddleware = createMiddleware().server(
     ) {
       headers.set("Cache-Control", "public, max-age=60, stale-while-revalidate=240");
     }
+    if (headers.get("Content-Type")?.startsWith("text/html")) {
+      const cacheControl = headers.get("Cache-Control");
+      headers.set("Cache-Control", cacheControl ? `${cacheControl}, no-transform` : "no-transform");
+    }
     return {
       ...result,
       response: new Response(response.body, {

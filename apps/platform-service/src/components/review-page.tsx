@@ -1,9 +1,7 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
-import { Link } from "@tanstack/react-router";
-import { CalendarIcon, FilterIcon, InboxIcon, SearchIcon } from "lucide-react";
-import { format, parseISO, subDays } from "date-fns";
-import type { DateRange } from "react-day-picker";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { InboxIcon, PlusIcon, SearchIcon, XIcon } from "lucide-react";
 import type {
   Candidate,
   Decision,
@@ -20,13 +18,12 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "./
 import { Badge } from "./ui/badge.js";
 import { Button } from "./ui/button.js";
 import { ButtonGroup } from "./ui/button-group.js";
-import { Calendar } from "./ui/calendar.js";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card.js";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./ui/dialog.js";
 import { Empty as EmptyRoot, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "./ui/empty.js";
 import { Input } from "./ui/input.js";
 import { Label } from "./ui/label.js";
-import { Popover, PopoverContent, PopoverDescription, PopoverHeader, PopoverTitle, PopoverTrigger } from "./ui/popover.js";
+import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover.js";
 import { Separator } from "./ui/separator.js";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "./ui/sheet.js";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table.js";
@@ -90,7 +87,7 @@ export function ReviewPage({ initial, search }: { initial: ReviewPageData; searc
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant={search.view === "decisions" && data.decisions?.pending ? "secondary" : "default"}>{summaryLabel(data, search)}</Badge>
-            <span className="hidden text-xs text-muted-foreground md:inline">{data.actor}</span>
+            <ActorIdentity actor={data.actor} />
             <Button nativeButton={false} variant="ghost" size="sm" render={<a href="/cdn-cgi/access/logout" />}>Sign out</Button>
           </div>
         </header>
@@ -196,103 +193,27 @@ function ReviewScopeTabs({ search }: { search: ReviewSearch }) {
 }
 
 function DecisionFilters({ search }: { search: ReviewSearch }) {
-  function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const next: ReviewSearch = { ...search };
-    for (const key of ["projectKey", "taskId", "device", "harness", "skill", "from", "to"] as const) {
-      const value = String(form.get(key) ?? "").trim();
-      if (value) next[key] = value; else delete next[key];
-    }
-    const params = new URLSearchParams();
-    for (const [key, value] of Object.entries(next)) {
-      if (value) params.set(key, value);
-    }
-    window.location.assign(`/review?${params}`);
+  const navigate = useNavigate({ from: "/review" });
+  const facets = [
+    ["taskId", "Task", "Task ID", "text"], ["device", "Device", "Device", "text"], ["harness", "Harness", "Harness", "text"],
+    ["skill", "Skill", "Skill", "text"], ["from", "From", "Start date", "date"], ["to", "To", "End date", "date"]
+  ] as const;
+  const [visible, setVisible] = useState(() => new Set(facets.filter(([key]) => search[key]).map(([key]) => key)));
+  function update(key: keyof ReviewSearch, value?: string) {
+    const next = { ...search };
+    if (value?.trim()) Object.assign(next, { [key]: value.trim() }); else delete next[key];
+    void navigate({ search: next, replace: true });
   }
-  const filterCount = (["projectKey", "taskId", "device", "harness", "skill", "from", "to"] as const).filter((key) => search[key]).length;
-  return (
-    <Popover>
-      <PopoverTrigger render={<Button variant="outline" size="sm" />}>
-        <FilterIcon />
-        Filters
-        {filterCount ? <Badge variant="secondary">{filterCount}</Badge> : null}
-      </PopoverTrigger>
-      <PopoverContent align="end" className="w-[min(28rem,calc(100vw_-_2rem))]">
-        <PopoverHeader>
-          <PopoverTitle>Filter decisions</PopoverTitle>
-          <PopoverDescription>Filters are stored in the URL and apply to all matching decision records.</PopoverDescription>
-        </PopoverHeader>
-        <form className="grid grid-cols-1 gap-3 sm:grid-cols-2" onSubmit={submit} aria-label="Decision filters">
-          <Label className="sm:col-span-2">Project<Input name="projectKey" defaultValue={search.projectKey ?? ""} placeholder="Project key" /></Label>
-          <Label>Task<Input name="taskId" defaultValue={search.taskId ?? ""} placeholder="Task ID" /></Label>
-          <Label>Device<Input name="device" defaultValue={search.device ?? ""} placeholder="Device" /></Label>
-          <Label>Harness<Input name="harness" defaultValue={search.harness ?? ""} placeholder="Harness" /></Label>
-          <Label>Skill<Input name="skill" defaultValue={search.skill ?? ""} placeholder="Skill" /></Label>
-          <DateRangeFilter initialFrom={search.from} initialTo={search.to} />
-          <div className="flex justify-end gap-2 pt-1 sm:col-span-2">
-            <Button nativeButton={false} variant="ghost" size="sm" render={<Link to="/review" search={{ scope: search.scope, view: search.view, reviewState: search.reviewState }} reloadDocument />}>Clear</Button>
-            <Button type="submit" size="sm">Apply filters</Button>
-          </div>
-        </form>
-      </PopoverContent>
-    </Popover>
-  );
-}
-
-function DateRangeFilter({ initialFrom, initialTo }: { initialFrom?: string; initialTo?: string }) {
-  const [range, setRange] = useState<DateRange | undefined>(() => ({
-    from: initialFrom ? parseISO(initialFrom) : undefined,
-    to: initialTo ? parseISO(initialTo) : undefined
-  }));
-
-  const label = range?.from
-    ? range.to
-      ? `${format(range.from, "dd MMM yyyy")} – ${format(range.to, "dd MMM yyyy")}`
-      : format(range.from, "dd MMM yyyy")
-    : "Choose date range";
-
-  function selectQuickRange(days: number) {
-    const to = new Date();
-    setRange({ from: subDays(to, days), to });
-  }
-
-  return (
-    <div className="space-y-2 sm:col-span-2">
-      <Label>Date range</Label>
-      <input type="hidden" name="from" value={range?.from ? format(range.from, "yyyy-MM-dd") : ""} />
-      <input type="hidden" name="to" value={range?.to ? format(range.to, "yyyy-MM-dd") : ""} />
-      <Popover>
-        <PopoverTrigger render={<Button type="button" variant="outline" className="w-full justify-start font-normal" />}>
-          <CalendarIcon />
-          <span className={range?.from ? "" : "text-muted-foreground"}>{label}</span>
-        </PopoverTrigger>
-        <PopoverContent align="start" className="w-auto gap-2 p-0">
-          <Calendar
-            mode="range"
-            selected={range}
-            onSelect={setRange}
-            numberOfMonths={2}
-            defaultMonth={range?.from}
-            className="hidden sm:block"
-          />
-          <Calendar
-            mode="range"
-            selected={range}
-            onSelect={setRange}
-            defaultMonth={range?.from}
-            className="sm:hidden"
-          />
-          <div className="flex flex-wrap items-center gap-1 border-t p-2">
-            <Button type="button" variant="ghost" size="sm" onClick={() => selectQuickRange(1)}>24h</Button>
-            <Button type="button" variant="ghost" size="sm" onClick={() => selectQuickRange(7)}>7d</Button>
-            <Button type="button" variant="ghost" size="sm" onClick={() => selectQuickRange(30)}>30d</Button>
-            <Button type="button" variant="ghost" size="sm" className="ml-auto" onClick={() => setRange(undefined)}>Clear dates</Button>
-          </div>
-        </PopoverContent>
-      </Popover>
+  function remove(key: typeof facets[number][0]) { setVisible((current) => { const next = new Set(current); next.delete(key); return next; }); update(key); }
+  const activeCount = [search.projectKey, ...facets.map(([key]) => search[key])].filter(Boolean).length;
+  return <div className="data-filter" aria-label="Decision filters">
+    <div className="data-filter__bar">
+      <Label className="data-filter__search"><span className="sr-only">Filter decisions by project</span><SearchIcon aria-hidden="true" /><DebouncedFilterInput value={search.projectKey ?? ""} onCommit={(value) => update("projectKey", value)} placeholder="Filter decisions by project" /></Label>
+      <Popover><PopoverTrigger render={<Button type="button" variant="outline" size="sm" />}><PlusIcon />Add filter</PopoverTrigger><PopoverContent align="end" className="w-48 gap-1 p-1">{facets.filter(([key]) => !visible.has(key)).map(([key, label]) => <Button key={key} type="button" variant="ghost" size="sm" className="w-full justify-start" onClick={() => setVisible((current) => new Set(current).add(key))}>{label}</Button>)}</PopoverContent></Popover>
+      {activeCount ? <Button type="button" variant="ghost" size="sm" onClick={() => { setVisible(new Set()); void navigate({ search: { scope: search.scope, view: search.view, reviewState: search.reviewState }, replace: true }); }}>Reset</Button> : null}
     </div>
-  );
+    {visible.size ? <div className="data-filter__chips">{facets.filter(([key]) => visible.has(key)).map(([key, label, placeholder, type]) => <div className="data-filter__chip" key={key}><span>{label}</span><DebouncedFilterInput type={type} value={search[key] ?? ""} onCommit={(value) => update(key, value)} placeholder={placeholder} /><Button type="button" variant="ghost" size="icon-sm" aria-label={`Remove ${label} filter`} onClick={() => remove(key)}><XIcon /></Button></div>)}</div> : null}
+  </div>;
 }
 
 function DecisionReviewPanel({ item, onNotice, onUpdated }: { item: DecisionRecordItem; onNotice: (notice: { text: string; tone: "success" | "error" }) => void; onUpdated: (item: DecisionRecordItem) => void }) {
@@ -387,27 +308,29 @@ function QueueWorkspace({ data, search, setData, setNotice }: { data: QueuePageD
 }
 
 function QueueFilters({ search, projects }: { search: ReviewSearch; projects: string[] }) {
-  function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
+  const navigate = useNavigate({ from: "/review" });
+  const facets = ["queueProject", "queueKind", "queueStatus"] as const;
+  const labels = { queueProject: "Project", queueKind: "Kind", queueStatus: "Due" };
+  const [visible, setVisible] = useState(() => new Set(facets.filter((key) => search[key])));
+  function update(key: typeof facets[number] | "queueQuery", value?: string) {
     const next: ReviewSearch = { ...search };
-    for (const key of ["queueProject", "queueKind", "queueStatus", "queueQuery"] as const) {
-      const value = String(form.get(key) ?? "").trim();
-      if (value && value !== "all") Object.assign(next, { [key]: value }); else delete next[key];
-    }
-    const params = new URLSearchParams();
-    for (const [key, value] of Object.entries(next)) if (value) params.set(key, value);
-    window.location.assign(`/review?${params}`);
+    if (value && value !== "all") Object.assign(next, { [key]: value }); else delete next[key];
+    void navigate({ search: next, replace: true });
   }
   const count = [search.queueProject, search.queueKind, search.queueStatus, search.queueQuery].filter(Boolean).length;
-  return <form className="candidate-filters" onSubmit={submit} aria-label="Candidate filters">
-    <Label className="candidate-search"><span className="sr-only">Search candidates</span><SearchIcon aria-hidden="true" /><Input className="pl-9!" name="queueQuery" defaultValue={search.queueQuery ?? ""} placeholder="Search candidates" /></Label>
-    <Label className="candidate-filter-field"><span>Project</span><AppSelect name="queueProject" defaultValue={search.queueProject ?? "all"} aria-label="Project" options={[{ value: "all", label: "All projects" }, ...projects.map((project) => ({ value: project, label: project }))]} /></Label>
-    <Label className="candidate-filter-field"><span>Kind</span><AppSelect name="queueKind" defaultValue={search.queueKind ?? "all"} aria-label="Candidate kind" options={[{ value: "all", label: "All kinds" }, { value: "initial", label: "New candidates" }, { value: "scheduled", label: "Revalidations" }]} /></Label>
-    <Label className="candidate-filter-field"><span>Due</span><AppSelect name="queueStatus" defaultValue={search.queueStatus ?? "all"} aria-label="Due status" options={[{ value: "all", label: "Any due state" }, { value: "pending", label: "Pending" }, { value: "due", label: "Due" }, { value: "overdue", label: "Overdue" }]} /></Label>
-    <Button type="submit" variant="secondary" size="sm"><FilterIcon />Apply{count ? <Badge variant="outline">{count}</Badge> : null}</Button>
-    {count ? <Button nativeButton={false} variant="ghost" size="sm" render={<Link to="/review" search={{ scope: search.scope, view: "queue", reviewState: search.reviewState }} reloadDocument />}>Clear</Button> : null}
-  </form>;
+  const options = {
+    queueProject: [{ value: "all", label: "All projects" }, ...projects.map((project) => ({ value: project, label: project }))],
+    queueKind: [{ value: "all", label: "All kinds" }, { value: "initial", label: "New candidates" }, { value: "scheduled", label: "Revalidations" }],
+    queueStatus: [{ value: "all", label: "Any due state" }, { value: "pending", label: "Pending" }, { value: "due", label: "Due" }, { value: "overdue", label: "Overdue" }]
+  };
+  return <div className="data-filter" aria-label="Candidate filters">
+    <div className="data-filter__bar">
+      <Label className="data-filter__search"><span className="sr-only">Search candidates</span><SearchIcon aria-hidden="true" /><Input className="pl-9!" value={search.queueQuery ?? ""} onChange={(event) => update("queueQuery", event.currentTarget.value)} placeholder="Search candidates" /></Label>
+      <Popover><PopoverTrigger render={<Button type="button" variant="outline" size="sm" />}><PlusIcon />Add filter</PopoverTrigger><PopoverContent align="end" className="w-48 gap-1 p-1">{facets.filter((key) => !visible.has(key)).map((key) => <Button key={key} type="button" variant="ghost" size="sm" className="w-full justify-start" onClick={() => setVisible((current) => new Set(current).add(key))}>{labels[key]}</Button>)}</PopoverContent></Popover>
+      {count ? <Button type="button" variant="ghost" size="sm" onClick={() => { setVisible(new Set()); void navigate({ search: { scope: search.scope, view: "queue", reviewState: search.reviewState }, replace: true }); }}>Reset</Button> : null}
+    </div>
+    {visible.size ? <div className="data-filter__chips">{facets.filter((key) => visible.has(key)).map((key) => <div className="data-filter__chip" key={key}><span>{labels[key]}</span><AppSelect value={search[key] ?? "all"} aria-label={labels[key]} onValueChange={(value) => update(key, value)} options={options[key]} /><Button type="button" variant="ghost" size="icon-sm" aria-label={`Remove ${labels[key]} filter`} onClick={() => { setVisible((current) => { const next = new Set(current); next.delete(key); return next; }); update(key); }}><XIcon /></Button></div>)}</div> : null}
+  </div>;
 }
 
 function QueueInspector({ item, onComplete, onNotice }: { item: QueueItem; onComplete: () => void; onNotice: (notice: { text: string; tone: "success" | "error" }) => void }) {
@@ -502,6 +425,23 @@ function HistoryCard({ decision, onNotice }: { decision: Decision; onNotice: (no
     </div>
     {decision.canAmend ? <div className="history-row__footer"><Button type="button" variant="outline" size="sm" onClick={() => setOpen((value) => !value)}>{open ? "Cancel update" : "Update decision"}</Button>{open ? <div className="history-row__amendment"><AppSelect value={action} onValueChange={setAction} options={[{ value: decision.roundKind === "initial" ? "approve" : "confirm_valid", label: decision.roundKind === "initial" ? "Approve" : "Still valid" }, { value: decision.roundKind === "initial" ? "reject" : "mark_invalid", label: decision.roundKind === "initial" ? "Reject" : "No longer valid" }, { value: "defer", label: "Defer" }]} />{action === "defer" ? <Input type="datetime-local" value={deferUntil} onChange={(event) => setDeferUntil(event.currentTarget.value)} /> : null}<Button type="button" variant="secondary" size="sm" disabled={busy || (action === "defer" && !deferUntil)} onClick={() => void amend()}>{busy ? "Saving…" : "Save amendment"}</Button></div> : null}</div> : null}
   </Card>;
+}
+
+function DebouncedFilterInput({ value, onCommit, ...props }: { value: string; onCommit: (value: string) => void } & Omit<React.ComponentProps<typeof Input>, "value" | "onChange">) {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value]);
+  useEffect(() => {
+    if (draft === value) return;
+    const timeout = window.setTimeout(() => onCommit(draft), 300);
+    return () => window.clearTimeout(timeout);
+  }, [draft, onCommit, value]);
+  return <Input {...props} value={draft} onChange={(event) => setDraft(event.currentTarget.value)} />;
+}
+
+function ActorIdentity({ actor }: { actor: string }) {
+  const separator = actor.lastIndexOf("@");
+  if (separator < 1) return <span className="hidden text-xs text-muted-foreground md:inline">{actor}</span>;
+  return <span className="hidden text-xs text-muted-foreground md:inline"><span>{actor.slice(0, separator)}</span><span>@</span><span>{actor.slice(separator + 1)}</span></span>;
 }
 
 function Empty({ title, body, action }: { title: string; body: string; action?: React.ReactNode }) { return <EmptyRoot className="border"><EmptyHeader><EmptyMedia variant="icon"><InboxIcon /></EmptyMedia><EmptyTitle>{title}</EmptyTitle><EmptyDescription>{body}</EmptyDescription></EmptyHeader>{action ? <EmptyContent>{action}</EmptyContent> : null}</EmptyRoot>; }
