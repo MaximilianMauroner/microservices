@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { InboxIcon, PlusIcon, SearchIcon, XIcon } from "lucide-react";
 import type {
   Candidate,
@@ -193,7 +193,6 @@ function ReviewScopeTabs({ search }: { search: ReviewSearch }) {
 }
 
 function DecisionFilters({ search }: { search: ReviewSearch }) {
-  const navigate = useNavigate({ from: "/review" });
   const facets = [
     ["taskId", "Task", "Task ID", "text"], ["device", "Device", "Device", "text"], ["harness", "Harness", "Harness", "text"],
     ["skill", "Skill", "Skill", "text"], ["from", "From", "Start date", "date"], ["to", "To", "End date", "date"]
@@ -202,7 +201,7 @@ function DecisionFilters({ search }: { search: ReviewSearch }) {
   function update(key: keyof ReviewSearch, value?: string) {
     const next = { ...search };
     if (value?.trim()) Object.assign(next, { [key]: value.trim() }); else delete next[key];
-    void navigate({ search: next, replace: true });
+    replaceReviewDocument(next);
   }
   function remove(key: typeof facets[number][0]) { setVisible((current) => { const next = new Set(current); next.delete(key); return next; }); update(key); }
   const activeCount = [search.projectKey, ...facets.map(([key]) => search[key])].filter(Boolean).length;
@@ -210,7 +209,7 @@ function DecisionFilters({ search }: { search: ReviewSearch }) {
     <div className="data-filter__bar">
       <Label className="data-filter__search"><span className="sr-only">Filter decisions by project</span><SearchIcon aria-hidden="true" /><DebouncedFilterInput value={search.projectKey ?? ""} onCommit={(value) => update("projectKey", value)} placeholder="Filter decisions by project" /></Label>
       <Popover><PopoverTrigger render={<Button type="button" variant="outline" size="sm" />}><PlusIcon />Add filter</PopoverTrigger><PopoverContent align="end" className="w-48 gap-1 p-1">{facets.filter(([key]) => !visible.has(key)).map(([key, label]) => <Button key={key} type="button" variant="ghost" size="sm" className="w-full justify-start" onClick={() => setVisible((current) => new Set(current).add(key))}>{label}</Button>)}</PopoverContent></Popover>
-      {activeCount ? <Button type="button" variant="ghost" size="sm" onClick={() => { setVisible(new Set()); void navigate({ search: { scope: search.scope, view: search.view, reviewState: search.reviewState }, replace: true }); }}>Reset</Button> : null}
+      {activeCount ? <Button type="button" variant="ghost" size="sm" onClick={() => { setVisible(new Set()); replaceReviewDocument({ scope: search.scope, view: search.view, reviewState: search.reviewState }); }}>Reset</Button> : null}
     </div>
     {visible.size ? <div className="data-filter__chips">{facets.filter(([key]) => visible.has(key)).map(([key, label, placeholder, type]) => <div className="data-filter__chip" key={key}><span>{label}</span><DebouncedFilterInput type={type} value={search[key] ?? ""} onCommit={(value) => update(key, value)} placeholder={placeholder} /><Button type="button" variant="ghost" size="icon-sm" aria-label={`Remove ${label} filter`} onClick={() => remove(key)}><XIcon /></Button></div>)}</div> : null}
   </div>;
@@ -308,14 +307,13 @@ function QueueWorkspace({ data, search, setData, setNotice }: { data: QueuePageD
 }
 
 function QueueFilters({ search, projects }: { search: ReviewSearch; projects: string[] }) {
-  const navigate = useNavigate({ from: "/review" });
   const facets = ["queueProject", "queueKind", "queueStatus"] as const;
   const labels = { queueProject: "Project", queueKind: "Kind", queueStatus: "Due" };
   const [visible, setVisible] = useState(() => new Set(facets.filter((key) => search[key])));
   function update(key: typeof facets[number] | "queueQuery", value?: string) {
     const next: ReviewSearch = { ...search };
     if (value && value !== "all") Object.assign(next, { [key]: value }); else delete next[key];
-    void navigate({ search: next, replace: true });
+    replaceReviewDocument(next);
   }
   const count = [search.queueProject, search.queueKind, search.queueStatus, search.queueQuery].filter(Boolean).length;
   const options = {
@@ -325,9 +323,9 @@ function QueueFilters({ search, projects }: { search: ReviewSearch; projects: st
   };
   return <div className="data-filter" aria-label="Candidate filters">
     <div className="data-filter__bar">
-      <Label className="data-filter__search"><span className="sr-only">Search candidates</span><SearchIcon aria-hidden="true" /><Input className="pl-9!" value={search.queueQuery ?? ""} onChange={(event) => update("queueQuery", event.currentTarget.value)} placeholder="Search candidates" /></Label>
+      <Label className="data-filter__search"><span className="sr-only">Search candidates</span><SearchIcon aria-hidden="true" /><DebouncedFilterInput className="pl-9!" value={search.queueQuery ?? ""} onCommit={(value) => update("queueQuery", value)} placeholder="Search candidates" /></Label>
       <Popover><PopoverTrigger render={<Button type="button" variant="outline" size="sm" />}><PlusIcon />Add filter</PopoverTrigger><PopoverContent align="end" className="w-48 gap-1 p-1">{facets.filter((key) => !visible.has(key)).map((key) => <Button key={key} type="button" variant="ghost" size="sm" className="w-full justify-start" onClick={() => setVisible((current) => new Set(current).add(key))}>{labels[key]}</Button>)}</PopoverContent></Popover>
-      {count ? <Button type="button" variant="ghost" size="sm" onClick={() => { setVisible(new Set()); void navigate({ search: { scope: search.scope, view: "queue", reviewState: search.reviewState }, replace: true }); }}>Reset</Button> : null}
+      {count ? <Button type="button" variant="ghost" size="sm" onClick={() => { setVisible(new Set()); replaceReviewDocument({ scope: search.scope, view: "queue", reviewState: search.reviewState }); }}>Reset</Button> : null}
     </div>
     {visible.size ? <div className="data-filter__chips">{facets.filter((key) => visible.has(key)).map((key) => <div className="data-filter__chip" key={key}><span>{labels[key]}</span><AppSelect value={search[key] ?? "all"} aria-label={labels[key]} onValueChange={(value) => update(key, value)} options={options[key]} /><Button type="button" variant="ghost" size="icon-sm" aria-label={`Remove ${labels[key]} filter`} onClick={() => { setVisible((current) => { const next = new Set(current); next.delete(key); return next; }); update(key); }}><XIcon /></Button></div>)}</div> : null}
   </div>;
@@ -454,4 +452,9 @@ function humanAction(action: Decision["action"]) { return action === "approve" ?
 function relativeTime(value: string) { const time = new Date(value).getTime(); if (!Number.isFinite(time)) return value; const minutes = Math.round((time - Date.now()) / 60_000); const absolute = Math.abs(minutes); const formatter = new Intl.RelativeTimeFormat("en", { numeric: "auto" }); if (absolute < 60) return formatter.format(minutes, "minute"); const hours = Math.round(minutes / 60); if (Math.abs(hours) < 24) return formatter.format(hours, "hour"); return formatter.format(Math.round(hours / 24), "day"); }
 function formatDate(value: string) { return new Intl.DateTimeFormat("en", { dateStyle: "medium", timeZone: "UTC" }).format(new Date(value)); }
 function slugify(value: string) { return value.toLocaleLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80) || "field-guide-lesson"; }
+function replaceReviewDocument(search: ReviewSearch) {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(search)) if (value) params.set(key, value);
+  window.location.replace(`/review?${params}`);
+}
 function addSearchFilters(params: URLSearchParams, search: ReviewSearch) { for (const key of ["projectKey", "taskId", "device", "harness", "skill", "from", "to"] as const) if (search[key]) params.set(key, search[key]!); }

@@ -18,6 +18,8 @@ describe("primary page ownership", () => {
     const reviewLinks = [...source.matchAll(/<Link to="\/review"[^>]*>/g)].map(([link]) => link);
     expect(reviewLinks.length).toBeGreaterThan(0);
     expect(reviewLinks.every((link) => link.includes("reloadDocument"))).toBe(true);
+    expect(source).toContain("window.location.replace(`/review?${params}`)");
+    expect(source).not.toContain("useNavigate");
   });
 
   it("keeps catalog management read-only at both UI and API boundaries", () => {
