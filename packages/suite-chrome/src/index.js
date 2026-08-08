@@ -1,12 +1,12 @@
 /** @typedef {"tools" | "publish" | "review" | "status" | "manage"} SuiteDestination */
 
-/** @type {ReadonlyArray<{id: SuiteDestination, href: string, label: string, protected: boolean}>} */
+/** @type {ReadonlyArray<{id: SuiteDestination, href: string, label: string}>} */
 const destinations = [
-  { id: "tools", href: "/", label: "Tools", protected: false },
-  { id: "publish", href: "/publish", label: "Publish", protected: true },
-  { id: "review", href: "/review", label: "Review", protected: true },
-  { id: "status", href: "/status", label: "Status", protected: false },
-  { id: "manage", href: "/manage", label: "Manage", protected: true }
+  { id: "tools", href: "/", label: "Tools" },
+  { id: "publish", href: "/publish", label: "Publish" },
+  { id: "review", href: "/review", label: "Review" },
+  { id: "status", href: "/status", label: "Status" },
+  { id: "manage", href: "/manage", label: "Manage" }
 ];
 
 /**
@@ -14,12 +14,9 @@ const destinations = [
  * @returns {string}
  */
 export function renderSuiteChrome(active) {
-  const renderLinks = () => destinations.map((destination) => {
-    const access = destination.protected
-      ? '<span class="suite-lock" aria-hidden="true"></span><span class="visually-hidden">, sign-in required</span>'
-      : "";
-    return `<a href="${destination.href}"${destination.id === active ? ' aria-current="page"' : ""}>${destination.label}${access}</a>`;
-  }).join("");
+  const renderLinks = () => destinations.map((destination) =>
+    `<a href="${destination.href}"${destination.id === active ? ' aria-current="page"' : ""}>${destination.label}</a>`
+  ).join("");
   const links = renderLinks();
   return `<a class="suite-skip skip-link" href="#main">Skip to content</a>
     <header class="suite-header" data-suite-shell="command-deck">
@@ -95,8 +92,6 @@ button, summary, a { -webkit-tap-highlight-color: transparent; }
 .suite-nav a, .suite-menu nav a { display: inline-flex; min-height: 36px; align-items: center; gap: 7px; padding: 0 10px; border-radius: var(--control-radius); color: var(--muted-foreground); font-size: 12px; font-weight: 650; text-decoration: none; }
 .suite-nav a:hover, .suite-menu nav a:hover { background: var(--accent); color: var(--accent-foreground); }
 .suite-nav a[aria-current="page"], .suite-menu nav a[aria-current="page"] { background: var(--secondary); color: var(--secondary-foreground); }
-.suite-lock { position: relative; width: 9px; height: 8px; display: inline-block; border: 1px solid currentColor; border-radius: 2px; opacity: .7; }
-.suite-lock::before { content: ""; position: absolute; left: 1px; bottom: 5px; width: 5px; height: 5px; border: 1px solid currentColor; border-bottom: 0; border-radius: 5px 5px 0 0; }
 .suite-menu { display: none; position: relative; }
 .suite-menu summary { min-height: 36px; display: inline-flex; align-items: center; padding: 0 11px; border: 1px solid var(--border); border-radius: var(--control-radius); background: var(--secondary); color: var(--foreground); cursor: pointer; font-size: 12px; font-weight: 650; list-style: none; }
 .suite-menu summary::-webkit-details-marker { display: none; }

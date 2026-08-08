@@ -10,7 +10,13 @@ export default defineConfig({
   plugins: [
     tailwindcss(),
     tanstackStart({ serverFns: { base: SERVER_FUNCTION_BASE_PATH } }),
-    nitro({ preset: "bun" }),
+    nitro({
+      preset: "bun",
+      // Rolldown can emit an invalid cross-chunk namespace export for the SSR
+      // renderer. Keeping the server bundle together prevents broken builds
+      // from passing the lightweight /health check.
+      inlineDynamicImports: true
+    }),
     react()
   ],
   resolve: {
