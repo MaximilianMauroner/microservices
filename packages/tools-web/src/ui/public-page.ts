@@ -148,7 +148,7 @@ function privateStatusCallout(): string {
     <div class="private-status-callout__icon" aria-hidden="true"><span class="suite-lock"></span></div>
     <div>
       <h2 id="private-status-title">Private service status</h2>
-      <p>Sign in with Cloudflare Access to view availability for internal services.</p>
+      <p>Sign in with Google to view availability for internal services.</p>
     </div>
     <a class="private-status-link" href="/manage/status">View private status <span aria-hidden="true">›</span></a>
   </section>`;
@@ -235,7 +235,7 @@ function renderToolCard(
     : [
         ...(entry.links.some((link) => link.access === "public") ? ["Public"] : []),
         ...(entry.links.some((link) => link.access === "restricted")
-          ? ["Cloudflare Access"]
+          ? ["Sign-in required"]
           : [])
       ];
   if (accessLabels.length === 0) accessLabels.push("Public");
@@ -258,7 +258,7 @@ function renderToolCard(
         <div class="tool-card__identity">
           ${iconPath ? `<img class="tool-card__icon" src="${iconPath}" alt="" width="48" height="48">` : ""}
           <div>
-            <p class="access-label access-label--${accessClass}">${accessLabels.includes("Cloudflare Access") ? '<span class="suite-lock" aria-hidden="true"></span>' : ""}${escapeHtml(accessLabels.join(" · "))}</p>
+            <p class="access-label access-label--${accessClass}">${accessLabels.includes("Sign-in required") ? '<span class="suite-lock" aria-hidden="true"></span>' : ""}${escapeHtml(accessLabels.join(" · "))}</p>
             <h3>${escapeHtml(entry.name)}</h3>
           </div>
         </div>
@@ -713,10 +713,6 @@ function renderDirectoryLink(
 function localBrowserPath(destination: URL, publicOrigin: string): string | undefined {
   if (destination.origin === new URL(publicOrigin).origin) {
     return `${destination.pathname}${destination.search}${destination.hash}`;
-  }
-  if (destination.pathname.startsWith("/cdn-cgi/access/login/")) {
-    const redirect = destination.searchParams.get("redirect_url");
-    if (redirect?.startsWith("/") && !redirect.startsWith("//")) return redirect;
   }
   return undefined;
 }

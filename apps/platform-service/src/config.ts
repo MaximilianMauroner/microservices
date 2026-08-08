@@ -9,22 +9,15 @@ type Environment = Readonly<Record<string, string | undefined>>;
 export function loadPlatformConfig(env: Environment = process.env) {
   const publicOrigin = required(env, "PUBLIC_ORIGIN");
   const port = env.PORT ?? "3000";
-  const audiences = routeAudiences(env);
   const readOnly = optionalBoolean(env.PLATFORM_READ_ONLY, "PLATFORM_READ_ONLY");
-  const localAuth = optionalBoolean(env.PLATFORM_LOCAL_AUTH, "PLATFORM_LOCAL_AUTH");
   if (readOnly && env.NODE_ENV === "production") {
     throw new Error("PLATFORM_READ_ONLY is unavailable in production");
-  }
-  if (localAuth && env.NODE_ENV === "production") {
-    throw new Error("PLATFORM_LOCAL_AUTH is unavailable in production");
   }
 
   const tools = loadToolsConfig({
     ...env,
     PORT: port,
     PUBLIC_ORIGIN: publicOrigin,
-    CF_ACCESS_AUDIENCE:
-      [...audiences.manage, ...audiences.publisher, ...audiences.review].join(","),
     ...bucketEnvironment(env, "TOOLS")
   });
   const artifact = loadArtifactConfig({
@@ -48,13 +41,8 @@ export function loadPlatformConfig(env: Environment = process.env) {
   return {
     port: tools.port,
     readOnly,
-    localAuth,
     publicOrigin: tools.trustedOrigin,
-    access: {
-      issuer: tools.access.issuer,
-      jwksUrl: tools.access.jwksUrl,
-      audience: audiences
-    },
+    auth: loadPlatformAuthConfig(env, tools.trustedOrigin),
     tools,
     artifact,
     fieldGuide,
@@ -78,6 +66,23 @@ export function loadPlatformConfig(env: Environment = process.env) {
   };
 }
 
+export type PlatformAuthConfig = ReturnType<typeof loadPlatformAuthConfig>;
+
+export function loadPlatformAuthConfig(
+  env: Environment,
+  publicOrigin: string
+) {
+  return {
+    publicOrigin,
+    googleClientId: required(env, "GOOGLE_CLIENT_ID"),
+    googleClientSecret: required(env, "GOOGLE_CLIENT_SECRET"),
+    secret: secret(required(env, "BETTER_AUTH_SECRET"), "BETTER_AUTH_SECRET"),
+    allowedGoogleSubject: googleSubject(
+      required(env, "AUTH_ALLOWED_GOOGLE_SUBJECT")
+    )
+  };
+}
+
 function secret(value: string, name: string): string {
   if (value.length < 32 || /\s/.test(value)) {
     throw new Error(`${name} must be at least 32 non-whitespace characters`);
@@ -85,60 +90,13 @@ function secret(value: string, name: string): string {
   return value;
 }
 
-export function routeAudiences(env: Environment) {
-  const explicit = {
-    manage: optionalAudience(env.CF_ACCESS_MANAGE_AUDIENCE),
-    publisher: optionalAudience(env.CF_ACCESS_PUBLISHER_AUDIENCE),
-    review: optionalAudience(env.CF_ACCESS_REVIEW_AUDIENCE)
-  };
-  for (const [family, value] of Object.entries(explicit)) {
-    if (!value) {
-      throw new Error(
-        `CF_ACCESS_${family.toUpperCase()}_AUDIENCE is required`
-      );
-    }
-    if (value.length !== 1) {
-      throw new Error(
-        `CF_ACCESS_${family.toUpperCase()}_AUDIENCE must contain exactly one audience tag`
-      );
-    }
+function googleSubject(value: string): string {
+  if (value.length > 255 || !/^[A-Za-z0-9_-]+$/.test(value)) {
+    throw new Error(
+      "AUTH_ALLOWED_GOOGLE_SUBJECT must be a valid Google subject identifier"
+    );
   }
-  const audiences = {
-    manage: explicit.manage!,
-    publisher: explicit.publisher!,
-    review: explicit.review!
-  };
-  requireDistinctAudiences(audiences);
-  return audiences;
-}
-
-function optionalAudience(value: string | undefined): string[] | undefined {
-  if (value === undefined) return undefined;
-  const audiences = [...new Set(value.split(",").map((item) => item.trim()))]
-    .filter(Boolean);
-  if (audiences.length === 0) {
-    throw new Error("Route-family Access audience must not be empty");
-  }
-  return audiences;
-}
-
-function requireDistinctAudiences(audiences: {
-  manage: string[];
-  publisher: string[];
-  review: string[];
-}) {
-  const owner = new Map<string, string>();
-  for (const [family, values] of Object.entries(audiences)) {
-    for (const value of values) {
-      const existing = owner.get(value);
-      if (existing) {
-        throw new Error(
-          `Cloudflare Access audience ${value} overlaps ${existing} and ${family}`
-        );
-      }
-      owner.set(value, family);
-    }
-  }
+  return value;
 }
 
 function bucketEnvironment(env: Environment, prefix: "TOOLS" | "ARTIFACT") {

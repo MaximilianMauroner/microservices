@@ -4,8 +4,12 @@ import {
   HISTORY_SCHEMA_VERSION
 } from "@tools-platform/domain";
 import { describe, expect, it } from "vitest";
-import { createApp, type AppLogger } from "../src/app.js";
-import { AccessDeniedError, type AccessVerifier } from "../src/auth.js";
+import {
+  AuthenticationRequiredError,
+  createApp,
+  type AppLogger,
+  type PrincipalAuthenticator
+} from "../src/app.js";
 import {
   MarkdownAdminUnavailableError,
   type MarkdownAdminReader
@@ -13,16 +17,12 @@ import {
 import { WebStorage } from "../src/storage.js";
 import { catalog, MemoryBucket, privateSnapshot, publicSnapshot } from "./fixtures.js";
 
-const allowed: AccessVerifier = {
-  async verify() {
-    return { id: "admin@example.test" };
-  }
+const allowed: PrincipalAuthenticator = async () => {
+  return { id: "admin@example.test" };
 };
 
-const denied: AccessVerifier = {
-  async verify() {
-    throw new AccessDeniedError();
-  }
+const denied: PrincipalAuthenticator = async () => {
+  throw new AuthenticationRequiredError();
 };
 
 const markdownAdmin: MarkdownAdminReader = {
@@ -206,16 +206,14 @@ describe("tools web routes", () => {
     });
   });
 
-  it("enforces exact-origin JSON CSRF boundaries after Access authentication", async () => {
+  it("enforces exact-origin JSON CSRF boundaries after authentication", async () => {
     const bucket = seededBucket();
     let verifications = 0;
-    const access: AccessVerifier = {
-      async verify() {
-        verifications += 1;
-        return { id: "admin@example.test" };
-      }
+    const authenticate: PrincipalAuthenticator = async () => {
+      verifications += 1;
+      return { id: "admin@example.test" };
     };
-    const app = testApp(bucket, access);
+    const app = testApp(bucket, authenticate);
     const request = (headers: HeadersInit) =>
       app(
         new Request("https://tools.example.test/api/ops/groups", {
@@ -682,13 +680,13 @@ const quiet: AppLogger = {
 
 function testApp(
   bucket: MemoryBucket,
-  access: AccessVerifier,
+  authenticate: PrincipalAuthenticator,
   logger: AppLogger = quiet,
   markdownReader: MarkdownAdminReader = markdownAdmin
 ) {
   return createApp({
     storage: new WebStorage(bucket),
-    access,
+    authenticate,
     markdownAdmin: markdownReader,
     markdownSharePublicOrigin: "https://markdown.example.test",
     trustedOrigin: "https://tools.example.test",

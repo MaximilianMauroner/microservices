@@ -1,43 +1,30 @@
-# Cloudflare Access incident
+# Browser authentication incident
 
-Use this runbook when `/manage` is unexpectedly public, valid operators cannot
-authenticate, an Access audience changes, or a JWT/bucket credential may be
-compromised.
+Use this runbook when a private route is unexpectedly public, the authorized
+Google account cannot sign in, or session material may be compromised.
 
 ## Contain
 
-1. Disable the platform deployment or route `/manage*`, legacy `/ops*`, and `/api/ops/*`
-   to a deny-all Access policy. Keep the public directory available only if its
-   routing is clearly separate.
-2. Remove the web service's bucket write credentials. The checker can continue
-   because it has separate ownership credentials.
-3. Rotate the S3 access key if exposure is possible. Do not log the old or new
-   value.
-4. Export `catalog/current.json` and `audit/**`; compare revisions and actors
-   with the last known-good deployment.
-5. If a catalog revision has no corresponding audit object, keep web write
-   credentials removed and follow the audit-repair gate in
-   `bucket-recovery.md`. A failed HTTP response does not prove the catalog
-   write failed.
+1. Disable the platform deployment if private data may be exposed. Keep public
+   routes online only when their routing is clearly separate.
+2. Rotate `BETTER_AUTH_SECRET` to invalidate every browser session. Never log
+   either secret value.
+3. Rotate the Google OAuth client secret if it may have been exposed.
+4. Remove bucket write credentials while investigating unauthorized writes.
 
 ## Diagnose
 
-- Verify the Access applications cover `/publish*`, `/uploads*`,
-  `/api/external-uploads`, `/review*`, `/manage*`, protected legacy page
-  aliases, and their protected APIs. Ensure Access does not intercept public
-  `GET`/`HEAD` capability delivery at `/artifacts/*`, `/files/*`, `/p/*`, or
-  `/f/*`; the origin still protects non-read methods on those paths.
-- Verify `CF_ACCESS_ISSUER` is the exact `*.cloudflareaccess.com` team origin and
-  `CF_ACCESS_MANAGE_AUDIENCE`, `CF_ACCESS_PUBLISHER_AUDIENCE`, and
-  `CF_ACCESS_REVIEW_AUDIENCE` match their intended route-family applications.
-- Verify the app rejects missing, expired, wrong-issuer, wrong-audience, and
-  incorrectly signed assertions. Edge headers alone are never sufficient.
-- Review sanitized request events by request ID. Logs intentionally omit
-  headers, tokens, bodies, webhook URLs, and full exception messages.
+- Confirm `/api/auth/callback/google` is registered on the correct Google OAuth
+  web client and `PUBLIC_ORIGIN` exactly matches the deployed origin.
+- Confirm `AUTH_ALLOWED_GOOGLE_SUBJECT` is the stable `sub` for the intended
+  account. Do not substitute an email address.
+- Test an anonymous private document, private JSON request, expired session,
+  allowed Google account, and a different valid Google account.
+- Review sanitized request events only. Logs must not contain tokens, cookies,
+  authorization codes, secrets, or identity claims.
 
 ## Recover
 
-Restore a least-privilege Access policy, rotate credentials, redeploy, and test
-with an allowed and denied identity. Confirm catalog writes generate immutable
-audit objects and a stale `If-Match` produces an explicit `409` without retry.
-Only then restore the route and bucket write credential.
+Redeploy with the corrected variables. Verify public and native-token machine
+routes first, then verify allowed and denied browser identities. Restore bucket
+write credentials only after private writes and audit attribution are correct.

@@ -1,62 +1,52 @@
 # Platform Service
 
-The platform service is the single production compute and authentication
-boundary for the hosted tools platform. It mounts the existing modules without
-moving their data:
+The platform service is the single production compute and browser-authentication boundary for Mauroner Tools.
 
-| Route | Module |
+## Route policy
+
+| Surface | Authentication |
 | --- | --- |
-| `/`, `/status`, `/manage/status`, `/manage`, `/api/ops/*` | Tools catalog, public/private status, management, and private Markdown inventory |
-| `/publish`, `/artifacts/*`, `/files/*` | Artifact publisher browser and public capability-read routes |
-| `/review`, `/api/review/*` | Field-guide review browser routes |
-| `/api/uploads*`, `/api/agent*`, `/api/heartbeat/tower` | Native-token machine APIs |
-| in-process, every five minutes | Tools checker |
+| `/`, `/status`, health routes, and fixed public assets | Public |
+| `/artifacts/*` and `/files/*` `GET`/`HEAD` | Public unlisted capability URL |
+| `/sign-in` and `/api/auth/*` | Public authentication flow |
+| `/publish`, `/review`, `/manage/*`, `/tools/private/*`, and their browser APIs | Better Auth Google session |
+| `/api/uploads*`, `/api/agent*`, and `/api/heartbeat/tower` | Existing native bearer token |
 
-The redacted Tools and status routes (`/`, `/status`, `/assets/tools.css`, and
-`/api/public/catalog`) are public. The exact `/assets/ops.js` browser dependency
-is also public so an authenticated Manage page can load its client behavior;
-the script contains no privileged data and is not a trust boundary. Private
-status at `/manage/status`, Manage HTML, data under `/api/ops/*`, and all
-mutations remain Access-protected. Artifact/file
-`GET`/`HEAD` delivery is public and unlisted: the unguessable URL is the read
-capability, and the backing bucket remains private. Publish, Review, Manage,
-upload/list/revoke surfaces, and non-read delivery requests require a valid
-`Cf-Access-Jwt-Assertion`. Legacy `/p/*` and `/f/*` capability reads redirect
-with `308` before Access verification; protected `/uploads` and `/ops/*`
-redirects occur only after verification.
+TanStack document requests and protected server functions resolve the same
+application session. Private SPA navigation therefore stays inside the router;
+the shared `/_serverFn` endpoint no longer depends on an edge route policy.
+Anonymous private document requests redirect to `/sign-in`, while private JSON
+requests return `401 {"error":"authentication_required"}`. Protected responses
+are private and non-cacheable.
 
-`/manage/documents` uses the existing Manage Access application and renders a
-read-only Markdown Share inventory. The platform calls a bearer-protected
-Convex HTTP Action server-to-server and does not request Markdown bodies.
+## Browser authentication
 
-`/api/uploads*`, `/api/agent*`, and `/api/heartbeat/tower` intentionally bypass
-browser Access so automation does not need a browser assertion. They remain
-protected by their native bearer authenticators. Tower sends a heartbeat every
-minute using `TOWER_HEARTBEAT_TOKEN`; `/health/tower` returns healthy while the
-latest durable heartbeat is no more than three minutes old. The token must be
-at least 32 non-whitespace characters. `TOWER_HEARTBEAT_STALE_AFTER_MS` can
-override the three-minute threshold.
+Better Auth runs without an auth database. It uses a secure, HTTP-only,
+same-site encrypted cookie with a 12-hour lifetime. Google is the only provider
+and requests only the default OpenID, email, and profile scopes. The verified
+Google `sub` must exactly match `AUTH_ALLOWED_GOOGLE_SUBJECT` before a session
+is created.
 
-`/live`, `/health`, `/health/tools`, `/health/publisher`, `/health/review`, and
-`/health/tower` are public and assertion-free. Railway uses aggregate `/health`;
-the in-process checker uses the component and Tower routes so one dependency
-cannot borrow another component's result. The Tower route reveals only whether
-the heartbeat is current, never its credential or timestamp.
+Required variables:
 
-The service requires one distinct audience tag in each of
-`CF_ACCESS_MANAGE_AUDIENCE`, `CF_ACCESS_PUBLISHER_AUDIENCE`, and
-`CF_ACCESS_REVIEW_AUDIENCE`. Missing, multiple, or overlapping tags fail
-startup regardless of `NODE_ENV`.
+- `PUBLIC_ORIGIN`
+- `GOOGLE_CLIENT_ID`
+- `GOOGLE_CLIENT_SECRET`
+- `BETTER_AUTH_SECRET`, at least 32 non-whitespace characters
+- `AUTH_ALLOWED_GOOGLE_SUBJECT`
 
-The service preserves the two S3 buckets and existing field-guide PostgreSQL
-database. Their variables are namespaced as `TOOLS_S3_*`, `ARTIFACT_S3_*`, and
-`FIELD_GUIDE_DATABASE_URL` so credentials cannot be confused.
+The Google OAuth web client must register this exact callback URL:
 
-The HTTP composition root is TanStack Start on Nitro's Bun preset. File-based
-route handlers live in `src/routes`, and `src/start.ts` applies the central
-Access policy before any route delegate runs. The production build writes the
-Nitro bundle to `.output/`; the process must start from this package directory
-so the mounted Field Guide stylesheet resolves from the sibling app.
+```text
+${PUBLIC_ORIGIN}/api/auth/callback/google
+```
+
+Google uses online access only. The application does not request offline
+refresh-token capability or retain a provider-account cookie. Changing
+`BETTER_AUTH_SECRET` invalidates existing sessions.
+
+The service preserves its existing S3 buckets and Field Guide PostgreSQL
+database. Browser authentication does not add or migrate database tables.
 
 ## Commands
 
