@@ -7,7 +7,7 @@ export const Route = createFileRoute("/manage")({
   head: () => ({
     meta: [
       { title: "Manage — Mauroner Tools" },
-      { name: "description", content: "Protected Tools Platform catalog administration." },
+      { name: "description", content: "Maintain published artifacts and temporary files." },
       { name: "robots", content: "noindex, nofollow" }
     ],
     links: [faviconLink(favicons.directory)]

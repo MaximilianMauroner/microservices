@@ -78,7 +78,8 @@ curl -fsS -X DELETE "$PUBLIC_BASE_URL/api/uploads/$UPLOAD_ID" \
 
 ## Browser and read behavior
 
-The unified `/publish` UI lists recent uploads and creates temporary files
+The unified `/publish` UI creates temporary files, while `/manage` owns the
+artifact inventory and lifecycle actions
 through same-origin `/api/external-uploads`. The Better Auth session is
 validated at the platform boundary; the browser never receives the native
 upload token.

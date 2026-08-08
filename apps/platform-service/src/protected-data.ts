@@ -1,6 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
 import type {
-  CatalogDocument,
   PrivateSnapshotDocument
 } from "@tools-platform/domain";
 import type { MarkdownAdminSnapshot } from "@tools-platform/web";
@@ -90,21 +89,7 @@ export type UploadPageData = {
   nextCursor?: string;
 };
 
-export const getPublishPageData = createServerFn({ method: "GET" })
-  .middleware([requirePlatformSession])
-  .handler(async (): Promise<UploadPageData> => {
-    const { context, request } = internalPlatformRequest("/api/external-uploads?limit=25");
-    const response = await context.runtime.services.publisher.handle(request);
-    if (!response.ok) throw new Error(`Upload inventory request failed: ${response.status}`);
-    return response.json() as Promise<UploadPageData>;
-  });
-
-export type ManagePageData = {
-  actor: string;
-  revision: string;
-  catalog: CatalogDocument;
-  snapshot: PrivateSnapshotDocument;
-};
+export type ManagePageData = UploadPageData;
 
 export type PrivateStatusPageData = {
   actor: string;
@@ -143,17 +128,12 @@ export const getPrivateStatusPageData = createServerFn({ method: "GET" })
 export const getManagePageData = createServerFn({ method: "GET" })
   .middleware([requirePlatformSession])
   .handler(async (): Promise<ManagePageData> => {
-    const { context } = internalPlatformRequest("/api/ops/catalog");
-    const [catalog, snapshot] = await Promise.all([
-      readPlatformJson<CatalogDocument>(context.runtime.services.manage.handle, "/api/ops/catalog"),
-      readPlatformJson<PrivateSnapshotDocument>(context.runtime.services.manage.handle, "/api/ops/snapshot")
-    ]);
-    return {
-      actor: context.principal?.email ?? "Authenticated user",
-      revision: catalog.revision,
-      catalog,
-      snapshot: { ...snapshot, catalog, catalogRevision: catalog.revision }
-    };
+    const { context, request } = internalPlatformRequest(
+      "/api/external-uploads?limit=100&sort=newest"
+    );
+    const response = await context.runtime.services.publisher.handle(request);
+    if (!response.ok) throw new Error(`Artifact inventory request failed: ${response.status}`);
+    return response.json() as Promise<ManagePageData>;
   });
 
 export const getDocumentsPageData = createServerFn({ method: "GET" })

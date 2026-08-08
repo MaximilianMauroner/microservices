@@ -60,6 +60,13 @@ class MemoryUploadStorage implements UploadStorage {
     return { uploads: [] };
   }
 
+  async updateHtmlProject(id: string, project: string) {
+    const page = this.pages.get(id);
+    if (!page) return false;
+    page.metadata = { ...page.metadata, project };
+    return true;
+  }
+
   async deleteUpload(id: string, _options?: StorageOperationOptions) {
     this.pages.delete(id);
     this.files.delete(id);
@@ -142,5 +149,81 @@ describe("native artifact fetch handler", () => {
     expect(response.status).toBe(400);
     expect(await response.json()).toMatchObject({ error: "invalid_project" });
     expect(storage.pages.size).toBe(0);
+  });
+
+  it("lets the authenticated browser replace, reassign, and revoke an HTML artifact", async () => {
+    const storage = new MemoryUploadStorage();
+    const app = createFetchApp({
+      storage,
+      uploadToken: "upload-token",
+      publicBaseUrl: "https://tools.example.test",
+      externalUpload: true
+    });
+    const createdResponse = await app(
+      new Request("https://tools.example.test/api/uploads", {
+        method: "POST",
+        headers: { Authorization: "Bearer upload-token" },
+        body: multipart("first.html", "<h1>first</h1>", "text/html", "microservices")
+      })
+    );
+    const created = await createdResponse.json() as { id: string; url: string };
+
+    const replacedResponse = await app(
+      new Request(`https://tools.example.test/api/external-uploads/${created.id}`, {
+        method: "PUT",
+        headers: { Origin: "https://tools.example.test" },
+        body: multipart("replacement.html", "<h1>replacement</h1>", "text/html")
+      })
+    );
+    expect(replacedResponse.status).toBe(200);
+    expect(await replacedResponse.json()).toMatchObject({
+      id: created.id,
+      filename: "replacement.html",
+      project: "microservices",
+      url: created.url
+    });
+    expect(storage.pages.get(created.id)?.body.toString()).toBe("<h1>replacement</h1>");
+
+    const projectResponse = await app(
+      new Request(`https://tools.example.test/api/external-uploads/${created.id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Origin: "https://tools.example.test"
+        },
+        body: JSON.stringify({ project: "field-guide" })
+      })
+    );
+    expect(projectResponse.status).toBe(200);
+    expect(await projectResponse.json()).toEqual({ id: created.id, project: "field-guide" });
+    expect(storage.pages.get(created.id)?.metadata.project).toBe("field-guide");
+
+    const revokedResponse = await app(
+      new Request(`https://tools.example.test/api/external-uploads/${created.id}`, {
+        method: "DELETE",
+        headers: { Origin: "https://tools.example.test" }
+      })
+    );
+    expect(revokedResponse.status).toBe(204);
+    expect((await app(new Request(created.url))).status).toBe(404);
+  });
+
+  it("rejects cross-origin browser lifecycle mutations", async () => {
+    const storage = new MemoryUploadStorage();
+    const app = createFetchApp({
+      storage,
+      uploadToken: "upload-token",
+      externalUpload: true
+    });
+
+    const response = await app(
+      new Request(`https://tools.example.test/api/external-uploads/${"a".repeat(32)}`, {
+        method: "DELETE",
+        headers: { Origin: "https://attacker.example" }
+      })
+    );
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ error: "invalid_origin" });
   });
 });

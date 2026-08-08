@@ -1,5 +1,6 @@
 import { Readable } from "node:stream";
 import {
+  CopyObjectCommand,
   DeleteObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
@@ -122,6 +123,49 @@ describe("S3 upload storage", () => {
         { ifMatch: '"stale-etag"' }
       )
     ).rejects.toBeInstanceOf(HtmlUpdateConflictError);
+    storage.close?.();
+  });
+
+  it("changes HTML project metadata with a conditional in-place copy", async () => {
+    let copy: CopyObjectCommand | undefined;
+    vi.spyOn(S3Client.prototype, "send").mockImplementation(async (command) => {
+      if (command instanceof HeadObjectCommand) {
+        return {
+          ETag: '"current-etag"',
+          CacheControl: "private, no-cache",
+          ContentType: "text/html; charset=utf-8",
+          Metadata: {
+            bytes: "12",
+            sha256: "a".repeat(64),
+            "original-name-base64": Buffer.from("plan.html").toString("base64"),
+            "project-base64": Buffer.from("old-project").toString("base64")
+          }
+        } as never;
+      }
+      if (command instanceof CopyObjectCommand) {
+        copy = command;
+        return {} as never;
+      }
+      throw new Error("Unexpected S3 command");
+    });
+    const storage = createS3UploadStorage(storageConfig);
+
+    await expect(storage.updateHtmlProject("stable-id", "new-project")).resolves.toBe(true);
+
+    expect(copy?.input).toMatchObject({
+      Bucket: "bucket",
+      Key: "pages/stable-id.html",
+      CopySource: "bucket/pages/stable-id.html",
+      CopySourceIfMatch: '"current-etag"',
+      MetadataDirective: "REPLACE",
+      CacheControl: "private, no-cache",
+      ContentType: "text/html; charset=utf-8"
+    });
+    expect(copy?.input.Metadata).toMatchObject({
+      bytes: "12",
+      sha256: "a".repeat(64),
+      "project-base64": Buffer.from("new-project").toString("base64")
+    });
     storage.close?.();
   });
 

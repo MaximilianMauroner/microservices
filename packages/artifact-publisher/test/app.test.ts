@@ -187,6 +187,14 @@ class MemoryUploadStorage implements UploadStorage {
     this.files.delete(id);
   }
 
+  async updateHtmlProject(id: string, project: string) {
+    const page = this.pages.get(id);
+    if (!page) return false;
+    page.metadata = { ...page.metadata, project };
+    page.lastModified = this.now();
+    return true;
+  }
+
   async deleteExpiredTemporaryFiles(expiresAtOrBefore: Date) {
     let deleted = 0;
 
