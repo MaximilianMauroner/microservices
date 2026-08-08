@@ -23,6 +23,15 @@ describe("primary page ownership", () => {
     expect(source).not.toContain("useNavigate");
   });
 
+  it("waits for matching loader data when switching review views", () => {
+    const source = readFileSync(new URL("../src/features/review/review-page.tsx", import.meta.url), "utf8");
+
+    expect(source).toContain('search.view === "decisions" && data.view === "decisions" && data.decisions');
+    expect(source).toContain('search.view === "queue" && data.view === "queue" && data.queue');
+    expect(source).toContain('search.view === "history" && data.view === "history" && data.history');
+    expect(source).not.toContain("queue: data.queue!");
+  });
+
   it("keeps catalog management read-only at both UI and API boundaries", () => {
     const page = readFileSync(new URL("../src/features/manage/manage-page.tsx", import.meta.url), "utf8");
     const route = readFileSync(new URL("../src/routes/api/ops/$.ts", import.meta.url), "utf8");

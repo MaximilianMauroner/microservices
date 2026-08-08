@@ -92,9 +92,9 @@ export function ReviewPage({ initial, search }: { initial: ReviewPageData; searc
         </header>
         <div className="mb-5"><ReviewNav search={search} /></div>
         {notice ? <Alert className="mb-4" variant={notice.tone === "error" ? "destructive" : "default"} data-tone={notice.tone}>{notice.text}</Alert> : null}
-        {search.view === "decisions" ? <DecisionWorkspace data={{ ...data, decisions: data.decisions! }} search={search} setData={setData} setNotice={setNotice} onLoadMore={() => void loadMore()} /> : null}
-        {search.view === "queue" ? <QueueWorkspace data={{ ...data, queue: data.queue! }} search={search} setData={setData} setNotice={setNotice} /> : null}
-        {search.view === "history" ? <HistoryWorkspace data={data} search={search} onLoadMore={() => void loadMore()} setNotice={setNotice} /> : null}
+        {search.view === "decisions" && data.view === "decisions" && data.decisions ? <DecisionWorkspace data={{ ...data, decisions: data.decisions }} search={search} setData={setData} setNotice={setNotice} onLoadMore={() => void loadMore()} /> : null}
+        {search.view === "queue" && data.view === "queue" && data.queue ? <QueueWorkspace data={{ ...data, queue: data.queue }} search={search} setData={setData} setNotice={setNotice} /> : null}
+        {search.view === "history" && data.view === "history" && data.history ? <HistoryWorkspace data={data} search={search} onLoadMore={() => void loadMore()} setNotice={setNotice} /> : null}
       </main>
     </>
   );
