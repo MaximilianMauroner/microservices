@@ -32,13 +32,12 @@ describe("primary page ownership", () => {
     expect(source).not.toContain("queue: data.queue!");
   });
 
-  it("keeps catalog management read-only at both UI and API boundaries", () => {
+  it("keeps catalog operations read-only while Manage uses publisher lifecycle routes", () => {
     const page = readFileSync(new URL("../src/features/manage/manage-page.tsx", import.meta.url), "utf8");
     const route = readFileSync(new URL("../src/routes/api/ops/$.ts", import.meta.url), "utf8");
 
-    for (const mutation of ["Save group", "Save entry", "Delete", "Add group", "Add entry", "method: \"POST\"", "method: \"PATCH\""]) {
-      expect(page).not.toContain(mutation);
-    }
+    expect(page).toContain("/api/external-uploads/${selected.id}");
+    expect(page).not.toContain("/api/ops/catalog");
     expect(route).toContain("handlers: { GET: tools, HEAD: tools, POST: readOnly, PUT: readOnly, PATCH: readOnly, DELETE: readOnly }");
     expect(route).not.toMatch(/\b(POST|PUT|PATCH|DELETE): tools/);
   });

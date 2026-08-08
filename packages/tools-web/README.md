@@ -69,11 +69,11 @@ in the current tab. Cross-origin destinations use an external arrow, open in a
 new tab with `rel=noreferrer`, and announce that behavior to assistive
 technology.
 
-Manage uses a searchable/filterable record list and one focused editor. Links
-are edited as validated structured rows with an optional synchronized JSON
-view. History and audit requests have an eight-second timeout and explicit
-accessible retry; mutations are never retried automatically. Structural no-op
-mutations return the current revision without catalog or audit writes.
+Manage uses a project-filtered artifact library and one focused lifecycle
+inspector. Browser actions replace persistent HTML in place, update its project
+metadata, copy or open capability URLs, and revoke stored artifacts through the
+same-origin `/api/external-uploads/:id` routes. The native upload token is never
+sent to the browser.
 `/manage/documents` is a read-only Markdown Share inventory. It uses the same
 browser session and fetches active document metadata through a bearer-
 protected Convex HTTP Action, and never retrieves document bodies.

@@ -1,27 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DecisionRecordItem, QueueItem } from "@tools-platform/field-guide";
-import { uploadListUrl } from "../src/features/publish/publish-page.js";
 import { decisionEmptyState, filterQueueItems, queueProjectOptions, reconcileCompletedCandidate, reconcileReviewedDecision } from "../src/features/review/review-page.js";
-
-describe("publish inventory criteria", () => {
-  it("binds every active criterion and the cursor into the backend request", () => {
-    const url = new URL(uploadListUrl({
-      filter: "html",
-      expiry: "7d",
-      sort: "filename",
-      search: " quarterly plan "
-    }, "criteria-bound-cursor"), "https://tools.example");
-
-    expect(Object.fromEntries(url.searchParams)).toEqual({
-      limit: "25",
-      kind: "html",
-      expiry: "7d",
-      sort: "filename",
-      q: "quarterly plan",
-      cursor: "criteria-bound-cursor"
-    });
-  });
-});
 
 describe("candidate workbench filters", () => {
   const items = [queueItem("Project B", "pending", "initial"), queueItem("Project A", "overdue", "scheduled")];

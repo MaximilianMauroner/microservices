@@ -194,6 +194,62 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
         );
       }
 
+      const externalUploadId = matchPath(url.pathname, "/api/external-uploads/");
+      if (externalUploadId !== undefined && ["PUT", "PATCH", "DELETE"].includes(request.method)) {
+        if (!options.externalUpload) return externalUploadUnavailable();
+        requireSameOrigin(request, url);
+        if (!PAGE_ID_PATTERN.test(externalUploadId)) {
+          throw new ArtifactRequestError(
+            400,
+            "invalid_upload_id",
+            "Upload ID is invalid."
+          );
+        }
+        if (request.method === "PUT") {
+          requireMultipartUpload(request);
+          return upload(
+            request,
+            url,
+            options,
+            { kind: "update", id: externalUploadId },
+            uploadGate,
+            maxUploadBytes,
+            maxHtmlUploadBytes,
+            temporaryFileRetentionMs,
+            activityTracker
+          );
+        }
+        if (request.method === "PATCH") {
+          const project = await readProjectUpdate(request);
+          try {
+            const updated = await options.storage.updateHtmlProject(
+              externalUploadId,
+              project,
+              { signal: request.signal }
+            );
+            if (!updated) {
+              throw new ArtifactRequestError(
+                404,
+                "upload_not_found",
+                "The HTML upload was not found."
+              );
+            }
+          } catch (error) {
+            if (error instanceof HtmlUpdateConflictError) {
+              throw new ArtifactRequestError(
+                409,
+                "upload_conflict",
+                "The HTML page changed or was revoked before the project update completed."
+              );
+            }
+            throw error;
+          }
+          return jsonResponse({ id: externalUploadId, project });
+        }
+        await options.storage.deleteUpload(externalUploadId, { signal: request.signal });
+        return new Response(null, { status: 204 });
+      }
+
       if (url.pathname === "/api/uploads" && request.method === "POST") {
         requireBearer(request, uploadToken);
         requireMultipartUpload(request);
@@ -866,6 +922,37 @@ function requireMultipartUpload(request: Request) {
       "Expected multipart/form-data with a boundary."
     );
   }
+}
+
+async function readProjectUpdate(request: Request) {
+  if (request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !== "application/json") {
+    throw new ArtifactRequestError(
+      415,
+      "unsupported_media_type",
+      "Expected application/json."
+    );
+  }
+  const raw = await request.text();
+  if (Buffer.byteLength(raw, "utf8") > 1024) {
+    throw new ArtifactRequestError(413, "payload_too_large", "Project update is too large.");
+  }
+  let input: unknown;
+  try {
+    input = JSON.parse(raw);
+  } catch {
+    throw new ArtifactRequestError(400, "invalid_project", "Project update is invalid JSON.");
+  }
+  const project = input && typeof input === "object" && "project" in input
+    ? normalizeProjectName(String(input.project))
+    : undefined;
+  if (!project) {
+    throw new ArtifactRequestError(
+      400,
+      "invalid_project",
+      "Project must be a non-empty string of at most 240 UTF-8 bytes."
+    );
+  }
+  return project;
 }
 
 function isMultipartContentType(contentType: string) {

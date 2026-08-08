@@ -1,86 +1,361 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import type { RefObject } from "react";
 import { Link } from "@tanstack/react-router";
-import type {
-  AdminAuditRecord,
-  CatalogEntry,
-  CatalogGroup,
-  HistoryPartitionDocument
-} from "@tools-platform/domain";
+import {
+  Copy,
+  Download,
+  ExternalLink,
+  FileText,
+  Folder,
+  RefreshCw,
+  Search,
+  Trash2,
+  Upload
+} from "lucide-react";
 import { AppShell } from "../../components/app-shell.js";
 import { AppSelect } from "../../components/form-controls.js";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger
+} from "../../components/ui/alert-dialog.js";
+import { Alert } from "../../components/ui/alert.js";
 import { Badge } from "../../components/ui/badge.js";
 import { Button } from "../../components/ui/button.js";
 import { Card } from "../../components/ui/card.js";
 import { Input } from "../../components/ui/input.js";
-import type { ManagePageData } from "../../protected-data.js";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow
+} from "../../components/ui/table.js";
+import type { ManagePageData, UploadSummary } from "../../protected-data.js";
 
-type RecordKey = `group:${string}` | `entry:${string}`;
+type KindFilter = "all" | UploadSummary["kind"];
+type ExpiryFilter = "all" | "24h" | "7d" | "persistent";
+type SortOrder = "newest" | "oldest" | "filename" | "expiry";
+
+const ALL_PROJECTS = "__all__";
+const UNASSIGNED_PROJECT = "__unassigned__";
 
 export function ManagePage({ initial }: { initial: ManagePageData }) {
-  const groups = useMemo(() => [...initial.catalog.groups].sort(byOrderThenId), [initial.catalog.groups]);
-  const entries = useMemo(() => [...initial.catalog.entries].sort(byOrderThenId), [initial.catalog.entries]);
-  const [selected, setSelected] = useState<RecordKey | undefined>(() => firstRecord(groups, entries));
+  const [uploads, setUploads] = useState(initial.uploads);
+  const [nextCursor, setNextCursor] = useState(initial.nextCursor);
+  const [selectedId, setSelectedId] = useState(initial.uploads[0]?.id);
+  const [projectFilter, setProjectFilter] = useState(ALL_PROJECTS);
   const [query, setQuery] = useState("");
-  const [kind, setKind] = useState<"all" | "group" | "entry">("all");
-  const [lifecycle, setLifecycle] = useState("all");
-  const records = useMemo(() => {
-    const normalized = query.trim().toLocaleLowerCase();
-    return [
-      ...(kind !== "entry" ? groups.filter((group) => matchesRecord(`${group.id} ${group.name} ${group.description ?? ""}`, normalized, lifecycle === "all" || lifecycle === group.visibility)).map((group) => ({ key: `group:${group.id}` as RecordKey, kind: "group" as const, name: group.name })) : []),
-      ...(kind !== "group" ? entries.filter((entry) => matchesRecord(`${entry.id} ${entry.name} ${entry.groupId}`, normalized, lifecycle === "all" || lifecycle === entry.lifecycle || lifecycle === entry.visibility)).map((entry) => ({ key: `entry:${entry.id}` as RecordKey, kind: "entry" as const, name: entry.name })) : [])
-    ];
-  }, [entries, groups, kind, lifecycle, query]);
-  const selectedGroup = selected?.startsWith("group:") ? groups.find((group) => group.id === selected.slice(6)) : undefined;
-  const selectedEntry = selected?.startsWith("entry:") ? entries.find((entry) => entry.id === selected.slice(6)) : undefined;
+  const [kind, setKind] = useState<KindFilter>("all");
+  const [expiry, setExpiry] = useState<ExpiryFilter>("all");
+  const [sort, setSort] = useState<SortOrder>("newest");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{ text: string; tone: "success" | "error" }>();
+  const replaceInput = useRef<HTMLInputElement>(null);
 
-  return <>
-    <AppShell active="manage" />
-    <main id="main" className="app-page manage-page">
-      <section className="app-heading" aria-labelledby="manage-title">
-        <div><p className="eyebrow">Architecture as code</p><h1 id="manage-title">Tools architecture and monitoring.</h1><p>The catalog is read-only here. Change groups, visibility, links, and tracking in the repository.</p></div>
-        <div className="app-heading__actions"><Badge variant="outline">Revision {initial.revision}</Badge><Button nativeButton={false} variant="ghost" size="sm" render={<Link to="/tools/private/money" preload="intent" />}>Money tracker</Button><Button nativeButton={false} variant="ghost" size="sm" render={<Link to="/manage/documents" preload="intent" />}>Documents</Button><Button nativeButton={false} variant="ghost" size="sm" render={<Link to="/manage/status" preload="intent" />}>Private status</Button></div>
-      </section>
-      <section className="manage-metrics" aria-label="Catalog summary"><Metric label="Groups" value={groups.length} /><Metric label="Entries" value={entries.length} /><Metric label="Monitored" value={entries.filter((entry) => entry.monitor).length} /><Metric label="Open incidents" value={Object.values(initial.snapshot.state.monitors).filter((monitor) => monitor.openIncidentId).length} /></section>
-      <section className="manage-records" aria-label="Read-only catalog">
-        <div><div className="manage-record-list"><Input value={query} onChange={(event) => setQuery(event.currentTarget.value)} placeholder="Search records" aria-label="Search records" /><div className="manage-filter-row"><AppSelect value={kind} onValueChange={(value) => setKind(value as typeof kind)} aria-label="Filter by kind" options={[{ value: "all", label: "All kinds" }, { value: "group", label: "Groups" }, { value: "entry", label: "Entries" }]} /><AppSelect value={lifecycle} onValueChange={setLifecycle} aria-label="Filter by status" options={[{ value: "all", label: "All status" }, { value: "active", label: "Active" }, { value: "archived", label: "Archived" }, { value: "public", label: "Public" }, { value: "private", label: "Private" }]} /></div>{records.map((record) => <Button key={record.key} type="button" variant="ghost" size="sm" className={`manage-record${selected === record.key ? " is-active" : ""}`} onClick={() => setSelected(record.key)}><span>{record.name}</span><code>{record.kind}</code></Button>)}{records.length === 0 ? <p className="app-mono">No records match.</p> : null}</div></div>
-        <div>{selectedGroup ? <GroupDetails group={selectedGroup} /> : selectedEntry ? <EntryDetails entry={selectedEntry} groups={groups} snapshot={initial.snapshot} /> : <div className="app-empty">Select a catalog record.</div>}</div>
-      </section>
-      <AdminCollections />
-    </main>
-  </>;
+  const projects = useMemo(() => projectCounts(uploads), [uploads]);
+  const visibleUploads = useMemo(
+    () => filterAndSortUploads(uploads, { projectFilter, query, kind, expiry, sort }),
+    [expiry, kind, projectFilter, query, sort, uploads]
+  );
+  const selected = uploads.find((upload) => upload.id === selectedId);
+  const expiringSoon = uploads.filter((upload) => expiresWithin(upload, 24 * 60 * 60 * 1000)).length;
+
+  async function refresh(options: { announce?: boolean } = {}) {
+    setBusy(true);
+    try {
+      const response = await fetch("/api/external-uploads?limit=100&sort=newest", {
+        credentials: "same-origin"
+      });
+      const payload = await readPayload<ManagePageData>(response, "Artifact inventory could not be refreshed.");
+      setUploads(payload.uploads);
+      setNextCursor(payload.nextCursor);
+      setSelectedId((current) => payload.uploads.some((upload) => upload.id === current)
+        ? current
+        : payload.uploads[0]?.id);
+      if (options.announce) setMessage({ text: "Artifact inventory refreshed.", tone: "success" });
+    } catch (error) {
+      setMessage({ text: errorMessage(error), tone: "error" });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function loadOlder() {
+    if (!nextCursor) return;
+    setBusy(true);
+    try {
+      const response = await fetch(`/api/external-uploads?limit=100&sort=newest&cursor=${encodeURIComponent(nextCursor)}`, {
+        credentials: "same-origin"
+      });
+      const payload = await readPayload<ManagePageData>(response, "Older artifacts could not be loaded.");
+      setUploads((current) => [...current, ...payload.uploads]);
+      setNextCursor(payload.nextCursor);
+    } catch (error) {
+      setMessage({ text: errorMessage(error), tone: "error" });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function replaceSelected(file: File) {
+    if (!selected || selected.kind !== "html") return;
+    setBusy(true);
+    setMessage(undefined);
+    try {
+      const form = new FormData();
+      if (selected.project) form.set("project", selected.project);
+      form.set("file", file);
+      const response = await fetch(`/api/external-uploads/${selected.id}`, {
+        method: "PUT",
+        credentials: "same-origin",
+        body: form
+      });
+      const updated = await readPayload<UploadSummary>(response, "Artifact could not be replaced.");
+      await refresh();
+      setSelectedId(updated.id);
+      setMessage({ text: `${updated.filename} replaced the artifact without changing its URL.`, tone: "success" });
+    } catch (error) {
+      setMessage({ text: errorMessage(error), tone: "error" });
+    } finally {
+      setBusy(false);
+      if (replaceInput.current) replaceInput.current.value = "";
+    }
+  }
+
+  async function changeProject(project: string) {
+    if (!selected || selected.kind !== "html") return;
+    setBusy(true);
+    setMessage(undefined);
+    try {
+      const response = await fetch(`/api/external-uploads/${selected.id}`, {
+        method: "PATCH",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project })
+      });
+      await readPayload(response, "Project could not be changed.");
+      setUploads((current) => current.map((upload) => upload.id === selected.id
+        ? { ...upload, project }
+        : upload));
+      setMessage({ text: `Moved ${selected.filename} to ${project}.`, tone: "success" });
+    } catch (error) {
+      setMessage({ text: errorMessage(error), tone: "error" });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function revokeSelected() {
+    if (!selected) return;
+    setBusy(true);
+    setMessage(undefined);
+    try {
+      const response = await fetch(`/api/external-uploads/${selected.id}`, {
+        method: "DELETE",
+        credentials: "same-origin"
+      });
+      if (!response.ok) await readPayload(response, "Artifact could not be revoked.");
+      const remaining = uploads.filter((upload) => upload.id !== selected.id);
+      setUploads(remaining);
+      setSelectedId(remaining[0]?.id);
+      setMessage({ text: `${selected.filename} was revoked. Its capability URL no longer works.`, tone: "success" });
+    } catch (error) {
+      setMessage({ text: errorMessage(error), tone: "error" });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function copySelectedUrl() {
+    if (!selected) return;
+    try {
+      await navigator.clipboard.writeText(selected.url);
+      setMessage({ text: "Capability URL copied.", tone: "success" });
+    } catch {
+      setMessage({ text: "The URL could not be copied. Open the artifact to copy it manually.", tone: "error" });
+    }
+  }
+
+  return (
+    <>
+      <AppShell active="manage" />
+      <main id="main" className="mx-auto w-[min(1380px,calc(100%_-_2rem))] py-8 sm:py-10">
+        <section className="mb-5 flex flex-col gap-4 border-b pb-5 sm:flex-row sm:items-end sm:justify-between" aria-labelledby="manage-title">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Artifact lifecycle</p>
+            <h1 id="manage-title" className="mt-2 text-3xl font-semibold tracking-tight">Artifacts</h1>
+            <p className="mt-2 text-sm text-muted-foreground">Maintain every plan and file shared through Publish.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void refresh({ announce: true })}>
+              <RefreshCw /> Refresh
+            </Button>
+            <Button nativeButton={false} size="sm" render={<Link to="/publish" preload="intent" />}>
+              <Upload /> Publish new
+            </Button>
+          </div>
+        </section>
+
+        {message ? <Alert className="mb-4" variant={message.tone === "error" ? "destructive" : "default"}>{message.text}</Alert> : null}
+
+        <section className="mb-3 grid grid-cols-2 gap-2 lg:grid-cols-4" aria-label="Artifact summary">
+          <Metric label="Artifacts" value={uploads.length} />
+          <Metric label="Persistent" value={uploads.filter((upload) => upload.kind === "html").length} />
+          <Metric label="Temporary" value={uploads.filter((upload) => upload.kind === "file").length} />
+          <Metric label="Expiring soon" value={expiringSoon} attention={expiringSoon > 0} />
+        </section>
+
+        <section className="mb-3 flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between" aria-label="Artifact filters">
+          <label className="relative block w-full lg:max-w-md">
+            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+            <Input className="pl-9" value={query} onChange={(event) => setQuery(event.currentTarget.value)} placeholder="Search artifacts, URLs, or projects" aria-label="Search artifacts" />
+          </label>
+          <div className="grid grid-cols-3 gap-2 sm:flex">
+            <AppSelect value={kind} onValueChange={(value) => setKind(value as KindFilter)} aria-label="Filter by type" options={[{ value: "all", label: "All types" }, { value: "html", label: "Plans" }, { value: "file", label: "Files" }]} />
+            <AppSelect value={expiry} onValueChange={(value) => setExpiry(value as ExpiryFilter)} aria-label="Filter by expiry" options={[{ value: "all", label: "Any expiry" }, { value: "24h", label: "Next 24 hours" }, { value: "7d", label: "Next 7 days" }, { value: "persistent", label: "Persistent" }]} />
+            <AppSelect value={sort} onValueChange={(value) => setSort(value as SortOrder)} aria-label="Sort artifacts" options={[{ value: "newest", label: "Newest" }, { value: "oldest", label: "Oldest" }, { value: "filename", label: "Filename" }, { value: "expiry", label: "Expiry" }]} />
+          </div>
+        </section>
+
+        <section className="grid items-start gap-3 lg:grid-cols-[12rem_minmax(0,1fr)_20rem]" aria-label="Artifact library">
+          <ProjectNavigation projects={projects} active={projectFilter} onSelect={setProjectFilter} total={uploads.length} />
+          <ArtifactTable uploads={visibleUploads} selectedId={selectedId} onSelect={setSelectedId} hasMore={Boolean(nextCursor)} busy={busy} onLoadMore={loadOlder} />
+          <ArtifactInspector
+            key={selected?.id ?? "none"}
+            upload={selected}
+            busy={busy}
+            knownProjects={projects.map(([project]) => project)}
+            replaceInput={replaceInput}
+            onReplace={replaceSelected}
+            onChangeProject={changeProject}
+            onCopy={copySelectedUrl}
+            onRevoke={revokeSelected}
+          />
+        </section>
+      </main>
+    </>
+  );
 }
 
-function GroupDetails({ group }: { group: CatalogGroup }) {
-  return <Card className="manage-editor"><DetailsHeading type="Group" name={group.name} status={group.visibility} /><dl className="manage-details"><Detail label="Identifier" value={group.id} mono /><Detail label="Visibility" value={group.visibility} /><Detail label="Order" value={String(group.order)} /><Detail label="Description" value={group.description || "No description"} wide /></dl></Card>;
+function Metric({ label, value, attention = false }: { label: string; value: number; attention?: boolean }) {
+  return <Card className="gap-0 p-4"><span className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">{label}</span><strong className={`mt-1 text-2xl${attention ? " text-amber-300" : ""}`}>{value}</strong></Card>;
 }
 
-function EntryDetails({ entry, groups, snapshot }: { entry: CatalogEntry; groups: CatalogGroup[]; snapshot: ManagePageData["snapshot"] }) {
-  const group = groups.find((candidate) => candidate.id === entry.groupId);
-  const monitor = snapshot.state.monitors[entry.id];
-  const state = monitor?.status ?? (entry.monitor ? "checking" : "unmonitored");
-  return <Card className="manage-editor"><DetailsHeading type={entry.lifecycle === "archived" ? "Archived entry" : "Entry"} name={entry.name} status={state} /><dl className="manage-details"><Detail label="Identifier" value={entry.id} mono /><Detail label="Group" value={group?.name ?? entry.groupId} /><Detail label="Visibility" value={entry.visibility} /><Detail label="Lifecycle" value={entry.lifecycle} /><Detail label="Description" value={entry.description} wide />{entry.monitor ? <><Detail label="Tracking" value={entry.monitor.tracking === "heartbeat" ? "Inbound heartbeat" : "HTTP probe"} /><Detail label="Scope" value={entry.monitor.scope} /><Detail label="Checks" value={!entry.monitor.enabled ? "Disabled" : entry.monitor.paused ? "Paused" : "Enabled"} /><Detail label="Target" value={entry.monitor.url} mono wide /></> : <Detail label="Monitoring" value="Not configured" wide />}{entry.links.length ? <div className="manage-detail manage-detail--wide"><dt>Links</dt><dd className="manage-detail-links">{entry.links.map((link) => <a key={link.id} href={link.url} rel="noreferrer"><span>{link.label}</span><Badge variant="outline">{link.access}</Badge></a>)}</dd></div> : null}{entry.privateNotes ? <Detail label="Private notes" value={entry.privateNotes} wide /> : null}</dl></Card>;
+function ProjectNavigation({ projects, active, onSelect, total }: { projects: Array<[string, number]>; active: string; onSelect: (value: string) => void; total: number }) {
+  const unassigned = projects.find(([project]) => project === UNASSIGNED_PROJECT)?.[1] ?? 0;
+  return <Card className="gap-0 py-2"><h2 className="px-3 pb-2 text-xs font-semibold uppercase tracking-[0.1em] text-muted-foreground">Projects</h2><nav className="grid gap-0.5 px-1.5" aria-label="Artifact projects"><ProjectButton label="All artifacts" count={total} active={active === ALL_PROJECTS} onClick={() => onSelect(ALL_PROJECTS)} />{projects.filter(([project]) => project !== UNASSIGNED_PROJECT).map(([project, count]) => <ProjectButton key={project} label={project} count={count} active={active === project} onClick={() => onSelect(project)} />)}{unassigned ? <ProjectButton label="Unassigned" count={unassigned} active={active === UNASSIGNED_PROJECT} onClick={() => onSelect(UNASSIGNED_PROJECT)} /> : null}</nav></Card>;
 }
 
-function DetailsHeading({ type, name, status }: { type: string; name: string; status: string }) {
-  const healthy = status === "up" || status === "public";
-  const attention = status === "down" || status === "unavailable";
-  return <div className="manage-editor__heading"><div><p className="eyebrow">{type}</p><h2>{name}</h2></div><Badge variant={attention ? "destructive" : healthy ? "default" : "outline"}>{status}</Badge></div>;
+function ProjectButton({ label, count, active, onClick }: { label: string; count: number; active: boolean; onClick: () => void }) {
+  return <button className={`flex min-w-0 items-center justify-between gap-2 rounded-md px-2 py-2 text-left text-xs transition-colors hover:bg-muted${active ? " bg-secondary text-foreground" : " text-muted-foreground"}`} type="button" aria-current={active ? "true" : undefined} onClick={onClick}><span className="truncate">{label}</span><Badge variant="outline">{count}</Badge></button>;
 }
 
-function Detail({ label, value, mono, wide }: { label: string; value: string; mono?: boolean; wide?: boolean }) {
-  return <div className={`manage-detail${wide ? " manage-detail--wide" : ""}`}><dt>{label}</dt><dd className={mono ? "app-mono" : undefined}>{value}</dd></div>;
+function ArtifactTable({ uploads, selectedId, onSelect, hasMore, busy, onLoadMore }: { uploads: UploadSummary[]; selectedId?: string; onSelect: (id: string) => void; hasMore: boolean; busy: boolean; onLoadMore: () => Promise<void> }) {
+  return <Card className="gap-0 py-0"><div className="flex items-center justify-between border-b px-4 py-3"><h2 className="font-semibold">Artifact library</h2><span className="text-xs text-muted-foreground">{uploads.length} shown</span></div>{uploads.length === 0 ? <div className="grid min-h-72 place-items-center p-8 text-center"><div><h3 className="font-semibold">No artifacts match</h3><p className="mt-1 text-sm text-muted-foreground">Try another search, project, or lifecycle filter.</p></div></div> : <Table><TableHeader><TableRow><TableHead>Artifact</TableHead><TableHead>Project</TableHead><TableHead>Lifecycle</TableHead><TableHead>Updated</TableHead></TableRow></TableHeader><TableBody>{uploads.map((upload) => <TableRow key={upload.id} data-state={selectedId === upload.id ? "selected" : undefined} className={selectedId === upload.id ? "shadow-[inset_2px_0_var(--foreground)]" : undefined}><TableCell><button className="flex max-w-[25rem] items-center gap-3 text-left" type="button" onClick={() => onSelect(upload.id)}><span className="grid size-9 shrink-0 place-items-center rounded-md border text-muted-foreground">{upload.kind === "html" ? <FileText /> : <Download />}</span><span className="min-w-0"><strong className="block truncate text-sm">{upload.filename}</strong><small className="block truncate font-mono text-xs text-muted-foreground">{shortUrl(upload.url)}</small></span></button></TableCell><TableCell className="text-xs text-muted-foreground">{upload.project ?? "Unassigned"}</TableCell><TableCell><LifecycleBadge upload={upload} /></TableCell><TableCell className="text-xs text-muted-foreground">{formatRelativeDate(upload.updatedAt)}</TableCell></TableRow>)}</TableBody></Table>}{hasMore ? <div className="flex justify-center border-t p-3"><Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => void onLoadMore()}>Load older artifacts</Button></div> : null}</Card>;
 }
 
-function Metric({ label, value }: { label: string; value: number }) { return <div className="manage-metric"><span>{label}</span><strong>{value}</strong></div>; }
-
-function AdminCollections() {
-  const [history, setHistory] = useState<HistoryPartitionDocument[]>([]);
-  const [audit, setAudit] = useState<AdminAuditRecord[]>([]);
-  useEffect(() => { void Promise.all([fetch("/api/ops/history?limit=5", { credentials: "same-origin" }).then((response) => response.ok ? response.json() as Promise<{ items: HistoryPartitionDocument[] }> : { items: [] }), fetch("/api/ops/audit?limit=8", { credentials: "same-origin" }).then((response) => response.ok ? response.json() as Promise<{ items: AdminAuditRecord[] }> : { items: [] })]).then(([historyPage, auditPage]) => { setHistory(historyPage.items); setAudit(auditPage.items); }); }, []);
-  return <><section className="manage-collection"><div className="manage-collection__heading"><div><p className="eyebrow">Monitoring</p><h2>Check and incident history</h2></div><span className="app-mono">Protected data</span></div><div className="manage-list">{history.length === 0 ? <div className="app-empty">No history loaded yet.</div> : history.map((partition) => <div className="manage-history-day" key={partition.day}><h3>{partition.day}</h3><div className="manage-history-grid"><section><h4>Checks</h4><ul>{partition.observations.slice(0, 4).map((observation) => <li key={observation.id}><strong>{observation.monitorId ?? "Unknown monitor"}</strong> · {observation.success ? "Succeeded" : observation.errorCode ?? "Failed"} · {observation.latencyMs} ms</li>)}</ul></section><section><h4>Incidents</h4><ul>{partition.incidents.slice(0, 4).map((incident) => <li key={incident.id}><strong>{incident.monitorId}</strong> · {incident.resolvedAt ? "Resolved" : "Open"}</li>)}</ul></section></div></div>)}</div></section><section className="manage-collection"><div className="manage-collection__heading"><div><p className="eyebrow">Accountability</p><h2>Catalog audit</h2></div><span className="app-mono">Latest events</span></div><div className="manage-list">{audit.length === 0 ? <div className="app-empty">No audit events loaded yet.</div> : audit.map((record) => <div className="manage-audit-row" key={record.id}><div><strong>{record.action}</strong><div>{record.targetType}{record.targetId ? ` · ${record.targetId}` : ""}</div></div><div>{record.actor}<br />{formatDate(record.occurredAt)}</div><code>{record.catalogRevisionAfter}</code></div>)}</div></section></>;
+function ArtifactInspector({ upload, busy, knownProjects, replaceInput, onReplace, onChangeProject, onCopy, onRevoke }: { upload?: UploadSummary; busy: boolean; knownProjects: string[]; replaceInput: RefObject<HTMLInputElement | null>; onReplace: (file: File) => Promise<void>; onChangeProject: (project: string) => Promise<void>; onCopy: () => Promise<void>; onRevoke: () => Promise<void> }) {
+  const [project, setProject] = useState(upload?.project ?? "");
+  const currentProject = upload?.project ?? "";
+  if (!upload) return <Card className="grid min-h-64 place-items-center p-6 text-center text-sm text-muted-foreground">Select an artifact.</Card>;
+  const canUpdate = upload.kind === "html";
+  const projectChanged = project.trim() !== currentProject && project.trim().length > 0;
+  return <Card key={upload.id} className="gap-0 py-0 lg:sticky lg:top-[4.5rem]"><div className="border-b p-4"><LifecycleBadge upload={upload} /><h2 className="mt-3 break-words font-semibold">{upload.filename}</h2><p className="mt-1 text-xs text-muted-foreground">{formatBytes(upload.bytes)} · updated {formatDate(upload.updatedAt)}</p></div><dl className="grid gap-0"><InspectorDetail label="Capability URL" value={upload.url} mono /><InspectorDetail label="Content type" value={upload.contentType} /><InspectorDetail label="Identifier" value={upload.id} mono />{upload.expiresAt ? <InspectorDetail label="Expires" value={formatDate(upload.expiresAt)} /> : null}</dl><div className="grid grid-cols-2 gap-2 border-t p-3"><Input ref={replaceInput} className="sr-only" type="file" accept=".html,.htm,text/html,application/xhtml+xml" onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) void onReplace(file); }} aria-label="Choose replacement HTML file" /><Button type="button" size="sm" disabled={!canUpdate || busy} onClick={() => replaceInput.current?.click()}><Upload /> Replace file</Button><Button nativeButton={false} variant="outline" size="sm" render={<a href={upload.url} target="_blank" rel="noreferrer" />}><ExternalLink /> Open</Button><Button type="button" variant="outline" size="sm" onClick={() => void onCopy()}><Copy /> Copy URL</Button></div>{canUpdate ? <div className="border-t p-3"><label className="text-xs font-medium" htmlFor="artifact-project">Project</label><div className="mt-2 flex gap-2"><Input id="artifact-project" list="artifact-projects" value={project} onChange={(event) => setProject(event.currentTarget.value)} placeholder="Project name" /><datalist id="artifact-projects">{knownProjects.filter((value) => value !== UNASSIGNED_PROJECT).map((value) => <option key={value} value={value} />)}</datalist><Button type="button" variant="outline" size="sm" disabled={!projectChanged || busy} onClick={() => void onChangeProject(project.trim())}><Folder /> Save</Button></div></div> : null}<div className="border-t border-rose-950 p-3"><h3 className="text-xs font-semibold text-destructive">Revoke artifact</h3><p className="mt-1 text-xs text-muted-foreground">The capability URL will stop working immediately.</p><AlertDialog><AlertDialogTrigger className="mt-3" render={<Button type="button" variant="destructive" size="sm" disabled={busy} />}><Trash2 /> Revoke…</AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Revoke {upload.filename}?</AlertDialogTitle><AlertDialogDescription>This permanently removes the stored artifact. Anyone using its capability URL will receive a not-found response.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={() => void onRevoke()}>Revoke artifact</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></div></Card>;
 }
 
-function firstRecord(groups: CatalogGroup[], entries: CatalogEntry[]): RecordKey | undefined { const group = groups[0]; if (group) return `group:${group.id}`; const entry = entries[0]; return entry ? `entry:${entry.id}` : undefined; }
-function byOrderThenId<T extends { id: string; order: number }>(left: T, right: T) { return left.order - right.order || left.id.localeCompare(right.id); }
-function matchesRecord(value: string, query: string, status: boolean) { return status && (!query || value.toLocaleLowerCase().includes(query)); }
-function formatDate(value: string) { return new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }).format(new Date(value)) + " UTC"; }
+function InspectorDetail({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
+  return <div className="border-b px-4 py-3 last:border-b-0"><dt className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">{label}</dt><dd className={`mt-1 break-all text-xs${mono ? " font-mono" : ""}`}>{value}</dd></div>;
+}
+
+function LifecycleBadge({ upload }: { upload: UploadSummary }) {
+  if (upload.kind === "html") return <Badge variant="default">Persistent</Badge>;
+  const soon = expiresWithin(upload, 24 * 60 * 60 * 1000);
+  return <Badge variant={soon ? "destructive" : "outline"}>{upload.expiresAt ? `${formatTimeRemaining(upload.expiresAt)} left` : "Temporary"}</Badge>;
+}
+
+function projectCounts(uploads: UploadSummary[]): Array<[string, number]> {
+  const counts = new Map<string, number>();
+  for (const upload of uploads) {
+    const project = upload.project ?? UNASSIGNED_PROJECT;
+    counts.set(project, (counts.get(project) ?? 0) + 1);
+  }
+  return [...counts].sort(([left], [right]) => left === UNASSIGNED_PROJECT ? 1 : right === UNASSIGNED_PROJECT ? -1 : left.localeCompare(right));
+}
+
+function filterAndSortUploads(uploads: UploadSummary[], filters: { projectFilter: string; query: string; kind: KindFilter; expiry: ExpiryFilter; sort: SortOrder }) {
+  const now = Date.now();
+  const query = filters.query.trim().toLocaleLowerCase();
+  return uploads.filter((upload) => {
+    const project = upload.project ?? UNASSIGNED_PROJECT;
+    if (filters.projectFilter !== ALL_PROJECTS && project !== filters.projectFilter) return false;
+    if (filters.kind !== "all" && upload.kind !== filters.kind) return false;
+    if (query && !`${upload.filename} ${upload.url} ${upload.project ?? ""}`.toLocaleLowerCase().includes(query)) return false;
+    if (filters.expiry === "persistent" && upload.kind !== "html") return false;
+    if (filters.expiry === "24h" && (!upload.expiresAt || new Date(upload.expiresAt).getTime() > now + 24 * 60 * 60 * 1000)) return false;
+    if (filters.expiry === "7d" && (!upload.expiresAt || new Date(upload.expiresAt).getTime() > now + 7 * 24 * 60 * 60 * 1000)) return false;
+    return true;
+  }).sort((left, right) => {
+    if (filters.sort === "filename") return left.filename.localeCompare(right.filename);
+    if (filters.sort === "expiry") return expiryTime(left) - expiryTime(right) || left.filename.localeCompare(right.filename);
+    const time = new Date(left.updatedAt).getTime() - new Date(right.updatedAt).getTime();
+    return filters.sort === "oldest" ? time : -time;
+  });
+}
+
+function expiryTime(upload: UploadSummary) {
+  return upload.expiresAt ? new Date(upload.expiresAt).getTime() : Number.MAX_SAFE_INTEGER;
+}
+
+function expiresWithin(upload: UploadSummary, windowMs: number) {
+  if (!upload.expiresAt) return false;
+  const remaining = new Date(upload.expiresAt).getTime() - Date.now();
+  return remaining > 0 && remaining <= windowMs;
+}
+
+async function readPayload<T = unknown>(response: Response, fallback: string): Promise<T> {
+  const payload = await response.json().catch(() => undefined) as { message?: unknown } | undefined;
+  if (!response.ok) throw new Error(typeof payload?.message === "string" ? payload.message : fallback);
+  return payload as T;
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "The artifact operation failed.";
+}
+
+function shortUrl(value: string) {
+  const url = new URL(value);
+  return `${url.host}${url.pathname.length > 42 ? `${url.pathname.slice(0, 39)}…` : url.pathname}`;
+}
+
+function formatBytes(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }).format(new Date(value)) + " UTC";
+}
+
+function formatRelativeDate(value: string) {
+  const elapsed = Date.now() - new Date(value).getTime();
+  if (elapsed < 60_000) return "Just now";
+  if (elapsed < 3_600_000) return `${Math.floor(elapsed / 60_000)}m ago`;
+  if (elapsed < 86_400_000) return `${Math.floor(elapsed / 3_600_000)}h ago`;
+  return `${Math.floor(elapsed / 86_400_000)}d ago`;
+}
+
+function formatTimeRemaining(value: string) {
+  const remaining = Math.max(0, new Date(value).getTime() - Date.now());
+  if (remaining < 3_600_000) return `${Math.max(1, Math.ceil(remaining / 60_000))}m`;
+  if (remaining < 86_400_000) return `${Math.ceil(remaining / 3_600_000)}h`;
+  return `${Math.ceil(remaining / 86_400_000)}d`;
+}

@@ -2,6 +2,7 @@ import { createReadStream } from "node:fs";
 import { Readable } from "node:stream";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import {
+  CopyObjectCommand,
   DeleteObjectCommand,
   GetObjectCommand,
   type GetObjectCommandOutput,
@@ -134,6 +135,11 @@ export interface UploadStorage {
     asOf: Date,
     options: ListUploadsOptions
   ): Promise<StoredUploadPage>;
+  updateHtmlProject(
+    id: string,
+    project: string,
+    options?: StorageOperationOptions
+  ): Promise<boolean>;
   deleteUpload(id: string, options?: StorageOperationOptions): Promise<void>;
   deleteExpiredTemporaryFiles(
     expiresAtOrBefore: Date,
@@ -402,6 +408,36 @@ export function createS3UploadStorage(config: S3UploadStorageConfig): UploadStor
             }
           : {})
       };
+    },
+
+    async updateHtmlProject(id, project, options) {
+      const key = htmlKey(id);
+      try {
+        const current = await client.send(
+          new HeadObjectCommand({ Bucket: config.bucket, Key: key }),
+          requestOptions(options)
+        );
+        const metadata = { ...(current.Metadata ?? {}) };
+        delete metadata["project-base64"];
+        await client.send(
+          new CopyObjectCommand({
+            Bucket: config.bucket,
+            Key: key,
+            CopySource: `${config.bucket}/${key}`,
+            CopySourceIfMatch: current.ETag,
+            MetadataDirective: "REPLACE",
+            Metadata: { ...metadata, ...projectMetadata(project) },
+            CacheControl: current.CacheControl,
+            ContentType: current.ContentType
+          }),
+          requestOptions(options)
+        );
+        return true;
+      } catch (error) {
+        if (isNotFoundError(error)) return false;
+        if (isConditionalWriteConflictError(error)) throw new HtmlUpdateConflictError();
+        throw error;
+      }
     },
 
     async deleteUpload(id, options) {

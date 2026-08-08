@@ -28,7 +28,7 @@ failures return `401 {"error":"authentication_required"}`.
 |---|---|---|
 | `GET`, `HEAD` | `/manage/status` | Server-rendered current status for active services excluded from the public projection; private fields such as operator notes and notification errors are not rendered. |
 | `GET`, `HEAD` | `/manage/documents` | Read-only active Markdown Share inventory fetched server-side from the bearer-protected Convex admin endpoint. |
-| `GET` | `/manage`, `/manage/*` | Server-rendered management UI from the latest catalog plus prepared private checker state. |
+| `GET` | `/manage` | Artifact library backed by the authenticated publisher inventory. |
 | `GET` | `/api/ops/catalog` | Full `CatalogDocument` plus an `ETag` containing its revision. |
 | `GET` | `/api/ops/snapshot` | Decoded `PrivateSnapshotDocument`. |
 | `GET` | `/api/ops/audit?limit=&cursor=` | `{ "items": AdminAuditRecord[], "nextCursor": string \| null }`; newest-first canonical immutable records with opaque lossless cursors, and the read repairs durable pending audit intents. |
