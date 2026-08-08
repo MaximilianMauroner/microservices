@@ -1,5 +1,5 @@
 import { PLATFORM_UI_BUILD } from "../build-identity.js";
-import { Link, useLocation } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { authClient } from "../lib/auth-client.js";
 
 type Destination = "tools" | "publish" | "review" | "status" | "manage";
@@ -8,20 +8,15 @@ const destinations: ReadonlyArray<{
   id: Destination;
   href: string;
   label: string;
-  protected: boolean;
 }> = [
-  { id: "tools", href: "/", label: "Tools", protected: false },
-  { id: "publish", href: "/publish", label: "Publish", protected: true },
-  { id: "review", href: "/review", label: "Review", protected: true },
-  { id: "status", href: "/status", label: "Status", protected: false },
-  { id: "manage", href: "/manage", label: "Manage", protected: true }
+  { id: "tools", href: "/", label: "Tools" },
+  { id: "publish", href: "/publish", label: "Publish" },
+  { id: "review", href: "/review", label: "Review" },
+  { id: "status", href: "/status", label: "Status" },
+  { id: "manage", href: "/manage", label: "Manage" }
 ];
 
-export function AppShell({ active }: { active: Destination }) {
-  const pathname = useLocation({ select: (location) => location.pathname });
-  const privateView = destinations.find((destination) => destination.id === active)?.protected ||
-    pathname.startsWith("/manage") || pathname.startsWith("/tools/private");
-
+export function AppShell({ active, showSignOut }: { active: Destination; showSignOut: boolean }) {
   async function signOut() {
     await authClient.signOut();
     window.location.assign("/");
@@ -49,7 +44,7 @@ export function AppShell({ active }: { active: Destination }) {
                 {destination.label}
               </Link>
             ))}
-            {privateView ? (
+            {showSignOut ? (
               <button
                 className="ml-1 inline-flex h-8 items-center rounded-md border border-zinc-800 px-2.5 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
                 type="button"

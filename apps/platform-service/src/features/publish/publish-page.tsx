@@ -65,7 +65,7 @@ export function PublishPage() {
 
   return (
     <>
-      <AppShell active="publish" />
+      <AppShell active="publish" showSignOut />
       <main id="main" className="mx-auto w-[min(900px,calc(100%_-_2rem))] py-8 sm:py-10">
         <section className="mb-6 flex flex-col gap-4 border-b pb-6 sm:flex-row sm:items-end sm:justify-between" aria-labelledby="publish-title">
           <div>

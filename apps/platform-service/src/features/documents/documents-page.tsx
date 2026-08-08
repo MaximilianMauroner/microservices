@@ -38,7 +38,7 @@ export function DocumentsPage({ initial }: { initial: DocumentsPageData }) {
   }
 
   return <>
-    <AppShell active="manage" />
+    <AppShell active="manage" showSignOut />
     <main id="main" className="mx-auto w-[min(1180px,calc(100%_-_2rem))] py-8 sm:py-10">
       <header className="mb-6 flex flex-col gap-5 border-b pb-6 md:flex-row md:items-end md:justify-between">
         <div>

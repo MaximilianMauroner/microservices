@@ -78,7 +78,7 @@ export function ReviewPage({ initial, search }: { initial: ReviewPageData; searc
 
   return (
     <>
-      <AppShell active="review" />
+      <AppShell active="review" showSignOut />
       <main id="main" className="mx-auto w-[min(1180px,calc(100%_-_2rem))] py-8 sm:py-10">
         <header className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between" aria-labelledby="review-title">
           <div>

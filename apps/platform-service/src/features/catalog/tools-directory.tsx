@@ -38,7 +38,7 @@ export function ToolsDirectory({
 
   return (
     <>
-      <AppShell active="tools" />
+      <AppShell active="tools" showSignOut />
       <main id="main">
         <section className="mx-auto w-[min(1180px,calc(100%_-_2rem))] py-16 sm:py-24" aria-labelledby="tools-title">
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Useful, focused services</p>
