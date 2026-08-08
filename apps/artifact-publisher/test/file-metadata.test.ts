@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   attachmentDisposition,
   normalizeMimeType,
+  normalizeProjectName,
   originalNameMetadata,
+  projectMetadata,
   readOriginalNameMetadata,
+  readProjectMetadata,
   safeFileName
 } from "../src/file-metadata.js";
 
@@ -35,5 +38,16 @@ describe("file metadata", () => {
     expect(normalizeMimeType("Text/Plain; charset=utf-8")).toBe("text/plain");
     expect(normalizeMimeType("text/plain\r\nx-test: injected")).toBe("application/octet-stream");
     expect(normalizeMimeType("")).toBe("application/octet-stream");
+  });
+
+  it("normalizes and round-trips bounded project names", () => {
+    const project = "  Mauroner Téam / Microservices  ";
+
+    expect(normalizeProjectName(project)).toBe("Mauroner Téam / Microservices");
+    expect(readProjectMetadata(projectMetadata(project))).toBe(
+      "Mauroner Téam / Microservices"
+    );
+    expect(normalizeProjectName("bad\nproject")).toBeUndefined();
+    expect(normalizeProjectName("a".repeat(241))).toBeUndefined();
   });
 });

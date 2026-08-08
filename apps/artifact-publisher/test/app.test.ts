@@ -70,7 +70,8 @@ class MemoryUploadStorage implements UploadStorage {
           bytes: page.body.length,
           etag: page.etag,
           sha256: page.metadata.sha256,
-          lastModified: page.lastModified
+          lastModified: page.lastModified,
+          ...(page.metadata.project ? { project: page.metadata.project } : {})
         }
       : null;
   }
@@ -121,7 +122,8 @@ class MemoryUploadStorage implements UploadStorage {
         originalName: page.metadata.originalName,
         bytes: page.metadata.bytes,
         contentType: "text/html; charset=utf-8",
-        updatedAt: page.lastModified
+        updatedAt: page.lastModified,
+        ...(page.metadata.project ? { project: page.metadata.project } : {})
       }
     }));
     const files = Array.from(this.files, ([id, file]) => ({
@@ -868,6 +870,7 @@ describe("html publisher", () => {
     const plan = await request(app)
       .post("/api/uploads")
       .set("Authorization", "Bearer test-upload-token")
+      .field("project", "microservices")
       .attach("file", Buffer.from("<!doctype html><title>Recent</title>"), {
         filename: planName,
         contentType: "text/html"
@@ -907,7 +910,8 @@ describe("html publisher", () => {
           kind: "html",
           filename: planName,
           url: `https://html.example/artifacts/${plan.body.id}`,
-          updatedAt: now.toISOString()
+          updatedAt: now.toISOString(),
+          project: "microservices"
         }),
         expect.objectContaining({
           id: file.body.id,
@@ -1398,6 +1402,7 @@ describe("html publisher", () => {
     const response = await request(app)
       .post("/api/uploads")
       .set("Authorization", "Bearer test-upload-token")
+      .field("project", "microservices")
       .attach("file", html, {
         filename: "page.html",
         contentType: "text/html"
@@ -1410,11 +1415,30 @@ describe("html publisher", () => {
       contentType: "text/html; charset=utf-8",
       url: expect.stringMatching(/^https:\/\/html\.example\/artifacts\/[A-Za-z0-9_-]{32}$/),
       bytes: html.length,
-      sha256: crypto.createHash("sha256").update(html).digest("hex")
+      sha256: crypto.createHash("sha256").update(html).digest("hex"),
+      project: "microservices"
     });
     expect(response.body.id).toMatch(/^[A-Za-z0-9_-]{32}$/);
     expect(storage.pages.get(response.body.id)?.body.equals(html)).toBe(true);
     expect(storage.pages.get(response.body.id)?.metadata.bytes).toBe(html.length);
+    expect(storage.pages.get(response.body.id)?.metadata.project).toBe("microservices");
+  });
+
+  it("rejects invalid project metadata without storing the plan", async () => {
+    const { app, storage } = setup();
+
+    const response = await request(app)
+      .post("/api/uploads")
+      .set("Authorization", "Bearer test-upload-token")
+      .field("project", "   ")
+      .attach("file", Buffer.from("<html>plan</html>"), {
+        filename: "page.html",
+        contentType: "text/html"
+      })
+      .expect(400);
+
+    expect(response.body).toMatchObject({ error: "invalid_project" });
+    expect(storage.pages.size).toBe(0);
   });
 
   it("updates an HTML page in place with refreshed representation metadata", async () => {
@@ -1426,6 +1450,7 @@ describe("html publisher", () => {
     const created = await request(app)
       .post("/api/uploads")
       .set("Authorization", "Bearer test-upload-token")
+      .field("project", "microservices")
       .attach("file", first, { filename: "first.html", contentType: "text/html" })
       .expect(201);
     const pagePath = new URL(created.body.url).pathname;
@@ -1445,13 +1470,15 @@ describe("html publisher", () => {
       contentType: "text/html; charset=utf-8",
       url: created.body.url,
       bytes: second.length,
-      sha256: crypto.createHash("sha256").update(second).digest("hex")
+      sha256: crypto.createHash("sha256").update(second).digest("hex"),
+      project: "microservices"
     });
     expect(storage.pages.size).toBe(1);
     expect(storage.pages.get(created.body.id)?.metadata).toMatchObject({
       bytes: second.length,
       originalName: "revised.html",
-      sha256: updated.body.sha256
+      sha256: updated.body.sha256,
+      project: "microservices"
     });
 
     const secondRead = await request(app)

@@ -37,7 +37,7 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
     <main id="main" className="app-page manage-page">
       <section className="app-heading" aria-labelledby="manage-title">
         <div><p className="eyebrow">Architecture as code</p><h1 id="manage-title">Tools architecture and monitoring.</h1><p>The catalog is read-only here. Change groups, visibility, links, and tracking in the repository.</p></div>
-        <div className="app-heading__actions"><Badge variant="outline">Revision {initial.revision}</Badge><Button nativeButton={false} variant="ghost" size="sm" render={<a href="/manage/documents" />}>Documents</Button><Button nativeButton={false} variant="ghost" size="sm" render={<a href="/manage/status" />}>Private status</Button></div>
+        <div className="app-heading__actions"><Badge variant="outline">Revision {initial.revision}</Badge><Button nativeButton={false} variant="ghost" size="sm" render={<a href="/tools/private/money" />}>Money tracker</Button><Button nativeButton={false} variant="ghost" size="sm" render={<a href="/manage/documents" />}>Documents</Button><Button nativeButton={false} variant="ghost" size="sm" render={<a href="/manage/status" />}>Private status</Button></div>
       </section>
       <section className="manage-metrics" aria-label="Catalog summary"><Metric label="Groups" value={groups.length} /><Metric label="Entries" value={entries.length} /><Metric label="Monitored" value={entries.filter((entry) => entry.monitor).length} /><Metric label="Open incidents" value={Object.values(initial.snapshot.state.monitors).filter((monitor) => monitor.openIncidentId).length} /></section>
       <section className="manage-records" aria-label="Read-only catalog">

@@ -43,18 +43,23 @@ are `MAX_UPLOAD_BYTES`, `MAX_HTML_UPLOAD_BYTES`, `MAX_CONCURRENT_UPLOADS`,
 
 ## Native upload API
 
-The endpoint accepts exactly one multipart field named `file`:
+The endpoint accepts exactly one file field named `file` and an optional
+`project` field for persistent HTML plans:
 
 ```bash
 curl -fsS -X POST "$PUBLIC_BASE_URL/api/uploads" \
   -H "Authorization: Bearer $UPLOAD_TOKEN" \
+  --form-string "project=my-project" \
   -F "file=@page.html;type=text/html"
 ```
 
 An upload is HTML only when its extension is `.html` or `.htm` and its MIME
 type is `text/html` or `application/xhtml+xml`. Everything else is a temporary
 download. Uploads are staged on local temporary storage, hashed, and sent with
-one S3 `PutObject`. The HTML cap is enforced while staging.
+one S3 `PutObject`. The HTML cap is enforced while staging. Project names are
+normalized, limited to 240 UTF-8 bytes, stored with plans, and returned by the
+upload and inventory APIs. Replacing a plan preserves its stored project when
+the update omits `project`.
 
 Replace an HTML page without changing its ID:
 

@@ -21,6 +21,7 @@ import { Route as PRouteImport } from './routes/p'
 import { Route as PublishRouteImport } from './routes/publish'
 import { Route as ReviewRouteImport } from './routes/review'
 import { Route as StatusRouteImport } from './routes/status'
+import { Route as ToolsRouteImport } from './routes/tools'
 import { Route as UploadsRouteImport } from './routes/uploads'
 import { Route as ApiAgentRouteImport } from './routes/api/agent'
 import { Route as ApiExternalUploadsRouteImport } from './routes/api/external-uploads'
@@ -41,6 +42,7 @@ import { Route as PIdRouteImport } from './routes/p/$id'
 import { Route as PublishCallbackRouteImport } from './routes/publish/callback'
 import { Route as ReviewCallbackRouteImport } from './routes/review/callback'
 import { Route as StatusPrivateRouteImport } from './routes/status/private'
+import { Route as ToolsPrivateRouteImport } from './routes/tools/private'
 import { Route as UploadsSplatRouteImport } from './routes/uploads/$'
 import { Route as ApiAgentSplatRouteImport } from './routes/api/agent/$'
 import { Route as ApiExternalUploadsSplatRouteImport } from './routes/api/external-uploads/$'
@@ -51,6 +53,7 @@ import { Route as ApiReviewSplatRouteImport } from './routes/api/review/$'
 import { Route as ApiUploadsSplatRouteImport } from './routes/api/uploads/$'
 import { Route as FIdSplatRouteImport } from './routes/f/$id/$'
 import { Route as FilesIdSplatRouteImport } from './routes/files/$id/$'
+import { Route as ToolsPrivateMoneyRouteImport } from './routes/tools/private/money'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -110,6 +113,11 @@ const ReviewRoute = ReviewRouteImport.update({
 const StatusRoute = StatusRouteImport.update({
   id: '/status',
   path: '/status',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ToolsRoute = ToolsRouteImport.update({
+  id: '/tools',
+  path: '/tools',
   getParentRoute: () => rootRouteImport,
 } as any)
 const UploadsRoute = UploadsRouteImport.update({
@@ -212,6 +220,11 @@ const StatusPrivateRoute = StatusPrivateRouteImport.update({
   path: '/private',
   getParentRoute: () => StatusRoute,
 } as any)
+const ToolsPrivateRoute = ToolsPrivateRouteImport.update({
+  id: '/private',
+  path: '/private',
+  getParentRoute: () => ToolsRoute,
+} as any)
 const UploadsSplatRoute = UploadsSplatRouteImport.update({
   id: '/$',
   path: '/$',
@@ -262,6 +275,11 @@ const FilesIdSplatRoute = FilesIdSplatRouteImport.update({
   path: '/$',
   getParentRoute: () => FilesIdRoute,
 } as any)
+const ToolsPrivateMoneyRoute = ToolsPrivateMoneyRouteImport.update({
+  id: '/money',
+  path: '/money',
+  getParentRoute: () => ToolsPrivateRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -276,6 +294,7 @@ export interface FileRoutesByFullPath {
   '/publish': typeof PublishRouteWithChildren
   '/review': typeof ReviewRouteWithChildren
   '/status': typeof StatusRouteWithChildren
+  '/tools': typeof ToolsRouteWithChildren
   '/uploads': typeof UploadsRouteWithChildren
   '/api/agent': typeof ApiAgentRouteWithChildren
   '/api/external-uploads': typeof ApiExternalUploadsRouteWithChildren
@@ -295,6 +314,7 @@ export interface FileRoutesByFullPath {
   '/publish/callback': typeof PublishCallbackRoute
   '/review/callback': typeof ReviewCallbackRoute
   '/status/private': typeof StatusPrivateRoute
+  '/tools/private': typeof ToolsPrivateRouteWithChildren
   '/uploads/$': typeof UploadsSplatRoute
   '/manage/': typeof ManageIndexRoute
   '/api/agent/$': typeof ApiAgentSplatRoute
@@ -306,6 +326,7 @@ export interface FileRoutesByFullPath {
   '/api/uploads/$': typeof ApiUploadsSplatRoute
   '/f/$id/$': typeof FIdSplatRoute
   '/files/$id/$': typeof FilesIdSplatRoute
+  '/tools/private/money': typeof ToolsPrivateMoneyRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -319,6 +340,7 @@ export interface FileRoutesByTo {
   '/publish': typeof PublishRouteWithChildren
   '/review': typeof ReviewRouteWithChildren
   '/status': typeof StatusRouteWithChildren
+  '/tools': typeof ToolsRouteWithChildren
   '/uploads': typeof UploadsRouteWithChildren
   '/api/agent': typeof ApiAgentRouteWithChildren
   '/api/external-uploads': typeof ApiExternalUploadsRouteWithChildren
@@ -338,6 +360,7 @@ export interface FileRoutesByTo {
   '/publish/callback': typeof PublishCallbackRoute
   '/review/callback': typeof ReviewCallbackRoute
   '/status/private': typeof StatusPrivateRoute
+  '/tools/private': typeof ToolsPrivateRouteWithChildren
   '/uploads/$': typeof UploadsSplatRoute
   '/manage': typeof ManageIndexRoute
   '/api/agent/$': typeof ApiAgentSplatRoute
@@ -349,6 +372,7 @@ export interface FileRoutesByTo {
   '/api/uploads/$': typeof ApiUploadsSplatRoute
   '/f/$id/$': typeof FIdSplatRoute
   '/files/$id/$': typeof FilesIdSplatRoute
+  '/tools/private/money': typeof ToolsPrivateMoneyRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -364,6 +388,7 @@ export interface FileRoutesById {
   '/publish': typeof PublishRouteWithChildren
   '/review': typeof ReviewRouteWithChildren
   '/status': typeof StatusRouteWithChildren
+  '/tools': typeof ToolsRouteWithChildren
   '/uploads': typeof UploadsRouteWithChildren
   '/api/agent': typeof ApiAgentRouteWithChildren
   '/api/external-uploads': typeof ApiExternalUploadsRouteWithChildren
@@ -383,6 +408,7 @@ export interface FileRoutesById {
   '/publish/callback': typeof PublishCallbackRoute
   '/review/callback': typeof ReviewCallbackRoute
   '/status/private': typeof StatusPrivateRoute
+  '/tools/private': typeof ToolsPrivateRouteWithChildren
   '/uploads/$': typeof UploadsSplatRoute
   '/manage/': typeof ManageIndexRoute
   '/api/agent/$': typeof ApiAgentSplatRoute
@@ -394,6 +420,7 @@ export interface FileRoutesById {
   '/api/uploads/$': typeof ApiUploadsSplatRoute
   '/f/$id/$': typeof FIdSplatRoute
   '/files/$id/$': typeof FilesIdSplatRoute
+  '/tools/private/money': typeof ToolsPrivateMoneyRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -410,6 +437,7 @@ export interface FileRouteTypes {
     | '/publish'
     | '/review'
     | '/status'
+    | '/tools'
     | '/uploads'
     | '/api/agent'
     | '/api/external-uploads'
@@ -429,6 +457,7 @@ export interface FileRouteTypes {
     | '/publish/callback'
     | '/review/callback'
     | '/status/private'
+    | '/tools/private'
     | '/uploads/$'
     | '/manage/'
     | '/api/agent/$'
@@ -440,6 +469,7 @@ export interface FileRouteTypes {
     | '/api/uploads/$'
     | '/f/$id/$'
     | '/files/$id/$'
+    | '/tools/private/money'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -453,6 +483,7 @@ export interface FileRouteTypes {
     | '/publish'
     | '/review'
     | '/status'
+    | '/tools'
     | '/uploads'
     | '/api/agent'
     | '/api/external-uploads'
@@ -472,6 +503,7 @@ export interface FileRouteTypes {
     | '/publish/callback'
     | '/review/callback'
     | '/status/private'
+    | '/tools/private'
     | '/uploads/$'
     | '/manage'
     | '/api/agent/$'
@@ -483,6 +515,7 @@ export interface FileRouteTypes {
     | '/api/uploads/$'
     | '/f/$id/$'
     | '/files/$id/$'
+    | '/tools/private/money'
   id:
     | '__root__'
     | '/'
@@ -497,6 +530,7 @@ export interface FileRouteTypes {
     | '/publish'
     | '/review'
     | '/status'
+    | '/tools'
     | '/uploads'
     | '/api/agent'
     | '/api/external-uploads'
@@ -516,6 +550,7 @@ export interface FileRouteTypes {
     | '/publish/callback'
     | '/review/callback'
     | '/status/private'
+    | '/tools/private'
     | '/uploads/$'
     | '/manage/'
     | '/api/agent/$'
@@ -527,6 +562,7 @@ export interface FileRouteTypes {
     | '/api/uploads/$'
     | '/f/$id/$'
     | '/files/$id/$'
+    | '/tools/private/money'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -542,6 +578,7 @@ export interface RootRouteChildren {
   PublishRoute: typeof PublishRouteWithChildren
   ReviewRoute: typeof ReviewRouteWithChildren
   StatusRoute: typeof StatusRouteWithChildren
+  ToolsRoute: typeof ToolsRouteWithChildren
   UploadsRoute: typeof UploadsRouteWithChildren
   ApiAgentRoute: typeof ApiAgentRouteWithChildren
   ApiExternalUploadsRoute: typeof ApiExternalUploadsRouteWithChildren
@@ -640,6 +677,13 @@ declare module '@tanstack/react-router' {
       path: '/status'
       fullPath: '/status'
       preLoaderRoute: typeof StatusRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/tools': {
+      id: '/tools'
+      path: '/tools'
+      fullPath: '/tools'
+      preLoaderRoute: typeof ToolsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/uploads': {
@@ -782,6 +826,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof StatusPrivateRouteImport
       parentRoute: typeof StatusRoute
     }
+    '/tools/private': {
+      id: '/tools/private'
+      path: '/private'
+      fullPath: '/tools/private'
+      preLoaderRoute: typeof ToolsPrivateRouteImport
+      parentRoute: typeof ToolsRoute
+    }
     '/uploads/$': {
       id: '/uploads/$'
       path: '/$'
@@ -851,6 +902,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/files/$id/$'
       preLoaderRoute: typeof FilesIdSplatRouteImport
       parentRoute: typeof FilesIdRoute
+    }
+    '/tools/private/money': {
+      id: '/tools/private/money'
+      path: '/money'
+      fullPath: '/tools/private/money'
+      preLoaderRoute: typeof ToolsPrivateMoneyRouteImport
+      parentRoute: typeof ToolsPrivateRoute
     }
   }
 }
@@ -956,6 +1014,28 @@ const StatusRouteChildren: StatusRouteChildren = {
 const StatusRouteWithChildren =
   StatusRoute._addFileChildren(StatusRouteChildren)
 
+interface ToolsPrivateRouteChildren {
+  ToolsPrivateMoneyRoute: typeof ToolsPrivateMoneyRoute
+}
+
+const ToolsPrivateRouteChildren: ToolsPrivateRouteChildren = {
+  ToolsPrivateMoneyRoute: ToolsPrivateMoneyRoute,
+}
+
+const ToolsPrivateRouteWithChildren = ToolsPrivateRoute._addFileChildren(
+  ToolsPrivateRouteChildren,
+)
+
+interface ToolsRouteChildren {
+  ToolsPrivateRoute: typeof ToolsPrivateRouteWithChildren
+}
+
+const ToolsRouteChildren: ToolsRouteChildren = {
+  ToolsPrivateRoute: ToolsPrivateRouteWithChildren,
+}
+
+const ToolsRouteWithChildren = ToolsRoute._addFileChildren(ToolsRouteChildren)
+
 interface UploadsRouteChildren {
   UploadsSplatRoute: typeof UploadsSplatRoute
 }
@@ -1038,6 +1118,7 @@ const rootRouteChildren: RootRouteChildren = {
   PublishRoute: PublishRouteWithChildren,
   ReviewRoute: ReviewRouteWithChildren,
   StatusRoute: StatusRouteWithChildren,
+  ToolsRoute: ToolsRouteWithChildren,
   UploadsRoute: UploadsRouteWithChildren,
   ApiAgentRoute: ApiAgentRouteWithChildren,
   ApiExternalUploadsRoute: ApiExternalUploadsRouteWithChildren,

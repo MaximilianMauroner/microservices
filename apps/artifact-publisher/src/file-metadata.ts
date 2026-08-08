@@ -1,5 +1,6 @@
 const DEFAULT_CONTENT_TYPE = "application/octet-stream";
 const MAX_FILE_NAME_BYTES = 240;
+export const MAX_PROJECT_NAME_BYTES = 240;
 const MIME_TYPE_PATTERN =
   /^[!#$%&'*+.^_`|~0-9A-Za-z-]+\/[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
 
@@ -38,6 +39,35 @@ export function originalNameMetadata(originalName: string) {
     "original-name": safeName.replace(/[^\x20-\x7E]/g, "_"),
     "original-name-base64": Buffer.from(safeName, "utf8").toString("base64")
   };
+}
+
+export function normalizeProjectName(project: string) {
+  const normalized = project.normalize("NFKC").trim();
+  if (
+    !normalized ||
+    Buffer.byteLength(normalized, "utf8") > MAX_PROJECT_NAME_BYTES ||
+    /[\u0000-\u001F\u007F]/.test(normalized)
+  ) {
+    return undefined;
+  }
+
+  return normalized;
+}
+
+export function projectMetadata(project: string | undefined): Record<string, string> {
+  const normalized = project ? normalizeProjectName(project) : undefined;
+  return normalized
+    ? { "project-base64": Buffer.from(normalized, "utf8").toString("base64") }
+    : {};
+}
+
+export function readProjectMetadata(metadata: Record<string, string | undefined>) {
+  const encodedProject = metadata["project-base64"];
+  if (!encodedProject || !isCanonicalBase64(encodedProject)) {
+    return undefined;
+  }
+
+  return normalizeProjectName(Buffer.from(encodedProject, "base64").toString("utf8"));
 }
 
 export function readOriginalNameMetadata(

@@ -14,7 +14,9 @@ import {
 } from "./external-upload-page.js";
 import {
   attachmentDisposition,
+  MAX_PROJECT_NAME_BYTES,
   normalizeMimeType,
+  normalizeProjectName,
   safeFileName
 } from "./file-metadata.js";
 import {
@@ -412,6 +414,7 @@ async function listExternalUploads(
             : `${baseUrl}/files/${upload.id}/${encodeURIComponent(upload.originalName)}`,
         bytes: upload.bytes,
         updatedAt: upload.updatedAt.toISOString(),
+        ...(upload.project ? { project: upload.project } : {}),
         ...(upload.expiresAt ? { expiresAt: upload.expiresAt.toISOString() } : {})
       })),
       ...(page.nextCursor
@@ -483,6 +486,7 @@ async function upload(
           uploadType.kind === "temporary" ? "download" : "page.html"
         );
         const baseUrl = getPublicBaseUrl(request, options.publicBaseUrl);
+        let project = staged.project;
         let updateEtag: string | undefined;
         if (mode.kind === "update") {
           const existing = await options.storage.getHtml(id, {
@@ -497,6 +501,7 @@ async function upload(
             );
           }
           existing.body.destroy();
+          project ??= existing.project;
           if (!existing.etag) throw new Error(`Stored HTML ${id} is missing an ETag`);
           updateEtag = existing.etag;
         }
@@ -509,7 +514,12 @@ async function upload(
             await options.storage.putHtml(
               id,
               staged.filePath,
-              { bytes: staged.bytes, originalName, sha256 },
+              {
+                bytes: staged.bytes,
+                originalName,
+                sha256,
+                ...(project ? { project } : {})
+              },
               { ifMatch: updateEtag, signal: request.signal }
             );
           } catch (error) {
@@ -532,7 +542,8 @@ async function upload(
               contentType: HTML_CONTENT_TYPE,
               url: `${baseUrl}/artifacts/${id}`,
               bytes: staged.bytes,
-              sha256
+              sha256,
+              ...(project ? { project } : {})
             },
             mode.kind === "create" ? 201 : 200
           );
@@ -598,6 +609,7 @@ type StagedUpload = {
   originalName: string;
   contentType: string;
   bytes: number;
+  project?: string;
 };
 
 async function stageMultipart(
@@ -630,11 +642,12 @@ async function stageMultipart(
     defParamCharset: "utf8",
     limits: {
       fieldNameSize: 64,
-      fields: 0,
+      fieldSize: MAX_PROJECT_NAME_BYTES,
+      fields: 1,
       files: 1,
       fileSize: options.maxUploadBytes,
       headerPairs: 100,
-      parts: 2
+      parts: 3
     }
   });
   const input = Readable.fromWeb(
@@ -643,6 +656,7 @@ async function stageMultipart(
   let filePromise: Promise<StagedUpload> | undefined;
   let parserError: unknown;
   let fileCount = 0;
+  let project: string | undefined;
 
   parser.on("file", (fieldName, stream, info) => {
     fileCount += 1;
@@ -674,11 +688,23 @@ async function stageMultipart(
       parser.destroy(error instanceof Error ? error : new Error("Multipart staging failed"));
     });
   });
-  parser.on("field", () => {
+  parser.on("field", (fieldName, value, info) => {
+    const normalized = normalizeProjectName(value);
+    if (fieldName !== "project" || info.valueTruncated || !normalized || project) {
+      parserError ??= new ArtifactRequestError(
+        400,
+        "invalid_project",
+        "Project must be a single non-empty multipart field of at most 240 UTF-8 bytes."
+      );
+      return;
+    }
+    project = normalized;
+  });
+  parser.on("fieldsLimit", () => {
     parserError ??= new ArtifactRequestError(
       400,
-      "invalid_multipart_upload",
-      "Expected exactly one file in multipart field `file`."
+      "invalid_project",
+      "Only one optional multipart field named `project` is supported."
     );
   });
   parser.on("filesLimit", () => {
@@ -719,7 +745,7 @@ async function stageMultipart(
       "Expected multipart field `file`."
     );
   }
-  return staged;
+  return { ...staged, ...(project ? { project } : {}) };
 }
 
 async function stageFile(

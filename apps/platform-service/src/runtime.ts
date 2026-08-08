@@ -17,6 +17,7 @@ import { loadPlatformConfig } from "./config.js";
 import { startAlignedScheduler } from "./scheduler.js";
 import { createTowerHeartbeat, type TowerHeartbeat } from "./tower-heartbeat.js";
 import { PLATFORM_UI_BUILD } from "./build-identity.js";
+import { createMoneyTracker } from "./money-tracker.js";
 
 export type PlatformRuntime = {
   publicOrigin: string;
@@ -27,6 +28,7 @@ export type PlatformRuntime = {
   publicSnapshot: () => Promise<PublicSnapshotDocument>;
   health: () => Promise<void>;
   towerHeartbeat: TowerHeartbeat;
+  moneyTracker: ReturnType<typeof createMoneyTracker>;
   stop: () => Promise<void>;
 };
 
@@ -69,6 +71,7 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
   });
   const artifactStorage = createS3UploadStorage(config.artifact.s3);
   const activityTracker = new ActivityTracker();
+  const moneyTracker = createMoneyTracker(config.moneyTracker);
   const fieldGuideHandle = await createRepository(config.fieldGuide, {
     readOnly: config.readOnly
   });
@@ -170,6 +173,7 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
       services,
       publicSnapshot: () => toolsStorage.readPublicSnapshot(),
       towerHeartbeat,
+      moneyTracker,
       health: async () => {
         await Promise.all(Object.values(services).map((service) => service.readiness()));
       },
