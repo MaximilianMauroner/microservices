@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { ReviewPage, type ReviewSearch } from "../features/review/review-page.js";
 import { getReviewPageData } from "../protected-data.js";
 import { faviconLink, favicons } from "../favicons.js";
+import { requireRouteSession } from "../auth-session.js";
 
 export const Route = createFileRoute("/review")({
   validateSearch: (search): ReviewSearch => ({
@@ -20,6 +21,7 @@ export const Route = createFileRoute("/review")({
     ...enumSearch(search, "queueStatus", ["pending", "due", "overdue"] as const),
     ...optionalSearch(search, "queueQuery")
   }),
+  beforeLoad: ({ location }) => requireRouteSession(location.href),
   loaderDeps: ({ search }) => ({
     scope: search.scope,
     view: search.view,

@@ -1,7 +1,7 @@
 # Tools Web
 
-Tools Web is the public directory, truthful status page, and
-Cloudflare Access-protected Manage module mounted by `apps/platform-service`.
+Tools Web is the public directory, truthful status page, and authenticated
+Manage module mounted by `apps/platform-service`.
 It is not deployed as a separate Railway service.
 
 ## Production runtime
@@ -11,26 +11,16 @@ single process stays awake because it owns the aligned five-minute checker
 scheduler. Tools Web and Tools Checker share one private bucket with disjoint
 writer ownership enforced in code.
 
-Required platform Access variables:
-
-- `CF_ACCESS_ISSUER`
-- `CF_ACCESS_MANAGE_AUDIENCE`
-- `CF_ACCESS_PUBLISHER_AUDIENCE`
-- `CF_ACCESS_REVIEW_AUDIENCE`
-- `CF_ACCESS_JWKS_URL`, optional
-
 The private Markdown inventory also requires:
 
 - `MARKDOWN_SHARE_ADMIN_ENDPOINT`, the production Convex HTTP Action URL
 - `MARKDOWN_SHARE_ADMIN_TOKEN`, a 32+ character service secret shared with Convex
 - `MARKDOWN_SHARE_PUBLIC_ORIGIN`, the Markdown Share browser origin
 
-Production fails startup unless all three route-family variables contain one
-unique tag each. The application
-validates the signature, issuer, family audience, expiry, and actor before
-dispatching protected browser routes. Native-token `/api/uploads*` and
-`/api/agent*` routes intentionally bypass browser Access and still require
-their own bearer credentials.
+The platform service authenticates browser requests before dispatching them to
+this module and supplies a generic verified principal for attribution.
+Native-token `/api/uploads*` and `/api/agent*` routes keep their own bearer
+credentials.
 
 `GET /live` reports process liveness. `GET /health` checks all shared
 dependencies. The component endpoints `/health/tools`, `/health/publisher`,
@@ -72,7 +62,7 @@ observed day. Its aggregate gives outages and checking states precedence, then
 reports healthy measured services separately from services not measured.
 Below the public services it links to `/manage/status`, which uses the Manage
 Access audience and renders only active services excluded from the public
-projection. The protected response is non-cacheable and does not render
+projection. The response requires the shared browser session, is non-cacheable, and does not render
 operator notes, notification delivery details, or monitor target URLs.
 Directory destinations on the current browser origin use a chevron and open
 in the current tab. Cross-origin destinations use an external arrow, open in a
@@ -84,6 +74,6 @@ are edited as validated structured rows with an optional synchronized JSON
 view. History and audit requests have an eight-second timeout and explicit
 accessible retry; mutations are never retried automatically. Structural no-op
 mutations return the current revision without catalog or audit writes.
-`/manage/documents` is a read-only Markdown Share inventory. It is protected by the same
-Manage Access audience, fetches active document metadata through a bearer-
+`/manage/documents` is a read-only Markdown Share inventory. It uses the same
+browser session and fetches active document metadata through a bearer-
 protected Convex HTTP Action, and never retrieves document bodies.

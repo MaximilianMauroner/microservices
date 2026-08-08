@@ -1,5 +1,5 @@
 import { getGlobalStartContext } from "@tanstack/react-start";
-import { attachAccessActor } from "@tools-platform/security";
+import { attachPlatformPrincipal } from "@tools-platform/security";
 
 type PlatformHandler = (request: Request) => Promise<Response>;
 
@@ -11,7 +11,7 @@ export function internalPlatformRequest(pathname: string, init: RequestInit = {}
     ...init,
     headers
   });
-  if (context.accessActor) attachAccessActor(request, context.accessActor);
+  if (context.principal) attachPlatformPrincipal(request, context.principal);
   return { context, request };
 }
 

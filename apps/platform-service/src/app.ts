@@ -1,20 +1,21 @@
 import {
-  AccessDeniedError,
-  attachAccessActor,
+  attachPlatformPrincipal,
   classifyRoute,
-  getAttachedAccessActor,
+  getAttachedPlatformPrincipal,
   serviceForPath,
-  type AccessActor,
-  type AccessFamily,
-  type AccessVerifier
+  type PlatformPrincipal,
+  type ServiceFamily
 } from "@tools-platform/security";
+import {
+  AuthenticationRequiredError,
+  type PrincipalAuthenticator
+} from "@tools-platform/web";
 import type { Authentication, FetchHandler } from "@tools-platform/field-guide/http";
+import { signInLocation } from "./lib/auth-return-path.js";
 
-export interface PlatformAccess {
-  manage: AccessVerifier;
-  publisher: AccessVerifier;
-  review: AccessVerifier;
-}
+export type PrincipalResolver = (
+  request: Request
+) => Promise<PlatformPrincipal | undefined>;
 
 export type PlatformHandler = (request: Request) => Promise<Response>;
 
@@ -24,80 +25,64 @@ export type MountedService = {
   close: () => void | Promise<void>;
 };
 
-export type PlatformServices = Record<AccessFamily, MountedService>;
+export type PlatformServices = Record<ServiceFamily, MountedService>;
 
-/**
- * Authenticates one request using the central route-family policy and stores
- * the verified actor on the request for package handlers that need attribution.
- */
+/** Resolves a browser session once and enforces it only for human-private URLs. */
 export async function authenticatePlatformRequest(
   request: Request,
-  access: PlatformAccess,
-  options: { readOnly?: boolean; localAuth?: boolean } = {}
-): Promise<{ actor?: AccessActor; response?: Response }> {
+  resolvePrincipal: PrincipalResolver
+): Promise<{ principal?: PlatformPrincipal; response?: Response }> {
   const route = classifyRoute(new URL(request.url).pathname, request.method);
-  if (route.kind !== "access") return {};
-
-  if (
-    options.localAuth ||
-    (options.readOnly &&
-      (request.method === "GET" || request.method === "HEAD"))
-  ) {
-    const actor = { id: options.localAuth ? "local@localhost" : "design@local.invalid" };
-    attachAccessActor(request, actor);
-    return { actor };
+  if (route.kind !== "human-session" && route.kind !== "server-function") {
+    return {};
   }
 
-  try {
-    const actor = await access[route.family].verify(request);
-    attachAccessActor(request, actor);
-    return { actor };
-  } catch (error) {
-    if (!(error instanceof AccessDeniedError)) {
-      console.error(JSON.stringify({
-        event: "platform.access_verification_failed",
-        errorType: error instanceof Error ? error.name : "UnknownError"
-      }));
-    }
+  const principal = await resolvePrincipal(request);
+  if (principal) {
+    attachPlatformPrincipal(request, principal);
+    return { principal };
+  }
+  if (route.kind === "server-function") return {};
+
+  if (isDocumentNavigation(request)) {
+    const url = new URL(request.url);
     return {
-      response: new Response(JSON.stringify({ error: "access_required" }), {
-        status: 401,
+      response: new Response(null, {
+        status: 302,
         headers: {
-          "Cache-Control": "no-store",
-          "Content-Type": "application/json; charset=utf-8",
-          "WWW-Authenticate": 'Bearer realm="cloudflare-access"'
+          "Cache-Control": "private, no-store",
+          Location: signInLocation(`${url.pathname}${url.search}${url.hash}`, "session_required")
         }
       })
     };
   }
+
+  return {
+    response: new Response(JSON.stringify({ error: "authentication_required" }), {
+      status: 401,
+      headers: {
+        "Cache-Control": "no-store",
+        "Content-Type": "application/json; charset=utf-8"
+      }
+    })
+  };
 }
 
-/**
- * Fetch-compatible composition root used by contract tests and by the Start
- * route delegates. Start's global middleware performs the same auth step
- * before its route tree, so production routes do not duplicate verification.
- */
+/** Fetch-compatible composition root used by route-policy contract tests. */
 export function createPlatformHandler(options: {
-  access: PlatformAccess;
+  resolvePrincipal: PrincipalResolver;
   services: PlatformServices;
   publicOrigin: string;
 }): PlatformHandler {
   return async (request) => {
-    const authentication = await authenticatePlatformRequest(request, options.access);
+    const authentication = await authenticatePlatformRequest(
+      request,
+      options.resolvePrincipal
+    );
     if (authentication.response) return authentication.response;
 
     const pathname = new URL(request.url).pathname;
     const handler = options.services[serviceForPath(pathname)].handle;
-    const redirect = legacyBrowserRedirect(request);
-    if (redirect) {
-      return new Response(null, {
-        status: 308,
-        headers: {
-          "Cache-Control": "private, no-store",
-          Location: redirect
-        }
-      });
-    }
     try {
       return await handler(request);
     } catch (error) {
@@ -107,71 +92,39 @@ export function createPlatformHandler(options: {
       }));
       return new Response(JSON.stringify({ error: "internal_error" }), {
         status: 500,
-        headers: {
-          "Content-Type": "application/json; charset=utf-8"
-        }
+        headers: { "Content-Type": "application/json; charset=utf-8" }
       });
     }
   };
 }
 
-export function accessAuthentication(access: AccessVerifier) {
-  return async (request: Request): Promise<Authentication> => {
-    try {
-      const actor = getAttachedAccessActor(request) ?? (await access.verify(request));
-      return { ok: true, email: actor.id };
-    } catch {
-      return {
-        ok: false,
-        response: new Response(
-          JSON.stringify({
-            error: "access_required",
-            message: "Cloudflare Access authentication is required."
-          }),
-          {
-            status: 401,
-            headers: {
-              "Content-Type": "application/json; charset=utf-8",
-              "WWW-Authenticate": 'Bearer realm="cloudflare-access"'
-            }
-          }
-        )
-      };
-    }
+export function toolsPrincipalAuthentication(): PrincipalAuthenticator {
+  return (request: Request) => {
+    const principal = getAttachedPlatformPrincipal(request);
+    if (!principal) throw new AuthenticationRequiredError();
+    return { id: principal.email };
   };
 }
 
-export function contextAwareAccessVerifier(access: AccessVerifier): AccessVerifier {
+export function reviewerAuthentication(request: Request): Authentication {
+  const principal = getAttachedPlatformPrincipal(request);
+  if (principal) return { ok: true, email: principal.email };
   return {
-    async verify(request) {
-      return getAttachedAccessActor(request) ?? access.verify(request);
-    }
+    ok: false,
+    response: new Response(
+      JSON.stringify({ error: "authentication_required" }),
+      {
+        status: 401,
+        headers: {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json; charset=utf-8"
+        }
+      }
+    )
   };
 }
 
-export function accessFamilyForPath(
-  pathname: string,
-  method: string
-): AccessFamily | undefined {
-  const route = classifyRoute(pathname, method);
-  return route.kind === "access" ? route.family : undefined;
-}
-
-function legacyBrowserRedirect(request: Request): string | undefined {
-  if (request.method !== "GET" && request.method !== "HEAD") return undefined;
-  const url = new URL(request.url);
-  const path = url.pathname;
-  let destination: string | undefined;
-  if (path === "/uploads" || path === "/uploads/callback") {
-    destination = "/publish";
-  } else if (path === "/ops" || path.startsWith("/ops/")) {
-    destination = `/manage${path.slice("/ops".length)}`;
-  } else if (path === "/p" || path.startsWith("/p/")) {
-    destination = `/artifacts${path.slice("/p".length)}`;
-  } else if (path === "/f" || path.startsWith("/f/")) {
-    destination = `/files${path.slice("/f".length)}`;
-  }
-  return destination === undefined
-    ? undefined
-    : `${destination}${url.search}${url.hash}`;
+function isDocumentNavigation(request: Request): boolean {
+  if (request.method !== "GET" && request.method !== "HEAD") return false;
+  return request.headers.get("accept")?.includes("text/html") ?? false;
 }

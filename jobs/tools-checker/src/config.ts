@@ -9,11 +9,6 @@ export interface CheckerConfig {
     forcePathStyle: boolean;
   };
   discordWebhookUrl?: string;
-  access?: {
-    clientId: string;
-    clientSecret: string;
-    protectedOrigins: ReadonlySet<string>;
-  };
   concurrency: number;
   probeTimeoutMs: number;
   runDeadlineMs: number;
@@ -23,7 +18,6 @@ export interface CheckerConfig {
 export function loadConfig(
   env: NodeJS.ProcessEnv = process.env
 ): CheckerConfig {
-  const access = accessConfig(env);
   return {
     environment: identifier(required(env, "TOOLS_ENVIRONMENT"), "TOOLS_ENVIRONMENT"),
     bucket: {
@@ -46,7 +40,6 @@ export function loadConfig(
           )
         }
       : {}),
-    ...(access ? { access } : {}),
     concurrency: boundedInteger(env.CHECK_CONCURRENCY, 6, 1, 32, "CHECK_CONCURRENCY"),
     probeTimeoutMs: boundedInteger(
       env.PROBE_TIMEOUT_MS,
@@ -70,22 +63,6 @@ export function loadConfig(
       "NOTIFICATION_ATTEMPT_LIMIT"
     )
   };
-}
-
-function accessConfig(env: NodeJS.ProcessEnv): CheckerConfig["access"] {
-  const clientId = env.CF_ACCESS_CLIENT_ID?.trim();
-  const clientSecret = env.CF_ACCESS_CLIENT_SECRET?.trim();
-  const originList = env.CF_ACCESS_PROTECTED_ORIGINS?.trim();
-  if (!clientId && !clientSecret && !originList) return undefined;
-  if (!clientId || !clientSecret || !originList) {
-    throw new Error(
-      "CF_ACCESS_CLIENT_ID, CF_ACCESS_CLIENT_SECRET, and CF_ACCESS_PROTECTED_ORIGINS must be set together"
-    );
-  }
-  const protectedOrigins = new Set(
-    originList.split(",").map((value) => httpsOrigin(value.trim()))
-  );
-  return { clientId, clientSecret, protectedOrigins };
 }
 
 function required(env: NodeJS.ProcessEnv, name: string): string {
@@ -118,26 +95,6 @@ function httpUrl(value: string, name: string): string {
     throw new Error(`${name} must be a credential-free HTTP(S) URL`);
   }
   return url.toString();
-}
-
-function httpsOrigin(value: string): string {
-  let url: URL;
-  try {
-    url = new URL(value);
-  } catch {
-    throw new Error("CF_ACCESS_PROTECTED_ORIGINS must contain HTTPS origins");
-  }
-  if (
-    url.protocol !== "https:" ||
-    url.username ||
-    url.password ||
-    url.pathname !== "/" ||
-    url.search ||
-    url.hash
-  ) {
-    throw new Error("CF_ACCESS_PROTECTED_ORIGINS must contain HTTPS origins");
-  }
-  return url.origin;
 }
 
 function optionalBoolean(

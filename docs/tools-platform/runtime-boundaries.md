@@ -11,7 +11,7 @@ Repository location defines runtime ownership:
 - `jobs/*` directories are independently running background processes without
   a browser surface.
 
-Access is an independent property. Public, Cloudflare Access-protected, and
+Authentication is an independent property. Public, session-protected, and
 private-network tools can exist on either side of the runtime boundary. Catalog
 `visibility` and link `access` describe that policy; directory location does
 not.

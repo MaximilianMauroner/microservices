@@ -8,9 +8,9 @@ describe("primary page ownership", () => {
     for (const path of ["/status", "/review", "/publish", "/manage", "/manage/status", "/manage/documents", "/tools/private/money"]) {
       expect(source).toContain(`fullPath: '${path}'`);
     }
-    expect(source).not.toContain("fullPath: '/review/$'");
-    expect(source).not.toContain("fullPath: '/publish/$'");
-    expect(source).not.toContain("fullPath: '/manage/$'");
+    for (const path of ["/review/$", "/publish/$", "/manage/$", "/ops", "/uploads", "/p", "/f", "/status/private"]) {
+      expect(source).not.toContain(`fullPath: '${path}'`);
+    }
   });
 
   it("uses preloaded client navigation for review links", () => {
@@ -34,10 +34,10 @@ describe("primary page ownership", () => {
     expect(route).not.toMatch(/\b(POST|PUT|PATCH|DELETE): tools/);
   });
 
-  it("protects private money data with the manage Access middleware", () => {
+  it("protects private money data with the shared session middleware", () => {
     const source = readFileSync(new URL("../src/protected-data.ts", import.meta.url), "utf8");
     const moneyLoader = source.slice(source.indexOf("getMoneyTrackerPageData"), source.indexOf("getPrivateStatusPageData"));
-    expect(moneyLoader).toContain(".middleware([manageAccessMiddleware])");
+    expect(moneyLoader).toContain(".middleware([requirePlatformSession])");
   });
 
   it("rejects catalog mutations with an explicit read-only response", async () => {

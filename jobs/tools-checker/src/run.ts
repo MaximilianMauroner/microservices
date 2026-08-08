@@ -353,7 +353,6 @@ async function observeEntry(
     };
   }
   return probeTarget(monitor.url, {
-    access: dependencies.config.access,
     fetcher: dependencies.fetcher,
     now: () => now().getTime(),
     timeoutMs: dependencies.config.probeTimeoutMs,

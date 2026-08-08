@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import { reviewConsole } from "../src/ui.js";
 
-it("uses Cloudflare Access and nonce CSP with attribute escaping", async () => {
+it("uses the authenticated platform session and nonce CSP with attribute escaping", async () => {
   const response = reviewConsole();
   const html = await response.text();
   expect(html).not.toContain("requestPii:true");

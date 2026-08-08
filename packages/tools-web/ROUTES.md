@@ -20,16 +20,15 @@ private catalog in the request process.
 
 ## Protected
 
-Every `/manage`, `/manage/*`, legacy `/ops`, legacy `/ops/*`, and `/api/ops/*` request requires a valid
-`Cf-Access-Jwt-Assertion`. Authentication failures return
-`401 {"error":"access_required"}`.
+Every `/manage`, `/manage/*`, and `/api/ops/*` request requires the generic
+authenticated principal supplied by the platform gateway. Authentication
+failures return `401 {"error":"authentication_required"}`.
 
 | Method | Path | Response / operation |
 |---|---|---|
 | `GET`, `HEAD` | `/manage/status` | Server-rendered current status for active services excluded from the public projection; private fields such as operator notes and notification errors are not rendered. |
 | `GET`, `HEAD` | `/manage/documents` | Read-only active Markdown Share inventory fetched server-side from the bearer-protected Convex admin endpoint. |
 | `GET` | `/manage`, `/manage/*` | Server-rendered management UI from the latest catalog plus prepared private checker state. |
-| `GET`, `HEAD` | `/ops`, `/ops/*` | Authenticated `308` redirect to the corresponding `/manage` path with query preserved. |
 | `GET` | `/api/ops/catalog` | Full `CatalogDocument` plus an `ETag` containing its revision. |
 | `GET` | `/api/ops/snapshot` | Decoded `PrivateSnapshotDocument`. |
 | `GET` | `/api/ops/audit?limit=&cursor=` | `{ "items": AdminAuditRecord[], "nextCursor": string \| null }`; newest-first canonical immutable records with opaque lossless cursors, and the read repairs durable pending audit intents. |
@@ -53,8 +52,8 @@ Every `/manage`, `/manage/*`, legacy `/ops`, legacy `/ops/*`, and `/api/ops/*` r
 | `PUT` | `/api/ops/order` | Reorder all groups and entries. |
 
 Every mutation requires an `Origin` exactly equal to configured
-`PUBLIC_ORIGIN` and an `application/json` content type; Cloudflare Access JWT
-verification still happens first. Cross-origin/missing-origin requests return
+`PUBLIC_ORIGIN` and an `application/json` content type; principal verification
+still happens first. Cross-origin/missing-origin requests return
 `403`; non-JSON requests return `400`. Except initialization and reads,
 mutations also require `If-Match: "<revision>"`.
 Successful changed writes return `{ "revision": "...", "reload": true, "changed": true }` and the new

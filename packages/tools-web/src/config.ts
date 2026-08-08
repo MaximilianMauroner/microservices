@@ -9,11 +9,6 @@ export interface ToolsWebConfig {
     secretAccessKey: string;
     forcePathStyle: boolean;
   };
-  access: {
-    issuer: string;
-    audience: string[];
-    jwksUrl: string;
-  };
   markdownShare: {
     adminEndpoint: string;
     adminToken: string;
@@ -24,7 +19,6 @@ export interface ToolsWebConfig {
 export function loadConfig(
   env: Readonly<Record<string, string | undefined>> = process.env
 ): ToolsWebConfig {
-  const issuer = parseOrigin(required(env, "CF_ACCESS_ISSUER"), "CF_ACCESS_ISSUER");
   const port = env.PORT === undefined ? 3000 : Number(env.PORT);
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     throw new Error("PORT must be an integer between 1 and 65535");
@@ -49,13 +43,6 @@ export function loadConfig(
       secretAccessKey: required(env, "S3_SECRET_ACCESS_KEY"),
       forcePathStyle: optionalBoolean(env.S3_FORCE_PATH_STYLE, "S3_FORCE_PATH_STYLE")
     },
-    access: {
-      issuer,
-      audience: parseAudience(required(env, "CF_ACCESS_AUDIENCE")),
-      jwksUrl: env.CF_ACCESS_JWKS_URL
-        ? parseHttpsUrl(env.CF_ACCESS_JWKS_URL, "CF_ACCESS_JWKS_URL")
-        : new URL("/cdn-cgi/access/certs", issuer).toString()
-    },
     markdownShare: {
       adminEndpoint: parseHttpsUrl(
         required(env, "MARKDOWN_SHARE_ADMIN_ENDPOINT"),
@@ -73,15 +60,6 @@ export function loadConfig(
       )
     }
   };
-}
-
-function parseAudience(value: string): string[] {
-  const audiences = [...new Set(value.split(",").map((item) => item.trim()))]
-    .filter(Boolean);
-  if (audiences.length === 0) {
-    throw new Error("CF_ACCESS_AUDIENCE must contain at least one audience tag");
-  }
-  return audiences;
 }
 
 function required(
@@ -112,12 +90,6 @@ function parseOrigin(value: string, name: string, allowHttp = false): string {
   ) {
     const protocolLabel = allowHttp ? "HTTP(S)" : "HTTPS";
     throw new Error(`${name} must be an ${protocolLabel} origin`);
-  }
-  if (
-    name === "CF_ACCESS_ISSUER" &&
-    !url.hostname.endsWith(".cloudflareaccess.com")
-  ) {
-    throw new Error("CF_ACCESS_ISSUER must be a Cloudflare Access team domain");
   }
   return url.origin;
 }

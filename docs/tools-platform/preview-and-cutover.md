@@ -1,26 +1,13 @@
-# Superseded preview and cutover runbook
+# Preview verification
 
-This document described the former split deployment with a sleeping Tools Web
-service and a separate Railway checker cron. That architecture is retired.
+Use isolated buckets and an isolated Field Guide database. Configure a separate
+Google OAuth web client whose callback points to the preview origin, plus a
+preview-only `BETTER_AUTH_SECRET`.
 
-Use `consolidation-cutover.md` for the current rollout. The production shape is
-one always-awake `platform-service` process with an aligned in-process
-five-minute checker. Do not create a separate Tools Web service, enable
-scale-to-zero, or schedule a separate checker cron.
+Verify public pages, component health, canonical capability reads, allowed and
+denied Google identities, deep-linked private SSR, public-to-private SPA
+navigation, expiry recovery, sign-out, and native-token machine APIs. Do not
+reuse production credentials or point the preview at production data.
 
-For preview validation, deploy the repository-root service against isolated
-buckets and an isolated field-guide database. Use separate Cloudflare Access
-applications and route-family audiences. Keep notifications disabled, run the
-in-process checker, and verify:
-
-- public `/`, `/status`, and `/api/public/catalog`;
-- component-specific health endpoints;
-- cross-family Access assertion rejection;
-- native-token access to `/api/uploads*` and `/api/agent*`;
-- public unlisted canonical and legacy artifact/file capability reads,
-  including `GET`, `HEAD`, safe `404` responses, and preserved redirects;
-- protected upload/list/revoke routes and non-read delivery methods;
-- redaction of private catalog, Access, and notification data.
-
-Production cutover, legacy alias observation, explicit retirement approval,
-and rollback steps are maintained only in `consolidation-cutover.md`.
+Use [consolidation-cutover.md](./consolidation-cutover.md) for production order
+and rollback.

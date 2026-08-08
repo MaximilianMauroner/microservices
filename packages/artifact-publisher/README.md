@@ -79,8 +79,8 @@ curl -fsS -X DELETE "$PUBLIC_BASE_URL/api/uploads/$UPLOAD_ID" \
 ## Browser and read behavior
 
 The unified `/publish` UI lists recent uploads and creates temporary files
-through same-origin `/api/external-uploads`. Cloudflare Access is validated at
-the platform route-family boundary; the browser never receives the native
+through same-origin `/api/external-uploads`. The Better Auth session is
+validated at the platform boundary; the browser never receives the native
 upload token.
 
 `GET /api/external-uploads` accepts `kind=all|html|file`, a normalized

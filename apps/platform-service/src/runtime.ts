@@ -9,21 +9,30 @@ import {
   createS3JsonBucket,
   WebStorage
 } from "@tools-platform/web";
-import { createAccessVerifier } from "@tools-platform/security";
 import { executeChecker } from "@tools-platform/tools-checker";
 import type { PublicSnapshotDocument } from "@tools-platform/domain";
-import { accessAuthentication, contextAwareAccessVerifier, type PlatformAccess, type PlatformServices } from "./app.js";
+import {
+  reviewerAuthentication,
+  toolsPrincipalAuthentication,
+  type PlatformServices,
+  type PrincipalResolver
+} from "./app.js";
 import { loadPlatformConfig } from "./config.js";
 import { startAlignedScheduler } from "./scheduler.js";
 import { createTowerHeartbeat, type TowerHeartbeat } from "./tower-heartbeat.js";
 import { PLATFORM_UI_BUILD } from "./build-identity.js";
 import { createMoneyTracker } from "./features/money/money-tracker.js";
+import {
+  createPlatformAuth,
+  resolvePlatformPrincipal,
+  type PlatformAuth
+} from "./lib/auth.js";
 
 export type PlatformRuntime = {
   publicOrigin: string;
   readOnly: boolean;
-  localAuth: boolean;
-  access: PlatformAccess;
+  auth: PlatformAuth;
+  resolvePrincipal: PrincipalResolver;
   services: PlatformServices;
   publicSnapshot: () => Promise<PublicSnapshotDocument>;
   health: () => Promise<void>;
@@ -41,23 +50,9 @@ export function getPlatformRuntime(): Promise<PlatformRuntime> {
 
 async function createPlatformRuntime(): Promise<PlatformRuntime> {
   const config = loadPlatformConfig();
-  const access: PlatformAccess = {
-    manage: createAccessVerifier({
-      issuer: config.access.issuer,
-      jwksUrl: config.access.jwksUrl,
-      audience: config.access.audience.manage
-    }),
-    publisher: createAccessVerifier({
-      issuer: config.access.issuer,
-      jwksUrl: config.access.jwksUrl,
-      audience: config.access.audience.publisher
-    }),
-    review: createAccessVerifier({
-      issuer: config.access.issuer,
-      jwksUrl: config.access.jwksUrl,
-      audience: config.access.audience.review
-    })
-  };
+  const auth = createPlatformAuth(config.auth);
+  const resolvePrincipal: PrincipalResolver = (request) =>
+    resolvePlatformPrincipal(auth, request, config.auth.allowedGoogleSubject);
   const toolsBucket = createS3JsonBucket(config.tools.bucket);
   const toolsStorage = new WebStorage(toolsBucket);
   const towerHeartbeat = createTowerHeartbeat({
@@ -77,11 +72,9 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
   });
 
   try {
-    const toolsAccess = contextAwareAccessVerifier(access.manage);
-    const reviewAccess = contextAwareAccessVerifier(access.review);
     const tools = createToolsApp({
       storage: toolsStorage,
-      access: toolsAccess,
+      authenticate: toolsPrincipalAuthentication(),
       markdownAdmin,
       markdownSharePublicOrigin: config.markdownShare.publicOrigin,
       trustedOrigin: config.publicOrigin
@@ -89,7 +82,7 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
     const fieldGuide = createFieldGuideApp({
       repository: fieldGuideHandle.repository,
       agentAuth: agentAuth(config.fieldGuide.agentApiToken),
-      reviewerAuth: accessAuthentication(reviewAccess),
+      reviewerAuth: reviewerAuthentication,
       publicBaseUrl: config.publicOrigin,
       stylesheet: reviewStylesheet,
       decisionRecordArchiveDays: config.fieldGuide.decisionRecordArchiveDays
@@ -160,15 +153,14 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
       event: "platform.runtime_ready",
       origin: config.publicOrigin,
       readOnly: config.readOnly,
-      localAuth: config.localAuth,
       uiBuild: PLATFORM_UI_BUILD
     }));
 
     return {
       publicOrigin: config.publicOrigin,
       readOnly: config.readOnly,
-      localAuth: config.localAuth,
-      access,
+      auth,
+      resolvePrincipal,
       services,
       publicSnapshot: () => toolsStorage.readPublicSnapshot(),
       towerHeartbeat,

@@ -1,4 +1,11 @@
-export { createApp } from "./app.js";
+export {
+  AuthenticationRequiredError,
+  createApp
+} from "./app.js";
+export type {
+  AuthenticatedPrincipal,
+  PrincipalAuthenticator
+} from "./app.js";
 export { createS3JsonBucket } from "./bucket.js";
 export type { ConditionalWrite, JsonBucket } from "./bucket.js";
 export { loadConfig } from "./config.js";

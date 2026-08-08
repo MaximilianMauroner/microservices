@@ -97,13 +97,12 @@ services:
       NODE_ENV: development
       PORT: 3000
       PUBLIC_ORIGIN: http://localhost:3000
-      PLATFORM_LOCAL_AUTH: true
       PLATFORM_READ_ONLY: false
       FIELD_GUIDE_DATABASE_URL: postgres://local:local@postgres:5432/field_guide
-      CF_ACCESS_ISSUER: https://local.cloudflareaccess.com
-      CF_ACCESS_MANAGE_AUDIENCE: local-manage
-      CF_ACCESS_PUBLISHER_AUDIENCE: local-publisher
-      CF_ACCESS_REVIEW_AUDIENCE: local-review
+      GOOGLE_CLIENT_ID: local-client.apps.googleusercontent.com
+      GOOGLE_CLIENT_SECRET: local-google-client-secret
+      BETTER_AUTH_SECRET: local-better-auth-secret-000000000000000000
+      AUTH_ALLOWED_GOOGLE_SUBJECT: local-google-subject
       TOOLS_S3_BUCKET: tools
       TOOLS_S3_ENDPOINT: http://minio:9000
       TOOLS_S3_REGION: us-east-1

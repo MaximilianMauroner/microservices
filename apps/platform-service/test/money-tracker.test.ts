@@ -58,6 +58,7 @@ describe("money tracker analytics", () => {
     expect(stats.momentum?.change).toBe(40);
     expect(stats.momentum?.percent).toBeCloseTo(28.57, 2);
     expect(stats.periodChange?.change).toBe(70);
+    expect(stats.allTimeChange).toEqual({ change: 100, percent: 100 });
     expect(stats.averageMonthlyChange).toBe(14);
     expect(stats.averageMoneyChange).toBe(4);
     expect(stats.averageStocksChange).toBe(10);
@@ -71,6 +72,32 @@ describe("money tracker analytics", () => {
       current: { money: 30, stocks: 70 },
       previousYear: { date: "01/08/2025", money: 40, stocks: 60 }
     });
+  });
+
+  it("keeps visible drawdowns anchored to the true historical peak", () => {
+    const history = [
+      trendPoint("01/01/2026", 100, 40, 60),
+      trendPoint("01/02/2026", 150, 50, 100),
+      trendPoint("01/03/2026", 120, 45, 75),
+      trendPoint("01/04/2026", 90, 35, 55),
+      trendPoint("01/05/2026", 110, 40, 70)
+    ];
+    const stats = moneyTrackerTrendStats(history.slice(-3), history);
+
+    expect(stats.highWaterMark).toEqual({ date: "01/02/2026", value: 150 });
+    expect(stats.drawdown?.change).toBe(-40);
+    expect(stats.drawdown?.percent).toBeCloseTo(-26.67, 2);
+    expect(stats.drawdowns.map(({ date, change }) => ({ date, change }))).toEqual([
+      { date: "01/03/2026", change: -30 },
+      { date: "01/04/2026", change: -60 },
+      { date: "01/05/2026", change: -40 }
+    ]);
+    expect(stats.maximumDrawdown).toMatchObject({
+      date: "01/04/2026",
+      peakDate: "01/02/2026",
+      change: -60
+    });
+    expect(stats.maximumDrawdown?.percent).toBeCloseTo(-40);
   });
 
   it("projects balances and milestone windows from a stable monthly trend", () => {

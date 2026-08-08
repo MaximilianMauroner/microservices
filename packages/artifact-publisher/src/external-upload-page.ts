@@ -24,7 +24,7 @@ export function renderExternalUploadPage(options: {
       </a>
       <div class="identity" id="identity">
         <span class="identity__status" aria-hidden="true"></span>
-        <span class="identity__email" id="identity-email">Cloudflare Access</span>
+        <span class="identity__email" id="identity-email">Authenticated</span>
         <button class="identity__signout" id="sign-out" type="button" aria-label="Sign out" title="Sign out">
           <svg aria-hidden="true" viewBox="0 0 24 24">
             <path d="M10 17l5-5-5-5"></path>
@@ -44,8 +44,8 @@ export function renderExternalUploadPage(options: {
           <path d="m9 12 2 2 4-4"></path>
         </svg>
       </span>
-      <h1 id="auth-heading">Access session required</h1>
-      <p id="auth-message">Refresh to continue through Cloudflare Access.</p>
+      <h1 id="auth-heading">Session required</h1>
+      <p id="auth-message">Sign in again to continue.</p>
       <button class="button button--primary auth-panel__button" id="sign-in" type="button">
         Refresh sign-in
       </button>
@@ -694,7 +694,7 @@ export const EXTERNAL_UPLOAD_SCRIPT = `
     authPanel.hidden = false;
     authenticatedApp.hidden = true;
     identity.hidden = true;
-    authMessage.textContent = message || "Sign in through Cloudflare Access to continue.";
+    authMessage.textContent = message || "Sign in to continue.";
     signIn.disabled = false;
   };
 
@@ -703,7 +703,7 @@ export const EXTERNAL_UPLOAD_SCRIPT = `
     authPanel.hidden = true;
     authenticatedApp.hidden = false;
     identity.hidden = false;
-    identityEmail.textContent = claims.email || "Cloudflare Access";
+    identityEmail.textContent = claims.email || "Authenticated";
   };
 
   const setView = (view) => {
@@ -893,7 +893,7 @@ export const EXTERNAL_UPLOAD_SCRIPT = `
       });
       const payload = await response.json();
       if (response.status === 401) {
-        showSignedOut("Your Cloudflare Access session expired. Refresh to sign in again.");
+        showSignedOut("Your session expired. Sign in again to continue.");
         return;
       }
       if (!response.ok || !payload || !Array.isArray(payload.uploads)) {
@@ -926,13 +926,13 @@ export const EXTERNAL_UPLOAD_SCRIPT = `
   };
 
   const initializeAuth = async () => {
-    showSignedIn("cloudflare-access", { email: "Cloudflare Access" });
+    showSignedIn("browser-session", { email: "Authenticated" });
   };
 
   signIn.addEventListener("click", () => location.reload());
 
   signOut.addEventListener("click", () => {
-    location.assign("/cdn-cgi/access/logout");
+    fetch("/api/auth/sign-out", { method: "POST" }).finally(() => location.assign("/"));
   });
 
   uploadTab.addEventListener("click", () => setView("upload"));

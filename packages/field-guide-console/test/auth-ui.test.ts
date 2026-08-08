@@ -28,11 +28,11 @@ async function expectRejected(
 }
 
 describe("review UI and authentication", () => {
-  it("serves the Access UI, separate scopes, history, evidence, and valid action controls", async () => {
+  it("serves the authenticated UI, separate scopes, history, evidence, and valid action controls", async () => {
     const response = reviewConsole();
     const html = await response.text();
-    expect(html).toContain("Cloudflare Access protects this review desk");
-    expect(html).toContain("/cdn-cgi/access/logout");
+    expect(html).toContain("An authenticated session protects this review desk");
+    expect(html).toContain("/api/auth/sign-out");
     expect(html).toContain('data-scope="project"');
     expect(html).toContain('data-scope="global"');
     expect(html).toContain('data-view="history"');

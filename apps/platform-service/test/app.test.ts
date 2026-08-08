@@ -1,31 +1,19 @@
 import { describe, expect, it } from "vitest";
+import { getAttachedPlatformPrincipal } from "@tools-platform/security";
 import {
-  AccessDeniedError,
-  type AccessVerifier
-} from "@tools-platform/security";
-import {
-  accessAuthentication,
   createPlatformHandler,
-  type PlatformAccess,
-  type PlatformHandler
+  reviewerAuthentication,
+  type PlatformHandler,
+  type PrincipalResolver
 } from "../src/app.js";
 
-function verifier(audience: string): AccessVerifier {
-  return {
-    async verify(request) {
-      if (request.headers.get("cf-access-jwt-assertion") !== audience) {
-        throw new AccessDeniedError();
-      }
-      return { id: "operator@example.test" };
-    }
-  };
-}
-
-const access: PlatformAccess = {
-  manage: verifier("manage-audience"),
-  publisher: verifier("publisher-audience"),
-  review: verifier("review-audience")
+const principal = {
+  subject: "google-subject",
+  email: "operator@example.test"
 };
+
+const resolvePrincipal: PrincipalResolver = async (request) =>
+  request.headers.get("cookie") === "session=valid" ? principal : undefined;
 
 const mounted = (handle: PlatformHandler) => ({
   handle,
@@ -43,7 +31,7 @@ function request(
 
 function app() {
   return createPlatformHandler({
-    access,
+    resolvePrincipal,
     services: {
       publisher: mounted(async () => new Response("artifact")),
       review: mounted(async () => new Response("field-guide")),
@@ -54,38 +42,33 @@ function app() {
 }
 
 describe("platform fetch gateway", () => {
-  it("keeps protected route families isolated by Access audience", async () => {
+  it("uses one application session across every private browser surface", async () => {
     const platform = app();
-
-    expect((await request(platform, "/")).status).toBe(200);
-    expect((await request(platform, "/manage")).status).toBe(401);
-    expect(
-      (
-        await request(platform, "/manage", {
-          headers: { "Cf-Access-Jwt-Assertion": "manage-audience" }
-        })
-      ).status
-    ).toBe(200);
-    expect(
-      (
-        await request(platform, "/publish", {
-          headers: { "Cf-Access-Jwt-Assertion": "review-audience" }
-        })
-      ).status
-    ).toBe(401);
-    expect(
-      (
-        await request(platform, "/review", {
-          headers: { "Cf-Access-Jwt-Assertion": "review-audience" }
-        })
-      ).status
-    ).toBe(200);
+    for (const path of ["/manage", "/publish", "/review", "/tools/private/money"]) {
+      expect((await request(platform, path)).status, path).toBe(401);
+      expect(
+        (await request(platform, path, { headers: { Cookie: "session=valid" } })).status,
+        path
+      ).toBe(200);
+    }
   });
 
-  it("allows public catalog, assets, and capability reads without Access", async () => {
+  it("redirects private document navigations to a validated sign-in return path", async () => {
+    const response = await request(app(), "/manage/status?view=all", {
+      headers: { Accept: "text/html" }
+    });
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe(
+      "/sign-in?returnTo=%2Fmanage%2Fstatus%3Fview%3Dall&reason=session_required"
+    );
+  });
+
+  it("allows public pages and canonical capability reads without a session", async () => {
     const platform = app();
     for (const path of [
       "/",
+      "/sign-in",
+      "/api/auth/callback/google",
       "/status",
       "/assets/tools.css",
       "/api/public/catalog",
@@ -96,9 +79,9 @@ describe("platform fetch gateway", () => {
     }
   });
 
-  it("keeps machine APIs on native service tokens", async () => {
+  it("keeps machine APIs on their native service tokens", async () => {
     const platform = createPlatformHandler({
-      access,
+      resolvePrincipal,
       services: {
         publisher: mounted(async (request) =>
           request.headers.get("authorization") === "Bearer upload-token"
@@ -114,41 +97,37 @@ describe("platform fetch gateway", () => {
     });
 
     expect((await request(platform, "/api/uploads")).status).toBe(401);
-    expect(
-      (
-        await request(platform, "/api/uploads", {
-          method: "POST",
-          headers: { Authorization: "Bearer upload-token" },
-          body: "payload"
-        })
-      ).status
-    ).toBe(200);
+    expect((await request(platform, "/api/uploads", {
+      method: "POST",
+      headers: { Authorization: "Bearer upload-token" },
+      body: "payload"
+    })).status).toBe(200);
     expect((await request(platform, "/api/agent/status")).status).toBe(401);
-    expect(
-      (
-        await request(platform, "/api/agent/status", {
-          headers: { Authorization: "Bearer agent-token" }
+    expect((await request(platform, "/api/agent/status", {
+      headers: { Authorization: "Bearer agent-token" }
+    })).status).toBe(200);
+  });
+
+  it("attaches the generic principal for mounted service attribution", async () => {
+    let attached;
+    const platform = createPlatformHandler({
+      resolvePrincipal,
+      services: {
+        publisher: mounted(async () => new Response()),
+        review: mounted(async () => new Response()),
+        manage: mounted(async (request) => {
+          attached = getAttachedPlatformPrincipal(request);
+          return new Response();
         })
-      ).status
-    ).toBe(200);
-  });
-
-  it("preserves legacy browser redirects and query strings", async () => {
-    const platform = app();
-    const response = await request(platform, "/ops/status?view=all", {
-      headers: { "Cf-Access-Jwt-Assertion": "manage-audience" }
+      },
+      publicOrigin: "https://tools.example.test"
     });
-    expect(response.status).toBe(308);
-    expect(response.headers.get("location")).toBe("/manage/status?view=all");
-  });
+    await request(platform, "/manage", { headers: { Cookie: "session=valid" } });
+    expect(attached).toEqual(principal);
 
-  it("adapts Access actors for downstream browser handlers", async () => {
-    const authentication = accessAuthentication(access.review);
-    const result = await authentication(
-      new Request("https://tools.example.test/review", {
-        headers: { "Cf-Access-Jwt-Assertion": "review-audience" }
-      })
+    const auth = reviewerAuthentication(
+      Object.assign(new Request("https://tools.example.test/review"), {})
     );
-    expect(result).toEqual({ ok: true, email: "operator@example.test" });
+    expect(auth.ok).toBe(false);
   });
 });

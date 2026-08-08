@@ -11,6 +11,7 @@ type TrendChange = Readonly<{ change: number; percent?: number }>;
 
 export type MoneyTrackerTrendStats = Readonly<{
   periodChange?: TrendChange;
+  allTimeChange?: TrendChange;
   yearOverYear?: Readonly<{
     comparisonDate: string;
     total: TrendChange;
@@ -20,6 +21,8 @@ export type MoneyTrackerTrendStats = Readonly<{
   momentum?: TrendChange;
   highWaterMark?: Readonly<{ date: string; value: number }>;
   drawdown?: TrendChange;
+  drawdowns: readonly Readonly<{ date: string; change: number; percent?: number }>[];
+  maximumDrawdown?: Readonly<{ date: string; peakDate: string; change: number; percent?: number }>;
   positiveMonths: Readonly<{ positive: number; total: number; rate?: number }>;
   averageMonthlyChange?: number;
   averageMoneyChange?: number;
@@ -87,7 +90,15 @@ export function moneyTrackerTrendStats(
   const moneyChanges = period.slice(1).map((point, index) => point.money - period[index]!.money);
   const stocksChanges = period.slice(1).map((point, index) => point.stocks - period[index]!.stocks);
   const positive = changes.filter((change) => change > 0).length;
-  const high = period.length ? period.reduce((best, point) => point.total > best.total ? point : best) : undefined;
+  const firstHistorical = history.at(0);
+  const high = history.length ? history.reduce((best, point) => point.total > best.total ? point : best) : undefined;
+  const historicalDrawdowns = drawdownPoints(history);
+  const visibleDates = new Set(period.map((point) => point.date));
+  const drawdowns = historicalDrawdowns.filter((point) => visibleDates.has(point.date));
+  const currentDrawdown = latest ? historicalDrawdowns.findLast((point) => point.date === latest.date) : undefined;
+  const maximumDrawdown = historicalDrawdowns.length
+    ? historicalDrawdowns.reduce((worst, point) => (point.percent ?? 0) < (worst.percent ?? 0) ? point : worst)
+    : undefined;
   const previousYear = latest ? findPreviousYear(history, latest.date) : undefined;
   const currentWindow = period.slice(-3);
   const previousWindow = period.slice(-6, -3);
@@ -95,6 +106,7 @@ export function moneyTrackerTrendStats(
 
   return {
     periodChange: latest && first ? change(latest.total, first.total) : undefined,
+    allTimeChange: latest && firstHistorical ? change(latest.total, firstHistorical.total) : undefined,
     yearOverYear: latest && previousYear ? {
       comparisonDate: previousYear.date,
       total: change(latest.total, previousYear.total),
@@ -105,7 +117,9 @@ export function moneyTrackerTrendStats(
       ? change(average(currentWindow.map((point) => point.total)), average(previousWindow.map((point) => point.total)))
       : undefined,
     highWaterMark: high ? { date: high.date, value: high.total } : undefined,
-    drawdown: latest && high ? change(latest.total, high.total) : undefined,
+    drawdown: currentDrawdown ? { change: currentDrawdown.change, percent: currentDrawdown.percent } : undefined,
+    drawdowns,
+    maximumDrawdown,
     positiveMonths: {
       positive,
       total: changes.length,
@@ -267,6 +281,15 @@ function allocation(point: MoneyTrackerTrendPoint) {
     money: point.money / point.total * 100,
     stocks: point.stocks / point.total * 100
   };
+}
+
+function drawdownPoints(history: readonly MoneyTrackerTrendPoint[]) {
+  let peak: MoneyTrackerTrendPoint | undefined;
+  return history.map((point) => {
+    if (!peak || point.total >= peak.total) peak = point;
+    const drawdown = change(point.total, peak.total);
+    return { date: point.date, peakDate: peak.date, ...drawdown };
+  });
 }
 
 function average(values: readonly number[]) {

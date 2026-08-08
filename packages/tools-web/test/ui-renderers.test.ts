@@ -163,7 +163,7 @@ describe("public page", () => {
     expect(html).toContain('class="browse-tools directory-primary-action"');
     expect(html).toContain('aria-current="page">Tools');
     expect(html).toContain("Publishing &amp; sharing");
-    expect(html).toContain("Cloudflare Access");
+    expect(html).toContain("Sign-in required");
     expect(html).toContain("Tailscale required");
     expect(html).toContain("Operational");
     expect(html).toContain("Unavailable from Railway");

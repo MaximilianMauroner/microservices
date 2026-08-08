@@ -40,31 +40,5 @@ describe("checker config", () => {
     expect(() =>
       loadConfig({ ...required, DISCORD_WEBHOOK_URL: "file:///secret" })
     ).toThrow(/credential-free HTTP/);
-    expect(() =>
-      loadConfig({ ...required, CF_ACCESS_CLIENT_ID: "id" })
-    ).toThrow(/must be set together/);
-    expect(() =>
-      loadConfig({
-        ...required,
-        CF_ACCESS_CLIENT_ID: "id",
-        CF_ACCESS_CLIENT_SECRET: "secret",
-        CF_ACCESS_PROTECTED_ORIGINS: "https://example.test/path"
-      })
-    ).toThrow(/HTTPS origins/);
-  });
-
-  it("scopes Access service credentials to explicit origins", () => {
-    const config = loadConfig({
-      ...required,
-      CF_ACCESS_CLIENT_ID: "id",
-      CF_ACCESS_CLIENT_SECRET: "secret",
-      CF_ACCESS_PROTECTED_ORIGINS:
-        "https://tools.example.test, https://uploads.example.test"
-    });
-    expect(config.access).toMatchObject({ clientId: "id", clientSecret: "secret" });
-    expect([...config.access!.protectedOrigins]).toEqual([
-      "https://tools.example.test",
-      "https://uploads.example.test"
-    ]);
   });
 });

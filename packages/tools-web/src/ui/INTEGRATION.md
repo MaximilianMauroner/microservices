@@ -1,10 +1,10 @@
 # Tools Web UI integration contract
 
-The UI is server-rendered and framework-free. `renderPublicPage(snapshot)` accepts only a decoded `PublicSnapshotDocument`. `renderOperationsPage({ snapshot, actor, revision })` accepts a decoded private snapshot and the independently verified Cloudflare Access actor. The server must send HTML with a restrictive CSP and serve `/assets/tools.css`, `/assets/ops.js`, and the catalog icons under `/assets/icons/*` from `public/assets`.
+The UI is server-rendered and framework-free. `renderPublicPage(snapshot)` accepts only a decoded `PublicSnapshotDocument`. `renderOperationsPage({ snapshot, actor, revision })` accepts a decoded private snapshot and the independently verified principal identity. The server must send HTML with a restrictive CSP and serve `/assets/tools.css`, `/assets/ops.js`, and the catalog icons under `/assets/icons/*` from `public/assets`.
 
 The public page makes no requests. Its JSON counterpart is `GET /api/public/catalog`.
 
-Operations routes are same-origin JSON endpoints protected by Cloudflare Access and application-level JWT verification:
+Operations routes are same-origin JSON endpoints protected by the platform browser session:
 
 - `POST /api/ops/groups`; `PATCH|DELETE /api/ops/groups/:id`
 - `POST /api/ops/groups/:id/reorder` with `{ "direction": "up" | "down" }`

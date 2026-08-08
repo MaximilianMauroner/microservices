@@ -14,13 +14,9 @@ import type {
   Scope,
   Summary
 } from "@tools-platform/field-guide";
-import { createPlatformAccessFunctionMiddleware } from "./access-middleware.js";
+import { requirePlatformSession } from "./auth-middleware.js";
 import { internalPlatformRequest, readPlatformJson } from "./server-data.js";
 import type { MoneyTrackerSnapshot } from "./features/money/money-tracker.js";
-
-const reviewAccessMiddleware = createPlatformAccessFunctionMiddleware("review");
-const publisherAccessMiddleware = createPlatformAccessFunctionMiddleware("publisher");
-const manageAccessMiddleware = createPlatformAccessFunctionMiddleware("manage");
 
 export type ReviewView = "decisions" | "queue" | "history";
 
@@ -50,11 +46,11 @@ export type ReviewPageData = {
 };
 
 export const getReviewPageData = createServerFn({ method: "GET" })
-  .middleware([reviewAccessMiddleware])
+  .middleware([requirePlatformSession])
   .validator((input: ReviewLoaderInput) => input)
   .handler(async ({ data }): Promise<ReviewPageData> => {
     const { context } = internalPlatformRequest("/api/review/queue");
-    const actor = context.accessActor?.id ?? "Access protected";
+    const actor = context.principal?.email ?? "Authenticated user";
     if (data.view === "queue") {
       const query = new URLSearchParams({ scope: data.scope });
       const result = await readPlatformJson<{ items: QueueItem[]; summary: Summary }>(context.runtime.services.review.handle, `/api/review/queue?${query}`);
@@ -95,7 +91,7 @@ export type UploadPageData = {
 };
 
 export const getPublishPageData = createServerFn({ method: "GET" })
-  .middleware([publisherAccessMiddleware])
+  .middleware([requirePlatformSession])
   .handler(async (): Promise<UploadPageData> => {
     const { context, request } = internalPlatformRequest("/api/external-uploads?limit=25");
     const response = await context.runtime.services.publisher.handle(request);
@@ -124,28 +120,28 @@ export type DocumentsPageData = MarkdownAdminSnapshot & {
 export type MoneyTrackerPageData = MoneyTrackerSnapshot & { actor: string };
 
 export const getMoneyTrackerPageData = createServerFn({ method: "GET" })
-  .middleware([manageAccessMiddleware])
+  .middleware([requirePlatformSession])
   .handler(async (): Promise<MoneyTrackerPageData> => {
     const { context } = internalPlatformRequest("/tools/private/money");
     return {
-      actor: context.accessActor?.id ?? "Access protected",
+      actor: context.principal?.email ?? "Authenticated user",
       ...await context.runtime.moneyTracker.readSnapshot()
     };
   });
 
 export const getPrivateStatusPageData = createServerFn({ method: "GET" })
-  .middleware([manageAccessMiddleware])
+  .middleware([requirePlatformSession])
   .handler(async (): Promise<PrivateStatusPageData> => {
     const { context } = internalPlatformRequest("/api/ops/snapshot");
     return {
-      actor: context.accessActor?.id ?? "Access protected",
+      actor: context.principal?.email ?? "Authenticated user",
       publicOrigin: context.runtime.publicOrigin,
       snapshot: await readPlatformJson<PrivateSnapshotDocument>(context.runtime.services.manage.handle, "/api/ops/snapshot")
     };
   });
 
 export const getManagePageData = createServerFn({ method: "GET" })
-  .middleware([manageAccessMiddleware])
+  .middleware([requirePlatformSession])
   .handler(async (): Promise<ManagePageData> => {
     const { context } = internalPlatformRequest("/api/ops/catalog");
     const [catalog, snapshot] = await Promise.all([
@@ -153,7 +149,7 @@ export const getManagePageData = createServerFn({ method: "GET" })
       readPlatformJson<PrivateSnapshotDocument>(context.runtime.services.manage.handle, "/api/ops/snapshot")
     ]);
     return {
-      actor: context.accessActor?.id ?? "Access protected",
+      actor: context.principal?.email ?? "Authenticated user",
       revision: catalog.revision,
       catalog,
       snapshot: { ...snapshot, catalog, catalogRevision: catalog.revision }
@@ -161,7 +157,7 @@ export const getManagePageData = createServerFn({ method: "GET" })
   });
 
 export const getDocumentsPageData = createServerFn({ method: "GET" })
-  .middleware([manageAccessMiddleware])
+  .middleware([requirePlatformSession])
   .handler(async (): Promise<DocumentsPageData> => {
     const { context } = internalPlatformRequest("/api/ops/documents");
     const result = await readPlatformJson<MarkdownAdminSnapshot & { publicOrigin: string }>(
@@ -170,7 +166,7 @@ export const getDocumentsPageData = createServerFn({ method: "GET" })
     );
     return {
       ...result,
-      actor: context.accessActor?.id ?? "Access protected"
+      actor: context.principal?.email ?? "Authenticated user"
     };
   });
 

@@ -1,70 +1,41 @@
-# Unified platform cutover
+# Better Auth browser-session cutover
 
-The cutover moves compute and authentication without moving data. The catalog
-bucket, artifact bucket, and field-guide PostgreSQL database remain in place.
+This cutover changes browser authentication without moving the catalog bucket,
+artifact bucket, Field Guide database, or machine credentials.
 
-## Required Cloudflare state
+## Required external state
 
-1. The Tools home at `tools.mauroner.net/`, Status at `/status`, the public
-   stylesheet, fixed `/assets/ops.js`, and `/api/public/catalog` remain public.
-   They expose only the redacted catalog, current monitor state, and observed
-   check aggregates; no-data days are not counted as monitoring history.
-2. Self-hosted Access applications group protected routes that share a browser
-   session: Manage (`/manage`, `/manage/*`, legacy `/ops*`, `/api/ops/*`),
-   Publisher (`/publish`, `/publish/*`, legacy `/uploads*`,
-   `/api/external-uploads`), and Field Guide
-   (`/review`, `/review/*`, `/review.css`, `/review-suite.css`,
-   `/api/review/*`). These are the same three families enforced by the origin.
-   Do not place `GET`/`HEAD` delivery at `/artifacts/*`, `/files/*`, legacy
-   `/p/*`, or legacy `/f/*` behind Access: each unguessable URL is an unlisted
-   read capability. The artifact bucket itself remains private.
-3. The human Allow policy includes only the intended operator identity. Opening
-   `/manage` from the public Tools page therefore starts the Cloudflare Access
-   identity-provider flow before the request reaches Railway.
-4. Railway validates the `Cf-Access-Jwt-Assertion` signature, issuer, and the
-   route-family audience again at the origin. Set
-   `CF_ACCESS_MANAGE_AUDIENCE`, `CF_ACCESS_PUBLISHER_AUDIENCE`, and
-   `CF_ACCESS_REVIEW_AUDIENCE` to one distinct tag each. Production startup
-   rejects missing, multiple, or overlapping family tags.
-5. `/api/uploads*` and `/api/agent*` are machine APIs. Do not put them behind
-   browser Access; they retain their native upload and agent bearer tokens.
-6. The checker probes `/health/tools`, `/health/publisher`, and
-   `/health/review`. Each endpoint checks only its named dependency.
+1. Create one Google OAuth web client and register
+   `https://tools.mauroner.net/api/auth/callback/google`.
+2. Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `BETTER_AUTH_SECRET`, and
+   `AUTH_ALLOWED_GOOGLE_SUBJECT` on the platform service.
+3. Remove edge authentication from the application hostname so `/api/auth/*`
+   callbacks and the first-party session reach the application unchanged.
+4. Keep `/api/uploads*`, `/api/agent*`, and `/api/heartbeat/tower` on their
+   existing native bearer-token contracts.
 
-## Order of operations
+## Verification before production
 
-1. Configure the Access applications without changing DNS.
-2. Deploy `platform-service` to the existing `tools-web` Railway service.
-3. Verify `/health` on the Railway domain. Confirm `/`, `/status`, and known
-   `/artifacts/*` and `/files/*` capabilities load without a session;
-   `/publish`, `/review`, and `/manage` start the Cloudflare Access flow.
-   Confirm missing, revoked, and expired capabilities return `404`.
-4. Confirm public `GET`/`HEAD` redirects from `/p/*` and `/f/*`, plus protected
-   redirects from `/uploads` and `/ops/*`, preserve IDs, encoded filenames,
-   subpaths, and queries. Confirm API and mutation methods are not redirected
-   and remain protected.
-5. Update the live catalog to the canonical `tools.mauroner.net` URLs and wait
-   for a successful checker pass against all three component health endpoints.
-6. Stop the old checker cron, field-guide app, and publisher app. Keep all
-   legacy services deployable and keep the field-guide PostgreSQL service and
-   both buckets throughout the rollback window.
-7. Observe the legacy aliases for at least one complete production release.
-   Retirement requires recorded access evidence and explicit operator approval;
-   do not remove aliases in the same release as cutover.
+- Public `/`, `/status`, health routes, and canonical artifact/file reads work
+  without a browser session.
+- Anonymous private document requests redirect to `/sign-in`; anonymous private
+  APIs return `401` without private data.
+- The allowed Google subject can open deep links and navigate between public and
+  private pages without document reloads.
+- A different valid Google account reaches the explicit unauthorized state and
+  receives no session.
+- Sign-out and expiry stop private access. Return paths reject cross-origin and
+  recursive values.
+- Machine upload, agent, and heartbeat requests still use their existing tokens.
 
-Cloudflare Access application edits, live catalog replacement, DNS changes,
-and retirement of old services are external rollout actions. Repository tests
-and local redirects do not substitute for those production steps.
+## Cutover
+
+Deploy the verified build, set the variables, complete one allowed and one
+denied Google sign-in, and only then remove the old edge policies. Do not change
+live catalog data, buckets, databases, or machine secrets during this cutover.
 
 ## Rollback
 
-1. Restore the previous `tools-web` deployment and its former `/` Status page,
-   checker cron, catalog URLs, and Cloudflare origin.
-2. Restart the old publisher and field-guide services and restore their route
-   applications.
-3. Remove the suite navigation adapters and unified route mappings so the old
-   services do not link back into the failed deployment.
-4. Verify the old `/` Status response, one checker slot, native upload and agent
-   APIs, and authenticated browser flows before declaring rollback complete.
-5. Keep Access applications, databases, buckets, aliases, and old deployable
-   artifacts until rollback approval is closed.
+Restore the previous application build and its matching external authentication
+configuration. Keep data stores unchanged. If the new session secret may have
+escaped, rotate it even after rollback.

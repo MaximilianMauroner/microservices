@@ -16,7 +16,7 @@ const destinations = [
 export function renderSuiteChrome(active) {
   const renderLinks = () => destinations.map((destination) => {
     const access = destination.protected
-      ? '<span class="suite-lock" aria-hidden="true"></span><span class="visually-hidden">, Cloudflare Access protected</span>'
+      ? '<span class="suite-lock" aria-hidden="true"></span><span class="visually-hidden">, sign-in required</span>'
       : "";
     return `<a href="${destination.href}"${destination.id === active ? ' aria-current="page"' : ""}>${destination.label}${access}</a>`;
   }).join("");

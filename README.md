@@ -13,12 +13,12 @@ private-network-only; the typed catalog records that access boundary.
 
 | Service | Path | Runtime | Purpose |
 | --- | --- | --- | --- |
-| Platform service | `apps/platform-service` | Railway | Single HTTP process, checker scheduler, and Cloudflare Access boundary for all hosted tools. |
+| Platform service | `apps/platform-service` | Railway | Single HTTP process, checker scheduler, and Better Auth boundary for all hosted tools. |
 | Artifact publisher | `packages/artifact-publisher` | Platform capability | Sandboxed planning pages, temporary file uploads, resumable downloads, and revocation. |
 | Field guide console | `packages/field-guide-console` | Platform capability | Agent decision inbox plus review-only approval and lifecycle history for field-guide lessons. |
 | Markdown Share | `apps/markdown-share` | Cloudflare | Independently hosted collaborative Markdown application. |
 | Network console | `apps/network-console` | Local VM systemd service | Port-80 dashboard for Tailscale address and listening-port discovery. |
-| Tools Web | `packages/tools-web` | Platform capability | Public tools directory and Cloudflare Access-protected catalog operations. |
+| Tools Web | `packages/tools-web` | Platform capability | Public tools directory and session-protected catalog operations. |
 | Tools Checker | `jobs/tools-checker` | In-process module | One bounded status/incident/notification pass every five minutes. |
 | Tools Domain | `packages/tools-domain` | Pure TypeScript | Shared schemas, safe projections, URL/IP validation, transitions, and bucket keys. |
 
@@ -57,8 +57,9 @@ Reset local database and object storage state:
 bun run docker:reset
 ```
 
-The local stack sets `PLATFORM_LOCAL_AUTH=true` so every route is available for
-development without Cloudflare Access.
+The local stack uses non-production placeholder OAuth values so public routes
+and infrastructure can start. Supply a real local Google OAuth client when
+testing private browser routes.
 
 
 Run an individual component's tests from its package directory. Only independently
@@ -83,22 +84,14 @@ Railway deploys the workspace once:
 | Platform Service | `/` | `/railway.json` | `bun run --cwd apps/platform-service start` |
 
 The platform service must remain awake because it owns the five-minute checker
-scheduler. The redacted Tools home and `/status` surface are public;
-`/manage/status` uses the Manage Access audience. Cloudflare Access protects
-Publisher upload/list/revoke surfaces, Review,
-Manage, and their protected legacy browser aliases. Artifact and file delivery
-uses public, unlisted capability URLs: possession of an unguessable URL grants
-read access, while the backing bucket remains private. The application also
-verifies the Access assertion before dispatching any protected route.
-
-Production requires three distinct Access audiences:
-`CF_ACCESS_MANAGE_AUDIENCE`, `CF_ACCESS_PUBLISHER_AUDIENCE`, and
-`CF_ACCESS_REVIEW_AUDIENCE`. Publisher covers `/publish`, `/uploads`, and
-`/api/external-uploads`; non-read requests to delivery paths also fail closed
-behind that audience. Unauthenticated `GET`/`HEAD` requests may read
-`/artifacts*`, `/files*`, `/p*`, and `/f*`. The native-token `/api/uploads*`
-and `/api/agent*` machine APIs bypass browser Access but remain protected by
-their upload and agent bearer tokens.
+scheduler. The redacted Tools home and `/status` surface are public. Publish,
+Review, Manage, and private tools share one stateless Better Auth Google
+session. Production requires `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
+`BETTER_AUTH_SECRET`, and `AUTH_ALLOWED_GOOGLE_SUBJECT`; the verified Google
+subject must match before a session is issued. Artifact and file delivery uses
+public, unlisted capability URLs, while the backing bucket remains private.
+The native-token `/api/uploads*` and `/api/agent*` machine APIs remain on their
+existing bearer credentials.
 
 `/health` checks all dependencies. `/health/tools`, `/health/publisher`, and
 `/health/review` expose public, component-specific readiness for the in-process
@@ -107,7 +100,7 @@ checker without borrowing another component's result.
 Tools Web and Tools Checker share one private bucket with disjoint writer
 ownership enforced in code. See [Tools Platform operations](docs/tools-platform/README.md)
 for preview isolation, initial catalog bootstrap, cutover, rollback, recovery,
-Access incidents, cost controls, and Cloudflare Worker retirement.
+authentication incidents, cost controls, and legacy Worker retirement.
 
 If a host or deployment system starts from the repository root, use an explicit
 root shortcut such as `bun run start:artifact-publisher` instead of treating the

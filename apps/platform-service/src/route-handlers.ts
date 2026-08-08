@@ -34,34 +34,6 @@ export function favicon() {
   });
 }
 
-export function redirectTo(pathname: string) {
-  return ({ request }: PlatformRouteInput) => {
-    const url = new URL(request.url);
-    url.pathname = pathname;
-    return new Response(null, {
-      status: 308,
-      headers: {
-        "Cache-Control": "private, no-store",
-        Location: url.toString()
-      }
-    });
-  };
-}
-
-export function redirectLegacyPrefix(prefix: string, replacement: string) {
-  return ({ request }: PlatformRouteInput) => {
-    const url = new URL(request.url);
-    url.pathname = `${replacement}${url.pathname.slice(prefix.length)}`;
-    return new Response(null, {
-      status: 308,
-      headers: {
-        "Cache-Control": "private, no-store",
-        Location: url.toString()
-      }
-    });
-  };
-}
-
 export async function live() {
   return json({ ok: true });
 }
