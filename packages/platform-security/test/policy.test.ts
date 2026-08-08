@@ -7,11 +7,12 @@ import {
 
 describe("central platform route policy", () => {
   it("keeps public reads, human sessions, and machine APIs distinct", () => {
-    expect(classifyRoute("/", "GET")).toEqual({ kind: "public" });
+    expect(classifyRoute("/", "GET")).toEqual({ kind: "human-session" });
     expect(classifyRoute("/sign-in", "GET")).toEqual({ kind: "public" });
     expect(classifyRoute("/api/auth/callback/google", "GET")).toEqual({ kind: "public" });
-    expect(classifyRoute("/api/public/catalog", "HEAD")).toEqual({ kind: "public" });
-    expect(classifyRoute("/artifacts/abc", "GET")).toEqual({ kind: "public" });
+    expect(classifyRoute("/status", "GET")).toEqual({ kind: "human-session" });
+    expect(classifyRoute("/api/public/catalog", "HEAD")).toEqual({ kind: "human-session" });
+    expect(classifyRoute("/artifacts/abc", "GET")).toEqual({ kind: "human-session" });
     expect(classifyRoute("/artifacts/abc", "POST")).toEqual({ kind: "human-session" });
     expect(classifyRoute("/api/uploads", "POST")).toEqual({ kind: "machine", service: "uploads" });
     expect(classifyRoute("/api/agent/status", "GET")).toEqual({ kind: "machine", service: "agent" });
