@@ -56,7 +56,7 @@
         "scope": "public",
         "url": "https://tools.mauroner.net/health/publisher"
       },
-      "privateNotes": "Runs inside the unified platform service behind Cloudflare Access."
+      "privateNotes": "Runs inside the unified platform service behind the authenticated browser session."
     },
     {
       "id": "markdown-share",
@@ -87,7 +87,7 @@
         "scope": "public",
         "url": "https://markdown-share-alpha.mauroner.workers.dev/"
       },
-      "privateNotes": "Documents expire seven days after the latest accepted edit; the inventory is restricted by Cloudflare Access."
+      "privateNotes": "Documents expire seven days after the latest accepted edit; the inventory requires an authenticated browser session."
     },
     {
       "id": "field-guide-console",
@@ -112,7 +112,7 @@
         "scope": "public",
         "url": "https://tools.mauroner.net/health/review"
       },
-      "privateNotes": "Runs inside the unified platform service behind Cloudflare Access."
+      "privateNotes": "Runs inside the unified platform service behind the authenticated browser session."
     },
     {
       "id": "tools-directory",

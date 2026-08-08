@@ -7,11 +7,6 @@ import {
 } from "@tools-platform/domain";
 
 export interface ProbeOptions {
-  access?: {
-    clientId: string;
-    clientSecret: string;
-    protectedOrigins: ReadonlySet<string>;
-  };
   fetcher?: typeof fetch;
   now?: () => number;
   timeoutMs?: number;
@@ -46,8 +41,7 @@ export async function probeTarget(
         signal,
         headers: {
           "user-agent": "ToolsChecker/1.0",
-          accept: "*/*",
-          ...accessHeaders(url, options.access)
+          accept: "*/*"
         }
       });
       statusCode = response.status;
@@ -94,17 +88,6 @@ export async function probeTarget(
   } finally {
     clearTimeout(timer);
   }
-}
-
-function accessHeaders(
-  url: string | URL,
-  access: ProbeOptions["access"]
-): Record<string, string> {
-  if (!access || !access.protectedOrigins.has(new URL(url).origin)) return {};
-  return {
-    "CF-Access-Client-Id": access.clientId,
-    "CF-Access-Client-Secret": access.clientSecret
-  };
 }
 
 function observation(input: {

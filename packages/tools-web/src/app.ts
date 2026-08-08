@@ -9,7 +9,6 @@ import {
   type PrivateSnapshotDocument,
   type PublicSnapshotDocument
 } from "@tools-platform/domain";
-import { AccessDeniedError, type AccessVerifier } from "./auth.js";
 import { BucketReadError } from "./bucket.js";
 import {
   MarkdownAdminUnavailableError,
@@ -100,9 +99,24 @@ export interface AppLogger {
   error(event: string, fields: Readonly<Record<string, string | number>>): void;
 }
 
+export interface AuthenticatedPrincipal {
+  id: string;
+}
+
+export type PrincipalAuthenticator = (
+  request: Request
+) => AuthenticatedPrincipal | Promise<AuthenticatedPrincipal>;
+
+export class AuthenticationRequiredError extends Error {
+  constructor() {
+    super("Authenticated principal required");
+    this.name = "AuthenticationRequiredError";
+  }
+}
+
 export function createApp(options: {
   storage: WebStorage;
-  access: AccessVerifier;
+  authenticate: PrincipalAuthenticator;
   markdownAdmin: MarkdownAdminReader;
   markdownSharePublicOrigin: string;
   trustedOrigin: string;
@@ -121,7 +135,7 @@ export function createApp(options: {
         request,
         url,
         options.storage,
-        options.access,
+        options.authenticate,
         options.markdownAdmin,
         options.markdownSharePublicOrigin,
         renderer,
@@ -153,7 +167,7 @@ async function route(
   request: Request,
   url: URL,
   storage: WebStorage,
-  access: AccessVerifier,
+  authenticate: PrincipalAuthenticator,
   markdownAdmin: MarkdownAdminReader,
   markdownSharePublicOrigin: string,
   renderer: PageRenderer,
@@ -191,7 +205,7 @@ async function route(
   }
 
   if (isProtectedPath(url.pathname)) {
-    const actor = await access.verify(request);
+    const actor = await authenticate(request);
     if (
       readMethod &&
       (url.pathname === "/manage/status" || url.pathname === "/status/private")
@@ -885,13 +899,10 @@ function json(body: unknown, init: ResponseInit = {}): Response {
 }
 
 function errorResponse(error: unknown): Response {
-  if (error instanceof AccessDeniedError) {
+  if (error instanceof AuthenticationRequiredError) {
     return json(
-      { error: "access_required" },
-      {
-        status: 401,
-        headers: { "WWW-Authenticate": 'Bearer realm="cloudflare-access"' }
-      }
+      { error: "authentication_required" },
+      { status: 401 }
     );
   }
   if (error instanceof CatalogConflictError) {
