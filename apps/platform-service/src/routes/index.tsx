@@ -3,8 +3,10 @@ import { ToolsDirectory } from "../features/catalog/tools-directory.js";
 import { getPublicPageData } from "../public-data.js";
 import { tools } from "../route-handlers.js";
 import { faviconLink, favicons } from "../favicons.js";
+import { requireRouteSession } from "../auth-session.js";
 
 export const Route = createFileRoute("/")({
+  beforeLoad: ({ location }) => requireRouteSession(location.href),
   head: ({ loaderData }) => ({
     meta: [
       { title: "Mauroner Tools" },

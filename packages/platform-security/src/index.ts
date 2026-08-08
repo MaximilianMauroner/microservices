@@ -45,9 +45,7 @@ export type RouteAccess =
 export const SERVER_FUNCTION_BASE_PATH = "/_serverFn";
 
 const PUBLIC_PATHS = new Set([
-  "/",
   "/sign-in",
-  "/status",
   "/favicon.ico",
   "/favicon.svg",
   "/assets/markdown-admin.js",
@@ -58,7 +56,6 @@ const PUBLIC_PATHS = new Set([
   "/assets/icons/field-guide-console.png",
   "/assets/icons/tools-status-directory.png",
   "/assets/icons/network-console.png",
-  "/api/public/catalog",
   "/live",
   "/health",
   "/health/tools",
@@ -94,10 +91,6 @@ export function classifyRoute(pathname: string, method: string): RouteAccess {
   }
 
   if (isServerFunctionPath(pathname)) return { kind: "server-function" };
-
-  if (isArtifactDeliveryPath(pathname) && isReadMethod(normalizedMethod)) {
-    return { kind: "public" };
-  }
 
   return { kind: "human-session" };
 }
@@ -140,14 +133,6 @@ export function isAgentPath(pathname: string): boolean {
 
 export function isHeartbeatPath(pathname: string): boolean {
   return pathname === "/api/heartbeat/tower";
-}
-
-export function isArtifactDeliveryPath(pathname: string): boolean {
-  return matchesPrefix(pathname, ["/artifacts", "/files"]);
-}
-
-export function isReadMethod(method: string): boolean {
-  return method === "GET" || method === "HEAD";
 }
 
 function matchesPrefix(pathname: string, prefixes: readonly string[]): boolean {

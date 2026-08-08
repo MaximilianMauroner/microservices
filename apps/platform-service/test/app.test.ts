@@ -44,7 +44,17 @@ function app() {
 describe("platform fetch gateway", () => {
   it("uses one application session across every private browser surface", async () => {
     const platform = app();
-    for (const path of ["/manage", "/publish", "/review", "/tools/private/money"]) {
+    for (const path of [
+      "/",
+      "/status",
+      "/api/public/catalog",
+      "/artifacts/01234567890123456789012345678901",
+      "/files/01234567890123456789012345678901/index.html",
+      "/manage",
+      "/publish",
+      "/review",
+      "/tools/private/money"
+    ]) {
       expect((await request(platform, path)).status, path).toBe(401);
       expect(
         (await request(platform, path, { headers: { Cookie: "session=valid" } })).status,
@@ -63,17 +73,13 @@ describe("platform fetch gateway", () => {
     );
   });
 
-  it("allows public pages and canonical capability reads without a session", async () => {
+  it("keeps only sign-in infrastructure and health checks public", async () => {
     const platform = app();
     for (const path of [
-      "/",
       "/sign-in",
       "/api/auth/callback/google",
-      "/status",
       "/assets/tools.css",
-      "/api/public/catalog",
-      "/artifacts/01234567890123456789012345678901",
-      "/files/01234567890123456789012345678901/index.html"
+      "/health"
     ]) {
       expect((await request(platform, path)).status, path).toBe(200);
     }

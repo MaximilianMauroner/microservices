@@ -63,13 +63,6 @@ const platformRequestMiddleware = createMiddleware().server(
     if (headers.get("Content-Type")?.startsWith("text/html")) {
       headers.set("X-Platform-UI-Build", PLATFORM_UI_BUILD);
     }
-    if (
-      (request.method === "GET" || request.method === "HEAD") &&
-      (pathname === "/" || pathname === "/status") &&
-      response.status < 400
-    ) {
-      headers.set("Cache-Control", "public, max-age=60, stale-while-revalidate=240");
-    }
     if (classifyRoute(pathname, request.method).kind === "human-session") {
       headers.set("Cache-Control", "private, no-store");
     }
