@@ -52,7 +52,12 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
   const config = loadPlatformConfig();
   const auth = createPlatformAuth(config.auth);
   const resolvePrincipal: PrincipalResolver = (request) =>
-    resolvePlatformPrincipal(auth, request, config.auth.allowedGoogleSubject);
+    resolvePlatformPrincipal(
+      auth,
+      request,
+      config.auth.allowedGoogleSubject,
+      config.auth.allowedGoogleEmail
+    );
   const toolsBucket = createS3JsonBucket(config.tools.bucket);
   const toolsStorage = new WebStorage(toolsBucket);
   const towerHeartbeat = createTowerHeartbeat({

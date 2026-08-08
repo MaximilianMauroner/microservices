@@ -6,31 +6,55 @@ describe("Google account authorization", () => {
   it("accepts only the configured stable Google subject", () => {
     const profile = {
       sub: "allowed-subject",
-      email: "operator@example.test",
+      email: "owner@example.com",
       email_verified: true,
       name: "Operator",
       picture: "https://example.test/avatar.png"
     };
-    expect(isAllowedGoogleProfile(profile, "allowed-subject")).toBe(true);
+    expect(isAllowedGoogleProfile(
+      profile,
+      "allowed-subject",
+      "owner@example.com"
+    )).toBe(true);
     expect(isAllowedGoogleProfile(
       { ...profile, sub: "different-subject" },
-      "allowed-subject"
+      "allowed-subject",
+      "owner@example.com"
     )).toBe(false);
     expect(isAllowedGoogleProfile(
       { ...profile, email_verified: false },
-      "allowed-subject"
+      "allowed-subject",
+      "owner@example.com"
+    )).toBe(false);
+    expect(isAllowedGoogleProfile(
+      { ...profile, email: "someone-else@gmail.com" },
+      "allowed-subject",
+      "owner@example.com"
     )).toBe(false);
   });
 
   it("rechecks the configured subject when resolving a session", () => {
     const session = {
-      user: { id: "allowed-subject", email: "operator@example.test" }
+      user: { id: "allowed-subject", email: "owner@example.com" }
     };
-    expect(principalFromSession(session, "allowed-subject")).toEqual({
+    expect(principalFromSession(
+      session,
+      "allowed-subject",
+      "owner@example.com"
+    )).toEqual({
       subject: "allowed-subject",
-      email: "operator@example.test"
+      email: "owner@example.com"
     });
-    expect(principalFromSession(session, "different-subject")).toBeUndefined();
+    expect(principalFromSession(
+      session,
+      "different-subject",
+      "owner@example.com"
+    )).toBeUndefined();
+    expect(principalFromSession(
+      { user: { id: "allowed-subject", email: "someone-else@gmail.com" } },
+      "allowed-subject",
+      "owner@example.com"
+    )).toBeUndefined();
   });
 });
 

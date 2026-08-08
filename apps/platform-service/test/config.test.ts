@@ -17,6 +17,7 @@ describe("platform authentication configuration", () => {
       googleClientId: valid.GOOGLE_CLIENT_ID,
       googleClientSecret: valid.GOOGLE_CLIENT_SECRET,
       secret: valid.BETTER_AUTH_SECRET,
+      allowedGoogleEmail: "owner@example.com",
       allowedGoogleSubject: valid.AUTH_ALLOWED_GOOGLE_SUBJECT
     });
   });

@@ -29,7 +29,11 @@ export function createPlatformAuth(config: PlatformAuthConfig) {
             token: tokens.idToken,
             audience: config.googleClientId
           });
-          if (!isAllowedGoogleProfile(profile, config.allowedGoogleSubject)) {
+          if (!isAllowedGoogleProfile(
+            profile,
+            config.allowedGoogleSubject,
+            config.allowedGoogleEmail
+          )) {
             return null;
           }
           return {
@@ -83,13 +87,13 @@ export type PlatformAuth = ReturnType<typeof createPlatformAuth>;
 /** Checks Google's verified ID-token claims before Better Auth creates a session. */
 export function isAllowedGoogleProfile(
   profile: unknown,
-  allowedSubject: string
+  allowedSubject: string,
+  allowedEmail: string
 ): profile is GoogleProfile {
   if (!profile || typeof profile !== "object") return false;
   const claims = profile as Record<string, unknown>;
   return claims.sub === allowedSubject &&
-    typeof claims.email === "string" &&
-    claims.email.length > 0 &&
+    claims.email === allowedEmail &&
     claims.email_verified === true &&
     typeof claims.name === "string" &&
     claims.name.length > 0 &&
@@ -99,11 +103,12 @@ export function isAllowedGoogleProfile(
 export async function resolvePlatformPrincipal(
   auth: PlatformAuth,
   request: Request,
-  allowedSubject: string
+  allowedSubject: string,
+  allowedEmail: string
 ): Promise<PlatformPrincipal | undefined> {
   try {
     const session = await auth.api.getSession({ headers: request.headers });
-    return principalFromSession(session, allowedSubject);
+    return principalFromSession(session, allowedSubject, allowedEmail);
   } catch {
     return undefined;
   }
@@ -111,8 +116,13 @@ export async function resolvePlatformPrincipal(
 
 export function principalFromSession(
   session: { user: { id: string; email: string } } | null,
-  allowedSubject: string
+  allowedSubject: string,
+  allowedEmail: string
 ): PlatformPrincipal | undefined {
-  if (!session || session.user.id !== allowedSubject) return undefined;
+  if (
+    !session ||
+    session.user.id !== allowedSubject ||
+    session.user.email !== allowedEmail
+  ) return undefined;
   return { subject: session.user.id, email: session.user.email };
 }
