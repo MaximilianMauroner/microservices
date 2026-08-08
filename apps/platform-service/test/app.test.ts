@@ -48,8 +48,6 @@ describe("platform fetch gateway", () => {
       "/",
       "/status",
       "/api/public/catalog",
-      "/artifacts/01234567890123456789012345678901",
-      "/files/01234567890123456789012345678901/index.html",
       "/manage",
       "/publish",
       "/review",
@@ -73,16 +71,21 @@ describe("platform fetch gateway", () => {
     );
   });
 
-  it("keeps only sign-in infrastructure and health checks public", async () => {
+  it("keeps sign-in infrastructure, health checks, and capability reads public", async () => {
     const platform = app();
     for (const path of [
       "/sign-in",
       "/api/auth/callback/google",
       "/assets/tools.css",
-      "/health"
+      "/health",
+      "/artifacts/01234567890123456789012345678901",
+      "/files/01234567890123456789012345678901/index.html"
     ]) {
       expect((await request(platform, path)).status, path).toBe(200);
     }
+
+    expect((await request(platform, "/artifacts/id", { method: "POST" })).status).toBe(401);
+    expect((await request(platform, "/files/id/index.html", { method: "DELETE" })).status).toBe(401);
   });
 
   it("keeps machine APIs on their native service tokens", async () => {
