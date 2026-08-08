@@ -2,7 +2,7 @@ import { createFetchApp, createS3UploadStorage, ActivityTracker } from "@tools-p
 import { createApp as createFieldGuideApp } from "@tools-platform/field-guide/app";
 import { agentAuth } from "@tools-platform/field-guide/auth";
 import { createRepository } from "@tools-platform/field-guide/repository";
-import { readReviewStylesheet } from "@tools-platform/field-guide/stylesheet";
+import reviewStylesheet from "../../../packages/field-guide-console/public/review.css?raw";
 import {
   createApp as createToolsApp,
   createMarkdownAdminClient,
@@ -17,7 +17,7 @@ import { loadPlatformConfig } from "./config.js";
 import { startAlignedScheduler } from "./scheduler.js";
 import { createTowerHeartbeat, type TowerHeartbeat } from "./tower-heartbeat.js";
 import { PLATFORM_UI_BUILD } from "./build-identity.js";
-import { createMoneyTracker } from "./money-tracker.js";
+import { createMoneyTracker } from "./features/money/money-tracker.js";
 
 export type PlatformRuntime = {
   publicOrigin: string;
@@ -77,7 +77,6 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
   });
 
   try {
-    const stylesheet = await readReviewStylesheet();
     const toolsAccess = contextAwareAccessVerifier(access.manage);
     const reviewAccess = contextAwareAccessVerifier(access.review);
     const tools = createToolsApp({
@@ -92,7 +91,7 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
       agentAuth: agentAuth(config.fieldGuide.agentApiToken),
       reviewerAuth: accessAuthentication(reviewAccess),
       publicBaseUrl: config.publicOrigin,
-      stylesheet: new TextDecoder().decode(stylesheet),
+      stylesheet: reviewStylesheet,
       decisionRecordArchiveDays: config.fieldGuide.decisionRecordArchiveDays
     });
     const artifact = createFetchApp({

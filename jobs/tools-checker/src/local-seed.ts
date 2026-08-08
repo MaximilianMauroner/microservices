@@ -52,7 +52,7 @@ const catalogPath = env(
   "SEED_CATALOG_PATH",
   path.join(
     import.meta.dirname,
-    "../../../apps/tools-web/config/initial-catalog.json"
+    "../../../packages/tools-web/config/initial-catalog.json"
   )
 );
 

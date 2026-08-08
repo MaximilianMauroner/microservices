@@ -12,9 +12,14 @@ export type PlatformRequestContext = {
 };
 
 const platformRequestMiddleware = createMiddleware().server(
-  async ({ request, next }) => {
+  async ({ request, handlerType, next }) => {
     const runtime = await getPlatformRuntime();
-    if (runtime.readOnly && request.method !== "GET" && request.method !== "HEAD") {
+    if (
+      runtime.readOnly &&
+      handlerType !== "serverFn" &&
+      request.method !== "GET" &&
+      request.method !== "HEAD"
+    ) {
       return new Response(JSON.stringify({ error: "read_only_local_mode" }), {
         status: 405,
         headers: {
@@ -82,7 +87,11 @@ const platformRequestMiddleware = createMiddleware().server(
 );
 
 const csrfMiddleware = createCsrfMiddleware({
-  filter: ({ handlerType }) => handlerType === "serverFn"
+  filter: ({ handlerType }) => handlerType === "serverFn",
+  origin: (origin) => origin === process.env.PUBLIC_ORIGIN,
+  // TanStack invokes loaders through an internal server-function request during SSR.
+  // Those requests have no browser Origin headers; cross-origin browser requests do.
+  allowRequestsWithoutOriginCheck: true
 });
 
 export const startInstance = createStart(() => ({

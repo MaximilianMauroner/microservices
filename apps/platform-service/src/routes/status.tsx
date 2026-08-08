@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { ToolsStatus } from "../components/tools-status.js";
+import { ToolsStatus } from "../features/status/tools-status.js";
 import { getPublicPageData } from "../public-data.js";
 import { tools } from "../route-handlers.js";
+import { faviconLink, favicons } from "../favicons.js";
 
 export const Route = createFileRoute("/status")({
   head: ({ loaderData }) => ({
@@ -14,7 +15,10 @@ export const Route = createFileRoute("/status")({
       { property: "og:url", content: `${loaderData?.publicOrigin ?? ""}/status` },
       { property: "og:type", content: "website" }
     ],
-    links: loaderData ? [{ rel: "canonical", href: `${loaderData.publicOrigin}/status` }] : []
+    links: [
+      faviconLink(favicons.directory),
+      ...(loaderData ? [{ rel: "canonical", href: `${loaderData.publicOrigin}/status` }] : [])
+    ]
   }),
   loader: () => getPublicPageData(),
   component: ToolsStatusRoute,

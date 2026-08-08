@@ -16,7 +16,7 @@ import type {
 } from "@tools-platform/field-guide";
 import { createPlatformAccessFunctionMiddleware } from "./access-middleware.js";
 import { internalPlatformRequest, readPlatformJson } from "./server-data.js";
-import type { MoneyTrackerSnapshot } from "./money-tracker.js";
+import type { MoneyTrackerSnapshot } from "./features/money/money-tracker.js";
 
 const reviewAccessMiddleware = createPlatformAccessFunctionMiddleware("review");
 const publisherAccessMiddleware = createPlatformAccessFunctionMiddleware("publisher");

@@ -6,7 +6,7 @@ import { nitro } from "nitro/vite";
 import { defineConfig } from "vite";
 
 export default defineConfig({
-  publicDir: "../tools-web/public",
+  publicDir: new URL("../../packages/tools-web/public", import.meta.url).pathname,
   plugins: [
     tailwindcss(),
     tanstackStart({ serverFns: { base: SERVER_FUNCTION_BASE_PATH } }),

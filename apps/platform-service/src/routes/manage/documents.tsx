@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { DocumentsPage } from "../../components/documents-page.js";
+import { DocumentsPage } from "../../features/documents/documents-page.js";
 import { getDocumentsPageData } from "../../protected-data.js";
 
 export const Route = createFileRoute("/manage/documents")({

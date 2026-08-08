@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { MoneyTrackerPage, MoneyTrackerPendingPage, type MoneyTrackerView } from "../../../components/money-tracker-page.js";
+import { MoneyTrackerPage, MoneyTrackerPendingPage, type MoneyTrackerView } from "../../../features/money/money-tracker-page.js";
 import { getMoneyTrackerPageData } from "../../../protected-data.js";
+import { faviconLink, favicons } from "../../../favicons.js";
 
 export const Route = createFileRoute("/tools/private/money")({
   validateSearch: (search: Record<string, unknown>): { view?: Exclude<MoneyTrackerView, "overview"> } => ({ view: search.view === "accounts" || search.view === "history" || search.view === "predictions" ? search.view : undefined }),
@@ -8,7 +9,10 @@ export const Route = createFileRoute("/tools/private/money")({
   pendingComponent: MoneyTrackerPendingRoute,
   pendingMs: 0,
   pendingMinMs: 250,
-  head: () => ({ meta: [{ title: "Money tracker — Mauroner Tools" }, { name: "robots", content: "noindex, nofollow" }] }),
+  head: () => ({
+    meta: [{ title: "Money tracker — Mauroner Tools" }, { name: "robots", content: "noindex, nofollow" }],
+    links: [faviconLink(favicons.money)]
+  }),
   component: MoneyTrackerRoute
 });
 

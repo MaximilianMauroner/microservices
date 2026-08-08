@@ -1,18 +1,24 @@
 # Tools Platform
 
-Small hosted utilities and operational consoles live in `apps/*`. Their runtime
-modules are mounted by one production service so compute and authentication
-share a single boundary. Shared pure contracts belong in `packages/*`.
+Runtime ownership is encoded in the top-level directory. Independently deployed
+applications live in `apps/*`, reusable capabilities live in `packages/*`, and
+background processes live in `jobs/*`. The TanStack application in
+`apps/platform-service` owns every integrated route and its SPA navigation.
+
+Public versus private access is intentionally independent of that layout. Both
+platform routes and external applications may be public, Access-protected, or
+private-network-only; the typed catalog records that access boundary.
 
 ## Components
 
 | Service | Path | Runtime | Purpose |
 | --- | --- | --- | --- |
 | Platform service | `apps/platform-service` | Railway | Single HTTP process, checker scheduler, and Cloudflare Access boundary for all hosted tools. |
-| Artifact publisher | `apps/artifact-publisher` | Railway | Sandboxed planning pages, temporary file uploads, resumable downloads, and revocation. |
-| Field guide console | `apps/field-guide-console` | Railway | Agent decision inbox plus review-only approval and lifecycle history for field-guide lessons. |
+| Artifact publisher | `packages/artifact-publisher` | Platform capability | Sandboxed planning pages, temporary file uploads, resumable downloads, and revocation. |
+| Field guide console | `packages/field-guide-console` | Platform capability | Agent decision inbox plus review-only approval and lifecycle history for field-guide lessons. |
+| Markdown Share | `apps/markdown-share` | Cloudflare | Independently hosted collaborative Markdown application. |
 | Network console | `apps/network-console` | Local VM systemd service | Port-80 dashboard for Tailscale address and listening-port discovery. |
-| Tools Web | `apps/tools-web` | In-process module | Public tools directory and Cloudflare Access-protected catalog operations. |
+| Tools Web | `packages/tools-web` | Platform capability | Public tools directory and Cloudflare Access-protected catalog operations. |
 | Tools Checker | `jobs/tools-checker` | In-process module | One bounded status/incident/notification pass every five minutes. |
 | Tools Domain | `packages/tools-domain` | Pure TypeScript | Shared schemas, safe projections, URL/IP validation, transitions, and bucket keys. |
 
@@ -55,19 +61,17 @@ The local stack sets `PLATFORM_LOCAL_AUTH=true` so every route is available for
 development without Cloudflare Access.
 
 
-Run an individual component's tests from its package directory. The following
-standalone shortcuts are retained for machine-API and focused development work:
+Run an individual component's tests from its package directory. Only independently
+running processes have standalone start shortcuts:
 
 ```bash
-bun run start:artifact-publisher
-bun run start:field-guide-console
 bun run start:network-console
-bun run start:tools-web
+bun run start:markdown-share
 bun run start:tools-checker
 ```
 
-The root deploys `apps/platform-service` using `/railway.json`. Standalone
-Publisher and Field Guide processes do not provide browser authentication:
+The root deploys `apps/platform-service` using `/railway.json`. Embedded
+capabilities are never deployed independently:
 their browser routes fail with `503`; use the unified service for browser work.
 
 ## Deployment Notes

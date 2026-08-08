@@ -10,11 +10,14 @@
     "cssVariables": true,
     "prefix": ""
   },
+  "iconLibrary": "lucide",
   "aliases": {
     "components": "@/components",
     "utils": "@/lib/utils",
-    "hooks": "@/hooks",
-    "ui": "@/components/ui"
+    "ui": "@/components/ui",
+    "hooks": "@/hooks"
   },
-  "iconLibrary": "lucide"
+  "registries": {
+    "@evilcharts": "https://evilcharts.com/r/{name}.json"
+  }
 }

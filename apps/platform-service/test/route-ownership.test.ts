@@ -13,17 +13,18 @@ describe("primary page ownership", () => {
     expect(source).not.toContain("fullPath: '/manage/$'");
   });
 
-  it("uses document navigation for Cloudflare Access-protected review links", () => {
-    const source = readFileSync(new URL("../src/components/review-page.tsx", import.meta.url), "utf8");
+  it("uses preloaded client navigation for review links", () => {
+    const source = readFileSync(new URL("../src/features/review/review-page.tsx", import.meta.url), "utf8");
     const reviewLinks = [...source.matchAll(/<Link to="\/review"[^>]*>/g)].map(([link]) => link);
     expect(reviewLinks.length).toBeGreaterThan(0);
-    expect(reviewLinks.every((link) => link.includes("reloadDocument"))).toBe(true);
+    expect(reviewLinks.every((link) => link.includes('preload="intent"'))).toBe(true);
+    expect(reviewLinks.every((link) => !link.includes("reloadDocument"))).toBe(true);
     expect(source).toContain("window.location.replace(`/review?${params}`)");
     expect(source).not.toContain("useNavigate");
   });
 
   it("keeps catalog management read-only at both UI and API boundaries", () => {
-    const page = readFileSync(new URL("../src/components/manage-page.tsx", import.meta.url), "utf8");
+    const page = readFileSync(new URL("../src/features/manage/manage-page.tsx", import.meta.url), "utf8");
     const route = readFileSync(new URL("../src/routes/api/ops/$.ts", import.meta.url), "utf8");
 
     for (const mutation of ["Save group", "Save entry", "Delete", "Add group", "Add entry", "method: \"POST\"", "method: \"PATCH\""]) {

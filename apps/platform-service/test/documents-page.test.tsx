@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { DocumentsPage, filterDocuments } from "../src/components/documents-page.js";
+import { DocumentsPage, filterDocuments } from "../src/features/documents/documents-page.js";
 
 const now = Date.UTC(2026, 7, 4, 12);
 const documents = [
