@@ -12,18 +12,19 @@ import { Badge } from "../../components/ui/badge.js";
 import { Button } from "../../components/ui/button.js";
 import { Card } from "../../components/ui/card.js";
 import { formatTimestamp, resolveBrowserLink } from "../catalog/tools-directory.js";
+import { projectPrivateCatalog } from "../catalog/private-catalog-projection.js";
 
 type OverallState = "operational" | "attention" | "outage" | "unknown";
 
 export function ToolsStatus({ snapshot, publicOrigin }: { snapshot: PublicSnapshotDocument | PrivateSnapshotDocument; publicOrigin: string }) {
   if ("catalog" in snapshot) {
-    return <ToolsStatusView snapshot={statusSnapshot(snapshot, "all")} publicOrigin={publicOrigin} view="combined" />;
+    return <ToolsStatusView snapshot={projectPrivateCatalog(snapshot, "all")} publicOrigin={publicOrigin} view="combined" />;
   }
   return <ToolsStatusView snapshot={snapshot} publicOrigin={publicOrigin} view="public" />;
 }
 
 export function PrivateToolsStatus({ snapshot, actor, publicOrigin }: { snapshot: PrivateSnapshotDocument; actor: string; publicOrigin: string }) {
-  return <ToolsStatusView snapshot={statusSnapshot(snapshot, "private")} publicOrigin={publicOrigin} view="private" actor={actor} />;
+  return <ToolsStatusView snapshot={projectPrivateCatalog(snapshot, "private")} publicOrigin={publicOrigin} view="private" actor={actor} />;
 }
 
 function ToolsStatusView({ snapshot, publicOrigin, view, actor }: { snapshot: PublicSnapshotDocument; publicOrigin: string; view: "public" | "combined" | "private"; actor?: string }) {
@@ -291,40 +292,3 @@ function formatClock(value: Date) { return new Intl.DateTimeFormat("en", { hour:
 function formatShortDate(value: Date) { return new Intl.DateTimeFormat("en", { month: "short", day: "numeric", timeZone: "UTC" }).format(value); }
 function byOrderThenId<T extends { id: string; order: number }>(a: T, b: T) { return a.order - b.order || a.id.localeCompare(b.id); }
 function safeHttpUrl(value: string) { try { const url = new URL(value); return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : null; } catch { return null; } }
-
-function statusSnapshot(snapshot: PrivateSnapshotDocument, visibility: "all" | "private"): PublicSnapshotDocument {
-  const groupVisibility = new Map(snapshot.catalog.groups.map((group) => [group.id, group.visibility]));
-  const entries = snapshot.catalog.entries
-    .filter((entry) => entry.lifecycle === "active" && (visibility === "all" || !(entry.visibility === "public" && groupVisibility.get(entry.groupId) === "public")))
-    .map((entry) => ({
-      id: entry.id,
-      groupId: entry.groupId,
-      name: entry.name,
-      description: entry.description,
-      order: entry.order,
-      links: entry.links.map(({ id, label, url, access }) => ({ id, label, url, access: access === "private" ? "restricted" as const : access }))
-    }));
-  const entryIds = new Set(entries.map((entry) => entry.id));
-  const statuses: Record<string, PublicMonitorStatus> = {};
-  for (const entry of snapshot.catalog.entries) {
-    if (!entryIds.has(entry.id) || !entry.monitor?.enabled) continue;
-    const monitor = snapshot.state.monitors[entry.id];
-    statuses[entry.id] = {
-      monitorId: entry.id,
-      status: monitor?.status ?? (entry.monitor.paused ? "paused" : "checking"),
-      checkedAt: monitor?.latestObservation?.checkedAt ?? null,
-      latencyMs: monitor?.latestObservation?.latencyMs ?? null,
-      statusCode: monitor?.latestObservation?.statusCode ?? null,
-      uptimeDays: monitor?.uptimeDays ?? [],
-      downtimeRecords: snapshot.state.incidents.filter(({ monitorId }) => monitorId === entry.id).map(({ startedAt, resolvedAt }) => ({ startedAt, resolvedAt }))
-    };
-  }
-  return {
-    schemaVersion: snapshot.schemaVersion,
-    generatedAt: snapshot.generatedAt,
-    catalogRevision: snapshot.catalogRevision,
-    groups: snapshot.catalog.groups.filter((group) => entries.some((entry) => entry.groupId === group.id)).map(({ id, name, description, order }) => ({ id, name, ...(description === undefined ? {} : { description }), order })),
-    entries,
-    statuses
-  };
-}

@@ -102,8 +102,20 @@ describe("TanStack Start public pages", () => {
     expect(html).toContain('data-variant="default"');
     expect(html).toContain('href="#catalog"');
     expect(html).toContain("Browse tools");
+    expect(html).toContain("Personal tools");
+    expect(html).toContain('href="/tools/private/money"');
+    expect(html).not.toContain('id="private-tools-title"');
     expect(html).toContain('href="/publish"');
     expect(html).not.toContain('href="https://tools.mauroner.net/publish"');
+  });
+
+  it("includes private catalog destinations in the authenticated directory", () => {
+    const html = renderToStaticMarkup(
+      <ToolsDirectory snapshot={privateSnapshot} publicOrigin="https://tools.mauroner.net" />
+    );
+
+    expect(html).toContain("Private console");
+    expect(html).toContain('href="https://private.example.test/"');
   });
 
   it("renders status semantics and the rolling availability window", () => {

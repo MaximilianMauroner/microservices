@@ -1,5 +1,6 @@
 import type {
   MonitorStatus,
+  PrivateSnapshotDocument,
   PublicCatalogEntry,
   PublicMonitorStatus,
   PublicSnapshotDocument
@@ -10,6 +11,7 @@ import { LocalTimestamp } from "../../components/local-time.js";
 import { Badge } from "../../components/ui/badge.js";
 import { Button } from "../../components/ui/button.js";
 import { Card, CardHeader } from "../../components/ui/card.js";
+import { projectPrivateCatalog } from "./private-catalog-projection.js";
 
 const iconPaths: Readonly<Record<string, string>> = {
   "artifact-publisher": "/assets/icons/artifact-publisher.png",
@@ -27,12 +29,13 @@ const statusLabels: Record<MonitorStatus, string> = {
 };
 
 export function ToolsDirectory({
-  snapshot,
+  snapshot: sourceSnapshot,
   publicOrigin
 }: {
-  snapshot: PublicSnapshotDocument;
+  snapshot: PublicSnapshotDocument | PrivateSnapshotDocument;
   publicOrigin: string;
 }) {
+  const snapshot = "catalog" in sourceSnapshot ? projectPrivateCatalog(sourceSnapshot, "all") : sourceSnapshot;
   const groups = [...snapshot.groups].sort(byOrderThenId);
   const entries = [...snapshot.entries].sort(byOrderThenId);
 
@@ -84,13 +87,13 @@ export function ToolsDirectory({
               </section>
             );
           })}
-          <section className="border-t py-8 sm:py-10" aria-labelledby="private-tools-title">
+          <section className="border-t py-8 sm:py-10" aria-labelledby="personal-tools-title">
             <header className="grid grid-cols-[3rem_minmax(0,1fr)] gap-3 sm:grid-cols-[4rem_minmax(0,1fr)]">
               <p className="pt-1 font-mono text-xs text-muted-foreground">{String(groups.length + 1).padStart(2, "0")}</p>
-              <div><h2 id="private-tools-title" className="text-xl font-semibold tracking-tight sm:text-2xl">Private</h2><p className="mt-2 text-sm text-muted-foreground">Personal tools protected by your Google session.</p></div>
+              <div><h2 id="personal-tools-title" className="text-xl font-semibold tracking-tight sm:text-2xl">Personal tools</h2><p className="mt-2 text-sm text-muted-foreground">Utilities backed by personal data and services.</p></div>
             </header>
             <ul className="mt-5 grid list-none gap-3 pl-0 sm:ml-16" role="list">
-              <li><Card className="gap-4 border-input bg-card p-5 sm:p-6"><CardHeader className="items-start"><div><p className="mb-2 flex items-center gap-1.5 font-mono text-[0.65rem] font-semibold uppercase tracking-wide text-sky-400"><span className="suite-lock" aria-hidden="true" />Google session</p><h3 className="text-lg font-semibold">Money tracker</h3></div><Badge variant="outline">Private</Badge></CardHeader><p className="text-sm leading-6 text-muted-foreground">Track cash, stocks, account changes, and monthly net worth from Google Sheets.</p><div><Button variant="outline" render={<Link to="/tools/private/money" preload="intent" />}>Open money tracker <span aria-hidden="true">›</span></Button></div></Card></li>
+              <li><Card className="gap-4 border-input bg-card p-5 sm:p-6"><CardHeader className="items-start"><div><p className="mb-2 font-mono text-[0.65rem] font-semibold uppercase tracking-wide text-sky-400">Google Sheets</p><h3 className="text-lg font-semibold">Money tracker</h3></div><Badge variant="outline">Read only</Badge></CardHeader><p className="text-sm leading-6 text-muted-foreground">Track cash, stocks, account changes, and monthly net worth from Google Sheets.</p><div><Button variant="outline" render={<Link to="/tools/private/money" preload="intent" />}>Open money tracker <span aria-hidden="true">›</span></Button></div></Card></li>
             </ul>
           </section>
         </section>

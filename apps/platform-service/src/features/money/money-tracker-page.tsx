@@ -38,7 +38,7 @@ export function MoneyTrackerPage(props: MoneyTrackerPageData & { view: MoneyTrac
 
   return <><AppShell active="tools" showSignOut /><main id="main" className="app-page space-y-4">
     <header className="app-heading mb-0">
-      <div><p className="eyebrow">Private / Money</p><h1>{props.view === "overview" ? "Net worth" : props.view === "accounts" ? "Accounts" : props.view === "history" ? "Snapshot history" : "Balance predictions"}</h1><p>Monthly balance snapshots from Google Sheets.</p></div>
+      <div><p className="eyebrow">Money tracker</p><h1>{props.view === "overview" ? "Net worth" : props.view === "accounts" ? "Accounts" : props.view === "history" ? "Snapshot history" : "Balance predictions"}</h1><p>Monthly balance snapshots from Google Sheets.</p></div>
       <div className="app-heading__actions">{props.view === "predictions" ? <span className="text-xs text-muted-foreground">History used</span> : null}<PeriodButton active={period === "6m"} onClick={() => setPeriod("6m")}>6M</PeriodButton><PeriodButton active={period === "1y"} onClick={() => setPeriod("1y")}>1Y</PeriodButton><PeriodButton active={period === "all"} onClick={() => setPeriod("all")}>All</PeriodButton><Badge variant="outline">Read only</Badge><Badge variant="outline">{props.actor}</Badge></div>
     </header>
     <MoneyNav view={props.view} />
@@ -52,7 +52,7 @@ export function MoneyTrackerPage(props: MoneyTrackerPageData & { view: MoneyTrac
 export function MoneyTrackerPendingPage({ view }: { view: MoneyTrackerView }) {
   return <><AppShell active="tools" showSignOut /><main id="main" className="app-page space-y-4" aria-busy="true">
     <header className="app-heading mb-0">
-      <div><p className="eyebrow">Private / Money</p><h1>{view === "overview" ? "Net worth" : view === "accounts" ? "Accounts" : view === "history" ? "Snapshot history" : "Balance predictions"}</h1><p>Loading monthly balance snapshots.</p></div>
+      <div><p className="eyebrow">Money tracker</p><h1>{view === "overview" ? "Net worth" : view === "accounts" ? "Accounts" : view === "history" ? "Snapshot history" : "Balance predictions"}</h1><p>Loading monthly balance snapshots.</p></div>
       <Badge variant="outline">Read only</Badge>
     </header>
     <MoneyNav view={view} />
