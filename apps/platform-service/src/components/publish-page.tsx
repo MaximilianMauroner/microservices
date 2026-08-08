@@ -209,7 +209,7 @@ function UploadRow({ upload, onMessage }: { upload: UploadSummary; onMessage: (m
   }
   return (
     <div className="grid gap-3 border-b p-4 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center">
-      <div className="flex min-w-0 items-center gap-3"><span className="grid size-9 shrink-0 place-items-center rounded-md border text-muted-foreground" aria-hidden="true">{upload.kind === "html" ? "▤" : "⇩"}</span><div className="min-w-0"><strong className="block truncate text-sm">{upload.filename}</strong><small className="text-xs text-muted-foreground">{upload.kind === "html" ? "Plan" : "File"} · {formatBytes(upload.bytes)}{upload.expiresAt ? ` · expires ${formatDate(upload.expiresAt)}` : " · persistent"}</small></div></div>
+      <div className="flex min-w-0 items-center gap-3"><span className="grid size-9 shrink-0 place-items-center rounded-md border text-muted-foreground" aria-hidden="true">{upload.kind === "html" ? "▤" : "⇩"}</span><div className="min-w-0"><strong className="block truncate text-sm">{upload.filename}</strong><small className="text-xs text-muted-foreground">{upload.kind === "html" ? "Plan" : "File"}{upload.project ? ` · ${upload.project}` : ""} · {formatBytes(upload.bytes)}{upload.expiresAt ? ` · expires ${formatDate(upload.expiresAt)}` : " · persistent"}</small></div></div>
       <time className="text-xs text-muted-foreground" dateTime={upload.updatedAt}>Uploaded {formatDate(upload.updatedAt)}</time>
       <div className="flex justify-end gap-1"><Button type="button" variant="ghost" size="sm" onClick={() => void copyUrl()}>Copy</Button><Button nativeButton={false} variant="secondary" size="sm" render={<a href={upload.url} target="_blank" rel="noreferrer" />}>Open ↗</Button></div>
     </div>

@@ -20,7 +20,9 @@ import {
 } from "./external-upload-page.js";
 import {
   attachmentDisposition,
+  MAX_PROJECT_NAME_BYTES,
   normalizeMimeType,
+  normalizeProjectName,
   safeFileName
 } from "./file-metadata.js";
 import {
@@ -144,11 +146,12 @@ export function createApp(options: CreateAppOptions) {
     }),
     limits: {
       fieldNameSize: 64,
-      fields: 0,
+      fieldSize: MAX_PROJECT_NAME_BYTES,
+      fields: 1,
       files: 1,
       fileSize: maxUploadBytes,
       headerPairs: 100,
-      parts: 2
+      parts: 3
     }
   };
   const upload = multer(uploadOptions).single("file");
@@ -270,6 +273,7 @@ export function createApp(options: CreateAppOptions) {
                   : `${baseUrl}/files/${upload.id}/${encodeURIComponent(upload.originalName)}`,
               bytes: upload.bytes,
               updatedAt: upload.updatedAt.toISOString(),
+              ...(upload.project ? { project: upload.project } : {}),
               ...(upload.expiresAt
                 ? { expiresAt: upload.expiresAt.toISOString() }
                 : {})
@@ -763,6 +767,12 @@ async function handleUpload(
       res.status(400).json({ error: "missing_file", message: "Expected multipart field `file`." });
       return;
     }
+    const uploadProject = parseUploadProject(req.body);
+    if (!uploadProject.ok) {
+      operation.complete();
+      res.status(400).json({ error: "invalid_project", message: uploadProject.message });
+      return;
+    }
 
     const uploadType =
       mode.kind === "create" && mode.temporaryOnly
@@ -791,6 +801,7 @@ async function handleUpload(
       uploadType.kind === "temporary" ? "download" : "page.html"
     );
     const baseUrl = getPublicBaseUrl(req, options.publicBaseUrl);
+    let project = uploadProject.project;
 
     let updateEtag: string | undefined;
     if (mode.kind === "update") {
@@ -807,6 +818,7 @@ async function handleUpload(
         return;
       }
       existing.body.destroy();
+      project ??= existing.project;
       if (!existing.etag) {
         throw new Error(`Stored HTML ${id} is missing an ETag`);
       }
@@ -827,7 +839,8 @@ async function handleUpload(
           {
             bytes: file.size,
             originalName,
-            sha256
+            sha256,
+            ...(project ? { project } : {})
           },
           { ifMatch: updateEtag, signal: operation.signal }
         );
@@ -852,7 +865,8 @@ async function handleUpload(
         contentType: HTML_CONTENT_TYPE,
         url: `${baseUrl}/artifacts/${id}`,
         bytes: file.size,
-        sha256
+        sha256,
+        ...(project ? { project } : {})
       });
       responseSent = true;
       return;
@@ -904,6 +918,34 @@ async function handleUpload(
       await safeUnlink(file.path);
     }
   }
+}
+
+function parseUploadProject(body: unknown):
+  | { ok: true; project?: string }
+  | { ok: false; message: string } {
+  if (!body || typeof body !== "object") {
+    return { ok: true };
+  }
+
+  const fields = Object.keys(body);
+  if (fields.length === 0) {
+    return { ok: true };
+  }
+  if (fields.length !== 1 || fields[0] !== "project") {
+    return {
+      ok: false,
+      message: "Only the optional multipart field `project` is supported."
+    };
+  }
+
+  const value = (body as Record<string, unknown>).project;
+  const project = typeof value === "string" ? normalizeProjectName(value) : undefined;
+  return project
+    ? { ok: true, project }
+    : {
+        ok: false,
+        message: "Project must be a non-empty name of at most 240 UTF-8 bytes."
+      };
 }
 
 function requireUploadToken(uploadToken: string) {

@@ -16,6 +16,7 @@ import type {
 } from "@tools-platform/field-guide";
 import { createPlatformAccessFunctionMiddleware } from "./access-middleware.js";
 import { internalPlatformRequest, readPlatformJson } from "./server-data.js";
+import type { MoneyTrackerSnapshot } from "./money-tracker.js";
 
 const reviewAccessMiddleware = createPlatformAccessFunctionMiddleware("review");
 const publisherAccessMiddleware = createPlatformAccessFunctionMiddleware("publisher");
@@ -85,6 +86,7 @@ export type UploadSummary = {
   bytes: number;
   updatedAt: string;
   expiresAt?: string;
+  project?: string;
 };
 
 export type UploadPageData = {
@@ -118,6 +120,18 @@ export type DocumentsPageData = MarkdownAdminSnapshot & {
   actor: string;
   publicOrigin: string;
 };
+
+export type MoneyTrackerPageData = MoneyTrackerSnapshot & { actor: string };
+
+export const getMoneyTrackerPageData = createServerFn({ method: "GET" })
+  .middleware([manageAccessMiddleware])
+  .handler(async (): Promise<MoneyTrackerPageData> => {
+    const { context } = internalPlatformRequest("/tools/private/money");
+    return {
+      actor: context.accessActor?.id ?? "Access protected",
+      ...await context.runtime.moneyTracker.readSnapshot()
+    };
+  });
 
 export const getPrivateStatusPageData = createServerFn({ method: "GET" })
   .middleware([manageAccessMiddleware])

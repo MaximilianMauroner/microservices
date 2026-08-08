@@ -13,7 +13,9 @@ import {
 import {
   attachmentDisposition,
   originalNameMetadata,
-  readOriginalNameMetadata
+  projectMetadata,
+  readOriginalNameMetadata,
+  readProjectMetadata
 } from "./file-metadata.js";
 
 const TEMPORARY_FILE_PREFIX = "files/";
@@ -70,6 +72,7 @@ export type StoredHtml = {
   etag?: string;
   sha256?: string;
   lastModified?: Date;
+  project?: string;
 };
 
 export type StoredTemporaryFile = {
@@ -87,6 +90,7 @@ export type PutHtmlMetadata = {
   bytes: number;
   originalName: string;
   sha256: string;
+  project?: string;
 };
 
 export type PutTemporaryFileMetadata = {
@@ -105,6 +109,7 @@ export type StoredUploadSummary = {
   contentType: string;
   updatedAt: Date;
   expiresAt?: Date;
+  project?: string;
 };
 
 export interface UploadStorage {
@@ -192,6 +197,7 @@ export function createS3UploadStorage(config: S3UploadStorageConfig): UploadStor
             IfMatch: options?.ifMatch,
             Metadata: {
               ...originalNameMetadata(metadata.originalName),
+              ...projectMetadata(metadata.project),
               bytes: String(metadata.bytes),
               sha256: metadata.sha256
             }
@@ -216,13 +222,15 @@ export function createS3UploadStorage(config: S3UploadStorageConfig): UploadStor
             }),
             requestOptions(options)
           );
+          const project = readProjectMetadata(result.Metadata ?? {});
 
           return {
             body: Readable.from(Buffer.alloc(0)),
             bytes: result.ContentLength ?? 0,
             etag: result.ETag,
             sha256: result.Metadata?.sha256,
-            lastModified: result.LastModified
+            lastModified: result.LastModified,
+            ...(project ? { project } : {})
           };
         }
 
@@ -233,13 +241,15 @@ export function createS3UploadStorage(config: S3UploadStorageConfig): UploadStor
           }),
           requestOptions(options)
         );
+        const project = readProjectMetadata(result.Metadata ?? {});
 
         return {
           body: await readableBody(result.Body),
           bytes: result.ContentLength ?? 0,
           etag: result.ETag,
           sha256: result.Metadata?.sha256,
-          lastModified: result.LastModified
+          lastModified: result.LastModified,
+          ...(project ? { project } : {})
         };
       } catch (error) {
         if (isNotFoundError(error)) {
@@ -654,6 +664,7 @@ async function headUploadSummary(
     const updatedAt = result.LastModified ?? candidate.updatedAt;
 
     if (candidate.kind === "html") {
+      const project = readProjectMetadata(metadata);
       return {
         id: candidate.id,
         kind: "html",
@@ -663,7 +674,8 @@ async function headUploadSummary(
         ),
         bytes: result.ContentLength ?? 0,
         contentType: result.ContentType ?? "text/html; charset=utf-8",
-        updatedAt
+        updatedAt,
+        ...(project ? { project } : {})
       };
     }
 

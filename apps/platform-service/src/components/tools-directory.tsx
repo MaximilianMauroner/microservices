@@ -83,6 +83,15 @@ export function ToolsDirectory({
               </section>
             );
           })}
+          <section className="border-t py-8 sm:py-10" aria-labelledby="private-tools-title">
+            <header className="grid grid-cols-[3rem_minmax(0,1fr)] gap-3 sm:grid-cols-[4rem_minmax(0,1fr)]">
+              <p className="pt-1 font-mono text-xs text-muted-foreground">{String(groups.length + 1).padStart(2, "0")}</p>
+              <div><h2 id="private-tools-title" className="text-xl font-semibold tracking-tight sm:text-2xl">Private</h2><p className="mt-2 text-sm text-muted-foreground">Personal tools protected by Cloudflare Access.</p></div>
+            </header>
+            <ul className="mt-5 grid list-none gap-3 pl-0 sm:ml-16" role="list">
+              <li><Card className="gap-4 border-input bg-card p-5 sm:p-6"><CardHeader className="items-start"><div><p className="mb-2 flex items-center gap-1.5 font-mono text-[0.65rem] font-semibold uppercase tracking-wide text-sky-400"><span className="suite-lock" aria-hidden="true" />Cloudflare Access</p><h3 className="text-lg font-semibold">Money tracker</h3></div><Badge variant="outline">Private</Badge></CardHeader><p className="text-sm leading-6 text-muted-foreground">Track cash, stocks, account changes, and monthly net worth from Google Sheets.</p><div><Button variant="outline" render={<a href="/tools/private/money" />}>Open money tracker <span aria-hidden="true">›</span></Button></div></Card></li>
+            </ul>
+          </section>
         </section>
       </main>
       <footer className="border-t">

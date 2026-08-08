@@ -68,7 +68,8 @@ describe("S3 upload storage", () => {
     await storage.putHtml("stable-id", "/dev/null", {
       bytes: 0,
       originalName: "first.html",
-      sha256: "a".repeat(64)
+      sha256: "a".repeat(64),
+      project: "microservices"
     });
     await storage.putHtml(
       "stable-id",
@@ -76,7 +77,8 @@ describe("S3 upload storage", () => {
       {
         bytes: 0,
         originalName: "revised.html",
-        sha256: "b".repeat(64)
+        sha256: "b".repeat(64),
+        project: "microservices"
       },
       { ifMatch: '"current-etag"' }
     );
@@ -87,6 +89,7 @@ describe("S3 upload storage", () => {
     ]);
     expect(commands[1]?.input.Metadata).toMatchObject({
       "original-name": "revised.html",
+      "project-base64": Buffer.from("microservices").toString("base64"),
       sha256: "b".repeat(64)
     });
     expect(commands[1]?.input.IfMatch).toBe('"current-etag"');
@@ -129,7 +132,10 @@ describe("S3 upload storage", () => {
         return {
           ContentLength: body.length,
           LastModified: new Date("2026-07-10T12:00:00.000Z"),
-          Metadata: { sha256: "a".repeat(64) }
+          Metadata: {
+            sha256: "a".repeat(64),
+            "project-base64": Buffer.from("microservices").toString("base64")
+          }
         } as never;
       }
       if (command instanceof GetObjectCommand) {
@@ -137,7 +143,10 @@ describe("S3 upload storage", () => {
           Body: Readable.from(body),
           ContentLength: body.length,
           LastModified: new Date("2026-07-10T12:00:00.000Z"),
-          Metadata: { sha256: "a".repeat(64) }
+          Metadata: {
+            sha256: "a".repeat(64),
+            "project-base64": Buffer.from("microservices").toString("base64")
+          }
         } as never;
       }
       throw new Error("Unexpected S3 command");
@@ -146,7 +155,11 @@ describe("S3 upload storage", () => {
 
     const page = await storage.getHtml("page-id");
     expect(page?.body).toBeInstanceOf(Readable);
-    expect(page).toMatchObject({ bytes: body.length, sha256: "a".repeat(64) });
+    expect(page).toMatchObject({
+      bytes: body.length,
+      sha256: "a".repeat(64),
+      project: "microservices"
+    });
 
     const chunks: Buffer[] = [];
     if (!page) {
@@ -158,7 +171,11 @@ describe("S3 upload storage", () => {
     expect(Buffer.concat(chunks)).toEqual(body);
 
     const head = await storage.getHtml("page-id", { headOnly: true });
-    expect(head).toMatchObject({ bytes: body.length, sha256: "a".repeat(64) });
+    expect(head).toMatchObject({
+      bytes: body.length,
+      sha256: "a".repeat(64),
+      project: "microservices"
+    });
     expect(head?.body.readableLength).toBe(0);
     storage.close?.();
   });
@@ -237,7 +254,10 @@ describe("S3 upload storage", () => {
             ContentLength: 120,
             ContentType: "text/html; charset=utf-8",
             LastModified: new Date("2026-07-22T10:00:00.000Z"),
-            Metadata: { "original-name": "agent-browser-plan-123.html" }
+            Metadata: {
+              "original-name": "agent-browser-plan-123.html",
+              "project-base64": Buffer.from("microservices").toString("base64")
+            }
           } as never;
         }
         if (command.input.Key === `files/${fileId}`) {
@@ -302,7 +322,8 @@ describe("S3 upload storage", () => {
           originalName: "agent-browser-plan-123.html",
           bytes: 120,
           contentType: "text/html; charset=utf-8",
-          updatedAt: new Date("2026-07-22T10:00:00.000Z")
+          updatedAt: new Date("2026-07-22T10:00:00.000Z"),
+          project: "microservices"
         }
       ]
     });

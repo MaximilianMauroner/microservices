@@ -5,7 +5,7 @@ import { readOnly } from "../src/route-handlers.js";
 describe("primary page ownership", () => {
   it("registers explicit React routes without legacy browser splats", () => {
     const source = readFileSync(new URL("../src/routeTree.gen.ts", import.meta.url), "utf8");
-    for (const path of ["/status", "/review", "/publish", "/manage", "/manage/status", "/manage/documents"]) {
+    for (const path of ["/status", "/review", "/publish", "/manage", "/manage/status", "/manage/documents", "/tools/private/money"]) {
       expect(source).toContain(`fullPath: '${path}'`);
     }
     expect(source).not.toContain("fullPath: '/review/$'");
@@ -31,6 +31,12 @@ describe("primary page ownership", () => {
     }
     expect(route).toContain("handlers: { GET: tools, HEAD: tools, POST: readOnly, PUT: readOnly, PATCH: readOnly, DELETE: readOnly }");
     expect(route).not.toMatch(/\b(POST|PUT|PATCH|DELETE): tools/);
+  });
+
+  it("protects private money data with the manage Access middleware", () => {
+    const source = readFileSync(new URL("../src/protected-data.ts", import.meta.url), "utf8");
+    const moneyLoader = source.slice(source.indexOf("getMoneyTrackerPageData"), source.indexOf("getPrivateStatusPageData"));
+    expect(moneyLoader).toContain(".middleware([manageAccessMiddleware])");
   });
 
   it("rejects catalog mutations with an explicit read-only response", async () => {

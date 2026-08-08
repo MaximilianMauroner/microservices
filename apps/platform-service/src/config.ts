@@ -2,6 +2,7 @@ import { loadConfig as loadArtifactConfig } from "@tools-platform/artifact-publi
 import { loadConfig as loadFieldGuideConfig } from "@tools-platform/field-guide/config";
 import { loadConfig as loadToolsConfig } from "@tools-platform/web";
 import { loadConfig as loadCheckerConfig } from "@tools-platform/tools-checker/config";
+import { loadMoneyTrackerConfig } from "./money-tracker.js";
 
 type Environment = Readonly<Record<string, string | undefined>>;
 
@@ -59,6 +60,7 @@ export function loadPlatformConfig(env: Environment = process.env) {
     fieldGuide,
     markdownShare: tools.markdownShare,
     checker,
+    moneyTracker: loadMoneyTrackerConfig(env),
     towerHeartbeatToken: secret(
       required(env, "TOWER_HEARTBEAT_TOKEN"),
       "TOWER_HEARTBEAT_TOKEN"

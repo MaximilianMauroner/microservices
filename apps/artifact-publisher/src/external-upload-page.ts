@@ -820,6 +820,7 @@ export const EXTERNAL_UPLOAD_SCRIPT = `
       meta.className = "upload-row__meta";
       meta.textContent =
         (upload.kind === "html" ? "Plan" : "File") +
+        (upload.project ? " - " + upload.project : "") +
         " - " +
         formatBytes(upload.bytes) +
         (upload.expiresAt ? " - expires " + formatDate(upload.expiresAt) : "");
