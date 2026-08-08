@@ -42,13 +42,11 @@ export function AppShell({ active }: { active: Destination }) {
                 key={destination.id}
                 to={destination.href}
                 preload="intent"
+                activeOptions={{ exact: true }}
                 aria-current={destination.id === active ? "page" : undefined}
-                className="inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground aria-[current=page]:bg-secondary aria-[current=page]:text-foreground"
+                className="inline-flex h-8 items-center rounded-md px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground aria-[current=page]:bg-secondary aria-[current=page]:text-foreground"
               >
                 {destination.label}
-                {destination.protected ? (
-                  <span className="size-1 rounded-full bg-muted-foreground" title="Sign-in required"><span className="visually-hidden">, sign-in required</span></span>
-                ) : null}
               </Link>
             ))}
             {privateView ? (
