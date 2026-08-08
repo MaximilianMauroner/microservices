@@ -38,7 +38,7 @@ services:
     environment:
       DATABASE_URL: postgres://local:local@postgres:5432/field_guide
       FIELD_GUIDE_SCHEMA_PUSH_CONFIRM: field-guide-console-production
-    command: ["bun", "run", "--cwd", "apps/field-guide-console", "db:push-postgres"]
+    command: ["bun", "run", "--cwd", "packages/field-guide-console", "db:push-postgres"]
 
   minio-seed:
     build:

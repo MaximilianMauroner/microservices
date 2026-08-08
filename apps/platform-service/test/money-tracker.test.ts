@@ -1,7 +1,7 @@
 import { generateKeyPairSync } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { buildSnapshot, loadMoneyTrackerConfig, MONEY_TRACKER_SHEETS_SCOPE } from "../src/money-tracker.js";
-import { moneyTrackerAccountCategory, moneyTrackerForecast, moneyTrackerTrendStats } from "../src/money-tracker-domain.js";
+import { buildSnapshot, loadMoneyTrackerConfig, MONEY_TRACKER_SHEETS_SCOPE } from "../src/features/money/money-tracker.js";
+import { moneyTrackerAccountCategory, moneyTrackerForecast, moneyTrackerTrendStats } from "../src/features/money/money-tracker-domain.js";
 
 describe("money tracker configuration", () => {
   it("uses only the Google Sheets read-only scope", () => {

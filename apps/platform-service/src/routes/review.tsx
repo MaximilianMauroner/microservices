@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { ReviewPage, type ReviewSearch } from "../components/review-page.js";
+import { ReviewPage, type ReviewSearch } from "../features/review/review-page.js";
 import { getReviewPageData } from "../protected-data.js";
+import { faviconLink, favicons } from "../favicons.js";
 
 export const Route = createFileRoute("/review")({
   validateSearch: (search): ReviewSearch => ({
@@ -39,7 +40,8 @@ export const Route = createFileRoute("/review")({
       { title: "Review — Mauroner Tools" },
       { name: "description", content: "Protected field-guide review workspace." },
       { name: "robots", content: "noindex, nofollow" }
-    ]
+    ],
+    links: [faviconLink(favicons.review)]
   }),
   component: ReviewRoute
 });

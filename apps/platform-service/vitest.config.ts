@@ -7,6 +7,7 @@ export default defineConfig({
     }
   },
   test: {
-    environment: "node"
+    environment: "node",
+    setupFiles: ["./test/router-link-mock.tsx"]
   }
 });

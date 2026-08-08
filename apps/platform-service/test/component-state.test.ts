@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { DecisionRecordItem, QueueItem } from "@tools-platform/field-guide";
-import { uploadListUrl } from "../src/components/publish-page.js";
-import { decisionEmptyState, filterQueueItems, queueProjectOptions, reconcileCompletedCandidate, reconcileReviewedDecision } from "../src/components/review-page.js";
+import { uploadListUrl } from "../src/features/publish/publish-page.js";
+import { decisionEmptyState, filterQueueItems, queueProjectOptions, reconcileCompletedCandidate, reconcileReviewedDecision } from "../src/features/review/review-page.js";
 
 describe("publish inventory criteria", () => {
   it("binds every active criterion and the cursor into the backend request", () => {

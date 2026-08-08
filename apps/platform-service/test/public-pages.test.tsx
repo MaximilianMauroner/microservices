@@ -1,8 +1,8 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { PrivateSnapshotDocument, PublicSnapshotDocument } from "@tools-platform/domain";
-import { ToolsDirectory } from "../src/components/tools-directory.js";
-import { PrivateToolsStatus, ToolsStatus } from "../src/components/tools-status.js";
+import { ToolsDirectory } from "../src/features/catalog/tools-directory.js";
+import { PrivateToolsStatus, ToolsStatus } from "../src/features/status/tools-status.js";
 
 const snapshot: PublicSnapshotDocument = {
   schemaVersion: 1,
