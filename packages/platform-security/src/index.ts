@@ -79,6 +79,13 @@ export function classifyRoute(pathname: string, method: string): RouteAccess {
 
   if (matchesPrefix(pathname, ["/api/auth"])) return { kind: "public" };
 
+  if (
+    (normalizedMethod === "GET" || normalizedMethod === "HEAD") &&
+    matchesPrefix(pathname, ["/artifacts", "/files"])
+  ) {
+    return { kind: "public" };
+  }
+
   if (isMachineApiPath(pathname)) {
     return {
       kind: "machine",
