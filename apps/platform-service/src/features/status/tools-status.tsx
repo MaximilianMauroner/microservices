@@ -15,15 +15,18 @@ import { formatTimestamp, resolveBrowserLink } from "../catalog/tools-directory.
 
 type OverallState = "operational" | "attention" | "outage" | "unknown";
 
-export function ToolsStatus({ snapshot, publicOrigin }: { snapshot: PublicSnapshotDocument; publicOrigin: string }) {
-  return <ToolsStatusView snapshot={snapshot} publicOrigin={publicOrigin} />;
+export function ToolsStatus({ snapshot, publicOrigin }: { snapshot: PublicSnapshotDocument | PrivateSnapshotDocument; publicOrigin: string }) {
+  if ("catalog" in snapshot) {
+    return <ToolsStatusView snapshot={statusSnapshot(snapshot, "all")} publicOrigin={publicOrigin} view="combined" />;
+  }
+  return <ToolsStatusView snapshot={snapshot} publicOrigin={publicOrigin} view="public" />;
 }
 
 export function PrivateToolsStatus({ snapshot, actor, publicOrigin }: { snapshot: PrivateSnapshotDocument; actor: string; publicOrigin: string }) {
-  return <ToolsStatusView snapshot={privateStatusSnapshot(snapshot)} publicOrigin={publicOrigin} privateView actor={actor} />;
+  return <ToolsStatusView snapshot={statusSnapshot(snapshot, "private")} publicOrigin={publicOrigin} view="private" actor={actor} />;
 }
 
-function ToolsStatusView({ snapshot, publicOrigin, privateView = false, actor }: { snapshot: PublicSnapshotDocument; publicOrigin: string; privateView?: boolean; actor?: string }) {
+function ToolsStatusView({ snapshot, publicOrigin, view, actor }: { snapshot: PublicSnapshotDocument; publicOrigin: string; view: "public" | "combined" | "private"; actor?: string }) {
   const entries = [...snapshot.entries].sort(byOrderThenId);
   const overall = overallState(entries, snapshot.statuses);
   const unmeasuredCount = entries.filter((entry) => {
@@ -34,7 +37,7 @@ function ToolsStatusView({ snapshot, publicOrigin, privateView = false, actor }:
 
   return (
     <>
-      <AppShell active="status" />
+      <AppShell active="status" showSignOut />
       <div className={`status-page status-page--${overall}`}>
         <main id="main" className="status-wrap status-main">
           <section className="status-hero" aria-labelledby="status-title">
@@ -70,9 +73,9 @@ function ToolsStatusView({ snapshot, publicOrigin, privateView = false, actor }:
               </ul>
             )}
           </Card>
-          {privateView ? (
-            <div className="private-status-identity"><Link to="/status" preload="intent">← Public status</Link><span>Signed in as {actor}</span></div>
-          ) : (
+          {view === "private" ? (
+            <div className="private-status-identity"><Link to="/status" preload="intent">← All services</Link><span>Signed in as {actor}</span></div>
+          ) : view === "public" ? (
             <section className="private-status-callout" aria-labelledby="private-status-title">
               <div className="private-status-callout__icon" aria-hidden="true"><span className="suite-lock" /></div>
               <div>
@@ -83,7 +86,7 @@ function ToolsStatusView({ snapshot, publicOrigin, privateView = false, actor }:
                 View private status <span aria-hidden="true">›</span>
               </Button>
             </section>
-          )}
+          ) : null}
         </main>
         <footer className="status-footer">
           <div className="status-wrap"><span className="footer-mark" aria-hidden="true">M</span><span>Managed by Mauroner</span><span aria-hidden="true">·</span><span>Five-minute checks</span></div>
@@ -289,10 +292,10 @@ function formatShortDate(value: Date) { return new Intl.DateTimeFormat("en", { m
 function byOrderThenId<T extends { id: string; order: number }>(a: T, b: T) { return a.order - b.order || a.id.localeCompare(b.id); }
 function safeHttpUrl(value: string) { try { const url = new URL(value); return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : null; } catch { return null; } }
 
-function privateStatusSnapshot(snapshot: PrivateSnapshotDocument): PublicSnapshotDocument {
+function statusSnapshot(snapshot: PrivateSnapshotDocument, visibility: "all" | "private"): PublicSnapshotDocument {
   const groupVisibility = new Map(snapshot.catalog.groups.map((group) => [group.id, group.visibility]));
   const entries = snapshot.catalog.entries
-    .filter((entry) => entry.lifecycle === "active" && !(entry.visibility === "public" && groupVisibility.get(entry.groupId) === "public"))
+    .filter((entry) => entry.lifecycle === "active" && (visibility === "all" || !(entry.visibility === "public" && groupVisibility.get(entry.groupId) === "public")))
     .map((entry) => ({
       id: entry.id,
       groupId: entry.groupId,

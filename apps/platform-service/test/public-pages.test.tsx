@@ -116,6 +116,7 @@ describe("TanStack Start public pages", () => {
     expect(html).toContain('class="uptime-bar-scroll"');
     expect(html).toContain("uptime-scroll-hint");
     expect(html).toContain("private-status-link");
+    expect(html).toContain("Sign out");
     expect(html.match(/class="uptime-day /g)).toHaveLength(90);
   });
 
@@ -128,5 +129,15 @@ describe("TanStack Start public pages", () => {
     expect(html).toContain("Private console");
     expect(html).not.toContain("Public console");
     expect(html).toContain('href="/status"');
+  });
+
+  it("includes public and private services in the authenticated status view", () => {
+    const html = renderToStaticMarkup(
+      <ToolsStatus snapshot={privateSnapshot} publicOrigin="https://tools.mauroner.net" />
+    );
+
+    expect(html).toContain("Private console");
+    expect(html).toContain("Public console");
+    expect(html).not.toContain("private-status-callout");
   });
 });
