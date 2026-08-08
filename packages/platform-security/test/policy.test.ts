@@ -12,8 +12,12 @@ describe("central platform route policy", () => {
     expect(classifyRoute("/api/auth/callback/google", "GET")).toEqual({ kind: "public" });
     expect(classifyRoute("/status", "GET")).toEqual({ kind: "human-session" });
     expect(classifyRoute("/api/public/catalog", "HEAD")).toEqual({ kind: "human-session" });
-    expect(classifyRoute("/artifacts/abc", "GET")).toEqual({ kind: "human-session" });
+    expect(classifyRoute("/artifacts/abc", "GET")).toEqual({ kind: "public" });
+    expect(classifyRoute("/artifacts/abc", "HEAD")).toEqual({ kind: "public" });
+    expect(classifyRoute("/files/abc/index.html", "GET")).toEqual({ kind: "public" });
+    expect(classifyRoute("/files/abc/index.html", "HEAD")).toEqual({ kind: "public" });
     expect(classifyRoute("/artifacts/abc", "POST")).toEqual({ kind: "human-session" });
+    expect(classifyRoute("/files/abc/index.html", "DELETE")).toEqual({ kind: "human-session" });
     expect(classifyRoute("/api/uploads", "POST")).toEqual({ kind: "machine", service: "uploads" });
     expect(classifyRoute("/api/agent/status", "GET")).toEqual({ kind: "machine", service: "agent" });
     expect(classifyRoute("/api/heartbeat/tower", "POST")).toEqual({ kind: "machine", service: "heartbeat" });
