@@ -6,31 +6,55 @@ describe("Google account authorization", () => {
   it("accepts only the configured stable Google subject", () => {
     const profile = {
       sub: "allowed-subject",
-      email: "operator@example.test",
+      email: "maximilian.mauroner@gmail.com",
       email_verified: true,
       name: "Operator",
       picture: "https://example.test/avatar.png"
     };
-    expect(isAllowedGoogleProfile(profile, "allowed-subject")).toBe(true);
+    expect(isAllowedGoogleProfile(
+      profile,
+      "allowed-subject",
+      "maximilian.mauroner@gmail.com"
+    )).toBe(true);
     expect(isAllowedGoogleProfile(
       { ...profile, sub: "different-subject" },
-      "allowed-subject"
+      "allowed-subject",
+      "maximilian.mauroner@gmail.com"
     )).toBe(false);
     expect(isAllowedGoogleProfile(
       { ...profile, email_verified: false },
-      "allowed-subject"
+      "allowed-subject",
+      "maximilian.mauroner@gmail.com"
+    )).toBe(false);
+    expect(isAllowedGoogleProfile(
+      { ...profile, email: "someone-else@gmail.com" },
+      "allowed-subject",
+      "maximilian.mauroner@gmail.com"
     )).toBe(false);
   });
 
   it("rechecks the configured subject when resolving a session", () => {
     const session = {
-      user: { id: "allowed-subject", email: "operator@example.test" }
+      user: { id: "allowed-subject", email: "maximilian.mauroner@gmail.com" }
     };
-    expect(principalFromSession(session, "allowed-subject")).toEqual({
+    expect(principalFromSession(
+      session,
+      "allowed-subject",
+      "maximilian.mauroner@gmail.com"
+    )).toEqual({
       subject: "allowed-subject",
-      email: "operator@example.test"
+      email: "maximilian.mauroner@gmail.com"
     });
-    expect(principalFromSession(session, "different-subject")).toBeUndefined();
+    expect(principalFromSession(
+      session,
+      "different-subject",
+      "maximilian.mauroner@gmail.com"
+    )).toBeUndefined();
+    expect(principalFromSession(
+      { user: { id: "allowed-subject", email: "someone-else@gmail.com" } },
+      "allowed-subject",
+      "maximilian.mauroner@gmail.com"
+    )).toBeUndefined();
   });
 });
 

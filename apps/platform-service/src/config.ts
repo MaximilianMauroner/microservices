@@ -6,6 +6,8 @@ import { loadMoneyTrackerConfig } from "./features/money/money-tracker.js";
 
 type Environment = Readonly<Record<string, string | undefined>>;
 
+const AUTHORIZED_GOOGLE_EMAIL = "maximilian.mauroner@gmail.com";
+
 export function loadPlatformConfig(env: Environment = process.env) {
   const publicOrigin = required(env, "PUBLIC_ORIGIN");
   const port = env.PORT ?? "3000";
@@ -77,6 +79,7 @@ export function loadPlatformAuthConfig(
     googleClientId: required(env, "GOOGLE_CLIENT_ID"),
     googleClientSecret: required(env, "GOOGLE_CLIENT_SECRET"),
     secret: secret(required(env, "BETTER_AUTH_SECRET"), "BETTER_AUTH_SECRET"),
+    allowedGoogleEmail: AUTHORIZED_GOOGLE_EMAIL,
     allowedGoogleSubject: googleSubject(
       required(env, "AUTH_ALLOWED_GOOGLE_SUBJECT")
     )
