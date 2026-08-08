@@ -22,7 +22,7 @@ const snapshot: PublicSnapshotDocument = {
         {
           id: "publish",
           label: "Open uploader",
-          url: "https://mm-tools.cloudflareaccess.com/cdn-cgi/access/login/tools.mauroner.net?redirect_url=%2Fpublish",
+          url: "https://tools.mauroner.net/publish",
           access: "restricted"
         }
       ]

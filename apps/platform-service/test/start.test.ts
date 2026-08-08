@@ -1,40 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { AccessDeniedError, type AccessVerifier } from "@tools-platform/security";
-import { createPlatformAccessFunctionMiddleware } from "../src/access-middleware.js";
+import { requirePlatformSession } from "../src/auth-middleware.js";
 import { routerSsrOptions } from "../src/router-options.js";
 
-function verifier(audience: string): AccessVerifier {
-  return {
-    async verify(request) {
-      if (request.headers.get("cf-access-jwt-assertion") !== audience) {
-        throw new AccessDeniedError();
-      }
-      return { id: `${audience}@example.test` };
-    }
-  };
-}
-
-const runtime = {
-  access: {
-    manage: verifier("manage-audience"),
-    publisher: verifier("publisher-audience"),
-    review: verifier("review-audience")
-  }
-};
-
-async function runAccessMiddleware(
-  family: "manage" | "publisher" | "review",
-  audience: string
-) {
-  const middleware = createPlatformAccessFunctionMiddleware(family);
-  const server = middleware.options.server;
+async function runSessionMiddleware(authenticated: boolean) {
+  const server = requirePlatformSession.options.server;
   if (!server) throw new Error("function middleware server handler is missing");
   return server({
     context: {
       request: new Request("https://tools.example.test/_serverFn/test", {
-        headers: { "Cf-Access-Jwt-Assertion": audience }
+        headers: { Referer: "https://tools.example.test/review?view=queue" }
       }),
-      runtime
+      ...(authenticated
+        ? { principal: { subject: "google-subject", email: "operator@example.test" } }
+        : {})
     },
     next: async (nextContext: Record<string, unknown>) => ({
       ...nextContext,
@@ -48,12 +26,19 @@ async function runAccessMiddleware(
 }
 
 describe("TanStack Start request boundaries", () => {
-  it("binds each protected server function to its own Access family", async () => {
-    await expect(runAccessMiddleware("review", "review-audience")).resolves.toMatchObject({
+  it("shares one principal across protected server functions", async () => {
+    await expect(runSessionMiddleware(true)).resolves.toMatchObject({
       result: "authorized"
     });
-    await expect(runAccessMiddleware("review", "manage-audience")).rejects.toBeInstanceOf(AccessDeniedError);
-    await expect(runAccessMiddleware("publisher", "review-audience")).rejects.toBeInstanceOf(AccessDeniedError);
+  });
+
+  it("redirects an expired server-function session to safe recovery", async () => {
+    await expect(runSessionMiddleware(false)).rejects.toMatchObject({
+      options: {
+        href: "/sign-in?returnTo=%2Freview%3Fview%3Dqueue&reason=session_expired",
+        statusCode: 307
+      }
+    });
   });
 
   it("passes the request nonce into TanStack Router SSR options", () => {

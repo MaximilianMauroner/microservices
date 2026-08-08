@@ -1,5 +1,5 @@
 import { createCsrfMiddleware, createMiddleware, createStart } from "@tanstack/react-start";
-import type { AccessActor } from "@tools-platform/security";
+import { classifyRoute, type PlatformPrincipal } from "@tools-platform/security";
 import { authenticatePlatformRequest } from "./app.js";
 import { getPlatformRuntime, type PlatformRuntime } from "./runtime.js";
 import { PLATFORM_UI_BUILD } from "./build-identity.js";
@@ -7,7 +7,7 @@ import { PLATFORM_UI_BUILD } from "./build-identity.js";
 export type PlatformRequestContext = {
   runtime: PlatformRuntime;
   request: Request;
-  accessActor?: AccessActor;
+  principal?: PlatformPrincipal;
   nonce?: string;
 };
 
@@ -31,8 +31,7 @@ const platformRequestMiddleware = createMiddleware().server(
     }
     const authentication = await authenticatePlatformRequest(
       request,
-      runtime.access,
-      { readOnly: runtime.readOnly, localAuth: runtime.localAuth }
+      runtime.resolvePrincipal
     );
     if (authentication.response) return authentication.response;
     const nonce = crypto.randomUUID().replaceAll("-", "");
@@ -41,7 +40,7 @@ const platformRequestMiddleware = createMiddleware().server(
         runtime,
         request,
         nonce,
-        ...(authentication.actor ? { accessActor: authentication.actor } : {})
+        ...(authentication.principal ? { principal: authentication.principal } : {})
       }
     });
     const response = result.response as Response;
@@ -70,6 +69,9 @@ const platformRequestMiddleware = createMiddleware().server(
       response.status < 400
     ) {
       headers.set("Cache-Control", "public, max-age=60, stale-while-revalidate=240");
+    }
+    if (classifyRoute(pathname, request.method).kind === "human-session") {
+      headers.set("Cache-Control", "private, no-store");
     }
     if (headers.get("Content-Type")?.startsWith("text/html")) {
       const cacheControl = headers.get("Cache-Control");

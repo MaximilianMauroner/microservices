@@ -10,19 +10,16 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as FRouteImport } from './routes/f'
 import { Route as FaviconDoticoRouteImport } from './routes/favicon[.]ico'
 import { Route as FaviconDotsvgRouteImport } from './routes/favicon[.]svg'
 import { Route as HealthRouteImport } from './routes/health'
 import { Route as LiveRouteImport } from './routes/live'
 import { Route as ManageRouteImport } from './routes/manage'
-import { Route as OpsRouteImport } from './routes/ops'
-import { Route as PRouteImport } from './routes/p'
 import { Route as PublishRouteImport } from './routes/publish'
 import { Route as ReviewRouteImport } from './routes/review'
+import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as StatusRouteImport } from './routes/status'
 import { Route as ToolsRouteImport } from './routes/tools'
-import { Route as UploadsRouteImport } from './routes/uploads'
 import { Route as ApiAgentRouteImport } from './routes/api/agent'
 import { Route as ApiExternalUploadsRouteImport } from './routes/api/external-uploads'
 import { Route as ApiReviewRouteImport } from './routes/api/review'
@@ -30,39 +27,26 @@ import { Route as ApiUploadsRouteImport } from './routes/api/uploads'
 import { Route as ArtifactsSplatRouteImport } from './routes/artifacts/$'
 import { Route as ArtifactsIdRouteImport } from './routes/artifacts/$id'
 import { Route as AssetsSplatRouteImport } from './routes/assets/$'
-import { Route as FIdRouteImport } from './routes/f/$id'
 import { Route as FilesIdRouteImport } from './routes/files/$id'
 import { Route as HealthComponentRouteImport } from './routes/health/$component'
 import { Route as ManageIndexRouteImport } from './routes/manage/index'
 import { Route as ManageDocumentsRouteImport } from './routes/manage/documents'
 import { Route as ManageStatusRouteImport } from './routes/manage/status'
-import { Route as OpsSplatRouteImport } from './routes/ops/$'
-import { Route as PSplatRouteImport } from './routes/p/$'
-import { Route as PIdRouteImport } from './routes/p/$id'
-import { Route as PublishCallbackRouteImport } from './routes/publish/callback'
-import { Route as ReviewCallbackRouteImport } from './routes/review/callback'
-import { Route as StatusPrivateRouteImport } from './routes/status/private'
 import { Route as ToolsPrivateRouteImport } from './routes/tools/private'
-import { Route as UploadsSplatRouteImport } from './routes/uploads/$'
 import { Route as ApiAgentSplatRouteImport } from './routes/api/agent/$'
+import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiExternalUploadsSplatRouteImport } from './routes/api/external-uploads/$'
 import { Route as ApiHeartbeatTowerRouteImport } from './routes/api/heartbeat/tower'
 import { Route as ApiOpsSplatRouteImport } from './routes/api/ops/$'
 import { Route as ApiPublicCatalogRouteImport } from './routes/api/public/catalog'
 import { Route as ApiReviewSplatRouteImport } from './routes/api/review/$'
 import { Route as ApiUploadsSplatRouteImport } from './routes/api/uploads/$'
-import { Route as FIdSplatRouteImport } from './routes/f/$id/$'
 import { Route as FilesIdSplatRouteImport } from './routes/files/$id/$'
 import { Route as ToolsPrivateMoneyRouteImport } from './routes/tools/private/money'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const FRoute = FRouteImport.update({
-  id: '/f',
-  path: '/f',
   getParentRoute: () => rootRouteImport,
 } as any)
 const FaviconDoticoRoute = FaviconDoticoRouteImport.update({
@@ -90,16 +74,6 @@ const ManageRoute = ManageRouteImport.update({
   path: '/manage',
   getParentRoute: () => rootRouteImport,
 } as any)
-const OpsRoute = OpsRouteImport.update({
-  id: '/ops',
-  path: '/ops',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PRoute = PRouteImport.update({
-  id: '/p',
-  path: '/p',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const PublishRoute = PublishRouteImport.update({
   id: '/publish',
   path: '/publish',
@@ -110,6 +84,11 @@ const ReviewRoute = ReviewRouteImport.update({
   path: '/review',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SignInRoute = SignInRouteImport.update({
+  id: '/sign-in',
+  path: '/sign-in',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const StatusRoute = StatusRouteImport.update({
   id: '/status',
   path: '/status',
@@ -118,11 +97,6 @@ const StatusRoute = StatusRouteImport.update({
 const ToolsRoute = ToolsRouteImport.update({
   id: '/tools',
   path: '/tools',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const UploadsRoute = UploadsRouteImport.update({
-  id: '/uploads',
-  path: '/uploads',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiAgentRoute = ApiAgentRouteImport.update({
@@ -160,11 +134,6 @@ const AssetsSplatRoute = AssetsSplatRouteImport.update({
   path: '/assets/$',
   getParentRoute: () => rootRouteImport,
 } as any)
-const FIdRoute = FIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => FRoute,
-} as any)
 const FilesIdRoute = FilesIdRouteImport.update({
   id: '/files/$id',
   path: '/files/$id',
@@ -190,50 +159,20 @@ const ManageStatusRoute = ManageStatusRouteImport.update({
   path: '/status',
   getParentRoute: () => ManageRoute,
 } as any)
-const OpsSplatRoute = OpsSplatRouteImport.update({
-  id: '/$',
-  path: '/$',
-  getParentRoute: () => OpsRoute,
-} as any)
-const PSplatRoute = PSplatRouteImport.update({
-  id: '/$',
-  path: '/$',
-  getParentRoute: () => PRoute,
-} as any)
-const PIdRoute = PIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => PRoute,
-} as any)
-const PublishCallbackRoute = PublishCallbackRouteImport.update({
-  id: '/callback',
-  path: '/callback',
-  getParentRoute: () => PublishRoute,
-} as any)
-const ReviewCallbackRoute = ReviewCallbackRouteImport.update({
-  id: '/callback',
-  path: '/callback',
-  getParentRoute: () => ReviewRoute,
-} as any)
-const StatusPrivateRoute = StatusPrivateRouteImport.update({
-  id: '/private',
-  path: '/private',
-  getParentRoute: () => StatusRoute,
-} as any)
 const ToolsPrivateRoute = ToolsPrivateRouteImport.update({
   id: '/private',
   path: '/private',
   getParentRoute: () => ToolsRoute,
 } as any)
-const UploadsSplatRoute = UploadsSplatRouteImport.update({
-  id: '/$',
-  path: '/$',
-  getParentRoute: () => UploadsRoute,
-} as any)
 const ApiAgentSplatRoute = ApiAgentSplatRouteImport.update({
   id: '/$',
   path: '/$',
   getParentRoute: () => ApiAgentRoute,
+} as any)
+const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
+  id: '/api/auth/$',
+  path: '/api/auth/$',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const ApiExternalUploadsSplatRoute = ApiExternalUploadsSplatRouteImport.update({
   id: '/$',
@@ -265,11 +204,6 @@ const ApiUploadsSplatRoute = ApiUploadsSplatRouteImport.update({
   path: '/$',
   getParentRoute: () => ApiUploadsRoute,
 } as any)
-const FIdSplatRoute = FIdSplatRouteImport.update({
-  id: '/$',
-  path: '/$',
-  getParentRoute: () => FIdRoute,
-} as any)
 const FilesIdSplatRoute = FilesIdSplatRouteImport.update({
   id: '/$',
   path: '/$',
@@ -283,19 +217,16 @@ const ToolsPrivateMoneyRoute = ToolsPrivateMoneyRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/f': typeof FRouteWithChildren
   '/favicon.ico': typeof FaviconDoticoRoute
   '/favicon.svg': typeof FaviconDotsvgRoute
   '/health': typeof HealthRouteWithChildren
   '/live': typeof LiveRoute
   '/manage': typeof ManageRouteWithChildren
-  '/ops': typeof OpsRouteWithChildren
-  '/p': typeof PRouteWithChildren
-  '/publish': typeof PublishRouteWithChildren
-  '/review': typeof ReviewRouteWithChildren
-  '/status': typeof StatusRouteWithChildren
+  '/publish': typeof PublishRoute
+  '/review': typeof ReviewRoute
+  '/sign-in': typeof SignInRoute
+  '/status': typeof StatusRoute
   '/tools': typeof ToolsRouteWithChildren
-  '/uploads': typeof UploadsRouteWithChildren
   '/api/agent': typeof ApiAgentRouteWithChildren
   '/api/external-uploads': typeof ApiExternalUploadsRouteWithChildren
   '/api/review': typeof ApiReviewRouteWithChildren
@@ -303,45 +234,34 @@ export interface FileRoutesByFullPath {
   '/artifacts/$': typeof ArtifactsSplatRoute
   '/artifacts/$id': typeof ArtifactsIdRoute
   '/assets/$': typeof AssetsSplatRoute
-  '/f/$id': typeof FIdRouteWithChildren
   '/files/$id': typeof FilesIdRouteWithChildren
   '/health/$component': typeof HealthComponentRoute
   '/manage/documents': typeof ManageDocumentsRoute
   '/manage/status': typeof ManageStatusRoute
-  '/ops/$': typeof OpsSplatRoute
-  '/p/$': typeof PSplatRoute
-  '/p/$id': typeof PIdRoute
-  '/publish/callback': typeof PublishCallbackRoute
-  '/review/callback': typeof ReviewCallbackRoute
-  '/status/private': typeof StatusPrivateRoute
   '/tools/private': typeof ToolsPrivateRouteWithChildren
-  '/uploads/$': typeof UploadsSplatRoute
   '/manage/': typeof ManageIndexRoute
   '/api/agent/$': typeof ApiAgentSplatRoute
+  '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/external-uploads/$': typeof ApiExternalUploadsSplatRoute
   '/api/heartbeat/tower': typeof ApiHeartbeatTowerRoute
   '/api/ops/$': typeof ApiOpsSplatRoute
   '/api/public/catalog': typeof ApiPublicCatalogRoute
   '/api/review/$': typeof ApiReviewSplatRoute
   '/api/uploads/$': typeof ApiUploadsSplatRoute
-  '/f/$id/$': typeof FIdSplatRoute
   '/files/$id/$': typeof FilesIdSplatRoute
   '/tools/private/money': typeof ToolsPrivateMoneyRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/f': typeof FRouteWithChildren
   '/favicon.ico': typeof FaviconDoticoRoute
   '/favicon.svg': typeof FaviconDotsvgRoute
   '/health': typeof HealthRouteWithChildren
   '/live': typeof LiveRoute
-  '/ops': typeof OpsRouteWithChildren
-  '/p': typeof PRouteWithChildren
-  '/publish': typeof PublishRouteWithChildren
-  '/review': typeof ReviewRouteWithChildren
-  '/status': typeof StatusRouteWithChildren
+  '/publish': typeof PublishRoute
+  '/review': typeof ReviewRoute
+  '/sign-in': typeof SignInRoute
+  '/status': typeof StatusRoute
   '/tools': typeof ToolsRouteWithChildren
-  '/uploads': typeof UploadsRouteWithChildren
   '/api/agent': typeof ApiAgentRouteWithChildren
   '/api/external-uploads': typeof ApiExternalUploadsRouteWithChildren
   '/api/review': typeof ApiReviewRouteWithChildren
@@ -349,47 +269,36 @@ export interface FileRoutesByTo {
   '/artifacts/$': typeof ArtifactsSplatRoute
   '/artifacts/$id': typeof ArtifactsIdRoute
   '/assets/$': typeof AssetsSplatRoute
-  '/f/$id': typeof FIdRouteWithChildren
   '/files/$id': typeof FilesIdRouteWithChildren
   '/health/$component': typeof HealthComponentRoute
   '/manage/documents': typeof ManageDocumentsRoute
   '/manage/status': typeof ManageStatusRoute
-  '/ops/$': typeof OpsSplatRoute
-  '/p/$': typeof PSplatRoute
-  '/p/$id': typeof PIdRoute
-  '/publish/callback': typeof PublishCallbackRoute
-  '/review/callback': typeof ReviewCallbackRoute
-  '/status/private': typeof StatusPrivateRoute
   '/tools/private': typeof ToolsPrivateRouteWithChildren
-  '/uploads/$': typeof UploadsSplatRoute
   '/manage': typeof ManageIndexRoute
   '/api/agent/$': typeof ApiAgentSplatRoute
+  '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/external-uploads/$': typeof ApiExternalUploadsSplatRoute
   '/api/heartbeat/tower': typeof ApiHeartbeatTowerRoute
   '/api/ops/$': typeof ApiOpsSplatRoute
   '/api/public/catalog': typeof ApiPublicCatalogRoute
   '/api/review/$': typeof ApiReviewSplatRoute
   '/api/uploads/$': typeof ApiUploadsSplatRoute
-  '/f/$id/$': typeof FIdSplatRoute
   '/files/$id/$': typeof FilesIdSplatRoute
   '/tools/private/money': typeof ToolsPrivateMoneyRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/f': typeof FRouteWithChildren
   '/favicon.ico': typeof FaviconDoticoRoute
   '/favicon.svg': typeof FaviconDotsvgRoute
   '/health': typeof HealthRouteWithChildren
   '/live': typeof LiveRoute
   '/manage': typeof ManageRouteWithChildren
-  '/ops': typeof OpsRouteWithChildren
-  '/p': typeof PRouteWithChildren
-  '/publish': typeof PublishRouteWithChildren
-  '/review': typeof ReviewRouteWithChildren
-  '/status': typeof StatusRouteWithChildren
+  '/publish': typeof PublishRoute
+  '/review': typeof ReviewRoute
+  '/sign-in': typeof SignInRoute
+  '/status': typeof StatusRoute
   '/tools': typeof ToolsRouteWithChildren
-  '/uploads': typeof UploadsRouteWithChildren
   '/api/agent': typeof ApiAgentRouteWithChildren
   '/api/external-uploads': typeof ApiExternalUploadsRouteWithChildren
   '/api/review': typeof ApiReviewRouteWithChildren
@@ -397,28 +306,20 @@ export interface FileRoutesById {
   '/artifacts/$': typeof ArtifactsSplatRoute
   '/artifacts/$id': typeof ArtifactsIdRoute
   '/assets/$': typeof AssetsSplatRoute
-  '/f/$id': typeof FIdRouteWithChildren
   '/files/$id': typeof FilesIdRouteWithChildren
   '/health/$component': typeof HealthComponentRoute
   '/manage/documents': typeof ManageDocumentsRoute
   '/manage/status': typeof ManageStatusRoute
-  '/ops/$': typeof OpsSplatRoute
-  '/p/$': typeof PSplatRoute
-  '/p/$id': typeof PIdRoute
-  '/publish/callback': typeof PublishCallbackRoute
-  '/review/callback': typeof ReviewCallbackRoute
-  '/status/private': typeof StatusPrivateRoute
   '/tools/private': typeof ToolsPrivateRouteWithChildren
-  '/uploads/$': typeof UploadsSplatRoute
   '/manage/': typeof ManageIndexRoute
   '/api/agent/$': typeof ApiAgentSplatRoute
+  '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/external-uploads/$': typeof ApiExternalUploadsSplatRoute
   '/api/heartbeat/tower': typeof ApiHeartbeatTowerRoute
   '/api/ops/$': typeof ApiOpsSplatRoute
   '/api/public/catalog': typeof ApiPublicCatalogRoute
   '/api/review/$': typeof ApiReviewSplatRoute
   '/api/uploads/$': typeof ApiUploadsSplatRoute
-  '/f/$id/$': typeof FIdSplatRoute
   '/files/$id/$': typeof FilesIdSplatRoute
   '/tools/private/money': typeof ToolsPrivateMoneyRoute
 }
@@ -426,19 +327,16 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/f'
     | '/favicon.ico'
     | '/favicon.svg'
     | '/health'
     | '/live'
     | '/manage'
-    | '/ops'
-    | '/p'
     | '/publish'
     | '/review'
+    | '/sign-in'
     | '/status'
     | '/tools'
-    | '/uploads'
     | '/api/agent'
     | '/api/external-uploads'
     | '/api/review'
@@ -446,45 +344,34 @@ export interface FileRouteTypes {
     | '/artifacts/$'
     | '/artifacts/$id'
     | '/assets/$'
-    | '/f/$id'
     | '/files/$id'
     | '/health/$component'
     | '/manage/documents'
     | '/manage/status'
-    | '/ops/$'
-    | '/p/$'
-    | '/p/$id'
-    | '/publish/callback'
-    | '/review/callback'
-    | '/status/private'
     | '/tools/private'
-    | '/uploads/$'
     | '/manage/'
     | '/api/agent/$'
+    | '/api/auth/$'
     | '/api/external-uploads/$'
     | '/api/heartbeat/tower'
     | '/api/ops/$'
     | '/api/public/catalog'
     | '/api/review/$'
     | '/api/uploads/$'
-    | '/f/$id/$'
     | '/files/$id/$'
     | '/tools/private/money'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/f'
     | '/favicon.ico'
     | '/favicon.svg'
     | '/health'
     | '/live'
-    | '/ops'
-    | '/p'
     | '/publish'
     | '/review'
+    | '/sign-in'
     | '/status'
     | '/tools'
-    | '/uploads'
     | '/api/agent'
     | '/api/external-uploads'
     | '/api/review'
@@ -492,46 +379,35 @@ export interface FileRouteTypes {
     | '/artifacts/$'
     | '/artifacts/$id'
     | '/assets/$'
-    | '/f/$id'
     | '/files/$id'
     | '/health/$component'
     | '/manage/documents'
     | '/manage/status'
-    | '/ops/$'
-    | '/p/$'
-    | '/p/$id'
-    | '/publish/callback'
-    | '/review/callback'
-    | '/status/private'
     | '/tools/private'
-    | '/uploads/$'
     | '/manage'
     | '/api/agent/$'
+    | '/api/auth/$'
     | '/api/external-uploads/$'
     | '/api/heartbeat/tower'
     | '/api/ops/$'
     | '/api/public/catalog'
     | '/api/review/$'
     | '/api/uploads/$'
-    | '/f/$id/$'
     | '/files/$id/$'
     | '/tools/private/money'
   id:
     | '__root__'
     | '/'
-    | '/f'
     | '/favicon.ico'
     | '/favicon.svg'
     | '/health'
     | '/live'
     | '/manage'
-    | '/ops'
-    | '/p'
     | '/publish'
     | '/review'
+    | '/sign-in'
     | '/status'
     | '/tools'
-    | '/uploads'
     | '/api/agent'
     | '/api/external-uploads'
     | '/api/review'
@@ -539,47 +415,36 @@ export interface FileRouteTypes {
     | '/artifacts/$'
     | '/artifacts/$id'
     | '/assets/$'
-    | '/f/$id'
     | '/files/$id'
     | '/health/$component'
     | '/manage/documents'
     | '/manage/status'
-    | '/ops/$'
-    | '/p/$'
-    | '/p/$id'
-    | '/publish/callback'
-    | '/review/callback'
-    | '/status/private'
     | '/tools/private'
-    | '/uploads/$'
     | '/manage/'
     | '/api/agent/$'
+    | '/api/auth/$'
     | '/api/external-uploads/$'
     | '/api/heartbeat/tower'
     | '/api/ops/$'
     | '/api/public/catalog'
     | '/api/review/$'
     | '/api/uploads/$'
-    | '/f/$id/$'
     | '/files/$id/$'
     | '/tools/private/money'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  FRoute: typeof FRouteWithChildren
   FaviconDoticoRoute: typeof FaviconDoticoRoute
   FaviconDotsvgRoute: typeof FaviconDotsvgRoute
   HealthRoute: typeof HealthRouteWithChildren
   LiveRoute: typeof LiveRoute
   ManageRoute: typeof ManageRouteWithChildren
-  OpsRoute: typeof OpsRouteWithChildren
-  PRoute: typeof PRouteWithChildren
-  PublishRoute: typeof PublishRouteWithChildren
-  ReviewRoute: typeof ReviewRouteWithChildren
-  StatusRoute: typeof StatusRouteWithChildren
+  PublishRoute: typeof PublishRoute
+  ReviewRoute: typeof ReviewRoute
+  SignInRoute: typeof SignInRoute
+  StatusRoute: typeof StatusRoute
   ToolsRoute: typeof ToolsRouteWithChildren
-  UploadsRoute: typeof UploadsRouteWithChildren
   ApiAgentRoute: typeof ApiAgentRouteWithChildren
   ApiExternalUploadsRoute: typeof ApiExternalUploadsRouteWithChildren
   ApiReviewRoute: typeof ApiReviewRouteWithChildren
@@ -588,6 +453,7 @@ export interface RootRouteChildren {
   ArtifactsIdRoute: typeof ArtifactsIdRoute
   AssetsSplatRoute: typeof AssetsSplatRoute
   FilesIdRoute: typeof FilesIdRouteWithChildren
+  ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiHeartbeatTowerRoute: typeof ApiHeartbeatTowerRoute
   ApiOpsSplatRoute: typeof ApiOpsSplatRoute
   ApiPublicCatalogRoute: typeof ApiPublicCatalogRoute
@@ -600,13 +466,6 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/f': {
-      id: '/f'
-      path: '/f'
-      fullPath: '/f'
-      preLoaderRoute: typeof FRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/favicon.ico': {
@@ -644,20 +503,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ManageRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/ops': {
-      id: '/ops'
-      path: '/ops'
-      fullPath: '/ops'
-      preLoaderRoute: typeof OpsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/p': {
-      id: '/p'
-      path: '/p'
-      fullPath: '/p'
-      preLoaderRoute: typeof PRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/publish': {
       id: '/publish'
       path: '/publish'
@@ -672,6 +517,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ReviewRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/sign-in': {
+      id: '/sign-in'
+      path: '/sign-in'
+      fullPath: '/sign-in'
+      preLoaderRoute: typeof SignInRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/status': {
       id: '/status'
       path: '/status'
@@ -684,13 +536,6 @@ declare module '@tanstack/react-router' {
       path: '/tools'
       fullPath: '/tools'
       preLoaderRoute: typeof ToolsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/uploads': {
-      id: '/uploads'
-      path: '/uploads'
-      fullPath: '/uploads'
-      preLoaderRoute: typeof UploadsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/agent': {
@@ -742,13 +587,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AssetsSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/f/$id': {
-      id: '/f/$id'
-      path: '/$id'
-      fullPath: '/f/$id'
-      preLoaderRoute: typeof FIdRouteImport
-      parentRoute: typeof FRoute
-    }
     '/files/$id': {
       id: '/files/$id'
       path: '/files/$id'
@@ -784,48 +622,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ManageStatusRouteImport
       parentRoute: typeof ManageRoute
     }
-    '/ops/$': {
-      id: '/ops/$'
-      path: '/$'
-      fullPath: '/ops/$'
-      preLoaderRoute: typeof OpsSplatRouteImport
-      parentRoute: typeof OpsRoute
-    }
-    '/p/$': {
-      id: '/p/$'
-      path: '/$'
-      fullPath: '/p/$'
-      preLoaderRoute: typeof PSplatRouteImport
-      parentRoute: typeof PRoute
-    }
-    '/p/$id': {
-      id: '/p/$id'
-      path: '/$id'
-      fullPath: '/p/$id'
-      preLoaderRoute: typeof PIdRouteImport
-      parentRoute: typeof PRoute
-    }
-    '/publish/callback': {
-      id: '/publish/callback'
-      path: '/callback'
-      fullPath: '/publish/callback'
-      preLoaderRoute: typeof PublishCallbackRouteImport
-      parentRoute: typeof PublishRoute
-    }
-    '/review/callback': {
-      id: '/review/callback'
-      path: '/callback'
-      fullPath: '/review/callback'
-      preLoaderRoute: typeof ReviewCallbackRouteImport
-      parentRoute: typeof ReviewRoute
-    }
-    '/status/private': {
-      id: '/status/private'
-      path: '/private'
-      fullPath: '/status/private'
-      preLoaderRoute: typeof StatusPrivateRouteImport
-      parentRoute: typeof StatusRoute
-    }
     '/tools/private': {
       id: '/tools/private'
       path: '/private'
@@ -833,19 +629,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ToolsPrivateRouteImport
       parentRoute: typeof ToolsRoute
     }
-    '/uploads/$': {
-      id: '/uploads/$'
-      path: '/$'
-      fullPath: '/uploads/$'
-      preLoaderRoute: typeof UploadsSplatRouteImport
-      parentRoute: typeof UploadsRoute
-    }
     '/api/agent/$': {
       id: '/api/agent/$'
       path: '/$'
       fullPath: '/api/agent/$'
       preLoaderRoute: typeof ApiAgentSplatRouteImport
       parentRoute: typeof ApiAgentRoute
+    }
+    '/api/auth/$': {
+      id: '/api/auth/$'
+      path: '/api/auth/$'
+      fullPath: '/api/auth/$'
+      preLoaderRoute: typeof ApiAuthSplatRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/api/external-uploads/$': {
       id: '/api/external-uploads/$'
@@ -889,13 +685,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiUploadsSplatRouteImport
       parentRoute: typeof ApiUploadsRoute
     }
-    '/f/$id/$': {
-      id: '/f/$id/$'
-      path: '/$'
-      fullPath: '/f/$id/$'
-      preLoaderRoute: typeof FIdSplatRouteImport
-      parentRoute: typeof FIdRoute
-    }
     '/files/$id/$': {
       id: '/files/$id/$'
       path: '/$'
@@ -912,26 +701,6 @@ declare module '@tanstack/react-router' {
     }
   }
 }
-
-interface FIdRouteChildren {
-  FIdSplatRoute: typeof FIdSplatRoute
-}
-
-const FIdRouteChildren: FIdRouteChildren = {
-  FIdSplatRoute: FIdSplatRoute,
-}
-
-const FIdRouteWithChildren = FIdRoute._addFileChildren(FIdRouteChildren)
-
-interface FRouteChildren {
-  FIdRoute: typeof FIdRouteWithChildren
-}
-
-const FRouteChildren: FRouteChildren = {
-  FIdRoute: FIdRouteWithChildren,
-}
-
-const FRouteWithChildren = FRoute._addFileChildren(FRouteChildren)
 
 interface HealthRouteChildren {
   HealthComponentRoute: typeof HealthComponentRoute
@@ -959,61 +728,6 @@ const ManageRouteChildren: ManageRouteChildren = {
 const ManageRouteWithChildren =
   ManageRoute._addFileChildren(ManageRouteChildren)
 
-interface OpsRouteChildren {
-  OpsSplatRoute: typeof OpsSplatRoute
-}
-
-const OpsRouteChildren: OpsRouteChildren = {
-  OpsSplatRoute: OpsSplatRoute,
-}
-
-const OpsRouteWithChildren = OpsRoute._addFileChildren(OpsRouteChildren)
-
-interface PRouteChildren {
-  PSplatRoute: typeof PSplatRoute
-  PIdRoute: typeof PIdRoute
-}
-
-const PRouteChildren: PRouteChildren = {
-  PSplatRoute: PSplatRoute,
-  PIdRoute: PIdRoute,
-}
-
-const PRouteWithChildren = PRoute._addFileChildren(PRouteChildren)
-
-interface PublishRouteChildren {
-  PublishCallbackRoute: typeof PublishCallbackRoute
-}
-
-const PublishRouteChildren: PublishRouteChildren = {
-  PublishCallbackRoute: PublishCallbackRoute,
-}
-
-const PublishRouteWithChildren =
-  PublishRoute._addFileChildren(PublishRouteChildren)
-
-interface ReviewRouteChildren {
-  ReviewCallbackRoute: typeof ReviewCallbackRoute
-}
-
-const ReviewRouteChildren: ReviewRouteChildren = {
-  ReviewCallbackRoute: ReviewCallbackRoute,
-}
-
-const ReviewRouteWithChildren =
-  ReviewRoute._addFileChildren(ReviewRouteChildren)
-
-interface StatusRouteChildren {
-  StatusPrivateRoute: typeof StatusPrivateRoute
-}
-
-const StatusRouteChildren: StatusRouteChildren = {
-  StatusPrivateRoute: StatusPrivateRoute,
-}
-
-const StatusRouteWithChildren =
-  StatusRoute._addFileChildren(StatusRouteChildren)
-
 interface ToolsPrivateRouteChildren {
   ToolsPrivateMoneyRoute: typeof ToolsPrivateMoneyRoute
 }
@@ -1035,17 +749,6 @@ const ToolsRouteChildren: ToolsRouteChildren = {
 }
 
 const ToolsRouteWithChildren = ToolsRoute._addFileChildren(ToolsRouteChildren)
-
-interface UploadsRouteChildren {
-  UploadsSplatRoute: typeof UploadsSplatRoute
-}
-
-const UploadsRouteChildren: UploadsRouteChildren = {
-  UploadsSplatRoute: UploadsSplatRoute,
-}
-
-const UploadsRouteWithChildren =
-  UploadsRoute._addFileChildren(UploadsRouteChildren)
 
 interface ApiAgentRouteChildren {
   ApiAgentSplatRoute: typeof ApiAgentSplatRoute
@@ -1107,19 +810,16 @@ const FilesIdRouteWithChildren =
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  FRoute: FRouteWithChildren,
   FaviconDoticoRoute: FaviconDoticoRoute,
   FaviconDotsvgRoute: FaviconDotsvgRoute,
   HealthRoute: HealthRouteWithChildren,
   LiveRoute: LiveRoute,
   ManageRoute: ManageRouteWithChildren,
-  OpsRoute: OpsRouteWithChildren,
-  PRoute: PRouteWithChildren,
-  PublishRoute: PublishRouteWithChildren,
-  ReviewRoute: ReviewRouteWithChildren,
-  StatusRoute: StatusRouteWithChildren,
+  PublishRoute: PublishRoute,
+  ReviewRoute: ReviewRoute,
+  SignInRoute: SignInRoute,
+  StatusRoute: StatusRoute,
   ToolsRoute: ToolsRouteWithChildren,
-  UploadsRoute: UploadsRouteWithChildren,
   ApiAgentRoute: ApiAgentRouteWithChildren,
   ApiExternalUploadsRoute: ApiExternalUploadsRouteWithChildren,
   ApiReviewRoute: ApiReviewRouteWithChildren,
@@ -1128,6 +828,7 @@ const rootRouteChildren: RootRouteChildren = {
   ArtifactsIdRoute: ArtifactsIdRoute,
   AssetsSplatRoute: AssetsSplatRoute,
   FilesIdRoute: FilesIdRouteWithChildren,
+  ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiHeartbeatTowerRoute: ApiHeartbeatTowerRoute,
   ApiOpsSplatRoute: ApiOpsSplatRoute,
   ApiPublicCatalogRoute: ApiPublicCatalogRoute,

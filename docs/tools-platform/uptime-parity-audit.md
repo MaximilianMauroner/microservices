@@ -14,7 +14,7 @@ This audit was completed before removing `services/uptime-monitor`.
 | Bounded concurrency | `CHECK_CONCURRENCY` validation and checker concurrent map |
 | Thirty-day raw check retention while retaining incidents | checker history pruning and retention tests |
 | Tailscale-only target semantics | no fetch; `unavailable_from_railway` observation/status |
-| Protected administration | Cloudflare Access edge policy plus independent JWT verification in Tools Web |
+| Protected administration | One Better Auth Google session enforced by the platform gateway and protected server functions |
 | Sanitized operational logging | checker/web structured loggers omit secrets, request bodies, headers, webhook URLs, and exception text |
 
 The following legacy product features are intentionally not migrated as

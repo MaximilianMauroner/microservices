@@ -87,10 +87,10 @@ export function ToolsDirectory({
           <section className="border-t py-8 sm:py-10" aria-labelledby="private-tools-title">
             <header className="grid grid-cols-[3rem_minmax(0,1fr)] gap-3 sm:grid-cols-[4rem_minmax(0,1fr)]">
               <p className="pt-1 font-mono text-xs text-muted-foreground">{String(groups.length + 1).padStart(2, "0")}</p>
-              <div><h2 id="private-tools-title" className="text-xl font-semibold tracking-tight sm:text-2xl">Private</h2><p className="mt-2 text-sm text-muted-foreground">Personal tools protected by Cloudflare Access.</p></div>
+              <div><h2 id="private-tools-title" className="text-xl font-semibold tracking-tight sm:text-2xl">Private</h2><p className="mt-2 text-sm text-muted-foreground">Personal tools protected by your Google session.</p></div>
             </header>
             <ul className="mt-5 grid list-none gap-3 pl-0 sm:ml-16" role="list">
-              <li><Card className="gap-4 border-input bg-card p-5 sm:p-6"><CardHeader className="items-start"><div><p className="mb-2 flex items-center gap-1.5 font-mono text-[0.65rem] font-semibold uppercase tracking-wide text-sky-400"><span className="suite-lock" aria-hidden="true" />Cloudflare Access</p><h3 className="text-lg font-semibold">Money tracker</h3></div><Badge variant="outline">Private</Badge></CardHeader><p className="text-sm leading-6 text-muted-foreground">Track cash, stocks, account changes, and monthly net worth from Google Sheets.</p><div><Button variant="outline" render={<Link to="/tools/private/money" preload="intent" />}>Open money tracker <span aria-hidden="true">›</span></Button></div></Card></li>
+              <li><Card className="gap-4 border-input bg-card p-5 sm:p-6"><CardHeader className="items-start"><div><p className="mb-2 flex items-center gap-1.5 font-mono text-[0.65rem] font-semibold uppercase tracking-wide text-sky-400"><span className="suite-lock" aria-hidden="true" />Google session</p><h3 className="text-lg font-semibold">Money tracker</h3></div><Badge variant="outline">Private</Badge></CardHeader><p className="text-sm leading-6 text-muted-foreground">Track cash, stocks, account changes, and monthly net worth from Google Sheets.</p><div><Button variant="outline" render={<Link to="/tools/private/money" preload="intent" />}>Open money tracker <span aria-hidden="true">›</span></Button></div></Card></li>
             </ul>
           </section>
         </section>
@@ -115,7 +115,7 @@ function ToolCard({
     ? ["Tailscale required"]
     : [
         ...(entry.links.some((link) => link.access === "public") ? ["Public"] : []),
-        ...(entry.links.some((link) => link.access === "restricted") ? ["Cloudflare Access"] : [])
+        ...(entry.links.some((link) => link.access === "restricted") ? ["Sign-in required"] : [])
       ];
   if (accessLabels.length === 0) accessLabels.push("Public");
   const accessClass = entry.id === "network-console"
@@ -137,7 +137,7 @@ function ToolCard({
             {iconPath ? <img className="size-11 shrink-0 rounded-md" src={iconPath} alt="" width="48" height="48" /> : null}
             <div className="min-w-0">
               <p className={`mb-2 flex items-center gap-1.5 font-mono text-[0.65rem] font-semibold uppercase tracking-wide ${accessClass}`}>
-                {accessLabels.includes("Cloudflare Access") ? <span className="suite-lock" aria-hidden="true" /> : null}
+                {accessLabels.includes("Sign-in required") ? <span className="suite-lock" aria-hidden="true" /> : null}
                 {accessLabels.join(" · ")}
               </p>
               <h3 className="text-lg font-semibold">{entry.name}</h3>
@@ -183,10 +183,6 @@ export function resolveBrowserLink(href: string, publicOrigin: string) {
   const destination = new URL(href);
   if (destination.origin === new URL(publicOrigin).origin) {
     return `${destination.pathname}${destination.search}${destination.hash}`;
-  }
-  if (destination.pathname.startsWith("/cdn-cgi/access/login/")) {
-    const redirect = destination.searchParams.get("redirect_url");
-    if (redirect?.startsWith("/") && !redirect.startsWith("//")) return redirect;
   }
   return href;
 }

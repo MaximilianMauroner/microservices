@@ -88,7 +88,6 @@ export function ReviewPage({ initial, search }: { initial: ReviewPageData; searc
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant={search.view === "decisions" && data.decisions?.pending ? "secondary" : "default"}>{summaryLabel(data, search)}</Badge>
             <ActorIdentity actor={data.actor} />
-            <Button nativeButton={false} variant="ghost" size="sm" render={<a href="/cdn-cgi/access/logout" />}>Sign out</Button>
           </div>
         </header>
         <div className="mb-5"><ReviewNav search={search} /></div>

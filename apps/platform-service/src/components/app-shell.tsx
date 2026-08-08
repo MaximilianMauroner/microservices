@@ -1,5 +1,6 @@
 import { PLATFORM_UI_BUILD } from "../build-identity.js";
-import { Link } from "@tanstack/react-router";
+import { Link, useLocation } from "@tanstack/react-router";
+import { authClient } from "../lib/auth-client.js";
 
 type Destination = "tools" | "publish" | "review" | "status" | "manage";
 
@@ -17,6 +18,15 @@ const destinations: ReadonlyArray<{
 ];
 
 export function AppShell({ active }: { active: Destination }) {
+  const pathname = useLocation({ select: (location) => location.pathname });
+  const privateView = destinations.find((destination) => destination.id === active)?.protected ||
+    pathname.startsWith("/manage") || pathname.startsWith("/tools/private");
+
+  async function signOut() {
+    await authClient.signOut();
+    window.location.assign("/");
+  }
+
   return (
     <>
       <a className="suite-skip skip-link" href="#main">Skip to content</a>
@@ -37,10 +47,19 @@ export function AppShell({ active }: { active: Destination }) {
               >
                 {destination.label}
                 {destination.protected ? (
-                  <span className="size-1 rounded-full bg-muted-foreground" title="Access protected"><span className="visually-hidden">, Cloudflare Access protected</span></span>
+                  <span className="size-1 rounded-full bg-muted-foreground" title="Sign-in required"><span className="visually-hidden">, sign-in required</span></span>
                 ) : null}
               </Link>
             ))}
+            {privateView ? (
+              <button
+                className="ml-1 inline-flex h-8 items-center rounded-md border border-zinc-800 px-2.5 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
+                type="button"
+                onClick={() => void signOut()}
+              >
+                Sign out
+              </button>
+            ) : null}
           </nav>
         </div>
       </header>

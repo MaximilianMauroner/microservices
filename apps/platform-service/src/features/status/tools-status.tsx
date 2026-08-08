@@ -77,7 +77,7 @@ function ToolsStatusView({ snapshot, publicOrigin, privateView = false, actor }:
               <div className="private-status-callout__icon" aria-hidden="true"><span className="suite-lock" /></div>
               <div>
                 <h2 id="private-status-title">Private service status</h2>
-                <p>Sign in with Cloudflare Access to view availability for internal services.</p>
+                <p>Sign in with Google to view availability for internal services.</p>
               </div>
               <Button variant="secondary" className="private-status-link" render={<Link to="/manage/status" preload="intent" />}>
                 View private status <span aria-hidden="true">›</span>

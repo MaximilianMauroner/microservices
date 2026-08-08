@@ -770,7 +770,7 @@ describe("html publisher", () => {
     expect(page.headers["cache-control"]).toBe("private, no-store");
     expect(page.text).toContain("Temporary uploads");
     expect(page.text).toContain("Files expire after 3 days.");
-    expect(page.text).toContain("Cloudflare Access");
+    expect(page.text).toContain("Authenticated");
     expect(page.text).toContain('aria-current="page">Publish');
     expect(page.text).toContain('class="suite-skip skip-link"');
     expect(page.text).toContain('id="upload-search"');
@@ -799,7 +799,7 @@ describe("html publisher", () => {
       .expect("content-type", /javascript/)
       .expect("Cache-Control", "private, max-age=31536000, immutable")
       .expect(200);
-    expect(script.text).toContain('location.assign("/cdn-cgi/access/logout")');
+    expect(script.text).toContain('fetch("/api/auth/sign-out", { method: "POST" })');
     expect(script.text).toContain("destination.origin !== window.location.origin");
     expect(script.text).toContain('link.target = "_blank"');
     expect(script.text).toContain('link.rel = "noreferrer"');

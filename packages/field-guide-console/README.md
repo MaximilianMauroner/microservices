@@ -5,8 +5,8 @@ task-scoped agent decision records. Submitted content is immutable. Decision
 feedback and candidate verdict amendments are append-only.
 
 Production is mounted by `apps/platform-service` at `/review` and uses the
-Field Guide Cloudflare Access audience. `/api/review*` shares that browser
-boundary. Native-token `/api/agent*` intentionally bypasses browser Access and
+shared Better Auth browser session. `/api/review*` shares that browser
+boundary. Native-token `/api/agent*` intentionally bypasses browser auth and
 requires `AGENT_API_TOKEN`.
 
 The standalone process is retained for repository and agent-API development.

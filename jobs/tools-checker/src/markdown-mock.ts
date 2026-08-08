@@ -88,7 +88,7 @@ function route(request: Request): Response | undefined {
 }
 
 function unauthorized() {
-  return jsonResponse({ error: "access_required" }, 401, {
+  return jsonResponse({ error: "authentication_required" }, 401, {
     "WWW-Authenticate": 'Bearer realm="markdown-share-admin"'
   });
 }

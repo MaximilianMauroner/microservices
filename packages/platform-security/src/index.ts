@@ -1,81 +1,36 @@
-import {
-  createRemoteJWKSet,
-  jwtVerify,
-  type JWTVerifyGetKey
-} from "jose";
-
-export interface AccessActor {
-  id: string;
+export interface PlatformPrincipal {
+  subject: string;
+  email: string;
 }
 
-export interface AccessVerifier {
-  verify(request: Request): Promise<AccessActor>;
-}
+const verifiedPrincipal = Symbol("tools-platform.verified-principal");
 
-const verifiedActor = Symbol("tools-platform.verified-access-actor");
-
-type RequestWithActor = Request & {
-  [verifiedActor]?: AccessActor;
+type RequestWithPrincipal = Request & {
+  [verifiedPrincipal]?: PlatformPrincipal;
 };
 
-export function attachAccessActor(request: Request, actor: AccessActor): Request {
-  Object.defineProperty(request, verifiedActor, {
+export function attachPlatformPrincipal(
+  request: Request,
+  principal: PlatformPrincipal
+): Request {
+  Object.defineProperty(request, verifiedPrincipal, {
     configurable: true,
-    value: actor,
+    value: principal,
     writable: false
   });
   return request;
 }
 
-export function getAttachedAccessActor(request: Request): AccessActor | undefined {
-  return (request as RequestWithActor)[verifiedActor];
+export function getAttachedPlatformPrincipal(
+  request: Request
+): PlatformPrincipal | undefined {
+  return (request as RequestWithPrincipal)[verifiedPrincipal];
 }
 
-export class AccessDeniedError extends Error {
-  constructor() {
-    super("Cloudflare Access authentication required");
-    this.name = "AccessDeniedError";
-  }
-}
+export type ServiceFamily = "manage" | "publisher" | "review";
 
-export function createAccessVerifier(config: {
-  issuer: string;
-  audience: string | string[];
-  jwksUrl: string;
-  key?: JWTVerifyGetKey;
-}): AccessVerifier {
-  const key = config.key ?? createRemoteJWKSet(new URL(config.jwksUrl));
-  return {
-    async verify(request) {
-      const token = request.headers.get("cf-access-jwt-assertion");
-      if (!token) throw new AccessDeniedError();
-      try {
-        const { payload } = await jwtVerify(token, key, {
-          issuer: config.issuer,
-          audience: config.audience,
-          algorithms: ["RS256"]
-        });
-        const email = typeof payload.email === "string" ? payload.email : null;
-        const actor = email ?? payload.sub;
-        if (
-          !actor ||
-          actor.length > 320 ||
-          !/^[A-Za-z0-9][A-Za-z0-9@._+%-]*$/.test(actor)
-        ) {
-          throw new AccessDeniedError();
-        }
-        return { id: actor.toLowerCase() };
-      } catch {
-        throw new AccessDeniedError();
-      }
-    }
-  };
-}
-
-export type AccessFamily = "manage" | "publisher" | "review";
-
-/** Returns the mounted service that owns a path, independently of its access mode. */
-export function serviceForPath(pathname: string): AccessFamily {
+/** Returns the mounted service that owns a path, independently of its auth mode. */
+export function serviceForPath(pathname: string): ServiceFamily {
   if (isArtifactPath(pathname)) return "publisher";
   if (isFieldGuidePath(pathname)) return "review";
   return "manage";
@@ -85,12 +40,13 @@ export type RouteAccess =
   | { kind: "public" }
   | { kind: "machine"; service: "uploads" | "agent" | "heartbeat" }
   | { kind: "server-function" }
-  | { kind: "access"; family: AccessFamily };
+  | { kind: "human-session" };
 
 export const SERVER_FUNCTION_BASE_PATH = "/_serverFn";
 
 const PUBLIC_PATHS = new Set([
   "/",
+  "/sign-in",
   "/status",
   "/favicon.ico",
   "/favicon.svg",
@@ -119,10 +75,12 @@ export function classifyRoute(pathname: string, method: string): RouteAccess {
       normalizedMethod !== "GET" &&
       normalizedMethod !== "HEAD"
     ) {
-      return { kind: "access", family: "manage" };
+      return { kind: "human-session" };
     }
     return { kind: "public" };
   }
+
+  if (matchesPrefix(pathname, ["/api/auth"])) return { kind: "public" };
 
   if (isMachineApiPath(pathname)) {
     return {
@@ -135,21 +93,13 @@ export function classifyRoute(pathname: string, method: string): RouteAccess {
     };
   }
 
-  if (isServerFunctionPath(pathname)) {
-    return { kind: "server-function" };
-  }
+  if (isServerFunctionPath(pathname)) return { kind: "server-function" };
 
   if (isArtifactDeliveryPath(pathname) && isReadMethod(normalizedMethod)) {
     return { kind: "public" };
   }
 
-  if (isArtifactPath(pathname)) {
-    return { kind: "access", family: "publisher" };
-  }
-  if (isFieldGuidePath(pathname)) {
-    return { kind: "access", family: "review" };
-  }
-  return { kind: "access", family: "manage" };
+  return { kind: "human-session" };
 }
 
 export function isServerFunctionPath(
@@ -164,27 +114,16 @@ export function isServerFunctionPath(
 
 export function isArtifactPath(pathname: string): boolean {
   return matchesPrefix(pathname, [
-    "/favicon.ico",
-    "/favicon.svg",
     "/publish",
-    "/uploads",
     "/api/uploads",
     "/api/external-uploads",
     "/artifacts",
-    "/files",
-    "/p",
-    "/f"
+    "/files"
   ]);
 }
 
 export function isFieldGuidePath(pathname: string): boolean {
-  return matchesPrefix(pathname, [
-    "/review",
-    "/review.css",
-    "/review-suite.css",
-    "/api/review",
-    "/api/agent"
-  ]);
+  return matchesPrefix(pathname, ["/review", "/api/review", "/api/agent"]);
 }
 
 export function isMachineApiPath(pathname: string): boolean {
@@ -204,7 +143,7 @@ export function isHeartbeatPath(pathname: string): boolean {
 }
 
 export function isArtifactDeliveryPath(pathname: string): boolean {
-  return matchesPrefix(pathname, ["/artifacts", "/files", "/p", "/f"]);
+  return matchesPrefix(pathname, ["/artifacts", "/files"]);
 }
 
 export function isReadMethod(method: string): boolean {
