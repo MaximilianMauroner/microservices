@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { ToolsDirectory } from "../features/catalog/tools-directory.js";
-import { getPublicPageData } from "../public-data.js";
+import { getPrivateStatusPageData } from "../protected-data.js";
 import { tools } from "../route-handlers.js";
 import { faviconLink, favicons } from "../favicons.js";
 import { requireRouteSession } from "../auth-session.js";
@@ -22,7 +22,7 @@ export const Route = createFileRoute("/")({
       ...(loaderData ? [{ rel: "canonical", href: `${loaderData.publicOrigin}/` }] : [])
     ]
   }),
-  loader: () => getPublicPageData(),
+  loader: () => getPrivateStatusPageData(),
   component: ToolsDirectoryRoute,
   server: {
     handlers: {
@@ -33,5 +33,5 @@ export const Route = createFileRoute("/")({
 
 function ToolsDirectoryRoute() {
   const data = Route.useLoaderData();
-  return <ToolsDirectory {...data} />;
+  return <ToolsDirectory snapshot={data.snapshot} publicOrigin={data.publicOrigin} />;
 }
