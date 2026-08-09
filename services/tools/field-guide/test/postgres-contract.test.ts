@@ -75,6 +75,17 @@ describe("Postgres schema contract", () => {
     expect(artifacts).toContain('tablesFilter: ["objects", "operations"]');
   });
 
+  it("exports runtime schemas for Drizzle ownership", async () => {
+    const schema = await readFile(new URL("../../database/postgres-schema.ts", import.meta.url), "utf8");
+    expect(schema).toContain('export const toolsSchema = pgSchema("tools")');
+    expect(schema).toContain('export const artifactsSchema = pgSchema("artifacts")');
+  });
+
+  it("never bypasses Drizzle decisions with hints", async () => {
+    const push = await readFile(new URL("../src/push-postgres.ts", import.meta.url), "utf8");
+    expect(push).not.toContain("--hints");
+  });
+
   it("keeps the runtime search path aligned with the pushed Field Guide tables", async () => {
     const repository = await readFile(
       new URL("../src/postgres-repository.ts", import.meta.url),
