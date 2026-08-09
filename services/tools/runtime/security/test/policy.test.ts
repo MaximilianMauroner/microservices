@@ -22,6 +22,10 @@ describe("central platform route policy", () => {
     expect(classifyRoute("/api/agent/status", "GET")).toEqual({ kind: "machine", service: "agent" });
     expect(classifyRoute("/api/status/heartbeats/tower", "POST")).toEqual({ kind: "machine", service: "heartbeat" });
     expect(classifyRoute("/api/review/queue", "GET")).toEqual({ kind: "human-session" });
+    expect(classifyRoute("/api/money/imports", "POST")).toEqual({ kind: "human-session" });
+    expect(classifyRoute("/api/money/activity", "GET")).toEqual({ kind: "human-session" });
+    expect(classifyRoute("/api/money/categories", "POST")).toEqual({ kind: "human-session" });
+    expect(classifyRoute("/api/money/balances", "POST")).toEqual({ kind: "human-session" });
     expect(classifyRoute("/manage/status", "GET")).toEqual({ kind: "human-session" });
     expect(classifyRoute("/_serverFn/getPublicPageData", "GET")).toEqual({ kind: "server-function" });
   });

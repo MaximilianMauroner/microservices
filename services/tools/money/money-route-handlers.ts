@@ -1,0 +1,184 @@
+import type { PlatformRouteInput } from "../src/route-handlers.js";
+import { MoneyImportValidationError } from "./money-import-domain.js";
+import { assertMoneyImportFileSize } from "./money-import-service.js";
+
+export async function previewMoneyImport(input: PlatformRouteInput) {
+  const rejected = validateMutationRequest(input);
+  if (rejected) return rejected;
+  try {
+    const file = await moneyFile(input.request);
+    const preview = await input.context.runtime.moneyImports.preview(file.name, await fileBytes(file));
+    return json(preview);
+  } catch (error) {
+    return importError(error);
+  }
+}
+
+export async function commitMoneyImport(input: PlatformRouteInput) {
+  const rejected = validateMutationRequest(input);
+  if (rejected) return rejected;
+  try {
+    const form = await multipart(input.request);
+    const file = singleFile(form);
+    const digest = singleString(form, "expectedDigest");
+    assertMoneyImportFileSize(file.size);
+    const receipt = await input.context.runtime.moneyImports.commit({
+      filename: file.name,
+      bytes: await fileBytes(file),
+      expectedDigest: digest,
+      actor: input.context.principal!.email
+    });
+    return json(receipt, receipt.replay ? 200 : 201);
+  } catch (error) {
+    return importError(error);
+  }
+}
+
+export async function updateMoneyCategory(input: PlatformRouteInput) {
+  const rejected = validateMutationRequest(input);
+  if (rejected) return rejected;
+  try {
+    const body = await jsonBody(input.request);
+    await input.context.runtime.moneyImports.setTransactionCategory({
+      transactionId: stringField(body, "transactionId"),
+      category: stringField(body, "category"),
+      createRule: body.createRule === true,
+      actor: input.context.principal!.email
+    });
+    return json({ ok: true });
+  } catch (error) {
+    return importError(error);
+  }
+}
+
+export async function addMoneyBalance(input: PlatformRouteInput) {
+  const rejected = validateMutationRequest(input);
+  if (rejected) return rejected;
+  try {
+    const body = await jsonBody(input.request);
+    await input.context.runtime.moneyImports.addManualBalance({
+      accountName: stringField(body, "accountName"), role: stringField(body, "role"),
+      date: stringField(body, "date"), value: stringField(body, "value"), currency: stringField(body, "currency")
+    });
+    return json({ ok: true }, 201);
+  } catch (error) {
+    return importError(error);
+  }
+}
+
+export async function getMoneyActivity(input: PlatformRouteInput) {
+  if (!input.context.principal) return json({ error: "authentication_required" }, 401);
+  try {
+    const url = new URL(input.request.url);
+    return json(await input.context.runtime.moneyImports.readActivityPage({
+      query: url.searchParams.get("query") ?? "",
+      ...(url.searchParams.get("flow") ? { flow: url.searchParams.get("flow")! } : {}),
+      offset: integerParameter(url.searchParams.get("offset"), 0),
+      limit: integerParameter(url.searchParams.get("limit"), 200)
+    }));
+  } catch (error) {
+    return importError(error);
+  }
+}
+
+function validateMutationRequest({ request, context }: PlatformRouteInput) {
+  if (!context.principal) return json({ error: "authentication_required" }, 401);
+  const origin = request.headers.get("origin");
+  if (!origin || origin !== new URL(context.runtime.publicOrigin).origin) {
+    return json({ error: "invalid_origin" }, 403);
+  }
+  const contentLength = Number(request.headers.get("content-length"));
+  if (Number.isFinite(contentLength) && contentLength > 11 * 1024 * 1024) {
+    return json({ error: "file_too_large", message: "Money imports must be 10 MB or smaller." }, 413);
+  }
+  return undefined;
+}
+
+async function moneyFile(request: Request) {
+  const form = await multipart(request);
+  const file = singleFile(form);
+  if ([...form.keys()].some((key) => key !== "file")) {
+    throw new MoneyImportValidationError("invalid_form", "Preview accepts only one file.");
+  }
+  assertMoneyImportFileSize(file.size);
+  return file;
+}
+
+async function multipart(request: Request) {
+  if (!request.headers.get("content-type")?.toLowerCase().startsWith("multipart/form-data;")) {
+    throw new MoneyImportValidationError("invalid_content_type", "Expected a multipart file upload.");
+  }
+  try {
+    return await request.formData();
+  } catch {
+    throw new MoneyImportValidationError("invalid_form", "The multipart upload could not be parsed.");
+  }
+}
+
+async function jsonBody(request: Request): Promise<Record<string, unknown>> {
+  if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) {
+    throw new MoneyImportValidationError("invalid_content_type", "Expected a JSON request.");
+  }
+  if (Number(request.headers.get("content-length")) > 16_384) throw new MoneyImportValidationError("request_too_large", "The request is too large.");
+  try {
+    const value: unknown = await request.json();
+    if (typeof value !== "object" || value === null || Array.isArray(value)) throw new Error();
+    return value as Record<string, unknown>;
+  } catch {
+    throw new MoneyImportValidationError("invalid_json", "The JSON request could not be parsed.");
+  }
+}
+
+function stringField(body: Record<string, unknown>, name: string) {
+  const value = body[name];
+  if (typeof value !== "string") throw new MoneyImportValidationError("invalid_request", `Expected ${name} to be a string.`);
+  return value;
+}
+
+function integerParameter(value: string | null, fallback: number) {
+  if (value === null) return fallback;
+  if (!/^\d+$/.test(value)) throw new MoneyImportValidationError("invalid_parameter", "Expected an integer query parameter.");
+  return Number(value);
+}
+
+function singleFile(form: FormData) {
+  const values = form.getAll("file");
+  if (values.length !== 1 || !(values[0] instanceof File)) {
+    throw new MoneyImportValidationError("invalid_file", "Expected exactly one file.");
+  }
+  return values[0];
+}
+
+function singleString(form: FormData, name: string) {
+  const values = form.getAll(name);
+  if (values.length !== 1 || typeof values[0] !== "string" || !values[0]) {
+    throw new MoneyImportValidationError("invalid_form", `Expected one ${name} field.`);
+  }
+  return values[0];
+}
+
+async function fileBytes(file: File) {
+  return new Uint8Array(await file.arrayBuffer());
+}
+
+function importError(error: unknown) {
+  if (error instanceof MoneyImportValidationError) {
+    const status = error.code === "file_too_large" ? 413 : 400;
+    return json({ error: error.code, message: error.message }, status);
+  }
+  console.error(JSON.stringify({
+    event: "money.import_failed",
+    errorType: error instanceof Error ? error.name : "UnknownError"
+  }));
+  return json({ error: "import_failed", message: "The statement could not be imported." }, 500);
+}
+
+function json(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      "Cache-Control": "private, no-store",
+      "Content-Type": "application/json; charset=utf-8"
+    }
+  });
+}
