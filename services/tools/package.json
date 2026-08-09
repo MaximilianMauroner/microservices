@@ -7,7 +7,6 @@
     "build": "vite build",
     "dev": "vite dev",
     "start": "node .output/server/index.mjs",
-    "db:migrate": "tsx database/migrate.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },
@@ -31,6 +30,7 @@
     "google-auth-library": "^11.0.0",
     "input-otp": "^1.4.2",
     "lucide-react": "^1.28.0",
+    "drizzle-orm": "1.0.0-rc.4",
     "postgres": "^3.4.7",
     "react": "19.2.8",
     "react-day-picker": "^10.0.1",

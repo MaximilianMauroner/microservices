@@ -276,7 +276,7 @@ export class PostgresReviewRepository implements ReviewRepository {
     await this.sql.end();
   }
 }
-const FIELD_GUIDE_SCHEMA = "field_guide";
+const FIELD_GUIDE_SCHEMA = "public";
 const digest = (value: object) =>
   crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const isUnique = (e: unknown) =>

@@ -42,7 +42,7 @@ function foreignKeys(table: (typeof tables)[number]) {
 }
 
 describe("Postgres schema contract", () => {
-  it("owns exactly the Field Guide schema tables", async () => {
+  it("owns the Field Guide tables in the shared Drizzle push", async () => {
     expect(tables.map((table) => getTableConfig(table).name)).toEqual([
       "candidates",
       "review_rounds",
@@ -55,16 +55,32 @@ describe("Postgres schema contract", () => {
       "decision_promotion_records",
     ]);
 
-    const config = await readFile(
-      new URL("../drizzle.postgres.config.ts", import.meta.url),
-      "utf8",
-    );
+    const config = await readFile(new URL("../drizzle.postgres.config.ts", import.meta.url), "utf8");
     expect(config).toContain('dialect: "postgresql"');
     expect(config).toContain('schema: "./src/db/postgres-schema.ts"');
-    expect(config).toContain('schemaFilter: ["field_guide"]');
-    expect(config).toContain('"field_guide_schema_migrations"');
+    expect(config).toContain('schemaFilter: ["public"]');
+    expect(config).toContain('tablesFilter: [');
     expect(config).toContain("consumePushHandoff(process.env)");
     expect(config).not.toContain("PUSH_AUTHORIZATION");
+  });
+
+  it("scopes runtime pushes to one schema each", async () => {
+    const [tools, artifacts] = await Promise.all([
+      readFile(new URL("../drizzle.tools.config.ts", import.meta.url), "utf8"),
+      readFile(new URL("../drizzle.artifacts.config.ts", import.meta.url), "utf8"),
+    ]);
+    expect(tools).toContain('schemaFilter: ["tools"]');
+    expect(tools).not.toContain('"objects"');
+    expect(artifacts).toContain('schemaFilter: ["artifacts"]');
+    expect(artifacts).toContain('tablesFilter: ["objects", "operations"]');
+  });
+
+  it("keeps the runtime search path aligned with the pushed Field Guide tables", async () => {
+    const repository = await readFile(
+      new URL("../src/postgres-repository.ts", import.meta.url),
+      "utf8",
+    );
+    expect(repository).toContain('const FIELD_GUIDE_SCHEMA = "public"');
   });
 
   it("filters decision records by effective source-project provenance", async () => {
@@ -217,7 +233,7 @@ describe("Postgres schema contract", () => {
     });
     expect(
       dialect.sqlToQuery(indexes[0]?.config.where ?? sql`false`).sql,
-    ).toBe('"field_guide"."verdict_events"."amends_decision_id" is not null');
+    ).toBe('"verdict_events"."amends_decision_id" is not null');
   });
 
   it("keeps verdict events append-only and schema changes out of startup", async () => {
