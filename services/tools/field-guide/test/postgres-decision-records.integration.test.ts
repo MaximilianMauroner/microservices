@@ -34,7 +34,7 @@ it.skipIf(!databaseUrl || !confirmed)("pushes the PostgreSQL schema and supports
       cwd: serviceDirectory,
       env: { ...process.env, TEST_DATABASE_URL: url, FIELD_GUIDE_TEST_DATABASE_CONFIRM: "field-guide-console-test" },
     });
-    expect((await database<{ name: string }[]>`SELECT indexname name FROM pg_indexes WHERE schemaname='field_guide' AND indexname='decision_feedback_events_record_sequence_idx'`)[0]?.name).toBe("decision_feedback_events_record_sequence_idx");
+    expect((await database<{ name: string }[]>`SELECT indexname name FROM pg_indexes WHERE schemaname='public' AND indexname='decision_feedback_events_record_sequence_idx'`)[0]?.name).toBe("decision_feedback_events_record_sequence_idx");
 
     repository = new PostgresReviewRepository(url);
     const first = record();

@@ -66,9 +66,9 @@ describe("Postgres artifact metadata paging", () => {
 
   it("claims only expired operations and locks ownership during finalization", async () => {
     const source = await readFile(new URL("../src/postgres-storage.ts", import.meta.url), "utf8");
-    const migration = await readFile(new URL("../../database/003_artifact_operations.sql", import.meta.url), "utf8");
+    const schema = await readFile(new URL("../../database/postgres-schema.ts", import.meta.url), "utf8");
     expect(source).toContain("where lease_until <= now()");
     expect(source).toContain("and owner_id = ${operation.ownerId} for update");
-    expect(migration).toContain("unique index if not exists artifact_operations_artifact_idx");
+    expect(schema).toContain('uniqueIndex("artifact_operations_artifact_idx")');
   });
 });

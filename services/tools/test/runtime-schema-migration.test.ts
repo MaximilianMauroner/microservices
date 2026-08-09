@@ -1,14 +1,21 @@
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 
-const migrationUrl = new URL("../database/001_runtime_schemas.sql", import.meta.url);
+describe("runtime schema management", () => {
+  it("uses the guarded Drizzle push without migration scripts", async () => {
+    const [rootConfig, previewConfig, serviceConfig, packageJson] = await Promise.all([
+      readFile(new URL("../../../railway.json", import.meta.url), "utf8"),
+      readFile(new URL("../../../railway.preview.json", import.meta.url), "utf8"),
+      readFile(new URL("../railway.json", import.meta.url), "utf8"),
+      readFile(new URL("../package.json", import.meta.url), "utf8"),
+    ]);
 
-describe("runtime schema migration", () => {
-  it("fails instead of silently accepting duplicate Field Guide relations", async () => {
-    const migration = await readFile(migrationUrl, "utf8");
-
-    expect(migration).toContain("and to_regclass('field_guide.' || relation_name) is not null then");
-    expect(migration).toContain("raise exception 'refusing to move public.%: field_guide.% already exists'");
-    expect(migration).toContain("elsif to_regclass('public.' || relation_name) is not null then");
+    for (const config of [rootConfig, previewConfig, serviceConfig]) {
+      expect(config).toContain("db:push-postgres");
+      expect(config).toContain("db:push-postgres && pnpm --dir services/tools/publisher run db:backfill");
+      expect(config).not.toContain("db:migrate");
+    }
+    expect(JSON.parse(packageJson).scripts["db:migrate"]).toBeUndefined();
+    await expect(stat(new URL("../database/migrate.ts", import.meta.url))).rejects.toThrow();
   });
 });

@@ -31,23 +31,35 @@ if (mode === "test") {
   }
 }
 
-const handoff = createPushHandoff(process.env, mode);
-const push = spawn("pnpm", ["exec", "drizzle-kit", "push", "--config", "drizzle.postgres.config.ts"], {
-  cwd: new URL("..", import.meta.url),
-  env: {
-    ...process.env,
-    FIELD_GUIDE_SCHEMA_PUSH_HANDOFF: handoff.path,
-    FIELD_GUIDE_SCHEMA_PUSH_NONCE: handoff.nonce,
-    FIELD_GUIDE_SCHEMA_PUSH_MODE: handoff.mode,
-  },
-  stdio: "inherit",
-});
-const exitCode = await new Promise<number>((resolve, reject) => {
-  push.once("error", reject);
-  push.once("exit", (code, signal) => {
-    if (signal) reject(new Error(`Drizzle schema push terminated by ${signal}.`));
-    else resolve(code ?? 1);
-  });
-});
-await rm(handoff.directory, { recursive: true, force: true });
-process.exit(exitCode);
+let failedExitCode: number | undefined;
+for (const config of [
+  "drizzle.postgres.config.ts",
+  "drizzle.tools.config.ts",
+  "drizzle.artifacts.config.ts",
+]) {
+  const handoff = createPushHandoff(process.env, mode);
+  try {
+    const push = spawn("pnpm", ["exec", "drizzle-kit", "push", "--config", config], {
+      cwd: new URL("..", import.meta.url),
+      env: {
+        ...process.env,
+        FIELD_GUIDE_SCHEMA_PUSH_HANDOFF: handoff.path,
+        FIELD_GUIDE_SCHEMA_PUSH_NONCE: handoff.nonce,
+        FIELD_GUIDE_SCHEMA_PUSH_MODE: handoff.mode,
+      },
+      stdio: "inherit",
+    });
+    const exitCode = await new Promise<number>((resolve, reject) => {
+      push.once("error", reject);
+      push.once("exit", (code, signal) => {
+        if (signal) reject(new Error(`Drizzle schema push terminated by ${signal}.`));
+        else resolve(code ?? 1);
+      });
+    });
+    if (exitCode !== 0) failedExitCode = exitCode;
+  } finally {
+    await rm(handoff.directory, { recursive: true, force: true });
+  }
+  if (failedExitCode !== undefined) break;
+}
+if (failedExitCode !== undefined) process.exitCode = failedExitCode;
