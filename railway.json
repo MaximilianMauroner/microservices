@@ -4,8 +4,8 @@
     "builder": "RAILPACK"
   },
   "deploy": {
-    "preDeployCommand": ["FIELD_GUIDE_SCHEMA_PUSH_CONFIRM=field-guide-console-production DATABASE_URL=\"$FIELD_GUIDE_DATABASE_URL\" bun run --cwd packages/field-guide-console db:push-postgres"],
-    "startCommand": "bun run --cwd apps/platform-service start",
+    "preDeployCommand": ["pnpm --dir services/tools run db:migrate && FIELD_GUIDE_SCHEMA_PUSH_CONFIRM=field-guide-console-production pnpm --dir services/tools/field-guide run db:push-postgres"],
+    "startCommand": "pnpm --dir services/tools run start",
     "healthcheckPath": "/health",
     "healthcheckTimeout": 60,
     "restartPolicyType": "ON_FAILURE",

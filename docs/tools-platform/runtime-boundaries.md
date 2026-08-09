@@ -2,25 +2,22 @@
 
 Repository location defines runtime ownership:
 
-- `apps/platform-service` is the only integrated TanStack application. Its
-  routes use client navigation and share the platform loading experience.
-- Other `apps/*` directories are independently hosted applications. Links to
+- `services/tools` is the integrated TanStack application. Its products share
+  client navigation, authentication, health, lifecycle, and deployment.
+- Other `services/*` directories are independently hosted services. Links to
   them cross a document and runtime boundary.
-- `packages/*` directories are reusable capabilities. They cannot own a
-  deployment or browser entry point.
-- `jobs/*` directories are independently running background processes without
-  a browser surface.
+- Direct children of `services/tools/*` are products in the Tools monolith.
+- Scheduled work belongs to the product that owns its state. Tools products run
+  leased tasks in the Tools process; Markdown Share uses Convex scheduling.
 
-Authentication is an independent property. Public, session-protected, and
-private-network tools can exist on either side of the runtime boundary. Catalog
-`visibility` and link `access` describe that policy; directory location does
-not.
+Authentication is independent of deployment. Public, session-protected, and
+private-network products may exist on either side of a runtime boundary.
 
-When adding a tool:
+When adding a product or service:
 
-1. Add a platform feature under `apps/platform-service/src/features` when it
-   belongs to the shared TanStack runtime.
-2. Add an `apps/<name>` workspace only when it has an independent deployment.
-3. Extract reusable logic to `packages/<name>` without adding deployment
-   configuration there.
-4. Register visibility and access explicitly in the typed catalog.
+1. Add a direct product under `services/tools/<name>` when it belongs to the
+   Tools process.
+2. Add `services/<name>` only when it has an independent deployment.
+3. Keep cross-product runtime behavior under `services/tools/runtime` only when
+   it has multiple consumers inside the monolith.
+4. Define dashboard identity and status monitoring behavior in typed code.
