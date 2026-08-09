@@ -27,6 +27,8 @@ describe("central platform route policy", () => {
   });
 
   it("does not widen exact public asset exceptions", () => {
+    expect(classifyRoute("/theme.js", "GET")).toEqual({ kind: "public" });
+    expect(classifyRoute("/theme.js.map", "GET")).toEqual({ kind: "human-session" });
     expect(classifyRoute("/assets/ops.js", "GET")).toEqual({ kind: "public" });
     expect(classifyRoute("/assets/local-time.js", "GET")).toEqual({ kind: "public" });
     expect(classifyRoute("/assets/ops.js.map", "GET")).toEqual({ kind: "human-session" });

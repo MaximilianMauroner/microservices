@@ -73,7 +73,10 @@ export function createPostgresCheckerStore(config: CheckerConfig): CheckerStore 
     },
     writePublicSnapshot: (value, signal) => snapshots.writePublicSnapshot(value, signal),
     writePrivateSnapshot: (value, signal) => snapshots.writePrivateSnapshot(value, signal),
-    close() { snapshots.close(); void sql.end(); }
+    async close() {
+      await snapshots.close();
+      await sql.end();
+    }
   };
 }
 

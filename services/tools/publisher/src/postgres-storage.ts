@@ -28,9 +28,12 @@ type ArtifactRow = {
 type PendingOperation = {
   operation_id: string;
   artifact_id: string;
+  owner_id: string;
   operation_kind: "put_html" | "put_file" | "delete";
   payload: UpsertArtifact | null;
 };
+
+const OPERATION_LEASE_MS = 6 * 60 * 60 * 1000;
 
 /** Keeps file bodies in S3 while making Postgres authoritative for metadata. */
 export function createPostgresUploadStorage(
@@ -58,8 +61,8 @@ export function createMetadataBackedUploadStorage(
       await runDurableMutation({
         prepare: () => prepare(sql, id, "put_html", intended),
         mutate: () => bodies.putHtml(id, filePath, metadata, options),
-        reconcile: (operationId) => reconcileOperation(bodies, sql, { operation_id: operationId, artifact_id: id, operation_kind: "put_html", payload: intended }, options),
-        finalize: (operationId) => finalizePut(sql, operationId, intended)
+        reconcile: (operation) => reconcileOperation(bodies, sql, { operation_id: operation.operationId, owner_id: operation.ownerId, artifact_id: id, operation_kind: "put_html", payload: intended }, options),
+        finalize: (operation) => finalizePut(sql, operation, intended)
       });
     },
     async getHtml(id, options) {
@@ -82,8 +85,8 @@ export function createMetadataBackedUploadStorage(
       await runDurableMutation({
         prepare: () => prepare(sql, id, "put_file", intended),
         mutate: () => bodies.putTemporaryFile(id, filePath, metadata, options),
-        reconcile: (operationId) => reconcileOperation(bodies, sql, { operation_id: operationId, artifact_id: id, operation_kind: "put_file", payload: intended }, options),
-        finalize: (operationId) => finalizePut(sql, operationId, intended)
+        reconcile: (operation) => reconcileOperation(bodies, sql, { operation_id: operation.operationId, owner_id: operation.ownerId, artifact_id: id, operation_kind: "put_file", payload: intended }, options),
+        finalize: (operation) => finalizePut(sql, operation, intended)
       });
     },
     async getTemporaryFile(id, options) {
@@ -120,14 +123,14 @@ export function createMetadataBackedUploadStorage(
     },
     async deleteUpload(id, options) {
       await reconcileArtifactOperations(bodies, sql, options);
-      const operationId = await prepare(sql, id, "delete", null);
+      const operation = await prepare(sql, id, "delete", null);
       try {
         await bodies.deleteUpload(id, options);
       } catch (error) {
         // Keep the durable intent: a later read/list/cleanup retries the idempotent delete.
         throw error;
       }
-      await finalizeDelete(sql, operationId, id);
+      await finalizeDelete(sql, operation, id);
     },
     async deleteExpiredTemporaryFiles(expiresAtOrBefore, options) {
       const rows = await sql<{ id: string }[]>`
@@ -154,41 +157,59 @@ type UpsertArtifact = {
 };
 
 export async function runDurableMutation(options: {
-  prepare: () => Promise<string>;
+  prepare: () => Promise<OperationOwner>;
   mutate: () => Promise<void>;
-  reconcile: (operationId: string) => Promise<void>;
-  finalize: (operationId: string) => Promise<void>;
+  reconcile: (operation: OperationOwner) => Promise<void>;
+  finalize: (operation: OperationOwner) => Promise<void>;
 }) {
-  const operationId = await options.prepare();
+  const operation = await options.prepare();
   try { await options.mutate(); }
-  catch (error) { await options.reconcile(operationId); throw error; }
-  await options.finalize(operationId);
+  catch (error) { await options.reconcile(operation); throw error; }
+  await options.finalize(operation);
 }
+
+export type OperationOwner = Readonly<{ operationId: string; ownerId: string }>;
 
 async function prepare(sql: Sql, artifactId: string, kind: PendingOperation["operation_kind"], payload: UpsertArtifact | null) {
   const operationId = crypto.randomUUID();
-  await sql`insert into artifacts.operations (operation_id, artifact_id, operation_kind, payload)
-    values (${operationId}, ${artifactId}, ${kind}, ${payload ? JSON.stringify(payload) : null}::jsonb)`;
-  return operationId;
+  const ownerId = crypto.randomUUID();
+  await sql`insert into artifacts.operations (operation_id, artifact_id, owner_id, lease_until, operation_kind, payload)
+    values (${operationId}, ${artifactId}, ${ownerId}, now() + ${OPERATION_LEASE_MS} * interval '1 millisecond', ${kind}, ${payload ? JSON.stringify(payload) : null}::jsonb)`;
+  return { operationId, ownerId };
 }
 
-async function finalizePut(sql: Sql, operationId: string, value: UpsertArtifact) {
-  await sql.begin(async (tx) => { await upsert(tx, value); await tx`delete from artifacts.operations where operation_id = ${operationId}`; });
+async function finalizePut(sql: Sql, operation: OperationOwner, value: UpsertArtifact) {
+  await sql.begin(async (tx) => {
+    await requireOwnership(tx, operation);
+    await upsert(tx, value);
+    await tx`delete from artifacts.operations where operation_id = ${operation.operationId} and owner_id = ${operation.ownerId}`;
+  });
 }
 
-async function finalizeDelete(sql: Sql, operationId: string, id: string) {
-  await sql.begin(async (tx) => { await tx`delete from artifacts.objects where id = ${id}`; await tx`delete from artifacts.operations where operation_id = ${operationId}`; });
+async function finalizeDelete(sql: Sql, operation: OperationOwner, id: string) {
+  await sql.begin(async (tx) => {
+    await requireOwnership(tx, operation);
+    await tx`delete from artifacts.objects where id = ${id}`;
+    await tx`delete from artifacts.operations where operation_id = ${operation.operationId} and owner_id = ${operation.ownerId}`;
+  });
 }
 
 export async function reconcileArtifactOperations(bodies: UploadStorage, sql: Sql, options?: { signal?: AbortSignal }) {
-  const operations = await sql<PendingOperation[]>`select operation_id, artifact_id, operation_kind, payload from artifacts.operations order by created_at`;
-  for (const operation of operations) await reconcileOperation(bodies, sql, operation, options);
+  const expired = await sql<{ operation_id: string }[]>`select operation_id from artifacts.operations where lease_until <= now() order by created_at`;
+  for (const { operation_id } of expired) {
+    const ownerId = crypto.randomUUID();
+    const [operation] = await sql<PendingOperation[]>`
+      update artifacts.operations set owner_id = ${ownerId}, lease_until = now() + ${OPERATION_LEASE_MS} * interval '1 millisecond'
+      where operation_id = ${operation_id} and lease_until <= now()
+      returning operation_id, artifact_id, owner_id, operation_kind, payload`;
+    if (operation) await reconcileOperation(bodies, sql, operation, options);
+  }
 }
 
 async function reconcileOperation(bodies: UploadStorage, sql: Sql, operation: PendingOperation, options?: { signal?: AbortSignal }) {
   if (operation.operation_kind === "delete") {
     await bodies.deleteUpload(operation.artifact_id, options);
-    await finalizeDelete(sql, operation.operation_id, operation.artifact_id);
+    await finalizeDelete(sql, owner(operation), operation.artifact_id);
     return;
   }
   if (!operation.payload) throw new Error(`Artifact operation ${operation.operation_id} has no payload`);
@@ -196,8 +217,20 @@ async function reconcileOperation(bodies: UploadStorage, sql: Sql, operation: Pe
   const stored = operation.operation_kind === "put_html"
     ? await bodies.getHtml(operation.artifact_id, { ...options, headOnly: true })
     : await bodies.getTemporaryFile(operation.artifact_id, { ...options, headOnly: true });
-  if (stored?.sha256 === payload.sha256) await finalizePut(sql, operation.operation_id, payload);
-  else await sql`delete from artifacts.operations where operation_id = ${operation.operation_id}`;
+  if (stored?.sha256 === payload.sha256) await finalizePut(sql, owner(operation), payload);
+  else await sql`delete from artifacts.operations where operation_id = ${operation.operation_id} and owner_id = ${operation.owner_id}`;
+}
+
+function owner(operation: PendingOperation): OperationOwner { return { operationId: operation.operation_id, ownerId: operation.owner_id }; }
+
+async function requireOwnership(sql: TransactionSql, operation: OperationOwner) {
+  const rows = await sql<{ operation_id: string }[]>`select operation_id from artifacts.operations
+    where operation_id = ${operation.operationId} and owner_id = ${operation.ownerId} for update`;
+  assertOperationOwnership(rows.length === 1, operation.operationId);
+}
+
+export function assertOperationOwnership(owned: boolean, operationId: string) {
+  if (!owned) throw new Error(`Artifact operation ${operationId} is no longer owned by this writer`);
 }
 
 function hydratePayload(payload: UpsertArtifact): UpsertArtifact {

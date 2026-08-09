@@ -17,6 +17,7 @@ export interface ExecuteOptions {
   fetcher?: typeof fetch;
   now?: () => Date;
   monitorDefinitions?: readonly MonitorDefinition[];
+  settlementGraceMs?: number;
 }
 
 export class CheckerDeadlineError extends Error {
@@ -50,17 +51,23 @@ export async function executeChecker(
     controller.abort(new CheckerDeadlineError(config.runDeadlineMs));
     rejectDeadline(new CheckerDeadlineError(config.runDeadlineMs));
   }, config.runDeadlineMs);
+  const run = runChecker({
+    store,
+    config,
+    logger,
+    fetcher: options.fetcher,
+    now: options.now,
+    signal: controller.signal,
+    monitorDefinitions: options.monitorDefinitions ?? (options.store ? undefined : loadMonitorDefinitions())
+  });
+  let settled = false;
+  const settlement = run.then(
+    () => { settled = true; },
+    () => { settled = true; }
+  );
   try {
     const result = await Promise.race([
-      runChecker({
-        store,
-        config,
-        logger,
-        fetcher: options.fetcher,
-        now: options.now,
-        signal: controller.signal,
-        monitorDefinitions: options.monitorDefinitions ?? (options.store ? undefined : loadMonitorDefinitions())
-      }),
+      run,
       deadline
     ]);
     logger.info("checker_process_terminal", {
@@ -71,7 +78,22 @@ export async function executeChecker(
   } finally {
     clearTimeout(timer);
     controller.abort();
-    store.close();
+    if (!settled) {
+      await waitForSettlement(settlement, options.settlementGraceMs ?? 1_000);
+    }
+    await store.close();
+  }
+}
+
+async function waitForSettlement(settlement: Promise<void>, milliseconds: number) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      settlement,
+      new Promise<void>((resolve) => { timer = setTimeout(resolve, milliseconds); })
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 
@@ -102,7 +124,8 @@ export async function runCheckerCli(
       store: options.store,
       fetcher: options.fetcher,
       now: options.now,
-      monitorDefinitions: options.monitorDefinitions
+      monitorDefinitions: options.monitorDefinitions,
+      settlementGraceMs: options.settlementGraceMs ?? Math.max(1, Math.floor(cleanupGraceMs / 2))
     });
   } catch (error) {
     logger.error("checker_process_terminal", {

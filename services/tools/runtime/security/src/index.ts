@@ -48,6 +48,7 @@ const PUBLIC_PATHS = new Set([
   "/sign-in",
   "/favicon.ico",
   "/favicon.svg",
+  "/theme.js",
   "/assets/markdown-admin.js",
   "/assets/local-time.js",
   "/assets/ops.js",

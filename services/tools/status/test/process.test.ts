@@ -51,10 +51,34 @@ describe("one-shot process", () => {
       executeChecker({
         store,
         config: { ...configFixture, runDeadlineMs: 20 },
+        settlementGraceMs: 5,
         logger,
         now: () => new Date(NOW)
       })
     ).rejects.toBeInstanceOf(CheckerDeadlineError);
+    expect(store.closed).toBe(true);
+  });
+
+  it("awaits asynchronous store cleanup before returning", async () => {
+    const store = new MemoryStore();
+    let releaseClose: () => void = () => undefined;
+    const closing = new Promise<void>((resolve) => { releaseClose = resolve; });
+    store.close = async () => {
+      await closing;
+      store.closed = true;
+    };
+    let returned = false;
+    const execution = executeChecker({
+      store,
+      config: configFixture,
+      logger,
+      fetcher: vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 200 })),
+      now: () => new Date(NOW)
+    }).then(() => { returned = true; });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(returned).toBe(false);
+    releaseClose();
+    await execution;
     expect(store.closed).toBe(true);
   });
 
