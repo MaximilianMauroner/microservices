@@ -141,6 +141,12 @@ describe("tools web routes", () => {
     expect(icon.status).toBe(200);
     expect(icon.headers.get("content-type")).toBe("image/png");
 
+    const moneyIcon = await app(
+      new Request("https://tools.example.test/assets/icons/money-tracker.png")
+    );
+    expect(moneyIcon.status).toBe(200);
+    expect(moneyIcon.headers.get("content-type")).toBe("image/png");
+
     const ops = await app(new Request("https://tools.example.test/ops/catalog"));
     const html = await ops.text();
     expect(ops.status).toBe(200);

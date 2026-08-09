@@ -56,6 +56,7 @@ const PUBLIC_PATHS = new Set([
   "/assets/icons/artifact-publisher.png",
   "/assets/icons/field-guide-console.png",
   "/assets/icons/tools-status-directory.png",
+  "/assets/icons/money-tracker.png",
   "/assets/icons/network-console.png",
   "/live",
   "/health",
