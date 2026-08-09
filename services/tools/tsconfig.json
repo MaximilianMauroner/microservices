@@ -1,0 +1,31 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "types": ["node"],
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+    "allowImportingTsExtensions": true
+  },
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "dashboard/ui/**/*.ts",
+    "dashboard/ui/**/*.tsx",
+    "status/ui/**/*.ts",
+    "status/ui/**/*.tsx",
+    "publisher/ui/**/*.ts",
+    "publisher/ui/**/*.tsx",
+    "field-guide/ui/**/*.ts",
+    "field-guide/ui/**/*.tsx",
+    "money/**/*.ts",
+    "money/**/*.tsx",
+    "test/**/*.ts"
+  ]
+}

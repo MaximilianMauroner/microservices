@@ -1,0 +1,14 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "builder": "RAILPACK"
+  },
+  "deploy": {
+    "preDeployCommand": ["pnpm --dir services/tools run db:migrate && pnpm --dir services/tools/publisher run db:backfill && FIELD_GUIDE_SCHEMA_PUSH_CONFIRM=field-guide-console-production pnpm --dir services/tools/field-guide run db:push-postgres"],
+    "startCommand": "pnpm --dir services/tools run start",
+    "healthcheckPath": "/health",
+    "healthcheckTimeout": 60,
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 5
+  }
+}

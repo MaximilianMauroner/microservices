@@ -1,12 +1,16 @@
 node_modules/
 dist/
 .env
+.env.*
+!.env.example
 .railway/
 coverage/
 .DS_Store
 /.field-guide/sessions/
+/.field-guide/scratch/
+/.scratch/
 /.review/
 /.agent/sessions/
 /.agent/artifacts/
 /.agent/review/
-apps/platform-service/.output/
+services/tools/.output/

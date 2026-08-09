@@ -1,51 +1,35 @@
-# Bucket export and recovery
+# Data export and recovery
 
 ## Ownership map
 
-| Object | Writer |
-| --- | --- |
-| `catalog/current.json` | Tools Web |
-| `audit/**` | Tools Web, create-only |
-| `state/current.json` | Tools Checker |
-| `snapshots/public.json`, `snapshots/private.json` | Tools Checker |
-| `history/YYYY-MM-DD.json.gz` | Tools Checker |
-| `recovery/**`, `exports/**` | Tools Checker or an explicit operator export |
+| Data | Authority | Recovery source |
+| --- | --- | --- |
+| Product and monitor definitions | Typed repository code | Reviewed Git commit |
+| Status runs, observations, incidents, heartbeats, and leases | PostgreSQL `tools` schema | PostgreSQL backup |
+| Field Guide data | PostgreSQL `field_guide` schema | PostgreSQL backup |
+| Artifact metadata and operation journal | PostgreSQL `artifacts` schema | PostgreSQL backup |
+| Artifact file bodies | Private object-storage bucket | Bucket export |
+| Public/private status snapshots | Object storage, derived | Regenerate from code and PostgreSQL |
 
-Never give either runtime an unrestricted code path around these prefixes.
-Bucket credentials are secrets and must not be placed in commands saved to
-shell history, logs, artifacts, or tickets.
-
-## Export
-
-Before cutover, schema migration, or manual repair, copy the complete bucket to
-an encrypted operator-controlled location or a timestamped `exports/<stamp>/`
-prefix using the Railway bucket UI or an S3-compatible client. Record object
-keys, ETags, byte lengths, and SHA-256 hashes. Include catalog, state, both
-snapshots, history, recovery, and audit objects.
-
-Downloads of gzip history must remain compressed for hash comparison. Validate
-JSON objects with the decoders in `@tools-platform/domain`; do not “fix” a
-production export in place.
+PostgreSQL and the artifact bucket must be backed up together. Artifact IDs and
+object keys are stable, so preserve them exactly. Status snapshots are output
+projections and must never be used as the recovery authority.
 
 ## Recovery
 
-1. Stop the unified `platform-service` deployment to halt its in-process
-   scheduler and all web writes. Route the public origin to a maintenance
-   response; do not run a second platform replica during recovery.
-2. Export the damaged state before changing it.
-3. Select a recovery object whose schema version is supported and whose catalog
-   revision matches the intended snapshot.
-4. Restore one object at a time with `If-Match` against the damaged object's
-   current ETag. Use `If-None-Match: *` only when the destination is absent.
-5. Re-read and decode the object, then compare its ETag/hash.
-6. For catalog recovery, preserve existing audit objects and append an operator
-   incident note outside the bucket; audit objects are immutable.
-7. Restart one unified platform replica with Discord unset. Wait for one
-   aligned in-process checker pass, then verify the public/private projections.
-   Restore notifications and normal traffic only after that pass succeeds.
+1. Stop Tools to prevent browser writes and scheduled work during restoration.
+2. Export the damaged database and bucket before changing either one.
+3. Restore PostgreSQL first, preserving the `tools`, `field_guide`, and
+   `artifacts` schemas.
+4. Restore artifact bodies with their original object keys. Do not invent
+   replacement IDs or legacy URL aliases.
+5. Run `pnpm run railway:predeploy` against the restored database. Migrations
+   are idempotent and artifact-operation reconciliation repairs interrupted
+   uploads after their leases expire.
+6. Start one Tools replica and verify `/live`, `/health`, canonical artifact
+   reads, Field Guide access, and one Status pass.
+7. Restore normal replica count and traffic only after those checks pass.
 
-If `catalog/current.json` is missing, initialize it from the reviewed seed with
-a create-only conditional write. Never use the seed to overwrite an existing
-catalog. If state is missing, the checker creates empty state on its next pass;
-that loses active incident/outbox continuity, so restore state when a valid copy
-exists.
+Treat database URLs, bucket credentials, OAuth secrets, and bearer tokens as
+secrets. Never store them in repository files, shell history, logs, artifacts,
+or incident tickets.
