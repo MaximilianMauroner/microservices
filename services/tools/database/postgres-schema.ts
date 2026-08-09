@@ -126,6 +126,7 @@ export const moneyTransactions = toolsSchema.table("money_transactions", {
   category: text("category").notNull(),
   categoryOrigin: text("category_origin").notNull(),
   transferGroupId: uuid("transfer_group_id"),
+  transferDisposition: text("transfer_disposition"),
 }, (table) => [
   check("money_transactions_source_row_check", sql`${table.sourceRow} > 1`),
   check("money_transactions_currency_check", sql`${table.currency} ~ '^[A-Z]{3}$'`),
@@ -134,6 +135,7 @@ export const moneyTransactions = toolsSchema.table("money_transactions", {
   check("money_transactions_flow_kind_check", sql`${table.flowKind} in ('spend', 'income', 'refund', 'transfer', 'trade', 'investment_income', 'fee', 'tax', 'balance_adjustment')`),
   check("money_transactions_category_check", sql`${table.category} in ('housing', 'groceries', 'dining', 'transport', 'shopping', 'health', 'travel', 'subscriptions', 'education', 'entertainment', 'gifts', 'taxes', 'fees', 'cash', 'investments', 'income', 'other', 'uncategorized')`),
   check("money_transactions_category_origin_check", sql`${table.categoryOrigin} in ('source', 'rule', 'manual')`),
+  check("money_transactions_transfer_disposition_check", sql`${table.transferDisposition} is null or (${table.flowKind} = 'transfer' and ${table.transferDisposition} in ('internal_transfer', 'income', 'spend', 'refund', 'excluded'))`),
   index("money_transactions_occurred_idx").on(table.occurredAt),
   index("money_transactions_account_date_idx").on(table.accountId, table.localDate),
   index("money_transactions_flow_date_idx").on(table.flowKind, table.localDate),

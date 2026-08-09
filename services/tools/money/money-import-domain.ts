@@ -25,6 +25,8 @@ export type MoneyFlowKind = "spend" | "income" | "refund" | "transfer" | "trade"
 export const MONEY_CATEGORIES = ["housing", "groceries", "dining", "transport", "shopping", "health", "travel", "subscriptions", "education", "entertainment", "gifts", "taxes", "fees", "cash", "investments", "income", "other", "uncategorized"] as const;
 export type MoneyCategory = typeof MONEY_CATEGORIES[number];
 export type MoneyInvestmentEventKind = "buy" | "sell" | "dividend" | "fee" | "tax" | "split" | "cash_transfer" | "position_transfer" | "delivery";
+export const MONEY_TRANSFER_DISPOSITIONS = ["internal_transfer", "income", "spend", "refund", "excluded"] as const;
+export type MoneyTransferDisposition = typeof MONEY_TRANSFER_DISPOSITIONS[number];
 
 export type MoneyLedgerTransaction = Readonly<{
   sourceKey: string;
@@ -201,7 +203,7 @@ function parseTrading(dataRows: string[][], digest: string): ParsedMoneyImport {
       transactionSourceKey: sourceKey, eventKind, ...(ticker ? { symbol: ticker } : {}),
       ...(quantity ? { quantity: decimal(quantity, sourceRow, "Quantity") } : {}),
       ...(price ? { unitPrice: price.amount, priceCurrency: price.currency } : {}),
-      ...(fxRate ? { fxRate: decimal(fxRate, sourceRow, "FX Rate") } : {})
+      ...(fxRate ? { fxRate: positiveDecimal(fxRate, sourceRow, "FX Rate") } : {})
     });
   }
   return result(REVOLUT_TRADING_FORMAT, digest, transactions, investmentEvents, [], accountPreviews(transactions), []);
@@ -239,7 +241,7 @@ function parsePortfolio(dataRows: string[][], digest: string): ParsedMoneyImport
     if (eventKind) investmentEvents.push({
       transactionSourceKey: sourceKey, eventKind, ...(symbol ? { symbol } : {}), ...(name ? { name } : {}), ...(assetClass ? { assetClass } : {}),
       ...(shares ? { quantity: decimal(shares, sourceRow, "shares") } : {}), ...(price ? { unitPrice: decimal(price, sourceRow, "price"), priceCurrency: currency! } : {}),
-      ...(fxRate ? { fxRate: decimal(fxRate, sourceRow, "fx_rate") } : {})
+      ...(fxRate ? { fxRate: positiveDecimal(fxRate, sourceRow, "fx_rate") } : {})
     });
   }
   return result(PORTFOLIO_TRANSACTION_FORMAT, digest, transactions, investmentEvents, [], accountPreviews(transactions), []);
@@ -357,8 +359,9 @@ function assertEuro(value: string, sourceRow: number) { if (value !== "EUR") thr
 function parseMinorUnits(value: string | undefined, sourceRow: number, field: string) { if (!value || !/^-?\d+(?:\.\d+)?$/.test(value)) throw invalid("invalid_amount", `Row ${sourceRow} has an invalid ${field}.`); const negative = value.startsWith("-"); const [whole, fraction = ""] = (negative ? value.slice(1) : value).split("."); if (fraction.slice(2).replaceAll("0", "")) throw invalid("fractional_minor_units", `Row ${sourceRow} has unsupported fractional minor units in ${field}.`); const minor = Number(whole) * 100 + Number(fraction.slice(0, 2).padEnd(2, "0")); if (!Number.isSafeInteger(minor)) throw invalid("amount_out_of_range", `Row ${sourceRow} has an out-of-range ${field}.`); return negative ? -minor : minor; }
 function convertToEuroMinor(value: number, rate: string, sourceRow: number) { const normalized = decimal(rate, sourceRow, "FX Rate"); const [whole, fraction = ""] = normalized.split("."); const denominator = BigInt(`${whole}${fraction}`); if (denominator <= 0n) throw invalid("invalid_decimal", `Row ${sourceRow} has an invalid FX Rate.`); const numerator = BigInt(Math.abs(value)) * 10n ** BigInt(fraction.length); const rounded = (numerator + denominator / 2n) / denominator; const result = Number(rounded) * Math.sign(value); if (!Number.isSafeInteger(result)) throw invalid("amount_out_of_range", `Row ${sourceRow} has an out-of-range converted amount.`); return result; }
 function parseCurrencyAmount(value: string | undefined, expected: string, sourceRow: number, field: string) { const match = /^([A-Z]{3})\s+(-?\d+(?:\.\d+)?)$/.exec(value ?? ""); if (!match || match[1] !== expected) throw invalid("invalid_amount", `Row ${sourceRow} has an invalid ${field}.`); return parseMinorUnits(match[2], sourceRow, field); }
-function parseOptionalCurrencyAmount(value: string | undefined, expected: string, sourceRow: number, field: string) { if (!value) return undefined; const match = /^([A-Z]{3})\s+(-?\d+(?:\.\d+)?)$/.exec(value); if (!match) throw invalid("invalid_amount", `Row ${sourceRow} has an invalid ${field}.`); return { currency: match[1]!, amount: decimal(match[2]!, sourceRow, field) }; }
-function decimal(value: string, sourceRow: number, field: string) { if (!/^-?\d+(?:\.\d+)?$/.test(value)) throw invalid("invalid_decimal", `Row ${sourceRow} has an invalid ${field}.`); const normalized = value.replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, ""); return normalized === "-0" ? "0" : normalized; }
+function parseOptionalCurrencyAmount(value: string | undefined, expected: string, sourceRow: number, field: string) { if (!value) return undefined; const match = /^([A-Z]{3})\s+(-?\d+(?:\.\d+)?)$/.exec(value); if (!match || match[1] !== expected) throw invalid("invalid_amount", `Row ${sourceRow} has an invalid ${field}.`); return { currency: match[1]!, amount: decimal(match[2]!, sourceRow, field) }; }
+function decimal(value: string, sourceRow: number, field: string) { const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(value); if (!match) throw invalid("invalid_decimal", `Row ${sourceRow} has an invalid ${field}.`); const integralDigits = match[2]!.replace(/^0+(?=\d)/, "").length; const fractionalDigits = match[3]?.length ?? 0; if (integralDigits > 18 || fractionalDigits > 12) throw invalid("decimal_out_of_range", `Row ${sourceRow} has an out-of-range ${field}; at most 18 integral and 12 fractional digits are supported.`); const normalized = value.replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, ""); return normalized === "-0" ? "0" : normalized; }
+function positiveDecimal(value: string, sourceRow: number, field: string) { const normalized = decimal(value, sourceRow, field); if (Number(normalized) <= 0) throw invalid("invalid_decimal", `Row ${sourceRow} requires a positive ${field}.`); return normalized; }
 function parseIsoTimestamp(value: string | undefined, sourceRow: number, field: string) { if (!value || !/^\d{4}-\d{2}-\d{2}T/.test(value)) throw invalid("invalid_date", `Row ${sourceRow} has an invalid ${field}.`); const date = new Date(value); if (Number.isNaN(date.getTime()) || !validCalendarDate(value.slice(0, 10))) throw invalid("invalid_date", `Row ${sourceRow} has an invalid ${field}.`); return date; }
 function normalizedDate(value: string | undefined, sourceRow: number) { const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value ?? ""); const local = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(value ?? ""); const date = iso ? `${iso[1]}-${iso[2]}-${iso[3]}` : local ? `${local[3]}-${local[2]}-${local[1]}` : undefined; if (!date || !validCalendarDate(date)) throw invalid("invalid_date", `Row ${sourceRow} has an invalid Date.`); return date; }
 function validCalendarDate(value: string) { const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value); if (!match) return false; const [, year, month, day] = match.map(Number); const date = new Date(Date.UTC(year!, month! - 1, day!)); return date.getUTCFullYear() === year && date.getUTCMonth() === month! - 1 && date.getUTCDate() === day; }

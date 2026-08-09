@@ -38,6 +38,7 @@ import { Route as ApiMoneyActivityRouteImport } from './routes/api/money/activit
 import { Route as ApiMoneyBalancesRouteImport } from './routes/api/money/balances'
 import { Route as ApiMoneyCategoriesRouteImport } from './routes/api/money/categories'
 import { Route as ApiMoneyImportsRouteImport } from './routes/api/money/imports'
+import { Route as ApiMoneyTransfersRouteImport } from './routes/api/money/transfers'
 import { Route as ApiOpsSplatRouteImport } from './routes/api/ops/$'
 import { Route as ApiPublicCatalogRouteImport } from './routes/api/public/catalog'
 import { Route as ApiReviewSplatRouteImport } from './routes/api/review/$'
@@ -191,6 +192,11 @@ const ApiMoneyImportsRoute = ApiMoneyImportsRouteImport.update({
   path: '/api/money/imports',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiMoneyTransfersRoute = ApiMoneyTransfersRouteImport.update({
+  id: '/api/money/transfers',
+  path: '/api/money/transfers',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiOpsSplatRoute = ApiOpsSplatRouteImport.update({
   id: '/api/ops/$',
   path: '/api/ops/$',
@@ -258,6 +264,7 @@ export interface FileRoutesByFullPath {
   '/api/money/balances': typeof ApiMoneyBalancesRoute
   '/api/money/categories': typeof ApiMoneyCategoriesRoute
   '/api/money/imports': typeof ApiMoneyImportsRouteWithChildren
+  '/api/money/transfers': typeof ApiMoneyTransfersRoute
   '/api/ops/$': typeof ApiOpsSplatRoute
   '/api/public/catalog': typeof ApiPublicCatalogRoute
   '/api/review/$': typeof ApiReviewSplatRoute
@@ -295,6 +302,7 @@ export interface FileRoutesByTo {
   '/api/money/balances': typeof ApiMoneyBalancesRoute
   '/api/money/categories': typeof ApiMoneyCategoriesRoute
   '/api/money/imports': typeof ApiMoneyImportsRouteWithChildren
+  '/api/money/transfers': typeof ApiMoneyTransfersRoute
   '/api/ops/$': typeof ApiOpsSplatRoute
   '/api/public/catalog': typeof ApiPublicCatalogRoute
   '/api/review/$': typeof ApiReviewSplatRoute
@@ -334,6 +342,7 @@ export interface FileRoutesById {
   '/api/money/balances': typeof ApiMoneyBalancesRoute
   '/api/money/categories': typeof ApiMoneyCategoriesRoute
   '/api/money/imports': typeof ApiMoneyImportsRouteWithChildren
+  '/api/money/transfers': typeof ApiMoneyTransfersRoute
   '/api/ops/$': typeof ApiOpsSplatRoute
   '/api/public/catalog': typeof ApiPublicCatalogRoute
   '/api/review/$': typeof ApiReviewSplatRoute
@@ -374,6 +383,7 @@ export interface FileRouteTypes {
     | '/api/money/balances'
     | '/api/money/categories'
     | '/api/money/imports'
+    | '/api/money/transfers'
     | '/api/ops/$'
     | '/api/public/catalog'
     | '/api/review/$'
@@ -411,6 +421,7 @@ export interface FileRouteTypes {
     | '/api/money/balances'
     | '/api/money/categories'
     | '/api/money/imports'
+    | '/api/money/transfers'
     | '/api/ops/$'
     | '/api/public/catalog'
     | '/api/review/$'
@@ -449,6 +460,7 @@ export interface FileRouteTypes {
     | '/api/money/balances'
     | '/api/money/categories'
     | '/api/money/imports'
+    | '/api/money/transfers'
     | '/api/ops/$'
     | '/api/public/catalog'
     | '/api/review/$'
@@ -483,6 +495,7 @@ export interface RootRouteChildren {
   ApiMoneyBalancesRoute: typeof ApiMoneyBalancesRoute
   ApiMoneyCategoriesRoute: typeof ApiMoneyCategoriesRoute
   ApiMoneyImportsRoute: typeof ApiMoneyImportsRouteWithChildren
+  ApiMoneyTransfersRoute: typeof ApiMoneyTransfersRoute
   ApiOpsSplatRoute: typeof ApiOpsSplatRoute
   ApiPublicCatalogRoute: typeof ApiPublicCatalogRoute
   ApiStatusHeartbeatsMonitorIdRoute: typeof ApiStatusHeartbeatsMonitorIdRoute
@@ -693,6 +706,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiMoneyImportsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/money/transfers': {
+      id: '/api/money/transfers'
+      path: '/api/money/transfers'
+      fullPath: '/api/money/transfers'
+      preLoaderRoute: typeof ApiMoneyTransfersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/ops/$': {
       id: '/api/ops/$'
       path: '/api/ops/$'
@@ -865,6 +885,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiMoneyBalancesRoute: ApiMoneyBalancesRoute,
   ApiMoneyCategoriesRoute: ApiMoneyCategoriesRoute,
   ApiMoneyImportsRoute: ApiMoneyImportsRouteWithChildren,
+  ApiMoneyTransfersRoute: ApiMoneyTransfersRoute,
   ApiOpsSplatRoute: ApiOpsSplatRoute,
   ApiPublicCatalogRoute: ApiPublicCatalogRoute,
   ApiStatusHeartbeatsMonitorIdRoute: ApiStatusHeartbeatsMonitorIdRoute,

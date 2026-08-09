@@ -8,7 +8,8 @@
     "dev": "vite dev",
     "start": "node .output/server/index.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:money-postgres": "vitest run test/money-repository.integration.test.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",

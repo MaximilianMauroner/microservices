@@ -1,9 +1,11 @@
 import {
   MONEY_IMPORT_MAX_BYTES,
   MONEY_CATEGORIES,
+  MONEY_TRANSFER_DISPOSITIONS,
   MoneyImportValidationError,
   parseMoneyImport,
   type MoneyCategory,
+  type MoneyTransferDisposition,
   type MoneyImportPreview
 } from "./money-import-domain.js";
 import type { MoneyImportReceipt, MoneyLedgerSnapshot, MoneyRepository } from "./money-repository.js";
@@ -73,13 +75,19 @@ export class MoneyImportService {
   }
 
   setTransactionCategory(input: Readonly<{ transactionId: string; category: string; actor: string; createRule: boolean }>) {
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.transactionId)) {
-      throw new MoneyImportValidationError("invalid_transaction", "The transaction identifier is invalid.");
-    }
+    assertTransactionId(input.transactionId);
     if (!MONEY_CATEGORIES.includes(input.category as MoneyCategory)) {
       throw new MoneyImportValidationError("invalid_category", "The selected category is invalid.");
     }
     return this.repository.setTransactionCategory({ ...input, category: input.category as MoneyCategory });
+  }
+
+  setTransferDisposition(input: Readonly<{ transactionId: string; disposition: string }>) {
+    assertTransactionId(input.transactionId);
+    if (!MONEY_TRANSFER_DISPOSITIONS.includes(input.disposition as MoneyTransferDisposition)) {
+      throw new MoneyImportValidationError("invalid_transfer_disposition", "Select a valid transfer disposition.");
+    }
+    return this.repository.setTransferDisposition({ transactionId: input.transactionId, disposition: input.disposition as MoneyTransferDisposition });
   }
 
   addManualBalance(input: Readonly<{ accountName: string; role: string; date: string; value: string; currency: string }>) {
@@ -102,6 +110,12 @@ export class MoneyImportService {
 
   close(): Promise<void> {
     return this.repository.close();
+  }
+}
+
+function assertTransactionId(value: string) {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) {
+    throw new MoneyImportValidationError("invalid_transaction", "The transaction identifier is invalid.");
   }
 }
 

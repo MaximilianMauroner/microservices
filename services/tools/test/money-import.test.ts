@@ -9,7 +9,7 @@ import {
   parseMoneyImport
 } from "../money/money-import-domain.js";
 import { MoneyImportService } from "../money/money-import-service.js";
-import { previewMoneyImport, updateMoneyCategory } from "../money/money-route-handlers.js";
+import { previewMoneyImport, updateMoneyCategory, updateMoneyTransfer } from "../money/money-route-handlers.js";
 import type {
   MoneyImportCommitInput,
   MoneyImportReceipt,
@@ -114,6 +114,15 @@ describe("investment export parsers", () => {
     expect(parsed.investmentEvents[1]).toMatchObject({ eventKind: "dividend" });
   });
 
+  it("rejects investment decimals outside numeric(30,12), non-positive FX, and mismatched price currencies", () => {
+    const tradingHeader = "Date\tTicker\tType\tQuantity\tPrice per share\tTotal Amount\tCurrency\tFX Rate";
+    const parseTrading = (row: string) => parseMoneyImport(Buffer.from(`${tradingHeader}\r\n${row}\r\n`));
+    expect(() => parseTrading("2026-08-09T03:08:51.000Z\tVWCE\tBUY - MARKET\t1234567890123456789\tEUR 1\tEUR 1\tEUR\t1")).toThrow("at most 18 integral");
+    expect(() => parseTrading("2026-08-09T03:08:51.000Z\tVWCE\tBUY - MARKET\t0.1234567890123\tEUR 1\tEUR 1\tEUR\t1")).toThrow("at most 18 integral");
+    expect(() => parseTrading("2026-08-09T03:08:51.000Z\tVWCE\tBUY - MARKET\t1\tUSD 1\tEUR 1\tEUR\t1")).toThrow("invalid Price per share");
+    expect(() => parseTrading("2026-08-09T03:08:51.000Z\tVWCE\tBUY - MARKET\t1\tUSD 1\tUSD 1\tUSD\t0")).toThrow("invalid FX Rate");
+  });
+
   it("drops private payment fields and sanitizes account identifiers from portfolio CSV descriptions", () => {
     const headers = "datetime,date,account_type,category,type,asset_class,name,symbol,shares,price,amount,fee,tax,currency,original_amount,original_currency,fx_rate,description,transaction_id,counterparty_name,counterparty_iban,payment_reference,mcc_code";
     const row = "2026-08-09T03:08:51.123Z,2026-08-09,DEFAULT,CASH,CARD_TRANSACTION,,,,,,-3.500000,,,EUR,,,,Payment to DE00AAAAAAAAAAAAAAAAAA,stable-id,Merchant,DE00AAAAAAAAAAAAAAAAAA,private reference,5812";
@@ -144,11 +153,6 @@ describe("investment export parsers", () => {
     ]);
   });
 
-  it("keeps migration events out of position quantity aggregation", () => {
-    const repository = readFileSync(new URL("../money/money-repository.ts", import.meta.url), "utf8");
-    expect(repository).toContain("e.event_kind in ('buy', 'split')");
-    expect(repository).not.toContain("e.event_kind in ('buy', 'split', 'position_transfer', 'delivery')");
-  });
 });
 
 describe("balance snapshot parser", () => {
@@ -207,6 +211,11 @@ describe("money import service", () => {
       actor: "operator@example.test"
     })).rejects.toMatchObject({ code: "file_changed" });
   });
+
+  it("validates explicit transfer dispositions", () => {
+    const service = new MoneyImportService(new MemoryMoneyRepository());
+    expect(() => service.setTransferDisposition({ transactionId: "00000000-0000-4000-8000-000000000000", disposition: "uncategorized" })).toThrow("valid transfer disposition");
+  });
 });
 
 describe("money import route", () => {
@@ -241,6 +250,14 @@ describe("money import route", () => {
     expect(response.status).toBe(400);
   });
 
+  it("persists an explicit transfer disposition independently from category", async () => {
+    const setTransferDisposition = vi.fn().mockResolvedValue(undefined);
+    const request = new Request("https://tools.example.test/api/money/transfers", { method: "POST", headers: { Origin: "https://tools.example.test", "Content-Type": "application/json" }, body: JSON.stringify({ transactionId: "00000000-0000-4000-8000-000000000000", disposition: "refund" }) });
+    const response = await updateMoneyTransfer({ request, params: {}, context: { principal: { subject: "subject", email: "operator@example.test" }, runtime: { publicOrigin: "https://tools.example.test", moneyImports: { setTransferDisposition } } } } as unknown as PlatformRouteInput);
+    expect(response.status).toBe(200);
+    expect(setTransferDisposition).toHaveBeenCalledWith({ transactionId: "00000000-0000-4000-8000-000000000000", disposition: "refund" });
+  });
+
   it("passes only the private file bytes and filename to preview", async () => {
     const result = { format: REVOLUT_CASH_FORMAT };
     const preview = vi.fn().mockResolvedValue(result);
@@ -264,14 +281,7 @@ describe("money schema and Option A route contract", () => {
     }
     expect(schema).toContain('accountId: uuid("account_id").notNull().references(() => moneyAccounts.id)');
     expect(schema).toContain("table.accountId, table.matchField, table.matchValue");
-  });
-
-  it("keeps planning complete-month-only and rules account-scoped", () => {
-    const repository = readFileSync(new URL("../money/money-repository.ts", import.meta.url), "utf8");
-    expect(repository).toContain("local_date < date_trunc('month', current_date)");
-    expect(repository).toContain("generate_series(first_month, last_month");
-    expect(repository).toContain("r.account_id = t.account_id");
-    expect(repository).toContain("category_origin in ('manual', 'rule')");
+    expect(schema).toContain('transferDisposition: text("transfer_disposition")');
   });
 
   it("uses the selected workspace views without legacy search values", () => {
@@ -327,7 +337,7 @@ class MemoryMoneyRepository implements MoneyRepository {
 
   async readLedgerSnapshot(): Promise<MoneyLedgerSnapshot> {
     return {
-      imports: [], activity: [], transactionCount: 0, transferReview: { linkedPairs: 0, unlinkedCount: 0, unresolvedPositiveCount: 0, unresolvedNegativeCount: 0 }, accounts: [], accountLabels: {}, months: [],
+      imports: [], activity: [], transactionCount: 0, transferReview: { linkedPairs: 0, unlinkedCount: 0, unresolvedPositiveCount: 0, unresolvedNegativeCount: 0 }, accounts: [], accountLabels: {}, accountRoles: {}, months: [],
       spending: { months: [], categories: [], uncategorizedCount: 0 },
       investments: { positions: [], totals: { eventCount: 0, boughtMinor: 0, soldMinor: 0, incomeMinor: 0, feesMinor: 0, taxesMinor: 0 } },
       planning: { ready: true, unresolvedTransferCount: 0, medianMonthlyNetMinor: 0, observedMonthCount: 0, projections: [{ months: 6, changeMinor: 0 }, { months: 12, changeMinor: 0 }, { months: 24, changeMinor: 0 }] }
@@ -337,6 +347,7 @@ class MemoryMoneyRepository implements MoneyRepository {
   async readActivityPage() { return { items: [], total: 0, hasMore: false }; }
 
   async setTransactionCategory() { return { affectedCount: 1 }; }
+  async setTransferDisposition() {}
   async addManualBalance() {}
 
   async readiness() {}

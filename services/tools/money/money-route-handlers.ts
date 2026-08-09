@@ -51,6 +51,21 @@ export async function updateMoneyCategory(input: PlatformRouteInput) {
   }
 }
 
+export async function updateMoneyTransfer(input: PlatformRouteInput) {
+  const rejected = validateMutationRequest(input);
+  if (rejected) return rejected;
+  try {
+    const body = await jsonBody(input.request);
+    await input.context.runtime.moneyImports.setTransferDisposition({
+      transactionId: stringField(body, "transactionId"),
+      disposition: stringField(body, "disposition")
+    });
+    return json({ ok: true });
+  } catch (error) {
+    return importError(error);
+  }
+}
+
 export async function addMoneyBalance(input: PlatformRouteInput) {
   const rejected = validateMutationRequest(input);
   if (rejected) return rejected;

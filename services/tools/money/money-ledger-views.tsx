@@ -4,7 +4,7 @@ import { useMemo, useRef, useState } from "react";
 import { useRouter } from "@tanstack/react-router";
 import { Check, FileSpreadsheet, Search, Upload } from "lucide-react";
 import type { MoneyTrackerPageData } from "../src/protected-data.js";
-import { MONEY_CATEGORIES, type MoneyCategory, type MoneyImportPreview } from "./money-import-domain.js";
+import { MONEY_CATEGORIES, MONEY_TRANSFER_DISPOSITIONS, type MoneyCategory, type MoneyImportPreview, type MoneyTransferDisposition } from "./money-import-domain.js";
 import type { MoneyActivityPage, MoneyImportReceipt } from "./money-repository.js";
 import { Alert, AlertDescription, AlertTitle } from "../src/components/ui/alert.js";
 import { Badge } from "../src/components/ui/badge.js";
@@ -41,17 +41,28 @@ export function MoneyActivityView({ activity, transactionCount, transferReview }
       if (createRule && result.affectedCount > 1) await searchAll();
     } catch (caught) { setError(message(caught)); } finally { setSaving(undefined); }
   };
-  const searchAll = async (append = false) => {
+  const loadActivity = async (review: boolean, append = false) => {
     setLoading(true); setError(undefined);
     try {
       const offset = append ? rows.length : 0;
       const parameters = new URLSearchParams({ query, offset: String(offset), limit: "500" });
       if (flow !== "all") parameters.set("flow", flow);
-      if (reviewOnly) parameters.set("review", "true");
+      if (review) parameters.set("review", "true");
       const page = await moneyGet<MoneyActivityPage>(`/api/money/activity?${parameters}`);
       setRows((current) => append ? [...current, ...page.items] : [...page.items]);
       setHasMore(page.hasMore);
     } catch (caught) { setError(message(caught)); } finally { setLoading(false); }
+  };
+  const searchAll = (append = false) => loadActivity(reviewOnly, append);
+  const toggleReview = async () => { const next = !reviewOnly; setReviewOnly(next); await loadActivity(next); };
+  const setDisposition = async (item: Activity, disposition: MoneyTransferDisposition) => {
+    setSaving(item.id); setError(undefined);
+    try {
+      await moneyJson("/api/money/transfers", { transactionId: item.id, disposition });
+      setRows((current) => current.map((row) => row.id === item.id ? { ...row, transferDisposition: disposition, needsTransferReview: false } : row));
+      if (reviewOnly) await loadActivity(true);
+      await router.invalidate();
+    } catch (caught) { setError(message(caught)); } finally { setSaving(undefined); }
   };
   return <>
     <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Activity summary">
@@ -60,7 +71,8 @@ export function MoneyActivityView({ activity, transactionCount, transferReview }
       <LedgerMetric label="Reverted" value={activity.filter((item) => item.status === "reverted").length.toLocaleString("en-GB")} detail="excluded from analytics" />
       <LedgerMetric label="Linked transfers" value={transferReview.linkedPairs.toLocaleString("en-GB")} detail={`${transferReview.unlinkedCount.toLocaleString("en-GB")} remain unlinked`} />
     </section>
-    {transferReview.unresolvedPositiveCount + transferReview.unresolvedNegativeCount > 0 ? <Button className="w-fit" type="button" variant="outline" onClick={() => setReviewOnly((current) => !current)}>{reviewOnly ? "Show all activity" : "Show transfer review rows"}</Button> : null}
+    {transferReview.unresolvedPositiveCount + transferReview.unresolvedNegativeCount > 0 || reviewOnly ? <Button className="w-fit" type="button" variant="outline" disabled={loading} onClick={() => void toggleReview()}>{reviewOnly ? "Show all activity" : "Show transfer review rows"}</Button> : null}
+    {visible.some((item) => item.flowKind === "transfer" && !item.transferGroupId) ? <Card><CardHeader className="border-b"><CardTitle>Transfer treatment</CardTitle><CardDescription>Choose the accounting meaning independently from its category.</CardDescription></CardHeader><CardContent className="divide-y p-0">{visible.filter((item) => item.flowKind === "transfer" && !item.transferGroupId).map((item) => <div className="grid items-center gap-3 px-4 py-3 text-sm sm:grid-cols-[minmax(0,1fr)_9rem_12rem]" key={item.id}><span className="truncate">{item.description || item.sourceType}</span><span className="text-right font-mono">{signedMoney(item.amountMinor, item.currency)}</span><select aria-label={`Transfer treatment for ${item.description}`} className="h-8 rounded-md border border-input bg-background px-2 text-xs" disabled={saving === item.id} value={item.transferDisposition ?? ""} onChange={(event) => void setDisposition(item, event.currentTarget.value as MoneyTransferDisposition)}><option value="" disabled>Needs review</option>{MONEY_TRANSFER_DISPOSITIONS.map((disposition) => <option key={disposition} value={disposition}>{flowLabel(disposition)}</option>)}</select></div>)}</CardContent></Card> : null}
     {error ? <Alert variant="destructive"><AlertTitle>Category not saved</AlertTitle><AlertDescription>{error}</AlertDescription></Alert> : null}
     {ruleCandidate ? <Alert><AlertTitle>Saved for this row</AlertTitle><AlertDescription><span>Apply this exact description to other transactions in {ruleCandidate.accountName}?</span><Button className="ml-3" type="button" size="sm" variant="outline" disabled={saving === ruleCandidate.id} onClick={() => void categorize(ruleCandidate, ruleCandidate.category, true)}>Create account rule</Button></AlertDescription></Alert> : null}
     {ruleAffected !== undefined ? <Alert><AlertTitle>Account rule applied</AlertTitle><AlertDescription>{ruleAffected.toLocaleString("en-GB")} transaction{ruleAffected === 1 ? "" : "s"} now use this category.</AlertDescription></Alert> : null}
