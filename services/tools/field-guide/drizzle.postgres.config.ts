@@ -7,7 +7,7 @@ export default defineConfig({
   dialect: "postgresql",
   schema: "./src/db/postgres-schema.ts",
   dbCredentials: { url: databaseUrl },
-  schemaFilter: ["public"],
+  schemaFilter: ["field_guide"],
   tablesFilter: [
     "candidates",
     "review_rounds",
