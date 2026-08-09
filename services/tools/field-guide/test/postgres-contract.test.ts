@@ -58,7 +58,7 @@ describe("Postgres schema contract", () => {
     const config = await readFile(new URL("../drizzle.postgres.config.ts", import.meta.url), "utf8");
     expect(config).toContain('dialect: "postgresql"');
     expect(config).toContain('schema: "./src/db/postgres-schema.ts"');
-    expect(config).toContain('schemaFilter: ["public"]');
+    expect(config).toContain('schemaFilter: ["field_guide"]');
     expect(config).toContain('tablesFilter: [');
     expect(config).toContain("consumePushHandoff(process.env)");
     expect(config).not.toContain("PUSH_AUTHORIZATION");
@@ -91,7 +91,7 @@ describe("Postgres schema contract", () => {
       new URL("../src/postgres-repository.ts", import.meta.url),
       "utf8",
     );
-    expect(repository).toContain('const FIELD_GUIDE_SCHEMA = "public"');
+    expect(repository).toContain('const FIELD_GUIDE_SCHEMA = "field_guide"');
   });
 
   it("filters decision records by effective source-project provenance", async () => {
@@ -244,7 +244,7 @@ describe("Postgres schema contract", () => {
     });
     expect(
       dialect.sqlToQuery(indexes[0]?.config.where ?? sql`false`).sql,
-    ).toBe('"verdict_events"."amends_decision_id" is not null');
+    ).toBe('"field_guide"."verdict_events"."amends_decision_id" is not null');
   });
 
   it("keeps verdict events append-only and schema changes out of startup", async () => {
