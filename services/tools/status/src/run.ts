@@ -19,6 +19,7 @@ import type { CheckerStore } from "./bucket.js";
 import type { SafeLogger } from "./logger.js";
 import { drainNotifications } from "./notifications.js";
 import { probeTarget } from "./probe.js";
+import type { MonitorDefinition } from "./definitions.js";
 
 export interface RunDependencies {
   store: CheckerStore;
@@ -27,6 +28,7 @@ export interface RunDependencies {
   fetcher?: typeof fetch;
   now?: () => Date;
   signal?: AbortSignal;
+  monitorDefinitions?: readonly MonitorDefinition[];
 }
 
 export interface CheckerRunResult {
@@ -341,6 +343,7 @@ async function observeEntry(
     throw new Error(`Enabled entry is missing monitor config: ${entry.id}`);
   }
   const observationId = stableId("observation", runId, entry.id);
+  const definition = dependencies.monitorDefinitions?.find(({ id }) => id === entry.id);
   if (monitor.scope === "tailscale") {
     return {
       id: observationId,
@@ -355,7 +358,8 @@ async function observeEntry(
   return probeTarget(monitor.url, {
     fetcher: dependencies.fetcher,
     now: () => now().getTime(),
-    timeoutMs: dependencies.config.probeTimeoutMs,
+    timeoutMs: definition?.kind === "http" ? definition.timeoutMs : dependencies.config.probeTimeoutMs,
+    expectedStatus: definition?.kind === "http" ? definition.expectedStatus : undefined,
     observationId,
     runId,
     signal: dependencies.signal

@@ -88,4 +88,13 @@ describe("HTTP probing", () => {
     expect(redirected.errorCode).toBe("too_many_redirects");
   });
 
+  it("enforces an explicit expected-status allowlist", async () => {
+    const result = await probeTarget("https://example.com/", {
+      ...options,
+      expectedStatus: [204],
+      fetcher: vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 200 }))
+    });
+    expect(result).toMatchObject({ success: false, statusCode: 200, errorCode: "http_error" });
+  });
+
 });

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { loadMonitorDefinitions } from "../src/definitions.js";
+import catalogSource from "../../dashboard/config/initial-catalog.json" with { type: "json" };
+import { products } from "../../dashboard/products.js";
+import { assertMonitorIdentities, loadMonitorDefinitions } from "../src/definitions.js";
 
 describe("monitor definitions", () => {
   it("owns HTTP and heartbeat check behavior in typed code", () => {
@@ -19,5 +21,20 @@ describe("monitor definitions", () => {
       checkUrl: "https://tools.example/health/tower",
       staleAfterMs: 240_000
     });
+  });
+
+  it("uses the same stable IDs in definitions, catalog entries, and products", () => {
+    const definitions = loadMonitorDefinitions({
+      PUBLIC_ORIGIN: "https://tools.example",
+      MARKDOWN_SHARE_PUBLIC_ORIGIN: "https://markdown.example"
+    });
+    expect(() => assertMonitorIdentities(
+      catalogSource.entries.map(({ id }) => id),
+      products.flatMap(({ monitorId }) => monitorId ? [monitorId] : []),
+      definitions
+    )).not.toThrow();
+    expect(() => assertMonitorIdentities(["known"], ["missing"], [
+      { id: "known", kind: "http", url: "https://known.example", scope: "public", expectedStatus: [200], timeoutMs: 1000 }
+    ])).toThrow(/unknownProducts=missing/);
   });
 });

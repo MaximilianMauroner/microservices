@@ -10,6 +10,7 @@ export interface ProbeOptions {
   fetcher?: typeof fetch;
   now?: () => number;
   timeoutMs?: number;
+  expectedStatus?: readonly number[];
   observationId: string;
   runId: string;
   signal?: AbortSignal;
@@ -62,7 +63,9 @@ export async function probeTarget(
         continue;
       }
       await response.body?.cancel();
-      const success = response.status >= 200 && response.status <= 399;
+      const success = options.expectedStatus
+        ? options.expectedStatus.includes(response.status)
+        : response.status >= 200 && response.status <= 399;
       return observation({
         options,
         checkedAt: now(),

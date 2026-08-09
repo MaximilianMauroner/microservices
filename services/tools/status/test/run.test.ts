@@ -10,6 +10,26 @@ import {
 } from "./helpers.js";
 
 describe("checker run", () => {
+  it("passes typed expected status and timeout behavior to production probes", async () => {
+    const store = new MemoryStore();
+    store.catalog.value.entries = store.catalog.value.entries.filter(({ id }) => id === "public-a");
+    let probeSignal: AbortSignal | undefined;
+    const result = await runChecker({
+      store,
+      config: configFixture,
+      logger,
+      fetcher: vi.fn<typeof fetch>().mockImplementation((_url, init) => {
+        probeSignal = init?.signal ?? undefined;
+        return Promise.resolve(new Response(null, { status: 200 }));
+      }),
+      monitorDefinitions: [{ id: "public-a", kind: "http", url: "https://public-a.example", scope: "public", expectedStatus: [204], timeoutMs: 1 }],
+      now: () => new Date(NOW)
+    });
+    expect(result.attemptedMonitorIds).toEqual(["public-a"]);
+    expect(probeSignal).toBeDefined();
+    expect(store.state?.value.monitors["public-a"].latestObservation).toMatchObject({ success: false, statusCode: 200 });
+  });
+
   it("enumerates every enabled monitor once and is duplicate-safe", async () => {
     const store = new MemoryStore();
     const fetcher = vi
