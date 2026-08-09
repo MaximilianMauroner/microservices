@@ -1,116 +1,87 @@
-# Tools Platform
+# Microservices
 
-Runtime ownership is encoded in the top-level directory. Independently deployed
-applications live in `apps/*`, reusable capabilities live in `packages/*`, and
-background processes live in `jobs/*`. The TanStack application in
-`apps/platform-service` owns every integrated route and its SPA navigation.
+Deployable services live under `services/`. Each service owns its application
+code, configuration, tests, and deployment boundary. Tools is a single
+TanStack Start monolith whose products live directly beneath `services/tools`.
 
-Public versus private access is intentionally independent of that layout. Both
-platform routes and external applications may be public, Access-protected, or
-private-network-only; the typed catalog records that access boundary.
-
-## Components
+## Services
 
 | Service | Path | Runtime | Purpose |
 | --- | --- | --- | --- |
-| Platform service | `apps/platform-service` | Railway | Single HTTP process, checker scheduler, and Better Auth boundary for all hosted tools. |
-| Artifact publisher | `packages/artifact-publisher` | Platform capability | Sandboxed planning pages, temporary file uploads, resumable downloads, and revocation. |
-| Field guide console | `packages/field-guide-console` | Platform capability | Agent decision inbox plus review-only approval and lifecycle history for field-guide lessons. |
-| Markdown Share | `apps/markdown-share` | Cloudflare | Independently hosted collaborative Markdown application. |
-| Network console | `apps/network-console` | Local VM systemd service | Port-80 dashboard for Tailscale address and listening-port discovery. |
-| Tools Web | `packages/tools-web` | Platform capability | Public tools directory and session-protected catalog operations. |
-| Tools Checker | `jobs/tools-checker` | In-process module | One bounded status/incident/notification pass every five minutes. |
-| Tools Domain | `packages/tools-domain` | Pure TypeScript | Shared schemas, safe projections, URL/IP validation, transitions, and bucket keys. |
+| Tools | `services/tools` | Railway, Node.js | Authenticated product monolith and product-owned scheduled work. |
+| Markdown Share | `services/markdown-share` | Cloudflare Workers | Collaborative Markdown application backed by Convex. |
+| Network Console | `services/network-console` | Local VM, Node.js | Private network and listening-port dashboard. |
 
-## Commands
+Tools contains the `dashboard`, `status`, `publisher`, `field-guide`, and
+`money` products. Code reused within Tools remains owned by the product or
+runtime module that provides it; there is no repository-wide shared package.
+
+## Requirements
+
+- Node.js 22.12 or newer
+- pnpm 11.16.0 through Corepack
+
+Install dependencies and verify the workspace:
 
 ```bash
-bun run typecheck
-bun run test
-bun run verify
+corepack enable
+pnpm install --frozen-lockfile
+pnpm run typecheck
+pnpm run test
+pnpm run verify
 ```
 
-## Local Docker stack
-
-Run a local prod-mirroring stack (PostgreSQL, MinIO, Markdown mock, seed job,
-platform service) with:
+Run an independently deployed service:
 
 ```bash
-bun run docker:up
+pnpm run start:tools
+pnpm run start:markdown-share
+pnpm run start:network-console
+```
+
+Status scheduling runs inside Tools and is not a standalone deployment.
+
+## Local stack
+
+Start the production-shaped local stack, which includes PostgreSQL, MinIO, a
+Markdown mock, database setup, seed work, and Tools:
+
+```bash
+pnpm run docker:up
 ```
 
 Then open:
 
-- `http://localhost:3000` for the local platform service
-- `http://localhost:9001` for MinIO console
-- `http://localhost:8787` for the Markdown mock service
+- `http://localhost:3000` for Tools
+- `http://localhost:9001` for the MinIO console
+- `http://localhost:8787` for the Markdown mock
 
-Stop the stack:
+Stop the stack with `pnpm run docker:down`. To also delete its local database
+and object-storage volumes, run `pnpm run docker:reset`.
 
-```bash
-bun run docker:down
-```
+The stack uses non-production OAuth placeholders so public routes and
+infrastructure can start. Supply a local Google OAuth client to test private
+browser routes.
 
-Reset local database and object storage state:
+## Railway
 
-```bash
-bun run docker:reset
-```
-
-The local stack uses non-production placeholder OAuth values so public routes
-and infrastructure can start. Supply a real local Google OAuth client when
-testing private browser routes.
-
-
-Run an individual component's tests from its package directory. Only independently
-running processes have standalone start shortcuts:
+Railway builds the repository root with Railpack and starts Tools with:
 
 ```bash
-bun run start:network-console
-bun run start:markdown-share
-bun run start:tools-checker
+pnpm --dir services/tools run start
 ```
 
-The root deploys `apps/platform-service` using `/railway.json`. Embedded
-capabilities are never deployed independently:
-their browser routes fail with `503`; use the unified service for browser work.
+The predeploy step applies the Tools migration and the Field Guide Postgres
+schema. Tools must remain awake while it owns scheduled work. `/live` reports
+process liveness; `/health` reports dependency readiness.
 
-## Deployment Notes
+Production requires `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
+`BETTER_AUTH_SECRET`, and `AUTH_ALLOWED_GOOGLE_SUBJECT`. Machine APIs retain
+their dedicated bearer credentials. Artifact bodies remain in private object
+storage while canonical capability URLs serve authorized file access.
 
-Railway deploys the workspace once:
+The Network Console is not a Railway service. Install it on its VM with
+`services/network-console/ops/install-systemd.sh`.
 
-| Service | Railway source root | Config path | Start command |
-| --- | --- | --- | --- |
-| Platform Service | `/` | `/railway.json` | `bun run --cwd apps/platform-service start` |
-
-The platform service must remain awake because it owns the five-minute checker
-scheduler. The redacted Tools home and `/status` surface are public. Publish,
-Review, Manage, and private tools share one stateless Better Auth Google
-session. Production requires `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
-`BETTER_AUTH_SECRET`, and `AUTH_ALLOWED_GOOGLE_SUBJECT`; the verified Google
-subject must match before a session is issued. Artifact and file delivery uses
-public, unlisted capability URLs, while the backing bucket remains private.
-The native-token `/api/uploads*` and `/api/agent*` machine APIs remain on their
-existing bearer credentials.
-
-`/health` checks all dependencies. `/health/tools`, `/health/publisher`, and
-`/health/review` expose public, component-specific readiness for the in-process
-checker without borrowing another component's result.
-
-Tools Web and Tools Checker share one private bucket with disjoint writer
-ownership enforced in code. See [Tools Platform operations](docs/tools-platform/README.md)
-for preview isolation, initial catalog bootstrap, cutover, rollback, recovery,
-authentication incidents, cost controls, and legacy Worker retirement.
-
-If a host or deployment system starts from the repository root, use an explicit
-root shortcut such as `bun run start:artifact-publisher` instead of treating the
-workspace root as the service package.
-
-The network console is not a Railway service. Install it on the VM with
-`apps/network-console/ops/install-systemd.sh`; the `network-console.service`
-unit is enabled for VM boot through `multi-user.target`.
-
-The legacy Cloudflare uptime Worker source was removed after the required
-monitoring behavior was ported and audited. Its deployed Worker, route, Access
-application, and D1 database are external resources and are not removed by this
-repository change.
+See [Tools operations](docs/tools-platform/README.md) for deployment and
+recovery procedures.

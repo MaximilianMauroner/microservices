@@ -4,12 +4,12 @@ This audit was completed before removing `services/uptime-monitor`.
 
 | Required behavior | Replacement evidence |
 | --- | --- |
-| HTTP(S)-only URLs, no credentials, normalized hosts | `packages/tools-domain/src/url.ts` and schema decoders |
-| Block private, loopback, link-local, reserved, documentation, multicast, and embedded IPv4 literals | `packages/tools-domain/src/ip.ts`; its coverage is a formatted superset of the legacy implementation |
+| HTTP(S)-only URLs, no credentials, normalized hosts | `services/tools/runtime/domain/src/url.ts` and schema decoders |
+| Block private, loopback, link-local, reserved, documentation, multicast, and embedded IPv4 literals | `services/tools/runtime/domain/src/ip.ts`; its coverage is a formatted superset of the legacy implementation |
 | Validate initial targets and redirects | `validatedMonitorUrl`, `validatedRedirectUrl`, and checker probe tests |
-| GET probe, manual redirects, at most one redirect, bounded total timeout, 2xx–3xx success | `jobs/tools-checker/src/probe.ts` and `test/probe.test.ts` |
-| Open incident after the second consecutive failure; resolve on success | `packages/tools-domain/src/transitions.ts` and checker run tests |
-| Durable down/recovery outbox with retry and `Retry-After`/capped backoff | checker state schema, `jobs/tools-checker/src/notifications.ts`, and notification tests |
+| GET probe, manual redirects, at most one redirect, bounded total timeout, 2xx–3xx success | `services/tools/status/src/probe.ts` and `test/probe.test.ts` |
+| Open incident after the second consecutive failure; resolve on success | `services/tools/runtime/domain/src/transitions.ts` and checker run tests |
+| Durable down/recovery outbox with retry and `Retry-After`/capped backoff | checker state schema, `services/tools/status/src/notifications.ts`, and notification tests |
 | Idempotent scheduled work | deterministic five-minute run IDs and duplicate-run tests |
 | Bounded concurrency | `CHECK_CONCURRENCY` validation and checker concurrent map |
 | Thirty-day raw check retention while retaining incidents | checker history pruning and retention tests |

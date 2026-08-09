@@ -38,7 +38,7 @@ services:
     environment:
       DATABASE_URL: postgres://local:local@postgres:5432/field_guide
       FIELD_GUIDE_SCHEMA_PUSH_CONFIRM: field-guide-console-production
-    command: ["bun", "run", "--cwd", "packages/field-guide-console", "db:push-postgres"]
+    command: ["pnpm", "--dir", "services/tools/field-guide", "run", "db:push-postgres"]
 
   minio-seed:
     build:
@@ -68,7 +68,7 @@ services:
       LOCAL_MARKDOWN_PUBLIC_ORIGIN: http://localhost:8787
       LOCAL_MARKDOWN_INTERNAL_ORIGIN: http://markdown-mock:8787
       SEED_RETRY_ATTEMPTS: 30
-    command: ["bun", "run", "--cwd", "jobs/tools-checker", "seed-local"]
+    command: ["pnpm", "--dir", "services/tools/status", "run", "seed-local"]
 
   markdown-mock:
     build:
@@ -77,7 +77,7 @@ services:
     environment:
       PORT: 8787
       MARKDOWN_SHARE_ADMIN_TOKEN: local-markdown-admin-token-local-development-001
-    command: ["bun", "run", "--cwd", "jobs/tools-checker", "markdown-mock"]
+    command: ["pnpm", "--dir", "services/tools/status", "run", "markdown-mock"]
     ports:
       - "8787:8787"
     depends_on:
@@ -98,7 +98,7 @@ services:
       PORT: 3000
       PUBLIC_ORIGIN: http://localhost:3000
       PLATFORM_READ_ONLY: false
-      FIELD_GUIDE_DATABASE_URL: postgres://local:local@postgres:5432/field_guide
+      DATABASE_URL: postgres://local:local@postgres:5432/field_guide
       GOOGLE_CLIENT_ID: local-client.apps.googleusercontent.com
       GOOGLE_CLIENT_SECRET: local-google-client-secret
       BETTER_AUTH_SECRET: local-better-auth-secret-000000000000000000
@@ -123,11 +123,11 @@ services:
       TOWER_HEARTBEAT_TOKEN: local-tower-heartbeat-token-000000000000000
       TOOLS_ENVIRONMENT: local
       CHECKER_INTERVAL_MS: 300000
-    command: ["bun", "run", "--cwd", "apps/platform-service", "start"]
+    command: ["pnpm", "--dir", "services/tools", "run", "start"]
     ports:
       - "3000:3000"
     healthcheck:
-      test: ["CMD", "bun", "-e", "await fetch('http://localhost:3000/live').then((response) => { if (!response.ok) process.exit(1); }).catch(() => process.exit(1));"]
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/live').then((response) => { if (!response.ok) process.exit(1); }).catch(() => process.exit(1));"]
       interval: 5s
       timeout: 5s
       retries: 30
