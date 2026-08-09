@@ -20,7 +20,11 @@ begin
     'decision_promotion_records'
   ] loop
     if to_regclass('public.' || relation_name) is not null
-       and to_regclass('field_guide.' || relation_name) is null then
+       and to_regclass('field_guide.' || relation_name) is not null then
+      raise exception 'refusing to move public.%: field_guide.% already exists',
+        relation_name,
+        relation_name;
+    elsif to_regclass('public.' || relation_name) is not null then
       execute format('alter table public.%I set schema field_guide', relation_name);
     end if;
   end loop;

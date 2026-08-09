@@ -3,6 +3,7 @@ import { classifyRoute, type PlatformPrincipal } from "@tools-platform/security"
 import { authenticatePlatformRequest } from "./app.js";
 import { getPlatformRuntime, type PlatformRuntime } from "./runtime.js";
 import { PLATFORM_UI_BUILD } from "./build-identity.js";
+import { documentContentSecurityPolicy } from "./content-security-policy.js";
 
 export type PlatformRequestContext = {
   runtime: PlatformRuntime;
@@ -52,12 +53,12 @@ const platformRequestMiddleware = createMiddleware().server(
       headers.get("Content-Type")?.startsWith("text/html") &&
       !headers.has("Content-Security-Policy")
     ) {
-      const styleSources = process.env.NODE_ENV === "development"
-        ? "'self' 'unsafe-inline'"
-        : "'self'";
       headers.set(
         "Content-Security-Policy",
-        `default-src 'none'; style-src ${styleSources} 'nonce-${nonce}'; style-src-attr 'unsafe-inline'; script-src 'self' 'nonce-${nonce}'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`
+        documentContentSecurityPolicy(
+          nonce,
+          process.env.NODE_ENV === "development"
+        )
       );
     }
     if (headers.get("Content-Type")?.startsWith("text/html")) {

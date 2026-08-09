@@ -11,7 +11,7 @@ export const Route = createFileRoute("/status")({
     meta: [
       { title: "Status — Mauroner Tools" },
       { name: "description", content: "Current availability of Mauroner tools and services." },
-      { name: "theme-color", content: "#000000" },
+      { name: "theme-color", content: "#1b1e28" },
       { property: "og:title", content: "Status — Mauroner Tools" },
       { property: "og:description", content: "Current availability of Mauroner tools and services." },
       { property: "og:url", content: `${loaderData?.publicOrigin ?? ""}/status` },

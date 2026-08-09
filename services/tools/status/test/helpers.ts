@@ -17,6 +17,7 @@ export const NOW = new Date("2026-07-27T12:01:00.000Z");
 
 export const configFixture: CheckerConfig = {
   environment: "test",
+  databaseUrl: "postgres://test:test@localhost/test",
   bucket: {
     name: "bucket",
     endpoint: "https://bucket.example",

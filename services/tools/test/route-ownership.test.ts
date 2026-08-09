@@ -19,6 +19,10 @@ describe("primary page ownership", () => {
     expect(reviewLinks.length).toBeGreaterThan(0);
     expect(reviewLinks.every((link) => link.includes('preload="intent"'))).toBe(true);
     expect(reviewLinks.every((link) => !link.includes("reloadDocument"))).toBe(true);
+    const linkTabs = [...source.matchAll(/<TabsTrigger[^>]*render=\{<Link[^>]*>/g)]
+      .map(([trigger]) => trigger);
+    expect(linkTabs.length).toBeGreaterThan(0);
+    expect(linkTabs.every((trigger) => trigger.includes("nativeButton={false}"))).toBe(true);
     expect(source).toContain("window.location.replace(`/field-guide?${params}`)");
     expect(source).not.toContain("useNavigate");
   });

@@ -30,17 +30,9 @@ const PLATFORM_BROWSER_ORIGIN = env(
   "LOCAL_PLATFORM_BROWSER_ORIGIN",
   "http://localhost:3000"
 );
-const PLATFORM_INTERNAL_ORIGIN = env(
-  "LOCAL_PLATFORM_INTERNAL_ORIGIN",
-  "http://platform:3000"
-);
 const MARKDOWN_PUBLIC_ORIGIN = env(
   "LOCAL_MARKDOWN_PUBLIC_ORIGIN",
   "http://localhost:8787"
-);
-const MARKDOWN_INTERNAL_ORIGIN = env(
-  "LOCAL_MARKDOWN_INTERNAL_ORIGIN",
-  "http://markdown-mock:8787"
 );
 const TOOLS_HOST = "tools.mauroner.net";
 const MARKDOWN_HOST = "markdown-share-alpha.mauroner.workers.dev";
@@ -48,11 +40,12 @@ const MARKDOWN_HOST = "markdown-share-alpha.mauroner.workers.dev";
 const toolsBucket = loadBucketConfig("TOOLS");
 const artifactBucket = loadBucketConfig("ARTIFACT");
 const retryAttempts = Math.max(1, integer(process.env.SEED_RETRY_ATTEMPTS, 30));
+const overwrite = process.env.SEED_OVERWRITE === "true";
 const catalogPath = env(
   "SEED_CATALOG_PATH",
   path.join(
     import.meta.dirname,
-    "../../../services/tools/dashboard/config/initial-catalog.json"
+    "../../dashboard/config/initial-catalog.json"
   )
 );
 
@@ -71,7 +64,7 @@ async function runSeed() {
   await ensureBucket(toolsClient, toolsBucket.name);
   await ensureBucket(artifactClient, artifactBucket.name);
 
-  await putIfMissing(
+  await putSeedObject(
     toolsClient,
     toolsBucket.name,
     BUCKET_KEYS.catalog,
@@ -88,22 +81,15 @@ async function runSeed() {
     notifications: [],
     historyPending: []
   };
-  await putIfMissing(
-    toolsClient,
-    toolsBucket.name,
-    BUCKET_KEYS.checkerState,
-    JSON.stringify(initialState, null, 2)
-  );
-
   const publicSnapshot = projectPublicSnapshot(catalog, initialState, now);
   const privateSnapshot = projectPrivateSnapshot(catalog, initialState, now);
-  await putIfMissing(
+  await putSeedObject(
     toolsClient,
     toolsBucket.name,
     BUCKET_KEYS.publicSnapshot,
     JSON.stringify(publicSnapshot, null, 2)
   );
-  await putIfMissing(
+  await putSeedObject(
     toolsClient,
     toolsBucket.name,
     BUCKET_KEYS.privateSnapshot,
@@ -120,9 +106,7 @@ function localizeCatalog(catalog: CatalogDocument): CatalogDocument {
     revision: `${catalog.revision}-local`,
     updatedAt: now,
     entries: catalog.entries.map((entry) => {
-      const localizedMonitor = entry.monitor
-        ? localizeMonitorUrl(entry.monitor.url)
-        : "";
+      const monitorUrl = entry.monitor?.url ?? "";
       return {
         ...entry,
         links: entry.links.map((link) => ({
@@ -133,10 +117,10 @@ function localizeCatalog(catalog: CatalogDocument): CatalogDocument {
           ? {
               monitor: {
                 ...entry.monitor,
-                url: localizedMonitor,
+                url: monitorUrl,
                 paused:
                   entry.monitor.paused ||
-                  shouldPauseMonitor(localizedMonitor)
+                  shouldPauseMonitor(monitorUrl)
               }
             }
           : {})
@@ -154,23 +138,6 @@ function localizeLinkUrl(value: string): string {
     return new URL(
       parsed.pathname + parsed.search,
       MARKDOWN_PUBLIC_ORIGIN
-    ).toString();
-  }
-  return value;
-}
-
-function localizeMonitorUrl(value: string): string {
-  const parsed = new URL(value);
-  if (parsed.hostname === TOOLS_HOST) {
-    return new URL(
-      parsed.pathname + parsed.search,
-      PLATFORM_INTERNAL_ORIGIN
-    ).toString();
-  }
-  if (parsed.hostname === MARKDOWN_HOST) {
-    return new URL(
-      parsed.pathname + parsed.search,
-      MARKDOWN_INTERNAL_ORIGIN
     ).toString();
   }
   return value;
@@ -218,13 +185,13 @@ async function ensureBucket(client: S3Client, bucket: string) {
     });
 }
 
-async function putIfMissing(
+async function putSeedObject(
   client: S3Client,
   bucket: string,
   key: string,
   body: string
 ) {
-  if (await objectExists(client, bucket, key)) {
+  if (!overwrite && await objectExists(client, bucket, key)) {
     return;
   }
   await withRetry(`seed-object:${bucket}/${key}`, async () => {

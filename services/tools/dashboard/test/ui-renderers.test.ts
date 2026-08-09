@@ -167,7 +167,7 @@ describe("public page", () => {
     expect(html).toContain("Tailscale required");
     expect(html).toContain("Operational");
     expect(html).toContain("Unavailable from Railway");
-    expect(html).toContain('<meta name="theme-color" content="#000000">');
+    expect(html).toContain('<meta name="theme-color" content="#1b1e28">');
     expect(html).toContain('<header class="suite-header" data-suite-shell="command-deck">');
     expect(html).not.toContain("Operator sign-in");
     expect(html).toContain('<link rel="icon" href="/favicon.svg?v=90e2a71" type="image/svg+xml">');
