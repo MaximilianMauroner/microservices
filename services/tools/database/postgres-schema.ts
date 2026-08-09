@@ -15,16 +15,16 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
-const tools = pgSchema("tools");
-const artifacts = pgSchema("artifacts");
+export const toolsSchema = pgSchema("tools");
+export const artifactsSchema = pgSchema("artifacts");
 
-export const checkRuns = tools.table("check_runs", {
+export const checkRuns = toolsSchema.table("check_runs", {
   id: text("id").primaryKey(),
   startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
   completedAt: timestamp("completed_at", { withTimezone: true }),
 });
 
-export const observations = tools.table("observations", {
+export const observations = toolsSchema.table("observations", {
   id: text("id").primaryKey(),
   runId: text("run_id").notNull().references(() => checkRuns.id),
   monitorId: text("monitor_id").notNull(),
@@ -35,7 +35,7 @@ export const observations = tools.table("observations", {
   errorCode: text("error_code"),
 }, (table) => [index("observations_monitor_checked_idx").on(table.monitorId, table.checkedAt)]);
 
-export const incidents = tools.table("incidents", {
+export const incidents = toolsSchema.table("incidents", {
   id: text("id").primaryKey(),
   monitorId: text("monitor_id").notNull(),
   startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
@@ -44,18 +44,18 @@ export const incidents = tools.table("incidents", {
   closingObservationId: text("closing_observation_id"),
 }, (table) => [index("incidents_monitor_started_idx").on(table.monitorId, table.startedAt)]);
 
-export const heartbeats = tools.table("heartbeats", {
+export const heartbeats = toolsSchema.table("heartbeats", {
   monitorId: text("monitor_id").primaryKey(),
   lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull(),
 });
 
-export const monitorOverrides = tools.table("monitor_overrides", {
+export const monitorOverrides = toolsSchema.table("monitor_overrides", {
   monitorId: text("monitor_id").primaryKey(),
   paused: boolean("paused").notNull().default(false),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
 });
 
-export const scheduledTaskRuns = tools.table("scheduled_task_runs", {
+export const scheduledTaskRuns = toolsSchema.table("scheduled_task_runs", {
   taskId: text("task_id").notNull(),
   slot: timestamp("slot", { withTimezone: true }).notNull(),
   ownerId: text("owner_id").notNull(),
@@ -64,14 +64,14 @@ export const scheduledTaskRuns = tools.table("scheduled_task_runs", {
   result: jsonb("result").$type<Record<string, unknown>>(),
 }, (table) => [primaryKey({ columns: [table.taskId, table.slot] })]);
 
-export const checkerStates = tools.table("checker_states", {
+export const checkerStates = toolsSchema.table("checker_states", {
   environment: text("environment").primaryKey(),
   revision: bigint("revision", { mode: "number" }).notNull().default(0),
   value: jsonb("value").$type<Record<string, unknown>>().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
 });
 
-export const historyPartitions = tools.table("history_partitions", {
+export const historyPartitions = toolsSchema.table("history_partitions", {
   environment: text("environment").notNull(),
   day: date("day").notNull(),
   revision: bigint("revision", { mode: "number" }).notNull().default(0),
@@ -79,7 +79,7 @@ export const historyPartitions = tools.table("history_partitions", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
 }, (table) => [primaryKey({ columns: [table.environment, table.day] })]);
 
-export const objects = artifacts.table("objects", {
+export const objects = artifactsSchema.table("objects", {
   id: text("id").primaryKey(),
   kind: text("kind").notNull(),
   filename: text("filename").notNull(),
@@ -96,7 +96,7 @@ export const objects = artifacts.table("objects", {
   check("objects_bytes_check", sql`${table.bytes} >= 0`),
 ]);
 
-export const operations = artifacts.table("operations", {
+export const operations = artifactsSchema.table("operations", {
   operationId: uuid("operation_id").primaryKey(),
   artifactId: text("artifact_id").notNull(),
   ownerId: text("owner_id").notNull(),
@@ -105,7 +105,7 @@ export const operations = artifacts.table("operations", {
   payload: jsonb("payload").$type<Record<string, unknown>>(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
-  check("operations_kind_check", sql`${table.operationKind} in ('put_html', 'put_file', 'delete')`),
+  check("operations_operation_kind_check", sql`${table.operationKind} in ('put_html', 'put_file', 'delete')`),
   index("artifact_operations_created_idx").on(table.createdAt),
   uniqueIndex("artifact_operations_artifact_idx").on(table.artifactId),
 ]);

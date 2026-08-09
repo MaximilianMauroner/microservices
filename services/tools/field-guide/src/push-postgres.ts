@@ -31,15 +31,17 @@ if (mode === "test") {
   }
 }
 
+const pushes = [
+  { config: "drizzle.postgres.config.ts" },
+  { config: "drizzle.tools.config.ts" },
+  { config: "drizzle.artifacts.config.ts" },
+] as const;
+
 let failedExitCode: number | undefined;
-for (const config of [
-  "drizzle.postgres.config.ts",
-  "drizzle.tools.config.ts",
-  "drizzle.artifacts.config.ts",
-]) {
+for (const pushConfig of pushes) {
   const handoff = createPushHandoff(process.env, mode);
   try {
-    const push = spawn("pnpm", ["exec", "drizzle-kit", "push", "--config", config], {
+    const push = spawn("pnpm", ["exec", "drizzle-kit", "push", "--config", pushConfig.config], {
       cwd: new URL("..", import.meta.url),
       env: {
         ...process.env,
