@@ -7,6 +7,7 @@ import {
   index,
   integer,
   jsonb,
+  numeric,
   pgSchema,
   primaryKey,
   text,
@@ -63,6 +64,134 @@ export const scheduledTaskRuns = toolsSchema.table("scheduled_task_runs", {
   completedAt: timestamp("completed_at", { withTimezone: true }),
   result: jsonb("result").$type<Record<string, unknown>>(),
 }, (table) => [primaryKey({ columns: [table.taskId, table.slot] })]);
+
+export const moneyAccounts = toolsSchema.table("money_accounts", {
+  id: uuid("id").primaryKey(),
+  provider: text("provider").notNull(),
+  externalRef: text("external_ref").notNull(),
+  displayName: text("display_name").notNull(),
+  role: text("role").notNull(),
+  currency: text("currency").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+}, (table) => [
+  check("money_accounts_provider_check", sql`${table.provider} in ('revolut', 'portfolio_export', 'manual')`),
+  check("money_accounts_role_check", sql`${table.role} in ('cash', 'investment')`),
+  check("money_accounts_currency_check", sql`${table.currency} ~ '^[A-Z]{3}$'`),
+  uniqueIndex("money_accounts_provider_ref_idx").on(table.provider, table.externalRef),
+]);
+
+export const moneyImports = toolsSchema.table("money_imports", {
+  id: uuid("id").primaryKey(),
+  digest: text("digest").notNull().unique(),
+  format: text("format").notNull(),
+  filename: text("filename").notNull(),
+  bytes: bigint("bytes", { mode: "number" }).notNull(),
+  sourceRowCount: integer("source_row_count").notNull(),
+  insertedRowCount: integer("inserted_row_count").notNull(),
+  duplicateRowCount: integer("duplicate_row_count").notNull(),
+  warnings: jsonb("warnings").$type<string[]>().notNull(),
+  committedAt: timestamp("committed_at", { withTimezone: true }).notNull(),
+  createdBy: text("created_by").notNull(),
+}, (table) => [
+  check("money_imports_format_check", sql`${table.format} in ('revolut_cash_statement_v1', 'revolut_trading_statement_v1', 'portfolio_transaction_export_v1', 'money_balance_snapshot_v1')`),
+  check("money_imports_bytes_check", sql`${table.bytes} > 0`),
+  check("money_imports_row_counts_check", sql`${table.sourceRowCount} >= 0 and ${table.insertedRowCount} >= 0 and ${table.duplicateRowCount} >= 0 and ${table.insertedRowCount} + ${table.duplicateRowCount} = ${table.sourceRowCount}`),
+  index("money_imports_committed_idx").on(table.committedAt),
+]);
+
+export const moneyTransactions = toolsSchema.table("money_transactions", {
+  id: uuid("id").primaryKey(),
+  accountId: uuid("account_id").notNull().references(() => moneyAccounts.id),
+  importId: uuid("import_id").notNull().references(() => moneyImports.id),
+  sourceKey: text("source_key").notNull().unique(),
+  sourceRow: integer("source_row").notNull(),
+  occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  localDate: date("local_date").notNull(),
+  description: text("description").notNull(),
+  amountMinor: bigint("amount_minor", { mode: "number" }).notNull(),
+  feeMinor: bigint("fee_minor", { mode: "number" }).notNull(),
+  taxMinor: bigint("tax_minor", { mode: "number" }).notNull(),
+  baseAmountMinor: bigint("base_amount_minor", { mode: "number" }),
+  baseFeeMinor: bigint("base_fee_minor", { mode: "number" }),
+  baseTaxMinor: bigint("base_tax_minor", { mode: "number" }),
+  baseCurrency: text("base_currency"),
+  balanceAfterMinor: bigint("balance_after_minor", { mode: "number" }),
+  currency: text("currency").notNull(),
+  status: text("status").notNull(),
+  sourceType: text("source_type").notNull(),
+  mcc: text("mcc"),
+  flowKind: text("flow_kind").notNull(),
+  category: text("category").notNull(),
+  categoryOrigin: text("category_origin").notNull(),
+  transferGroupId: uuid("transfer_group_id"),
+  transferDisposition: text("transfer_disposition"),
+}, (table) => [
+  check("money_transactions_source_row_check", sql`${table.sourceRow} > 1`),
+  check("money_transactions_currency_check", sql`${table.currency} ~ '^[A-Z]{3}$'`),
+  check("money_transactions_base_currency_check", sql`${table.baseCurrency} is null or ${table.baseCurrency} = 'EUR'`),
+  check("money_transactions_status_check", sql`${table.status} in ('completed', 'reverted')`),
+  check("money_transactions_flow_kind_check", sql`${table.flowKind} in ('spend', 'income', 'refund', 'transfer', 'trade', 'investment_income', 'fee', 'tax', 'balance_adjustment')`),
+  check("money_transactions_category_check", sql`${table.category} in ('housing', 'groceries', 'dining', 'transport', 'shopping', 'health', 'travel', 'subscriptions', 'education', 'entertainment', 'gifts', 'taxes', 'fees', 'cash', 'investments', 'income', 'other', 'uncategorized')`),
+  check("money_transactions_category_origin_check", sql`${table.categoryOrigin} in ('source', 'rule', 'manual')`),
+  check("money_transactions_transfer_disposition_check", sql`${table.transferDisposition} is null or (${table.flowKind} = 'transfer' and ${table.transferDisposition} in ('internal_transfer', 'income', 'spend', 'refund', 'excluded'))`),
+  index("money_transactions_occurred_idx").on(table.occurredAt),
+  index("money_transactions_account_date_idx").on(table.accountId, table.localDate),
+  index("money_transactions_flow_date_idx").on(table.flowKind, table.localDate),
+  index("money_transactions_category_date_idx").on(table.category, table.localDate),
+  index("money_transactions_transfer_group_idx").on(table.transferGroupId),
+]);
+
+export const moneyInvestmentEvents = toolsSchema.table("money_investment_events", {
+  id: uuid("id").primaryKey(),
+  transactionId: uuid("transaction_id").notNull().references(() => moneyTransactions.id).unique(),
+  eventKind: text("event_kind").notNull(),
+  symbol: text("symbol"),
+  name: text("name"),
+  assetClass: text("asset_class"),
+  quantity: numeric("quantity", { precision: 30, scale: 12 }),
+  unitPrice: numeric("unit_price", { precision: 30, scale: 12 }),
+  priceCurrency: text("price_currency"),
+  fxRate: numeric("fx_rate", { precision: 30, scale: 12 }),
+}, (table) => [
+  check("money_investment_events_kind_check", sql`${table.eventKind} in ('buy', 'sell', 'dividend', 'fee', 'tax', 'split', 'cash_transfer', 'position_transfer', 'delivery')`),
+  check("money_investment_events_price_currency_check", sql`${table.priceCurrency} is null or ${table.priceCurrency} ~ '^[A-Z]{3}$'`),
+  index("money_investment_events_symbol_idx").on(table.symbol),
+]);
+
+export const moneyCategoryRules = toolsSchema.table("money_category_rules", {
+  id: uuid("id").primaryKey(),
+  accountId: uuid("account_id").notNull().references(() => moneyAccounts.id),
+  priority: integer("priority").notNull(),
+  matchField: text("match_field").notNull(),
+  matchValue: text("match_value").notNull(),
+  category: text("category").notNull(),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+  createdBy: text("created_by").notNull(),
+}, (table) => [
+  check("money_category_rules_field_check", sql`${table.matchField} in ('description', 'mcc', 'source_type')`),
+  check("money_category_rules_category_check", sql`${table.category} in ('housing', 'groceries', 'dining', 'transport', 'shopping', 'health', 'travel', 'subscriptions', 'education', 'entertainment', 'gifts', 'taxes', 'fees', 'cash', 'investments', 'income', 'other', 'uncategorized')`),
+  uniqueIndex("money_category_rules_unique_idx").on(table.accountId, table.matchField, table.matchValue),
+  index("money_category_rules_priority_idx").on(table.priority),
+]);
+
+export const moneyBalanceSnapshots = toolsSchema.table("money_balance_snapshots", {
+  accountId: uuid("account_id").notNull().references(() => moneyAccounts.id),
+  snapshotDate: date("snapshot_date").notNull(),
+  observedAt: timestamp("observed_at", { withTimezone: true }).notNull(),
+  valueMinor: bigint("value_minor", { mode: "number" }).notNull(),
+  currency: text("currency").notNull(),
+  origin: text("origin").notNull(),
+  importId: uuid("import_id").references(() => moneyImports.id),
+}, (table) => [
+  primaryKey({ columns: [table.accountId, table.snapshotDate, table.origin] }),
+  check("money_balance_snapshots_currency_check", sql`${table.currency} ~ '^[A-Z]{3}$'`),
+  check("money_balance_snapshots_origin_check", sql`${table.origin} in ('import', 'manual')`),
+  index("money_balance_snapshots_date_idx").on(table.snapshotDate),
+]);
 
 export const checkerStates = toolsSchema.table("checker_states", {
   environment: text("environment").primaryKey(),

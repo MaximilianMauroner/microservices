@@ -22,7 +22,8 @@ import { loadPlatformConfig } from "./config.js";
 import { startAlignedScheduler } from "./scheduler.js";
 import { createPostgresScheduledTaskLeaseRepository } from "./scheduled-task-leases.js";
 import { PLATFORM_UI_BUILD } from "./build-identity.js";
-import { createMoneyTracker } from "../money/money-tracker.js";
+import { MoneyImportService } from "../money/money-import-service.js";
+import { createPostgresMoneyRepository } from "../money/money-repository.js";
 import {
   createPlatformAuth,
   resolvePlatformPrincipal,
@@ -38,7 +39,7 @@ export type PlatformRuntime = {
   publicSnapshot: () => Promise<PublicSnapshotDocument>;
   health: () => Promise<void>;
   heartbeats: ReturnType<typeof createHeartbeats>;
-  moneyTracker: ReturnType<typeof createMoneyTracker>;
+  moneyImports: MoneyImportService;
   stop: () => Promise<void>;
 };
 
@@ -73,7 +74,7 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
   });
   const artifactStorage = createPostgresUploadStorage(config.artifact.s3, config.databaseUrl);
   const activityTracker = new ActivityTracker();
-  const moneyTracker = createMoneyTracker(config.moneyTracker);
+  const moneyImports = new MoneyImportService(createPostgresMoneyRepository(config.databaseUrl, { readOnly: config.readOnly }));
   const fieldGuideHandle = await createRepository(config.fieldGuide, {
     readOnly: config.readOnly
   });
@@ -155,7 +156,8 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
         cleanup?.wait() ?? Promise.resolve(),
         activityTracker.waitForIdle(),
         ...Object.values(services).map((service) => service.close()),
-        heartbeatRepository.close()
+        heartbeatRepository.close(),
+        moneyImports.close()
       ]);
     };
 
@@ -174,9 +176,12 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
       services,
       publicSnapshot: () => toolsStorage.readPublicSnapshot(),
       heartbeats,
-      moneyTracker,
+      moneyImports,
       health: async () => {
-        await Promise.all(Object.values(services).map((service) => service.readiness()));
+        await Promise.all([
+          ...Object.values(services).map((service) => service.readiness()),
+          moneyImports.readiness()
+        ]);
       },
       stop
     };
@@ -184,6 +189,7 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
     await fieldGuideHandle.close();
     artifactStorage.close?.();
     await heartbeatRepository.close();
+    await moneyImports.close();
     throw error;
   }
 }

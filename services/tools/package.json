@@ -8,7 +8,8 @@
     "dev": "vite dev",
     "start": "node .output/server/index.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:money-postgres": "vitest run test/money-repository.integration.test.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
@@ -25,12 +26,12 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
+    "csv-parse": "^6.2.1",
     "date-fns": "^4.4.0",
+    "drizzle-orm": "1.0.0-rc.4",
     "embla-carousel-react": "^8.6.0",
-    "google-auth-library": "^11.0.0",
     "input-otp": "^1.4.2",
     "lucide-react": "^1.28.0",
-    "drizzle-orm": "1.0.0-rc.4",
     "postgres": "^3.4.7",
     "react": "19.2.8",
     "react-day-picker": "^10.0.1",

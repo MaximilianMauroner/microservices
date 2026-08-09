@@ -34,11 +34,17 @@ import { Route as PublisherArtifactsRouteImport } from './routes/publisher/artif
 import { Route as ApiAgentSplatRouteImport } from './routes/api/agent/$'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiExternalUploadsSplatRouteImport } from './routes/api/external-uploads/$'
+import { Route as ApiMoneyActivityRouteImport } from './routes/api/money/activity'
+import { Route as ApiMoneyBalancesRouteImport } from './routes/api/money/balances'
+import { Route as ApiMoneyCategoriesRouteImport } from './routes/api/money/categories'
+import { Route as ApiMoneyImportsRouteImport } from './routes/api/money/imports'
+import { Route as ApiMoneyTransfersRouteImport } from './routes/api/money/transfers'
 import { Route as ApiOpsSplatRouteImport } from './routes/api/ops/$'
 import { Route as ApiPublicCatalogRouteImport } from './routes/api/public/catalog'
 import { Route as ApiReviewSplatRouteImport } from './routes/api/review/$'
 import { Route as ApiUploadsSplatRouteImport } from './routes/api/uploads/$'
 import { Route as FilesIdSplatRouteImport } from './routes/files/$id/$'
+import { Route as ApiMoneyImportsPreviewRouteImport } from './routes/api/money/imports/preview'
 import { Route as ApiStatusHeartbeatsMonitorIdRouteImport } from './routes/api/status/heartbeats/$monitorId'
 
 const IndexRoute = IndexRouteImport.update({
@@ -166,6 +172,31 @@ const ApiExternalUploadsSplatRoute = ApiExternalUploadsSplatRouteImport.update({
   path: '/$',
   getParentRoute: () => ApiExternalUploadsRoute,
 } as any)
+const ApiMoneyActivityRoute = ApiMoneyActivityRouteImport.update({
+  id: '/api/money/activity',
+  path: '/api/money/activity',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiMoneyBalancesRoute = ApiMoneyBalancesRouteImport.update({
+  id: '/api/money/balances',
+  path: '/api/money/balances',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiMoneyCategoriesRoute = ApiMoneyCategoriesRouteImport.update({
+  id: '/api/money/categories',
+  path: '/api/money/categories',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiMoneyImportsRoute = ApiMoneyImportsRouteImport.update({
+  id: '/api/money/imports',
+  path: '/api/money/imports',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiMoneyTransfersRoute = ApiMoneyTransfersRouteImport.update({
+  id: '/api/money/transfers',
+  path: '/api/money/transfers',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiOpsSplatRoute = ApiOpsSplatRouteImport.update({
   id: '/api/ops/$',
   path: '/api/ops/$',
@@ -190,6 +221,11 @@ const FilesIdSplatRoute = FilesIdSplatRouteImport.update({
   id: '/$',
   path: '/$',
   getParentRoute: () => FilesIdRoute,
+} as any)
+const ApiMoneyImportsPreviewRoute = ApiMoneyImportsPreviewRouteImport.update({
+  id: '/preview',
+  path: '/preview',
+  getParentRoute: () => ApiMoneyImportsRoute,
 } as any)
 const ApiStatusHeartbeatsMonitorIdRoute =
   ApiStatusHeartbeatsMonitorIdRouteImport.update({
@@ -224,11 +260,17 @@ export interface FileRoutesByFullPath {
   '/api/agent/$': typeof ApiAgentSplatRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/external-uploads/$': typeof ApiExternalUploadsSplatRoute
+  '/api/money/activity': typeof ApiMoneyActivityRoute
+  '/api/money/balances': typeof ApiMoneyBalancesRoute
+  '/api/money/categories': typeof ApiMoneyCategoriesRoute
+  '/api/money/imports': typeof ApiMoneyImportsRouteWithChildren
+  '/api/money/transfers': typeof ApiMoneyTransfersRoute
   '/api/ops/$': typeof ApiOpsSplatRoute
   '/api/public/catalog': typeof ApiPublicCatalogRoute
   '/api/review/$': typeof ApiReviewSplatRoute
   '/api/uploads/$': typeof ApiUploadsSplatRoute
   '/files/$id/$': typeof FilesIdSplatRoute
+  '/api/money/imports/preview': typeof ApiMoneyImportsPreviewRoute
   '/api/status/heartbeats/$monitorId': typeof ApiStatusHeartbeatsMonitorIdRoute
 }
 export interface FileRoutesByTo {
@@ -256,11 +298,17 @@ export interface FileRoutesByTo {
   '/api/agent/$': typeof ApiAgentSplatRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/external-uploads/$': typeof ApiExternalUploadsSplatRoute
+  '/api/money/activity': typeof ApiMoneyActivityRoute
+  '/api/money/balances': typeof ApiMoneyBalancesRoute
+  '/api/money/categories': typeof ApiMoneyCategoriesRoute
+  '/api/money/imports': typeof ApiMoneyImportsRouteWithChildren
+  '/api/money/transfers': typeof ApiMoneyTransfersRoute
   '/api/ops/$': typeof ApiOpsSplatRoute
   '/api/public/catalog': typeof ApiPublicCatalogRoute
   '/api/review/$': typeof ApiReviewSplatRoute
   '/api/uploads/$': typeof ApiUploadsSplatRoute
   '/files/$id/$': typeof FilesIdSplatRoute
+  '/api/money/imports/preview': typeof ApiMoneyImportsPreviewRoute
   '/api/status/heartbeats/$monitorId': typeof ApiStatusHeartbeatsMonitorIdRoute
 }
 export interface FileRoutesById {
@@ -290,11 +338,17 @@ export interface FileRoutesById {
   '/api/agent/$': typeof ApiAgentSplatRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/external-uploads/$': typeof ApiExternalUploadsSplatRoute
+  '/api/money/activity': typeof ApiMoneyActivityRoute
+  '/api/money/balances': typeof ApiMoneyBalancesRoute
+  '/api/money/categories': typeof ApiMoneyCategoriesRoute
+  '/api/money/imports': typeof ApiMoneyImportsRouteWithChildren
+  '/api/money/transfers': typeof ApiMoneyTransfersRoute
   '/api/ops/$': typeof ApiOpsSplatRoute
   '/api/public/catalog': typeof ApiPublicCatalogRoute
   '/api/review/$': typeof ApiReviewSplatRoute
   '/api/uploads/$': typeof ApiUploadsSplatRoute
   '/files/$id/$': typeof FilesIdSplatRoute
+  '/api/money/imports/preview': typeof ApiMoneyImportsPreviewRoute
   '/api/status/heartbeats/$monitorId': typeof ApiStatusHeartbeatsMonitorIdRoute
 }
 export interface FileRouteTypes {
@@ -325,11 +379,17 @@ export interface FileRouteTypes {
     | '/api/agent/$'
     | '/api/auth/$'
     | '/api/external-uploads/$'
+    | '/api/money/activity'
+    | '/api/money/balances'
+    | '/api/money/categories'
+    | '/api/money/imports'
+    | '/api/money/transfers'
     | '/api/ops/$'
     | '/api/public/catalog'
     | '/api/review/$'
     | '/api/uploads/$'
     | '/files/$id/$'
+    | '/api/money/imports/preview'
     | '/api/status/heartbeats/$monitorId'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -357,11 +417,17 @@ export interface FileRouteTypes {
     | '/api/agent/$'
     | '/api/auth/$'
     | '/api/external-uploads/$'
+    | '/api/money/activity'
+    | '/api/money/balances'
+    | '/api/money/categories'
+    | '/api/money/imports'
+    | '/api/money/transfers'
     | '/api/ops/$'
     | '/api/public/catalog'
     | '/api/review/$'
     | '/api/uploads/$'
     | '/files/$id/$'
+    | '/api/money/imports/preview'
     | '/api/status/heartbeats/$monitorId'
   id:
     | '__root__'
@@ -390,11 +456,17 @@ export interface FileRouteTypes {
     | '/api/agent/$'
     | '/api/auth/$'
     | '/api/external-uploads/$'
+    | '/api/money/activity'
+    | '/api/money/balances'
+    | '/api/money/categories'
+    | '/api/money/imports'
+    | '/api/money/transfers'
     | '/api/ops/$'
     | '/api/public/catalog'
     | '/api/review/$'
     | '/api/uploads/$'
     | '/files/$id/$'
+    | '/api/money/imports/preview'
     | '/api/status/heartbeats/$monitorId'
   fileRoutesById: FileRoutesById
 }
@@ -419,6 +491,11 @@ export interface RootRouteChildren {
   AssetsSplatRoute: typeof AssetsSplatRoute
   FilesIdRoute: typeof FilesIdRouteWithChildren
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiMoneyActivityRoute: typeof ApiMoneyActivityRoute
+  ApiMoneyBalancesRoute: typeof ApiMoneyBalancesRoute
+  ApiMoneyCategoriesRoute: typeof ApiMoneyCategoriesRoute
+  ApiMoneyImportsRoute: typeof ApiMoneyImportsRouteWithChildren
+  ApiMoneyTransfersRoute: typeof ApiMoneyTransfersRoute
   ApiOpsSplatRoute: typeof ApiOpsSplatRoute
   ApiPublicCatalogRoute: typeof ApiPublicCatalogRoute
   ApiStatusHeartbeatsMonitorIdRoute: typeof ApiStatusHeartbeatsMonitorIdRoute
@@ -601,6 +678,41 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiExternalUploadsSplatRouteImport
       parentRoute: typeof ApiExternalUploadsRoute
     }
+    '/api/money/activity': {
+      id: '/api/money/activity'
+      path: '/api/money/activity'
+      fullPath: '/api/money/activity'
+      preLoaderRoute: typeof ApiMoneyActivityRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/money/balances': {
+      id: '/api/money/balances'
+      path: '/api/money/balances'
+      fullPath: '/api/money/balances'
+      preLoaderRoute: typeof ApiMoneyBalancesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/money/categories': {
+      id: '/api/money/categories'
+      path: '/api/money/categories'
+      fullPath: '/api/money/categories'
+      preLoaderRoute: typeof ApiMoneyCategoriesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/money/imports': {
+      id: '/api/money/imports'
+      path: '/api/money/imports'
+      fullPath: '/api/money/imports'
+      preLoaderRoute: typeof ApiMoneyImportsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/money/transfers': {
+      id: '/api/money/transfers'
+      path: '/api/money/transfers'
+      fullPath: '/api/money/transfers'
+      preLoaderRoute: typeof ApiMoneyTransfersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/ops/$': {
       id: '/api/ops/$'
       path: '/api/ops/$'
@@ -635,6 +747,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/files/$id/$'
       preLoaderRoute: typeof FilesIdSplatRouteImport
       parentRoute: typeof FilesIdRoute
+    }
+    '/api/money/imports/preview': {
+      id: '/api/money/imports/preview'
+      path: '/preview'
+      fullPath: '/api/money/imports/preview'
+      preLoaderRoute: typeof ApiMoneyImportsPreviewRouteImport
+      parentRoute: typeof ApiMoneyImportsRoute
     }
     '/api/status/heartbeats/$monitorId': {
       id: '/api/status/heartbeats/$monitorId'
@@ -729,6 +848,18 @@ const FilesIdRouteChildren: FilesIdRouteChildren = {
 const FilesIdRouteWithChildren =
   FilesIdRoute._addFileChildren(FilesIdRouteChildren)
 
+interface ApiMoneyImportsRouteChildren {
+  ApiMoneyImportsPreviewRoute: typeof ApiMoneyImportsPreviewRoute
+}
+
+const ApiMoneyImportsRouteChildren: ApiMoneyImportsRouteChildren = {
+  ApiMoneyImportsPreviewRoute: ApiMoneyImportsPreviewRoute,
+}
+
+const ApiMoneyImportsRouteWithChildren = ApiMoneyImportsRoute._addFileChildren(
+  ApiMoneyImportsRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DocumentsRoute: DocumentsRoute,
@@ -750,6 +881,11 @@ const rootRouteChildren: RootRouteChildren = {
   AssetsSplatRoute: AssetsSplatRoute,
   FilesIdRoute: FilesIdRouteWithChildren,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiMoneyActivityRoute: ApiMoneyActivityRoute,
+  ApiMoneyBalancesRoute: ApiMoneyBalancesRoute,
+  ApiMoneyCategoriesRoute: ApiMoneyCategoriesRoute,
+  ApiMoneyImportsRoute: ApiMoneyImportsRouteWithChildren,
+  ApiMoneyTransfersRoute: ApiMoneyTransfersRoute,
   ApiOpsSplatRoute: ApiOpsSplatRoute,
   ApiPublicCatalogRoute: ApiPublicCatalogRoute,
   ApiStatusHeartbeatsMonitorIdRoute: ApiStatusHeartbeatsMonitorIdRoute,

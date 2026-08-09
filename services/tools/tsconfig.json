@@ -26,6 +26,7 @@
     "field-guide/ui/**/*.tsx",
     "money/**/*.ts",
     "money/**/*.tsx",
-    "test/**/*.ts"
+    "test/**/*.ts",
+    "test/**/*.tsx"
   ]
 }
