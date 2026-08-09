@@ -179,7 +179,7 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
 
       if (request.method === "POST" && url.pathname === "/api/external-uploads") {
         if (!options.externalUpload) return externalUploadUnavailable();
-        requireSameOrigin(request, url);
+        requireSameOrigin(request, url, options.publicBaseUrl);
         requireMultipartUpload(request);
         return upload(
           request,
@@ -197,7 +197,7 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
       const externalUploadId = matchPath(url.pathname, "/api/external-uploads/");
       if (externalUploadId !== undefined && ["PUT", "PATCH", "DELETE"].includes(request.method)) {
         if (!options.externalUpload) return externalUploadUnavailable();
-        requireSameOrigin(request, url);
+        requireSameOrigin(request, url, options.publicBaseUrl);
         if (!PAGE_ID_PATTERN.test(externalUploadId)) {
           throw new ArtifactRequestError(
             400,
@@ -903,9 +903,10 @@ function requireBearer(request: Request, expectedToken: string) {
   }
 }
 
-function requireSameOrigin(request: Request, url: URL) {
+function requireSameOrigin(request: Request, url: URL, publicBaseUrl?: string) {
   const origin = request.headers.get("origin");
-  if (!origin || !isValidHost(url.host) || origin !== url.origin) {
+  const expectedOrigin = publicBaseUrl ? new URL(publicBaseUrl).origin : url.origin;
+  if (!origin || !isValidHost(url.host) || origin !== expectedOrigin) {
     throw new ArtifactRequestError(
       403,
       "invalid_origin",
