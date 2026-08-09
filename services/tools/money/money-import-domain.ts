@@ -1,5 +1,18 @@
 import { createHash } from "node:crypto";
 import { parse } from "csv-parse/sync";
+import {
+  MONEY_CATEGORIES,
+  MONEY_TRANSFER_DISPOSITIONS,
+  type MoneyCategory,
+  type MoneyTransferDisposition
+} from "./money-enums.js";
+
+export {
+  MONEY_CATEGORIES,
+  MONEY_TRANSFER_DISPOSITIONS,
+  type MoneyCategory,
+  type MoneyTransferDisposition
+} from "./money-enums.js";
 
 export const MONEY_IMPORT_MAX_BYTES = 10 * 1024 * 1024;
 export const MONEY_INDEXED_IDENTITY_MAX_BYTES = 512;
@@ -23,11 +36,7 @@ export type MoneyProvider = "revolut" | "portfolio_export" | "manual";
 export type MoneyAccountRole = "cash" | "investment";
 export type MoneyTransactionStatus = "completed" | "reverted";
 export type MoneyFlowKind = "spend" | "income" | "refund" | "transfer" | "trade" | "investment_income" | "fee" | "tax" | "balance_adjustment";
-export const MONEY_CATEGORIES = ["housing", "groceries", "dining", "transport", "shopping", "health", "travel", "subscriptions", "education", "entertainment", "gifts", "taxes", "fees", "cash", "investments", "income", "other", "uncategorized"] as const;
-export type MoneyCategory = typeof MONEY_CATEGORIES[number];
 export type MoneyInvestmentEventKind = "buy" | "sell" | "dividend" | "fee" | "tax" | "split" | "cash_transfer" | "position_transfer" | "delivery";
-export const MONEY_TRANSFER_DISPOSITIONS = ["internal_transfer", "income", "spend", "refund", "excluded"] as const;
-export type MoneyTransferDisposition = typeof MONEY_TRANSFER_DISPOSITIONS[number];
 
 export type MoneyLedgerTransaction = Readonly<{
   sourceKey: string;
