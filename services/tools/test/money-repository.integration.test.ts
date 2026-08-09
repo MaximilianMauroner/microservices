@@ -114,17 +114,23 @@ it.skipIf(!repository || !admin)("allows a user to correct an automatic transfer
 });
 
 it.skipIf(!repository || !admin)("starts the planning calendar only when a classified cash-flow contributor exists", async () => {
+  const [period] = await admin!<{ month_key: string; day_1: string; day_2: string; day_3: string; day_4: string }[]>`with period as (
+    select (date_trunc('month', current_date) - interval '1 month')::date month_start
+  ) select to_char(month_start, 'YYYY-MM') as month_key, month_start::text day_1,
+    (month_start + 1)::date::text day_2, (month_start + 2)::date::text day_3,
+    (month_start + 3)::date::text day_4 from period`;
+  expect(period).toBeDefined();
   await commitCash(repository!, Buffer.from([
     "Date,Account,Value,Role,Currency",
-    "2026-07-01,Cash snapshot,500,cash,EUR",
+    `${period!.day_1},Cash snapshot,500,cash,EUR`,
   ].join("\r\n")), "balance-only.csv");
   await commitCash(repository!, Buffer.from([
     "Date\tTicker\tType\tQuantity\tPrice per share\tTotal Amount\tCurrency\tFX Rate",
-    "2026-07-02T12:00:00.000Z\tVWCE\tBUY - MARKET\t1\tEUR 100\tEUR -100\tEUR\t1",
+    `${period!.day_2}T12:00:00.000Z\tVWCE\tBUY - MARKET\t1\tEUR 100\tEUR -100\tEUR\t1`,
   ].join("\r\n")), "fee-free-trade.tsv");
   await commitCash(repository!, cash([
-    "Transfer\tCurrent\t2026-07-03 12:00:00\t2026-07-03 12:00:00\tInternal only\t-25\t0\tEUR\tCOMPLETED\t475",
-    "Transfer\tSavings\t2026-07-03 12:00:00\t2026-07-03 12:00:00\tInternal only\t25\t0\tEUR\tCOMPLETED\t25",
+    `Transfer\tCurrent\t${period!.day_3} 12:00:00\t${period!.day_3} 12:00:00\tInternal only\t-25\t0\tEUR\tCOMPLETED\t475`,
+    `Transfer\tSavings\t${period!.day_3} 12:00:00\t${period!.day_3} 12:00:00\tInternal only\t25\t0\tEUR\tCOMPLETED\t25`,
   ]), "internal-only.tsv");
 
   const withoutCashFlow = await repository!.readLedgerSnapshot();
@@ -132,10 +138,10 @@ it.skipIf(!repository || !admin)("starts the planning calendar only when a class
   expect(withoutCashFlow.planning).toMatchObject({ ready: false, observedMonthCount: 0 });
 
   await commitCash(repository!, cash([
-    "Card Payment\tCurrent\t2026-07-04 12:00:00\t2026-07-04 12:00:00\tReal spend\t-12.50\t0\tEUR\tCOMPLETED\t462.50",
+    `Card Payment\tCurrent\t${period!.day_4} 12:00:00\t${period!.day_4} 12:00:00\tReal spend\t-12.50\t0\tEUR\tCOMPLETED\t462.50`,
   ]), "real-spend.tsv");
   const withCashFlow = await repository!.readLedgerSnapshot();
-  expect(withCashFlow.spending.months).toEqual([expect.objectContaining({ month: "2026-07", spendMinor: 1_250, netCashFlowMinor: -1_250 })]);
+  expect(withCashFlow.spending.months).toEqual([expect.objectContaining({ month: period!.month_key, spendMinor: 1_250, netCashFlowMinor: -1_250 })]);
   expect(withCashFlow.planning).toMatchObject({ ready: true, observedMonthCount: 1 });
 });
 
