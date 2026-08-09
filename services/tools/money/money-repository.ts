@@ -243,9 +243,28 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
     },
 
     async setTransferDisposition(input) {
-      const updated = await sql<{ id: string }[]>`update tools.money_transactions set transfer_disposition = ${input.disposition}
-        where id = ${input.transactionId} and status = 'completed' and flow_kind = 'transfer' and transfer_group_id is null returning id`;
-      if (!updated[0]) throw new Error("Reviewable money transfer not found.");
+      await sql.begin(async (tx) => {
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          const [snapshot] = await tx<{ transfer_group_id: string | null }[]>`select transfer_group_id from tools.money_transactions
+            where id = ${input.transactionId} and status = 'completed' and flow_kind = 'transfer'`;
+          if (!snapshot) throw new Error("Reviewable money transfer not found.");
+          if (snapshot.transfer_group_id) {
+            const locked = await tx<{ id: string }[]>`select id from tools.money_transactions
+              where transfer_group_id = ${snapshot.transfer_group_id} order by id for update`;
+            if (!locked.some((row) => row.id === input.transactionId)) continue;
+            if (input.disposition === "internal_transfer") return;
+            await tx`update tools.money_transactions set transfer_group_id = null,
+              transfer_disposition = case when id = ${input.transactionId} then ${input.disposition} else null end
+              where transfer_group_id = ${snapshot.transfer_group_id}`;
+            return;
+          }
+          const updated = await tx<{ id: string }[]>`update tools.money_transactions set transfer_disposition = ${input.disposition}
+            where id = ${input.transactionId} and status = 'completed' and flow_kind = 'transfer'
+              and transfer_group_id is null returning id`;
+          if (updated[0]) return;
+        }
+        throw new Error("The transfer changed while it was being reviewed. Try again.");
+      });
     },
 
     addManualBalance(input) {
@@ -340,7 +359,7 @@ async function applyCategoryRules(tx: postgres.TransactionSql, transactionIds: s
 }
 
 async function linkUnambiguousTransfers(tx: postgres.TransactionSql) {
-  const rows = await tx<TransferRow[]>`select id, account_id, local_date::text, amount_minor::text, currency from tools.money_transactions where status = 'completed' and flow_kind = 'transfer' and amount_minor <> 0 and transfer_group_id is null and (source_type = 'Transfer' or source_type like 'TRANSFER%')`;
+  const rows = await tx<TransferRow[]>`select id, account_id, local_date::text, amount_minor::text, currency from tools.money_transactions where status = 'completed' and flow_kind = 'transfer' and amount_minor <> 0 and transfer_group_id is null and transfer_disposition is null and (source_type = 'Transfer' or source_type like 'TRANSFER%')`;
   const buckets = new Map<string, TransferRow[]>();
   for (const row of rows) {
     const key = `${row.currency}:${-integer(row.amount_minor)}:${Math.floor(day(row.local_date))}`;
@@ -356,17 +375,25 @@ async function linkUnambiguousTransfers(tx: postgres.TransactionSql) {
     candidates.set(row.id, matches);
   }
   const used = new Set<string>();
-  const updates: Array<{ id: string; groupId: string }> = [];
+  const pairs: Array<readonly [string, string]> = [];
   for (const row of rows) {
     const matches = candidates.get(row.id) ?? [];
     const other = matches[0];
     if (matches.length !== 1 || !other || (candidates.get(other.id)?.length ?? 0) !== 1 || used.has(row.id) || used.has(other.id)) continue;
-    const group = randomUUID(); used.add(row.id); used.add(other.id);
-    updates.push({ id: row.id, groupId: group }, { id: other.id, groupId: group });
+    used.add(row.id); used.add(other.id);
+    pairs.push([row.id, other.id]);
   }
-  for (const batch of chunks(updates, 500)) await tx`update tools.money_transactions t set transfer_group_id = linked.group_id, transfer_disposition = 'internal_transfer'
-    from unnest(${tx.array(batch.map((item) => item.id))}::uuid[], ${tx.array(batch.map((item) => item.groupId))}::uuid[]) linked(id, group_id)
-    where t.id = linked.id`;
+  for (const pair of pairs) {
+    const ids = [...pair].sort();
+    const locked = await tx<{ id: string }[]>`select id from tools.money_transactions
+      where id in ${tx(ids)} and status = 'completed' and flow_kind = 'transfer'
+        and transfer_group_id is null and transfer_disposition is null
+      order by id for update`;
+    if (locked.length !== 2) continue;
+    const groupId = randomUUID();
+    await tx`update tools.money_transactions set transfer_group_id = ${groupId}, transfer_disposition = 'internal_transfer'
+      where id in ${tx(ids)} and transfer_group_id is null and transfer_disposition is null`;
+  }
 }
 
 function uniqueAccounts(transactions: readonly MoneyLedgerTransaction[]) { return [...new Map(transactions.map((item) => [item.accountExternalRef, { externalRef: item.accountExternalRef, name: item.accountName, currency: item.accountRole === "investment" ? "EUR" : item.currency, provider: item.provider, role: item.accountRole }])).values()]; }

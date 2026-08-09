@@ -66,6 +66,7 @@ describe("Option A money ledger views", () => {
     expect(html).toContain("Linked transfers");
     expect(html).toContain("Transfer treatment");
     expect(html).toContain("Needs review");
+    expect(html).toContain("Changing an automatic internal match safely unlinks both sides");
   });
 
   it("states the bounded spending and investment contracts", () => {

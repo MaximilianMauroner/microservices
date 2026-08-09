@@ -1,7 +1,8 @@
 import postgres from "postgres";
-import { afterAll, beforeAll, expect, it } from "vitest";
+import { afterAll, beforeEach, expect, it } from "vitest";
+import { DISPOSABLE_DATABASE_SENTINEL, withVerifiedDisposableDatabase } from "../field-guide/src/postgres-push-guard.js";
 import { parseMoneyImport } from "../money/money-import-domain.js";
-import { createPostgresMoneyRepository } from "../money/money-repository.js";
+import { createPostgresMoneyRepository, type MoneyRepository } from "../money/money-repository.js";
 
 // Opt in only with a disposable database after applying the guarded tools schema:
 // TEST_DATABASE_URL=... MONEY_TEST_DATABASE_CONFIRM=money-repository-test pnpm test:money-postgres
@@ -10,11 +11,18 @@ const confirmed = process.env.MONEY_TEST_DATABASE_CONFIRM === "money-repository-
 const repository = databaseUrl && confirmed ? createPostgresMoneyRepository(databaseUrl) : undefined;
 const admin = databaseUrl && confirmed ? postgres(databaseUrl, { max: 1 }) : undefined;
 
-beforeAll(async () => {
+beforeEach(async () => {
   if (!admin) return;
-  const [database] = await admin<{ name: string }[]>`select current_database() name`;
-  if (!database || !/test/i.test(database.name)) throw new Error("Money integration tests require a disposable database whose name contains 'test'.");
-  await admin`truncate tools.money_balance_snapshots, tools.money_category_rules, tools.money_investment_events, tools.money_transactions, tools.money_imports, tools.money_accounts cascade`;
+  await withVerifiedDisposableDatabase({
+    readRelationKind: async () => (await admin<{ kind: string }[]>`
+      select c.relkind::text kind from pg_class c join pg_namespace n on n.oid = c.relnamespace
+      where n.nspname = 'public' and c.relname = ${DISPOSABLE_DATABASE_SENTINEL.relation}`)[0]?.kind,
+    readValue: async () => (await admin<{ value: string }[]>`
+      select sentinel_value value from public.field_guide_review_test_sentinel
+      where sentinel_key = ${DISPOSABLE_DATABASE_SENTINEL.key}`)[0]?.value,
+  }, async () => {
+    await admin`truncate tools.money_balance_snapshots, tools.money_category_rules, tools.money_investment_events, tools.money_transactions, tools.money_imports, tools.money_accounts cascade`;
+  });
 });
 
 afterAll(async () => {
@@ -56,6 +64,62 @@ it.skipIf(!repository || !admin)("executes import replay, transfer review, analy
   expect(new Set(duplicateAccounts.map((id) => snapshot.accountRoles[id]))).toEqual(new Set(["cash", "investment"]));
 });
 
+it.skipIf(!repository || !admin)("preserves a reviewed transfer when its possible counterpart arrives later", async () => {
+  await commitCash(repository!, cash([
+    "Transfer\tCurrent\t2026-03-02 12:00:00\t2026-03-02 12:00:00\tReviewed first\t50\t0\tEUR\tCOMPLETED\t150",
+  ]), "reviewed-first.tsv");
+  const [reviewed] = (await repository!.readActivityPage({ query: "Reviewed first", reviewOnly: true, offset: 0, limit: 10 })).items;
+  expect(reviewed).toBeDefined();
+  await repository!.setTransferDisposition({ transactionId: reviewed!.id, disposition: "income" });
+
+  await commitCash(repository!, cash([
+    "Transfer\tSavings\t2026-03-03 12:00:00\t2026-03-03 12:00:00\tLate counterpart\t-50\t0\tEUR\tCOMPLETED\t50",
+  ]), "late-counterpart.tsv");
+  const rows = (await repository!.readActivityPage({ query: "", offset: 0, limit: 10 })).items;
+  expect(rows.find((row) => row.description === "Reviewed first")).toMatchObject({ transferDisposition: "income", needsTransferReview: false });
+  expect(rows.find((row) => row.description === "Reviewed first")?.transferGroupId).toBeUndefined();
+  expect(rows.find((row) => row.description === "Late counterpart")).toMatchObject({ needsTransferReview: true });
+});
+
+it.skipIf(!repository || !admin)("keeps review authoritative when a counterpart import races it", async () => {
+  await commitCash(repository!, cash([
+    "Transfer\tCurrent\t2026-04-02 12:00:00\t2026-04-02 12:00:00\tRacing review\t75\t0\tEUR\tCOMPLETED\t175",
+  ]), "racing-review.tsv");
+  const [reviewed] = (await repository!.readActivityPage({ query: "Racing review", reviewOnly: true, offset: 0, limit: 10 })).items;
+  expect(reviewed).toBeDefined();
+  await Promise.all([
+    repository!.setTransferDisposition({ transactionId: reviewed!.id, disposition: "income" }),
+    commitCash(repository!, cash([
+      "Transfer\tSavings\t2026-04-03 12:00:00\t2026-04-03 12:00:00\tRacing counterpart\t-75\t0\tEUR\tCOMPLETED\t25",
+    ]), "racing-counterpart.tsv"),
+  ]);
+  const rows = (await repository!.readActivityPage({ query: "Racing", offset: 0, limit: 10 })).items;
+  expect(rows.find((row) => row.description === "Racing review")).toMatchObject({ transferDisposition: "income", needsTransferReview: false });
+  expect(rows.every((row) => row.transferGroupId === undefined)).toBe(true);
+});
+
+it.skipIf(!repository || !admin)("allows a user to correct an automatic transfer match", async () => {
+  await commitCash(repository!, cash([
+    "Transfer\tCurrent\t2026-05-02 12:00:00\t2026-05-02 12:00:00\tFalse match inflow\t90\t0\tEUR\tCOMPLETED\t190",
+    "Transfer\tSavings\t2026-05-03 12:00:00\t2026-05-03 12:00:00\tFalse match outflow\t-90\t0\tEUR\tCOMPLETED\t10",
+  ]), "false-match.tsv");
+  const linked = (await repository!.readActivityPage({ query: "False match", offset: 0, limit: 10 })).items;
+  expect(new Set(linked.map((row) => row.transferGroupId)).size).toBe(1);
+  const inflow = linked.find((row) => row.amountMinor > 0)!;
+  await repository!.setTransferDisposition({ transactionId: inflow.id, disposition: "refund" });
+  const corrected = (await repository!.readActivityPage({ query: "False match", offset: 0, limit: 10 })).items;
+  expect(corrected.find((row) => row.id === inflow.id)).toMatchObject({ transferDisposition: "refund", needsTransferReview: false });
+  expect(corrected.every((row) => row.transferGroupId === undefined)).toBe(true);
+  expect(corrected.find((row) => row.id !== inflow.id)).toMatchObject({ needsTransferReview: true });
+});
+
 function cash(rows: string[]) {
   return Buffer.from(["Type\tProduct\tStarted Date\tCompleted Date\tDescription\tAmount\tFee\tCurrency\tState\tBalance", ...rows].join("\r\n"));
+}
+
+async function commitCash(target: MoneyRepository, source: Buffer, filename: string) {
+  const parsed = parseMoneyImport(source);
+  return target.commitImport({ digest: parsed.digest, format: parsed.format, filename, bytes: source.byteLength,
+    rowCount: parsed.rowCount, actor: "integration@example.test", transactions: parsed.transactions,
+    investmentEvents: parsed.investmentEvents, balanceSnapshots: parsed.balanceSnapshots, warnings: parsed.warnings });
 }
