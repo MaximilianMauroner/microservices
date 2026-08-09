@@ -53,7 +53,7 @@ export interface CheckerStore {
     value: PrivateSnapshotDocument,
     signal?: AbortSignal
   ): Promise<void>;
-  close(): void;
+  close(): void | Promise<void>;
 }
 
 export class CheckerConflictError extends Error {

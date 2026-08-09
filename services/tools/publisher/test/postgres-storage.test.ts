@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { pageArtifactMetadata, runDurableMutation } from "../src/postgres-storage.js";
+import { readFile } from "node:fs/promises";
+import { assertOperationOwnership, pageArtifactMetadata, runDurableMutation } from "../src/postgres-storage.js";
 import { vi } from "vitest";
 import { artifactId } from "../src/artifact-backfill.js";
 
@@ -38,7 +39,7 @@ describe("Postgres artifact metadata paging", () => {
   it("retains the durable operation when metadata finalization fails", async () => {
     const events: string[] = [];
     await expect(runDurableMutation({
-      prepare: async () => { events.push("prepared"); return "operation"; },
+      prepare: async () => { events.push("prepared"); return { operationId: "operation", ownerId: "owner" }; },
       mutate: async () => { events.push("body-written"); },
       reconcile: vi.fn(),
       finalize: async () => { events.push("finalize-attempted"); throw new Error("database unavailable"); }
@@ -50,11 +51,24 @@ describe("Postgres artifact metadata paging", () => {
     const original = new Error("S3 response lost");
     const reconcile = vi.fn(async () => {});
     await expect(runDurableMutation({
-      prepare: async () => "operation",
+      prepare: async () => ({ operationId: "operation", ownerId: "owner" }),
       mutate: async () => { throw original; },
       reconcile,
       finalize: vi.fn()
     })).rejects.toBe(original);
-    expect(reconcile).toHaveBeenCalledWith("operation");
+    expect(reconcile).toHaveBeenCalledWith({ operationId: "operation", ownerId: "owner" });
+  });
+
+  it("rejects metadata finalization after operation ownership changes", () => {
+    expect(() => assertOperationOwnership(false, "operation")).toThrow("no longer owned");
+    expect(() => assertOperationOwnership(true, "operation")).not.toThrow();
+  });
+
+  it("claims only expired operations and locks ownership during finalization", async () => {
+    const source = await readFile(new URL("../src/postgres-storage.ts", import.meta.url), "utf8");
+    const migration = await readFile(new URL("../../database/003_artifact_operations.sql", import.meta.url), "utf8");
+    expect(source).toContain("where lease_until <= now()");
+    expect(source).toContain("and owner_id = ${operation.ownerId} for update");
+    expect(migration).toContain("unique index if not exists artifact_operations_artifact_idx");
   });
 });
