@@ -17,5 +17,11 @@ export default defineConfig({
     "scheduled_task_runs",
     "checker_states",
     "history_partitions",
+    "money_accounts",
+    "money_imports",
+    "money_transactions",
+    "money_investment_events",
+    "money_category_rules",
+    "money_balance_snapshots",
   ],
 });

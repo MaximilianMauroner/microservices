@@ -6,7 +6,7 @@ import { requireRouteSession } from "../auth-session.js";
 
 export const Route = createFileRoute("/money")({
   beforeLoad: ({ location }) => requireRouteSession(location.href),
-  validateSearch: (search: Record<string, unknown>): { view?: Exclude<MoneyTrackerView, "overview"> } => ({ view: search.view === "accounts" || search.view === "history" || search.view === "predictions" ? search.view : undefined }),
+  validateSearch: (search: Record<string, unknown>): { view?: Exclude<MoneyTrackerView, "overview"> } => ({ view: search.view === "activity" || search.view === "spending" || search.view === "investments" || search.view === "balances" || search.view === "imports" ? search.view : undefined }),
   loader: () => getMoneyTrackerPageData(),
   pendingComponent: MoneyTrackerPendingRoute,
   pendingMs: 0,

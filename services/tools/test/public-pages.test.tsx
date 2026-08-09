@@ -65,7 +65,7 @@ const privateSnapshot: PrivateSnapshotDocument = {
         visibility: "private",
         lifecycle: "active",
         links: [{ id: "console", label: "Open console", url: "https://private.example.test", access: "private" }],
-        monitor: { enabled: true, paused: false, scope: "tailscale", url: "https://private.example.test/health" }
+        monitor: { tracking: "http", enabled: true, paused: false, scope: "tailscale", url: "https://private.example.test/health" }
       },
       {
         id: "public-console",

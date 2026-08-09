@@ -60,6 +60,15 @@ export async function verifyDisposableDatabase(lookups: SentinelLookups) {
   }
 }
 
+/** Runs a destructive test operation only after the canonical disposable sentinel is verified. */
+export async function withVerifiedDisposableDatabase<Result>(
+  lookups: SentinelLookups,
+  run: () => Promise<Result>,
+) {
+  await verifyDisposableDatabase(lookups);
+  return run();
+}
+
 /** Creates a single-use capability after the caller has completed every push guard. */
 export function createPushHandoff(environment: Environment, mode: PushMode): PushHandoff {
   const url = resolvePushDatabase(environment, mode);

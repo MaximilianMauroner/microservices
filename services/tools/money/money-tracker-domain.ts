@@ -32,45 +32,6 @@ export type MoneyTrackerTrendStats = Readonly<{
   }>;
 }>;
 
-export type MoneyTrackerForecastHorizon = 6 | 12 | 24;
-export type MoneyTrackerForecastConfidence = "low" | "medium" | "high";
-
-type ForecastMetric = Readonly<{
-  current: number;
-  monthlyTrend: number;
-  projected: number;
-  change: number;
-}>;
-
-export type MoneyTrackerForecast = Readonly<{
-  horizon: MoneyTrackerForecastHorizon;
-  sampleCount: number;
-  confidence: MoneyTrackerForecastConfidence;
-  total: ForecastMetric;
-  money: ForecastMetric;
-  stocks: ForecastMetric;
-  points: readonly Readonly<{
-    date: string;
-    total: number;
-    money: number;
-    stocks: number;
-    lowerTotal: number;
-    upperTotal: number;
-  }>[];
-  scenarios: readonly Readonly<{
-    label: "Conservative" | "Base trend" | "Upper historical";
-    monthlyChange: number;
-    projected: number;
-  }>[];
-  milestones: readonly Readonly<{
-    value: number;
-    estimatedDate: string;
-    earliestDate?: string;
-    latestDate?: string;
-    confidence: MoneyTrackerForecastConfidence;
-  }>[];
-}>;
-
 /** Classifies accounts using the naming contract chosen for the money tracker UI. */
 export function moneyTrackerAccountCategory(account: string): MoneyTrackerAccountCategory {
   return /stocks?$/i.test(account.trim()) ? "stocks" : "money";
@@ -125,115 +86,6 @@ export function moneyTrackerTrendStats(
   };
 }
 
-/** Extrapolates observed balances. It does not estimate investment returns or cash flow. */
-export function moneyTrackerForecast(
-  history: readonly MoneyTrackerTrendPoint[],
-  horizon: MoneyTrackerForecastHorizon
-): MoneyTrackerForecast | undefined {
-  if (history.length < 6) return undefined;
-  const latest = history.at(-1)!;
-  const totalValues = history.map((point) => point.total);
-  const moneyValues = history.map((point) => point.money);
-  const stockValues = history.map((point) => point.stocks);
-  const totalChanges = differences(totalValues);
-  const totalSlope = linearSlope(totalValues);
-  const moneySlope = linearSlope(moneyValues);
-  const stocksSlope = linearSlope(stockValues);
-  const volatility = standardDeviation(totalChanges);
-  const lowerSlope = Math.min(quantile(totalChanges, 0.25), totalSlope);
-  const upperSlope = Math.max(quantile(totalChanges, 0.75), totalSlope);
-  const confidence: MoneyTrackerForecastConfidence = history.length < 12 ? "low" : history.length < 24 ? "medium" : "high";
-  const points = Array.from({ length: horizon }, (_, index) => {
-    const step = index + 1;
-    const total = project(latest.total, totalSlope, step);
-    const spread = volatility * Math.sqrt(step) * 1.28;
-    return {
-      date: addMonths(latest.date, step),
-      total,
-      money: project(latest.money, moneySlope, step),
-      stocks: project(latest.stocks, stocksSlope, step),
-      lowerTotal: Math.max(0, total - spread),
-      upperTotal: total + spread
-    };
-  });
-
-  return {
-    horizon,
-    sampleCount: history.length,
-    confidence,
-    total: forecastMetric(latest.total, totalSlope, horizon),
-    money: forecastMetric(latest.money, moneySlope, horizon),
-    stocks: forecastMetric(latest.stocks, stocksSlope, horizon),
-    points,
-    scenarios: [
-      { label: "Conservative", monthlyChange: lowerSlope, projected: project(latest.total, lowerSlope, horizon) },
-      { label: "Base trend", monthlyChange: totalSlope, projected: project(latest.total, totalSlope, horizon) },
-      { label: "Upper historical", monthlyChange: upperSlope, projected: project(latest.total, upperSlope, horizon) }
-    ],
-    milestones: forecastMilestones(latest.date, latest.total, totalSlope, lowerSlope, upperSlope, confidence)
-  };
-}
-
-function forecastMetric(current: number, monthlyTrend: number, horizon: number): ForecastMetric {
-  const projected = project(current, monthlyTrend, horizon);
-  return { current, monthlyTrend, projected, change: projected - current };
-}
-
-function forecastMilestones(date: string, current: number, baseSlope: number, lowerSlope: number, upperSlope: number, confidence: MoneyTrackerForecastConfidence) {
-  if (baseSlope <= 0) return [];
-  const first = Math.floor(current / 5_000) * 5_000 + 5_000;
-  return Array.from({ length: 3 }, (_, index) => first + index * 5_000).flatMap((value) => {
-    const estimatedMonths = Math.ceil((value - current) / baseSlope);
-    if (estimatedMonths > 60) return [];
-    const earliestMonths = upperSlope > 0 ? Math.max(1, Math.ceil((value - current) / upperSlope)) : undefined;
-    const latestMonths = lowerSlope > 0 ? Math.ceil((value - current) / lowerSlope) : undefined;
-    return [{
-      value,
-      estimatedDate: addMonths(date, estimatedMonths),
-      earliestDate: earliestMonths === undefined ? undefined : addMonths(date, earliestMonths),
-      latestDate: latestMonths === undefined || latestMonths > 60 ? undefined : addMonths(date, latestMonths),
-      confidence: estimatedMonths > 24 ? "low" as const : confidence
-    }];
-  });
-}
-
-function linearSlope(values: readonly number[]) {
-  const center = (values.length - 1) / 2;
-  const numerator = values.reduce((sum, value, index) => sum + (index - center) * value, 0);
-  const denominator = values.reduce((sum, _value, index) => sum + Math.pow(index - center, 2), 0);
-  return denominator === 0 ? 0 : numerator / denominator;
-}
-
-function differences(values: readonly number[]) {
-  return values.slice(1).map((value, index) => value - values[index]!);
-}
-
-function standardDeviation(values: readonly number[]) {
-  if (!values.length) return 0;
-  const mean = average(values);
-  return Math.sqrt(average(values.map((value) => Math.pow(value - mean, 2))));
-}
-
-function quantile(values: readonly number[], percentile: number) {
-  if (!values.length) return 0;
-  const sorted = [...values].sort((left, right) => left - right);
-  const position = (sorted.length - 1) * percentile;
-  const lower = Math.floor(position);
-  const remainder = position - lower;
-  return sorted[lower]! + ((sorted[lower + 1] ?? sorted[lower]!) - sorted[lower]!) * remainder;
-}
-
-function project(current: number, monthlyTrend: number, months: number) {
-  return Math.max(0, current + monthlyTrend * months);
-}
-
-function addMonths(value: string, months: number) {
-  const parsed = parseDate(value);
-  if (!parsed) return value;
-  const date = new Date(Date.UTC(parsed.year, parsed.month - 1 + months, Math.min(parsed.day, 28)));
-  return `${String(date.getUTCDate()).padStart(2, "0")}/${String(date.getUTCMonth() + 1).padStart(2, "0")}/${date.getUTCFullYear()}`;
-}
-
 function yearlyChanges(history: readonly MoneyTrackerTrendPoint[]) {
   const years = [...new Set(history.map((point) => parseDate(point.date)?.year).filter((year): year is number => year !== undefined))];
   return years.map((year) => {
@@ -254,6 +106,8 @@ function findPreviousYear(history: readonly MoneyTrackerTrendPoint[], latestDate
 }
 
 function parseDate(value: string) {
+  const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (iso) return { year: Number(iso[1]), month: Number(iso[2]), day: Number(iso[3]) };
   const [day, month, year] = value.split("/").map(Number);
   return day && month && year ? { day, month, year } : undefined;
 }
