@@ -70,6 +70,10 @@ const STATIC_ASSETS = {
     file: "../public/assets/icons/tools-status-directory.png",
     contentType: "image/png"
   },
+  "/assets/icons/money-tracker.png": {
+    file: "../public/assets/icons/money-tracker.png",
+    contentType: "image/png"
+  },
   "/assets/icons/network-console.png": {
     file: "../public/assets/icons/network-console.png",
     contentType: "image/png"
@@ -998,6 +1002,7 @@ async function asset(path: StaticAssetPath): Promise<Response> {
   const candidateFiles = new Set([
     resolve(moduleDir, "..", withoutParent),
     resolve(process.cwd(), withoutParent),
+    resolve(process.cwd(), "services", "tools", "dashboard", withoutParent),
     resolve(process.cwd(), "apps", "tools-web", withoutParent),
     resolve(process.cwd(), "..", "tools-web", withoutParent)
   ]);
