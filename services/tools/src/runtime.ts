@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { createFetchApp, createPostgresUploadStorage, ActivityTracker } from "@tools-platform/artifact-publisher";
 import { createApp as createFieldGuideApp } from "@tools-platform/field-guide/app";
 import { agentAuth } from "@tools-platform/field-guide/auth";
@@ -19,6 +20,7 @@ import {
 } from "./app.js";
 import { loadPlatformConfig } from "./config.js";
 import { startAlignedScheduler } from "./scheduler.js";
+import { createPostgresScheduledTaskLeaseRepository } from "./scheduled-task-leases.js";
 import { PLATFORM_UI_BUILD } from "./build-identity.js";
 import { createMoneyTracker } from "../money/money-tracker.js";
 import {
@@ -108,6 +110,12 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
       ? undefined
       : startAlignedScheduler({
           intervalMs: config.checkerIntervalMs,
+          lease: {
+            repository: createPostgresScheduledTaskLeaseRepository(config.databaseUrl),
+            taskId: `status-checker:${config.checker.environment}`,
+            ownerId: randomUUID(),
+            durationMs: config.checker.runDeadlineMs + 30_000
+          },
           run: () => executeChecker({ config: config.checker }),
           logger: {
             info: (event, fields = {}) => console.info(JSON.stringify({ event, ...fields })),
@@ -141,10 +149,9 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
     const stop = async () => {
       if (stopped) return;
       stopped = true;
-      checker?.stop();
       cleanup?.stop();
       await Promise.all([
-        checker?.wait() ?? Promise.resolve(),
+        checker?.close() ?? Promise.resolve(),
         cleanup?.wait() ?? Promise.resolve(),
         activityTracker.waitForIdle(),
         ...Object.values(services).map((service) => service.close()),

@@ -7,9 +7,10 @@ import {
   type HistoryPartitionDocument
 } from "@tools-platform/domain";
 import catalogSource from "../../dashboard/config/initial-catalog.json" with { type: "json" };
+import { products } from "../../dashboard/products.js";
 import { CheckerConflictError, createS3CheckerStore, type CheckerStore } from "./bucket.js";
 import type { CheckerConfig } from "./config.js";
-import { loadMonitorDefinitions } from "./definitions.js";
+import { assertMonitorIdentities, loadMonitorDefinitions } from "./definitions.js";
 
 /** Keeps runtime state in Postgres; S3 remains only the catalog/snapshot transport. */
 export function createPostgresCheckerStore(config: CheckerConfig): CheckerStore {
@@ -19,6 +20,11 @@ export function createPostgresCheckerStore(config: CheckerConfig): CheckerStore 
     async readCatalog() {
       const catalog = decodeCatalogDocument(catalogSource);
       const definitions = loadMonitorDefinitions();
+      assertMonitorIdentities(
+        catalog.entries.map(({ id }) => id),
+        products.flatMap(({ monitorId }) => monitorId ? [monitorId] : []),
+        definitions
+      );
       const overrides = await sql<{ monitor_id: string; paused: boolean }[]>`select monitor_id, paused from tools.monitor_overrides`;
       const paused = new Map(overrides.map((row) => [row.monitor_id, row.paused]));
       const byId = new Map(definitions.map((definition) => [definition.id, definition]));
@@ -59,9 +65,7 @@ export function createPostgresCheckerStore(config: CheckerConfig): CheckerStore 
     },
     async writeState(value, expectedEtag) {
       decodeCheckerStateDocument(value);
-      const revision = await guardedWrite(sql, config.environment, null, value, expectedEtag);
-      await persistFacts(sql, value);
-      return revision;
+      return guardedWrite(sql, config.environment, null, value, expectedEtag);
     },
     async writeHistory(value, expectedEtag) {
       decodeHistoryPartitionDocument(value);
@@ -87,6 +91,7 @@ async function guardedWrite(sql: Sql, environment: string, day: string | null, v
     if (day === null) {
       await tx`insert into tools.checker_states (environment, revision, value, updated_at) values (${environment}, ${next}, ${json}::jsonb, now())
         on conflict (environment) do update set revision = excluded.revision, value = excluded.value, updated_at = excluded.updated_at`;
+      await persistFacts(tx, value as CheckerStateDocument);
     } else {
       await tx`insert into tools.history_partitions (environment, day, revision, value, updated_at) values (${environment}, ${day}::date, ${next}, ${json}::jsonb, now())
         on conflict (environment, day) do update set revision = excluded.revision, value = excluded.value, updated_at = excluded.updated_at`;
@@ -95,7 +100,7 @@ async function guardedWrite(sql: Sql, environment: string, day: string | null, v
   });
 }
 
-async function persistFacts(sql: Sql, state: CheckerStateDocument) {
+async function persistFacts(sql: postgres.TransactionSql, state: CheckerStateDocument) {
   if (state.lastRunId) await sql`insert into tools.check_runs (id, started_at, completed_at) values (${state.lastRunId}, ${state.updatedAt}, ${state.updatedAt}) on conflict (id) do update set completed_at = excluded.completed_at`;
   for (const [monitorId, monitor] of Object.entries(state.monitors)) {
     const observation = monitor.latestObservation;

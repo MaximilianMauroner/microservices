@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { pageArtifactMetadata } from "../src/postgres-storage.js";
+import { pageArtifactMetadata, runDurableMutation } from "../src/postgres-storage.js";
+import { vi } from "vitest";
 import { artifactId } from "../src/artifact-backfill.js";
 
 const now = new Date("2026-08-09T12:00:00.000Z");
@@ -32,5 +33,28 @@ describe("Postgres artifact metadata paging", () => {
   it("keeps persistent artifacts separate from expiring files", () => {
     const page = pageArtifactMetadata(uploads, now, { limit: 10, expiry: "persistent" });
     expect(page.uploads.map(({ id }) => id)).toEqual(["a"]);
+  });
+
+  it("retains the durable operation when metadata finalization fails", async () => {
+    const events: string[] = [];
+    await expect(runDurableMutation({
+      prepare: async () => { events.push("prepared"); return "operation"; },
+      mutate: async () => { events.push("body-written"); },
+      reconcile: vi.fn(),
+      finalize: async () => { events.push("finalize-attempted"); throw new Error("database unavailable"); }
+    })).rejects.toThrow("database unavailable");
+    expect(events).toEqual(["prepared", "body-written", "finalize-attempted"]);
+  });
+
+  it("reconciles an ambiguous S3 failure before returning it", async () => {
+    const original = new Error("S3 response lost");
+    const reconcile = vi.fn(async () => {});
+    await expect(runDurableMutation({
+      prepare: async () => "operation",
+      mutate: async () => { throw original; },
+      reconcile,
+      finalize: vi.fn()
+    })).rejects.toBe(original);
+    expect(reconcile).toHaveBeenCalledWith("operation");
   });
 });

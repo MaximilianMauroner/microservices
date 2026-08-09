@@ -1,4 +1,5 @@
-import postgres, { type Sql } from "postgres";
+import crypto from "node:crypto";
+import postgres, { type Sql, type TransactionSql } from "postgres";
 import {
   htmlKey,
   temporaryFileKey,
@@ -24,6 +25,13 @@ type ArtifactRow = {
   expires_at: Date | null;
 };
 
+type PendingOperation = {
+  operation_id: string;
+  artifact_id: string;
+  operation_kind: "put_html" | "put_file" | "delete";
+  payload: UpsertArtifact | null;
+};
+
 /** Keeps file bodies in S3 while making Postgres authoritative for metadata. */
 export function createPostgresUploadStorage(
   s3Config: S3UploadStorageConfig,
@@ -40,15 +48,22 @@ export function createMetadataBackedUploadStorage(
 ): UploadStorage {
   return {
     async putHtml(id, filePath, metadata, options) {
-      await bodies.putHtml(id, filePath, metadata, options);
+      await reconcileArtifactOperations(bodies, sql, options);
       const now = new Date();
-      await upsert(sql, {
+      const intended: UpsertArtifact = {
         id, kind: "html", filename: metadata.originalName,
         contentType: "text/html; charset=utf-8", bytes: metadata.bytes,
-        objectKey: htmlKey(id), project: metadata.project, now
+        objectKey: htmlKey(id), project: metadata.project, sha256: metadata.sha256, now
+      };
+      await runDurableMutation({
+        prepare: () => prepare(sql, id, "put_html", intended),
+        mutate: () => bodies.putHtml(id, filePath, metadata, options),
+        reconcile: (operationId) => reconcileOperation(bodies, sql, { operation_id: operationId, artifact_id: id, operation_kind: "put_html", payload: intended }, options),
+        finalize: (operationId) => finalizePut(sql, operationId, intended)
       });
     },
     async getHtml(id, options) {
+      await reconcileArtifactOperations(bodies, sql, options);
       const row = await find(sql, id, "html");
       if (!row) return null;
       const object = await bodies.getHtml(id, options);
@@ -57,15 +72,22 @@ export function createMetadataBackedUploadStorage(
       return { ...body, bytes: Number(row.bytes), lastModified: row.updated_at, ...(row.project ? { project: row.project } : {}) };
     },
     async putTemporaryFile(id, filePath, metadata, options) {
-      await bodies.putTemporaryFile(id, filePath, metadata, options);
+      await reconcileArtifactOperations(bodies, sql, options);
       const now = new Date();
-      await upsert(sql, {
+      const intended: UpsertArtifact = {
         id, kind: "file", filename: metadata.originalName,
         contentType: metadata.contentType, bytes: metadata.bytes,
-        objectKey: temporaryFileKey(id), expiresAt: metadata.expiresAt, now
+        objectKey: temporaryFileKey(id), expiresAt: metadata.expiresAt, sha256: metadata.sha256, now
+      };
+      await runDurableMutation({
+        prepare: () => prepare(sql, id, "put_file", intended),
+        mutate: () => bodies.putTemporaryFile(id, filePath, metadata, options),
+        reconcile: (operationId) => reconcileOperation(bodies, sql, { operation_id: operationId, artifact_id: id, operation_kind: "put_file", payload: intended }, options),
+        finalize: (operationId) => finalizePut(sql, operationId, intended)
       });
     },
     async getTemporaryFile(id, options) {
+      await reconcileArtifactOperations(bodies, sql, options);
       const row = await find(sql, id, "file");
       if (!row || !row.expires_at) return null;
       const object = await bodies.getTemporaryFile(id, options);
@@ -80,6 +102,7 @@ export function createMetadataBackedUploadStorage(
       };
     },
     async listUploads(asOf, options) {
+      await reconcileArtifactOperations(bodies, sql, options);
       const rows = await sql<ArtifactRow[]>`
         select id, kind, filename, content_type, bytes::text, object_key, project,
                created_at, updated_at, expires_at
@@ -88,6 +111,7 @@ export function createMetadataBackedUploadStorage(
       return pageArtifactMetadata(rows.map(toSummary), asOf, options);
     },
     async updateHtmlProject(id, project) {
+      await reconcileArtifactOperations(bodies, sql);
       const rows = await sql<{ id: string }[]>`
         update artifacts.objects set project = ${project}, updated_at = now()
         where id = ${id} and kind = 'html' and revoked_at is null returning id
@@ -95,8 +119,15 @@ export function createMetadataBackedUploadStorage(
       return rows.length === 1;
     },
     async deleteUpload(id, options) {
-      await bodies.deleteUpload(id, options);
-      await sql`delete from artifacts.objects where id = ${id}`;
+      await reconcileArtifactOperations(bodies, sql, options);
+      const operationId = await prepare(sql, id, "delete", null);
+      try {
+        await bodies.deleteUpload(id, options);
+      } catch (error) {
+        // Keep the durable intent: a later read/list/cleanup retries the idempotent delete.
+        throw error;
+      }
+      await finalizeDelete(sql, operationId, id);
     },
     async deleteExpiredTemporaryFiles(expiresAtOrBefore, options) {
       const rows = await sql<{ id: string }[]>`
@@ -105,8 +136,7 @@ export function createMetadataBackedUploadStorage(
       `;
       let deleted = 0;
       for (const { id } of rows) {
-        await bodies.deleteUpload(id, options);
-        await sql`delete from artifacts.objects where id = ${id}`;
+        await this.deleteUpload(id, options);
         deleted += 1;
       }
       return deleted;
@@ -120,10 +150,61 @@ export function createMetadataBackedUploadStorage(
 
 type UpsertArtifact = {
   id: string; kind: "html" | "file"; filename: string; contentType: string;
-  bytes: number; objectKey: string; project?: string; expiresAt?: Date; now: Date;
+  bytes: number; objectKey: string; project?: string; expiresAt?: Date; sha256: string; now: Date;
 };
 
-async function upsert(sql: Sql, value: UpsertArtifact) {
+export async function runDurableMutation(options: {
+  prepare: () => Promise<string>;
+  mutate: () => Promise<void>;
+  reconcile: (operationId: string) => Promise<void>;
+  finalize: (operationId: string) => Promise<void>;
+}) {
+  const operationId = await options.prepare();
+  try { await options.mutate(); }
+  catch (error) { await options.reconcile(operationId); throw error; }
+  await options.finalize(operationId);
+}
+
+async function prepare(sql: Sql, artifactId: string, kind: PendingOperation["operation_kind"], payload: UpsertArtifact | null) {
+  const operationId = crypto.randomUUID();
+  await sql`insert into artifacts.operations (operation_id, artifact_id, operation_kind, payload)
+    values (${operationId}, ${artifactId}, ${kind}, ${payload ? JSON.stringify(payload) : null}::jsonb)`;
+  return operationId;
+}
+
+async function finalizePut(sql: Sql, operationId: string, value: UpsertArtifact) {
+  await sql.begin(async (tx) => { await upsert(tx, value); await tx`delete from artifacts.operations where operation_id = ${operationId}`; });
+}
+
+async function finalizeDelete(sql: Sql, operationId: string, id: string) {
+  await sql.begin(async (tx) => { await tx`delete from artifacts.objects where id = ${id}`; await tx`delete from artifacts.operations where operation_id = ${operationId}`; });
+}
+
+export async function reconcileArtifactOperations(bodies: UploadStorage, sql: Sql, options?: { signal?: AbortSignal }) {
+  const operations = await sql<PendingOperation[]>`select operation_id, artifact_id, operation_kind, payload from artifacts.operations order by created_at`;
+  for (const operation of operations) await reconcileOperation(bodies, sql, operation, options);
+}
+
+async function reconcileOperation(bodies: UploadStorage, sql: Sql, operation: PendingOperation, options?: { signal?: AbortSignal }) {
+  if (operation.operation_kind === "delete") {
+    await bodies.deleteUpload(operation.artifact_id, options);
+    await finalizeDelete(sql, operation.operation_id, operation.artifact_id);
+    return;
+  }
+  if (!operation.payload) throw new Error(`Artifact operation ${operation.operation_id} has no payload`);
+  const payload = hydratePayload(operation.payload);
+  const stored = operation.operation_kind === "put_html"
+    ? await bodies.getHtml(operation.artifact_id, { ...options, headOnly: true })
+    : await bodies.getTemporaryFile(operation.artifact_id, { ...options, headOnly: true });
+  if (stored?.sha256 === payload.sha256) await finalizePut(sql, operation.operation_id, payload);
+  else await sql`delete from artifacts.operations where operation_id = ${operation.operation_id}`;
+}
+
+function hydratePayload(payload: UpsertArtifact): UpsertArtifact {
+  return { ...payload, now: new Date(payload.now), ...(payload.expiresAt ? { expiresAt: new Date(payload.expiresAt) } : {}) };
+}
+
+async function upsert(sql: Sql | TransactionSql, value: UpsertArtifact) {
   await sql`
     insert into artifacts.objects
       (id, kind, filename, content_type, bytes, object_key, project, created_at, updated_at, expires_at)

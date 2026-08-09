@@ -3,6 +3,8 @@ import { createPostgresCheckerStore } from "./postgres-store.js";
 import { loadConfig, type CheckerConfig } from "./config.js";
 import { consoleLogger, type SafeLogger } from "./logger.js";
 import { runChecker } from "./run.js";
+import { loadMonitorDefinitions } from "./definitions.js";
+import type { MonitorDefinition } from "./definitions.js";
 
 export { loadMonitorDefinitions } from "./definitions.js";
 export { createHeartbeats, InvalidHeartbeatTokenError, UnknownHeartbeatMonitorError } from "./heartbeats.js";
@@ -14,6 +16,7 @@ export interface ExecuteOptions {
   store?: CheckerStore;
   fetcher?: typeof fetch;
   now?: () => Date;
+  monitorDefinitions?: readonly MonitorDefinition[];
 }
 
 export class CheckerDeadlineError extends Error {
@@ -55,7 +58,8 @@ export async function executeChecker(
         logger,
         fetcher: options.fetcher,
         now: options.now,
-        signal: controller.signal
+        signal: controller.signal,
+        monitorDefinitions: options.monitorDefinitions ?? (options.store ? undefined : loadMonitorDefinitions())
       }),
       deadline
     ]);
@@ -97,7 +101,8 @@ export async function runCheckerCli(
       logger,
       store: options.store,
       fetcher: options.fetcher,
-      now: options.now
+      now: options.now,
+      monitorDefinitions: options.monitorDefinitions
     });
   } catch (error) {
     logger.error("checker_process_terminal", {
