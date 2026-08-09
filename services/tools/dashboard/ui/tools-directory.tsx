@@ -1,8 +1,7 @@
 import type { PrivateSnapshotDocument, PublicMonitorStatus, PublicSnapshotDocument } from "@tools-platform/domain";
 import { Link } from "@tanstack/react-router";
-import { ArrowUpRight, BookOpen, CircleDollarSign, Cloud, Radio, Send, type LucideIcon } from "lucide-react";
+import { Activity, ArrowUpRight, BookOpen, CircleDollarSign, CircleOff, CirclePause, Cloud, Globe2, LockKeyhole, Network, Radio, Send, type LucideIcon } from "lucide-react";
 import { AppShell } from "../../src/components/app-shell.js";
-import { Badge } from "../../src/components/ui/badge.js";
 import { products, type ProductAccent, type ProductId } from "../products.js";
 
 const productIcons: Record<ProductId, LucideIcon> = {
@@ -30,13 +29,13 @@ export function ToolsDirectory({ snapshot }: { snapshot: PublicSnapshotDocument 
   return <>
     <AppShell product="Dashboard" showSignOut />
     <main id="main" className="mx-auto w-[min(1180px,calc(100%_-_2rem))] pb-20 pt-12 sm:pt-20">
-      <section className="grid gap-8 border-b border-white/10 pb-12 lg:grid-cols-[1fr_auto] lg:items-end">
+      <section className="grid gap-8 border-b pb-12 lg:grid-cols-[1fr_auto] lg:items-end">
         <div>
-          <p className="font-mono text-xs uppercase tracking-[0.18em] text-lime-300">Private workspace</p>
-          <h1 className="mt-4 max-w-3xl text-5xl font-semibold tracking-[-0.055em] text-white sm:text-7xl">Useful things,<br />close at hand.</h1>
+          <p className="font-mono text-xs uppercase tracking-[0.18em] text-primary">Private workspace</p>
+          <h1 className="mt-4 max-w-3xl text-5xl font-semibold tracking-[-0.055em] sm:text-7xl">Useful things,<br />close at hand.</h1>
         </div>
-        <div className="flex items-center gap-3 rounded-full border border-white/10 bg-white/[0.035] px-4 py-2 text-sm text-white/65">
-          <span className="size-2 rounded-full bg-lime-300" aria-hidden="true" />
+        <div className="flex items-center gap-3 rounded-full border bg-card px-4 py-2 text-sm text-muted-foreground">
+          <span className="size-2 rounded-full bg-primary" aria-hidden="true" />
           {operational} of {products.length} operational
         </div>
       </section>
@@ -45,21 +44,18 @@ export function ToolsDirectory({ snapshot }: { snapshot: PublicSnapshotDocument 
         {products.map((product, index) => {
           const Icon = productIcons[product.id];
           const status = monitorStatus(product.monitorId, statuses);
-          const card = <article className="group flex min-h-56 flex-col justify-between rounded-[2rem] border border-white/10 bg-white/[0.035] p-6 transition-colors hover:border-white/25 hover:bg-white/[0.06]">
+          const card = <article className="group flex min-h-56 flex-col justify-between rounded-[2rem] border bg-card p-6 transition-colors hover:border-input hover:bg-accent/35">
             <div className="flex items-start justify-between gap-4">
               <span className={`grid size-14 place-items-center rounded-full border ${accents[product.accent]}`}><Icon className="size-6" aria-hidden="true" /></span>
-              <span className="font-mono text-xs text-white/30">{String(index + 1).padStart(2, "0")}</span>
+              <span className="font-mono text-xs text-muted-foreground/55">{String(index + 1).padStart(2, "0")}</span>
             </div>
             <div className="mt-10">
               <div className="flex items-center justify-between gap-3">
-                <h2 className="text-2xl font-medium tracking-tight text-white">{product.name}</h2>
-                <ArrowUpRight className="size-5 text-white/35 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-white" aria-hidden="true" />
+                <h2 className="text-2xl font-medium tracking-tight">{product.name}</h2>
+                <ArrowUpRight className="size-5 text-muted-foreground/55 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-foreground" aria-hidden="true" />
               </div>
-              <p className="mt-2 text-sm leading-6 text-white/50">{product.description}</p>
-              <div className="mt-5 flex items-center gap-2">
-                <StatusBadge status={status} />
-                <Badge variant="outline">{product.access === "private" ? "Private" : product.access === "tailnet" ? "Tailnet" : "Public"}</Badge>
-              </div>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">{product.description}</p>
+              <ProductMetadata access={product.access} status={status} />
             </div>
           </article>;
           return product.external
@@ -88,9 +84,24 @@ function monitorStatus(id: string | undefined, statuses: Record<string, PublicMo
   return id ? statuses[id] : undefined;
 }
 
-export function StatusBadge({ status }: { status: PublicMonitorStatus | undefined }) {
-  const label = status?.status === "up" ? "Operational" : status?.status === "down" ? "Unavailable" : status?.status === "paused" ? "Paused" : "Not monitored";
-  return <Badge variant={status?.status === "down" ? "destructive" : status?.status === "up" ? "default" : "secondary"}>{label}</Badge>;
+function ProductMetadata({ access, status }: { access: "private" | "tailnet" | "public"; status: PublicMonitorStatus | undefined }) {
+  const AccessIcon = access === "private" ? LockKeyhole : access === "tailnet" ? Network : Globe2;
+  const accessLabel = access === "private" ? "Private" : access === "tailnet" ? "Tailnet" : "Public";
+  const StatusIcon = status?.status === "up" ? Activity : status?.status === "down" ? CircleOff : status?.status === "paused" ? CirclePause : CircleOff;
+  const statusLabel = status?.status === "up" ? "Operational" : status?.status === "down" ? "Unavailable" : status?.status === "paused" ? "Paused" : "Not monitored";
+  const statusTone = status?.status === "up" ? "text-emerald-300" : status?.status === "down" ? "text-rose-300" : status?.status === "paused" ? "text-amber-200" : "text-muted-foreground";
+
+  return <div className="mt-5 flex items-center gap-2 text-muted-foreground">
+    <MetadataIcon icon={AccessIcon} label={accessLabel} />
+    <MetadataIcon icon={StatusIcon} label={statusLabel} className={statusTone} />
+  </div>;
+}
+
+function MetadataIcon({ icon: Icon, label, className = "" }: { icon: LucideIcon; label: string; className?: string }) {
+  return <span className={`group/meta relative grid size-7 place-items-center rounded-md border bg-muted/35 ${className}`} tabIndex={0} aria-label={label}>
+    <Icon className="size-3.5" aria-hidden="true" />
+    <span className="pointer-events-none absolute bottom-[calc(100%+0.4rem)] left-1/2 z-20 -translate-x-1/2 whitespace-nowrap rounded-md bg-foreground px-2 py-1 text-[0.65rem] font-medium text-background opacity-0 shadow-lg transition-opacity group-hover/meta:opacity-100 group-focus/meta:opacity-100">{label}</span>
+  </span>;
 }
 
 export function resolveBrowserLink(href: string, publicOrigin: string) {

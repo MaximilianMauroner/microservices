@@ -11,7 +11,7 @@ import { Badge } from "../src/components/ui/badge.js";
 import { Button } from "../src/components/ui/button.js";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../src/components/ui/card.js";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "../src/components/ui/chart.js";
-import { AllocationSankey } from "./allocation-sankey.js";
+import { AllocationTreemap } from "./allocation-treemap.js";
 
 export type MoneyTrackerView = "overview" | "accounts" | "history" | "predictions";
 type Period = "6m" | "1y" | "all";
@@ -103,7 +103,7 @@ function Accounts({ accounts, months, latest, previous }: { accounts: string[]; 
   const allocationAccounts = rows.flatMap((row) => row.value === undefined ? [] : [{ name: row.account, value: row.value, category: moneyTrackerAccountCategory(row.account) }]);
   return <>
     <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Account summary"><Metric label="Total balance" value={latest ? currency.format(latest.total) : "No data"} /><Metric label="Largest account" value={rows[0] ? currency.format(rows[0].value ?? 0) : "—"} detail={rows[0]?.account} /><Metric label="Top-two concentration" value={topTwoShare === undefined ? "—" : `${topTwoShare.toFixed(1)}%`} detail="of total balance" /><Metric label="Accounts recorded" value={latest ? `${Object.keys(latest.values).length} / ${accounts.length}` : "0 / 0"} detail="latest snapshot" /></section>
-    <Card><CardHeader className="border-b"><CardTitle>Balance allocation</CardTitle><CardDescription>{latest ? `${latest.date} · Account → asset class · balance and share` : "No snapshot available"}</CardDescription></CardHeader><CardContent className="px-0 py-4 sm:px-4"><MountedChart fallback={<ChartFallback values={latest ? [latest.total] : []} />}><AllocationSankey accounts={allocationAccounts} /></MountedChart></CardContent></Card>
+    <Card><CardHeader className="border-b"><CardTitle>Account map</CardTitle><CardDescription>{latest ? `${latest.date} · Area represents share of total balance` : "No snapshot available"}</CardDescription></CardHeader><CardContent className="p-4"><AllocationTreemap accounts={allocationAccounts} /></CardContent></Card>
     <section className="grid gap-3 lg:grid-cols-2" aria-label="Category balance history">
       <AccountGroupChart title="Cash history" category="money" accounts={cashAccounts} months={months} first={first} latest={latest} />
       <AccountGroupChart title="Stocks history" category="stocks" accounts={stockAccounts} months={months} first={first} latest={latest} />
@@ -171,8 +171,8 @@ function Predictions({ months }: { months: GroupedMonth[] }) {
   </>;
 }
 
-function MoneyNav({ view }: { view: MoneyTrackerView }) { return <nav className="flex border-b" aria-label="Money tracker"><NavItem view="overview" active={view === "overview"}>Overview</NavItem><NavItem view="accounts" active={view === "accounts"}>Accounts</NavItem><NavItem view="history" active={view === "history"}>History</NavItem><NavItem view="predictions" active={view === "predictions"}>Predictions</NavItem></nav>; }
-function NavItem({ view, active, children }: { view: MoneyTrackerView; active: boolean; children: React.ReactNode }) { return <Link to="/money" search={{ view: view === "overview" ? undefined : view }} preload="intent" aria-current={active ? "page" : undefined} className="border-b-2 border-transparent px-3 py-2 text-sm text-muted-foreground hover:text-foreground aria-[current=page]:border-foreground aria-[current=page]:text-foreground">{children}</Link>; }
+function MoneyNav({ view }: { view: MoneyTrackerView }) { return <nav className="flex w-fit max-w-full gap-1 overflow-x-auto rounded-lg border bg-muted/40 p-1" aria-label="Money tracker"><NavItem view="overview" active={view === "overview"}>Overview</NavItem><NavItem view="accounts" active={view === "accounts"}>Accounts</NavItem><NavItem view="history" active={view === "history"}>History</NavItem><NavItem view="predictions" active={view === "predictions"}>Predictions</NavItem></nav>; }
+function NavItem({ view, active, children }: { view: MoneyTrackerView; active: boolean; children: React.ReactNode }) { return <Link to="/money" search={{ view: view === "overview" ? undefined : view }} preload="intent" aria-current={active ? "page" : undefined} className="whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground aria-[current=page]:bg-accent aria-[current=page]:text-foreground">{children}</Link>; }
 function PeriodButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) { return <Button type="button" size="sm" variant={active ? "default" : "outline"} onClick={onClick}>{children}</Button>; }
 function ChartCard({ title, description, children }: { title: string; description: string; children: React.ReactNode }) { return <Card><CardHeader className="border-b"><CardTitle>{title}</CardTitle><CardDescription>{description}</CardDescription></CardHeader><CardContent className="pt-5">{children}</CardContent></Card>; }
 function MountedChart({ fallback, children }: { fallback: React.ReactNode; children: React.ReactNode }) { const [mounted, setMounted] = useState(false); useEffect(() => setMounted(true), []); return mounted ? children : fallback; }

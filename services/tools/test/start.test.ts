@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { requirePlatformSession } from "../src/auth-middleware.js";
 import { routerSsrOptions } from "../src/router-options.js";
+import { documentContentSecurityPolicy } from "../src/content-security-policy.js";
 
 async function runSessionMiddleware(authenticated: boolean) {
   const server = requirePlatformSession.options.server;
@@ -44,5 +45,16 @@ describe("TanStack Start request boundaries", () => {
   it("passes the request nonce into TanStack Router SSR options", () => {
     expect(routerSsrOptions("request-nonce")).toEqual({ ssr: { nonce: "request-nonce" } });
     expect(routerSsrOptions()).toEqual({});
+  });
+
+  it("allows Vite's inline development styles without weakening production", () => {
+    const development = documentContentSecurityPolicy("request-nonce", true);
+    expect(development).toContain("style-src 'self' 'unsafe-inline';");
+    expect(development).not.toContain("style-src 'self' 'unsafe-inline' 'nonce-");
+    expect(development).toContain("script-src 'self' 'nonce-request-nonce'");
+
+    const production = documentContentSecurityPolicy("request-nonce", false);
+    expect(production).toContain("style-src 'self' 'nonce-request-nonce';");
+    expect(production).not.toContain("style-src 'self' 'unsafe-inline'");
   });
 });

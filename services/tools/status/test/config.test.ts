@@ -3,6 +3,7 @@ import { loadConfig } from "../src/config.js";
 
 const required = {
   TOOLS_ENVIRONMENT: "preview",
+  DATABASE_URL: "postgres://test:test@localhost/test",
   S3_BUCKET: "tools-preview",
   S3_ENDPOINT: "https://bucket.example/",
   S3_REGION: "auto",
@@ -19,6 +20,7 @@ describe("checker config", () => {
       })
     ).toMatchObject({
       environment: "preview",
+      databaseUrl: "postgres://test:test@localhost/test",
       concurrency: 6,
       probeTimeoutMs: 10_000,
       runDeadlineMs: 240_000,

@@ -1,4 +1,5 @@
-import { createS3CheckerStore, type CheckerStore } from "./bucket.js";
+import type { CheckerStore } from "./bucket.js";
+import { createPostgresCheckerStore } from "./postgres-store.js";
 import { loadConfig, type CheckerConfig } from "./config.js";
 import { consoleLogger, type SafeLogger } from "./logger.js";
 import { runChecker } from "./run.js";
@@ -33,7 +34,7 @@ export async function executeChecker(
 ): Promise<void> {
   const config = options.config ?? loadConfig();
   const logger = options.logger ?? consoleLogger;
-  const store = options.store ?? createS3CheckerStore(config.bucket);
+  const store = options.store ?? createPostgresCheckerStore(config);
   logger.info("checker_process_started", {
     environment: config.environment
   });

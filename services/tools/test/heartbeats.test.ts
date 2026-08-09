@@ -11,7 +11,7 @@ class MemoryHeartbeatRepository implements HeartbeatRepository {
 
 function fixture(repository = new MemoryHeartbeatRepository()) {
   return createHeartbeats({
-    definitions: [{ id: "tower", kind: "heartbeat", scope: "public", staleAfterMs: 180_000 }],
+    definitions: [{ id: "tower", kind: "heartbeat", scope: "public", checkUrl: "https://tools.example.test/health/tower", staleAfterMs: 180_000 }],
     repository,
     token: "a".repeat(64)
   });

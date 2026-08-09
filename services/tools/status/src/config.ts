@@ -1,5 +1,6 @@
 export interface CheckerConfig {
   environment: string;
+  databaseUrl: string;
   bucket: {
     name: string;
     endpoint: string;
@@ -20,6 +21,7 @@ export function loadConfig(
 ): CheckerConfig {
   return {
     environment: identifier(required(env, "TOOLS_ENVIRONMENT"), "TOOLS_ENVIRONMENT"),
+    databaseUrl: required(env, "DATABASE_URL"),
     bucket: {
       name: required(env, "S3_BUCKET"),
       endpoint: httpUrl(required(env, "S3_ENDPOINT"), "S3_ENDPOINT"),

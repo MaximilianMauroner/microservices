@@ -1,5 +1,5 @@
 export type HttpMonitorDefinition = Readonly<{ id: string; kind: "http"; url: string; scope: "public" | "tailnet"; expectedStatus: readonly number[]; timeoutMs: number }>;
-export type HeartbeatMonitorDefinition = Readonly<{ id: string; kind: "heartbeat"; scope: "public"; staleAfterMs: number }>;
+export type HeartbeatMonitorDefinition = Readonly<{ id: string; kind: "heartbeat"; scope: "public"; checkUrl: string; staleAfterMs: number }>;
 export type MonitorDefinition = HttpMonitorDefinition | HeartbeatMonitorDefinition;
 
 /** Monitor identity and expected behaviour live in code; Postgres only records runtime facts. */
@@ -12,7 +12,7 @@ export function loadMonitorDefinitions(env: Readonly<Record<string, string | und
     http("markdown-share", requiredOrigin(env.MARKDOWN_SHARE_PUBLIC_ORIGIN, "MARKDOWN_SHARE_PUBLIC_ORIGIN")),
     { id: "network-console", kind: "http", url: "https://coding.tailbc92d.ts.net/health", scope: "tailnet", expectedStatus: [200], timeoutMs: 10_000 },
     http("home-assistant", "https://homeassistant.mauroner.net/"),
-    { id: "tower", kind: "heartbeat", scope: "public", staleAfterMs: positiveInteger(env.TOWER_HEARTBEAT_STALE_AFTER_MS, 180_000) }
+    { id: "tower", kind: "heartbeat", scope: "public", checkUrl: `${origin}/health/tower`, staleAfterMs: positiveInteger(env.TOWER_HEARTBEAT_STALE_AFTER_MS, 180_000) }
   ] as const satisfies readonly MonitorDefinition[];
 }
 

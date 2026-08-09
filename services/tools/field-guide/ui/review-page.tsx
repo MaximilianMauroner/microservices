@@ -79,29 +79,34 @@ export function ReviewPage({ initial, search }: { initial: ReviewPageData; searc
   return (
     <>
       <AppShell product="Field Guide" showSignOut />
-      <main id="main" className="mx-auto w-[min(1180px,calc(100%_-_2rem))] py-8 sm:py-10">
-        <header className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between" aria-labelledby="review-title">
+      <main id="main" className="mx-auto w-[min(1180px,calc(100%_-_2rem))] pb-20 pt-10 sm:pt-16">
+        <header className="grid gap-8 border-b pb-9 lg:grid-cols-[1fr_auto] lg:items-end" aria-labelledby="review-title">
           <div>
-            <h1 id="review-title" className="text-2xl font-semibold tracking-tight">{reviewTitle(search)}</h1>
-            <p className="mt-1 text-sm text-muted-foreground">{search.view === "decisions" ? "Review agent decisions before they become field guide candidates." : search.view === "queue" ? "Approve, reject, or defer pending field guide candidates." : "Inspect the immutable decision history."}</p>
+            <p className="font-mono text-xs uppercase tracking-[0.18em] text-primary">Private workspace</p>
+            <h1 id="review-title" className="mt-3 text-4xl font-semibold tracking-[-0.045em] sm:text-5xl">{reviewTitle(search)}</h1>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">{search.view === "decisions" ? "Review agent decisions before they become field guide candidates." : search.view === "queue" ? "Approve, reject, or defer pending field guide candidates." : "Inspect the immutable decision history."}</p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant={search.view === "decisions" && data.decisions?.pending ? "secondary" : "default"}>{summaryLabel(data, search)}</Badge>
-            <ActorIdentity actor={data.actor} />
+          <div className="flex flex-col items-start gap-3 lg:items-end">
+            <ReviewNav search={search} />
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant={search.view === "decisions" && data.decisions?.pending ? "secondary" : "default"}>{summaryLabel(data, search)}</Badge>
+              <ActorIdentity actor={data.actor} />
+            </div>
           </div>
         </header>
-        <div className="mb-5"><ReviewNav search={search} /></div>
-        {notice ? <Alert className="mb-4" variant={notice.tone === "error" ? "destructive" : "default"} data-tone={notice.tone}>{notice.text}</Alert> : null}
+        {notice ? <Alert className="mt-6" variant={notice.tone === "error" ? "destructive" : "default"} data-tone={notice.tone}>{notice.text}</Alert> : null}
+        <div className="pt-8">
         {search.view === "decisions" && data.view === "decisions" && data.decisions ? <DecisionWorkspace data={{ ...data, decisions: data.decisions }} search={search} setData={setData} setNotice={setNotice} onLoadMore={() => void loadMore()} /> : null}
         {search.view === "queue" && data.view === "queue" && data.queue ? <QueueWorkspace data={{ ...data, queue: data.queue }} search={search} setData={setData} setNotice={setNotice} /> : null}
         {search.view === "history" && data.view === "history" && data.history ? <HistoryWorkspace data={data} search={search} onLoadMore={() => void loadMore()} setNotice={setNotice} /> : null}
+        </div>
       </main>
     </>
   );
 }
 
 function ReviewNav({ search }: { search: ReviewSearch }) {
-  return <Tabs value={search.view}><TabsList>{(["decisions", "queue", "history"] as const).map((view) => <TabsTrigger key={view} value={view} render={<Link to="/field-guide" search={{ ...search, view }} preload="intent" />}>{view === "decisions" ? "Decisions" : view === "queue" ? "Candidates" : "History"}</TabsTrigger>)}</TabsList></Tabs>;
+  return <Tabs value={search.view}><TabsList>{(["decisions", "queue", "history"] as const).map((view) => <TabsTrigger key={view} value={view} nativeButton={false} render={<Link to="/field-guide" search={{ ...search, view }} preload="intent" />}>{view === "decisions" ? "Decisions" : view === "queue" ? "Candidates" : "History"}</TabsTrigger>)}</TabsList></Tabs>;
 }
 
 function DecisionWorkspace({ data, search, setData, setNotice, onLoadMore }: { data: DecisionsPageData; search: ReviewSearch; setData: (data: ReviewPageData) => void; setNotice: (notice: { text: string; tone: "success" | "error" }) => void; onLoadMore: () => void }) {
@@ -128,34 +133,27 @@ function DecisionWorkspace({ data, search, setData, setNotice, onLoadMore }: { d
     <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
       <div className="flex flex-wrap items-center gap-2">
         <ReviewScopeTabs search={search} />
-        <Tabs value={search.reviewState}><TabsList>{(["unreviewed", "reviewed", "all"] as const).map((reviewState) => <TabsTrigger key={reviewState} value={reviewState} render={<Link to="/field-guide" search={{ ...search, reviewState }} preload="intent" />}>{reviewState === "all" ? "All" : reviewState === "reviewed" ? "Reviewed" : "Unreviewed"}</TabsTrigger>)}</TabsList></Tabs>
+        <Tabs value={search.reviewState}><TabsList>{(["unreviewed", "reviewed", "all"] as const).map((reviewState) => <TabsTrigger key={reviewState} value={reviewState} nativeButton={false} render={<Link to="/field-guide" search={{ ...search, reviewState }} preload="intent" />}>{reviewState === "all" ? "All" : reviewState === "reviewed" ? "Reviewed" : "Unreviewed"}</TabsTrigger>)}</TabsList></Tabs>
       </div>
-      <DecisionFilters search={search} />
     </div>
-    {!data.decisions.items.length ? <Empty title={emptyState.title} body={emptyState.body} action={emptyState.canLoadMore ? <Button type="button" variant="outline" size="sm" onClick={onLoadMore}>Load next page</Button> : undefined} /> : <div className="flex flex-col gap-6">
-      {selected ? <section className="mx-auto w-full max-w-3xl" aria-label="Current review task"><DecisionReviewPanel key={selected.record.decisionRecordId} item={selected} onNotice={setNotice} onUpdated={updateItem} /></section> : null}
-      <Card className="gap-0 py-0" aria-labelledby="decision-list-title">
-        <CardHeader className="border-b py-4">
-          <CardTitle id="decision-list-title">Up next</CardTitle>
-          <CardDescription>{data.decisions.pending} unresolved · select another decision to review</CardDescription>
+    <div className="grid items-start gap-4 lg:grid-cols-[minmax(19rem,0.72fr)_minmax(0,1.35fr)]">
+      <Card className="gap-0 overflow-hidden py-0 lg:sticky lg:top-20 lg:max-h-[calc(100svh-6rem)]" aria-labelledby="decision-list-title">
+        <CardHeader className="border-b px-4 py-4">
+          <CardTitle id="decision-list-title" className="text-sm">Decision queue</CardTitle>
+          <CardDescription>{data.decisions.pending} unresolved · select a decision to review</CardDescription>
         </CardHeader>
-        <Table>
-          <TableHeader><TableRow><TableHead>Decision</TableHead><TableHead className="hidden md:table-cell">Project</TableHead><TableHead className="hidden lg:table-cell">Confidence</TableHead><TableHead>State</TableHead><TableHead><span className="sr-only">Actions</span></TableHead></TableRow></TableHeader>
-          <TableBody>{data.decisions.items.map((item) => {
-            const record = item.record;
-            const selectedRow = record.decisionRecordId === selected?.record.decisionRecordId;
-            return <TableRow key={record.decisionRecordId} data-state={selectedRow ? "selected" : undefined}>
-              <TableCell className="min-w-52 max-w-md whitespace-normal"><Button type="button" variant="link" className="h-auto max-w-full justify-start px-0 text-left font-medium whitespace-normal" onClick={() => selectItem(item)}>{record.summary}</Button><span className="mt-1 block truncate font-mono text-[0.68rem] text-muted-foreground">{formatDate(record.createdAt)} · {record.decisionRecordId}</span></TableCell>
-              <TableCell className="hidden md:table-cell"><Badge variant="outline">{decisionProject(record)}</Badge></TableCell>
-              <TableCell className="hidden font-mono text-xs text-muted-foreground lg:table-cell">{record.confidence}</TableCell>
-              <TableCell><Badge variant={item.currentFeedback ? item.currentFeedback.action === "down" ? "destructive" : "outline" : "secondary"}>{item.currentFeedback ? feedbackLabel(item.currentFeedback.action) : "Unreviewed"}</Badge></TableCell>
-              <TableCell className="text-right"><Button type="button" variant="ghost" size="sm" onClick={() => selectItem(item)}>Review</Button></TableCell>
-            </TableRow>;
-          })}</TableBody>
-        </Table>
-        {data.decisions.nextCursor ? <div className="flex justify-center border-t p-3"><Button type="button" variant="ghost" size="sm" onClick={onLoadMore}>Load older decisions</Button></div> : null}
+        <div className="border-b p-3"><DecisionFilters search={search} /></div>
+        {!data.decisions.items.length ? <div className="p-4"><Empty title={emptyState.title} body={emptyState.body} action={emptyState.canLoadMore ? <Button type="button" variant="outline" size="sm" onClick={onLoadMore}>Load next page</Button> : undefined} /></div> : <div className="overflow-y-auto p-2">{data.decisions.items.map((item) => {
+          const record = item.record;
+          const selectedRow = record.decisionRecordId === selected?.record.decisionRecordId;
+          return <button key={record.decisionRecordId} type="button" className="group mb-1 w-full rounded-xl border border-transparent p-3 text-left transition-colors hover:border-border hover:bg-accent/45 data-[selected=true]:border-input data-[selected=true]:bg-accent/70" data-selected={selectedRow} onClick={() => selectItem(item)}>
+            <span className="flex items-start justify-between gap-3"><span className="text-sm font-medium leading-5">{record.summary}</span><Badge variant={item.currentFeedback ? item.currentFeedback.action === "down" ? "destructive" : "outline" : "secondary"}>{item.currentFeedback ? feedbackLabel(item.currentFeedback.action) : "New"}</Badge></span>
+            <span className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[0.66rem] text-muted-foreground"><span>{decisionProject(record)}</span><span aria-hidden="true">·</span><span>{record.confidence}</span><span aria-hidden="true">·</span><span>{formatDate(record.createdAt)}</span></span>
+          </button>;
+        })}{data.decisions.nextCursor ? <div className="flex justify-center p-2"><Button type="button" variant="ghost" size="sm" onClick={onLoadMore}>Load older decisions</Button></div> : null}</div>}
       </Card>
-    </div>}
+      {selected ? <section aria-label="Current review task"><DecisionReviewPanel key={selected.record.decisionRecordId} item={selected} onNotice={setNotice} onUpdated={updateItem} /></section> : <Empty title="Select a decision" body="Choose an item from the queue to inspect its context and evidence." />}
+    </div>
   </>;
 }
 
@@ -188,7 +186,7 @@ export function decisionEmptyState(
 }
 
 function ReviewScopeTabs({ search }: { search: ReviewSearch }) {
-  return <Tabs value={search.scope}><TabsList><TabsTrigger value="project" render={<Link to="/field-guide" search={{ ...search, scope: "project" }} preload="intent" />}>Project</TabsTrigger><TabsTrigger value="global" render={<Link to="/field-guide" search={{ ...search, scope: "global" }} preload="intent" />}>Global</TabsTrigger></TabsList></Tabs>;
+  return <Tabs value={search.scope}><TabsList><TabsTrigger value="project" nativeButton={false} render={<Link to="/field-guide" search={{ ...search, scope: "project" }} preload="intent" />}>Project</TabsTrigger><TabsTrigger value="global" nativeButton={false} render={<Link to="/field-guide" search={{ ...search, scope: "global" }} preload="intent" />}>Global</TabsTrigger></TabsList></Tabs>;
 }
 
 function DecisionFilters({ search }: { search: ReviewSearch }) {

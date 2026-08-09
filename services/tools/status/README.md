@@ -1,8 +1,8 @@
 # Tools Checker
 
-Short-lived Bun process for Tools Platform monitoring. Railway runs it from
+Short-lived Node process for Tools Platform monitoring. Railway runs it from
 `services/tools/status` on `*/5 * * * *`. It performs one bounded monitoring pass,
-publishes bucket state and snapshots, drains due Discord notifications, logs a
+stores runtime state in Postgres, publishes snapshots, drains due Discord notifications, logs a
 terminal outcome, closes its S3 client, and exits. It never opens a listening
 socket, starts a scheduler, or keeps a background service alive.
 
@@ -10,6 +10,8 @@ socket, starts a scheduler, or keeps a background service alive.
 
 - `TOOLS_ENVIRONMENT`: URL-safe environment identity included in deterministic
   five-minute run IDs.
+- `DATABASE_URL`: Postgres connection used for runs, observations, incidents,
+  heartbeats, pause overrides, checker state, and history.
 - `S3_BUCKET`, `S3_ENDPOINT`, `S3_REGION`, `S3_ACCESS_KEY_ID`,
   `S3_SECRET_ACCESS_KEY`: private Railway Bucket credentials.
 - `S3_FORCE_PATH_STYLE`: optional `true`/`false`, default `false`.
@@ -19,9 +21,10 @@ socket, starts a scheduler, or keeps a background service alive.
 - `DISCORD_WEBHOOK_URL`: optional; when absent, pending notifications remain in
   the durable outbox.
 
-Tools Checker reads `catalog/current.json` but cannot write it. It exclusively
-writes `state/current.json`, both snapshots, daily gzip history partitions, and
-recovery copies. State and history use conditional writes; malformed or missing
+Tools Checker reads product presentation metadata from `catalog/current.json`
+but monitor identity, URLs, scope, and expectations come from typed definitions
+in `src/definitions.ts`. It writes only the two derived snapshots to the bucket.
+Runtime state and history use transactional revision checks in Postgres; malformed or missing
 required objects fail with the object key but never log object bodies,
 credentials, headers, webhook URLs, or full exceptions.
 

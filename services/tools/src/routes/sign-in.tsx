@@ -30,7 +30,7 @@ export const Route = createFileRoute("/sign-in")({
     meta: [
       { title: "Sign in · Mauroner Tools" },
       { name: "robots", content: "noindex, nofollow" },
-      { name: "theme-color", content: "#000000" }
+      { name: "theme-color", content: "#1b1e28" }
     ]
   }),
   component: SignInRoute
@@ -78,13 +78,13 @@ export function SignInPanel({
   onSignIn?: () => void;
 }) {
   return (
-    <Card className="w-full max-w-[25rem] gap-0 border-zinc-800 bg-zinc-950 shadow-2xl shadow-black">
-      <CardHeader className="border-b border-zinc-800 px-6 py-5">
-        <div className="mb-4 grid size-9 place-items-center rounded-md bg-white text-sm font-black text-black" aria-hidden="true">M</div>
+    <Card className="w-full max-w-[25rem] gap-0 shadow-2xl shadow-black/25">
+      <CardHeader className="border-b px-6 py-5">
+        <div className="mb-4 grid size-9 place-items-center rounded-md bg-primary text-sm font-black text-primary-foreground" aria-hidden="true">M</div>
         <CardTitle className="text-xl tracking-tight">
           {state === "unauthorized" ? "Account not authorized" : state === "expired" ? "Session expired" : "Sign in to continue"}
         </CardTitle>
-        <p className="mt-2 text-sm leading-6 text-zinc-400">
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">
           {state === "unauthorized"
             ? "That Google account cannot access this workspace. Choose the authorized account."
             : state === "expired"
@@ -94,7 +94,7 @@ export function SignInPanel({
       </CardHeader>
       <CardContent className="px-6 py-5">
         <Button
-          className="h-11 w-full bg-white text-black hover:bg-zinc-200"
+          className="h-11 w-full"
           type="button"
           disabled={submitting}
           onClick={onSignIn}
@@ -102,7 +102,7 @@ export function SignInPanel({
           <GoogleMark />
           {submitting ? "Opening Google…" : state === "unauthorized" ? "Choose another Google account" : "Continue with Google"}
         </Button>
-        <p className="mt-4 text-center font-mono text-[0.68rem] uppercase tracking-[0.1em] text-zinc-500">
+        <p className="mt-4 text-center font-mono text-[0.68rem] uppercase tracking-[0.1em] text-muted-foreground">
           Secure session · 12 hours
         </p>
       </CardContent>

@@ -1,4 +1,4 @@
-import { createFetchApp, createS3UploadStorage, ActivityTracker } from "@tools-platform/artifact-publisher";
+import { createFetchApp, createPostgresUploadStorage, ActivityTracker } from "@tools-platform/artifact-publisher";
 import { createApp as createFieldGuideApp } from "@tools-platform/field-guide/app";
 import { agentAuth } from "@tools-platform/field-guide/auth";
 import { createRepository } from "@tools-platform/field-guide/repository";
@@ -69,7 +69,7 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
     endpoint: config.markdownShare.adminEndpoint,
     token: config.markdownShare.adminToken
   });
-  const artifactStorage = createS3UploadStorage(config.artifact.s3);
+  const artifactStorage = createPostgresUploadStorage(config.artifact.s3, config.databaseUrl);
   const activityTracker = new ActivityTracker();
   const moneyTracker = createMoneyTracker(config.moneyTracker);
   const fieldGuideHandle = await createRepository(config.fieldGuide, {
@@ -182,7 +182,7 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
 }
 
 function startArtifactCleanup(
-  storage: ReturnType<typeof createS3UploadStorage>,
+  storage: ReturnType<typeof createPostgresUploadStorage>,
   intervalMs: number
 ) {
   let current: Promise<void> | undefined;
