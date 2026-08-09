@@ -226,4 +226,26 @@ describe("native artifact fetch handler", () => {
     expect(response.status).toBe(403);
     expect(await response.json()).toMatchObject({ error: "invalid_origin" });
   });
+
+  it("accepts the public origin when a TLS proxy forwards an HTTP request URL", async () => {
+    const storage = new MemoryUploadStorage();
+    const app = createFetchApp({
+      storage,
+      uploadToken: "upload-token",
+      externalUpload: true,
+      publicBaseUrl: "https://tools.example.test"
+    });
+    const form = new FormData();
+    form.append("file", new File(["private"], "private.txt", { type: "text/plain" }));
+
+    const response = await app(
+      new Request("http://tools.example.test/api/external-uploads", {
+        method: "POST",
+        headers: { Origin: "https://tools.example.test" },
+        body: form
+      })
+    );
+
+    expect(response.status).toBe(201);
+  });
 });
