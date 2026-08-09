@@ -39,13 +39,13 @@ export async function updateMoneyCategory(input: PlatformRouteInput) {
   if (rejected) return rejected;
   try {
     const body = await jsonBody(input.request);
-    await input.context.runtime.moneyImports.setTransactionCategory({
+    const result = await input.context.runtime.moneyImports.setTransactionCategory({
       transactionId: stringField(body, "transactionId"),
       category: stringField(body, "category"),
       createRule: body.createRule === true,
       actor: input.context.principal!.email
     });
-    return json({ ok: true });
+    return json({ ok: true, ...result });
   } catch (error) {
     return importError(error);
   }
@@ -73,6 +73,7 @@ export async function getMoneyActivity(input: PlatformRouteInput) {
     return json(await input.context.runtime.moneyImports.readActivityPage({
       query: url.searchParams.get("query") ?? "",
       ...(url.searchParams.get("flow") ? { flow: url.searchParams.get("flow")! } : {}),
+      reviewOnly: url.searchParams.get("review") === "true",
       offset: integerParameter(url.searchParams.get("offset"), 0),
       limit: integerParameter(url.searchParams.get("limit"), 200)
     }));
@@ -87,8 +88,12 @@ function validateMutationRequest({ request, context }: PlatformRouteInput) {
   if (!origin || origin !== new URL(context.runtime.publicOrigin).origin) {
     return json({ error: "invalid_origin" }, 403);
   }
-  const contentLength = Number(request.headers.get("content-length"));
-  if (Number.isFinite(contentLength) && contentLength > 11 * 1024 * 1024) {
+  const contentLengthHeader = request.headers.get("content-length");
+  if (contentLengthHeader !== null && !/^\d+$/.test(contentLengthHeader)) {
+    return json({ error: "invalid_content_length", message: "The request Content-Length is invalid." }, 400);
+  }
+  const contentLength = contentLengthHeader === null ? undefined : Number(contentLengthHeader);
+  if (contentLength !== undefined && contentLength > 11 * 1024 * 1024) {
     return json({ error: "file_too_large", message: "Money imports must be 10 MB or smaller." }, 413);
   }
   return undefined;
@@ -109,8 +114,10 @@ async function multipart(request: Request) {
     throw new MoneyImportValidationError("invalid_content_type", "Expected a multipart file upload.");
   }
   try {
-    return await request.formData();
-  } catch {
+    const bytes = await boundedBody(request, 11 * 1024 * 1024);
+    return await new Request(request.url, { method: "POST", headers: request.headers, body: bytes }).formData();
+  } catch (error) {
+    if (error instanceof MoneyImportValidationError) throw error;
     throw new MoneyImportValidationError("invalid_form", "The multipart upload could not be parsed.");
   }
 }
@@ -119,14 +126,40 @@ async function jsonBody(request: Request): Promise<Record<string, unknown>> {
   if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) {
     throw new MoneyImportValidationError("invalid_content_type", "Expected a JSON request.");
   }
-  if (Number(request.headers.get("content-length")) > 16_384) throw new MoneyImportValidationError("request_too_large", "The request is too large.");
   try {
-    const value: unknown = await request.json();
+    const bytes = await boundedBody(request, 16_384);
+    const value: unknown = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
     if (typeof value !== "object" || value === null || Array.isArray(value)) throw new Error();
     return value as Record<string, unknown>;
-  } catch {
+  } catch (error) {
+    if (error instanceof MoneyImportValidationError) throw error;
     throw new MoneyImportValidationError("invalid_json", "The JSON request could not be parsed.");
   }
+}
+
+async function boundedBody(request: Request, maximumBytes: number) {
+  const reader = request.body?.getReader();
+  if (!reader) throw new MoneyImportValidationError("invalid_request", "The request body is missing.");
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > maximumBytes) {
+        await reader.cancel();
+        throw new MoneyImportValidationError("request_too_large", "The request is too large.");
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+  return bytes;
 }
 
 function stringField(body: Record<string, unknown>, name: string) {
@@ -163,7 +196,7 @@ async function fileBytes(file: File) {
 
 function importError(error: unknown) {
   if (error instanceof MoneyImportValidationError) {
-    const status = error.code === "file_too_large" ? 413 : 400;
+    const status = error.code === "file_too_large" || error.code === "request_too_large" ? 413 : 400;
     return json({ error: error.code, message: error.message }, status);
   }
   console.error(JSON.stringify({

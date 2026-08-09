@@ -69,6 +69,7 @@ export type MoneyBalanceSnapshotInput = Readonly<{
   accountExternalRef: string;
   date: string;
   observedAt: string;
+  sourceRow: number;
   valueMinor: number;
   currency: string;
 }>;
@@ -147,6 +148,7 @@ function cashRow(row: string[], sourceRow: number): MoneyLedgerTransaction {
   if (!type || !CASH_TYPES.has(type)) throw invalid("unsupported_transaction_type", `Row ${sourceRow} contains unsupported transaction type ${JSON.stringify(type ?? "")}.`);
   if (!product?.trim()) throw invalid("invalid_product", `Row ${sourceRow} has no product.`);
   assertCurrency(currency, sourceRow);
+  assertEuro(currency, sourceRow);
   if (state !== "COMPLETED" && state !== "REVERTED") throw invalid("unsupported_state", `Row ${sourceRow} contains unsupported state ${JSON.stringify(state ?? "")}.`);
   const occurredAt = parseBerlinTimestamp(started, sourceRow, "Started Date");
   const completedAt = completed ? parseBerlinTimestamp(completed, sourceRow, "Completed Date") : undefined;
@@ -215,11 +217,14 @@ function parsePortfolio(dataRows: string[][], digest: string): ParsedMoneyImport
     if (!type || !PORTFOLIO_TYPES.has(type)) throw invalid("unsupported_transaction_type", `Row ${sourceRow} contains unsupported transaction type ${JSON.stringify(type ?? "")}.`);
     if (!accountType) throw invalid("invalid_product", `Row ${sourceRow} has no account type.`);
     assertCurrency(currency, sourceRow);
+    assertEuro(currency, sourceRow);
     const occurredAt = parseIsoTimestamp(timestamp, sourceRow, "datetime");
     if (date !== occurredAt.toISOString().slice(0, 10)) throw invalid("invalid_date", `Row ${sourceRow} has inconsistent date fields.`);
     const amountMinor = !amount && type === "MIGRATION" ? 0 : parseMinorUnits(amount, sourceRow, "amount");
-    const feeMinor = fee ? Math.abs(parseMinorUnits(fee, sourceRow, "fee")) : 0;
-    const taxMinor = tax ? Math.abs(parseMinorUnits(tax, sourceRow, "tax")) : 0;
+    // Source costs are negative and corrections positive. Store costs as positive,
+    // which preserves correction signs instead of turning refunds into extra cost.
+    const feeMinor = fee ? -parseMinorUnits(fee, sourceRow, "fee") : 0;
+    const taxMinor = tax ? -parseMinorUnits(tax, sourceRow, "tax") : 0;
     const sourceKey = transactionId?.trim() ? fingerprint([PORTFOLIO_TRANSACTION_FORMAT, transactionId.trim()]) : fingerprint([PORTFOLIO_TRANSACTION_FORMAT, ...row.slice(0, 19)]);
     const role: MoneyAccountRole = sourceCategory === "TRADING" || sourceCategory === "DELIVERY" ? "investment" : "cash";
     const description = sanitizeDescription(rawDescription || counterpartyName || [type, name, symbol].filter(Boolean).join(" · "));
@@ -243,6 +248,7 @@ function parsePortfolio(dataRows: string[][], digest: string): ParsedMoneyImport
 function parseBalances(dataRows: string[][], digest: string): ParsedMoneyImport {
   const transactions: MoneyLedgerTransaction[] = [];
   const balanceSnapshots: MoneyBalanceSnapshotInput[] = [];
+  const keys = new Map<string, number>();
   for (const [index, row] of dataRows.entries()) {
     const sourceRow = index + 2;
     assertColumns(row, BALANCE_HEADERS.length, sourceRow);
@@ -252,15 +258,20 @@ function parseBalances(dataRows: string[][], digest: string): ParsedMoneyImport 
     if (!accountName || accountName.length > 100) throw invalid("invalid_account", `Row ${sourceRow} has an invalid Account.`);
     if (role !== "cash" && role !== "investment") throw invalid("invalid_role", `Row ${sourceRow} has an invalid Role.`);
     assertCurrency(currency, sourceRow);
+    assertEuro(currency, sourceRow);
     const valueMinor = parseMinorUnits(rawValue, sourceRow, "Value");
     const occurredAt = `${date}T12:00:00.000Z`;
-    const accountExternalRef = `manual:${accountName.toLocaleLowerCase("en-GB")}:${currency}`;
+    const accountExternalRef = `manual:${accountName.toLocaleLowerCase("en-GB")}:${role}:${currency}`;
+    const snapshotKey = `${accountExternalRef}:${date}`;
+    const duplicateRow = keys.get(snapshotKey);
+    if (duplicateRow !== undefined) throw invalid("duplicate_balance_snapshot", `Row ${sourceRow} duplicates the account and date from row ${duplicateRow}.`);
+    keys.set(snapshotKey, sourceRow);
     const sourceKey = fingerprint([MONEY_BALANCE_SNAPSHOT_FORMAT, date, accountName, rawValue!, role, currency!]);
     transactions.push({ sourceKey, sourceRow, provider: "manual", accountRole: role, accountExternalRef, accountName,
       occurredAt, completedAt: occurredAt, localDate: date, description: "Imported balance snapshot", amountMinor: 0,
       feeMinor: 0, taxMinor: 0, ...(currency === "EUR" ? { baseAmountMinor: 0, baseFeeMinor: 0, baseTaxMinor: 0, baseCurrency: "EUR" as const } : {}),
       balanceAfterMinor: valueMinor, currency, status: "completed", sourceType: "Balance snapshot", flowKind: "balance_adjustment", category: "other" });
-    balanceSnapshots.push({ accountExternalRef, date, observedAt: occurredAt, valueMinor, currency });
+    balanceSnapshots.push({ accountExternalRef, date, observedAt: occurredAt, sourceRow, valueMinor, currency });
   }
   return result(MONEY_BALANCE_SNAPSHOT_FORMAT, digest, transactions, [], balanceSnapshots, accountPreviews(transactions), []);
 }
@@ -302,9 +313,9 @@ function buildBalanceSnapshots(transactions: readonly MoneyLedgerTransaction[]) 
   for (const row of transactions) {
     if (row.status !== "completed" || row.balanceAfterMinor === undefined) continue;
     const key = `${row.accountExternalRef}:${row.localDate}`;
-    const candidate = { accountExternalRef: row.accountExternalRef, date: row.localDate, observedAt: row.completedAt ?? row.occurredAt, valueMinor: row.balanceAfterMinor, currency: row.currency };
+    const candidate = { accountExternalRef: row.accountExternalRef, date: row.localDate, observedAt: row.completedAt ?? row.occurredAt, sourceRow: row.sourceRow, valueMinor: row.balanceAfterMinor, currency: row.currency };
     const current = latest.get(key);
-    if (!current || current.observedAt < candidate.observedAt) latest.set(key, candidate);
+    if (!current || current.observedAt < candidate.observedAt || (current.observedAt === candidate.observedAt && current.sourceRow < candidate.sourceRow)) latest.set(key, candidate);
   }
   return [...latest.values()].sort((a, b) => a.date.localeCompare(b.date) || a.accountExternalRef.localeCompare(b.accountExternalRef));
 }
@@ -342,14 +353,30 @@ function decode(bytes: Uint8Array) { try { return new TextDecoder("utf-8", { fat
 function rows(source: string, delimiter: string) { try { return parse(source, { bom: true, delimiter, quote: '"', relax_column_count: false, skip_empty_lines: true }) as string[][]; } catch { throw invalid("invalid_delimited_file", "The statement could not be parsed as a supported delimited export."); } }
 function assertColumns(row: string[], count: number, sourceRow: number) { if (row.length !== count) throw invalid("invalid_row", `Row ${sourceRow} does not contain ${count} columns.`); }
 function assertCurrency(value: string | undefined, sourceRow: number): asserts value is string { if (!value || !/^[A-Z]{3}$/.test(value)) throw invalid("invalid_currency", `Row ${sourceRow} has an invalid currency.`); }
+function assertEuro(value: string, sourceRow: number) { if (value !== "EUR") throw invalid("unsupported_currency", `Row ${sourceRow} uses ${value}. This import currently supports EUR only.`); }
 function parseMinorUnits(value: string | undefined, sourceRow: number, field: string) { if (!value || !/^-?\d+(?:\.\d+)?$/.test(value)) throw invalid("invalid_amount", `Row ${sourceRow} has an invalid ${field}.`); const negative = value.startsWith("-"); const [whole, fraction = ""] = (negative ? value.slice(1) : value).split("."); if (fraction.slice(2).replaceAll("0", "")) throw invalid("fractional_minor_units", `Row ${sourceRow} has unsupported fractional minor units in ${field}.`); const minor = Number(whole) * 100 + Number(fraction.slice(0, 2).padEnd(2, "0")); if (!Number.isSafeInteger(minor)) throw invalid("amount_out_of_range", `Row ${sourceRow} has an out-of-range ${field}.`); return negative ? -minor : minor; }
 function convertToEuroMinor(value: number, rate: string, sourceRow: number) { const normalized = decimal(rate, sourceRow, "FX Rate"); const [whole, fraction = ""] = normalized.split("."); const denominator = BigInt(`${whole}${fraction}`); if (denominator <= 0n) throw invalid("invalid_decimal", `Row ${sourceRow} has an invalid FX Rate.`); const numerator = BigInt(Math.abs(value)) * 10n ** BigInt(fraction.length); const rounded = (numerator + denominator / 2n) / denominator; const result = Number(rounded) * Math.sign(value); if (!Number.isSafeInteger(result)) throw invalid("amount_out_of_range", `Row ${sourceRow} has an out-of-range converted amount.`); return result; }
 function parseCurrencyAmount(value: string | undefined, expected: string, sourceRow: number, field: string) { const match = /^([A-Z]{3})\s+(-?\d+(?:\.\d+)?)$/.exec(value ?? ""); if (!match || match[1] !== expected) throw invalid("invalid_amount", `Row ${sourceRow} has an invalid ${field}.`); return parseMinorUnits(match[2], sourceRow, field); }
 function parseOptionalCurrencyAmount(value: string | undefined, expected: string, sourceRow: number, field: string) { if (!value) return undefined; const match = /^([A-Z]{3})\s+(-?\d+(?:\.\d+)?)$/.exec(value); if (!match) throw invalid("invalid_amount", `Row ${sourceRow} has an invalid ${field}.`); return { currency: match[1]!, amount: decimal(match[2]!, sourceRow, field) }; }
 function decimal(value: string, sourceRow: number, field: string) { if (!/^-?\d+(?:\.\d+)?$/.test(value)) throw invalid("invalid_decimal", `Row ${sourceRow} has an invalid ${field}.`); const normalized = value.replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, ""); return normalized === "-0" ? "0" : normalized; }
-function parseIsoTimestamp(value: string | undefined, sourceRow: number, field: string) { if (!value || !/^\d{4}-\d{2}-\d{2}T/.test(value)) throw invalid("invalid_date", `Row ${sourceRow} has an invalid ${field}.`); const date = new Date(value); if (Number.isNaN(date.getTime())) throw invalid("invalid_date", `Row ${sourceRow} has an invalid ${field}.`); return date; }
-function normalizedDate(value: string | undefined, sourceRow: number) { const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value ?? ""); const local = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(value ?? ""); const date = iso ? `${iso[1]}-${iso[2]}-${iso[3]}` : local ? `${local[3]}-${local[2]}-${local[1]}` : undefined; if (!date || Number.isNaN(Date.parse(`${date}T00:00:00Z`))) throw invalid("invalid_date", `Row ${sourceRow} has an invalid Date.`); return date; }
-function parseBerlinTimestamp(value: string | undefined, sourceRow: number, field: string) { const match = /^(\d{4})-(\d{2})-(\d{2}) (\d{1,2}):(\d{2}):(\d{2})$/.exec(value ?? ""); if (!match) throw invalid("invalid_date", `Row ${sourceRow} has an invalid ${field}.`); const [, year, month, day, hour, minute, second] = match.map(Number); const guess = Date.UTC(year!, month! - 1, day!, hour!, minute!, second!); const formatter = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Berlin", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }); const parts = Object.fromEntries(formatter.formatToParts(new Date(guess)).map((part) => [part.type, part.value])); const represented = Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day), Number(parts.hour), Number(parts.minute), Number(parts.second)); return new Date(guess - (represented - guess)); }
+function parseIsoTimestamp(value: string | undefined, sourceRow: number, field: string) { if (!value || !/^\d{4}-\d{2}-\d{2}T/.test(value)) throw invalid("invalid_date", `Row ${sourceRow} has an invalid ${field}.`); const date = new Date(value); if (Number.isNaN(date.getTime()) || !validCalendarDate(value.slice(0, 10))) throw invalid("invalid_date", `Row ${sourceRow} has an invalid ${field}.`); return date; }
+function normalizedDate(value: string | undefined, sourceRow: number) { const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value ?? ""); const local = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(value ?? ""); const date = iso ? `${iso[1]}-${iso[2]}-${iso[3]}` : local ? `${local[3]}-${local[2]}-${local[1]}` : undefined; if (!date || !validCalendarDate(date)) throw invalid("invalid_date", `Row ${sourceRow} has an invalid Date.`); return date; }
+function validCalendarDate(value: string) { const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value); if (!match) return false; const [, year, month, day] = match.map(Number); const date = new Date(Date.UTC(year!, month! - 1, day!)); return date.getUTCFullYear() === year && date.getUTCMonth() === month! - 1 && date.getUTCDate() === day; }
+function parseBerlinTimestamp(value: string | undefined, sourceRow: number, field: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2}) (\d{1,2}):(\d{2}):(\d{2})$/.exec(value ?? "");
+  if (!match) throw invalid("invalid_date", `Row ${sourceRow} has an invalid ${field}.`);
+  const [, year, month, day, hour, minute, second] = match.map(Number);
+  const calendar = `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  if (!validCalendarDate(calendar) || hour! > 23 || minute! > 59 || second! > 59) throw invalid("invalid_date", `Row ${sourceRow} has an invalid ${field}.`);
+  const localMillis = Date.UTC(year!, month! - 1, day!, hour!, minute!, second!);
+  const candidates = [localMillis - 2 * 3_600_000, localMillis - 3_600_000]
+    .map((millis) => new Date(millis)).filter((candidate) => berlinParts(candidate) === `${calendar} ${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:${String(second).padStart(2, "0")}`);
+  if (!candidates.length) throw invalid("invalid_date", `Row ${sourceRow} has a nonexistent Europe/Berlin time in ${field}.`);
+  // Fall-back-hour ambiguity is resolved to the first occurrence (summer offset).
+  return candidates.sort((left, right) => left.getTime() - right.getTime())[0]!;
+}
+const berlinFormatter = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Berlin", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
+function berlinParts(value: Date) { const parts = Object.fromEntries(berlinFormatter.formatToParts(value).map((part) => [part.type, part.value])); return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`; }
 function sanitizeDescription(value: string) { return value.trim().replace(/\b[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b/gi, "[account]").replace(/\s+/g, " ").slice(0, 500); }
 function fingerprint(fields: readonly string[]) { return createHash("sha256").update(JSON.stringify(fields)).digest("hex"); }
 function sameStrings(actual: readonly string[], expected: readonly string[]) { return actual.length === expected.length && expected.every((value, index) => actual[index] === value); }

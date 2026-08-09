@@ -27,6 +27,7 @@ export type MoneyActivityItem = Readonly<{
   taxMinor: number; currency: string; status: MoneyLedgerTransaction["status"]; sourceType: string;
   flowKind: MoneyLedgerTransaction["flowKind"]; category: MoneyCategory; categoryOrigin: "source" | "rule" | "manual";
   transferGroupId?: string;
+  needsTransferReview: boolean;
 }>;
 export type MoneySpendingAnalytics = Readonly<{
   months: readonly Readonly<{ month: string; spendMinor: number; refundsMinor: number; incomeMinor: number; feesMinor: number; taxesMinor: number; netCashFlowMinor: number }>[];
@@ -38,13 +39,15 @@ export type MoneyInvestmentAnalytics = Readonly<{
   totals: Readonly<{ eventCount: number; boughtMinor: number; soldMinor: number; incomeMinor: number; feesMinor: number; taxesMinor: number }>;
 }>;
 export type MoneyPlanningAnalytics = Readonly<{
+  ready: boolean;
+  unresolvedTransferCount: number;
   medianMonthlyNetMinor: number;
   observedMonthCount: number;
   projections: readonly Readonly<{ months: 6 | 12 | 24; changeMinor: number }>[];
 }>;
 export type MoneyLedgerSnapshot = MoneyTrackerSnapshot & Readonly<{
   imports: readonly MoneyImportSummary[]; activity: readonly MoneyActivityItem[]; transactionCount: number;
-  transferReview: Readonly<{ linkedPairs: number; unlinkedCount: number }>;
+  transferReview: Readonly<{ linkedPairs: number; unlinkedCount: number; unresolvedPositiveCount: number; unresolvedNegativeCount: number }>;
   spending: MoneySpendingAnalytics; investments: MoneyInvestmentAnalytics; planning: MoneyPlanningAnalytics;
 }>;
 export type MoneyActivityPage = Readonly<{ items: readonly MoneyActivityItem[]; total: number; hasMore: boolean }>;
@@ -53,8 +56,8 @@ export interface MoneyRepository {
   existingSourceKeys(sourceKeys: readonly string[]): Promise<ReadonlySet<string>>;
   commitImport(input: MoneyImportCommitInput): Promise<MoneyImportReceipt>;
   readLedgerSnapshot(): Promise<MoneyLedgerSnapshot>;
-  readActivityPage(input: Readonly<{ query: string; flow?: MoneyLedgerTransaction["flowKind"]; offset: number; limit: number }>): Promise<MoneyActivityPage>;
-  setTransactionCategory(input: Readonly<{ transactionId: string; category: MoneyCategory; actor: string; createRule: boolean }>): Promise<void>;
+  readActivityPage(input: Readonly<{ query: string; flow?: MoneyLedgerTransaction["flowKind"]; reviewOnly?: boolean; offset: number; limit: number }>): Promise<MoneyActivityPage>;
+  setTransactionCategory(input: Readonly<{ transactionId: string; category: MoneyCategory; actor: string; createRule: boolean }>): Promise<Readonly<{ affectedCount: number }>>;
   addManualBalance(input: Readonly<{ accountName: string; role: "cash" | "investment"; date: string; valueMinor: number; currency: string }>): Promise<void>;
   readiness(): Promise<void>;
   close(): Promise<void>;
@@ -147,14 +150,37 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
         sql<ImportRow[]>`select id, digest, format, filename, bytes, source_row_count, inserted_row_count, duplicate_row_count, committed_at, created_by from tools.money_imports order by committed_at desc limit 50`,
         sql<ActivityRow[]>`select t.id, t.occurred_at, a.display_name account_name, t.description, t.amount_minor, t.fee_minor, t.tax_minor, t.currency, t.status, t.source_type, t.flow_kind, t.category, t.category_origin, t.transfer_group_id from tools.money_transactions t join tools.money_accounts a on a.id = t.account_id order by t.occurred_at desc, t.source_row desc limit 500`,
         sql<{ count: string }[]>`select count(*)::text count from tools.money_transactions`,
-        sql<{ linked_pairs: string; unlinked_count: string }[]>`select count(distinct transfer_group_id)::text linked_pairs, count(*) filter (where transfer_group_id is null)::text unlinked_count from tools.money_transactions where status = 'completed' and flow_kind = 'transfer'`,
-        sql<MonthlyRow[]>`select to_char(date_trunc('month', local_date), 'YYYY-MM') month,
-          coalesce(sum(abs(base_amount_minor)) filter (where flow_kind = 'spend'), 0)::text spend_minor,
-          coalesce(sum(base_amount_minor) filter (where flow_kind = 'refund'), 0)::text refunds_minor,
-          coalesce(sum(base_amount_minor) filter (where flow_kind in ('income', 'investment_income') or category = 'income'), 0)::text income_minor,
+        sql<TransferReviewRow[]>`select count(distinct transfer_group_id)::text linked_pairs,
+          count(*) filter (where transfer_group_id is null)::text unlinked_count,
+          count(*) filter (where transfer_group_id is null and category_origin = 'source' and amount_minor > 0)::text unresolved_positive_count,
+          count(*) filter (where transfer_group_id is null and category_origin = 'source' and amount_minor < 0)::text unresolved_negative_count
+          from tools.money_transactions where status = 'completed' and flow_kind = 'transfer'`,
+        sql<MonthlyRow[]>`with recursive bounds as (
+          select date_trunc('month', min(local_date))::date first_month, (date_trunc('month', current_date) - interval '1 month')::date last_month
+          from tools.money_transactions where status = 'completed' and base_currency = 'EUR'
+        ), calendar as (
+          select generate_series(first_month, last_month, interval '1 month')::date month from bounds where first_month <= last_month
+        ), classified as (
+          select local_date, base_amount_minor, base_fee_minor, base_tax_minor,
+            case
+              when flow_kind = 'transfer' and transfer_group_id is null and category_origin in ('manual', 'rule') and amount_minor > 0 and category = 'income' then 'income'
+              when flow_kind = 'transfer' and transfer_group_id is null and category_origin in ('manual', 'rule') and amount_minor < 0 and category not in ('uncategorized', 'cash', 'investments', 'income') then 'spend'
+              else flow_kind
+            end effective_flow
+          from tools.money_transactions
+          where status = 'completed' and base_currency = 'EUR' and local_date < date_trunc('month', current_date)
+        ) select to_char(calendar.month, 'YYYY-MM') month,
+          coalesce(sum(abs(base_amount_minor)) filter (where effective_flow = 'spend'), 0)::text spend_minor,
+          coalesce(sum(base_amount_minor) filter (where effective_flow = 'refund'), 0)::text refunds_minor,
+          coalesce(sum(base_amount_minor) filter (where effective_flow in ('income', 'investment_income')), 0)::text income_minor,
           coalesce(sum(base_fee_minor), 0)::text fees_minor, coalesce(sum(base_tax_minor), 0)::text taxes_minor
-          from tools.money_transactions where status = 'completed' and base_currency = 'EUR' group by 1 order by 1`,
-        sql<CategoryRow[]>`select category, coalesce(sum(abs(base_amount_minor)), 0)::text amount_minor, count(*)::text count from tools.money_transactions where status = 'completed' and flow_kind = 'spend' and base_currency = 'EUR' group by category order by sum(abs(base_amount_minor)) desc`,
+          from calendar left join classified on date_trunc('month', classified.local_date) = calendar.month group by calendar.month order by calendar.month`,
+        sql<CategoryRow[]>`with classified as (
+          select category, base_amount_minor, case
+            when flow_kind = 'transfer' and transfer_group_id is null and category_origin in ('manual', 'rule') and amount_minor < 0 and category not in ('uncategorized', 'cash', 'investments', 'income') then 'spend'
+            else flow_kind end effective_flow
+          from tools.money_transactions where status = 'completed' and base_currency = 'EUR'
+        ) select category, coalesce(sum(abs(base_amount_minor)), 0)::text amount_minor, count(*)::text count from classified where effective_flow = 'spend' group by category order by sum(abs(base_amount_minor)) desc`,
         sql<InvestmentRow[]>`select e.symbol, e.name, e.asset_class,
           coalesce(sum(case when e.event_kind in ('buy', 'split') then e.quantity when e.event_kind = 'sell' then -e.quantity else 0 end), 0)::text quantity,
           coalesce(sum(abs(t.base_amount_minor)) filter (where e.event_kind = 'buy'), 0)::text bought_minor,
@@ -165,8 +191,8 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
           from tools.money_investment_events e join tools.money_transactions t on t.id = e.transaction_id
           where t.status = 'completed' and t.base_currency = 'EUR'
           group by e.symbol, e.name, e.asset_class, t.base_currency order by sum(abs(t.base_amount_minor)) desc nulls last`,
-        sql<SnapshotRow[]>`select snapshot_date, value_minor, currency, display_name, role from (
-          select distinct on (s.account_id, s.snapshot_date) s.snapshot_date::text snapshot_date, s.value_minor::text value_minor, s.currency, a.display_name, a.role
+        sql<SnapshotRow[]>`select account_id, snapshot_date, value_minor, currency, display_name, role, provider from (
+          select distinct on (s.account_id, s.snapshot_date) s.account_id::text account_id, s.snapshot_date::text snapshot_date, s.value_minor::text value_minor, s.currency, a.display_name, a.role, a.provider
           from tools.money_balance_snapshots s join tools.money_accounts a on a.id = s.account_id
           order by s.account_id, s.snapshot_date, case when s.origin = 'manual' then 0 else 1 end, s.observed_at desc
         ) latest order by snapshot_date, display_name`
@@ -174,8 +200,8 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
       const spending = spendingAnalytics(monthly, categories);
       return {
         imports: imports.map(summary), activity: activity.map(activityItem), transactionCount: Number(count[0]?.count ?? 0),
-        transferReview: { linkedPairs: Number(transfers[0]?.linked_pairs ?? 0), unlinkedCount: Number(transfers[0]?.unlinked_count ?? 0) },
-        spending, investments: investmentAnalytics(events), planning: planningAnalytics(spending.months), ...balanceSnapshot(snapshotRows)
+        transferReview: transferReview(transfers[0]),
+        spending, investments: investmentAnalytics(events), planning: planningAnalytics(spending.months, transferReview(transfers[0])), ...balanceSnapshot(snapshotRows)
       };
     },
 
@@ -186,10 +212,12 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
           from tools.money_transactions t join tools.money_accounts a on a.id = t.account_id
           where (${input.query} = '' or t.description ilike ${pattern} escape '\\' or a.display_name ilike ${pattern} escape '\\' or t.source_type ilike ${pattern} escape '\\')
             and (${input.flow ?? null}::text is null or t.flow_kind = ${input.flow ?? null})
+            and (${input.reviewOnly ?? false} = false or (t.status = 'completed' and t.flow_kind = 'transfer' and t.transfer_group_id is null and t.category_origin = 'source'))
           order by t.occurred_at desc, t.source_row desc limit ${input.limit} offset ${input.offset}`,
         sql<{ count: string }[]>`select count(*)::text count from tools.money_transactions t join tools.money_accounts a on a.id = t.account_id
           where (${input.query} = '' or t.description ilike ${pattern} escape '\\' or a.display_name ilike ${pattern} escape '\\' or t.source_type ilike ${pattern} escape '\\')
-            and (${input.flow ?? null}::text is null or t.flow_kind = ${input.flow ?? null})`
+            and (${input.flow ?? null}::text is null or t.flow_kind = ${input.flow ?? null})
+            and (${input.reviewOnly ?? false} = false or (t.status = 'completed' and t.flow_kind = 'transfer' and t.transfer_group_id is null and t.category_origin = 'source'))`
       ]);
       const total = Number(count[0]?.count ?? 0);
       return { items: rows.map(activityItem), total, hasMore: input.offset + rows.length < total };
@@ -198,20 +226,22 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
     setTransactionCategory(input) {
       if (!MONEY_CATEGORIES.includes(input.category)) throw new Error("Unsupported money category.");
       return sql.begin(async (tx) => {
-        const [row] = await tx<{ description: string }[]>`update tools.money_transactions set category = ${input.category}, category_origin = 'manual' where id = ${input.transactionId} returning description`;
+        const [row] = await tx<{ description: string; account_id: string }[]>`update tools.money_transactions set category = ${input.category}, category_origin = 'manual' where id = ${input.transactionId} returning description, account_id`;
         if (!row) throw new Error("Money transaction not found.");
-        if (!input.createRule || !row.description) return;
+        if (!input.createRule || !row.description) return { affectedCount: 1 };
         const value = row.description.toLocaleLowerCase("en-GB");
-        await tx`insert into tools.money_category_rules (id, priority, match_field, match_value, category, active, created_at, updated_at, created_by)
-          values (${randomUUID()}, 100, 'description', ${value}, ${input.category}, true, now(), now(), ${input.actor})
-          on conflict (match_field, match_value) do update set category = excluded.category, active = true, updated_at = now(), created_by = excluded.created_by`;
-        await tx`update tools.money_transactions set category = ${input.category}, category_origin = 'rule' where lower(description) = ${value} and category_origin <> 'manual'`;
+        await tx`insert into tools.money_category_rules (id, account_id, priority, match_field, match_value, category, active, created_at, updated_at, created_by)
+          values (${randomUUID()}, ${row.account_id}, 100, 'description', ${value}, ${input.category}, true, now(), now(), ${input.actor})
+          on conflict (account_id, match_field, match_value) do update set category = excluded.category, active = true, updated_at = now(), created_by = excluded.created_by`;
+        const updated = await tx<{ id: string }[]>`update tools.money_transactions set category = ${input.category}, category_origin = 'rule'
+          where account_id = ${row.account_id} and lower(description) = ${value} and category_origin <> 'manual' returning id`;
+        return { affectedCount: updated.length + 1 };
       });
     },
 
     addManualBalance(input) {
       return sql.begin(async (tx) => {
-        const ref = `manual:${input.accountName.trim().toLocaleLowerCase("en-GB")}:${input.currency}`;
+        const ref = `manual:${input.accountName.trim().toLocaleLowerCase("en-GB")}:${input.role}:${input.currency}`;
         const [account] = await tx<{ id: string }[]>`insert into tools.money_accounts (id, provider, external_ref, display_name, role, currency, created_at, updated_at)
           values (${randomUUID()}, 'manual', ${ref}, ${input.accountName.trim()}, ${input.role}, ${input.currency}, now(), now())
           on conflict (provider, external_ref) do update set display_name = excluded.display_name, role = excluded.role, updated_at = now() returning id`;
@@ -231,12 +261,13 @@ type ActivityRow = { id: string; occurred_at: Date; account_name: string; descri
 type MonthlyRow = { month: string; spend_minor: string; refunds_minor: string; income_minor: string; fees_minor: string; taxes_minor: string };
 type CategoryRow = { category: MoneyCategory; amount_minor: string; count: string };
 type InvestmentRow = { symbol: string | null; name: string | null; asset_class: string | null; quantity: string; bought_minor: string; sold_minor: string; income_minor: string; fees_minor: string; taxes_minor: string; event_count: string; currency: string };
-type SnapshotRow = { snapshot_date: string; value_minor: string; currency: string; display_name: string; role: "cash" | "investment" };
+type SnapshotRow = { account_id: string; snapshot_date: string; value_minor: string; currency: string; display_name: string; role: "cash" | "investment"; provider: string };
 type TransferRow = { id: string; account_id: string; local_date: string; amount_minor: string; currency: string };
+type TransferReviewRow = { linked_pairs: string; unlinked_count: string; unresolved_positive_count: string; unresolved_negative_count: string };
 
 function receipt(row: ImportRow, replay: boolean): MoneyImportReceipt { return { id: row.id, digest: row.digest, format: row.format, filename: row.filename, rowCount: row.source_row_count, insertedCount: row.inserted_row_count, duplicateCount: row.duplicate_row_count, committedAt: row.committed_at.toISOString(), replay }; }
 function summary(row: ImportRow): MoneyImportSummary { const { replay: _, ...item } = receipt(row, false); return { ...item, bytes: Number(row.bytes), actor: row.created_by }; }
-function activityItem(row: ActivityRow): MoneyActivityItem { return { id: row.id, occurredAt: row.occurred_at.toISOString(), accountName: row.account_name, description: row.description, amountMinor: integer(row.amount_minor), feeMinor: integer(row.fee_minor), taxMinor: integer(row.tax_minor), currency: row.currency, status: row.status, sourceType: row.source_type, flowKind: row.flow_kind, category: row.category, categoryOrigin: row.category_origin, ...(row.transfer_group_id ? { transferGroupId: row.transfer_group_id } : {}) }; }
+function activityItem(row: ActivityRow): MoneyActivityItem { return { id: row.id, occurredAt: row.occurred_at.toISOString(), accountName: row.account_name, description: row.description, amountMinor: integer(row.amount_minor), feeMinor: integer(row.fee_minor), taxMinor: integer(row.tax_minor), currency: row.currency, status: row.status, sourceType: row.source_type, flowKind: row.flow_kind, category: row.category, categoryOrigin: row.category_origin, needsTransferReview: row.status === "completed" && row.flow_kind === "transfer" && !row.transfer_group_id && row.category_origin === "source", ...(row.transfer_group_id ? { transferGroupId: row.transfer_group_id } : {}) }; }
 
 function spendingAnalytics(monthly: MonthlyRow[], categories: CategoryRow[]): MoneySpendingAnalytics {
   const months = monthly.map((row) => { const spendMinor = integer(row.spend_minor); const refundsMinor = integer(row.refunds_minor); const incomeMinor = integer(row.income_minor); const feesMinor = integer(row.fees_minor); const taxesMinor = integer(row.taxes_minor); return { month: row.month, spendMinor, refundsMinor, incomeMinor, feesMinor, taxesMinor, netCashFlowMinor: incomeMinor + refundsMinor - spendMinor - feesMinor - taxesMinor }; });
@@ -250,20 +281,27 @@ function investmentAnalytics(rows: InvestmentRow[]): MoneyInvestmentAnalytics {
   return { positions: items, totals: { eventCount: rows.reduce((sum, row) => sum + integer(row.event_count), 0), boughtMinor: items.reduce((s, x) => s + x.boughtMinor, 0), soldMinor: items.reduce((s, x) => s + x.soldMinor, 0), incomeMinor: items.reduce((s, x) => s + x.incomeMinor, 0), feesMinor: items.reduce((s, x) => s + x.feesMinor, 0), taxesMinor: items.reduce((s, x) => s + x.taxesMinor, 0) } };
 }
 
-function planningAnalytics(months: MoneySpendingAnalytics["months"]): MoneyPlanningAnalytics {
+function planningAnalytics(months: MoneySpendingAnalytics["months"], review: MoneyLedgerSnapshot["transferReview"]): MoneyPlanningAnalytics {
   const recent = months.slice(-12).map((item) => item.netCashFlowMinor).sort((a, b) => a - b);
   const middle = Math.floor(recent.length / 2);
   const median = recent.length ? recent.length % 2 ? recent[middle]! : Math.round((recent[middle - 1]! + recent[middle]!) / 2) : 0;
-  return { medianMonthlyNetMinor: median, observedMonthCount: recent.length, projections: ([6, 12, 24] as const).map((projectionMonths) => ({ months: projectionMonths, changeMinor: median * projectionMonths })) };
+  const unresolvedTransferCount = review.unresolvedPositiveCount + review.unresolvedNegativeCount;
+  const ready = unresolvedTransferCount === 0 && recent.length > 0;
+  return { ready, unresolvedTransferCount, medianMonthlyNetMinor: median, observedMonthCount: recent.length,
+    projections: ready ? ([6, 12, 24] as const).map((projectionMonths) => ({ months: projectionMonths, changeMinor: median * projectionMonths })) : [] };
 }
 
 function balanceSnapshot(rows: SnapshotRow[]): MoneyTrackerSnapshot {
-  const byDate = new Map<string, Record<string, number>>(); const accounts = new Set<string>();
+  const byDate = new Map<string, Record<string, number>>(); const labels: Record<string, string> = {}; const accounts = new Set<string>();
+  const labelsByAccount = new Map(rows.map((row) => [row.account_id, row.role === "investment" && !/stocks?$/i.test(row.display_name) ? `${row.display_name} Stocks` : row.display_name]));
+  const labelCounts = new Map<string, number>();
+  for (const label of labelsByAccount.values()) labelCounts.set(label, (labelCounts.get(label) ?? 0) + 1);
   for (const row of rows) {
     if (row.currency !== "EUR") continue;
-    const name = row.role === "investment" && !/stocks?$/i.test(row.display_name) ? `${row.display_name} Stocks` : row.display_name;
+    const baseName = labelsByAccount.get(row.account_id)!;
+    const name = (labelCounts.get(baseName) ?? 0) > 1 ? `${baseName} · ${row.provider} ${row.account_id.slice(0, 6)}` : baseName;
     const month = `${row.snapshot_date.slice(0, 7)}-01`;
-    accounts.add(name); const values = byDate.get(month) ?? {}; values[name] = integer(row.value_minor) / 100; byDate.set(month, values);
+    accounts.add(row.account_id); labels[row.account_id] = name; const values = byDate.get(month) ?? {}; values[row.account_id] = integer(row.value_minor) / 100; byDate.set(month, values);
   }
   const carried: Record<string, number> = {};
   const months = [...byDate].sort(([left], [right]) => left.localeCompare(right)).map(([date, updates]) => {
@@ -271,14 +309,19 @@ function balanceSnapshot(rows: SnapshotRow[]): MoneyTrackerSnapshot {
     const values = { ...carried };
     return { date, values, total: Object.values(values).reduce((sum, value) => sum + value, 0) };
   });
-  return { accounts: [...accounts].sort(), months, latestDate: months.at(-1)?.date };
+  return { accounts: [...accounts].sort((left, right) => labels[left]!.localeCompare(labels[right]!)), accountLabels: labels, months, latestDate: months.at(-1)?.date };
+}
+
+function transferReview(row?: TransferReviewRow): MoneyLedgerSnapshot["transferReview"] {
+  return { linkedPairs: Number(row?.linked_pairs ?? 0), unlinkedCount: Number(row?.unlinked_count ?? 0),
+    unresolvedPositiveCount: Number(row?.unresolved_positive_count ?? 0), unresolvedNegativeCount: Number(row?.unresolved_negative_count ?? 0) };
 }
 
 async function applyCategoryRules(tx: postgres.TransactionSql, transactionIds: string[]) {
   if (!transactionIds.length) return;
   await tx`with matches as (
     select t.id, r.category, row_number() over (partition by t.id order by r.priority desc, r.id) rank
-    from tools.money_transactions t join tools.money_category_rules r on r.active and (
+    from tools.money_transactions t join tools.money_category_rules r on r.active and r.account_id = t.account_id and (
       (r.match_field = 'description' and r.match_value = lower(t.description)) or
       (r.match_field = 'mcc' and r.match_value = t.mcc) or
       (r.match_field = 'source_type' and r.match_value = lower(t.source_type)))
@@ -291,14 +334,16 @@ async function linkUnambiguousTransfers(tx: postgres.TransactionSql) {
   const rows = await tx<TransferRow[]>`select id, account_id, local_date::text, amount_minor::text, currency from tools.money_transactions where status = 'completed' and flow_kind = 'transfer' and amount_minor <> 0 and transfer_group_id is null and (source_type = 'Transfer' or source_type like 'TRANSFER%')`;
   const buckets = new Map<string, TransferRow[]>();
   for (const row of rows) {
-    const key = `${row.currency}:${Math.abs(integer(row.amount_minor))}`;
+    const key = `${row.currency}:${-integer(row.amount_minor)}:${Math.floor(day(row.local_date))}`;
     const bucket = buckets.get(key) ?? [];
     bucket.push(row);
     buckets.set(key, bucket);
   }
   const candidates = new Map<string, TransferRow[]>();
   for (const row of rows) {
-    const matches = (buckets.get(`${row.currency}:${Math.abs(integer(row.amount_minor))}`) ?? []).filter((other) => other.id !== row.id && other.account_id !== row.account_id && integer(other.amount_minor) === -integer(row.amount_minor) && Math.abs(day(row.local_date) - day(other.local_date)) <= 3);
+    const rowDay = Math.floor(day(row.local_date));
+    const matches = Array.from({ length: 7 }, (_, index) => buckets.get(`${row.currency}:${integer(row.amount_minor)}:${rowDay + index - 3}`) ?? [])
+      .flat().filter((other) => other.account_id !== row.account_id);
     candidates.set(row.id, matches);
   }
   const used = new Set<string>();

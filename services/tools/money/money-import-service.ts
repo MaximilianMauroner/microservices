@@ -62,14 +62,14 @@ export class MoneyImportService {
     return this.repository.readLedgerSnapshot();
   }
 
-  readActivityPage(input: Readonly<{ query: string; flow?: string; offset: number; limit: number }>) {
+  readActivityPage(input: Readonly<{ query: string; flow?: string; reviewOnly?: boolean; offset: number; limit: number }>) {
     const query = input.query.trim().slice(0, 100);
     const flows = ["spend", "income", "refund", "transfer", "trade", "investment_income", "fee", "tax", "balance_adjustment"] as const;
     const flow = input.flow && flows.includes(input.flow as typeof flows[number]) ? input.flow as typeof flows[number] : undefined;
     if (input.flow && !flow) throw new MoneyImportValidationError("invalid_flow", "The activity flow filter is invalid.");
     if (!Number.isSafeInteger(input.offset) || input.offset < 0) throw new MoneyImportValidationError("invalid_offset", "The activity offset is invalid.");
     if (!Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > 500) throw new MoneyImportValidationError("invalid_limit", "The activity limit is invalid.");
-    return this.repository.readActivityPage({ query, ...(flow ? { flow } : {}), offset: input.offset, limit: input.limit });
+    return this.repository.readActivityPage({ query, ...(flow ? { flow } : {}), ...(input.reviewOnly ? { reviewOnly: true } : {}), offset: input.offset, limit: input.limit });
   }
 
   setTransactionCategory(input: Readonly<{ transactionId: string; category: string; actor: string; createRule: boolean }>) {
@@ -86,8 +86,8 @@ export class MoneyImportService {
     const accountName = input.accountName.trim();
     if (!accountName || accountName.length > 100) throw new MoneyImportValidationError("invalid_account", "Enter an account name up to 100 characters.");
     if (input.role !== "cash" && input.role !== "investment") throw new MoneyImportValidationError("invalid_role", "Select a valid account role.");
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date) || Number.isNaN(Date.parse(`${input.date}T00:00:00Z`))) throw new MoneyImportValidationError("invalid_date", "Enter a valid snapshot date.");
-    if (!/^[A-Z]{3}$/.test(input.currency)) throw new MoneyImportValidationError("invalid_currency", "Enter a valid three-letter currency.");
+    if (!validDate(input.date)) throw new MoneyImportValidationError("invalid_date", "Enter a valid snapshot date.");
+    if (input.currency !== "EUR") throw new MoneyImportValidationError("unsupported_currency", "Balance snapshots currently support EUR only.");
     if (!/^-?\d+(?:\.\d{1,2})?$/.test(input.value)) throw new MoneyImportValidationError("invalid_value", "Enter a balance with no more than two decimal places.");
     const [whole, fraction = ""] = input.value.replace("-", "").split(".");
     const absolute = Number(whole) * 100 + Number(fraction.padEnd(2, "0"));
@@ -103,6 +103,14 @@ export class MoneyImportService {
   close(): Promise<void> {
     return this.repository.close();
   }
+}
+
+function validDate(value: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return false;
+  const [, year, month, day] = match.map(Number);
+  const date = new Date(Date.UTC(year!, month! - 1, day!));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month! - 1 && date.getUTCDate() === day;
 }
 
 function validateFilename(filename: string) {

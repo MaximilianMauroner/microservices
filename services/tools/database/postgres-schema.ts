@@ -160,6 +160,7 @@ export const moneyInvestmentEvents = toolsSchema.table("money_investment_events"
 
 export const moneyCategoryRules = toolsSchema.table("money_category_rules", {
   id: uuid("id").primaryKey(),
+  accountId: uuid("account_id").notNull().references(() => moneyAccounts.id),
   priority: integer("priority").notNull(),
   matchField: text("match_field").notNull(),
   matchValue: text("match_value").notNull(),
@@ -171,7 +172,7 @@ export const moneyCategoryRules = toolsSchema.table("money_category_rules", {
 }, (table) => [
   check("money_category_rules_field_check", sql`${table.matchField} in ('description', 'mcc', 'source_type')`),
   check("money_category_rules_category_check", sql`${table.category} in ('housing', 'groceries', 'dining', 'transport', 'shopping', 'health', 'travel', 'subscriptions', 'education', 'entertainment', 'gifts', 'taxes', 'fees', 'cash', 'investments', 'income', 'other', 'uncategorized')`),
-  uniqueIndex("money_category_rules_unique_idx").on(table.matchField, table.matchValue),
+  uniqueIndex("money_category_rules_unique_idx").on(table.accountId, table.matchField, table.matchValue),
   index("money_category_rules_priority_idx").on(table.priority),
 ]);
 

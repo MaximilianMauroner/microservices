@@ -9,7 +9,7 @@ import {
   parseMoneyImport
 } from "../money/money-import-domain.js";
 import { MoneyImportService } from "../money/money-import-service.js";
-import { previewMoneyImport } from "../money/money-route-handlers.js";
+import { previewMoneyImport, updateMoneyCategory } from "../money/money-route-handlers.js";
 import type {
   MoneyImportCommitInput,
   MoneyImportReceipt,
@@ -82,6 +82,20 @@ describe("Revolut cash statement parser", () => {
     expect(() => parseMoneyImport(Buffer.from(header.replace("Balance", "Running Balance")))).toThrowError(MoneyImportValidationError);
     expect(() => statement(["Mystery\tCurrent\t2026-08-09 5:08:51\t2026-08-09 5:08:51\tUnknown\t1\t0\tEUR\tCOMPLETED\t1"])).toThrow("unsupported transaction type");
   });
+
+  it("rejects non-EUR cash and impossible or nonexistent Berlin dates", () => {
+    expect(() => statement(["Transfer\tCurrent\t2026-08-09 5:08:51\t2026-08-09 5:08:51\tTop up\t10\t0\tUSD\tCOMPLETED\t10"])).toThrow("currently supports EUR only");
+    expect(() => statement(["Transfer\tCurrent\t2026-02-30 5:08:51\t2026-02-30 5:08:51\tTop up\t10\t0\tEUR\tCOMPLETED\t10"])).toThrow("invalid Started Date");
+    expect(() => statement(["Transfer\tCurrent\t2026-03-29 2:30:00\t2026-03-29 2:30:00\tTop up\t10\t0\tEUR\tCOMPLETED\t10"])).toThrow("nonexistent Europe/Berlin time");
+  });
+
+  it("uses source sequence when equal timestamps contain multiple balances", () => {
+    const parsed = statement([
+      "Transfer\tCurrent\t2026-08-09 5:08:51\t2026-08-09 5:08:51\tFirst\t10\t0\tEUR\tCOMPLETED\t10",
+      "Transfer\tCurrent\t2026-08-09 5:08:51\t2026-08-09 5:08:51\tSecond\t5\t0\tEUR\tCOMPLETED\t15"
+    ]);
+    expect(parsed.balanceSnapshots).toEqual([expect.objectContaining({ valueMinor: 1_500, sourceRow: 3 })]);
+  });
 });
 
 describe("investment export parsers", () => {
@@ -111,6 +125,30 @@ describe("investment export parsers", () => {
     expect(JSON.stringify(parsed)).not.toContain("private reference");
     expect(JSON.stringify(parsed)).not.toContain("DE00AAAAAAAAAAAAAAAAAA");
   });
+
+  it("keeps Revolut trading FX support but rejects non-EUR portfolio rows", () => {
+    const headers = "datetime,date,account_type,category,type,asset_class,name,symbol,shares,price,amount,fee,tax,currency,original_amount,original_currency,fx_rate,description,transaction_id,counterparty_name,counterparty_iban,payment_reference,mcc_code";
+    const row = "2026-08-09T03:08:51.123Z,2026-08-09,DEFAULT,CASH,CARD_TRANSACTION,,,,,,-3.500000,,,USD,,,,Funding,stable-id,Merchant,,private reference,5812";
+    expect(() => parseMoneyImport(Buffer.from(`${headers}\r\n${row}\r\n`))).toThrow("currently supports EUR only");
+  });
+
+  it("preserves portfolio fee and tax correction signs", () => {
+    const headers = "datetime,date,account_type,category,type,asset_class,name,symbol,shares,price,amount,fee,tax,currency,original_amount,original_currency,fx_rate,description,transaction_id,counterparty_name,counterparty_iban,payment_reference,mcc_code";
+    const rows = [
+      "2026-08-09T03:08:51.123Z,2026-08-09,DEFAULT,TRADING,TAX_OPTIMIZATION,FUND,Fund,FUND,,,0,-1.25,-2.50,EUR,,,,Tax,id-1,,,,",
+      "2026-08-10T03:08:51.123Z,2026-08-10,DEFAULT,TRADING,TAX_OPTIMIZATION,FUND,Fund,FUND,,,0,0.25,0.50,EUR,,,,Correction,id-2,,,,"
+    ];
+    const parsed = parseMoneyImport(Buffer.from([headers, ...rows].join("\r\n")));
+    expect(parsed.transactions.map(({ feeMinor, taxMinor }) => ({ feeMinor, taxMinor }))).toEqual([
+      { feeMinor: 125, taxMinor: 250 }, { feeMinor: -25, taxMinor: -50 }
+    ]);
+  });
+
+  it("keeps migration events out of position quantity aggregation", () => {
+    const repository = readFileSync(new URL("../money/money-repository.ts", import.meta.url), "utf8");
+    expect(repository).toContain("e.event_kind in ('buy', 'split')");
+    expect(repository).not.toContain("e.event_kind in ('buy', 'split', 'position_transfer', 'delivery')");
+  });
 });
 
 describe("balance snapshot parser", () => {
@@ -127,6 +165,13 @@ describe("balance snapshot parser", () => {
       expect.objectContaining({ date: "2026-08-09", valueMinor: 42_000 })
     ]);
     expect(parsed.transactions.every((item) => item.flowKind === "balance_adjustment")).toBe(true);
+  });
+
+  it("rejects non-EUR, impossible dates, and repeated account/date keys during preview parsing", () => {
+    const headers = "Date,Account,Value,Role,Currency";
+    expect(() => parseMoneyImport(Buffer.from(`${headers}\r\n2026-08-09,Cash,1,cash,USD\r\n`))).toThrow("currently supports EUR only");
+    expect(() => parseMoneyImport(Buffer.from(`${headers}\r\n2026-02-30,Cash,1,cash,EUR\r\n`))).toThrow("invalid Date");
+    expect(() => parseMoneyImport(Buffer.from(`${headers}\r\n2026-08-09,Cash,1,cash,EUR\r\n2026-08-09,Cash,2,cash,EUR\r\n`))).toThrow("duplicates the account and date");
   });
 });
 
@@ -176,6 +221,26 @@ describe("money import route", () => {
     expect(preview).not.toHaveBeenCalled();
   });
 
+  it("bounds streamed JSON bodies without Content-Length", async () => {
+    const bytes = new TextEncoder().encode(JSON.stringify({ transactionId: "00000000-0000-4000-8000-000000000000", category: "other", padding: "x".repeat(20_000) }));
+    const request = new Request("https://tools.example.test/api/money/categories", { method: "POST", headers: { Origin: "https://tools.example.test", "Content-Type": "application/json" }, body: new ReadableStream({ start(controller) { controller.enqueue(bytes); controller.close(); } }), duplex: "half" } as RequestInit);
+    const response = await updateMoneyCategory({ request, params: {}, context: { principal: { subject: "subject", email: "operator@example.test" }, runtime: { publicOrigin: "https://tools.example.test", moneyImports: { setTransactionCategory: vi.fn() } } } } as unknown as PlatformRouteInput);
+    expect(response.status).toBe(413);
+  });
+
+  it("bounds streamed multipart bodies without Content-Length", async () => {
+    const bytes = new Uint8Array(11 * 1024 * 1024 + 1);
+    const request = new Request("https://tools.example.test/api/money/imports/preview", { method: "POST", headers: { Origin: "https://tools.example.test", "Content-Type": "multipart/form-data; boundary=money" }, body: new ReadableStream({ start(controller) { controller.enqueue(bytes); controller.close(); } }), duplex: "half" } as RequestInit);
+    const response = await previewMoneyImport(routeInput(request, vi.fn()));
+    expect(response.status).toBe(413);
+  });
+
+  it("rejects malformed Content-Length before reading the request", async () => {
+    const request = new Request("https://tools.example.test/api/money/categories", { method: "POST", headers: { Origin: "https://tools.example.test", "Content-Type": "application/json", "Content-Length": "wat" }, body: "{}" });
+    const response = await updateMoneyCategory({ request, params: {}, context: { principal: { subject: "subject", email: "operator@example.test" }, runtime: { publicOrigin: "https://tools.example.test", moneyImports: { setTransactionCategory: vi.fn() } } } } as unknown as PlatformRouteInput);
+    expect(response.status).toBe(400);
+  });
+
   it("passes only the private file bytes and filename to preview", async () => {
     const result = { format: REVOLUT_CASH_FORMAT };
     const preview = vi.fn().mockResolvedValue(result);
@@ -197,6 +262,16 @@ describe("money schema and Option A route contract", () => {
       expect(schema).toContain(`\"${table}\"`);
       expect(config).toContain(`\"${table}\"`);
     }
+    expect(schema).toContain('accountId: uuid("account_id").notNull().references(() => moneyAccounts.id)');
+    expect(schema).toContain("table.accountId, table.matchField, table.matchValue");
+  });
+
+  it("keeps planning complete-month-only and rules account-scoped", () => {
+    const repository = readFileSync(new URL("../money/money-repository.ts", import.meta.url), "utf8");
+    expect(repository).toContain("local_date < date_trunc('month', current_date)");
+    expect(repository).toContain("generate_series(first_month, last_month");
+    expect(repository).toContain("r.account_id = t.account_id");
+    expect(repository).toContain("category_origin in ('manual', 'rule')");
   });
 
   it("uses the selected workspace views without legacy search values", () => {
@@ -252,16 +327,16 @@ class MemoryMoneyRepository implements MoneyRepository {
 
   async readLedgerSnapshot(): Promise<MoneyLedgerSnapshot> {
     return {
-      imports: [], activity: [], transactionCount: 0, transferReview: { linkedPairs: 0, unlinkedCount: 0 }, accounts: [], months: [],
+      imports: [], activity: [], transactionCount: 0, transferReview: { linkedPairs: 0, unlinkedCount: 0, unresolvedPositiveCount: 0, unresolvedNegativeCount: 0 }, accounts: [], accountLabels: {}, months: [],
       spending: { months: [], categories: [], uncategorizedCount: 0 },
       investments: { positions: [], totals: { eventCount: 0, boughtMinor: 0, soldMinor: 0, incomeMinor: 0, feesMinor: 0, taxesMinor: 0 } },
-      planning: { medianMonthlyNetMinor: 0, observedMonthCount: 0, projections: [{ months: 6, changeMinor: 0 }, { months: 12, changeMinor: 0 }, { months: 24, changeMinor: 0 }] }
+      planning: { ready: true, unresolvedTransferCount: 0, medianMonthlyNetMinor: 0, observedMonthCount: 0, projections: [{ months: 6, changeMinor: 0 }, { months: 12, changeMinor: 0 }, { months: 24, changeMinor: 0 }] }
     };
   }
 
   async readActivityPage() { return { items: [], total: 0, hasMore: false }; }
 
-  async setTransactionCategory() {}
+  async setTransactionCategory() { return { affectedCount: 1 }; }
   async addManualBalance() {}
 
   async readiness() {}
