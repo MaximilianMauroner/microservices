@@ -1,18 +1,28 @@
-# Tools Platform operations
+# Tools operations
 
-The production architecture has one Railway process. `platform-service` mounts
-the catalog, publisher, and Field Guide routes and runs the bounded checker.
-Public pages and canonical artifact/file reads stay unauthenticated. Human
-private routes share one stateless Better Auth Google session. Machine upload,
-agent, and heartbeat routes retain their native bearer tokens.
+Tools is one TanStack Start monolith deployed as a single Railway service. Its
+products live directly under `services/tools`: Dashboard, Status, Publisher,
+Field Guide, and Money. They share authentication, configuration, lifecycle,
+health checks, and deployment.
 
-- [preview-and-cutover.md](./preview-and-cutover.md): isolated verification.
-- [consolidation-cutover.md](./consolidation-cutover.md): production cutover and rollback.
-- [access-incident.md](./access-incident.md): browser-authentication containment and recovery.
-- [bucket-recovery.md](./bucket-recovery.md): object export, restore, and corruption recovery.
-- [rename-migration.md](./rename-migration.md): naming changes without breaking canonical URLs.
-- [uptime-parity-audit.md](./uptime-parity-audit.md): legacy checker parity evidence.
+The process also owns leased scheduled work for Status. It must remain awake,
+but multiple replicas are safe because PostgreSQL arbitrates each schedule
+slot. Dashboard and monitor definitions are typed code. PostgreSQL stores
+runtime state; object storage holds artifact bodies and derived status
+snapshots.
 
-The service cannot sleep because it owns the checker schedule. Private responses
-are no-store and noindex. Authentication adds no database and does not change
-bucket ownership.
+- [runtime-boundaries.md](./runtime-boundaries.md): service and product ownership.
+- [access-incident.md](./access-incident.md): authentication containment and recovery.
+- [bucket-recovery.md](./bucket-recovery.md): PostgreSQL and object-storage recovery.
+
+## Operational checks
+
+- `/live` proves that the process is running.
+- `/health` proves that required dependencies are ready.
+- Public pages and canonical artifact URLs do not require a browser session.
+- Private browser routes use one Better Auth Google session.
+- Upload, agent, and heartbeat APIs retain dedicated bearer credentials.
+
+Deployments run `pnpm run railway:predeploy` before starting Tools. That command
+applies the Tools and Field Guide migrations and reconciles artifact metadata.
+Never point a local or preview process at production data.

@@ -45,8 +45,11 @@ Google uses online access only. The application does not request offline
 refresh-token capability or retain a provider-account cookie. Changing
 `BETTER_AUTH_SECRET` invalidates existing sessions.
 
-The service preserves its existing S3 buckets and Field Guide PostgreSQL
-database. Browser authentication does not add or migrate database tables.
+Tools uses one Railway PostgreSQL instance with separate `tools`,
+`field_guide`, and `artifacts` schemas. Artifact bodies remain in private object
+storage; metadata and interrupted-operation recovery live in PostgreSQL.
+Dashboard and monitor definitions are versioned code rather than editable
+database records.
 
 ## Commands
 
