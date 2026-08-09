@@ -1,0 +1,58 @@
+{
+  "name": "@tools-platform/field-guide",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    },
+    "./app": {
+      "types": "./src/app.ts",
+      "import": "./src/app.ts"
+    },
+    "./auth": {
+      "types": "./src/auth.ts",
+      "import": "./src/auth.ts"
+    },
+    "./config": {
+      "types": "./src/config.ts",
+      "import": "./src/config.ts"
+    },
+    "./http": {
+      "types": "./src/http.ts",
+      "import": "./src/http.ts"
+    },
+    "./repository": {
+      "types": "./src/repository.ts",
+      "import": "./src/repository.ts"
+    }
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "pnpm run build:css && tsc -p tsconfig.build.json",
+    "build:css": "tailwindcss -i ./src/review.css -o ./public/review.css --minify",
+    "db:push-postgres": "tsx src/push-postgres.ts production",
+    "db:push-postgres:test": "tsx src/push-postgres.ts test",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "verify": "pnpm run typecheck && pnpm run test"
+  },
+  "dependencies": {
+    "@tools-platform/suite-chrome": "workspace:*",
+    "drizzle-orm": "1.0.0-rc.4",
+    "postgres": "^3.4.7"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.3.3",
+    "@types/node": "^22.10.2",
+    "drizzle-kit": "1.0.0-rc.4",
+    "tailwindcss": "^4.3.3",
+    "tsx": "^4.20.6",
+    "typescript": "7.0.2",
+    "vitest": "^4.1.9"
+  }
+}

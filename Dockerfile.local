@@ -1,10 +1,12 @@
-FROM oven/bun:1.3.14
+FROM node:22-bookworm-slim
 
 WORKDIR /app
 
 COPY . .
 
-RUN bun install --frozen-lockfile
-RUN bun run build
+RUN corepack enable \
+    && corepack prepare pnpm@11.16.0 --activate \
+    && pnpm install --frozen-lockfile
+RUN pnpm run build
 
-CMD ["bun", "run", "--cwd", "apps/platform-service", "start"]
+CMD ["pnpm", "--dir", "services/tools", "run", "start"]

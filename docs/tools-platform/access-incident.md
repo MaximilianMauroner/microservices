@@ -10,7 +10,8 @@ Google account cannot sign in, or session material may be compromised.
 2. Rotate `BETTER_AUTH_SECRET` to invalidate every browser session. Never log
    either secret value.
 3. Rotate the Google OAuth client secret if it may have been exposed.
-4. Remove bucket write credentials while investigating unauthorized writes.
+4. Remove database and object-storage write credentials while investigating
+   unauthorized writes.
 
 ## Diagnose
 
@@ -26,5 +27,5 @@ Google account cannot sign in, or session material may be compromised.
 ## Recover
 
 Redeploy with the corrected variables. Verify public and native-token machine
-routes first, then verify allowed and denied browser identities. Restore bucket
-write credentials only after private writes and audit attribution are correct.
+routes first, then verify allowed and denied browser identities. Restore data
+store credentials only after private writes and audit attribution are correct.
