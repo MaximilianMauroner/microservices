@@ -158,12 +158,7 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
           count(*) filter (where transfer_group_id is null and transfer_disposition is null and amount_minor > 0)::text unresolved_positive_count,
           count(*) filter (where transfer_group_id is null and transfer_disposition is null and amount_minor < 0)::text unresolved_negative_count
           from tools.money_transactions where status = 'completed' and flow_kind = 'transfer'`,
-        sql<MonthlyRow[]>`with recursive bounds as (
-          select date_trunc('month', min(local_date))::date first_month, (date_trunc('month', current_date) - interval '1 month')::date last_month
-          from tools.money_transactions where status = 'completed' and base_currency = 'EUR'
-        ), calendar as (
-          select generate_series(first_month, last_month, interval '1 month')::date as month_start from bounds where first_month <= last_month
-        ), classified as (
+        sql<MonthlyRow[]>`with classified as (
           select local_date, base_amount_minor, base_fee_minor, base_tax_minor, flow_kind,
             case
               when flow_kind = 'transfer' and transfer_group_id is not null then 'internal_transfer'
@@ -172,12 +167,21 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
             end effective_flow
           from tools.money_transactions
           where status = 'completed' and base_currency = 'EUR' and local_date < date_trunc('month', current_date)
+        ), contributors as (
+          select * from classified where
+            (effective_flow in ('spend', 'refund', 'income', 'investment_income') and base_amount_minor <> 0)
+            or base_fee_minor <> 0 or base_tax_minor <> 0
+        ), bounds as (
+          select date_trunc('month', min(local_date))::date first_month, (date_trunc('month', current_date) - interval '1 month')::date last_month
+          from contributors
+        ), calendar as (
+          select generate_series(first_month, last_month, interval '1 month')::date as month_start from bounds where first_month <= last_month
         ) select to_char(calendar.month_start, 'YYYY-MM') as month,
           coalesce(sum(case when effective_flow = 'spend' and flow_kind = 'transfer' then -base_amount_minor when effective_flow = 'spend' then abs(base_amount_minor) else 0 end), 0)::text spend_minor,
           coalesce(sum(base_amount_minor) filter (where effective_flow = 'refund'), 0)::text refunds_minor,
           coalesce(sum(base_amount_minor) filter (where effective_flow in ('income', 'investment_income')), 0)::text income_minor,
           coalesce(sum(base_fee_minor), 0)::text fees_minor, coalesce(sum(base_tax_minor), 0)::text taxes_minor
-          from calendar left join classified on date_trunc('month', classified.local_date) = calendar.month_start group by calendar.month_start order by calendar.month_start`,
+          from calendar left join contributors on date_trunc('month', contributors.local_date) = calendar.month_start group by calendar.month_start order by calendar.month_start`,
         sql<CategoryRow[]>`with classified as (
           select category, base_amount_minor, flow_kind, case
             when flow_kind = 'transfer' and transfer_group_id is not null then 'internal_transfer'
