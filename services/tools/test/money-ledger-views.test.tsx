@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { MoneyActivityView, MoneyInvestmentsView, MoneySpendingView } from "../money/money-ledger-views.js";
+import { MoneyActivityView, MoneyInvestmentsView, MoneyPlanningCard, MoneySpendingView } from "../money/money-ledger-views.js";
 import { groupMonth, History } from "../money/money-tracker-page.js";
 
 const activity = [
@@ -50,7 +50,9 @@ const activity = [
     flowKind: "transfer" as const,
     category: "uncategorized" as const,
     categoryOrigin: "source" as const,
-    needsTransferReview: true
+    transferGroupId: "00000000-0000-4000-8000-000000000001",
+    transferDisposition: "internal_transfer" as const,
+    needsTransferReview: false
   }
 ];
 
@@ -67,6 +69,25 @@ describe("Option A money ledger views", () => {
     expect(html).toContain("Transfer treatment");
     expect(html).toContain("Needs review");
     expect(html).toContain("Changing an automatic internal match safely unlinks both sides");
+    expect(html).toContain('aria-label="Transfer treatment for External funding"');
+    expect(html).not.toContain('aria-label="Transfer treatment for Own account transfer"');
+  });
+
+  it("distinguishes an empty search result from an empty ledger", () => {
+    const summary = { linkedPairs: 0, unlinkedCount: 0, unresolvedPositiveCount: 0, unresolvedNegativeCount: 0 };
+    const noMatches = renderToStaticMarkup(<MoneyActivityView activity={[]} transactionCount={10} transferReview={summary} />);
+    const noImports = renderToStaticMarkup(<MoneyActivityView activity={[]} transactionCount={0} transferReview={summary} />);
+    expect(noMatches).toContain("No matching activity");
+    expect(noMatches).not.toContain("No transactions imported");
+    expect(noImports).toContain("No transactions imported");
+  });
+
+  it("separates insufficient planning history from unresolved transfer review", () => {
+    const history = renderToStaticMarkup(<MoneyPlanningCard planning={{ ready: false, unresolvedTransferCount: 0, medianMonthlyNetMinor: 0, observedMonthCount: 0, projections: [] }} />);
+    const review = renderToStaticMarkup(<MoneyPlanningCard planning={{ ready: false, unresolvedTransferCount: 2, medianMonthlyNetMinor: 0, observedMonthCount: 0, projections: [] }} />);
+    expect(history).toContain("Not enough planning history");
+    expect(history).not.toContain("Planning needs transfer review");
+    expect(review).toContain("Planning needs transfer review");
   });
 
   it("states the bounded spending and investment contracts", () => {
