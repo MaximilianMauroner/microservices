@@ -41,7 +41,7 @@ export function MoneyTrackerPage(props: MoneyTrackerPageData & { view: MoneyTrac
       <div><p className="eyebrow">Money tracker</p><h1>{props.view === "overview" ? "Net worth" : props.view === "accounts" ? "Accounts" : props.view === "history" ? "Snapshot history" : "Balance predictions"}</h1><p>Monthly balance snapshots from Google Sheets.</p></div>
       <div className="app-heading__actions">{props.view === "predictions" ? <span className="text-xs text-muted-foreground">History used</span> : null}<PeriodButton active={period === "6m"} onClick={() => setPeriod("6m")}>6M</PeriodButton><PeriodButton active={period === "1y"} onClick={() => setPeriod("1y")}>1Y</PeriodButton><PeriodButton active={period === "all"} onClick={() => setPeriod("all")}>All</PeriodButton><Badge variant="outline">Read only</Badge><Badge variant="outline">{props.actor}</Badge></div>
     </header>
-    <MoneyNav view={props.view} />
+    <MoneyNav />
     {props.view === "overview" ? <Overview {...props} months={months} latest={latest} previous={previous} monthlyChange={monthlyChange} trends={trends} /> : null}
     {props.view === "accounts" ? <Accounts accounts={props.accounts} months={months} latest={latest} previous={previous} /> : null}
     {props.view === "history" ? <History accounts={props.accounts} months={months} /> : null}
@@ -55,7 +55,7 @@ export function MoneyTrackerPendingPage({ view }: { view: MoneyTrackerView }) {
       <div><p className="eyebrow">Money tracker</p><h1>{view === "overview" ? "Net worth" : view === "accounts" ? "Accounts" : view === "history" ? "Snapshot history" : "Balance predictions"}</h1><p>Loading monthly balance snapshots.</p></div>
       <Badge variant="outline">Read only</Badge>
     </header>
-    <MoneyNav view={view} />
+    <MoneyNav />
     <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Loading summary">
       {Array.from({ length: 4 }, (_, index) => <Card key={index}><CardContent className="space-y-3 p-4"><LoadingBlock className="h-3 w-24" /><LoadingBlock className="h-7 w-32" /><LoadingBlock className="h-3 w-20" /></CardContent></Card>)}
     </section>
@@ -171,8 +171,25 @@ function Predictions({ months }: { months: GroupedMonth[] }) {
   </>;
 }
 
-function MoneyNav({ view }: { view: MoneyTrackerView }) { return <nav className="flex w-fit max-w-full gap-1 overflow-x-auto rounded-lg border bg-muted/40 p-1" aria-label="Money tracker"><NavItem view="overview" active={view === "overview"}>Overview</NavItem><NavItem view="accounts" active={view === "accounts"}>Accounts</NavItem><NavItem view="history" active={view === "history"}>History</NavItem><NavItem view="predictions" active={view === "predictions"}>Predictions</NavItem></nav>; }
-function NavItem({ view, active, children }: { view: MoneyTrackerView; active: boolean; children: React.ReactNode }) { return <Link to="/money" search={{ view: view === "overview" ? undefined : view }} preload="intent" aria-current={active ? "page" : undefined} className="whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground aria-[current=page]:bg-accent aria-[current=page]:text-foreground">{children}</Link>; }
+function MoneyNav() {
+  return <nav className="flex w-fit max-w-full gap-1 overflow-x-auto rounded-lg border bg-muted/40 p-1" aria-label="Money tracker">
+    <NavItem view="overview">Overview</NavItem>
+    <NavItem view="accounts">Accounts</NavItem>
+    <NavItem view="history">History</NavItem>
+    <NavItem view="predictions">Predictions</NavItem>
+  </nav>;
+}
+
+function NavItem({ view, children }: { view: MoneyTrackerView; children: React.ReactNode }) {
+  return <Link
+    to="/money"
+    search={{ view: view === "overview" ? undefined : view }}
+    preload="intent"
+    activeOptions={{ exact: true }}
+    activeProps={{ className: "bg-accent text-foreground" }}
+    className="whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+  >{children}</Link>;
+}
 function PeriodButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) { return <Button type="button" size="sm" variant={active ? "default" : "outline"} onClick={onClick}>{children}</Button>; }
 function ChartCard({ title, description, children }: { title: string; description: string; children: React.ReactNode }) { return <Card><CardHeader className="border-b"><CardTitle>{title}</CardTitle><CardDescription>{description}</CardDescription></CardHeader><CardContent className="pt-5">{children}</CardContent></Card>; }
 function MountedChart({ fallback, children }: { fallback: React.ReactNode; children: React.ReactNode }) { const [mounted, setMounted] = useState(false); useEffect(() => setMounted(true), []); return mounted ? children : fallback; }
