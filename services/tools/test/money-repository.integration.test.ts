@@ -3,6 +3,7 @@ import { afterAll, beforeEach, expect, it } from "vitest";
 import { DISPOSABLE_DATABASE_SENTINEL, withVerifiedDisposableDatabase } from "../field-guide/src/postgres-push-guard.js";
 import { parseMoneyImport } from "../money/money-import-domain.js";
 import { createPostgresMoneyRepository, type MoneyRepository } from "../money/money-repository.js";
+import { moneyTrackerTrendStats } from "../money/money-tracker-domain.js";
 
 // Opt in only with a disposable database after applying the guarded tools schema:
 // TEST_DATABASE_URL=... MONEY_TEST_DATABASE_CONFIRM=money-repository-test pnpm test:money-postgres
@@ -143,6 +144,56 @@ it.skipIf(!repository || !admin)("starts the planning calendar only when a class
   const withCashFlow = await repository!.readLedgerSnapshot();
   expect(withCashFlow.spending.months).toEqual([expect.objectContaining({ month: period!.month_key, spendMinor: 1_250, netCashFlowMinor: -1_250 })]);
   expect(withCashFlow.planning).toMatchObject({ ready: true, observedMonthCount: 1 });
+});
+
+it.skipIf(!repository || !admin)("normalizes investment positions while retaining symbol-less costs in totals", async () => {
+  const headers = "datetime,date,account_type,category,type,asset_class,name,symbol,shares,price,amount,fee,tax,currency,original_amount,original_currency,fx_rate,description,transaction_id,counterparty_name,counterparty_iban,payment_reference,mcc_code";
+  const rows = [
+    "2026-06-01T12:00:00.000Z,2026-06-01,DEFAULT,TRADING,BUY,FUND,Old Fund,vwce,1,100,-100,,,EUR,,,,Buy,meta-1,,,,",
+    "2026-06-02T12:00:00.000Z,2026-06-02,DEFAULT,TRADING,BUY,ETF,Latest Fund,VWCE,2,100,-200,,,EUR,,,,Buy,meta-2,,,,",
+  ];
+  await commitCash(repository!, Buffer.from([headers, ...rows].join("\r\n")), "metadata.csv");
+  await commitCash(repository!, Buffer.from([
+    "Date\tTicker\tType\tQuantity\tPrice per share\tTotal Amount\tCurrency\tFX Rate",
+    "2026-06-03T12:00:00.000Z\t\tCUSTODY FEE\t\t\tEUR -3\tEUR\t1",
+  ].join("\r\n")), "symbol-less-fee.tsv");
+  const { investments } = await repository!.readLedgerSnapshot();
+  expect(investments.positions).toEqual([expect.objectContaining({ symbol: "VWCE", name: "Latest Fund", assetClass: "ETF", quantity: "3" })]);
+  expect(investments.totals).toMatchObject({ eventCount: 3, boughtMinor: 30_000, feesMinor: 300 });
+});
+
+it.skipIf(!repository || !admin)("reports reverted rows beyond the initial activity page", async () => {
+  const rows = Array.from({ length: 501 }, (_, index) => {
+    const day = String(index % 28 + 1).padStart(2, "0");
+    const hour = String(Math.floor(index / 28) % 24).padStart(2, "0");
+    return `Card Payment\tCurrent\t2026-06-${day} ${hour}:00:00\t2026-06-${day} ${hour}:00:00\tRow ${index}\t-1\t0\tEUR\t${index === 0 ? "REVERTED" : "COMPLETED"}\t${1000 - index}`;
+  });
+  await commitCash(repository!, cash(rows), "many-rows.tsv");
+  const snapshot = await repository!.readLedgerSnapshot();
+  expect(snapshot.activity).toHaveLength(500);
+  expect(snapshot.activity.some((row) => row.status === "reverted")).toBe(false);
+  expect(snapshot.revertedCount).toBe(1);
+});
+
+it.skipIf(!repository || !admin)("materializes carried balance months for monthly trend intervals", async () => {
+  await repository!.addManualBalance({ accountName: "Calendar", role: "cash", date: "2026-01-31", valueMinor: 10_000, currency: "EUR" });
+  await repository!.addManualBalance({ accountName: "Calendar", role: "cash", date: "2026-03-31", valueMinor: 12_100, currency: "EUR" });
+  const snapshot = await repository!.readLedgerSnapshot();
+  expect(snapshot.months.map((month) => [month.date, month.total])).toEqual([["2026-01-01", 100], ["2026-02-01", 100], ["2026-03-01", 121]]);
+  const points = snapshot.months.map((month) => ({ date: month.date, total: month.total, money: month.total, stocks: 0 }));
+  expect(moneyTrackerTrendStats(points).geometricAverageMonthlyPercent).toBeCloseTo(10);
+});
+
+it.skipIf(!repository || !admin)("preserves signed transfer corrections in monthly net cash flow", async () => {
+  await commitCash(repository!, cash([
+    "Transfer\tCurrent\t2026-06-10 12:00:00\t2026-06-10 12:00:00\tSpend correction\t10\t0\tEUR\tCOMPLETED\t10",
+    "Transfer\tCurrent\t2026-06-11 12:00:00\t2026-06-11 12:00:00\tIncome correction\t-5\t0\tEUR\tCOMPLETED\t5",
+    "Transfer\tCurrent\t2026-06-12 12:00:00\t2026-06-12 12:00:00\tRefund correction\t-2\t0\tEUR\tCOMPLETED\t3",
+  ]), "signed-corrections.tsv");
+  const review = await repository!.readActivityPage({ query: "correction", reviewOnly: true, offset: 0, limit: 10 });
+  for (const row of review.items) await repository!.setTransferDisposition({ transactionId: row.id, disposition: row.description.startsWith("Spend") ? "spend" : row.description.startsWith("Income") ? "income" : "refund" });
+  const month = (await repository!.readLedgerSnapshot()).spending.months.find((item) => item.month === "2026-06");
+  expect(month).toMatchObject({ spendMinor: -1_000, incomeMinor: -500, refundsMinor: -200, netCashFlowMinor: 300 });
 });
 
 function cash(rows: string[]) {

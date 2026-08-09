@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { parse } from "csv-parse/sync";
 
 export const MONEY_IMPORT_MAX_BYTES = 10 * 1024 * 1024;
+export const MONEY_INDEXED_IDENTITY_MAX_BYTES = 512;
 export const MONEY_IMPORT_MAX_ROWS = 100_000;
 export const REVOLUT_CASH_FORMAT = "revolut_cash_statement_v1" as const;
 export const REVOLUT_TRADING_FORMAT = "revolut_trading_statement_v1" as const;
@@ -149,6 +150,7 @@ function cashRow(row: string[], sourceRow: number): MoneyLedgerTransaction {
   const [type, product, started, completed, rawDescription, amount, fee, currency, state, balance] = row;
   if (!type || !CASH_TYPES.has(type)) throw invalid("unsupported_transaction_type", `Row ${sourceRow} contains unsupported transaction type ${JSON.stringify(type ?? "")}.`);
   if (!product?.trim()) throw invalid("invalid_product", `Row ${sourceRow} has no product.`);
+  assertIndexedIdentity(product.trim(), sourceRow, "Product");
   assertCurrency(currency, sourceRow);
   assertEuro(currency, sourceRow);
   if (state !== "COMPLETED" && state !== "REVERTED") throw invalid("unsupported_state", `Row ${sourceRow} contains unsupported state ${JSON.stringify(state ?? "")}.`);
@@ -180,6 +182,7 @@ function parseTrading(dataRows: string[][], digest: string): ParsedMoneyImport {
     const [date, ticker, type, quantity, priceText, totalText, currency, fxRate] = row;
     if (!type || !TRADING_TYPES.has(type)) throw invalid("unsupported_transaction_type", `Row ${sourceRow} contains unsupported transaction type ${JSON.stringify(type ?? "")}.`);
     assertCurrency(currency, sourceRow);
+    if (ticker) assertIndexedIdentity(ticker, sourceRow, "Ticker");
     const occurredAt = parseIsoTimestamp(date, sourceRow, "Date");
     const total = parseCurrencyAmount(totalText, currency!, sourceRow, "Total Amount");
     const price = parseOptionalCurrencyAmount(priceText, currency!, sourceRow, "Price per share");
@@ -218,6 +221,8 @@ function parsePortfolio(dataRows: string[][], digest: string): ParsedMoneyImport
     const [timestamp, date, accountType, sourceCategory, type, assetClass, name, symbol, shares, price, amount, fee, tax, currency, , , fxRate, rawDescription, transactionId, counterpartyName, , , mcc] = row;
     if (!type || !PORTFOLIO_TYPES.has(type)) throw invalid("unsupported_transaction_type", `Row ${sourceRow} contains unsupported transaction type ${JSON.stringify(type ?? "")}.`);
     if (!accountType) throw invalid("invalid_product", `Row ${sourceRow} has no account type.`);
+    assertIndexedIdentity(accountType, sourceRow, "account_type");
+    if (symbol) assertIndexedIdentity(symbol, sourceRow, "symbol");
     assertCurrency(currency, sourceRow);
     assertEuro(currency, sourceRow);
     const occurredAt = parseIsoTimestamp(timestamp, sourceRow, "datetime");
@@ -362,6 +367,7 @@ function parseCurrencyAmount(value: string | undefined, expected: string, source
 function parseOptionalCurrencyAmount(value: string | undefined, expected: string, sourceRow: number, field: string) { if (!value) return undefined; const match = /^([A-Z]{3})\s+(-?\d+(?:\.\d+)?)$/.exec(value); if (!match || match[1] !== expected) throw invalid("invalid_amount", `Row ${sourceRow} has an invalid ${field}.`); return { currency: match[1]!, amount: decimal(match[2]!, sourceRow, field) }; }
 function decimal(value: string, sourceRow: number, field: string) { const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(value); if (!match) throw invalid("invalid_decimal", `Row ${sourceRow} has an invalid ${field}.`); const integralDigits = match[2]!.replace(/^0+(?=\d)/, "").length; const fractionalDigits = match[3]?.length ?? 0; if (integralDigits > 18 || fractionalDigits > 12) throw invalid("decimal_out_of_range", `Row ${sourceRow} has an out-of-range ${field}; at most 18 integral and 12 fractional digits are supported.`); const normalized = value.replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, ""); return normalized === "-0" ? "0" : normalized; }
 function positiveDecimal(value: string, sourceRow: number, field: string) { const normalized = decimal(value, sourceRow, field); if (Number(normalized) <= 0) throw invalid("invalid_decimal", `Row ${sourceRow} requires a positive ${field}.`); return normalized; }
+function assertIndexedIdentity(value: string, sourceRow: number, field: string) { if (Buffer.byteLength(value, "utf8") > MONEY_INDEXED_IDENTITY_MAX_BYTES) throw invalid("indexed_identity_too_long", `Row ${sourceRow} has a ${field} longer than ${MONEY_INDEXED_IDENTITY_MAX_BYTES} UTF-8 bytes.`); }
 function parseIsoTimestamp(value: string | undefined, sourceRow: number, field: string) { if (!value || !/^\d{4}-\d{2}-\d{2}T/.test(value)) throw invalid("invalid_date", `Row ${sourceRow} has an invalid ${field}.`); const date = new Date(value); if (Number.isNaN(date.getTime()) || !validCalendarDate(value.slice(0, 10))) throw invalid("invalid_date", `Row ${sourceRow} has an invalid ${field}.`); return date; }
 function normalizedDate(value: string | undefined, sourceRow: number) { const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value ?? ""); const local = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(value ?? ""); const date = iso ? `${iso[1]}-${iso[2]}-${iso[3]}` : local ? `${local[3]}-${local[2]}-${local[1]}` : undefined; if (!date || !validCalendarDate(date)) throw invalid("invalid_date", `Row ${sourceRow} has an invalid Date.`); return date; }
 function validCalendarDate(value: string) { const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value); if (!match) return false; const [, year, month, day] = match.map(Number); const date = new Date(Date.UTC(year!, month! - 1, day!)); return date.getUTCFullYear() === year && date.getUTCMonth() === month! - 1 && date.getUTCDate() === day; }

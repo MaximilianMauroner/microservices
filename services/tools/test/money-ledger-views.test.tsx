@@ -58,10 +58,11 @@ const activity = [
 
 describe("Option A money ledger views", () => {
   it("renders auditable activity with flow and status boundaries", () => {
-    const html = renderToStaticMarkup(<MoneyActivityView activity={activity} transactionCount={8_030} transferReview={{ linkedPairs: 12, unlinkedCount: 4, unresolvedPositiveCount: 1, unresolvedNegativeCount: 1 }} />);
+    const html = renderToStaticMarkup(<MoneyActivityView activity={activity} transactionCount={8_030} revertedCount={17} transferReview={{ linkedPairs: 12, unlinkedCount: 4, unresolvedPositiveCount: 1, unresolvedNegativeCount: 1 }} />);
 
     expect(html).toContain("Transaction activity");
     expect(html).toContain("8,030");
+    expect(html).toContain("17");
     expect(html).toContain("Coffee");
     expect(html).toContain("Revolut Current");
     expect(html).toContain("reverted");
@@ -75,8 +76,8 @@ describe("Option A money ledger views", () => {
 
   it("distinguishes an empty search result from an empty ledger", () => {
     const summary = { linkedPairs: 0, unlinkedCount: 0, unresolvedPositiveCount: 0, unresolvedNegativeCount: 0 };
-    const noMatches = renderToStaticMarkup(<MoneyActivityView activity={[]} transactionCount={10} transferReview={summary} />);
-    const noImports = renderToStaticMarkup(<MoneyActivityView activity={[]} transactionCount={0} transferReview={summary} />);
+    const noMatches = renderToStaticMarkup(<MoneyActivityView activity={[]} transactionCount={10} revertedCount={0} transferReview={summary} />);
+    const noImports = renderToStaticMarkup(<MoneyActivityView activity={[]} transactionCount={0} revertedCount={0} transferReview={summary} />);
     expect(noMatches).toContain("No matching activity");
     expect(noMatches).not.toContain("No transactions imported");
     expect(noImports).toContain("No transactions imported");

@@ -123,6 +123,14 @@ describe("investment export parsers", () => {
     expect(() => parseTrading("2026-08-09T03:08:51.000Z\tVWCE\tBUY - MARKET\t1\tUSD 1\tUSD 1\tUSD\t0")).toThrow("invalid FX Rate");
   });
 
+  it("rejects oversized UTF-8 indexed identities during preview", () => {
+    const oversized = "é".repeat(257);
+    expect(() => parseMoneyImport(Buffer.from(`Type\tProduct\tStarted Date\tCompleted Date\tDescription\tAmount\tFee\tCurrency\tState\tBalance\r\nCard Payment\t${oversized}\t2026-08-01 12:00:00\t2026-08-01 12:00:00\tTest\t-1\t0\tEUR\tCOMPLETED\t1\r\n`))).toThrow("512 UTF-8 bytes");
+    expect(() => parseMoneyImport(Buffer.from(`Date\tTicker\tType\tQuantity\tPrice per share\tTotal Amount\tCurrency\tFX Rate\r\n2026-08-01T12:00:00.000Z\t${oversized}\tBUY - MARKET\t1\tEUR 1\tEUR -1\tEUR\t1\r\n`))).toThrow("512 UTF-8 bytes");
+    const portfolioHeaders = "datetime,date,account_type,category,type,asset_class,name,symbol,shares,price,amount,fee,tax,currency,original_amount,original_currency,fx_rate,description,transaction_id,counterparty_name,counterparty_iban,payment_reference,mcc_code";
+    expect(() => parseMoneyImport(Buffer.from(`${portfolioHeaders}\r\n2026-08-01T12:00:00.000Z,2026-08-01,${oversized},CASH,CARD_TRANSACTION,,,,,,-3.500000,,,EUR,,,,Payment,stable-id,Merchant,,reference,5812\r\n`))).toThrow("512 UTF-8 bytes");
+  });
+
   it("drops private payment fields and sanitizes account identifiers from portfolio CSV descriptions", () => {
     const headers = "datetime,date,account_type,category,type,asset_class,name,symbol,shares,price,amount,fee,tax,currency,original_amount,original_currency,fx_rate,description,transaction_id,counterparty_name,counterparty_iban,payment_reference,mcc_code";
     const row = "2026-08-09T03:08:51.123Z,2026-08-09,DEFAULT,CASH,CARD_TRANSACTION,,,,,,-3.500000,,,EUR,,,,Payment to DE00AAAAAAAAAAAAAAAAAA,stable-id,Merchant,DE00AAAAAAAAAAAAAAAAAA,private reference,5812";
@@ -337,7 +345,7 @@ class MemoryMoneyRepository implements MoneyRepository {
 
   async readLedgerSnapshot(): Promise<MoneyLedgerSnapshot> {
     return {
-      imports: [], activity: [], transactionCount: 0, transferReview: { linkedPairs: 0, unlinkedCount: 0, unresolvedPositiveCount: 0, unresolvedNegativeCount: 0 }, accounts: [], accountLabels: {}, accountRoles: {}, months: [],
+      imports: [], activity: [], transactionCount: 0, revertedCount: 0, transferReview: { linkedPairs: 0, unlinkedCount: 0, unresolvedPositiveCount: 0, unresolvedNegativeCount: 0 }, accounts: [], accountLabels: {}, accountRoles: {}, months: [],
       spending: { months: [], categories: [], uncategorizedCount: 0 },
       investments: { positions: [], totals: { eventCount: 0, boughtMinor: 0, soldMinor: 0, incomeMinor: 0, feesMinor: 0, taxesMinor: 0 } },
       planning: { ready: true, unresolvedTransferCount: 0, medianMonthlyNetMinor: 0, observedMonthCount: 0, projections: [{ months: 6, changeMinor: 0 }, { months: 12, changeMinor: 0 }, { months: 24, changeMinor: 0 }] }

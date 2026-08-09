@@ -44,7 +44,7 @@ export function MoneyTrackerPage(props: MoneyTrackerPageData & { view: MoneyTrac
     </header>
     <MoneyNav view={props.view} />
     {props.view === "overview" ? <Overview {...props} months={months} latest={latest} previous={previous} monthlyChange={monthlyChange} trends={trends} /> : null}
-    {props.view === "activity" ? <MoneyActivityView activity={props.activity} transactionCount={props.transactionCount} transferReview={props.transferReview} /> : null}
+    {props.view === "activity" ? <MoneyActivityView activity={props.activity} transactionCount={props.transactionCount} revertedCount={props.revertedCount} transferReview={props.transferReview} /> : null}
     {props.view === "spending" ? <MoneySpendingView spending={props.spending} /> : null}
     {props.view === "investments" ? <MoneyInvestmentsView investments={props.investments} /> : null}
     {props.view === "balances" ? <><MoneyBalanceEntry /><Accounts accounts={props.accounts} accountLabels={props.accountLabels} accountRoles={props.accountRoles} months={months} latest={latest} previous={previous} /><History accounts={props.accounts} accountLabels={props.accountLabels} months={months} /></> : null}
