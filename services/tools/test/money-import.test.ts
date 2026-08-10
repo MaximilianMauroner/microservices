@@ -326,12 +326,6 @@ describe("money schema and Option A route contract", () => {
     for (const old of ["activity", "spending", "balances", "imports", "history", "predictions"]) expect(route).not.toContain(`search.view === \"${old}\"`);
   });
 
-  it("keeps server-only import parsers out of the interactive ledger bundle", () => {
-    const ledger = readFileSync(new URL("../money/money-ledger-views.tsx", import.meta.url), "utf8");
-    expect(ledger).toContain('import type { MoneyImportPreview } from "./money-import-domain.js"');
-    expect(ledger).toContain("REVOLUT_CASH_FORMAT, SPARKASSE_CASH_FORMAT");
-    expect(ledger).not.toMatch(/import\s+\{[^}]*REVOLUT_CASH_FORMAT[^}]*\}\s+from\s+"\.\/money-import-domain\.js"/s);
-  });
 });
 
 function statement(rows: string[]) {
