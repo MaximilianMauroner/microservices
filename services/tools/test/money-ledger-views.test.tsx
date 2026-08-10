@@ -128,6 +128,7 @@ describe("Option A money ledger views", () => {
     expect(html).toContain("Sparkasse");
     expect(html).toContain("Needs prices");
     expect(html).toContain("Raw file bytes were discarded after normalization");
+    expect(html).toContain('aria-label="Delete cash.tsv"');
   });
 
   it("renders disambiguated balance labels instead of stable account ids", () => {

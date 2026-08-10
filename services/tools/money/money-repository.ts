@@ -24,6 +24,7 @@ export type MoneyImportReceipt = Readonly<{
   insertedCount: number; duplicateCount: number; committedAt: string; replay: boolean;
 }>;
 export type MoneyImportSummary = Omit<MoneyImportReceipt, "replay"> & Readonly<{ bytes: number; actor: string }>;
+export type MoneyImportDeletion = Readonly<{ transactionCount: number; investmentEventCount: number; balanceSnapshotCount: number }>;
 
 export type MoneyActivityItem = Readonly<{
   id: string; occurredAt: string; accountName: string; description: string; amountMinor: number; feeMinor: number;
@@ -63,6 +64,7 @@ export type MoneyActivityPage = Readonly<{ items: readonly MoneyActivityItem[]; 
 export interface MoneyRepository {
   existingSourceKeys(sourceKeys: readonly string[]): Promise<ReadonlySet<string>>;
   commitImport(input: MoneyImportCommitInput): Promise<MoneyImportReceipt>;
+  deleteImport(importId: string): Promise<MoneyImportDeletion | undefined>;
   readLedgerSnapshot(): Promise<MoneyLedgerSnapshot>;
   readActivityPage(input: Readonly<{ query: string; flow?: MoneyLedgerTransaction["flowKind"]; reviewOnly?: boolean; offset: number; limit: number }>): Promise<MoneyActivityPage>;
   setTransactionCategory(input: Readonly<{ transactionId: string; category: MoneyCategory; actor: string; createRule: boolean }>): Promise<Readonly<{ affectedCount: number }>>;
@@ -156,6 +158,36 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
           update tools.money_imports set source_row_count = ${input.rowCount}, inserted_row_count = ${insertedCount}, duplicate_row_count = ${duplicateCount}
           where id = ${importId} returning id, digest, format, filename, bytes, source_row_count, inserted_row_count, duplicate_row_count, committed_at, created_by`;
         return receipt(saved!, false);
+      });
+    },
+
+    deleteImport(importId) {
+      return sql.begin(async (tx) => {
+        const [moneyImport] = await tx<{ id: string }[]>`select id from tools.money_imports where id = ${importId} for update`;
+        if (!moneyImport) return undefined;
+
+        const linkedGroups = await tx<{ transfer_group_id: string }[]>`select distinct transfer_group_id
+          from tools.money_transactions where import_id = ${importId} and transfer_group_id is not null`;
+        const groupIds = linkedGroups.map((row) => row.transfer_group_id);
+        if (groupIds.length) {
+          await tx`update tools.money_transactions set transfer_group_id = null, transfer_disposition = null
+            where transfer_group_id in ${tx(groupIds)}`;
+        }
+
+        const deletedEvents = await tx<{ id: string }[]>`delete from tools.money_investment_events
+          where transaction_id in (select id from tools.money_transactions where import_id = ${importId}) returning id`;
+        const deletedSnapshots = await tx<{ account_id: string }[]>`delete from tools.money_balance_snapshots
+          where import_id = ${importId} returning account_id`;
+        const deletedTransactions = await tx<{ id: string }[]>`delete from tools.money_transactions
+          where import_id = ${importId} returning id`;
+        await tx`delete from tools.money_imports where id = ${importId}`;
+        await linkUnambiguousTransfers(tx);
+
+        return {
+          transactionCount: deletedTransactions.length,
+          investmentEventCount: deletedEvents.length,
+          balanceSnapshotCount: deletedSnapshots.length
+        };
       });
     },
 

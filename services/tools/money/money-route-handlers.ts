@@ -34,6 +34,17 @@ export async function commitMoneyImport(input: PlatformRouteInput) {
   }
 }
 
+export async function deleteMoneyImport(input: PlatformRouteInput) {
+  const rejected = validateMutationRequest(input);
+  if (rejected) return rejected;
+  try {
+    const deleted = await input.context.runtime.moneyImports.deleteImport(input.params.importId ?? "");
+    return json({ ok: true, ...deleted });
+  } catch (error) {
+    return importError(error);
+  }
+}
+
 export async function updateMoneyCategory(input: PlatformRouteInput) {
   const rejected = validateMutationRequest(input);
   if (rejected) return rejected;
@@ -211,7 +222,8 @@ async function fileBytes(file: File) {
 
 function importError(error: unknown) {
   if (error instanceof MoneyImportValidationError) {
-    const status = error.code === "file_too_large" || error.code === "request_too_large" ? 413 : 400;
+    const status = error.code === "file_too_large" || error.code === "request_too_large" ? 413
+      : error.code === "import_not_found" ? 404 : 400;
     return json({ error: error.code, message: error.message }, status);
   }
   console.error(JSON.stringify({

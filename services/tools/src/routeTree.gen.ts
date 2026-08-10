@@ -44,6 +44,7 @@ import { Route as ApiPublicCatalogRouteImport } from './routes/api/public/catalo
 import { Route as ApiReviewSplatRouteImport } from './routes/api/review/$'
 import { Route as ApiUploadsSplatRouteImport } from './routes/api/uploads/$'
 import { Route as FilesIdSplatRouteImport } from './routes/files/$id/$'
+import { Route as ApiMoneyImportsImportIdRouteImport } from './routes/api/money/imports/$importId'
 import { Route as ApiMoneyImportsPreviewRouteImport } from './routes/api/money/imports/preview'
 import { Route as ApiStatusHeartbeatsMonitorIdRouteImport } from './routes/api/status/heartbeats/$monitorId'
 
@@ -222,6 +223,11 @@ const FilesIdSplatRoute = FilesIdSplatRouteImport.update({
   path: '/$',
   getParentRoute: () => FilesIdRoute,
 } as any)
+const ApiMoneyImportsImportIdRoute = ApiMoneyImportsImportIdRouteImport.update({
+  id: '/$importId',
+  path: '/$importId',
+  getParentRoute: () => ApiMoneyImportsRoute,
+} as any)
 const ApiMoneyImportsPreviewRoute = ApiMoneyImportsPreviewRouteImport.update({
   id: '/preview',
   path: '/preview',
@@ -270,6 +276,7 @@ export interface FileRoutesByFullPath {
   '/api/review/$': typeof ApiReviewSplatRoute
   '/api/uploads/$': typeof ApiUploadsSplatRoute
   '/files/$id/$': typeof FilesIdSplatRoute
+  '/api/money/imports/$importId': typeof ApiMoneyImportsImportIdRoute
   '/api/money/imports/preview': typeof ApiMoneyImportsPreviewRoute
   '/api/status/heartbeats/$monitorId': typeof ApiStatusHeartbeatsMonitorIdRoute
 }
@@ -308,6 +315,7 @@ export interface FileRoutesByTo {
   '/api/review/$': typeof ApiReviewSplatRoute
   '/api/uploads/$': typeof ApiUploadsSplatRoute
   '/files/$id/$': typeof FilesIdSplatRoute
+  '/api/money/imports/$importId': typeof ApiMoneyImportsImportIdRoute
   '/api/money/imports/preview': typeof ApiMoneyImportsPreviewRoute
   '/api/status/heartbeats/$monitorId': typeof ApiStatusHeartbeatsMonitorIdRoute
 }
@@ -348,6 +356,7 @@ export interface FileRoutesById {
   '/api/review/$': typeof ApiReviewSplatRoute
   '/api/uploads/$': typeof ApiUploadsSplatRoute
   '/files/$id/$': typeof FilesIdSplatRoute
+  '/api/money/imports/$importId': typeof ApiMoneyImportsImportIdRoute
   '/api/money/imports/preview': typeof ApiMoneyImportsPreviewRoute
   '/api/status/heartbeats/$monitorId': typeof ApiStatusHeartbeatsMonitorIdRoute
 }
@@ -389,6 +398,7 @@ export interface FileRouteTypes {
     | '/api/review/$'
     | '/api/uploads/$'
     | '/files/$id/$'
+    | '/api/money/imports/$importId'
     | '/api/money/imports/preview'
     | '/api/status/heartbeats/$monitorId'
   fileRoutesByTo: FileRoutesByTo
@@ -427,6 +437,7 @@ export interface FileRouteTypes {
     | '/api/review/$'
     | '/api/uploads/$'
     | '/files/$id/$'
+    | '/api/money/imports/$importId'
     | '/api/money/imports/preview'
     | '/api/status/heartbeats/$monitorId'
   id:
@@ -466,6 +477,7 @@ export interface FileRouteTypes {
     | '/api/review/$'
     | '/api/uploads/$'
     | '/files/$id/$'
+    | '/api/money/imports/$importId'
     | '/api/money/imports/preview'
     | '/api/status/heartbeats/$monitorId'
   fileRoutesById: FileRoutesById
@@ -748,6 +760,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof FilesIdSplatRouteImport
       parentRoute: typeof FilesIdRoute
     }
+    '/api/money/imports/$importId': {
+      id: '/api/money/imports/$importId'
+      path: '/$importId'
+      fullPath: '/api/money/imports/$importId'
+      preLoaderRoute: typeof ApiMoneyImportsImportIdRouteImport
+      parentRoute: typeof ApiMoneyImportsRoute
+    }
     '/api/money/imports/preview': {
       id: '/api/money/imports/preview'
       path: '/preview'
@@ -849,10 +868,12 @@ const FilesIdRouteWithChildren =
   FilesIdRoute._addFileChildren(FilesIdRouteChildren)
 
 interface ApiMoneyImportsRouteChildren {
+  ApiMoneyImportsImportIdRoute: typeof ApiMoneyImportsImportIdRoute
   ApiMoneyImportsPreviewRoute: typeof ApiMoneyImportsPreviewRoute
 }
 
 const ApiMoneyImportsRouteChildren: ApiMoneyImportsRouteChildren = {
+  ApiMoneyImportsImportIdRoute: ApiMoneyImportsImportIdRoute,
   ApiMoneyImportsPreviewRoute: ApiMoneyImportsPreviewRoute,
 }
 
