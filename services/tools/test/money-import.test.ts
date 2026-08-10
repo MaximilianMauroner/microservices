@@ -121,6 +121,7 @@ describe("investment export parsers", () => {
     expect(() => parseTrading("2026-08-09T03:08:51.000Z\tVWCE\tBUY - MARKET\t0.1234567890123\tEUR 1\tEUR 1\tEUR\t1")).toThrow("at most 18 integral");
     expect(() => parseTrading("2026-08-09T03:08:51.000Z\tVWCE\tBUY - MARKET\t1\tUSD 1\tEUR 1\tEUR\t1")).toThrow("invalid Price per share");
     expect(() => parseTrading("2026-08-09T03:08:51.000Z\tVWCE\tBUY - MARKET\t1\tUSD 1\tUSD 1\tUSD\t0")).toThrow("invalid FX Rate");
+    expect(() => parseTrading("2026-08-09T03:08:51.000Z\tVWCE\tSELL - MARKET\t-1\tEUR 1\tEUR 1\tEUR\t1")).toThrow("positive Quantity");
   });
 
   it("rejects oversized UTF-8 indexed identities during preview", () => {
@@ -129,6 +130,14 @@ describe("investment export parsers", () => {
     expect(() => parseMoneyImport(Buffer.from(`Date\tTicker\tType\tQuantity\tPrice per share\tTotal Amount\tCurrency\tFX Rate\r\n2026-08-01T12:00:00.000Z\t${oversized}\tBUY - MARKET\t1\tEUR 1\tEUR -1\tEUR\t1\r\n`))).toThrow("512 UTF-8 bytes");
     const portfolioHeaders = "datetime,date,account_type,category,type,asset_class,name,symbol,shares,price,amount,fee,tax,currency,original_amount,original_currency,fx_rate,description,transaction_id,counterparty_name,counterparty_iban,payment_reference,mcc_code";
     expect(() => parseMoneyImport(Buffer.from(`${portfolioHeaders}\r\n2026-08-01T12:00:00.000Z,2026-08-01,${oversized},CASH,CARD_TRANSACTION,,,,,,-3.500000,,,EUR,,,,Payment,stable-id,Merchant,,reference,5812\r\n`))).toThrow("512 UTF-8 bytes");
+  });
+
+  it("accepts portfolio sales as realized-gain events", () => {
+    const headers = "datetime,date,account_type,category,type,asset_class,name,symbol,shares,price,amount,fee,tax,currency,original_amount,original_currency,fx_rate,description,transaction_id,counterparty_name,counterparty_iban,payment_reference,mcc_code";
+    const row = "2026-08-09T03:08:51.123Z,2026-08-09,DEFAULT,TRADING,SELL,ETF,Global ETF,VWCE,0.5,120,60,-1,,EUR,,,,Sell,sale-1,,,,";
+    const parsed = parseMoneyImport(Buffer.from(`${headers}\r\n${row}\r\n`));
+    expect(parsed.transactions[0]).toMatchObject({ flowKind: "trade", baseAmountMinor: 6_000, baseFeeMinor: 100 });
+    expect(parsed.investmentEvents[0]).toMatchObject({ eventKind: "sell", symbol: "VWCE", quantity: "0.5" });
   });
 
   it("drops private payment fields and sanitizes account identifiers from portfolio CSV descriptions", () => {
@@ -294,8 +303,8 @@ describe("money schema and Option A route contract", () => {
 
   it("uses the selected workspace views without legacy search values", () => {
     const route = readFileSync(new URL("../src/routes/money.tsx", import.meta.url), "utf8");
-    for (const view of ["activity", "spending", "investments", "balances", "imports"]) expect(route).toContain(`\"${view}\"`);
-    for (const old of ["accounts", "history", "predictions"]) expect(route).not.toContain(`search.view === \"${old}\"`);
+    for (const view of ["cash-flow", "transactions", "investments", "accounts", "insights", "data"]) expect(route).toContain(`\"${view}\"`);
+    for (const old of ["activity", "spending", "balances", "imports", "history", "predictions"]) expect(route).not.toContain(`search.view === \"${old}\"`);
   });
 });
 
@@ -347,8 +356,9 @@ class MemoryMoneyRepository implements MoneyRepository {
     return {
       imports: [], activity: [], transactionCount: 0, revertedCount: 0, transferReview: { linkedPairs: 0, unlinkedCount: 0, unresolvedPositiveCount: 0, unresolvedNegativeCount: 0 }, accounts: [], accountLabels: {}, accountRoles: {}, months: [],
       spending: { months: [], categories: [], uncategorizedCount: 0 },
-      investments: { positions: [], totals: { eventCount: 0, boughtMinor: 0, soldMinor: 0, incomeMinor: 0, feesMinor: 0, taxesMinor: 0 } },
-      planning: { ready: true, unresolvedTransferCount: 0, medianMonthlyNetMinor: 0, observedMonthCount: 0, projections: [{ months: 6, changeMinor: 0 }, { months: 12, changeMinor: 0 }, { months: 24, changeMinor: 0 }] }
+      investments: { positions: [], totals: { eventCount: 0, boughtMinor: 0, soldMinor: 0, incomeMinor: 0, feesMinor: 0, taxesMinor: 0 }, realized: { positions: [], totals: { saleCount: 0, proceedsMinor: 0, costBasisMinor: 0, gainMinor: 0, unmatchedSaleCount: 0 } } },
+      planning: { ready: true, unresolvedTransferCount: 0, medianMonthlyNetMinor: 0, observedMonthCount: 6, projections: [{ months: 6, changeMinor: 0 }, { months: 12, changeMinor: 0 }] },
+      accountLastObserved: {}
     };
   }
 
