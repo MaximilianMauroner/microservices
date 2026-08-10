@@ -79,12 +79,12 @@ export function ReviewPage({ initial, search }: { initial: ReviewPageData; searc
   return (
     <>
       <AppShell product="Field Guide" showSignOut />
-      <main id="main" className="mx-auto w-[min(1180px,calc(100%_-_2rem))] pb-20 pt-10 sm:pt-16">
-        <header className="grid gap-8 border-b pb-9 lg:grid-cols-[1fr_auto] lg:items-end" aria-labelledby="review-title">
+      <main id="main" className="workspace-page">
+        <header className="workspace-header" aria-labelledby="review-title">
           <div>
-            <p className="font-mono text-xs uppercase tracking-[0.18em] text-primary">Private workspace</p>
-            <h1 id="review-title" className="mt-3 text-4xl font-semibold tracking-[-0.045em] sm:text-5xl">{reviewTitle(search)}</h1>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">{search.view === "decisions" ? "Review agent decisions before they become field guide candidates." : search.view === "queue" ? "Approve, reject, or defer pending field guide candidates." : "Inspect the immutable decision history."}</p>
+            <p className="workspace-header__eyebrow">Private workspace</p>
+            <h1 id="review-title">{reviewTitle(search)}</h1>
+            <p className="workspace-header__description">{search.view === "decisions" ? "Review agent decisions before they become field guide candidates." : search.view === "queue" ? "Approve, reject, or defer pending field guide candidates." : "Inspect the immutable decision history."}</p>
           </div>
           <div className="flex flex-col items-start gap-3 lg:items-end">
             <ReviewNav search={search} />

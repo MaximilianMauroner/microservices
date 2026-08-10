@@ -30,7 +30,7 @@ export const Route = createFileRoute("/sign-in")({
     meta: [
       { title: "Sign in · Mauroner Tools" },
       { name: "robots", content: "noindex, nofollow" },
-      { name: "theme-color", content: "#1b1e28" }
+      { name: "theme-color", content: "#000000" }
     ]
   }),
   component: SignInRoute
@@ -78,10 +78,11 @@ export function SignInPanel({
   onSignIn?: () => void;
 }) {
   return (
-    <Card className="w-full max-w-[25rem] gap-0 shadow-2xl shadow-black/25">
+    <Card className="w-full max-w-[25rem] gap-0 rounded-[2rem] shadow-2xl shadow-black/25">
       <CardHeader className="border-b px-6 py-5">
-        <div className="mb-4 grid size-9 place-items-center rounded-md bg-primary text-sm font-black text-primary-foreground" aria-hidden="true">M</div>
-        <CardTitle className="text-xl tracking-tight">
+        <div className="mb-4 grid size-10 place-items-center rounded-full bg-primary text-sm font-black text-primary-foreground" aria-hidden="true">M</div>
+        <p className="workspace-header__eyebrow">Private workspace</p>
+        <CardTitle className="text-2xl tracking-[-0.035em]">
           {state === "unauthorized" ? "Account not authorized" : state === "expired" ? "Session expired" : "Sign in to continue"}
         </CardTitle>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
