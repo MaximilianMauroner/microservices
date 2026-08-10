@@ -43,7 +43,7 @@ export function MoneyTrackerPage(props: MoneyTrackerPageData & { view: MoneyTrac
   return <><AppShell product="Money" showSignOut /><main id="main" className="app-page money-page">
     <header className="app-heading mb-0">
       <div><p className="eyebrow">Money</p><h1>{viewTitle(props.view)}</h1><p>{viewDescription(props.view)}</p></div>
-      <div className="app-heading__actions">{showPeriod ? <PeriodSelector period={period} onPeriod={setPeriod} /> : null}<Badge variant="outline">Private</Badge><Badge variant="outline">{props.actor}</Badge></div>
+      {showPeriod ? <div className="app-heading__actions"><PeriodSelector period={period} onPeriod={setPeriod} /></div> : null}
     </header>
     <div className="money-layout">
       <MoneyNav view={props.view} />
@@ -65,7 +65,6 @@ export function MoneyTrackerPendingPage({ view }: { view: MoneyTrackerView }) {
   return <><AppShell product="Money" showSignOut /><main id="main" className="app-page money-page" aria-busy="true">
     <header className="app-heading mb-0">
       <div><p className="eyebrow">Money</p><h1>{viewTitle(view)}</h1><p>Loading private financial data.</p></div>
-      <Badge variant="outline">Private</Badge>
     </header>
     <div className="money-layout"><MoneyNav view={view} /><div className="money-content space-y-4">
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Loading summary">
