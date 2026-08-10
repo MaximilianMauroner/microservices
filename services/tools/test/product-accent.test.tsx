@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { AppShell } from "../src/components/app-shell.js";
+import { Card } from "../src/components/ui/card.js";
 import { productAccents } from "../src/product-accent.js";
 
 describe("product accent contract", () => {
@@ -9,5 +10,10 @@ describe("product accent contract", () => {
       const html = renderToStaticMarkup(<AppShell product={accent} accent={accent} showSignOut={false} />);
       expect(html).toContain('data-suite-accent="' + accent + '"');
     }
+  });
+
+  it("uses the shared surface-border token for cards", () => {
+    const html = renderToStaticMarkup(<Card>Content</Card>);
+    expect(html).toContain("ring-[color:var(--surface-border)]");
   });
 });

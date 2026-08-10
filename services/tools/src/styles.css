@@ -23,6 +23,7 @@
   --destructive: #ff7474;
   --destructive-foreground: #000000;
   --border: #252525;
+  --surface-border: var(--border);
   --input: #383838;
   --ring: #74a7ff;
   --treemap-stocks: #171126;
@@ -98,6 +99,10 @@ html:has([data-suite-accent="blue"]) {
   --product-accent-border: #346aa8;
 }
 
+html:has([data-suite-accent]) {
+  --surface-border: color-mix(in oklab, var(--product-accent) 18%, var(--border));
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -162,23 +167,24 @@ html:has([data-suite-accent="blue"]) {
 }
 
 @layer components {
+  [data-suite-shell][data-suite-accent] { border-color: var(--surface-border); }
   .allocation-tile--stocks { border-color: var(--treemap-stocks-border); background: var(--treemap-stocks); }
   .allocation-tile--cash { border-color: var(--treemap-cash-border); background: var(--treemap-cash); }
   .workspace-page, .app-page, .status-wrap { width: min(1180px, calc(100% - 2rem)); margin-inline: auto; }
   .workspace-page { padding-block: 2.5rem 5rem; }
   .workspace-page--wide { width: min(1380px, calc(100% - 2rem)); }
   .workspace-page--narrow { width: min(900px, calc(100% - 2rem)); }
-  .workspace-header { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2rem; align-items: end; padding-bottom: 2.25rem; margin-bottom: 2rem; border-bottom: 1px solid var(--border); }
+  .workspace-header { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2rem; align-items: end; padding-bottom: 2.25rem; margin-bottom: 2rem; border-bottom: 1px solid var(--surface-border); }
   .workspace-header__eyebrow { color: var(--primary); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .7rem; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; }
   .workspace-header h1 { margin-top: .75rem; font-size: clamp(2.25rem, 5vw, 3.5rem); line-height: 1; font-weight: 650; letter-spacing: -.05em; }
   .workspace-header__description { max-width: 42rem; margin-top: .75rem; color: var(--muted-foreground); font-size: .875rem; line-height: 1.6; }
   .workspace-header__actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: end; gap: .5rem; }
   .app-page { padding-block: 2.5rem; }
   .money-page { width: min(1440px, calc(100% - 2rem)); padding-block: 1.5rem 3rem; }
-  .money-page .app-heading { padding-bottom: 2rem; border-bottom-color: var(--border); }
+  .money-page .app-heading { padding-bottom: 2rem; }
   .money-layout { display: grid; grid-template-columns: 10.5rem minmax(0, 1fr); gap: 1rem; align-items: start; margin-top: 1rem; }
   .money-content { min-width: 0; }
-  .money-nav { position: sticky; top: 4.5rem; display: grid; gap: .75rem; padding: .55rem .4rem; border: 1px solid var(--border); border-radius: var(--radius); background: #050505; }
+  .money-nav { position: sticky; top: 4.5rem; display: grid; gap: .75rem; padding: .55rem .4rem; border: 1px solid var(--surface-border); border-radius: var(--radius); background: #050505; }
   .money-nav__group { display: grid; gap: .2rem; }
   .money-nav__label { padding: .2rem .65rem; color: #737373; font-size: .62rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
   .money-nav__item { display: flex; min-height: 2.25rem; align-items: center; border-radius: calc(var(--radius) - 2px); padding: .45rem .65rem; color: var(--muted-foreground); font-size: .8rem; font-weight: 600; transition: background-color 120ms ease, color 120ms ease; }
@@ -200,7 +206,7 @@ html:has([data-suite-accent="blue"]) {
   .money-chart-data summary { cursor: pointer; padding: .7rem 0; font-weight: 600; }
   .money-chart-data th, .money-chart-data td { padding: .45rem .25rem; border-top: 1px solid var(--border); }
   .money-chart-fallback { display: grid; height: 16rem; place-items: center; border: 1px dashed var(--border); color: var(--muted-foreground); font-size: .8rem; }
-  .app-heading { display: flex; align-items: end; justify-content: space-between; gap: 1rem; padding-bottom: 1.5rem; margin-bottom: 1.5rem; border-bottom: 1px solid var(--border); }
+  .app-heading { display: flex; align-items: end; justify-content: space-between; gap: 1rem; padding-bottom: 1.5rem; margin-bottom: 1.5rem; border-bottom: 1px solid var(--surface-border); }
   .app-heading h1 { margin-top: .65rem; font-size: clamp(2.25rem, 5vw, 3.5rem); line-height: 1; font-weight: 650; letter-spacing: -.05em; }
   .app-heading p:last-child { margin-top: .5rem; color: var(--muted-foreground); font-size: .875rem; }
   .app-heading__actions, .review-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
