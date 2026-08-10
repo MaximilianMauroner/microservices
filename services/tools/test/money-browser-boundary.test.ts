@@ -28,10 +28,25 @@ describe("money browser boundary", () => {
       }
     }
   });
+
+  it("recognizes every runtime module edge used by the client graph", () => {
+    expect(runtimeImports(`
+      import type { Preview } from "./types.js";
+      export type { Result } from "./results.js";
+      import "./side-effect.js";
+      import { value } from "./static.js";
+      export { shared } from "./barrel.js";
+      void import("./dynamic.js");
+    `)).toEqual(["./side-effect.js", "./static.js", "./barrel.js", "./dynamic.js"]);
+  });
 });
 
 function runtimeImports(source: string) {
-  return [...source.matchAll(/import\s+(?!type\b)[\s\S]*?\s+from\s+["']([^"']+)["']/g)].map((match) => match[1]!);
+  return [
+    ...source.matchAll(/\bimport\s+(?!type\b)(?:[^"'`;]*?\bfrom\s*)?["']([^"']+)["']/g),
+    ...source.matchAll(/\bexport\s+(?!type\b)[^"'`;]*?\bfrom\s*["']([^"']+)["']/g),
+    ...source.matchAll(/\bimport\s*\(\s*["']([^"']+)["']/g)
+  ].sort((left, right) => left.index - right.index).map((match) => match[1]!);
 }
 
 function resolveSourceModule(importer: string, specifier: string) {
