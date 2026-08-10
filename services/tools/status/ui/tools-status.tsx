@@ -42,6 +42,7 @@ function ToolsStatusView({ snapshot, publicOrigin, view, actor }: { snapshot: Pu
       <div className={`status-page status-page--${overall}`}>
         <main id="main" className="status-wrap status-main">
           <section className="status-hero" aria-labelledby="status-title">
+            <p className="eyebrow">System status</p>
             <StatusMark state={overall} large />
             <h1 id="status-title">{summary.title}</h1>
             <p>{summary.detail}</p>

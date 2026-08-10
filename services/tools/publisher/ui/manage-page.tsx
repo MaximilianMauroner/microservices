@@ -187,14 +187,14 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
   return (
     <>
       <AppShell product="Publisher" showSignOut />
-      <main id="main" className="mx-auto w-[min(1380px,calc(100%_-_2rem))] py-8 sm:py-10">
-        <section className="mb-5 flex flex-col gap-4 border-b pb-5 sm:flex-row sm:items-end sm:justify-between" aria-labelledby="manage-title">
+      <main id="main" className="workspace-page workspace-page--wide">
+        <section className="workspace-header" aria-labelledby="manage-title">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Artifact lifecycle</p>
-            <h1 id="manage-title" className="mt-2 text-3xl font-semibold tracking-tight">Artifacts</h1>
-            <p className="mt-2 text-sm text-muted-foreground">Maintain every plan and file shared through Publish.</p>
+            <p className="workspace-header__eyebrow">Artifact lifecycle</p>
+            <h1 id="manage-title">Artifacts.</h1>
+            <p className="workspace-header__description">Maintain every plan and file shared through Publish.</p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="workspace-header__actions">
             <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void refresh({ announce: true })}>
               <RefreshCw /> Refresh
             </Button>

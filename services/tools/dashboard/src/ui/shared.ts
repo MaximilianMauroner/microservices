@@ -32,10 +32,10 @@ export function pageShell(input: {
     <meta property="og:description" content="${escapeHtml(input.description)}">
     <meta property="og:url" content="${escapeHtml(input.canonicalUrl)}">
     <meta property="og:type" content="website">` : ""}
-    <meta name="theme-color" content="${escapeHtml(input.themeColor ?? "#1b1e28")}">
+    <meta name="theme-color" content="${escapeHtml(input.themeColor ?? "#000000")}">
     <title>${escapeHtml(input.title)}</title>
     <link rel="icon" href="/favicon.svg?v=90e2a71" type="image/svg+xml">
-    <link rel="stylesheet" href="/assets/tools.css?v=be38fb8a48fb">
+    <link rel="stylesheet" href="/assets/tools.css?v=e711d2ab9dec">
     <script src="/assets/local-time.js?v=2b6fd61" defer></script>${script}
   </head>
   <body>

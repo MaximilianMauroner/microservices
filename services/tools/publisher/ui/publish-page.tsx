@@ -66,16 +66,16 @@ export function PublishPage() {
   return (
     <>
       <AppShell product="Publisher" showSignOut />
-      <main id="main" className="mx-auto w-[min(900px,calc(100%_-_2rem))] py-8 sm:py-10">
-        <section className="mb-6 flex flex-col gap-4 border-b pb-6 sm:flex-row sm:items-end sm:justify-between" aria-labelledby="publish-title">
+      <main id="main" className="workspace-page workspace-page--narrow">
+        <section className="workspace-header" aria-labelledby="publish-title">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Artifact publisher</p>
-            <h1 id="publish-title" className="mt-2 text-3xl font-semibold tracking-tight">Share a new file.</h1>
-            <p className="mt-2 text-sm text-muted-foreground">Upload once, then maintain it from the artifact library.</p>
+            <p className="workspace-header__eyebrow">Artifact publisher</p>
+            <h1 id="publish-title">Share a new file.</h1>
+            <p className="workspace-header__description">Upload once, then maintain it from the artifact library.</p>
           </div>
-          <Button nativeButton={false} variant="outline" size="sm" render={<Link to="/publisher/artifacts" preload="intent" />}>
+          <div className="workspace-header__actions"><Button nativeButton={false} variant="outline" size="sm" render={<Link to="/publisher/artifacts" preload="intent" />}>
             <FolderOpen /> Manage artifacts
-          </Button>
+          </Button></div>
         </section>
 
         {message ? <Alert className="mb-4" variant={message.tone === "error" ? "destructive" : "default"}>{message.text}</Alert> : null}
@@ -92,7 +92,7 @@ export function PublishPage() {
               </Button>
             </div>
           </Card>
-          <aside className="rounded-lg border bg-card p-5" aria-label="Upload policy">
+          <aside className="rounded-xl border bg-card p-5" aria-label="Upload policy">
             <h2 className="font-semibold">Upload policy</h2>
             <p className="mt-2 text-sm text-muted-foreground">Generated URLs are public, unlisted capability links. Anyone with the URL can download the file until it expires or is revoked.</p>
             <dl className="mt-5 grid gap-3 text-xs"><div><dt className="text-muted-foreground">Delivery</dt><dd className="mt-1 font-medium">Temporary download</dd></div><div><dt className="text-muted-foreground">Access</dt><dd className="mt-1 font-medium">Unlisted URL</dd></div><div><dt className="text-muted-foreground">Maintenance</dt><dd className="mt-1 font-medium">Manage artifact library</dd></div></dl>
