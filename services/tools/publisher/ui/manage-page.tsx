@@ -186,7 +186,7 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
 
   return (
     <>
-      <AppShell product="Publisher" showSignOut />
+      <AppShell product="Publisher" accent="violet" showSignOut />
       <main id="main" className="workspace-page workspace-page--wide">
         <section className="workspace-header" aria-labelledby="manage-title">
           <div>

@@ -1,8 +1,9 @@
 import { PLATFORM_UI_BUILD } from "../build-identity.js";
 import { Link } from "@tanstack/react-router";
 import { authClient } from "../lib/auth-client.js";
+import type { ProductAccent } from "../product-accent.js";
 
-export function AppShell({ product, showSignOut }: { product: string; showSignOut: boolean }) {
+export function AppShell({ product, showSignOut, accent }: { product: string; showSignOut: boolean; accent?: ProductAccent }) {
   async function signOut() {
     await authClient.signOut();
     window.location.assign("/");
@@ -11,7 +12,7 @@ export function AppShell({ product, showSignOut }: { product: string; showSignOu
   return (
     <>
       <a className="suite-skip skip-link" href="#main">Skip to content</a>
-      <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur-sm" data-suite-shell="orbit" data-ui-build={PLATFORM_UI_BUILD}>
+      <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur-sm" data-suite-shell="orbit" data-suite-accent={accent} data-ui-build={PLATFORM_UI_BUILD}>
         <div className="mx-auto flex h-14 w-[min(1380px,calc(100%_-_2rem))] items-center justify-between gap-4">
           <div className="flex min-w-0 items-center gap-3">
             <Link className="flex items-center gap-2 text-sm font-semibold" to="/" preload="intent" aria-label="Tools dashboard">

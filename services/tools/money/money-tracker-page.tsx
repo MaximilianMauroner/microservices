@@ -40,7 +40,7 @@ export function MoneyTrackerPage(props: MoneyTrackerPageData & { view: MoneyTrac
   const trends = useMemo(() => moneyTrackerTrendStats(months.map((month) => ({ ...month, observed: isFullyObserved(month, props.accounts.length) })), allMonths.map((month) => ({ ...month, observed: isFullyObserved(month, props.accounts.length) }))), [allMonths, months, props.accounts.length]);
   const showPeriod = props.view === "accounts" || props.view === "insights";
 
-  return <><AppShell product="Money" showSignOut /><main id="main" className="app-page money-page">
+  return <><AppShell product="Money" accent="lime" showSignOut /><main id="main" className="app-page money-page">
     <header className="app-heading mb-0">
       <div><p className="eyebrow">Money</p><h1>{viewTitle(props.view)}</h1><p>{viewDescription(props.view)}</p></div>
       {showPeriod ? <div className="app-heading__actions"><PeriodSelector period={period} onPeriod={setPeriod} /></div> : null}
@@ -62,7 +62,7 @@ export function MoneyTrackerPage(props: MoneyTrackerPageData & { view: MoneyTrac
 }
 
 export function MoneyTrackerPendingPage({ view }: { view: MoneyTrackerView }) {
-  return <><AppShell product="Money" showSignOut /><main id="main" className="app-page money-page" aria-busy="true">
+  return <><AppShell product="Money" accent="lime" showSignOut /><main id="main" className="app-page money-page" aria-busy="true">
     <header className="app-heading mb-0">
       <div><p className="eyebrow">Money</p><h1>{viewTitle(view)}</h1><p>Loading private financial data.</p></div>
     </header>

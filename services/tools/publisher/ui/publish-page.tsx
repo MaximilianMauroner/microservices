@@ -65,7 +65,7 @@ export function PublishPage() {
 
   return (
     <>
-      <AppShell product="Publisher" showSignOut />
+      <AppShell product="Publisher" accent="violet" showSignOut />
       <main id="main" className="workspace-page workspace-page--narrow">
         <section className="workspace-header" aria-labelledby="publish-title">
           <div>
