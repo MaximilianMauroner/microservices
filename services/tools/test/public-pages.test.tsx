@@ -104,6 +104,13 @@ describe("TanStack Start public pages", () => {
     expect(html).toContain("Publisher");
     expect(html).toContain("Field Guide");
     expect(html).toContain("Markdown Share");
+    expect(html).toContain("bg-violet-300");
+    expect(html).toContain("bg-amber-300");
+    expect(html).toContain("bg-lime-300");
+    expect(html).toContain("bg-cyan-300");
+    expect(html).toContain("bg-rose-300");
+    expect(html).toContain("bg-blue-300");
+    expect(html).toContain('href="https://markdown-share-alpha.mauroner.workers.dev/"');
     expect(html).toContain('href="/money"');
     expect(html).toContain('href="/publisher"');
     expect(html).toContain('href="/status"');
@@ -130,6 +137,7 @@ describe("TanStack Start public pages", () => {
     expect(html).toContain("uptime-scroll-hint");
     expect(html).toContain("private-status-link");
     expect(html).toContain("Sign out");
+    expect(html).toContain('data-suite-accent="cyan"');
     expect(html.match(/class="uptime-day /g)).toHaveLength(90);
   });
 

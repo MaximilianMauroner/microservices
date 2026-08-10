@@ -10,7 +10,9 @@
   --muted: #716e66;
   --paper: #fffdf8;
   --line: #d9d3c7;
-  --accent: #ea5b34;
+  --accent: #e11d48;
+  --accent-hover: #be123c;
+  --accent-soft: #fda4af;
   --green: #2b8467;
   --app-height: 100dvh;
 }
@@ -77,8 +79,8 @@ button:disabled {
   place-items: center;
   width: 48px;
   height: 48px;
-  color: #fffdf8;
-  background: var(--ink);
+  color: #2d0b10;
+  background: var(--accent-soft);
   font-family: "DM Mono", monospace;
   font-weight: 500;
   letter-spacing: -0.1em;
@@ -151,13 +153,14 @@ button:disabled {
 .filename-row button,
 .button-primary {
   color: #fff;
-  background: var(--ink);
+  background: var(--accent);
+  border-color: var(--accent);
 }
 
 .filename-row button:hover,
 .button-primary:hover {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
 }
 
 .button-secondary {

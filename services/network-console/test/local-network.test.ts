@@ -159,6 +159,8 @@ describe("local network dashboard", () => {
     expect(html).toContain('datetime="2026-07-08T11:00:00.000Z"');
     expect(html).toContain('>1h0m</time>');
     expect(html).toContain("Other listeners");
+    expect(html).toContain("--accent: #2563eb");
+    expect(html).toContain("--accent: #93c5fd");
 
     const faviconResponse = await app.request("/favicon.svg");
     expect(faviconResponse.status).toBe(200);
