@@ -42,6 +42,7 @@ describe("Manage artifact library", () => {
     expect(html).toContain("Copy URL");
     expect(html).toContain("Revoke artifact");
     expect(html).toContain('href="/publisher"');
+    expect(html).toContain('data-suite-accent="violet"');
     expect(html).not.toContain("Tools architecture and monitoring");
   });
 });

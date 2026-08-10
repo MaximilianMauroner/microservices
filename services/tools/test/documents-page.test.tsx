@@ -15,6 +15,7 @@ describe("DocumentsPage", () => {
     expect(html).toContain('data-slot="table"');
     expect(html).toContain("recent.md");
     expect(html).toContain("New document");
+    expect(html).toContain('data-suite-accent="rose"');
   });
 
   it("filters checkpoints and expiry before sorting", () => {

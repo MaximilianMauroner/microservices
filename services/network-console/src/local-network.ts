@@ -978,6 +978,7 @@ function renderDashboard(snapshot: NetworkSnapshot, dashboardPort: number) {
         font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         background: #f6f8fa;
         color: #1f2328;
+        --accent: #2563eb;
       }
 
       body {
@@ -1068,7 +1069,7 @@ function renderDashboard(snapshot: NetworkSnapshot, dashboardPort: number) {
       }
 
       .website-card:hover {
-        border-color: #0969da;
+        border-color: var(--accent);
         transform: translateY(-1px);
       }
 
@@ -1190,7 +1191,7 @@ function renderDashboard(snapshot: NetworkSnapshot, dashboardPort: number) {
       }
 
       a {
-        color: #0969da;
+        color: var(--accent);
         text-decoration: none;
       }
 
@@ -1248,6 +1249,7 @@ function renderDashboard(snapshot: NetworkSnapshot, dashboardPort: number) {
         :root {
           background: #0d1117;
           color: #e6edf3;
+          --accent: #93c5fd;
         }
 
         .meta,
@@ -1288,10 +1290,6 @@ function renderDashboard(snapshot: NetworkSnapshot, dashboardPort: number) {
 
         .port-chip {
           background: #21262d;
-        }
-
-        a {
-          color: #58a6ff;
         }
 
         .warnings {
