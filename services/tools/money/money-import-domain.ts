@@ -3,6 +3,11 @@ import { parse } from "csv-parse/sync";
 import {
   MONEY_CATEGORIES,
   MONEY_TRANSFER_DISPOSITIONS,
+  MONEY_BALANCE_SNAPSHOT_FORMAT,
+  PORTFOLIO_TRANSACTION_FORMAT,
+  REVOLUT_CASH_FORMAT,
+  REVOLUT_TRADING_FORMAT,
+  SPARKASSE_CASH_FORMAT,
   type MoneyCategory,
   type MoneyTransferDisposition
 } from "./money-enums.js";
@@ -11,6 +16,11 @@ import { parseSparkasseWorkbook, SparkasseWorkbookError } from "./sparkasse-xlsx
 export {
   MONEY_CATEGORIES,
   MONEY_TRANSFER_DISPOSITIONS,
+  MONEY_BALANCE_SNAPSHOT_FORMAT,
+  PORTFOLIO_TRANSACTION_FORMAT,
+  REVOLUT_CASH_FORMAT,
+  REVOLUT_TRADING_FORMAT,
+  SPARKASSE_CASH_FORMAT,
   type MoneyCategory,
   type MoneyTransferDisposition
 } from "./money-enums.js";
@@ -18,11 +28,6 @@ export {
 export const MONEY_IMPORT_MAX_BYTES = 10 * 1024 * 1024;
 export const MONEY_INDEXED_IDENTITY_MAX_BYTES = 512;
 export const MONEY_IMPORT_MAX_ROWS = 100_000;
-export const REVOLUT_CASH_FORMAT = "revolut_cash_statement_v1" as const;
-export const REVOLUT_TRADING_FORMAT = "revolut_trading_statement_v1" as const;
-export const PORTFOLIO_TRANSACTION_FORMAT = "portfolio_transaction_export_v1" as const;
-export const MONEY_BALANCE_SNAPSHOT_FORMAT = "money_balance_snapshot_v1" as const;
-export const SPARKASSE_CASH_FORMAT = "sparkasse_cash_statement_v1" as const;
 export const SPARKASSE_TRANSFER_TYPES = [
   "HOMEBANKINGUEBERWEISUNG",
   "UEBERWEISUNG",
