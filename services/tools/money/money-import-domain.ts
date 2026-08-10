@@ -6,6 +6,7 @@ import {
   type MoneyCategory,
   type MoneyTransferDisposition
 } from "./money-enums.js";
+import { parseSparkasseWorkbook, SparkasseWorkbookError } from "./sparkasse-xlsx.js";
 
 export {
   MONEY_CATEGORIES,
@@ -21,6 +22,16 @@ export const REVOLUT_CASH_FORMAT = "revolut_cash_statement_v1" as const;
 export const REVOLUT_TRADING_FORMAT = "revolut_trading_statement_v1" as const;
 export const PORTFOLIO_TRANSACTION_FORMAT = "portfolio_transaction_export_v1" as const;
 export const MONEY_BALANCE_SNAPSHOT_FORMAT = "money_balance_snapshot_v1" as const;
+export const SPARKASSE_CASH_FORMAT = "sparkasse_cash_statement_v1" as const;
+export const SPARKASSE_TRANSFER_TYPES = [
+  "HOMEBANKINGUEBERWEISUNG",
+  "UEBERWEISUNG",
+  "UEBERWEISUNG ZU IHREN GUNSTEN",
+  "SEPA ECHTZEITUEBERWEISUNG",
+  "IHR DAUERAUFTRAG",
+  "BAREINLAGE",
+  "VERSCHIEDENE WERTE"
+] as const;
 
 const CASH_HEADERS = ["Type", "Product", "Started Date", "Completed Date", "Description", "Amount", "Fee", "Currency", "State", "Balance"] as const;
 const TRADING_HEADERS = ["Date", "Ticker", "Type", "Quantity", "Price per share", "Total Amount", "Currency", "FX Rate"] as const;
@@ -30,9 +41,15 @@ const BALANCE_HEADERS = ["Date", "Account", "Value", "Role", "Currency"] as cons
 const CASH_TYPES = new Set(["Transfer", "Card Payment", "Topup", "Exchange", "Card Refund", "ATM", "CARD_CREDIT", "Interest"]);
 const TRADING_TYPES = new Set(["DIVIDEND", "CUSTODY FEE", "CASH TOP-UP", "BUY - MARKET", "CASH WITHDRAWAL", "SELL - MARKET", "STOCK SPLIT", "DIVIDEND TAX (CORRECTION)", "CUSTODY FEE REVERSAL", "TRANSFER FROM REVOLUT TRADING LTD TO REVOLUT SECURITIES EUROPE UAB", "TRANSFER FROM REVOLUT BANK UAB TO REVOLUT SECURITIES EUROPE UAB"]);
 const PORTFOLIO_TYPES = new Set(["BUY", "SELL", "INTEREST_PAYMENT", "CARD_TRANSACTION", "CUSTOMER_INBOUND", "TAX_OPTIMIZATION", "MIGRATION", "TRANSFER_INBOUND", "TRANSFER_INSTANT_OUTBOUND", "STOCKPERK", "CUSTOMER_INPAYMENT", "TRANSFER_INSTANT_INBOUND"]);
+const SPARKASSE_FEE_TYPES = new Set(["GEBUEHREN", "KOMMISSION AUF UEBERWEISUNGEN", "KOMM. ECHTZEITUEBERWEISUNG"]);
+const SPARKASSE_TAX_TYPES = new Set(["STEMPELSTEUER"]);
+const SPARKASSE_SPEND_TYPES = new Set(["LASTSCHRIFT", "BEZAHLUNG EU LAENDER"]);
+const SPARKASSE_INCOME_TYPES = new Set(["BEZUEGE", "AUSGANGSBELEG"]);
+const SPARKASSE_TRANSFER_TYPE_SET = new Set<string>(SPARKASSE_TRANSFER_TYPES);
+const SPARKASSE_TRANSACTION_TYPES = new Set([...SPARKASSE_FEE_TYPES, ...SPARKASSE_TAX_TYPES, ...SPARKASSE_SPEND_TYPES, ...SPARKASSE_INCOME_TYPES, ...SPARKASSE_TRANSFER_TYPES]);
 
-export type MoneyImportFormat = typeof REVOLUT_CASH_FORMAT | typeof REVOLUT_TRADING_FORMAT | typeof PORTFOLIO_TRANSACTION_FORMAT | typeof MONEY_BALANCE_SNAPSHOT_FORMAT;
-export type MoneyProvider = "revolut" | "portfolio_export" | "manual";
+export type MoneyImportFormat = typeof REVOLUT_CASH_FORMAT | typeof REVOLUT_TRADING_FORMAT | typeof PORTFOLIO_TRANSACTION_FORMAT | typeof MONEY_BALANCE_SNAPSHOT_FORMAT | typeof SPARKASSE_CASH_FORMAT;
+export type MoneyProvider = "revolut" | "portfolio_export" | "manual" | "sparkasse";
 export type MoneyAccountRole = "cash" | "investment";
 export type MoneyTransactionStatus = "completed" | "reverted";
 export type MoneyFlowKind = "spend" | "income" | "refund" | "transfer" | "trade" | "investment_income" | "fee" | "tax" | "balance_adjustment";
@@ -132,6 +149,15 @@ export class MoneyImportValidationError extends Error {
 export function parseMoneyImport(bytes: Uint8Array): ParsedMoneyImport {
   if (bytes.byteLength === 0) throw invalid("empty_file", "The selected file is empty.");
   if (bytes.byteLength > MONEY_IMPORT_MAX_BYTES) throw invalid("file_too_large", "Money imports must be 10 MB or smaller.");
+  const digest = createHash("sha256").update(bytes).digest("hex");
+  if (isZip(bytes)) {
+    try {
+      return parseSparkasse(bytes, digest);
+    } catch (error) {
+      if (error instanceof SparkasseWorkbookError) throw invalid("invalid_sparkasse_workbook", error.message);
+      throw error;
+    }
+  }
   const source = decode(bytes);
   const firstLine = source.replace(/^\uFEFF/, "").split(/\r?\n/, 1)[0] ?? "";
   const parsed = firstLine.includes("\t") ? rows(source, "\t") : rows(source, ",");
@@ -139,12 +165,57 @@ export function parseMoneyImport(bytes: Uint8Array): ParsedMoneyImport {
   if (!headers) throw invalid("empty_statement", "The statement contains no rows.");
   if (!dataRows.length) throw invalid("empty_statement", "The statement contains no transactions.");
   if (dataRows.length > MONEY_IMPORT_MAX_ROWS) throw invalid("too_many_rows", `Money imports may contain at most ${MONEY_IMPORT_MAX_ROWS.toLocaleString("en-GB")} rows.`);
-  const digest = createHash("sha256").update(bytes).digest("hex");
   if (sameStrings(headers, CASH_HEADERS)) return parseCash(dataRows, digest);
   if (sameStrings(headers, TRADING_HEADERS)) return parseTrading(dataRows, digest);
   if (sameStrings(headers, PORTFOLIO_HEADERS)) return parsePortfolio(dataRows, digest);
   if (sameStrings(headers, BALANCE_HEADERS)) return parseBalances(dataRows, digest);
   throw invalid("unsupported_format", "This file does not match a supported money export format.");
+}
+
+function parseSparkasse(bytes: Uint8Array, digest: string): ParsedMoneyImport {
+  const workbook = parseSparkasseWorkbook(bytes);
+  if (workbook.transactions.length > MONEY_IMPORT_MAX_ROWS) throw invalid("too_many_rows", `Money imports may contain at most ${MONEY_IMPORT_MAX_ROWS.toLocaleString("en-GB")} rows.`);
+  const iban = workbook.iban.replace(/\s+/g, "").toUpperCase();
+  if (!/^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/.test(iban)) throw invalid("invalid_account", "The Sparkasse workbook contains an invalid IBAN.");
+  const openingBalanceMinor = parseMinorUnits(workbook.openingBalance, 13, "Anfangssaldo");
+  const closingBalanceMinor = parseMinorUnits(workbook.closingBalance, 14, "Endsaldo");
+  const accountExternalRef = `sparkasse:cash:${fingerprint([iban]).slice(0, 24)}:EUR`;
+  const accountName = `Sparkasse · ${iban.slice(-4)}`;
+  assertIndexedIdentity(accountExternalRef, 6, "Account");
+  const occurrences = new Map<string, number>();
+  let balanceAfterMinor = openingBalanceMinor;
+  const transactions = [...workbook.transactions].reverse().map((row): MoneyLedgerTransaction => {
+    const rawAmountMinor = parseMinorUnits(row.amount, row.sourceRow, "Betrag EUR");
+    const rawDescription = row.description.trim();
+    if (!rawDescription) throw invalid("invalid_description", `Row ${row.sourceRow} has no Beschreibung.`);
+    const sourceType = rawDescription.split(/\r?\n/, 1)[0]!.trim().toUpperCase();
+    if (!SPARKASSE_TRANSACTION_TYPES.has(sourceType)) throw invalid("unsupported_transaction_type", `Row ${row.sourceRow} contains unsupported Sparkasse transaction type ${JSON.stringify(sourceType)}.`);
+    const identity = [row.bookingDate, row.valueDate, rawDescription, row.amount];
+    const identityKey = JSON.stringify(identity);
+    const occurrence = occurrences.get(identityKey) ?? 0;
+    occurrences.set(identityKey, occurrence + 1);
+    const feeMinor = SPARKASSE_FEE_TYPES.has(sourceType) ? -rawAmountMinor : 0;
+    const taxMinor = SPARKASSE_TAX_TYPES.has(sourceType) ? -rawAmountMinor : 0;
+    const amountMinor = feeMinor || taxMinor ? 0 : rawAmountMinor;
+    balanceAfterMinor += rawAmountMinor;
+    const occurredAt = `${row.bookingDate}T12:00:00.000Z`;
+    const completedAt = `${row.valueDate}T12:00:00.000Z`;
+    const description = sanitizeDescription(rawDescription);
+    const flowKind = sparkasseFlow(sourceType, rawAmountMinor, rawDescription, workbook.accountHolder);
+    return {
+      sourceKey: fingerprint([SPARKASSE_CASH_FORMAT, iban, ...identity, String(occurrence)]), sourceRow: row.sourceRow,
+      provider: "sparkasse", accountRole: "cash", accountExternalRef, accountName, occurredAt, completedAt,
+      localDate: row.bookingDate, description, amountMinor, feeMinor, taxMinor, baseAmountMinor: amountMinor,
+      baseFeeMinor: feeMinor, baseTaxMinor: taxMinor, baseCurrency: "EUR", balanceAfterMinor, currency: "EUR",
+      status: "completed", sourceType, flowKind,
+      category: SPARKASSE_FEE_TYPES.has(sourceType) ? "fees" : SPARKASSE_TAX_TYPES.has(sourceType) ? "taxes" : SPARKASSE_INCOME_TYPES.has(sourceType) && rawAmountMinor > 0 ? "income" : categorizeDescription(description)
+    };
+  });
+  if (balanceAfterMinor !== closingBalanceMinor) {
+    throw invalid("sparkasse_balance_mismatch", "The Sparkasse transactions do not reconcile with the workbook closing balance.");
+  }
+  const accounts = accountPreviews(transactions);
+  return result(SPARKASSE_CASH_FORMAT, digest, transactions, [], buildBalanceSnapshots(transactions, true), accounts, []);
 }
 
 function parseCash(dataRows: string[][], digest: string): ParsedMoneyImport {
@@ -324,14 +395,14 @@ function reconciliationMismatches(rows: readonly MoneyLedgerTransaction[]) {
   return mismatches;
 }
 
-function buildBalanceSnapshots(transactions: readonly MoneyLedgerTransaction[]) {
+function buildBalanceSnapshots(transactions: readonly MoneyLedgerTransaction[], sourceSequenceIsChronological = false) {
   const latest = new Map<string, MoneyBalanceSnapshotInput>();
   for (const row of transactions) {
     if (row.status !== "completed" || row.balanceAfterMinor === undefined) continue;
     const key = `${row.accountExternalRef}:${row.localDate}`;
     const candidate = { accountExternalRef: row.accountExternalRef, date: row.localDate, observedAt: row.completedAt ?? row.occurredAt, sourceRow: row.sourceRow, valueMinor: row.balanceAfterMinor, currency: row.currency };
     const current = latest.get(key);
-    if (!current || current.observedAt < candidate.observedAt || (current.observedAt === candidate.observedAt && current.sourceRow < candidate.sourceRow)) latest.set(key, candidate);
+    if (sourceSequenceIsChronological || !current || current.observedAt < candidate.observedAt || (current.observedAt === candidate.observedAt && current.sourceRow < candidate.sourceRow)) latest.set(key, candidate);
   }
   return [...latest.values()].sort((a, b) => a.date.localeCompare(b.date) || a.accountExternalRef.localeCompare(b.accountExternalRef));
 }
@@ -348,20 +419,67 @@ function tradingEventKind(type: string): MoneyInvestmentEventKind { return type.
 function tradingSignedAmount(type: string, total: number) { return type.includes("BUY") ? -Math.abs(total) : type.includes("SELL") ? Math.abs(total) : total; }
 function portfolioFlow(type: string, amount: number): MoneyFlowKind { return type === "BUY" || type === "SELL" || type === "MIGRATION" ? "trade" : type === "INTEREST_PAYMENT" ? "investment_income" : type === "CARD_TRANSACTION" ? (amount < 0 ? "spend" : "refund") : type === "TAX_OPTIMIZATION" ? "tax" : "transfer"; }
 function portfolioEventKind(type: string, category: string | undefined): MoneyInvestmentEventKind | undefined { return type === "BUY" ? "buy" : type === "SELL" ? "sell" : type === "INTEREST_PAYMENT" ? "dividend" : type === "TAX_OPTIMIZATION" ? "tax" : type === "MIGRATION" ? "position_transfer" : category === "DELIVERY" ? "delivery" : undefined; }
+function sparkasseFlow(type: string, amount: number, description: string, accountHolder: string): MoneyFlowKind {
+  if (SPARKASSE_FEE_TYPES.has(type)) return "fee";
+  if (SPARKASSE_TAX_TYPES.has(type)) return "tax";
+  if (SPARKASSE_SPEND_TYPES.has(type)) return amount < 0 ? "spend" : "refund";
+  if (SPARKASSE_INCOME_TYPES.has(type) && amount > 0) return "income";
+  if (SPARKASSE_TRANSFER_TYPE_SET.has(type)) {
+    if (amount >= 0 || type === "BAREINLAGE" || type === "VERSCHIEDENE WERTE") return "transfer";
+    return sparkasseBeneficiaryMatchesHolder(description, accountHolder) ? "transfer" : "spend";
+  }
+  throw new Error("Sparkasse transaction classification is incomplete.");
+}
 
-/** Small, auditable defaults. User rules take precedence in the repository. */
+function sparkasseBeneficiaryMatchesHolder(description: string, accountHolder: string) {
+  const holderTokens = normalizedIdentityTokens(accountHolder);
+  if (holderTokens.length < 2) return false;
+  const body = description.split(/\r?\n/).slice(1).join(" ");
+  const beneficiary = body.split(/\biban\s+beg\.\s*:/i, 1)[0] ?? "";
+  const beneficiaryTokens = new Set(normalizedIdentityTokens(beneficiary));
+  return holderTokens.every((token) => beneficiaryTokens.has(token));
+}
+
+function normalizedIdentityTokens(value: string) {
+  return value.toLocaleLowerCase("en-GB").normalize("NFKD").replace(/\p{Diacritic}/gu, "").match(/[a-z0-9]+/g) ?? [];
+}
+
+const MCC_CATEGORY_RULES: readonly Readonly<{ category: MoneyCategory; pattern: RegExp }>[] = [
+  { category: "groceries", pattern: /^(5411|5422|5441|5451|5462|5499)$/ },
+  { category: "dining", pattern: /^581[1-4]$/ },
+  { category: "transport", pattern: /^(4111|4121|4131|4784|4789|5541|5542|7523)$/ },
+  { category: "shopping", pattern: /^(5310|5311|5331|5399|5611|5621|5631|5641|5651|5655|5661|5681|5691|5697|5698|5699|5712|5713|5714|5719|5722|5732|5734|5941|5942|5943|5944|5945|5946|5947|5948|5949|5999)$/ },
+  { category: "health", pattern: /^(5912|5975|5976|8011|8021|8031|8041|8042|8043|8049|8050|8062|8071|8099)$/ },
+  { category: "travel", pattern: /^(4411|4722|7011)$/ },
+  { category: "education", pattern: /^(8211|8220|8241|8244|8249|8299)$/ },
+  { category: "entertainment", pattern: /^(7832|7911|7922|7929|7932|7933|7991|7992|7993|7994|7996|7997|7998|7999)$/ }
+];
+
+const DESCRIPTION_CATEGORY_RULES: readonly Readonly<{ category: MoneyCategory; pattern: RegExp }>[] = [
+  { category: "housing", pattern: /\b(rent|landlord|mortgage|utility|utilities|electricity|gas bill)\b/ },
+  { category: "groceries", pattern: /\b(billa|spar|hofer|aldi|lidl|rewe|edeka|despar|mpreis|supermarket|grocer(?:y|ies)|denn'?s|biomarkt|hello ?fresh|huel|koncoop|naturalia|agrocenter|sudtiroler milch|fruits?)\b|s.*dtiroler milch|^basic$/ },
+  { category: "dining", pattern: /\b(lieferando|foodora|deliveroo|delivery hero|just eat|takeaway|restaurant|cafe|coffee|backwerk|mcdonald'?s|confiserie|autogrill|swing kitchen|bistrot|bakerei|konditorei|kebab|imbiss|pizzeria|biteclub|bao bar|veggiezz|frozen yogurt|litalissimo|humus|old wild west|serways|brot und spiele|juice factory|le crobag|speckstandl)\b|b.*ckerei|caf.|str.*ck|b.*renwirt|^chez angele?$/ },
+  { category: "transport", pattern: /\b(oebb|obb|enio|westbahn|wiener linien|wienerlinien|klimaticket|trenitalia|salzburg verkehr|flixbus|eurolanes|uber|taxi|train|rail|parking|parkhaus|parkplatz|parcheggio|garage|wipark|autostrade?|brennero|bolzano sud|tiermobilit|esso|petrol|fuel)\b|a.bb|^wien$/ },
+  { category: "health", pattern: /\b(apotheke|pharmacy|pharmac|farmacia|doctor|dentist|hospital|fitinn|drogerie|bipa|dermopraxis|beauty)\b/ },
+  { category: "travel", pattern: /\b(booking\.com|hotel|airline|flight|camping|holafly|sardinia vera)\b/ },
+  { category: "subscriptions", pattern: /\b(netflix|spotify|audible|youtube|deezer|libro\.fm|t3 chat|openai|chatgpt|claude|google(?: cloud| chrome)?|microsoft|jetbrains|paddle|replicate|iliad|tim|vodafone|hot telekom|1mobile|purevpn|server dedicato|hetzner|railway|convex|cloudflare|virtualsolu|aruba\.it|amazon prime|evernote|readwise|bitwarden|akiflow|obsidian|cursor|reclaim|groq|unraid|filebot|rize subscription)\b|netflixinte/ },
+  { category: "education", pattern: /\b(tu wien|frontendmasters|knowt)\b/ },
+  { category: "entertainment", pattern: /\b(steam|riot games|hrk game|playstation|g2a|kinguin|chrono(?: gg)?|electronic arts|eneba|mmoga|twitch|znipe|ticketmaster|wien ticket|p3 comix|billardcafe|der klub|wiener eistraum|cineplexx|google play|itunes|itch\.io)\b|steamgames|hrkdistribu/ },
+  { category: "shopping", pattern: /\b(amazon|apple(?:\.com)?|ikea|dbrand|zalando|zara|muller|printbox|paperlike|massdrop|redbubble|thomann|media ?markt|mediaworld|media world|linus tech tips|nike|etsy|uniqlo|brookssport|puma|urban outfitters|samsung|rhinoshield|sportler|nencini sport|beyerdynamic|darn tough|calida|cyberport|e-tec\.at|xxxlutz|action|thalia|athesia|unifi|seven technology|legami|kurzgesagt|h&m|obi|ceramics|flaconi|paga in 3 rate)\b|m.*ller|ebay/ },
+  { category: "gifts", pattern: /\b(wikimedia|blumen)\b/ },
+  { category: "taxes", pattern: /\b(pagopa)\b/ },
+  { category: "fees", pattern: /\b(hannafinanz|poste italiane|post fa|post 1153)\b/ },
+  { category: "cash", pattern: /\b(ricarica yap)\b|^yap$/ }
+];
+
+/** Auditable defaults inferred from source MCCs and recurring merchant names. User rules take precedence in the repository. */
 export function categorizeDescription(description: string, mcc?: string): MoneyCategory {
-  const value = description.toLocaleLowerCase("en-GB");
-  if (mcc && /^(5411|5422|5441|5451|5462|5499)$/.test(mcc)) return "groceries";
-  if (mcc && /^(5812|5813|5814)$/.test(mcc)) return "dining";
-  if (mcc && /^(4111|4121|4131|4789|5541|5542)$/.test(mcc)) return "transport";
-  if (/\b(rent|landlord|mortgage)\b/.test(value)) return "housing";
-  if (/\b(supermarket|grocery|groceries|aldi|lidl|rewe|edeka)\b/.test(value)) return "groceries";
-  if (/\b(restaurant|cafe|coffee|delivery|takeaway)\b/.test(value)) return "dining";
-  if (/\b(train|rail|uber|taxi|fuel|petrol|parking)\b/.test(value)) return "transport";
-  if (/\b(pharmacy|doctor|dentist|hospital)\b/.test(value)) return "health";
-  if (/\b(hotel|airline|flight|booking)\b/.test(value)) return "travel";
-  if (/\b(subscription|netflix|spotify|icloud)\b/.test(value)) return "subscriptions";
+  const normalizedMcc = mcc?.trim();
+  const mccMatch = normalizedMcc && MCC_CATEGORY_RULES.find((rule) => rule.pattern.test(normalizedMcc));
+  if (mccMatch) return mccMatch.category;
+  const value = description.toLocaleLowerCase("en-GB").normalize("NFKD").replace(/\p{Diacritic}/gu, "");
+  const descriptionMatch = DESCRIPTION_CATEGORY_RULES.find((rule) => rule.pattern.test(value));
+  if (descriptionMatch) return descriptionMatch.category;
   return "uncategorized";
 }
 
@@ -396,7 +514,8 @@ function parseBerlinTimestamp(value: string | undefined, sourceRow: number, fiel
 }
 const berlinFormatter = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Berlin", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
 function berlinParts(value: Date) { const parts = Object.fromEntries(berlinFormatter.formatToParts(value).map((part) => [part.type, part.value])); return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`; }
-function sanitizeDescription(value: string) { return value.trim().replace(/\b[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b/gi, "[account]").replace(/\s+/g, " ").slice(0, 500); }
+function sanitizeDescription(value: string) { return value.trim().replace(/\b[A-Z]{2}\d{2}(?:\s?[A-Z0-9]){11,30}\b/gi, "[account]").replace(/\s+/g, " ").slice(0, 500); }
 function fingerprint(fields: readonly string[]) { return createHash("sha256").update(JSON.stringify(fields)).digest("hex"); }
 function sameStrings(actual: readonly string[], expected: readonly string[]) { return actual.length === expected.length && expected.every((value, index) => actual[index] === value); }
+function isZip(bytes: Uint8Array) { return bytes.length >= 4 && bytes[0] === 0x50 && bytes[1] === 0x4b && bytes[2] === 0x03 && bytes[3] === 0x04; }
 function invalid(code: string, message: string) { return new MoneyImportValidationError(code, message); }

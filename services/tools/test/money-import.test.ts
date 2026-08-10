@@ -6,6 +6,7 @@ import {
   PORTFOLIO_TRANSACTION_FORMAT,
   REVOLUT_CASH_FORMAT,
   REVOLUT_TRADING_FORMAT,
+  categorizeDescription,
   parseMoneyImport
 } from "../money/money-import-domain.js";
 import { MoneyImportService } from "../money/money-import-service.js";
@@ -21,6 +22,20 @@ import type { PlatformRouteInput } from "../src/route-handlers.js";
 const header = "Type\tProduct\tStarted Date\tCompleted Date\tDescription\tAmount\tFee\tCurrency\tState\tBalance";
 
 describe("Revolut cash statement parser", () => {
+  it("infers common merchant and MCC categories from the supplied export families", () => {
+    const cases = [
+      ["BILLA", undefined, "groceries"], ["SÃ¼dtiroler Milch", undefined, "groceries"],
+      ["Lieferando", undefined, "dining"], ["CafÃ© Jelinek", undefined, "dining"],
+      ["ÃBB", undefined, "transport"], ["ENIO", undefined, "transport"],
+      ["Apotheke Schwenk", undefined, "health"], ["Booking.com", undefined, "travel"],
+      ["OpenAI", undefined, "subscriptions"], ["JetBrains", undefined, "subscriptions"],
+      ["Steam", undefined, "entertainment"], ["Amazon", undefined, "shopping"],
+      ["Payment", "5411", "groceries"], ["Payment", "5732", "shopping"],
+      ["Unknown person", undefined, "uncategorized"]
+    ] as const;
+    for (const [description, mcc, category] of cases) expect(categorizeDescription(description, mcc)).toBe(category);
+  });
+
   it("normalizes exact amounts, statuses, flow kinds, and Berlin timestamps", () => {
     const parsed = statement([
       "Transfer\tCurrent\t2026-08-09 5:08:51\t2026-08-09 5:08:51\tFrom own account\t20\t0\tEUR\tCOMPLETED\t20",
@@ -299,11 +314,15 @@ describe("money schema and Option A route contract", () => {
     expect(schema).toContain('accountId: uuid("account_id").notNull().references(() => moneyAccounts.id)');
     expect(schema).toContain("table.accountId, table.matchField, table.matchValue");
     expect(schema).toContain('transferDisposition: text("transfer_disposition")');
+    expect(schema).toContain("'manual', 'sparkasse'");
+    const repository = readFileSync(new URL("../money/money-repository.ts", import.meta.url), "utf8");
+    expect(repository).toContain("a.provider = 'sparkasse'");
+    expect(repository).toContain("SPARKASSE_TRANSFER_TYPES");
   });
 
   it("uses the selected workspace views without legacy search values", () => {
     const route = readFileSync(new URL("../src/routes/money.tsx", import.meta.url), "utf8");
-    for (const view of ["cash-flow", "transactions", "investments", "accounts", "insights", "data"]) expect(route).toContain(`\"${view}\"`);
+    for (const view of ["cash-flow", "transactions", "investments", "accounts", "categories", "insights", "data"]) expect(route).toContain(`\"${view}\"`);
     for (const old of ["activity", "spending", "balances", "imports", "history", "predictions"]) expect(route).not.toContain(`search.view === \"${old}\"`);
   });
 });
@@ -355,7 +374,7 @@ class MemoryMoneyRepository implements MoneyRepository {
   async readLedgerSnapshot(): Promise<MoneyLedgerSnapshot> {
     return {
       imports: [], activity: [], transactionCount: 0, revertedCount: 0, transferReview: { linkedPairs: 0, unlinkedCount: 0, unresolvedPositiveCount: 0, unresolvedNegativeCount: 0 }, accounts: [], accountLabels: {}, accountRoles: {}, months: [],
-      spending: { months: [], categories: [], uncategorizedCount: 0 },
+      spending: { months: [], categories: [], categoryMonths: [], merchantMonths: [], categoryActivity: [], uncategorizedCount: 0 },
       investments: { positions: [], totals: { eventCount: 0, boughtMinor: 0, soldMinor: 0, incomeMinor: 0, feesMinor: 0, taxesMinor: 0 }, realized: { positions: [], totals: { saleCount: 0, proceedsMinor: 0, costBasisMinor: 0, gainMinor: 0, unmatchedSaleCount: 0 } } },
       planning: { ready: true, unresolvedTransferCount: 0, medianMonthlyNetMinor: 0, observedMonthCount: 6, projections: [{ months: 6, changeMinor: 0 }, { months: 12, changeMinor: 0 }] },
       accountLastObserved: {}
