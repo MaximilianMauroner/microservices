@@ -232,6 +232,20 @@ describe("money import service", () => {
     expect(preview.duplicateCount).toBe(1);
   });
 
+  it("allows Sparkasse XLSX filenames before detecting the file contents", async () => {
+    const bytes = fixture(["Transfer\tCurrent\t2026-08-09 5:08:51\t2026-08-09 5:08:51\tTop up\t10\t0\tEUR\tCOMPLETED\t10"]);
+
+    const preview = await new MoneyImportService(new MemoryMoneyRepository()).preview("movimenti.xlsx", bytes);
+
+    expect(preview.filename).toBe("movimenti.xlsx");
+  });
+
+  it("still rejects unsupported money import extensions", async () => {
+    const bytes = fixture(["Transfer\tCurrent\t2026-08-09 5:08:51\t2026-08-09 5:08:51\tTop up\t10\t0\tEUR\tCOMPLETED\t10"]);
+
+    await expect(new MoneyImportService(new MemoryMoneyRepository()).preview("account.txt", bytes)).rejects.toMatchObject({ code: "unsupported_file_extension" });
+  });
+
   it("requires the committed file to match the preview digest", async () => {
     const service = new MoneyImportService(new MemoryMoneyRepository());
     const bytes = fixture(["Transfer\tCurrent\t2026-08-09 5:08:51\t2026-08-09 5:08:51\tTop up\t10\t0\tEUR\tCOMPLETED\t10"]);
