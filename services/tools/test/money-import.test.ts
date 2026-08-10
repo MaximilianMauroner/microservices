@@ -314,11 +314,15 @@ describe("money schema and Option A route contract", () => {
     expect(schema).toContain('accountId: uuid("account_id").notNull().references(() => moneyAccounts.id)');
     expect(schema).toContain("table.accountId, table.matchField, table.matchValue");
     expect(schema).toContain('transferDisposition: text("transfer_disposition")');
+    expect(schema).toContain("'manual', 'sparkasse'");
+    const repository = readFileSync(new URL("../money/money-repository.ts", import.meta.url), "utf8");
+    expect(repository).toContain("a.provider = 'sparkasse'");
+    expect(repository).toContain("SPARKASSE_TRANSFER_TYPES");
   });
 
   it("uses the selected workspace views without legacy search values", () => {
     const route = readFileSync(new URL("../src/routes/money.tsx", import.meta.url), "utf8");
-    for (const view of ["cash-flow", "transactions", "investments", "accounts", "insights", "data"]) expect(route).toContain(`\"${view}\"`);
+    for (const view of ["cash-flow", "transactions", "investments", "accounts", "categories", "insights", "data"]) expect(route).toContain(`\"${view}\"`);
     for (const old of ["activity", "spending", "balances", "imports", "history", "predictions"]) expect(route).not.toContain(`search.view === \"${old}\"`);
   });
 });
@@ -370,7 +374,7 @@ class MemoryMoneyRepository implements MoneyRepository {
   async readLedgerSnapshot(): Promise<MoneyLedgerSnapshot> {
     return {
       imports: [], activity: [], transactionCount: 0, revertedCount: 0, transferReview: { linkedPairs: 0, unlinkedCount: 0, unresolvedPositiveCount: 0, unresolvedNegativeCount: 0 }, accounts: [], accountLabels: {}, accountRoles: {}, months: [],
-      spending: { months: [], categories: [], uncategorizedCount: 0 },
+      spending: { months: [], categories: [], categoryMonths: [], merchantMonths: [], categoryActivity: [], uncategorizedCount: 0 },
       investments: { positions: [], totals: { eventCount: 0, boughtMinor: 0, soldMinor: 0, incomeMinor: 0, feesMinor: 0, taxesMinor: 0 }, realized: { positions: [], totals: { saleCount: 0, proceedsMinor: 0, costBasisMinor: 0, gainMinor: 0, unmatchedSaleCount: 0 } } },
       planning: { ready: true, unresolvedTransferCount: 0, medianMonthlyNetMinor: 0, observedMonthCount: 6, projections: [{ months: 6, changeMinor: 0 }, { months: 12, changeMinor: 0 }] },
       accountLastObserved: {}
