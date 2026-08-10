@@ -58,11 +58,13 @@ it.skipIf(!repository || !admin)("executes import replay, transfer review, analy
   await repository!.addManualBalance({ accountName: "Duplicate", role: "investment", date: "2026-02-28", valueMinor: 2_000, currency: "EUR" });
   const snapshot = await repository!.readLedgerSnapshot();
   expect(snapshot.transferReview.unresolvedPositiveCount + snapshot.transferReview.unresolvedNegativeCount).toBe(0);
-  expect(snapshot.planning.ready).toBe(true);
+  expect(snapshot.planning).toMatchObject({ ready: false, observedMonthCount: 1 });
   expect(snapshot.spending.months.find((month) => month.month === "2026-02")).toMatchObject({ incomeMinor: 5_000, spendMinor: 2_000, netCashFlowMinor: 3_000 });
   const duplicateAccounts = snapshot.accounts.filter((id) => snapshot.accountLabels[id]?.startsWith("Duplicate"));
   expect(duplicateAccounts).toHaveLength(2);
   expect(new Set(duplicateAccounts.map((id) => snapshot.accountRoles[id]))).toEqual(new Set(["cash", "investment"]));
+  expect(snapshot.accountLastObserved).toEqual(expect.objectContaining(Object.fromEntries(duplicateAccounts.map((id) => [id, "2026-02-01"]))));
+  expect(snapshot.months.at(-1)?.observedAccounts).toEqual(expect.arrayContaining(duplicateAccounts));
 });
 
 it.skipIf(!repository || !admin)("preserves a reviewed transfer when its possible counterpart arrives later", async () => {
@@ -114,7 +116,7 @@ it.skipIf(!repository || !admin)("allows a user to correct an automatic transfer
   expect(corrected.find((row) => row.id !== inflow.id)).toMatchObject({ needsTransferReview: true });
 });
 
-it.skipIf(!repository || !admin)("starts the planning calendar only when a classified cash-flow contributor exists", async () => {
+it.skipIf(!repository || !admin)("starts planning history only when a classified cash-flow contributor exists", async () => {
   const [period] = await admin!<{ month_key: string; day_1: string; day_2: string; day_3: string; day_4: string }[]>`with period as (
     select (date_trunc('month', current_date) - interval '1 month')::date month_start
   ) select to_char(month_start, 'YYYY-MM') as month_key, month_start::text day_1,
@@ -143,7 +145,7 @@ it.skipIf(!repository || !admin)("starts the planning calendar only when a class
   ]), "real-spend.tsv");
   const withCashFlow = await repository!.readLedgerSnapshot();
   expect(withCashFlow.spending.months).toEqual([expect.objectContaining({ month: period!.month_key, spendMinor: 1_250, netCashFlowMinor: -1_250 })]);
-  expect(withCashFlow.planning).toMatchObject({ ready: true, observedMonthCount: 1 });
+  expect(withCashFlow.planning).toMatchObject({ ready: false, observedMonthCount: 1 });
 });
 
 it.skipIf(!repository || !admin)("normalizes investment positions while retaining symbol-less costs in totals", async () => {

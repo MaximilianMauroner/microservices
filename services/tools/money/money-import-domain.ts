@@ -29,7 +29,7 @@ const BALANCE_HEADERS = ["Date", "Account", "Value", "Role", "Currency"] as cons
 
 const CASH_TYPES = new Set(["Transfer", "Card Payment", "Topup", "Exchange", "Card Refund", "ATM", "CARD_CREDIT", "Interest"]);
 const TRADING_TYPES = new Set(["DIVIDEND", "CUSTODY FEE", "CASH TOP-UP", "BUY - MARKET", "CASH WITHDRAWAL", "SELL - MARKET", "STOCK SPLIT", "DIVIDEND TAX (CORRECTION)", "CUSTODY FEE REVERSAL", "TRANSFER FROM REVOLUT TRADING LTD TO REVOLUT SECURITIES EUROPE UAB", "TRANSFER FROM REVOLUT BANK UAB TO REVOLUT SECURITIES EUROPE UAB"]);
-const PORTFOLIO_TYPES = new Set(["BUY", "INTEREST_PAYMENT", "CARD_TRANSACTION", "CUSTOMER_INBOUND", "TAX_OPTIMIZATION", "MIGRATION", "TRANSFER_INBOUND", "TRANSFER_INSTANT_OUTBOUND", "STOCKPERK", "CUSTOMER_INPAYMENT", "TRANSFER_INSTANT_INBOUND"]);
+const PORTFOLIO_TYPES = new Set(["BUY", "SELL", "INTEREST_PAYMENT", "CARD_TRANSACTION", "CUSTOMER_INBOUND", "TAX_OPTIMIZATION", "MIGRATION", "TRANSFER_INBOUND", "TRANSFER_INSTANT_OUTBOUND", "STOCKPERK", "CUSTOMER_INPAYMENT", "TRANSFER_INSTANT_INBOUND"]);
 
 export type MoneyImportFormat = typeof REVOLUT_CASH_FORMAT | typeof REVOLUT_TRADING_FORMAT | typeof PORTFOLIO_TRANSACTION_FORMAT | typeof MONEY_BALANCE_SNAPSHOT_FORMAT;
 export type MoneyProvider = "revolut" | "portfolio_export" | "manual";
@@ -213,7 +213,7 @@ function parseTrading(dataRows: string[][], digest: string): ParsedMoneyImport {
     });
     investmentEvents.push({
       transactionSourceKey: sourceKey, eventKind, ...(ticker ? { symbol: ticker } : {}),
-      ...(quantity ? { quantity: decimal(quantity, sourceRow, "Quantity") } : {}),
+      ...(quantity ? { quantity: investmentQuantity(eventKind, quantity, sourceRow, "Quantity") } : {}),
       ...(price ? { unitPrice: price.amount, priceCurrency: price.currency } : {}),
       ...(fxRate ? { fxRate: positiveDecimal(fxRate, sourceRow, "FX Rate") } : {})
     });
@@ -254,7 +254,7 @@ function parsePortfolio(dataRows: string[][], digest: string): ParsedMoneyImport
     const eventKind = portfolioEventKind(type, sourceCategory);
     if (eventKind) investmentEvents.push({
       transactionSourceKey: sourceKey, eventKind, ...(symbol ? { symbol } : {}), ...(name ? { name } : {}), ...(assetClass ? { assetClass } : {}),
-      ...(shares ? { quantity: decimal(shares, sourceRow, "shares") } : {}), ...(price ? { unitPrice: decimal(price, sourceRow, "price"), priceCurrency: currency! } : {}),
+      ...(shares ? { quantity: investmentQuantity(eventKind, shares, sourceRow, "shares") } : {}), ...(price ? { unitPrice: decimal(price, sourceRow, "price"), priceCurrency: currency! } : {}),
       ...(fxRate ? { fxRate: positiveDecimal(fxRate, sourceRow, "fx_rate") } : {})
     });
   }
@@ -346,8 +346,8 @@ function cashFlow(type: string, amount: number, description: string): MoneyFlowK
 function tradingFlow(type: string): MoneyFlowKind { return type.includes("BUY") || type.includes("SELL") || type === "STOCK SPLIT" || type.startsWith("POSITION TRANSFER") ? "trade" : type === "DIVIDEND" ? "investment_income" : type.includes("FEE") ? "fee" : type.includes("TAX") ? "tax" : "transfer"; }
 function tradingEventKind(type: string): MoneyInvestmentEventKind { return type.includes("BUY") ? "buy" : type.includes("SELL") ? "sell" : type === "DIVIDEND" ? "dividend" : type.includes("FEE") ? "fee" : type.includes("TAX") ? "tax" : type === "STOCK SPLIT" ? "split" : type.startsWith("POSITION TRANSFER") ? "position_transfer" : "cash_transfer"; }
 function tradingSignedAmount(type: string, total: number) { return type.includes("BUY") ? -Math.abs(total) : type.includes("SELL") ? Math.abs(total) : total; }
-function portfolioFlow(type: string, amount: number): MoneyFlowKind { return type === "BUY" || type === "MIGRATION" ? "trade" : type === "INTEREST_PAYMENT" ? "investment_income" : type === "CARD_TRANSACTION" ? (amount < 0 ? "spend" : "refund") : type === "TAX_OPTIMIZATION" ? "tax" : "transfer"; }
-function portfolioEventKind(type: string, category: string | undefined): MoneyInvestmentEventKind | undefined { return type === "BUY" ? "buy" : type === "INTEREST_PAYMENT" ? "dividend" : type === "TAX_OPTIMIZATION" ? "tax" : type === "MIGRATION" ? "position_transfer" : category === "DELIVERY" ? "delivery" : undefined; }
+function portfolioFlow(type: string, amount: number): MoneyFlowKind { return type === "BUY" || type === "SELL" || type === "MIGRATION" ? "trade" : type === "INTEREST_PAYMENT" ? "investment_income" : type === "CARD_TRANSACTION" ? (amount < 0 ? "spend" : "refund") : type === "TAX_OPTIMIZATION" ? "tax" : "transfer"; }
+function portfolioEventKind(type: string, category: string | undefined): MoneyInvestmentEventKind | undefined { return type === "BUY" ? "buy" : type === "SELL" ? "sell" : type === "INTEREST_PAYMENT" ? "dividend" : type === "TAX_OPTIMIZATION" ? "tax" : type === "MIGRATION" ? "position_transfer" : category === "DELIVERY" ? "delivery" : undefined; }
 
 /** Small, auditable defaults. User rules take precedence in the repository. */
 export function categorizeDescription(description: string, mcc?: string): MoneyCategory {
@@ -376,6 +376,7 @@ function parseCurrencyAmount(value: string | undefined, expected: string, source
 function parseOptionalCurrencyAmount(value: string | undefined, expected: string, sourceRow: number, field: string) { if (!value) return undefined; const match = /^([A-Z]{3})\s+(-?\d+(?:\.\d+)?)$/.exec(value); if (!match || match[1] !== expected) throw invalid("invalid_amount", `Row ${sourceRow} has an invalid ${field}.`); return { currency: match[1]!, amount: decimal(match[2]!, sourceRow, field) }; }
 function decimal(value: string, sourceRow: number, field: string) { const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(value); if (!match) throw invalid("invalid_decimal", `Row ${sourceRow} has an invalid ${field}.`); const integralDigits = match[2]!.replace(/^0+(?=\d)/, "").length; const fractionalDigits = match[3]?.length ?? 0; if (integralDigits > 18 || fractionalDigits > 12) throw invalid("decimal_out_of_range", `Row ${sourceRow} has an out-of-range ${field}; at most 18 integral and 12 fractional digits are supported.`); const normalized = value.replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, ""); return normalized === "-0" ? "0" : normalized; }
 function positiveDecimal(value: string, sourceRow: number, field: string) { const normalized = decimal(value, sourceRow, field); if (Number(normalized) <= 0) throw invalid("invalid_decimal", `Row ${sourceRow} requires a positive ${field}.`); return normalized; }
+function investmentQuantity(eventKind: MoneyInvestmentEventKind, value: string, sourceRow: number, field: string) { return eventKind === "buy" || eventKind === "sell" || eventKind === "split" ? positiveDecimal(value, sourceRow, field) : decimal(value, sourceRow, field); }
 function assertIndexedIdentity(value: string, sourceRow: number, field: string) { if (new TextEncoder().encode(value).byteLength > MONEY_INDEXED_IDENTITY_MAX_BYTES) throw invalid("indexed_identity_too_long", `Row ${sourceRow} has a ${field} longer than ${MONEY_INDEXED_IDENTITY_MAX_BYTES} UTF-8 bytes.`); }
 function parseIsoTimestamp(value: string | undefined, sourceRow: number, field: string) { if (!value || !/^\d{4}-\d{2}-\d{2}T/.test(value)) throw invalid("invalid_date", `Row ${sourceRow} has an invalid ${field}.`); const date = new Date(value); if (Number.isNaN(date.getTime()) || !validCalendarDate(value.slice(0, 10))) throw invalid("invalid_date", `Row ${sourceRow} has an invalid ${field}.`); return date; }
 function normalizedDate(value: string | undefined, sourceRow: number) { const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value ?? ""); const local = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(value ?? ""); const date = iso ? `${iso[1]}-${iso[2]}-${iso[3]}` : local ? `${local[3]}-${local[2]}-${local[1]}` : undefined; if (!date || !validCalendarDate(date)) throw invalid("invalid_date", `Row ${sourceRow} has an invalid Date.`); return date; }

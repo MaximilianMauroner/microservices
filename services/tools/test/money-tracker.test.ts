@@ -41,6 +41,22 @@ describe("money tracker analytics", () => {
     });
   });
 
+  it("does not compact unobserved calendar gaps into monthly statistics", () => {
+    const history = [
+      { ...trendPoint("2026-01-01", 100, 100, 0), observed: true },
+      { ...trendPoint("2026-02-01", 100, 100, 0), observed: false },
+      { ...trendPoint("2026-03-01", 121, 121, 0), observed: true },
+      { ...trendPoint("2026-04-01", 133.1, 133.1, 0), observed: true },
+      { ...trendPoint("2026-05-01", 146.41, 146.41, 0), observed: false },
+      { ...trendPoint("2026-06-01", 161.051, 161.051, 0), observed: true }
+    ];
+    const stats = moneyTrackerTrendStats(history);
+    expect(stats.positiveMonths).toEqual({ positive: 1, total: 1, rate: 100 });
+    expect(stats.averageMonthlyChange).toBeCloseTo(12.1);
+    expect(stats.geometricAverageMonthlyPercent).toBeCloseTo(10);
+    expect(stats.momentum).toBeUndefined();
+  });
+
 });
 
 function trendPoint(date: string, total: number, money: number, stocks: number) {
