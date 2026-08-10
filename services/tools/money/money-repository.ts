@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import postgres, { type Sql } from "postgres";
 import type { MoneyTrackerSnapshot } from "./money-tracker.js";
+import { fifoRealizedGains, type MoneyRealizedGainAnalytics } from "./money-investment-domain.js";
 import {
   MONEY_CATEGORIES,
   type MoneyBalanceSnapshotInput,
@@ -32,20 +33,21 @@ export type MoneyActivityItem = Readonly<{
   needsTransferReview: boolean;
 }>;
 export type MoneySpendingAnalytics = Readonly<{
-  months: readonly Readonly<{ month: string; spendMinor: number; refundsMinor: number; incomeMinor: number; feesMinor: number; taxesMinor: number; netCashFlowMinor: number }>[];
+  months: readonly Readonly<{ month: string; observed: boolean; spendMinor: number; refundsMinor: number; incomeMinor: number; feesMinor: number; taxesMinor: number; netCashFlowMinor: number }>[];
   categories: readonly Readonly<{ category: MoneyCategory; amountMinor: number; count: number }>[];
   uncategorizedCount: number;
 }>;
 export type MoneyInvestmentAnalytics = Readonly<{
   positions: readonly Readonly<{ symbol: string; name?: string; assetClass?: string; quantity: string; boughtMinor: number; soldMinor: number; incomeMinor: number; feesMinor: number; taxesMinor: number; currency: string }>[];
   totals: Readonly<{ eventCount: number; boughtMinor: number; soldMinor: number; incomeMinor: number; feesMinor: number; taxesMinor: number }>;
+  realized: MoneyRealizedGainAnalytics;
 }>;
 export type MoneyPlanningAnalytics = Readonly<{
   ready: boolean;
   unresolvedTransferCount: number;
   medianMonthlyNetMinor: number;
   observedMonthCount: number;
-  projections: readonly Readonly<{ months: 6 | 12 | 24; changeMinor: number }>[];
+  projections: readonly Readonly<{ months: 6 | 12; changeMinor: number }>[];
 }>;
 export type MoneyLedgerSnapshot = MoneyTrackerSnapshot & Readonly<{
   imports: readonly MoneyImportSummary[]; activity: readonly MoneyActivityItem[]; transactionCount: number; revertedCount: number;
@@ -149,7 +151,7 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
     },
 
     async readLedgerSnapshot() {
-      const [imports, activity, count, transfers, monthly, categories, events, investmentTotals, snapshotRows] = await Promise.all([
+      const [imports, activity, count, transfers, monthly, categories, events, investmentTotals, realizedEvents, snapshotRows] = await Promise.all([
         sql<ImportRow[]>`select id, digest, format, filename, bytes, source_row_count, inserted_row_count, duplicate_row_count, committed_at, created_by from tools.money_imports order by committed_at desc limit 50`,
         sql<ActivityRow[]>`select t.id, t.occurred_at, a.display_name account_name, t.description, t.amount_minor, t.fee_minor, t.tax_minor, t.currency, t.status, t.source_type, t.flow_kind, t.category, t.category_origin, t.transfer_group_id, t.transfer_disposition from tools.money_transactions t join tools.money_accounts a on a.id = t.account_id order by t.occurred_at desc, t.source_row desc limit 500`,
         sql<{ count: string; reverted_count: string }[]>`select count(*)::text count, count(*) filter (where status = 'reverted')::text reverted_count from tools.money_transactions`,
@@ -172,16 +174,25 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
             (effective_flow in ('spend', 'refund', 'income', 'investment_income') and base_amount_minor <> 0)
             or base_fee_minor <> 0 or base_tax_minor <> 0
         ), bounds as (
-          select date_trunc('month', min(local_date))::date first_month, (date_trunc('month', current_date) - interval '1 month')::date last_month
+          select date_trunc('month', min(local_date))::date first_month, date_trunc('month', max(local_date))::date last_month
           from contributors
         ), calendar as (
           select generate_series(first_month, last_month, interval '1 month')::date as month_start from bounds where first_month <= last_month
-        ) select to_char(calendar.month_start, 'YYYY-MM') as month,
-          coalesce(sum(case when effective_flow = 'spend' and flow_kind = 'transfer' then -base_amount_minor when effective_flow = 'spend' then abs(base_amount_minor) else 0 end), 0)::text spend_minor,
-          coalesce(sum(base_amount_minor) filter (where effective_flow = 'refund'), 0)::text refunds_minor,
-          coalesce(sum(base_amount_minor) filter (where effective_flow in ('income', 'investment_income')), 0)::text income_minor,
-          coalesce(sum(base_fee_minor), 0)::text fees_minor, coalesce(sum(base_tax_minor), 0)::text taxes_minor
-          from calendar left join contributors on date_trunc('month', contributors.local_date) = calendar.month_start group by calendar.month_start order by calendar.month_start`,
+        ), monthly_contributors as (
+          select date_trunc('month', local_date)::date month_start,
+            sum(case when effective_flow = 'spend' and flow_kind = 'transfer' then -base_amount_minor when effective_flow = 'spend' then abs(base_amount_minor) else 0 end) spend_minor,
+            sum(base_amount_minor) filter (where effective_flow = 'refund') refunds_minor,
+            sum(base_amount_minor) filter (where effective_flow in ('income', 'investment_income')) income_minor,
+            sum(base_fee_minor) fees_minor, sum(base_tax_minor) taxes_minor
+          from contributors group by date_trunc('month', local_date)
+        ), coverage as (
+          select distinct date_trunc('month', local_date)::date month_start from contributors
+        ) select to_char(calendar.month_start, 'YYYY-MM') as month, coverage.month_start is not null observed,
+          coalesce(monthly_contributors.spend_minor, 0)::text spend_minor,
+          coalesce(monthly_contributors.refunds_minor, 0)::text refunds_minor,
+          coalesce(monthly_contributors.income_minor, 0)::text income_minor,
+          coalesce(monthly_contributors.fees_minor, 0)::text fees_minor, coalesce(monthly_contributors.taxes_minor, 0)::text taxes_minor
+          from calendar left join monthly_contributors using (month_start) left join coverage using (month_start) order by calendar.month_start`,
         sql<CategoryRow[]>`with classified as (
           select category, base_amount_minor, flow_kind, case
             when flow_kind = 'transfer' and transfer_group_id is not null then 'internal_transfer'
@@ -207,6 +218,11 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
           coalesce(sum(t.base_fee_minor), 0)::text fees_minor, coalesce(sum(t.base_tax_minor), 0)::text taxes_minor
           from tools.money_investment_events e join tools.money_transactions t on t.id = e.transaction_id
           where t.status = 'completed' and t.base_currency = 'EUR'`,
+        sql<RealizedEventRow[]>`select t.account_id::text account_id, t.occurred_at, t.source_row, t.source_key, e.event_kind, e.symbol, e.quantity::text quantity,
+          t.base_amount_minor::text base_amount_minor, t.base_fee_minor::text base_fee_minor
+          from tools.money_investment_events e join tools.money_transactions t on t.id = e.transaction_id
+          where t.status = 'completed' and t.base_currency = 'EUR'
+          order by t.occurred_at, t.source_row, t.source_key`,
         sql<SnapshotRow[]>`select account_id, snapshot_date, value_minor, currency, display_name, role, provider from (
           select distinct on (s.account_id, s.snapshot_date) s.account_id::text account_id, s.snapshot_date::text snapshot_date, s.value_minor::text value_minor, s.currency, a.display_name, a.role, a.provider
           from tools.money_balance_snapshots s join tools.money_accounts a on a.id = s.account_id
@@ -217,7 +233,7 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
       return {
         imports: imports.map(summary), activity: activity.map(activityItem), transactionCount: Number(count[0]?.count ?? 0), revertedCount: Number(count[0]?.reverted_count ?? 0),
         transferReview: transferReview(transfers[0]),
-        spending, investments: investmentAnalytics(events, investmentTotals[0]), planning: planningAnalytics(spending.months, transferReview(transfers[0])), ...balanceSnapshot(snapshotRows)
+        spending, investments: investmentAnalytics(events, investmentTotals[0], realizedEvents), planning: planningAnalytics(spending.months, transferReview(transfers[0])), ...balanceSnapshot(snapshotRows)
       };
     },
 
@@ -299,10 +315,11 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
 
 type ImportRow = { id: string; digest: string; format: MoneyImportFormat; filename: string; bytes: string; source_row_count: number; inserted_row_count: number; duplicate_row_count: number; committed_at: Date; created_by: string };
 type ActivityRow = { id: string; occurred_at: Date; account_name: string; description: string; amount_minor: string; fee_minor: string; tax_minor: string; currency: string; status: MoneyLedgerTransaction["status"]; source_type: string; flow_kind: MoneyLedgerTransaction["flowKind"]; category: MoneyCategory; category_origin: "source" | "rule" | "manual"; transfer_group_id: string | null; transfer_disposition: MoneyTransferDisposition | null };
-type MonthlyRow = { month: string; spend_minor: string; refunds_minor: string; income_minor: string; fees_minor: string; taxes_minor: string };
+type MonthlyRow = { month: string; observed: boolean; spend_minor: string; refunds_minor: string; income_minor: string; fees_minor: string; taxes_minor: string };
 type CategoryRow = { category: MoneyCategory; amount_minor: string; count: string };
 type InvestmentRow = { symbol: string | null; name: string | null; asset_class: string | null; quantity: string; bought_minor: string; sold_minor: string; income_minor: string; fees_minor: string; taxes_minor: string; event_count: string; currency: string };
 type InvestmentTotalsRow = { event_count: string; bought_minor: string; sold_minor: string; income_minor: string; fees_minor: string; taxes_minor: string };
+type RealizedEventRow = { account_id: string; occurred_at: Date; source_row: number; source_key: string; event_kind: MoneyInvestmentEventInput["eventKind"]; symbol: string | null; quantity: string | null; base_amount_minor: string; base_fee_minor: string };
 type SnapshotRow = { account_id: string; snapshot_date: string; value_minor: string; currency: string; display_name: string; role: "cash" | "investment"; provider: string };
 type TransferRow = { id: string; account_id: string; local_date: string; amount_minor: string; currency: string };
 type TransferReviewRow = { linked_pairs: string; unlinked_count: string; unresolved_positive_count: string; unresolved_negative_count: string };
@@ -312,29 +329,33 @@ function summary(row: ImportRow): MoneyImportSummary { const { replay: _, ...ite
 function activityItem(row: ActivityRow): MoneyActivityItem { return { id: row.id, occurredAt: row.occurred_at.toISOString(), accountName: row.account_name, description: row.description, amountMinor: integer(row.amount_minor), feeMinor: integer(row.fee_minor), taxMinor: integer(row.tax_minor), currency: row.currency, status: row.status, sourceType: row.source_type, flowKind: row.flow_kind, category: row.category, categoryOrigin: row.category_origin, needsTransferReview: row.status === "completed" && row.flow_kind === "transfer" && !row.transfer_group_id && !row.transfer_disposition, ...(row.transfer_group_id ? { transferGroupId: row.transfer_group_id } : {}), ...(row.transfer_disposition ? { transferDisposition: row.transfer_disposition } : {}) }; }
 
 function spendingAnalytics(monthly: MonthlyRow[], categories: CategoryRow[]): MoneySpendingAnalytics {
-  const months = monthly.map((row) => { const spendMinor = integer(row.spend_minor); const refundsMinor = integer(row.refunds_minor); const incomeMinor = integer(row.income_minor); const feesMinor = integer(row.fees_minor); const taxesMinor = integer(row.taxes_minor); return { month: row.month, spendMinor, refundsMinor, incomeMinor, feesMinor, taxesMinor, netCashFlowMinor: incomeMinor + refundsMinor - spendMinor - feesMinor - taxesMinor }; });
+  const months = monthly.map((row) => { const spendMinor = integer(row.spend_minor); const refundsMinor = integer(row.refunds_minor); const incomeMinor = integer(row.income_minor); const feesMinor = integer(row.fees_minor); const taxesMinor = integer(row.taxes_minor); return { month: row.month, observed: row.observed, spendMinor, refundsMinor, incomeMinor, feesMinor, taxesMinor, netCashFlowMinor: incomeMinor + refundsMinor - spendMinor - feesMinor - taxesMinor }; });
   return { months, categories: categories.map((row) => ({ category: row.category, amountMinor: integer(row.amount_minor), count: integer(row.count) })), uncategorizedCount: categories.find((row) => row.category === "uncategorized") ? integer(categories.find((row) => row.category === "uncategorized")!.count) : 0 };
 }
 
-function investmentAnalytics(rows: InvestmentRow[], totals?: InvestmentTotalsRow): MoneyInvestmentAnalytics {
+function investmentAnalytics(rows: InvestmentRow[], totals: InvestmentTotalsRow | undefined, realizedEvents: RealizedEventRow[]): MoneyInvestmentAnalytics {
   const items = rows.map((row) => ({ symbol: row.symbol ?? "—", ...(row.name ? { name: row.name } : {}), ...(row.asset_class ? { assetClass: row.asset_class } : {}),
     quantity: normalizeDatabaseDecimal(row.quantity), boughtMinor: integer(row.bought_minor), soldMinor: integer(row.sold_minor),
     incomeMinor: integer(row.income_minor), feesMinor: integer(row.fees_minor), taxesMinor: integer(row.taxes_minor), currency: row.currency }));
-  return { positions: items, totals: { eventCount: integer(totals?.event_count ?? "0"), boughtMinor: integer(totals?.bought_minor ?? "0"), soldMinor: integer(totals?.sold_minor ?? "0"), incomeMinor: integer(totals?.income_minor ?? "0"), feesMinor: integer(totals?.fees_minor ?? "0"), taxesMinor: integer(totals?.taxes_minor ?? "0") } };
+  return { positions: items, totals: { eventCount: integer(totals?.event_count ?? "0"), boughtMinor: integer(totals?.bought_minor ?? "0"), soldMinor: integer(totals?.sold_minor ?? "0"), incomeMinor: integer(totals?.income_minor ?? "0"), feesMinor: integer(totals?.fees_minor ?? "0"), taxesMinor: integer(totals?.taxes_minor ?? "0") },
+    realized: fifoRealizedGains(realizedEvents.map((event) => ({ accountKey: event.account_id, occurredAt: event.occurred_at.toISOString(), sourceOrder: `${String(event.source_row).padStart(10, "0")}\0${event.source_key}`, eventKind: event.event_kind, ...(event.symbol ? { symbol: event.symbol } : {}), ...(event.quantity ? { quantity: event.quantity } : {}), baseAmountMinor: integer(event.base_amount_minor), baseFeeMinor: integer(event.base_fee_minor) }))) };
 }
 
 function planningAnalytics(months: MoneySpendingAnalytics["months"], review: MoneyLedgerSnapshot["transferReview"]): MoneyPlanningAnalytics {
-  const recent = months.slice(-12).map((item) => item.netCashFlowMinor).sort((a, b) => a - b);
+  const calendar = months.slice(-12);
+  let firstConsecutive = calendar.length;
+  while (firstConsecutive > 0 && calendar[firstConsecutive - 1]!.observed) firstConsecutive -= 1;
+  const recent = calendar.slice(firstConsecutive).map((item) => item.netCashFlowMinor).sort((a, b) => a - b);
   const middle = Math.floor(recent.length / 2);
   const median = recent.length ? recent.length % 2 ? recent[middle]! : Math.round((recent[middle - 1]! + recent[middle]!) / 2) : 0;
   const unresolvedTransferCount = review.unresolvedPositiveCount + review.unresolvedNegativeCount;
-  const ready = unresolvedTransferCount === 0 && recent.length > 0;
+  const ready = unresolvedTransferCount === 0 && recent.length >= 6;
   return { ready, unresolvedTransferCount, medianMonthlyNetMinor: median, observedMonthCount: recent.length,
-    projections: ready ? ([6, 12, 24] as const).map((projectionMonths) => ({ months: projectionMonths, changeMinor: median * projectionMonths })) : [] };
+    projections: ready ? ([6, 12] as const).map((projectionMonths) => ({ months: projectionMonths, changeMinor: median * projectionMonths })) : [] };
 }
 
 function balanceSnapshot(rows: SnapshotRow[]): MoneyTrackerSnapshot {
-  const byDate = new Map<string, Record<string, number>>(); const labels: Record<string, string> = {}; const roles: Record<string, "cash" | "investment"> = {}; const accounts = new Set<string>();
+  const byDate = new Map<string, Record<string, number>>(); const labels: Record<string, string> = {}; const roles: Record<string, "cash" | "investment"> = {}; const accountLastObserved: Record<string, string> = {}; const accounts = new Set<string>();
   const labelsByAccount = new Map(rows.map((row) => [row.account_id, row.display_name]));
   const labelCounts = new Map<string, number>();
   for (const label of labelsByAccount.values()) labelCounts.set(label, (labelCounts.get(label) ?? 0) + 1);
@@ -343,7 +364,7 @@ function balanceSnapshot(rows: SnapshotRow[]): MoneyTrackerSnapshot {
     const baseName = labelsByAccount.get(row.account_id)!;
     const name = (labelCounts.get(baseName) ?? 0) > 1 ? `${baseName} · ${row.provider} ${row.account_id.slice(0, 6)}` : baseName;
     const month = `${row.snapshot_date.slice(0, 7)}-01`;
-    accounts.add(row.account_id); labels[row.account_id] = name; roles[row.account_id] = row.role; const values = byDate.get(month) ?? {}; values[row.account_id] = integer(row.value_minor) / 100; byDate.set(month, values);
+    accounts.add(row.account_id); labels[row.account_id] = name; roles[row.account_id] = row.role; accountLastObserved[row.account_id] = month; const values = byDate.get(month) ?? {}; values[row.account_id] = integer(row.value_minor) / 100; byDate.set(month, values);
   }
   const carried: Record<string, number> = {};
   const observedDates = [...byDate.keys()].sort();
@@ -352,9 +373,9 @@ function balanceSnapshot(rows: SnapshotRow[]): MoneyTrackerSnapshot {
     const updates = byDate.get(date) ?? {};
     Object.assign(carried, updates);
     const values = { ...carried };
-    return { date, values, total: Object.values(values).reduce((sum, value) => sum + value, 0) };
+    return { date, values, observedAccounts: Object.keys(updates), total: Object.values(values).reduce((sum, value) => sum + value, 0) };
   });
-  return { accounts: [...accounts].sort((left, right) => labels[left]!.localeCompare(labels[right]!)), accountLabels: labels, accountRoles: roles, months, latestDate: months.at(-1)?.date };
+  return { accounts: [...accounts].sort((left, right) => labels[left]!.localeCompare(labels[right]!)), accountLabels: labels, accountRoles: roles, accountLastObserved, months, latestDate: months.at(-1)?.date };
 }
 
 function monthRange(first: string, last: string) { const result: string[] = []; const current = new Date(`${first}T00:00:00Z`); const end = new Date(`${last}T00:00:00Z`); while (current <= end) { result.push(current.toISOString().slice(0, 10)); current.setUTCMonth(current.getUTCMonth() + 1); } return result; }

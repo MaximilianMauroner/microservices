@@ -5,6 +5,7 @@ export type MoneyTrackerTrendPoint = Readonly<{
   total: number;
   money: number;
   stocks: number;
+  observed?: boolean;
 }>;
 
 type TrendChange = Readonly<{ change: number; percent?: number }>;
@@ -42,14 +43,20 @@ export function moneyTrackerTrendStats(
   period: readonly MoneyTrackerTrendPoint[],
   history: readonly MoneyTrackerTrendPoint[] = period
 ): MoneyTrackerTrendStats {
-  const latest = period.at(-1);
-  const first = period.at(0);
-  const changes = period.slice(1).map((point, index) => point.total - period[index]!.total);
-  const moneyChanges = period.slice(1).map((point, index) => point.money - period[index]!.money);
-  const stocksChanges = period.slice(1).map((point, index) => point.stocks - period[index]!.stocks);
+  const observedPeriod = period.filter(isObserved);
+  const observedHistory = history.filter(isObserved);
+  const latest = observedPeriod.at(-1);
+  const first = observedPeriod.at(0);
+  const adjacent = period.slice(1).flatMap((point, index) => {
+    const previous = period[index]!;
+    return isObserved(point) && isObserved(previous) && monthDistance(previous.date, point.date) === 1 ? [{ previous, point }] : [];
+  });
+  const changes = adjacent.map(({ previous, point }) => point.total - previous.total);
+  const moneyChanges = adjacent.map(({ previous, point }) => point.money - previous.money);
+  const stocksChanges = adjacent.map(({ previous, point }) => point.stocks - previous.stocks);
   const positive = changes.filter((change) => change > 0).length;
-  const high = period.length ? period.reduce((best, point) => point.total > best.total ? point : best) : undefined;
-  const previousYear = latest ? findPreviousYear(history, latest.date) : undefined;
+  const high = observedPeriod.length ? observedPeriod.reduce((best, point) => point.total > best.total ? point : best) : undefined;
+  const previousYear = latest ? findPreviousYear(observedHistory, latest.date) : undefined;
   const currentWindow = period.slice(-3);
   const previousWindow = period.slice(-6, -3);
   const currentAllocation = latest ? allocation(latest) : undefined;
@@ -62,7 +69,7 @@ export function moneyTrackerTrendStats(
       money: change(latest.money, previousYear.money),
       stocks: change(latest.stocks, previousYear.stocks)
     } : undefined,
-    momentum: currentWindow.length === 3 && previousWindow.length === 3
+    momentum: currentWindow.length === 3 && previousWindow.length === 3 && [...previousWindow, ...currentWindow].every(isObserved) && consecutiveMonths([...previousWindow, ...currentWindow])
       ? change(average(currentWindow.map((point) => point.total)), average(previousWindow.map((point) => point.total)))
       : undefined,
     highWaterMark: high ? { date: high.date, value: high.total } : undefined,
@@ -75,10 +82,10 @@ export function moneyTrackerTrendStats(
     averageMonthlyChange: changes.length ? average(changes) : undefined,
     averageMoneyChange: moneyChanges.length ? average(moneyChanges) : undefined,
     averageStocksChange: stocksChanges.length ? average(stocksChanges) : undefined,
-    geometricAverageMonthlyPercent: latest && first && period.length > 1 && latest.total > 0 && first.total > 0
-      ? (Math.pow(latest.total / first.total, 1 / (period.length - 1)) - 1) * 100
+    geometricAverageMonthlyPercent: latest && first && latest.total > 0 && first.total > 0 && monthDistance(first.date, latest.date) > 0
+      ? (Math.pow(latest.total / first.total, 1 / monthDistance(first.date, latest.date)) - 1) * 100
       : undefined,
-    yearlyChanges: yearlyChanges(history),
+    yearlyChanges: yearlyChanges(observedHistory),
     allocation: currentAllocation ? {
       current: currentAllocation,
       previousYear: previousYear ? { date: previousYear.date, ...allocation(previousYear) } : undefined
@@ -110,6 +117,17 @@ function parseDate(value: string) {
   if (iso) return { year: Number(iso[1]), month: Number(iso[2]), day: Number(iso[3]) };
   const [day, month, year] = value.split("/").map(Number);
   return day && month && year ? { day, month, year } : undefined;
+}
+
+function isObserved(point: MoneyTrackerTrendPoint) { return point.observed !== false; }
+
+function monthDistance(from: string, to: string) {
+  const start = parseDate(from); const end = parseDate(to);
+  return start && end ? (end.year - start.year) * 12 + end.month - start.month : Number.NaN;
+}
+
+function consecutiveMonths(points: readonly MoneyTrackerTrendPoint[]) {
+  return points.slice(1).every((point, index) => monthDistance(points[index]!.date, point.date) === 1);
 }
 
 function change(current: number, base: number): TrendChange {

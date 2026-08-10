@@ -3,7 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { Sun } from "lucide-react";
 import { authClient } from "../lib/auth-client.js";
 
-export function AppShell({ product, showSignOut }: { product: string; showSignOut: boolean }) {
+export function AppShell({ product, showSignOut, showThemeToggle = true }: { product: string; showSignOut: boolean; showThemeToggle?: boolean }) {
   async function signOut() {
     await authClient.signOut();
     window.location.assign("/");
@@ -30,7 +30,7 @@ export function AppShell({ product, showSignOut }: { product: string; showSignOu
             <span className="truncate text-xs font-semibold text-muted-foreground">{product}</span>
           </div>
           <nav className="flex items-center gap-1" aria-label={`${product} session`}>
-            <button
+            {showThemeToggle ? <button
               className="grid size-8 place-items-center rounded-full border text-muted-foreground hover:bg-accent hover:text-foreground"
               type="button"
               onClick={toggleTheme}
@@ -38,7 +38,7 @@ export function AppShell({ product, showSignOut }: { product: string; showSignOu
               title="Toggle color mode"
             >
               <Sun className="size-4" aria-hidden="true" />
-            </button>
+            </button> : null}
             {showSignOut ? (
               <button
                 className="inline-flex h-8 items-center rounded-full border px-3 text-xs font-semibold text-muted-foreground hover:bg-accent hover:text-foreground"

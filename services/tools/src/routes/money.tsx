@@ -6,13 +6,13 @@ import { requireRouteSession } from "../auth-session.js";
 
 export const Route = createFileRoute("/money")({
   beforeLoad: ({ location }) => requireRouteSession(location.href),
-  validateSearch: (search: Record<string, unknown>): { view?: Exclude<MoneyTrackerView, "overview"> } => ({ view: search.view === "activity" || search.view === "spending" || search.view === "investments" || search.view === "balances" || search.view === "imports" ? search.view : undefined }),
+  validateSearch: (search: Record<string, unknown>): { view?: Exclude<MoneyTrackerView, "overview"> } => ({ view: search.view === "cash-flow" || search.view === "transactions" || search.view === "investments" || search.view === "accounts" || search.view === "insights" || search.view === "data" ? search.view : undefined }),
   loader: () => getMoneyTrackerPageData(),
   pendingComponent: MoneyTrackerPendingRoute,
   pendingMs: 0,
   pendingMinMs: 250,
   head: () => ({
-    meta: [{ title: "Money tracker — Mauroner Tools" }, { name: "robots", content: "noindex, nofollow" }],
+    meta: [{ title: "Money dashboard | Mauroner Tools" }, { name: "robots", content: "noindex, nofollow" }],
     links: [faviconLink(favicons.money)]
   }),
   component: MoneyTrackerRoute
