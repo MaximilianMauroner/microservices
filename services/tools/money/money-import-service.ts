@@ -147,8 +147,8 @@ function validateFilename(filename: string) {
   if (!value || value.length > 255 || value.includes("/") || value.includes("\\") || /[\u0000-\u001f\u007f]/.test(value)) {
     throw new MoneyImportValidationError("invalid_filename", "The import filename is invalid.");
   }
-  if (!/\.(?:tsv|csv)$/i.test(value)) {
-    throw new MoneyImportValidationError("unsupported_file_extension", "Money imports must be a .tsv or .csv file.");
+  if (!/\.(?:xlsx|tsv|csv)$/i.test(value)) {
+    throw new MoneyImportValidationError("unsupported_file_extension", "Money imports must be an .xlsx, .tsv, or .csv file.");
   }
   return value;
 }
