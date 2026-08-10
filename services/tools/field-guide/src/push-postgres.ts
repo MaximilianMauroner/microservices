@@ -8,6 +8,7 @@ import {
   verifyDisposableDatabase,
   type PushMode,
 } from "./postgres-push-guard.js";
+import { reconcileRuntimeSchema } from "./runtime-schema-reconciliation.js";
 
 const mode = process.argv[2];
 if (mode !== "production" && mode !== "test") {
@@ -64,4 +65,13 @@ for (const pushConfig of pushes) {
   }
   if (failedExitCode !== undefined) break;
 }
-if (failedExitCode !== undefined) process.exitCode = failedExitCode;
+if (failedExitCode !== undefined) {
+  process.exitCode = failedExitCode;
+} else {
+  const database = postgres(url, { max: 1 });
+  try {
+    await reconcileRuntimeSchema(database);
+  } finally {
+    await database.end();
+  }
+}

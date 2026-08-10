@@ -86,6 +86,11 @@ describe("Postgres schema contract", () => {
     expect(push).not.toContain("--hints");
   });
 
+  it("reconciles check expression changes after successful schema pushes", async () => {
+    const push = await readFile(new URL("../src/push-postgres.ts", import.meta.url), "utf8");
+    expect(push).toContain("reconcileRuntimeSchema");
+  });
+
   it("keeps the runtime search path aligned with the pushed Field Guide tables", async () => {
     const repository = await readFile(
       new URL("../src/postgres-repository.ts", import.meta.url),
