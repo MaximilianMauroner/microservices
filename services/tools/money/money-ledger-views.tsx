@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "@tanstack/react-router";
-import { Check, FileSpreadsheet, Search, Upload } from "lucide-react";
+import { Check, FileSpreadsheet, Search, Upload, X } from "lucide-react";
 import type { MoneyTrackerPageData } from "../src/protected-data.js";
 import type { MoneyImportPreview } from "./money-import-domain.js";
 import { MONEY_CATEGORIES, MONEY_TRANSFER_DISPOSITIONS, REVOLUT_CASH_FORMAT, SPARKASSE_CASH_FORMAT, type MoneyCategory, type MoneyTransferDisposition } from "./money-enums.js";
@@ -117,12 +117,50 @@ export function MoneyDataView({ accounts, accountLastObserved, imports, investme
 
 export function MoneyImportsView({ imports }: Pick<MoneyTrackerPageData, "imports">) {
   const router = useRouter(); const input = useRef<HTMLInputElement>(null);
-  const [file, setFile] = useState<File>(); const [preview, setPreview] = useState<MoneyImportPreview>(); const [receipt, setReceipt] = useState<MoneyImportReceipt>();
-  const [busy, setBusy] = useState<"preview" | "commit">(); const [error, setError] = useState<string>();
-  const choose = (selected?: File) => { setFile(selected); setPreview(undefined); setReceipt(undefined); setError(undefined); };
-  const previewFile = async () => { if (!file) return; setBusy("preview"); setError(undefined); try { const form = new FormData(); form.set("file", file); setPreview(await moneyForm<MoneyImportPreview>("/api/money/imports/preview", form)); } catch (caught) { setError(message(caught)); } finally { setBusy(undefined); } };
-  const commit = async () => { if (!file || !preview) return; setBusy("commit"); setError(undefined); try { const form = new FormData(); form.set("file", file); form.set("expectedDigest", preview.digest); const result = await moneyForm<MoneyImportReceipt>("/api/money/imports", form); setReceipt(result); setPreview(undefined); setFile(undefined); if (input.current) input.current.value = ""; await router.invalidate(); } catch (caught) { setError(message(caught)); } finally { setBusy(undefined); } };
-  return <section className="grid items-start gap-3 lg:grid-cols-[minmax(0,1.25fr)_minmax(20rem,.75fr)]"><Card><CardHeader className="border-b"><CardTitle>Import a statement</CardTitle><CardDescription>Sparkasse XLSX, Revolut cash/trading TSV, portfolio CSV, or balance CSV</CardDescription></CardHeader><CardContent className="space-y-4 pt-5"><input ref={input} className="sr-only" tabIndex={-1} type="file" accept=".xlsx,.tsv,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/tab-separated-values,text/csv" onChange={(event) => choose(event.currentTarget.files?.[0])} /><button type="button" className="grid min-h-44 w-full place-items-center rounded-lg border border-dashed bg-muted/25 p-6 text-center transition-colors hover:bg-muted/40" onClick={() => input.current?.click()}><span><FileSpreadsheet className="mx-auto mb-3 size-8 text-cyan-300" /><strong className="block">{file?.name ?? "Choose a money export"}</strong><span className="mt-1 block text-sm text-muted-foreground">{file ? formatBytes(file.size) : "XLSX, TSV, or CSV, up to 10 MB"}</span></span></button>{error ? <Alert variant="destructive"><AlertTitle>Import unavailable</AlertTitle><AlertDescription>{error}</AlertDescription></Alert> : null}{receipt ? <Alert><Check /><AlertTitle>{receipt.replay ? "Already imported" : "Import complete"}</AlertTitle><AlertDescription>{receipt.insertedCount.toLocaleString("en-GB")} rows inserted and {receipt.duplicateCount.toLocaleString("en-GB")} duplicates skipped.</AlertDescription></Alert> : null}{!preview ? <Button type="button" disabled={!file || busy !== undefined} onClick={() => void previewFile()}><Upload />{busy === "preview" ? "Reading statement…" : "Preview import"}</Button> : <PreviewPanel preview={preview} onCancel={() => setPreview(undefined)} onCommit={() => void commit()} busy={busy === "commit"} />}</CardContent></Card><Card><CardHeader className="border-b"><CardTitle>Import history</CardTitle><CardDescription>Raw files are discarded after normalization</CardDescription></CardHeader><CardContent className="divide-y p-0">{imports.length ? imports.map((item) => <div className="space-y-1 px-4 py-3" key={item.id}><div className="flex items-start justify-between gap-3"><strong className="min-w-0 truncate text-sm" title={item.filename}>{item.filename}</strong><Badge variant="outline">{item.insertedCount.toLocaleString("en-GB")} new</Badge></div><p className="text-xs text-muted-foreground">{formatDate(item.committedAt)} · {formatBytes(item.bytes)} · {item.duplicateCount.toLocaleString("en-GB")} duplicates</p><p className="text-[.65rem] uppercase tracking-wide text-muted-foreground">{formatLabel(item.format)}</p></div>) : <EmptyLedger title="No imports yet" description="Completed imports will appear here with their row counts and digest-backed receipt." />}</CardContent></Card></section>;
+  const [files, setFiles] = useState<MoneyImportFile[]>([]);
+  const [busy, setBusy] = useState<"preview" | "commit">(); const [progress, setProgress] = useState(0); const [operationTotal, setOperationTotal] = useState(0);
+  const choose = (selected?: FileList | null) => {
+    const next = Array.from(selected ?? []).map((file, index) => ({ id: `${file.name}:${file.size}:${file.lastModified}:${index}`, file }));
+    setFiles(next); setBusy(undefined); setProgress(0); setOperationTotal(0);
+  };
+  const updateFile = (id: string, update: Partial<Pick<MoneyImportFile, "preview" | "receipt" | "error">>) => setFiles((current) => current.map((item) => item.id === id ? { ...item, ...update } : item));
+  const clear = () => { setFiles([]); setProgress(0); setOperationTotal(0); if (input.current) input.current.value = ""; };
+  const previewFiles = async () => {
+    const pending = files.filter((item) => !item.receipt);
+    if (!pending.length) return;
+    setBusy("preview"); setProgress(0); setOperationTotal(pending.length);
+    for (const [index, item] of pending.entries()) {
+      updateFile(item.id, { preview: undefined, error: undefined });
+      try {
+        const form = new FormData(); form.set("file", item.file);
+        updateFile(item.id, { preview: await moneyForm<MoneyImportPreview>("/api/money/imports/preview", form), error: undefined });
+      } catch (caught) { updateFile(item.id, { preview: undefined, error: message(caught) }); }
+      setProgress(index + 1);
+    }
+    setBusy(undefined);
+  };
+  const commitFiles = async () => {
+    const ready = files.filter((item) => item.preview && !item.receipt);
+    if (!ready.length) return;
+    setBusy("commit"); setProgress(0); setOperationTotal(ready.length);
+    let imported = false;
+    for (const [index, item] of ready.entries()) {
+      const preview = item.preview;
+      if (!preview) continue;
+      updateFile(item.id, { error: undefined });
+      try {
+        const form = new FormData(); form.set("file", item.file); form.set("expectedDigest", preview.digest);
+        updateFile(item.id, { receipt: await moneyForm<MoneyImportReceipt>("/api/money/imports", form), error: undefined });
+        imported = true;
+      } catch (caught) { updateFile(item.id, { error: message(caught) }); }
+      setProgress(index + 1);
+    }
+    setBusy(undefined);
+    if (imported) await router.invalidate();
+  };
+  const readyCount = files.filter((item) => item.preview && !item.receipt).length;
+  const completedCount = files.filter((item) => item.receipt).length;
+  return <section className="grid items-start gap-3 lg:grid-cols-[minmax(0,1.25fr)_minmax(20rem,.75fr)]"><Card><CardHeader className="border-b"><CardTitle>Import statements</CardTitle><CardDescription>Sparkasse XLSX, Revolut cash/trading TSV, portfolio CSV, or balance CSV</CardDescription></CardHeader><CardContent className="space-y-4 pt-5"><input ref={input} className="sr-only" tabIndex={-1} type="file" multiple accept=".xlsx,.tsv,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/tab-separated-values,text/csv" disabled={busy !== undefined} onChange={(event) => choose(event.currentTarget.files)} /><button type="button" disabled={busy !== undefined} className="grid min-h-44 w-full place-items-center rounded-lg border border-dashed bg-muted/25 p-6 text-center transition-colors hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-60" onClick={() => { if (input.current) { input.current.value = ""; input.current.click(); } }}><span><FileSpreadsheet className="mx-auto mb-3 size-8 text-cyan-300" /><strong className="block">{files.length ? `${files.length.toLocaleString("en-GB")} file${files.length === 1 ? "" : "s"} selected` : "Choose money exports"}</strong><span className="mt-1 block text-sm text-muted-foreground">{files.length ? formatBytes(files.reduce((total, item) => total + item.file.size, 0)) : "Select one or more XLSX, TSV, or CSV files, up to 10 MB each"}</span></span></button>{files.length ? <BatchImportPanel files={files} busy={busy} progress={progress} operationTotal={operationTotal} readyCount={readyCount} completedCount={completedCount} onPreview={() => void previewFiles()} onCommit={() => void commitFiles()} onClear={clear} onRemove={(id) => setFiles((current) => current.filter((item) => item.id !== id))} /> : null}</CardContent></Card><Card><CardHeader className="border-b"><CardTitle>Import history</CardTitle><CardDescription>Raw files are discarded after normalization</CardDescription></CardHeader><CardContent className="divide-y p-0">{imports.length ? imports.map((item) => <div className="space-y-1 px-4 py-3" key={item.id}><div className="flex items-start justify-between gap-3"><strong className="min-w-0 truncate text-sm" title={item.filename}>{item.filename}</strong><Badge variant="outline">{item.insertedCount.toLocaleString("en-GB")} new</Badge></div><p className="text-xs text-muted-foreground">{formatDate(item.committedAt)} · {formatBytes(item.bytes)} · {item.duplicateCount.toLocaleString("en-GB")} duplicates</p><p className="text-[.65rem] uppercase tracking-wide text-muted-foreground">{formatLabel(item.format)}</p></div>) : <EmptyLedger title="No imports yet" description="Completed imports will appear here with their row counts and digest-backed receipt." />}</CardContent></Card></section>;
 }
 
 export function MoneySpendingView({ spending }: Pick<MoneyTrackerPageData, "spending">) {
@@ -146,7 +184,32 @@ export function MoneyBalanceEntry() {
   return <Card><CardHeader className="border-b"><CardTitle>Add balance snapshot</CardTitle><CardDescription>Manual EUR values are stored alongside imported running balances</CardDescription></CardHeader><CardContent className="pt-5"><form className="grid gap-3 sm:grid-cols-[minmax(10rem,1fr)_9rem_10rem_10rem_auto]" onSubmit={(event) => void submit(event)}><label className="space-y-1 text-xs text-muted-foreground">Account<Input name="accountName" required maxLength={100} placeholder="Broker or account" /></label><label className="space-y-1 text-xs text-muted-foreground">Role<select name="role" className="block h-9 w-full rounded-md border border-input bg-background px-2.5 text-sm text-foreground"><option value="cash">Cash</option><option value="investment">Investment</option></select></label><label className="space-y-1 text-xs text-muted-foreground">Date<Input name="date" type="date" required /></label><label className="space-y-1 text-xs text-muted-foreground">Value<Input name="value" inputMode="decimal" required placeholder="0.00" /></label><Button className="self-end" disabled={busy}>{busy ? "Saving…" : "Save snapshot"}</Button></form>{error ? <p className="mt-3 text-sm text-rose-300" role="alert">{error}</p> : null}{saved ? <p className="mt-3 text-sm text-emerald-300" role="status">Snapshot saved.</p> : null}</CardContent></Card>;
 }
 
-function PreviewPanel({ preview, onCancel, onCommit, busy }: { preview: MoneyImportPreview; onCancel: () => void; onCommit: () => void; busy: boolean }) { return <div className="space-y-4 rounded-lg border bg-muted/20 p-4"><div><div className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-semibold">Ready to import</h3><Badge variant="outline">{preview.rowCount.toLocaleString("en-GB")} rows</Badge></div><p className="mt-1 text-xs text-muted-foreground">{formatLabel(preview.format)} · {preview.dateRange.from} to {preview.dateRange.to} · {preview.duplicateCount.toLocaleString("en-GB")} duplicates{preview.investmentEventCount ? ` · ${preview.investmentEventCount.toLocaleString("en-GB")} investment events` : ""}</p></div><div className="grid gap-2 sm:grid-cols-2">{preview.accounts.map((account) => <div className="rounded-md border bg-background p-3" key={account.externalRef}><div className="flex justify-between gap-3"><strong className="text-sm">{account.name}</strong><span className="font-mono text-sm">{account.endingBalanceMinor === undefined ? "—" : money(account.endingBalanceMinor, account.currency)}</span></div><p className="mt-1 text-xs text-muted-foreground">{account.rowCount.toLocaleString("en-GB")} rows · {account.revertedCount} reverted · {reconciliationLabel(preview, account.reconciliationMismatchCount)}</p></div>)}</div>{preview.warnings.map((warning) => <Alert key={warning}><AlertTitle>Review warning</AlertTitle><AlertDescription>{warning}</AlertDescription></Alert>)}<div className="flex flex-wrap gap-2"><Button type="button" onClick={onCommit} disabled={busy}>{busy ? "Importing…" : `Import ${Math.max(0, preview.rowCount - preview.duplicateCount).toLocaleString("en-GB")} new rows`}</Button><Button type="button" variant="outline" onClick={onCancel} disabled={busy}>Cancel</Button></div><p className="text-xs text-muted-foreground">Commit reparses and digest-checks the file. Raw bytes are never retained.</p></div>; }
+type MoneyImportFile = Readonly<{ id: string; file: File; preview?: MoneyImportPreview; receipt?: MoneyImportReceipt; error?: string }>;
+
+function BatchImportPanel({ files, busy, progress, operationTotal, readyCount, completedCount, onPreview, onCommit, onClear, onRemove }: { files: readonly MoneyImportFile[]; busy?: "preview" | "commit"; progress: number; operationTotal: number; readyCount: number; completedCount: number; onPreview: () => void; onCommit: () => void; onClear: () => void; onRemove: (id: string) => void }) {
+  const complete = completedCount === files.length;
+  const operationPosition = Math.min(progress + 1, operationTotal);
+  return <div className="rounded-lg border bg-muted/20">
+    <div className="divide-y">{files.map((item) => {
+      const preview = item.preview;
+      return <div className="space-y-2 p-4" key={item.id}>
+        <div className="flex items-start gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2"><strong className="truncate text-sm" title={item.file.name}>{item.file.name}</strong>{item.receipt ? <Badge variant="outline"><Check />{item.receipt.replay ? "Already imported" : `${item.receipt.insertedCount.toLocaleString("en-GB")} new`}</Badge> : preview ? <Badge variant="outline">Ready</Badge> : item.error ? <Badge variant="destructive">Needs attention</Badge> : <Badge variant="outline">Selected</Badge>}</div>
+            <p className="mt-1 text-xs text-muted-foreground">{formatBytes(item.file.size)}{preview ? ` · ${formatLabel(preview.format)} · ${preview.dateRange.from} to ${preview.dateRange.to} · ${preview.rowCount.toLocaleString("en-GB")} rows · ${preview.duplicateCount.toLocaleString("en-GB")} known duplicates${preview.investmentEventCount ? ` · ${preview.investmentEventCount.toLocaleString("en-GB")} investment events` : ""}` : ""}</p>
+          </div>
+          {busy === undefined && !item.receipt ? <button type="button" className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground" onClick={() => onRemove(item.id)} aria-label={`Remove ${item.file.name}`}><X className="size-4" /></button> : null}
+        </div>
+        {preview ? <div className="grid gap-2 sm:grid-cols-2">{preview.accounts.map((account) => <div className="rounded-md border bg-background p-3" key={account.externalRef}><div className="flex justify-between gap-3"><strong className="truncate text-xs">{account.name}</strong><span className="font-mono text-xs">{account.endingBalanceMinor === undefined ? "—" : money(account.endingBalanceMinor, account.currency)}</span></div><p className="mt-1 text-[.68rem] text-muted-foreground">{account.rowCount.toLocaleString("en-GB")} rows · {account.revertedCount} reverted · {reconciliationLabel(preview, account.reconciliationMismatchCount)}</p></div>)}</div> : null}
+        {preview?.warnings.map((warning) => <Alert key={warning}><AlertTitle>Review warning</AlertTitle><AlertDescription>{warning}</AlertDescription></Alert>)}
+        {item.error ? <p className="text-sm text-rose-300" role="alert">{item.error}</p> : null}
+        {item.receipt ? <p className="text-xs text-muted-foreground">{item.receipt.insertedCount.toLocaleString("en-GB")} rows inserted and {item.receipt.duplicateCount.toLocaleString("en-GB")} duplicates skipped.</p> : null}
+      </div>;
+    })}</div>
+    <div className="flex flex-wrap items-center gap-2 border-t p-4"><Button type="button" disabled={busy !== undefined || complete} onClick={readyCount ? onCommit : onPreview}><Upload />{busy === "preview" ? `Previewing ${operationPosition} of ${operationTotal}…` : busy === "commit" ? `Importing ${operationPosition} of ${operationTotal}…` : readyCount ? `Import ${readyCount} file${readyCount === 1 ? "" : "s"}` : complete ? "Import complete" : `Preview ${files.length - completedCount} file${files.length - completedCount === 1 ? "" : "s"}`}</Button><Button type="button" variant="outline" disabled={busy !== undefined} onClick={onClear}>{complete ? "Choose more files" : "Clear"}</Button>{completedCount ? <span className="text-xs text-muted-foreground" role="status">{completedCount} of {files.length} files imported</span> : null}</div>
+    <p className="border-t px-4 py-3 text-xs text-muted-foreground">Files are committed one at a time. Every commit reparses and digest-checks the file; raw bytes are never retained.</p>
+  </div>;
+}
 function LedgerMetric({ label, value, detail }: { label: string; value: string; detail?: string }) { return <Card><CardContent className="p-4"><p className="text-[.68rem] font-semibold uppercase tracking-[.08em] text-muted-foreground">{label}</p><strong className="mt-1.5 block text-2xl tracking-tight">{value}</strong>{detail ? <span className="mt-1 block text-xs text-muted-foreground">{detail}</span> : null}</CardContent></Card>; }
 function QualityRow({ label, value, state }: { label: string; value: string; state: string }) { return <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-3 text-sm"><div><p className="font-medium">{label}</p><p className="mt-0.5 text-xs text-muted-foreground">{value}</p></div><Badge variant={state === "Review" || state === "Needs prices" ? "destructive" : "outline"}>{state}</Badge></div>; }
 function EmptyLedger({ title, description }: { title: string; description: string }) { return <div className="grid min-h-36 place-items-center p-5 text-center"><div><p className="font-medium">{title}</p><p className="mx-auto mt-1 max-w-lg text-sm text-muted-foreground">{description}</p></div></div>; }
