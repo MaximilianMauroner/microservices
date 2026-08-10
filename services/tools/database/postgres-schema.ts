@@ -94,7 +94,7 @@ export const moneyImports = toolsSchema.table("money_imports", {
   committedAt: timestamp("committed_at", { withTimezone: true }).notNull(),
   createdBy: text("created_by").notNull(),
 }, (table) => [
-  check("money_imports_format_check", sql`${table.format} in ('revolut_cash_statement_v1', 'revolut_trading_statement_v1', 'portfolio_transaction_export_v1', 'money_balance_snapshot_v1')`),
+  check("money_imports_format_check", sql`${table.format} in ('revolut_cash_statement_v1', 'revolut_trading_statement_v1', 'portfolio_transaction_export_v1', 'money_balance_snapshot_v1', 'sparkasse_cash_statement_v1')`),
   check("money_imports_bytes_check", sql`${table.bytes} > 0`),
   check("money_imports_row_counts_check", sql`${table.sourceRowCount} >= 0 and ${table.insertedRowCount} >= 0 and ${table.duplicateRowCount} >= 0 and ${table.insertedRowCount} + ${table.duplicateRowCount} = ${table.sourceRowCount}`),
   index("money_imports_committed_idx").on(table.committedAt),

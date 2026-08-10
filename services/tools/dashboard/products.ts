@@ -1,4 +1,6 @@
-export type ProductAccent = "lime" | "violet" | "amber" | "cyan" | "rose" | "blue";
+import type { ProductAccent } from "../src/product-accent.js";
+
+export type { ProductAccent } from "../src/product-accent.js";
 
 export type ProductDefinition = Readonly<{
   id: string;

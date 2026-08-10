@@ -38,7 +38,7 @@ export function DocumentsPage({ initial }: { initial: DocumentsPageData }) {
   }
 
   return <>
-    <AppShell product="Markdown Share" showSignOut />
+    <AppShell product="Markdown Share" accent="rose" showSignOut />
     <main id="main" className="workspace-page">
       <header className="workspace-header">
         <div>

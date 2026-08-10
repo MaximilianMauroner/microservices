@@ -78,7 +78,7 @@ export function ReviewPage({ initial, search }: { initial: ReviewPageData; searc
 
   return (
     <>
-      <AppShell product="Field Guide" showSignOut />
+      <AppShell product="Field Guide" accent="amber" showSignOut />
       <main id="main" className="workspace-page">
         <header className="workspace-header" aria-labelledby="review-title">
           <div>
