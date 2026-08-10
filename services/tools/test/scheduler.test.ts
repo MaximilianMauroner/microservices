@@ -69,6 +69,30 @@ describe("aligned scheduler", () => {
     expect(repository.close).toHaveBeenCalledOnce();
   });
 
+  it("aligns daily work to a phase offset", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const day = 86_400_000;
+    const phase = 3 * 3_600_000 + 15 * 60_000;
+    const run = vi.fn().mockResolvedValue(undefined);
+    const scheduler = startAlignedScheduler({
+      intervalMs: day,
+      phaseOffsetMs: phase,
+      run,
+      logger: { info: vi.fn(), error: vi.fn() },
+      now: () => Date.now()
+    });
+
+    await scheduler.wait();
+    expect(run).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(phase - 1);
+    expect(run).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(run).toHaveBeenCalledTimes(2);
+    scheduler.stop();
+    vi.useRealTimers();
+  });
+
   it("skips work when another process owns the slot", async () => {
     const repository = {
       acquire: vi.fn().mockResolvedValue(false),

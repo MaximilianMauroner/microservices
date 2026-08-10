@@ -28,11 +28,11 @@ export function ToolsDirectory({ snapshot }: { snapshot: PublicSnapshotDocument 
 
   return <>
     <AppShell product="Dashboard" showSignOut />
-    <main id="main" className="mx-auto w-[min(1180px,calc(100%_-_2rem))] pb-20 pt-12 sm:pt-20">
-      <section className="grid gap-8 border-b pb-12 lg:grid-cols-[1fr_auto] lg:items-end">
+    <main id="main" className="mx-auto w-[min(1180px,calc(100%_-_2rem))] pb-20 pt-8 sm:pt-20">
+      <section className="grid gap-6 border-b pb-8 sm:gap-8 sm:pb-12 lg:grid-cols-[1fr_auto] lg:items-end">
         <div>
           <p className="font-mono text-xs uppercase tracking-[0.18em] text-primary">Private workspace</p>
-          <h1 className="mt-4 max-w-3xl text-5xl font-semibold tracking-[-0.055em] sm:text-7xl">Useful things,<br />close at hand.</h1>
+          <h1 className="mt-3 max-w-3xl text-4xl font-semibold tracking-[-0.055em] sm:mt-4 sm:text-7xl">Useful things,<br />close at hand.</h1>
         </div>
         <div className="flex items-center gap-3 rounded-full border bg-card px-4 py-2 text-sm text-muted-foreground">
           <span className="size-2 rounded-full bg-primary" aria-hidden="true" />
@@ -40,21 +40,21 @@ export function ToolsDirectory({ snapshot }: { snapshot: PublicSnapshotDocument 
         </div>
       </section>
 
-      <section className="grid gap-4 pt-8 md:grid-cols-2 xl:grid-cols-3" aria-label="Products">
+      <section className="grid gap-3 pt-5 sm:gap-4 sm:pt-8 md:grid-cols-2 xl:grid-cols-3" aria-label="Products">
         {products.map((product, index) => {
           const Icon = productIcons[product.id];
           const status = monitorStatus(product.monitorId, statuses);
-          const card = <article className={`group flex min-h-56 flex-col justify-between rounded-2xl border p-6 text-black transition-colors ${accents[product.accent]}`}>
+          const card = <article className={`group flex min-h-0 flex-row items-center justify-between gap-4 rounded-xl border p-4 text-black transition-colors sm:min-h-56 sm:flex-col sm:items-stretch sm:rounded-2xl sm:p-6 ${accents[product.accent]}`}>
             <div className="flex items-start justify-between gap-4">
-              <span className="grid size-14 place-items-center rounded-full border border-black/25 bg-black/10 text-black"><Icon className="size-6" aria-hidden="true" /></span>
-              <span className="font-mono text-xs text-black/45">{String(index + 1).padStart(2, "0")}</span>
+              <span className="grid size-11 place-items-center rounded-full border border-black/25 bg-black/10 text-black sm:size-14"><Icon className="size-5 sm:size-6" aria-hidden="true" /></span>
+              <span className="hidden font-mono text-xs text-black/45 sm:block">{String(index + 1).padStart(2, "0")}</span>
             </div>
-            <div className="mt-10">
+            <div className="min-w-0 flex-1 sm:mt-10 sm:flex-none">
               <div className="flex items-center justify-between gap-3">
-                <h2 className="text-2xl font-medium tracking-tight">{product.name}</h2>
+                <h2 className="truncate text-lg font-medium tracking-tight sm:text-2xl">{product.name}</h2>
                 <ArrowUpRight className="size-5 text-black/55 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-black" aria-hidden="true" />
               </div>
-              <p className="mt-2 text-sm leading-6 text-black/65">{product.description}</p>
+              <p className="mt-1 truncate text-xs text-black/65 sm:mt-2 sm:text-sm sm:leading-6">{product.description}</p>
               <ProductMetadata access={product.access} status={status} />
             </div>
           </article>;
@@ -91,7 +91,7 @@ function ProductMetadata({ access, status }: { access: "private" | "tailnet" | "
   const statusLabel = status?.status === "up" ? "Operational" : status?.status === "down" ? "Unavailable" : status?.status === "paused" ? "Paused" : "Not monitored";
   const statusTone = status?.status === "down" ? "text-black" : "text-black/70";
 
-  return <div className="mt-5 flex items-center gap-2 text-black/70">
+  return <div className="mt-2 flex items-center gap-2 text-black/70 sm:mt-5">
     <MetadataIcon icon={AccessIcon} label={accessLabel} />
     <MetadataIcon icon={StatusIcon} label={statusLabel} className={statusTone} />
   </div>;

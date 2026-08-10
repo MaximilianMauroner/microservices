@@ -10,6 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../..
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "../../src/components/ui/empty.js";
 import { Input } from "../../src/components/ui/input.js";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../src/components/ui/table.js";
+import { useIsMobile } from "../../src/components/ui/use-mobile.js";
 import type { DocumentsPageData } from "../../src/protected-data.js";
 
 type CheckpointFilter = "all" | "with" | "without";
@@ -17,11 +18,13 @@ type ExpiryFilter = "all" | "24" | "72" | "168";
 type SortOrder = "updated-desc" | "expiry-asc" | "created-desc" | "name-asc";
 
 export function DocumentsPage({ initial }: { initial: DocumentsPageData }) {
+  const isMobile = useIsMobile();
   const [query, setQuery] = useState("");
   const [checkpoints, setCheckpoints] = useState<CheckpointFilter>("all");
   const [expiry, setExpiry] = useState<ExpiryFilter>("all");
   const [sort, setSort] = useState<SortOrder>("updated-desc");
   const [copied, setCopied] = useState<string>();
+  const [mobileLimit, setMobileLimit] = useState(50);
   const documents = useMemo(() => filterDocuments(initial.documents, initial.generatedAt, { query, checkpoints, expiry, sort }), [checkpoints, expiry, initial.documents, initial.generatedAt, query, sort]);
   const editedRecently = initial.documents.filter((document) => document.updatedAt >= initial.generatedAt - 86_400_000).length;
   const checkpointVersions = initial.documents.reduce((total, document) => total + document.checkpointCount, 0);
@@ -69,7 +72,7 @@ export function DocumentsPage({ initial }: { initial: DocumentsPageData }) {
             </div>
           </div>
         </CardHeader>
-        {documents.length === 0 ? <Empty className="min-h-72"><EmptyHeader><EmptyMedia variant="icon"><FileTextIcon /></EmptyMedia><EmptyTitle>No documents match</EmptyTitle><EmptyDescription>Adjust the filters or create a new Markdown document.</EmptyDescription></EmptyHeader></Empty> : <div className="overflow-x-auto"><Table>
+        {documents.length === 0 ? <Empty className="min-h-72"><EmptyHeader><EmptyMedia variant="icon"><FileTextIcon /></EmptyMedia><EmptyTitle>No documents match</EmptyTitle><EmptyDescription>Adjust the filters or create a new Markdown document.</EmptyDescription></EmptyHeader></Empty> : isMobile ? <MobileDocumentInventory documents={documents.slice(0, mobileLimit)} total={documents.length} generatedAt={initial.generatedAt} publicOrigin={initial.publicOrigin} copied={copied} onCopy={copyLink} onShowMore={() => setMobileLimit((current) => current + 50)} /> : <div className="overflow-x-auto"><Table>
           <TableHeader><TableRow><TableHead>Document</TableHead><TableHead>Last activity</TableHead><TableHead>Checkpoints</TableHead><TableHead>Expires</TableHead><TableHead><span className="sr-only">Actions</span></TableHead></TableRow></TableHeader>
           <TableBody>{documents.map((document) => <TableRow key={document.token}>
             <TableCell className="min-w-56"><div className="font-medium">{document.filename}</div><div className="mt-1 text-xs text-muted-foreground">Created {relativePast(document.createdAt, initial.generatedAt)}</div></TableCell>
@@ -82,6 +85,22 @@ export function DocumentsPage({ initial }: { initial: DocumentsPageData }) {
       </Card>
     </main>
   </>;
+}
+
+export function MobileDocumentInventory({ documents, total, generatedAt, publicOrigin, copied, onCopy, onShowMore }: { documents: MarkdownAdminDocument[]; total: number; generatedAt: number; publicOrigin: string; copied?: string; onCopy: (document: MarkdownAdminDocument) => void; onShowMore: () => void }) {
+  return <div className="divide-y" role="list" aria-label="Document inventory">
+    {documents.map((document) => <article className="space-y-3 p-4" key={document.token} role="listitem">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0"><h2 className="truncate text-sm font-semibold">{document.filename}</h2><p className="mt-1 text-xs text-muted-foreground">Edited {relativePast(document.updatedAt, generatedAt)} · {document.checkpointCount} {document.checkpointCount === 1 ? "checkpoint" : "checkpoints"}</p></div>
+        <Badge variant={document.expiresAt - generatedAt <= 86_400_000 ? "destructive" : "outline"}>{remaining(document.expiresAt, generatedAt)} left</Badge>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <Button type="button" variant="outline" onClick={() => onCopy(document)}>{copied === document.token ? <CheckIcon /> : <CopyIcon />}{copied === document.token ? "Copied" : "Copy link"}</Button>
+        <Button nativeButton={false} render={<a href={documentUrl(document, publicOrigin)} target="_blank" rel="noreferrer" />}>Open<ArrowUpRightIcon /></Button>
+      </div>
+    </article>)}
+    {documents.length < total ? <div className="p-3 text-center"><Button type="button" variant="outline" onClick={onShowMore}>Show 50 more</Button></div> : null}
+  </div>;
 }
 
 function Metric({ label, value, detail, attention = false }: { label: string; value: string; detail: string; attention?: boolean }) {

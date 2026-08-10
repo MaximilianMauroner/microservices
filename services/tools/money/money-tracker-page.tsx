@@ -52,7 +52,7 @@ export function MoneyTrackerPage(props: MoneyTrackerPageData & { view: MoneyTrac
         {props.view === "transactions" ? <MoneyActivityView activity={props.activity} transactionCount={props.transactionCount} revertedCount={props.revertedCount} transferReview={props.transferReview} /> : null}
         {props.view === "cash-flow" ? <MoneySpendingView spending={props.spending} /> : null}
         {props.view === "categories" ? <MoneyCategoryExplorer spending={props.spending} initialCategory={props.category} /> : null}
-        {props.view === "investments" ? <MoneyInvestmentsView investments={props.investments} /> : null}
+        {props.view === "investments" ? <MoneyInvestmentsView investments={props.investments} marketData={props.marketData} /> : null}
         {props.view === "accounts" ? <><MoneyBalanceEntry /><Accounts accounts={props.accounts} accountLabels={props.accountLabels} accountRoles={props.accountRoles} accountLastObserved={props.accountLastObserved} months={months} latest={latest} previous={previous} /><History accounts={props.accounts} accountLabels={props.accountLabels} months={months} /></> : null}
         {props.view === "insights" ? <Insights {...props} months={months} latest={latest} previous={previous} monthlyChange={monthlyChange} trends={trends} /> : null}
         {props.view === "data" ? <MoneyDataView {...props} /> : null}
@@ -78,7 +78,7 @@ export function MoneyTrackerPendingPage({ view }: { view: MoneyTrackerView }) {
   </main></>;
 }
 
-function Overview({ accounts, activity, imports, investments, revertedCount, spending, transactionCount, transferReview, months, latest, trends, period, onPeriod }: MoneyTrackerPageData & { months: GroupedMonth[]; latest?: GroupedMonth; trends: MoneyTrackerTrendStats; period: Period; onPeriod: (period: Period) => void }) {
+function Overview({ accounts, activity, imports, investments, marketData, revertedCount, spending, transactionCount, transferReview, months, latest, trends, period, onPeriod }: MoneyTrackerPageData & { months: GroupedMonth[]; latest?: GroupedMonth; trends: MoneyTrackerTrendStats; period: Period; onPeriod: (period: Period) => void }) {
   const observedCashFlow = spending.months.filter((month) => month.observed);
   const recentCashFlow = observedCashFlow.slice(-6);
   const maximumCashFlow = Math.max(...recentCashFlow.flatMap((month) => [month.spendMinor, month.incomeMinor]), 1);
@@ -87,14 +87,15 @@ function Overview({ accounts, activity, imports, investments, revertedCount, spe
   const unresolvedTransfers = transferReview.unresolvedPositiveCount + transferReview.unresolvedNegativeCount;
   const observedAccounts = latest?.observedAccounts.length ?? 0;
   const carriedAccounts = Math.max(accounts.length - observedAccounts, 0);
-  const attentionCount = Number(spending.uncategorizedCount > 0) + Number(unresolvedTransfers > 0) + Number(investments.positions.length > 0) + Number(carriedAccounts > 0);
+  const unpricedPositions = marketData.positions.filter((position) => position.state === "unpriced").length;
+  const attentionCount = Number(spending.uncategorizedCount > 0) + Number(unresolvedTransfers > 0) + Number(unpricedPositions > 0) + Number(carriedAccounts > 0);
   const completedActivity = activity.filter((item) => item.status.toLowerCase() === "completed").slice(0, 6);
   return <>
     <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Money summary">
       <Metric label="Tracked net worth" value={latest ? currency.format(latest.total) : "No data"} detail={latest ? `${latest.date} · ${observedAccounts} observed, ${carriedAccounts} carried` : undefined} />
       <Metric label="Last cash-flow month" value={lastCashFlow ? formatMinor(lastCashFlow.netCashFlowMinor, "EUR") : "No data"} detail={savingsRate === undefined ? lastCashFlow?.month : `${lastCashFlow?.month} · ${savingsRate.toFixed(1)}% savings rate`} tone={tone(lastCashFlow?.netCashFlowMinor)} />
       <Metric label="Tracked cash" value={latest ? currency.format(latest.money) : "No data"} detail={latest?.total ? `${(latest.money / latest.total * 100).toFixed(1)}% of tracked total` : undefined} />
-      <Metric label="Reported investment balances" value={latest ? currency.format(latest.stocks) : "No data"} detail={latest?.total ? `${(latest.stocks / latest.total * 100).toFixed(1)}% · no live pricing` : undefined} />
+      <Metric label="Reported investment balances" value={latest ? currency.format(latest.stocks) : "No data"} detail={latest?.total ? `${(latest.stocks / latest.total * 100).toFixed(1)}% · imported snapshots` : undefined} />
     </section>
     <section className="grid items-start gap-3 lg:grid-cols-[minmax(0,1.7fr)_minmax(18rem,.7fr)]">
       <BalanceChart months={months} period={period} onPeriod={onPeriod} />
@@ -102,7 +103,7 @@ function Overview({ accounts, activity, imports, investments, revertedCount, spe
         <AttentionRow label="Carried balances" value={carriedAccounts.toLocaleString("en-GB")} detail="Check when each account was last observed" ready={carriedAccounts === 0} view="accounts" action="Open accounts" />
         <AttentionRow label="Uncategorized spending" value={spending.uncategorizedCount.toLocaleString("en-GB")} detail="Complete categories for trustworthy spending" ready={spending.uncategorizedCount === 0} view="transactions" action="Review transactions" />
         <AttentionRow label="Unresolved transfers" value={unresolvedTransfers.toLocaleString("en-GB")} detail="Confirm links before trusting cash flow" ready={unresolvedTransfers === 0} view="transactions" action="Review transfers" />
-        <AttentionRow label="Portfolio valuation" value={investments.positions.length ? "Prices missing" : "No positions"} detail="Trade-derived quantities are not current value" ready={investments.positions.length === 0} view="investments" action="Open investments" />
+        <AttentionRow label="Portfolio valuation" value={marketData.positions.length ? unpricedPositions ? `${unpricedPositions} unpriced` : "Fully priced" : "No positions"} detail={marketData.positions.length ? `${marketData.positions.length} open positions from cached closes` : "Import investment activity to begin"} ready={unpricedPositions === 0} view="investments" action="Open investments" />
         <p className="px-4 py-3 text-xs text-muted-foreground">{revertedCount.toLocaleString("en-GB")} reverted source rows are excluded from analytics.</p>
       </CardContent></Card>
     </section>
@@ -213,7 +214,7 @@ function viewTitle(view: MoneyTrackerView) {
   return view === "overview" ? "Overview" : view === "cash-flow" ? "Cash flow" : view === "transactions" ? "Transactions" : view === "investments" ? "Investments" : view === "accounts" ? "Accounts" : view === "categories" ? "Categories" : view === "insights" ? "Insights" : "Data quality";
 }
 function viewDescription(view: MoneyTrackerView) {
-  return view === "overview" ? "Your tracked financial position, recent cash flow, freshness, and open review work." : view === "cash-flow" ? "Income, spending, categories, and imported monthly cash-flow activity." : view === "transactions" ? "The normalized ledger with complete search, classification, and transfer review." : view === "investments" ? "Contributions, trades, income, fees, taxes, and trade-derived quantities." : view === "accounts" ? "Tracked balances, observation freshness, allocation, and monthly history." : view === "categories" ? "Explore spending by category, month, merchant, and underlying transaction." : view === "insights" ? "Balance momentum, concentration, drawdown, trends, and a conservative run-rate scenario." : "Imports, reconciliation, coverage, rules, and analytical limits.";
+  return view === "overview" ? "Your tracked financial position, recent cash flow, freshness, and open review work." : view === "cash-flow" ? "Income, spending, categories, and imported monthly cash-flow activity." : view === "transactions" ? "The normalized ledger with complete search, classification, and transfer review." : view === "investments" ? "Current EUR valuation, historical closes, FIFO performance, and imported activity." : view === "accounts" ? "Tracked balances, observation freshness, allocation, and monthly history." : view === "categories" ? "Explore spending by category, month, merchant, and underlying transaction." : view === "insights" ? "Balance momentum, concentration, drawdown, trends, and a conservative run-rate scenario." : "Imports, reconciliation, coverage, rules, and analytical limits.";
 }
 function MoneyNav() { return <nav className="money-nav" aria-label="Money"><NavGroup label="Portfolio"><NavItem view="overview">Overview</NavItem><NavItem view="accounts">Accounts</NavItem><NavItem view="investments">Investments</NavItem></NavGroup><NavGroup label="Operations"><NavItem view="cash-flow">Cash flow</NavItem><NavItem view="transactions">Transactions</NavItem></NavGroup><NavGroup label="Analysis"><NavItem view="categories">Categories</NavItem><NavItem view="insights">Insights</NavItem></NavGroup><NavGroup label="System"><NavItem view="data">Data quality</NavItem></NavGroup></nav>; }
 function NavGroup({ label, children }: { label: string; children: React.ReactNode }) { return <div className="money-nav__group"><span className="money-nav__label">{label}</span>{children}</div>; }

@@ -24,6 +24,8 @@ import { createPostgresScheduledTaskLeaseRepository } from "./scheduled-task-lea
 import { PLATFORM_UI_BUILD } from "./build-identity.js";
 import { MoneyImportService } from "../money/money-import-service.js";
 import { createPostgresMoneyRepository } from "../money/money-repository.js";
+import { MoneyMarketDataService } from "../money/money-market-data-service.js";
+import { createPostgresMoneyMarketDataRepository } from "../money/money-market-data-repository.js";
 import {
   createPlatformAuth,
   resolvePlatformPrincipal,
@@ -40,6 +42,7 @@ export type PlatformRuntime = {
   health: () => Promise<void>;
   heartbeats: ReturnType<typeof createHeartbeats>;
   moneyImports: MoneyImportService;
+  moneyMarketData: MoneyMarketDataService;
   stop: () => Promise<void>;
 };
 
@@ -75,6 +78,7 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
   const artifactStorage = createPostgresUploadStorage(config.artifact.s3, config.databaseUrl);
   const activityTracker = new ActivityTracker();
   const moneyImports = new MoneyImportService(createPostgresMoneyRepository(config.databaseUrl, { readOnly: config.readOnly }));
+  const moneyMarketData = new MoneyMarketDataService(createPostgresMoneyMarketDataRepository(config.databaseUrl, { readOnly: config.readOnly }));
   const fieldGuideHandle = await createRepository(config.fieldGuide, {
     readOnly: config.readOnly
   });
@@ -129,6 +133,26 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
           artifactStorage,
           config.artifact.temporaryFileCleanupIntervalMs
         );
+    const marketDataScheduler = config.readOnly
+      ? undefined
+      : startAlignedScheduler({
+          intervalMs: 86_400_000,
+          phaseOffsetMs: 3 * 3_600_000 + 15 * 60_000,
+          lease: {
+            repository: createPostgresScheduledTaskLeaseRepository(config.databaseUrl),
+            taskId: "money-market-data:daily",
+            ownerId: randomUUID(),
+            durationMs: 30 * 60_000
+          },
+          run: async () => {
+            const result = await moneyMarketData.sync();
+            console.info(JSON.stringify({ event: "money.market_data.synced", ...result }));
+          },
+          logger: {
+            info: (event, fields = {}) => console.info(JSON.stringify({ event, task: "money-market-data", ...fields })),
+            error: (event, fields = {}) => console.error(JSON.stringify({ event, task: "money-market-data", ...fields }))
+          }
+        });
     let stopped = false;
     const services: PlatformServices = {
       manage: {
@@ -153,11 +177,13 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
       cleanup?.stop();
       await Promise.all([
         checker?.close() ?? Promise.resolve(),
+        marketDataScheduler?.close() ?? Promise.resolve(),
         cleanup?.wait() ?? Promise.resolve(),
         activityTracker.waitForIdle(),
         ...Object.values(services).map((service) => service.close()),
         heartbeatRepository.close(),
-        moneyImports.close()
+        moneyImports.close(),
+        moneyMarketData.close()
       ]);
     };
 
@@ -177,10 +203,12 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
       publicSnapshot: () => toolsStorage.readPublicSnapshot(),
       heartbeats,
       moneyImports,
+      moneyMarketData,
       health: async () => {
         await Promise.all([
           ...Object.values(services).map((service) => service.readiness()),
-          moneyImports.readiness()
+          moneyImports.readiness(),
+          moneyMarketData.readiness()
         ]);
       },
       stop
@@ -190,6 +218,7 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
     artifactStorage.close?.();
     await heartbeatRepository.close();
     await moneyImports.close();
+    await moneyMarketData.close();
     throw error;
   }
 }

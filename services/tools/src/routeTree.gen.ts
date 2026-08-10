@@ -38,6 +38,7 @@ import { Route as ApiMoneyActivityRouteImport } from './routes/api/money/activit
 import { Route as ApiMoneyBalancesRouteImport } from './routes/api/money/balances'
 import { Route as ApiMoneyCategoriesRouteImport } from './routes/api/money/categories'
 import { Route as ApiMoneyImportsRouteImport } from './routes/api/money/imports'
+import { Route as ApiMoneyMarketDataRouteImport } from './routes/api/money/market-data'
 import { Route as ApiMoneyTransfersRouteImport } from './routes/api/money/transfers'
 import { Route as ApiOpsSplatRouteImport } from './routes/api/ops/$'
 import { Route as ApiPublicCatalogRouteImport } from './routes/api/public/catalog'
@@ -193,6 +194,11 @@ const ApiMoneyImportsRoute = ApiMoneyImportsRouteImport.update({
   path: '/api/money/imports',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiMoneyMarketDataRoute = ApiMoneyMarketDataRouteImport.update({
+  id: '/api/money/market-data',
+  path: '/api/money/market-data',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiMoneyTransfersRoute = ApiMoneyTransfersRouteImport.update({
   id: '/api/money/transfers',
   path: '/api/money/transfers',
@@ -270,6 +276,7 @@ export interface FileRoutesByFullPath {
   '/api/money/balances': typeof ApiMoneyBalancesRoute
   '/api/money/categories': typeof ApiMoneyCategoriesRoute
   '/api/money/imports': typeof ApiMoneyImportsRouteWithChildren
+  '/api/money/market-data': typeof ApiMoneyMarketDataRoute
   '/api/money/transfers': typeof ApiMoneyTransfersRoute
   '/api/ops/$': typeof ApiOpsSplatRoute
   '/api/public/catalog': typeof ApiPublicCatalogRoute
@@ -309,6 +316,7 @@ export interface FileRoutesByTo {
   '/api/money/balances': typeof ApiMoneyBalancesRoute
   '/api/money/categories': typeof ApiMoneyCategoriesRoute
   '/api/money/imports': typeof ApiMoneyImportsRouteWithChildren
+  '/api/money/market-data': typeof ApiMoneyMarketDataRoute
   '/api/money/transfers': typeof ApiMoneyTransfersRoute
   '/api/ops/$': typeof ApiOpsSplatRoute
   '/api/public/catalog': typeof ApiPublicCatalogRoute
@@ -350,6 +358,7 @@ export interface FileRoutesById {
   '/api/money/balances': typeof ApiMoneyBalancesRoute
   '/api/money/categories': typeof ApiMoneyCategoriesRoute
   '/api/money/imports': typeof ApiMoneyImportsRouteWithChildren
+  '/api/money/market-data': typeof ApiMoneyMarketDataRoute
   '/api/money/transfers': typeof ApiMoneyTransfersRoute
   '/api/ops/$': typeof ApiOpsSplatRoute
   '/api/public/catalog': typeof ApiPublicCatalogRoute
@@ -392,6 +401,7 @@ export interface FileRouteTypes {
     | '/api/money/balances'
     | '/api/money/categories'
     | '/api/money/imports'
+    | '/api/money/market-data'
     | '/api/money/transfers'
     | '/api/ops/$'
     | '/api/public/catalog'
@@ -431,6 +441,7 @@ export interface FileRouteTypes {
     | '/api/money/balances'
     | '/api/money/categories'
     | '/api/money/imports'
+    | '/api/money/market-data'
     | '/api/money/transfers'
     | '/api/ops/$'
     | '/api/public/catalog'
@@ -471,6 +482,7 @@ export interface FileRouteTypes {
     | '/api/money/balances'
     | '/api/money/categories'
     | '/api/money/imports'
+    | '/api/money/market-data'
     | '/api/money/transfers'
     | '/api/ops/$'
     | '/api/public/catalog'
@@ -507,6 +519,7 @@ export interface RootRouteChildren {
   ApiMoneyBalancesRoute: typeof ApiMoneyBalancesRoute
   ApiMoneyCategoriesRoute: typeof ApiMoneyCategoriesRoute
   ApiMoneyImportsRoute: typeof ApiMoneyImportsRouteWithChildren
+  ApiMoneyMarketDataRoute: typeof ApiMoneyMarketDataRoute
   ApiMoneyTransfersRoute: typeof ApiMoneyTransfersRoute
   ApiOpsSplatRoute: typeof ApiOpsSplatRoute
   ApiPublicCatalogRoute: typeof ApiPublicCatalogRoute
@@ -718,6 +731,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiMoneyImportsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/money/market-data': {
+      id: '/api/money/market-data'
+      path: '/api/money/market-data'
+      fullPath: '/api/money/market-data'
+      preLoaderRoute: typeof ApiMoneyMarketDataRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/money/transfers': {
       id: '/api/money/transfers'
       path: '/api/money/transfers'
@@ -906,6 +926,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiMoneyBalancesRoute: ApiMoneyBalancesRoute,
   ApiMoneyCategoriesRoute: ApiMoneyCategoriesRoute,
   ApiMoneyImportsRoute: ApiMoneyImportsRouteWithChildren,
+  ApiMoneyMarketDataRoute: ApiMoneyMarketDataRoute,
   ApiMoneyTransfersRoute: ApiMoneyTransfersRoute,
   ApiOpsSplatRoute: ApiOpsSplatRoute,
   ApiPublicCatalogRoute: ApiPublicCatalogRoute,

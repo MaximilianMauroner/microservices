@@ -25,7 +25,7 @@ export function AppShell({ product, showSignOut, accent }: { product: string; sh
           <nav className="flex items-center gap-1" aria-label={`${product} session`}>
             {showSignOut ? (
               <button
-                className="inline-flex h-8 items-center rounded-full border px-3 text-xs font-semibold text-muted-foreground hover:bg-accent hover:text-foreground"
+                className="inline-flex h-11 items-center rounded-full border px-3 text-xs font-semibold text-muted-foreground hover:bg-accent hover:text-foreground sm:h-8"
                 type="button"
                 onClick={() => void signOut()}
               >
