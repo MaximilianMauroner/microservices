@@ -214,7 +214,7 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
             when flow_kind = 'transfer' then coalesce(transfer_disposition, 'unreviewed') else flow_kind end effective_flow
           from tools.money_transactions
           where status = 'completed' and base_currency = 'EUR' and local_date < date_trunc('month', current_date)
-        ) select to_char(date_trunc('month', local_date), 'YYYY-MM') month, category,
+        ) select to_char(date_trunc('month', local_date), 'YYYY-MM') as month, category,
           sum(case when flow_kind = 'transfer' then -base_amount_minor else abs(base_amount_minor) end)::text amount_minor,
           count(*)::text count from classified where effective_flow = 'spend'
           group by date_trunc('month', local_date), category order by date_trunc('month', local_date), category`,
@@ -224,7 +224,7 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
             when flow_kind = 'transfer' then coalesce(transfer_disposition, 'unreviewed') else flow_kind end effective_flow
           from tools.money_transactions
           where status = 'completed' and base_currency = 'EUR' and local_date < date_trunc('month', current_date)
-        ) select to_char(date_trunc('month', local_date), 'YYYY-MM') month, category,
+        ) select to_char(date_trunc('month', local_date), 'YYYY-MM') as month, category,
           coalesce(nullif(trim(description), ''), 'Unknown merchant') description,
           sum(case when flow_kind = 'transfer' then -base_amount_minor else abs(base_amount_minor) end)::text amount_minor,
           count(*)::text count from classified where effective_flow = 'spend'
