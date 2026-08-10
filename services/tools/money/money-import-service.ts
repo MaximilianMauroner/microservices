@@ -60,6 +60,15 @@ export class MoneyImportService {
     });
   }
 
+  async deleteImport(importId: string) {
+    assertImportId(importId);
+    const deleted = await this.repository.deleteImport(importId);
+    if (!deleted) {
+      throw new MoneyImportValidationError("import_not_found", "The money import no longer exists.");
+    }
+    return deleted;
+  }
+
   readLedgerSnapshot(): Promise<MoneyLedgerSnapshot> {
     return this.repository.readLedgerSnapshot();
   }
@@ -116,6 +125,12 @@ export class MoneyImportService {
 function assertTransactionId(value: string) {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) {
     throw new MoneyImportValidationError("invalid_transaction", "The transaction identifier is invalid.");
+  }
+}
+
+function assertImportId(value: string) {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) {
+    throw new MoneyImportValidationError("invalid_import", "The import identifier is invalid.");
   }
 }
 

@@ -10,7 +10,7 @@ import {
   parseMoneyImport
 } from "../money/money-import-domain.js";
 import { MoneyImportService } from "../money/money-import-service.js";
-import { previewMoneyImport, updateMoneyCategory, updateMoneyTransfer } from "../money/money-route-handlers.js";
+import { deleteMoneyImport, previewMoneyImport, updateMoneyCategory, updateMoneyTransfer } from "../money/money-route-handlers.js";
 import type {
   MoneyImportCommitInput,
   MoneyImportReceipt,
@@ -248,6 +248,12 @@ describe("money import service", () => {
     const service = new MoneyImportService(new MemoryMoneyRepository());
     expect(() => service.setTransferDisposition({ transactionId: "00000000-0000-4000-8000-000000000000", disposition: "uncategorized" })).toThrow("valid transfer disposition");
   });
+
+  it("validates import deletion identifiers and reports missing imports", async () => {
+    const service = new MoneyImportService(new MemoryMoneyRepository());
+    await expect(service.deleteImport("not-an-import")).rejects.toMatchObject({ code: "invalid_import" });
+    await expect(service.deleteImport("00000000-0000-4000-8000-000000000000")).rejects.toMatchObject({ code: "import_not_found" });
+  });
 });
 
 describe("money import route", () => {
@@ -288,6 +294,23 @@ describe("money import route", () => {
     const response = await updateMoneyTransfer({ request, params: {}, context: { principal: { subject: "subject", email: "operator@example.test" }, runtime: { publicOrigin: "https://tools.example.test", moneyImports: { setTransferDisposition } } } } as unknown as PlatformRouteInput);
     expect(response.status).toBe(200);
     expect(setTransferDisposition).toHaveBeenCalledWith({ transactionId: "00000000-0000-4000-8000-000000000000", disposition: "refund" });
+  });
+
+  it("deletes an import through an authenticated same-origin request", async () => {
+    const deleteImport = vi.fn().mockResolvedValue({ transactionCount: 12, investmentEventCount: 2, balanceSnapshotCount: 1 });
+    const request = new Request("https://tools.example.test/api/money/imports/00000000-0000-4000-8000-000000000000", {
+      method: "DELETE",
+      headers: { Origin: "https://tools.example.test" }
+    });
+    const response = await deleteMoneyImport({
+      request,
+      params: { importId: "00000000-0000-4000-8000-000000000000" },
+      context: { principal: { subject: "subject", email: "operator@example.test" }, runtime: { publicOrigin: "https://tools.example.test", moneyImports: { deleteImport } } }
+    } as unknown as PlatformRouteInput);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, transactionCount: 12, investmentEventCount: 2, balanceSnapshotCount: 1 });
+    expect(deleteImport).toHaveBeenCalledWith("00000000-0000-4000-8000-000000000000");
   });
 
   it("passes only the private file bytes and filename to preview", async () => {
@@ -371,6 +394,8 @@ class MemoryMoneyRepository implements MoneyRepository {
   async commitImport(_input: MoneyImportCommitInput): Promise<MoneyImportReceipt> {
     throw new Error("Not used by this test.");
   }
+
+  async deleteImport() { return undefined; }
 
   async readLedgerSnapshot(): Promise<MoneyLedgerSnapshot> {
     return {

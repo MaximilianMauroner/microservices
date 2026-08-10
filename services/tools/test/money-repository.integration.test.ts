@@ -87,6 +87,58 @@ it.skipIf(!repository || !admin)("preserves a reviewed transfer when its possibl
   expect(rows.find((row) => row.description === "Late counterpart")).toMatchObject({ needsTransferReview: true });
 });
 
+it.skipIf(!repository || !admin)("deletes an import cascade and repairs a cross-import transfer link", async () => {
+  const removed = await commitCash(repository!, cash([
+    "Transfer\tCurrent\t2026-03-02 12:00:00\t2026-03-02 12:00:00\tMove to savings\t-50\t0\tEUR\tCOMPLETED\t50",
+  ]), "outflow.tsv");
+  await commitCash(repository!, cash([
+    "Transfer\tSavings\t2026-03-03 12:00:00\t2026-03-03 12:00:00\tMove from current\t50\t0\tEUR\tCOMPLETED\t50",
+  ]), "inflow.tsv");
+  const linked = (await repository!.readActivityPage({ query: "Move", offset: 0, limit: 10 })).items;
+  expect(linked).toHaveLength(2);
+  expect(new Set(linked.map((row) => row.transferGroupId)).size).toBe(1);
+
+  await expect(repository!.deleteImport(removed.id)).resolves.toEqual({
+    transactionCount: 1,
+    investmentEventCount: 0,
+    balanceSnapshotCount: 1
+  });
+
+  const remaining = (await repository!.readActivityPage({ query: "Move", offset: 0, limit: 10 })).items;
+  expect(remaining).toEqual([expect.objectContaining({ description: "Move from current", needsTransferReview: true })]);
+  expect(remaining[0]?.transferGroupId).toBeUndefined();
+  expect(remaining[0]?.transferDisposition).toBeUndefined();
+  expect((await repository!.readLedgerSnapshot()).imports.map((item) => item.id)).not.toContain(removed.id);
+  await expect(repository!.deleteImport(removed.id)).resolves.toBeUndefined();
+});
+
+it.skipIf(!repository || !admin)("deletes investment events while preserving rows owned by another import", async () => {
+  const shared = "Card Payment\tCurrent\t2026-04-01 12:00:00\t2026-04-01 12:00:00\tShared row\t-5\t0\tEUR\tCOMPLETED\t95";
+  const original = await commitCash(repository!, cash([shared]), "original.tsv");
+  const later = await commitCash(repository!, cash([
+    shared,
+    "Card Payment\tCurrent\t2026-04-02 12:00:00\t2026-04-02 12:00:00\tLater row\t-7\t0\tEUR\tCOMPLETED\t88",
+  ]), "later.tsv");
+  expect(later).toMatchObject({ insertedCount: 1, duplicateCount: 1 });
+
+  await repository!.deleteImport(later.id);
+  const cashRows = (await repository!.readActivityPage({ query: "row", offset: 0, limit: 10 })).items;
+  expect(cashRows.map((row) => row.description)).toEqual(["Shared row"]);
+  expect((await repository!.readLedgerSnapshot()).imports.map((item) => item.id)).toContain(original.id);
+
+  const trading = Buffer.from([
+    "Date\tTicker\tType\tQuantity\tPrice per share\tTotal Amount\tCurrency\tFX Rate",
+    "2026-04-03T12:00:00.000Z\tVWCE\tBUY - MARKET\t1\tEUR 100\tEUR -100\tEUR\t1",
+  ].join("\r\n"));
+  const tradeImport = await commitCash(repository!, trading, "trade.tsv");
+  await expect(repository!.deleteImport(tradeImport.id)).resolves.toEqual({
+    transactionCount: 1,
+    investmentEventCount: 1,
+    balanceSnapshotCount: 0
+  });
+  expect((await repository!.readLedgerSnapshot()).investments.totals.eventCount).toBe(0);
+});
+
 it.skipIf(!repository || !admin)("keeps review authoritative when a counterpart import races it", async () => {
   await commitCash(repository!, cash([
     "Transfer\tCurrent\t2026-04-02 12:00:00\t2026-04-02 12:00:00\tRacing review\t75\t0\tEUR\tCOMPLETED\t175",
