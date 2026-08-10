@@ -39,14 +39,14 @@ export function DocumentsPage({ initial }: { initial: DocumentsPageData }) {
 
   return <>
     <AppShell product="Markdown Share" showSignOut />
-    <main id="main" className="mx-auto w-[min(1180px,calc(100%_-_2rem))] py-8 sm:py-10">
-      <header className="mb-6 flex flex-col gap-5 border-b pb-6 md:flex-row md:items-end md:justify-between">
+    <main id="main" className="workspace-page">
+      <header className="workspace-header">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Markdown Share</p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight">Manage active documents.</h1>
-          <p className="mt-2 max-w-2xl text-sm text-muted-foreground">Find expiring work, verify checkpoints, and open the document that needs attention.</p>
+          <p className="workspace-header__eyebrow">Markdown Share</p>
+          <h1>Manage active documents.</h1>
+          <p className="workspace-header__description">Find expiring work, verify checkpoints, and open the document that needs attention.</p>
         </div>
-        <Button nativeButton={false} render={<a href={initial.publicOrigin} target="_blank" rel="noreferrer" />}><PlusIcon />New document<ArrowUpRightIcon /></Button>
+        <div className="workspace-header__actions"><Button nativeButton={false} render={<a href={initial.publicOrigin} target="_blank" rel="noreferrer" />}><PlusIcon />New document<ArrowUpRightIcon /></Button></div>
       </header>
 
       <section className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="Document overview">

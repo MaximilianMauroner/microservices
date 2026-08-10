@@ -11,7 +11,7 @@ export const Route = createFileRoute("/")({
     meta: [
       { title: "Mauroner Tools" },
       { name: "description", content: "Publishing, review, status, and operations tools." },
-      { name: "theme-color", content: "#1b1e28" },
+      { name: "theme-color", content: "#000000" },
       { property: "og:title", content: "Mauroner Tools" },
       { property: "og:description", content: "Publishing, review, status, and operations tools." },
       { property: "og:url", content: `${loaderData?.publicOrigin ?? ""}/` },
