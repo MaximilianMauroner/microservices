@@ -87,6 +87,26 @@ it.skipIf(!repository || !admin)("preserves a reviewed transfer when its possibl
   expect(rows.find((row) => row.description === "Late counterpart")).toMatchObject({ needsTransferReview: true });
 });
 
+it.skipIf(!repository || !admin)("refreshes inferred flows and transfer links when an import is replayed", async () => {
+  const source = cash([
+    "Card Payment\tCurrent\t2026-03-02 12:00:00\t2026-03-02 12:00:00\tHYPE\t-25\t0\tEUR\tCOMPLETED\t75",
+    "Transfer\tSavings\t2026-03-02 12:00:00\t2026-03-02 12:00:00\tHYPE recharge\t25\t0\tEUR\tCOMPLETED\t25"
+  ]);
+  const first = await commitCash(repository!, source, "hype.tsv");
+  expect(first.replay).toBe(false);
+
+  await admin!`update tools.money_transactions set transfer_group_id = null, transfer_disposition = null
+    where description in ('HYPE', 'HYPE recharge')`;
+  await admin!`update tools.money_transactions set flow_kind = 'spend' where description = 'HYPE'`;
+
+  const replay = await commitCash(repository!, source, "hype.tsv");
+  expect(replay.replay).toBe(true);
+  const rows = (await repository!.readActivityPage({ query: "HYPE", offset: 0, limit: 10 })).items;
+  expect(rows).toHaveLength(2);
+  expect(rows.find((row) => row.description === "HYPE")).toMatchObject({ flowKind: "transfer", needsTransferReview: false });
+  expect(new Set(rows.map((row) => row.transferGroupId)).size).toBe(1);
+});
+
 it.skipIf(!repository || !admin)("deletes an import cascade and repairs a cross-import transfer link", async () => {
   const removed = await commitCash(repository!, cash([
     "Transfer\tCurrent\t2026-03-02 12:00:00\t2026-03-02 12:00:00\tMove to savings\t-50\t0\tEUR\tCOMPLETED\t50",

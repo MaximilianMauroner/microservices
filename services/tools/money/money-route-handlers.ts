@@ -108,6 +108,25 @@ export async function getMoneyActivity(input: PlatformRouteInput) {
   }
 }
 
+export async function getMoneyMarketData(input: PlatformRouteInput) {
+  if (!input.context.principal) return json({ error: "authentication_required" }, 401);
+  try {
+    return json(await input.context.runtime.moneyMarketData.snapshot());
+  } catch (error) {
+    return marketDataError(error);
+  }
+}
+
+export async function syncMoneyMarketData(input: PlatformRouteInput) {
+  const rejected = validateMutationRequest(input);
+  if (rejected) return rejected;
+  try {
+    return json(await input.context.runtime.moneyMarketData.sync());
+  } catch (error) {
+    return marketDataError(error);
+  }
+}
+
 function validateMutationRequest({ request, context }: PlatformRouteInput) {
   if (!context.principal) return json({ error: "authentication_required" }, 401);
   const origin = request.headers.get("origin");
@@ -231,6 +250,14 @@ function importError(error: unknown) {
     errorType: error instanceof Error ? error.name : "UnknownError"
   }));
   return json({ error: "import_failed", message: "The statement could not be imported." }, 500);
+}
+
+function marketDataError(error: unknown) {
+  console.error(JSON.stringify({
+    event: "money.market_data_failed",
+    errorType: error instanceof Error ? error.name : "UnknownError"
+  }));
+  return json({ error: "market_data_unavailable", message: "Market data is temporarily unavailable." }, 503);
 }
 
 function json(body: unknown, status = 200) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fifoRealizedGains, type MoneyRealizedGainEvent } from "../money/money-investment-domain.js";
+import { fifoInvestmentLots, fifoRealizedGains, type MoneyRealizedGainEvent } from "../money/money-investment-domain.js";
 
 describe("FIFO realized investment gains", () => {
   it("matches sales to the oldest lots and includes transaction fees", () => {
@@ -68,6 +68,20 @@ describe("FIFO realized investment gains", () => {
       event("2026-02-01", "sell", "FEE", "1", 50, 75)
     ]);
     expect(result.positions[0]).toMatchObject({ proceedsMinor: -25, costBasisMinor: 100, gainMinor: -125 });
+  });
+
+  it("reports the remaining FIFO quantity and cost basis", () => {
+    const result = fifoInvestmentLots([
+      event("2026-01-01", "buy", "OPEN", "2", -20_000, 1_000),
+      event("2026-02-01", "sell", "OPEN", "0.5", 8_000)
+    ]);
+
+    expect(result.openPositions).toEqual([{
+      accountKey: "broker",
+      symbol: "OPEN",
+      quantity: "1.5",
+      costBasisMinor: 15_750
+    }]);
   });
 });
 

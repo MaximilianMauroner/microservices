@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { DocumentsPage, filterDocuments } from "../dashboard/ui/documents-page.js";
+import { DocumentsPage, MobileDocumentInventory, filterDocuments } from "../dashboard/ui/documents-page.js";
 
 const now = Date.UTC(2026, 7, 4, 12);
 const documents = [
@@ -16,6 +16,14 @@ describe("DocumentsPage", () => {
     expect(html).toContain("recent.md");
     expect(html).toContain("New document");
     expect(html).toContain('data-suite-accent="rose"');
+  });
+
+  it("keeps every mobile document action visible in the focused record", () => {
+    const html = renderToStaticMarkup(<MobileDocumentInventory documents={documents.slice(0, 1)} total={documents.length} generatedAt={now} publicOrigin="https://markdown.example.test" onCopy={() => undefined} onShowMore={() => undefined} />);
+    expect(html).toContain('aria-label="Document inventory"');
+    expect(html).toContain("Copy link");
+    expect(html).toContain("Open");
+    expect(html).toContain("Show 50 more");
   });
 
   it("filters checkpoints and expiry before sorting", () => {

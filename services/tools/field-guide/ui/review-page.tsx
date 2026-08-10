@@ -110,7 +110,9 @@ function ReviewNav({ search }: { search: ReviewSearch }) {
 }
 
 function DecisionWorkspace({ data, search, setData, setNotice, onLoadMore }: { data: DecisionsPageData; search: ReviewSearch; setData: (data: ReviewPageData) => void; setNotice: (notice: { text: string; tone: "success" | "error" }) => void; onLoadMore: () => void }) {
+  const isMobile = useIsMobile();
   const [selectedId, setSelectedId] = useState(data.decisions.items[0]?.record.decisionRecordId);
+  const [mobileReviewOpen, setMobileReviewOpen] = useState(false);
   const selected = data.decisions.items.find((item) => item.record.decisionRecordId === selectedId) ?? data.decisions.items[0];
   const emptyState = decisionEmptyState(data.decisions, search.reviewState);
 
@@ -127,6 +129,7 @@ function DecisionWorkspace({ data, search, setData, setNotice, onLoadMore }: { d
 
   function selectItem(item: DecisionRecordItem) {
     setSelectedId(item.record.decisionRecordId);
+    setMobileReviewOpen(true);
   }
 
   return <>
@@ -152,8 +155,9 @@ function DecisionWorkspace({ data, search, setData, setNotice, onLoadMore }: { d
           </button>;
         })}{data.decisions.nextCursor ? <div className="flex justify-center p-2"><Button type="button" variant="ghost" size="sm" onClick={onLoadMore}>Load older decisions</Button></div> : null}</div>}
       </Card>
-      {selected ? <section aria-label="Current review task"><DecisionReviewPanel key={selected.record.decisionRecordId} item={selected} onNotice={setNotice} onUpdated={updateItem} /></section> : <Empty title="Select a decision" body="Choose an item from the queue to inspect its context and evidence." />}
+      {!isMobile ? selected ? <section aria-label="Current review task"><DecisionReviewPanel key={selected.record.decisionRecordId} item={selected} onNotice={setNotice} onUpdated={updateItem} /></section> : <Empty title="Select a decision" body="Choose an item from the queue to inspect its context and evidence." /> : null}
     </div>
+    {isMobile ? <Sheet open={mobileReviewOpen} onOpenChange={setMobileReviewOpen}><SheetContent className="w-full overflow-y-auto"><SheetHeader className="border-b"><SheetTitle>Review decision</SheetTitle><SheetDescription>Inspect one judgment and record a verdict.</SheetDescription></SheetHeader><div className="p-4 pt-0">{selected ? <DecisionReviewPanel key={selected.record.decisionRecordId} item={selected} onNotice={setNotice} onUpdated={updateItem} /> : null}</div></SheetContent></Sheet> : null}
   </>;
 }
 
@@ -283,7 +287,7 @@ function QueueWorkspace({ data, search, setData, setNotice }: { data: QueuePageD
     {data.queue.items.length === 0 ? <Empty title="Nothing to review" body="Every candidate in this scope has been handled." /> : items.length === 0 ? <Empty title="No matching candidates" body="Clear or change the filters to see another part of the queue." action={<Button nativeButton={false} variant="outline" size="sm" render={<Link to="/field-guide" search={{ scope: search.scope, view: "queue", reviewState: search.reviewState }} preload="intent" />}>Clear filters</Button>} /> : <div className="candidate-workbench">
       <Card className="candidate-table-card gap-0 py-0">
         <div className="candidate-table-summary"><div><strong>{items.length}</strong> candidate{items.length === 1 ? "" : "s"}</div><span>{visibleProjectCount} project{visibleProjectCount === 1 ? "" : "s"} in queue</span></div>
-        <Table>
+        {isMobile ? <div className="divide-y" role="list" aria-label="Candidate queue">{items.map((item) => <article className="space-y-3 p-4" key={`${item.candidate.candidateId}-${item.round}`} role="listitem"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><h2 className="text-sm font-semibold leading-5">{item.candidate.title}</h2><p className="mt-1 truncate text-xs text-muted-foreground">{queueProject(item)} · Round {item.round}{item.dueAt ? ` · ${relativeTime(item.dueAt)}` : ""}</p></div><Badge variant={item.status === "overdue" ? "destructive" : item.status === "due" ? "secondary" : "outline"}>{item.status}</Badge></div><Button className="w-full" type="button" variant="outline" onClick={() => select(item)}>Review candidate</Button></article>)}</div> : <Table>
           <TableHeader><TableRow><TableHead>Candidate</TableHead><TableHead className="hidden xl:table-cell">Project</TableHead><TableHead className="hidden 2xl:table-cell">Kind</TableHead><TableHead>Status</TableHead><TableHead className="w-20"><span className="sr-only">Open</span></TableHead></TableRow></TableHeader>
           <TableBody>{items.map((item) => {
             const active = item.candidate.candidateId === selected?.candidate.candidateId;
@@ -295,7 +299,7 @@ function QueueWorkspace({ data, search, setData, setNotice }: { data: QueuePageD
               <TableCell className="w-20 text-right"><Button type="button" variant="outline" size="sm" onClick={() => select(item)}>Review</Button></TableCell>
             </TableRow>;
           })}</TableBody>
-        </Table>
+        </Table>}
       </Card>
       {!isMobile ? <aside className="candidate-inspector" aria-label="Selected candidate">{inspector}</aside> : null}
     </div>}

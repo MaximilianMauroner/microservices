@@ -94,7 +94,8 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
       return sql.begin(async (tx) => {
         const [existing] = await tx<ImportRow[]>`select id, digest, format, filename, bytes, source_row_count, inserted_row_count, duplicate_row_count, committed_at, created_by from tools.money_imports where digest = ${input.digest}`;
         if (existing) {
-          await refreshInferredCategories(tx, input.transactions);
+          await refreshInferredTransactions(tx, input.transactions);
+          await linkUnambiguousTransfers(tx);
           return receipt(existing, true);
         }
         const importId = randomUUID();
@@ -106,7 +107,8 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
         if (!created[0]) {
           const [raced] = await tx<ImportRow[]>`select id, digest, format, filename, bytes, source_row_count, inserted_row_count, duplicate_row_count, committed_at, created_by from tools.money_imports where digest = ${input.digest}`;
           if (!raced) throw new Error("Money import replay could not be read.");
-          await refreshInferredCategories(tx, input.transactions);
+          await refreshInferredTransactions(tx, input.transactions);
+          await linkUnambiguousTransfers(tx);
           return receipt(raced, true);
         }
 
@@ -150,7 +152,7 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
             observed_at: item.observedAt, value_minor: item.valueMinor, currency: item.currency, origin: "import", import_id: importId }));
           if (values.length) await tx`insert into tools.money_balance_snapshots ${tx(values)} on conflict (account_id, snapshot_date, origin) do update set observed_at = excluded.observed_at, value_minor = excluded.value_minor, currency = excluded.currency, import_id = excluded.import_id where excluded.observed_at >= tools.money_balance_snapshots.observed_at`;
         }
-        await refreshInferredCategories(tx, input.transactions);
+        await refreshInferredTransactions(tx, input.transactions);
         await applyCategoryRules(tx, [...transactionIds.values()]);
         await linkUnambiguousTransfers(tx);
         const duplicateCount = input.rowCount - insertedCount;
@@ -194,7 +196,7 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
     async readLedgerSnapshot() {
       const [imports, activity, count, transfers, monthly, categories, categoryMonths, merchantMonths, categoryActivity, events, investmentTotals, realizedEvents, snapshotRows] = await Promise.all([
         sql<ImportRow[]>`select id, digest, format, filename, bytes, source_row_count, inserted_row_count, duplicate_row_count, committed_at, created_by from tools.money_imports order by committed_at desc limit 50`,
-        sql<ActivityRow[]>`select t.id, t.occurred_at, a.display_name account_name, t.description, t.amount_minor, t.fee_minor, t.tax_minor, t.currency, t.status, t.source_type, t.flow_kind, t.category, t.category_origin, t.transfer_group_id, t.transfer_disposition from tools.money_transactions t join tools.money_accounts a on a.id = t.account_id order by t.occurred_at desc, t.source_row desc limit 500`,
+        sql<ActivityRow[]>`select t.id, t.occurred_at, a.display_name account_name, t.description, t.amount_minor, t.fee_minor, t.tax_minor, t.currency, t.status, t.source_type, t.flow_kind, t.category, t.category_origin, t.transfer_group_id, t.transfer_disposition from tools.money_transactions t join tools.money_accounts a on a.id = t.account_id order by t.occurred_at desc, t.source_row desc limit 50`,
         sql<{ count: string; reverted_count: string }[]>`select count(*)::text count, count(*) filter (where status = 'reverted')::text reverted_count from tools.money_transactions`,
         sql<TransferReviewRow[]>`select count(distinct transfer_group_id)::text linked_pairs,
           count(*) filter (where transfer_group_id is null)::text unlinked_count,
@@ -420,7 +422,7 @@ function investmentAnalytics(rows: InvestmentRow[], totals: InvestmentTotalsRow 
     quantity: normalizeDatabaseDecimal(row.quantity), boughtMinor: integer(row.bought_minor), soldMinor: integer(row.sold_minor),
     incomeMinor: integer(row.income_minor), feesMinor: integer(row.fees_minor), taxesMinor: integer(row.taxes_minor), currency: row.currency }));
   return { positions: items, totals: { eventCount: integer(totals?.event_count ?? "0"), boughtMinor: integer(totals?.bought_minor ?? "0"), soldMinor: integer(totals?.sold_minor ?? "0"), incomeMinor: integer(totals?.income_minor ?? "0"), feesMinor: integer(totals?.fees_minor ?? "0"), taxesMinor: integer(totals?.taxes_minor ?? "0") },
-    realized: fifoRealizedGains(realizedEvents.map((event) => ({ accountKey: event.account_id, occurredAt: event.occurred_at.toISOString(), sourceOrder: `${String(event.source_row).padStart(10, "0")}\0${event.source_key}`, eventKind: event.event_kind, ...(event.symbol ? { symbol: event.symbol } : {}), ...(event.quantity ? { quantity: event.quantity } : {}), baseAmountMinor: integer(event.base_amount_minor), baseFeeMinor: integer(event.base_fee_minor) }))) };
+    realized: fifoRealizedGains(realizedEvents.map((event) => ({ accountKey: event.account_id, occurredAt: event.occurred_at.toISOString(), sourceOrder: `${String(event.source_row).padStart(10, "0")}\0${event.source_key}`, eventKind: event.event_kind, ...(event.symbol ? { symbol: event.symbol.trim().toLocaleUpperCase("en-GB") } : {}), ...(event.quantity ? { quantity: event.quantity } : {}), baseAmountMinor: integer(event.base_amount_minor), baseFeeMinor: integer(event.base_fee_minor) }))) };
 }
 
 function planningAnalytics(months: MoneySpendingAnalytics["months"], review: MoneyLedgerSnapshot["transferReview"]): MoneyPlanningAnalytics {
@@ -480,8 +482,20 @@ async function applyCategoryRules(tx: postgres.TransactionSql, transactionIds: s
     from matches where matches.id = t.id and matches.rank = 1`;
 }
 
-/** Re-imports pick up improved defaults without overwriting user or rule choices. */
-async function refreshInferredCategories(tx: postgres.TransactionSql, transactions: readonly MoneyLedgerTransaction[]) {
+/** Re-imports pick up improved defaults without overwriting category or transfer review choices. */
+async function refreshInferredTransactions(tx: postgres.TransactionSql, transactions: readonly MoneyLedgerTransaction[]) {
+  const sourceKeysByFlow = new Map<MoneyLedgerTransaction["flowKind"], string[]>();
+  for (const transaction of transactions) {
+    const sourceKeys = sourceKeysByFlow.get(transaction.flowKind) ?? [];
+    sourceKeys.push(transaction.sourceKey);
+    sourceKeysByFlow.set(transaction.flowKind, sourceKeys);
+  }
+  for (const [flowKind, sourceKeys] of sourceKeysByFlow) {
+    for (const keys of chunks(sourceKeys, 1_000)) {
+      if (keys.length) await tx`update tools.money_transactions set flow_kind = ${flowKind}
+        where source_key in ${tx(keys)} and transfer_group_id is null and transfer_disposition is null and flow_kind <> ${flowKind}`;
+    }
+  }
   for (const category of MONEY_CATEGORIES) {
     const sourceKeys = transactions.filter((item) => item.category === category).map((item) => item.sourceKey);
     for (const keys of chunks(sourceKeys, 1_000)) {
@@ -497,7 +511,11 @@ async function linkUnambiguousTransfers(tx: postgres.TransactionSql) {
     where t.status = 'completed' and t.flow_kind = 'transfer' and t.amount_minor <> 0
       and t.transfer_group_id is null and t.transfer_disposition is null and (
         t.source_type = 'Transfer' or t.source_type like 'TRANSFER%'
-        or (a.provider = 'sparkasse' and t.source_type in ${tx([...SPARKASSE_TRANSFER_TYPES])})
+        or (a.provider = 'sparkasse' and (
+          t.source_type in ${tx([...SPARKASSE_TRANSFER_TYPES])}
+          or (t.source_type = 'BEZAHLUNG EU LAENDER' and lower(t.description) ~ '\\m(revolut|trade republic)\\M')
+        ))
+        or (a.provider = 'revolut' and t.source_type = 'Card Payment' and lower(trim(t.description)) = 'hype')
       )`;
   const buckets = new Map<string, TransferRow[]>();
   for (const row of rows) {

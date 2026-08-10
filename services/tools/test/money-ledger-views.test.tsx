@@ -56,6 +56,13 @@ const activity = [
   }
 ];
 
+const emptyMarketData = {
+  asOf: "2026-08-10T12:00:00.000Z",
+  positions: [],
+  history: [],
+  totals: { costBasisMinor: 0, knownMarketValueMinor: 0, knownUnrealizedGainMinor: 0, complete: true }
+} as const;
+
 describe("Option A money ledger views", () => {
   it("renders auditable activity with flow and status boundaries", () => {
     const html = renderToStaticMarkup(<MoneyActivityView activity={activity} transactionCount={8_030} revertedCount={17} transferReview={{ linkedPairs: 12, unlinkedCount: 4, unresolvedPositiveCount: 1, unresolvedNegativeCount: 1 }} />);
@@ -93,16 +100,17 @@ describe("Option A money ledger views", () => {
 
   it("states the bounded spending and investment contracts", () => {
     const spending = renderToStaticMarkup(<MoneySpendingView spending={{ months: [{ month: "2026-08", observed: true, spendMinor: 350, refundsMinor: 0, incomeMinor: 0, feesMinor: 10, taxesMinor: 0, netCashFlowMinor: -360 }], categories: [{ category: "uncategorized", amountMinor: 350, count: 1 }], categoryMonths: [], merchantMonths: [], categoryActivity: [], uncategorizedCount: 1 }} />);
-    const investments = renderToStaticMarkup(<MoneyInvestmentsView investments={{ positions: [], totals: { eventCount: 0, boughtMinor: 0, soldMinor: 0, incomeMinor: 0, feesMinor: 0, taxesMinor: 0 }, realized: { positions: [], totals: { saleCount: 0, proceedsMinor: 0, costBasisMinor: 0, gainMinor: 0, unmatchedSaleCount: 0 } } }} />);
+    const investments = renderToStaticMarkup(<MoneyInvestmentsView marketData={emptyMarketData} investments={{ positions: [], totals: { eventCount: 0, boughtMinor: 0, soldMinor: 0, incomeMinor: 0, feesMinor: 0, taxesMinor: 0 }, realized: { positions: [], totals: { saleCount: 0, proceedsMinor: 0, costBasisMinor: 0, gainMinor: 0, unmatchedSaleCount: 0 } } }} />);
 
     expect(spending).toContain("excluding transfers, trades, adjustments, and reverted rows");
     expect(spending).toContain("3,50");
-    expect(investments).toContain("Current unrealized gains still require market prices");
+    expect(investments).toContain("Portfolio valuation");
+    expect(investments).toContain("Imported investment activity");
     expect(investments).toContain("No realized gains yet");
   });
 
   it("shows FIFO realized gains separately from current valuation", () => {
-    const html = renderToStaticMarkup(<MoneyInvestmentsView investments={{ positions: [], totals: { eventCount: 3, boughtMinor: 20_000, soldMinor: 30_000, incomeMinor: 0, feesMinor: 0, taxesMinor: 0 }, realized: { positions: [{ symbol: "ABC", soldQuantity: "1", saleCount: 1, proceedsMinor: 30_000, costBasisMinor: 20_000, gainMinor: 10_000 }], totals: { saleCount: 1, proceedsMinor: 30_000, costBasisMinor: 20_000, gainMinor: 10_000, unmatchedSaleCount: 0 } } }} />);
+    const html = renderToStaticMarkup(<MoneyInvestmentsView marketData={emptyMarketData} investments={{ positions: [], totals: { eventCount: 3, boughtMinor: 20_000, soldMinor: 30_000, incomeMinor: 0, feesMinor: 0, taxesMinor: 0 }, realized: { positions: [{ symbol: "ABC", soldQuantity: "1", saleCount: 1, proceedsMinor: 30_000, costBasisMinor: 20_000, gainMinor: 10_000 }], totals: { saleCount: 1, proceedsMinor: 30_000, costBasisMinor: 20_000, gainMinor: 10_000, unmatchedSaleCount: 0 } } }} />);
     expect(html).toContain("Realized gains and losses");
     expect(html).toContain("FIFO basis");
     expect(html).toContain("+50.0%");

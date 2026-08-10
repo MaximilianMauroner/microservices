@@ -7,6 +7,7 @@ export interface SchedulerLogger {
 
 export function startAlignedScheduler(options: {
   intervalMs: number;
+  phaseOffsetMs?: number;
   lease?: Readonly<{
     repository: ScheduledTaskLeaseRepository;
     taskId: string;
@@ -25,9 +26,10 @@ export function startAlignedScheduler(options: {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let stopped = false;
   let current: Promise<void> | undefined;
+  const phaseOffsetMs = options.phaseOffsetMs ?? 0;
 
   const execute = async (startedAt: number) => {
-    const slot = new Date(Math.floor(startedAt / options.intervalMs) * options.intervalMs);
+    const slot = new Date(Math.floor((startedAt - phaseOffsetMs) / options.intervalMs) * options.intervalMs + phaseOffsetMs);
     if (options.lease) {
       const acquired = await options.lease.repository.acquire({
         taskId: options.lease.taskId,
@@ -81,7 +83,8 @@ export function startAlignedScheduler(options: {
 
   const scheduleNext = () => {
     if (stopped) return;
-    const delay = options.intervalMs - (now() % options.intervalMs);
+    const elapsedInSlot = ((now() - phaseOffsetMs) % options.intervalMs + options.intervalMs) % options.intervalMs;
+    const delay = options.intervalMs - elapsedInSlot;
     timer = schedule(() => {
       run();
       scheduleNext();

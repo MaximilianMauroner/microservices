@@ -45,6 +45,14 @@ describe("Sparkasse XLSX parser", () => {
     expect(ownAccount.transactions.find(({ sourceRow }) => sourceRow === 19)?.flowKind).toBe("transfer");
     expect(thirdParty.transactions.find(({ sourceRow }) => sourceRow === 19)?.flowKind).toBe("spend");
   });
+
+  it("treats card funding of owned financial accounts as transfers", () => {
+    const revolut = parseMoneyImport(workbook({ spendDescription: "BEZAHLUNG EU LAENDER\nbei Revolut**4361* Dublin" }));
+    const tradeRepublic = parseMoneyImport(workbook({ spendDescription: "BEZAHLUNG EU LAENDER\nbei Trade Republic Berlin" }));
+
+    expect(revolut.transactions.find(({ sourceRow }) => sourceRow === 19)?.flowKind).toBe("transfer");
+    expect(tradeRepublic.transactions.find(({ sourceRow }) => sourceRow === 19)).toMatchObject({ flowKind: "transfer", category: "investments" });
+  });
 });
 
 function workbook(options: Readonly<{ header?: string; closingBalance?: string; formula?: boolean; incomeType?: string; spendDescription?: string }> = {}) {

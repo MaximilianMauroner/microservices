@@ -16,6 +16,7 @@ import type {
 import { requirePlatformSession } from "./auth-middleware.js";
 import { internalPlatformRequest, readPlatformJson } from "./server-data.js";
 import type { MoneyLedgerSnapshot } from "../money/money-repository.js";
+import type { MoneyMarketSnapshot } from "../money/money-market-data-service.js";
 
 export type ReviewView = "decisions" | "queue" | "history";
 
@@ -102,16 +103,20 @@ export type DocumentsPageData = MarkdownAdminSnapshot & {
   publicOrigin: string;
 };
 
-export type MoneyTrackerPageData = MoneyLedgerSnapshot & { actor: string };
+export type MoneyTrackerPageData = MoneyLedgerSnapshot & { actor: string; marketData: MoneyMarketSnapshot };
 
 export const getMoneyTrackerPageData = createServerFn({ method: "GET" })
   .middleware([requirePlatformSession])
   .handler(async (): Promise<MoneyTrackerPageData> => {
     const { context } = internalPlatformRequest("/money");
-    const ledger = await context.runtime.moneyImports.readLedgerSnapshot();
+    const [ledger, marketData] = await Promise.all([
+      context.runtime.moneyImports.readLedgerSnapshot(),
+      context.runtime.moneyMarketData.snapshot()
+    ]);
     return {
       actor: context.principal?.email ?? "Authenticated user",
-      ...ledger
+      ...ledger,
+      marketData
     };
   });
 

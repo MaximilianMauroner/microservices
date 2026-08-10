@@ -100,6 +100,79 @@ export const moneyImports = toolsSchema.table("money_imports", {
   index("money_imports_committed_idx").on(table.committedAt),
 ]);
 
+export const moneyInstruments = toolsSchema.table("money_instruments", {
+  id: uuid("id").primaryKey(),
+  canonicalKey: text("canonical_key").notNull().unique(),
+  name: text("name").notNull(),
+  assetClass: text("asset_class").notNull(),
+  isin: text("isin"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+}, (table) => [
+  check("money_instruments_asset_class_check", sql`${table.assetClass} in ('equity', 'etf', 'crypto')`),
+  check("money_instruments_isin_check", sql`${table.isin} is null or ${table.isin} ~ '^[A-Z]{2}[A-Z0-9]{10}$'`),
+  uniqueIndex("money_instruments_isin_idx").on(table.isin),
+]);
+
+export const moneyInstrumentAliases = toolsSchema.table("money_instrument_aliases", {
+  sourceProvider: text("source_provider").notNull(),
+  sourceSymbol: text("source_symbol").notNull(),
+  instrumentId: uuid("instrument_id").notNull().references(() => moneyInstruments.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.sourceProvider, table.sourceSymbol] }),
+  check("money_instrument_aliases_provider_check", sql`${table.sourceProvider} in ('revolut', 'portfolio_export')`),
+  index("money_instrument_aliases_instrument_idx").on(table.instrumentId),
+]);
+
+export const moneyMarketSeries = toolsSchema.table("money_market_series", {
+  id: uuid("id").primaryKey(),
+  instrumentId: uuid("instrument_id").notNull().references(() => moneyInstruments.id),
+  provider: text("provider").notNull(),
+  providerKey: text("provider_key").notNull(),
+  quoteCurrency: text("quote_currency").notNull(),
+  timezone: text("timezone").notNull(),
+  active: boolean("active").notNull().default(true),
+  firstRequiredDate: date("first_required_date"),
+  lastAttemptAt: timestamp("last_attempt_at", { withTimezone: true }),
+  lastSuccessAt: timestamp("last_success_at", { withTimezone: true }),
+  lastErrorCode: text("last_error_code"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+}, (table) => [
+  check("money_market_series_provider_check", sql`${table.provider} = 'yahoo_chart'`),
+  check("money_market_series_currency_check", sql`${table.quoteCurrency} in ('EUR', 'USD')`),
+  uniqueIndex("money_market_series_provider_key_idx").on(table.provider, table.providerKey),
+  index("money_market_series_instrument_idx").on(table.instrumentId),
+]);
+
+export const moneyDailyPrices = toolsSchema.table("money_daily_prices", {
+  seriesId: uuid("series_id").notNull().references(() => moneyMarketSeries.id),
+  priceDate: date("price_date").notNull(),
+  close: numeric("close", { precision: 30, scale: 12 }).notNull(),
+  currency: text("currency").notNull(),
+  fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.seriesId, table.priceDate] }),
+  check("money_daily_prices_close_check", sql`${table.close} > 0`),
+  check("money_daily_prices_currency_check", sql`${table.currency} in ('EUR', 'USD')`),
+  index("money_daily_prices_date_idx").on(table.priceDate),
+]);
+
+export const moneyFxRates = toolsSchema.table("money_fx_rates", {
+  rateDate: date("rate_date").notNull(),
+  quoteCurrency: text("quote_currency").notNull(),
+  quotePerEuro: numeric("quote_per_euro", { precision: 30, scale: 12 }).notNull(),
+  provider: text("provider").notNull(),
+  fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.rateDate, table.quoteCurrency] }),
+  check("money_fx_rates_currency_check", sql`${table.quoteCurrency} = 'USD'`),
+  check("money_fx_rates_provider_check", sql`${table.provider} = 'ecb'`),
+  check("money_fx_rates_value_check", sql`${table.quotePerEuro} > 0`),
+]);
+
 export const moneyTransactions = toolsSchema.table("money_transactions", {
   id: uuid("id").primaryKey(),
   accountId: uuid("account_id").notNull().references(() => moneyAccounts.id),
@@ -146,6 +219,7 @@ export const moneyTransactions = toolsSchema.table("money_transactions", {
 export const moneyInvestmentEvents = toolsSchema.table("money_investment_events", {
   id: uuid("id").primaryKey(),
   transactionId: uuid("transaction_id").notNull().references(() => moneyTransactions.id).unique(),
+  instrumentId: uuid("instrument_id").references(() => moneyInstruments.id),
   eventKind: text("event_kind").notNull(),
   symbol: text("symbol"),
   name: text("name"),
@@ -158,6 +232,7 @@ export const moneyInvestmentEvents = toolsSchema.table("money_investment_events"
   check("money_investment_events_kind_check", sql`${table.eventKind} in ('buy', 'sell', 'dividend', 'fee', 'tax', 'split', 'cash_transfer', 'position_transfer', 'delivery')`),
   check("money_investment_events_price_currency_check", sql`${table.priceCurrency} is null or ${table.priceCurrency} ~ '^[A-Z]{3}$'`),
   index("money_investment_events_symbol_idx").on(table.symbol),
+  index("money_investment_events_instrument_idx").on(table.instrumentId),
 ]);
 
 export const moneyCategoryRules = toolsSchema.table("money_category_rules", {

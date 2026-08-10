@@ -30,6 +30,13 @@ describe("Revolut cash statement parser", () => {
       ["Apotheke Schwenk", undefined, "health"], ["Booking.com", undefined, "travel"],
       ["OpenAI", undefined, "subscriptions"], ["JetBrains", undefined, "subscriptions"],
       ["Steam", undefined, "entertainment"], ["Amazon", undefined, "shopping"],
+      ["Studentenfoerderungsstiftung", undefined, "housing"], ["Suedtirol Pass", undefined, "transport"],
+      ["Fahrschule Haslach", undefined, "education"], ["50min Diagnostik", undefined, "health"],
+      ["Dell SAS", undefined, "shopping"], ["PayPal Europe", undefined, "other"],
+      ["LÃ¤derach", undefined, "groceries"], ["Mne 95012851winestore", undefined, "groceries"],
+      ["910 Denn.s Bio Wien", undefined, "groceries"], ["l'autentico1190", undefined, "dining"],
+      ["Salone Gran Chik", undefined, "health"], ["Mne 95011892sixpol Ele", undefined, "shopping"],
+      ["Fedexexpres", undefined, "fees"],
       ["Payment", "5411", "groceries"], ["Payment", "5732", "shopping"],
       ["Unknown person", undefined, "uncategorized"]
     ] as const;
@@ -80,6 +87,14 @@ describe("Revolut cash statement parser", () => {
 
     expect(parsed.transactions.map(({ flowKind }) => flowKind)).toEqual(["balance_adjustment", "balance_adjustment"]);
     expect(parsed.accounts[0]?.reconciliationMismatchCount).toBe(0);
+  });
+
+  it("treats HYPE card recharges as transfers", () => {
+    const parsed = statement([
+      "Card Payment\tCurrent\t2026-08-09 5:08:51\t2026-08-09 5:08:51\tHYPE\t-25\t0\tEUR\tCOMPLETED\t75"
+    ]);
+
+    expect(parsed.transactions[0]).toMatchObject({ flowKind: "transfer", amountMinor: -2_500 });
   });
 
   it("fingerprints rows independently from their source row number", () => {
@@ -344,7 +359,7 @@ describe("money schema and Option A route contract", () => {
   it("registers finance tables in the guarded tools schema push", () => {
     const schema = readFileSync(new URL("../database/postgres-schema.ts", import.meta.url), "utf8");
     const config = readFileSync(new URL("../field-guide/drizzle.tools.config.ts", import.meta.url), "utf8");
-    for (const table of ["money_accounts", "money_imports", "money_transactions", "money_investment_events", "money_category_rules", "money_balance_snapshots"]) {
+    for (const table of ["money_accounts", "money_imports", "money_instruments", "money_instrument_aliases", "money_market_series", "money_daily_prices", "money_fx_rates", "money_transactions", "money_investment_events", "money_category_rules", "money_balance_snapshots"]) {
       expect(schema).toContain(`\"${table}\"`);
       expect(config).toContain(`\"${table}\"`);
     }

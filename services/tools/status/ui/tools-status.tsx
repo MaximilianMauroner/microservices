@@ -11,6 +11,7 @@ import { LocalDate, LocalTimeRange, LocalTimestamp } from "../../src/components/
 import { Badge } from "../../src/components/ui/badge.js";
 import { Button } from "../../src/components/ui/button.js";
 import { Card } from "../../src/components/ui/card.js";
+import { useIsMobile } from "../../src/components/ui/use-mobile.js";
 import { formatTimestamp, resolveBrowserLink } from "../../dashboard/ui/tools-directory.js";
 import { projectPrivateCatalog } from "../../dashboard/ui/private-catalog-projection.js";
 
@@ -104,40 +105,45 @@ function ServiceRow({ entry, status, generatedAt, publicOrigin }: {
   generatedAt: string;
   publicOrigin: string;
 }) {
+  const isMobile = useIsMobile();
   const state = serviceState(status);
   const uptime = uptimeSummary(status, generatedAt);
   const links = entry.links.flatMap((link) => {
     const destination = safeHttpUrl(link.url);
     return destination ? [{ ...link, destination }] : [];
   });
+  const details = <>
+    <p className="service-description">{entry.description}</p>
+    <UptimeBar status={status} generatedAt={generatedAt} summary={uptime} />
+    <p className="uptime-scroll-hint">Swipe horizontally to inspect daily checks.</p>
+    <div className="uptime-legend" aria-hidden="true">
+      <span><i className="uptime-key uptime-key--operational" />Operational</span>
+      <span><i className="uptime-key uptime-key--attention" />Partial outage</span>
+      <span><i className="uptime-key uptime-key--outage" />Outage</span>
+      <span><i className="uptime-key uptime-key--unknown" />No data</span>
+    </div>
+    <div className="service-meta">
+      <span>{uptime.firstObservedDay ? `Observed since ${uptime.firstObservedDay}` : "No checks recorded"}</span>
+      <span>{uptime.totalChecks > 0 ? `${uptime.totalChecks} ${uptime.totalChecks === 1 ? "check" : "checks"} · ` : ""}<StatusDetails status={status} /></span>
+      <span>Today</span>
+    </div>
+    <DowntimeHistory status={status} generatedAt={generatedAt} />
+    {links.length > 0 ? (
+      <div className="service-links" role="group" aria-label={`${entry.name} links`}>
+        {links.map((link) => (
+          <ServiceLink key={link.id} href={link.destination} label={link.label} restricted={link.access === "restricted"} publicOrigin={publicOrigin} />
+        ))}
+      </div>
+    ) : null}
+  </>;
+  if (isMobile) return <li className="service-row service-row--compact"><details className="service-disclosure"><summary><span><StatusMark state={state} /><strong>{entry.name}</strong></span><span className={`service-state service-state--${state}`}>{uptime.label}</span></summary><div className="service-disclosure__body">{details}</div></details></li>;
   return (
     <li className="service-row">
       <div className="service-heading">
         <div><StatusMark state={state} /><h3>{entry.name}</h3></div>
         <span className={`service-state service-state--${state}`}>{uptime.label}</span>
       </div>
-      <p className="service-description">{entry.description}</p>
-      <UptimeBar status={status} generatedAt={generatedAt} summary={uptime} />
-      <p className="uptime-scroll-hint">Swipe horizontally to inspect daily checks.</p>
-      <div className="uptime-legend" aria-hidden="true">
-        <span><i className="uptime-key uptime-key--operational" />Operational</span>
-        <span><i className="uptime-key uptime-key--attention" />Partial outage</span>
-        <span><i className="uptime-key uptime-key--outage" />Outage</span>
-        <span><i className="uptime-key uptime-key--unknown" />No data</span>
-      </div>
-      <div className="service-meta">
-        <span>{uptime.firstObservedDay ? `Observed since ${uptime.firstObservedDay}` : "No checks recorded"}</span>
-        <span>{uptime.totalChecks > 0 ? `${uptime.totalChecks} ${uptime.totalChecks === 1 ? "check" : "checks"} · ` : ""}<StatusDetails status={status} /></span>
-        <span>Today</span>
-      </div>
-      <DowntimeHistory status={status} generatedAt={generatedAt} />
-      {links.length > 0 ? (
-        <div className="service-links" role="group" aria-label={`${entry.name} links`}>
-          {links.map((link) => (
-            <ServiceLink key={link.id} href={link.destination} label={link.label} restricted={link.access === "restricted"} publicOrigin={publicOrigin} />
-          ))}
-        </div>
-      ) : null}
+      {details}
     </li>
   );
 }

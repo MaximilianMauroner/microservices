@@ -29,18 +29,35 @@ export type MoneyRealizedGainAnalytics = Readonly<{
   }>;
 }>;
 
+export type MoneyOpenInvestmentPosition = Readonly<{
+  accountKey: string;
+  symbol: string;
+  quantity: string;
+  costBasisMinor: number;
+}>;
+
+export type MoneyInvestmentLotAnalytics = Readonly<{
+  realized: MoneyRealizedGainAnalytics;
+  openPositions: readonly MoneyOpenInvestmentPosition[];
+}>;
+
 type Lot = { quantity: bigint; costMinor: bigint };
 const QUANTITY_SCALE = 1_000_000_000_000n;
 
 /** Calculates realized performance from completed trades using FIFO lots. */
 export function fifoRealizedGains(events: readonly MoneyRealizedGainEvent[]): MoneyRealizedGainAnalytics {
+  return fifoInvestmentLots(events).realized;
+}
+
+/** Calculates realized performance and the remaining FIFO cost basis. */
+export function fifoInvestmentLots(events: readonly MoneyRealizedGainEvent[]): MoneyInvestmentLotAnalytics {
   const lots = new Map<string, Lot[]>();
   const realized = new Map<string, { soldQuantity: bigint; saleCount: number; proceedsMinor: bigint; costBasisMinor: bigint }>();
   let unmatchedSaleCount = 0;
 
   for (const event of [...events].sort((left, right) => left.occurredAt.localeCompare(right.occurredAt) || left.sourceOrder.localeCompare(right.sourceOrder))) {
     if (!event.symbol || !event.quantity) continue;
-    const symbol = event.symbol.trim().toLocaleUpperCase("en-GB");
+    const symbol = event.symbol.trim();
     const quantity = fixedQuantity(event.quantity);
     if (!symbol || quantity === 0n) continue;
     const lotKey = `${event.accountKey}\0${symbol}`;
@@ -58,20 +75,18 @@ export function fifoRealizedGains(events: readonly MoneyRealizedGainEvent[]): Mo
       continue;
     }
 
+    if (event.eventKind === "position_transfer" || event.eventKind === "delivery") {
+      if (quantity > 0n) symbolLots.push({ quantity, costMinor: 0n });
+      else consumeLots(symbolLots, -quantity);
+      lots.set(lotKey, symbolLots);
+      continue;
+    }
+
     if (event.eventKind !== "sell" || quantity < 0n) continue;
     const saleQuantity = quantity;
     let remaining = saleQuantity;
     let costBasisMinor = 0n;
-    while (remaining > 0n && symbolLots.length) {
-      const lot = symbolLots[0]!;
-      const consumed = remaining < lot.quantity ? remaining : lot.quantity;
-      const consumedCost = consumed === lot.quantity ? lot.costMinor : proportionalMinor(lot.costMinor, consumed, lot.quantity);
-      costBasisMinor += consumedCost;
-      lot.quantity -= consumed;
-      lot.costMinor -= consumedCost;
-      remaining -= consumed;
-      if (lot.quantity === 0n) symbolLots.shift();
-    }
+    ({ remaining, costBasisMinor } = consumeLots(symbolLots, saleQuantity));
     lots.set(lotKey, symbolLots);
     const matchedQuantity = saleQuantity - remaining;
     if (remaining > 0n) unmatchedSaleCount += 1;
@@ -94,7 +109,7 @@ export function fifoRealizedGains(events: readonly MoneyRealizedGainEvent[]): Mo
     costBasisMinor: safeMinor(item.costBasisMinor),
     gainMinor: safeMinor(item.proceedsMinor - item.costBasisMinor)
   })).sort((left, right) => Math.abs(right.gainMinor) - Math.abs(left.gainMinor) || left.symbol.localeCompare(right.symbol));
-  return {
+  const realizedAnalytics = {
     positions,
     totals: {
       saleCount: positions.reduce((sum, item) => sum + item.saleCount, 0),
@@ -104,6 +119,34 @@ export function fifoRealizedGains(events: readonly MoneyRealizedGainEvent[]): Mo
       unmatchedSaleCount
     }
   };
+  const openPositions = [...lots.entries()].flatMap(([lotKey, symbolLots]) => {
+    const [accountKey, symbol] = lotKey.split("\0") as [string, string];
+    const quantity = symbolLots.reduce((sum, lot) => sum + lot.quantity, 0n);
+    if (quantity === 0n) return [];
+    return [{
+      accountKey,
+      symbol,
+      quantity: decimalQuantity(quantity),
+      costBasisMinor: safeMinor(symbolLots.reduce((sum, lot) => sum + lot.costMinor, 0n))
+    }];
+  }).sort((left, right) => left.symbol.localeCompare(right.symbol) || left.accountKey.localeCompare(right.accountKey));
+  return { realized: realizedAnalytics, openPositions };
+}
+
+function consumeLots(lots: Lot[], requestedQuantity: bigint) {
+  let remaining = requestedQuantity;
+  let costBasisMinor = 0n;
+  while (remaining > 0n && lots.length) {
+    const lot = lots[0]!;
+    const consumed = remaining < lot.quantity ? remaining : lot.quantity;
+    const consumedCost = consumed === lot.quantity ? lot.costMinor : proportionalMinor(lot.costMinor, consumed, lot.quantity);
+    costBasisMinor += consumedCost;
+    lot.quantity -= consumed;
+    lot.costMinor -= consumedCost;
+    remaining -= consumed;
+    if (lot.quantity === 0n) lots.shift();
+  }
+  return { remaining, costBasisMinor };
 }
 
 function applySplit(lots: Lot[], addedQuantity: bigint) {

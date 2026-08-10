@@ -86,7 +86,7 @@ export function PublishPage() {
               <div className="mx-auto mb-4 grid size-11 place-items-center rounded-full border text-muted-foreground" aria-hidden="true"><Upload /></div>
               <strong className="text-lg">{busy ? "Uploading…" : "Drop a file here"}</strong>
               <p className="mt-2 text-sm text-muted-foreground">Browser uploads are temporary, unlisted downloads that expire automatically.</p>
-              <Input className="sr-only" ref={fileInput} type="file" onChange={chooseFile} aria-label="Choose a file to upload" />
+              <Input className="hidden" ref={fileInput} type="file" onChange={chooseFile} aria-label="Choose a file to upload" tabIndex={-1} />
               <Button className="mt-5" type="button" size="sm" onClick={() => fileInput.current?.click()} disabled={busy}>
                 {busy ? "Working…" : "Choose file"}
               </Button>

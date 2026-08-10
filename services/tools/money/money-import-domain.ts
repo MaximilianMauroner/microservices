@@ -414,6 +414,7 @@ function buildBalanceSnapshots(transactions: readonly MoneyLedgerTransaction[], 
 
 function cashFlow(type: string, amount: number, description: string): MoneyFlowKind {
   if (/^(closing transaction|balance migration to another region or legal entity)$/i.test(description.trim())) return "balance_adjustment";
+  if (type === "Card Payment" && /^hype$/i.test(description.trim())) return "transfer";
   if (type === "Card Payment" || type === "ATM") return amount < 0 ? "spend" : "refund";
   if (type === "Card Refund" || type === "CARD_CREDIT") return "refund";
   if (type === "Interest") return "investment_income";
@@ -427,6 +428,7 @@ function portfolioEventKind(type: string, category: string | undefined): MoneyIn
 function sparkasseFlow(type: string, amount: number, description: string, accountHolder: string): MoneyFlowKind {
   if (SPARKASSE_FEE_TYPES.has(type)) return "fee";
   if (SPARKASSE_TAX_TYPES.has(type)) return "tax";
+  if (SPARKASSE_SPEND_TYPES.has(type) && amount < 0 && /\b(revolut|trade republic)\b/i.test(description)) return "transfer";
   if (SPARKASSE_SPEND_TYPES.has(type)) return amount < 0 ? "spend" : "refund";
   if (SPARKASSE_INCOME_TYPES.has(type) && amount > 0) return "income";
   if (SPARKASSE_TRANSFER_TYPE_SET.has(type)) {
@@ -461,20 +463,22 @@ const MCC_CATEGORY_RULES: readonly Readonly<{ category: MoneyCategory; pattern: 
 ];
 
 const DESCRIPTION_CATEGORY_RULES: readonly Readonly<{ category: MoneyCategory; pattern: RegExp }>[] = [
-  { category: "housing", pattern: /\b(rent|landlord|mortgage|utility|utilities|electricity|gas bill)\b/ },
-  { category: "groceries", pattern: /\b(billa|spar|hofer|aldi|lidl|rewe|edeka|despar|mpreis|supermarket|grocer(?:y|ies)|denn'?s|biomarkt|hello ?fresh|huel|koncoop|naturalia|agrocenter|sudtiroler milch|fruits?)\b|s.*dtiroler milch|^basic$/ },
-  { category: "dining", pattern: /\b(lieferando|foodora|deliveroo|delivery hero|just eat|takeaway|restaurant|cafe|coffee|backwerk|mcdonald'?s|confiserie|autogrill|swing kitchen|bistrot|bakerei|konditorei|kebab|imbiss|pizzeria|biteclub|bao bar|veggiezz|frozen yogurt|litalissimo|humus|old wild west|serways|brot und spiele|juice factory|le crobag|speckstandl)\b|b.*ckerei|caf.|str.*ck|b.*renwirt|^chez angele?$/ },
-  { category: "transport", pattern: /\b(oebb|obb|enio|westbahn|wiener linien|wienerlinien|klimaticket|trenitalia|salzburg verkehr|flixbus|eurolanes|uber|taxi|train|rail|parking|parkhaus|parkplatz|parcheggio|garage|wipark|autostrade?|brennero|bolzano sud|tiermobilit|esso|petrol|fuel)\b|a.bb|^wien$/ },
-  { category: "health", pattern: /\b(apotheke|pharmacy|pharmac|farmacia|doctor|dentist|hospital|fitinn|drogerie|bipa|dermopraxis|beauty)\b/ },
+  { category: "housing", pattern: /\b(rent|landlord|mortgage|utility|utilities|electricity|gas bill|studentenf(?:o|oe)rderungsstiftung)\b/ },
+  { category: "groceries", pattern: /\b(billa|spar|hofer|aldi|lidl|rewe|edeka|despar|mpreis|supermarket|grocer(?:y|ies)|denn'?s|biomarkt|hello ?fresh|huel|koncoop|naturalia|agrocenter|sudtiroler milch|fruits?|misa tea)\b|s.*dtiroler milch|l.*derach|winestore|denn.s|^basic$/ },
+  { category: "dining", pattern: /\b(lieferando|foodora|deliveroo|delivery hero|just eat|takeaway|restaurant|cafe|coffee|backwerk|mcdonald'?s|confiserie|autogrill|swing kitchen|bistrot|bakerei|konditorei|kebab|imbiss|pizzeria|biteclub|bao bar|veggiezz|frozen yogurt|litalissimo|humus|old wild west|serways|brot und spiele|juice factory|le crobag|speckstandl|nihonbashi|tramuntana|giannotti et fil|balthasar kaffee|bar edelweiss|stadtkebab)\b|l'autentico|b.*ckerei|caf.|str.*ck|b.*renwirt|^chez angele?$/ },
+  { category: "transport", pattern: /\b(oebb|obb|enio|westbahn|wiener linien|wienerlinien|klimaticket|trenitalia|salzburg verkehr|flixbus|eurolanes|uber|taxi|train|rail|parking|parkhaus|parkplatz|parcheggio|garage|wipark|autostrade?|brennero|bolzano sud|tiermobilit|suedtirol pass|altoadige p ass|esso|petrol|fuel)\b|a.bb|^tier$|^wien$/ },
+  { category: "health", pattern: /\b(apotheke|pharmacy|pharmac|farmacia|doctor|dentist|hospital|fitinn|drogerie|bipa|dermopraxis|beauty|diagnostik)\b|salone gran chi/ },
   { category: "travel", pattern: /\b(booking\.com|hotel|airline|flight|camping|holafly|sardinia vera)\b/ },
   { category: "subscriptions", pattern: /\b(netflix|spotify|audible|youtube|deezer|libro\.fm|t3 chat|openai|chatgpt|claude|google(?: cloud| chrome)?|microsoft|jetbrains|paddle|replicate|iliad|tim|vodafone|hot telekom|1mobile|purevpn|server dedicato|hetzner|railway|convex|cloudflare|virtualsolu|aruba\.it|amazon prime|evernote|readwise|bitwarden|akiflow|obsidian|cursor|reclaim|groq|unraid|filebot|rize subscription)\b|netflixinte/ },
-  { category: "education", pattern: /\b(tu wien|frontendmasters|knowt)\b/ },
-  { category: "entertainment", pattern: /\b(steam|riot games|hrk game|playstation|g2a|kinguin|chrono(?: gg)?|electronic arts|eneba|mmoga|twitch|znipe|ticketmaster|wien ticket|p3 comix|billardcafe|der klub|wiener eistraum|cineplexx|google play|itunes|itch\.io)\b|steamgames|hrkdistribu/ },
-  { category: "shopping", pattern: /\b(amazon|apple(?:\.com)?|ikea|dbrand|zalando|zara|muller|printbox|paperlike|massdrop|redbubble|thomann|media ?markt|mediaworld|media world|linus tech tips|nike|etsy|uniqlo|brookssport|puma|urban outfitters|samsung|rhinoshield|sportler|nencini sport|beyerdynamic|darn tough|calida|cyberport|e-tec\.at|xxxlutz|action|thalia|athesia|unifi|seven technology|legami|kurzgesagt|h&m|obi|ceramics|flaconi|paga in 3 rate)\b|m.*ller|ebay/ },
+  { category: "education", pattern: /\b(tu wien|technische universitaet wien|fahrschule|frontendmasters|knowt)\b/ },
+  { category: "entertainment", pattern: /\b(steam|riot games|hrk game|playstation|g2a|kinguin|chrono(?: gg)?|electronic arts|eneba|mmoga|twitch|znipe|ticketmaster|wien ticket|p3 comix|billardcafe|der klub|wiener eistraum|cineplexx|google play|itunes|itch\.io|abavent|addicted to rock|sport arena wien)\b|steamgames|hrkdistribu|^khm sk/ },
+  { category: "shopping", pattern: /\b(amazon|apple(?:\.com)?|ikea|dbrand|zalando|zara|muller|printbox|paperlike|massdrop|redbubble|thomann|media ?markt|mediaworld|media world|linus tech tips|nike|etsy|uniqlo|brookssport|puma|urban outfitters|samsung|rhinoshield|sportler|nencini sport|beyerdynamic|darn tough|calida|cyberport|e-tec\.at|xxxlutz|action|thalia|athesia|unifi|seven technology|legami|kurzgesagt|h&m|obi|ceramics|flaconi|dell sas|athleticgre|hutstuebele|heogmbh|spri\.ng|ctdi|blitzhandel24|surteesstudios|az delivery|paga in 3 rate)\b|sixpol|m.*ller|ebay/ },
   { category: "gifts", pattern: /\b(wikimedia|blumen)\b/ },
   { category: "taxes", pattern: /\b(pagopa)\b/ },
-  { category: "fees", pattern: /\b(hannafinanz|poste italiane|post fa|post 1153)\b/ },
-  { category: "cash", pattern: /\b(ricarica yap)\b|^yap$/ }
+  { category: "fees", pattern: /\b(hannafinanz|poste italiane|post fa|post 1153|packlink)\b|fedex/ },
+  { category: "cash", pattern: /\b(ricarica yap)\b|^yap$/ },
+  { category: "investments", pattern: /\btrade republic\b/ },
+  { category: "other", pattern: /\bpaypal\b/ }
 ];
 
 /** Auditable defaults inferred from source MCCs and recurring merchant names. User rules take precedence in the repository. */
