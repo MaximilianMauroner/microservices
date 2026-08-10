@@ -325,6 +325,7 @@ describe("money schema and Option A route contract", () => {
     for (const view of ["cash-flow", "transactions", "investments", "accounts", "categories", "insights", "data"]) expect(route).toContain(`\"${view}\"`);
     for (const old of ["activity", "spending", "balances", "imports", "history", "predictions"]) expect(route).not.toContain(`search.view === \"${old}\"`);
   });
+
 });
 
 function statement(rows: string[]) {
