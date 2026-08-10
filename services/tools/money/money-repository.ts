@@ -87,7 +87,10 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
     commitImport(input) {
       return sql.begin(async (tx) => {
         const [existing] = await tx<ImportRow[]>`select id, digest, format, filename, bytes, source_row_count, inserted_row_count, duplicate_row_count, committed_at, created_by from tools.money_imports where digest = ${input.digest}`;
-        if (existing) return receipt(existing, true);
+        if (existing) {
+          await refreshInferredCategories(tx, input.transactions);
+          return receipt(existing, true);
+        }
         const importId = randomUUID();
         const committedAt = new Date();
         const created = await tx<{ id: string }[]>`
@@ -97,6 +100,7 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
         if (!created[0]) {
           const [raced] = await tx<ImportRow[]>`select id, digest, format, filename, bytes, source_row_count, inserted_row_count, duplicate_row_count, committed_at, created_by from tools.money_imports where digest = ${input.digest}`;
           if (!raced) throw new Error("Money import replay could not be read.");
+          await refreshInferredCategories(tx, input.transactions);
           return receipt(raced, true);
         }
 
@@ -140,6 +144,7 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
             observed_at: item.observedAt, value_minor: item.valueMinor, currency: item.currency, origin: "import", import_id: importId }));
           if (values.length) await tx`insert into tools.money_balance_snapshots ${tx(values)} on conflict (account_id, snapshot_date, origin) do update set observed_at = excluded.observed_at, value_minor = excluded.value_minor, currency = excluded.currency, import_id = excluded.import_id where excluded.observed_at >= tools.money_balance_snapshots.observed_at`;
         }
+        await refreshInferredCategories(tx, input.transactions);
         await applyCategoryRules(tx, [...transactionIds.values()]);
         await linkUnambiguousTransfers(tx);
         const duplicateCount = input.rowCount - insertedCount;
@@ -396,6 +401,17 @@ async function applyCategoryRules(tx: postgres.TransactionSql, transactionIds: s
     where t.id in ${tx(transactionIds)} and t.category_origin <> 'manual'
   ) update tools.money_transactions t set category = matches.category, category_origin = 'rule'
     from matches where matches.id = t.id and matches.rank = 1`;
+}
+
+/** Re-imports pick up improved defaults without overwriting user or rule choices. */
+async function refreshInferredCategories(tx: postgres.TransactionSql, transactions: readonly MoneyLedgerTransaction[]) {
+  for (const category of MONEY_CATEGORIES) {
+    const sourceKeys = transactions.filter((item) => item.category === category).map((item) => item.sourceKey);
+    for (const keys of chunks(sourceKeys, 1_000)) {
+      if (keys.length) await tx`update tools.money_transactions set category = ${category}
+        where source_key in ${tx(keys)} and category_origin = 'source' and category <> ${category}`;
+    }
+  }
 }
 
 async function linkUnambiguousTransfers(tx: postgres.TransactionSql) {

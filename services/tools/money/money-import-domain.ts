@@ -349,19 +349,42 @@ function tradingSignedAmount(type: string, total: number) { return type.includes
 function portfolioFlow(type: string, amount: number): MoneyFlowKind { return type === "BUY" || type === "SELL" || type === "MIGRATION" ? "trade" : type === "INTEREST_PAYMENT" ? "investment_income" : type === "CARD_TRANSACTION" ? (amount < 0 ? "spend" : "refund") : type === "TAX_OPTIMIZATION" ? "tax" : "transfer"; }
 function portfolioEventKind(type: string, category: string | undefined): MoneyInvestmentEventKind | undefined { return type === "BUY" ? "buy" : type === "SELL" ? "sell" : type === "INTEREST_PAYMENT" ? "dividend" : type === "TAX_OPTIMIZATION" ? "tax" : type === "MIGRATION" ? "position_transfer" : category === "DELIVERY" ? "delivery" : undefined; }
 
-/** Small, auditable defaults. User rules take precedence in the repository. */
+const MCC_CATEGORY_RULES: readonly Readonly<{ category: MoneyCategory; pattern: RegExp }>[] = [
+  { category: "groceries", pattern: /^(5411|5422|5441|5451|5462|5499)$/ },
+  { category: "dining", pattern: /^581[1-4]$/ },
+  { category: "transport", pattern: /^(4111|4121|4131|4784|4789|5541|5542|7523)$/ },
+  { category: "shopping", pattern: /^(5310|5311|5331|5399|5611|5621|5631|5641|5651|5655|5661|5681|5691|5697|5698|5699|5712|5713|5714|5719|5722|5732|5734|5941|5942|5943|5944|5945|5946|5947|5948|5949|5999)$/ },
+  { category: "health", pattern: /^(5912|5975|5976|8011|8021|8031|8041|8042|8043|8049|8050|8062|8071|8099)$/ },
+  { category: "travel", pattern: /^(4411|4722|7011)$/ },
+  { category: "education", pattern: /^(8211|8220|8241|8244|8249|8299)$/ },
+  { category: "entertainment", pattern: /^(7832|7911|7922|7929|7932|7933|7991|7992|7993|7994|7996|7997|7998|7999)$/ }
+];
+
+const DESCRIPTION_CATEGORY_RULES: readonly Readonly<{ category: MoneyCategory; pattern: RegExp }>[] = [
+  { category: "housing", pattern: /\b(rent|landlord|mortgage|utility|utilities|electricity|gas bill)\b/ },
+  { category: "groceries", pattern: /\b(billa|spar|hofer|aldi|lidl|rewe|edeka|despar|mpreis|supermarket|grocer(?:y|ies)|denn'?s|biomarkt|hello ?fresh|huel|koncoop|naturalia|agrocenter|sudtiroler milch|fruits?)\b|s.*dtiroler milch|^basic$/ },
+  { category: "dining", pattern: /\b(lieferando|foodora|deliveroo|delivery hero|just eat|takeaway|restaurant|cafe|coffee|backwerk|mcdonald'?s|confiserie|autogrill|swing kitchen|bistrot|bakerei|konditorei|kebab|imbiss|pizzeria|biteclub|bao bar|veggiezz|frozen yogurt|litalissimo|humus|old wild west|serways|brot und spiele|juice factory|le crobag|speckstandl)\b|b.*ckerei|caf.|str.*ck|b.*renwirt|^chez angele?$/ },
+  { category: "transport", pattern: /\b(oebb|obb|enio|westbahn|wiener linien|wienerlinien|klimaticket|trenitalia|salzburg verkehr|flixbus|eurolanes|uber|taxi|train|rail|parking|parkhaus|parkplatz|parcheggio|garage|wipark|autostrade?|brennero|bolzano sud|tiermobilit|esso|petrol|fuel)\b|a.bb|^wien$/ },
+  { category: "health", pattern: /\b(apotheke|pharmacy|pharmac|farmacia|doctor|dentist|hospital|fitinn|drogerie|bipa|dermopraxis|beauty)\b/ },
+  { category: "travel", pattern: /\b(booking\.com|hotel|airline|flight|camping|holafly|sardinia vera)\b/ },
+  { category: "subscriptions", pattern: /\b(netflix|spotify|audible|youtube|deezer|libro\.fm|t3 chat|openai|chatgpt|claude|google(?: cloud| chrome)?|microsoft|jetbrains|paddle|replicate|iliad|tim|vodafone|hot telekom|1mobile|purevpn|server dedicato|hetzner|railway|convex|cloudflare|virtualsolu|aruba\.it|amazon prime|evernote|readwise|bitwarden|akiflow|obsidian|cursor|reclaim|groq|unraid|filebot|rize subscription)\b|netflixinte/ },
+  { category: "education", pattern: /\b(tu wien|frontendmasters|knowt)\b/ },
+  { category: "entertainment", pattern: /\b(steam|riot games|hrk game|playstation|g2a|kinguin|chrono(?: gg)?|electronic arts|eneba|mmoga|twitch|znipe|ticketmaster|wien ticket|p3 comix|billardcafe|der klub|wiener eistraum|cineplexx|google play|itunes|itch\.io)\b|steamgames|hrkdistribu/ },
+  { category: "shopping", pattern: /\b(amazon|apple(?:\.com)?|ikea|dbrand|zalando|zara|muller|printbox|paperlike|massdrop|redbubble|thomann|media ?markt|mediaworld|media world|linus tech tips|nike|etsy|uniqlo|brookssport|puma|urban outfitters|samsung|rhinoshield|sportler|nencini sport|beyerdynamic|darn tough|calida|cyberport|e-tec\.at|xxxlutz|action|thalia|athesia|unifi|seven technology|legami|kurzgesagt|h&m|obi|ceramics|flaconi|paga in 3 rate)\b|m.*ller|ebay/ },
+  { category: "gifts", pattern: /\b(wikimedia|blumen)\b/ },
+  { category: "taxes", pattern: /\b(pagopa)\b/ },
+  { category: "fees", pattern: /\b(hannafinanz|poste italiane|post fa|post 1153)\b/ },
+  { category: "cash", pattern: /\b(ricarica yap)\b|^yap$/ }
+];
+
+/** Auditable defaults inferred from source MCCs and recurring merchant names. User rules take precedence in the repository. */
 export function categorizeDescription(description: string, mcc?: string): MoneyCategory {
-  const value = description.toLocaleLowerCase("en-GB");
-  if (mcc && /^(5411|5422|5441|5451|5462|5499)$/.test(mcc)) return "groceries";
-  if (mcc && /^(5812|5813|5814)$/.test(mcc)) return "dining";
-  if (mcc && /^(4111|4121|4131|4789|5541|5542)$/.test(mcc)) return "transport";
-  if (/\b(rent|landlord|mortgage)\b/.test(value)) return "housing";
-  if (/\b(supermarket|grocery|groceries|aldi|lidl|rewe|edeka)\b/.test(value)) return "groceries";
-  if (/\b(restaurant|cafe|coffee|delivery|takeaway)\b/.test(value)) return "dining";
-  if (/\b(train|rail|uber|taxi|fuel|petrol|parking)\b/.test(value)) return "transport";
-  if (/\b(pharmacy|doctor|dentist|hospital)\b/.test(value)) return "health";
-  if (/\b(hotel|airline|flight|booking)\b/.test(value)) return "travel";
-  if (/\b(subscription|netflix|spotify|icloud)\b/.test(value)) return "subscriptions";
+  const normalizedMcc = mcc?.trim();
+  const mccMatch = normalizedMcc && MCC_CATEGORY_RULES.find((rule) => rule.pattern.test(normalizedMcc));
+  if (mccMatch) return mccMatch.category;
+  const value = description.toLocaleLowerCase("en-GB").normalize("NFKD").replace(/\p{Diacritic}/gu, "");
+  const descriptionMatch = DESCRIPTION_CATEGORY_RULES.find((rule) => rule.pattern.test(value));
+  if (descriptionMatch) return descriptionMatch.category;
   return "uncategorized";
 }
 

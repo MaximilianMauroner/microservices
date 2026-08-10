@@ -6,6 +6,7 @@ import {
   PORTFOLIO_TRANSACTION_FORMAT,
   REVOLUT_CASH_FORMAT,
   REVOLUT_TRADING_FORMAT,
+  categorizeDescription,
   parseMoneyImport
 } from "../money/money-import-domain.js";
 import { MoneyImportService } from "../money/money-import-service.js";
@@ -21,6 +22,20 @@ import type { PlatformRouteInput } from "../src/route-handlers.js";
 const header = "Type\tProduct\tStarted Date\tCompleted Date\tDescription\tAmount\tFee\tCurrency\tState\tBalance";
 
 describe("Revolut cash statement parser", () => {
+  it("infers common merchant and MCC categories from the supplied export families", () => {
+    const cases = [
+      ["BILLA", undefined, "groceries"], ["SÃ¼dtiroler Milch", undefined, "groceries"],
+      ["Lieferando", undefined, "dining"], ["CafÃ© Jelinek", undefined, "dining"],
+      ["ÃBB", undefined, "transport"], ["ENIO", undefined, "transport"],
+      ["Apotheke Schwenk", undefined, "health"], ["Booking.com", undefined, "travel"],
+      ["OpenAI", undefined, "subscriptions"], ["JetBrains", undefined, "subscriptions"],
+      ["Steam", undefined, "entertainment"], ["Amazon", undefined, "shopping"],
+      ["Payment", "5411", "groceries"], ["Payment", "5732", "shopping"],
+      ["Unknown person", undefined, "uncategorized"]
+    ] as const;
+    for (const [description, mcc, category] of cases) expect(categorizeDescription(description, mcc)).toBe(category);
+  });
+
   it("normalizes exact amounts, statuses, flow kinds, and Berlin timestamps", () => {
     const parsed = statement([
       "Transfer\tCurrent\t2026-08-09 5:08:51\t2026-08-09 5:08:51\tFrom own account\t20\t0\tEUR\tCOMPLETED\t20",
