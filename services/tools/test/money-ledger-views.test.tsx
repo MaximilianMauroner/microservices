@@ -92,7 +92,7 @@ describe("Option A money ledger views", () => {
   });
 
   it("states the bounded spending and investment contracts", () => {
-    const spending = renderToStaticMarkup(<MoneySpendingView spending={{ months: [{ month: "2026-08", observed: true, spendMinor: 350, refundsMinor: 0, incomeMinor: 0, feesMinor: 10, taxesMinor: 0, netCashFlowMinor: -360 }], categories: [{ category: "uncategorized", amountMinor: 350, count: 1 }], uncategorizedCount: 1 }} />);
+    const spending = renderToStaticMarkup(<MoneySpendingView spending={{ months: [{ month: "2026-08", observed: true, spendMinor: 350, refundsMinor: 0, incomeMinor: 0, feesMinor: 10, taxesMinor: 0, netCashFlowMinor: -360 }], categories: [{ category: "uncategorized", amountMinor: 350, count: 1 }], categoryMonths: [], merchantMonths: [], categoryActivity: [], uncategorizedCount: 1 }} />);
     const investments = renderToStaticMarkup(<MoneyInvestmentsView investments={{ positions: [], totals: { eventCount: 0, boughtMinor: 0, soldMinor: 0, incomeMinor: 0, feesMinor: 0, taxesMinor: 0 }, realized: { positions: [], totals: { saleCount: 0, proceedsMinor: 0, costBasisMinor: 0, gainMinor: 0, unmatchedSaleCount: 0 } } }} />);
 
     expect(spending).toContain("excluding transfers, trades, adjustments, and reverted rows");
@@ -117,7 +117,7 @@ describe("Option A money ledger views", () => {
       investments={{ positions: [{ symbol: "ETF", quantity: "1", boughtMinor: 10_000, soldMinor: 0, incomeMinor: 0, feesMinor: 0, taxesMinor: 0, currency: "EUR" }], totals: { eventCount: 1, boughtMinor: 10_000, soldMinor: 0, incomeMinor: 0, feesMinor: 0, taxesMinor: 0 }, realized: { positions: [], totals: { saleCount: 0, proceedsMinor: 0, costBasisMinor: 0, gainMinor: 0, unmatchedSaleCount: 0 } } }}
       months={[{ date: "2026-08-01", total: 100, values: { cash: 50, broker: 50 }, observedAccounts: ["cash", "broker"] }]}
       revertedCount={2}
-      spending={{ months: [], categories: [{ category: "groceries", amountMinor: 100, count: 2 }, { category: "uncategorized", amountMinor: 50, count: 1 }], uncategorizedCount: 1 }}
+      spending={{ months: [], categories: [{ category: "groceries", amountMinor: 100, count: 2 }, { category: "uncategorized", amountMinor: 50, count: 1 }], categoryMonths: [], merchantMonths: [], categoryActivity: [], uncategorizedCount: 1 }}
       transactionCount={100}
       transferReview={{ linkedPairs: 4, unlinkedCount: 1, unresolvedPositiveCount: 1, unresolvedNegativeCount: 0 }}
     />);

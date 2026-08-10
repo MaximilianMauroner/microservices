@@ -75,7 +75,7 @@ export const moneyAccounts = toolsSchema.table("money_accounts", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
 }, (table) => [
-  check("money_accounts_provider_check", sql`${table.provider} in ('revolut', 'portfolio_export', 'manual')`),
+  check("money_accounts_provider_check", sql`${table.provider} in ('revolut', 'portfolio_export', 'manual', 'sparkasse')`),
   check("money_accounts_role_check", sql`${table.role} in ('cash', 'investment')`),
   check("money_accounts_currency_check", sql`${table.currency} ~ '^[A-Z]{3}$'`),
   uniqueIndex("money_accounts_provider_ref_idx").on(table.provider, table.externalRef),

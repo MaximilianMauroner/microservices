@@ -60,6 +60,9 @@ it.skipIf(!repository || !admin)("executes import replay, transfer review, analy
   expect(snapshot.transferReview.unresolvedPositiveCount + snapshot.transferReview.unresolvedNegativeCount).toBe(0);
   expect(snapshot.planning).toMatchObject({ ready: false, observedMonthCount: 1 });
   expect(snapshot.spending.months.find((month) => month.month === "2026-02")).toMatchObject({ incomeMinor: 5_000, spendMinor: 2_000, netCashFlowMinor: 3_000 });
+  expect(snapshot.spending.categoryMonths).toContainEqual(expect.objectContaining({ month: "2026-02", amountMinor: 2_000, count: 1 }));
+  expect(snapshot.spending.merchantMonths).toContainEqual(expect.objectContaining({ month: "2026-02", description: "External payment", amountMinor: 2_000, count: 1 }));
+  expect(snapshot.spending.categoryActivity).toContainEqual(expect.objectContaining({ description: "External payment", amountMinor: -2_000 }));
   const duplicateAccounts = snapshot.accounts.filter((id) => snapshot.accountLabels[id]?.startsWith("Duplicate"));
   expect(duplicateAccounts).toHaveLength(2);
   expect(new Set(duplicateAccounts.map((id) => snapshot.accountRoles[id]))).toEqual(new Set(["cash", "investment"]));
