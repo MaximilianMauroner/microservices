@@ -157,6 +157,8 @@ describe("Option A money ledger views", () => {
     expect(html).toContain("Net Interest Paid to &#x27;Instant Access Savings");
     expect(html).toContain("Repair queue");
     expect(html).toContain("unpriced positions");
+    expect(html.match(/lucide-chevron-right/g)).toHaveLength(4);
+    expect(html).toContain("focus-visible:ring-inset");
     expect(html).not.toContain("Imported formats");
     expect(html).toContain('aria-label="Delete cash.tsv"');
   });
