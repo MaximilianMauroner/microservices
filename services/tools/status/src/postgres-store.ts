@@ -49,14 +49,14 @@ export function createPostgresCheckerStore(config: CheckerConfig): CheckerStore 
       };
     },
     async readState() {
-      const [row] = await sql<{ value: unknown; revision: number }[]>`
-        select value, revision from tools.checker_states where environment = ${config.environment}`;
-      return row ? { value: decodeCheckerStateDocument(persistedJsonValue(row.value)), etag: String(row.revision) } : null;
+      const [row] = await sql<{ value: unknown; revision: string }[]>`
+        select value, revision::text as revision from tools.checker_states where environment = ${config.environment}`;
+      return row ? { value: decodeCheckerStateDocument(persistedJsonValue(row.value)), etag: row.revision } : null;
     },
     async readHistory(day) {
-      const [row] = await sql<{ value: unknown; revision: number }[]>`
-        select value, revision from tools.history_partitions where environment = ${config.environment} and day = ${day}::date`;
-      return row ? { value: decodeHistoryPartitionDocument(persistedJsonValue(row.value)), etag: String(row.revision) } : null;
+      const [row] = await sql<{ value: unknown; revision: string }[]>`
+        select value, revision::text as revision from tools.history_partitions where environment = ${config.environment} and day = ${day}::date`;
+      return row ? { value: decodeHistoryPartitionDocument(persistedJsonValue(row.value)), etag: row.revision } : null;
     },
     async listHistoryDays() {
       const rows = await sql<{ day: string }[]>`
@@ -87,21 +87,26 @@ async function guardedWrite(sql: Sql, environment: string, day: string | null, v
   const document = { toJSON: () => value };
   return sql.begin(async (tx) => {
     const rows = day === null
-      ? await tx<{ revision: number }[]>`select revision from tools.checker_states where environment = ${environment} for update`
-      : await tx<{ revision: number }[]>`select revision from tools.history_partitions where environment = ${environment} and day = ${day}::date for update`;
+      ? await tx<{ revision: string }[]>`select revision::text as revision from tools.checker_states where environment = ${environment} for update`
+      : await tx<{ revision: string }[]>`select revision::text as revision from tools.history_partitions where environment = ${environment} and day = ${day}::date for update`;
     const current = rows[0]?.revision;
-    if ((current === undefined ? null : String(current)) !== expectedEtag) throw new CheckerConflictError(day ?? environment);
-    const next = (current ?? 0) + 1;
+    if ((current ?? null) !== expectedEtag) throw new CheckerConflictError(day ?? environment);
+    const next = nextRevision(current);
     if (day === null) {
-      await tx`insert into tools.checker_states (environment, revision, value, updated_at) values (${environment}, ${next}, ${tx.json(document)}, now())
+      await tx`insert into tools.checker_states (environment, revision, value, updated_at) values (${environment}, ${next}::bigint, ${tx.json(document)}, now())
         on conflict (environment) do update set revision = excluded.revision, value = excluded.value, updated_at = excluded.updated_at`;
       await persistFacts(tx, value as CheckerStateDocument);
     } else {
-      await tx`insert into tools.history_partitions (environment, day, revision, value, updated_at) values (${environment}, ${day}::date, ${next}, ${tx.json(document)}, now())
+      await tx`insert into tools.history_partitions (environment, day, revision, value, updated_at) values (${environment}, ${day}::date, ${next}::bigint, ${tx.json(document)}, now())
         on conflict (environment, day) do update set revision = excluded.revision, value = excluded.value, updated_at = excluded.updated_at`;
     }
-    return String(next);
+    return next;
   });
+}
+
+/** Increments Postgres bigint revisions without crossing JavaScript's safe-integer boundary. */
+export function nextRevision(current: string | undefined) {
+  return (BigInt(current ?? "0") + 1n).toString();
 }
 
 /** Recovers rows written as JSON strings by the former double-serialization bug. */
