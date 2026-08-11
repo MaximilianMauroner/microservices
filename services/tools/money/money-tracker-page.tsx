@@ -38,13 +38,13 @@ export function MoneyTrackerPage(props: MoneyTrackerPageData & { view: MoneyTrac
     const financial = moneyFinancialHistory(allCashMonths.map((month) => ({ date: month.date, cashValue: month.money, observedCashAccountCount: month.observedAccounts.length, cashAccountCount: cashAccounts.length })), props.marketData.history);
     return financial.map((point, index) => ({ ...allCashMonths[index]!, ...point, trend: point.total }));
   }, [allCashMonths, cashAccounts.length, props.marketData.history]);
-  const months = useMemo(() => withLinearTrend(period === "all" ? allMonths : allMonths.slice(period === "6m" ? -6 : -12), cashAccounts.length), [allMonths, period, cashAccounts.length]);
+  const months = useMemo(() => withLinearTrend(period === "all" ? allMonths : allMonths.slice(period === "6m" ? -6 : -12)), [allMonths, period]);
   const accountMonths = useMemo(() => period === "all" ? allCashMonths : allCashMonths.slice(period === "6m" ? -6 : -12), [allCashMonths, period]);
   const latest = months.at(-1);
   const previous = months.at(-2);
   const latestCash = allCashMonths.at(-1);
   const position = useMemo(() => moneyFinancialPosition({ asOf: props.marketData.asOf, cashValueMinor: Math.round((latestCash?.money ?? 0) * 100), cashObservationDate: latestCash?.date, observedCashAccountCount: latestCash?.observedAccounts.length ?? 0, cashAccountCount: cashAccounts.length, marketData: props.marketData }), [cashAccounts.length, latestCash, props.marketData]);
-  const latestObservedChange = withChanges(months, cashAccounts.length).at(-1);
+  const latestObservedChange = withChanges(months).at(-1);
   const monthlyChange = latestObservedChange && latestObservedChange.date === latest?.date ? latestObservedChange.change : undefined;
   const trends = useMemo(() => moneyTrackerTrendStats(months, allMonths), [allMonths, months]);
   const showPeriod = props.view === "accounts" || props.view === "insights";
@@ -111,7 +111,7 @@ function CashFlowReconciliation({ month }: { month?: MoneyTrackerPageData["spend
 
 function Insights({ accounts, accountLabels, accountRoles: providedAccountRoles, planning, position, months, latest, previous, monthlyChange, trends }: MoneyTrackerPageData & { position: MoneyFinancialPosition; months: GroupedMonth[]; latest?: GroupedMonth; previous?: GroupedMonth; monthlyChange?: number; trends: MoneyTrackerTrendStats }) {
   const accountRoles = { ...providedAccountRoles, __portfolio: "investment" as const };
-  const changes = withChanges(months, accounts.length);
+  const changes = withChanges(months);
   const portfolioContributor = position.portfolio.openPositionCount || latest?.stocks ? [{ account: "__portfolio", label: "Portfolio", value: latest?.stocks, previous: previous?.stocks, change: latest && previous ? latest.stocks - previous.stocks : undefined }] : [];
   const contributors = [...accountRows(accounts, accountLabels, latest, previous), ...portfolioContributor].sort((a, b) => Math.abs(b.change ?? 0) - Math.abs(a.change ?? 0));
   const maxChange = Math.max(...contributors.map((item) => Math.abs(item.change ?? 0)), 1);
@@ -128,7 +128,7 @@ function Insights({ accounts, accountLabels, accountRoles: providedAccountRoles,
       <ChartCard title="Monthly balance change" description="Absolute month-over-month movement"><MountedChart fallback={<ChartFallback values={changes.map((month) => month.change)} />}><ChartContainer config={changeConfig} className="h-64 w-full aspect-auto" role="img" aria-label="Month-over-month tracked balance changes. Exact values follow in an expandable table."><BarChart accessibilityLayer={false} data={changes}><CartesianGrid vertical={false} /><XAxis dataKey="date" tickLine={false} axisLine={false} minTickGap={24} /><YAxis tickLine={false} axisLine={false} width={68} tickFormatter={(value: number) => currency.format(value)} /><ChartTooltip content={<ChartTooltipContent formatter={(value) => <TooltipValue label="Change" value={formatSigned(Number(value))} />} />} /><Bar dataKey="change" radius={3}>{changes.map((month) => <Cell key={month.date} fill={month.change < 0 ? "#fb7185" : "#4ade80"} />)}</Bar></BarChart></ChartContainer></MountedChart><ChangeDataDisclosure changes={changes} /></ChartCard>
       <Card><CardHeader className="border-b"><CardTitle>What moved this month</CardTitle><CardDescription>{formatSigned(monthlyChange)} across the latest snapshot</CardDescription></CardHeader><CardContent className="p-0">{(["stocks", "money"] as const).map((category) => { const items = contributors.filter((item) => roleCategory(accountRoles, item.account) === category); const subtotal = items.reduce((sum, item) => sum + (item.change ?? 0), 0); return <section key={category} className="border-b last:border-b-0"><div className="flex items-center justify-between bg-muted/40 px-4 py-2.5"><span className="text-[.68rem] font-semibold uppercase tracking-[.08em] text-muted-foreground">{category === "stocks" ? "Stocks" : "Cash"}</span><span className={`font-mono text-xs ${changeClass(subtotal)}`}>{formatSigned(subtotal, true)}</span></div><div className="divide-y">{items.map((item) => <div className="grid grid-cols-[minmax(7rem,1fr)_minmax(6rem,1.4fr)_auto] items-center gap-3 px-4 py-3 text-sm" key={item.account}><span className="truncate font-medium">{item.label}</span><div className="h-1.5 overflow-hidden rounded-full bg-muted"><div className={`h-full rounded-full ${item.change !== undefined && item.change < 0 ? "bg-rose-400" : "bg-emerald-400"}`} style={{ width: `${Math.abs(item.change ?? 0) / maxChange * 100}%` }} /></div><span className={changeClass(item.change)}>{formatSigned(item.change, true)}</span></div>)}</div></section>; })}</CardContent></Card>
     </section>
-    <Alert role="note"><AlertTitle>How to read these trends</AlertTitle><AlertDescription>Momentum compares the latest three-month average with the previous three months. Drawdown compares the current balance with the selected-range high. Balance changes include deposits, withdrawals, and market movement, so they are not investment returns.</AlertDescription></Alert>
+    <Alert role="note"><AlertTitle>How to read these trends</AlertTitle><AlertDescription>Momentum compares the latest three-month average with the previous three months. Drawdown compares the current balance with the selected-range high. Tracked totals can include carried balances; changes include deposits, withdrawals, and market movement, so they are not investment returns.</AlertDescription></Alert>
     <section className="grid items-start gap-3 lg:grid-cols-3" aria-label="Trend statistics">
       <Card><CardHeader className="border-b"><CardTitle>Year-over-year</CardTitle><CardDescription>{trends.yearOverYear ? `Compared with ${trends.yearOverYear.comparisonDate}` : "A matching prior-year month is required"}</CardDescription></CardHeader><CardContent className="divide-y p-0"><TrendRow label="Total" change={trends.yearOverYear?.total} /><TrendRow label="Cash" change={trends.yearOverYear?.money} /><TrendRow label="Stocks" change={trends.yearOverYear?.stocks} /></CardContent></Card>
       <Card><CardHeader className="border-b"><CardTitle>Selected-range trend</CardTitle><CardDescription>Calculated from the visible snapshots</CardDescription></CardHeader><CardContent className="divide-y p-0"><TrendRow label="Cumulative change" change={trends.periodChange} /><StatRow label="Geometric monthly change" value={formatTrendPercent(trends.geometricAverageMonthlyPercent)} /><StatRow label="Average total change" value={formatSigned(trends.averageMonthlyChange, true)} /><StatRow label="Average cash change" value={formatSigned(trends.averageMoneyChange, true)} /><StatRow label="Average stock change" value={formatSigned(trends.averageStocksChange, true)} /><StatRow label="High-water mark" value={trends.highWaterMark ? preciseCurrency.format(trends.highWaterMark.value) : "—"} detail={trends.highWaterMark?.date} /></CardContent></Card>
@@ -171,7 +171,7 @@ function AccountGroupChart({ title, category, accounts, accountLabels, months, f
 
 export function History({ accounts, accountLabels, months }: { accounts: string[]; accountLabels: Record<string, string>; months: GroupedMonth[] }) {
   const descending = [...months].reverse();
-  const changes = withChanges(months, accounts.length);
+  const changes = withObservedChanges(months, accounts.length);
   const latest = months.at(-1);
   const previous = months.at(-2);
   const latestObservedChange = changes.at(-1);
@@ -221,7 +221,8 @@ function StatRow({ label, value, detail }: { label: string; value: string; detai
 function TrendRow({ label, change }: { label: string; change?: { change: number; percent?: number } }) { return <div className="flex items-center justify-between gap-4 px-4 py-3 text-sm"><span className="text-muted-foreground">{label}</span><span className={`text-right font-mono ${changeClass(change?.change)}`}><strong className="font-medium">{formatSigned(change?.change, true)}</strong><span className="ml-2 text-xs">{formatTrendPercent(change?.percent)}</span></span></div>; }
 function AllocationRow({ label, money, stocks }: { label: string; money: number; stocks: number }) { return <div className="space-y-2 px-4 py-3"><div className="flex items-center justify-between text-xs"><span className="text-muted-foreground">{label}</span><span className="font-mono"><span className="text-cyan-300">Cash {money.toFixed(1)}%</span><span className="ml-3 text-purple-300">Stocks {stocks.toFixed(1)}%</span></span></div><div className="flex h-1.5 overflow-hidden rounded-full bg-muted"><div className="bg-cyan-300" style={{ width: `${money}%` }} /><div className="bg-purple-400" style={{ width: `${stocks}%` }} /></div></div>; }
 function TooltipValue({ label, value }: { label: string; value: string }) { return <div className="flex min-w-40 items-center justify-between gap-4"><span className="text-muted-foreground">{label}</span><strong>{value}</strong></div>; }
-function withChanges(months: Month[], accountCount: number) { return months.slice(1).flatMap((month, index) => { const previous = months[index]!; return isFullyObserved(month, accountCount) && isFullyObserved(previous, accountCount) ? [{ ...month, change: month.total - previous.total }] : []; }); }
+function withChanges(months: Month[]) { return months.slice(1).map((month, index) => ({ ...month, change: month.total - months[index]!.total })); }
+function withObservedChanges(months: Month[], accountCount: number) { return months.slice(1).flatMap((month, index) => { const previous = months[index]!; return isFullyObserved(month, accountCount) && isFullyObserved(previous, accountCount) ? [{ ...month, change: month.total - previous.total }] : []; }); }
 function accountRows(accounts: string[], labels: Record<string, string>, latest?: Month, previous?: Month) { return accounts.map((account) => { const value = latest?.values[account]; const oldValue = previous?.values[account]; const comparable = latest?.observedAccounts.includes(account) && previous?.observedAccounts.includes(account); return { account, label: labels[account] ?? account, value, previous: oldValue, change: comparable && value !== undefined && oldValue !== undefined ? value - oldValue : undefined }; }); }
 function isFullyObserved(month: Month & { observed?: boolean }, accountCount: number) { return month.observed ?? (accountCount > 0 && month.observedAccounts.length === accountCount); }
 function formatActivityDate(value: string) { return new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeZone: "Europe/Berlin" }).format(new Date(value)); }
@@ -241,13 +242,12 @@ function cashMonth(month: Month, cashAccounts: readonly string[]): GroupedMonth 
   return { ...month, values, observedAccounts, total: money, money, stocks: 0, trend: money };
 }
 function roleCategory(roles: Record<string, "cash" | "investment">, account: string): MoneyTrackerAccountCategory { return roles[account] === "investment" ? "stocks" : "money"; }
-function withLinearTrend(months: GroupedMonth[], accountCount: number) {
-  const observed = months.flatMap((month, index) => isFullyObserved(month, accountCount) ? [{ month, index }] : []);
-  if (observed.length < 2) return months;
-  const meanX = observed.reduce((sum, item) => sum + item.index, 0) / observed.length;
-  const meanY = observed.reduce((sum, item) => sum + item.month.total, 0) / observed.length;
-  const slopeNumerator = observed.reduce((sum, item) => sum + (item.index - meanX) * (item.month.total - meanY), 0);
-  const slopeDenominator = observed.reduce((sum, item) => sum + (item.index - meanX) ** 2, 0);
+function withLinearTrend(months: GroupedMonth[]) {
+  if (months.length < 2) return months;
+  const meanX = (months.length - 1) / 2;
+  const meanY = months.reduce((sum, month) => sum + month.total, 0) / months.length;
+  const slopeNumerator = months.reduce((sum, month, index) => sum + (index - meanX) * (month.total - meanY), 0);
+  const slopeDenominator = months.reduce((sum, _month, index) => sum + (index - meanX) ** 2, 0);
   const slope = slopeNumerator / slopeDenominator;
   return months.map((month, index) => ({ ...month, trend: meanY + slope * (index - meanX) }));
 }
