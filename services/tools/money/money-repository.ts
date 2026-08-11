@@ -194,6 +194,11 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
         const [count] = await tx<{ import_count: string }[]>`select count(*)::text import_count from tools.money_imports`;
         const rows = await tx<ReimportRow[]>`select id, source_key, flow_kind, source_type, description, mcc
           from tools.money_transactions where import_id is not null order by id for update`;
+        await tx`update tools.money_accounts set display_name = case role
+            when 'investment' then 'Trade Republic Investments'
+            else 'Trade Republic Cash'
+          end, updated_at = now()
+          where provider = 'portfolio_export'`;
         const linkedGroups = await tx<{ transfer_group_id: string }[]>`select distinct transfer_group_id
           from tools.money_transactions where import_id is not null and transfer_group_id is not null`;
         const groupIds = linkedGroups.map((row) => row.transfer_group_id);
@@ -371,7 +376,14 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
           select distinct on (s.account_id, s.snapshot_date) s.account_id::text account_id, s.snapshot_date::text snapshot_date, s.value_minor::text value_minor, s.currency, a.display_name, a.role, a.provider
           from tools.money_balance_snapshots s join tools.money_accounts a on a.id = s.account_id
           order by s.account_id, s.snapshot_date, case when s.origin = 'manual' then 0 else 1 end, s.observed_at desc
-        ) latest order by snapshot_date, display_name`
+        ) latest
+        union all
+        select a.id::text, null, null, a.currency, a.display_name, a.role, a.provider
+        from tools.money_accounts a
+        where a.currency = 'EUR'
+          and not exists (select 1 from tools.money_balance_snapshots s where s.account_id = a.id)
+          and exists (select 1 from tools.money_transactions t where t.account_id = a.id and t.status = 'completed')
+        order by snapshot_date nulls last, display_name`
       ]);
       const spending = spendingAnalytics(monthly, categories, categoryMonths, merchantMonths, categoryActivity);
       return {
@@ -514,7 +526,7 @@ type InvestmentRow = { symbol: string | null; name: string | null; asset_class: 
 type InvestmentTotalsRow = { event_count: string; bought_minor: string; sold_minor: string; income_minor: string; fees_minor: string; taxes_minor: string };
 type CategoryRuleRow = { id: string; account_name: string; match_value: string; category: MoneyCategory; updated_at: Date };
 type RealizedEventRow = { account_id: string; occurred_at: Date; source_row: number; source_key: string; event_kind: MoneyInvestmentEventInput["eventKind"]; symbol: string | null; quantity: string | null; base_amount_minor: string; base_fee_minor: string };
-type SnapshotRow = { account_id: string; snapshot_date: string; value_minor: string; currency: string; display_name: string; role: "cash" | "investment"; provider: string };
+type SnapshotRow = { account_id: string; snapshot_date: string | null; value_minor: string | null; currency: string; display_name: string; role: "cash" | "investment"; provider: string };
 type TransferRow = { id: string; account_id: string; occurred_at: Date; local_date: string; description: string; amount_minor: string; currency: string };
 type TransferReviewRow = { linked_pairs: string; unlinked_count: string; unresolved_positive_count: string; unresolved_negative_count: string };
 type TransferReviewItemRow = { id: string; account_id: string; account_name: string; description: string; source_type: string; amount_minor: string; currency: string };
@@ -588,15 +600,17 @@ function planningAnalytics(months: MoneySpendingAnalytics["months"], review: Mon
 
 function balanceSnapshot(rows: SnapshotRow[]): MoneyTrackerSnapshot {
   const byDate = new Map<string, Record<string, number>>(); const labels: Record<string, string> = {}; const roles: Record<string, "cash" | "investment"> = {}; const accountLastObserved: Record<string, string> = {}; const accounts = new Set<string>();
-  const labelsByAccount = new Map(rows.map((row) => [row.account_id, row.display_name]));
+  const labelsByAccount = new Map(rows.map((row) => [row.account_id, accountDisplayName(row)]));
   const labelCounts = new Map<string, number>();
   for (const label of labelsByAccount.values()) labelCounts.set(label, (labelCounts.get(label) ?? 0) + 1);
   for (const row of rows) {
     if (row.currency !== "EUR") continue;
     const baseName = labelsByAccount.get(row.account_id)!;
     const name = (labelCounts.get(baseName) ?? 0) > 1 ? `${baseName} · ${row.provider} ${row.account_id.slice(0, 6)}` : baseName;
+    accounts.add(row.account_id); labels[row.account_id] = name; roles[row.account_id] = row.role;
+    if (row.snapshot_date === null || row.value_minor === null) continue;
     const month = `${row.snapshot_date.slice(0, 7)}-01`;
-    accounts.add(row.account_id); labels[row.account_id] = name; roles[row.account_id] = row.role; accountLastObserved[row.account_id] = month; const values = byDate.get(month) ?? {}; values[row.account_id] = integer(row.value_minor) / 100; byDate.set(month, values);
+    accountLastObserved[row.account_id] = month; const values = byDate.get(month) ?? {}; values[row.account_id] = integer(row.value_minor) / 100; byDate.set(month, values);
   }
   const carried: Record<string, number> = {};
   const observedDates = [...byDate.keys()].sort();
@@ -608,6 +622,11 @@ function balanceSnapshot(rows: SnapshotRow[]): MoneyTrackerSnapshot {
     return { date, values, observedAccounts: Object.keys(updates), total: Object.values(values).reduce((sum, value) => sum + value, 0) };
   });
   return { accounts: [...accounts].sort((left, right) => labels[left]!.localeCompare(labels[right]!)), accountLabels: labels, accountRoles: roles, accountLastObserved, months, latestDate: months.at(-1)?.date };
+}
+
+function accountDisplayName(row: Pick<SnapshotRow, "display_name" | "provider" | "role">) {
+  if (row.provider !== "portfolio_export") return row.display_name;
+  return `Trade Republic ${row.role === "investment" ? "Investments" : "Cash"}`;
 }
 
 function monthRange(first: string, last: string) { const result: string[] = []; const current = new Date(`${first}T00:00:00Z`); const end = new Date(`${last}T00:00:00Z`); while (current <= end) { result.push(current.toISOString().slice(0, 10)); current.setUTCMonth(current.getUTCMonth() + 1); } return result; }

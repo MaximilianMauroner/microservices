@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
+import { ArrowDown, ArrowUp, ArrowUpDown, Search } from "lucide-react";
 import { Area, Bar, BarChart, CartesianGrid, Cell, ComposedChart, Line, XAxis, YAxis } from "recharts";
 import type { MoneyTrackerPageData } from "../src/protected-data.js";
 import { moneyFinancialHistory, moneyFinancialPosition, moneyTrackerTrendStats, type MoneyFinancialPosition, type MoneyTrackerAccountCategory, type MoneyTrackerTrendStats } from "./money-tracker-domain.js";
@@ -11,7 +12,7 @@ import { Badge } from "../src/components/ui/badge.js";
 import { Button } from "../src/components/ui/button.js";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../src/components/ui/card.js";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "../src/components/ui/chart.js";
-import { AllocationTreemap } from "./allocation-treemap.js";
+import { Input } from "../src/components/ui/input.js";
 import { MoneyCategoryExplorer } from "./money-category-explorer.js";
 import type { MoneyCategory } from "./money-enums.js";
 import { MoneyActivityView, MoneyBalanceEntry, MoneyDataView, MoneyInvestmentsView, MoneyPlanningCard, MoneySpendingView } from "./money-ledger-views.js";
@@ -33,13 +34,15 @@ const changeConfig = { change: { label: "Balance change" } } satisfies ChartConf
 export function MoneyTrackerPage(props: MoneyTrackerPageData & { view: MoneyTrackerView; category?: MoneyCategory }) {
   const [period, setPeriod] = useState<Period>("1y");
   const cashAccounts = useMemo(() => props.accounts.filter((account) => roleCategory(props.accountRoles, account) === "money"), [props.accountRoles, props.accounts]);
+  const balanceAccounts = useMemo(() => props.accounts.filter((account) => props.accountLastObserved[account] !== undefined), [props.accountLastObserved, props.accounts]);
   const allCashMonths = useMemo(() => props.months.map((month) => cashMonth(month, cashAccounts)), [cashAccounts, props.months]);
   const allMonths = useMemo(() => {
     const financial = moneyFinancialHistory(allCashMonths.map((month) => ({ date: month.date, cashValue: month.money, ...cashCoverage(month, cashAccounts) })), props.marketData.history);
     return financial.map((point, index) => ({ ...allCashMonths[index]!, ...point, trend: point.total }));
   }, [allCashMonths, cashAccounts.length, props.marketData.history]);
   const months = useMemo(() => withLinearTrend(period === "all" ? allMonths : allMonths.slice(period === "6m" ? -6 : -12)), [allMonths, period]);
-  const accountMonths = useMemo(() => period === "all" ? allCashMonths : allCashMonths.slice(period === "6m" ? -6 : -12), [allCashMonths, period]);
+  const allAccountMonths = useMemo(() => props.months.map((month) => groupMonth(month, props.accountRoles)), [props.accountRoles, props.months]);
+  const visibleAccountMonths = useMemo(() => period === "all" ? allAccountMonths : allAccountMonths.slice(period === "6m" ? -6 : -12), [allAccountMonths, period]);
   const latest = months.at(-1);
   const previous = months.at(-2);
   const latestCash = allCashMonths.at(-1);
@@ -62,7 +65,7 @@ export function MoneyTrackerPage(props: MoneyTrackerPageData & { view: MoneyTrac
         {props.view === "cash-flow" ? <MoneySpendingView spending={props.spending} /> : null}
         {props.view === "categories" ? <MoneyCategoryExplorer spending={props.spending} initialCategory={props.category} /> : null}
         {props.view === "investments" ? <MoneyInvestmentsView investments={props.investments} marketData={props.marketData} /> : null}
-        {props.view === "accounts" ? <><Accounts accounts={cashAccounts} accountLabels={props.accountLabels} accountRoles={props.accountRoles} accountLastObserved={props.accountLastObserved} months={accountMonths} latest={accountMonths.at(-1)} previous={accountMonths.at(-2)} /><History accounts={cashAccounts} accountLabels={props.accountLabels} months={accountMonths} /><MoneyBalanceEntry accounts={cashAccounts} accountLabels={props.accountLabels} /></> : null}
+        {props.view === "accounts" ? <><Accounts accounts={props.accounts} accountLabels={props.accountLabels} accountRoles={props.accountRoles} accountLastObserved={props.accountLastObserved} months={visibleAccountMonths} latest={visibleAccountMonths.at(-1)} previous={visibleAccountMonths.at(-2)} /><History accounts={balanceAccounts} accountLabels={props.accountLabels} months={visibleAccountMonths} /><MoneyBalanceEntry accounts={cashAccounts} accountLabels={props.accountLabels} /></> : null}
         {props.view === "insights" ? <Insights {...props} accounts={cashAccounts} position={position} months={months} latest={latest} previous={previous} monthlyChange={monthlyChange} trends={trends} /> : null}
         {props.view === "data" ? <MoneyDataView {...props} /> : null}
       </div>
@@ -138,23 +141,56 @@ function Insights({ accounts, accountLabels, accountRoles: providedAccountRoles,
 }
 
 function Accounts({ accounts, accountLabels, accountRoles, accountLastObserved, months, latest, previous }: { accounts: string[]; accountLabels: Record<string, string>; accountRoles: Record<string, "cash" | "investment">; accountLastObserved: Record<string, string>; months: GroupedMonth[]; latest?: GroupedMonth; previous?: GroupedMonth }) {
+  const [query, setQuery] = useState("");
+  const [scope, setScope] = useState<"all" | "cash" | "investment">("all");
+  const [sort, setSort] = useState<{ key: AccountSortKey; direction: SortDirection }>({ key: "value", direction: "desc" });
   const first = months.at(0);
   const cashAccounts = accounts.filter((account) => roleCategory(accountRoles, account) === "money");
+  const investmentAccounts = accounts.filter((account) => roleCategory(accountRoles, account) === "stocks");
+  const chartCashAccounts = cashAccounts.filter((account) => accountLastObserved[account] !== undefined);
+  const chartInvestmentAccounts = investmentAccounts.filter((account) => accountLastObserved[account] !== undefined);
   const rows = accountRows(accounts, accountLabels, latest, previous).map((row) => {
     const firstValue = first?.values[row.account];
     const comparable = first?.observedAccounts.includes(row.account) && latest?.observedAccounts.includes(row.account);
-    return { ...row, firstValue, periodChange: comparable && row.value !== undefined && firstValue !== undefined ? row.value - firstValue : undefined };
-  }).sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
-  const topTwoShare = latest?.total ? rows.slice(0, 2).reduce((sum, row) => sum + (row.value ?? 0), 0) / latest.total * 100 : undefined;
-  const allocationAccounts = rows.flatMap((row) => row.value === undefined ? [] : [{ name: row.label, value: row.value, category: roleCategory(accountRoles, row.account) }]);
+    const periodChange = comparable && row.value !== undefined && firstValue !== undefined ? row.value - firstValue : undefined;
+    const range = rangeValuesForAccount(months, row.account);
+    return { ...row, category: accountRoles[row.account] === "investment" ? "Investment" : "Cash", firstValue, periodChange,
+      latestPercent: percent(row.change, row.previous), periodPercent: percent(periodChange, firstValue), share: latest?.total && row.value !== undefined ? row.value / latest.total * 100 : undefined,
+      lastObserved: accountLastObserved[row.account], rangeMin: range?.minimum, rangeMax: range?.maximum };
+  });
+  const normalizedQuery = query.trim().toLocaleLowerCase("en-GB");
+  const visibleRows = rows.filter((row) => (scope === "all" || accountRoles[row.account] === scope)
+    && (!normalizedQuery || row.label.toLocaleLowerCase("en-GB").includes(normalizedQuery)))
+    .sort((left, right) => compareAccountRows(left, right, sort));
+  const observedCount = latest ? accounts.filter((account) => latest.observedAccounts.includes(account)).length : 0;
+  const changeSort = (key: AccountSortKey) => setSort((current) => current.key === key
+    ? { key, direction: current.direction === "asc" ? "desc" : "asc" }
+    : { key, direction: key === "label" || key === "category" || key === "lastObserved" ? "asc" : "desc" });
   return <>
-    <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Cash account summary"><Metric label="Tracked cash" value={latest ? currency.format(latest.total) : "No data"} /><Metric label="Largest cash account" value={rows[0] ? currency.format(rows[0].value ?? 0) : "—"} detail={rows[0]?.label} /><Metric label="Top-two concentration" value={topTwoShare === undefined ? "—" : `${topTwoShare.toFixed(1)}%`} detail="of tracked cash" /><Metric label="Cash accounts observed" value={latest ? `${latest.observedAccounts.length} / ${accounts.length}` : "0 / 0"} detail="in latest month" /></section>
-    <Card><CardHeader className="border-b"><CardTitle>Cash account map</CardTitle><CardDescription>{latest ? `${latest.date} · Area represents share of tracked cash` : "No snapshot available"}</CardDescription></CardHeader><CardContent className="p-4"><AllocationTreemap accounts={allocationAccounts} /></CardContent></Card>
-    <section aria-label="Cash balance history">
-      <AccountGroupChart title="Cash history" category="money" accounts={cashAccounts} accountLabels={accountLabels} months={months} first={first} latest={latest} />
+    <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Account summary"><Metric label="Tracked total" value={latest ? currency.format(latest.total) : "No data"} detail={latest?.date} /><Metric label="Cash" value={latest ? currency.format(latest.money) : "—"} detail={`${cashAccounts.length} accounts`} /><Metric label="Investments" value={latest ? currency.format(latest.stocks) : "—"} detail={`${investmentAccounts.length} accounts`} /><Metric label="Observed accounts" value={`${observedCount} / ${accounts.length}`} detail="in latest month" /></section>
+    <section className={`grid items-start gap-3 ${chartInvestmentAccounts.length ? "xl:grid-cols-2" : ""}`} aria-label="Balance history">
+      <AccountGroupChart title="Cash history" category="money" accounts={chartCashAccounts} accountLabels={accountLabels} months={months} first={first} latest={latest} />
+      {chartInvestmentAccounts.length ? <AccountGroupChart title="Investment balance history" category="stocks" accounts={chartInvestmentAccounts} accountLabels={accountLabels} months={months} first={first} latest={latest} /> : null}
     </section>
-    <Card><CardHeader className="border-b"><CardTitle>Cash account detail</CardTitle><CardDescription>Latest movement, selected-period change, share, freshness, and tracked range</CardDescription></CardHeader><CardContent className="overflow-x-auto p-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" tabIndex={0} role="region" aria-label="Account detail table"><table className="w-full min-w-[68rem] text-sm"><caption className="sr-only">Cash balances, changes, allocation and observation dates by account</caption><thead className="border-b text-xs text-muted-foreground"><tr><th className="px-4 py-3 text-left">Account</th><th className="px-4 py-3 text-left">Category</th><th className="px-4 py-3 text-right">Balance</th><th className="px-4 py-3 text-right">Latest</th><th className="px-4 py-3 text-right">Latest %</th><th className="px-4 py-3 text-right">Selected period</th><th className="px-4 py-3 text-right">Period %</th><th className="px-4 py-3 text-right">Share</th><th className="px-4 py-3 text-right">Last observed</th><th className="px-4 py-3 text-right">Tracked range</th></tr></thead><tbody className="divide-y">{rows.map((row) => <tr key={row.account}><td className="px-4 py-3 font-medium">{row.label}</td><td className="px-4 py-3"><Badge variant="outline">Cash</Badge></td><td className="px-4 py-3 text-right font-mono">{preciseCurrency.format(row.value ?? 0)}</td><td className={`px-4 py-3 text-right font-mono ${changeClass(row.change)}`}>{formatSigned(row.change, true)}</td><td className={`px-4 py-3 text-right font-mono ${changeClass(row.change)}`}>{formatPercent(row.change, row.previous)}</td><td className={`px-4 py-3 text-right font-mono ${changeClass(row.periodChange)}`}>{formatSigned(row.periodChange, true)}</td><td className={`px-4 py-3 text-right font-mono ${changeClass(row.periodChange)}`}>{formatPercent(row.periodChange, row.firstValue)}</td><td className="px-4 py-3 text-right font-mono">{latest?.total ? `${((row.value ?? 0) / latest.total * 100).toFixed(1)}%` : "—"}</td><td className="px-4 py-3 text-right font-mono text-xs text-muted-foreground">{accountLastObserved[row.account] ?? "Never"}</td><td className="px-4 py-3 text-right font-mono text-xs text-muted-foreground">{rangeForAccount(months, row.account)}</td></tr>)}</tbody></table></CardContent></Card>
+    <Card><CardHeader className="gap-4 border-b"><div><CardTitle>Accounts</CardTitle><CardDescription>Filter and sort balances, movement, allocation, and freshness</CardDescription></div><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div className="flex w-fit rounded-lg bg-muted p-1" aria-label="Account type filter">{(["all", "cash", "investment"] as const).map((item) => <Button key={item} type="button" size="sm" variant={scope === item ? "secondary" : "ghost"} className="h-7 capitalize" aria-pressed={scope === item} onClick={() => setScope(item)}>{item === "all" ? `All ${accounts.length}` : `${item === "cash" ? "Cash" : "Investments"} ${item === "cash" ? cashAccounts.length : investmentAccounts.length}`}</Button>)}</div><label className="relative w-full sm:max-w-xs"><span className="sr-only">Filter accounts</span><Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><Input value={query} onChange={(event) => setQuery(event.currentTarget.value)} placeholder="Filter accounts…" className="pl-8" /></label></div></CardHeader><CardContent className="overflow-x-auto p-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" tabIndex={0} role="region" aria-label="Account detail table"><table className="w-full min-w-[68rem] text-sm"><caption className="sr-only">Balances, changes, allocation and observation dates by account</caption><thead className="border-b text-xs text-muted-foreground"><tr><SortableHead label="Account" sortKey="label" active={sort} onSort={changeSort} /><SortableHead label="Category" sortKey="category" active={sort} onSort={changeSort} /><SortableHead label="Balance" sortKey="value" active={sort} onSort={changeSort} align="right" /><SortableHead label="Latest" sortKey="change" active={sort} onSort={changeSort} align="right" /><SortableHead label="Latest %" sortKey="latestPercent" active={sort} onSort={changeSort} align="right" /><SortableHead label="Selected period" sortKey="periodChange" active={sort} onSort={changeSort} align="right" /><SortableHead label="Period %" sortKey="periodPercent" active={sort} onSort={changeSort} align="right" /><SortableHead label="Share" sortKey="share" active={sort} onSort={changeSort} align="right" /><SortableHead label="Last observed" sortKey="lastObserved" active={sort} onSort={changeSort} align="right" /><SortableHead label="Tracked range" sortKey="rangeMax" active={sort} onSort={changeSort} align="right" /></tr></thead><tbody className="divide-y">{visibleRows.map((row) => <tr className="transition-colors hover:bg-muted/40" key={row.account}><td className="px-4 py-3 font-medium">{row.label}</td><td className="px-4 py-3"><Badge variant="outline">{row.category}</Badge></td><td className="px-4 py-3 text-right font-mono">{row.value === undefined ? <span className="text-muted-foreground">—</span> : preciseCurrency.format(row.value)}</td><td className={`px-4 py-3 text-right font-mono ${changeClass(row.change)}`}>{formatSigned(row.change, true)}</td><td className={`px-4 py-3 text-right font-mono ${changeClass(row.change)}`}>{formatTrendPercent(row.latestPercent)}</td><td className={`px-4 py-3 text-right font-mono ${changeClass(row.periodChange)}`}>{formatSigned(row.periodChange, true)}</td><td className={`px-4 py-3 text-right font-mono ${changeClass(row.periodChange)}`}>{formatTrendPercent(row.periodPercent)}</td><td className="px-4 py-3 text-right font-mono">{row.share === undefined ? "—" : `${row.share.toFixed(1)}%`}</td><td className="px-4 py-3 text-right font-mono text-xs text-muted-foreground">{row.lastObserved ?? "No snapshot"}</td><td className="px-4 py-3 text-right font-mono text-xs text-muted-foreground">{row.rangeMin === undefined || row.rangeMax === undefined ? "—" : `${currency.format(row.rangeMin)} – ${currency.format(row.rangeMax)}`}</td></tr>)}{visibleRows.length === 0 ? <tr><td className="px-4 py-10 text-center text-muted-foreground" colSpan={10}>No accounts match this filter.</td></tr> : null}</tbody></table></CardContent></Card>
   </>;
+}
+
+type AccountSortKey = "label" | "category" | "value" | "change" | "latestPercent" | "periodChange" | "periodPercent" | "share" | "lastObserved" | "rangeMax";
+type SortDirection = "asc" | "desc";
+
+function SortableHead({ label, sortKey, active, onSort, align = "left" }: { label: string; sortKey: AccountSortKey; active: { key: AccountSortKey; direction: SortDirection }; onSort: (key: AccountSortKey) => void; align?: "left" | "right" }) {
+  const Icon = active.key !== sortKey ? ArrowUpDown : active.direction === "asc" ? ArrowUp : ArrowDown;
+  return <th className={`px-2 py-1 ${align === "right" ? "text-right" : "text-left"}`} aria-sort={active.key === sortKey ? active.direction === "asc" ? "ascending" : "descending" : "none"}><Button type="button" variant="ghost" size="sm" className={`h-8 px-2 text-xs text-muted-foreground hover:text-foreground ${align === "right" ? "ml-auto" : "-ml-2"}`} onClick={() => onSort(sortKey)}>{label}<Icon className="size-3.5" /></Button></th>;
+}
+
+function compareAccountRows<Row extends { label: string } & Record<AccountSortKey, string | number | undefined>>(left: Row, right: Row, sort: { key: AccountSortKey; direction: SortDirection }) {
+  const a = left[sort.key]; const b = right[sort.key];
+  if (a === undefined && b === undefined) return left.label.localeCompare(right.label);
+  if (a === undefined) return 1;
+  if (b === undefined) return -1;
+  const compared = typeof a === "number" && typeof b === "number" ? a - b : String(a).localeCompare(String(b), "en-GB", { numeric: true });
+  return (sort.direction === "asc" ? compared : -compared) || left.label.localeCompare(right.label);
 }
 
 function AccountGroupChart({ title, category, accounts, accountLabels, months, first, latest }: { title: string; category: MoneyTrackerAccountCategory; accounts: string[]; accountLabels: Record<string, string>; months: GroupedMonth[]; first?: GroupedMonth; latest?: GroupedMonth }) {
@@ -233,7 +269,8 @@ function formatTrendPercent(value?: number) { return value === undefined ? "—"
 function formatPoints(value: number) { return `${value >= 0 ? "+" : ""}${value.toFixed(1)} pp`; }
 function tone(value?: number): "positive" | "negative" | undefined { return value === undefined ? undefined : value < 0 ? "negative" : "positive"; }
 function changeClass(value?: number) { return value === undefined ? "text-muted-foreground" : value < 0 ? "text-rose-400" : "text-emerald-400"; }
-function rangeForAccount(months: Month[], account: string) { const values = months.map((month) => month.values[account]).filter((value): value is number => value !== undefined); return values.length ? `${currency.format(Math.min(...values))} – ${currency.format(Math.max(...values))}` : "—"; }
+function rangeValuesForAccount(months: Month[], account: string) { const values = months.map((month) => month.values[account]).filter((value): value is number => value !== undefined); return values.length ? { minimum: Math.min(...values), maximum: Math.max(...values) } : undefined; }
+function percent(change?: number, base?: number) { return change === undefined || !base ? undefined : change / base * 100; }
 export function groupMonth(month: Month, roles: Record<string, "cash" | "investment">): GroupedMonth { let money = 0; let stocks = 0; for (const [account, value] of Object.entries(month.values)) { if (roleCategory(roles, account) === "stocks") stocks += value; else money += value; } return { ...month, money, stocks, trend: month.total }; }
 function cashMonth(month: Month, cashAccounts: readonly string[]): GroupedMonth {
   const values = Object.fromEntries(cashAccounts.flatMap((account) => month.values[account] === undefined ? [] : [[account, month.values[account]]])) as Record<string, number>;

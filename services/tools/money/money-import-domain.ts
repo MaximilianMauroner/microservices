@@ -326,7 +326,7 @@ function parsePortfolio(dataRows: string[][], digest: string): ParsedMoneyImport
     transactions.push({
       sourceKey, sourceRow, provider: "portfolio_export", accountRole: role,
       accountExternalRef: `portfolio:${accountType.toLocaleLowerCase("en-GB")}:${role}`,
-      accountName: `Portfolio ${role === "investment" ? "Investments" : "Cash"}`, occurredAt: occurredAt.toISOString(), completedAt: occurredAt.toISOString(),
+      accountName: `Trade Republic ${role === "investment" ? "Investments" : "Cash"}`, occurredAt: occurredAt.toISOString(), completedAt: occurredAt.toISOString(),
       localDate: date!, description, amountMinor, feeMinor, taxMinor, baseAmountMinor: amountMinor, baseFeeMinor: feeMinor, baseTaxMinor: taxMinor, baseCurrency: "EUR", currency: currency!, status: "completed", sourceType: type,
       ...(mcc?.trim() ? { mcc: mcc.trim() } : {}), flowKind, category: sourceCategory === "TRADING" || sourceCategory === "DELIVERY" ? "investments" : flowKind === "transfer" ? "transfer" : type === "CARD_TRANSACTION" ? categorizeDescription(description, mcc) : type === "INTEREST_PAYMENT" ? "income" : flowKind === "tax" ? "taxes" : flowKind === "balance_adjustment" ? "adjustment" : "uncategorized"
     });
