@@ -10,7 +10,7 @@ import {
   parseMoneyImport
 } from "../money/money-import-domain.js";
 import { MoneyImportService } from "../money/money-import-service.js";
-import { deleteMoneyImport, previewMoneyImport, updateMoneyCategory, updateMoneyTransfer } from "../money/money-route-handlers.js";
+import { deleteMoneyCategoryRule, deleteMoneyImport, previewMoneyImport, updateMoneyCategory, updateMoneyTransfer } from "../money/money-route-handlers.js";
 import type {
   MoneyImportCommitInput,
   MoneyImportReceipt,
@@ -325,6 +325,24 @@ describe("money import route", () => {
     expect(setTransferDisposition).toHaveBeenCalledWith({ transactionId: "00000000-0000-4000-8000-000000000000", disposition: "refund" });
   });
 
+  it("deletes a category rule through an authenticated same-origin request", async () => {
+    const deleteCategoryRule = vi.fn().mockResolvedValue({ affectedCount: 3 });
+    const request = new Request("https://tools.example.test/api/money/categories", {
+      method: "DELETE",
+      headers: { Origin: "https://tools.example.test", "Content-Type": "application/json" },
+      body: JSON.stringify({ ruleId: "00000000-0000-4000-8000-000000000000" })
+    });
+    const response = await deleteMoneyCategoryRule({
+      request,
+      params: {},
+      context: { principal: { subject: "subject", email: "operator@example.test" }, runtime: { publicOrigin: "https://tools.example.test", moneyImports: { deleteCategoryRule } } }
+    } as unknown as PlatformRouteInput);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, affectedCount: 3 });
+    expect(deleteCategoryRule).toHaveBeenCalledWith("00000000-0000-4000-8000-000000000000");
+  });
+
   it("deletes an import through an authenticated same-origin request", async () => {
     const deleteImport = vi.fn().mockResolvedValue({ transactionCount: 12, investmentEventCount: 2, balanceSnapshotCount: 1 });
     const request = new Request("https://tools.example.test/api/money/imports/00000000-0000-4000-8000-000000000000", {
@@ -428,7 +446,7 @@ class MemoryMoneyRepository implements MoneyRepository {
 
   async readLedgerSnapshot(): Promise<MoneyLedgerSnapshot> {
     return {
-      imports: [], activity: [], transactionCount: 0, revertedCount: 0, transferReview: { linkedPairs: 0, unlinkedCount: 0, unresolvedPositiveCount: 0, unresolvedNegativeCount: 0 }, accounts: [], accountLabels: {}, accountRoles: {}, months: [],
+      imports: [], categoryRules: [], activity: [], transactionCount: 0, revertedCount: 0, transferReview: { linkedPairs: 0, unlinkedCount: 0, unresolvedPositiveCount: 0, unresolvedNegativeCount: 0 }, transferReviewGroups: [], accounts: [], accountLabels: {}, accountRoles: {}, months: [],
       spending: { months: [], categories: [], categoryMonths: [], merchantMonths: [], categoryActivity: [], uncategorizedCount: 0 },
       investments: { positions: [], totals: { eventCount: 0, boughtMinor: 0, soldMinor: 0, incomeMinor: 0, feesMinor: 0, taxesMinor: 0 }, realized: { positions: [], totals: { saleCount: 0, proceedsMinor: 0, costBasisMinor: 0, gainMinor: 0, unmatchedSaleCount: 0 } } },
       planning: { ready: true, unresolvedTransferCount: 0, medianMonthlyNetMinor: 0, observedMonthCount: 6, projections: [{ months: 6, changeMinor: 0 }, { months: 12, changeMinor: 0 }] },
@@ -439,7 +457,9 @@ class MemoryMoneyRepository implements MoneyRepository {
   async readActivityPage() { return { items: [], total: 0, hasMore: false }; }
 
   async setTransactionCategory() { return { affectedCount: 1 }; }
+  async deleteCategoryRule() { return undefined; }
   async setTransferDisposition() {}
+  async setTransferGroupDisposition() { return { affectedCount: 0 }; }
   async addManualBalance() {}
 
   async readiness() {}

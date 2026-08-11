@@ -54,8 +54,15 @@ it.skipIf(!repository || !admin)("executes import replay, transfer review, analy
   expect(review.items).toHaveLength(2);
   for (const item of review.items) await repository!.setTransferDisposition({ transactionId: item.id, disposition: item.amountMinor > 0 ? "income" : "spend" });
 
-  await repository!.addManualBalance({ accountName: "Duplicate", role: "cash", date: "2026-02-28", valueMinor: 1_000, currency: "EUR" });
-  await repository!.addManualBalance({ accountName: "Duplicate", role: "investment", date: "2026-02-28", valueMinor: 2_000, currency: "EUR" });
+  const beforeTargetedBalance = await repository!.readLedgerSnapshot();
+  const currentAccount = beforeTargetedBalance.accounts.find((id) => beforeTargetedBalance.accountLabels[id]?.startsWith("Current"));
+  expect(currentAccount).toBeDefined();
+  await repository!.addManualBalance({ accountId: currentAccount!, date: "2026-02-28", valueMinor: 12_345, currency: "EUR" });
+  const afterTargetedBalance = await repository!.readLedgerSnapshot();
+  expect(afterTargetedBalance.accounts).toHaveLength(beforeTargetedBalance.accounts.length);
+  expect(afterTargetedBalance.months.at(-1)?.values[currentAccount!]).toBe(123.45);
+
+  await repository!.addManualBalance({ accountName: "Duplicate", date: "2026-02-28", valueMinor: 1_000, currency: "EUR" });
   const snapshot = await repository!.readLedgerSnapshot();
   expect(snapshot.transferReview.unresolvedPositiveCount + snapshot.transferReview.unresolvedNegativeCount).toBe(0);
   expect(snapshot.planning).toMatchObject({ ready: false, observedMonthCount: 1 });
@@ -64,10 +71,30 @@ it.skipIf(!repository || !admin)("executes import replay, transfer review, analy
   expect(snapshot.spending.merchantMonths).toContainEqual(expect.objectContaining({ month: "2026-02", description: "External payment", amountMinor: 2_000, count: 1 }));
   expect(snapshot.spending.categoryActivity).toContainEqual(expect.objectContaining({ description: "External payment", amountMinor: -2_000 }));
   const duplicateAccounts = snapshot.accounts.filter((id) => snapshot.accountLabels[id]?.startsWith("Duplicate"));
-  expect(duplicateAccounts).toHaveLength(2);
-  expect(new Set(duplicateAccounts.map((id) => snapshot.accountRoles[id]))).toEqual(new Set(["cash", "investment"]));
+  expect(duplicateAccounts).toHaveLength(1);
+  expect(duplicateAccounts.map((id) => snapshot.accountRoles[id])).toEqual(["cash"]);
   expect(snapshot.accountLastObserved).toEqual(expect.objectContaining(Object.fromEntries(duplicateAccounts.map((id) => [id, "2026-02-01"]))));
   expect(snapshot.months.at(-1)?.observedAccounts).toEqual(expect.arrayContaining(duplicateAccounts));
+});
+
+it.skipIf(!repository || !admin)("lists and removes account-scoped category rules without losing the direct edit", async () => {
+  await commitCash(repository!, cash([
+    "Card Payment\tCurrent\t2026-04-02 12:00:00\t2026-04-02 12:00:00\tRecurring merchant\t-10\t0\tEUR\tCOMPLETED\t90",
+    "Card Payment\tCurrent\t2026-04-03 12:00:00\t2026-04-03 12:00:00\tRecurring merchant\t-15\t0\tEUR\tCOMPLETED\t75"
+  ]), "category-rule.tsv");
+  const rows = (await repository!.readActivityPage({ query: "Recurring merchant", offset: 0, limit: 10 })).items;
+  await repository!.setTransactionCategory({ transactionId: rows[0]!.id, category: "groceries", actor: "integration@example.test", createRule: true });
+
+  const withRule = await repository!.readLedgerSnapshot();
+  expect(withRule.categoryRules).toEqual([expect.objectContaining({ description: "Recurring merchant", category: "groceries" })]);
+  const deletion = await repository!.deleteCategoryRule(withRule.categoryRules[0]!.id);
+  expect(deletion).toEqual({ affectedCount: 1 });
+
+  const withoutRule = await repository!.readLedgerSnapshot();
+  expect(withoutRule.categoryRules).toEqual([]);
+  const updatedRows = (await repository!.readActivityPage({ query: "Recurring merchant", offset: 0, limit: 10 })).items;
+  expect(updatedRows.filter((row) => row.categoryOrigin === "manual")).toHaveLength(1);
+  expect(updatedRows.filter((row) => row.categoryOrigin === "source")).toEqual([expect.objectContaining({ category: "uncategorized" })]);
 });
 
 it.skipIf(!repository || !admin)("preserves a reviewed transfer when its possible counterpart arrives later", async () => {
@@ -253,8 +280,8 @@ it.skipIf(!repository || !admin)("reports reverted rows beyond the initial activ
 });
 
 it.skipIf(!repository || !admin)("materializes carried balance months for monthly trend intervals", async () => {
-  await repository!.addManualBalance({ accountName: "Calendar", role: "cash", date: "2026-01-31", valueMinor: 10_000, currency: "EUR" });
-  await repository!.addManualBalance({ accountName: "Calendar", role: "cash", date: "2026-03-31", valueMinor: 12_100, currency: "EUR" });
+  await repository!.addManualBalance({ accountName: "Calendar", date: "2026-01-31", valueMinor: 10_000, currency: "EUR" });
+  await repository!.addManualBalance({ accountName: "Calendar", date: "2026-03-31", valueMinor: 12_100, currency: "EUR" });
   const snapshot = await repository!.readLedgerSnapshot();
   expect(snapshot.months.map((month) => [month.date, month.total])).toEqual([["2026-01-01", 100], ["2026-02-01", 100], ["2026-03-01", 121]]);
   const points = snapshot.months.map((month) => ({ date: month.date, total: month.total, money: month.total, stocks: 0 }));

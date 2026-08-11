@@ -1,7 +1,44 @@
 import { describe, expect, it } from "vitest";
-import { moneyTrackerAccountCategory, moneyTrackerTrendStats } from "../money/money-tracker-domain.js";
+import { moneyFinancialHistory, moneyFinancialPosition, moneyTrackerAccountCategory, moneyTrackerTrendStats } from "../money/money-tracker-domain.js";
 
 describe("money tracker analytics", () => {
+  it("combines cash and live portfolio value into one confidence-aware position", () => {
+    const position = moneyFinancialPosition({
+      asOf: "2026-08-10T12:00:00.000Z",
+      cashValueMinor: 298_906,
+      cashObservationDate: "2026-08-01",
+      observedCashAccountCount: 4,
+      cashAccountCount: 5,
+      marketData: {
+        positions: [
+          { state: "fresh", priceDate: "2026-08-10" },
+          { state: "fresh", priceDate: "2026-08-10" }
+        ],
+        totals: { knownMarketValueMinor: 2_825_367, complete: true }
+      }
+    });
+
+    expect(position.knownNetWorthMinor).toBe(3_124_273);
+    expect(position.cash).toMatchObject({ observedAccountCount: 4, carriedAccountCount: 1 });
+    expect(position.portfolio).toMatchObject({ knownValueMinor: 2_825_367, pricedPositionCount: 2, freshPositionCount: 2, priceDate: "2026-08-10" });
+    expect(position.state).toBe("carried");
+  });
+
+  it("aligns monthly cash with the last accepted portfolio close without claiming incomplete points are observed", () => {
+    const history = moneyFinancialHistory([
+      { date: "2026-01-01", cashValue: 100, observedCashAccountCount: 2, cashAccountCount: 2 },
+      { date: "2026-02-01", cashValue: 120, observedCashAccountCount: 1, cashAccountCount: 2 }
+    ], [
+      { date: "2025-12-31", knownMarketValueMinor: 20_000, complete: true },
+      { date: "2026-01-31", knownMarketValueMinor: 25_000, complete: true }
+    ]);
+
+    expect(history).toEqual([
+      { date: "2026-01-01", money: 100, stocks: 200, total: 300, observed: true, portfolioDate: "2025-12-31" },
+      { date: "2026-02-01", money: 120, stocks: 250, total: 370, observed: false, portfolioDate: "2026-01-31" }
+    ]);
+  });
+
   it("separates stock-suffixed accounts from money on hand", () => {
     expect(moneyTrackerAccountCategory("Revolut Stocks")).toBe("stocks");
     expect(moneyTrackerAccountCategory("Company Stock ")).toBe("stocks");

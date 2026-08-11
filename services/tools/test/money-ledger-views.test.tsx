@@ -65,7 +65,7 @@ const emptyMarketData = {
 
 describe("Option A money ledger views", () => {
   it("renders auditable activity with flow and status boundaries", () => {
-    const html = renderToStaticMarkup(<MoneyActivityView activity={activity} transactionCount={8_030} revertedCount={17} transferReview={{ linkedPairs: 12, unlinkedCount: 4, unresolvedPositiveCount: 1, unresolvedNegativeCount: 1 }} />);
+    const html = renderToStaticMarkup(<MoneyActivityView activity={activity} transactionCount={8_030} revertedCount={17} transferReview={{ linkedPairs: 12, unlinkedCount: 4, unresolvedPositiveCount: 1, unresolvedNegativeCount: 1 }} transferReviewGroups={[]} />);
 
     expect(html).toContain("Transaction activity");
     expect(html).toContain("8,030");
@@ -73,18 +73,16 @@ describe("Option A money ledger views", () => {
     expect(html).toContain("Coffee");
     expect(html).toContain("Revolut Current");
     expect(html).toContain("reverted");
-    expect(html).toContain("Linked transfers");
-    expect(html).toContain("Transfer treatment");
-    expect(html).toContain("Needs review");
-    expect(html).toContain("Changing an automatic internal match safely unlinks both sides");
-    expect(html).toContain('aria-label="Transfer treatment for External funding"');
-    expect(html).not.toContain('aria-label="Transfer treatment for Own account transfer"');
+    expect(html).toContain("Matched transfer pairs");
+    expect(html).toContain("Unresolved transfer rows");
+    expect(html).toContain("Show transfer review rows");
+    expect(html).not.toContain("Transfer treatment");
   });
 
   it("distinguishes an empty search result from an empty ledger", () => {
     const summary = { linkedPairs: 0, unlinkedCount: 0, unresolvedPositiveCount: 0, unresolvedNegativeCount: 0 };
-    const noMatches = renderToStaticMarkup(<MoneyActivityView activity={[]} transactionCount={10} revertedCount={0} transferReview={summary} />);
-    const noImports = renderToStaticMarkup(<MoneyActivityView activity={[]} transactionCount={0} revertedCount={0} transferReview={summary} />);
+    const noMatches = renderToStaticMarkup(<MoneyActivityView activity={[]} transactionCount={10} revertedCount={0} transferReview={summary} transferReviewGroups={[]} />);
+    const noImports = renderToStaticMarkup(<MoneyActivityView activity={[]} transactionCount={0} revertedCount={0} transferReview={summary} transferReviewGroups={[]} />);
     expect(noMatches).toContain("No matching activity");
     expect(noMatches).not.toContain("No transactions imported");
     expect(noImports).toContain("No transactions imported");
@@ -117,12 +115,29 @@ describe("Option A money ledger views", () => {
     expect(html).toContain("+100,00");
   });
 
-  it("surfaces import coverage and analytical confidence in one data-quality view", () => {
+  it("shows auditable cost basis and return for priced positions", () => {
+    const html = renderToStaticMarkup(<MoneyInvestmentsView marketData={{
+      asOf: "2026-08-10T12:00:00.000Z",
+      positions: [{ canonicalKey: "aum5", providerKey: "AUM5.DE", name: "Amundi S&amp;P 500", assetClass: "etf", quantity: "57.339404", costBasisMinor: 567_780, close: "134.01", currency: "EUR", marketValueMinor: 768_438, unrealizedGainMinor: 200_658, priceDate: "2026-08-10", state: "fresh" }],
+      history: [{ date: "2026-08-10", costBasisMinor: 567_780, knownMarketValueMinor: 768_438, knownUnrealizedGainMinor: 200_658, complete: true }],
+      totals: { costBasisMinor: 567_780, knownMarketValueMinor: 768_438, knownUnrealizedGainMinor: 200_658, complete: true }
+    }} investments={{ positions: [], totals: { eventCount: 0, boughtMinor: 0, soldMinor: 0, incomeMinor: 0, feesMinor: 0, taxesMinor: 0 }, realized: { positions: [], totals: { saleCount: 0, proceedsMinor: 0, costBasisMinor: 0, gainMinor: 0, unmatchedSaleCount: 0 } } }} />);
+
+    expect(html).toContain("FIFO");
+    expect(html).toContain("avg");
+    expect(html).toContain("99,02");
+    expect(html).toContain("+35.3%");
+    expect(html).toContain("View exact portfolio data");
+  });
+
+  it("surfaces analytical confidence and actionable repairs in one data-quality view", () => {
     const html = renderToStaticMarkup(<MoneyDataView
       accounts={["cash", "broker"]}
+      categoryRules={[{ id: "rule-1", accountName: "Cash", description: "Net Interest Paid to 'Instant Access Savings", category: "income", updatedAt: "2026-08-09T05:08:51.000Z" }]}
+      accountRoles={{ cash: "cash", broker: "investment" }}
       accountLastObserved={{ cash: "2026-08-01", broker: "2026-08-01" }}
       imports={[{ id: "import-1", digest: "digest", format: "revolut_cash_statement_v1", filename: "cash.tsv", bytes: 1200, rowCount: 100, insertedCount: 90, duplicateCount: 10, committedAt: "2026-08-09T05:08:51.000Z", actor: "operator@example.test" }]}
-      investments={{ positions: [{ symbol: "ETF", quantity: "1", boughtMinor: 10_000, soldMinor: 0, incomeMinor: 0, feesMinor: 0, taxesMinor: 0, currency: "EUR" }], totals: { eventCount: 1, boughtMinor: 10_000, soldMinor: 0, incomeMinor: 0, feesMinor: 0, taxesMinor: 0 }, realized: { positions: [], totals: { saleCount: 0, proceedsMinor: 0, costBasisMinor: 0, gainMinor: 0, unmatchedSaleCount: 0 } } }}
+      marketData={{ ...emptyMarketData, positions: [{ canonicalKey: "ETF", name: "ETF", assetClass: "etf", quantity: "1", costBasisMinor: 10_000, state: "unpriced" }], totals: { ...emptyMarketData.totals, complete: false } }}
       months={[{ date: "2026-08-01", total: 100, values: { cash: 50, broker: 50 }, observedAccounts: ["cash", "broker"] }]}
       revertedCount={2}
       spending={{ months: [], categories: [{ category: "groceries", amountMinor: 100, count: 2 }, { category: "uncategorized", amountMinor: 50, count: 1 }], categoryMonths: [], merchantMonths: [], categoryActivity: [], uncategorizedCount: 1 }}
@@ -132,10 +147,11 @@ describe("Option A money ledger views", () => {
 
     expect(html).toContain("Data quality summary");
     expect(html).toContain("66.7%");
-    expect(html).toContain("Revolut cash TSV");
-    expect(html).toContain("Sparkasse");
-    expect(html).toContain("Needs prices");
-    expect(html).toContain("Raw file bytes were discarded after normalization");
+    expect(html).toContain("Active category rules");
+    expect(html).toContain("Net Interest Paid to &#x27;Instant Access Savings");
+    expect(html).toContain("Repair queue");
+    expect(html).toContain("unpriced positions");
+    expect(html).not.toContain("Imported formats");
     expect(html).toContain('aria-label="Delete cash.tsv"');
   });
 

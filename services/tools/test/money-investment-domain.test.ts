@@ -36,12 +36,33 @@ describe("FIFO realized investment gains", () => {
   });
 
   it("does not realize gains for migrations or deliveries", () => {
-    const result = fifoRealizedGains([
+    const result = fifoInvestmentLots([
       event("2026-01-01", "buy", "MOVE", "1", -10_000),
       event("2026-02-01", "position_transfer", "MOVE", "-1", 0),
       event("2026-02-01", "position_transfer", "MOVE", "1", 0)
     ]);
-    expect(result.totals).toEqual({ saleCount: 0, proceedsMinor: 0, costBasisMinor: 0, gainMinor: 0, unmatchedSaleCount: 0 });
+    expect(result.realized.totals).toEqual({ saleCount: 0, proceedsMinor: 0, costBasisMinor: 0, gainMinor: 0, unmatchedSaleCount: 0 });
+    expect(result.openPositions).toEqual([{ accountKey: "broker", symbol: "MOVE", quantity: "1", costBasisMinor: 10_000 }]);
+  });
+
+  it("preserves the AUM5 cost basis across a neutral same-account position transfer", () => {
+    const result = fifoInvestmentLots([
+      event("2022-03-24", "buy", "AUM5", "35.850440", -332_779, 0, "portfolio"),
+      event("2025-03-14T08:00:00Z", "position_transfer", "AUM5", "-35.850440", 0, 0, "portfolio", "0001"),
+      event("2025-03-14T08:00:00Z", "position_transfer", "AUM5", "35.850440", 0, 0, "portfolio", "0002"),
+      event("2025-03-17", "buy", "AUM5", "21.488964", -235_000, 0, "portfolio")
+    ]);
+
+    expect(result.openPositions).toEqual([{ accountKey: "portfolio", symbol: "AUM5", quantity: "57.339404", costBasisMinor: 567_779 }]);
+  });
+
+  it("still consumes FIFO basis for an unpaired transfer out", () => {
+    const result = fifoInvestmentLots([
+      event("2026-01-01", "buy", "MOVE", "2", -20_000),
+      event("2026-02-01", "position_transfer", "MOVE", "-1", 0)
+    ]);
+
+    expect(result.openPositions).toEqual([{ accountKey: "broker", symbol: "MOVE", quantity: "1", costBasisMinor: 10_000 }]);
   });
 
   it("keeps FIFO acquisition lots separate for each investment account", () => {

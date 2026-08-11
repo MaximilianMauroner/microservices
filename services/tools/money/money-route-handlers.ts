@@ -62,16 +62,33 @@ export async function updateMoneyCategory(input: PlatformRouteInput) {
   }
 }
 
+export async function deleteMoneyCategoryRule(input: PlatformRouteInput) {
+  const rejected = validateMutationRequest(input);
+  if (rejected) return rejected;
+  try {
+    const body = await jsonBody(input.request);
+    const result = await input.context.runtime.moneyImports.deleteCategoryRule(stringField(body, "ruleId"));
+    return json({ ok: true, ...result });
+  } catch (error) {
+    return importError(error);
+  }
+}
+
 export async function updateMoneyTransfer(input: PlatformRouteInput) {
   const rejected = validateMutationRequest(input);
   if (rejected) return rejected;
   try {
     const body = await jsonBody(input.request);
-    await input.context.runtime.moneyImports.setTransferDisposition({
+    const payload = {
       transactionId: stringField(body, "transactionId"),
       disposition: stringField(body, "disposition")
-    });
-    return json({ ok: true });
+    };
+    if (body.group === true) {
+      const result = await input.context.runtime.moneyImports.setTransferGroupDisposition(payload);
+      return json({ ok: true, ...result });
+    }
+    await input.context.runtime.moneyImports.setTransferDisposition(payload);
+    return json({ ok: true, affectedCount: 1 });
   } catch (error) {
     return importError(error);
   }
@@ -83,7 +100,7 @@ export async function addMoneyBalance(input: PlatformRouteInput) {
   try {
     const body = await jsonBody(input.request);
     await input.context.runtime.moneyImports.addManualBalance({
-      accountName: stringField(body, "accountName"), role: stringField(body, "role"),
+      ...(optionalStringField(body, "accountId") ? { accountId: optionalStringField(body, "accountId") } : { accountName: optionalStringField(body, "accountName") }),
       date: stringField(body, "date"), value: stringField(body, "value"), currency: stringField(body, "currency")
     });
     return json({ ok: true }, 201);
@@ -213,6 +230,13 @@ function stringField(body: Record<string, unknown>, name: string) {
   return value;
 }
 
+function optionalStringField(body: Record<string, unknown>, name: string) {
+  const value = body[name];
+  if (value === undefined || value === null || value === "") return undefined;
+  if (typeof value !== "string") throw new MoneyImportValidationError("invalid_request", `Expected ${name} to be a string.`);
+  return value;
+}
+
 function integerParameter(value: string | null, fallback: number) {
   if (value === null) return fallback;
   if (!/^\d+$/.test(value)) throw new MoneyImportValidationError("invalid_parameter", "Expected an integer query parameter.");
@@ -242,7 +266,7 @@ async function fileBytes(file: File) {
 function importError(error: unknown) {
   if (error instanceof MoneyImportValidationError) {
     const status = error.code === "file_too_large" || error.code === "request_too_large" ? 413
-      : error.code === "import_not_found" ? 404 : 400;
+      : error.code === "import_not_found" || error.code === "category_rule_not_found" ? 404 : 400;
     return json({ error: error.code, message: error.message }, status);
   }
   console.error(JSON.stringify({

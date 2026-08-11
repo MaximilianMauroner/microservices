@@ -1,5 +1,94 @@
 export type MoneyTrackerAccountCategory = "money" | "stocks";
 
+export type MoneyFinancialPosition = Readonly<{
+  asOf: string;
+  cash: Readonly<{
+    valueMinor: number;
+    observationDate?: string;
+    observedAccountCount: number;
+    carriedAccountCount: number;
+  }>;
+  portfolio: Readonly<{
+    knownValueMinor: number;
+    priceDate?: string;
+    pricedPositionCount: number;
+    openPositionCount: number;
+    freshPositionCount: number;
+  }>;
+  knownNetWorthMinor: number;
+  state: "complete" | "carried" | "partial";
+}>;
+
+export type MoneyFinancialHistoryPoint = Readonly<{
+  date: string;
+  total: number;
+  money: number;
+  stocks: number;
+  observed: boolean;
+  portfolioDate?: string;
+}>;
+
+/** Builds the one current financial-position contract shared by every Money page. */
+export function moneyFinancialPosition(input: Readonly<{
+  asOf: string;
+  cashValueMinor: number;
+  cashObservationDate?: string;
+  observedCashAccountCount: number;
+  cashAccountCount: number;
+  marketData: Readonly<{
+    positions: readonly Readonly<{ state: "fresh" | "stale" | "unpriced"; priceDate?: string }>[];
+    totals: Readonly<{ knownMarketValueMinor: number; complete: boolean }>;
+  }>;
+}>): MoneyFinancialPosition {
+  const priced = input.marketData.positions.filter((position) => position.state !== "unpriced");
+  const fresh = input.marketData.positions.filter((position) => position.state === "fresh");
+  const priceDate = priced.map((position) => position.priceDate).filter((date): date is string => date !== undefined).sort().at(-1);
+  const carriedAccountCount = Math.max(input.cashAccountCount - input.observedCashAccountCount, 0);
+  const partial = !input.marketData.totals.complete;
+  return {
+    asOf: input.asOf,
+    cash: {
+      valueMinor: input.cashValueMinor,
+      ...(input.cashObservationDate ? { observationDate: input.cashObservationDate } : {}),
+      observedAccountCount: input.observedCashAccountCount,
+      carriedAccountCount
+    },
+    portfolio: {
+      knownValueMinor: input.marketData.totals.knownMarketValueMinor,
+      ...(priceDate ? { priceDate } : {}),
+      pricedPositionCount: priced.length,
+      openPositionCount: input.marketData.positions.length,
+      freshPositionCount: fresh.length
+    },
+    knownNetWorthMinor: input.cashValueMinor + input.marketData.totals.knownMarketValueMinor,
+    state: partial ? "partial" : carriedAccountCount > 0 || fresh.length !== input.marketData.positions.length ? "carried" : "complete"
+  };
+}
+
+/** Aligns monthly cash snapshots with the last accepted portfolio close on or before each date. */
+export function moneyFinancialHistory(
+  cashMonths: readonly Readonly<{ date: string; cashValue: number; observedCashAccountCount: number; cashAccountCount: number }>[],
+  portfolioHistory: readonly Readonly<{ date: string; knownMarketValueMinor: number; complete: boolean }>[]
+): MoneyFinancialHistoryPoint[] {
+  const portfolio = [...portfolioHistory].sort((left, right) => left.date.localeCompare(right.date));
+  let portfolioIndex = 0;
+  let latestPortfolio: typeof portfolio[number] | undefined;
+  return cashMonths.map((month) => {
+    while (portfolioIndex < portfolio.length && portfolio[portfolioIndex]!.date <= month.date) {
+      latestPortfolio = portfolio[portfolioIndex++]!;
+    }
+    const stocks = (latestPortfolio?.knownMarketValueMinor ?? 0) / 100;
+    return {
+      date: month.date,
+      money: month.cashValue,
+      stocks,
+      total: month.cashValue + stocks,
+      observed: month.observedCashAccountCount === month.cashAccountCount && latestPortfolio?.complete === true,
+      ...(latestPortfolio ? { portfolioDate: latestPortfolio.date } : {})
+    };
+  });
+}
+
 export type MoneyTrackerTrendPoint = Readonly<{
   date: string;
   total: number;
