@@ -170,7 +170,7 @@ describe("investment export parsers", () => {
     const headers = "datetime,date,account_type,category,type,asset_class,name,symbol,shares,price,amount,fee,tax,currency,original_amount,original_currency,fx_rate,description,transaction_id,counterparty_name,counterparty_iban,payment_reference,mcc_code";
     const row = "2026-08-09T03:08:51.123Z,2026-08-09,DEFAULT,TRADING,SELL,ETF,Global ETF,VWCE,0.5,120,60,-1,,EUR,,,,Sell,sale-1,,,,";
     const parsed = parseMoneyImport(Buffer.from(`${headers}\r\n${row}\r\n`));
-    expect(parsed.transactions[0]).toMatchObject({ flowKind: "trade", baseAmountMinor: 6_000, baseFeeMinor: 100 });
+    expect(parsed.transactions[0]).toMatchObject({ accountName: "Trade Republic Investments", flowKind: "trade", baseAmountMinor: 6_000, baseFeeMinor: 100 });
     expect(parsed.investmentEvents[0]).toMatchObject({ eventKind: "sell", symbol: "VWCE", quantity: "0.5" });
   });
 
@@ -181,7 +181,7 @@ describe("investment export parsers", () => {
     const parsed = parseMoneyImport(Buffer.from(`${headers}\r\n${row}\r\n`));
 
     expect(parsed.format).toBe(PORTFOLIO_TRANSACTION_FORMAT);
-    expect(parsed.transactions[0]).toMatchObject({ description: "Payment to [account]", amountMinor: -350, category: "dining", mcc: "5812" });
+    expect(parsed.transactions[0]).toMatchObject({ accountName: "Trade Republic Cash", description: "Payment to [account]", amountMinor: -350, category: "dining", mcc: "5812" });
     expect(JSON.stringify(parsed)).not.toContain("private reference");
     expect(JSON.stringify(parsed)).not.toContain("DE00AAAAAAAAAAAAAAAAAA");
   });
