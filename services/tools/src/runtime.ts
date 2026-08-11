@@ -53,6 +53,26 @@ export function getPlatformRuntime(): Promise<PlatformRuntime> {
   return runtimePromise;
 }
 
+/** Releases every long-lived resource owned by the current server runtime. */
+export async function closePlatformRuntime(): Promise<void> {
+  const current = runtimePromise;
+  runtimePromise = undefined;
+  if (current) await (await current).stop();
+}
+
+// Vite replaces server modules during development without terminating Node.
+// Dispose the previous runtime so its Postgres pools do not survive each edit.
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    void closePlatformRuntime().catch((error: unknown) => {
+      console.error(JSON.stringify({
+        event: "platform.hmr_cleanup_failed",
+        errorType: error instanceof Error ? error.name : "UnknownError"
+      }));
+    });
+  });
+}
+
 async function createPlatformRuntime(): Promise<PlatformRuntime> {
   const config = loadPlatformConfig();
   const auth = createPlatformAuth(config.auth);

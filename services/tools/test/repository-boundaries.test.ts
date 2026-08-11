@@ -17,8 +17,11 @@ describe("repository runtime boundaries", () => {
   it("keeps tools products directly inside the tools service", async () => {
     for (const name of ["dashboard", "field-guide", "publisher", "status"]) {
       await expect(access(new URL(`services/tools/${name}/package.json`, repository))).resolves.toBeUndefined();
+    }
+    for (const name of ["dashboard", "field-guide", "publisher"]) {
       await expect(access(new URL(`services/tools/${name}/railway.json`, repository))).rejects.toThrow();
     }
+    await expect(access(new URL("services/tools/status/railway.json", repository))).resolves.toBeUndefined();
   });
 
   it("keeps tools-only runtime libraries inside the tools service", async () => {
