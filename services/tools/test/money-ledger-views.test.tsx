@@ -64,18 +64,24 @@ const emptyMarketData = {
 } as const;
 
 describe("Option A money ledger views", () => {
-  it("renders auditable activity with flow and status boundaries", () => {
-    const html = renderToStaticMarkup(<MoneyActivityView activity={activity} transactionCount={8_030} revertedCount={17} transferReview={{ linkedPairs: 12, unlinkedCount: 4, unresolvedPositiveCount: 1, unresolvedNegativeCount: 1 }} transferReviewGroups={[]} />);
+  it("renders auditable activity with sortable ledger controls", () => {
+    const accountIds = ["00000000-0000-4000-8000-000000000010", "00000000-0000-4000-8000-000000000011"];
+    const html = renderToStaticMarkup(<MoneyActivityView activity={activity} accounts={accountIds} accountLabels={{ [accountIds[0]!]: "Savings", [accountIds[1]!]: "Savings" }} transactionCount={8_030} revertedCount={17} transferReview={{ linkedPairs: 12, unlinkedCount: 4, unresolvedPositiveCount: 1, unresolvedNegativeCount: 1 }} transferReviewGroups={[]} />);
 
     expect(html).toContain("Transaction activity");
     expect(html).toContain("8,030");
     expect(html).toContain("17");
     expect(html).toContain("Coffee");
     expect(html).toContain("Revolut Current");
-    expect(html).toContain("reverted");
+    expect(html).toContain("Needs category");
+    expect(html).toContain("17 reverted excluded");
+    expect(html).toContain('aria-sort="descending"');
+    expect(html).not.toContain(">Status</button>");
     expect(html).toContain("Matched transfer pairs");
     expect(html).toContain("Unresolved transfer rows");
     expect(html).toContain("Show transfer review rows");
+    expect(html).toContain(`value="${accountIds[0]}"`);
+    expect(html).toContain(`value="${accountIds[1]}"`);
     expect(html).not.toContain("Transfer treatment");
   });
 

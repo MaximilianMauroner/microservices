@@ -30,7 +30,7 @@ export type MoneyImportDeletion = Readonly<{ transactionCount: number; investmen
 export type MoneyReimportResult = Readonly<{ importCount: number; transactionCount: number; linkedPairCount: number }>;
 
 export type MoneyActivityItem = Readonly<{
-  id: string; occurredAt: string; accountName: string; description: string; amountMinor: number; feeMinor: number;
+  id: string; occurredAt: string; accountId?: string; accountName: string; description: string; amountMinor: number; feeMinor: number;
   taxMinor: number; currency: string; status: MoneyLedgerTransaction["status"]; sourceType: string;
   flowKind: MoneyLedgerTransaction["flowKind"]; category: MoneyCategory; categoryOrigin: "source" | "rule" | "manual";
   transferGroupId?: string;
@@ -83,6 +83,9 @@ export type MoneyLedgerSnapshot = MoneyTrackerSnapshot & Readonly<{
   spending: MoneySpendingAnalytics; investments: MoneyInvestmentAnalytics; planning: MoneyPlanningAnalytics;
 }>;
 export type MoneyActivityPage = Readonly<{ items: readonly MoneyActivityItem[]; total: number; hasMore: boolean }>;
+export type MoneyActivitySortKey = "date" | "description" | "account" | "flow" | "category" | "costs" | "amount";
+export type MoneyActivitySortDirection = "asc" | "desc";
+export type MoneyActivityPageInput = Readonly<{ query: string; flow?: MoneyLedgerTransaction["flowKind"]; accountId?: string; category?: MoneyCategory; reviewOnly?: boolean; sort?: MoneyActivitySortKey; direction?: MoneyActivitySortDirection; offset: number; limit: number }>;
 
 export interface MoneyRepository {
   existingSourceKeys(sourceKeys: readonly string[]): Promise<ReadonlySet<string>>;
@@ -90,7 +93,7 @@ export interface MoneyRepository {
   reimportAll(): Promise<MoneyReimportResult>;
   deleteImport(importId: string): Promise<MoneyImportDeletion | undefined>;
   readLedgerSnapshot(): Promise<MoneyLedgerSnapshot>;
-  readActivityPage(input: Readonly<{ query: string; flow?: MoneyLedgerTransaction["flowKind"]; reviewOnly?: boolean; offset: number; limit: number }>): Promise<MoneyActivityPage>;
+  readActivityPage(input: MoneyActivityPageInput): Promise<MoneyActivityPage>;
   setTransactionCategory(input: Readonly<{ transactionId: string; category: MoneyCategory; actor: string; createRule: boolean }>): Promise<Readonly<{ affectedCount: number }>>;
   deleteCategoryRule(ruleId: string): Promise<Readonly<{ affectedCount: number }> | undefined>;
   setTransferDisposition(input: Readonly<{ transactionId: string; disposition: MoneyTransferDisposition }>): Promise<void>;
@@ -258,7 +261,7 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
           r.category, r.updated_at
           from tools.money_category_rules r join tools.money_accounts a on a.id = r.account_id
           where r.active and r.match_field = 'description' order by r.updated_at desc, r.id`,
-        sql<ActivityRow[]>`select t.id, t.occurred_at, a.display_name account_name, t.description, t.amount_minor, t.fee_minor, t.tax_minor, t.currency, t.status, t.source_type, t.flow_kind, t.category, t.category_origin, t.transfer_group_id, t.transfer_disposition
+        sql<ActivityRow[]>`select t.id, t.occurred_at, t.account_id::text account_id, a.display_name account_name, t.description, t.amount_minor, t.fee_minor, t.tax_minor, t.currency, t.status, t.source_type, t.flow_kind, t.category, t.category_origin, t.transfer_group_id, t.transfer_disposition
           from tools.money_transactions t join tools.money_accounts a on a.id = t.account_id
           where t.status = 'completed' and not exists (
             select 1 from tools.money_transactions undone where undone.status = 'reverted'
@@ -395,8 +398,17 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
 
     async readActivityPage(input) {
       const pattern = `%${input.query.replaceAll("%", "\\%").replaceAll("_", "\\_")}%`;
+      const accountName = sql`case when a.provider = 'portfolio_export' then case a.role when 'investment' then 'Trade Republic Investments' else 'Trade Republic Cash' end else a.display_name end`;
+      const order = input.sort === "description" ? sql`t.description`
+        : input.sort === "account" ? accountName
+        : input.sort === "flow" ? sql`t.flow_kind`
+        : input.sort === "category" ? sql`t.category`
+        : input.sort === "costs" ? sql`(t.fee_minor + t.tax_minor)`
+        : input.sort === "amount" ? sql`t.amount_minor`
+        : sql`t.occurred_at`;
+      const direction = input.direction === "asc" ? sql`asc` : sql`desc`;
       const [rows, count] = await Promise.all([
-        sql<ActivityRow[]>`select t.id, t.occurred_at, a.display_name account_name, t.description, t.amount_minor, t.fee_minor, t.tax_minor, t.currency, t.status, t.source_type, t.flow_kind, t.category, t.category_origin, t.transfer_group_id, t.transfer_disposition
+        sql<ActivityRow[]>`select t.id, t.occurred_at, t.account_id::text account_id, ${accountName} account_name, t.description, t.amount_minor, t.fee_minor, t.tax_minor, t.currency, t.status, t.source_type, t.flow_kind, t.category, t.category_origin, t.transfer_group_id, t.transfer_disposition
           from tools.money_transactions t join tools.money_accounts a on a.id = t.account_id
           where t.status = 'completed' and not exists (
               select 1 from tools.money_transactions undone where undone.status = 'reverted'
@@ -404,10 +416,12 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
                 and undone.source_type = t.source_type and undone.description = t.description
                 and undone.amount_minor = t.amount_minor and undone.currency = t.currency
             )
-            and (${input.query} = '' or t.description ilike ${pattern} escape '\\' or a.display_name ilike ${pattern} escape '\\' or t.source_type ilike ${pattern} escape '\\')
+            and (${input.query} = '' or t.description ilike ${pattern} escape '\\' or ${accountName} ilike ${pattern} escape '\\' or t.source_type ilike ${pattern} escape '\\')
             and (${input.flow ?? null}::text is null or t.flow_kind = ${input.flow ?? null})
+            and (${input.accountId ?? null}::uuid is null or t.account_id = ${input.accountId ?? null}::uuid)
+            and (${input.category ?? null}::text is null or t.category = ${input.category ?? null})
             and (${input.reviewOnly ?? false} = false or (t.status = 'completed' and t.flow_kind = 'transfer' and t.transfer_group_id is null and t.transfer_disposition is null))
-          order by t.occurred_at desc, t.source_row desc limit ${input.limit} offset ${input.offset}`,
+          order by ${order} ${direction}, t.occurred_at desc, t.source_row desc, t.id desc limit ${input.limit} offset ${input.offset}`,
         sql<{ count: string }[]>`select count(*)::text count from tools.money_transactions t join tools.money_accounts a on a.id = t.account_id
           where t.status = 'completed' and not exists (
               select 1 from tools.money_transactions undone where undone.status = 'reverted'
@@ -415,8 +429,10 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
                 and undone.source_type = t.source_type and undone.description = t.description
                 and undone.amount_minor = t.amount_minor and undone.currency = t.currency
             )
-            and (${input.query} = '' or t.description ilike ${pattern} escape '\\' or a.display_name ilike ${pattern} escape '\\' or t.source_type ilike ${pattern} escape '\\')
+            and (${input.query} = '' or t.description ilike ${pattern} escape '\\' or ${accountName} ilike ${pattern} escape '\\' or t.source_type ilike ${pattern} escape '\\')
             and (${input.flow ?? null}::text is null or t.flow_kind = ${input.flow ?? null})
+            and (${input.accountId ?? null}::uuid is null or t.account_id = ${input.accountId ?? null}::uuid)
+            and (${input.category ?? null}::text is null or t.category = ${input.category ?? null})
             and (${input.reviewOnly ?? false} = false or (t.status = 'completed' and t.flow_kind = 'transfer' and t.transfer_group_id is null and t.transfer_disposition is null))`
       ]);
       const total = Number(count[0]?.count ?? 0);
@@ -517,7 +533,7 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
 }
 
 type ImportRow = { id: string; digest: string; format: MoneyImportFormat; filename: string; bytes: string; source_row_count: number; inserted_row_count: number; duplicate_row_count: number; committed_at: Date; created_by: string };
-type ActivityRow = { id: string; occurred_at: Date; account_name: string; description: string; amount_minor: string; fee_minor: string; tax_minor: string; currency: string; status: MoneyLedgerTransaction["status"]; source_type: string; flow_kind: MoneyLedgerTransaction["flowKind"]; category: MoneyCategory; category_origin: "source" | "rule" | "manual"; transfer_group_id: string | null; transfer_disposition: MoneyTransferDisposition | null };
+type ActivityRow = { id: string; occurred_at: Date; account_id?: string; account_name: string; description: string; amount_minor: string; fee_minor: string; tax_minor: string; currency: string; status: MoneyLedgerTransaction["status"]; source_type: string; flow_kind: MoneyLedgerTransaction["flowKind"]; category: MoneyCategory; category_origin: "source" | "rule" | "manual"; transfer_group_id: string | null; transfer_disposition: MoneyTransferDisposition | null };
 type MonthlyRow = { month: string; observed: boolean; spend_minor: string; refunds_minor: string; income_minor: string; fees_minor: string; taxes_minor: string };
 type CategoryRow = { category: MoneyCategory; amount_minor: string; count: string };
 type CategoryMonthRow = CategoryRow & { month: string };
@@ -538,7 +554,7 @@ function categoryRule(row: CategoryRuleRow): MoneyCategoryRule { return { id: ro
 function activityItem(row: ActivityRow): MoneyActivityItem {
   const description = moneyDisplayDescription(row.description);
   const category = activityCategory(row);
-  return { id: row.id, occurredAt: row.occurred_at.toISOString(), accountName: row.account_name, description, ...(description === row.description ? {} : { rawDescription: row.description }), amountMinor: integer(row.amount_minor), feeMinor: integer(row.fee_minor), taxMinor: integer(row.tax_minor), currency: row.currency, status: row.status, sourceType: row.source_type, flowKind: row.flow_kind, category, categoryOrigin: category === row.category ? row.category_origin : "source", needsTransferReview: row.status === "completed" && row.flow_kind === "transfer" && !row.transfer_group_id && !row.transfer_disposition, ...(row.transfer_group_id ? { transferGroupId: row.transfer_group_id } : {}), ...(row.transfer_disposition ? { transferDisposition: row.transfer_disposition } : {}) };
+  return { id: row.id, occurredAt: row.occurred_at.toISOString(), ...(row.account_id ? { accountId: row.account_id } : {}), accountName: row.account_name, description, ...(description === row.description ? {} : { rawDescription: row.description }), amountMinor: integer(row.amount_minor), feeMinor: integer(row.fee_minor), taxMinor: integer(row.tax_minor), currency: row.currency, status: row.status, sourceType: row.source_type, flowKind: row.flow_kind, category, categoryOrigin: category === row.category ? row.category_origin : "source", needsTransferReview: row.status === "completed" && row.flow_kind === "transfer" && !row.transfer_group_id && !row.transfer_disposition, ...(row.transfer_group_id ? { transferGroupId: row.transfer_group_id } : {}), ...(row.transfer_disposition ? { transferDisposition: row.transfer_disposition } : {}) };
 }
 function activityCategory(row: ActivityRow): MoneyCategory {
   if (row.flow_kind === "transfer" && (!row.transfer_disposition || row.transfer_disposition === "internal_transfer" || row.transfer_disposition === "excluded")) return "transfer";
