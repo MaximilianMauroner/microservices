@@ -10,7 +10,7 @@ import {
   parseMoneyImport
 } from "../money/money-import-domain.js";
 import { MoneyImportService } from "../money/money-import-service.js";
-import { deleteMoneyCategoryRule, deleteMoneyImport, previewMoneyImport, updateMoneyCategory, updateMoneyTransfer } from "../money/money-route-handlers.js";
+import { deleteMoneyCategoryRule, deleteMoneyImport, previewMoneyImport, reimportAllMoneyImports, updateMoneyCategory, updateMoneyTransfer } from "../money/money-route-handlers.js";
 import type {
   MoneyImportCommitInput,
   MoneyImportReceipt,
@@ -37,6 +37,9 @@ describe("Revolut cash statement parser", () => {
       ["910 Denn.s Bio Wien", undefined, "groceries"], ["l'autentico1190", undefined, "dining"],
       ["Salone Gran Chik", undefined, "health"], ["Mne 95011892sixpol Ele", undefined, "shopping"],
       ["Fedexexpres", undefined, "fees"],
+      ["Landhausbar Renovas", undefined, "dining"], ["Coca-Cola", undefined, "dining"],
+      ["Kvw Service Bozen", undefined, "transport"], ["Salewa Bivac", undefined, "shopping"],
+      ["Der Fellhof", undefined, "shopping"], ["Servizio Spid", undefined, "fees"],
       ["Payment", "5411", "groceries"], ["Payment", "5732", "shopping"],
       ["Unknown person", undefined, "uncategorized"]
     ] as const;
@@ -59,7 +62,8 @@ describe("Revolut cash statement parser", () => {
       feeMinor: 0,
       balanceAfterMinor: 2_000,
       status: "completed",
-      flowKind: "transfer"
+      flowKind: "transfer",
+      category: "transfer"
     });
     expect(parsed.transactions[1]).toMatchObject({
       amountMinor: -350,
@@ -85,7 +89,7 @@ describe("Revolut cash statement parser", () => {
       "Transfer\tPocket\t2023-12-18 15:52:27\t2023-12-18 15:52:27\tClosing transaction\t0\t0\tEUR\tCOMPLETED\t0"
     ]);
 
-    expect(parsed.transactions.map(({ flowKind }) => flowKind)).toEqual(["balance_adjustment", "balance_adjustment"]);
+    expect(parsed.transactions.map(({ flowKind, category }) => [flowKind, category])).toEqual([["balance_adjustment", "adjustment"], ["balance_adjustment", "adjustment"]]);
     expect(parsed.accounts[0]?.reconciliationMismatchCount).toBe(0);
   });
 
@@ -94,7 +98,7 @@ describe("Revolut cash statement parser", () => {
       "Card Payment\tCurrent\t2026-08-09 5:08:51\t2026-08-09 5:08:51\tHYPE\t-25\t0\tEUR\tCOMPLETED\t75"
     ]);
 
-    expect(parsed.transactions[0]).toMatchObject({ flowKind: "transfer", amountMinor: -2_500 });
+    expect(parsed.transactions[0]).toMatchObject({ flowKind: "transfer", category: "transfer", amountMinor: -2_500 });
   });
 
   it("fingerprints rows independently from their source row number", () => {
@@ -360,6 +364,25 @@ describe("money import route", () => {
     expect(deleteImport).toHaveBeenCalledWith("00000000-0000-4000-8000-000000000000");
   });
 
+  it("re-imports every normalized document through an authenticated same-origin request", async () => {
+    const result = { importCount: 7, transactionCount: 8_907, linkedPairCount: 1_054 };
+    const reimportAll = vi.fn().mockResolvedValue(result);
+    const request = new Request("https://tools.example.test/api/money/imports/reimport", {
+      method: "POST",
+      headers: { Origin: "https://tools.example.test", "Content-Type": "application/json" },
+      body: "{}"
+    });
+    const response = await reimportAllMoneyImports({
+      request,
+      params: {},
+      context: { principal: { subject: "subject", email: "operator@example.test" }, runtime: { publicOrigin: "https://tools.example.test", moneyImports: { reimportAll } } }
+    } as unknown as PlatformRouteInput);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, ...result });
+    expect(reimportAll).toHaveBeenCalledOnce();
+  });
+
   it("passes only the private file bytes and filename to preview", async () => {
     const result = { format: REVOLUT_CASH_FORMAT };
     const preview = vi.fn().mockResolvedValue(result);
@@ -443,6 +466,7 @@ class MemoryMoneyRepository implements MoneyRepository {
   }
 
   async deleteImport() { return undefined; }
+  async reimportAll() { return { importCount: 0, transactionCount: 0, linkedPairCount: 0 }; }
 
   async readLedgerSnapshot(): Promise<MoneyLedgerSnapshot> {
     return {

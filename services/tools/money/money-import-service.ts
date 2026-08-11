@@ -69,6 +69,10 @@ export class MoneyImportService {
     return deleted;
   }
 
+  reimportAll() {
+    return this.repository.reimportAll();
+  }
+
   readLedgerSnapshot(): Promise<MoneyLedgerSnapshot> {
     return this.repository.readLedgerSnapshot();
   }

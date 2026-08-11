@@ -45,6 +45,16 @@ export async function deleteMoneyImport(input: PlatformRouteInput) {
   }
 }
 
+export async function reimportAllMoneyImports(input: PlatformRouteInput) {
+  const rejected = validateMutationRequest(input);
+  if (rejected) return rejected;
+  try {
+    return json({ ok: true, ...await input.context.runtime.moneyImports.reimportAll() });
+  } catch (error) {
+    return importError(error);
+  }
+}
+
 export async function updateMoneyCategory(input: PlatformRouteInput) {
   const rejected = validateMutationRequest(input);
   if (rejected) return rejected;

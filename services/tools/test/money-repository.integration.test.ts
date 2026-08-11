@@ -134,6 +134,35 @@ it.skipIf(!repository || !admin)("refreshes inferred flows and transfer links wh
   expect(new Set(rows.map((row) => row.transferGroupId)).size).toBe(1);
 });
 
+it.skipIf(!repository || !admin)("prefers exact transfer identity when repeated amounts make the date window ambiguous", async () => {
+  await commitCash(repository!, cash([
+    "Transfer\tCurrent\t2026-03-04 12:00:00\t2026-03-04 12:00:00\tPocket A\t-10\t0\tEUR\tCOMPLETED\t90",
+    "Transfer\tSavings\t2026-03-04 12:00:00\t2026-03-04 12:00:00\tPocket A\t10\t0\tEUR\tCOMPLETED\t10",
+    "Transfer\tCurrent\t2026-03-04 13:00:00\t2026-03-04 13:00:00\tPocket B\t-10\t0\tEUR\tCOMPLETED\t80",
+    "Transfer\tSavings\t2026-03-04 13:00:00\t2026-03-04 13:00:00\tPocket B\t10\t0\tEUR\tCOMPLETED\t20"
+  ]), "repeated-pocket-amounts.tsv");
+  await admin!`update tools.money_transactions set category = 'subscriptions', category_origin = 'source' where description in ('Pocket A', 'Pocket B')`;
+  const rows = (await repository!.readActivityPage({ query: "Pocket", offset: 0, limit: 10 })).items;
+  expect(rows).toHaveLength(4);
+  expect(rows.every((row) => row.category === "transfer" && row.transferDisposition === "internal_transfer")).toBe(true);
+  expect(new Set(rows.map((row) => row.transferGroupId)).size).toBe(2);
+});
+
+it.skipIf(!repository || !admin)("re-imports all normalized documents and rebuilds derived review state", async () => {
+  await commitCash(repository!, cash([
+    "Transfer\tCurrent\t2026-03-05 12:00:00\t2026-03-05 12:00:00\tPocket rebuild\t-10\t0\tEUR\tCOMPLETED\t90",
+    "Transfer\tSavings\t2026-03-05 12:00:00\t2026-03-05 12:00:00\tPocket rebuild\t10\t0\tEUR\tCOMPLETED\t10"
+  ]), "rebuild.tsv");
+  await admin!`update tools.money_transactions set category = 'subscriptions', category_origin = 'manual', transfer_group_id = null, transfer_disposition = 'excluded'
+    where description = 'Pocket rebuild'`;
+
+  await expect(repository!.reimportAll()).resolves.toEqual({ importCount: 1, transactionCount: 2, linkedPairCount: 1 });
+  const rows = (await repository!.readActivityPage({ query: "Pocket rebuild", offset: 0, limit: 10 })).items;
+  expect(rows).toHaveLength(2);
+  expect(rows.every((row) => row.category === "transfer" && row.categoryOrigin === "source" && row.transferDisposition === "internal_transfer")).toBe(true);
+  expect(new Set(rows.map((row) => row.transferGroupId)).size).toBe(1);
+});
+
 it.skipIf(!repository || !admin)("deletes an import cascade and repairs a cross-import transfer link", async () => {
   const removed = await commitCash(repository!, cash([
     "Transfer\tCurrent\t2026-03-02 12:00:00\t2026-03-02 12:00:00\tMove to savings\t-50\t0\tEUR\tCOMPLETED\t50",

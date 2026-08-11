@@ -213,7 +213,7 @@ function parseSparkasse(bytes: Uint8Array, digest: string): ParsedMoneyImport {
       localDate: row.bookingDate, description, amountMinor, feeMinor, taxMinor, baseAmountMinor: amountMinor,
       baseFeeMinor: feeMinor, baseTaxMinor: taxMinor, baseCurrency: "EUR", balanceAfterMinor, currency: "EUR",
       status: "completed", sourceType, flowKind,
-      category: SPARKASSE_FEE_TYPES.has(sourceType) ? "fees" : SPARKASSE_TAX_TYPES.has(sourceType) ? "taxes" : SPARKASSE_INCOME_TYPES.has(sourceType) && rawAmountMinor > 0 ? "income" : categorizeDescription(description)
+      category: inferMoneyCategory(flowKind, sourceType, description)
     };
   });
   if (balanceAfterMinor !== closingBalanceMinor) {
@@ -245,6 +245,7 @@ function cashRow(row: string[], sourceRow: number): MoneyLedgerTransaction {
   const feeMinor = Math.abs(parseMinorUnits(fee, sourceRow, "Fee"));
   const balanceAfterMinor = balance ? parseMinorUnits(balance, sourceRow, "Balance") : undefined;
   const description = sanitizeDescription(rawDescription ?? "");
+  const flowKind = cashFlow(type, amountMinor, description);
   return {
     sourceKey: fingerprint([REVOLUT_CASH_FORMAT, ...row]), sourceRow, provider: "revolut", accountRole: "cash",
     accountExternalRef: `revolut:cash:${product.trim().toLocaleLowerCase("en-GB")}:${currency}`,
@@ -254,7 +255,7 @@ function cashRow(row: string[], sourceRow: number): MoneyLedgerTransaction {
     ...(currency === "EUR" ? { baseAmountMinor: amountMinor, baseFeeMinor: feeMinor, baseTaxMinor: 0, baseCurrency: "EUR" as const } : {}),
     ...(balanceAfterMinor === undefined ? {} : { balanceAfterMinor }), currency: currency!,
     status: state === "COMPLETED" ? "completed" : "reverted", sourceType: type,
-    flowKind: cashFlow(type, amountMinor, description), category: type === "ATM" ? "cash" : categorizeDescription(description)
+    flowKind, category: inferMoneyCategory(flowKind, type, description)
   };
 }
 
@@ -278,6 +279,7 @@ function parseTrading(dataRows: string[][], digest: string): ParsedMoneyImport {
     const baseAmountMinor = currency === "EUR" ? amountMinor : convertToEuroMinor(amountMinor, fxRate!, sourceRow);
     const feeMinor = type.includes("FEE") ? -total : 0;
     const taxMinor = type.includes("TAX") ? -total : 0;
+    const flowKind = tradingFlow(type);
     transactions.push({
       sourceKey, sourceRow, provider: "revolut", accountRole: "investment", accountExternalRef: "revolut:investment:trading",
       accountName: "Revolut Trading", occurredAt: occurredAt.toISOString(), completedAt: occurredAt.toISOString(),
@@ -285,7 +287,7 @@ function parseTrading(dataRows: string[][], digest: string): ParsedMoneyImport {
       amountMinor, feeMinor, taxMinor, baseAmountMinor,
       baseFeeMinor: currency === "EUR" ? feeMinor : convertToEuroMinor(feeMinor, fxRate!, sourceRow),
       baseTaxMinor: currency === "EUR" ? taxMinor : convertToEuroMinor(taxMinor, fxRate!, sourceRow), baseCurrency: "EUR",
-      currency: currency!, status: "completed", sourceType: type, flowKind: tradingFlow(type), category: type.includes("FEE") ? "fees" : type.includes("TAX") ? "taxes" : "investments"
+      currency: currency!, status: "completed", sourceType: type, flowKind, category: flowKind === "transfer" ? "transfer" : type.includes("FEE") ? "fees" : type.includes("TAX") ? "taxes" : "investments"
     });
     investmentEvents.push({
       transactionSourceKey: sourceKey, eventKind, ...(ticker ? { symbol: ticker } : {}),
@@ -320,12 +322,13 @@ function parsePortfolio(dataRows: string[][], digest: string): ParsedMoneyImport
     const sourceKey = transactionId?.trim() ? fingerprint([PORTFOLIO_TRANSACTION_FORMAT, transactionId.trim()]) : fingerprint([PORTFOLIO_TRANSACTION_FORMAT, ...row.slice(0, 19)]);
     const role: MoneyAccountRole = sourceCategory === "TRADING" || sourceCategory === "DELIVERY" ? "investment" : "cash";
     const description = sanitizeDescription(rawDescription || counterpartyName || [type, name, symbol].filter(Boolean).join(" · "));
+    const flowKind = portfolioFlow(type, amountMinor);
     transactions.push({
       sourceKey, sourceRow, provider: "portfolio_export", accountRole: role,
       accountExternalRef: `portfolio:${accountType.toLocaleLowerCase("en-GB")}:${role}`,
       accountName: `Portfolio ${role === "investment" ? "Investments" : "Cash"}`, occurredAt: occurredAt.toISOString(), completedAt: occurredAt.toISOString(),
       localDate: date!, description, amountMinor, feeMinor, taxMinor, baseAmountMinor: amountMinor, baseFeeMinor: feeMinor, baseTaxMinor: taxMinor, baseCurrency: "EUR", currency: currency!, status: "completed", sourceType: type,
-      ...(mcc?.trim() ? { mcc: mcc.trim() } : {}), flowKind: portfolioFlow(type, amountMinor), category: sourceCategory === "TRADING" || sourceCategory === "DELIVERY" ? "investments" : type === "CARD_TRANSACTION" ? categorizeDescription(description, mcc) : type === "INTEREST_PAYMENT" ? "income" : "uncategorized"
+      ...(mcc?.trim() ? { mcc: mcc.trim() } : {}), flowKind, category: sourceCategory === "TRADING" || sourceCategory === "DELIVERY" ? "investments" : flowKind === "transfer" ? "transfer" : type === "CARD_TRANSACTION" ? categorizeDescription(description, mcc) : type === "INTEREST_PAYMENT" ? "income" : flowKind === "tax" ? "taxes" : flowKind === "balance_adjustment" ? "adjustment" : "uncategorized"
     });
     const eventKind = portfolioEventKind(type, sourceCategory);
     if (eventKind) investmentEvents.push({
@@ -362,7 +365,7 @@ function parseBalances(dataRows: string[][], digest: string): ParsedMoneyImport 
     transactions.push({ sourceKey, sourceRow, provider: "manual", accountRole: role, accountExternalRef, accountName,
       occurredAt, completedAt: occurredAt, localDate: date, description: "Imported balance snapshot", amountMinor: 0,
       feeMinor: 0, taxMinor: 0, ...(currency === "EUR" ? { baseAmountMinor: 0, baseFeeMinor: 0, baseTaxMinor: 0, baseCurrency: "EUR" as const } : {}),
-      balanceAfterMinor: valueMinor, currency, status: "completed", sourceType: "Balance snapshot", flowKind: "balance_adjustment", category: "other" });
+      balanceAfterMinor: valueMinor, currency, status: "completed", sourceType: "Balance snapshot", flowKind: "balance_adjustment", category: "adjustment" });
     balanceSnapshots.push({ accountExternalRef, date, observedAt: occurredAt, sourceRow, valueMinor, currency });
   }
   return result(MONEY_BALANCE_SNAPSHOT_FORMAT, digest, transactions, [], balanceSnapshots, accountPreviews(transactions), []);
@@ -420,6 +423,16 @@ function cashFlow(type: string, amount: number, description: string): MoneyFlowK
   if (type === "Interest") return "investment_income";
   return "transfer";
 }
+export function inferMoneyCategory(flowKind: MoneyFlowKind, sourceType: string, description: string, mcc?: string): MoneyCategory {
+  if (flowKind === "transfer") return "transfer";
+  if (flowKind === "balance_adjustment") return "adjustment";
+  if (flowKind === "investment_income" || flowKind === "income") return "income";
+  if (flowKind === "fee") return "fees";
+  if (flowKind === "tax") return "taxes";
+  if (flowKind === "trade") return "investments";
+  if (sourceType === "ATM") return "cash";
+  return categorizeDescription(description, mcc);
+}
 function tradingFlow(type: string): MoneyFlowKind { return type.includes("BUY") || type.includes("SELL") || type === "STOCK SPLIT" || type.startsWith("POSITION TRANSFER") ? "trade" : type === "DIVIDEND" ? "investment_income" : type.includes("FEE") ? "fee" : type.includes("TAX") ? "tax" : "transfer"; }
 function tradingEventKind(type: string): MoneyInvestmentEventKind { return type.includes("BUY") ? "buy" : type.includes("SELL") ? "sell" : type === "DIVIDEND" ? "dividend" : type.includes("FEE") ? "fee" : type.includes("TAX") ? "tax" : type === "STOCK SPLIT" ? "split" : type.startsWith("POSITION TRANSFER") ? "position_transfer" : "cash_transfer"; }
 function tradingSignedAmount(type: string, total: number) { return type.includes("BUY") ? -Math.abs(total) : type.includes("SELL") ? Math.abs(total) : total; }
@@ -465,17 +478,17 @@ const MCC_CATEGORY_RULES: readonly Readonly<{ category: MoneyCategory; pattern: 
 const DESCRIPTION_CATEGORY_RULES: readonly Readonly<{ category: MoneyCategory; pattern: RegExp }>[] = [
   { category: "housing", pattern: /\b(rent|landlord|mortgage|utility|utilities|electricity|gas bill|studentenf(?:o|oe)rderungsstiftung)\b/ },
   { category: "groceries", pattern: /\b(billa|spar|hofer|aldi|lidl|rewe|edeka|despar|mpreis|supermarket|grocer(?:y|ies)|denn'?s|biomarkt|hello ?fresh|huel|koncoop|naturalia|agrocenter|sudtiroler milch|fruits?|misa tea)\b|s.*dtiroler milch|l.*derach|winestore|denn.s|^basic$/ },
-  { category: "dining", pattern: /\b(lieferando|foodora|deliveroo|delivery hero|just eat|takeaway|restaurant|cafe|coffee|backwerk|mcdonald'?s|confiserie|autogrill|swing kitchen|bistrot|bakerei|konditorei|kebab|imbiss|pizzeria|biteclub|bao bar|veggiezz|frozen yogurt|litalissimo|humus|old wild west|serways|brot und spiele|juice factory|le crobag|speckstandl|nihonbashi|tramuntana|giannotti et fil|balthasar kaffee|bar edelweiss|stadtkebab)\b|l'autentico|b.*ckerei|caf.|str.*ck|b.*renwirt|^chez angele?$/ },
-  { category: "transport", pattern: /\b(oebb|obb|enio|westbahn|wiener linien|wienerlinien|klimaticket|trenitalia|salzburg verkehr|flixbus|eurolanes|uber|taxi|train|rail|parking|parkhaus|parkplatz|parcheggio|garage|wipark|autostrade?|brennero|bolzano sud|tiermobilit|suedtirol pass|altoadige p ass|esso|petrol|fuel)\b|a.bb|^tier$|^wien$/ },
+  { category: "dining", pattern: /\b(lieferando|foodora|deliveroo|delivery hero|just eat|takeaway|restaurant|cafe|coffee|backwerk|mcdonald'?s|confiserie|autogrill|swing kitchen|bistrot|bakerei|konditorei|kebab|imbiss|pizzeria|biteclub|bao bar|veggiezz|frozen yogurt|litalissimo|humus|old wild west|serways|brot und spiele|juice factory|le crobag|speckstandl|nihonbashi|tramuntana|giannotti et fil|balthasar kaffee|bar edelweiss|stadtkebab|landhausbar|coca-cola|gourmet)\b|l'autentico|b.*ckerei|caf.|str.*ck|b.*renwirt|^chez angele?$/ },
+  { category: "transport", pattern: /\b(oebb|obb|enio|westbahn|wiener linien|wienerlinien|klimaticket|trenitalia|salzburg verkehr|flixbus|eurolanes|uber|taxi|train|rail|parking|parkhaus|parkplatz|parcheggio|garage|wipark|autostrade?|brennero|bolzano sud|tiermobilit|suedtirol pass|altoadige p ass|esso|petrol|fuel|kvw service)\b|a.bb|^tier$|^wien$/ },
   { category: "health", pattern: /\b(apotheke|pharmacy|pharmac|farmacia|doctor|dentist|hospital|fitinn|drogerie|bipa|dermopraxis|beauty|diagnostik)\b|salone gran chi/ },
   { category: "travel", pattern: /\b(booking\.com|hotel|airline|flight|camping|holafly|sardinia vera)\b/ },
   { category: "subscriptions", pattern: /\b(netflix|spotify|audible|youtube|deezer|libro\.fm|t3 chat|openai|chatgpt|claude|google(?: cloud| chrome)?|microsoft|jetbrains|paddle|replicate|iliad|tim|vodafone|hot telekom|1mobile|purevpn|server dedicato|hetzner|railway|convex|cloudflare|virtualsolu|aruba\.it|amazon prime|evernote|readwise|bitwarden|akiflow|obsidian|cursor|reclaim|groq|unraid|filebot|rize subscription)\b|netflixinte/ },
   { category: "education", pattern: /\b(tu wien|technische universitaet wien|fahrschule|frontendmasters|knowt)\b/ },
   { category: "entertainment", pattern: /\b(steam|riot games|hrk game|playstation|g2a|kinguin|chrono(?: gg)?|electronic arts|eneba|mmoga|twitch|znipe|ticketmaster|wien ticket|p3 comix|billardcafe|der klub|wiener eistraum|cineplexx|google play|itunes|itch\.io|abavent|addicted to rock|sport arena wien)\b|steamgames|hrkdistribu|^khm sk/ },
-  { category: "shopping", pattern: /\b(amazon|apple(?:\.com)?|ikea|dbrand|zalando|zara|muller|printbox|paperlike|massdrop|redbubble|thomann|media ?markt|mediaworld|media world|linus tech tips|nike|etsy|uniqlo|brookssport|puma|urban outfitters|samsung|rhinoshield|sportler|nencini sport|beyerdynamic|darn tough|calida|cyberport|e-tec\.at|xxxlutz|action|thalia|athesia|unifi|seven technology|legami|kurzgesagt|h&m|obi|ceramics|flaconi|dell sas|athleticgre|hutstuebele|heogmbh|spri\.ng|ctdi|blitzhandel24|surteesstudios|az delivery|paga in 3 rate)\b|sixpol|m.*ller|ebay/ },
+  { category: "shopping", pattern: /\b(amazon|apple(?:\.com)?|ikea|dbrand|zalando|zara|muller|printbox|paperlike|massdrop|redbubble|thomann|media ?markt|mediaworld|media world|linus tech tips|nike|etsy|uniqlo|brookssport|puma|urban outfitters|samsung|rhinoshield|sportler|nencini sport|beyerdynamic|darn tough|calida|cyberport|e-tec\.at|xxxlutz|action|thalia|athesia|unifi|seven technology|legami|kurzgesagt|h&m|obi|ceramics|flaconi|dell sas|athleticgre|hutstuebele|heogmbh|spri\.ng|ctdi|blitzhandel24|surteesstudios|az delivery|paga in 3 rate|salewa|fellhof)\b|sixpol|m.*ller|ebay/ },
   { category: "gifts", pattern: /\b(wikimedia|blumen)\b/ },
   { category: "taxes", pattern: /\b(pagopa)\b/ },
-  { category: "fees", pattern: /\b(hannafinanz|poste italiane|post fa|post 1153|packlink)\b|fedex/ },
+  { category: "fees", pattern: /\b(hannafinanz|poste italiane|post fa|post 1153|packlink|servizio spid)\b|fedex/ },
   { category: "cash", pattern: /\b(ricarica yap)\b|^yap$/ },
   { category: "investments", pattern: /\btrade republic\b/ },
   { category: "other", pattern: /\bpaypal\b/ }

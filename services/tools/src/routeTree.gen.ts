@@ -47,6 +47,7 @@ import { Route as ApiUploadsSplatRouteImport } from './routes/api/uploads/$'
 import { Route as FilesIdSplatRouteImport } from './routes/files/$id/$'
 import { Route as ApiMoneyImportsImportIdRouteImport } from './routes/api/money/imports/$importId'
 import { Route as ApiMoneyImportsPreviewRouteImport } from './routes/api/money/imports/preview'
+import { Route as ApiMoneyImportsReimportRouteImport } from './routes/api/money/imports/reimport'
 import { Route as ApiStatusHeartbeatsMonitorIdRouteImport } from './routes/api/status/heartbeats/$monitorId'
 
 const IndexRoute = IndexRouteImport.update({
@@ -239,6 +240,11 @@ const ApiMoneyImportsPreviewRoute = ApiMoneyImportsPreviewRouteImport.update({
   path: '/preview',
   getParentRoute: () => ApiMoneyImportsRoute,
 } as any)
+const ApiMoneyImportsReimportRoute = ApiMoneyImportsReimportRouteImport.update({
+  id: '/reimport',
+  path: '/reimport',
+  getParentRoute: () => ApiMoneyImportsRoute,
+} as any)
 const ApiStatusHeartbeatsMonitorIdRoute =
   ApiStatusHeartbeatsMonitorIdRouteImport.update({
     id: '/api/status/heartbeats/$monitorId',
@@ -285,6 +291,7 @@ export interface FileRoutesByFullPath {
   '/files/$id/$': typeof FilesIdSplatRoute
   '/api/money/imports/$importId': typeof ApiMoneyImportsImportIdRoute
   '/api/money/imports/preview': typeof ApiMoneyImportsPreviewRoute
+  '/api/money/imports/reimport': typeof ApiMoneyImportsReimportRoute
   '/api/status/heartbeats/$monitorId': typeof ApiStatusHeartbeatsMonitorIdRoute
 }
 export interface FileRoutesByTo {
@@ -325,6 +332,7 @@ export interface FileRoutesByTo {
   '/files/$id/$': typeof FilesIdSplatRoute
   '/api/money/imports/$importId': typeof ApiMoneyImportsImportIdRoute
   '/api/money/imports/preview': typeof ApiMoneyImportsPreviewRoute
+  '/api/money/imports/reimport': typeof ApiMoneyImportsReimportRoute
   '/api/status/heartbeats/$monitorId': typeof ApiStatusHeartbeatsMonitorIdRoute
 }
 export interface FileRoutesById {
@@ -367,6 +375,7 @@ export interface FileRoutesById {
   '/files/$id/$': typeof FilesIdSplatRoute
   '/api/money/imports/$importId': typeof ApiMoneyImportsImportIdRoute
   '/api/money/imports/preview': typeof ApiMoneyImportsPreviewRoute
+  '/api/money/imports/reimport': typeof ApiMoneyImportsReimportRoute
   '/api/status/heartbeats/$monitorId': typeof ApiStatusHeartbeatsMonitorIdRoute
 }
 export interface FileRouteTypes {
@@ -410,6 +419,7 @@ export interface FileRouteTypes {
     | '/files/$id/$'
     | '/api/money/imports/$importId'
     | '/api/money/imports/preview'
+    | '/api/money/imports/reimport'
     | '/api/status/heartbeats/$monitorId'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -450,6 +460,7 @@ export interface FileRouteTypes {
     | '/files/$id/$'
     | '/api/money/imports/$importId'
     | '/api/money/imports/preview'
+    | '/api/money/imports/reimport'
     | '/api/status/heartbeats/$monitorId'
   id:
     | '__root__'
@@ -491,6 +502,7 @@ export interface FileRouteTypes {
     | '/files/$id/$'
     | '/api/money/imports/$importId'
     | '/api/money/imports/preview'
+    | '/api/money/imports/reimport'
     | '/api/status/heartbeats/$monitorId'
   fileRoutesById: FileRoutesById
 }
@@ -794,6 +806,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiMoneyImportsPreviewRouteImport
       parentRoute: typeof ApiMoneyImportsRoute
     }
+    '/api/money/imports/reimport': {
+      id: '/api/money/imports/reimport'
+      path: '/reimport'
+      fullPath: '/api/money/imports/reimport'
+      preLoaderRoute: typeof ApiMoneyImportsReimportRouteImport
+      parentRoute: typeof ApiMoneyImportsRoute
+    }
     '/api/status/heartbeats/$monitorId': {
       id: '/api/status/heartbeats/$monitorId'
       path: '/api/status/heartbeats/$monitorId'
@@ -890,11 +909,13 @@ const FilesIdRouteWithChildren =
 interface ApiMoneyImportsRouteChildren {
   ApiMoneyImportsImportIdRoute: typeof ApiMoneyImportsImportIdRoute
   ApiMoneyImportsPreviewRoute: typeof ApiMoneyImportsPreviewRoute
+  ApiMoneyImportsReimportRoute: typeof ApiMoneyImportsReimportRoute
 }
 
 const ApiMoneyImportsRouteChildren: ApiMoneyImportsRouteChildren = {
   ApiMoneyImportsImportIdRoute: ApiMoneyImportsImportIdRoute,
   ApiMoneyImportsPreviewRoute: ApiMoneyImportsPreviewRoute,
+  ApiMoneyImportsReimportRoute: ApiMoneyImportsReimportRoute,
 }
 
 const ApiMoneyImportsRouteWithChildren = ApiMoneyImportsRoute._addFileChildren(
