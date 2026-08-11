@@ -77,14 +77,23 @@ export class MoneyImportService {
     return this.repository.readLedgerSnapshot();
   }
 
-  readActivityPage(input: Readonly<{ query: string; flow?: string; reviewOnly?: boolean; offset: number; limit: number }>) {
+  readActivityPage(input: Readonly<{ query: string; flow?: string; accountId?: string; category?: string; reviewOnly?: boolean; sort?: string; direction?: string; offset: number; limit: number }>) {
     const query = input.query.trim().slice(0, 100);
     const flows = ["spend", "income", "refund", "transfer", "trade", "investment_income", "fee", "tax", "balance_adjustment"] as const;
     const flow = input.flow && flows.includes(input.flow as typeof flows[number]) ? input.flow as typeof flows[number] : undefined;
+    const sorts = ["date", "description", "account", "flow", "category", "costs", "amount"] as const;
+    const sort = input.sort && sorts.includes(input.sort as typeof sorts[number]) ? input.sort as typeof sorts[number] : input.sort ? undefined : "date";
+    const direction = input.direction === "asc" || input.direction === "desc" ? input.direction : input.direction ? undefined : "desc";
+    const accountId = input.accountId?.trim();
+    const category = input.category && MONEY_CATEGORIES.includes(input.category as MoneyCategory) ? input.category as MoneyCategory : undefined;
     if (input.flow && !flow) throw new MoneyImportValidationError("invalid_flow", "The activity flow filter is invalid.");
+    if (!sort) throw new MoneyImportValidationError("invalid_sort", "The activity sort is invalid.");
+    if (!direction) throw new MoneyImportValidationError("invalid_sort", "The activity sort direction is invalid.");
+    if (input.category && !category) throw new MoneyImportValidationError("invalid_category", "The activity category filter is invalid.");
+    if (accountId) assertUuid(accountId, "invalid_account", "The activity account filter is invalid.");
     if (!Number.isSafeInteger(input.offset) || input.offset < 0) throw new MoneyImportValidationError("invalid_offset", "The activity offset is invalid.");
     if (!Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > 500) throw new MoneyImportValidationError("invalid_limit", "The activity limit is invalid.");
-    return this.repository.readActivityPage({ query, ...(flow ? { flow } : {}), ...(input.reviewOnly ? { reviewOnly: true } : {}), offset: input.offset, limit: input.limit });
+    return this.repository.readActivityPage({ query, ...(flow ? { flow } : {}), ...(accountId ? { accountId } : {}), ...(category ? { category } : {}), ...(input.reviewOnly ? { reviewOnly: true } : {}), sort, direction, offset: input.offset, limit: input.limit });
   }
 
   setTransactionCategory(input: Readonly<{ transactionId: string; category: string; actor: string; createRule: boolean }>) {

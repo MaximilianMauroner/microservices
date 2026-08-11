@@ -13,6 +13,7 @@ import { MoneyImportService } from "../money/money-import-service.js";
 import { deleteMoneyCategoryRule, deleteMoneyImport, previewMoneyImport, reimportAllMoneyImports, updateMoneyCategory, updateMoneyTransfer } from "../money/money-route-handlers.js";
 import type {
   MoneyImportCommitInput,
+  MoneyActivityPageInput,
   MoneyImportReceipt,
   MoneyLedgerSnapshot,
   MoneyRepository
@@ -231,6 +232,14 @@ describe("balance snapshot parser", () => {
 });
 
 describe("money import service", () => {
+  it("allowlists complete-ledger activity filters and sorting", async () => {
+    const repository = new MemoryMoneyRepository();
+    const service = new MoneyImportService(repository);
+    await service.readActivityPage({ query: " coffee ", accountId: "00000000-0000-4000-8000-000000000000", category: "dining", sort: "amount", direction: "asc", offset: 0, limit: 50 });
+    expect(repository.lastActivityInput).toEqual({ query: "coffee", accountId: "00000000-0000-4000-8000-000000000000", category: "dining", sort: "amount", direction: "asc", offset: 0, limit: 50 });
+    expect(() => service.readActivityPage({ query: "", sort: "amount desc; drop table", offset: 0, limit: 50 })).toThrow("activity sort is invalid");
+  });
+
   it("reports existing source rows during preview", async () => {
     const repository = new MemoryMoneyRepository();
     const bytes = fixture(["Transfer\tCurrent\t2026-08-09 5:08:51\t2026-08-09 5:08:51\tTop up\t10\t0\tEUR\tCOMPLETED\t10"]);
@@ -456,6 +465,7 @@ function routeInput(request: Request, preview: ReturnType<typeof vi.fn>) {
 
 class MemoryMoneyRepository implements MoneyRepository {
   readonly sourceKeys = new Set<string>();
+  lastActivityInput?: MoneyActivityPageInput;
 
   async existingSourceKeys(sourceKeys: readonly string[]) {
     return new Set(sourceKeys.filter((key) => this.sourceKeys.has(key)));
@@ -478,7 +488,7 @@ class MemoryMoneyRepository implements MoneyRepository {
     };
   }
 
-  async readActivityPage() { return { items: [], total: 0, hasMore: false }; }
+  async readActivityPage(input: MoneyActivityPageInput) { this.lastActivityInput = input; return { items: [], total: 0, hasMore: false }; }
 
   async setTransactionCategory() { return { affectedCount: 1 }; }
   async deleteCategoryRule() { return undefined; }

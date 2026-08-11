@@ -34,7 +34,8 @@ export function MoneyCategoryExplorer({ spending, initialCategory }: { spending:
 
   const selected = totals.find((row) => row.category === category);
   const totalSpend = totals.reduce((sum, row) => sum + row.amountMinor, 0);
-  const uncategorized = totals.find((row) => row.category === "uncategorized")?.amountMinor ?? 0;
+  const uncategorizedRow = totals.find((row) => row.category === "uncategorized");
+  const uncategorized = uncategorizedRow?.amountMinor ?? 0;
   const coverage = totalSpend ? (totalSpend - uncategorized) / totalSpend * 100 : 0;
   const trend = selectedMonths.map((month) => ({ month, amount: spending.categoryMonths.filter((row) => row.month === month && row.category === category).reduce((sum, row) => sum + row.amountMinor, 0) / 100 }));
   const merchants = aggregateMerchants(spending.merchantMonths.filter((row) => selectedMonthSet.has(row.month) && row.category === category));
@@ -47,7 +48,7 @@ export function MoneyCategoryExplorer({ spending, initialCategory }: { spending:
   return <div className="money-category-explorer space-y-3">
     <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Category summary">
       <Metric label="Selected-period spend" value={formatMinor(totalSpend)} detail={`${selectedMonths.length} completed months`} />
-      <Metric label="Category coverage" value={`${coverage.toFixed(1)}%`} detail={`${formatMinor(uncategorized)} uncategorized`} />
+      <Metric label="Category coverage" value={`${coverage.toFixed(1)}%`} detail={`${(uncategorizedRow?.count ?? 0).toLocaleString("en-GB")} transactions · ${formatMinor(uncategorized)} uncategorized`} />
       <Metric label="Monthly average" value={formatMinor(selectedMonths.length ? Math.round(totalSpend / selectedMonths.length) : 0)} detail="completed months only" />
       <Metric label="Active categories" value={totals.length.toLocaleString("en-GB")} detail={`${totals.reduce((sum, row) => sum + row.count, 0).toLocaleString("en-GB")} transactions`} />
     </section>

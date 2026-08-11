@@ -126,7 +126,11 @@ export async function getMoneyActivity(input: PlatformRouteInput) {
     return json(await input.context.runtime.moneyImports.readActivityPage({
       query: url.searchParams.get("query") ?? "",
       ...(url.searchParams.get("flow") ? { flow: url.searchParams.get("flow")! } : {}),
+      ...(url.searchParams.get("accountId") ? { accountId: url.searchParams.get("accountId")! } : {}),
+      ...(url.searchParams.get("category") ? { category: url.searchParams.get("category")! } : {}),
       reviewOnly: url.searchParams.get("review") === "true",
+      ...(url.searchParams.get("sort") ? { sort: url.searchParams.get("sort")! } : {}),
+      ...(url.searchParams.get("direction") ? { direction: url.searchParams.get("direction")! } : {}),
       offset: integerParameter(url.searchParams.get("offset"), 0),
       limit: integerParameter(url.searchParams.get("limit"), 200)
     }));
