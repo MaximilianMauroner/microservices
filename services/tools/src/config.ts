@@ -1,7 +1,6 @@
 import { loadConfig as loadArtifactConfig } from "@tools-platform/artifact-publisher";
 import { loadConfig as loadFieldGuideConfig } from "@tools-platform/field-guide/config";
 import { loadConfig as loadToolsConfig } from "@tools-platform/web";
-import { loadConfig as loadCheckerConfig } from "@tools-platform/tools-checker/config";
 
 type Environment = Readonly<Record<string, string | undefined>>;
 
@@ -34,11 +33,6 @@ export function loadPlatformConfig(env: Environment = process.env) {
     PUBLIC_BASE_URL: publicOrigin,
     DATABASE_URL: databaseUrl
   });
-  const checker = loadCheckerConfig({
-    ...env,
-    ...bucketEnvironment(env, "TOOLS")
-  });
-
   return {
     port: tools.port,
     readOnly,
@@ -49,7 +43,6 @@ export function loadPlatformConfig(env: Environment = process.env) {
     artifact,
     fieldGuide,
     markdownShare: tools.markdownShare,
-    checker,
     towerHeartbeatToken: secret(
       required(env, "TOWER_HEARTBEAT_TOKEN"),
       "TOWER_HEARTBEAT_TOKEN"
@@ -58,11 +51,6 @@ export function loadPlatformConfig(env: Environment = process.env) {
       env.TOWER_HEARTBEAT_STALE_AFTER_MS,
       3 * 60 * 1000,
       "TOWER_HEARTBEAT_STALE_AFTER_MS"
-    ),
-    checkerIntervalMs: positiveInteger(
-      env.CHECKER_INTERVAL_MS,
-      5 * 60 * 1000,
-      "CHECKER_INTERVAL_MS"
     )
   };
 }

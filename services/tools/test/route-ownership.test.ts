@@ -13,6 +13,14 @@ describe("primary page ownership", () => {
     }
   });
 
+  it("periodically reloads an open status page", () => {
+    const source = readFileSync(new URL("../src/routes/status.tsx", import.meta.url), "utf8");
+
+    expect(source).toContain("window.setInterval");
+    expect(source).toContain("void router.invalidate()");
+    expect(source).toContain("window.clearInterval(interval)");
+  });
+
   it("uses preloaded client navigation for review links", () => {
     const source = readFileSync(new URL("../field-guide/ui/review-page.tsx", import.meta.url), "utf8");
     const reviewLinks = [...source.matchAll(/<Link to="\/field-guide"[^>]*>/g)].map(([link]) => link);

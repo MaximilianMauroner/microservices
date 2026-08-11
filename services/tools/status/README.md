@@ -1,13 +1,13 @@
 # Status
 
-Status is a Tools product, not a separate Railway service. The Tools process
-claims each deterministic five-minute slot through a PostgreSQL lease and runs
-one bounded monitoring pass. A standalone CLI uses the same checker for
-operations and tests.
+Status is presented by Tools and checked by a separate Railway cron service.
+Railway starts `pnpm --dir services/tools/status run start` every five minutes
+from this directory's `railway.json`; the process runs one bounded monitoring
+pass, closes its resources, and exits.
 
-Each pass stores runtime state in PostgreSQL, publishes derived snapshots,
-drains due Discord notifications, and records a terminal lease outcome. Multiple
-Tools replicas may be active; only the lease owner executes a given slot.
+Each pass stores runtime state in PostgreSQL, publishes derived snapshots, and
+drains due Discord notifications. Deterministic run IDs and transactional
+revision checks keep repeated invocations idempotent.
 
 ## Required configuration
 
@@ -42,7 +42,7 @@ incident records remain. Discord delivery is at least once: pending state is
 persisted before delivery, and failed delivery uses `Retry-After` or capped
 exponential backoff.
 
-Configure explicit Railway CPU/RAM limits and a project usage alert. Tools must
-remain awake so its in-process scheduler can claim slots. Checker shutdown is
-bounded and awaits database and snapshot-store cleanup before releasing its
-lease.
+Configure the Railway service to use `/services/tools/status/railway.json` and
+provide the required variables. Configure explicit CPU/RAM limits and a project
+usage alert. Checker shutdown is bounded and awaits database and snapshot-store
+cleanup before exiting.
