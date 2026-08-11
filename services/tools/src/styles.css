@@ -208,9 +208,29 @@ html:has([data-suite-accent]) {
   .money-chart-data summary { cursor: pointer; padding: .7rem 0; font-weight: 600; }
   .money-chart-data th, .money-chart-data td { padding: .45rem .25rem; border-top: 1px solid var(--border); }
   .money-chart-fallback { display: grid; height: 16rem; place-items: center; border: 1px dashed var(--border); color: var(--muted-foreground); font-size: .8rem; }
+  .money-category-trend { display: grid; grid-template-columns: minmax(0, 1fr) minmax(16rem, .42fr); }
+  .money-category-trend__chart { min-width: 0; padding: 1.25rem 1.25rem .55rem; }
+  .money-category-contributors { min-width: 0; border-left: 1px solid var(--border); background: #050505; }
+  .money-category-contributors__header { display: flex; align-items: start; justify-content: space-between; gap: .75rem; padding: .9rem 1rem; border-bottom: 1px solid var(--border); }
+  .money-category-contributors__header h3 { font-size: .8rem; font-weight: 650; }
+  .money-category-contributors__header p, .money-category-contributors__header > span { margin-top: .2rem; color: var(--muted-foreground); font-size: .68rem; }
+  .money-category-contributors__header > span { flex: none; font-family: ui-monospace, monospace; }
+  .money-category-contributors__search { display: block; padding: .7rem 1rem; border-bottom: 1px solid var(--border); }
+  .money-category-contributors__search input { width: 100%; height: 2rem; border: 1px solid var(--border); border-radius: calc(var(--radius) - 2px); background: #000; padding: 0 .65rem; color: var(--foreground); font-size: .72rem; outline: none; }
+  .money-category-contributors__search input:focus { border-color: var(--ring); box-shadow: 0 0 0 2px color-mix(in oklab, var(--ring) 25%, transparent); }
+  .money-category-contributor { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .75rem; padding: .7rem 1rem; border-bottom: 1px solid var(--border); font-size: .72rem; }
+  .money-category-contributor div { min-width: 0; }
+  .money-category-contributor strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+  .money-category-contributor div span { display: block; margin-top: .15rem; color: var(--muted-foreground); font-size: .65rem; }
+  .money-category-contributor > span { font-family: ui-monospace, monospace; font-weight: 600; white-space: nowrap; }
+  .money-category-contributors__empty { padding: 2rem 1rem; color: var(--muted-foreground); font-size: .72rem; text-align: center; }
   [aria-label="Transaction ledger"] h3[title],
   [aria-label="Transaction ledger"] td p[title] { overflow: visible; overflow-wrap: anywhere; text-overflow: clip; white-space: normal; }
   .money-category-explorer .truncate { overflow: visible; overflow-wrap: anywhere; text-overflow: clip; white-space: normal; }
+  @media (max-width: 767px) {
+    .money-category-trend { grid-template-columns: 1fr; }
+    .money-category-contributors { border-top: 1px solid var(--border); border-left: 0; }
+  }
   .app-heading { display: flex; align-items: end; justify-content: space-between; gap: 1rem; padding-bottom: 1.5rem; margin-bottom: 1.5rem; border-bottom: 1px solid var(--surface-border); }
   .app-heading h1 { margin-top: .65rem; font-size: clamp(2.25rem, 5vw, 3.5rem); line-height: 1; font-weight: 650; letter-spacing: -.05em; }
   .app-heading p:last-child { margin-top: .5rem; color: var(--muted-foreground); font-size: .875rem; }
