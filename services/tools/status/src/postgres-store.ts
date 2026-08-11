@@ -51,12 +51,12 @@ export function createPostgresCheckerStore(config: CheckerConfig): CheckerStore 
     async readState() {
       const [row] = await sql<{ value: unknown; revision: number }[]>`
         select value, revision from tools.checker_states where environment = ${config.environment}`;
-      return row ? { value: decodeCheckerStateDocument(row.value), etag: String(row.revision) } : null;
+      return row ? { value: decodeCheckerStateDocument(persistedJsonValue(row.value)), etag: String(row.revision) } : null;
     },
     async readHistory(day) {
       const [row] = await sql<{ value: unknown; revision: number }[]>`
         select value, revision from tools.history_partitions where environment = ${config.environment} and day = ${day}::date`;
-      return row ? { value: decodeHistoryPartitionDocument(row.value), etag: String(row.revision) } : null;
+      return row ? { value: decodeHistoryPartitionDocument(persistedJsonValue(row.value)), etag: String(row.revision) } : null;
     },
     async listHistoryDays() {
       const rows = await sql<{ day: string }[]>`
@@ -83,7 +83,8 @@ export function createPostgresCheckerStore(config: CheckerConfig): CheckerStore 
 type Sql = ReturnType<typeof postgres>;
 
 async function guardedWrite(sql: Sql, environment: string, day: string | null, value: CheckerStateDocument | HistoryPartitionDocument, expectedEtag: string | null) {
-  const json = JSON.stringify(value);
+  // postgres.js accepts domain objects through its supported toJSON contract.
+  const document = { toJSON: () => value };
   return sql.begin(async (tx) => {
     const rows = day === null
       ? await tx<{ revision: number }[]>`select revision from tools.checker_states where environment = ${environment} for update`
@@ -92,15 +93,20 @@ async function guardedWrite(sql: Sql, environment: string, day: string | null, v
     if ((current === undefined ? null : String(current)) !== expectedEtag) throw new CheckerConflictError(day ?? environment);
     const next = (current ?? 0) + 1;
     if (day === null) {
-      await tx`insert into tools.checker_states (environment, revision, value, updated_at) values (${environment}, ${next}, ${json}::jsonb, now())
+      await tx`insert into tools.checker_states (environment, revision, value, updated_at) values (${environment}, ${next}, ${tx.json(document)}, now())
         on conflict (environment) do update set revision = excluded.revision, value = excluded.value, updated_at = excluded.updated_at`;
       await persistFacts(tx, value as CheckerStateDocument);
     } else {
-      await tx`insert into tools.history_partitions (environment, day, revision, value, updated_at) values (${environment}, ${day}::date, ${next}, ${json}::jsonb, now())
+      await tx`insert into tools.history_partitions (environment, day, revision, value, updated_at) values (${environment}, ${day}::date, ${next}, ${tx.json(document)}, now())
         on conflict (environment, day) do update set revision = excluded.revision, value = excluded.value, updated_at = excluded.updated_at`;
     }
     return String(next);
   });
+}
+
+/** Recovers rows written as JSON strings by the former double-serialization bug. */
+export function persistedJsonValue(value: unknown): unknown {
+  return typeof value === "string" ? JSON.parse(value) : value;
 }
 
 async function persistFacts(sql: postgres.TransactionSql, state: CheckerStateDocument) {

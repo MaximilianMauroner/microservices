@@ -60,6 +60,21 @@ describe("initial catalog", () => {
       tower: "heartbeat",
       "home-assistant": "http"
     });
+    expect(
+      Object.fromEntries(
+        catalog.entries.flatMap((entry) =>
+          entry.links
+            .filter(({ url }) => new URL(url).origin === "https://tools.mauroner.net")
+            .map(({ id, url }) => [`${entry.id}:${id}`, new URL(url).pathname])
+        )
+      )
+    ).toEqual({
+      "artifact-publisher:upload": "/publisher",
+      "markdown-share:documents": "/documents",
+      "field-guide-console:console": "/field-guide",
+      "tools-directory:directory": "/",
+      "tools-directory:status": "/status"
+    });
 
     const projected = projectPublicSnapshot(
       catalog,

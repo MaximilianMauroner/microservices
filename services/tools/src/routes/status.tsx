@@ -1,4 +1,5 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useRouter } from "@tanstack/react-router";
+import { useEffect } from "react";
 import { ToolsStatus } from "../../status/ui/tools-status.js";
 import { getPrivateStatusPageData } from "../protected-data.js";
 import { tools } from "../route-handlers.js";
@@ -28,6 +29,15 @@ export const Route = createFileRoute("/status")({
 });
 
 function ToolsStatusRoute() {
+  const router = useRouter();
   const data = Route.useLoaderData();
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      void router.invalidate();
+    }, 60_000);
+    return () => window.clearInterval(interval);
+  }, [router]);
+
   return <ToolsStatus snapshot={data.snapshot} publicOrigin={data.publicOrigin} />;
 }

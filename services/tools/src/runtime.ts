@@ -10,7 +10,7 @@ import {
   createS3JsonBucket,
   WebStorage
 } from "@tools-platform/web";
-import { createHeartbeats, createPostgresHeartbeatRepository, executeChecker, loadMonitorDefinitions } from "@tools-platform/tools-checker";
+import { createHeartbeats, createPostgresHeartbeatRepository, loadMonitorDefinitions } from "@tools-platform/tools-checker";
 import type { PublicSnapshotDocument } from "@tools-platform/domain";
 import {
   reviewerAuthentication,
@@ -111,22 +111,6 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
       temporaryFileRetentionMs: config.artifact.temporaryFileRetentionMs
     });
 
-    const checker = config.readOnly
-      ? undefined
-      : startAlignedScheduler({
-          intervalMs: config.checkerIntervalMs,
-          lease: {
-            repository: createPostgresScheduledTaskLeaseRepository(config.databaseUrl),
-            taskId: `status-checker:${config.checker.environment}`,
-            ownerId: randomUUID(),
-            durationMs: config.checker.runDeadlineMs + 30_000
-          },
-          run: () => executeChecker({ config: config.checker }),
-          logger: {
-            info: (event, fields = {}) => console.info(JSON.stringify({ event, ...fields })),
-            error: (event, fields = {}) => console.error(JSON.stringify({ event, ...fields }))
-          }
-        });
     const cleanup = config.readOnly
       ? undefined
       : startArtifactCleanup(
@@ -176,7 +160,6 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
       stopped = true;
       cleanup?.stop();
       await Promise.all([
-        checker?.close() ?? Promise.resolve(),
         marketDataScheduler?.close() ?? Promise.resolve(),
         cleanup?.wait() ?? Promise.resolve(),
         activityTracker.waitForIdle(),
