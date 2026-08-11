@@ -35,7 +35,7 @@ export function MoneyTrackerPage(props: MoneyTrackerPageData & { view: MoneyTrac
   const cashAccounts = useMemo(() => props.accounts.filter((account) => roleCategory(props.accountRoles, account) === "money"), [props.accountRoles, props.accounts]);
   const allCashMonths = useMemo(() => props.months.map((month) => cashMonth(month, cashAccounts)), [cashAccounts, props.months]);
   const allMonths = useMemo(() => {
-    const financial = moneyFinancialHistory(allCashMonths.map((month) => ({ date: month.date, cashValue: month.money, observedCashAccountCount: month.observedAccounts.length, cashAccountCount: cashAccounts.length })), props.marketData.history);
+    const financial = moneyFinancialHistory(allCashMonths.map((month) => ({ date: month.date, cashValue: month.money, ...cashCoverage(month, cashAccounts) })), props.marketData.history);
     return financial.map((point, index) => ({ ...allCashMonths[index]!, ...point, trend: point.total }));
   }, [allCashMonths, cashAccounts.length, props.marketData.history]);
   const months = useMemo(() => withLinearTrend(period === "all" ? allMonths : allMonths.slice(period === "6m" ? -6 : -12)), [allMonths, period]);
@@ -43,7 +43,7 @@ export function MoneyTrackerPage(props: MoneyTrackerPageData & { view: MoneyTrac
   const latest = months.at(-1);
   const previous = months.at(-2);
   const latestCash = allCashMonths.at(-1);
-  const position = useMemo(() => moneyFinancialPosition({ asOf: props.marketData.asOf, cashValueMinor: Math.round((latestCash?.money ?? 0) * 100), cashObservationDate: latestCash?.date, observedCashAccountCount: latestCash?.observedAccounts.length ?? 0, cashAccountCount: cashAccounts.length, marketData: props.marketData }), [cashAccounts.length, latestCash, props.marketData]);
+  const position = useMemo(() => moneyFinancialPosition({ asOf: props.marketData.asOf, cashValueMinor: Math.round((latestCash?.money ?? 0) * 100), cashObservationDate: latestCash?.date, ...cashCoverage(latestCash, cashAccounts), marketData: props.marketData }), [cashAccounts, latestCash, props.marketData]);
   const latestObservedChange = withChanges(months).at(-1);
   const monthlyChange = latestObservedChange && latestObservedChange.date === latest?.date ? latestObservedChange.change : undefined;
   const trends = useMemo(() => moneyTrackerTrendStats(months, allMonths), [allMonths, months]);
@@ -240,6 +240,10 @@ function cashMonth(month: Month, cashAccounts: readonly string[]): GroupedMonth 
   const observedAccounts = month.observedAccounts.filter((account) => cashAccounts.includes(account));
   const money = Object.values(values).reduce((sum, value) => sum + value, 0);
   return { ...month, values, observedAccounts, total: money, money, stocks: 0, trend: money };
+}
+function cashCoverage(month: Month | undefined, cashAccounts: readonly string[]) {
+  const tracked = cashAccounts.filter((account) => month?.observedAccounts.includes(account) || (month?.values[account] ?? 0) !== 0);
+  return { observedCashAccountCount: tracked.filter((account) => month?.observedAccounts.includes(account)).length, cashAccountCount: tracked.length };
 }
 function roleCategory(roles: Record<string, "cash" | "investment">, account: string): MoneyTrackerAccountCategory { return roles[account] === "investment" ? "stocks" : "money"; }
 function withLinearTrend(months: GroupedMonth[]) {

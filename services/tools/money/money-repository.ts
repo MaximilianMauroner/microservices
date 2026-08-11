@@ -6,6 +6,7 @@ import { moneyDisplayDescription, moneyMerchantName } from "./money-description.
 import {
   MONEY_CATEGORIES,
   SPARKASSE_TRANSFER_TYPES,
+  inferMoneyCategory,
   type MoneyBalanceSnapshotInput,
   type MoneyCategory,
   type MoneyImportFormat,
@@ -26,6 +27,7 @@ export type MoneyImportReceipt = Readonly<{
 }>;
 export type MoneyImportSummary = Omit<MoneyImportReceipt, "replay"> & Readonly<{ bytes: number; actor: string }>;
 export type MoneyImportDeletion = Readonly<{ transactionCount: number; investmentEventCount: number; balanceSnapshotCount: number }>;
+export type MoneyReimportResult = Readonly<{ importCount: number; transactionCount: number; linkedPairCount: number }>;
 
 export type MoneyActivityItem = Readonly<{
   id: string; occurredAt: string; accountName: string; description: string; amountMinor: number; feeMinor: number;
@@ -85,6 +87,7 @@ export type MoneyActivityPage = Readonly<{ items: readonly MoneyActivityItem[]; 
 export interface MoneyRepository {
   existingSourceKeys(sourceKeys: readonly string[]): Promise<ReadonlySet<string>>;
   commitImport(input: MoneyImportCommitInput): Promise<MoneyImportReceipt>;
+  reimportAll(): Promise<MoneyReimportResult>;
   deleteImport(importId: string): Promise<MoneyImportDeletion | undefined>;
   readLedgerSnapshot(): Promise<MoneyLedgerSnapshot>;
   readActivityPage(input: Readonly<{ query: string; flow?: MoneyLedgerTransaction["flowKind"]; reviewOnly?: boolean; offset: number; limit: number }>): Promise<MoneyActivityPage>;
@@ -183,6 +186,30 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
           update tools.money_imports set source_row_count = ${input.rowCount}, inserted_row_count = ${insertedCount}, duplicate_row_count = ${duplicateCount}
           where id = ${importId} returning id, digest, format, filename, bytes, source_row_count, inserted_row_count, duplicate_row_count, committed_at, created_by`;
         return receipt(saved!, false);
+      });
+    },
+
+    reimportAll() {
+      return sql.begin(async (tx) => {
+        const [count] = await tx<{ import_count: string }[]>`select count(*)::text import_count from tools.money_imports`;
+        const rows = await tx<ReimportRow[]>`select id, source_key, flow_kind, source_type, description, mcc
+          from tools.money_transactions where import_id is not null order by id for update`;
+        const linkedGroups = await tx<{ transfer_group_id: string }[]>`select distinct transfer_group_id
+          from tools.money_transactions where import_id is not null and transfer_group_id is not null`;
+        const groupIds = linkedGroups.map((row) => row.transfer_group_id);
+        if (groupIds.length) await tx`update tools.money_transactions set transfer_group_id = null, transfer_disposition = null
+          where transfer_group_id in ${tx(groupIds)}`;
+        await tx`update tools.money_transactions set transfer_disposition = null where import_id is not null and transfer_disposition is not null`;
+        for (const category of MONEY_CATEGORIES) {
+          const ids = rows.filter((row) => inferMoneyCategory(row.flow_kind, row.source_type, row.description, row.mcc ?? undefined) === category).map((row) => row.id);
+          for (const batch of chunks(ids, 1_000)) if (batch.length) await tx`update tools.money_transactions
+            set category = ${category}, category_origin = 'source' where id in ${tx(batch)}`;
+        }
+        for (const batch of chunks(rows.map((row) => row.id), 1_000)) await applyCategoryRules(tx, batch);
+        await linkUnambiguousTransfers(tx);
+        const [linked] = await tx<{ linked_pair_count: string }[]>`select count(distinct transfer_group_id)::text linked_pair_count
+          from tools.money_transactions where transfer_group_id is not null`;
+        return { importCount: integer(count?.import_count ?? "0"), transactionCount: rows.length, linkedPairCount: integer(linked?.linked_pair_count ?? "0") };
       });
     },
 
@@ -488,16 +515,27 @@ type InvestmentTotalsRow = { event_count: string; bought_minor: string; sold_min
 type CategoryRuleRow = { id: string; account_name: string; match_value: string; category: MoneyCategory; updated_at: Date };
 type RealizedEventRow = { account_id: string; occurred_at: Date; source_row: number; source_key: string; event_kind: MoneyInvestmentEventInput["eventKind"]; symbol: string | null; quantity: string | null; base_amount_minor: string; base_fee_minor: string };
 type SnapshotRow = { account_id: string; snapshot_date: string; value_minor: string; currency: string; display_name: string; role: "cash" | "investment"; provider: string };
-type TransferRow = { id: string; account_id: string; local_date: string; amount_minor: string; currency: string };
+type TransferRow = { id: string; account_id: string; occurred_at: Date; local_date: string; description: string; amount_minor: string; currency: string };
 type TransferReviewRow = { linked_pairs: string; unlinked_count: string; unresolved_positive_count: string; unresolved_negative_count: string };
 type TransferReviewItemRow = { id: string; account_id: string; account_name: string; description: string; source_type: string; amount_minor: string; currency: string };
+type ReimportRow = { id: string; source_key: string; flow_kind: MoneyLedgerTransaction["flowKind"]; source_type: string; description: string; mcc: string | null };
 
 function receipt(row: ImportRow, replay: boolean): MoneyImportReceipt { return { id: row.id, digest: row.digest, format: row.format, filename: row.filename, rowCount: row.source_row_count, insertedCount: row.inserted_row_count, duplicateCount: row.duplicate_row_count, committedAt: row.committed_at.toISOString(), replay }; }
 function summary(row: ImportRow): MoneyImportSummary { const { replay: _, ...item } = receipt(row, false); return { ...item, bytes: Number(row.bytes), actor: row.created_by }; }
 function categoryRule(row: CategoryRuleRow): MoneyCategoryRule { return { id: row.id, accountName: row.account_name, description: moneyDisplayDescription(row.match_value), category: row.category, updatedAt: row.updated_at.toISOString() }; }
 function activityItem(row: ActivityRow): MoneyActivityItem {
   const description = moneyDisplayDescription(row.description);
-  return { id: row.id, occurredAt: row.occurred_at.toISOString(), accountName: row.account_name, description, ...(description === row.description ? {} : { rawDescription: row.description }), amountMinor: integer(row.amount_minor), feeMinor: integer(row.fee_minor), taxMinor: integer(row.tax_minor), currency: row.currency, status: row.status, sourceType: row.source_type, flowKind: row.flow_kind, category: row.category, categoryOrigin: row.category_origin, needsTransferReview: row.status === "completed" && row.flow_kind === "transfer" && !row.transfer_group_id && !row.transfer_disposition, ...(row.transfer_group_id ? { transferGroupId: row.transfer_group_id } : {}), ...(row.transfer_disposition ? { transferDisposition: row.transfer_disposition } : {}) };
+  const category = activityCategory(row);
+  return { id: row.id, occurredAt: row.occurred_at.toISOString(), accountName: row.account_name, description, ...(description === row.description ? {} : { rawDescription: row.description }), amountMinor: integer(row.amount_minor), feeMinor: integer(row.fee_minor), taxMinor: integer(row.tax_minor), currency: row.currency, status: row.status, sourceType: row.source_type, flowKind: row.flow_kind, category, categoryOrigin: category === row.category ? row.category_origin : "source", needsTransferReview: row.status === "completed" && row.flow_kind === "transfer" && !row.transfer_group_id && !row.transfer_disposition, ...(row.transfer_group_id ? { transferGroupId: row.transfer_group_id } : {}), ...(row.transfer_disposition ? { transferDisposition: row.transfer_disposition } : {}) };
+}
+function activityCategory(row: ActivityRow): MoneyCategory {
+  if (row.flow_kind === "transfer" && (!row.transfer_disposition || row.transfer_disposition === "internal_transfer" || row.transfer_disposition === "excluded")) return "transfer";
+  if (row.flow_kind === "balance_adjustment") return "adjustment";
+  if (row.category !== "uncategorized") return row.category;
+  if (row.flow_kind === "tax") return "taxes";
+  if (row.flow_kind === "fee") return "fees";
+  if (row.flow_kind === "income" || row.flow_kind === "investment_income") return "income";
+  return row.category;
 }
 
 function spendingAnalytics(monthly: MonthlyRow[], categories: CategoryRow[], categoryMonths: CategoryMonthRow[], merchantMonths: MerchantMonthRow[], categoryActivity: ActivityRow[]): MoneySpendingAnalytics {
@@ -646,7 +684,7 @@ async function refreshInferredTransactions(tx: postgres.TransactionSql, transact
 }
 
 async function linkUnambiguousTransfers(tx: postgres.TransactionSql) {
-  const rows = await tx<TransferRow[]>`select t.id, t.account_id, t.local_date::text, t.amount_minor::text, t.currency
+  const rows = await tx<TransferRow[]>`select t.id, t.account_id, t.occurred_at, t.local_date::text, lower(trim(t.description)) description, t.amount_minor::text, t.currency
     from tools.money_transactions t join tools.money_accounts a on a.id = t.account_id
     where t.status = 'completed' and t.flow_kind = 'transfer' and t.amount_minor <> 0
       and t.transfer_group_id is null and t.transfer_disposition is null and (
@@ -657,29 +695,10 @@ async function linkUnambiguousTransfers(tx: postgres.TransactionSql) {
         ))
         or (a.provider = 'revolut' and t.source_type = 'Card Payment' and lower(trim(t.description)) = 'hype')
       )`;
-  const buckets = new Map<string, TransferRow[]>();
-  for (const row of rows) {
-    const key = `${row.currency}:${-integer(row.amount_minor)}:${Math.floor(day(row.local_date))}`;
-    const bucket = buckets.get(key) ?? [];
-    bucket.push(row);
-    buckets.set(key, bucket);
-  }
-  const candidates = new Map<string, TransferRow[]>();
-  for (const row of rows) {
-    const rowDay = Math.floor(day(row.local_date));
-    const matches = Array.from({ length: 7 }, (_, index) => buckets.get(`${row.currency}:${integer(row.amount_minor)}:${rowDay + index - 3}`) ?? [])
-      .flat().filter((other) => other.account_id !== row.account_id);
-    candidates.set(row.id, matches);
-  }
   const used = new Set<string>();
   const pairs: Array<readonly [string, string]> = [];
-  for (const row of rows) {
-    const matches = candidates.get(row.id) ?? [];
-    const other = matches[0];
-    if (matches.length !== 1 || !other || (candidates.get(other.id)?.length ?? 0) !== 1 || used.has(row.id) || used.has(other.id)) continue;
-    used.add(row.id); used.add(other.id);
-    pairs.push([row.id, other.id]);
-  }
+  collectExactTransferPairs(rows, used, pairs);
+  collectDateTransferPairs(rows, used, pairs);
   for (const pair of pairs) {
     const ids = [...pair].sort();
     const locked = await tx<{ id: string }[]>`select id from tools.money_transactions
@@ -690,6 +709,40 @@ async function linkUnambiguousTransfers(tx: postgres.TransactionSql) {
     const groupId = randomUUID();
     await tx`update tools.money_transactions set transfer_group_id = ${groupId}, transfer_disposition = 'internal_transfer'
       where id in ${tx(ids)} and transfer_group_id is null and transfer_disposition is null`;
+  }
+}
+
+function collectExactTransferPairs(rows: readonly TransferRow[], used: Set<string>, pairs: Array<readonly [string, string]>) {
+  const available = rows.filter((row) => !used.has(row.id));
+  const buckets = transferBuckets(available, (row) => `${row.currency}:${integer(row.amount_minor)}:${row.occurred_at.getTime()}:${row.description}`);
+  collectMutuallyUnique(available, used, pairs, (row) => buckets.get(`${row.currency}:${-integer(row.amount_minor)}:${row.occurred_at.getTime()}:${row.description}`) ?? []);
+}
+
+function collectDateTransferPairs(rows: readonly TransferRow[], used: Set<string>, pairs: Array<readonly [string, string]>) {
+  const available = rows.filter((row) => !used.has(row.id));
+  const buckets = transferBuckets(available, (row) => `${row.currency}:${integer(row.amount_minor)}:${Math.floor(day(row.local_date))}`);
+  collectMutuallyUnique(available, used, pairs, (row) => Array.from({ length: 7 }, (_, index) => buckets.get(`${row.currency}:${-integer(row.amount_minor)}:${Math.floor(day(row.local_date)) + index - 3}`) ?? []).flat());
+}
+
+function transferBuckets(rows: readonly TransferRow[], key: (row: TransferRow) => string) {
+  const buckets = new Map<string, TransferRow[]>();
+  for (const row of rows) {
+    const bucketKey = key(row);
+    const bucket = buckets.get(bucketKey);
+    if (bucket) bucket.push(row);
+    else buckets.set(bucketKey, [row]);
+  }
+  return buckets;
+}
+
+function collectMutuallyUnique(rows: readonly TransferRow[], used: Set<string>, pairs: Array<readonly [string, string]>, candidatesFor: (row: TransferRow) => readonly TransferRow[]) {
+  const candidates = new Map(rows.map((row) => [row.id, candidatesFor(row).filter((other) => other.account_id !== row.account_id)]));
+  for (const row of rows) {
+    const rowMatches = candidates.get(row.id) ?? [];
+    const other = rowMatches[0];
+    if (rowMatches.length !== 1 || !other || (candidates.get(other.id)?.length ?? 0) !== 1 || used.has(row.id) || used.has(other.id)) continue;
+    used.add(row.id); used.add(other.id);
+    pairs.push([row.id, other.id]);
   }
 }
 

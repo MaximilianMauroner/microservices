@@ -51,7 +51,7 @@ describe("Sparkasse XLSX parser", () => {
     const tradeRepublic = parseMoneyImport(workbook({ spendDescription: "BEZAHLUNG EU LAENDER\nbei Trade Republic Berlin" }));
 
     expect(revolut.transactions.find(({ sourceRow }) => sourceRow === 19)?.flowKind).toBe("transfer");
-    expect(tradeRepublic.transactions.find(({ sourceRow }) => sourceRow === 19)).toMatchObject({ flowKind: "transfer", category: "investments" });
+    expect(tradeRepublic.transactions.find(({ sourceRow }) => sourceRow === 19)).toMatchObject({ flowKind: "transfer", category: "transfer" });
   });
 });
 
