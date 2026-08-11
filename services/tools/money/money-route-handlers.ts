@@ -279,9 +279,12 @@ function importError(error: unknown) {
       : error.code === "import_not_found" || error.code === "category_rule_not_found" ? 404 : 400;
     return json({ error: error.code, message: error.message }, status);
   }
+  const databaseError = error as { code?: unknown; constraint_name?: unknown };
   console.error(JSON.stringify({
     event: "money.import_failed",
-    errorType: error instanceof Error ? error.name : "UnknownError"
+    errorType: error instanceof Error ? error.name : "UnknownError",
+    ...(typeof databaseError.code === "string" ? { errorCode: databaseError.code } : {}),
+    ...(typeof databaseError.constraint_name === "string" ? { constraint: databaseError.constraint_name } : {})
   }));
   return json({ error: "import_failed", message: "The statement could not be imported." }, 500);
 }
