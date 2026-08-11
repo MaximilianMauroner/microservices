@@ -78,7 +78,7 @@ describe("money tracker analytics", () => {
     });
   });
 
-  it("does not compact unobserved calendar gaps into monthly statistics", () => {
+  it("uses tracked carried values without compacting calendar months", () => {
     const history = [
       { ...trendPoint("2026-01-01", 100, 100, 0), observed: true },
       { ...trendPoint("2026-02-01", 100, 100, 0), observed: false },
@@ -88,10 +88,11 @@ describe("money tracker analytics", () => {
       { ...trendPoint("2026-06-01", 161.051, 161.051, 0), observed: true }
     ];
     const stats = moneyTrackerTrendStats(history);
-    expect(stats.positiveMonths).toEqual({ positive: 1, total: 1, rate: 100 });
-    expect(stats.averageMonthlyChange).toBeCloseTo(12.1);
+    expect(stats.periodChange?.change).toBeCloseTo(61.051);
+    expect(stats.positiveMonths).toEqual({ positive: 4, total: 5, rate: 80 });
+    expect(stats.averageMonthlyChange).toBeCloseTo(12.2102);
     expect(stats.geometricAverageMonthlyPercent).toBeCloseTo(10);
-    expect(stats.momentum).toBeUndefined();
+    expect(stats.momentum).toBeDefined();
   });
 
 });

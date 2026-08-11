@@ -226,7 +226,14 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
           r.category, r.updated_at
           from tools.money_category_rules r join tools.money_accounts a on a.id = r.account_id
           where r.active and r.match_field = 'description' order by r.updated_at desc, r.id`,
-        sql<ActivityRow[]>`select t.id, t.occurred_at, a.display_name account_name, t.description, t.amount_minor, t.fee_minor, t.tax_minor, t.currency, t.status, t.source_type, t.flow_kind, t.category, t.category_origin, t.transfer_group_id, t.transfer_disposition from tools.money_transactions t join tools.money_accounts a on a.id = t.account_id order by t.occurred_at desc, t.source_row desc limit 50`,
+        sql<ActivityRow[]>`select t.id, t.occurred_at, a.display_name account_name, t.description, t.amount_minor, t.fee_minor, t.tax_minor, t.currency, t.status, t.source_type, t.flow_kind, t.category, t.category_origin, t.transfer_group_id, t.transfer_disposition
+          from tools.money_transactions t join tools.money_accounts a on a.id = t.account_id
+          where t.status = 'completed' and not exists (
+            select 1 from tools.money_transactions undone where undone.status = 'reverted'
+              and undone.account_id = t.account_id and undone.occurred_at = t.occurred_at
+              and undone.source_type = t.source_type and undone.description = t.description
+              and undone.amount_minor = t.amount_minor and undone.currency = t.currency
+          ) order by t.occurred_at desc, t.source_row desc limit 50`,
         sql<{ count: string; reverted_count: string }[]>`select count(*)::text count, count(*) filter (where status = 'reverted')::text reverted_count from tools.money_transactions`,
         sql<TransferReviewRow[]>`select count(distinct transfer_group_id)::text linked_pairs,
           count(*) filter (where transfer_group_id is null)::text unlinked_count,
@@ -352,12 +359,24 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
       const [rows, count] = await Promise.all([
         sql<ActivityRow[]>`select t.id, t.occurred_at, a.display_name account_name, t.description, t.amount_minor, t.fee_minor, t.tax_minor, t.currency, t.status, t.source_type, t.flow_kind, t.category, t.category_origin, t.transfer_group_id, t.transfer_disposition
           from tools.money_transactions t join tools.money_accounts a on a.id = t.account_id
-          where (${input.query} = '' or t.description ilike ${pattern} escape '\\' or a.display_name ilike ${pattern} escape '\\' or t.source_type ilike ${pattern} escape '\\')
+          where t.status = 'completed' and not exists (
+              select 1 from tools.money_transactions undone where undone.status = 'reverted'
+                and undone.account_id = t.account_id and undone.occurred_at = t.occurred_at
+                and undone.source_type = t.source_type and undone.description = t.description
+                and undone.amount_minor = t.amount_minor and undone.currency = t.currency
+            )
+            and (${input.query} = '' or t.description ilike ${pattern} escape '\\' or a.display_name ilike ${pattern} escape '\\' or t.source_type ilike ${pattern} escape '\\')
             and (${input.flow ?? null}::text is null or t.flow_kind = ${input.flow ?? null})
             and (${input.reviewOnly ?? false} = false or (t.status = 'completed' and t.flow_kind = 'transfer' and t.transfer_group_id is null and t.transfer_disposition is null))
           order by t.occurred_at desc, t.source_row desc limit ${input.limit} offset ${input.offset}`,
         sql<{ count: string }[]>`select count(*)::text count from tools.money_transactions t join tools.money_accounts a on a.id = t.account_id
-          where (${input.query} = '' or t.description ilike ${pattern} escape '\\' or a.display_name ilike ${pattern} escape '\\' or t.source_type ilike ${pattern} escape '\\')
+          where t.status = 'completed' and not exists (
+              select 1 from tools.money_transactions undone where undone.status = 'reverted'
+                and undone.account_id = t.account_id and undone.occurred_at = t.occurred_at
+                and undone.source_type = t.source_type and undone.description = t.description
+                and undone.amount_minor = t.amount_minor and undone.currency = t.currency
+            )
+            and (${input.query} = '' or t.description ilike ${pattern} escape '\\' or a.display_name ilike ${pattern} escape '\\' or t.source_type ilike ${pattern} escape '\\')
             and (${input.flow ?? null}::text is null or t.flow_kind = ${input.flow ?? null})
             and (${input.reviewOnly ?? false} = false or (t.status = 'completed' and t.flow_kind = 'transfer' and t.transfer_group_id is null and t.transfer_disposition is null))`
       ]);

@@ -279,6 +279,15 @@ it.skipIf(!repository || !admin)("reports reverted rows beyond the initial activ
   expect(snapshot.revertedCount).toBe(1);
 });
 
+it.skipIf(!repository || !admin)("hides reverted rows and completed rows later undone by an exact reverted export row", async () => {
+  await commitCash(repository!, cash([
+    "Card Payment\tCurrent\t2026-06-12 12:00:00\t2026-06-12 12:00:00\tVoided purchase\t-5\t0\tEUR\tCOMPLETED\t95",
+    "Card Payment\tCurrent\t2026-06-12 12:00:00\t2026-06-12 12:00:00\tVoided purchase\t-5\t0\tEUR\tREVERTED\t"
+  ]), "voided.tsv");
+  const activity = await repository!.readActivityPage({ query: "Voided purchase", offset: 0, limit: 10 });
+  expect(activity).toEqual({ items: [], total: 0, hasMore: false });
+});
+
 it.skipIf(!repository || !admin)("materializes carried balance months for monthly trend intervals", async () => {
   await repository!.addManualBalance({ accountName: "Calendar", date: "2026-01-31", valueMinor: 10_000, currency: "EUR" });
   await repository!.addManualBalance({ accountName: "Calendar", date: "2026-03-31", valueMinor: 12_100, currency: "EUR" });
