@@ -1,13 +1,8 @@
-import directoryIcon from "../dashboard/public/assets/icons/tools-status-directory.png?url";
-import moneyIcon from "../dashboard/public/assets/icons/money-tracker.png?url";
-import publisherIcon from "../dashboard/public/assets/icons/artifact-publisher.png?url";
-import reviewIcon from "../dashboard/public/assets/icons/field-guide-console.png?url";
-
 export const favicons = {
-  directory: directoryIcon,
-  money: moneyIcon,
-  publisher: publisherIcon,
-  review: reviewIcon
+  directory: "/assets/icons/tools-status-directory.png",
+  money: "/assets/icons/money-tracker.png",
+  publisher: "/assets/icons/artifact-publisher.png",
+  review: "/assets/icons/field-guide-console.png"
 } as const;
 
 export function faviconLink(href: string) {

@@ -36,7 +36,7 @@ describe("Revolut cash statement parser", () => {
       ["Dell SAS", undefined, "shopping"], ["PayPal Europe", undefined, "other"],
       ["LÃ¤derach", undefined, "groceries"], ["Mne 95012851winestore", undefined, "groceries"],
       ["910 Denn.s Bio Wien", undefined, "groceries"], ["l'autentico1190", undefined, "dining"],
-      ["Salone Gran Chik", undefined, "health"], ["Mne 95011892sixpol Ele", undefined, "shopping"],
+      ["Salone Gran Chik", undefined, "personal_care"], ["City Barber", undefined, "personal_care"], ["Mne 95011892sixpol Ele", undefined, "shopping"],
       ["Fedexexpres", undefined, "fees"],
       ["Landhausbar Renovas", undefined, "dining"], ["Coca-Cola", undefined, "dining"],
       ["Kvw Service Bozen", undefined, "transport"], ["Salewa Bivac", undefined, "shopping"],
@@ -82,6 +82,17 @@ describe("Revolut cash statement parser", () => {
       endingBalanceMinor: 1_640,
       reconciliationMismatchCount: 0
     })]);
+  });
+
+  it("repairs double-encoded merchant descriptions before storing and categorizing them", () => {
+    const parsed = statement([
+      "Card Payment\tCurrent\t2026-08-09 7:10:00\t2026-08-09 7:11:00\tÃBB\t-3.5\t0\tEUR\tCOMPLETED\t16.5",
+      "Card Payment\tCurrent\t2026-08-09 8:10:00\t2026-08-09 8:11:00\tWaag CafÃ©\t-5\t0\tEUR\tCOMPLETED\t11.5",
+    ]);
+    expect(parsed.transactions.map(({ description, category }) => ({ description, category }))).toEqual([
+      { description: "ÖBB", category: "transport" },
+      { description: "Waag Café", category: "dining" },
+    ]);
   });
 
   it("treats legal-entity migrations as balance adjustments", () => {
@@ -338,6 +349,18 @@ describe("money import route", () => {
     expect(setTransferDisposition).toHaveBeenCalledWith({ transactionId: "00000000-0000-4000-8000-000000000000", disposition: "refund" });
   });
 
+  it("applies one treatment to an explicit multi-row selection", async () => {
+    const setTransferDispositions = vi.fn().mockResolvedValue({ affectedCount: 2 });
+    const transactionIds = [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000002"
+    ];
+    const request = new Request("https://tools.example.test/api/money/transfers", { method: "POST", headers: { Origin: "https://tools.example.test", "Content-Type": "application/json" }, body: JSON.stringify({ transactionIds, disposition: "internal_transfer" }) });
+    const response = await updateMoneyTransfer({ request, params: {}, context: { principal: { subject: "subject", email: "operator@example.test" }, runtime: { publicOrigin: "https://tools.example.test", moneyImports: { setTransferDispositions } } } } as unknown as PlatformRouteInput);
+    expect(response.status).toBe(200);
+    expect(setTransferDispositions).toHaveBeenCalledWith({ transactionIds, disposition: "internal_transfer" });
+  });
+
   it("deletes a category rule through an authenticated same-origin request", async () => {
     const deleteCategoryRule = vi.fn().mockResolvedValue({ affectedCount: 3 });
     const request = new Request("https://tools.example.test/api/money/categories", {
@@ -482,7 +505,7 @@ class MemoryMoneyRepository implements MoneyRepository {
     return {
       imports: [], categoryRules: [], activity: [], transactionCount: 0, revertedCount: 0, transferReview: { linkedPairs: 0, unlinkedCount: 0, unresolvedPositiveCount: 0, unresolvedNegativeCount: 0 }, transferReviewGroups: [], accounts: [], accountLabels: {}, accountRoles: {}, months: [],
       spending: { months: [], categories: [], categoryMonths: [], merchantMonths: [], categoryActivity: [], uncategorizedCount: 0 },
-      investments: { positions: [], totals: { eventCount: 0, boughtMinor: 0, soldMinor: 0, incomeMinor: 0, feesMinor: 0, taxesMinor: 0 }, realized: { positions: [], totals: { saleCount: 0, proceedsMinor: 0, costBasisMinor: 0, gainMinor: 0, unmatchedSaleCount: 0 } } },
+      investments: { positions: [], trades: [], totals: { eventCount: 0, boughtMinor: 0, soldMinor: 0, incomeMinor: 0, feesMinor: 0, taxesMinor: 0 }, realized: { positions: [], totals: { saleCount: 0, proceedsMinor: 0, costBasisMinor: 0, gainMinor: 0, unmatchedSaleCount: 0 } } },
       planning: { ready: true, unresolvedTransferCount: 0, medianMonthlyNetMinor: 0, observedMonthCount: 6, projections: [{ months: 6, changeMinor: 0 }, { months: 12, changeMinor: 0 }] },
       accountLastObserved: {}
     };
@@ -493,7 +516,7 @@ class MemoryMoneyRepository implements MoneyRepository {
   async setTransactionCategory() { return { affectedCount: 1 }; }
   async deleteCategoryRule() { return undefined; }
   async setTransferDisposition() {}
-  async setTransferGroupDisposition() { return { affectedCount: 0 }; }
+  async setTransferDispositions() { return { affectedCount: 0 }; }
   async addManualBalance() {}
 
   async readiness() {}

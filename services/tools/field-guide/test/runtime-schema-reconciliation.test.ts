@@ -15,7 +15,8 @@ describe("runtime schema reconciliation", () => {
     expect(moneyImportConstraintRepairs([
       { name: "money_accounts_provider_check", definition: "CHECK (provider = ANY (ARRAY['revolut'::text, 'sparkasse'::text]))" },
       { name: "money_imports_format_check", definition: "CHECK (format = ANY (ARRAY['revolut_cash_statement_v1'::text, 'sparkasse_cash_statement_v1'::text]))" },
-      { name: "money_transactions_category_check", definition: "CHECK (category = ANY (ARRAY['transfer'::text, 'adjustment'::text]))" },
+      { name: "money_transactions_category_check", definition: "CHECK (category = ANY (ARRAY['transfer'::text, 'adjustment'::text, 'personal_care'::text]))" },
+      { name: "money_category_rules_category_check", definition: "CHECK (category = ANY (ARRAY['personal_care'::text]))" },
     ])).toEqual({ provider: false, format: false, category: false });
   });
 });

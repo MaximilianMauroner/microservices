@@ -3,6 +3,7 @@ import postgres, { type Sql } from "postgres";
 import type { MoneyInvestmentEventKind } from "./money-import-domain.js";
 import type { MoneyDailyPriceBar, MoneyFxRate } from "./money-market-data-domain.js";
 import type { MoneyMarketInstrumentDefinition } from "./money-market-data-catalog.js";
+import { effectiveTransactions } from "./money-repository.js";
 
 export type MoneyMarketSyncTarget = Readonly<{
   seriesId: string;
@@ -110,8 +111,8 @@ export function postgresMoneyMarketDataRepository(sql: Sql): MoneyMarketDataRepo
           from (
             select e.instrument_id, min(t.local_date) - 1 first_required_date
             from tools.money_investment_events e
-            join tools.money_transactions t on t.id = e.transaction_id
-            where e.instrument_id is not null and t.status = 'completed'
+            join (${effectiveTransactions(tx)}) t on t.id = e.transaction_id
+            where e.instrument_id is not null
               and e.event_kind in ('buy', 'sell', 'split', 'position_transfer', 'delivery')
               and e.quantity is not null
             group by e.instrument_id
@@ -175,9 +176,9 @@ export function postgresMoneyMarketDataRepository(sql: Sql): MoneyMarketDataRepo
           t.occurred_at, t.local_date::text local_date, t.source_row, t.source_key, e.event_kind, e.quantity::text quantity,
           t.base_amount_minor::text base_amount_minor, t.base_fee_minor::text base_fee_minor
           from tools.money_investment_events e
-          join tools.money_transactions t on t.id = e.transaction_id
+          join (${effectiveTransactions(sql)}) t on t.id = e.transaction_id
           join tools.money_instruments i on i.id = e.instrument_id
-          where t.status = 'completed' and t.base_currency = 'EUR'
+          where t.base_currency = 'EUR'
           order by t.occurred_at, t.source_row, t.source_key`,
         sql<LatestPriceRow[]>`select i.canonical_key, s.provider_key, p.close::text close, p.price_date::text price_date,
           p.currency, fx.quote_per_euro::text quote_per_euro, s.last_success_at, s.last_error_code
@@ -227,9 +228,9 @@ export function postgresMoneyMarketDataRepository(sql: Sql): MoneyMarketDataRepo
           t.occurred_at, t.local_date::text local_date, t.source_row, t.source_key, e.event_kind, e.quantity::text quantity,
           t.base_amount_minor::text base_amount_minor, t.base_fee_minor::text base_fee_minor
           from tools.money_investment_events e
-          join tools.money_transactions t on t.id = e.transaction_id
+          join (${effectiveTransactions(sql)}) t on t.id = e.transaction_id
           join tools.money_instruments i on i.id = e.instrument_id
-          where t.status = 'completed' and t.base_currency = 'EUR'
+          where t.base_currency = 'EUR'
           order by t.occurred_at, t.source_row, t.source_key`,
         sql<HistoricalPriceRow[]>`select i.canonical_key, p.price_date::text price_date, p.close::text close, p.currency
           from tools.money_daily_prices p

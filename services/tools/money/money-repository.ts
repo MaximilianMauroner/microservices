@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
-import postgres, { type Sql } from "postgres";
+import postgres, { type Sql, type TransactionSql } from "postgres";
 import type { MoneyTrackerSnapshot } from "./money-tracker.js";
 import { fifoRealizedGains, type MoneyRealizedGainAnalytics } from "./money-investment-domain.js";
-import { moneyDisplayDescription, moneyMerchantName } from "./money-description.js";
+import { moneyDisplayDescription, moneyMerchantName, moneyTransferReviewDescription } from "./money-description.js";
+import { moneyMarketInstrumentName } from "./money-market-data-catalog.js";
 import {
   MONEY_CATEGORIES,
   SPARKASSE_TRANSFER_TYPES,
@@ -47,6 +48,7 @@ export type MoneyTransferReviewGroup = Readonly<{
   currency: string;
   count: number;
   totalMinor: number;
+  items: readonly MoneyActivityItem[];
 }>;
 export type MoneyCategoryRule = Readonly<{
   id: string;
@@ -65,6 +67,7 @@ export type MoneySpendingAnalytics = Readonly<{
 }>;
 export type MoneyInvestmentAnalytics = Readonly<{
   positions: readonly Readonly<{ symbol: string; name?: string; assetClass?: string; quantity: string; boughtMinor: number; soldMinor: number; incomeMinor: number; feesMinor: number; taxesMinor: number; currency: string }>[];
+  trades: readonly Readonly<{ date: string; eventKind: "buy" | "sell"; symbol: string; name?: string; quantity: string; amountMinor: number; feeMinor: number; currency: string }>[];
   totals: Readonly<{ eventCount: number; boughtMinor: number; soldMinor: number; incomeMinor: number; feesMinor: number; taxesMinor: number }>;
   realized: MoneyRealizedGainAnalytics;
 }>;
@@ -87,6 +90,39 @@ export type MoneyActivitySortKey = "date" | "description" | "account" | "flow" |
 export type MoneyActivitySortDirection = "asc" | "desc";
 export type MoneyActivityPageInput = Readonly<{ query: string; flow?: MoneyLedgerTransaction["flowKind"]; accountId?: string; category?: MoneyCategory; reviewOnly?: boolean; sort?: MoneyActivitySortKey; direction?: MoneyActivitySortDirection; offset: number; limit: number }>;
 
+// Keep each multi-row statement comfortably below PostgreSQL's 65,535 parameter limit.
+const ACCOUNT_INSERT_CHUNK_SIZE = 1_000;
+const TRANSACTION_INSERT_CHUNK_SIZE = 2_000;
+const RELATED_INSERT_CHUNK_SIZE = 5_000;
+
+// A reverted source row cancels one matching completed row. Ranking prevents a
+// single revert from hiding multiple otherwise-identical legitimate payments.
+export function effectiveTransactions(sql: Sql | TransactionSql) {
+  return sql`select candidate.* from (
+    select ledger.*, row_number() over (
+      partition by ledger.account_id, ledger.occurred_at, ledger.source_type,
+        ledger.description, ledger.amount_minor, ledger.currency, ledger.status
+      order by ledger.source_row, ledger.source_key, ledger.id
+    ) undo_rank
+    from tools.money_transactions ledger
+    where ledger.status in ('completed', 'reverted')
+  ) candidate
+  where candidate.status = 'completed' and not exists (
+    select 1 from (
+      select reverted.*, row_number() over (
+        partition by reverted.account_id, reverted.occurred_at, reverted.source_type,
+          reverted.description, reverted.amount_minor, reverted.currency, reverted.status
+        order by reverted.source_row, reverted.source_key, reverted.id
+      ) undo_rank
+      from tools.money_transactions reverted where reverted.status = 'reverted'
+    ) undone
+    where undone.account_id = candidate.account_id and undone.occurred_at = candidate.occurred_at
+      and undone.source_type = candidate.source_type and undone.description = candidate.description
+      and undone.amount_minor = candidate.amount_minor and undone.currency = candidate.currency
+      and undone.undo_rank = candidate.undo_rank
+  )`;
+}
+
 export interface MoneyRepository {
   existingSourceKeys(sourceKeys: readonly string[]): Promise<ReadonlySet<string>>;
   commitImport(input: MoneyImportCommitInput): Promise<MoneyImportReceipt>;
@@ -97,7 +133,7 @@ export interface MoneyRepository {
   setTransactionCategory(input: Readonly<{ transactionId: string; category: MoneyCategory; actor: string; createRule: boolean }>): Promise<Readonly<{ affectedCount: number }>>;
   deleteCategoryRule(ruleId: string): Promise<Readonly<{ affectedCount: number }> | undefined>;
   setTransferDisposition(input: Readonly<{ transactionId: string; disposition: MoneyTransferDisposition }>): Promise<void>;
-  setTransferGroupDisposition(input: Readonly<{ transactionId: string; disposition: MoneyTransferDisposition }>): Promise<Readonly<{ affectedCount: number }>>;
+  setTransferDispositions(input: Readonly<{ transactionIds: readonly string[]; disposition: MoneyTransferDisposition }>): Promise<Readonly<{ affectedCount: number }>>;
   addManualBalance(input: Readonly<({ accountId: string } | { accountName: string }) & { date: string; valueMinor: number; currency: string }>): Promise<void>;
   readiness(): Promise<void>;
   close(): Promise<void>;
@@ -142,17 +178,19 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
         }
 
         const accountIds = new Map<string, string>();
-        for (const account of uniqueAccounts(input.transactions)) {
-          const [saved] = await tx<{ id: string }[]>`
-            insert into tools.money_accounts (id, provider, external_ref, display_name, role, currency, created_at, updated_at)
-            values (${randomUUID()}, ${account.provider}, ${account.externalRef}, ${account.name}, ${account.role}, ${account.currency}, ${committedAt}, ${committedAt})
-            on conflict (provider, external_ref) do update set display_name = excluded.display_name, role = excluded.role, currency = excluded.currency, updated_at = excluded.updated_at returning id`;
-          accountIds.set(account.externalRef, saved!.id);
+        for (const batch of chunks(uniqueAccounts(input.transactions), ACCOUNT_INSERT_CHUNK_SIZE)) {
+          const saved = await tx<{ id: string; external_ref: string }[]>`
+            insert into tools.money_accounts ${tx(batch.map((account) => ({ id: randomUUID(), provider: account.provider,
+              external_ref: account.externalRef, display_name: account.name, role: account.role, currency: account.currency,
+              created_at: committedAt, updated_at: committedAt })))}
+            on conflict (provider, external_ref) do update set display_name = excluded.display_name, role = excluded.role,
+              currency = excluded.currency, updated_at = excluded.updated_at returning id, external_ref`;
+          for (const account of saved) accountIds.set(account.external_ref, account.id);
         }
 
         const transactionIds = new Map<string, string>();
         let insertedCount = 0;
-        for (const batch of chunks(input.transactions, 500)) {
+        for (const batch of chunks(input.transactions, TRANSACTION_INSERT_CHUNK_SIZE)) {
           const values = batch.map((item) => ({
             id: randomUUID(), account_id: requiredAccountId(accountIds, item.accountExternalRef), import_id: importId,
             source_key: item.sourceKey, source_row: item.sourceRow, occurred_at: item.occurredAt, completed_at: item.completedAt ?? null,
@@ -174,14 +212,14 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
             name: event.name ?? null, asset_class: event.assetClass ?? null, quantity: event.quantity ?? null, unit_price: event.unitPrice ?? null,
             price_currency: event.priceCurrency ?? null, fx_rate: event.fxRate ?? null }] : [];
         });
-        for (const batch of chunks(eventValues, 500)) if (batch.length) await tx`insert into tools.money_investment_events ${tx(batch)} on conflict (transaction_id) do nothing`;
+        for (const batch of chunks(eventValues, RELATED_INSERT_CHUNK_SIZE)) if (batch.length) await tx`insert into tools.money_investment_events ${tx(batch)} on conflict (transaction_id) do nothing`;
 
-        for (const batch of chunks(input.balanceSnapshots, 500)) {
+        for (const batch of chunks(input.balanceSnapshots, RELATED_INSERT_CHUNK_SIZE)) {
           const values = batch.map((item) => ({ account_id: requiredAccountId(accountIds, item.accountExternalRef), snapshot_date: item.date,
             observed_at: item.observedAt, value_minor: item.valueMinor, currency: item.currency, origin: "import", import_id: importId }));
           if (values.length) await tx`insert into tools.money_balance_snapshots ${tx(values)} on conflict (account_id, snapshot_date, origin) do update set observed_at = excluded.observed_at, value_minor = excluded.value_minor, currency = excluded.currency, import_id = excluded.import_id where excluded.observed_at >= tools.money_balance_snapshots.observed_at`;
         }
-        await refreshInferredTransactions(tx, input.transactions);
+        await refreshInferredTransactions(tx, input.transactions.filter((transaction) => !transactionIds.has(transaction.sourceKey)));
         await applyCategoryRules(tx, [...transactionIds.values()]);
         await linkUnambiguousTransfers(tx);
         const duplicateCount = input.rowCount - insertedCount;
@@ -252,7 +290,7 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
     },
 
     async readLedgerSnapshot() {
-      const [imports, categoryRules, activity, count, transfers, transferReviewItems, monthly, categories, categoryMonths, merchantMonths, categoryActivity, events, investmentTotals, realizedEvents, snapshotRows] = await Promise.all([
+      const [imports, categoryRules, activity, count, transfers, transferReviewItems, monthly, categories, categoryMonths, merchantMonths, categoryActivity, events, investmentTotals, tradeMarkers, realizedEvents, snapshotRows] = await Promise.all([
         sql<ImportRow[]>`select id, digest, format, filename, bytes, source_row_count, inserted_row_count, duplicate_row_count, committed_at, created_by from tools.money_imports order by committed_at desc limit 50`,
         sql<CategoryRuleRow[]>`select r.id, a.display_name account_name,
           coalesce((select t.description from tools.money_transactions t
@@ -262,25 +300,21 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
           from tools.money_category_rules r join tools.money_accounts a on a.id = r.account_id
           where r.active and r.match_field = 'description' order by r.updated_at desc, r.id`,
         sql<ActivityRow[]>`select t.id, t.occurred_at, t.account_id::text account_id, a.display_name account_name, t.description, t.amount_minor, t.fee_minor, t.tax_minor, t.currency, t.status, t.source_type, t.flow_kind, t.category, t.category_origin, t.transfer_group_id, t.transfer_disposition
-          from tools.money_transactions t join tools.money_accounts a on a.id = t.account_id
-          where t.status = 'completed' and not exists (
-            select 1 from tools.money_transactions undone where undone.status = 'reverted'
-              and undone.account_id = t.account_id and undone.occurred_at = t.occurred_at
-              and undone.source_type = t.source_type and undone.description = t.description
-              and undone.amount_minor = t.amount_minor and undone.currency = t.currency
-          ) order by t.occurred_at desc, t.source_row desc limit 50`,
+          from (${effectiveTransactions(sql)}) t join tools.money_accounts a on a.id = t.account_id
+          order by t.occurred_at desc, t.source_row desc limit 50`,
         sql<{ count: string; reverted_count: string }[]>`select count(*)::text count, count(*) filter (where status = 'reverted')::text reverted_count from tools.money_transactions`,
         sql<TransferReviewRow[]>`select count(distinct transfer_group_id)::text linked_pairs,
           count(*) filter (where transfer_group_id is null)::text unlinked_count,
           count(*) filter (where transfer_group_id is null and transfer_disposition is null and amount_minor > 0)::text unresolved_positive_count,
           count(*) filter (where transfer_group_id is null and transfer_disposition is null and amount_minor < 0)::text unresolved_negative_count
-          from tools.money_transactions where status = 'completed' and flow_kind = 'transfer'`,
-        sql<TransferReviewItemRow[]>`select t.id, t.account_id::text account_id, a.display_name account_name,
-          t.description, t.source_type, t.amount_minor::text amount_minor, t.currency
-          from tools.money_transactions t join tools.money_accounts a on a.id = t.account_id
-          where t.status = 'completed' and t.flow_kind = 'transfer'
+          from (${effectiveTransactions(sql)}) effective where flow_kind = 'transfer'`,
+        sql<ActivityRow[]>`select t.id, t.occurred_at, t.account_id::text account_id, a.display_name account_name,
+          t.description, t.amount_minor, t.fee_minor, t.tax_minor, t.currency, t.status, t.source_type,
+          t.flow_kind, t.category, t.category_origin, t.transfer_group_id, t.transfer_disposition
+          from (${effectiveTransactions(sql)}) t join tools.money_accounts a on a.id = t.account_id
+          where t.flow_kind = 'transfer'
             and t.transfer_group_id is null and t.transfer_disposition is null
-          order by a.display_name, t.description, t.source_type, sign(t.amount_minor), t.id`,
+          order by a.display_name, t.occurred_at desc, t.source_row desc, t.id desc`,
         sql<MonthlyRow[]>`with classified as (
           select local_date, base_amount_minor, base_fee_minor, base_tax_minor, flow_kind,
             case
@@ -288,8 +322,8 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
               when flow_kind = 'transfer' then coalesce(transfer_disposition, 'unreviewed')
               else flow_kind
             end effective_flow
-          from tools.money_transactions
-          where status = 'completed' and base_currency = 'EUR' and local_date < date_trunc('month', current_date)
+          from (${effectiveTransactions(sql)}) effective
+          where base_currency = 'EUR' and local_date < date_trunc('month', current_date)
         ), contributors as (
           select * from classified where
             (effective_flow in ('spend', 'refund', 'income', 'investment_income') and base_amount_minor <> 0)
@@ -318,14 +352,14 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
           select category, base_amount_minor, flow_kind, case
             when flow_kind = 'transfer' and transfer_group_id is not null then 'internal_transfer'
             when flow_kind = 'transfer' then coalesce(transfer_disposition, 'unreviewed') else flow_kind end effective_flow
-          from tools.money_transactions where status = 'completed' and base_currency = 'EUR'
+          from (${effectiveTransactions(sql)}) effective where base_currency = 'EUR'
         ) select category, coalesce(sum(case when flow_kind = 'transfer' then -base_amount_minor else abs(base_amount_minor) end), 0)::text amount_minor, count(*)::text count from classified where effective_flow = 'spend' group by category order by sum(case when flow_kind = 'transfer' then -base_amount_minor else abs(base_amount_minor) end) desc`,
         sql<CategoryMonthRow[]>`with classified as (
           select local_date, category, base_amount_minor, flow_kind, case
             when flow_kind = 'transfer' and transfer_group_id is not null then 'internal_transfer'
             when flow_kind = 'transfer' then coalesce(transfer_disposition, 'unreviewed') else flow_kind end effective_flow
-          from tools.money_transactions
-          where status = 'completed' and base_currency = 'EUR' and local_date < date_trunc('month', current_date)
+          from (${effectiveTransactions(sql)}) effective
+          where base_currency = 'EUR' and local_date < date_trunc('month', current_date)
         ) select to_char(date_trunc('month', local_date), 'YYYY-MM') as month, category,
           sum(case when flow_kind = 'transfer' then -base_amount_minor else abs(base_amount_minor) end)::text amount_minor,
           count(*)::text count from classified where effective_flow = 'spend'
@@ -334,8 +368,8 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
           select local_date, category, description, source_type, base_amount_minor, flow_kind, case
             when flow_kind = 'transfer' and transfer_group_id is not null then 'internal_transfer'
             when flow_kind = 'transfer' then coalesce(transfer_disposition, 'unreviewed') else flow_kind end effective_flow
-          from tools.money_transactions
-          where status = 'completed' and base_currency = 'EUR' and local_date < date_trunc('month', current_date)
+          from (${effectiveTransactions(sql)}) effective
+          where base_currency = 'EUR' and local_date < date_trunc('month', current_date)
         ) select to_char(date_trunc('month', local_date), 'YYYY-MM') as month, category, source_type,
           coalesce(nullif(trim(description), ''), 'Unknown merchant') description,
           sum(case when flow_kind = 'transfer' then -base_amount_minor else abs(base_amount_minor) end)::text amount_minor,
@@ -345,8 +379,8 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
         sql<ActivityRow[]>`select id, occurred_at, account_name, description, amount_minor, fee_minor, tax_minor, currency, status, source_type, flow_kind, category, category_origin, transfer_group_id, transfer_disposition from (
           select t.id, t.occurred_at, a.display_name account_name, t.description, t.amount_minor, t.fee_minor, t.tax_minor, t.currency, t.status, t.source_type, t.flow_kind, t.category, t.category_origin, t.transfer_group_id, t.transfer_disposition,
             row_number() over (partition by t.category order by t.occurred_at desc, t.source_row desc) category_rank
-          from tools.money_transactions t join tools.money_accounts a on a.id = t.account_id
-          where t.status = 'completed' and t.base_currency = 'EUR'
+          from (${effectiveTransactions(sql)}) t join tools.money_accounts a on a.id = t.account_id
+          where t.base_currency = 'EUR'
             and t.local_date < date_trunc('month', current_date) and (
             t.flow_kind = 'spend' or (t.flow_kind = 'transfer' and t.transfer_group_id is null and t.transfer_disposition = 'spend')
           )
@@ -360,20 +394,27 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
           coalesce(sum(t.base_amount_minor) filter (where e.event_kind = 'dividend'), 0)::text income_minor,
           coalesce(sum(t.base_fee_minor), 0)::text fees_minor, coalesce(sum(t.base_tax_minor), 0)::text taxes_minor,
           count(*)::text event_count, t.base_currency currency
-          from tools.money_investment_events e join tools.money_transactions t on t.id = e.transaction_id
-          where t.status = 'completed' and t.base_currency = 'EUR' and e.symbol is not null and trim(e.symbol) <> ''
+          from tools.money_investment_events e join (${effectiveTransactions(sql)}) t on t.id = e.transaction_id
+          where t.base_currency = 'EUR' and e.symbol is not null and trim(e.symbol) <> ''
           group by upper(trim(e.symbol)), t.base_currency order by sum(abs(t.base_amount_minor)) desc nulls last`,
         sql<InvestmentTotalsRow[]>`select count(*)::text event_count,
           coalesce(sum(abs(t.base_amount_minor)) filter (where e.event_kind = 'buy'), 0)::text bought_minor,
           coalesce(sum(abs(t.base_amount_minor)) filter (where e.event_kind = 'sell'), 0)::text sold_minor,
           coalesce(sum(t.base_amount_minor) filter (where e.event_kind = 'dividend'), 0)::text income_minor,
           coalesce(sum(t.base_fee_minor), 0)::text fees_minor, coalesce(sum(t.base_tax_minor), 0)::text taxes_minor
-          from tools.money_investment_events e join tools.money_transactions t on t.id = e.transaction_id
-          where t.status = 'completed' and t.base_currency = 'EUR'`,
+          from tools.money_investment_events e join (${effectiveTransactions(sql)}) t on t.id = e.transaction_id
+          where t.base_currency = 'EUR'`,
+        sql<TradeMarkerRow[]>`select t.local_date::text local_date, e.event_kind, upper(trim(e.symbol)) symbol,
+          e.name, e.quantity::text quantity, t.base_amount_minor::text base_amount_minor,
+          t.base_fee_minor::text base_fee_minor, t.base_currency currency
+          from tools.money_investment_events e join (${effectiveTransactions(sql)}) t on t.id = e.transaction_id
+          where t.base_currency = 'EUR' and e.event_kind in ('buy', 'sell')
+            and e.symbol is not null and trim(e.symbol) <> '' and e.quantity is not null
+          order by t.local_date, t.occurred_at, t.source_row, t.source_key`,
         sql<RealizedEventRow[]>`select t.account_id::text account_id, t.occurred_at, t.source_row, t.source_key, e.event_kind, e.symbol, e.quantity::text quantity,
           t.base_amount_minor::text base_amount_minor, t.base_fee_minor::text base_fee_minor
-          from tools.money_investment_events e join tools.money_transactions t on t.id = e.transaction_id
-          where t.status = 'completed' and t.base_currency = 'EUR'
+          from tools.money_investment_events e join (${effectiveTransactions(sql)}) t on t.id = e.transaction_id
+          where t.base_currency = 'EUR'
           order by t.occurred_at, t.source_row, t.source_key`,
         sql<SnapshotRow[]>`select account_id, snapshot_date, value_minor, currency, display_name, role, provider from (
           select distinct on (s.account_id, s.snapshot_date) s.account_id::text account_id, s.snapshot_date::text snapshot_date, s.value_minor::text value_minor, s.currency, a.display_name, a.role, a.provider
@@ -392,7 +433,7 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
       return {
         imports: imports.map(summary), categoryRules: categoryRules.map(categoryRule), activity: activity.map(activityItem), transactionCount: Number(count[0]?.count ?? 0), revertedCount: Number(count[0]?.reverted_count ?? 0),
         transferReview: transferReview(transfers[0]), transferReviewGroups: transferReviewGroups(transferReviewItems),
-        spending, investments: investmentAnalytics(events, investmentTotals[0], realizedEvents), planning: planningAnalytics(spending.months, transferReview(transfers[0])), ...balanceSnapshot(snapshotRows)
+        spending, investments: investmentAnalytics(events, investmentTotals[0], tradeMarkers, realizedEvents), planning: planningAnalytics(spending.months, transferReview(transfers[0])), ...balanceSnapshot(snapshotRows)
       };
     },
 
@@ -409,27 +450,15 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
       const direction = input.direction === "asc" ? sql`asc` : sql`desc`;
       const [rows, count] = await Promise.all([
         sql<ActivityRow[]>`select t.id, t.occurred_at, t.account_id::text account_id, ${accountName} account_name, t.description, t.amount_minor, t.fee_minor, t.tax_minor, t.currency, t.status, t.source_type, t.flow_kind, t.category, t.category_origin, t.transfer_group_id, t.transfer_disposition
-          from tools.money_transactions t join tools.money_accounts a on a.id = t.account_id
-          where t.status = 'completed' and not exists (
-              select 1 from tools.money_transactions undone where undone.status = 'reverted'
-                and undone.account_id = t.account_id and undone.occurred_at = t.occurred_at
-                and undone.source_type = t.source_type and undone.description = t.description
-                and undone.amount_minor = t.amount_minor and undone.currency = t.currency
-            )
-            and (${input.query} = '' or t.description ilike ${pattern} escape '\\' or ${accountName} ilike ${pattern} escape '\\' or t.source_type ilike ${pattern} escape '\\')
+          from (${effectiveTransactions(sql)}) t join tools.money_accounts a on a.id = t.account_id
+          where (${input.query} = '' or t.description ilike ${pattern} escape '\\' or ${accountName} ilike ${pattern} escape '\\' or t.source_type ilike ${pattern} escape '\\')
             and (${input.flow ?? null}::text is null or t.flow_kind = ${input.flow ?? null})
             and (${input.accountId ?? null}::uuid is null or t.account_id = ${input.accountId ?? null}::uuid)
             and (${input.category ?? null}::text is null or t.category = ${input.category ?? null})
             and (${input.reviewOnly ?? false} = false or (t.status = 'completed' and t.flow_kind = 'transfer' and t.transfer_group_id is null and t.transfer_disposition is null))
           order by ${order} ${direction}, t.occurred_at desc, t.source_row desc, t.id desc limit ${input.limit} offset ${input.offset}`,
-        sql<{ count: string }[]>`select count(*)::text count from tools.money_transactions t join tools.money_accounts a on a.id = t.account_id
-          where t.status = 'completed' and not exists (
-              select 1 from tools.money_transactions undone where undone.status = 'reverted'
-                and undone.account_id = t.account_id and undone.occurred_at = t.occurred_at
-                and undone.source_type = t.source_type and undone.description = t.description
-                and undone.amount_minor = t.amount_minor and undone.currency = t.currency
-            )
-            and (${input.query} = '' or t.description ilike ${pattern} escape '\\' or ${accountName} ilike ${pattern} escape '\\' or t.source_type ilike ${pattern} escape '\\')
+        sql<{ count: string }[]>`select count(*)::text count from (${effectiveTransactions(sql)}) t join tools.money_accounts a on a.id = t.account_id
+          where (${input.query} = '' or t.description ilike ${pattern} escape '\\' or ${accountName} ilike ${pattern} escape '\\' or t.source_type ilike ${pattern} escape '\\')
             and (${input.flow ?? null}::text is null or t.flow_kind = ${input.flow ?? null})
             and (${input.accountId ?? null}::uuid is null or t.account_id = ${input.accountId ?? null}::uuid)
             and (${input.category ?? null}::text is null or t.category = ${input.category ?? null})
@@ -496,23 +525,11 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
       });
     },
 
-    setTransferGroupDisposition(input) {
-      return sql.begin(async (tx) => {
-        const [representative] = await tx<{ account_id: string; description: string; source_type: string; amount_minor: string; currency: string }[]>`
-          select account_id::text account_id, description, source_type, amount_minor::text amount_minor, currency
-          from tools.money_transactions
-          where id = ${input.transactionId} and status = 'completed' and flow_kind = 'transfer'
-            and transfer_group_id is null and transfer_disposition is null
-          for update`;
-        if (!representative) throw new Error("Reviewable money transfer group not found.");
-        const direction = integer(representative.amount_minor) > 0 ? 1 : -1;
-        const updated = await tx<{ id: string }[]>`update tools.money_transactions set transfer_disposition = ${input.disposition}
-          where account_id = ${representative.account_id} and description = ${representative.description}
-            and source_type = ${representative.source_type} and currency = ${representative.currency}
-            and sign(amount_minor) = ${direction} and status = 'completed' and flow_kind = 'transfer'
-            and transfer_group_id is null and transfer_disposition is null returning id`;
-        return { affectedCount: updated.length };
-      });
+    async setTransferDispositions(input) {
+      const updated = await sql<{ id: string }[]>`update tools.money_transactions set transfer_disposition = ${input.disposition}
+        where id in ${sql(input.transactionIds)} and status = 'completed' and flow_kind = 'transfer'
+          and transfer_group_id is null and transfer_disposition is null returning id`;
+      return { affectedCount: updated.length };
     },
 
     addManualBalance(input) {
@@ -542,10 +559,10 @@ type InvestmentRow = { symbol: string | null; name: string | null; asset_class: 
 type InvestmentTotalsRow = { event_count: string; bought_minor: string; sold_minor: string; income_minor: string; fees_minor: string; taxes_minor: string };
 type CategoryRuleRow = { id: string; account_name: string; match_value: string; category: MoneyCategory; updated_at: Date };
 type RealizedEventRow = { account_id: string; occurred_at: Date; source_row: number; source_key: string; event_kind: MoneyInvestmentEventInput["eventKind"]; symbol: string | null; quantity: string | null; base_amount_minor: string; base_fee_minor: string };
+type TradeMarkerRow = { local_date: string; event_kind: "buy" | "sell"; symbol: string; name: string | null; quantity: string; base_amount_minor: string; base_fee_minor: string; currency: string };
 type SnapshotRow = { account_id: string; snapshot_date: string | null; value_minor: string | null; currency: string; display_name: string; role: "cash" | "investment"; provider: string };
 type TransferRow = { id: string; account_id: string; occurred_at: Date; local_date: string; description: string; amount_minor: string; currency: string };
 type TransferReviewRow = { linked_pairs: string; unlinked_count: string; unresolved_positive_count: string; unresolved_negative_count: string };
-type TransferReviewItemRow = { id: string; account_id: string; account_name: string; description: string; source_type: string; amount_minor: string; currency: string };
 type ReimportRow = { id: string; source_key: string; flow_kind: MoneyLedgerTransaction["flowKind"]; source_type: string; description: string; mcc: string | null };
 
 function receipt(row: ImportRow, replay: boolean): MoneyImportReceipt { return { id: row.id, digest: row.digest, format: row.format, filename: row.filename, rowCount: row.source_row_count, insertedCount: row.inserted_row_count, duplicateCount: row.duplicate_row_count, committedAt: row.committed_at.toISOString(), replay }; }
@@ -593,11 +610,12 @@ function aggregateMerchantMonths(rows: MerchantMonthRow[]): MoneySpendingAnalyti
 
 function categoryTotal(row: CategoryRow) { return { category: row.category, amountMinor: integer(row.amount_minor), count: integer(row.count) }; }
 
-function investmentAnalytics(rows: InvestmentRow[], totals: InvestmentTotalsRow | undefined, realizedEvents: RealizedEventRow[]): MoneyInvestmentAnalytics {
-  const items = rows.map((row) => ({ symbol: row.symbol ?? "—", ...(row.name ? { name: row.name } : {}), ...(row.asset_class ? { assetClass: row.asset_class } : {}),
+function investmentAnalytics(rows: InvestmentRow[], totals: InvestmentTotalsRow | undefined, tradeMarkers: TradeMarkerRow[], realizedEvents: RealizedEventRow[]): MoneyInvestmentAnalytics {
+  const items = rows.map((row) => { const symbol = row.symbol ?? "—"; const name = moneyMarketInstrumentName(symbol, row.name); return ({ symbol, ...(name ? { name } : {}), ...(row.asset_class ? { assetClass: row.asset_class } : {}),
     quantity: normalizeDatabaseDecimal(row.quantity), boughtMinor: integer(row.bought_minor), soldMinor: integer(row.sold_minor),
-    incomeMinor: integer(row.income_minor), feesMinor: integer(row.fees_minor), taxesMinor: integer(row.taxes_minor), currency: row.currency }));
-  return { positions: items, totals: { eventCount: integer(totals?.event_count ?? "0"), boughtMinor: integer(totals?.bought_minor ?? "0"), soldMinor: integer(totals?.sold_minor ?? "0"), incomeMinor: integer(totals?.income_minor ?? "0"), feesMinor: integer(totals?.fees_minor ?? "0"), taxesMinor: integer(totals?.taxes_minor ?? "0") },
+    incomeMinor: integer(row.income_minor), feesMinor: integer(row.fees_minor), taxesMinor: integer(row.taxes_minor), currency: row.currency }); });
+  const trades = tradeMarkers.map((event) => { const name = moneyMarketInstrumentName(event.symbol, event.name); return ({ date: event.local_date, eventKind: event.event_kind, symbol: event.symbol, ...(name ? { name } : {}), quantity: normalizeDatabaseDecimal(event.quantity), amountMinor: Math.abs(integer(event.base_amount_minor)), feeMinor: integer(event.base_fee_minor), currency: event.currency }); });
+  return { positions: items, trades, totals: { eventCount: integer(totals?.event_count ?? "0"), boughtMinor: integer(totals?.bought_minor ?? "0"), soldMinor: integer(totals?.sold_minor ?? "0"), incomeMinor: integer(totals?.income_minor ?? "0"), feesMinor: integer(totals?.fees_minor ?? "0"), taxesMinor: integer(totals?.taxes_minor ?? "0") },
     realized: fifoRealizedGains(realizedEvents.map((event) => ({ accountKey: event.account_id, occurredAt: event.occurred_at.toISOString(), sourceOrder: `${String(event.source_row).padStart(10, "0")}\0${event.source_key}`, eventKind: event.event_kind, ...(event.symbol ? { symbol: event.symbol.trim().toLocaleUpperCase("en-GB") } : {}), ...(event.quantity ? { quantity: event.quantity } : {}), baseAmountMinor: integer(event.base_amount_minor), baseFeeMinor: integer(event.base_fee_minor) }))) };
 }
 
@@ -652,22 +670,25 @@ function transferReview(row?: TransferReviewRow): MoneyLedgerSnapshot["transferR
     unresolvedPositiveCount: Number(row?.unresolved_positive_count ?? 0), unresolvedNegativeCount: Number(row?.unresolved_negative_count ?? 0) };
 }
 
-function transferReviewGroups(rows: TransferReviewItemRow[]): MoneyTransferReviewGroup[] {
+function transferReviewGroups(rows: ActivityRow[]): MoneyTransferReviewGroup[] {
   const groups = new Map<string, MoneyTransferReviewGroup>();
   for (const row of rows) {
     const amountMinor = integer(row.amount_minor);
     const direction = amountMinor > 0 ? "inflow" : "outflow";
-    const key = `${row.account_id}\0${row.description}\0${row.source_type}\0${direction}\0${row.currency}`;
+    const description = moneyTransferReviewDescription(row.description, row.source_type);
+    const key = `${row.account_id}\0${description.toLocaleLowerCase("en-GB")}\0${row.source_type}\0${direction}\0${row.currency}`;
+    const item = activityItem(row);
     const current = groups.get(key);
-    groups.set(key, current ? { ...current, count: current.count + 1, totalMinor: current.totalMinor + amountMinor } : {
+    groups.set(key, current ? { ...current, count: current.count + 1, totalMinor: current.totalMinor + amountMinor, items: [...current.items, item] } : {
       representativeId: row.id,
       accountName: row.account_name,
-      description: moneyDisplayDescription(row.description),
+      description,
       sourceType: row.source_type,
       direction,
       currency: row.currency,
       count: 1,
-      totalMinor: amountMinor
+      totalMinor: amountMinor,
+      items: [item]
     });
   }
   return [...groups.values()].sort((left, right) => right.count - left.count || Math.abs(right.totalMinor) - Math.abs(left.totalMinor) || left.description.localeCompare(right.description));
@@ -723,8 +744,8 @@ async function linkUnambiguousTransfers(tx: postgres.TransactionSql) {
     where status = 'completed' and flow_kind = 'transfer' and source_type = 'Exchange'
       and transfer_group_id is null and transfer_disposition is null`;
   const rows = await tx<TransferRow[]>`select t.id, t.account_id, t.occurred_at, t.local_date::text, lower(trim(t.description)) description, t.amount_minor::text, t.currency
-    from tools.money_transactions t join tools.money_accounts a on a.id = t.account_id
-    where t.status = 'completed' and t.flow_kind = 'transfer' and t.amount_minor <> 0
+    from (${effectiveTransactions(tx)}) t join tools.money_accounts a on a.id = t.account_id
+    where t.flow_kind = 'transfer' and t.amount_minor <> 0
       and t.transfer_group_id is null and t.transfer_disposition is null and (
         t.source_type in ('Transfer', 'Topup', 'CASH TOP-UP', 'CASH WITHDRAWAL', 'CUSTOMER_INBOUND', 'CUSTOMER_INPAYMENT')
         or t.source_type like 'TRANSFER%'
@@ -738,16 +759,29 @@ async function linkUnambiguousTransfers(tx: postgres.TransactionSql) {
   const pairs: Array<readonly [string, string]> = [];
   collectExactTransferPairs(rows, used, pairs);
   collectDateTransferPairs(rows, used, pairs);
-  for (const pair of pairs) {
-    const ids = [...pair].sort();
-    const locked = await tx<{ id: string }[]>`select id from tools.money_transactions
-      where id in ${tx(ids)} and status = 'completed' and flow_kind = 'transfer'
-        and transfer_group_id is null and transfer_disposition is null
-      order by id for update`;
-    if (locked.length !== 2) continue;
+  if (!pairs.length) return;
+  const candidateIds = pairs.flatMap((pair) => pair).sort();
+  const lockedIds = new Set<string>();
+  for (const batch of chunks(candidateIds, RELATED_INSERT_CHUNK_SIZE)) {
+    const locked = await tx<{ id: string }[]>`select raw.id from tools.money_transactions raw
+      join (${effectiveTransactions(tx)}) effective on effective.id = raw.id
+      where raw.id in ${tx(batch)} and raw.flow_kind = 'transfer'
+        and raw.transfer_group_id is null and raw.transfer_disposition is null
+      order by raw.id for update of raw`;
+    for (const row of locked) lockedIds.add(row.id);
+  }
+  const assignments = pairs.flatMap((pair) => {
+    if (!pair.every((id) => lockedIds.has(id))) return [];
     const groupId = randomUUID();
-    await tx`update tools.money_transactions set transfer_group_id = ${groupId}, transfer_disposition = 'internal_transfer'
-      where id in ${tx(ids)} and transfer_group_id is null and transfer_disposition is null`;
+    return pair.map((id) => ({ id, groupId }));
+  });
+  for (const batch of chunks(assignments, RELATED_INSERT_CHUNK_SIZE)) {
+    const ids = batch.map((assignment) => assignment.id);
+    const groupIds = batch.map((assignment) => assignment.groupId);
+    await tx`update tools.money_transactions t set transfer_group_id = assignments.group_id,
+      transfer_disposition = 'internal_transfer'
+      from unnest(${tx.array(ids)}::uuid[], ${tx.array(groupIds)}::uuid[]) as assignments(id, group_id)
+      where t.id = assignments.id and t.transfer_group_id is null and t.transfer_disposition is null`;
   }
 }
 

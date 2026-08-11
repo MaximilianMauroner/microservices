@@ -81,6 +81,18 @@ export function moneyMarketInstrument(provider: MoneyMarketSourceProvider, symbo
   ));
 }
 
+/** Uses an imported instrument name when available, otherwise resolves an unambiguous catalog alias. */
+export function moneyMarketInstrumentName(symbol: string, importedName?: string | null) {
+  const normalizedSymbol = symbol.trim().toLocaleUpperCase("en-GB");
+  const normalizedName = importedName?.trim();
+  if (normalizedName && normalizedName.toLocaleUpperCase("en-GB") !== normalizedSymbol) return normalizedName;
+
+  const matches = MONEY_MARKET_INSTRUMENTS.filter((instrument) => instrument.aliases.some(
+    (alias) => alias.symbol.toLocaleUpperCase("en-GB") === normalizedSymbol
+  ));
+  return matches.length === 1 ? matches[0]!.name : normalizedName;
+}
+
 function usEquity(symbol: string, name: string, mic: "XNAS" | "XNYS"): MoneyMarketInstrumentDefinition {
   return {
     canonicalKey: `listing:${mic}:${symbol}`,
