@@ -7,6 +7,8 @@ export function moneyImportConstraintRepairs(constraints: readonly ConstraintRow
   return {
     provider: !definitions.get("money_accounts_provider_check")?.includes("'sparkasse'"),
     format: !definitions.get("money_imports_format_check")?.includes("'sparkasse_cash_statement_v1'"),
+    category: !definitions.get("money_transactions_category_check")?.includes("'transfer'")
+      || !definitions.get("money_transactions_category_check")?.includes("'adjustment'"),
   };
 }
 
@@ -16,8 +18,8 @@ export async function reconcileRuntimeSchema(database: postgres.Sql) {
     const constraints = await transaction<ConstraintRow[]>`
       select conname name, pg_get_constraintdef(oid) definition
       from pg_constraint
-      where conrelid in ('tools.money_accounts'::regclass, 'tools.money_imports'::regclass)
-        and conname in ('money_accounts_provider_check', 'money_imports_format_check')`;
+      where conrelid in ('tools.money_accounts'::regclass, 'tools.money_imports'::regclass, 'tools.money_transactions'::regclass)
+        and conname in ('money_accounts_provider_check', 'money_imports_format_check', 'money_transactions_category_check')`;
     const repairs = moneyImportConstraintRepairs(constraints);
 
     if (repairs.provider) {
@@ -29,6 +31,11 @@ export async function reconcileRuntimeSchema(database: postgres.Sql) {
       await transaction`alter table tools.money_imports drop constraint if exists money_imports_format_check`;
       await transaction`alter table tools.money_imports add constraint money_imports_format_check
         check (format in ('revolut_cash_statement_v1', 'revolut_trading_statement_v1', 'portfolio_transaction_export_v1', 'money_balance_snapshot_v1', 'sparkasse_cash_statement_v1'))`;
+    }
+    if (repairs.category) {
+      await transaction`alter table tools.money_transactions drop constraint if exists money_transactions_category_check`;
+      await transaction`alter table tools.money_transactions add constraint money_transactions_category_check
+        check (category in ('housing', 'groceries', 'dining', 'transport', 'shopping', 'health', 'travel', 'subscriptions', 'education', 'entertainment', 'gifts', 'taxes', 'fees', 'cash', 'investments', 'income', 'transfer', 'adjustment', 'other', 'uncategorized'))`;
     }
   });
 }
