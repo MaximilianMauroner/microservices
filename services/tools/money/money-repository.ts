@@ -76,7 +76,7 @@ export type MoneyPlanningAnalytics = Readonly<{
   unresolvedTransferCount: number;
   medianMonthlyNetMinor: number;
   observedMonthCount: number;
-  projections: readonly Readonly<{ months: 6 | 12; changeMinor: number }>[];
+  projections: readonly Readonly<{ months: 6 | 12 | 60; changeMinor: number }>[];
 }>;
 export type MoneyLedgerSnapshot = MoneyTrackerSnapshot & Readonly<{
   imports: readonly MoneyImportSummary[]; activity: readonly MoneyActivityItem[]; transactionCount: number; revertedCount: number;
@@ -627,9 +627,9 @@ function planningAnalytics(months: MoneySpendingAnalytics["months"], review: Mon
   const middle = Math.floor(recent.length / 2);
   const median = recent.length ? recent.length % 2 ? recent[middle]! : Math.round((recent[middle - 1]! + recent[middle]!) / 2) : 0;
   const unresolvedTransferCount = review.unresolvedPositiveCount + review.unresolvedNegativeCount;
-  const ready = unresolvedTransferCount === 0 && recent.length >= 6;
+  const ready = recent.length >= 6;
   return { ready, unresolvedTransferCount, medianMonthlyNetMinor: median, observedMonthCount: recent.length,
-    projections: ready ? ([6, 12] as const).map((projectionMonths) => ({ months: projectionMonths, changeMinor: median * projectionMonths })) : [] };
+    projections: ready ? ([6, 12, 60] as const).map((projectionMonths) => ({ months: projectionMonths, changeMinor: median * projectionMonths })) : [] };
 }
 
 function balanceSnapshot(rows: SnapshotRow[]): MoneyTrackerSnapshot {

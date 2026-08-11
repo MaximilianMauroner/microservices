@@ -11,7 +11,7 @@ import { Button } from "../src/components/ui/button.js";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../src/components/ui/card.js";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "../src/components/ui/chart.js";
 
-type CategoryPeriod = "6m" | "1y" | "all";
+type CategoryPeriod = "6m" | "1y" | "5y" | "all";
 type CategoryTotal = Readonly<{ category: MoneyCategory; amountMinor: number; count: number }>;
 type MerchantTotal = Readonly<{ description: string; amountMinor: number; count: number }>;
 
@@ -24,7 +24,7 @@ export function MoneyCategoryExplorer({ spending, initialCategory }: { spending:
   const router = useRouter();
   const [period, setPeriod] = useState<CategoryPeriod>("1y");
   const availableMonths = useMemo(() => [...new Set(spending.categoryMonths.map((row) => row.month))].sort(), [spending.categoryMonths]);
-  const selectedMonths = useMemo(() => period === "all" ? availableMonths : availableMonths.slice(period === "6m" ? -6 : -12), [availableMonths, period]);
+  const selectedMonths = useMemo(() => period === "all" ? availableMonths : availableMonths.slice(period === "6m" ? -6 : period === "1y" ? -12 : -60), [availableMonths, period]);
   const selectedMonthSet = useMemo(() => new Set(selectedMonths), [selectedMonths]);
   const totals = useMemo(() => aggregateCategories(spending.categoryMonths.filter((row) => selectedMonthSet.has(row.month))), [selectedMonthSet, spending.categoryMonths]);
   const defaultCategory = initialCategory && totals.some((row) => row.category === initialCategory) ? initialCategory : totals[0]?.category;
@@ -117,7 +117,7 @@ function CategoryBar({ row, total, maximum, color, active, onSelect, href = fals
 }
 
 function CategoryPeriodSelector({ period, onPeriod }: { period: CategoryPeriod; onPeriod: (period: CategoryPeriod) => void }) {
-  return <div role="group" aria-label="Category period" className="flex gap-1"><PeriodButton active={period === "6m"} onClick={() => onPeriod("6m")}>6M</PeriodButton><PeriodButton active={period === "1y"} onClick={() => onPeriod("1y")}>1Y</PeriodButton><PeriodButton active={period === "all"} onClick={() => onPeriod("all")}>All</PeriodButton></div>;
+  return <div role="group" aria-label="Category period" className="flex gap-1"><PeriodButton active={period === "6m"} onClick={() => onPeriod("6m")}>6M</PeriodButton><PeriodButton active={period === "1y"} onClick={() => onPeriod("1y")}>1Y</PeriodButton><PeriodButton active={period === "5y"} onClick={() => onPeriod("5y")}>5Y</PeriodButton><PeriodButton active={period === "all"} onClick={() => onPeriod("all")}>All</PeriodButton></div>;
 }
 
 function PeriodButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) { return <Button type="button" size="sm" variant={active ? "default" : "outline"} aria-pressed={active} onClick={onClick}>{children}</Button>; }

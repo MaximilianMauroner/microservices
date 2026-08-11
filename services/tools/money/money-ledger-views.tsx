@@ -1611,7 +1611,7 @@ export function MoneySpendingView({
   spending,
   transferReview,
 }: Pick<MoneyTrackerPageData, "spending" | "transferReview">) {
-  const [range, setRange] = useState<6 | 12 | "all">(12);
+  const [range, setRange] = useState<6 | 12 | 60 | "all">(12);
   const observed = spending.months.filter((month) => month.observed);
   const recent = range === "all" ? observed : observed.slice(-range);
   const totals = recent.reduce(
@@ -1646,7 +1646,7 @@ export function MoneySpendingView({
     <>
       <div className="flex justify-end">
         <div className="flex gap-1" role="group" aria-label="Cash-flow range">
-          {([6, 12, "all"] as const).map((value) => (
+          {([6, 12, 60, "all"] as const).map((value) => (
             <Button
               key={value}
               size="sm"
@@ -1654,7 +1654,7 @@ export function MoneySpendingView({
               variant={range === value ? "default" : "outline"}
               onClick={() => setRange(value)}
             >
-              {value === "all" ? "All" : `${value}M`}
+              {value === "all" ? "All" : value === 60 ? "5Y" : `${value}M`}
             </Button>
           ))}
         </div>
@@ -1782,7 +1782,7 @@ export function MoneyInvestmentsView({
   marketData,
 }: Pick<MoneyTrackerPageData, "investments" | "marketData">) {
   const router = useRouter();
-  const [period, setPeriod] = useState<"1y" | "all">("1y");
+  const [period, setPeriod] = useState<"1y" | "5y" | "all">("1y");
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState<string>();
   const [positionQuery, setPositionQuery] = useState("");
@@ -1794,7 +1794,7 @@ export function MoneyInvestmentsView({
     direction: "desc",
   });
   const cutoff = new Date(marketData.asOf);
-  cutoff.setUTCFullYear(cutoff.getUTCFullYear() - 1);
+  cutoff.setUTCFullYear(cutoff.getUTCFullYear() - (period === "5y" ? 5 : 1));
   const cutoffDate = cutoff.toISOString().slice(0, 10);
   const history = useMemo(
     () =>
@@ -2015,7 +2015,7 @@ export function MoneyInvestmentsView({
                   Daily closes, FIFO basis, purchases, and sales
                 </CardDescription>
               </div>
-              <div className="flex gap-1">
+              <div className="flex gap-1" role="group" aria-label="Portfolio history range">
                 <Button
                   type="button"
                   size="sm"
@@ -2023,6 +2023,14 @@ export function MoneyInvestmentsView({
                   onClick={() => setPeriod("1y")}
                 >
                   1Y
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={period === "5y" ? "secondary" : "ghost"}
+                  onClick={() => setPeriod("5y")}
+                >
+                  5Y
                 </Button>
                 <Button
                   type="button"
@@ -2911,41 +2919,39 @@ export function MoneyPlanningCard({
       </CardHeader>
       <CardContent className="pt-5">
         {planning.ready ? (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <div>
-              <p className="text-xs text-muted-foreground">Monthly median</p>
-              <strong className="mt-1 block font-mono text-xl">
-                {signedMoney(planning.medianMonthlyNetMinor, "EUR")}
-              </strong>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {planning.observedMonthCount} consecutive activity months
-              </p>
-            </div>
-            {planning.projections.map((item) => (
-              <div
-                className="rounded-md border bg-muted/20 p-3"
-                key={item.months}
-              >
-                <p className="text-xs text-muted-foreground">
-                  Simple {item.months}-month run rate
-                </p>
-                <strong
-                  className={`mt-1 block font-mono text-lg ${item.changeMinor < 0 ? "text-rose-300" : "text-emerald-300"}`}
-                >
-                  {signedMoney(item.changeMinor, "EUR")}
+          <div className="space-y-3">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div>
+                <p className="text-xs text-muted-foreground">Monthly median</p>
+                <strong className="mt-1 block font-mono text-xl">
+                  {signedMoney(planning.medianMonthlyNetMinor, "EUR")}
                 </strong>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {planning.observedMonthCount} consecutive activity months
+                </p>
               </div>
-            ))}
+              {planning.projections.map((item) => (
+                <div
+                  className="rounded-md border bg-muted/20 p-3"
+                  key={item.months}
+                >
+                  <p className="text-xs text-muted-foreground">
+                    Simple {item.months === 60 ? "5-year" : `${item.months}-month`} run rate
+                  </p>
+                  <strong
+                    className={`mt-1 block font-mono text-lg ${item.changeMinor < 0 ? "text-rose-300" : "text-emerald-300"}`}
+                  >
+                    {signedMoney(item.changeMinor, "EUR")}
+                  </strong>
+                </div>
+              ))}
+            </div>
+            {planning.unresolvedTransferCount ? (
+              <p className="text-xs text-muted-foreground">
+                {planning.unresolvedTransferCount.toLocaleString("en-GB")} unresolved transfer rows excluded.
+              </p>
+            ) : null}
           </div>
-        ) : planning.unresolvedTransferCount ? (
-          <Alert>
-            <AlertTitle>Scenario needs transfer review</AlertTitle>
-            <AlertDescription>
-              {planning.unresolvedTransferCount.toLocaleString("en-GB")}{" "}
-              unlinked transfer-like inflows or outflows still need
-              classification. Scenarios stay hidden until review is complete.
-            </AlertDescription>
-          </Alert>
         ) : (
           <Alert>
             <AlertTitle>Not enough history</AlertTitle>
@@ -2953,6 +2959,12 @@ export function MoneyPlanningCard({
               At least six consecutive past months with imported cash-flow
               activity are required. You currently have{" "}
               {planning.observedMonthCount}.
+              {planning.unresolvedTransferCount ? (
+                <>
+                  {" "}
+                  {planning.unresolvedTransferCount.toLocaleString("en-GB")} unresolved transfer rows are excluded.
+                </>
+              ) : null}
             </AlertDescription>
           </Alert>
         )}

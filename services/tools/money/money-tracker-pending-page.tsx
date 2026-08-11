@@ -1,9 +1,10 @@
 import { AppShell } from "../src/components/app-shell.js";
+import { favicons } from "../src/favicons.js";
 import { Card, CardContent, CardHeader } from "../src/components/ui/card.js";
 import { MoneyNav, moneyViewTitle, type MoneyTrackerView } from "./money-tracker-navigation.js";
 
 export function MoneyTrackerPendingPage({ view }: { view: MoneyTrackerView }) {
-  return <><AppShell product="Money" accent="lime" showSignOut /><main id="main" className="app-page money-page" aria-busy="true">
+  return <><AppShell product="Money" accent="lime" icon={favicons.money} showSignOut /><main id="main" className="app-page money-page" aria-busy="true">
     <header className="app-heading mb-0">
       <div><p className="eyebrow">Money</p><h1>{moneyViewTitle(view)}</h1><p>Loading private financial data.</p></div>
     </header>

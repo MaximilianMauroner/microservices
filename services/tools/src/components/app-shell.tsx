@@ -3,7 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { authClient } from "../lib/auth-client.js";
 import type { ProductAccent } from "../product-accent.js";
 
-export function AppShell({ product, showSignOut, accent }: { product: string; showSignOut: boolean; accent?: ProductAccent }) {
+export function AppShell({ product, showSignOut, accent, icon }: { product: string; showSignOut: boolean; accent?: ProductAccent; icon?: string }) {
   async function signOut() {
     await authClient.signOut();
     window.location.assign("/");
@@ -16,7 +16,9 @@ export function AppShell({ product, showSignOut, accent }: { product: string; sh
         <div className="mx-auto flex h-14 w-[min(1380px,calc(100%_-_2rem))] items-center justify-between gap-4">
           <div className="flex min-w-0 items-center gap-3">
             <Link className="flex items-center gap-2 text-sm font-semibold" to="/" preload="intent" aria-label="Tools dashboard">
-              <span className="grid size-8 place-items-center rounded-full bg-primary text-xs font-black text-primary-foreground" aria-hidden="true">M</span>
+              {icon
+                ? <img className="size-8 rounded-lg" src={icon} alt="" width={32} height={32} />
+                : <span className="grid size-8 place-items-center rounded-full bg-primary text-xs font-black text-primary-foreground" aria-hidden="true">M</span>}
               <span>Tools</span>
             </Link>
             <span className="text-muted-foreground/45" aria-hidden="true">·</span>
