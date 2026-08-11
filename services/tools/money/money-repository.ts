@@ -684,11 +684,15 @@ async function refreshInferredTransactions(tx: postgres.TransactionSql, transact
 }
 
 async function linkUnambiguousTransfers(tx: postgres.TransactionSql) {
+  await tx`update tools.money_transactions set transfer_disposition = 'excluded'
+    where status = 'completed' and flow_kind = 'transfer' and source_type = 'Exchange'
+      and transfer_group_id is null and transfer_disposition is null`;
   const rows = await tx<TransferRow[]>`select t.id, t.account_id, t.occurred_at, t.local_date::text, lower(trim(t.description)) description, t.amount_minor::text, t.currency
     from tools.money_transactions t join tools.money_accounts a on a.id = t.account_id
     where t.status = 'completed' and t.flow_kind = 'transfer' and t.amount_minor <> 0
       and t.transfer_group_id is null and t.transfer_disposition is null and (
-        t.source_type = 'Transfer' or t.source_type like 'TRANSFER%'
+        t.source_type in ('Transfer', 'Topup', 'CASH TOP-UP', 'CASH WITHDRAWAL', 'CUSTOMER_INBOUND', 'CUSTOMER_INPAYMENT')
+        or t.source_type like 'TRANSFER%'
         or (a.provider = 'sparkasse' and (
           t.source_type in ${tx([...SPARKASSE_TRANSFER_TYPES])}
           or (t.source_type = 'BEZAHLUNG EU LAENDER' and lower(t.description) ~ '\\m(revolut|trade republic)\\M')

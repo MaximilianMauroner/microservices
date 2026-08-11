@@ -28,7 +28,7 @@ describe("Revolut cash statement parser", () => {
       ["Lieferando", undefined, "dining"], ["CafÃ© Jelinek", undefined, "dining"],
       ["ÃBB", undefined, "transport"], ["ENIO", undefined, "transport"],
       ["Apotheke Schwenk", undefined, "health"], ["Booking.com", undefined, "travel"],
-      ["OpenAI", undefined, "subscriptions"], ["JetBrains", undefined, "subscriptions"],
+      ["OpenAI", undefined, "subscriptions"], ["JetBrains", undefined, "subscriptions"], ["Appest", undefined, "subscriptions"],
       ["Steam", undefined, "entertainment"], ["Amazon", undefined, "shopping"],
       ["Studentenfoerderungsstiftung", undefined, "housing"], ["Suedtirol Pass", undefined, "transport"],
       ["Fahrschule Haslach", undefined, "education"], ["50min Diagnostik", undefined, "health"],

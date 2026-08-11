@@ -163,6 +163,21 @@ it.skipIf(!repository || !admin)("re-imports all normalized documents and rebuil
   expect(new Set(rows.map((row) => row.transferGroupId)).size).toBe(1);
 });
 
+it.skipIf(!repository || !admin)("links top-ups and excludes one-sided currency exchanges from transfer review", async () => {
+  await commitCash(repository!, cash([
+    "Topup\tCurrent\t2026-03-06 12:00:00\t2026-03-06 12:00:00\tExternal top-up\t25\t0\tEUR\tCOMPLETED\t125",
+    "Transfer\tSavings\t2026-03-07 12:00:00\t2026-03-07 12:00:00\tFunding source\t-25\t0\tEUR\tCOMPLETED\t75",
+    "Exchange\tCurrent\t2026-03-08 12:00:00\t2026-03-08 12:00:00\tExchanged to USD\t-10\t0\tEUR\tCOMPLETED\t115"
+  ]), "cash-movements.tsv");
+
+  const rows = (await repository!.readActivityPage({ query: "", offset: 0, limit: 10 })).items;
+  const linked = rows.filter((row) => row.description !== "Exchanged to USD");
+  expect(linked).toHaveLength(2);
+  expect(linked.every((row) => row.transferDisposition === "internal_transfer")).toBe(true);
+  expect(new Set(linked.map((row) => row.transferGroupId)).size).toBe(1);
+  expect(rows.find((row) => row.description === "Exchanged to USD")).toMatchObject({ category: "transfer", transferDisposition: "excluded", needsTransferReview: false });
+});
+
 it.skipIf(!repository || !admin)("deletes an import cascade and repairs a cross-import transfer link", async () => {
   const removed = await commitCash(repository!, cash([
     "Transfer\tCurrent\t2026-03-02 12:00:00\t2026-03-02 12:00:00\tMove to savings\t-50\t0\tEUR\tCOMPLETED\t50",
