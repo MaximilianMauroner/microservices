@@ -12,6 +12,7 @@ import { Button } from "../src/components/ui/button.js";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../src/components/ui/card.js";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "../src/components/ui/chart.js";
 import { compareMoneyValues, MoneySortableHead, MoneyTableSearch, nextMoneySort, type MoneySort } from "./money-data-table.js";
+import { MONEY_ROW_ACTION_CLASS, MoneyRowActionCue } from "./money-row-action.js";
 import { MoneyCategoryExplorer } from "./money-category-explorer.js";
 import type { MoneyCategory } from "./money-enums.js";
 import { MoneyActivityView, MoneyBalanceEntry, MoneyDataView, MoneyInvestmentsView, MoneyPlanningCard, MoneySpendingView } from "./money-ledger-views.js";
@@ -227,8 +228,8 @@ function BalanceChart({ months, period, onPeriod }: { months: GroupedMonth[]; pe
 }
 
 function AttentionRow({ label, value, detail, ready, view, action }: { label: string; value: string; detail: string; ready: boolean; view: Exclude<MoneyTrackerView, "overview">; action: string }) {
-  const content = <><div><p className="text-sm font-medium">{label}</p><p className="mt-0.5 text-xs text-muted-foreground">{ready ? detail : `${detail} · ${action}`}</p></div><Badge variant={ready ? "outline" : "destructive"}>{value}</Badge></>;
-  return ready ? <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 px-4 py-3">{content}</div> : <Link to="/money" search={{ view }} className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 px-4 py-3 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">{content}</Link>;
+  const details = <div><p className="text-sm font-medium">{label}</p><p className="mt-0.5 text-xs text-muted-foreground">{detail}</p></div>;
+  return ready ? <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-3">{details}<Badge variant="outline">{value}</Badge></div> : <Link to="/money" search={{ view }} className={`grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 px-4 py-3 ${MONEY_ROW_ACTION_CLASS}`}>{details}<Badge variant="destructive">{value}</Badge><MoneyRowActionCue label={action} /></Link>;
 }
 
 function CashFlowBar({ label, value, maximum, tone: barTone }: { label: string; value: number; maximum: number; tone: "income" | "spend" }) {
