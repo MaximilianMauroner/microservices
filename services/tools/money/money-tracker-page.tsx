@@ -15,8 +15,9 @@ import { AllocationTreemap } from "./allocation-treemap.js";
 import { MoneyCategoryExplorer } from "./money-category-explorer.js";
 import type { MoneyCategory } from "./money-enums.js";
 import { MoneyActivityView, MoneyBalanceEntry, MoneyDataView, MoneyInvestmentsView, MoneyPlanningCard, MoneySpendingView } from "./money-ledger-views.js";
+import { MoneyNav, moneyViewTitle, type MoneyTrackerView } from "./money-tracker-navigation.js";
 
-export type MoneyTrackerView = "overview" | "cash-flow" | "transactions" | "investments" | "accounts" | "categories" | "insights" | "data";
+export type { MoneyTrackerView } from "./money-tracker-navigation.js";
 type Period = "6m" | "1y" | "all";
 type Month = MoneyTrackerPageData["months"][number];
 type GroupedMonth = Month & { money: number; stocks: number; trend: number; observed?: boolean; portfolioDate?: string };
@@ -50,7 +51,7 @@ export function MoneyTrackerPage(props: MoneyTrackerPageData & { view: MoneyTrac
 
   return <><AppShell product="Money" accent="lime" showSignOut /><main id="main" className="app-page money-page">
     <header className="app-heading mb-0">
-      <div><p className="eyebrow">Money</p><h1>{viewTitle(props.view)}</h1><p>{viewDescription(props.view)}</p></div>
+      <div><p className="eyebrow">Money</p><h1>{moneyViewTitle(props.view)}</h1><p>{viewDescription(props.view)}</p></div>
       {showPeriod ? <div className="app-heading__actions"><PeriodSelector period={period} onPeriod={setPeriod} /></div> : null}
     </header>
     <div className="money-layout">
@@ -66,23 +67,6 @@ export function MoneyTrackerPage(props: MoneyTrackerPageData & { view: MoneyTrac
         {props.view === "data" ? <MoneyDataView {...props} /> : null}
       </div>
     </div>
-  </main></>;
-}
-
-export function MoneyTrackerPendingPage({ view }: { view: MoneyTrackerView }) {
-  return <><AppShell product="Money" accent="lime" showSignOut /><main id="main" className="app-page money-page" aria-busy="true">
-    <header className="app-heading mb-0">
-      <div><p className="eyebrow">Money</p><h1>{viewTitle(view)}</h1><p>Loading private financial data.</p></div>
-    </header>
-    <div className="money-layout"><MoneyNav /><div className="money-content space-y-4">
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Loading summary">
-        {Array.from({ length: 4 }, (_, index) => <Card key={index}><CardContent className="space-y-3 p-4"><LoadingBlock className="h-3 w-24" /><LoadingBlock className="h-7 w-32" /><LoadingBlock className="h-3 w-20" /></CardContent></Card>)}
-      </section>
-      <section className="grid gap-3 lg:grid-cols-[minmax(0,1.7fr)_minmax(18rem,.7fr)]" aria-label="Loading dashboard">
-        <Card><CardHeader className="border-b"><LoadingBlock className="h-4 w-40" /><LoadingBlock className="h-3 w-64 max-w-full" /></CardHeader><CardContent className="pt-5"><LoadingBlock className="h-[19rem] w-full" /></CardContent></Card>
-        <Card><CardHeader className="border-b"><LoadingBlock className="h-4 w-40" /><LoadingBlock className="h-3 w-48 max-w-full" /></CardHeader><CardContent className="space-y-3 pt-5">{Array.from({ length: 5 }, (_, index) => <LoadingBlock key={index} className="h-10 w-full" />)}</CardContent></Card>
-      </section>
-    </div></div>
   </main></>;
 }
 
@@ -220,15 +204,9 @@ function CashFlowBar({ label, value, maximum, tone: barTone }: { label: string; 
   return <div className="min-w-0"><div className="mb-1 flex justify-between gap-2"><span className="text-muted-foreground">{label}</span><span className="font-mono">{formatMinor(value, "EUR")}</span></div><div className="h-1.5 overflow-hidden rounded-full bg-muted"><div className={barTone === "income" ? "h-full rounded-full bg-emerald-400" : "h-full rounded-full bg-cyan-300"} style={{ width: `${value / maximum * 100}%` }} /></div></div>;
 }
 
-function viewTitle(view: MoneyTrackerView) {
-  return view === "overview" ? "Overview" : view === "cash-flow" ? "Cash flow" : view === "transactions" ? "Transactions" : view === "investments" ? "Investments" : view === "accounts" ? "Accounts" : view === "categories" ? "Categories" : view === "insights" ? "Insights" : "Data quality";
-}
 function viewDescription(view: MoneyTrackerView) {
   return view === "overview" ? "Your tracked financial position, recent cash flow, freshness, and open review work." : view === "cash-flow" ? "Income, spending, and imported monthly cash-flow activity." : view === "transactions" ? "The normalized ledger with complete search, classification, and transfer review." : view === "investments" ? "Current EUR valuation, historical closes, FIFO performance, and imported activity." : view === "accounts" ? "Cash balances, observation freshness, concentration, and monthly history." : view === "categories" ? "Explore spending by category, month, merchant, and underlying transaction." : view === "insights" ? "Balance momentum, concentration, drawdown, trends, and a conservative run-rate scenario." : "Imports, reconciliation, coverage, rules, and analytical limits.";
 }
-function MoneyNav() { return <nav className="money-nav" aria-label="Money"><NavGroup label="Portfolio"><NavItem view="overview">Overview</NavItem><NavItem view="accounts">Accounts</NavItem><NavItem view="investments">Investments</NavItem></NavGroup><NavGroup label="Operations"><NavItem view="cash-flow">Cash flow</NavItem><NavItem view="transactions">Transactions</NavItem></NavGroup><NavGroup label="Analysis"><NavItem view="categories">Categories</NavItem><NavItem view="insights">Insights</NavItem></NavGroup><NavGroup label="System"><NavItem view="data">Data quality</NavItem></NavGroup></nav>; }
-function NavGroup({ label, children }: { label: string; children: React.ReactNode }) { return <div className="money-nav__group"><span className="money-nav__label">{label}</span>{children}</div>; }
-function NavItem({ view, children }: { view: MoneyTrackerView; children: React.ReactNode }) { return <Link to="/money" search={{ view: view === "overview" ? undefined : view }} preload="intent" activeOptions={{ exact: true }} className="money-nav__item">{children}</Link>; }
 function PeriodSelector({ period, onPeriod }: { period: Period; onPeriod: (period: Period) => void }) { return <div role="group" aria-label="Balance range" className="flex gap-1"><PeriodButton active={period === "6m"} onClick={() => onPeriod("6m")}>6M</PeriodButton><PeriodButton active={period === "1y"} onClick={() => onPeriod("1y")}>1Y</PeriodButton><PeriodButton active={period === "all"} onClick={() => onPeriod("all")}>All</PeriodButton></div>; }
 function PeriodButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) { return <Button type="button" size="sm" variant={active ? "default" : "outline"} aria-pressed={active} onClick={onClick}>{children}</Button>; }
 function ChartCard({ title, description, children }: { title: string; description: string; children: React.ReactNode }) { return <Card><CardHeader className="border-b"><CardTitle>{title}</CardTitle><CardDescription>{description}</CardDescription></CardHeader><CardContent className="pt-5">{children}</CardContent></Card>; }
@@ -238,7 +216,6 @@ function BalanceDataDisclosure({ months, includeTrend = false }: { months: Group
 function ChangeDataDisclosure({ changes }: { changes: Array<Month & { change: number }> }) { return <ChartDataDetails label="View monthly change data"><table className="w-full text-xs"><caption className="sr-only">Exact values plotted in the monthly balance change chart</caption><thead className="border-b text-muted-foreground"><tr><th className="px-3 py-2 text-left">Month</th><th className="px-3 py-2 text-right">Change</th></tr></thead><tbody className="divide-y">{changes.map((month) => <tr key={month.date}><td className="px-3 py-2">{month.date}</td><td className="px-3 py-2 text-right font-mono">{formatSigned(month.change, true)}</td></tr>)}</tbody></table></ChartDataDetails>; }
 function AccountDataDisclosure({ months, accounts, accountLabels, totalKey, totalLabel }: { months: GroupedMonth[]; accounts: string[]; accountLabels: Record<string, string>; totalKey: "money" | "stocks"; totalLabel: string }) { return <ChartDataDetails label="View account chart data"><table className="w-full min-w-max text-xs"><caption className="sr-only">Exact values plotted in the account history chart</caption><thead className="border-b text-muted-foreground"><tr><th className="px-3 py-2 text-left">Month</th>{accounts.map((account) => <th className="px-3 py-2 text-right" key={account}>{accountLabels[account] ?? account}</th>)}<th className="px-3 py-2 text-right">{totalLabel}</th></tr></thead><tbody className="divide-y">{months.map((month) => <tr key={month.date}><td className="px-3 py-2">{month.date}</td>{accounts.map((account) => <td className="px-3 py-2 text-right font-mono" key={account}>{month.values[account] === undefined ? "—" : preciseCurrency.format(month.values[account])}</td>)}<td className="px-3 py-2 text-right font-mono">{preciseCurrency.format(month[totalKey])}</td></tr>)}</tbody></table></ChartDataDetails>; }
 function ChartDataDetails({ label, children }: { label: string; children: React.ReactNode }) { return <details className="mt-3 border-t pt-3"><summary className="w-fit cursor-pointer rounded-sm text-xs font-medium text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{label}</summary><div className="mt-3 overflow-x-auto rounded-md border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" tabIndex={0} role="region" aria-label={label}>{children}</div></details>; }
-function LoadingBlock({ className }: { className: string }) { return <div className={`rounded-md bg-muted ${className}`} />; }
 function Metric({ label, value, detail, tone: valueTone }: { label: string; value: string; detail?: string; tone?: "positive" | "negative" }) { return <Card><CardContent className="min-w-0 p-4"><p className="text-[.68rem] font-semibold uppercase tracking-[.08em] text-muted-foreground">{label}</p><strong className="mt-1.5 block break-words text-[clamp(1.25rem,2vw,1.5rem)] tracking-tight">{value}</strong>{detail ? <span className={valueTone === "negative" ? "mt-1 block text-xs text-rose-400" : valueTone === "positive" ? "mt-1 block text-xs text-emerald-400" : "mt-1 block text-xs text-muted-foreground"}>{detail}</span> : null}</CardContent></Card>; }
 function StatRow({ label, value, detail }: { label: string; value: string; detail?: string }) { return <div className="flex items-center justify-between gap-4 px-4 py-3 text-sm"><span className="text-muted-foreground">{label}</span><span className="text-right font-mono"><strong className="font-medium text-foreground">{value}</strong>{detail ? <span className="ml-2 text-xs text-muted-foreground">{detail}</span> : null}</span></div>; }
 function TrendRow({ label, change }: { label: string; change?: { change: number; percent?: number } }) { return <div className="flex items-center justify-between gap-4 px-4 py-3 text-sm"><span className="text-muted-foreground">{label}</span><span className={`text-right font-mono ${changeClass(change?.change)}`}><strong className="font-medium">{formatSigned(change?.change, true)}</strong><span className="ml-2 text-xs">{formatTrendPercent(change?.percent)}</span></span></div>; }

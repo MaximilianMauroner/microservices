@@ -1,5 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { MoneyTrackerPage, MoneyTrackerPendingPage, type MoneyTrackerView } from "../../money/money-tracker-page.js";
+import { MoneyTrackerPage } from "../../money/money-tracker-page.js";
+import { MoneyTrackerPendingPage } from "../../money/money-tracker-pending-page.js";
+import type { MoneyTrackerView } from "../../money/money-tracker-navigation.js";
 import { getMoneyTrackerPageData } from "../protected-data.js";
 import { faviconLink, favicons } from "../favicons.js";
 import { requireRouteSession } from "../auth-session.js";
