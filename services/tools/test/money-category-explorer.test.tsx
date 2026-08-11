@@ -43,5 +43,6 @@ describe("money category explorer", () => {
     expect(html).toContain("Bakery");
     expect(html).toContain("2 tx");
     expect(html).toContain("69.2%");
+    expect(html).toMatch(/>1Y<.*>5Y<.*>All</);
   });
 });

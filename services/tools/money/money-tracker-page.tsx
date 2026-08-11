@@ -24,6 +24,7 @@ import {
   type MoneyTrackerTrendStats,
 } from "./money-tracker-domain.js";
 import { AppShell } from "../src/components/app-shell.js";
+import { favicons } from "../src/favicons.js";
 import {
   Alert,
   AlertDescription,
@@ -86,7 +87,7 @@ import {
 } from "./money-tracker-navigation.js";
 
 export type { MoneyTrackerView } from "./money-tracker-navigation.js";
-type Period = "6m" | "1y" | "all";
+type Period = "6m" | "1y" | "5y" | "all";
 type AccountHistoryRange = "1y" | "5y" | "all";
 type Month = MoneyTrackerPageData["months"][number];
 type GroupedMonth = Month & {
@@ -176,7 +177,7 @@ export function MoneyTrackerPage(
       withLinearTrend(
         period === "all"
           ? allMonths
-          : allMonths.slice(period === "6m" ? -6 : -12),
+          : allMonths.slice(period === "6m" ? -6 : period === "1y" ? -12 : -60),
       ),
     [allMonths, period],
   );
@@ -188,7 +189,7 @@ export function MoneyTrackerPage(
     () =>
       period === "all"
         ? allAccountMonths
-        : allAccountMonths.slice(period === "6m" ? -6 : -12),
+        : allAccountMonths.slice(period === "6m" ? -6 : period === "1y" ? -12 : -60),
     [allAccountMonths, period],
   );
   const latest = months.at(-1);
@@ -218,7 +219,7 @@ export function MoneyTrackerPage(
 
   return (
     <>
-      <AppShell product="Money" accent="lime" showSignOut />
+      <AppShell product="Money" accent="lime" icon={favicons.money} showSignOut />
       <main id="main" className="app-page money-page">
         <header className="app-heading mb-0">
           <div>
@@ -2462,6 +2463,9 @@ function PeriodSelector({
       </PeriodButton>
       <PeriodButton active={period === "1y"} onClick={() => onPeriod("1y")}>
         1Y
+      </PeriodButton>
+      <PeriodButton active={period === "5y"} onClick={() => onPeriod("5y")}>
+        5Y
       </PeriodButton>
       <PeriodButton active={period === "all"} onClick={() => onPeriod("all")}>
         All

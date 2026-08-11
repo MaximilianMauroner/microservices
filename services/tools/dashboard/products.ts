@@ -20,7 +20,7 @@ export const products = [
   { id: "money", name: "Money", description: "Track accounts, changes, and net worth.", href: "/money", access: "private", accent: "lime", monitorId: "tools-directory", external: false },
   { id: "status", name: "Status", description: "Availability, incidents, and heartbeats.", href: "/status", access: "private", accent: "cyan", monitorId: "tools-directory", external: false },
   { id: "markdown-share", name: "Markdown Share", description: "Share rendered Markdown documents.", href: "https://markdown-share-alpha.mauroner.workers.dev/", access: "public", accent: "rose", monitorId: "markdown-share", external: true },
-  { id: "network-console", name: "Network Console", description: "Inspect private network services.", href: "https://network.mauroner.net", access: "tailnet", accent: "blue", monitorId: "network-console", external: true }
+  { id: "network-console", name: "Network Console", description: "Inspect private network services.", href: "https://coding.tailbc92d.ts.net", access: "tailnet", accent: "blue", monitorId: "network-console", external: true }
 ] as const satisfies readonly ProductDefinition[];
 
 export type ProductId = (typeof products)[number]["id"];

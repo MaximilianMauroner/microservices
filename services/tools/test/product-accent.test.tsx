@@ -16,4 +16,11 @@ describe("product accent contract", () => {
     const html = renderToStaticMarkup(<Card>Content</Card>);
     expect(html).toContain("ring-[color:var(--surface-border)]");
   });
+
+  it("allows a product icon to replace the generic shell mark", () => {
+    const html = renderToStaticMarkup(<AppShell product="Money" icon="/assets/icons/money-tracker.png" showSignOut={false} />);
+
+    expect(html).toContain('src="/assets/icons/money-tracker.png"');
+    expect(html).not.toContain('aria-hidden="true">M</span>');
+  });
 });

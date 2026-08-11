@@ -117,12 +117,14 @@ describe("Option A money ledger views", () => {
     expect(html).toContain("Apply to 0");
   });
 
-  it("separates insufficient planning history from unresolved transfer review", () => {
+  it("shows scenarios with unresolved transfers excluded and only blocks on insufficient history", () => {
     const history = renderToStaticMarkup(<MoneyPlanningCard planning={{ ready: false, unresolvedTransferCount: 0, medianMonthlyNetMinor: 0, observedMonthCount: 0, projections: [] }} />);
-    const review = renderToStaticMarkup(<MoneyPlanningCard planning={{ ready: false, unresolvedTransferCount: 2, medianMonthlyNetMinor: 0, observedMonthCount: 0, projections: [] }} />);
+    const scenario = renderToStaticMarkup(<MoneyPlanningCard planning={{ ready: true, unresolvedTransferCount: 2, medianMonthlyNetMinor: 1_000, observedMonthCount: 6, projections: [{ months: 6, changeMinor: 6_000 }, { months: 12, changeMinor: 12_000 }, { months: 60, changeMinor: 60_000 }] }} />);
     expect(history).toContain("Not enough history");
-    expect(history).not.toContain("Scenario needs transfer review");
-    expect(review).toContain("Scenario needs transfer review");
+    expect(scenario).toContain("Simple 6-month run rate");
+    expect(scenario).toContain("Simple 5-year run rate");
+    expect(scenario).toContain("2 unresolved transfer rows excluded");
+    expect(scenario).not.toContain("Scenario needs transfer review");
   });
 
   it("states the bounded spending and investment contracts", () => {
@@ -131,7 +133,9 @@ describe("Option A money ledger views", () => {
 
     expect(spending).toContain("excluding transfers, trades, adjustments, and reverted rows");
     expect(spending).toContain("3,50");
+    expect(spending).toMatch(/>12M<.*>5Y<.*>All</);
     expect(investments).toContain("Portfolio valuation");
+    expect(investments).toMatch(/>1Y<.*>5Y<.*>All</);
     expect(investments).toContain("Imported investment activity");
     expect(investments).toContain("No realized gains yet");
   });
