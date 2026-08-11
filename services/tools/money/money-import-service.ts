@@ -91,6 +91,13 @@ export class MoneyImportService {
     return this.repository.setTransactionCategory({ ...input, category: input.category as MoneyCategory });
   }
 
+  async deleteCategoryRule(ruleId: string) {
+    assertUuid(ruleId, "invalid_category_rule", "The category-rule identifier is invalid.");
+    const deleted = await this.repository.deleteCategoryRule(ruleId);
+    if (!deleted) throw new MoneyImportValidationError("category_rule_not_found", "The category rule no longer exists.");
+    return deleted;
+  }
+
   setTransferDisposition(input: Readonly<{ transactionId: string; disposition: string }>) {
     assertTransactionId(input.transactionId);
     if (!MONEY_TRANSFER_DISPOSITIONS.includes(input.disposition as MoneyTransferDisposition)) {
@@ -99,10 +106,20 @@ export class MoneyImportService {
     return this.repository.setTransferDisposition({ transactionId: input.transactionId, disposition: input.disposition as MoneyTransferDisposition });
   }
 
-  addManualBalance(input: Readonly<{ accountName: string; role: string; date: string; value: string; currency: string }>) {
-    const accountName = input.accountName.trim();
-    if (!accountName || accountName.length > 100) throw new MoneyImportValidationError("invalid_account", "Enter an account name up to 100 characters.");
-    if (input.role !== "cash" && input.role !== "investment") throw new MoneyImportValidationError("invalid_role", "Select a valid account role.");
+  setTransferGroupDisposition(input: Readonly<{ transactionId: string; disposition: string }>) {
+    assertTransactionId(input.transactionId);
+    if (!MONEY_TRANSFER_DISPOSITIONS.includes(input.disposition as MoneyTransferDisposition)) {
+      throw new MoneyImportValidationError("invalid_transfer_disposition", "Select a valid transfer disposition.");
+    }
+    return this.repository.setTransferGroupDisposition({ transactionId: input.transactionId, disposition: input.disposition as MoneyTransferDisposition });
+  }
+
+  addManualBalance(input: Readonly<{ accountId?: string; accountName?: string; date: string; value: string; currency: string }>) {
+    const accountId = input.accountId?.trim();
+    const accountName = input.accountName?.trim();
+    if (Boolean(accountId) === Boolean(accountName)) throw new MoneyImportValidationError("invalid_account", "Select an existing cash account or enter one new account name.");
+    if (accountId) assertUuid(accountId, "invalid_account", "The selected cash account is invalid.");
+    if (accountName && accountName.length > 100) throw new MoneyImportValidationError("invalid_account", "Enter an account name up to 100 characters.");
     if (!validDate(input.date)) throw new MoneyImportValidationError("invalid_date", "Enter a valid snapshot date.");
     if (input.currency !== "EUR") throw new MoneyImportValidationError("unsupported_currency", "Balance snapshots currently support EUR only.");
     if (!/^-?\d+(?:\.\d{1,2})?$/.test(input.value)) throw new MoneyImportValidationError("invalid_value", "Enter a balance with no more than two decimal places.");
@@ -110,7 +127,7 @@ export class MoneyImportService {
     const absolute = Number(whole) * 100 + Number(fraction.padEnd(2, "0"));
     const valueMinor = input.value.startsWith("-") ? -absolute : absolute;
     if (!Number.isSafeInteger(valueMinor)) throw new MoneyImportValidationError("invalid_value", "The balance is outside the supported range.");
-    return this.repository.addManualBalance({ accountName, role: input.role, date: input.date, valueMinor, currency: input.currency });
+    return this.repository.addManualBalance({ ...(accountId ? { accountId } : { accountName: accountName! }), date: input.date, valueMinor, currency: input.currency });
   }
 
   readiness(): Promise<void> {
@@ -123,9 +140,11 @@ export class MoneyImportService {
 }
 
 function assertTransactionId(value: string) {
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) {
-    throw new MoneyImportValidationError("invalid_transaction", "The transaction identifier is invalid.");
-  }
+  assertUuid(value, "invalid_transaction", "The transaction identifier is invalid.");
+}
+
+function assertUuid(value: string, code: string, message: string) {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) throw new MoneyImportValidationError(code, message);
 }
 
 function assertImportId(value: string) {

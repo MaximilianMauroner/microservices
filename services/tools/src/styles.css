@@ -208,6 +208,9 @@ html:has([data-suite-accent]) {
   .money-chart-data summary { cursor: pointer; padding: .7rem 0; font-weight: 600; }
   .money-chart-data th, .money-chart-data td { padding: .45rem .25rem; border-top: 1px solid var(--border); }
   .money-chart-fallback { display: grid; height: 16rem; place-items: center; border: 1px dashed var(--border); color: var(--muted-foreground); font-size: .8rem; }
+  [aria-label="Transaction ledger"] h3[title],
+  [aria-label="Transaction ledger"] td p[title] { overflow: visible; overflow-wrap: anywhere; text-overflow: clip; white-space: normal; }
+  .money-category-explorer .truncate { overflow: visible; overflow-wrap: anywhere; text-overflow: clip; white-space: normal; }
   .app-heading { display: flex; align-items: end; justify-content: space-between; gap: 1rem; padding-bottom: 1.5rem; margin-bottom: 1.5rem; border-bottom: 1px solid var(--surface-border); }
   .app-heading h1 { margin-top: .65rem; font-size: clamp(2.25rem, 5vw, 3.5rem); line-height: 1; font-weight: 650; letter-spacing: -.05em; }
   .app-heading p:last-child { margin-top: .5rem; color: var(--muted-foreground); font-size: .875rem; }
@@ -414,6 +417,49 @@ html:has([data-suite-accent]) {
     }
     .money-nav__item { min-height: 2.75rem; scroll-snap-align: start; }
     .money-nav__item[aria-current="page"] { box-shadow: inset 0 -2px var(--primary); }
+    [aria-label="Filter by flow kind"] { min-height: 2.75rem; }
+    :is([aria-label="Account detail table"], [aria-label="Monthly balance snapshot table"], [aria-label="Current portfolio positions"], [aria-label="Realized investment gains table"], [aria-label="Trade-derived investment quantities table"]) { overflow: visible; }
+    :is([aria-label="Account detail table"], [aria-label="Monthly balance snapshot table"], [aria-label="Current portfolio positions"], [aria-label="Realized investment gains table"], [aria-label="Trade-derived investment quantities table"]) table { min-width: 0; }
+    :is([aria-label="Account detail table"], [aria-label="Monthly balance snapshot table"], [aria-label="Current portfolio positions"], [aria-label="Realized investment gains table"], [aria-label="Trade-derived investment quantities table"]) thead { display: none; }
+    :is([aria-label="Account detail table"], [aria-label="Monthly balance snapshot table"], [aria-label="Current portfolio positions"], [aria-label="Realized investment gains table"], [aria-label="Trade-derived investment quantities table"]) tbody { display: grid; }
+    :is([aria-label="Account detail table"], [aria-label="Monthly balance snapshot table"], [aria-label="Current portfolio positions"], [aria-label="Realized investment gains table"], [aria-label="Trade-derived investment quantities table"]) tr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: .45rem 1rem; padding: 1rem; }
+    :is([aria-label="Account detail table"], [aria-label="Monthly balance snapshot table"], [aria-label="Current portfolio positions"], [aria-label="Realized investment gains table"], [aria-label="Trade-derived investment quantities table"]) td { display: flex; min-width: 0; align-items: baseline; justify-content: space-between; gap: .75rem; padding: 0; text-align: right; }
+    :is([aria-label="Account detail table"], [aria-label="Monthly balance snapshot table"], [aria-label="Current portfolio positions"], [aria-label="Realized investment gains table"], [aria-label="Trade-derived investment quantities table"]) td::before { flex: none; color: var(--muted-foreground); font-size: .68rem; font-weight: 600; }
+    :is([aria-label="Account detail table"], [aria-label="Monthly balance snapshot table"], [aria-label="Current portfolio positions"], [aria-label="Realized investment gains table"], [aria-label="Trade-derived investment quantities table"]) td:first-child { grid-column: 1 / -1; position: static; justify-content: flex-start; background: transparent; text-align: left; }
+    [aria-label="Current portfolio positions"] td:first-child { align-items: flex-start; flex-direction: column; gap: .2rem; }
+    [aria-label="Account detail table"] td:nth-child(2)::before { content: "Type"; }
+    [aria-label="Account detail table"] td:nth-child(3)::before { content: "Balance"; }
+    [aria-label="Account detail table"] td:nth-child(4)::before { content: "Latest"; }
+    [aria-label="Account detail table"] td:nth-child(5)::before { content: "Latest %"; }
+    [aria-label="Account detail table"] td:nth-child(6)::before { content: "Period"; }
+    [aria-label="Account detail table"] td:nth-child(7)::before { content: "Period %"; }
+    [aria-label="Account detail table"] td:nth-child(8)::before { content: "Share"; }
+    [aria-label="Account detail table"] td:nth-child(9)::before { content: "Observed"; }
+    [aria-label="Account detail table"] td:nth-child(10)::before { content: "Range"; }
+    [aria-label="Monthly balance snapshot table"] td:nth-child(2)::before { content: "Total"; }
+    [aria-label="Monthly balance snapshot table"] td:nth-child(3)::before { content: "Change"; }
+    [aria-label="Monthly balance snapshot table"] td:nth-child(4)::before { content: "Cash"; }
+    [aria-label="Monthly balance snapshot table"] td:nth-child(5)::before { content: "Investments"; }
+    [aria-label="Monthly balance snapshot table"] td:nth-child(n+6):not(:last-child)::before { content: "Account"; }
+    [aria-label="Monthly balance snapshot table"] td:last-child::before { content: "Coverage"; }
+    [aria-label="Current portfolio positions"] td:nth-child(2)::before { content: "Class"; }
+    [aria-label="Current portfolio positions"] td:nth-child(3)::before { content: "Quantity"; }
+    [aria-label="Current portfolio positions"] td:nth-child(4)::before { content: "Close"; }
+    [aria-label="Current portfolio positions"] td:nth-child(5)::before { content: "Value"; }
+    [aria-label="Current portfolio positions"] td:nth-child(6)::before { content: "Gain/loss"; }
+    [aria-label="Current portfolio positions"] td:nth-child(7)::before { content: "Price state"; }
+    [aria-label="Realized investment gains table"] td:nth-child(2)::before { content: "Sales"; }
+    [aria-label="Realized investment gains table"] td:nth-child(3)::before { content: "Quantity"; }
+    [aria-label="Realized investment gains table"] td:nth-child(4)::before { content: "Proceeds"; }
+    [aria-label="Realized investment gains table"] td:nth-child(5)::before { content: "FIFO basis"; }
+    [aria-label="Realized investment gains table"] td:nth-child(6)::before { content: "Gain/loss"; }
+    [aria-label="Realized investment gains table"] td:nth-child(7)::before { content: "Return"; }
+    [aria-label="Trade-derived investment quantities table"] td:nth-child(2)::before { content: "Class"; }
+    [aria-label="Trade-derived investment quantities table"] td:nth-child(3)::before { content: "Quantity"; }
+    [aria-label="Trade-derived investment quantities table"] td:nth-child(4)::before { content: "Bought"; }
+    [aria-label="Trade-derived investment quantities table"] td:nth-child(5)::before { content: "Sold"; }
+    [aria-label="Trade-derived investment quantities table"] td:nth-child(6)::before { content: "Income"; }
+    [aria-label="Trade-derived investment quantities table"] td:nth-child(7)::before { content: "Costs"; }
     .data-filter__search { min-width: 100%; }
     .data-filter__bar > [data-slot="button"] { flex: 1; }
     .data-filter__chips { display: grid; grid-template-columns: 1fr; }

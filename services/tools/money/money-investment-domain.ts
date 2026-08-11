@@ -54,8 +54,11 @@ export function fifoInvestmentLots(events: readonly MoneyRealizedGainEvent[]): M
   const lots = new Map<string, Lot[]>();
   const realized = new Map<string, { soldQuantity: bigint; saleCount: number; proceedsMinor: bigint; costBasisMinor: bigint }>();
   let unmatchedSaleCount = 0;
+  const orderedEvents = [...events].sort((left, right) => left.occurredAt.localeCompare(right.occurredAt) || left.sourceOrder.localeCompare(right.sourceOrder));
+  const neutralTransfers = neutralPositionTransfers(orderedEvents);
 
-  for (const event of [...events].sort((left, right) => left.occurredAt.localeCompare(right.occurredAt) || left.sourceOrder.localeCompare(right.sourceOrder))) {
+  for (const event of orderedEvents) {
+    if (neutralTransfers.has(event)) continue;
     if (!event.symbol || !event.quantity) continue;
     const symbol = event.symbol.trim();
     const quantity = fixedQuantity(event.quantity);
@@ -131,6 +134,30 @@ export function fifoInvestmentLots(events: readonly MoneyRealizedGainEvent[]): M
     }];
   }).sort((left, right) => left.symbol.localeCompare(right.symbol) || left.accountKey.localeCompare(right.accountKey));
   return { realized: realizedAnalytics, openPositions };
+}
+
+/** Exact same-account transfer pairs are bookkeeping rows, not disposals or zero-cost acquisitions. */
+function neutralPositionTransfers(events: readonly MoneyRealizedGainEvent[]) {
+  const groups = new Map<string, { incoming: MoneyRealizedGainEvent[]; outgoing: MoneyRealizedGainEvent[] }>();
+  for (const event of events) {
+    if (event.eventKind !== "position_transfer" || !event.symbol || !event.quantity || event.baseAmountMinor !== 0 || event.baseFeeMinor !== 0) continue;
+    const quantity = fixedQuantity(event.quantity);
+    if (quantity === 0n) continue;
+    const absoluteQuantity = quantity < 0n ? -quantity : quantity;
+    const key = `${event.accountKey}\0${event.symbol.trim()}\0${event.occurredAt.slice(0, 10)}\0${absoluteQuantity}`;
+    const group = groups.get(key) ?? { incoming: [], outgoing: [] };
+    (quantity > 0n ? group.incoming : group.outgoing).push(event);
+    groups.set(key, group);
+  }
+  const neutral = new Set<MoneyRealizedGainEvent>();
+  for (const group of groups.values()) {
+    const pairCount = Math.min(group.incoming.length, group.outgoing.length);
+    for (let index = 0; index < pairCount; index += 1) {
+      neutral.add(group.incoming[index]!);
+      neutral.add(group.outgoing[index]!);
+    }
+  }
+  return neutral;
 }
 
 function consumeLots(lots: Lot[], requestedQuantity: bigint) {

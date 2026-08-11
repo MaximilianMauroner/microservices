@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import postgres, { type Sql } from "postgres";
 import type { MoneyTrackerSnapshot } from "./money-tracker.js";
 import { fifoRealizedGains, type MoneyRealizedGainAnalytics } from "./money-investment-domain.js";
+import { moneyDisplayDescription, moneyMerchantName } from "./money-description.js";
 import {
   MONEY_CATEGORIES,
   SPARKASSE_TRANSFER_TYPES,
@@ -33,6 +34,24 @@ export type MoneyActivityItem = Readonly<{
   transferGroupId?: string;
   transferDisposition?: MoneyTransferDisposition;
   needsTransferReview: boolean;
+  rawDescription?: string;
+}>;
+export type MoneyTransferReviewGroup = Readonly<{
+  representativeId: string;
+  accountName: string;
+  description: string;
+  sourceType: string;
+  direction: "inflow" | "outflow";
+  currency: string;
+  count: number;
+  totalMinor: number;
+}>;
+export type MoneyCategoryRule = Readonly<{
+  id: string;
+  accountName: string;
+  description: string;
+  category: MoneyCategory;
+  updatedAt: string;
 }>;
 export type MoneySpendingAnalytics = Readonly<{
   months: readonly Readonly<{ month: string; observed: boolean; spendMinor: number; refundsMinor: number; incomeMinor: number; feesMinor: number; taxesMinor: number; netCashFlowMinor: number }>[];
@@ -57,6 +76,8 @@ export type MoneyPlanningAnalytics = Readonly<{
 export type MoneyLedgerSnapshot = MoneyTrackerSnapshot & Readonly<{
   imports: readonly MoneyImportSummary[]; activity: readonly MoneyActivityItem[]; transactionCount: number; revertedCount: number;
   transferReview: Readonly<{ linkedPairs: number; unlinkedCount: number; unresolvedPositiveCount: number; unresolvedNegativeCount: number }>;
+  transferReviewGroups: readonly MoneyTransferReviewGroup[];
+  categoryRules: readonly MoneyCategoryRule[];
   spending: MoneySpendingAnalytics; investments: MoneyInvestmentAnalytics; planning: MoneyPlanningAnalytics;
 }>;
 export type MoneyActivityPage = Readonly<{ items: readonly MoneyActivityItem[]; total: number; hasMore: boolean }>;
@@ -68,8 +89,10 @@ export interface MoneyRepository {
   readLedgerSnapshot(): Promise<MoneyLedgerSnapshot>;
   readActivityPage(input: Readonly<{ query: string; flow?: MoneyLedgerTransaction["flowKind"]; reviewOnly?: boolean; offset: number; limit: number }>): Promise<MoneyActivityPage>;
   setTransactionCategory(input: Readonly<{ transactionId: string; category: MoneyCategory; actor: string; createRule: boolean }>): Promise<Readonly<{ affectedCount: number }>>;
+  deleteCategoryRule(ruleId: string): Promise<Readonly<{ affectedCount: number }> | undefined>;
   setTransferDisposition(input: Readonly<{ transactionId: string; disposition: MoneyTransferDisposition }>): Promise<void>;
-  addManualBalance(input: Readonly<{ accountName: string; role: "cash" | "investment"; date: string; valueMinor: number; currency: string }>): Promise<void>;
+  setTransferGroupDisposition(input: Readonly<{ transactionId: string; disposition: MoneyTransferDisposition }>): Promise<Readonly<{ affectedCount: number }>>;
+  addManualBalance(input: Readonly<({ accountId: string } | { accountName: string }) & { date: string; valueMinor: number; currency: string }>): Promise<void>;
   readiness(): Promise<void>;
   close(): Promise<void>;
 }
@@ -194,8 +217,15 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
     },
 
     async readLedgerSnapshot() {
-      const [imports, activity, count, transfers, monthly, categories, categoryMonths, merchantMonths, categoryActivity, events, investmentTotals, realizedEvents, snapshotRows] = await Promise.all([
+      const [imports, categoryRules, activity, count, transfers, transferReviewItems, monthly, categories, categoryMonths, merchantMonths, categoryActivity, events, investmentTotals, realizedEvents, snapshotRows] = await Promise.all([
         sql<ImportRow[]>`select id, digest, format, filename, bytes, source_row_count, inserted_row_count, duplicate_row_count, committed_at, created_by from tools.money_imports order by committed_at desc limit 50`,
+        sql<CategoryRuleRow[]>`select r.id, a.display_name account_name,
+          coalesce((select t.description from tools.money_transactions t
+            where t.account_id = r.account_id and lower(t.description) = r.match_value
+            order by t.occurred_at desc, t.source_row desc limit 1), r.match_value) match_value,
+          r.category, r.updated_at
+          from tools.money_category_rules r join tools.money_accounts a on a.id = r.account_id
+          where r.active and r.match_field = 'description' order by r.updated_at desc, r.id`,
         sql<ActivityRow[]>`select t.id, t.occurred_at, a.display_name account_name, t.description, t.amount_minor, t.fee_minor, t.tax_minor, t.currency, t.status, t.source_type, t.flow_kind, t.category, t.category_origin, t.transfer_group_id, t.transfer_disposition from tools.money_transactions t join tools.money_accounts a on a.id = t.account_id order by t.occurred_at desc, t.source_row desc limit 50`,
         sql<{ count: string; reverted_count: string }[]>`select count(*)::text count, count(*) filter (where status = 'reverted')::text reverted_count from tools.money_transactions`,
         sql<TransferReviewRow[]>`select count(distinct transfer_group_id)::text linked_pairs,
@@ -203,6 +233,12 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
           count(*) filter (where transfer_group_id is null and transfer_disposition is null and amount_minor > 0)::text unresolved_positive_count,
           count(*) filter (where transfer_group_id is null and transfer_disposition is null and amount_minor < 0)::text unresolved_negative_count
           from tools.money_transactions where status = 'completed' and flow_kind = 'transfer'`,
+        sql<TransferReviewItemRow[]>`select t.id, t.account_id::text account_id, a.display_name account_name,
+          t.description, t.source_type, t.amount_minor::text amount_minor, t.currency
+          from tools.money_transactions t join tools.money_accounts a on a.id = t.account_id
+          where t.status = 'completed' and t.flow_kind = 'transfer'
+            and t.transfer_group_id is null and t.transfer_disposition is null
+          order by a.display_name, t.description, t.source_type, sign(t.amount_minor), t.id`,
         sql<MonthlyRow[]>`with classified as (
           select local_date, base_amount_minor, base_fee_minor, base_tax_minor, flow_kind,
             case
@@ -253,22 +289,23 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
           count(*)::text count from classified where effective_flow = 'spend'
           group by date_trunc('month', local_date), category order by date_trunc('month', local_date), category`,
         sql<MerchantMonthRow[]>`with classified as (
-          select local_date, category, description, base_amount_minor, flow_kind, case
+          select local_date, category, description, source_type, base_amount_minor, flow_kind, case
             when flow_kind = 'transfer' and transfer_group_id is not null then 'internal_transfer'
             when flow_kind = 'transfer' then coalesce(transfer_disposition, 'unreviewed') else flow_kind end effective_flow
           from tools.money_transactions
           where status = 'completed' and base_currency = 'EUR' and local_date < date_trunc('month', current_date)
-        ) select to_char(date_trunc('month', local_date), 'YYYY-MM') as month, category,
+        ) select to_char(date_trunc('month', local_date), 'YYYY-MM') as month, category, source_type,
           coalesce(nullif(trim(description), ''), 'Unknown merchant') description,
           sum(case when flow_kind = 'transfer' then -base_amount_minor else abs(base_amount_minor) end)::text amount_minor,
           count(*)::text count from classified where effective_flow = 'spend'
-          group by date_trunc('month', local_date), category, coalesce(nullif(trim(description), ''), 'Unknown merchant')
+          group by date_trunc('month', local_date), category, source_type, coalesce(nullif(trim(description), ''), 'Unknown merchant')
           order by date_trunc('month', local_date), category, sum(case when flow_kind = 'transfer' then -base_amount_minor else abs(base_amount_minor) end) desc`,
         sql<ActivityRow[]>`select id, occurred_at, account_name, description, amount_minor, fee_minor, tax_minor, currency, status, source_type, flow_kind, category, category_origin, transfer_group_id, transfer_disposition from (
           select t.id, t.occurred_at, a.display_name account_name, t.description, t.amount_minor, t.fee_minor, t.tax_minor, t.currency, t.status, t.source_type, t.flow_kind, t.category, t.category_origin, t.transfer_group_id, t.transfer_disposition,
             row_number() over (partition by t.category order by t.occurred_at desc, t.source_row desc) category_rank
           from tools.money_transactions t join tools.money_accounts a on a.id = t.account_id
-          where t.status = 'completed' and t.base_currency = 'EUR' and (
+          where t.status = 'completed' and t.base_currency = 'EUR'
+            and t.local_date < date_trunc('month', current_date) and (
             t.flow_kind = 'spend' or (t.flow_kind = 'transfer' and t.transfer_group_id is null and t.transfer_disposition = 'spend')
           )
         ) ranked where category_rank <= 12 order by occurred_at desc`,
@@ -304,8 +341,8 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
       ]);
       const spending = spendingAnalytics(monthly, categories, categoryMonths, merchantMonths, categoryActivity);
       return {
-        imports: imports.map(summary), activity: activity.map(activityItem), transactionCount: Number(count[0]?.count ?? 0), revertedCount: Number(count[0]?.reverted_count ?? 0),
-        transferReview: transferReview(transfers[0]),
+        imports: imports.map(summary), categoryRules: categoryRules.map(categoryRule), activity: activity.map(activityItem), transactionCount: Number(count[0]?.count ?? 0), revertedCount: Number(count[0]?.reverted_count ?? 0),
+        transferReview: transferReview(transfers[0]), transferReviewGroups: transferReviewGroups(transferReviewItems),
         spending, investments: investmentAnalytics(events, investmentTotals[0], realizedEvents), planning: planningAnalytics(spending.months, transferReview(transfers[0])), ...balanceSnapshot(snapshotRows)
       };
     },
@@ -344,6 +381,22 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
       });
     },
 
+    deleteCategoryRule(ruleId) {
+      return sql.begin(async (tx) => {
+        const [rule] = await tx<{ account_id: string; match_field: string; match_value: string }[]>`delete from tools.money_category_rules
+          where id = ${ruleId} returning account_id::text account_id, match_field, match_value`;
+        if (!rule) return undefined;
+        const reset = await tx<{ id: string }[]>`update tools.money_transactions set category = 'uncategorized', category_origin = 'source'
+          where account_id = ${rule.account_id} and category_origin = 'rule' and (
+            (${rule.match_field} = 'description' and lower(description) = ${rule.match_value}) or
+            (${rule.match_field} = 'mcc' and mcc = ${rule.match_value}) or
+            (${rule.match_field} = 'source_type' and lower(source_type) = ${rule.match_value})
+          ) returning id`;
+        await applyCategoryRules(tx, reset.map((row) => row.id));
+        return { affectedCount: reset.length };
+      });
+    },
+
     async setTransferDisposition(input) {
       await sql.begin(async (tx) => {
         for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -369,14 +422,33 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
       });
     },
 
+    setTransferGroupDisposition(input) {
+      return sql.begin(async (tx) => {
+        const [representative] = await tx<{ account_id: string; description: string; source_type: string; amount_minor: string; currency: string }[]>`
+          select account_id::text account_id, description, source_type, amount_minor::text amount_minor, currency
+          from tools.money_transactions
+          where id = ${input.transactionId} and status = 'completed' and flow_kind = 'transfer'
+            and transfer_group_id is null and transfer_disposition is null
+          for update`;
+        if (!representative) throw new Error("Reviewable money transfer group not found.");
+        const direction = integer(representative.amount_minor) > 0 ? 1 : -1;
+        const updated = await tx<{ id: string }[]>`update tools.money_transactions set transfer_disposition = ${input.disposition}
+          where account_id = ${representative.account_id} and description = ${representative.description}
+            and source_type = ${representative.source_type} and currency = ${representative.currency}
+            and sign(amount_minor) = ${direction} and status = 'completed' and flow_kind = 'transfer'
+            and transfer_group_id is null and transfer_disposition is null returning id`;
+        return { affectedCount: updated.length };
+      });
+    },
+
     addManualBalance(input) {
       return sql.begin(async (tx) => {
-        const ref = `manual:${input.accountName.trim().toLocaleLowerCase("en-GB")}:${input.role}:${input.currency}`;
-        const [account] = await tx<{ id: string }[]>`insert into tools.money_accounts (id, provider, external_ref, display_name, role, currency, created_at, updated_at)
-          values (${randomUUID()}, 'manual', ${ref}, ${input.accountName.trim()}, ${input.role}, ${input.currency}, now(), now())
-          on conflict (provider, external_ref) do update set display_name = excluded.display_name, role = excluded.role, updated_at = now() returning id`;
+        const account = "accountId" in input
+          ? (await tx<{ id: string }[]>`select id from tools.money_accounts where id = ${input.accountId} and role = 'cash' and currency = ${input.currency}`)[0]
+          : await createManualAccount(tx, input.accountName, input.currency);
+        if (!account) throw new Error("Cash account not found.");
         await tx`insert into tools.money_balance_snapshots (account_id, snapshot_date, observed_at, value_minor, currency, origin, import_id)
-          values (${account!.id}, ${input.date}, ${`${input.date}T12:00:00.000Z`}, ${input.valueMinor}, ${input.currency}, 'manual', null)
+          values (${account.id}, ${input.date}, ${`${input.date}T12:00:00.000Z`}, ${input.valueMinor}, ${input.currency}, 'manual', null)
           on conflict (account_id, snapshot_date, origin) do update set observed_at = excluded.observed_at, value_minor = excluded.value_minor, currency = excluded.currency`;
       });
     },
@@ -391,17 +463,23 @@ type ActivityRow = { id: string; occurred_at: Date; account_name: string; descri
 type MonthlyRow = { month: string; observed: boolean; spend_minor: string; refunds_minor: string; income_minor: string; fees_minor: string; taxes_minor: string };
 type CategoryRow = { category: MoneyCategory; amount_minor: string; count: string };
 type CategoryMonthRow = CategoryRow & { month: string };
-type MerchantMonthRow = CategoryMonthRow & { description: string };
+type MerchantMonthRow = CategoryMonthRow & { description: string; source_type: string };
 type InvestmentRow = { symbol: string | null; name: string | null; asset_class: string | null; quantity: string; bought_minor: string; sold_minor: string; income_minor: string; fees_minor: string; taxes_minor: string; event_count: string; currency: string };
 type InvestmentTotalsRow = { event_count: string; bought_minor: string; sold_minor: string; income_minor: string; fees_minor: string; taxes_minor: string };
+type CategoryRuleRow = { id: string; account_name: string; match_value: string; category: MoneyCategory; updated_at: Date };
 type RealizedEventRow = { account_id: string; occurred_at: Date; source_row: number; source_key: string; event_kind: MoneyInvestmentEventInput["eventKind"]; symbol: string | null; quantity: string | null; base_amount_minor: string; base_fee_minor: string };
 type SnapshotRow = { account_id: string; snapshot_date: string; value_minor: string; currency: string; display_name: string; role: "cash" | "investment"; provider: string };
 type TransferRow = { id: string; account_id: string; local_date: string; amount_minor: string; currency: string };
 type TransferReviewRow = { linked_pairs: string; unlinked_count: string; unresolved_positive_count: string; unresolved_negative_count: string };
+type TransferReviewItemRow = { id: string; account_id: string; account_name: string; description: string; source_type: string; amount_minor: string; currency: string };
 
 function receipt(row: ImportRow, replay: boolean): MoneyImportReceipt { return { id: row.id, digest: row.digest, format: row.format, filename: row.filename, rowCount: row.source_row_count, insertedCount: row.inserted_row_count, duplicateCount: row.duplicate_row_count, committedAt: row.committed_at.toISOString(), replay }; }
 function summary(row: ImportRow): MoneyImportSummary { const { replay: _, ...item } = receipt(row, false); return { ...item, bytes: Number(row.bytes), actor: row.created_by }; }
-function activityItem(row: ActivityRow): MoneyActivityItem { return { id: row.id, occurredAt: row.occurred_at.toISOString(), accountName: row.account_name, description: row.description, amountMinor: integer(row.amount_minor), feeMinor: integer(row.fee_minor), taxMinor: integer(row.tax_minor), currency: row.currency, status: row.status, sourceType: row.source_type, flowKind: row.flow_kind, category: row.category, categoryOrigin: row.category_origin, needsTransferReview: row.status === "completed" && row.flow_kind === "transfer" && !row.transfer_group_id && !row.transfer_disposition, ...(row.transfer_group_id ? { transferGroupId: row.transfer_group_id } : {}), ...(row.transfer_disposition ? { transferDisposition: row.transfer_disposition } : {}) }; }
+function categoryRule(row: CategoryRuleRow): MoneyCategoryRule { return { id: row.id, accountName: row.account_name, description: moneyDisplayDescription(row.match_value), category: row.category, updatedAt: row.updated_at.toISOString() }; }
+function activityItem(row: ActivityRow): MoneyActivityItem {
+  const description = moneyDisplayDescription(row.description);
+  return { id: row.id, occurredAt: row.occurred_at.toISOString(), accountName: row.account_name, description, ...(description === row.description ? {} : { rawDescription: row.description }), amountMinor: integer(row.amount_minor), feeMinor: integer(row.fee_minor), taxMinor: integer(row.tax_minor), currency: row.currency, status: row.status, sourceType: row.source_type, flowKind: row.flow_kind, category: row.category, categoryOrigin: row.category_origin, needsTransferReview: row.status === "completed" && row.flow_kind === "transfer" && !row.transfer_group_id && !row.transfer_disposition, ...(row.transfer_group_id ? { transferGroupId: row.transfer_group_id } : {}), ...(row.transfer_disposition ? { transferDisposition: row.transfer_disposition } : {}) };
+}
 
 function spendingAnalytics(monthly: MonthlyRow[], categories: CategoryRow[], categoryMonths: CategoryMonthRow[], merchantMonths: MerchantMonthRow[], categoryActivity: ActivityRow[]): MoneySpendingAnalytics {
   const months = monthly.map((row) => { const spendMinor = integer(row.spend_minor); const refundsMinor = integer(row.refunds_minor); const incomeMinor = integer(row.income_minor); const feesMinor = integer(row.fees_minor); const taxesMinor = integer(row.taxes_minor); return { month: row.month, observed: row.observed, spendMinor, refundsMinor, incomeMinor, feesMinor, taxesMinor, netCashFlowMinor: incomeMinor + refundsMinor - spendMinor - feesMinor - taxesMinor }; });
@@ -409,10 +487,23 @@ function spendingAnalytics(monthly: MonthlyRow[], categories: CategoryRow[], cat
     months,
     categories: categories.map(categoryTotal),
     categoryMonths: categoryMonths.map((row) => ({ month: row.month, ...categoryTotal(row) })),
-    merchantMonths: merchantMonths.map((row) => ({ month: row.month, description: row.description, ...categoryTotal(row) })),
+    merchantMonths: aggregateMerchantMonths(merchantMonths),
     categoryActivity: categoryActivity.map(activityItem),
     uncategorizedCount: integer(categories.find((row) => row.category === "uncategorized")?.count ?? "0")
   };
+}
+
+function aggregateMerchantMonths(rows: MerchantMonthRow[]): MoneySpendingAnalytics["merchantMonths"] {
+  const totals = new Map<string, { month: string; category: MoneyCategory; description: string; amountMinor: number; count: number }>();
+  for (const row of rows) {
+    const description = moneyMerchantName(row.description, row.source_type);
+    const key = `${row.month}\0${row.category}\0${description.toLocaleLowerCase("en-GB")}`;
+    const total = totals.get(key) ?? { month: row.month, category: row.category, description, amountMinor: 0, count: 0 };
+    total.amountMinor += integer(row.amount_minor);
+    total.count += integer(row.count);
+    totals.set(key, total);
+  }
+  return [...totals.values()];
 }
 
 function categoryTotal(row: CategoryRow) { return { category: row.category, amountMinor: integer(row.amount_minor), count: integer(row.count) }; }
@@ -469,6 +560,27 @@ function transferReview(row?: TransferReviewRow): MoneyLedgerSnapshot["transferR
     unresolvedPositiveCount: Number(row?.unresolved_positive_count ?? 0), unresolvedNegativeCount: Number(row?.unresolved_negative_count ?? 0) };
 }
 
+function transferReviewGroups(rows: TransferReviewItemRow[]): MoneyTransferReviewGroup[] {
+  const groups = new Map<string, MoneyTransferReviewGroup>();
+  for (const row of rows) {
+    const amountMinor = integer(row.amount_minor);
+    const direction = amountMinor > 0 ? "inflow" : "outflow";
+    const key = `${row.account_id}\0${row.description}\0${row.source_type}\0${direction}\0${row.currency}`;
+    const current = groups.get(key);
+    groups.set(key, current ? { ...current, count: current.count + 1, totalMinor: current.totalMinor + amountMinor } : {
+      representativeId: row.id,
+      accountName: row.account_name,
+      description: moneyDisplayDescription(row.description),
+      sourceType: row.source_type,
+      direction,
+      currency: row.currency,
+      count: 1,
+      totalMinor: amountMinor
+    });
+  }
+  return [...groups.values()].sort((left, right) => right.count - left.count || Math.abs(right.totalMinor) - Math.abs(left.totalMinor) || left.description.localeCompare(right.description));
+}
+
 async function applyCategoryRules(tx: postgres.TransactionSql, transactionIds: string[]) {
   if (!transactionIds.length) return;
   await tx`with matches as (
@@ -480,6 +592,15 @@ async function applyCategoryRules(tx: postgres.TransactionSql, transactionIds: s
     where t.id in ${tx(transactionIds)} and t.category_origin <> 'manual'
   ) update tools.money_transactions t set category = matches.category, category_origin = 'rule'
     from matches where matches.id = t.id and matches.rank = 1`;
+}
+
+async function createManualAccount(tx: postgres.TransactionSql, accountName: string, currency: string) {
+  const name = accountName.trim();
+  const ref = `manual:${name.toLocaleLowerCase("en-GB")}:cash:${currency}`;
+  const [account] = await tx<{ id: string }[]>`insert into tools.money_accounts (id, provider, external_ref, display_name, role, currency, created_at, updated_at)
+    values (${randomUUID()}, 'manual', ${ref}, ${name}, 'cash', ${currency}, now(), now())
+    on conflict (provider, external_ref) do update set display_name = excluded.display_name, role = excluded.role, updated_at = now() returning id`;
+  return account;
 }
 
 /** Re-imports pick up improved defaults without overwriting category or transfer review choices. */
