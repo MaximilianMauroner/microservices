@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { MoneyActivityView, MoneyDataView, MoneyInvestmentsView, MoneyPlanningCard, MoneySpendingView } from "../money/money-ledger-views.js";
+import { MoneyActivityView, MoneyDataView, MoneyInvestmentsView, MoneyPlanningCard, MoneySpendingView, portfolioChartPoints } from "../money/money-ledger-views.js";
 import { groupMonth, History } from "../money/money-tracker-page.js";
 
 const activity = [
@@ -170,6 +170,28 @@ describe("Option A money ledger views", () => {
     expect(html).toContain("Largest position");
     expect(html).not.toContain("Yahoo closes");
     expect(html).not.toContain("ECB USD/EUR");
+  });
+
+  it("bounds portfolio graph points while preserving trade markers and basis changes", () => {
+    const history = Array.from({ length: 2_000 }, (_, index) => ({
+      date: `2020-01-${String(index + 1).padStart(4, "0")}`,
+      marketValue: index,
+      costBasis: index < 1_000 ? 500 : 750
+    }));
+    const trades = [
+      { date: history[700]!.date, eventKind: "buy" as const, symbol: "ETF", quantity: "1", amountMinor: 10_000, feeMinor: 0, currency: "EUR" },
+      { date: "9999-12-31", eventKind: "sell" as const, symbol: "ETF", quantity: "1", amountMinor: 12_000, feeMinor: 0, currency: "EUR" }
+    ];
+
+    const points = portfolioChartPoints(history, trades);
+
+    expect(points.length).toBeLessThanOrEqual(480);
+    expect(points[0]?.date).toBe(history[0]!.date);
+    expect(points.at(-1)?.date).toBe(history.at(-1)!.date);
+    expect(points.find((point) => point.date === history[700]!.date)?.buyMarker).toBeDefined();
+    expect(points.at(-1)?.sellMarker).toBeDefined();
+    expect(points.some((point) => point.date === history[999]!.date)).toBe(true);
+    expect(points.some((point) => point.date === history[1_000]!.date)).toBe(true);
   });
 
   it("surfaces analytical confidence and actionable repairs in one data-quality view", () => {

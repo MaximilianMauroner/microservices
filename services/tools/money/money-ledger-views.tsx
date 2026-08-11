@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "@tanstack/react-router";
 import {
   Check,
@@ -1775,6 +1775,8 @@ const marketChartConfig = {
   costBasis: { label: "Cost basis" },
 } satisfies ChartConfig;
 
+const MAX_PORTFOLIO_CHART_POINTS = 480;
+
 export function MoneyInvestmentsView({
   investments,
   marketData,
@@ -1794,16 +1796,20 @@ export function MoneyInvestmentsView({
   const cutoff = new Date(marketData.asOf);
   cutoff.setUTCFullYear(cutoff.getUTCFullYear() - 1);
   const cutoffDate = cutoff.toISOString().slice(0, 10);
-  const history = marketData.history
-    .filter(
-      (point) =>
-        point.complete && (period === "all" || point.date >= cutoffDate),
-    )
-    .map((point) => ({
-      date: point.date,
-      marketValue: point.knownMarketValueMinor / 100,
-      costBasis: point.costBasisMinor / 100,
-    }));
+  const history = useMemo(
+    () =>
+      marketData.history
+        .filter(
+          (point) =>
+            point.complete && (period === "all" || point.date >= cutoffDate),
+        )
+        .map((point) => ({
+          date: point.date,
+          marketValue: point.knownMarketValueMinor / 100,
+          costBasis: point.costBasisMinor / 100,
+        })),
+    [cutoffDate, marketData.history, period],
+  );
   const pricedPositions = marketData.positions.filter(
     (position) => position.marketValueMinor !== undefined,
   );
@@ -1845,40 +1851,16 @@ export function MoneyInvestmentsView({
   const topThreeShare = allocationTotal
     ? (topThreeValue / allocationTotal) * 100
     : undefined;
-  const tradesByDate = new Map<string, typeof investments.trades>();
-  for (const trade of investments.trades.filter(
-    (item) => period === "all" || item.date >= cutoffDate,
-  )) {
-    const nextValuation = history.find(
-      (point) => point.date >= trade.date,
-    )?.date;
-    const previousValuation =
-      trade.eventKind === "sell"
-        ? [...history].reverse().find((point) => point.date <= trade.date)?.date
-        : undefined;
-    const valuationDate = nextValuation ?? previousValuation;
-    if (valuationDate)
-      tradesByDate.set(valuationDate, [
-        ...(tradesByDate.get(valuationDate) ?? []),
-        trade,
-      ]);
-  }
-  const chartHistory = history.map((point) => {
-    const trades = tradesByDate.get(point.date) ?? [];
-    const bothKinds =
-      trades.some((trade) => trade.eventKind === "buy") &&
-      trades.some((trade) => trade.eventKind === "sell");
-    return {
-      ...point,
-      trades,
-      buyMarker: trades.some((trade) => trade.eventKind === "buy")
-        ? point.marketValue * (bothKinds ? 0.995 : 1)
-        : undefined,
-      sellMarker: trades.some((trade) => trade.eventKind === "sell")
-        ? point.marketValue * (bothKinds ? 1.005 : 1)
-        : undefined,
-    };
-  });
+  const chartHistory = useMemo(
+    () =>
+      portfolioChartPoints(
+        history,
+        investments.trades.filter(
+          (item) => period === "all" || item.date >= cutoffDate,
+        ),
+      ),
+    [cutoffDate, history, investments.trades, period],
+  );
   const equityPercent = allocationTotal
     ? (allocation[0]!.value / allocationTotal) * 100
     : 0;
@@ -2345,7 +2327,87 @@ type PortfolioChartPoint = Readonly<{
   trades: MoneyTrackerPageData["investments"]["trades"];
 }>;
 
-function AreaChartForPortfolio({
+type PortfolioHistoryPoint = Pick<
+  PortfolioChartPoint,
+  "date" | "marketValue" | "costBasis"
+>;
+
+/** Bounds SVG work while retaining endpoints, cost-basis changes, and trade markers. */
+export function portfolioChartPoints(
+  history: readonly PortfolioHistoryPoint[],
+  trades: MoneyTrackerPageData["investments"]["trades"],
+): readonly PortfolioChartPoint[] {
+  const tradesByIndex = new Map<number, typeof trades>();
+  for (const trade of trades) {
+    const nextIndex = firstPointOnOrAfter(history, trade.date);
+    const index =
+      nextIndex < history.length
+        ? nextIndex
+        : trade.eventKind === "sell"
+          ? history.length - 1
+          : -1;
+    if (index < 0) continue;
+    tradesByIndex.set(index, [...(tradesByIndex.get(index) ?? []), trade]);
+  }
+
+  const requiredIndexes = new Set<number>([0, history.length - 1]);
+  for (const index of tradesByIndex.keys()) requiredIndexes.add(index);
+  for (let index = 1; index < history.length; index += 1) {
+    if (history[index]!.costBasis !== history[index - 1]!.costBasis) {
+      requiredIndexes.add(index - 1);
+      requiredIndexes.add(index);
+    }
+  }
+
+  const indexes = sampledIndexes(history.length, requiredIndexes);
+  return indexes.map((index) => {
+    const point = history[index]!;
+    const pointTrades = tradesByIndex.get(index) ?? [];
+    const hasBuy = pointTrades.some((trade) => trade.eventKind === "buy");
+    const hasSell = pointTrades.some((trade) => trade.eventKind === "sell");
+    const bothKinds = hasBuy && hasSell;
+    return {
+      ...point,
+      trades: pointTrades,
+      buyMarker: hasBuy ? point.marketValue * (bothKinds ? 0.995 : 1) : undefined,
+      sellMarker: hasSell
+        ? point.marketValue * (bothKinds ? 1.005 : 1)
+        : undefined,
+    };
+  });
+}
+
+function firstPointOnOrAfter(
+  history: readonly PortfolioHistoryPoint[],
+  date: string,
+) {
+  let low = 0;
+  let high = history.length;
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    if (history[middle]!.date < date) low = middle + 1;
+    else high = middle;
+  }
+  return low;
+}
+
+function sampledIndexes(length: number, requiredIndexes: ReadonlySet<number>) {
+  if (length <= MAX_PORTFOLIO_CHART_POINTS) {
+    return Array.from({ length }, (_, index) => index);
+  }
+
+  const indexes = new Set(requiredIndexes);
+  const sampleCount = Math.max(
+    0,
+    MAX_PORTFOLIO_CHART_POINTS - indexes.size,
+  );
+  for (let sample = 1; sample <= sampleCount; sample += 1) {
+    indexes.add(Math.round((sample * (length - 1)) / (sampleCount + 1)));
+  }
+  return [...indexes].filter((index) => index >= 0).sort((a, b) => a - b);
+}
+
+const AreaChartForPortfolio = memo(function AreaChartForPortfolio({
   data,
 }: {
   data: readonly PortfolioChartPoint[];
@@ -2386,6 +2448,7 @@ function AreaChartForPortfolio({
         fill="url(#money-market-value-fill)"
         stroke="#67e8f9"
         strokeWidth={2}
+        isAnimationActive={false}
       />
       <Line
         dataKey="costBasis"
@@ -2395,6 +2458,7 @@ function AreaChartForPortfolio({
         strokeWidth={1.5}
         strokeDasharray="6 5"
         dot={false}
+        isAnimationActive={false}
       />
       <Scatter
         dataKey="buyMarker"
@@ -2416,7 +2480,7 @@ function AreaChartForPortfolio({
       />
     </ComposedChart>
   );
-}
+});
 
 function PortfolioChartTooltip({
   active,

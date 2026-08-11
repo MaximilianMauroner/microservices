@@ -485,17 +485,17 @@ const DESCRIPTION_CATEGORY_RULES: readonly Readonly<{ category: MoneyCategory; p
   { category: "transport", pattern: /\b(oebb|obb|enio|westbahn|wiener linien|wienerlinien|klimaticket|trenitalia|salzburg verkehr|flixbus|eurolanes|uber|taxi|train|rail|parking|parkhaus|parkplatz|parcheggio|garage|wipark|autostrade?|brennero|bolzano sud|tiermobilit|suedtirol pass|altoadige p ass|esso|petrol|fuel|kvw service|bus(?:s+|$))\b|a.bb|^tier$|^wien$/ },
   { category: "health", pattern: /\b(apotheke|pharmacy|pharmac|farmacia|doctor|dentist|hospital|fitinn|drogerie|bipa|dermopraxis|diagnostik)\b/ },
   { category: "personal_care", pattern: /\b(barber|hairdresser|haircut|salon|salone|coiffeur|beauty|spa|nails?|cosmetics?|skincare|grooming|massage)\b/ },
-  { category: "travel", pattern: /\b(booking\.com|hotel|airline|flight|camping|holafly|sardinia vera)\b/ },
-  { category: "subscriptions", pattern: /\b(netflix|spotify|audible|youtube|deezer|libro\.fm|t3 chat|openai|chatgpt|claude|google(?: cloud| chrome)?|microsoft|jetbrains|paddle|replicate|iliad|tim|vodafone|hot telekom|1mobile|purevpn|server dedicato|hetzner|railway|convex|cloudflare|virtualsolu|aruba\.it|amazon prime|evernote|readwise|bitwarden|akiflow|appest|obsidian|cursor|reclaim|groq|unraid|filebot|rize subscription)\b|netflixinte/ },
+  { category: "travel", pattern: /\b(booking\.com|hotel|airline|flight|ferry|camping|holafly|sardinia vera)\b|^017480wp7806i11e$/ },
+  { category: "subscriptions", pattern: /\b(netflix|spotify|audible|youtube|deezer|libro\.fm|t3 chat|openai|chatgpt|claude|google(?: cloud| chrome)?|microsoft|jetbrains|paddle|replicate|iliad|tim|vodafone|hot telekom|1mobile|purevpn|privateinte|server dedicato|hetzner|railway|convex|cloudflare|virtualsolu|aruba\.it|amazon prime|evernote|readwise|bitwarden|akiflow|appest|obsidian|cursor|reclaim|groq|unraid|filebot|rize subscription)\b|netflixinte/ },
   { category: "education", pattern: /\b(tu wien|technische universitaet wien|fahrschule|frontendmasters|knowt)\b/ },
   { category: "entertainment", pattern: /\b(steam|riot games|hrk game|playstation|g2a|kinguin|chrono(?: gg)?|electronic arts|eneba|mmoga|twitch|znipe|ticketmaster|wien ticket|p3 comix|billardcafe|der klub|wiener eistraum|cineplexx|google play|itunes|itch\.io|abavent|addicted to rock|sport arena wien|musical)\b|steamgames|hrkdistribu|^khm sk/ },
-  { category: "shopping", pattern: /\b(amazon|amz|apple(?:\.com)?|ikea|dbrand|zalando|zara|muller|printbox|paperlike|massdrop|redbubble|thomann|media ?markt|mediaworld|media world|linus tech tips|nike|etsy|uniqlo|brookssport|puma|urban outfitters|samsung|rhinoshield|sportler|nencini sport|beyerdynamic|darn tough|calida|cyberport|e-tec\.at|xxxlutz|action|thalia|athesia|unifi|seven technology|legami|kurzgesagt|h&m|obi|ceramics|flaconi|dell sas|athleticgre|hutstuebele|heogmbh|spri\.ng|ctdi|blitzhandel24|surteesstudios|az delivery|paga in 3 rate|salewa|fellhof)\b|flaconi|sixpol|m.*ller|ebay/ },
-  { category: "gifts", pattern: /\b(wikimedia|blumen)\b/ },
+  { category: "shopping", pattern: /\b(amazon|amz|apple(?:\.com)?|ikea|dbrand|zalando|zara|muller|printbox|paperlike|massdrop|redbubble|thomann|media ?markt|mediaworld|media world|linus tech tips|nike|etsy|uniqlo|brookssport|puma|urban outfitters|samsung|rhinoshield|sportler|nencini sport|beyerdynamic|darn tough|calida|cyberport|e-tec\.at|xxxlutz|action|thalia|athesia|unifi|seven technology|legami|kurzgesagt|h&m|obi|ceramics|flaconi|dell sas|athleticgre|hutstuebele|heogmbh|spri\.ng|ctdi|blitzhandel24|surteesstudios|az delivery|paga in 3 rate|salewa|fellhof|bout\. maximilian|pierre)\b|flaconi|sixpol|m.*ller|ebay/ },
+  { category: "gifts", pattern: /\b(wikimedia|blumen|thaler)\b|^rili'?$/ },
   { category: "taxes", pattern: /\b(pagopa)\b/ },
   { category: "fees", pattern: /\b(hannafinanz|poste italiane|post fa|post 1153|packlink|servizio spid)\b|fedex/ },
   { category: "cash", pattern: /\b(ricarica yap)\b|^yap$/ },
   { category: "investments", pattern: /\btrade republic\b/ },
-  { category: "other", pattern: /\bpay\s*pal\b|\bpaypal\b|^pp\*/ }
+  { category: "other", pattern: /\bpay\s*pal\b|\bpaypal\b|^pp\*|^sonia\.mauroner$/ }
 ];
 
 /** Auditable defaults inferred from source MCCs and recurring merchant names. User rules take precedence in the repository. */

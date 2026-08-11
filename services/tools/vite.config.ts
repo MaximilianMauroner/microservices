@@ -1,4 +1,5 @@
-import react from "@vitejs/plugin-react";
+import babel from "@rolldown/plugin-babel";
+import react, { reactCompilerPreset } from "@vitejs/plugin-react";
 import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import { SERVER_FUNCTION_BASE_PATH } from "@tools-platform/security";
 import tailwindcss from "@tailwindcss/vite";
@@ -20,7 +21,8 @@ export default defineConfig({
       // from passing the lightweight /health check.
       inlineDynamicImports: true
     }),
-    react()
+    react(),
+    babel({ presets: [reactCompilerPreset()] })
   ],
   resolve: {
     alias: {

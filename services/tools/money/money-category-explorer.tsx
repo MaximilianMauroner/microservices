@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Link, useRouter } from "@tanstack/react-router";
-import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
+import { Area, AreaChart, CartesianGrid, ReferenceLine, XAxis, YAxis } from "recharts";
+import type { MouseHandlerDataParam } from "recharts";
 import type { MoneyCategory } from "./money-enums.js";
 import type { MoneySpendingAnalytics } from "./money-repository.js";
 import { Badge } from "../src/components/ui/badge.js";
@@ -12,6 +13,7 @@ import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } f
 
 type CategoryPeriod = "6m" | "1y" | "all";
 type CategoryTotal = Readonly<{ category: MoneyCategory; amountMinor: number; count: number }>;
+type MerchantTotal = Readonly<{ description: string; amountMinor: number; count: number }>;
 
 const preciseCurrency = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
 const compactCurrency = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
@@ -39,6 +41,20 @@ export function MoneyCategoryExplorer({ spending, initialCategory }: { spending:
   const coverage = totalSpend ? (totalSpend - uncategorized) / totalSpend * 100 : 0;
   const trend = selectedMonths.map((month) => ({ month, amount: spending.categoryMonths.filter((row) => row.month === month && row.category === category).reduce((sum, row) => sum + row.amountMinor, 0) / 100 }));
   const merchants = aggregateMerchants(spending.merchantMonths.filter((row) => selectedMonthSet.has(row.month) && row.category === category));
+  const contributorsByMonth = useMemo(() => indexContributors(spending.merchantMonths, category, selectedMonthSet), [category, selectedMonthSet, spending.merchantMonths]);
+  const defaultSelectedMonth = [...trend].reverse().find((row) => row.amount > 0)?.month ?? selectedMonths.at(-1);
+  const [selectedMonth, setSelectedMonth] = useState(defaultSelectedMonth);
+  const [contributorQuery, setContributorQuery] = useState("");
+  useEffect(() => {
+    setSelectedMonth(defaultSelectedMonth);
+    setContributorQuery("");
+  }, [category, defaultSelectedMonth, period]);
+  const selectedTrend = trend.find((row) => row.month === selectedMonth);
+  const selectedContributors = contributorsByMonth.get(selectedMonth ?? "") ?? [];
+  const normalizedContributorQuery = contributorQuery.trim().toLocaleLowerCase();
+  const visibleContributors = (normalizedContributorQuery
+    ? selectedContributors.filter((row) => row.description.toLocaleLowerCase().includes(normalizedContributorQuery))
+    : selectedContributors).slice(0, 10);
   const activity = spending.categoryActivity.filter((row) => row.category === category && selectedMonthSet.has(row.occurredAt.slice(0, 7)));
   const selectCategory = (nextCategory: MoneyCategory) => {
     setCategory(nextCategory);
@@ -63,14 +79,19 @@ export function MoneyCategoryExplorer({ spending, initialCategory }: { spending:
 
       <Card>
         <CardHeader className="border-b"><div className="flex items-start justify-between gap-3"><div><CardTitle>{selected ? categoryLabel(selected.category) : "Category detail"}</CardTitle><CardDescription>{selected ? `${formatMinor(selected.amountMinor)} across ${selected.count.toLocaleString("en-GB")} transactions` : "Select a category from the map"}</CardDescription></div>{selected ? <Badge variant="outline">{totalSpend ? (selected.amountMinor / totalSpend * 100).toFixed(1) : "0.0"}%</Badge> : null}</div></CardHeader>
-        <CardContent className="space-y-5 pt-5">
+        <CardContent className="p-0">
           {selected ? <>
-            <MountedChart fallback={<div className="money-chart-fallback">Loading trend</div>}>
-              <ChartContainer config={trendConfig} className="h-64 w-full aspect-auto" initialDimension={{ width: 760, height: 256 }} role="img" aria-label={`${categoryLabel(selected.category)} monthly spending trend. Exact values follow in a table.`}>
-                <AreaChart data={trend} margin={{ left: 4, right: 12, top: 8 }}><defs><linearGradient id="category-spend-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#67e8f9" stopOpacity={0.34} /><stop offset="95%" stopColor="#67e8f9" stopOpacity={0.03} /></linearGradient></defs><CartesianGrid vertical={false} /><XAxis dataKey="month" tickLine={false} axisLine={false} minTickGap={24} /><YAxis tickLine={false} axisLine={false} width={68} tickFormatter={(value: number) => compactCurrency.format(value)} /><ChartTooltip content={<ChartTooltipContent />} /><Area dataKey="amount" name="Spend" type="monotone" fill="url(#category-spend-fill)" stroke="#67e8f9" strokeWidth={2} /></AreaChart>
-              </ChartContainer>
-            </MountedChart>
-            <details className="money-chart-data"><summary>View exact graph data</summary><div className="overflow-x-auto"><table className="w-full text-xs"><thead><tr><th className="text-left">Month</th><th className="text-right">Spend</th></tr></thead><tbody>{trend.map((row) => <tr key={row.month}><td>{row.month}</td><td className="text-right font-mono">{preciseCurrency.format(row.amount)}</td></tr>)}</tbody></table></div></details>
+            <div className="money-category-trend">
+              <div className="money-category-trend__chart">
+                <MountedChart fallback={<div className="money-chart-fallback">Loading trend</div>}>
+                  <ChartContainer config={trendConfig} className="h-64 w-full aspect-auto" initialDimension={{ width: 760, height: 256 }} role="img" aria-label={`${categoryLabel(selected.category)} monthly spending trend. Click a month to inspect its biggest contributors. Exact values follow in a table.`}>
+                    <AreaChart data={trend} margin={{ left: 4, right: 12, top: 8 }} onClick={({ activeLabel }: MouseHandlerDataParam) => { if (typeof activeLabel === "string") setSelectedMonth(activeLabel); }} style={{ cursor: "pointer" }}><defs><linearGradient id="category-spend-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#67e8f9" stopOpacity={0.34} /><stop offset="95%" stopColor="#67e8f9" stopOpacity={0.03} /></linearGradient></defs><CartesianGrid vertical={false} /><XAxis dataKey="month" tickLine={false} axisLine={false} minTickGap={24} /><YAxis tickLine={false} axisLine={false} width={68} tickFormatter={(value: number) => compactCurrency.format(value)} />{selectedMonth ? <ReferenceLine x={selectedMonth} stroke="#a3e635" strokeDasharray="3 3" /> : null}<ChartTooltip content={<ChartTooltipContent />} /><Area dataKey="amount" name="Spend" type="monotone" fill="url(#category-spend-fill)" stroke="#67e8f9" strokeWidth={2} /></AreaChart>
+                  </ChartContainer>
+                </MountedChart>
+                <details className="money-chart-data"><summary>View exact graph data</summary><div className="overflow-x-auto"><table className="w-full text-xs"><thead><tr><th className="text-left">Month</th><th className="text-right">Spend</th></tr></thead><tbody>{trend.map((row) => <tr key={row.month}><td>{row.month}</td><td className="text-right font-mono">{preciseCurrency.format(row.amount)}</td></tr>)}</tbody></table></div></details>
+              </div>
+              <MonthlyContributors month={selectedMonth} amount={selectedTrend?.amount ?? 0} contributors={selectedContributors} visibleContributors={visibleContributors} query={contributorQuery} onQuery={setContributorQuery} />
+            </div>
           </> : <EmptyState />}
         </CardContent>
       </Card>
@@ -100,6 +121,17 @@ function CategoryPeriodSelector({ period, onPeriod }: { period: CategoryPeriod; 
 }
 
 function PeriodButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) { return <Button type="button" size="sm" variant={active ? "default" : "outline"} aria-pressed={active} onClick={onClick}>{children}</Button>; }
+function MonthlyContributors({ month, amount, contributors, visibleContributors, query, onQuery }: { month?: string; amount: number; contributors: readonly MerchantTotal[]; visibleContributors: readonly MerchantTotal[]; query: string; onQuery: (query: string) => void }) {
+  const amountMinor = Math.round(amount * 100);
+  return <aside className="money-category-contributors" aria-label="Biggest monthly contributors">
+    <div className="money-category-contributors__header"><div><h3>Biggest contributors</h3><p>{month ? `${month} · ${preciseCurrency.format(amount)}` : "Click a month on the graph"}</p></div><span>{contributors.reduce((sum, row) => sum + row.count, 0).toLocaleString("en-GB")} tx</span></div>
+    <label className="money-category-contributors__search"><span className="sr-only">Search contributors</span><input type="search" value={query} onChange={(event) => onQuery(event.currentTarget.value)} placeholder="Search contributors…" autoComplete="off" /></label>
+    <div className="money-category-contributors__list" role="list">
+      {visibleContributors.map((row) => <div className="money-category-contributor" key={row.description} role="listitem"><div><strong>{row.description}</strong><span>{row.count.toLocaleString("en-GB")} {row.count === 1 ? "transaction" : "transactions"}{amountMinor ? ` · ${(row.amountMinor / amountMinor * 100).toFixed(0)}%` : ""}</span></div><span>{formatMinor(row.amountMinor)}</span></div>)}
+      {visibleContributors.length === 0 ? <p className="money-category-contributors__empty">{query ? "No contributors match this search." : "No spending contributors in this month."}</p> : null}
+    </div>
+  </aside>;
+}
 function Metric({ label, value, detail }: { label: string; value: string; detail: string }) { return <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-2 text-2xl font-semibold tracking-tight">{value}</p><p className="mt-1 text-xs text-muted-foreground">{detail}</p></CardContent></Card>; }
 function EmptyState() { return <div className="p-8 text-center text-sm text-muted-foreground">No completed spending in this period.</div>; }
 function MountedChart({ fallback, children }: { fallback: React.ReactNode; children: React.ReactNode }) { const [mounted, setMounted] = useState(false); useEffect(() => setMounted(true), []); return mounted ? children : fallback; }
@@ -116,4 +148,17 @@ function aggregateMerchants(rows: MoneySpendingAnalytics["merchantMonths"]) {
   const totals = new Map<string, { amountMinor: number; count: number }>();
   for (const row of rows) { const total = totals.get(row.description) ?? { amountMinor: 0, count: 0 }; total.amountMinor += row.amountMinor; total.count += row.count; totals.set(row.description, total); }
   return [...totals].map(([description, total]) => ({ description, ...total })).sort((left, right) => right.amountMinor - left.amountMinor);
+}
+
+function indexContributors(rows: MoneySpendingAnalytics["merchantMonths"], category: MoneyCategory | undefined, selectedMonths: ReadonlySet<string>) {
+  const index = new Map<string, MerchantTotal[]>();
+  if (!category) return index;
+  for (const row of rows) {
+    if (row.category !== category || !selectedMonths.has(row.month)) continue;
+    const month = index.get(row.month) ?? [];
+    month.push({ description: row.description, amountMinor: row.amountMinor, count: row.count });
+    index.set(row.month, month);
+  }
+  for (const contributors of index.values()) contributors.sort((left, right) => right.amountMinor - left.amountMinor || left.description.localeCompare(right.description));
+  return index;
 }

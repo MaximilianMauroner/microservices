@@ -38,6 +38,10 @@ describe("money category explorer", () => {
     expect(html).toContain("Recent transactions");
     expect(html).toContain("rule");
     expect(html).toContain("View exact graph data");
+    expect(html).toContain("Biggest contributors");
+    expect(html).toContain("Search contributors");
+    expect(html).toContain("Bakery");
+    expect(html).toContain("2 tx");
     expect(html).toContain("69.2%");
   });
 });

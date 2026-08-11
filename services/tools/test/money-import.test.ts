@@ -28,12 +28,12 @@ describe("Revolut cash statement parser", () => {
       ["BILLA", undefined, "groceries"], ["SÃ¼dtiroler Milch", undefined, "groceries"],
       ["Lieferando", undefined, "dining"], ["CafÃ© Jelinek", undefined, "dining"],
       ["ÃBB", undefined, "transport"], ["ENIO", undefined, "transport"],
-      ["Apotheke Schwenk", undefined, "health"], ["Booking.com", undefined, "travel"],
-      ["OpenAI", undefined, "subscriptions"], ["JetBrains", undefined, "subscriptions"], ["Appest", undefined, "subscriptions"],
+      ["Apotheke Schwenk", undefined, "health"], ["Booking.com", undefined, "travel"], ["017480wp7806i11e", undefined, "travel"],
+      ["OpenAI", undefined, "subscriptions"], ["JetBrains", undefined, "subscriptions"], ["Appest", undefined, "subscriptions"], ["Privateinte", undefined, "subscriptions"],
       ["Steam", undefined, "entertainment"], ["Amazon", undefined, "shopping"],
       ["Studentenfoerderungsstiftung", undefined, "housing"], ["Suedtirol Pass", undefined, "transport"],
       ["Fahrschule Haslach", undefined, "education"], ["50min Diagnostik", undefined, "health"],
-      ["Dell SAS", undefined, "shopping"], ["PayPal Europe", undefined, "other"],
+      ["Dell SAS", undefined, "shopping"], ["PayPal Europe", undefined, "other"], ["sonia.mauroner", undefined, "other"],
       ["LÃ¤derach", undefined, "groceries"], ["Mne 95012851winestore", undefined, "groceries"],
       ["910 Denn.s Bio Wien", undefined, "groceries"], ["l'autentico1190", undefined, "dining"],
       ["Salone Gran Chik", undefined, "personal_care"], ["City Barber", undefined, "personal_care"], ["Mne 95011892sixpol Ele", undefined, "shopping"],
@@ -41,6 +41,7 @@ describe("Revolut cash statement parser", () => {
       ["Landhausbar Renovas", undefined, "dining"], ["Coca-Cola", undefined, "dining"],
       ["Kvw Service Bozen", undefined, "transport"], ["Salewa Bivac", undefined, "shopping"],
       ["Der Fellhof", undefined, "shopping"], ["Servizio Spid", undefined, "fees"],
+      ["Bout. Maximilian", undefined, "shopping"], ["Pierre", undefined, "shopping"], ["Rili'", undefined, "gifts"], ["Thaler", undefined, "gifts"],
       ["Payment", "5411", "groceries"], ["Payment", "5732", "shopping"],
       ["Unknown person", undefined, "uncategorized"]
     ] as const;
