@@ -1,6 +1,6 @@
 import { defaultStreamHandler, createStartHandler } from "@tanstack/react-start/server";
 import { createServerEntry } from "@tanstack/react-start/server-entry";
-import { getPlatformRuntime } from "./runtime.js";
+import { closePlatformRuntime, getPlatformRuntime } from "./runtime.js";
 
 const fetch = createStartHandler({ handler: defaultStreamHandler });
 const runtimeReady = getPlatformRuntime();
@@ -21,7 +21,8 @@ async function shutdown(signal: NodeJS.Signals) {
   const force = setTimeout(() => process.exit(1), 15_000);
   force.unref();
   try {
-    await (await runtimeReady).stop();
+    await runtimeReady;
+    await closePlatformRuntime();
     process.exitCode = 0;
   } finally {
     clearTimeout(force);
