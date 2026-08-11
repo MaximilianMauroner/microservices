@@ -323,13 +323,30 @@ it.skipIf(!repository || !admin)("reports reverted rows beyond the initial activ
   expect(snapshot.revertedCount).toBe(1);
 });
 
-it.skipIf(!repository || !admin)("hides reverted rows and completed rows later undone by an exact reverted export row", async () => {
+it.skipIf(!repository || !admin)("pairs reverted rows one-to-one and excludes the undone row from every analytic", async () => {
   await commitCash(repository!, cash([
     "Card Payment\tCurrent\t2026-06-12 12:00:00\t2026-06-12 12:00:00\tVoided purchase\t-5\t0\tEUR\tCOMPLETED\t95",
+    "Card Payment\tCurrent\t2026-06-12 12:00:00\t2026-06-12 12:00:00\tVoided purchase\t-5\t0\tEUR\tCOMPLETED\t90",
     "Card Payment\tCurrent\t2026-06-12 12:00:00\t2026-06-12 12:00:00\tVoided purchase\t-5\t0\tEUR\tREVERTED\t"
   ]), "voided.tsv");
   const activity = await repository!.readActivityPage({ query: "Voided purchase", offset: 0, limit: 10 });
-  expect(activity).toEqual({ items: [], total: 0, hasMore: false });
+  expect(activity).toEqual(expect.objectContaining({ total: 1, hasMore: false }));
+  expect(activity.items).toHaveLength(1);
+  const snapshot = await repository!.readLedgerSnapshot();
+  expect(snapshot.spending.categories).toContainEqual(expect.objectContaining({ amountMinor: 500, count: 1 }));
+  expect(snapshot.spending.months.find((month) => month.month === "2026-06")).toMatchObject({ spendMinor: 500, netCashFlowMinor: -500 });
+});
+
+it.skipIf(!repository || !admin)("does not link an effective transfer to a completed transfer that was undone", async () => {
+  await commitCash(repository!, cash([
+    "Transfer\tCurrent\t2026-06-15 12:00:00\t2026-06-15 12:00:00\tUndone funding\t50\t0\tEUR\tCOMPLETED\t150",
+    "Transfer\tCurrent\t2026-06-15 12:00:00\t2026-06-15 12:00:00\tUndone funding\t50\t0\tEUR\tREVERTED\t",
+    "Transfer\tSavings\t2026-06-15 12:00:00\t2026-06-15 12:00:00\tLegitimate opposite\t-50\t0\tEUR\tCOMPLETED\t50"
+  ]), "undone-transfer.tsv");
+  const snapshot = await repository!.readLedgerSnapshot();
+  expect(snapshot.transferReview.linkedPairs).toBe(0);
+  expect(snapshot.transferReview.unresolvedNegativeCount).toBe(1);
+  expect(snapshot.transferReviewGroups).toEqual([expect.objectContaining({ description: "Legitimate opposite", count: 1, totalMinor: -5_000 })]);
 });
 
 it.skipIf(!repository || !admin)("materializes carried balance months for monthly trend intervals", async () => {

@@ -373,7 +373,10 @@ function parseBalances(dataRows: string[][], digest: string): ParsedMoneyImport 
 
 function result(format: MoneyImportFormat, digest: string, transactions: MoneyLedgerTransaction[], investmentEvents: MoneyInvestmentEventInput[], balanceSnapshots: MoneyBalanceSnapshotInput[], accounts: MoneyImportAccountPreview[], warnings: string[]): ParsedMoneyImport {
   const dates = transactions.map((item) => item.localDate).sort();
-  return { format, digest, rowCount: transactions.length, dateRange: { from: dates[0]!, to: dates.at(-1)! }, accounts, transactions, investmentEvents, balanceSnapshots, warnings };
+  const duplicateCount = transactions.length - new Set(transactions.map((item) => item.sourceKey)).size;
+  const duplicateWarning = duplicateCount > 0 ? `${duplicateCount} duplicate source row${duplicateCount === 1 ? "" : "s"} will be skipped during import.` : undefined;
+  return { format, digest, rowCount: transactions.length, dateRange: { from: dates[0]!, to: dates.at(-1)! }, accounts, transactions, investmentEvents, balanceSnapshots,
+    warnings: duplicateWarning ? [...warnings, duplicateWarning] : warnings };
 }
 
 function accountPreviews(transactions: readonly MoneyLedgerTransaction[]): MoneyImportAccountPreview[] {
@@ -478,20 +481,21 @@ const MCC_CATEGORY_RULES: readonly Readonly<{ category: MoneyCategory; pattern: 
 const DESCRIPTION_CATEGORY_RULES: readonly Readonly<{ category: MoneyCategory; pattern: RegExp }>[] = [
   { category: "housing", pattern: /\b(rent|landlord|mortgage|utility|utilities|electricity|gas bill|studentenf(?:o|oe)rderungsstiftung)\b/ },
   { category: "groceries", pattern: /\b(billa|spar|hofer|aldi|lidl|rewe|edeka|despar|mpreis|supermarket|grocer(?:y|ies)|denn'?s|biomarkt|hello ?fresh|huel|koncoop|naturalia|agrocenter|sudtiroler milch|fruits?|misa tea)\b|s.*dtiroler milch|l.*derach|winestore|denn.s|^basic$/ },
-  { category: "dining", pattern: /\b(lieferando|foodora|deliveroo|delivery hero|just eat|takeaway|restaurant|cafe|coffee|backwerk|mcdonald'?s|confiserie|autogrill|swing kitchen|bistrot|bakerei|konditorei|kebab|imbiss|pizzeria|biteclub|bao bar|veggiezz|frozen yogurt|litalissimo|humus|old wild west|serways|brot und spiele|juice factory|le crobag|speckstandl|nihonbashi|tramuntana|giannotti et fil|balthasar kaffee|bar edelweiss|stadtkebab|landhausbar|coca-cola|gourmet)\b|l'autentico|b.*ckerei|caf.|str.*ck|b.*renwirt|^chez angele?$/ },
-  { category: "transport", pattern: /\b(oebb|obb|enio|westbahn|wiener linien|wienerlinien|klimaticket|trenitalia|salzburg verkehr|flixbus|eurolanes|uber|taxi|train|rail|parking|parkhaus|parkplatz|parcheggio|garage|wipark|autostrade?|brennero|bolzano sud|tiermobilit|suedtirol pass|altoadige p ass|esso|petrol|fuel|kvw service)\b|a.bb|^tier$|^wien$/ },
-  { category: "health", pattern: /\b(apotheke|pharmacy|pharmac|farmacia|doctor|dentist|hospital|fitinn|drogerie|bipa|dermopraxis|beauty|diagnostik)\b|salone gran chi/ },
+  { category: "dining", pattern: /\b(lieferando|foodora|deliveroo|delivery hero|just eat|takeaway|restaurant|cafe|coffee|pizza|backwerk|mcdonald'?s|confiserie|autogrill|swing kitchen|bistrot|bakerei|konditorei|kebab|imbiss|pizzeria|biteclub|bao bar|veggiezz|frozen yogurt|litalissimo|humus|old wild west|serways|brot und spiele|juice factory|le crobag|speckstandl|nihonbashi|tramuntana|giannotti et fil|balthasar kaffee|bar edelweiss|stadtkebab|landhausbar|coca-cola|gourmet)\b|l'autentico|b.*ckerei|caf.|str.*ck|b.*renwirt|^chez angele?$/ },
+  { category: "transport", pattern: /\b(oebb|obb|enio|westbahn|wiener linien|wienerlinien|klimaticket|trenitalia|salzburg verkehr|flixbus|eurolanes|uber|taxi|train|rail|parking|parkhaus|parkplatz|parcheggio|garage|wipark|autostrade?|brennero|bolzano sud|tiermobilit|suedtirol pass|altoadige p ass|esso|petrol|fuel|kvw service|bus(?:s+|$))\b|a.bb|^tier$|^wien$/ },
+  { category: "health", pattern: /\b(apotheke|pharmacy|pharmac|farmacia|doctor|dentist|hospital|fitinn|drogerie|bipa|dermopraxis|diagnostik)\b/ },
+  { category: "personal_care", pattern: /\b(barber|hairdresser|haircut|salon|salone|coiffeur|beauty|spa|nails?|cosmetics?|skincare|grooming|massage)\b/ },
   { category: "travel", pattern: /\b(booking\.com|hotel|airline|flight|camping|holafly|sardinia vera)\b/ },
   { category: "subscriptions", pattern: /\b(netflix|spotify|audible|youtube|deezer|libro\.fm|t3 chat|openai|chatgpt|claude|google(?: cloud| chrome)?|microsoft|jetbrains|paddle|replicate|iliad|tim|vodafone|hot telekom|1mobile|purevpn|server dedicato|hetzner|railway|convex|cloudflare|virtualsolu|aruba\.it|amazon prime|evernote|readwise|bitwarden|akiflow|appest|obsidian|cursor|reclaim|groq|unraid|filebot|rize subscription)\b|netflixinte/ },
   { category: "education", pattern: /\b(tu wien|technische universitaet wien|fahrschule|frontendmasters|knowt)\b/ },
-  { category: "entertainment", pattern: /\b(steam|riot games|hrk game|playstation|g2a|kinguin|chrono(?: gg)?|electronic arts|eneba|mmoga|twitch|znipe|ticketmaster|wien ticket|p3 comix|billardcafe|der klub|wiener eistraum|cineplexx|google play|itunes|itch\.io|abavent|addicted to rock|sport arena wien)\b|steamgames|hrkdistribu|^khm sk/ },
-  { category: "shopping", pattern: /\b(amazon|apple(?:\.com)?|ikea|dbrand|zalando|zara|muller|printbox|paperlike|massdrop|redbubble|thomann|media ?markt|mediaworld|media world|linus tech tips|nike|etsy|uniqlo|brookssport|puma|urban outfitters|samsung|rhinoshield|sportler|nencini sport|beyerdynamic|darn tough|calida|cyberport|e-tec\.at|xxxlutz|action|thalia|athesia|unifi|seven technology|legami|kurzgesagt|h&m|obi|ceramics|flaconi|dell sas|athleticgre|hutstuebele|heogmbh|spri\.ng|ctdi|blitzhandel24|surteesstudios|az delivery|paga in 3 rate|salewa|fellhof)\b|sixpol|m.*ller|ebay/ },
+  { category: "entertainment", pattern: /\b(steam|riot games|hrk game|playstation|g2a|kinguin|chrono(?: gg)?|electronic arts|eneba|mmoga|twitch|znipe|ticketmaster|wien ticket|p3 comix|billardcafe|der klub|wiener eistraum|cineplexx|google play|itunes|itch\.io|abavent|addicted to rock|sport arena wien|musical)\b|steamgames|hrkdistribu|^khm sk/ },
+  { category: "shopping", pattern: /\b(amazon|amz|apple(?:\.com)?|ikea|dbrand|zalando|zara|muller|printbox|paperlike|massdrop|redbubble|thomann|media ?markt|mediaworld|media world|linus tech tips|nike|etsy|uniqlo|brookssport|puma|urban outfitters|samsung|rhinoshield|sportler|nencini sport|beyerdynamic|darn tough|calida|cyberport|e-tec\.at|xxxlutz|action|thalia|athesia|unifi|seven technology|legami|kurzgesagt|h&m|obi|ceramics|flaconi|dell sas|athleticgre|hutstuebele|heogmbh|spri\.ng|ctdi|blitzhandel24|surteesstudios|az delivery|paga in 3 rate|salewa|fellhof)\b|flaconi|sixpol|m.*ller|ebay/ },
   { category: "gifts", pattern: /\b(wikimedia|blumen)\b/ },
   { category: "taxes", pattern: /\b(pagopa)\b/ },
   { category: "fees", pattern: /\b(hannafinanz|poste italiane|post fa|post 1153|packlink|servizio spid)\b|fedex/ },
   { category: "cash", pattern: /\b(ricarica yap)\b|^yap$/ },
   { category: "investments", pattern: /\btrade republic\b/ },
-  { category: "other", pattern: /\bpaypal\b/ }
+  { category: "other", pattern: /\bpay\s*pal\b|\bpaypal\b|^pp\*/ }
 ];
 
 /** Auditable defaults inferred from source MCCs and recurring merchant names. User rules take precedence in the repository. */
@@ -536,7 +540,15 @@ function parseBerlinTimestamp(value: string | undefined, sourceRow: number, fiel
 }
 const berlinFormatter = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Berlin", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
 function berlinParts(value: Date) { const parts = Object.fromEntries(berlinFormatter.formatToParts(value).map((part) => [part.type, part.value])); return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`; }
-function sanitizeDescription(value: string) { return value.trim().replace(/\b[A-Z]{2}\d{2}(?:\s?[A-Z0-9]){11,30}\b/gi, "[account]").replace(/\s+/g, " ").slice(0, 500); }
+function sanitizeDescription(value: string) {
+  let description = value.trim();
+  for (let attempt = 0; attempt < 2 && /[ÃÂ]/.test(description); attempt += 1) {
+    const repaired = Buffer.from(description, "latin1").toString("utf8");
+    if (repaired === description || repaired.includes("�")) break;
+    description = repaired;
+  }
+  return description.replace(/\b[A-Z]{2}\d{2}(?:\s?[A-Z0-9]){11,30}\b/gi, "[account]").replace(/\s+/g, " ").slice(0, 500);
+}
 function fingerprint(fields: readonly string[]) { return createHash("sha256").update(JSON.stringify(fields)).digest("hex"); }
 function sameStrings(actual: readonly string[], expected: readonly string[]) { return actual.length === expected.length && expected.every((value, index) => actual[index] === value); }
 function isZip(bytes: Uint8Array) { return bytes.length >= 4 && bytes[0] === 0x50 && bytes[1] === 0x4b && bytes[2] === 0x03 && bytes[3] === 0x04; }

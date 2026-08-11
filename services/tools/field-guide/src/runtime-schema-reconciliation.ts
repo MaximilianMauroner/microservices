@@ -8,7 +8,9 @@ export function moneyImportConstraintRepairs(constraints: readonly ConstraintRow
     provider: !definitions.get("money_accounts_provider_check")?.includes("'sparkasse'"),
     format: !definitions.get("money_imports_format_check")?.includes("'sparkasse_cash_statement_v1'"),
     category: !definitions.get("money_transactions_category_check")?.includes("'transfer'")
-      || !definitions.get("money_transactions_category_check")?.includes("'adjustment'"),
+      || !definitions.get("money_transactions_category_check")?.includes("'adjustment'")
+      || !definitions.get("money_transactions_category_check")?.includes("'personal_care'")
+      || !definitions.get("money_category_rules_category_check")?.includes("'personal_care'"),
   };
 }
 
@@ -18,8 +20,8 @@ export async function reconcileRuntimeSchema(database: postgres.Sql) {
     const constraints = await transaction<ConstraintRow[]>`
       select conname name, pg_get_constraintdef(oid) definition
       from pg_constraint
-      where conrelid in ('tools.money_accounts'::regclass, 'tools.money_imports'::regclass, 'tools.money_transactions'::regclass)
-        and conname in ('money_accounts_provider_check', 'money_imports_format_check', 'money_transactions_category_check')`;
+      where conrelid in ('tools.money_accounts'::regclass, 'tools.money_imports'::regclass, 'tools.money_transactions'::regclass, 'tools.money_category_rules'::regclass)
+        and conname in ('money_accounts_provider_check', 'money_imports_format_check', 'money_transactions_category_check', 'money_category_rules_category_check')`;
     const repairs = moneyImportConstraintRepairs(constraints);
 
     if (repairs.provider) {
@@ -35,7 +37,10 @@ export async function reconcileRuntimeSchema(database: postgres.Sql) {
     if (repairs.category) {
       await transaction`alter table tools.money_transactions drop constraint if exists money_transactions_category_check`;
       await transaction`alter table tools.money_transactions add constraint money_transactions_category_check
-        check (category in ('housing', 'groceries', 'dining', 'transport', 'shopping', 'health', 'travel', 'subscriptions', 'education', 'entertainment', 'gifts', 'taxes', 'fees', 'cash', 'investments', 'income', 'transfer', 'adjustment', 'other', 'uncategorized'))`;
+        check (category in ('housing', 'groceries', 'dining', 'transport', 'shopping', 'health', 'personal_care', 'travel', 'subscriptions', 'education', 'entertainment', 'gifts', 'taxes', 'fees', 'cash', 'investments', 'income', 'transfer', 'adjustment', 'other', 'uncategorized'))`;
+      await transaction`alter table tools.money_category_rules drop constraint if exists money_category_rules_category_check`;
+      await transaction`alter table tools.money_category_rules add constraint money_category_rules_category_check
+        check (category in ('housing', 'groceries', 'dining', 'transport', 'shopping', 'health', 'personal_care', 'travel', 'subscriptions', 'education', 'entertainment', 'gifts', 'taxes', 'fees', 'cash', 'investments', 'income', 'transfer', 'adjustment', 'other', 'uncategorized'))`;
     }
   });
 }

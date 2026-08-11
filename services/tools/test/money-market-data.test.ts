@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { marketValueMinor, parseEcbUsdRates, parseYahooDailySeries } from "../money/money-market-data-domain.js";
-import { moneyMarketInstrument } from "../money/money-market-data-catalog.js";
+import { moneyMarketInstrument, moneyMarketInstrumentName } from "../money/money-market-data-catalog.js";
 import { YahooChartClient } from "../money/money-market-data-provider.js";
 
 describe("money market-data domain", () => {
@@ -9,6 +9,13 @@ describe("money market-data domain", () => {
     expect(moneyMarketInstrument("portfolio_export", "IE00B4L5Y983")).toMatchObject({ series: { providerKey: "EUNL.DE" } });
     expect(moneyMarketInstrument("portfolio_export", "ETH")).toMatchObject({ canonicalKey: "crypto:ethereum", series: { providerKey: "ETH-EUR" } });
     expect(moneyMarketInstrument("portfolio_export", "AAPL")).toBeUndefined();
+  });
+
+  it("uses imported instrument names and falls back to canonical catalog names", () => {
+    expect(moneyMarketInstrumentName("IE00B4L5Y983")).toBe("iShares Core MSCI World UCITS ETF USD Acc");
+    expect(moneyMarketInstrumentName("IE00B4L5Y983", "IE00B4L5Y983")).toBe("iShares Core MSCI World UCITS ETF USD Acc");
+    expect(moneyMarketInstrumentName("IE00B4L5Y983", "Custom fund name")).toBe("Custom fund name");
+    expect(moneyMarketInstrumentName("UNKNOWN")).toBeUndefined();
   });
 
   it("reconstructs raw pre-split closes while keeping split-day closes unchanged", () => {

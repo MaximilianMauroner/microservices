@@ -89,15 +89,20 @@ export async function updateMoneyTransfer(input: PlatformRouteInput) {
   if (rejected) return rejected;
   try {
     const body = await jsonBody(input.request);
-    const payload = {
-      transactionId: stringField(body, "transactionId"),
-      disposition: stringField(body, "disposition")
-    };
-    if (body.group === true) {
-      const result = await input.context.runtime.moneyImports.setTransferGroupDisposition(payload);
+    if (Array.isArray(body.transactionIds)) {
+      const result = await input.context.runtime.moneyImports.setTransferDispositions({
+        transactionIds: body.transactionIds.map((value) => {
+          if (typeof value !== "string") throw new MoneyImportValidationError("invalid_transaction_selection", "Every selected transfer row must have a valid identifier.");
+          return value;
+        }),
+        disposition: stringField(body, "disposition")
+      });
       return json({ ok: true, ...result });
     }
-    await input.context.runtime.moneyImports.setTransferDisposition(payload);
+    await input.context.runtime.moneyImports.setTransferDisposition({
+      transactionId: stringField(body, "transactionId"),
+      disposition: stringField(body, "disposition")
+    });
     return json({ ok: true, affectedCount: 1 });
   } catch (error) {
     return importError(error);

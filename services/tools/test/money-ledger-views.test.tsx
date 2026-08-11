@@ -80,6 +80,9 @@ describe("Option A money ledger views", () => {
     expect(html).toContain("Matched transfer pairs");
     expect(html).toContain("Unresolved transfer rows");
     expect(html).toContain("Show transfer review rows");
+    expect(html).toContain('aria-label="Category for Coffee"');
+    expect(html).toContain("Uncategorized");
+    expect(html).toContain('data-slot="popover-trigger"');
     expect(html).toContain(`value="${accountIds[0]}"`);
     expect(html).toContain(`value="${accountIds[1]}"`);
     expect(html).not.toContain("Transfer treatment");
@@ -94,6 +97,26 @@ describe("Option A money ledger views", () => {
     expect(noImports).toContain("No transactions imported");
   });
 
+  it("opens directly into URL-selected repair queues", () => {
+    const html = renderToStaticMarkup(<MoneyActivityView activity={activity} transactionCount={3} revertedCount={0} transferReview={{ linkedPairs: 0, unlinkedCount: 1, unresolvedPositiveCount: 1, unresolvedNegativeCount: 0 }} transferReviewGroups={[]} initialCategory="uncategorized" initialReviewOnly />);
+    expect(html).toContain("Show all activity");
+    expect(html).toContain("Grouped transfer review");
+    expect(html).toMatch(/option value="uncategorized" selected/);
+  });
+
+  it("opens exact grouped transfer details with bulk range-selection controls", () => {
+    const transferItems = [
+      { ...activity[1]!, id: "review-1", status: "completed" as const, description: "Revolut card funding", amountMinor: -25_000, needsTransferReview: true },
+      { ...activity[1]!, id: "review-2", status: "completed" as const, description: "Revolut card funding", amountMinor: -25_000, needsTransferReview: true }
+    ];
+    const html = renderToStaticMarkup(<MoneyActivityView activity={activity} transactionCount={3} revertedCount={0} transferReview={{ linkedPairs: 0, unlinkedCount: 2, unresolvedPositiveCount: 0, unresolvedNegativeCount: 2 }} transferReviewGroups={[{ representativeId: "review-1", accountName: "Sparkasse · 0004", description: "Revolut card funding", sourceType: "BEZAHLUNG EU LAENDER", direction: "outflow", currency: "EUR", count: 2, totalMinor: -50_000, items: transferItems }]} initialReviewOnly />);
+    expect(html).toContain("2 exact unresolved rows");
+    expect(html).toContain('aria-pressed="true"');
+    expect(html).toContain("Shift-click another to select the range");
+    expect(html).toContain('aria-label="Select all 2 rows"');
+    expect(html).toContain("Apply to 0");
+  });
+
   it("separates insufficient planning history from unresolved transfer review", () => {
     const history = renderToStaticMarkup(<MoneyPlanningCard planning={{ ready: false, unresolvedTransferCount: 0, medianMonthlyNetMinor: 0, observedMonthCount: 0, projections: [] }} />);
     const review = renderToStaticMarkup(<MoneyPlanningCard planning={{ ready: false, unresolvedTransferCount: 2, medianMonthlyNetMinor: 0, observedMonthCount: 0, projections: [] }} />);
@@ -103,8 +126,8 @@ describe("Option A money ledger views", () => {
   });
 
   it("states the bounded spending and investment contracts", () => {
-    const spending = renderToStaticMarkup(<MoneySpendingView spending={{ months: [{ month: "2026-08", observed: true, spendMinor: 350, refundsMinor: 0, incomeMinor: 0, feesMinor: 10, taxesMinor: 0, netCashFlowMinor: -360 }], categories: [{ category: "uncategorized", amountMinor: 350, count: 1 }], categoryMonths: [], merchantMonths: [], categoryActivity: [], uncategorizedCount: 1 }} />);
-    const investments = renderToStaticMarkup(<MoneyInvestmentsView marketData={emptyMarketData} investments={{ positions: [], totals: { eventCount: 0, boughtMinor: 0, soldMinor: 0, incomeMinor: 0, feesMinor: 0, taxesMinor: 0 }, realized: { positions: [], totals: { saleCount: 0, proceedsMinor: 0, costBasisMinor: 0, gainMinor: 0, unmatchedSaleCount: 0 } } }} />);
+    const spending = renderToStaticMarkup(<MoneySpendingView spending={{ months: [{ month: "2026-08", observed: true, spendMinor: 350, refundsMinor: 0, incomeMinor: 0, feesMinor: 10, taxesMinor: 0, netCashFlowMinor: -360 }], categories: [{ category: "uncategorized", amountMinor: 350, count: 1 }], categoryMonths: [], merchantMonths: [], categoryActivity: [], uncategorizedCount: 1 }} transferReview={{ linkedPairs: 0, unlinkedCount: 0, unresolvedPositiveCount: 0, unresolvedNegativeCount: 0 }} />);
+    const investments = renderToStaticMarkup(<MoneyInvestmentsView marketData={emptyMarketData} investments={{ positions: [], trades: [], totals: { eventCount: 0, boughtMinor: 0, soldMinor: 0, incomeMinor: 0, feesMinor: 0, taxesMinor: 0 }, realized: { positions: [], totals: { saleCount: 0, proceedsMinor: 0, costBasisMinor: 0, gainMinor: 0, unmatchedSaleCount: 0 } } }} />);
 
     expect(spending).toContain("excluding transfers, trades, adjustments, and reverted rows");
     expect(spending).toContain("3,50");
@@ -113,8 +136,17 @@ describe("Option A money ledger views", () => {
     expect(investments).toContain("No realized gains yet");
   });
 
+  it("qualifies incomplete cash flow and shows uncategorized financial impact", () => {
+    const html = renderToStaticMarkup(<MoneySpendingView spending={{ months: [{ month: "2026-07", observed: true, spendMinor: 1_000, refundsMinor: 0, incomeMinor: 2_000, feesMinor: 0, taxesMinor: 0, netCashFlowMinor: 1_000 }], categories: [{ category: "uncategorized", amountMinor: 750, count: 3 }], categoryMonths: [], merchantMonths: [], categoryActivity: [], uncategorizedCount: 3 }} transferReview={{ linkedPairs: 2, unlinkedCount: 4, unresolvedPositiveCount: 3, unresolvedNegativeCount: 1 }} />);
+    expect(html).toContain("Cash flow is incomplete");
+    expect(html).toContain("4 transfer rows still need treatment");
+    expect(html).toContain("Classified net flow");
+    expect(html).toContain("Uncategorized spending");
+    expect(html).toContain("7,50");
+  });
+
   it("shows FIFO realized gains separately from current valuation", () => {
-    const html = renderToStaticMarkup(<MoneyInvestmentsView marketData={emptyMarketData} investments={{ positions: [], totals: { eventCount: 3, boughtMinor: 20_000, soldMinor: 30_000, incomeMinor: 0, feesMinor: 0, taxesMinor: 0 }, realized: { positions: [{ symbol: "ABC", soldQuantity: "1", saleCount: 1, proceedsMinor: 30_000, costBasisMinor: 20_000, gainMinor: 10_000 }], totals: { saleCount: 1, proceedsMinor: 30_000, costBasisMinor: 20_000, gainMinor: 10_000, unmatchedSaleCount: 0 } } }} />);
+    const html = renderToStaticMarkup(<MoneyInvestmentsView marketData={emptyMarketData} investments={{ positions: [], trades: [], totals: { eventCount: 3, boughtMinor: 20_000, soldMinor: 30_000, incomeMinor: 0, feesMinor: 0, taxesMinor: 0 }, realized: { positions: [{ symbol: "ABC", soldQuantity: "1", saleCount: 1, proceedsMinor: 30_000, costBasisMinor: 20_000, gainMinor: 10_000 }], totals: { saleCount: 1, proceedsMinor: 30_000, costBasisMinor: 20_000, gainMinor: 10_000, unmatchedSaleCount: 0 } } }} />);
     expect(html).toContain("Realized gains and losses");
     expect(html).toContain("FIFO basis");
     expect(html).toContain("+50.0%");
@@ -127,13 +159,17 @@ describe("Option A money ledger views", () => {
       positions: [{ canonicalKey: "aum5", providerKey: "AUM5.DE", name: "Amundi S&amp;P 500", assetClass: "etf", quantity: "57.339404", costBasisMinor: 567_780, close: "134.01", currency: "EUR", marketValueMinor: 768_438, unrealizedGainMinor: 200_658, priceDate: "2026-08-10", state: "fresh" }],
       history: [{ date: "2026-08-10", costBasisMinor: 567_780, knownMarketValueMinor: 768_438, knownUnrealizedGainMinor: 200_658, complete: true }],
       totals: { costBasisMinor: 567_780, knownMarketValueMinor: 768_438, knownUnrealizedGainMinor: 200_658, complete: true }
-    }} investments={{ positions: [], totals: { eventCount: 0, boughtMinor: 0, soldMinor: 0, incomeMinor: 0, feesMinor: 0, taxesMinor: 0 }, realized: { positions: [], totals: { saleCount: 0, proceedsMinor: 0, costBasisMinor: 0, gainMinor: 0, unmatchedSaleCount: 0 } } }} />);
+    }} investments={{ positions: [], trades: [], totals: { eventCount: 0, boughtMinor: 0, soldMinor: 0, incomeMinor: 0, feesMinor: 0, taxesMinor: 0 }, realized: { positions: [], totals: { saleCount: 0, proceedsMinor: 0, costBasisMinor: 0, gainMinor: 0, unmatchedSaleCount: 0 } } }} />);
 
     expect(html).toContain("FIFO");
     expect(html).toContain("avg");
     expect(html).toContain("99,02");
     expect(html).toContain("+35.3%");
     expect(html).toContain("View exact portfolio data");
+    expect(html).toContain("Allocation and concentration");
+    expect(html).toContain("Largest position");
+    expect(html).not.toContain("Yahoo closes");
+    expect(html).not.toContain("ECB USD/EUR");
   });
 
   it("surfaces analytical confidence and actionable repairs in one data-quality view", () => {
@@ -156,7 +192,9 @@ describe("Option A money ledger views", () => {
     expect(html).toContain("Active category rules");
     expect(html).toContain("Net Interest Paid to &#x27;Instant Access Savings");
     expect(html).toContain("Repair queue");
-    expect(html).toContain("unpriced positions");
+    expect(html).toContain("/money?view=transactions&amp;category=uncategorized");
+    expect(html).toContain("/money?view=transactions&amp;review=true");
+    expect(html).toContain("positions need pricing attention");
     expect(html.match(/lucide-chevron-right/g)).toHaveLength(4);
     expect(html).toContain("focus-visible:ring-inset");
     expect(html).not.toContain("Imported formats");
@@ -172,8 +210,9 @@ describe("Option A money ledger views", () => {
 
   it("labels carried balances instead of presenting them as freshly observed", () => {
     const html = renderToStaticMarkup(<History accounts={["cash", "broker"]} accountLabels={{ cash: "Cash", broker: "Broker" }} months={[{ date: "2026-08-01", values: { cash: 10, broker: 20 }, observedAccounts: ["cash"], total: 30, money: 10, stocks: 20, trend: 30 }]} />);
-    expect(html).toContain("1 carried");
-    expect(html).toContain("carried forward from their last observation");
+    expect(html).toContain("1 reused");
+    expect(html).toContain("most recent earlier balance was used");
+    expect(html).not.toContain('data-variant="destructive"');
   });
 
   it("suppresses balance changes when a later-added account leaves an endpoint incomplete", () => {
@@ -181,7 +220,7 @@ describe("Option A money ledger views", () => {
       { date: "2026-07-01", values: { cash: 10 }, observedAccounts: ["cash"], total: 10, money: 10, stocks: 0, trend: 10 },
       { date: "2026-08-01", values: { cash: 10, broker: 20 }, observedAccounts: ["cash", "broker"], total: 30, money: 10, stocks: 20, trend: 30 }
     ]} />);
-    expect(html).toContain("requires both months fully observed");
+    expect(html).toContain("Not comparable: account coverage changed");
   });
 
   it("uses persisted account roles instead of label suffixes for allocation", () => {

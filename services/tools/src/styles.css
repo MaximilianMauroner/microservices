@@ -339,7 +339,9 @@ html:has([data-suite-accent]) {
   .uptime-day--attention { background: #eab308; }
   .uptime-day--outage { background: #ef4444; }
   .uptime-popover { display: none; }
-  .uptime-day:focus .uptime-popover, .uptime-day:hover .uptime-popover { position: absolute; z-index: 20; bottom: calc(100% + .5rem); left: 50%; display: grid; width: 15rem; gap: .5rem; padding: .75rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--popover); color: var(--popover-foreground); transform: translateX(-50%); box-shadow: 0 12px 32px #000; }
+  .uptime-day:focus .uptime-popover, .uptime-day:hover .uptime-popover { position: absolute; z-index: 20; bottom: calc(100% + .5rem); left: 50%; display: grid; box-sizing: border-box; width: min(15rem, calc(100vw - 2rem)); gap: .5rem; padding: .75rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--popover); color: var(--popover-foreground); transform: translateX(-50%); box-shadow: 0 12px 32px #000; }
+  .uptime-day:nth-child(-n + 12) .uptime-popover { right: auto; left: 0; transform: none; }
+  .uptime-day:nth-last-child(-n + 12) .uptime-popover { right: 0; left: auto; transform: none; }
   .uptime-popover__header, .uptime-popover__metrics { display: flex; justify-content: space-between; gap: .5rem; }
   .uptime-popover__metrics small, .uptime-popover__footer { display: block; color: var(--muted-foreground); font-size: .65rem; }
   .uptime-legend, .service-meta, .service-links { display: flex; flex-wrap: wrap; gap: .75rem; margin-top: .65rem; color: var(--muted-foreground); font-size: .68rem; }

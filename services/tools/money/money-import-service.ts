@@ -119,12 +119,16 @@ export class MoneyImportService {
     return this.repository.setTransferDisposition({ transactionId: input.transactionId, disposition: input.disposition as MoneyTransferDisposition });
   }
 
-  setTransferGroupDisposition(input: Readonly<{ transactionId: string; disposition: string }>) {
-    assertTransactionId(input.transactionId);
+  setTransferDispositions(input: Readonly<{ transactionIds: readonly string[]; disposition: string }>) {
+    const transactionIds = [...new Set(input.transactionIds)];
+    if (!transactionIds.length || transactionIds.length > 500) {
+      throw new MoneyImportValidationError("invalid_transaction_selection", "Select between 1 and 500 transfer rows.");
+    }
+    for (const transactionId of transactionIds) assertTransactionId(transactionId);
     if (!MONEY_TRANSFER_DISPOSITIONS.includes(input.disposition as MoneyTransferDisposition)) {
       throw new MoneyImportValidationError("invalid_transfer_disposition", "Select a valid transfer disposition.");
     }
-    return this.repository.setTransferGroupDisposition({ transactionId: input.transactionId, disposition: input.disposition as MoneyTransferDisposition });
+    return this.repository.setTransferDispositions({ transactionIds, disposition: input.disposition as MoneyTransferDisposition });
   }
 
   addManualBalance(input: Readonly<{ accountId?: string; accountName?: string; date: string; value: string; currency: string }>) {
