@@ -6,10 +6,10 @@ The platform service is the single production compute and browser-authentication
 
 | Surface | Authentication |
 | --- | --- |
-| `/`, `/status`, health routes, and fixed public assets | Public |
+| Health routes and fixed public assets | Public |
 | `/artifacts/*` and `/files/*` `GET`/`HEAD` | Public unlisted capability URL |
 | `/sign-in` and `/api/auth/*` | Public authentication flow |
-| `/publish`, `/review`, `/manage/*`, `/tools/private/*`, and their browser APIs | Better Auth Google session |
+| `/`, `/status`, `/money`, `/publish`, `/review`, `/manage/*`, `/tools/private/*`, and their browser APIs | Better Auth Google session |
 | `/api/uploads*`, `/api/agent*`, and `/api/heartbeat/tower` | Existing native bearer token |
 
 TanStack document requests and protected server functions resolve the same

@@ -1,15 +1,17 @@
 import { access, readdir } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const repository = new URL("../../../", import.meta.url);
+const run = promisify(execFile);
 
 describe("repository runtime boundaries", () => {
   it("keeps every tracked deployable under services", async () => {
     const services = await directories(new URL("services/", repository));
     expect(services).toEqual(expect.arrayContaining(["markdown-share", "network-console", "tools"]));
-    await expect(access(new URL("apps/", repository))).rejects.toThrow();
-    await expect(access(new URL("jobs/", repository))).rejects.toThrow();
-    await expect(access(new URL("packages/", repository))).rejects.toThrow();
+    expect(await trackedFiles("apps", "jobs", "packages")).toEqual([]);
   });
 
   it("keeps tools products directly inside the tools service", async () => {
@@ -28,4 +30,9 @@ describe("repository runtime boundaries", () => {
 async function directories(url: URL) {
   const entries = await readdir(url, { withFileTypes: true });
   return entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort();
+}
+
+async function trackedFiles(...paths: string[]) {
+  const { stdout } = await run("git", ["ls-files", "--", ...paths], { cwd: fileURLToPath(repository) });
+  return stdout.trim() ? stdout.trim().split("\n") : [];
 }
