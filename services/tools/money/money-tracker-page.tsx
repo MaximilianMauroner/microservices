@@ -1150,7 +1150,7 @@ function Insights({
   );
 }
 
-type PredictionHorizon = 6 | 12 | 24;
+type PredictionHorizon = 6 | 12 | 24 | 60 | 120;
 type PredictionPoint = Readonly<{
   date: string;
   actual?: number;
@@ -1284,13 +1284,13 @@ function Predictions({ months }: { months: GroupedMonth[] }) {
           </p>
         </div>
         <div role="group" aria-label="Prediction horizon" className="flex gap-1">
-          {([6, 12, 24] as const).map((value) => (
+          {([6, 12, 24, 60, 120] as const).map((value) => (
             <PeriodButton
               key={value}
               active={horizon === value}
               onClick={() => setHorizon(value)}
             >
-              {value}M
+              {formatPredictionHorizon(value)}
             </PeriodButton>
           ))}
         </div>
@@ -3282,6 +3282,9 @@ function addCalendarMonths(value: string, offset: number) {
   const [year, month] = value.split("-").map(Number);
   const date = new Date(Date.UTC(year!, month! - 1 + offset, 1));
   return date.toISOString().slice(0, 7);
+}
+function formatPredictionHorizon(months: PredictionHorizon) {
+  return months < 12 ? `${months}M` : `${months / 12}Y`;
 }
 function formatMinor(value: number, valueCurrency: string) {
   return new Intl.NumberFormat("de-DE", {

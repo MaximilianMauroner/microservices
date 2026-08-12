@@ -49,4 +49,18 @@ describe("Money trajectory predictions", () => {
       ),
     ).toBeUndefined();
   });
+
+  it("supports long-range planning checkpoints", () => {
+    const history = Array.from({ length: 12 }, (_, index) => ({
+      date: `2025-${String(index + 1).padStart(2, "0")}`,
+      total: 10_000 + index * 500,
+    }));
+
+    expect(projectMoneyTrajectory(history, 60)?.forecast.at(-1)?.date).toBe(
+      "2030-12",
+    );
+    expect(projectMoneyTrajectory(history, 120)?.forecast.at(-1)?.date).toBe(
+      "2035-12",
+    );
+  });
 });
