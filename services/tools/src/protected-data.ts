@@ -113,7 +113,7 @@ export const getMoneyTrackerPageData = createServerFn({ method: "GET" })
   })
   .handler(async ({ data }): Promise<MoneyTrackerPageData> => {
     const { context } = internalPlatformRequest("/money");
-    const needsMarketData = data.view === "overview" || data.view === "investments" || data.view === "accounts" || data.view === "insights" || data.view === "data";
+    const needsMarketData = data.view === "overview" || data.view === "investments" || data.view === "accounts" || data.view === "insights" || data.view === "predictions" || data.view === "data";
     const [ledger, marketData] = await Promise.all([
       context.runtime.moneyImports.readLedgerSnapshot(data.view),
       needsMarketData ? context.runtime.moneyMarketData.snapshot() : Promise.resolve(emptyMarketSnapshot())

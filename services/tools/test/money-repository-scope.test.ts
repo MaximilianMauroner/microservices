@@ -26,6 +26,10 @@ describe("Money ledger query scopes", () => {
     ]);
   });
 
+  it("loads only balance history for predictions", () => {
+    expect(moneyLedgerQueriesFor("predictions")).toEqual(["balanceSnapshots"]);
+  });
+
   it("keeps the full scope for repository integration coverage only", () => {
     expect(moneyLedgerQueriesFor("all")).toHaveLength(16);
   });

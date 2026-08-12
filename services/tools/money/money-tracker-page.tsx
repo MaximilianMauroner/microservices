@@ -133,6 +133,11 @@ const changeConfig = {
 const accountBalanceConfig = {
   value: { label: "Balance" },
 } satisfies ChartConfig;
+const predictionConfig = {
+  actual: { label: "Observed total" },
+  estimate: { label: "Central estimate" },
+  range: { label: "80% range" },
+} satisfies ChartConfig;
 
 export function MoneyTrackerPage(
   props: MoneyTrackerPageData & {
@@ -318,6 +323,9 @@ export function MoneyTrackerPage(
                 monthlyChange={monthlyChange}
                 trends={trends}
               />
+            ) : null}
+            {props.view === "predictions" ? (
+              <Predictions months={allMonths} />
             ) : null}
             {props.view === "data" ? <MoneyDataView {...props} /> : null}
             </Suspense>
@@ -1138,6 +1146,326 @@ function Insights({
           </CardContent>
         </Card>
       </section>
+    </>
+  );
+}
+
+type PredictionHorizon = 6 | 12 | 24;
+type PredictionPoint = Readonly<{
+  date: string;
+  actual?: number;
+  estimate?: number;
+  range?: readonly [number, number];
+}>;
+export type MoneyTrajectoryPrediction = Readonly<{
+  historyMonths: number;
+  horizonMonths: PredictionHorizon;
+  monthlySlope: number;
+  residualVariation: number;
+  fit: number;
+  points: readonly PredictionPoint[];
+  forecast: readonly Required<
+    Pick<PredictionPoint, "date" | "estimate" | "range">
+  >[];
+}>;
+
+/** Produces an auditable trend projection from at most the latest 36 monthly totals. */
+export function projectMoneyTrajectory(
+  months: readonly Pick<GroupedMonth, "date" | "total">[],
+  horizonMonths: PredictionHorizon,
+): MoneyTrajectoryPrediction | undefined {
+  const history = months
+    .filter((month) => Number.isFinite(month.total))
+    .slice(-36);
+  if (history.length < 6) return undefined;
+
+  const meanX = (history.length - 1) / 2;
+  const meanY =
+    history.reduce((sum, month) => sum + month.total, 0) / history.length;
+  const sumSquaresX = history.reduce(
+    (sum, _month, index) => sum + (index - meanX) ** 2,
+    0,
+  );
+  const monthlySlope =
+    history.reduce(
+      (sum, month, index) =>
+        sum + (index - meanX) * (month.total - meanY),
+      0,
+    ) / sumSquaresX;
+  const intercept = meanY - monthlySlope * meanX;
+  const squaredResiduals = history.reduce((sum, month, index) => {
+    const residual = month.total - (intercept + monthlySlope * index);
+    return sum + residual ** 2;
+  }, 0);
+  const totalVariation = history.reduce(
+    (sum, month) => sum + (month.total - meanY) ** 2,
+    0,
+  );
+  const residualVariation = Math.sqrt(
+    squaredResiduals / Math.max(history.length - 2, 1),
+  );
+  const fit =
+    totalVariation === 0
+      ? 1
+      : Math.max(0, Math.min(1, 1 - squaredResiduals / totalVariation));
+  const latest = history.at(-1)!;
+  const forecast = Array.from({ length: horizonMonths }, (_, index) => {
+    const monthsAhead = index + 1;
+    const futureX = history.length - 1 + monthsAhead;
+    const estimate = latest.total + monthlySlope * monthsAhead;
+    const predictionError =
+      residualVariation *
+      Math.sqrt(
+        1 +
+          1 / history.length +
+          (futureX - meanX) ** 2 / sumSquaresX,
+      );
+    const margin = 1.281551565545 * predictionError;
+    return {
+      date: addCalendarMonths(latest.date, monthsAhead),
+      estimate,
+      range: [estimate - margin, estimate + margin] as const,
+    };
+  });
+
+  return {
+    historyMonths: history.length,
+    horizonMonths,
+    monthlySlope,
+    residualVariation,
+    fit,
+    points: [
+      ...history.map((month, index) => ({
+        date: month.date,
+        actual: month.total,
+        ...(index === history.length - 1
+          ? {
+              estimate: latest.total,
+              range: [latest.total, latest.total] as const,
+            }
+          : {}),
+      })),
+      ...forecast,
+    ],
+    forecast,
+  };
+}
+
+function Predictions({ months }: { months: GroupedMonth[] }) {
+  const [horizon, setHorizon] = useState<PredictionHorizon>(12);
+  const prediction = useMemo(
+    () => projectMoneyTrajectory(months, horizon),
+    [horizon, months],
+  );
+  if (!prediction) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Not enough history</CardTitle>
+          <CardDescription>
+            Predictions need at least six monthly balance snapshots.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="text-sm text-muted-foreground">
+          Add more balance history and this view will calculate automatically.
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const finalPoint = prediction.forecast.at(-1)!;
+  return (
+    <>
+      <section className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium">Projection horizon</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Recalculate the same model over a different future range.
+          </p>
+        </div>
+        <div role="group" aria-label="Prediction horizon" className="flex gap-1">
+          {([6, 12, 24] as const).map((value) => (
+            <PeriodButton
+              key={value}
+              active={horizon === value}
+              onClick={() => setHorizon(value)}
+            >
+              {value}M
+            </PeriodButton>
+          ))}
+        </div>
+      </section>
+      <section
+        className="grid gap-3 sm:grid-cols-3"
+        aria-label="Prediction summary"
+      >
+        <Metric
+          label={`Central estimate in ${horizon} months`}
+          value={currency.format(finalPoint.estimate)}
+          detail={`${formatSigned(prediction.monthlySlope)} modeled each month`}
+          tone={tone(prediction.monthlySlope)}
+        />
+        <Metric
+          label="80% model range"
+          value={`${currency.format(finalPoint.range[0])} to ${currency.format(finalPoint.range[1])}`}
+          detail={`At ${finalPoint.date}`}
+        />
+        <Metric
+          label="History used"
+          value={`${prediction.historyMonths} months`}
+          detail={`Trend fit ${(prediction.fit * 100).toFixed(0)}%`}
+        />
+      </section>
+      <section className="grid items-start gap-3 lg:grid-cols-[minmax(0,1.75fr)_minmax(18rem,.75fr)]">
+        <ChartCard
+          title="Net-worth trajectory"
+          description="Observed monthly totals followed by a central estimate and widening 80% range"
+        >
+          <MountedChart
+            fallback={
+              <ChartFallback
+                values={prediction.points.flatMap((point) =>
+                  point.actual === undefined ? [] : [point.actual],
+                )}
+              />
+            }
+          >
+            <ChartContainer
+              config={predictionConfig}
+              className="h-[25rem] w-full aspect-auto"
+              initialDimension={{ width: 760, height: 400 }}
+              role="img"
+              aria-label="Observed net worth and projected central estimate with an 80 percent range. Exact projected values follow in an expandable table."
+            >
+              <ComposedChart
+                accessibilityLayer={false}
+                data={prediction.points}
+                margin={{ left: 4, right: 12, top: 8 }}
+              >
+                <defs>
+                  <linearGradient
+                    id="money-prediction-range"
+                    x1="0"
+                    y1="0"
+                    x2="0"
+                    y2="1"
+                  >
+                    <stop offset="5%" stopColor="#a3e635" stopOpacity={0.34} />
+                    <stop offset="95%" stopColor="#a3e635" stopOpacity={0.08} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid vertical={false} />
+                <XAxis
+                  dataKey="date"
+                  tickLine={false}
+                  axisLine={false}
+                  tickMargin={10}
+                  minTickGap={28}
+                />
+                <YAxis
+                  tickLine={false}
+                  axisLine={false}
+                  width={72}
+                  tickFormatter={(value: number) => currency.format(value)}
+                />
+                <ChartTooltip
+                  content={
+                    <ChartTooltipContent
+                      formatter={(value, name) => {
+                        const label = String(name);
+                        if (Array.isArray(value)) {
+                          return (
+                            <TooltipValue
+                              label={label}
+                              value={`${currency.format(Number(value[0]))} to ${currency.format(Number(value[1]))}`}
+                            />
+                          );
+                        }
+                        return (
+                          <TooltipValue
+                            label={label}
+                            value={currency.format(Number(value))}
+                          />
+                        );
+                      }}
+                    />
+                  }
+                />
+                <Area
+                  dataKey="range"
+                  name="80% range"
+                  type="monotone"
+                  fill="url(#money-prediction-range)"
+                  stroke="#84cc16"
+                  strokeWidth={1}
+                  connectNulls
+                />
+                <Line
+                  dataKey="actual"
+                  name="Observed total"
+                  type="monotone"
+                  stroke="#fafafa"
+                  strokeWidth={2.5}
+                  dot={false}
+                  connectNulls
+                />
+                <Line
+                  dataKey="estimate"
+                  name="Central estimate"
+                  type="linear"
+                  stroke="#a3e635"
+                  strokeWidth={2.5}
+                  dot={false}
+                  connectNulls
+                />
+              </ComposedChart>
+            </ChartContainer>
+          </MountedChart>
+          <PredictionDataDisclosure points={prediction.forecast} />
+        </ChartCard>
+        <Card>
+          <CardHeader className="border-b">
+            <CardTitle>Model drivers</CardTitle>
+            <CardDescription>Inputs behind the displayed range</CardDescription>
+          </CardHeader>
+          <CardContent className="divide-y p-0">
+            <StatRow
+              label="History window"
+              value={`${prediction.historyMonths} months`}
+              detail="latest available"
+            />
+            <StatRow
+              label="Monthly trajectory"
+              value={formatSigned(prediction.monthlySlope, true)}
+              detail="linear slope"
+            />
+            <StatRow
+              label="Residual variation"
+              value={currency.format(prediction.residualVariation)}
+              detail="around trend"
+            />
+            <StatRow
+              label="Trend fit"
+              value={`${(prediction.fit * 100).toFixed(1)}%`}
+              detail="R²"
+            />
+            <div className="px-4 py-3 text-xs leading-relaxed text-muted-foreground">
+              The range widens further into the future because uncertainty
+              compounds with the projection horizon.
+            </div>
+          </CardContent>
+        </Card>
+      </section>
+      <Alert role="note">
+        <AlertTitle>Trajectory, not a guarantee</AlertTitle>
+        <AlertDescription>
+          This is a statistical extrapolation of monthly tracked totals. It
+          assumes the observed linear trajectory continues. Deposits,
+          withdrawals, transfers, market movement, missing balances, and new
+          accounts remain mixed together and can move the outcome outside the
+          displayed range.
+        </AlertDescription>
+      </Alert>
     </>
   );
 }
@@ -2462,7 +2790,9 @@ function viewDescription(view: MoneyTrackerView) {
               ? "Explore spending by category, month, merchant, and underlying transaction."
               : view === "insights"
                 ? "Balance momentum, concentration, drawdown, trends, and a conservative run-rate scenario."
-                : "Imports, reconciliation, coverage, rules, and analytical limits.";
+                : view === "predictions"
+                  ? "A projected net-worth range based on the trajectory and variability in your monthly history."
+                  : "Imports, reconciliation, coverage, rules, and analytical limits.";
 }
 function PeriodSelector({
   period,
@@ -2618,6 +2948,46 @@ function BalanceDataDisclosure({
                   {preciseCurrency.format(month.trend)}
                 </td>
               ) : null}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </ChartDataDetails>
+  );
+}
+function PredictionDataDisclosure({
+  points,
+}: {
+  points: MoneyTrajectoryPrediction["forecast"];
+}) {
+  return (
+    <ChartDataDetails label="View prediction data">
+      <table className="w-full min-w-[34rem] text-xs">
+        <caption className="sr-only">
+          Exact central estimate and 80 percent range plotted in the prediction
+          chart
+        </caption>
+        <thead className="border-b text-muted-foreground">
+          <tr>
+            <th className="px-3 py-2 text-left">Month</th>
+            <th className="px-3 py-2 text-right">Central estimate</th>
+            <th className="px-3 py-2 text-right">Range low</th>
+            <th className="px-3 py-2 text-right">Range high</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y">
+          {points.map((point) => (
+            <tr key={point.date}>
+              <td className="px-3 py-2">{point.date}</td>
+              <td className="px-3 py-2 text-right font-mono">
+                {preciseCurrency.format(point.estimate)}
+              </td>
+              <td className="px-3 py-2 text-right font-mono">
+                {preciseCurrency.format(point.range[0])}
+              </td>
+              <td className="px-3 py-2 text-right font-mono">
+                {preciseCurrency.format(point.range[1])}
+              </td>
             </tr>
           ))}
         </tbody>
@@ -2907,6 +3277,11 @@ function formatActivityDate(value: string) {
     dateStyle: "medium",
     timeZone: "Europe/Berlin",
   }).format(new Date(value));
+}
+function addCalendarMonths(value: string, offset: number) {
+  const [year, month] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(year!, month! - 1 + offset, 1));
+  return date.toISOString().slice(0, 7);
 }
 function formatMinor(value: number, valueCurrency: string) {
   return new Intl.NumberFormat("de-DE", {

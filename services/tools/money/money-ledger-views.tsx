@@ -75,6 +75,11 @@ import {
 import { Input } from "../src/components/ui/input.js";
 import { useIsMobile } from "../src/components/ui/use-mobile.js";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "../src/components/ui/tooltip.js";
+import {
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
@@ -729,12 +734,10 @@ export function MoneyActivityView({
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <h3
-                            className="truncate text-sm font-semibold"
-                            title={item.description}
-                          >
-                            {item.description || item.sourceType}
-                          </h3>
+                          <TransactionDescription
+                            className="text-sm font-semibold"
+                            description={item.description || item.sourceType}
+                          />
                           <p className="mt-1 text-xs text-muted-foreground">
                             {formatDate(item.occurredAt)} · {item.accountName}
                           </p>
@@ -835,12 +838,10 @@ export function MoneyActivityView({
                             {formatDate(item.occurredAt)}
                           </td>
                           <td className="max-w-80 px-4 py-3">
-                            <p
-                              className="truncate font-medium"
-                              title={item.description}
-                            >
-                              {item.description || item.sourceType}
-                            </p>
+                            <TransactionDescription
+                              className="font-medium"
+                              description={item.description || item.sourceType}
+                            />
                             <p className="text-xs text-muted-foreground">
                               {item.sourceType}
                               {item.transferGroupId ? " · linked transfer" : ""}
@@ -3482,6 +3483,36 @@ async function moneyDelete<Result = { ok: true }>(
 }
 function message(error: unknown) {
   return error instanceof Error ? error.message : "The money request failed.";
+}
+function TransactionDescription({
+  className,
+  description,
+}: {
+  className?: string;
+  description: string;
+}) {
+  const label = (
+    <p
+      className={`min-w-0 truncate ${className ?? ""}`}
+      tabIndex={0}
+      title={description}
+    >
+      {description}
+    </p>
+  );
+
+  return (
+    <Tooltip>
+      <TooltipTrigger render={label} />
+      <TooltipContent
+        className="max-w-lg whitespace-normal break-words"
+        side="top"
+        align="start"
+      >
+        {description}
+      </TooltipContent>
+    </Tooltip>
+  );
 }
 function money(minor: number, currency: string) {
   return new Intl.NumberFormat("de-DE", { style: "currency", currency }).format(

@@ -89,7 +89,7 @@ export type MoneyActivityPage = Readonly<{ items: readonly MoneyActivityItem[]; 
 export type MoneyActivitySortKey = "date" | "description" | "account" | "flow" | "category" | "costs" | "amount";
 export type MoneyActivitySortDirection = "asc" | "desc";
 export type MoneyActivityPageInput = Readonly<{ query: string; flow?: MoneyLedgerTransaction["flowKind"]; accountId?: string; category?: MoneyCategory; reviewOnly?: boolean; sort?: MoneyActivitySortKey; direction?: MoneyActivitySortDirection; offset: number; limit: number }>;
-export const MONEY_LEDGER_SCOPES = ["overview", "transactions", "cash-flow", "categories", "investments", "accounts", "insights", "data"] as const;
+export const MONEY_LEDGER_SCOPES = ["overview", "transactions", "cash-flow", "categories", "investments", "accounts", "insights", "predictions", "data"] as const;
 export type MoneyLedgerViewScope = (typeof MONEY_LEDGER_SCOPES)[number];
 export type MoneyLedgerScope = MoneyLedgerViewScope | "all";
 const MONEY_LEDGER_QUERY_SCOPES = {
@@ -108,7 +108,7 @@ const MONEY_LEDGER_QUERY_SCOPES = {
   investmentTotals: ["investments"],
   tradeMarkers: ["investments"],
   realizedEvents: ["investments"],
-  balanceSnapshots: ["overview", "transactions", "accounts", "insights", "data"]
+  balanceSnapshots: ["overview", "transactions", "accounts", "insights", "predictions", "data"]
 } as const satisfies Record<string, readonly MoneyLedgerViewScope[]>;
 export type MoneyLedgerQuery = keyof typeof MONEY_LEDGER_QUERY_SCOPES;
 

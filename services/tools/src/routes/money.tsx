@@ -12,7 +12,7 @@ type MoneySearch = { view?: Exclude<MoneyTrackerView, "overview">; category?: Mo
 export const Route = createFileRoute("/money")({
   beforeLoad: ({ location }) => requireRouteSession(location.href),
   validateSearch: (search: Record<string, unknown>): MoneySearch => ({
-    view: search.view === "cash-flow" || search.view === "transactions" || search.view === "investments" || search.view === "accounts" || search.view === "categories" || search.view === "insights" || search.view === "data" ? search.view : undefined,
+    view: search.view === "cash-flow" || search.view === "transactions" || search.view === "investments" || search.view === "accounts" || search.view === "categories" || search.view === "insights" || search.view === "predictions" || search.view === "data" ? search.view : undefined,
     category: typeof search.category === "string" && MONEY_CATEGORIES.includes(search.category as MoneyCategory) ? search.category as MoneyCategory : undefined,
     review: search.review === true || search.review === "true" ? true : undefined
   }),
