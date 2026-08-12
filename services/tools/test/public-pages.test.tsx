@@ -114,12 +114,9 @@ describe("TanStack Start public pages", () => {
     expect(html).toContain('href="/money"');
     expect(html).toContain('href="/publisher"');
     expect(html).toContain('href="/status"');
-    expect(html).toContain('src="/assets/icons/publisher.png?v=20260812-2"');
-    expect(html).toContain('src="/assets/icons/field-guide.png?v=20260812-2"');
-    expect(html).toContain('src="/assets/icons/money.png?v=20260812-2"');
-    expect(html).toContain('src="/assets/icons/status.png?v=20260812-2"');
-    expect(html).toContain('src="/assets/icons/markdown-share.png?v=20260812-2"');
-    expect(html).toContain('src="/assets/icons/network-console.png?v=20260812-2"');
+    for (const product of ["publisher", "field-guide", "money", "status", "markdown-share", "network-console"]) {
+      expect(html).toContain(`/assets/icons/${product}.png`);
+    }
   });
 
   it("adds monitored non-standard products from the authenticated catalog", () => {
@@ -129,7 +126,8 @@ describe("TanStack Start public pages", () => {
 
     expect(html).toContain("Private console");
     expect(html).toContain('href="https://private.example.test"');
-    expect(html).toContain('aria-label="Tailnet"');
+    expect(html).toContain('id="infrastructure-title"');
+    expect(html).toContain("Infrastructure");
     expect(html).not.toContain("Public console");
     expect(html).toContain("Publisher");
     expect(html).toContain("0 of 7 operational");

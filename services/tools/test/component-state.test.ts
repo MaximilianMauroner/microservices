@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DecisionRecordItem, QueueItem } from "@tools-platform/field-guide";
-import { decisionEmptyState, filterQueueItems, queueProjectOptions, reconcileCompletedCandidate, reconcileReviewedDecision } from "../field-guide/ui/review-page.js";
+import { decisionEmptyState, filterQueueItems, queueProjectOptions, reconcileCompletedCandidate, reconcileReviewedDecision } from "../field-guide/ui/review-state.js";
 
 describe("candidate workbench filters", () => {
   const items = [queueItem("Project B", "pending", "initial"), queueItem("Project A", "overdue", "scheduled")];

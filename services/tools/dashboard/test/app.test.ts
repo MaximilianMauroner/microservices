@@ -135,7 +135,7 @@ describe("tools web routes", () => {
     expect(localTime.status).toBe(200);
     expect(localTime.headers.get("content-type")).toContain("text/javascript");
 
-    for (const product of ["publisher", "field-guide", "money", "status", "markdown-share", "network-console"]) {
+    for (const product of ["publisher", "field-guide", "money", "status", "markdown-share", "network-console", "tools"]) {
       const icon = await app(
         new Request(`https://tools.example.test/assets/icons/${product}.png`)
       );

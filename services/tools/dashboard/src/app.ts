@@ -81,6 +81,10 @@ const STATIC_ASSETS = {
   "/assets/icons/network-console.png": {
     file: "../public/assets/icons/network-console.png",
     contentType: "image/png"
+  },
+  "/assets/icons/tools.png": {
+    file: "../public/assets/icons/tools.png",
+    contentType: "image/png"
   }
 } as const;
 

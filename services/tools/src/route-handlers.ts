@@ -1,7 +1,6 @@
 import { InvalidHeartbeatTokenError, UnknownHeartbeatMonitorError } from "@tools-platform/tools-checker";
 import type { PlatformRequestContext } from "./start.js";
-
-const FAVICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#000"/><path d="M7 24V8l9 10 9-10v16" fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="3"/></svg>`;
+import { favicons } from "./favicons.js";
 
 export type PlatformRouteInput = {
   request: Request;
@@ -25,11 +24,12 @@ export function artifact({ request, context }: PlatformRouteInput) {
   return context.runtime.services.publisher.handle(request);
 }
 
-export function favicon() {
-  return new Response(FAVICON_SVG, {
+export function favicon({ request }: PlatformRouteInput) {
+  return new Response(null, {
+    status: 307,
     headers: {
       "Cache-Control": "public, max-age=3600",
-      "Content-Type": "image/svg+xml; charset=utf-8"
+      Location: new URL(favicons.directory, request.url).href
     }
   });
 }

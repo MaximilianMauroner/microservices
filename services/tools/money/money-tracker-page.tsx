@@ -71,6 +71,7 @@ import {
 } from "./money-row-action.js";
 import type { MoneyCategory } from "./money-enums.js";
 import type { MoneyActivityPage } from "./money-repository.js";
+import { groupMonth, type GroupedMonth, type Month } from "./money-history.js";
 import { MoneyPlanningCard } from "./money-planning-card.js";
 import {
   MoneyNav,
@@ -81,15 +82,6 @@ import {
 export type { MoneyTrackerView } from "./money-tracker-navigation.js";
 type Period = "6m" | "1y" | "5y" | "all";
 type AccountHistoryRange = "1y" | "5y" | "all";
-type Month = MoneyTrackerPageData["months"][number];
-type GroupedMonth = Month & {
-  money: number;
-  stocks: number;
-  trend: number;
-  observed?: boolean;
-  portfolioDate?: string;
-};
-
 const MoneyCategoryExplorer = lazy(async () => ({
   default: (await import("./money-category-explorer.js")).MoneyCategoryExplorer,
 }));
@@ -2959,18 +2951,6 @@ function rangeValuesForAccount(months: Month[], account: string) {
 }
 function percent(change?: number, base?: number) {
   return change === undefined || !base ? undefined : (change / base) * 100;
-}
-export function groupMonth(
-  month: Month,
-  roles: Record<string, "cash" | "investment">,
-): GroupedMonth {
-  let money = 0;
-  let stocks = 0;
-  for (const [account, value] of Object.entries(month.values)) {
-    if (roleCategory(roles, account) === "stocks") stocks += value;
-    else money += value;
-  }
-  return { ...month, money, stocks, trend: month.total };
 }
 function cashMonth(
   month: Month,

@@ -32,6 +32,7 @@ import { Tabs, TabsList, TabsTrigger } from "../../src/components/ui/tabs.js";
 import { Textarea } from "../../src/components/ui/textarea.js";
 import { useIsMobile } from "../../src/components/ui/use-mobile.js";
 import type { ReviewPageData, ReviewView } from "../../src/protected-data.js";
+import { decisionEmptyState, filterQueueItems, queueProjectOptions, reconcileCompletedCandidate, reconcileReviewedDecision } from "./review-state.js";
 
 export type ReviewSearch = {
   scope: Scope;
@@ -160,34 +161,6 @@ function DecisionWorkspace({ data, search, setData, setNotice, onLoadMore }: { d
     </div>
     {isMobile ? <Sheet open={mobileReviewOpen} onOpenChange={setMobileReviewOpen}><SheetContent className="w-full overflow-y-auto"><SheetHeader className="border-b"><SheetTitle>Review decision</SheetTitle><SheetDescription>Inspect one judgment and record a verdict.</SheetDescription></SheetHeader><div className="p-4 pt-0">{selected ? <DecisionReviewPanel key={selected.record.decisionRecordId} item={selected} onNotice={setNotice} onUpdated={updateItem} /> : null}</div></SheetContent></Sheet> : null}
   </>;
-}
-
-export function reconcileReviewedDecision(
-  decisions: NonNullable<ReviewPageData["decisions"]>,
-  reviewedId: string
-) {
-  const removed = decisions.items.some((item) => item.record.decisionRecordId === reviewedId);
-  return {
-    ...decisions,
-    pending: removed ? Math.max(0, decisions.pending - 1) : decisions.pending,
-    items: decisions.items.filter((item) => item.record.decisionRecordId !== reviewedId)
-  };
-}
-
-export function decisionEmptyState(
-  decisions: NonNullable<ReviewPageData["decisions"]>,
-  reviewState: DecisionReviewState
-) {
-  const canLoadMore = Boolean(decisions.nextCursor);
-  return {
-    canLoadMore,
-    title: canLoadMore ? "No decisions on this page" : `No ${reviewState} decisions`,
-    body: canLoadMore
-      ? "More matching decisions are available on the next page."
-      : reviewState === "unreviewed"
-        ? "Every uploaded decision has been reviewed."
-        : "Decision records will appear here."
-  };
 }
 
 function ReviewScopeTabs({ search }: { search: ReviewSearch }) {
@@ -361,35 +334,6 @@ function QueueInspector({ item, onComplete, onNotice }: { item: QueueItem; onCom
     } catch (error) { onNotice({ text: error instanceof Error ? error.message : "Scope update failed.", tone: "error" }); setBusy(false); }
   }
   return <Card className={`queue-card queue-card--${item.status}`}><div className="queue-card__meta"><Badge variant="outline">{queueProject(item)}</Badge><span>{item.kind === "initial" ? "New candidate" : "Revalidation"}</span><span>Round {item.round}</span>{item.dueAt ? <time dateTime={item.dueAt} suppressHydrationWarning>{relativeTime(item.dueAt)}</time> : null}</div><h2>{candidate.title}</h2><p className="queue-card__body">{candidate.body}</p><div className="queue-card__rationale"><span className="eyebrow">Why remember this</span><p>{candidate.rationale}</p></div>{candidate.evidence.length ? <Accordion multiple><AccordionItem value="evidence"><AccordionTrigger>Evidence <Badge variant="outline">{candidate.evidence.length}</Badge></AccordionTrigger><AccordionContent><div className="review-evidence">{candidate.evidence.map((evidence) => <blockquote key={evidence.excerpt}>{evidence.excerpt}<div className="app-mono">{evidence.commitHashes.join(" · ")}</div></blockquote>)}</div></AccordionContent></AccordionItem></Accordion> : null}<div className="queue-card__footer"><div>{actions.map(({ action, label, variant }) => <Button key={action} type="button" variant={variant} size="sm" disabled={busy} onClick={() => void verdict(action)}>{label}</Button>)}<Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => setDeferOpen((open) => !open)}>Defer</Button></div>{item.kind === "initial" ? <Button type="button" variant="ghost" size="sm" disabled={busy || (candidate.scope === "global" && !candidate.foundProjectKey)} onClick={() => void changeScope()}>{candidate.scope === "project" ? "Promote to global" : "Demote to project"}</Button> : null}</div>{deferOpen ? <div className="review-actions"><Label>Review again after<Input type="datetime-local" value={deferUntil} onChange={(event) => setDeferUntil(event.currentTarget.value)} /></Label><Button type="button" variant="secondary" size="sm" disabled={!deferUntil || busy} onClick={() => void verdict("defer", deferUntil)}>Confirm defer</Button></div> : null}</Card>;
-}
-
-export function filterQueueItems(items: QueueItem[], search: Pick<ReviewSearch, "queueProject" | "queueKind" | "queueStatus" | "queueQuery">) {
-  const queryTokens = search.queueQuery?.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean) ?? [];
-  return items.filter((item) => {
-    if (search.queueProject && queueProject(item) !== search.queueProject) return false;
-    if (search.queueKind && item.kind !== search.queueKind) return false;
-    if (search.queueStatus && item.status !== search.queueStatus) return false;
-    if (!queryTokens.length) return true;
-    const searchable = [item.candidate.title, item.candidate.body, item.candidate.rationale, queueProject(item)].join(" ").toLocaleLowerCase();
-    return queryTokens.every((token) => searchable.includes(token));
-  });
-}
-
-export function queueProjectOptions(items: QueueItem[]) {
-  return [...new Set(items.map(queueProject))].sort((left, right) => left.localeCompare(right));
-}
-
-export function reconcileCompletedCandidate(queue: QueuePageData["queue"], completed: QueueItem) {
-  const removed = queue.items.includes(completed);
-  if (!removed) return queue;
-  return {
-    ...queue,
-    items: queue.items.filter((item) => item !== completed),
-    summary: {
-      ...queue.summary,
-      [completed.status]: Math.max(0, queue.summary[completed.status] - 1)
-    }
-  };
 }
 
 function queueProject(item: QueueItem) { return item.candidate.projectDisplayName ?? item.candidate.projectKey ?? "Global"; }

@@ -47,14 +47,13 @@ export function ToolsDirectory({ snapshot }: { snapshot: PublicSnapshotDocument 
   }, [router]);
 
   const statuses = statusMap(snapshot);
-  const directoryProducts: readonly DirectoryProduct[] = [
-    ...products.map((product) => ({ ...product, icon: productIcons[product.id] })),
-    ...catalogProducts(snapshot)
-  ];
+  const primaryProducts: readonly DirectoryProduct[] = products.map((product) => ({ ...product, icon: productIcons[product.id] }));
+  const infrastructureProducts = catalogProducts(snapshot);
+  const directoryProducts = [...primaryProducts, ...infrastructureProducts];
   const operational = directoryProducts.filter((product) => monitorStatus(product.monitorId, statuses)?.status === "up").length;
 
   return <>
-    <AppShell product="Dashboard" showSignOut />
+    <AppShell product="Dashboard" icon={favicons.directory} showSignOut />
     <main id="main" className="mx-auto w-[min(1180px,calc(100%_-_2rem))] pb-20 pt-8 sm:pt-20">
       <section className="grid gap-6 border-b pb-8 sm:gap-8 sm:pb-12 lg:grid-cols-[1fr_auto] lg:items-end">
         <div>
@@ -68,7 +67,7 @@ export function ToolsDirectory({ snapshot }: { snapshot: PublicSnapshotDocument 
       </section>
 
       <section className="grid gap-3 pt-5 sm:gap-4 sm:pt-8 md:grid-cols-2 xl:grid-cols-3" aria-label="Products">
-        {directoryProducts.map((product, index) => {
+        {primaryProducts.map((product, index) => {
           const Icon = typeof product.icon === "string" ? undefined : product.icon;
           const status = monitorStatus(product.monitorId, statuses);
           const card = <article className={`group flex min-h-0 flex-row items-center justify-between gap-4 rounded-xl border p-4 text-black transition-colors sm:min-h-56 sm:flex-col sm:items-stretch sm:rounded-2xl sm:p-6 ${accents[product.accent]}`}>
@@ -92,6 +91,41 @@ export function ToolsDirectory({ snapshot }: { snapshot: PublicSnapshotDocument 
             : <Link key={product.id} to={product.href as "/publisher" | "/field-guide" | "/money" | "/status"} preload="intent">{card}</Link>;
         })}
       </section>
+
+      {infrastructureProducts.length > 0 ? (
+        <section className="pt-8" aria-labelledby="infrastructure-title">
+          <h2 id="infrastructure-title" className="mb-3 font-mono text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Infrastructure</h2>
+          <div className="grid gap-2 md:grid-cols-2">
+            {infrastructureProducts.map((product) => {
+              const status = monitorStatus(product.monitorId, statuses);
+              return (
+                <a
+                  className="group flex min-w-0 items-center justify-between gap-4 rounded-lg border bg-card px-4 py-3 text-muted-foreground hover:bg-accent hover:text-foreground"
+                  href={product.href}
+                  key={product.id}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  <span className="flex min-w-0 items-center gap-3">
+                    <span className="grid size-8 shrink-0 place-items-center rounded-md border bg-background text-muted-foreground" aria-hidden="true">
+                      <Server className="size-4" />
+                    </span>
+                    <span className="min-w-0">
+                      <strong className="block truncate text-xs font-semibold text-foreground">{product.name}</strong>
+                      <span className="block truncate text-[0.68rem]">{product.description}</span>
+                    </span>
+                  </span>
+                  <span className="flex shrink-0 items-center gap-2 text-[0.68rem]">
+                    <span className={`size-1.5 rounded-full ${status?.status === "up" ? "bg-lime-300" : status?.status === "down" ? "bg-rose-400" : "bg-muted-foreground"}`} aria-hidden="true" />
+                    {infrastructureStatus(status)}
+                    <ArrowUpRight className="size-3.5 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" aria-hidden="true" />
+                  </span>
+                </a>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
     </main>
   </>;
 }
@@ -149,6 +183,14 @@ function monitorStatus(id: string | undefined, statuses: Record<string, PublicMo
   return id ? statuses[id] : undefined;
 }
 
+function infrastructureStatus(status: PublicMonitorStatus | undefined) {
+  if (status?.status === "up") return "Operational";
+  if (status?.status === "down") return "Unavailable";
+  if (status?.status === "paused") return "Paused";
+  if (status?.status === "checking") return "Checking";
+  return "Not monitored";
+}
+
 function ProductMetadata({ access, status }: { access: "private" | "tailnet" | "public"; status: PublicMonitorStatus | undefined }) {
   const AccessIcon = access === "private" ? LockKeyhole : access === "tailnet" ? Network : Globe2;
   const accessLabel = access === "private" ? "Private" : access === "tailnet" ? "Tailnet" : "Public";
@@ -167,20 +209,4 @@ function MetadataIcon({ icon: Icon, label, className = "" }: { icon: LucideIcon;
     <Icon className="size-3.5" aria-hidden="true" />
     <span className="pointer-events-none absolute bottom-[calc(100%+0.4rem)] left-1/2 z-20 -translate-x-1/2 whitespace-nowrap rounded-md bg-foreground px-2 py-1 text-[0.65rem] font-medium text-background opacity-0 shadow-lg transition-opacity group-hover/meta:opacity-100 group-focus/meta:opacity-100">{label}</span>
   </span>;
-}
-
-export function resolveBrowserLink(href: string, publicOrigin: string) {
-  const destination = new URL(href);
-  return destination.origin === new URL(publicOrigin).origin ? `${destination.pathname}${destination.search}${destination.hash}` : href;
-}
-
-export function statusDetails(status: PublicMonitorStatus | undefined) {
-  if (!status?.checkedAt) return "No recent check";
-  return `Checked ${formatTimestamp(status.checkedAt)}`;
-}
-
-export function formatTimestamp(value: string) {
-  const timestamp = new Date(value);
-  if (Number.isNaN(timestamp.getTime())) return value;
-  return new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }).format(timestamp) + " UTC";
 }

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { getCurrentPrincipal } from "../auth-session.js";
 import { AppShell } from "../components/app-shell.js";
+import { favicons } from "../favicons.js";
 import { Button } from "../components/ui/button.js";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card.js";
 import { authClient } from "../lib/auth-client.js";
@@ -80,7 +81,7 @@ export function SignInPanel({
   return (
     <Card className="w-full max-w-[25rem] gap-0 rounded-[2rem] shadow-2xl shadow-black/25">
       <CardHeader className="border-b px-6 py-5">
-        <div className="mb-4 grid size-10 place-items-center rounded-full bg-primary text-sm font-black text-primary-foreground" aria-hidden="true">M</div>
+        <img className="mb-4 size-10 rounded-xl" src={favicons.directory} alt="" width={40} height={40} />
         <p className="workspace-header__eyebrow">Private workspace</p>
         <CardTitle className="text-2xl tracking-[-0.035em]">
           {state === "unauthorized" ? "Account not authorized" : state === "expired" ? "Session expired" : "Sign in to continue"}
