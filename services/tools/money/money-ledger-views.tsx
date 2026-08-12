@@ -1773,6 +1773,13 @@ export function MoneySpendingView({
 const marketChartConfig = {
   marketValue: { label: "Market value" },
   costBasis: { label: "Cost basis" },
+  movingAverage90: { label: "90-day average" },
+} satisfies ChartConfig;
+
+const benchmarkChartConfig = {
+  actualIndex: { label: "Actual" },
+  inflationIndex: { label: "Euro-area inflation" },
+  targetIndex: { label: "7% annual target" },
 } satisfies ChartConfig;
 
 const MAX_PORTFOLIO_CHART_POINTS = 480;
@@ -1796,26 +1803,24 @@ export function MoneyInvestmentsView({
   const cutoff = new Date(marketData.asOf);
   cutoff.setUTCFullYear(cutoff.getUTCFullYear() - (period === "5y" ? 5 : 1));
   const cutoffDate = cutoff.toISOString().slice(0, 10);
-  const history = useMemo(
-    () =>
-      marketData.history
-        .filter(
-          (point) =>
-            point.complete && (period === "all" || point.date >= cutoffDate),
-        )
-        .map((point) => ({
+  const history = useMemo(() => {
+    const complete = marketData.history
+      .filter((point) => point.complete)
+      .map((point) => ({
           date: point.date,
           marketValue: point.knownMarketValueMinor / 100,
           costBasis: point.costBasisMinor / 100,
-        })),
+          inflationBenchmark: point.inflationBenchmarkMinor === undefined ? undefined : point.inflationBenchmarkMinor / 100,
+          target7Percent: point.target7PercentMinor / 100,
+        }));
+    return portfolioMovingAverage(complete).filter(
+      (point) => period === "all" || point.date >= cutoffDate,
+    );
+  },
     [cutoffDate, marketData.history, period],
   );
   const pricedPositions = marketData.positions.filter(
     (position) => position.marketValueMinor !== undefined,
-  );
-  const knownCostBasisMinor = pricedPositions.reduce(
-    (sum, position) => sum + position.costBasisMinor,
-    0,
   );
   const staleCount = marketData.positions.filter(
     (position) => position.state === "stale",
@@ -1861,6 +1866,13 @@ export function MoneyInvestmentsView({
       ),
     [cutoffDate, history, investments.trades, period],
   );
+  const latestBenchmark = history.at(-1);
+  const realReturnMinor = latestBenchmark?.inflationBenchmark === undefined
+    ? undefined
+    : marketData.totals.knownMarketValueMinor - Math.round(latestBenchmark.inflationBenchmark * 100);
+  const targetDifferenceMinor = latestBenchmark
+    ? marketData.totals.knownMarketValueMinor - Math.round(latestBenchmark.target7Percent * 100)
+    : undefined;
   const equityPercent = allocationTotal
     ? (allocation[0]!.value / allocationTotal) * 100
     : 0;
@@ -1986,23 +1998,16 @@ export function MoneyInvestmentsView({
           detail="Imported acquisitions and fees"
         />
         <MarketMetric
-          label="Unrealized gain/loss"
-          value={signedMoney(marketData.totals.knownUnrealizedGainMinor, "EUR")}
-          detail={`${gainPercent(marketData.totals.knownUnrealizedGainMinor, knownCostBasisMinor)} on priced FIFO basis`}
-          tone={marketData.totals.knownUnrealizedGainMinor}
+          label="Above inflation"
+          value={realReturnMinor === undefined ? "—" : signedMoney(realReturnMinor, "EUR")}
+          detail={realReturnMinor === undefined ? "Refresh to load euro-area HICP" : "Versus contribution-aware HICP hurdle"}
+          tone={realReturnMinor}
         />
         <MarketMetric
-          label="Largest position"
-          value={
-            largestPosition?.marketValueMinor === undefined
-              ? "—"
-              : money(largestPosition.marketValueMinor, "EUR")
-          }
-          detail={
-            largestPosition && largestShare !== undefined
-              ? `${largestPosition.name} · ${largestShare.toFixed(1)}%`
-              : "No priced positions"
-          }
+          label="Versus 7% target"
+          value={targetDifferenceMinor === undefined ? "—" : signedMoney(targetDifferenceMinor, "EUR")}
+          detail="Personal annual planning benchmark"
+          tone={targetDifferenceMinor}
         />
       </section>
       <section className="grid items-start gap-3 lg:grid-cols-[minmax(0,1.55fr)_minmax(17rem,.7fr)]">
@@ -2065,6 +2070,24 @@ export function MoneyInvestmentsView({
                     Sale
                   </span>
                   <span>Hover a marker for execution details</span>
+                </div>
+                <div className="mt-5 border-t pt-5">
+                  <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+                    <div>
+                      <h3 className="text-sm font-medium">Growth benchmark</h3>
+                      <p className="text-xs text-muted-foreground">Index 100 = remaining FIFO basis</p>
+                    </div>
+                    <p className="text-xs text-muted-foreground">HICP actual · 7% is your planning target</p>
+                  </div>
+                  <ChartContainer
+                    config={benchmarkChartConfig}
+                    className="h-[12rem] w-full aspect-auto"
+                    initialDimension={{ width: 760, height: 192 }}
+                    role="img"
+                    aria-label="Portfolio growth compared with euro-area inflation and a seven percent annual target"
+                  >
+                    <PortfolioBenchmarkChart data={chartHistory} />
+                  </ChartContainer>
                 </div>
                 <PortfolioHistoryDisclosure history={history} />
               </>
@@ -2330,15 +2353,46 @@ type PortfolioChartPoint = Readonly<{
   date: string;
   marketValue: number;
   costBasis: number;
+  movingAverage90: number;
+  inflationBenchmark?: number;
+  target7Percent: number;
   buyMarker?: number;
   sellMarker?: number;
   trades: MoneyTrackerPageData["investments"]["trades"];
 }>;
 
-type PortfolioHistoryPoint = Pick<
-  PortfolioChartPoint,
-  "date" | "marketValue" | "costBasis"
->;
+type PortfolioHistoryPoint = Readonly<{
+  date: string;
+  marketValue: number;
+  costBasis: number;
+  movingAverage90?: number;
+  inflationBenchmark?: number;
+  target7Percent?: number;
+}>;
+
+type PortfolioMovingAverageInput = Readonly<{
+  date: string;
+  marketValue: number;
+  costBasis: number;
+  inflationBenchmark?: number;
+  target7Percent: number;
+}>;
+
+type PortfolioMovingAveragePoint = PortfolioMovingAverageInput & Readonly<{ movingAverage90: number }>;
+
+/** Adds a trailing 90-calendar-day market-value average without losing pre-range context. */
+export function portfolioMovingAverage(history: readonly PortfolioMovingAverageInput[]): readonly PortfolioMovingAveragePoint[] {
+  let first = 0;
+  let sum = 0;
+  return history.map((point, index) => {
+    sum += point.marketValue;
+    const threshold = new Date(`${point.date}T00:00:00Z`);
+    threshold.setUTCDate(threshold.getUTCDate() - 89);
+    const thresholdDate = threshold.toISOString().slice(0, 10);
+    while (history[first] && history[first]!.date < thresholdDate) sum -= history[first++]!.marketValue;
+    return { ...point, movingAverage90: sum / (index - first + 1) };
+  });
+}
 
 /** Bounds SVG work while retaining endpoints, cost-basis changes, and trade markers. */
 export function portfolioChartPoints(
@@ -2376,6 +2430,8 @@ export function portfolioChartPoints(
     const bothKinds = hasBuy && hasSell;
     return {
       ...point,
+      movingAverage90: point.movingAverage90 ?? point.marketValue,
+      target7Percent: point.target7Percent ?? point.costBasis,
       trades: pointTrades,
       buyMarker: hasBuy ? point.marketValue * (bothKinds ? 0.995 : 1) : undefined,
       sellMarker: hasSell
@@ -2468,6 +2524,15 @@ const AreaChartForPortfolio = memo(function AreaChartForPortfolio({
         dot={false}
         isAnimationActive={false}
       />
+      <Line
+        dataKey="movingAverage90"
+        name="90-day average"
+        type="monotone"
+        stroke="#facc15"
+        strokeWidth={1.75}
+        dot={false}
+        isAnimationActive={false}
+      />
       <Scatter
         dataKey="buyMarker"
         name="Purchase"
@@ -2509,6 +2574,10 @@ function PortfolioChartTooltip({
           </strong>
         </p>
         <p className="flex justify-between gap-6">
+          <span>90-day average</span>
+          <strong className="font-mono text-foreground">{preciseEuro(point.movingAverage90)}</strong>
+        </p>
+        <p className="flex justify-between gap-6">
           <span>FIFO basis</span>
           <strong className="font-mono text-foreground">
             {preciseEuro(point.costBasis)}
@@ -2543,6 +2612,26 @@ function PortfolioChartTooltip({
     </div>
   );
 }
+
+const PortfolioBenchmarkChart = memo(function PortfolioBenchmarkChart({ data }: { data: readonly PortfolioChartPoint[] }) {
+  const indexed = data.map((point) => ({
+    date: point.date,
+    actualIndex: point.costBasis ? (point.marketValue / point.costBasis) * 100 : undefined,
+    inflationIndex: point.costBasis && point.inflationBenchmark !== undefined ? (point.inflationBenchmark / point.costBasis) * 100 : undefined,
+    targetIndex: point.costBasis ? (point.target7Percent / point.costBasis) * 100 : undefined,
+  }));
+  return (
+    <ComposedChart data={indexed} margin={{ left: 4, right: 12, top: 8 }}>
+      <CartesianGrid vertical={false} />
+      <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={10} minTickGap={28} />
+      <YAxis tickLine={false} axisLine={false} width={74} tickFormatter={(value: number) => value.toFixed(0)} />
+      <ChartTooltip content={<ChartTooltipContent formatter={(value) => `${Number(value).toFixed(1)}`} />} />
+      <Line dataKey="actualIndex" name="Actual" type="monotone" stroke="#67e8f9" strokeWidth={2} dot={false} isAnimationActive={false} />
+      <Line dataKey="inflationIndex" name="Euro-area inflation" type="stepAfter" stroke="#f472b6" strokeWidth={1.5} dot={false} isAnimationActive={false} />
+      <Line dataKey="targetIndex" name="7% annual target" type="monotone" stroke="#c084fc" strokeWidth={1.5} strokeDasharray="6 5" dot={false} isAnimationActive={false} />
+    </ComposedChart>
+  );
+});
 
 function PortfolioHistoryDisclosure({
   history,

@@ -1,7 +1,7 @@
 import { fifoInvestmentLots } from "./money-investment-domain.js";
 import { MONEY_MARKET_INSTRUMENTS } from "./money-market-data-catalog.js";
 import { marketValueMinor } from "./money-market-data-domain.js";
-import { EcbFxClient, MoneyMarketProviderError, YahooChartClient } from "./money-market-data-provider.js";
+import { EcbFxClient, EcbInflationClient, MoneyMarketProviderError, YahooChartClient } from "./money-market-data-provider.js";
 import type { MoneyMarketDataRepository } from "./money-market-data-repository.js";
 
 export type MoneyMarketPosition = Readonly<{
@@ -28,6 +28,8 @@ export type MoneyMarketSnapshot = Readonly<{
     costBasisMinor: number;
     knownMarketValueMinor: number;
     knownUnrealizedGainMinor: number;
+    inflationBenchmarkMinor?: number;
+    target7PercentMinor: number;
     complete: boolean;
   }>[];
   totals: Readonly<{
@@ -44,10 +46,12 @@ export type MoneyMarketSyncResult = Readonly<{
   failed: number;
   pricesSaved: number;
   ratesSaved: number;
+  inflationIndicesSaved: number;
 }>;
 
 type YahooDailyClient = Pick<YahooChartClient, "dailySeries">;
 type EcbRatesClient = Pick<EcbFxClient, "usdRates">;
+type EcbInflationIndexClient = Pick<EcbInflationClient, "euroAreaHicp">;
 
 /** Owns the provider sync and constructs current EUR valuations from cached data. */
 export class MoneyMarketDataService {
@@ -57,7 +61,8 @@ export class MoneyMarketDataService {
     private readonly repository: MoneyMarketDataRepository,
     private readonly yahoo: YahooDailyClient = new YahooChartClient(),
     private readonly ecb: EcbRatesClient = new EcbFxClient(),
-    private readonly now: () => Date = () => new Date()
+    private readonly now: () => Date = () => new Date(),
+    private readonly inflation: EcbInflationIndexClient = new EcbInflationClient()
   ) {}
 
   initializeCatalog() {
@@ -177,7 +182,18 @@ export class MoneyMarketDataService {
       await this.repository.saveUsdRates(rates, this.now());
       ratesSaved = rates.length;
     }
-    return { series: targets.length, succeeded, failed, pricesSaved, ratesSaved };
+    let inflationIndicesSaved = 0;
+    if (targets.length) {
+      const from = addDays(targets.map((target) => target.firstRequiredDate).sort()[0]!, -62);
+      try {
+        const indices = await this.inflation.euroAreaHicp(from, today);
+        await this.repository.saveInflationIndices(indices, this.now());
+        inflationIndicesSaved = indices.length;
+      } catch {
+        // Portfolio prices remain useful when the independent inflation feed is unavailable.
+      }
+    }
+    return { series: targets.length, succeeded, failed, pricesSaved, ratesSaved, inflationIndicesSaved };
   }
 }
 
@@ -188,12 +204,20 @@ function historyPoints(inputs: Awaited<ReturnType<MoneyMarketDataRepository["rea
   const events = [...inputs.events].sort((left, right) => left.localDate.localeCompare(right.localDate) || left.occurredAt.localeCompare(right.occurredAt) || left.sourceOrder.localeCompare(right.sourceOrder));
   const prices = [...inputs.prices].sort((left, right) => left.date.localeCompare(right.date) || left.canonicalKey.localeCompare(right.canonicalKey));
   const rates = [...inputs.usdRates].sort((left, right) => left.date.localeCompare(right.date));
+  const inflationIndices = [...inputs.inflationIndices].sort((left, right) => left.date.localeCompare(right.date));
   const activeEvents: typeof events = [];
   const latestPrices = new Map<string, (typeof prices)[number]>();
   let latestUsdRate: string | undefined;
   let eventIndex = 0;
   let priceIndex = 0;
   let rateIndex = 0;
+  let inflationIndex = 0;
+  let latestInflation: number | undefined;
+  let previousInflation: number | undefined;
+  let inflationBenchmarkMinor: number | undefined;
+  let target7PercentMinor: number | undefined;
+  let previousCostBasisMinor: number | undefined;
+  let previousDate: string | undefined;
 
   return dates.flatMap((date) => {
     while (eventIndex < events.length && events[eventIndex]!.localDate <= date) activeEvents.push(events[eventIndex++]!);
@@ -202,8 +226,18 @@ function historyPoints(inputs: Awaited<ReturnType<MoneyMarketDataRepository["rea
       latestPrices.set(price.canonicalKey, price);
     }
     while (rateIndex < rates.length && rates[rateIndex]!.date <= date) latestUsdRate = rates[rateIndex++]!.quotePerEuro;
+    while (inflationIndex < inflationIndices.length && inflationIndices[inflationIndex]!.date <= date) {
+      latestInflation = Number(inflationIndices[inflationIndex++]!.value);
+    }
     const openPositions = fifoInvestmentLots(lotEvents(activeEvents)).openPositions;
-    if (!openPositions.length) return [];
+    if (!openPositions.length) {
+      previousCostBasisMinor = 0;
+      previousDate = date;
+      previousInflation = latestInflation;
+      inflationBenchmarkMinor = undefined;
+      target7PercentMinor = undefined;
+      return [];
+    }
     let costBasisMinor = 0;
     let knownMarketValueMinor = 0;
     let complete = true;
@@ -216,14 +250,30 @@ function historyPoints(inputs: Awaited<ReturnType<MoneyMarketDataRepository["rea
       }
       knownMarketValueMinor += marketValueMinor(position.quantity, price.close, price.currency === "USD" ? latestUsdRate : undefined);
     }
+    const basisChange = costBasisMinor - (previousCostBasisMinor ?? costBasisMinor);
+    if (target7PercentMinor === undefined) target7PercentMinor = costBasisMinor;
+    else target7PercentMinor = Math.round(target7PercentMinor * 1.07 ** (daysBetween(previousDate!, date) / 365.2425) + basisChange);
+    if (latestInflation !== undefined) {
+      if (inflationBenchmarkMinor === undefined || previousInflation === undefined) inflationBenchmarkMinor = costBasisMinor;
+      else inflationBenchmarkMinor = Math.round(inflationBenchmarkMinor * (latestInflation / previousInflation) + basisChange);
+      previousInflation = latestInflation;
+    }
+    previousCostBasisMinor = costBasisMinor;
+    previousDate = date;
     return [{
       date,
       costBasisMinor,
       knownMarketValueMinor,
       knownUnrealizedGainMinor: knownMarketValueMinor - costBasisMinor,
+      ...(inflationBenchmarkMinor === undefined ? {} : { inflationBenchmarkMinor }),
+      target7PercentMinor,
       complete
     }];
   });
+}
+
+function daysBetween(left: string, right: string) {
+  return (new Date(`${right}T00:00:00Z`).valueOf() - new Date(`${left}T00:00:00Z`).valueOf()) / 86_400_000;
 }
 
 function lotEvents(events: readonly import("./money-market-data-repository.js").MoneyMarketValuationEvent[]) {

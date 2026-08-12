@@ -64,6 +64,7 @@ export function parseYahooDailySeries(value: unknown, expected: MoneyYahooSeries
 }
 
 export type MoneyFxRate = Readonly<{ date: string; quoteCurrency: "USD"; quotePerEuro: string }>;
+export type MoneyInflationIndex = Readonly<{ date: string; value: string }>;
 
 export function parseEcbUsdRates(source: string): readonly MoneyFxRate[] {
   const rows = parse(source, { columns: true, skip_empty_lines: true, bom: true }) as Record<string, string>[];
@@ -76,6 +77,22 @@ export function parseEcbUsdRates(source: string): readonly MoneyFxRate[] {
   assertIncreasingDates(rates);
   if (!rates.length) throw new Error("ECB returned no USD rates.");
   return rates;
+}
+
+/** Parses the ECB's monthly euro-area all-items HICP index and dates each observation at month end. */
+export function parseEcbEuroAreaHicp(source: string): readonly MoneyInflationIndex[] {
+  const rows = parse(source, { columns: true, skip_empty_lines: true, bom: true }) as Record<string, string>[];
+  const values = rows.map((row, index): MoneyInflationIndex => {
+    const period = requiredString(row.TIME_PERIOD, `ECB HICP period ${index + 2}`);
+    if (!/^\d{4}-\d{2}$/.test(period)) throw new Error(`ECB HICP period ${index + 2} must use YYYY-MM.`);
+    const date = new Date(`${period}-01T00:00:00Z`);
+    date.setUTCMonth(date.getUTCMonth() + 1, 0);
+    const scaled = positiveDecimal(row.OBS_VALUE, `ECB HICP value ${index + 2}`);
+    return { date: date.toISOString().slice(0, 10), value: decimalString(scaled) };
+  });
+  assertIncreasingDates(values);
+  if (!values.length) throw new Error("ECB returned no euro-area HICP observations.");
+  return values;
 }
 
 /** Converts an exact quantity and close to EUR cents using quote-currency units per euro. */

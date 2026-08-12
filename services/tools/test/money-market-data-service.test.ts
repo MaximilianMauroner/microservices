@@ -29,7 +29,8 @@ describe("money market-data service", () => {
         { canonicalKey: "listing:XNAS:AAPL", date: "2026-01-01", close: "100", currency: "USD" },
         { canonicalKey: "listing:XNAS:AAPL", date: "2026-02-01", close: "200", currency: "USD" }
       ],
-      usdRates: [{ date: "2026-01-01", quoteCurrency: "USD", quotePerEuro: "1.25" }]
+      usdRates: [{ date: "2026-01-01", quoteCurrency: "USD", quotePerEuro: "1.25" }],
+      inflationIndices: [{ date: "2025-12-31", value: "125" }, { date: "2026-01-31", value: "126" }]
     });
     const service = new MoneyMarketDataService(repository, undefined, undefined, () => new Date("2026-08-10T12:00:00Z"));
 
@@ -49,8 +50,8 @@ describe("money market-data service", () => {
         complete: true
       },
       history: [
-        { date: "2026-01-01", costBasisMinor: 20_000, knownMarketValueMinor: 16_000, knownUnrealizedGainMinor: -4_000, complete: true },
-        { date: "2026-02-01", costBasisMinor: 15_000, knownMarketValueMinor: 24_000, knownUnrealizedGainMinor: 9_000, complete: true }
+        { date: "2026-01-01", costBasisMinor: 20_000, knownMarketValueMinor: 16_000, knownUnrealizedGainMinor: -4_000, inflationBenchmarkMinor: 20_000, target7PercentMinor: 20_000, complete: true },
+        { date: "2026-02-01", costBasisMinor: 15_000, knownMarketValueMinor: 24_000, knownUnrealizedGainMinor: 9_000, inflationBenchmarkMinor: 15_160, target7PercentMinor: 15_115, complete: true }
       ]
     });
   });
@@ -69,9 +70,12 @@ describe("money market-data service", () => {
     const ecb = {
       usdRates: vi.fn().mockResolvedValue([{ date: "2026-08-10", quoteCurrency: "USD", quotePerEuro: "1.2" }])
     };
-    const service = new MoneyMarketDataService(repository, yahoo, ecb, () => new Date("2026-08-10T12:00:00Z"));
+    const inflation = {
+      euroAreaHicp: vi.fn().mockResolvedValue([{ date: "2026-07-31", value: "129.1" }])
+    };
+    const service = new MoneyMarketDataService(repository, yahoo, ecb, () => new Date("2026-08-10T12:00:00Z"), inflation);
 
-    await expect(service.sync()).resolves.toEqual({ series: 2, succeeded: 1, failed: 1, pricesSaved: 1, ratesSaved: 1 });
+    await expect(service.sync()).resolves.toEqual({ series: 2, succeeded: 1, failed: 1, pricesSaved: 1, ratesSaved: 1, inflationIndicesSaved: 1 });
     expect(yahoo.dailySeries).toHaveBeenNthCalledWith(2, { providerKey: "MSFT", currency: "USD" }, "2026-08-01", "2026-08-10");
     expect(repository.saveSeriesFailure).toHaveBeenCalledWith(expect.objectContaining({ seriesId: "b", errorCode: "rate_limited" }));
   });
@@ -84,8 +88,9 @@ function fakeRepository(): MoneyMarketDataRepository {
     saveSeriesSuccess: vi.fn().mockResolvedValue(undefined),
     saveSeriesFailure: vi.fn().mockResolvedValue(undefined),
     saveUsdRates: vi.fn().mockResolvedValue(undefined),
+    saveInflationIndices: vi.fn().mockResolvedValue(undefined),
     readValuationInputs: vi.fn().mockResolvedValue({ events: [], prices: [] }),
-    readHistoryInputs: vi.fn().mockResolvedValue({ events: [], prices: [], usdRates: [] }),
+    readHistoryInputs: vi.fn().mockResolvedValue({ events: [], prices: [], usdRates: [], inflationIndices: [] }),
     readiness: vi.fn().mockResolvedValue(undefined),
     close: vi.fn().mockResolvedValue(undefined)
   };

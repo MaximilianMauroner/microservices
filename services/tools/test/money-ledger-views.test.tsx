@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { MoneyActivityView, MoneyDataView, MoneyInvestmentsView, MoneySpendingView, portfolioChartPoints } from "../money/money-ledger-views.js";
+import { MoneyActivityView, MoneyDataView, MoneyInvestmentsView, MoneySpendingView, portfolioChartPoints, portfolioMovingAverage } from "../money/money-ledger-views.js";
 import { MoneyPlanningCard } from "../money/money-planning-card.js";
 import { History } from "../money/money-tracker-page.js";
 import { groupMonth } from "../money/money-history.js";
@@ -163,7 +163,7 @@ describe("Option A money ledger views", () => {
     const html = renderToStaticMarkup(<MoneyInvestmentsView marketData={{
       asOf: "2026-08-10T12:00:00.000Z",
       positions: [{ canonicalKey: "aum5", providerKey: "AUM5.DE", name: "Amundi S&amp;P 500", assetClass: "etf", quantity: "57.339404", costBasisMinor: 567_780, close: "134.01", currency: "EUR", marketValueMinor: 768_438, unrealizedGainMinor: 200_658, priceDate: "2026-08-10", state: "fresh" }],
-      history: [{ date: "2026-08-10", costBasisMinor: 567_780, knownMarketValueMinor: 768_438, knownUnrealizedGainMinor: 200_658, complete: true }],
+      history: [{ date: "2026-08-10", costBasisMinor: 567_780, knownMarketValueMinor: 768_438, knownUnrealizedGainMinor: 200_658, inflationBenchmarkMinor: 590_000, target7PercentMinor: 610_000, complete: true }],
       totals: { costBasisMinor: 567_780, knownMarketValueMinor: 768_438, knownUnrealizedGainMinor: 200_658, complete: true }
     }} investments={{ positions: [], trades: [], totals: { eventCount: 0, boughtMinor: 0, soldMinor: 0, incomeMinor: 0, feesMinor: 0, taxesMinor: 0 }, realized: { positions: [], totals: { saleCount: 0, proceedsMinor: 0, costBasisMinor: 0, gainMinor: 0, unmatchedSaleCount: 0 } } }} />);
 
@@ -198,6 +198,15 @@ describe("Option A money ledger views", () => {
     expect(points.at(-1)?.sellMarker).toBeDefined();
     expect(points.some((point) => point.date === history[999]!.date)).toBe(true);
     expect(points.some((point) => point.date === history[1_000]!.date)).toBe(true);
+  });
+
+  it("uses the trailing 90 calendar days for the portfolio trendline", () => {
+    const points = portfolioMovingAverage([
+      { date: "2026-01-01", marketValue: 100, costBasis: 100, target7Percent: 100 },
+      { date: "2026-03-31", marketValue: 200, costBasis: 100, target7Percent: 101 },
+      { date: "2026-04-01", marketValue: 300, costBasis: 100, target7Percent: 102 }
+    ]);
+    expect(points.map((point) => point.movingAverage90)).toEqual([100, 150, 250]);
   });
 
   it("surfaces analytical confidence and actionable repairs in one data-quality view", () => {

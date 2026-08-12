@@ -24,6 +24,7 @@ export default defineConfig({
     "money_market_series",
     "money_daily_prices",
     "money_fx_rates",
+    "money_inflation_indices",
     "money_transactions",
     "money_investment_events",
     "money_category_rules",

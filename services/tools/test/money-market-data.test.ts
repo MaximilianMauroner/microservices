@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { marketValueMinor, parseEcbUsdRates, parseYahooDailySeries } from "../money/money-market-data-domain.js";
+import { marketValueMinor, parseEcbEuroAreaHicp, parseEcbUsdRates, parseYahooDailySeries } from "../money/money-market-data-domain.js";
 import { moneyMarketInstrument, moneyMarketInstrumentName } from "../money/money-market-data-catalog.js";
 import { YahooChartClient } from "../money/money-market-data-provider.js";
 
@@ -37,6 +37,13 @@ describe("money market-data domain", () => {
     expect(parseEcbUsdRates("TIME_PERIOD,OBS_VALUE\n2026-08-07,1.1642\n2026-08-10,1.1555\n")).toEqual([
       { date: "2026-08-07", quoteCurrency: "USD", quotePerEuro: "1.1642" },
       { date: "2026-08-10", quoteCurrency: "USD", quotePerEuro: "1.1555" }
+    ]);
+  });
+
+  it("parses official monthly euro-area HICP observations at month end", () => {
+    expect(parseEcbEuroAreaHicp("TIME_PERIOD,OBS_VALUE\n2025-01,126.72\n2025-02,127.26\n")).toEqual([
+      { date: "2025-01-31", value: "126.72" },
+      { date: "2025-02-28", value: "127.26" }
     ]);
   });
 

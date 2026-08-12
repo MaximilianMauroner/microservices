@@ -1,4 +1,4 @@
-import { parseEcbUsdRates, parseYahooDailySeries, type MoneyYahooSeries } from "./money-market-data-domain.js";
+import { parseEcbEuroAreaHicp, parseEcbUsdRates, parseYahooDailySeries, type MoneyYahooSeries } from "./money-market-data-domain.js";
 
 const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 
@@ -37,6 +37,21 @@ export class EcbFxClient {
       return parseEcbUsdRates(source);
     } catch (error) {
       throw new MoneyMarketProviderError("invalid_response", error instanceof Error ? error.message : "ECB returned invalid data.");
+    }
+  }
+}
+
+export class EcbInflationClient {
+  constructor(private readonly fetcher: typeof fetch = fetch) {}
+
+  async euroAreaHicp(from: string, to: string) {
+    const url = new URL("/service/data/ICP/M.U2.N.000000.4.INX", "https://data-api.ecb.europa.eu");
+    url.search = new URLSearchParams({ startPeriod: from.slice(0, 7), endPeriod: to.slice(0, 7), format: "csvdata" }).toString();
+    const source = await providerText(this.fetcher, url, { Accept: "text/csv", "User-Agent": "money-tracker-personal/1.0" });
+    try {
+      return parseEcbEuroAreaHicp(source);
+    } catch (error) {
+      throw new MoneyMarketProviderError("invalid_response", error instanceof Error ? error.message : "ECB returned invalid HICP data.");
     }
   }
 }
