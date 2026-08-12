@@ -153,7 +153,7 @@ export function MoneyActivityView({
   const [error, setError] = useState<string>();
   const [ruleCandidate, setRuleCandidate] = useState<Activity>();
   const [ruleAffected, setRuleAffected] = useState<number>();
-  const [mobileLimit, setMobileLimit] = useState(50);
+  const [mobileWindow, setMobileWindow] = useState({ key: "", limit: 50 });
   const requestSequence = useRef(0);
   const transferSelectionAnchor = useRef<number | undefined>(undefined);
   const visible = useMemo(() => {
@@ -170,11 +170,9 @@ export function MoneyActivityView({
             .includes(normalized)),
     );
   }, [account, category, rows, flow, query, reviewOnly]);
+  const mobileViewKey = `${account}\0${category}\0${flow}\0${query}\0${reviewOnly}\0${sort.key}\0${sort.direction}`;
+  const mobileLimit = mobileWindow.key === mobileViewKey ? mobileWindow.limit : 50;
   const renderedRows = isMobile ? visible.slice(0, mobileLimit) : visible;
-  useEffect(
-    () => setMobileLimit(50),
-    [account, category, flow, query, reviewOnly, sort],
-  );
   const categorize = async (
     item: Activity,
     category: MoneyCategory,
@@ -297,18 +295,13 @@ export function MoneyActivityView({
   const selectedTransferGroup = transferReviewGroups.find(
     (group) => group.representativeId === selectedTransferGroupId,
   );
-  useEffect(() => {
-    if (selectedTransferGroupId && !selectedTransferGroup) {
-      setSelectedTransferGroupId(undefined);
-      setSelectedTransferRows(new Set());
-      transferSelectionAnchor.current = undefined;
-    }
-  }, [selectedTransferGroup, selectedTransferGroupId]);
   const toggleReview = () => {
     setReviewOnly((current) => {
       const next = !current;
-      if (next && !selectedTransferGroupId) {
+      if (next && !selectedTransferGroup) {
         setSelectedTransferGroupId(transferReviewGroups[0]?.representativeId);
+        setSelectedTransferRows(new Set());
+        transferSelectionAnchor.current = undefined;
       }
       return next;
     });
@@ -899,7 +892,14 @@ export function MoneyActivityView({
                     type="button"
                     variant="outline"
                     disabled={loading}
-                    onClick={() => setMobileLimit((current) => current + 50)}
+                    onClick={() =>
+                      setMobileWindow((current) => ({
+                        key: mobileViewKey,
+                        limit:
+                          (current.key === mobileViewKey ? current.limit : 50) +
+                          50,
+                      }))
+                    }
                   >
                     Show 50 more
                   </Button>
@@ -2902,74 +2902,6 @@ function InvestmentActivityHistory({
         </CardContent>
       </Card>
     </>
-  );
-}
-
-export function MoneyPlanningCard({
-  planning,
-}: Pick<MoneyTrackerPageData, "planning">) {
-  return (
-    <Card>
-      <CardHeader className="border-b">
-        <CardTitle>Run-rate scenario</CardTitle>
-        <CardDescription>
-          Median of the latest 6 to 12 consecutive months with imported
-          cash-flow activity. The current partial month is excluded.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="pt-5">
-        {planning.ready ? (
-          <div className="space-y-3">
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <div>
-                <p className="text-xs text-muted-foreground">Monthly median</p>
-                <strong className="mt-1 block font-mono text-xl">
-                  {signedMoney(planning.medianMonthlyNetMinor, "EUR")}
-                </strong>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {planning.observedMonthCount} consecutive activity months
-                </p>
-              </div>
-              {planning.projections.map((item) => (
-                <div
-                  className="rounded-md border bg-muted/20 p-3"
-                  key={item.months}
-                >
-                  <p className="text-xs text-muted-foreground">
-                    Simple {item.months === 60 ? "5-year" : `${item.months}-month`} run rate
-                  </p>
-                  <strong
-                    className={`mt-1 block font-mono text-lg ${item.changeMinor < 0 ? "text-rose-300" : "text-emerald-300"}`}
-                  >
-                    {signedMoney(item.changeMinor, "EUR")}
-                  </strong>
-                </div>
-              ))}
-            </div>
-            {planning.unresolvedTransferCount ? (
-              <p className="text-xs text-muted-foreground">
-                {planning.unresolvedTransferCount.toLocaleString("en-GB")} unresolved transfer rows excluded.
-              </p>
-            ) : null}
-          </div>
-        ) : (
-          <Alert>
-            <AlertTitle>Not enough history</AlertTitle>
-            <AlertDescription>
-              At least six consecutive past months with imported cash-flow
-              activity are required. You currently have{" "}
-              {planning.observedMonthCount}.
-              {planning.unresolvedTransferCount ? (
-                <>
-                  {" "}
-                  {planning.unresolvedTransferCount.toLocaleString("en-GB")} unresolved transfer rows are excluded.
-                </>
-              ) : null}
-            </AlertDescription>
-          </Alert>
-        )}
-      </CardContent>
-    </Card>
   );
 }
 

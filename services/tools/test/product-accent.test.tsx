@@ -18,9 +18,9 @@ describe("product accent contract", () => {
   });
 
   it("allows a product icon to replace the generic shell mark", () => {
-    const html = renderToStaticMarkup(<AppShell product="Money" icon="/assets/icons/money-tracker.png" showSignOut={false} />);
+    const html = renderToStaticMarkup(<AppShell product="Money" icon="/assets/icons/money.png" showSignOut={false} />);
 
-    expect(html).toContain('src="/assets/icons/money-tracker.png"');
+    expect(html).toContain('src="/assets/icons/money.png"');
     expect(html).not.toContain('aria-hidden="true">M</span>');
   });
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Link, useRouter } from "@tanstack/react-router";
 import { Area, AreaChart, CartesianGrid, ReferenceLine, XAxis, YAxis } from "recharts";
 import type { MouseHandlerDataParam } from "recharts";
@@ -28,27 +28,22 @@ export function MoneyCategoryExplorer({ spending, initialCategory }: { spending:
   const selectedMonthSet = useMemo(() => new Set(selectedMonths), [selectedMonths]);
   const totals = useMemo(() => aggregateCategories(spending.categoryMonths.filter((row) => selectedMonthSet.has(row.month))), [selectedMonthSet, spending.categoryMonths]);
   const defaultCategory = initialCategory && totals.some((row) => row.category === initialCategory) ? initialCategory : totals[0]?.category;
-  const [category, setCategory] = useState<MoneyCategory | undefined>(defaultCategory);
-  useEffect(() => {
-    if (initialCategory && totals.some((row) => row.category === initialCategory)) setCategory(initialCategory);
-    else if (!category || !totals.some((row) => row.category === category)) setCategory(totals[0]?.category);
-  }, [category, initialCategory, totals]);
+  const [chosenCategory, setChosenCategory] = useState<MoneyCategory | undefined>(defaultCategory);
+  const category = totals.some((row) => row.category === chosenCategory) ? chosenCategory : defaultCategory;
 
   const selected = totals.find((row) => row.category === category);
   const totalSpend = totals.reduce((sum, row) => sum + row.amountMinor, 0);
   const uncategorizedRow = totals.find((row) => row.category === "uncategorized");
   const uncategorized = uncategorizedRow?.amountMinor ?? 0;
   const coverage = totalSpend ? (totalSpend - uncategorized) / totalSpend * 100 : 0;
-  const trend = selectedMonths.map((month) => ({ month, amount: spending.categoryMonths.filter((row) => row.month === month && row.category === category).reduce((sum, row) => sum + row.amountMinor, 0) / 100 }));
+  const categoryMonthAmounts = useMemo(() => indexCategoryMonthAmounts(spending.categoryMonths), [spending.categoryMonths]);
+  const trend = selectedMonths.map((month) => ({ month, amount: ((category ? categoryMonthAmounts.get(category)?.get(month) : undefined) ?? 0) / 100 }));
   const merchants = aggregateMerchants(spending.merchantMonths.filter((row) => selectedMonthSet.has(row.month) && row.category === category));
   const contributorsByMonth = useMemo(() => indexContributors(spending.merchantMonths, category, selectedMonthSet), [category, selectedMonthSet, spending.merchantMonths]);
   const defaultSelectedMonth = [...trend].reverse().find((row) => row.amount > 0)?.month ?? selectedMonths.at(-1);
-  const [selectedMonth, setSelectedMonth] = useState(defaultSelectedMonth);
+  const [chosenMonth, setChosenMonth] = useState<string>();
   const [contributorQuery, setContributorQuery] = useState("");
-  useEffect(() => {
-    setSelectedMonth(defaultSelectedMonth);
-    setContributorQuery("");
-  }, [category, defaultSelectedMonth, period]);
+  const selectedMonth = trend.some((row) => row.month === chosenMonth) ? chosenMonth : defaultSelectedMonth;
   const selectedTrend = trend.find((row) => row.month === selectedMonth);
   const selectedContributors = contributorsByMonth.get(selectedMonth ?? "") ?? [];
   const normalizedContributorQuery = contributorQuery.trim().toLocaleLowerCase();
@@ -57,8 +52,15 @@ export function MoneyCategoryExplorer({ spending, initialCategory }: { spending:
     : selectedContributors).slice(0, 10);
   const activity = spending.categoryActivity.filter((row) => row.category === category && selectedMonthSet.has(row.occurredAt.slice(0, 7)));
   const selectCategory = (nextCategory: MoneyCategory) => {
-    setCategory(nextCategory);
+    setChosenCategory(nextCategory);
+    setChosenMonth(undefined);
+    setContributorQuery("");
     void router.navigate({ to: "/money", search: { view: "categories", category: nextCategory }, replace: true });
+  };
+  const selectPeriod = (nextPeriod: CategoryPeriod) => {
+    setPeriod(nextPeriod);
+    setChosenMonth(undefined);
+    setContributorQuery("");
   };
 
   return <div className="money-category-explorer space-y-3">
@@ -71,7 +73,7 @@ export function MoneyCategoryExplorer({ spending, initialCategory }: { spending:
 
     <section className="grid items-start gap-3 xl:grid-cols-[minmax(19rem,.72fr)_minmax(0,1.28fr)]">
       <Card>
-        <CardHeader className="border-b"><div className="flex items-start justify-between gap-3"><div><CardTitle>Category map</CardTitle><CardDescription>Click a bar to inspect its trend, merchants, and transactions</CardDescription></div><CategoryPeriodSelector period={period} onPeriod={setPeriod} /></div></CardHeader>
+        <CardHeader className="border-b"><div className="flex items-start justify-between gap-3"><div><CardTitle>Category map</CardTitle><CardDescription>Click a bar to inspect its trend, merchants, and transactions</CardDescription></div><CategoryPeriodSelector period={period} onPeriod={selectPeriod} /></div></CardHeader>
         <CardContent className="p-0">
           {totals.length ? <div className="money-category-map" role="list" aria-label="Spending categories">{totals.map((row, index) => <div role="listitem" key={row.category}><CategoryBar row={row} total={totalSpend} maximum={totals[0]?.amountMinor ?? 1} color={categoryColors[index % categoryColors.length]!} active={row.category === category} onSelect={() => selectCategory(row.category)} /></div>)}</div> : <EmptyState />}
         </CardContent>
@@ -85,7 +87,7 @@ export function MoneyCategoryExplorer({ spending, initialCategory }: { spending:
               <div className="money-category-trend__chart">
                 <MountedChart fallback={<div className="money-chart-fallback">Loading trend</div>}>
                   <ChartContainer config={trendConfig} className="h-64 w-full aspect-auto" initialDimension={{ width: 760, height: 256 }} role="img" aria-label={`${categoryLabel(selected.category)} monthly spending trend. Click a month to inspect its biggest contributors. Exact values follow in a table.`}>
-                    <AreaChart data={trend} margin={{ left: 4, right: 12, top: 8 }} onClick={({ activeLabel }: MouseHandlerDataParam) => { if (typeof activeLabel === "string") setSelectedMonth(activeLabel); }} style={{ cursor: "pointer" }}><defs><linearGradient id="category-spend-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#67e8f9" stopOpacity={0.34} /><stop offset="95%" stopColor="#67e8f9" stopOpacity={0.03} /></linearGradient></defs><CartesianGrid vertical={false} /><XAxis dataKey="month" tickLine={false} axisLine={false} minTickGap={24} /><YAxis tickLine={false} axisLine={false} width={68} tickFormatter={(value: number) => compactCurrency.format(value)} />{selectedMonth ? <ReferenceLine x={selectedMonth} stroke="#a3e635" strokeDasharray="3 3" /> : null}<ChartTooltip content={<ChartTooltipContent />} /><Area dataKey="amount" name="Spend" type="monotone" fill="url(#category-spend-fill)" stroke="#67e8f9" strokeWidth={2} /></AreaChart>
+                    <AreaChart data={trend} margin={{ left: 4, right: 12, top: 8 }} onClick={({ activeLabel }: MouseHandlerDataParam) => { if (typeof activeLabel === "string") setChosenMonth(activeLabel); }} style={{ cursor: "pointer" }}><defs><linearGradient id="category-spend-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#67e8f9" stopOpacity={0.34} /><stop offset="95%" stopColor="#67e8f9" stopOpacity={0.03} /></linearGradient></defs><CartesianGrid vertical={false} /><XAxis dataKey="month" tickLine={false} axisLine={false} minTickGap={24} /><YAxis tickLine={false} axisLine={false} width={68} tickFormatter={(value: number) => compactCurrency.format(value)} />{selectedMonth ? <ReferenceLine x={selectedMonth} stroke="#a3e635" strokeDasharray="3 3" /> : null}<ChartTooltip content={<ChartTooltipContent />} /><Area dataKey="amount" name="Spend" type="monotone" fill="url(#category-spend-fill)" stroke="#67e8f9" strokeWidth={2} /></AreaChart>
                   </ChartContainer>
                 </MountedChart>
                 <details className="money-chart-data"><summary>View exact graph data</summary><div className="overflow-x-auto"><table className="w-full text-xs"><thead><tr><th className="text-left">Month</th><th className="text-right">Spend</th></tr></thead><tbody>{trend.map((row) => <tr key={row.month}><td>{row.month}</td><td className="text-right font-mono">{preciseCurrency.format(row.amount)}</td></tr>)}</tbody></table></div></details>
@@ -134,7 +136,7 @@ function MonthlyContributors({ month, amount, contributors, visibleContributors,
 }
 function Metric({ label, value, detail }: { label: string; value: string; detail: string }) { return <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-2 text-2xl font-semibold tracking-tight">{value}</p><p className="mt-1 text-xs text-muted-foreground">{detail}</p></CardContent></Card>; }
 function EmptyState() { return <div className="p-8 text-center text-sm text-muted-foreground">No completed spending in this period.</div>; }
-function MountedChart({ fallback, children }: { fallback: React.ReactNode; children: React.ReactNode }) { const [mounted, setMounted] = useState(false); useEffect(() => setMounted(true), []); return mounted ? children : fallback; }
+function MountedChart({ children }: { fallback: React.ReactNode; children: React.ReactNode }) { return children; }
 function formatMinor(value: number) { return preciseCurrency.format(value / 100); }
 function categoryLabel(category: MoneyCategory) { return category.replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase()); }
 
@@ -142,6 +144,16 @@ function aggregateCategories(rows: MoneySpendingAnalytics["categoryMonths"]): Ca
   const totals = new Map<MoneyCategory, { amountMinor: number; count: number }>();
   for (const row of rows) { const total = totals.get(row.category) ?? { amountMinor: 0, count: 0 }; total.amountMinor += row.amountMinor; total.count += row.count; totals.set(row.category, total); }
   return [...totals].map(([category, total]) => ({ category, ...total })).sort((left, right) => right.amountMinor - left.amountMinor);
+}
+
+function indexCategoryMonthAmounts(rows: MoneySpendingAnalytics["categoryMonths"]) {
+  const index = new Map<MoneyCategory, Map<string, number>>();
+  for (const row of rows) {
+    const months = index.get(row.category) ?? new Map<string, number>();
+    months.set(row.month, (months.get(row.month) ?? 0) + row.amountMinor);
+    index.set(row.category, months);
+  }
+  return index;
 }
 
 function aggregateMerchants(rows: MoneySpendingAnalytics["merchantMonths"]) {

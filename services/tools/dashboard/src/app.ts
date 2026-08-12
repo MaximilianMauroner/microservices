@@ -58,20 +58,24 @@ const STATIC_ASSETS = {
     file: "../public/assets/local-time.js",
     contentType: "text/javascript; charset=utf-8"
   },
-  "/assets/icons/artifact-publisher.png": {
-    file: "../public/assets/icons/artifact-publisher.png",
+  "/assets/icons/publisher.png": {
+    file: "../public/assets/icons/publisher.png",
     contentType: "image/png"
   },
-  "/assets/icons/field-guide-console.png": {
-    file: "../public/assets/icons/field-guide-console.png",
+  "/assets/icons/field-guide.png": {
+    file: "../public/assets/icons/field-guide.png",
     contentType: "image/png"
   },
-  "/assets/icons/tools-status-directory.png": {
-    file: "../public/assets/icons/tools-status-directory.png",
+  "/assets/icons/status.png": {
+    file: "../public/assets/icons/status.png",
     contentType: "image/png"
   },
-  "/assets/icons/money-tracker.png": {
-    file: "../public/assets/icons/money-tracker.png",
+  "/assets/icons/money.png": {
+    file: "../public/assets/icons/money.png",
+    contentType: "image/png"
+  },
+  "/assets/icons/markdown-share.png": {
+    file: "../public/assets/icons/markdown-share.png",
     contentType: "image/png"
   },
   "/assets/icons/network-console.png": {

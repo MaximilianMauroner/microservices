@@ -7,6 +7,7 @@ import type {
 } from "@tools-platform/domain";
 import { Link } from "@tanstack/react-router";
 import { AppShell } from "../../src/components/app-shell.js";
+import { favicons } from "../../src/favicons.js";
 import { LocalDate, LocalTimeRange, LocalTimestamp } from "../../src/components/local-time.js";
 import { Badge } from "../../src/components/ui/badge.js";
 import { Button } from "../../src/components/ui/button.js";
@@ -39,7 +40,7 @@ function ToolsStatusView({ snapshot, publicOrigin, view, actor }: { snapshot: Pu
 
   return (
     <>
-      <AppShell product="Status" accent="cyan" showSignOut />
+      <AppShell product="Status" accent="cyan" icon={favicons.status} showSignOut />
       <div className={`status-page status-page--${overall}`}>
         <main id="main" className="status-wrap status-main">
           <section className="status-hero" aria-labelledby="status-title">

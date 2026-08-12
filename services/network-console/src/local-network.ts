@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import os from "node:os";
 import { Hono } from "hono";
 
@@ -110,15 +111,7 @@ const COMMON_HTTP_PORTS = new Set([80, 3000, 3001, 4173, 5000, 5173, 8000, 8080,
 const WEBSITE_PROBE_TIMEOUT_MS = 2_500;
 const WEBSITE_TITLE_READ_LIMIT = 64 * 1024;
 const TAILSCALE_IPV6_PREFIX = "fd7a:115c:a1e0:";
-const FAVICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <rect x=".75" y=".75" width="30.5" height="30.5" rx="7" fill="#f6f8fa" stroke="#d0d7de" stroke-width="1.5"/>
-  <path d="M10 10h8a4 4 0 0 1 4 4v8" fill="none" stroke="#59636e" stroke-width="2.25" stroke-linecap="round"/>
-  <path d="M10 22h12" fill="none" stroke="#0969da" stroke-width="2.25" stroke-linecap="round"/>
-  <rect x="6" y="6" width="8" height="8" rx="2" fill="#ffffff" stroke="#30363d" stroke-width="1.5"/>
-  <rect x="18" y="18" width="8" height="8" rx="2" fill="#ffffff" stroke="#30363d" stroke-width="1.5"/>
-  <circle cx="10" cy="10" r="2.25" fill="#0969da"/>
-  <rect x="21" y="21" width="4" height="4" rx="1" fill="#0969da"/>
-</svg>`;
+const FAVICON_PATH = new URL("../assets/favicon.png", import.meta.url);
 const PORT_USAGE = new Map<string, string>([
   ["tcp:22", "SSH remote shell"],
   ["tcp:80", "HTTP web service; this dashboard defaults here"],
@@ -155,10 +148,10 @@ export function createLocalNetworkDashboardApp(options: LocalNetworkDashboardOpt
 
   app.get("/health", (context) => context.json({ ok: true }));
 
-  app.get("/favicon.svg", (context) =>
-    context.body(FAVICON_SVG, 200, {
+  app.get("/favicon.png", async (context) =>
+    context.body(await readFile(FAVICON_PATH), 200, {
       "Cache-Control": "public, max-age=86400",
-      "Content-Type": "image/svg+xml"
+      "Content-Type": "image/png"
     })
   );
 
@@ -970,7 +963,7 @@ function renderDashboard(snapshot: NetworkSnapshot, dashboardPort: number) {
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta http-equiv="refresh" content="20">
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <link rel="icon" type="image/png" sizes="256x256" href="/favicon.png">
     <title>${escapeHtml(snapshot.hostname)} ports</title>
     <style>
       :root {

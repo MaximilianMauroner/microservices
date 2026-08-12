@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { ChevronRight } from "lucide-react";
 import {
@@ -69,17 +69,9 @@ import {
   MONEY_ROW_ACTION_CLASS,
   MoneyRowActionCue,
 } from "./money-row-action.js";
-import { MoneyCategoryExplorer } from "./money-category-explorer.js";
 import type { MoneyCategory } from "./money-enums.js";
 import type { MoneyActivityPage } from "./money-repository.js";
-import {
-  MoneyActivityView,
-  MoneyBalanceEntry,
-  MoneyDataView,
-  MoneyInvestmentsView,
-  MoneyPlanningCard,
-  MoneySpendingView,
-} from "./money-ledger-views.js";
+import { MoneyPlanningCard } from "./money-planning-card.js";
 import {
   MoneyNav,
   moneyViewTitle,
@@ -97,6 +89,25 @@ type GroupedMonth = Month & {
   observed?: boolean;
   portfolioDate?: string;
 };
+
+const MoneyCategoryExplorer = lazy(async () => ({
+  default: (await import("./money-category-explorer.js")).MoneyCategoryExplorer,
+}));
+const MoneyActivityView = lazy(async () => ({
+  default: (await import("./money-ledger-views.js")).MoneyActivityView,
+}));
+const MoneyBalanceEntry = lazy(async () => ({
+  default: (await import("./money-ledger-views.js")).MoneyBalanceEntry,
+}));
+const MoneyDataView = lazy(async () => ({
+  default: (await import("./money-ledger-views.js")).MoneyDataView,
+}));
+const MoneyInvestmentsView = lazy(async () => ({
+  default: (await import("./money-ledger-views.js")).MoneyInvestmentsView,
+}));
+const MoneySpendingView = lazy(async () => ({
+  default: (await import("./money-ledger-views.js")).MoneySpendingView,
+}));
 
 const currency = new Intl.NumberFormat("de-DE", {
   style: "currency",
@@ -236,6 +247,7 @@ export function MoneyTrackerPage(
         <div className="money-layout">
           <MoneyNav />
           <div className="money-content space-y-4">
+            <Suspense fallback={<MoneyViewFallback />}>
             {props.view === "overview" ? (
               <Overview
                 {...props}
@@ -316,10 +328,21 @@ export function MoneyTrackerPage(
               />
             ) : null}
             {props.view === "data" ? <MoneyDataView {...props} /> : null}
+            </Suspense>
           </div>
         </div>
       </main>
     </>
+  );
+}
+
+function MoneyViewFallback() {
+  return (
+    <Card aria-busy="true">
+      <CardContent className="p-6 text-sm text-muted-foreground">
+        Loading view…
+      </CardContent>
+    </Card>
   );
 }
 
@@ -2539,15 +2562,12 @@ function ChartCard({
   );
 }
 function MountedChart({
-  fallback,
   children,
 }: {
   fallback: React.ReactNode;
   children: React.ReactNode;
 }) {
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
-  return mounted ? children : fallback;
+  return children;
 }
 function ChartFallback({ values }: { values: number[] }) {
   const latest = values.at(-1);

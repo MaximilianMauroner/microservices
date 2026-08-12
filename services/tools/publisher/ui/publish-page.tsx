@@ -3,6 +3,7 @@ import type { ChangeEvent, DragEvent } from "react";
 import { Link } from "@tanstack/react-router";
 import { Copy, ExternalLink, FolderOpen, Upload } from "lucide-react";
 import { AppShell } from "../../src/components/app-shell.js";
+import { favicons } from "../../src/favicons.js";
 import { Alert } from "../../src/components/ui/alert.js";
 import { Badge } from "../../src/components/ui/badge.js";
 import { Button } from "../../src/components/ui/button.js";
@@ -65,7 +66,7 @@ export function PublishPage() {
 
   return (
     <>
-      <AppShell product="Publisher" accent="violet" showSignOut />
+      <AppShell product="Publisher" accent="violet" icon={favicons.publisher} showSignOut />
       <main id="main" className="workspace-page workspace-page--narrow">
         <section className="workspace-header" aria-labelledby="publish-title">
           <div>

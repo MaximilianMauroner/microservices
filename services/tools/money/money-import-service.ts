@@ -8,7 +8,7 @@ import {
   type MoneyTransferDisposition,
   type MoneyImportPreview
 } from "./money-import-domain.js";
-import type { MoneyImportReceipt, MoneyLedgerSnapshot, MoneyRepository } from "./money-repository.js";
+import type { MoneyImportReceipt, MoneyLedgerScope, MoneyLedgerSnapshot, MoneyRepository } from "./money-repository.js";
 
 export class MoneyImportService {
   constructor(private readonly repository: MoneyRepository) {}
@@ -73,8 +73,8 @@ export class MoneyImportService {
     return this.repository.reimportAll();
   }
 
-  readLedgerSnapshot(): Promise<MoneyLedgerSnapshot> {
-    return this.repository.readLedgerSnapshot();
+  readLedgerSnapshot(scope: MoneyLedgerScope): Promise<MoneyLedgerSnapshot> {
+    return this.repository.readLedgerSnapshot(scope);
   }
 
   readActivityPage(input: Readonly<{ query: string; flow?: string; accountId?: string; category?: string; reviewOnly?: boolean; sort?: string; direction?: string; offset: number; limit: number }>) {

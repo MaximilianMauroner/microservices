@@ -89,6 +89,38 @@ export type MoneyActivityPage = Readonly<{ items: readonly MoneyActivityItem[]; 
 export type MoneyActivitySortKey = "date" | "description" | "account" | "flow" | "category" | "costs" | "amount";
 export type MoneyActivitySortDirection = "asc" | "desc";
 export type MoneyActivityPageInput = Readonly<{ query: string; flow?: MoneyLedgerTransaction["flowKind"]; accountId?: string; category?: MoneyCategory; reviewOnly?: boolean; sort?: MoneyActivitySortKey; direction?: MoneyActivitySortDirection; offset: number; limit: number }>;
+export const MONEY_LEDGER_SCOPES = ["overview", "transactions", "cash-flow", "categories", "investments", "accounts", "insights", "data"] as const;
+export type MoneyLedgerViewScope = (typeof MONEY_LEDGER_SCOPES)[number];
+export type MoneyLedgerScope = MoneyLedgerViewScope | "all";
+const MONEY_LEDGER_QUERY_SCOPES = {
+  imports: ["data"],
+  categoryRules: ["data"],
+  activity: ["transactions"],
+  counts: ["overview", "transactions", "data"],
+  transferSummary: ["overview", "transactions", "cash-flow", "insights", "data"],
+  transferReview: ["transactions"],
+  monthlyCashFlow: ["overview", "cash-flow", "insights", "data"],
+  categoryTotals: ["overview", "transactions", "cash-flow", "data"],
+  categoryMonths: ["categories"],
+  merchantMonths: ["categories"],
+  categoryActivity: ["categories"],
+  investmentPositions: ["investments"],
+  investmentTotals: ["investments"],
+  tradeMarkers: ["investments"],
+  realizedEvents: ["investments"],
+  balanceSnapshots: ["overview", "transactions", "accounts", "insights", "data"]
+} as const satisfies Record<string, readonly MoneyLedgerViewScope[]>;
+export type MoneyLedgerQuery = keyof typeof MONEY_LEDGER_QUERY_SCOPES;
+
+export function moneyLedgerQueriesFor(scope: MoneyLedgerScope): readonly MoneyLedgerQuery[] {
+  const queries = Object.keys(MONEY_LEDGER_QUERY_SCOPES) as MoneyLedgerQuery[];
+  return scope === "all"
+    ? queries
+    : queries.filter((query) => {
+        const scopes = MONEY_LEDGER_QUERY_SCOPES[query] as readonly MoneyLedgerViewScope[];
+        return scopes.includes(scope);
+      });
+}
 
 // Keep each multi-row statement comfortably below PostgreSQL's 65,535 parameter limit.
 const ACCOUNT_INSERT_CHUNK_SIZE = 1_000;
@@ -128,7 +160,7 @@ export interface MoneyRepository {
   commitImport(input: MoneyImportCommitInput): Promise<MoneyImportReceipt>;
   reimportAll(): Promise<MoneyReimportResult>;
   deleteImport(importId: string): Promise<MoneyImportDeletion | undefined>;
-  readLedgerSnapshot(): Promise<MoneyLedgerSnapshot>;
+  readLedgerSnapshot(scope: MoneyLedgerScope): Promise<MoneyLedgerSnapshot>;
   readActivityPage(input: MoneyActivityPageInput): Promise<MoneyActivityPage>;
   setTransactionCategory(input: Readonly<{ transactionId: string; category: MoneyCategory; actor: string; createRule: boolean }>): Promise<Readonly<{ affectedCount: number }>>;
   deleteCategoryRule(ruleId: string): Promise<Readonly<{ affectedCount: number }> | undefined>;
@@ -289,33 +321,35 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
       });
     },
 
-    async readLedgerSnapshot() {
+    async readLedgerSnapshot(scope) {
+      const queries = new Set(moneyLedgerQueriesFor(scope));
+      const needs = (query: MoneyLedgerQuery) => queries.has(query);
       const [imports, categoryRules, activity, count, transfers, transferReviewItems, monthly, categories, categoryMonths, merchantMonths, categoryActivity, events, investmentTotals, tradeMarkers, realizedEvents, snapshotRows] = await Promise.all([
-        sql<ImportRow[]>`select id, digest, format, filename, bytes, source_row_count, inserted_row_count, duplicate_row_count, committed_at, created_by from tools.money_imports order by committed_at desc limit 50`,
-        sql<CategoryRuleRow[]>`select r.id, a.display_name account_name,
+        needs("imports") ? sql<ImportRow[]>`select id, digest, format, filename, bytes, source_row_count, inserted_row_count, duplicate_row_count, committed_at, created_by from tools.money_imports order by committed_at desc limit 50` : emptyRows<ImportRow>(),
+        needs("categoryRules") ? sql<CategoryRuleRow[]>`select r.id, a.display_name account_name,
           coalesce((select t.description from tools.money_transactions t
             where t.account_id = r.account_id and lower(t.description) = r.match_value
             order by t.occurred_at desc, t.source_row desc limit 1), r.match_value) match_value,
           r.category, r.updated_at
           from tools.money_category_rules r join tools.money_accounts a on a.id = r.account_id
-          where r.active and r.match_field = 'description' order by r.updated_at desc, r.id`,
-        sql<ActivityRow[]>`select t.id, t.occurred_at, t.account_id::text account_id, a.display_name account_name, t.description, t.amount_minor, t.fee_minor, t.tax_minor, t.currency, t.status, t.source_type, t.flow_kind, t.category, t.category_origin, t.transfer_group_id, t.transfer_disposition
+          where r.active and r.match_field = 'description' order by r.updated_at desc, r.id` : emptyRows<CategoryRuleRow>(),
+        needs("activity") ? sql<ActivityRow[]>`select t.id, t.occurred_at, t.account_id::text account_id, a.display_name account_name, t.description, t.amount_minor, t.fee_minor, t.tax_minor, t.currency, t.status, t.source_type, t.flow_kind, t.category, t.category_origin, t.transfer_group_id, t.transfer_disposition
           from (${effectiveTransactions(sql)}) t join tools.money_accounts a on a.id = t.account_id
-          order by t.occurred_at desc, t.source_row desc limit 50`,
-        sql<{ count: string; reverted_count: string }[]>`select count(*)::text count, count(*) filter (where status = 'reverted')::text reverted_count from tools.money_transactions`,
-        sql<TransferReviewRow[]>`select count(distinct transfer_group_id)::text linked_pairs,
+          order by t.occurred_at desc, t.source_row desc limit 50` : emptyRows<ActivityRow>(),
+        needs("counts") ? sql<{ count: string; reverted_count: string }[]>`select count(*)::text count, count(*) filter (where status = 'reverted')::text reverted_count from tools.money_transactions` : emptyRows<{ count: string; reverted_count: string }>(),
+        needs("transferSummary") ? sql<TransferReviewRow[]>`select count(distinct transfer_group_id)::text linked_pairs,
           count(*) filter (where transfer_group_id is null)::text unlinked_count,
           count(*) filter (where transfer_group_id is null and transfer_disposition is null and amount_minor > 0)::text unresolved_positive_count,
           count(*) filter (where transfer_group_id is null and transfer_disposition is null and amount_minor < 0)::text unresolved_negative_count
-          from (${effectiveTransactions(sql)}) effective where flow_kind = 'transfer'`,
-        sql<ActivityRow[]>`select t.id, t.occurred_at, t.account_id::text account_id, a.display_name account_name,
+          from (${effectiveTransactions(sql)}) effective where flow_kind = 'transfer'` : emptyRows<TransferReviewRow>(),
+        needs("transferReview") ? sql<ActivityRow[]>`select t.id, t.occurred_at, t.account_id::text account_id, a.display_name account_name,
           t.description, t.amount_minor, t.fee_minor, t.tax_minor, t.currency, t.status, t.source_type,
           t.flow_kind, t.category, t.category_origin, t.transfer_group_id, t.transfer_disposition
           from (${effectiveTransactions(sql)}) t join tools.money_accounts a on a.id = t.account_id
           where t.flow_kind = 'transfer'
             and t.transfer_group_id is null and t.transfer_disposition is null
-          order by a.display_name, t.occurred_at desc, t.source_row desc, t.id desc`,
-        sql<MonthlyRow[]>`with classified as (
+          order by a.display_name, t.occurred_at desc, t.source_row desc, t.id desc` : emptyRows<ActivityRow>(),
+        needs("monthlyCashFlow") ? sql<MonthlyRow[]>`with classified as (
           select local_date, base_amount_minor, base_fee_minor, base_tax_minor, flow_kind,
             case
               when flow_kind = 'transfer' and transfer_group_id is not null then 'internal_transfer'
@@ -347,14 +381,14 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
           coalesce(monthly_contributors.refunds_minor, 0)::text refunds_minor,
           coalesce(monthly_contributors.income_minor, 0)::text income_minor,
           coalesce(monthly_contributors.fees_minor, 0)::text fees_minor, coalesce(monthly_contributors.taxes_minor, 0)::text taxes_minor
-          from calendar left join monthly_contributors using (month_start) left join coverage using (month_start) order by calendar.month_start`,
-        sql<CategoryRow[]>`with classified as (
+          from calendar left join monthly_contributors using (month_start) left join coverage using (month_start) order by calendar.month_start` : emptyRows<MonthlyRow>(),
+        needs("categoryTotals") ? sql<CategoryRow[]>`with classified as (
           select category, base_amount_minor, flow_kind, case
             when flow_kind = 'transfer' and transfer_group_id is not null then 'internal_transfer'
             when flow_kind = 'transfer' then coalesce(transfer_disposition, 'unreviewed') else flow_kind end effective_flow
           from (${effectiveTransactions(sql)}) effective where base_currency = 'EUR'
-        ) select category, coalesce(sum(case when flow_kind = 'transfer' then -base_amount_minor else abs(base_amount_minor) end), 0)::text amount_minor, count(*)::text count from classified where effective_flow = 'spend' group by category order by sum(case when flow_kind = 'transfer' then -base_amount_minor else abs(base_amount_minor) end) desc`,
-        sql<CategoryMonthRow[]>`with classified as (
+        ) select category, coalesce(sum(case when flow_kind = 'transfer' then -base_amount_minor else abs(base_amount_minor) end), 0)::text amount_minor, count(*)::text count from classified where effective_flow = 'spend' group by category order by sum(case when flow_kind = 'transfer' then -base_amount_minor else abs(base_amount_minor) end) desc` : emptyRows<CategoryRow>(),
+        needs("categoryMonths") ? sql<CategoryMonthRow[]>`with classified as (
           select local_date, category, base_amount_minor, flow_kind, case
             when flow_kind = 'transfer' and transfer_group_id is not null then 'internal_transfer'
             when flow_kind = 'transfer' then coalesce(transfer_disposition, 'unreviewed') else flow_kind end effective_flow
@@ -363,8 +397,8 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
         ) select to_char(date_trunc('month', local_date), 'YYYY-MM') as month, category,
           sum(case when flow_kind = 'transfer' then -base_amount_minor else abs(base_amount_minor) end)::text amount_minor,
           count(*)::text count from classified where effective_flow = 'spend'
-          group by date_trunc('month', local_date), category order by date_trunc('month', local_date), category`,
-        sql<MerchantMonthRow[]>`with classified as (
+          group by date_trunc('month', local_date), category order by date_trunc('month', local_date), category` : emptyRows<CategoryMonthRow>(),
+        needs("merchantMonths") ? sql<MerchantMonthRow[]>`with classified as (
           select local_date, category, description, source_type, base_amount_minor, flow_kind, case
             when flow_kind = 'transfer' and transfer_group_id is not null then 'internal_transfer'
             when flow_kind = 'transfer' then coalesce(transfer_disposition, 'unreviewed') else flow_kind end effective_flow
@@ -375,8 +409,8 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
           sum(case when flow_kind = 'transfer' then -base_amount_minor else abs(base_amount_minor) end)::text amount_minor,
           count(*)::text count from classified where effective_flow = 'spend'
           group by date_trunc('month', local_date), category, source_type, coalesce(nullif(trim(description), ''), 'Unknown merchant')
-          order by date_trunc('month', local_date), category, sum(case when flow_kind = 'transfer' then -base_amount_minor else abs(base_amount_minor) end) desc`,
-        sql<ActivityRow[]>`select id, occurred_at, account_name, description, amount_minor, fee_minor, tax_minor, currency, status, source_type, flow_kind, category, category_origin, transfer_group_id, transfer_disposition from (
+          order by date_trunc('month', local_date), category, sum(case when flow_kind = 'transfer' then -base_amount_minor else abs(base_amount_minor) end) desc` : emptyRows<MerchantMonthRow>(),
+        needs("categoryActivity") ? sql<ActivityRow[]>`select id, occurred_at, account_name, description, amount_minor, fee_minor, tax_minor, currency, status, source_type, flow_kind, category, category_origin, transfer_group_id, transfer_disposition from (
           select t.id, t.occurred_at, a.display_name account_name, t.description, t.amount_minor, t.fee_minor, t.tax_minor, t.currency, t.status, t.source_type, t.flow_kind, t.category, t.category_origin, t.transfer_group_id, t.transfer_disposition,
             row_number() over (partition by t.category order by t.occurred_at desc, t.source_row desc) category_rank
           from (${effectiveTransactions(sql)}) t join tools.money_accounts a on a.id = t.account_id
@@ -384,8 +418,8 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
             and t.local_date < date_trunc('month', current_date) and (
             t.flow_kind = 'spend' or (t.flow_kind = 'transfer' and t.transfer_group_id is null and t.transfer_disposition = 'spend')
           )
-        ) ranked where category_rank <= 12 order by occurred_at desc`,
-        sql<InvestmentRow[]>`select upper(trim(e.symbol)) symbol,
+        ) ranked where category_rank <= 12 order by occurred_at desc` : emptyRows<ActivityRow>(),
+        needs("investmentPositions") ? sql<InvestmentRow[]>`select upper(trim(e.symbol)) symbol,
           (array_agg(e.name order by t.occurred_at desc, t.id desc) filter (where e.name is not null and trim(e.name) <> ''))[1] name,
           (array_agg(e.asset_class order by t.occurred_at desc, t.id desc) filter (where e.asset_class is not null and trim(e.asset_class) <> ''))[1] asset_class,
           coalesce(sum(case when e.event_kind in ('buy', 'split') then e.quantity when e.event_kind = 'sell' then -e.quantity else 0 end), 0)::text quantity,
@@ -396,27 +430,27 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
           count(*)::text event_count, t.base_currency currency
           from tools.money_investment_events e join (${effectiveTransactions(sql)}) t on t.id = e.transaction_id
           where t.base_currency = 'EUR' and e.symbol is not null and trim(e.symbol) <> ''
-          group by upper(trim(e.symbol)), t.base_currency order by sum(abs(t.base_amount_minor)) desc nulls last`,
-        sql<InvestmentTotalsRow[]>`select count(*)::text event_count,
+          group by upper(trim(e.symbol)), t.base_currency order by sum(abs(t.base_amount_minor)) desc nulls last` : emptyRows<InvestmentRow>(),
+        needs("investmentTotals") ? sql<InvestmentTotalsRow[]>`select count(*)::text event_count,
           coalesce(sum(abs(t.base_amount_minor)) filter (where e.event_kind = 'buy'), 0)::text bought_minor,
           coalesce(sum(abs(t.base_amount_minor)) filter (where e.event_kind = 'sell'), 0)::text sold_minor,
           coalesce(sum(t.base_amount_minor) filter (where e.event_kind = 'dividend'), 0)::text income_minor,
           coalesce(sum(t.base_fee_minor), 0)::text fees_minor, coalesce(sum(t.base_tax_minor), 0)::text taxes_minor
           from tools.money_investment_events e join (${effectiveTransactions(sql)}) t on t.id = e.transaction_id
-          where t.base_currency = 'EUR'`,
-        sql<TradeMarkerRow[]>`select t.local_date::text local_date, e.event_kind, upper(trim(e.symbol)) symbol,
+          where t.base_currency = 'EUR'` : emptyRows<InvestmentTotalsRow>(),
+        needs("tradeMarkers") ? sql<TradeMarkerRow[]>`select t.local_date::text local_date, e.event_kind, upper(trim(e.symbol)) symbol,
           e.name, e.quantity::text quantity, t.base_amount_minor::text base_amount_minor,
           t.base_fee_minor::text base_fee_minor, t.base_currency currency
           from tools.money_investment_events e join (${effectiveTransactions(sql)}) t on t.id = e.transaction_id
           where t.base_currency = 'EUR' and e.event_kind in ('buy', 'sell')
             and e.symbol is not null and trim(e.symbol) <> '' and e.quantity is not null
-          order by t.local_date, t.occurred_at, t.source_row, t.source_key`,
-        sql<RealizedEventRow[]>`select t.account_id::text account_id, t.occurred_at, t.source_row, t.source_key, e.event_kind, e.symbol, e.quantity::text quantity,
+          order by t.local_date, t.occurred_at, t.source_row, t.source_key` : emptyRows<TradeMarkerRow>(),
+        needs("realizedEvents") ? sql<RealizedEventRow[]>`select t.account_id::text account_id, t.occurred_at, t.source_row, t.source_key, e.event_kind, e.symbol, e.quantity::text quantity,
           t.base_amount_minor::text base_amount_minor, t.base_fee_minor::text base_fee_minor
           from tools.money_investment_events e join (${effectiveTransactions(sql)}) t on t.id = e.transaction_id
           where t.base_currency = 'EUR'
-          order by t.occurred_at, t.source_row, t.source_key`,
-        sql<SnapshotRow[]>`select account_id, snapshot_date, value_minor, currency, display_name, role, provider from (
+          order by t.occurred_at, t.source_row, t.source_key` : emptyRows<RealizedEventRow>(),
+        needs("balanceSnapshots") ? sql<SnapshotRow[]>`select account_id, snapshot_date, value_minor, currency, display_name, role, provider from (
           select distinct on (s.account_id, s.snapshot_date) s.account_id::text account_id, s.snapshot_date::text snapshot_date, s.value_minor::text value_minor, s.currency, a.display_name, a.role, a.provider
           from tools.money_balance_snapshots s join tools.money_accounts a on a.id = s.account_id
           order by s.account_id, s.snapshot_date, case when s.origin = 'manual' then 0 else 1 end, s.observed_at desc
@@ -427,7 +461,7 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
         where a.currency = 'EUR'
           and not exists (select 1 from tools.money_balance_snapshots s where s.account_id = a.id)
           and exists (select 1 from tools.money_transactions t where t.account_id = a.id and t.status = 'completed')
-        order by snapshot_date nulls last, display_name`
+        order by snapshot_date nulls last, display_name` : emptyRows<SnapshotRow>()
       ]);
       const spending = spendingAnalytics(monthly, categories, categoryMonths, merchantMonths, categoryActivity);
       return {
@@ -825,3 +859,4 @@ function integer(value: string) { const parsed = Number(value); if (!Number.isSa
 function normalizeDatabaseDecimal(value: string) { return value.replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, ""); }
 function day(value: string) { return Date.parse(`${value}T00:00:00Z`) / 86_400_000; }
 function chunks<Value>(values: readonly Value[], size: number): Value[][] { return Array.from({ length: Math.ceil(values.length / size) }, (_, index) => values.slice(index * size, (index + 1) * size)); }
+function emptyRows<Row>(): Promise<Row[]> { return Promise.resolve([]); }

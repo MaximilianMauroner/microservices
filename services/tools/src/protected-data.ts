@@ -15,7 +15,7 @@ import type {
 } from "@tools-platform/field-guide";
 import { requirePlatformSession } from "./auth-middleware.js";
 import { internalPlatformRequest, readPlatformJson } from "./server-data.js";
-import type { MoneyLedgerSnapshot } from "../money/money-repository.js";
+import { MONEY_LEDGER_SCOPES, type MoneyLedgerViewScope, type MoneyLedgerSnapshot } from "../money/money-repository.js";
 import type { MoneyMarketSnapshot } from "../money/money-market-data-service.js";
 
 export type ReviewView = "decisions" | "queue" | "history";
@@ -107,11 +107,16 @@ export type MoneyTrackerPageData = MoneyLedgerSnapshot & { actor: string; market
 
 export const getMoneyTrackerPageData = createServerFn({ method: "GET" })
   .middleware([requirePlatformSession])
-  .handler(async (): Promise<MoneyTrackerPageData> => {
+  .validator((input: { view: MoneyLedgerViewScope }) => {
+    if (!MONEY_LEDGER_SCOPES.includes(input.view)) throw new Error("Invalid Money view");
+    return input;
+  })
+  .handler(async ({ data }): Promise<MoneyTrackerPageData> => {
     const { context } = internalPlatformRequest("/money");
+    const needsMarketData = data.view === "overview" || data.view === "investments" || data.view === "accounts" || data.view === "insights" || data.view === "data";
     const [ledger, marketData] = await Promise.all([
-      context.runtime.moneyImports.readLedgerSnapshot(),
-      context.runtime.moneyMarketData.snapshot()
+      context.runtime.moneyImports.readLedgerSnapshot(data.view),
+      needsMarketData ? context.runtime.moneyMarketData.snapshot() : Promise.resolve(emptyMarketSnapshot())
     ]);
     return {
       actor: context.principal?.email ?? "Authenticated user",
@@ -119,6 +124,20 @@ export const getMoneyTrackerPageData = createServerFn({ method: "GET" })
       marketData
     };
   });
+
+function emptyMarketSnapshot(): MoneyMarketSnapshot {
+  return {
+    asOf: "1970-01-01T00:00:00.000Z",
+    positions: [],
+    history: [],
+    totals: {
+      costBasisMinor: 0,
+      knownMarketValueMinor: 0,
+      knownUnrealizedGainMinor: 0,
+      complete: true
+    }
+  };
+}
 
 export const getPrivateStatusPageData = createServerFn({ method: "GET" })
   .middleware([requirePlatformSession])

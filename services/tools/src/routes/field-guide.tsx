@@ -43,7 +43,7 @@ export const Route = createFileRoute("/field-guide")({
       { name: "description", content: "Protected field-guide review workspace." },
       { name: "robots", content: "noindex, nofollow" }
     ],
-    links: [faviconLink(favicons.review)]
+    links: [faviconLink(favicons.fieldGuide)]
   }),
   component: ReviewRoute
 });
