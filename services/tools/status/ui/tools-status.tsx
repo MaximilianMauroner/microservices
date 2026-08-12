@@ -13,7 +13,7 @@ import { Badge } from "../../src/components/ui/badge.js";
 import { Button } from "../../src/components/ui/button.js";
 import { Card } from "../../src/components/ui/card.js";
 import { useIsMobile } from "../../src/components/ui/use-mobile.js";
-import { formatTimestamp, resolveBrowserLink } from "../../dashboard/ui/tools-directory.js";
+import { formatTimestamp, resolveBrowserLink } from "../../dashboard/ui/tools-directory-helpers.js";
 import { projectPrivateCatalog } from "../../dashboard/ui/private-catalog-projection.js";
 
 type OverallState = "operational" | "attention" | "outage" | "unknown";

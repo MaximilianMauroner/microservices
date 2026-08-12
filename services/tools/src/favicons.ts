@@ -1,13 +1,19 @@
-const PRODUCT_ICON_VERSION = "20260812-2";
+import fieldGuide from "../dashboard/public/assets/icons/field-guide.png?url&no-inline";
+import markdownShare from "../dashboard/public/assets/icons/markdown-share.png?url&no-inline";
+import money from "../dashboard/public/assets/icons/money.png?url&no-inline";
+import networkConsole from "../dashboard/public/assets/icons/network-console.png?url&no-inline";
+import publisher from "../dashboard/public/assets/icons/publisher.png?url&no-inline";
+import status from "../dashboard/public/assets/icons/status.png?url&no-inline";
+import tools from "../dashboard/public/assets/icons/tools.png?url&no-inline";
 
 export const favicons = {
-  directory: `/assets/icons/status.png?v=${PRODUCT_ICON_VERSION}`,
-  fieldGuide: `/assets/icons/field-guide.png?v=${PRODUCT_ICON_VERSION}`,
-  markdownShare: `/assets/icons/markdown-share.png?v=${PRODUCT_ICON_VERSION}`,
-  money: `/assets/icons/money.png?v=${PRODUCT_ICON_VERSION}`,
-  networkConsole: `/assets/icons/network-console.png?v=${PRODUCT_ICON_VERSION}`,
-  publisher: `/assets/icons/publisher.png?v=${PRODUCT_ICON_VERSION}`,
-  status: `/assets/icons/status.png?v=${PRODUCT_ICON_VERSION}`
+  directory: tools,
+  fieldGuide,
+  markdownShare,
+  money,
+  networkConsole,
+  publisher,
+  status
 } as const;
 
 export function faviconLink(href: string) {

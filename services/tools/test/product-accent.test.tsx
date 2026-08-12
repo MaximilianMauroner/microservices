@@ -23,4 +23,11 @@ describe("product accent contract", () => {
     expect(html).toContain('src="/assets/icons/money.png"');
     expect(html).not.toContain('aria-hidden="true">M</span>');
   });
+
+  it("uses the tools favicon as the generic shell mark", () => {
+    const html = renderToStaticMarkup(<AppShell product="Dashboard" showSignOut={false} />);
+
+    expect(html).toContain("tools.png");
+    expect(html).not.toContain('aria-hidden="true">M</span>');
+  });
 });

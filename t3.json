@@ -1,4 +1,4 @@
 {
   "$schema": "https://t3.codes/schema/t3.json",
-  "iconPath": "services/network-console/assets/favicons/favicon.svg"
+  "iconPath": "services/tools/dashboard/public/assets/icons/tools.png"
 }

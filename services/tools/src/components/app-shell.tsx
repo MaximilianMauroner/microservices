@@ -2,6 +2,7 @@ import { PLATFORM_UI_BUILD } from "../build-identity.js";
 import { Link } from "@tanstack/react-router";
 import { authClient } from "../lib/auth-client.js";
 import type { ProductAccent } from "../product-accent.js";
+import { favicons } from "../favicons.js";
 
 export function AppShell({ product, showSignOut, accent, icon }: { product: string; showSignOut: boolean; accent?: ProductAccent; icon?: string }) {
   async function signOut() {
@@ -18,7 +19,7 @@ export function AppShell({ product, showSignOut, accent, icon }: { product: stri
             <Link className="flex items-center gap-2 text-sm font-semibold" to="/" preload="intent" aria-label="Tools dashboard">
               {icon
                 ? <img className="size-8 rounded-lg" src={icon} alt="" width={32} height={32} />
-                : <span className="grid size-8 place-items-center rounded-full bg-primary text-xs font-black text-primary-foreground" aria-hidden="true">M</span>}
+                : <img className="size-8 rounded-lg" src={favicons.directory} alt="" width={32} height={32} />}
               <span>Tools</span>
             </Link>
             <span className="text-muted-foreground/45" aria-hidden="true">·</span>

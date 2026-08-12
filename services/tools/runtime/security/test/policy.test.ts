@@ -38,6 +38,7 @@ describe("central platform route policy", () => {
     expect(classifyRoute("/assets/ops.js", "GET")).toEqual({ kind: "public" });
     expect(classifyRoute("/assets/local-time.js", "GET")).toEqual({ kind: "public" });
     expect(classifyRoute("/assets/icons/money.png", "GET")).toEqual({ kind: "public" });
+    expect(classifyRoute("/assets/icons/tools.png", "GET")).toEqual({ kind: "public" });
     expect(classifyRoute("/assets/ops.js.map", "GET")).toEqual({ kind: "human-session" });
     expect(classifyRoute("/api/agentic", "GET")).toEqual({ kind: "human-session" });
   });
