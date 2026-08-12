@@ -173,6 +173,16 @@ export const moneyFxRates = toolsSchema.table("money_fx_rates", {
   check("money_fx_rates_value_check", sql`${table.quotePerEuro} > 0`),
 ]);
 
+export const moneyInflationIndices = toolsSchema.table("money_inflation_indices", {
+  indexDate: date("index_date").primaryKey(),
+  value: numeric("value", { precision: 30, scale: 12 }).notNull(),
+  provider: text("provider").notNull(),
+  fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull(),
+}, (table) => [
+  check("money_inflation_indices_provider_check", sql`${table.provider} = 'ecb_hicp'`),
+  check("money_inflation_indices_value_check", sql`${table.value} > 0`),
+]);
+
 export const moneyTransactions = toolsSchema.table("money_transactions", {
   id: uuid("id").primaryKey(),
   accountId: uuid("account_id").notNull().references(() => moneyAccounts.id),

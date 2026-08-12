@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import postgres, { type Sql } from "postgres";
 import type { MoneyInvestmentEventKind } from "./money-import-domain.js";
-import type { MoneyDailyPriceBar, MoneyFxRate } from "./money-market-data-domain.js";
+import type { MoneyDailyPriceBar, MoneyFxRate, MoneyInflationIndex } from "./money-market-data-domain.js";
 import type { MoneyMarketInstrumentDefinition } from "./money-market-data-catalog.js";
 import { effectiveTransactions } from "./money-repository.js";
 
@@ -53,11 +53,13 @@ export interface MoneyMarketDataRepository {
   saveSeriesSuccess(input: Readonly<{ seriesId: string; bars: readonly MoneyDailyPriceBar[]; fetchedAt: Date }>): Promise<void>;
   saveSeriesFailure(input: Readonly<{ seriesId: string; errorCode: string; attemptedAt: Date }>): Promise<void>;
   saveUsdRates(rates: readonly MoneyFxRate[], fetchedAt: Date): Promise<void>;
+  saveInflationIndices(indices: readonly MoneyInflationIndex[], fetchedAt: Date): Promise<void>;
   readValuationInputs(): Promise<Readonly<{ events: readonly MoneyMarketValuationEvent[]; prices: readonly MoneyLatestPrice[] }>>;
   readHistoryInputs(): Promise<Readonly<{
     events: readonly MoneyMarketValuationEvent[];
     prices: readonly MoneyHistoricalPrice[];
     usdRates: readonly MoneyFxRate[];
+    inflationIndices: readonly MoneyInflationIndex[];
   }>>;
   readiness(): Promise<void>;
   close(): Promise<void>;
@@ -170,6 +172,16 @@ export function postgresMoneyMarketDataRepository(sql: Sql): MoneyMarketDataRepo
       }
     },
 
+    async saveInflationIndices(indices, fetchedAt) {
+      for (const batch of chunks(indices, 500)) {
+        if (!batch.length) continue;
+        const values = batch.map((index) => ({ index_date: index.date, value: index.value, provider: "ecb_hicp", fetched_at: fetchedAt }));
+        await sql`insert into tools.money_inflation_indices ${sql(values)}
+          on conflict (index_date) do update set value = excluded.value,
+            provider = excluded.provider, fetched_at = excluded.fetched_at`;
+      }
+    },
+
     async readValuationInputs() {
       const [eventRows, priceRows] = await Promise.all([
         sql<ValuationEventRow[]>`select t.account_id::text account_id, i.canonical_key, i.name, i.asset_class,
@@ -223,7 +235,7 @@ export function postgresMoneyMarketDataRepository(sql: Sql): MoneyMarketDataRepo
     },
 
     async readHistoryInputs() {
-      const [eventRows, priceRows, rateRows] = await Promise.all([
+      const [eventRows, priceRows, rateRows, inflationRows] = await Promise.all([
         sql<ValuationEventRow[]>`select t.account_id::text account_id, i.canonical_key, i.name, i.asset_class,
           t.occurred_at, t.local_date::text local_date, t.source_row, t.source_key, e.event_kind, e.quantity::text quantity,
           t.base_amount_minor::text base_amount_minor, t.base_fee_minor::text base_fee_minor
@@ -238,7 +250,9 @@ export function postgresMoneyMarketDataRepository(sql: Sql): MoneyMarketDataRepo
           join tools.money_instruments i on i.id = s.instrument_id
           where s.active order by p.price_date, i.canonical_key`,
         sql<FxRateRow[]>`select rate_date::text rate_date, quote_per_euro::text quote_per_euro
-          from tools.money_fx_rates where quote_currency = 'USD' order by rate_date`
+          from tools.money_fx_rates where quote_currency = 'USD' order by rate_date`,
+        sql<InflationIndexRow[]>`select index_date::text index_date, value::text value
+          from tools.money_inflation_indices order by index_date`
       ]);
       return {
         events: eventRows.map(valuationEvent),
@@ -248,7 +262,8 @@ export function postgresMoneyMarketDataRepository(sql: Sql): MoneyMarketDataRepo
           close: normalizeDecimal(row.close),
           currency: currency(row.currency)
         })),
-        usdRates: rateRows.map((row) => ({ date: row.rate_date, quoteCurrency: "USD", quotePerEuro: normalizeDecimal(row.quote_per_euro) }))
+        usdRates: rateRows.map((row) => ({ date: row.rate_date, quoteCurrency: "USD", quotePerEuro: normalizeDecimal(row.quote_per_euro) })),
+        inflationIndices: inflationRows.map((row) => ({ date: row.index_date, value: normalizeDecimal(row.value) }))
       };
     },
 
@@ -265,6 +280,7 @@ type ValuationEventRow = { account_id: string; canonical_key: string; name: stri
 type LatestPriceRow = { canonical_key: string; provider_key: string; close: string; price_date: string; currency: string; quote_per_euro: string | null; last_success_at: Date | null; last_error_code: string | null };
 type HistoricalPriceRow = { canonical_key: string; price_date: string; close: string; currency: string };
 type FxRateRow = { rate_date: string; quote_per_euro: string };
+type InflationIndexRow = { index_date: string; value: string };
 
 function valuationEvent(row: ValuationEventRow): MoneyMarketValuationEvent {
   return {
