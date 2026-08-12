@@ -450,15 +450,38 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
           from tools.money_investment_events e join (${effectiveTransactions(sql)}) t on t.id = e.transaction_id
           where t.base_currency = 'EUR'
           order by t.occurred_at, t.source_row, t.source_key` : emptyRows<RealizedEventRow>(),
-        needs("balanceSnapshots") ? sql<SnapshotRow[]>`select account_id, snapshot_date, value_minor, currency, display_name, role, provider from (
-          select distinct on (s.account_id, s.snapshot_date) s.account_id::text account_id, s.snapshot_date::text snapshot_date, s.value_minor::text value_minor, s.currency, a.display_name, a.role, a.provider
+        needs("balanceSnapshots") ? sql<SnapshotRow[]>`with explicit_snapshots as (
+          select distinct on (s.account_id, s.snapshot_date) s.account_id::text account_id, s.snapshot_date::text snapshot_date,
+            s.value_minor::text value_minor, s.currency, a.display_name, a.role, a.provider
           from tools.money_balance_snapshots s join tools.money_accounts a on a.id = s.account_id
           order by s.account_id, s.snapshot_date, case when s.origin = 'manual' then 0 else 1 end, s.observed_at desc
-        ) latest
+        ), trade_republic_cash_snapshots as (
+          select monthly.account_id, monthly.snapshot_date,
+            sum(monthly.change_minor) over (partition by monthly.account_id order by monthly.snapshot_date)::text value_minor,
+            monthly.currency, monthly.display_name, monthly.role, monthly.provider
+          from (
+            select cash_account.id::text account_id, max(t.local_date)::text snapshot_date,
+              sum(t.amount_minor - t.fee_minor - t.tax_minor) change_minor,
+              cash_account.currency, cash_account.display_name, cash_account.role, cash_account.provider
+            from (${effectiveTransactions(sql)}) t
+            join tools.money_accounts source_account on source_account.id = t.account_id
+            join tools.money_accounts cash_account
+              on cash_account.provider = 'portfolio_export' and cash_account.role = 'cash'
+              and regexp_replace(cash_account.external_ref, ':(cash|investment)$', '') = regexp_replace(source_account.external_ref, ':(cash|investment)$', '')
+            where source_account.provider = 'portfolio_export' and t.currency = 'EUR'
+              and not exists (select 1 from tools.money_balance_snapshots s where s.account_id = cash_account.id)
+            group by cash_account.id, date_trunc('month', t.local_date), cash_account.currency,
+              cash_account.display_name, cash_account.role, cash_account.provider
+          ) monthly
+        )
+        select * from explicit_snapshots
+        union all
+        select * from trade_republic_cash_snapshots
         union all
         select a.id::text, null, null, a.currency, a.display_name, a.role, a.provider
         from tools.money_accounts a
         where a.currency = 'EUR'
+          and not (a.provider = 'portfolio_export' and a.role = 'cash')
           and not exists (select 1 from tools.money_balance_snapshots s where s.account_id = a.id)
           and exists (select 1 from tools.money_transactions t where t.account_id = a.id and t.status = 'completed')
         order by snapshot_date nulls last, display_name` : emptyRows<SnapshotRow>()
