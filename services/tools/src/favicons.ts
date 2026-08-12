@@ -17,5 +17,5 @@ export const favicons = {
 } as const;
 
 export function faviconLink(href: string) {
-  return { rel: "icon", href, type: "image/png", sizes: "64x64" };
+  return { rel: "icon", href, type: "image/png", sizes: "96x96" };
 }
