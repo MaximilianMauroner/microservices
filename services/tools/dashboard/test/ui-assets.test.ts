@@ -2,8 +2,19 @@ import { readFile } from "node:fs/promises";
 import { describe, expect, test } from "vitest";
 
 const assets = new URL("../public/assets/", import.meta.url);
+const icons = new URL("icons/", assets);
 
 describe("static UI assets", () => {
+  test("tool icons remain canonical 64px PNG assets", async () => {
+    for (const name of ["publisher", "field-guide", "money", "status", "markdown-share", "network-console"]) {
+      const image = await readFile(new URL(`${name}.png`, icons));
+
+      expect(image.subarray(1, 4).toString("ascii")).toBe("PNG");
+      expect(image.readUInt32BE(16)).toBe(64);
+      expect(image.readUInt32BE(20)).toBe(64);
+    }
+  });
+
   test("operations script uses conditional writes and explicit conflicts", async () => {
     const script = await readFile(new URL("ops.js", assets), "utf8");
 
