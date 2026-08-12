@@ -245,7 +245,7 @@ function EditorWorkspace({
       <header className="topbar">
         <div className="topbar-identity">
           <a className="wordmark" href="/" aria-label="Markdown Share home">
-            <img className="wordmark-icon" src="/favicon.png" alt="" />
+            <img className="wordmark-icon" src="/favicon.png?v=20260812-2" alt="" />
             <span className="wordmark-name">Markdown Share</span>
           </a>
           <div className="document-identity">
@@ -523,7 +523,7 @@ function CenteredStatus({
   return (
     <main className="status-shell">
       <div className="status-card">
-        <img className="status-glyph" src="/favicon.png" alt="" />
+        <img className="status-glyph" src="/favicon.png?v=20260812-2" alt="" />
         <h1>{label}</h1>
         {detail ? <p>{detail}</p> : null}
         <a href="/">Create a new document</a>

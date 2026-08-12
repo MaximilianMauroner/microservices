@@ -1,16 +1,22 @@
-import type { PrivateSnapshotDocument, PublicMonitorStatus, PublicSnapshotDocument } from "@tools-platform/domain";
-import { Link } from "@tanstack/react-router";
-import { Activity, ArrowUpRight, BookOpen, CircleDollarSign, CircleOff, CirclePause, Cloud, Globe2, LockKeyhole, Network, Radio, Send, type LucideIcon } from "lucide-react";
-import { AppShell } from "../../src/components/app-shell.js";
-import { products, type ProductAccent, type ProductId } from "../products.js";
+"use client";
 
-const productIcons: Record<ProductId, LucideIcon> = {
-  publisher: Send,
-  "field-guide": BookOpen,
-  money: CircleDollarSign,
-  status: Radio,
-  "markdown-share": Cloud,
-  "network-console": Radio
+import type { CatalogEntry, PrivateSnapshotDocument, PublicMonitorStatus, PublicSnapshotDocument } from "@tools-platform/domain";
+import { Link, useRouter } from "@tanstack/react-router";
+import { useEffect } from "react";
+import { Activity, ArrowUpRight, CircleOff, CirclePause, Globe2, LockKeyhole, Network, Server, type LucideIcon } from "lucide-react";
+import { AppShell } from "../../src/components/app-shell.js";
+import { favicons } from "../../src/favicons.js";
+import { products, type ProductAccent, type ProductDefinition, type ProductId } from "../products.js";
+
+const REFRESH_INTERVAL_MS = 60_000;
+
+const productIcons: Record<ProductId, string> = {
+  publisher: favicons.publisher,
+  "field-guide": favicons.fieldGuide,
+  money: favicons.money,
+  status: favicons.status,
+  "markdown-share": favicons.markdownShare,
+  "network-console": favicons.networkConsole
 };
 
 const accents: Record<ProductAccent, string> = {
@@ -22,9 +28,30 @@ const accents: Record<ProductAccent, string> = {
   blue: "border-blue-300 bg-blue-300 hover:bg-blue-200"
 };
 
+const catalogAccents = ["violet", "amber", "lime", "cyan", "rose", "blue"] as const satisfies readonly ProductAccent[];
+
+type DirectoryProduct = ProductDefinition & Readonly<{ icon: string | LucideIcon }>;
+
 export function ToolsDirectory({ snapshot }: { snapshot: PublicSnapshotDocument | PrivateSnapshotDocument; publicOrigin: string }) {
+  const router = useRouter();
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState === "visible") void router.invalidate();
+    };
+    const interval = window.setInterval(refresh, REFRESH_INTERVAL_MS);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [router]);
+
   const statuses = statusMap(snapshot);
-  const operational = products.filter((product) => monitorStatus(product.monitorId, statuses)?.status === "up").length;
+  const directoryProducts: readonly DirectoryProduct[] = [
+    ...products.map((product) => ({ ...product, icon: productIcons[product.id] })),
+    ...catalogProducts(snapshot)
+  ];
+  const operational = directoryProducts.filter((product) => monitorStatus(product.monitorId, statuses)?.status === "up").length;
 
   return <>
     <AppShell product="Dashboard" showSignOut />
@@ -36,17 +63,19 @@ export function ToolsDirectory({ snapshot }: { snapshot: PublicSnapshotDocument 
         </div>
         <div className="flex items-center gap-3 rounded-full border bg-card px-4 py-2 text-sm text-muted-foreground">
           <span className="size-2 rounded-full bg-primary" aria-hidden="true" />
-          {operational} of {products.length} operational
+          {operational} of {directoryProducts.length} operational
         </div>
       </section>
 
       <section className="grid gap-3 pt-5 sm:gap-4 sm:pt-8 md:grid-cols-2 xl:grid-cols-3" aria-label="Products">
-        {products.map((product, index) => {
-          const Icon = productIcons[product.id];
+        {directoryProducts.map((product, index) => {
+          const Icon = typeof product.icon === "string" ? undefined : product.icon;
           const status = monitorStatus(product.monitorId, statuses);
           const card = <article className={`group flex min-h-0 flex-row items-center justify-between gap-4 rounded-xl border p-4 text-black transition-colors sm:min-h-56 sm:flex-col sm:items-stretch sm:rounded-2xl sm:p-6 ${accents[product.accent]}`}>
             <div className="flex items-start justify-between gap-4">
-              <span className="grid size-11 place-items-center rounded-full border border-black/25 bg-black/10 text-black sm:size-14"><Icon className="size-5 sm:size-6" aria-hidden="true" /></span>
+              {typeof product.icon === "string"
+                ? <img className="size-11 rounded-full sm:size-14" src={product.icon} alt="" width={56} height={56} />
+                : <span className="grid size-11 place-items-center rounded-full border border-black/25 bg-black/10 text-black sm:size-14">{Icon ? <Icon className="size-5 sm:size-6" aria-hidden="true" /> : null}</span>}
               <span className="hidden font-mono text-xs text-black/45 sm:block">{String(index + 1).padStart(2, "0")}</span>
             </div>
             <div className="min-w-0 flex-1 sm:mt-10 sm:flex-none">
@@ -67,17 +96,53 @@ export function ToolsDirectory({ snapshot }: { snapshot: PublicSnapshotDocument 
   </>;
 }
 
+function catalogProducts(snapshot: PublicSnapshotDocument | PrivateSnapshotDocument): DirectoryProduct[] {
+  if (!("catalog" in snapshot)) return [];
+  const standardMonitorIds = new Set<string>(products.flatMap(({ monitorId }) => monitorId ? [monitorId] : []));
+  return snapshot.catalog.entries
+    .filter((entry) => entry.lifecycle === "active" && entry.monitor?.enabled && !standardMonitorIds.has(entry.id))
+    .sort((left, right) => left.order - right.order || left.name.localeCompare(right.name))
+    .flatMap((entry, index) => {
+      const link = preferredCatalogLink(entry);
+      if (!link) return [];
+      return [{
+        id: `catalog:${entry.id}`,
+        name: entry.name,
+        description: entry.description,
+        href: link.url,
+        access: catalogAccess(entry, link.url),
+        accent: catalogAccents[index % catalogAccents.length]!,
+        monitorId: entry.id,
+        external: true,
+        icon: Server
+      } satisfies DirectoryProduct];
+    });
+}
+
+function preferredCatalogLink(entry: CatalogEntry) {
+  return entry.links.find(({ access }) => access === "private") ?? entry.links.find(({ access }) => access === "restricted") ?? entry.links[0];
+}
+
+function catalogAccess(entry: CatalogEntry, href: string): ProductDefinition["access"] {
+  if (entry.monitor?.scope === "tailscale" || new URL(href).hostname.endsWith(".ts.net")) return "tailnet";
+  return entry.visibility === "public" && entry.links.some(({ url, access }) => url === href && access === "public") ? "public" : "private";
+}
+
 function statusMap(snapshot: PublicSnapshotDocument | PrivateSnapshotDocument) {
   if (!("catalog" in snapshot)) return snapshot.statuses;
-  return Object.fromEntries(Object.entries(snapshot.state.monitors).map(([id, monitor]) => [id, {
-    monitorId: id,
-    status: monitor.status,
-    checkedAt: monitor.latestObservation?.checkedAt ?? null,
-    latencyMs: monitor.latestObservation?.latencyMs ?? null,
-    statusCode: monitor.latestObservation?.statusCode ?? null,
-    uptimeDays: [],
-    downtimeRecords: []
-  } satisfies PublicMonitorStatus]));
+  return Object.fromEntries(snapshot.catalog.entries.flatMap((entry) => {
+    if (!entry.monitor?.enabled) return [];
+    const monitor = snapshot.state.monitors[entry.id];
+    return [[entry.id, {
+      monitorId: entry.id,
+      status: monitor?.status ?? (entry.monitor.paused ? "paused" : "checking"),
+      checkedAt: monitor?.latestObservation?.checkedAt ?? null,
+      latencyMs: monitor?.latestObservation?.latencyMs ?? null,
+      statusCode: monitor?.latestObservation?.statusCode ?? null,
+      uptimeDays: [],
+      downtimeRecords: []
+    } satisfies PublicMonitorStatus]];
+  }));
 }
 
 function monitorStatus(id: string | undefined, statuses: Record<string, PublicMonitorStatus>) {
@@ -87,8 +152,8 @@ function monitorStatus(id: string | undefined, statuses: Record<string, PublicMo
 function ProductMetadata({ access, status }: { access: "private" | "tailnet" | "public"; status: PublicMonitorStatus | undefined }) {
   const AccessIcon = access === "private" ? LockKeyhole : access === "tailnet" ? Network : Globe2;
   const accessLabel = access === "private" ? "Private" : access === "tailnet" ? "Tailnet" : "Public";
-  const StatusIcon = status?.status === "up" ? Activity : status?.status === "down" ? CircleOff : status?.status === "paused" ? CirclePause : CircleOff;
-  const statusLabel = status?.status === "up" ? "Operational" : status?.status === "down" ? "Unavailable" : status?.status === "paused" ? "Paused" : "Not monitored";
+  const StatusIcon = status?.status === "up" ? Activity : status?.status === "down" ? CircleOff : status?.status === "paused" ? CirclePause : status?.status === "checking" ? Activity : CircleOff;
+  const statusLabel = status?.status === "up" ? "Operational" : status?.status === "down" ? "Unavailable" : status?.status === "paused" ? "Paused" : status?.status === "checking" ? "Checking" : status?.status === "unavailable" ? "Not reachable here" : "Not monitored";
   const statusTone = status?.status === "down" ? "text-black" : "text-black/70";
 
   return <div className="mt-2 flex items-center gap-2 text-black/70 sm:mt-5">

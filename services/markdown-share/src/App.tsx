@@ -60,7 +60,7 @@ function LandingPage() {
   return (
     <main className="landing-shell">
       <section className="landing-card">
-        <img className="brand-mark" src="/favicon.png" alt="" />
+        <img className="brand-mark" src="/favicon.png?v=20260812-2" alt="" />
         <p className="eyebrow">A temporary shared page</p>
         <h1>
           Write Markdown.<br />Share one quiet link.
@@ -189,7 +189,7 @@ function CenteredStatus({
   return (
     <main className="status-shell">
       <div className="status-card">
-        <img className="status-glyph" src="/favicon.png" alt="" />
+        <img className="status-glyph" src="/favicon.png?v=20260812-2" alt="" />
         <h1>{label}</h1>
         {detail ? <p>{detail}</p> : null}
         <a href="/">Create a new document</a>

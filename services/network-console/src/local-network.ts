@@ -963,7 +963,7 @@ function renderDashboard(snapshot: NetworkSnapshot, dashboardPort: number) {
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta http-equiv="refresh" content="20">
-    <link rel="icon" type="image/png" sizes="256x256" href="/favicon.png">
+    <link rel="icon" type="image/png" sizes="256x256" href="/favicon.png?v=20260812-2">
     <title>${escapeHtml(snapshot.hostname)} ports</title>
     <style>
       :root {
