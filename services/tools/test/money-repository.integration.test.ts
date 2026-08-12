@@ -310,6 +310,22 @@ it.skipIf(!repository || !admin)("normalizes investment positions while retainin
   expect(investments.totals).toMatchObject({ eventCount: 3, boughtMinor: 30_000, feesMinor: 300 });
 });
 
+it.skipIf(!repository || !admin)("derives Trade Republic cash snapshots from its unified ledger", async () => {
+  const headers = "datetime,date,account_type,category,type,asset_class,name,symbol,shares,price,amount,fee,tax,currency,original_amount,original_currency,fx_rate,description,transaction_id,counterparty_name,counterparty_iban,payment_reference,mcc_code";
+  const rows = [
+    "2026-01-05T12:00:00.000Z,2026-01-05,DEFAULT,CASH,CUSTOMER_INBOUND,,,,,,1000,,,EUR,,,,Funding,tr-cash-1,,,,",
+    "2026-02-10T12:00:00.000Z,2026-02-10,DEFAULT,TRADING,BUY,ETF,Fund,VWCE,2,100,-200,-1,,EUR,,,,Buy,tr-buy-1,,,,",
+  ];
+  await commitCash(repository!, Buffer.from([headers, ...rows].join("\r\n")), "trade-republic.csv");
+
+  const snapshot = await repository!.readLedgerSnapshot("accounts");
+  const account = snapshot.accounts.find((id) => snapshot.accountLabels[id] === "Trade Republic Cash");
+  expect(account).toBeDefined();
+  expect(snapshot.accountLastObserved[account!]).toBe("2026-02-01");
+  expect(snapshot.months.find((month) => month.date === "2026-01-01")?.values[account!]).toBe(1_000);
+  expect(snapshot.months.find((month) => month.date === "2026-02-01")?.values[account!]).toBe(799);
+});
+
 it.skipIf(!repository || !admin)("reports reverted rows beyond the initial activity page", async () => {
   const rows = Array.from({ length: 501 }, (_, index) => {
     const day = String(index % 28 + 1).padStart(2, "0");
