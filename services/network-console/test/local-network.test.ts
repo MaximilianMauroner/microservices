@@ -145,7 +145,7 @@ describe("local network dashboard", () => {
     const html = await htmlResponse.text();
     expect(htmlResponse.status).toBe(200);
     expect(htmlResponse.headers.get("content-type")).toContain("text/html");
-    expect(html).toContain('<link rel="icon" type="image/png" sizes="256x256" href="/favicon.png">');
+    expect(html).toContain('<link rel="icon" type="image/png" sizes="256x256" href="/favicon.png?v=20260812-2">');
     expect(html).toContain(TEST_TAILSCALE_IPV4);
     expect(html).toContain("Websites");
     expect(html).toContain("Example App");

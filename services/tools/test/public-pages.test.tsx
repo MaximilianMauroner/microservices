@@ -114,16 +114,25 @@ describe("TanStack Start public pages", () => {
     expect(html).toContain('href="/money"');
     expect(html).toContain('href="/publisher"');
     expect(html).toContain('href="/status"');
+    expect(html).toContain('src="/assets/icons/publisher.png?v=20260812-2"');
+    expect(html).toContain('src="/assets/icons/field-guide.png?v=20260812-2"');
+    expect(html).toContain('src="/assets/icons/money.png?v=20260812-2"');
+    expect(html).toContain('src="/assets/icons/status.png?v=20260812-2"');
+    expect(html).toContain('src="/assets/icons/markdown-share.png?v=20260812-2"');
+    expect(html).toContain('src="/assets/icons/network-console.png?v=20260812-2"');
   });
 
-  it("does not allow bucket catalog entries to alter product navigation", () => {
+  it("adds monitored non-standard products from the authenticated catalog", () => {
     const html = renderToStaticMarkup(
       <ToolsDirectory snapshot={privateSnapshot} publicOrigin="https://tools.mauroner.net" />
     );
 
-    expect(html).not.toContain("Private console");
-    expect(html).not.toContain('href="https://private.example.test/"');
+    expect(html).toContain("Private console");
+    expect(html).toContain('href="https://private.example.test"');
+    expect(html).toContain('aria-label="Tailnet"');
+    expect(html).not.toContain("Public console");
     expect(html).toContain("Publisher");
+    expect(html).toContain("0 of 7 operational");
   });
 
   it("renders status semantics and the rolling availability window", () => {
