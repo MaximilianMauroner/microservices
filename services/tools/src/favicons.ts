@@ -1,8 +1,11 @@
 export const favicons = {
-  directory: "/assets/icons/tools-status-directory.png",
-  money: "/assets/icons/money-tracker.png",
-  publisher: "/assets/icons/artifact-publisher.png",
-  review: "/assets/icons/field-guide-console.png"
+  directory: "/assets/icons/status.png",
+  fieldGuide: "/assets/icons/field-guide.png",
+  markdownShare: "/assets/icons/markdown-share.png",
+  money: "/assets/icons/money.png",
+  networkConsole: "/assets/icons/network-console.png",
+  publisher: "/assets/icons/publisher.png",
+  status: "/assets/icons/status.png"
 } as const;
 
 export function faviconLink(href: string) {

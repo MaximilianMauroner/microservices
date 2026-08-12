@@ -84,6 +84,7 @@ button:disabled {
   font-family: "DM Mono", monospace;
   font-weight: 500;
   letter-spacing: -0.1em;
+  object-fit: cover;
 }
 
 .eyebrow {

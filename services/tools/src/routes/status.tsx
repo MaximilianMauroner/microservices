@@ -19,7 +19,7 @@ export const Route = createFileRoute("/status")({
       { property: "og:type", content: "website" }
     ],
     links: [
-      faviconLink(favicons.directory),
+      faviconLink(favicons.status),
       ...(loaderData ? [{ rel: "canonical", href: `${loaderData.publicOrigin}/status` }] : [])
     ]
   }),

@@ -13,6 +13,7 @@ import {
   Upload
 } from "lucide-react";
 import { AppShell } from "../../src/components/app-shell.js";
+import { favicons } from "../../src/favicons.js";
 import { AppSelect } from "../../src/components/form-controls.js";
 import {
   AlertDialog,
@@ -190,7 +191,7 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
 
   return (
     <>
-      <AppShell product="Publisher" accent="violet" showSignOut />
+      <AppShell product="Publisher" accent="violet" icon={favicons.publisher} showSignOut />
       <main id="main" className="workspace-page workspace-page--wide">
         <section className="workspace-header" aria-labelledby="manage-title">
           <div>

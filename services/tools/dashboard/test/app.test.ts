@@ -135,17 +135,13 @@ describe("tools web routes", () => {
     expect(localTime.status).toBe(200);
     expect(localTime.headers.get("content-type")).toContain("text/javascript");
 
-    const icon = await app(
-      new Request("https://tools.example.test/assets/icons/artifact-publisher.png")
-    );
-    expect(icon.status).toBe(200);
-    expect(icon.headers.get("content-type")).toBe("image/png");
-
-    const moneyIcon = await app(
-      new Request("https://tools.example.test/assets/icons/money-tracker.png")
-    );
-    expect(moneyIcon.status).toBe(200);
-    expect(moneyIcon.headers.get("content-type")).toBe("image/png");
+    for (const product of ["publisher", "field-guide", "money", "status", "markdown-share", "network-console"]) {
+      const icon = await app(
+        new Request(`https://tools.example.test/assets/icons/${product}.png`)
+      );
+      expect(icon.status).toBe(200);
+      expect(icon.headers.get("content-type")).toBe("image/png");
+    }
 
     const ops = await app(new Request("https://tools.example.test/ops/catalog"));
     const html = await ops.text();

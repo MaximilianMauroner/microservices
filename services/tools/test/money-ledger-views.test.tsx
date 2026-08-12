@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { MoneyActivityView, MoneyDataView, MoneyInvestmentsView, MoneyPlanningCard, MoneySpendingView, portfolioChartPoints } from "../money/money-ledger-views.js";
+import { MoneyActivityView, MoneyDataView, MoneyInvestmentsView, MoneySpendingView, portfolioChartPoints } from "../money/money-ledger-views.js";
+import { MoneyPlanningCard } from "../money/money-planning-card.js";
 import { groupMonth, History } from "../money/money-tracker-page.js";
 
 const activity = [

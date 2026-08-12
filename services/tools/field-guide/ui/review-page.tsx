@@ -12,6 +12,7 @@ import type {
   Scope
 } from "@tools-platform/field-guide";
 import { AppShell } from "../../src/components/app-shell.js";
+import { favicons } from "../../src/favicons.js";
 import { AppSelect } from "../../src/components/form-controls.js";
 import { Alert } from "../../src/components/ui/alert.js";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "../../src/components/ui/accordion.js";
@@ -78,7 +79,7 @@ export function ReviewPage({ initial, search }: { initial: ReviewPageData; searc
 
   return (
     <>
-      <AppShell product="Field Guide" accent="amber" showSignOut />
+      <AppShell product="Field Guide" accent="amber" icon={favicons.fieldGuide} showSignOut />
       <main id="main" className="workspace-page">
         <header className="workspace-header" aria-labelledby="review-title">
           <div>

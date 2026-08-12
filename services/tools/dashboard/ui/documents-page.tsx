@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { ArrowUpRightIcon, CheckIcon, CopyIcon, FileTextIcon, PlusIcon } from "lucide-react";
 import type { MarkdownAdminDocument } from "@tools-platform/web";
 import { AppShell } from "../../src/components/app-shell.js";
+import { favicons } from "../../src/favicons.js";
 import { AppSelect } from "../../src/components/form-controls.js";
 import { Alert } from "../../src/components/ui/alert.js";
 import { Badge } from "../../src/components/ui/badge.js";
@@ -41,7 +42,7 @@ export function DocumentsPage({ initial }: { initial: DocumentsPageData }) {
   }
 
   return <>
-    <AppShell product="Markdown Share" accent="rose" showSignOut />
+    <AppShell product="Markdown Share" accent="rose" icon={favicons.markdownShare} showSignOut />
     <main id="main" className="workspace-page">
       <header className="workspace-header">
         <div>

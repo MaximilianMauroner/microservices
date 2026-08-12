@@ -16,7 +16,8 @@ export const Route = createFileRoute("/money")({
     category: typeof search.category === "string" && MONEY_CATEGORIES.includes(search.category as MoneyCategory) ? search.category as MoneyCategory : undefined,
     review: search.review === true || search.review === "true" ? true : undefined
   }),
-  loader: () => getMoneyTrackerPageData(),
+  loaderDeps: ({ search }) => ({ view: (search.view ?? "overview") as MoneyTrackerView }),
+  loader: ({ deps }) => getMoneyTrackerPageData({ data: deps }),
   pendingComponent: MoneyTrackerPendingRoute,
   pendingMs: 0,
   pendingMinMs: 250,

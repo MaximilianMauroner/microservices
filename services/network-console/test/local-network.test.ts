@@ -145,7 +145,7 @@ describe("local network dashboard", () => {
     const html = await htmlResponse.text();
     expect(htmlResponse.status).toBe(200);
     expect(htmlResponse.headers.get("content-type")).toContain("text/html");
-    expect(html).toContain('<link rel="icon" type="image/svg+xml" href="/favicon.svg">');
+    expect(html).toContain('<link rel="icon" type="image/png" sizes="256x256" href="/favicon.png">');
     expect(html).toContain(TEST_TAILSCALE_IPV4);
     expect(html).toContain("Websites");
     expect(html).toContain("Example App");
@@ -162,11 +162,11 @@ describe("local network dashboard", () => {
     expect(html).toContain("--accent: #2563eb");
     expect(html).toContain("--accent: #93c5fd");
 
-    const faviconResponse = await app.request("/favicon.svg");
+    const faviconResponse = await app.request("/favicon.png");
     expect(faviconResponse.status).toBe(200);
-    expect(faviconResponse.headers.get("content-type")).toContain("image/svg+xml");
+    expect(faviconResponse.headers.get("content-type")).toContain("image/png");
     expect(faviconResponse.headers.get("cache-control")).toBe("public, max-age=86400");
-    expect(await faviconResponse.text()).toContain("<svg");
+    expect((await faviconResponse.arrayBuffer()).byteLength).toBeGreaterThan(0);
 
     const jsonResponse = await app.request("/api/ports");
     expect(jsonResponse.status).toBe(200);

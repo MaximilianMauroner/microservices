@@ -54,16 +54,16 @@ it.skipIf(!repository || !admin)("executes import replay, transfer review, analy
   expect(review.items).toHaveLength(2);
   for (const item of review.items) await repository!.setTransferDisposition({ transactionId: item.id, disposition: item.amountMinor > 0 ? "income" : "spend" });
 
-  const beforeTargetedBalance = await repository!.readLedgerSnapshot();
+  const beforeTargetedBalance = await repository!.readLedgerSnapshot("all");
   const currentAccount = beforeTargetedBalance.accounts.find((id) => beforeTargetedBalance.accountLabels[id]?.startsWith("Current"));
   expect(currentAccount).toBeDefined();
   await repository!.addManualBalance({ accountId: currentAccount!, date: "2026-02-28", valueMinor: 12_345, currency: "EUR" });
-  const afterTargetedBalance = await repository!.readLedgerSnapshot();
+  const afterTargetedBalance = await repository!.readLedgerSnapshot("all");
   expect(afterTargetedBalance.accounts).toHaveLength(beforeTargetedBalance.accounts.length);
   expect(afterTargetedBalance.months.at(-1)?.values[currentAccount!]).toBe(123.45);
 
   await repository!.addManualBalance({ accountName: "Duplicate", date: "2026-02-28", valueMinor: 1_000, currency: "EUR" });
-  const snapshot = await repository!.readLedgerSnapshot();
+  const snapshot = await repository!.readLedgerSnapshot("all");
   expect(snapshot.transferReview.unresolvedPositiveCount + snapshot.transferReview.unresolvedNegativeCount).toBe(0);
   expect(snapshot.planning).toMatchObject({ ready: false, observedMonthCount: 1 });
   expect(snapshot.spending.months.find((month) => month.month === "2026-02")).toMatchObject({ incomeMinor: 5_000, spendMinor: 2_000, netCashFlowMinor: 3_000 });
@@ -85,12 +85,12 @@ it.skipIf(!repository || !admin)("lists and removes account-scoped category rule
   const rows = (await repository!.readActivityPage({ query: "Recurring merchant", offset: 0, limit: 10 })).items;
   await repository!.setTransactionCategory({ transactionId: rows[0]!.id, category: "groceries", actor: "integration@example.test", createRule: true });
 
-  const withRule = await repository!.readLedgerSnapshot();
+  const withRule = await repository!.readLedgerSnapshot("all");
   expect(withRule.categoryRules).toEqual([expect.objectContaining({ description: "Recurring merchant", category: "groceries" })]);
   const deletion = await repository!.deleteCategoryRule(withRule.categoryRules[0]!.id);
   expect(deletion).toEqual({ affectedCount: 1 });
 
-  const withoutRule = await repository!.readLedgerSnapshot();
+  const withoutRule = await repository!.readLedgerSnapshot("all");
   expect(withoutRule.categoryRules).toEqual([]);
   const updatedRows = (await repository!.readActivityPage({ query: "Recurring merchant", offset: 0, limit: 10 })).items;
   expect(updatedRows.filter((row) => row.categoryOrigin === "manual")).toHaveLength(1);
@@ -199,7 +199,7 @@ it.skipIf(!repository || !admin)("deletes an import cascade and repairs a cross-
   expect(remaining).toEqual([expect.objectContaining({ description: "Move from current", needsTransferReview: true })]);
   expect(remaining[0]?.transferGroupId).toBeUndefined();
   expect(remaining[0]?.transferDisposition).toBeUndefined();
-  expect((await repository!.readLedgerSnapshot()).imports.map((item) => item.id)).not.toContain(removed.id);
+  expect((await repository!.readLedgerSnapshot("all")).imports.map((item) => item.id)).not.toContain(removed.id);
   await expect(repository!.deleteImport(removed.id)).resolves.toBeUndefined();
 });
 
@@ -215,7 +215,7 @@ it.skipIf(!repository || !admin)("deletes investment events while preserving row
   await repository!.deleteImport(later.id);
   const cashRows = (await repository!.readActivityPage({ query: "row", offset: 0, limit: 10 })).items;
   expect(cashRows.map((row) => row.description)).toEqual(["Shared row"]);
-  expect((await repository!.readLedgerSnapshot()).imports.map((item) => item.id)).toContain(original.id);
+  expect((await repository!.readLedgerSnapshot("all")).imports.map((item) => item.id)).toContain(original.id);
 
   const trading = Buffer.from([
     "Date\tTicker\tType\tQuantity\tPrice per share\tTotal Amount\tCurrency\tFX Rate",
@@ -227,7 +227,7 @@ it.skipIf(!repository || !admin)("deletes investment events while preserving row
     investmentEventCount: 1,
     balanceSnapshotCount: 0
   });
-  expect((await repository!.readLedgerSnapshot()).investments.totals.eventCount).toBe(0);
+  expect((await repository!.readLedgerSnapshot("all")).investments.totals.eventCount).toBe(0);
 });
 
 it.skipIf(!repository || !admin)("keeps review authoritative when a counterpart import races it", async () => {
@@ -282,14 +282,14 @@ it.skipIf(!repository || !admin)("starts planning history only when a classified
     `Transfer\tSavings\t${period!.day_3} 12:00:00\t${period!.day_3} 12:00:00\tInternal only\t25\t0\tEUR\tCOMPLETED\t25`,
   ]), "internal-only.tsv");
 
-  const withoutCashFlow = await repository!.readLedgerSnapshot();
+  const withoutCashFlow = await repository!.readLedgerSnapshot("all");
   expect(withoutCashFlow.spending.months).toEqual([]);
   expect(withoutCashFlow.planning).toMatchObject({ ready: false, observedMonthCount: 0 });
 
   await commitCash(repository!, cash([
     `Card Payment\tCurrent\t${period!.day_4} 12:00:00\t${period!.day_4} 12:00:00\tReal spend\t-12.50\t0\tEUR\tCOMPLETED\t462.50`,
   ]), "real-spend.tsv");
-  const withCashFlow = await repository!.readLedgerSnapshot();
+  const withCashFlow = await repository!.readLedgerSnapshot("all");
   expect(withCashFlow.spending.months).toEqual([expect.objectContaining({ month: period!.month_key, spendMinor: 1_250, netCashFlowMinor: -1_250 })]);
   expect(withCashFlow.planning).toMatchObject({ ready: false, observedMonthCount: 1 });
 });
@@ -305,7 +305,7 @@ it.skipIf(!repository || !admin)("normalizes investment positions while retainin
     "Date\tTicker\tType\tQuantity\tPrice per share\tTotal Amount\tCurrency\tFX Rate",
     "2026-06-03T12:00:00.000Z\t\tCUSTODY FEE\t\t\tEUR -3\tEUR\t1",
   ].join("\r\n")), "symbol-less-fee.tsv");
-  const { investments } = await repository!.readLedgerSnapshot();
+  const { investments } = await repository!.readLedgerSnapshot("all");
   expect(investments.positions).toEqual([expect.objectContaining({ symbol: "VWCE", name: "Latest Fund", assetClass: "ETF", quantity: "3" })]);
   expect(investments.totals).toMatchObject({ eventCount: 3, boughtMinor: 30_000, feesMinor: 300 });
 });
@@ -317,7 +317,7 @@ it.skipIf(!repository || !admin)("reports reverted rows beyond the initial activ
     return `Card Payment\tCurrent\t2026-06-${day} ${hour}:00:00\t2026-06-${day} ${hour}:00:00\tRow ${index}\t-1\t0\tEUR\t${index === 0 ? "REVERTED" : "COMPLETED"}\t${1000 - index}`;
   });
   await commitCash(repository!, cash(rows), "many-rows.tsv");
-  const snapshot = await repository!.readLedgerSnapshot();
+  const snapshot = await repository!.readLedgerSnapshot("all");
   expect(snapshot.activity).toHaveLength(500);
   expect(snapshot.activity.some((row) => row.status === "reverted")).toBe(false);
   expect(snapshot.revertedCount).toBe(1);
@@ -332,7 +332,7 @@ it.skipIf(!repository || !admin)("pairs reverted rows one-to-one and excludes th
   const activity = await repository!.readActivityPage({ query: "Voided purchase", offset: 0, limit: 10 });
   expect(activity).toEqual(expect.objectContaining({ total: 1, hasMore: false }));
   expect(activity.items).toHaveLength(1);
-  const snapshot = await repository!.readLedgerSnapshot();
+  const snapshot = await repository!.readLedgerSnapshot("all");
   expect(snapshot.spending.categories).toContainEqual(expect.objectContaining({ amountMinor: 500, count: 1 }));
   expect(snapshot.spending.months.find((month) => month.month === "2026-06")).toMatchObject({ spendMinor: 500, netCashFlowMinor: -500 });
 });
@@ -343,7 +343,7 @@ it.skipIf(!repository || !admin)("does not link an effective transfer to a compl
     "Transfer\tCurrent\t2026-06-15 12:00:00\t2026-06-15 12:00:00\tUndone funding\t50\t0\tEUR\tREVERTED\t",
     "Transfer\tSavings\t2026-06-15 12:00:00\t2026-06-15 12:00:00\tLegitimate opposite\t-50\t0\tEUR\tCOMPLETED\t50"
   ]), "undone-transfer.tsv");
-  const snapshot = await repository!.readLedgerSnapshot();
+  const snapshot = await repository!.readLedgerSnapshot("all");
   expect(snapshot.transferReview.linkedPairs).toBe(0);
   expect(snapshot.transferReview.unresolvedNegativeCount).toBe(1);
   expect(snapshot.transferReviewGroups).toEqual([expect.objectContaining({ description: "Legitimate opposite", count: 1, totalMinor: -5_000 })]);
@@ -352,7 +352,7 @@ it.skipIf(!repository || !admin)("does not link an effective transfer to a compl
 it.skipIf(!repository || !admin)("materializes carried balance months for monthly trend intervals", async () => {
   await repository!.addManualBalance({ accountName: "Calendar", date: "2026-01-31", valueMinor: 10_000, currency: "EUR" });
   await repository!.addManualBalance({ accountName: "Calendar", date: "2026-03-31", valueMinor: 12_100, currency: "EUR" });
-  const snapshot = await repository!.readLedgerSnapshot();
+  const snapshot = await repository!.readLedgerSnapshot("all");
   expect(snapshot.months.map((month) => [month.date, month.total])).toEqual([["2026-01-01", 100], ["2026-02-01", 100], ["2026-03-01", 121]]);
   const points = snapshot.months.map((month) => ({ date: month.date, total: month.total, money: month.total, stocks: 0 }));
   expect(moneyTrackerTrendStats(points).geometricAverageMonthlyPercent).toBeCloseTo(10);
@@ -366,7 +366,7 @@ it.skipIf(!repository || !admin)("preserves signed transfer corrections in month
   ]), "signed-corrections.tsv");
   const review = await repository!.readActivityPage({ query: "correction", reviewOnly: true, offset: 0, limit: 10 });
   for (const row of review.items) await repository!.setTransferDisposition({ transactionId: row.id, disposition: row.description.startsWith("Spend") ? "spend" : row.description.startsWith("Income") ? "income" : "refund" });
-  const month = (await repository!.readLedgerSnapshot()).spending.months.find((item) => item.month === "2026-06");
+  const month = (await repository!.readLedgerSnapshot("all")).spending.months.find((item) => item.month === "2026-06");
   expect(month).toMatchObject({ spendMinor: -1_000, incomeMinor: -500, refundsMinor: -200, netCashFlowMinor: 300 });
 });
 
