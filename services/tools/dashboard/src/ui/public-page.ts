@@ -257,7 +257,7 @@ function renderToolCard(
   return `<li class="tool-card">
       <div class="tool-card__top">
         <div class="tool-card__identity">
-          ${iconPath ? `<img class="tool-card__icon" src="${iconPath}" alt="" width="48" height="48">` : ""}
+          ${iconPath ? `<img class="tool-card__icon" src="${iconPath}" alt="" width="64" height="64">` : ""}
           <div>
             <p class="access-label access-label--${accessClass}">${accessLabels.includes("Sign-in required") ? '<span class="suite-lock" aria-hidden="true"></span>' : ""}${escapeHtml(accessLabels.join(" · "))}</p>
             <h3>${escapeHtml(entry.name)}</h3>

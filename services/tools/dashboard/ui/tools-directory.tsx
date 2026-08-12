@@ -73,7 +73,7 @@ export function ToolsDirectory({ snapshot }: { snapshot: PublicSnapshotDocument 
           const card = <article className={`group flex min-h-0 flex-row items-center justify-between gap-4 rounded-xl border p-4 text-black transition-colors sm:min-h-56 sm:flex-col sm:items-stretch sm:rounded-2xl sm:p-6 ${accents[product.accent]}`}>
             <div className="flex items-start justify-between gap-4">
               {typeof product.icon === "string"
-                ? <img className="size-11 rounded-full sm:size-14" src={product.icon} alt="" width={56} height={56} />
+                ? <img className="size-14 rounded-xl sm:size-20" src={product.icon} alt="" width={80} height={80} />
                 : <span className="grid size-11 place-items-center rounded-full border border-black/25 bg-black/10 text-black sm:size-14">{Icon ? <Icon className="size-5 sm:size-6" aria-hidden="true" /> : null}</span>}
               <span className="hidden font-mono text-xs text-black/45 sm:block">{String(index + 1).padStart(2, "0")}</span>
             </div>
