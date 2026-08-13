@@ -137,6 +137,7 @@ const predictionConfig = {
   actual: { label: "Observed total" },
   estimate: { label: "Central estimate" },
   range: { label: "80% range" },
+  inflation: { label: "Inflation benchmark" },
 } satisfies ChartConfig;
 
 export function MoneyTrackerPage(
@@ -325,7 +326,10 @@ export function MoneyTrackerPage(
               />
             ) : null}
             {props.view === "predictions" ? (
-              <Predictions months={allMonths} />
+              <Predictions
+                months={allMonths}
+                portfolioHistory={props.marketData.history}
+              />
             ) : null}
             {props.view === "data" ? <MoneyDataView {...props} /> : null}
             </Suspense>
@@ -1156,92 +1160,142 @@ type PredictionPoint = Readonly<{
   actual?: number;
   estimate?: number;
   range?: readonly [number, number];
+  inflation?: number;
 }>;
 export type MoneyTrajectoryPrediction = Readonly<{
   historyMonths: number;
   horizonMonths: PredictionHorizon;
-  monthlySlope: number;
-  residualVariation: number;
-  fit: number;
+  monthlyContribution: number;
+  annualGrowthRate: number;
+  annualGrowthRange: readonly [number, number];
+  annualInflationRate: number;
+  monthlyReturnVariation: number;
   points: readonly PredictionPoint[];
   forecast: readonly Required<
-    Pick<PredictionPoint, "date" | "estimate" | "range">
+    Pick<PredictionPoint, "date" | "estimate" | "range" | "inflation">
   >[];
 }>;
 
-/** Produces an auditable trend projection from at most the latest 36 monthly totals. */
+type PortfolioProjectionPoint = Readonly<{
+  date: string;
+  costBasisMinor: number;
+  knownMarketValueMinor: number;
+  inflationBenchmarkMinor?: number;
+  complete: boolean;
+}>;
+
+/** Compounds flow-adjusted portfolio returns and continues recent contributions. */
 export function projectMoneyTrajectory(
   months: readonly Pick<GroupedMonth, "date" | "total">[],
   horizonMonths: PredictionHorizon,
+  portfolioHistory: readonly PortfolioProjectionPoint[],
 ): MoneyTrajectoryPrediction | undefined {
-  const history = months
+  const observed = months
     .filter((month) => Number.isFinite(month.total))
-    .slice(-36);
-  if (history.length < 6) return undefined;
+    .slice(-60);
+  const portfolioByMonth = new Map<string, PortfolioProjectionPoint>();
+  for (const point of portfolioHistory) {
+    if (point.complete && point.knownMarketValueMinor > 0) {
+      portfolioByMonth.set(point.date.slice(0, 7), point);
+    }
+  }
+  const portfolio = [...portfolioByMonth.values()]
+    .sort((left, right) => left.date.localeCompare(right.date))
+    .slice(-60);
+  if (observed.length < 6 || portfolio.length < 6) return undefined;
 
-  const meanX = (history.length - 1) / 2;
-  const meanY =
-    history.reduce((sum, month) => sum + month.total, 0) / history.length;
-  const sumSquaresX = history.reduce(
-    (sum, _month, index) => sum + (index - meanX) ** 2,
-    0,
-  );
-  const monthlySlope =
-    history.reduce(
-      (sum, month, index) =>
-        sum + (index - meanX) * (month.total - meanY),
+  const intervals = portfolio.slice(1).flatMap((point, index) => {
+    const previous = portfolio[index]!;
+    const basisChange = point.costBasisMinor - previous.costBasisMinor;
+    const growthFactor =
+      (point.knownMarketValueMinor - basisChange) /
+      previous.knownMarketValueMinor;
+    return growthFactor > 0
+      ? [{ basisChange, logReturn: Math.log(growthFactor) }]
+      : [];
+  });
+  if (intervals.length < 5) return undefined;
+
+  const meanLogReturn = mean(intervals.map(({ logReturn }) => logReturn));
+  const monthlyReturnVariation = Math.sqrt(
+    intervals.reduce(
+      (sum, { logReturn }) => sum + (logReturn - meanLogReturn) ** 2,
       0,
-    ) / sumSquaresX;
-  const intercept = meanY - monthlySlope * meanX;
-  const squaredResiduals = history.reduce((sum, month, index) => {
-    const residual = month.total - (intercept + monthlySlope * index);
-    return sum + residual ** 2;
-  }, 0);
-  const totalVariation = history.reduce(
-    (sum, month) => sum + (month.total - meanY) ** 2,
-    0,
+    ) / Math.max(intervals.length - 1, 1),
   );
-  const residualVariation = Math.sqrt(
-    squaredResiduals / Math.max(history.length - 2, 1),
-  );
-  const fit =
-    totalVariation === 0
-      ? 1
-      : Math.max(0, Math.min(1, 1 - squaredResiduals / totalVariation));
-  const latest = history.at(-1)!;
+  const returnMargin =
+    1.281551565545 * monthlyReturnVariation / Math.sqrt(intervals.length);
+  const monthlyRates = [
+    Math.exp(meanLogReturn - returnMargin) - 1,
+    Math.exp(meanLogReturn) - 1,
+    Math.exp(meanLogReturn + returnMargin) - 1,
+  ] as const;
+  const annualGrowthRange = [
+    Math.exp((meanLogReturn - returnMargin) * 12) - 1,
+    Math.exp((meanLogReturn + returnMargin) * 12) - 1,
+  ] as const;
+  const monthlyContribution =
+    mean(intervals.slice(-12).map(({ basisChange }) => basisChange)) / 100;
+  const inflationReturns = portfolio.slice(1).flatMap((point, index) => {
+    const previous = portfolio[index]!;
+    if (
+      point.inflationBenchmarkMinor === undefined ||
+      previous.inflationBenchmarkMinor === undefined ||
+      previous.inflationBenchmarkMinor <= 0
+    ) {
+      return [];
+    }
+    const basisChange = point.costBasisMinor - previous.costBasisMinor;
+    const factor =
+      (point.inflationBenchmarkMinor - basisChange) /
+      previous.inflationBenchmarkMinor;
+    return factor > 0 ? [Math.log(factor)] : [];
+  });
+  if (inflationReturns.length < 5) return undefined;
+  const meanInflationLogReturn = mean(inflationReturns);
+  const monthlyInflationRate = Math.exp(meanInflationLogReturn) - 1;
+  const latest = observed.at(-1)!;
+  const latestPortfolio = portfolio.at(-1)!.knownMarketValueMinor / 100;
+  const currentCash = latest.total - latestPortfolio;
+  let lowPortfolio = latestPortfolio;
+  let centralPortfolio = latestPortfolio;
+  let highPortfolio = latestPortfolio;
+  let inflationBenchmark = latest.total;
   const forecast = Array.from({ length: horizonMonths }, (_, index) => {
     const monthsAhead = index + 1;
-    const futureX = history.length - 1 + monthsAhead;
-    const estimate = latest.total + monthlySlope * monthsAhead;
-    const predictionError =
-      residualVariation *
-      Math.sqrt(
-        1 +
-          1 / history.length +
-          (futureX - meanX) ** 2 / sumSquaresX,
-      );
-    const margin = 1.281551565545 * predictionError;
+    lowPortfolio = lowPortfolio * (1 + monthlyRates[0]) + monthlyContribution;
+    centralPortfolio =
+      centralPortfolio * (1 + monthlyRates[1]) + monthlyContribution;
+    highPortfolio =
+      highPortfolio * (1 + monthlyRates[2]) + monthlyContribution;
+    inflationBenchmark =
+      inflationBenchmark * (1 + monthlyInflationRate) + monthlyContribution;
+    const estimate = currentCash + centralPortfolio;
     return {
       date: addCalendarMonths(latest.date, monthsAhead),
       estimate,
-      range: [estimate - margin, estimate + margin] as const,
+      range: [currentCash + lowPortfolio, currentCash + highPortfolio] as const,
+      inflation: inflationBenchmark,
     };
   });
 
   return {
-    historyMonths: history.length,
+    historyMonths: portfolio.length,
     horizonMonths,
-    monthlySlope,
-    residualVariation,
-    fit,
+    monthlyContribution,
+    annualGrowthRate: Math.exp(meanLogReturn * 12) - 1,
+    annualGrowthRange,
+    annualInflationRate: Math.exp(meanInflationLogReturn * 12) - 1,
+    monthlyReturnVariation,
     points: [
-      ...history.map((month, index) => ({
+      ...observed.map((month, index) => ({
         date: month.date,
         actual: month.total,
-        ...(index === history.length - 1
+        ...(index === observed.length - 1
           ? {
               estimate: latest.total,
               range: [latest.total, latest.total] as const,
+              inflation: latest.total,
             }
           : {}),
       })),
@@ -1251,11 +1305,21 @@ export function projectMoneyTrajectory(
   };
 }
 
-function Predictions({ months }: { months: GroupedMonth[] }) {
+function mean(values: readonly number[]) {
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function Predictions({
+  months,
+  portfolioHistory,
+}: {
+  months: GroupedMonth[];
+  portfolioHistory: readonly PortfolioProjectionPoint[];
+}) {
   const [horizon, setHorizon] = useState<PredictionHorizon>(12);
   const prediction = useMemo(
-    () => projectMoneyTrajectory(months, horizon),
-    [horizon, months],
+    () => projectMoneyTrajectory(months, horizon, portfolioHistory),
+    [horizon, months, portfolioHistory],
   );
   if (!prediction) {
     return (
@@ -1263,7 +1327,7 @@ function Predictions({ months }: { months: GroupedMonth[] }) {
         <CardHeader>
           <CardTitle>Not enough history</CardTitle>
           <CardDescription>
-            Predictions need at least six monthly balance snapshots.
+            Predictions need at least six months of complete portfolio history.
           </CardDescription>
         </CardHeader>
         <CardContent className="text-sm text-muted-foreground">
@@ -1302,8 +1366,8 @@ function Predictions({ months }: { months: GroupedMonth[] }) {
         <Metric
           label={`Central estimate in ${horizon} months`}
           value={currency.format(finalPoint.estimate)}
-          detail={`${formatSigned(prediction.monthlySlope)} modeled each month`}
-          tone={tone(prediction.monthlySlope)}
+          detail={`${formatSigned(prediction.monthlyContribution)} contributed monthly · ${(prediction.annualGrowthRate * 100).toFixed(1)}% annual growth`}
+          tone={tone(finalPoint.estimate - months.at(-1)!.total)}
         />
         <Metric
           label="80% model range"
@@ -1313,13 +1377,13 @@ function Predictions({ months }: { months: GroupedMonth[] }) {
         <Metric
           label="History used"
           value={`${prediction.historyMonths} months`}
-          detail={`Trend fit ${(prediction.fit * 100).toFixed(0)}%`}
+          detail={`${(prediction.annualGrowthRange[0] * 100).toFixed(1)}% to ${(prediction.annualGrowthRange[1] * 100).toFixed(1)}% annual growth range`}
         />
       </section>
       <section className="grid items-start gap-3 lg:grid-cols-[minmax(0,1.75fr)_minmax(18rem,.75fr)]">
-        <ChartCard
-          title="Net-worth trajectory"
-          description="Observed monthly totals followed by a central estimate and widening 80% range"
+          <ChartCard
+            title="Net-worth trajectory"
+            description="Five-year return scenarios, recurring contributions, and an inflation benchmark"
         >
           <MountedChart
             fallback={
@@ -1335,7 +1399,7 @@ function Predictions({ months }: { months: GroupedMonth[] }) {
               className="h-[25rem] w-full aspect-auto"
               initialDimension={{ width: 760, height: 400 }}
               role="img"
-              aria-label="Observed net worth and projected central estimate with an 80 percent range. Exact projected values follow in an expandable table."
+              aria-label="Observed net worth, projected return range, central estimate, and inflation benchmark. Exact assumptions and values follow in tables."
             >
               <ComposedChart
                 accessibilityLayer={false}
@@ -1394,7 +1458,7 @@ function Predictions({ months }: { months: GroupedMonth[] }) {
                 <Area
                   dataKey="range"
                   name="80% range"
-                  type="monotone"
+                  type="linear"
                   fill="url(#money-prediction-range)"
                   stroke="#84cc16"
                   strokeWidth={1}
@@ -1418,9 +1482,20 @@ function Predictions({ months }: { months: GroupedMonth[] }) {
                   dot={false}
                   connectNulls
                 />
+                <Line
+                  dataKey="inflation"
+                  name="Inflation benchmark"
+                  type="linear"
+                  stroke="#fbbf24"
+                  strokeWidth={1.75}
+                  strokeDasharray="6 5"
+                  dot={false}
+                  connectNulls
+                />
               </ComposedChart>
             </ChartContainer>
           </MountedChart>
+          <PredictionScenarioTable prediction={prediction} />
           <PredictionDataDisclosure points={prediction.forecast} />
         </ChartCard>
         <Card>
@@ -1435,23 +1510,23 @@ function Predictions({ months }: { months: GroupedMonth[] }) {
               detail="latest available"
             />
             <StatRow
-              label="Monthly trajectory"
-              value={formatSigned(prediction.monthlySlope, true)}
-              detail="linear slope"
+              label="Monthly contribution"
+              value={formatSigned(prediction.monthlyContribution, true)}
+              detail="recent cost-basis change"
             />
             <StatRow
-              label="Residual variation"
-              value={currency.format(prediction.residualVariation)}
-              detail="around trend"
+              label="Annual growth"
+              value={`${(prediction.annualGrowthRate * 100).toFixed(1)}%`}
+              detail="flow-adjusted compound rate"
             />
             <StatRow
-              label="Trend fit"
-              value={`${(prediction.fit * 100).toFixed(1)}%`}
-              detail="R²"
+              label="Growth range"
+              value={`${(prediction.annualGrowthRange[0] * 100).toFixed(1)}% to ${(prediction.annualGrowthRange[1] * 100).toFixed(1)}%`}
+              detail="80% rate range"
             />
             <div className="px-4 py-3 text-xs leading-relaxed text-muted-foreground">
-              The range widens further into the future because uncertainty
-              compounds with the projection horizon.
+              Return and inflation rates use up to five years of flow-adjusted
+              history. Contributions use the latest twelve-month average.
             </div>
           </CardContent>
         </Card>
@@ -1460,9 +1535,9 @@ function Predictions({ months }: { months: GroupedMonth[] }) {
         <AlertTitle>Trajectory, not a guarantee</AlertTitle>
         <AlertDescription>
           This is a statistical extrapolation of monthly tracked totals. It
-          assumes the observed linear trajectory continues. Deposits,
-          withdrawals, transfers, market movement, missing balances, and new
-          accounts remain mixed together and can move the outcome outside the
+          It continues the recent average contribution and compounds the
+          portfolio&apos;s flow-adjusted return. Future deposits, withdrawals,
+          market regimes, and missing prices can move the outcome outside the
           displayed range.
         </AlertDescription>
       </Alert>
@@ -2973,6 +3048,7 @@ function PredictionDataDisclosure({
             <th className="px-3 py-2 text-right">Central estimate</th>
             <th className="px-3 py-2 text-right">Range low</th>
             <th className="px-3 py-2 text-right">Range high</th>
+            <th className="px-3 py-2 text-right">Inflation benchmark</th>
           </tr>
         </thead>
         <tbody className="divide-y">
@@ -2988,11 +3064,88 @@ function PredictionDataDisclosure({
               <td className="px-3 py-2 text-right font-mono">
                 {preciseCurrency.format(point.range[1])}
               </td>
+              <td className="px-3 py-2 text-right font-mono">
+                {preciseCurrency.format(point.inflation)}
+              </td>
             </tr>
           ))}
         </tbody>
       </table>
     </ChartDataDetails>
+  );
+}
+
+function PredictionScenarioTable({
+  prediction,
+}: {
+  prediction: MoneyTrajectoryPrediction;
+}) {
+  const final = prediction.forecast.at(-1)!;
+  const scenarios = [
+    {
+      label: "Low estimate",
+      rate: prediction.annualGrowthRange[0],
+      value: final.range[0],
+      explanation: "Lower end of the observed return range",
+    },
+    {
+      label: "Central estimate",
+      rate: prediction.annualGrowthRate,
+      value: final.estimate,
+      explanation: "Average flow-adjusted portfolio return",
+    },
+    {
+      label: "High estimate",
+      rate: prediction.annualGrowthRange[1],
+      value: final.range[1],
+      explanation: "Upper end of the observed return range",
+    },
+    {
+      label: "Inflation benchmark",
+      rate: prediction.annualInflationRate,
+      value: final.inflation,
+      explanation: "Value needed to maintain purchasing power",
+    },
+  ] as const;
+  const outpacesInflation = final.estimate >= final.inflation;
+
+  return (
+    <div className="mt-4 overflow-x-auto rounded-md border">
+      <table className="w-full min-w-[38rem] text-xs">
+        <caption className="sr-only">
+          Projection scenarios and their annual growth assumptions
+        </caption>
+        <thead className="border-b text-muted-foreground">
+          <tr>
+            <th className="px-3 py-2 text-left">Path</th>
+            <th className="px-3 py-2 text-left">Meaning</th>
+            <th className="px-3 py-2 text-right">Annual rate</th>
+            <th className="px-3 py-2 text-right">Value at {final.date}</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y">
+          {scenarios.map((scenario) => (
+            <tr key={scenario.label}>
+              <td className="px-3 py-2 font-medium">{scenario.label}</td>
+              <td className="px-3 py-2 text-muted-foreground">
+                {scenario.explanation}
+              </td>
+              <td className="px-3 py-2 text-right font-mono">
+                {(scenario.rate * 100).toFixed(1)}%
+              </td>
+              <td className="px-3 py-2 text-right font-mono">
+                {preciseCurrency.format(scenario.value)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="border-t px-3 py-2 text-xs text-muted-foreground">
+        Every path adds {formatSigned(prediction.monthlyContribution)} monthly.
+        The central estimate {outpacesInflation ? "finishes" : "does not finish"}{" "}
+        above the inflation benchmark.
+      </p>
+    </div>
   );
 }
 function ChangeDataDisclosure({
