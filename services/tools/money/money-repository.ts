@@ -15,6 +15,7 @@ import {
   type MoneyLedgerTransaction,
   type MoneyTransferDisposition
 } from "./money-import-domain.js";
+import { inferTransferDisposition } from "./money-transfer-inference.js";
 
 export type MoneyImportCommitInput = Readonly<{
   digest: string; format: MoneyImportFormat; filename: string; bytes: number; rowCount: number; actor: string;
@@ -619,6 +620,7 @@ type RealizedEventRow = { account_id: string; occurred_at: Date; source_row: num
 type TradeMarkerRow = { local_date: string; event_kind: "buy" | "sell"; symbol: string; name: string | null; quantity: string; base_amount_minor: string; base_fee_minor: string; currency: string };
 type SnapshotRow = { account_id: string; snapshot_date: string | null; value_minor: string | null; currency: string; display_name: string; role: "cash" | "investment"; provider: string };
 type TransferRow = { id: string; account_id: string; occurred_at: Date; local_date: string; description: string; amount_minor: string; currency: string };
+type TransferInferenceRow = { id: string; provider: string; account_role: "cash" | "investment"; source_type: string; description: string; amount_minor: string };
 type TransferReviewRow = { linked_pairs: string; unlinked_count: string; unresolved_positive_count: string; unresolved_negative_count: string };
 type ReimportRow = { id: string; source_key: string; flow_kind: MoneyLedgerTransaction["flowKind"]; source_type: string; description: string; mcc: string | null };
 
@@ -816,29 +818,57 @@ async function linkUnambiguousTransfers(tx: postgres.TransactionSql) {
   const pairs: Array<readonly [string, string]> = [];
   collectExactTransferPairs(rows, used, pairs);
   collectDateTransferPairs(rows, used, pairs);
-  if (!pairs.length) return;
-  const candidateIds = pairs.flatMap((pair) => pair).sort();
-  const lockedIds = new Set<string>();
-  for (const batch of chunks(candidateIds, RELATED_INSERT_CHUNK_SIZE)) {
-    const locked = await tx<{ id: string }[]>`select raw.id from tools.money_transactions raw
-      join (${effectiveTransactions(tx)}) effective on effective.id = raw.id
-      where raw.id in ${tx(batch)} and raw.flow_kind = 'transfer'
-        and raw.transfer_group_id is null and raw.transfer_disposition is null
-      order by raw.id for update of raw`;
-    for (const row of locked) lockedIds.add(row.id);
+  if (pairs.length) {
+    const candidateIds = pairs.flatMap((pair) => pair).sort();
+    const lockedIds = new Set<string>();
+    for (const batch of chunks(candidateIds, RELATED_INSERT_CHUNK_SIZE)) {
+      const locked = await tx<{ id: string }[]>`select raw.id from tools.money_transactions raw
+        join (${effectiveTransactions(tx)}) effective on effective.id = raw.id
+        where raw.id in ${tx(batch)} and raw.flow_kind = 'transfer'
+          and raw.transfer_group_id is null and raw.transfer_disposition is null
+        order by raw.id for update of raw`;
+      for (const row of locked) lockedIds.add(row.id);
+    }
+    const assignments = pairs.flatMap((pair) => {
+      if (!pair.every((id) => lockedIds.has(id))) return [];
+      const groupId = randomUUID();
+      return pair.map((id) => ({ id, groupId }));
+    });
+    for (const batch of chunks(assignments, RELATED_INSERT_CHUNK_SIZE)) {
+      const ids = batch.map((assignment) => assignment.id);
+      const groupIds = batch.map((assignment) => assignment.groupId);
+      await tx`update tools.money_transactions t set transfer_group_id = assignments.group_id,
+        transfer_disposition = 'internal_transfer'
+        from unnest(${tx.array(ids)}::uuid[], ${tx.array(groupIds)}::uuid[]) as assignments(id, group_id)
+        where t.id = assignments.id and t.transfer_group_id is null and t.transfer_disposition is null`;
+    }
   }
-  const assignments = pairs.flatMap((pair) => {
-    if (!pair.every((id) => lockedIds.has(id))) return [];
-    const groupId = randomUUID();
-    return pair.map((id) => ({ id, groupId }));
-  });
-  for (const batch of chunks(assignments, RELATED_INSERT_CHUNK_SIZE)) {
-    const ids = batch.map((assignment) => assignment.id);
-    const groupIds = batch.map((assignment) => assignment.groupId);
-    await tx`update tools.money_transactions t set transfer_group_id = assignments.group_id,
-      transfer_disposition = 'internal_transfer'
-      from unnest(${tx.array(ids)}::uuid[], ${tx.array(groupIds)}::uuid[]) as assignments(id, group_id)
-      where t.id = assignments.id and t.transfer_group_id is null and t.transfer_disposition is null`;
+  await inferUnlinkedTransferDispositions(tx);
+}
+
+async function inferUnlinkedTransferDispositions(tx: postgres.TransactionSql) {
+  const rows = await tx<TransferInferenceRow[]>`select t.id, a.provider, a.role account_role,
+      t.source_type, t.description, t.amount_minor::text
+    from tools.money_transactions t join tools.money_accounts a on a.id = t.account_id
+    where t.status = 'completed' and t.flow_kind = 'transfer'
+      and t.transfer_group_id is null and t.transfer_disposition is null`;
+  const dispositions = new Map<MoneyTransferDisposition, string[]>();
+  for (const row of rows) {
+    const disposition = inferTransferDisposition({
+      provider: row.provider,
+      accountRole: row.account_role,
+      sourceType: row.source_type,
+      description: row.description,
+      amountMinor: integer(row.amount_minor),
+    });
+    if (!disposition) continue;
+    dispositions.set(disposition, [...(dispositions.get(disposition) ?? []), row.id]);
+  }
+  for (const [disposition, ids] of dispositions) {
+    for (const batch of chunks(ids, RELATED_INSERT_CHUNK_SIZE)) {
+      await tx`update tools.money_transactions set transfer_disposition = ${disposition}
+        where id in ${tx(batch)} and transfer_group_id is null and transfer_disposition is null`;
+    }
   }
 }
 

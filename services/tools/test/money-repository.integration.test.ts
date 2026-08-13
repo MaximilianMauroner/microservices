@@ -44,15 +44,14 @@ it.skipIf(!repository || !admin)("executes import replay, transfer review, analy
   expect((await repository!.commitImport(input)).replay).toBe(true);
 
   const external = cash([
-    "Transfer\tCurrent\t2026-02-02 12:00:00\t2026-02-02 12:00:00\tExternal funding\t50\t0\tEUR\tCOMPLETED\t140",
+    "Topup\tCurrent\t2026-02-02 12:00:00\t2026-02-02 12:00:00\tPayment from PROVINCIA AUTONOMA BOLZANO ALT\t50\t0\tEUR\tCOMPLETED\t140",
     "Transfer\tCurrent\t2026-02-03 12:00:00\t2026-02-03 12:00:00\tExternal payment\t-20\t0\tEUR\tCOMPLETED\t120"
   ]);
   const parsedExternal = parseMoneyImport(external);
   await repository!.commitImport({ ...input, digest: parsedExternal.digest, filename: "external.tsv", bytes: external.byteLength,
     rowCount: parsedExternal.rowCount, transactions: parsedExternal.transactions, balanceSnapshots: parsedExternal.balanceSnapshots });
   const review = await repository!.readActivityPage({ query: "", reviewOnly: true, offset: 0, limit: 10 });
-  expect(review.items).toHaveLength(2);
-  for (const item of review.items) await repository!.setTransferDisposition({ transactionId: item.id, disposition: item.amountMinor > 0 ? "income" : "spend" });
+  expect(review.items).toHaveLength(0);
 
   const beforeTargetedBalance = await repository!.readLedgerSnapshot("all");
   const currentAccount = beforeTargetedBalance.accounts.find((id) => beforeTargetedBalance.accountLabels[id]?.startsWith("Current"));
@@ -101,7 +100,7 @@ it.skipIf(!repository || !admin)("preserves a reviewed transfer when its possibl
   await commitCash(repository!, cash([
     "Transfer\tCurrent\t2026-03-02 12:00:00\t2026-03-02 12:00:00\tReviewed first\t50\t0\tEUR\tCOMPLETED\t150",
   ]), "reviewed-first.tsv");
-  const [reviewed] = (await repository!.readActivityPage({ query: "Reviewed first", reviewOnly: true, offset: 0, limit: 10 })).items;
+  const [reviewed] = (await repository!.readActivityPage({ query: "Reviewed first", offset: 0, limit: 10 })).items;
   expect(reviewed).toBeDefined();
   await repository!.setTransferDisposition({ transactionId: reviewed!.id, disposition: "income" });
 
@@ -111,7 +110,7 @@ it.skipIf(!repository || !admin)("preserves a reviewed transfer when its possibl
   const rows = (await repository!.readActivityPage({ query: "", offset: 0, limit: 10 })).items;
   expect(rows.find((row) => row.description === "Reviewed first")).toMatchObject({ transferDisposition: "income", needsTransferReview: false });
   expect(rows.find((row) => row.description === "Reviewed first")?.transferGroupId).toBeUndefined();
-  expect(rows.find((row) => row.description === "Late counterpart")).toMatchObject({ needsTransferReview: true });
+  expect(rows.find((row) => row.description === "Late counterpart")).toMatchObject({ transferDisposition: "spend", needsTransferReview: false });
 });
 
 it.skipIf(!repository || !admin)("refreshes inferred flows and transfer links when an import is replayed", async () => {
@@ -196,9 +195,9 @@ it.skipIf(!repository || !admin)("deletes an import cascade and repairs a cross-
   });
 
   const remaining = (await repository!.readActivityPage({ query: "Move", offset: 0, limit: 10 })).items;
-  expect(remaining).toEqual([expect.objectContaining({ description: "Move from current", needsTransferReview: true })]);
+  expect(remaining).toEqual([expect.objectContaining({ description: "Move from current", transferDisposition: "refund", needsTransferReview: false })]);
   expect(remaining[0]?.transferGroupId).toBeUndefined();
-  expect(remaining[0]?.transferDisposition).toBeUndefined();
+  expect(remaining[0]?.transferDisposition).toBe("refund");
   expect((await repository!.readLedgerSnapshot("all")).imports.map((item) => item.id)).not.toContain(removed.id);
   await expect(repository!.deleteImport(removed.id)).resolves.toBeUndefined();
 });
@@ -234,7 +233,7 @@ it.skipIf(!repository || !admin)("keeps review authoritative when a counterpart 
   await commitCash(repository!, cash([
     "Transfer\tCurrent\t2026-04-02 12:00:00\t2026-04-02 12:00:00\tRacing review\t75\t0\tEUR\tCOMPLETED\t175",
   ]), "racing-review.tsv");
-  const [reviewed] = (await repository!.readActivityPage({ query: "Racing review", reviewOnly: true, offset: 0, limit: 10 })).items;
+  const [reviewed] = (await repository!.readActivityPage({ query: "Racing review", offset: 0, limit: 10 })).items;
   expect(reviewed).toBeDefined();
   await Promise.all([
     repository!.setTransferDisposition({ transactionId: reviewed!.id, disposition: "income" }),
@@ -361,8 +360,9 @@ it.skipIf(!repository || !admin)("does not link an effective transfer to a compl
   ]), "undone-transfer.tsv");
   const snapshot = await repository!.readLedgerSnapshot("all");
   expect(snapshot.transferReview.linkedPairs).toBe(0);
-  expect(snapshot.transferReview.unresolvedNegativeCount).toBe(1);
-  expect(snapshot.transferReviewGroups).toEqual([expect.objectContaining({ description: "Legitimate opposite", count: 1, totalMinor: -5_000 })]);
+  expect(snapshot.transferReview.unresolvedNegativeCount).toBe(0);
+  expect(snapshot.transferReviewGroups).toEqual([]);
+  expect((await repository!.readActivityPage({ query: "Legitimate opposite", offset: 0, limit: 10 })).items[0]).toMatchObject({ transferDisposition: "spend", needsTransferReview: false });
 });
 
 it.skipIf(!repository || !admin)("materializes carried balance months for monthly trend intervals", async () => {
@@ -380,7 +380,7 @@ it.skipIf(!repository || !admin)("preserves signed transfer corrections in month
     "Transfer\tCurrent\t2026-06-11 12:00:00\t2026-06-11 12:00:00\tIncome correction\t-5\t0\tEUR\tCOMPLETED\t5",
     "Transfer\tCurrent\t2026-06-12 12:00:00\t2026-06-12 12:00:00\tRefund correction\t-2\t0\tEUR\tCOMPLETED\t3",
   ]), "signed-corrections.tsv");
-  const review = await repository!.readActivityPage({ query: "correction", reviewOnly: true, offset: 0, limit: 10 });
+  const review = await repository!.readActivityPage({ query: "correction", offset: 0, limit: 10 });
   for (const row of review.items) await repository!.setTransferDisposition({ transactionId: row.id, disposition: row.description.startsWith("Spend") ? "spend" : row.description.startsWith("Income") ? "income" : "refund" });
   const month = (await repository!.readLedgerSnapshot("all")).spending.months.find((item) => item.month === "2026-06");
   expect(month).toMatchObject({ spendMinor: -1_000, incomeMinor: -500, refundsMinor: -200, netCashFlowMinor: 300 });
