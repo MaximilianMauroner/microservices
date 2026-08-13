@@ -1301,6 +1301,7 @@ export function MoneyImportsView({
         transactionCount: number;
         linkedPairCount: number;
       }>("/api/money/imports/reimport", {});
+      await router.invalidate();
       setReimportResult(result);
     } catch (caught) {
       setReimportError(message(caught));
@@ -1315,7 +1316,7 @@ export function MoneyImportsView({
     if (open) {
       setReimportError(undefined);
       setReimportResult(undefined);
-    } else if (reimportResult) void router.invalidate();
+    }
   };
   const readyCount = files.filter(
     (item) => item.preview && !item.receipt,
