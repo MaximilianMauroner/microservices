@@ -78,6 +78,22 @@ describe("Money trajectory predictions", () => {
     expect(prediction?.annualGrowthRate).toBeCloseTo(0);
   });
 
+  it("recalculates every path with a custom monthly contribution", () => {
+    const historical = projectMoneyTrajectory(months, 12, portfolio());
+    const customized = projectMoneyTrajectory(months, 12, portfolio(), 900);
+
+    expect(customized?.monthlyContribution).toBe(900);
+    expect(customized?.forecast.at(-1)?.estimate).toBeGreaterThan(
+      historical?.forecast.at(-1)?.estimate ?? 0,
+    );
+    expect(customized?.forecast.at(-1)?.range[0]).toBeGreaterThan(
+      historical?.forecast.at(-1)?.range[0] ?? 0,
+    );
+    expect(customized?.forecast.at(-1)?.inflation).toBeGreaterThan(
+      historical?.forecast.at(-1)?.inflation ?? 0,
+    );
+  });
+
   it("uses the latest five years of returns", () => {
     const longMonths = Array.from({ length: 72 }, (_, index) => ({
       date: `${2020 + Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, "0")}`,
