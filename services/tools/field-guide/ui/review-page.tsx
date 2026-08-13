@@ -167,27 +167,48 @@ function ReviewScopeTabs({ search }: { search: ReviewSearch }) {
   return <Tabs value={search.scope}><TabsList><TabsTrigger value="project" nativeButton={false} render={<Link to="/field-guide" search={{ ...search, scope: "project" }} preload="intent" />}>Project</TabsTrigger><TabsTrigger value="global" nativeButton={false} render={<Link to="/field-guide" search={{ ...search, scope: "global" }} preload="intent" />}>Global</TabsTrigger></TabsList></Tabs>;
 }
 
+const decisionFacets = [
+  ["taskId", "Task", "Task ID", "text"], ["device", "Device", "Device", "text"], ["harness", "Harness", "Harness", "text"],
+  ["skill", "Skill", "Skill", "text"], ["from", "From", "Start date", "date"], ["to", "To", "End date", "date"]
+] as const;
+type DecisionFacetKey = typeof decisionFacets[number][0];
+
 function DecisionFilters({ search }: { search: ReviewSearch }) {
-  const facets = [
-    ["taskId", "Task", "Task ID", "text"], ["device", "Device", "Device", "text"], ["harness", "Harness", "Harness", "text"],
-    ["skill", "Skill", "Skill", "text"], ["from", "From", "Start date", "date"], ["to", "To", "End date", "date"]
-  ] as const;
-  const [visible, setVisible] = useState(() => new Set(facets.filter(([key]) => search[key]).map(([key]) => key)));
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [draft, setDraft] = useState<Record<DecisionFacetKey, string>>(() => decisionFilterDraft(search));
+  useEffect(() => setDraft(decisionFilterDraft(search)), [search.taskId, search.device, search.harness, search.skill, search.from, search.to]);
+
   function update(key: keyof ReviewSearch, value?: string) {
     const next = { ...search };
     if (value?.trim()) Object.assign(next, { [key]: value.trim() }); else delete next[key];
     replaceReviewDocument(next);
   }
-  function remove(key: typeof facets[number][0]) { setVisible((current) => { const next = new Set(current); next.delete(key); return next; }); update(key); }
-  const activeCount = [search.projectKey, ...facets.map(([key]) => search[key])].filter(Boolean).length;
+
+  function apply(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const next = { ...search };
+    for (const [key] of decisionFacets) {
+      const value = draft[key].trim();
+      if (value) Object.assign(next, { [key]: value }); else delete next[key];
+    }
+    setFilterOpen(false);
+    replaceReviewDocument(next);
+  }
+
+  const activeFacets = decisionFacets.filter(([key]) => search[key]);
+  const canClear = Boolean(search.projectKey || activeFacets.length);
   return <div className="data-filter" aria-label="Decision filters">
     <div className="data-filter__bar">
       <Label className="data-filter__search"><span className="sr-only">Filter decisions by project</span><SearchIcon aria-hidden="true" /><DebouncedFilterInput value={search.projectKey ?? ""} onCommit={(value) => update("projectKey", value)} placeholder="Filter decisions by project" /></Label>
-      <Popover><PopoverTrigger render={<Button type="button" variant="outline" size="sm" />}><PlusIcon />Add filter</PopoverTrigger><PopoverContent align="end" className="w-48 gap-1 p-1">{facets.filter(([key]) => !visible.has(key)).map(([key, label]) => <Button key={key} type="button" variant="ghost" size="sm" className="w-full justify-start" onClick={() => setVisible((current) => new Set(current).add(key))}>{label}</Button>)}</PopoverContent></Popover>
-      {activeCount ? <Button type="button" variant="ghost" size="sm" onClick={() => { setVisible(new Set()); replaceReviewDocument({ scope: search.scope, view: search.view, reviewState: search.reviewState }); }}>Reset</Button> : null}
+      <Popover open={filterOpen} onOpenChange={setFilterOpen}><PopoverTrigger render={<Button type="button" variant="outline" size="sm" />}><PlusIcon />Filter{activeFacets.length ? <span className="data-filter__count">{activeFacets.length}</span> : null}</PopoverTrigger><PopoverContent align="end" className="w-[min(34rem,calc(100vw-2rem))] gap-3"><div><p className="text-sm font-medium">Edit filters</p><p className="mt-1 text-xs text-muted-foreground">Narrow the current decision scope.</p></div><form className="data-filter__editor" onSubmit={apply}>{decisionFacets.map(([key, label, placeholder, type]) => <Label key={key}>{label}<Input className="mt-1" type={type} value={draft[key]} onChange={(event) => setDraft((current) => ({ ...current, [key]: event.currentTarget.value }))} placeholder={placeholder} /></Label>)}<div className="data-filter__editor-actions"><Button type="button" variant="ghost" size="sm" onClick={() => { setDraft(decisionFilterDraft(search)); setFilterOpen(false); }}>Cancel</Button><Button type="submit" size="sm">Apply filters</Button></div></form></PopoverContent></Popover>
+      {canClear ? <Button type="button" variant="ghost" size="sm" onClick={() => replaceReviewDocument({ scope: search.scope, view: search.view, reviewState: search.reviewState })}>Clear</Button> : null}
     </div>
-    {visible.size ? <div className="data-filter__chips">{facets.filter(([key]) => visible.has(key)).map(([key, label, placeholder, type]) => <div className="data-filter__chip" key={key}><span>{label}</span><DebouncedFilterInput type={type} value={search[key] ?? ""} onCommit={(value) => update(key, value)} placeholder={placeholder} /><Button type="button" variant="ghost" size="icon-sm" aria-label={`Remove ${label} filter`} onClick={() => remove(key)}><XIcon /></Button></div>)}</div> : null}
+    {activeFacets.length ? <div className="data-filter__applied">{activeFacets.map(([key, label]) => <div className="data-filter__pill" key={key}><button type="button" className="data-filter__pill-value" onClick={() => setFilterOpen(true)}><span>{label}</span><strong>{search[key]}</strong></button><Button type="button" variant="ghost" size="icon-xs" aria-label={`Remove ${label} filter`} onClick={() => update(key)}><XIcon /></Button></div>)}</div> : null}
   </div>;
+}
+
+function decisionFilterDraft(search: ReviewSearch): Record<DecisionFacetKey, string> {
+  return { taskId: search.taskId ?? "", device: search.device ?? "", harness: search.harness ?? "", skill: search.skill ?? "", from: search.from ?? "", to: search.to ?? "" };
 }
 
 function DecisionReviewPanel({ item, onNotice, onUpdated }: { item: DecisionRecordItem; onNotice: (notice: { text: string; tone: "success" | "error" }) => void; onUpdated: (item: DecisionRecordItem) => void }) {
