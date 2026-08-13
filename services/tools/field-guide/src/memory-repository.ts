@@ -250,6 +250,7 @@ export class MemoryReviewRepository implements ReviewRepository {
       .map((record, index) => ({ record, sequence: BigInt(index + 1) }))
       .filter(({ record, sequence }) =>
         (!before || sequence < BigInt(before)) &&
+        record.scope === filters.scope &&
         (!filters.projectKey || (record.foundProjectKey ?? record.projectKey) === filters.projectKey) &&
         (!filters.taskId || record.taskId === filters.taskId) &&
         (!filters.device || record.device === filters.device) &&
@@ -268,7 +269,9 @@ export class MemoryReviewRepository implements ReviewRepository {
     const page = rows.slice(0, filters.limit);
     return {
       items: page.map(({ item }) => item),
-      pending: this.decisionRecordValues.filter((record) => !this.currentFeedback(record.decisionRecordId)).length,
+      pending: this.decisionRecordValues.filter((record) =>
+        record.scope === filters.scope && !this.currentFeedback(record.decisionRecordId),
+      ).length,
       hasMore: rows.length > filters.limit,
       ...(rows.length > filters.limit
         ? { nextCursor: encodeCursor(page.at(-1)?.sequence.toString() ?? "0") }

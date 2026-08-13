@@ -63,6 +63,36 @@ describe("decision record review", () => {
     });
   });
 
+  it("separates project and global decision inboxes and pending counts", async () => {
+    const { app } = setup();
+    const globalRecord = {
+      ...record,
+      decisionRecordId: "22222222-2222-4222-8222-222222222222",
+      scope: "global" as const,
+      projectKey: undefined,
+      projectDisplayName: undefined,
+      foundProjectKey: "max/example",
+      foundProjectDisplayName: "example",
+    };
+    for (const decisionRecord of [record, globalRecord]) {
+      const response = await callApp(app, "/api/agent/decision-records", {
+        method: "POST",
+        json: { idempotencyKey: decisionRecord.decisionRecordId, record: decisionRecord },
+      });
+      expect(response.status).toBe(201);
+    }
+
+    const project = await responseJson<{ pending: number; items: Array<{ record: { scope: string } }> }>(
+      await callApp(app, "/api/review/decision-records?scope=project"),
+    );
+    const global = await responseJson<{ pending: number; items: Array<{ record: { scope: string } }> }>(
+      await callApp(app, "/api/review/decision-records?scope=global"),
+    );
+
+    expect(project).toMatchObject({ pending: 1, items: [{ record: { scope: "project" } }] });
+    expect(global).toMatchObject({ pending: 1, items: [{ record: { scope: "global" } }] });
+  });
+
   it("preserves source-project identity for global task grouping and promotion", async () => {
     const { app } = setup();
     const globalRecord = {
@@ -87,7 +117,7 @@ describe("decision record review", () => {
       foundProjectDisplayName: "example",
     });
     const filtered = await responseJson<{ items: Array<{ record: { decisionRecordId: string } }> }>(
-      await callApp(app, "/api/review/decision-records?projectKey=max%2Fexample"),
+      await callApp(app, "/api/review/decision-records?scope=global&projectKey=max%2Fexample"),
     );
     expect(filtered.items.map((item) => item.record.decisionRecordId)).toEqual([
       globalRecord.decisionRecordId,

@@ -283,6 +283,14 @@ html:has([data-suite-accent]) {
   .data-filter__search { position: relative; display: block; flex: 1; min-width: 15rem; max-width: 28rem; }
   .data-filter__search > svg { position: absolute; z-index: 1; top: 50%; left: .7rem; width: 1rem; height: 1rem; color: var(--muted-foreground); transform: translateY(-50%); pointer-events: none; }
   .data-filter__search input { padding-left: 2.25rem !important; }
+  .data-filter__count { display: inline-grid; min-width: 1.15rem; height: 1.15rem; place-items: center; padding-inline: .25rem; border-radius: 999px; background: var(--muted); color: var(--foreground); font-size: .65rem; }
+  .data-filter__applied { display: flex; flex-wrap: wrap; gap: .4rem; }
+  .data-filter__pill { display: inline-flex; min-width: 0; align-items: center; min-height: 2rem; padding: .15rem .2rem .15rem .55rem; border: 1px solid var(--input); border-radius: 999px; background: var(--card); }
+  .data-filter__pill-value { display: inline-flex; min-width: 0; cursor: pointer; align-items: center; gap: .35rem; }
+  .data-filter__pill-value span { color: var(--muted-foreground); font-size: .68rem; font-weight: 650; }
+  .data-filter__pill-value strong { max-width: 13rem; overflow: hidden; color: var(--foreground); font-size: .72rem; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+  .data-filter__editor { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
+  .data-filter__editor-actions { display: flex; grid-column: 1 / -1; justify-content: flex-end; gap: .5rem; padding-top: .25rem; }
   .data-filter__chips { display: flex; flex-wrap: wrap; gap: .4rem; }
   .data-filter__chip { display: flex; align-items: center; gap: .35rem; min-height: 2rem; padding: .2rem .25rem .2rem .55rem; border: 1px solid var(--input); border-radius: var(--radius); background: var(--card); }
   .data-filter__chip > span { color: var(--muted-foreground); font-size: .68rem; font-weight: 650; }
@@ -484,6 +492,10 @@ html:has([data-suite-accent]) {
     [aria-label="Trade-derived investment quantities table"] td:nth-child(7)::before { content: "Costs"; }
     .data-filter__search { min-width: 100%; }
     .data-filter__bar > [data-slot="button"] { flex: 1; }
+    .data-filter__applied { flex-wrap: nowrap; overflow-x: auto; padding-bottom: .1rem; }
+    .data-filter__pill { flex: none; }
+    .data-filter__editor { grid-template-columns: 1fr; }
+    .data-filter__editor-actions { grid-column: auto; }
     .data-filter__chips { display: grid; grid-template-columns: 1fr; }
     .data-filter__chip { min-height: 2.75rem; }
     .data-filter__chip [data-slot="select-trigger"] { min-height: 2.25rem; }

@@ -645,6 +645,8 @@ function parseDecisionFeedback(value: unknown): DecisionFeedbackInput {
 }
 
 function parseDecisionRecordFilters(url: URL, now: Date, archiveAfterDays: number): DecisionRecordFilters {
+  const scope = singleQuery(url, "scope") ?? "project";
+  if (scope !== "project" && scope !== "global") throw new InputError("Invalid scope.");
   const reviewState = singleQuery(url, "reviewState") ?? "unreviewed";
   if (reviewState !== "unreviewed" && reviewState !== "reviewed" && reviewState !== "all")
     throw new InputError("Invalid reviewState.");
@@ -652,6 +654,7 @@ function parseDecisionRecordFilters(url: URL, now: Date, archiveAfterDays: numbe
   if (includeArchivedValue !== undefined && includeArchivedValue !== "true" && includeArchivedValue !== "false")
     throw new InputError("includeArchived must be true or false.");
   return {
+    scope,
     cursor: parseCursorQuery(singleQuery(url, "cursor")),
     limit: parseLimit(singleQuery(url, "limit")),
     reviewState,

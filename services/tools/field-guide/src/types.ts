@@ -110,6 +110,7 @@ export type DecisionRecordItem = {
 };
 export type DecisionReviewState = "unreviewed" | "reviewed" | "all";
 export type DecisionRecordFilters = {
+  scope: Scope;
   cursor?: string;
   limit: number;
   projectKey?: string;

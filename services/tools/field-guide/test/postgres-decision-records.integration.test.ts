@@ -47,7 +47,7 @@ it.skipIf(!databaseUrl || !confirmed)("pushes the PostgreSQL schema and supports
     const firstFeedback = await repository.addDecisionFeedback(first.decisionRecordId, { action: "up" }, oldReview, "max@example.com");
     await repository.addDecisionFeedback(first.decisionRecordId, { action: "down", expectedFeedbackId: firstFeedback.feedbackId }, oldReview, "max@example.com");
     await repository.addDecisionFeedback(second.decisionRecordId, { action: "up" }, now, "max@example.com");
-    expect((await repository.decisionRecords({ limit: 10, reviewState: "reviewed", includeArchived: false, archiveAfterDays: 30, now })).items.map((item) => item.record.decisionRecordId)).toEqual([second.decisionRecordId]);
+    expect((await repository.decisionRecords({ scope: "project", limit: 10, reviewState: "reviewed", includeArchived: false, archiveAfterDays: 30, now })).items.map((item) => item.record.decisionRecordId)).toEqual([second.decisionRecordId]);
     expect((await repository.decisionRecord(first.decisionRecordId, now, 30)).archived).toBe(true);
 
     const firstCandidate = candidate();

@@ -79,6 +79,7 @@ export class PostgresDecisionRecordStore {
       ) f ON true
       LEFT JOIN decision_promotion_records pr ON pr.decision_record_id=d.decision_record_id
       WHERE (${before ?? null}::bigint IS NULL OR d.sequence<${before ?? null})
+        AND d.payload->>'scope'=${filters.scope}
         AND (${filters.projectKey ?? null}::text IS NULL OR COALESCE(d.payload->>'foundProjectKey',d.payload->>'projectKey')=${filters.projectKey ?? null})
         AND (${filters.taskId ?? null}::text IS NULL OR d.payload->>'taskId'=${filters.taskId ?? null})
         AND (${filters.device ?? null}::text IS NULL OR d.payload->>'device'=${filters.device ?? null})
@@ -92,7 +93,8 @@ export class PostgresDecisionRecordStore {
     const page = rows.slice(0, filters.limit);
     const pendingRows = await this.sql<{ count: number }[]>`
       SELECT COUNT(*)::int count FROM decision_records d
-      WHERE NOT EXISTS(SELECT 1 FROM decision_feedback_events f WHERE f.decision_record_id=d.decision_record_id)`;
+      WHERE d.payload->>'scope'=${filters.scope}
+        AND NOT EXISTS(SELECT 1 FROM decision_feedback_events f WHERE f.decision_record_id=d.decision_record_id)`;
     return {
       items: page.map((row) => this.itemFromRow(row, filters.now, filters.archiveAfterDays, [])),
       pending: pendingRows[0]?.count ?? 0,
