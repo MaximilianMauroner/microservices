@@ -1189,6 +1189,7 @@ export function projectMoneyTrajectory(
   months: readonly Pick<GroupedMonth, "date" | "total">[],
   horizonMonths: PredictionHorizon,
   portfolioHistory: readonly PortfolioProjectionPoint[],
+  monthlyContributionOverride?: number,
 ): MoneyTrajectoryPrediction | undefined {
   const observed = months
     .filter((month) => Number.isFinite(month.total))
@@ -1234,8 +1235,14 @@ export function projectMoneyTrajectory(
     Math.exp((meanLogReturn - returnMargin) * 12) - 1,
     Math.exp((meanLogReturn + returnMargin) * 12) - 1,
   ] as const;
-  const monthlyContribution =
+  const historicalMonthlyContribution =
     mean(intervals.slice(-12).map(({ basisChange }) => basisChange)) / 100;
+  const monthlyContribution =
+    monthlyContributionOverride !== undefined &&
+    Number.isFinite(monthlyContributionOverride) &&
+    monthlyContributionOverride >= 0
+      ? monthlyContributionOverride
+      : historicalMonthlyContribution;
   const inflationReturns = portfolio.slice(1).flatMap((point, index) => {
     const previous = portfolio[index]!;
     if (
@@ -1317,11 +1324,32 @@ function Predictions({
   portfolioHistory: readonly PortfolioProjectionPoint[];
 }) {
   const [horizon, setHorizon] = useState<PredictionHorizon>(12);
-  const prediction = useMemo(
+  const [contributionOverride, setContributionOverride] = useState<
+    number | undefined
+  >();
+  const historicalPrediction = useMemo(
     () => projectMoneyTrajectory(months, horizon, portfolioHistory),
     [horizon, months, portfolioHistory],
   );
-  if (!prediction) {
+  const prediction = useMemo(
+    () =>
+      contributionOverride === undefined
+        ? historicalPrediction
+        : projectMoneyTrajectory(
+            months,
+            horizon,
+            portfolioHistory,
+            contributionOverride,
+          ),
+    [
+      contributionOverride,
+      historicalPrediction,
+      horizon,
+      months,
+      portfolioHistory,
+    ],
+  );
+  if (!prediction || !historicalPrediction) {
     return (
       <Card>
         <CardHeader>
@@ -1337,26 +1365,72 @@ function Predictions({
     );
   }
 
+  const historicalMonthlyContribution = historicalPrediction.monthlyContribution;
   const finalPoint = prediction.forecast.at(-1)!;
   return (
     <>
-      <section className="flex flex-wrap items-end justify-between gap-3">
+      <section className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-sm font-medium">Projection horizon</p>
           <p className="mt-1 text-xs text-muted-foreground">
             Recalculate the same model over a different future range.
           </p>
         </div>
-        <div role="group" aria-label="Prediction horizon" className="flex gap-1">
-          {([6, 12, 24, 60, 120] as const).map((value) => (
-            <PeriodButton
-              key={value}
-              active={horizon === value}
-              onClick={() => setHorizon(value)}
-            >
-              {formatPredictionHorizon(value)}
-            </PeriodButton>
-          ))}
+        <div className="flex flex-wrap items-end gap-4">
+          <div>
+            <p className="mb-1.5 text-xs text-muted-foreground">
+              Monthly contribution
+            </p>
+            <div className="flex items-center gap-2">
+              <label className="flex h-9 items-center rounded-full border bg-background px-3 focus-within:border-ring focus-within:ring-1 focus-within:ring-ring">
+                <span className="text-sm text-muted-foreground">€</span>
+                <input
+                  aria-label="Monthly contribution"
+                  className="w-20 bg-transparent px-1.5 text-right text-sm font-medium outline-none"
+                  min="0"
+                  step="10"
+                  type="number"
+                  value={
+                    contributionOverride ??
+                    Math.round(historicalMonthlyContribution * 100) /
+                      100
+                  }
+                  onChange={(event) => {
+                    const value = event.currentTarget.valueAsNumber;
+                    if (Number.isFinite(value) && value >= 0) {
+                      setContributionOverride(value);
+                    }
+                  }}
+                />
+                <span className="text-xs text-muted-foreground">/ mo</span>
+              </label>
+              {contributionOverride !== undefined ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setContributionOverride(undefined)}
+                >
+                  Use historical
+                </Button>
+              ) : (
+                <span className="text-xs text-muted-foreground">
+                  Historical default
+                </span>
+              )}
+            </div>
+          </div>
+          <div role="group" aria-label="Prediction horizon" className="flex gap-1">
+            {([6, 12, 24, 60, 120] as const).map((value) => (
+              <PeriodButton
+                key={value}
+                active={horizon === value}
+                onClick={() => setHorizon(value)}
+              >
+                {formatPredictionHorizon(value)}
+              </PeriodButton>
+            ))}
+          </div>
         </div>
       </section>
       <section
@@ -1380,10 +1454,10 @@ function Predictions({
           detail={`${(prediction.annualGrowthRange[0] * 100).toFixed(1)}% to ${(prediction.annualGrowthRange[1] * 100).toFixed(1)}% annual growth range`}
         />
       </section>
-      <section className="grid items-start gap-3 lg:grid-cols-[minmax(0,1.75fr)_minmax(18rem,.75fr)]">
-          <ChartCard
-            title="Net-worth trajectory"
-            description="Five-year return scenarios, recurring contributions, and an inflation benchmark"
+      <section>
+        <ChartCard
+          title="Net-worth trajectory"
+          description="Five-year return scenarios, recurring contributions, and an inflation benchmark"
         >
           <MountedChart
             fallback={
@@ -1498,38 +1572,6 @@ function Predictions({
           <PredictionScenarioTable prediction={prediction} />
           <PredictionDataDisclosure points={prediction.forecast} />
         </ChartCard>
-        <Card>
-          <CardHeader className="border-b">
-            <CardTitle>Model drivers</CardTitle>
-            <CardDescription>Inputs behind the displayed range</CardDescription>
-          </CardHeader>
-          <CardContent className="divide-y p-0">
-            <StatRow
-              label="History window"
-              value={`${prediction.historyMonths} months`}
-              detail="latest available"
-            />
-            <StatRow
-              label="Monthly contribution"
-              value={formatSigned(prediction.monthlyContribution, true)}
-              detail="recent cost-basis change"
-            />
-            <StatRow
-              label="Annual growth"
-              value={`${(prediction.annualGrowthRate * 100).toFixed(1)}%`}
-              detail="flow-adjusted compound rate"
-            />
-            <StatRow
-              label="Growth range"
-              value={`${(prediction.annualGrowthRange[0] * 100).toFixed(1)}% to ${(prediction.annualGrowthRange[1] * 100).toFixed(1)}%`}
-              detail="80% rate range"
-            />
-            <div className="px-4 py-3 text-xs leading-relaxed text-muted-foreground">
-              Return and inflation rates use up to five years of flow-adjusted
-              history. Contributions use the latest twelve-month average.
-            </div>
-          </CardContent>
-        </Card>
       </section>
       <Alert role="note">
         <AlertTitle>Trajectory, not a guarantee</AlertTitle>
