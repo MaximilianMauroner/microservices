@@ -14,3 +14,4 @@ coverage/
 /.agent/artifacts/
 /.agent/review/
 services/tools/.output/
+/.agent/artifacts/
