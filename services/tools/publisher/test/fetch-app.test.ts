@@ -117,7 +117,11 @@ describe("native artifact fetch handler", () => {
 
   it("adds the Publisher favicon when serving HTML artifacts", async () => {
     const storage = new MemoryUploadStorage();
-    const app = createFetchApp({ storage, uploadToken: "upload-token" });
+    const app = createFetchApp({
+      storage,
+      uploadToken: "upload-token",
+      publisherFaviconUrl: "/assets/publisher-build-hash.png"
+    });
     const createdResponse = await app(
       new Request("https://tools.example.test/api/uploads", {
         method: "POST",
@@ -139,7 +143,7 @@ describe("native artifact fetch handler", () => {
 
     expect(response.status).toBe(200);
     expect(html).toContain(
-      '<link rel="icon" href="/assets/icons/publisher.png" type="image/png" sizes="96x96"></head>'
+      '<link rel="icon" href="/assets/publisher-build-hash.png" type="image/png" sizes="96x96"></head>'
     );
     expect(Number(response.headers.get("content-length"))).toBe(Buffer.byteLength(html));
     expect(storedBody).not.toContain('rel="icon"');

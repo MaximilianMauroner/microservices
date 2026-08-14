@@ -40,9 +40,7 @@ const PAGE_ID_PATTERN = /^[A-Za-z0-9_-]{32}$/;
 const HTML_MIME_TYPES = new Set(["text/html", "application/xhtml+xml"]);
 const HTML_EXTENSIONS = new Set([".html", ".htm"]);
 const HTML_CONTENT_TYPE = "text/html; charset=utf-8";
-const PUBLISHER_FAVICON_LINK =
-  '<link rel="icon" href="/assets/icons/publisher.png" type="image/png" sizes="96x96">';
-const PUBLISHER_FAVICON_BYTES = Buffer.byteLength(PUBLISHER_FAVICON_LINK);
+const DEFAULT_PUBLISHER_FAVICON_URL = "/assets/icons/publisher.png";
 const HTML_HEAD_BUFFER_LIMIT = 256 * 1024;
 const SINGLE_BYTE_RANGE_PATTERN = /^bytes=(?:\d+-\d*|-\d+)$/i;
 const DEFAULT_UPLOAD_LIST_LIMIT = 25;
@@ -87,6 +85,7 @@ export type FetchArtifactAppOptions = {
   uploadToken: string;
   externalUpload?: boolean;
   publicBaseUrl?: string;
+  publisherFaviconUrl?: string;
   maxUploadBytes?: number;
   maxHtmlUploadBytes?: number;
   maxConcurrentUploads?: number;
@@ -112,6 +111,7 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
     options.temporaryFileRetentionMs ?? DEFAULT_TEMPORARY_FILE_RETENTION_MS,
     "temporaryFileRetentionMs"
   );
+  const publisherFavicon = publisherFaviconLink(options.publisherFaviconUrl);
   if (maxHtmlUploadBytes > maxUploadBytes) {
     throw new Error("maxHtmlUploadBytes must be less than or equal to maxUploadBytes");
   }
@@ -128,7 +128,13 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
     const url = new URL(request.url);
     try {
       if (request.method === "GET" || request.method === "HEAD") {
-        const page = await readPageRoute(request, url, options, temporaryFileRetentionMs);
+        const page = await readPageRoute(
+          request,
+          url,
+          options,
+          temporaryFileRetentionMs,
+          publisherFavicon
+        );
         if (page) return page;
         const file = await readFileRoute(request, url, options);
         if (file) return file;
@@ -329,7 +335,8 @@ async function readPageRoute(
   request: Request,
   url: URL,
   options: FetchArtifactAppOptions,
-  _temporaryFileRetentionMs: number
+  _temporaryFileRetentionMs: number,
+  publisherFavicon: Buffer
 ): Promise<Response | undefined> {
   if (url.pathname === "/favicon.svg" || url.pathname === "/favicon.ico") {
     return new Response(FAVICON_SVG, {
@@ -360,8 +367,8 @@ async function readPageRoute(
   });
   applyRepresentationHeaders(
     headers,
-    html.bytes + PUBLISHER_FAVICON_BYTES,
-    htmlRepresentationSha256(html.sha256),
+    html.bytes + publisherFavicon.length,
+    htmlRepresentationSha256(html.sha256, publisherFavicon),
     html.lastModified
   );
   if (isNotModified(request, headers)) {
@@ -372,7 +379,10 @@ async function readPageRoute(
     html.body.destroy();
     return new Response(null, { status: 200, headers });
   }
-  return new Response(toWebStream(html.body.compose(new PublisherFaviconTransform())), { headers });
+  return new Response(
+    toWebStream(html.body.compose(new PublisherFaviconTransform(publisherFavicon))),
+    { headers }
+  );
 }
 
 async function readFileRoute(
@@ -883,6 +893,10 @@ class PublisherFaviconTransform extends Transform {
   private buffered = Buffer.alloc(0);
   private injected = false;
 
+  constructor(private readonly favicon: Buffer) {
+    super();
+  }
+
   override _transform(
     chunk: unknown,
     encoding: BufferEncoding,
@@ -907,7 +921,7 @@ class PublisherFaviconTransform extends Transform {
     const closingHead = this.buffered.toString("latin1").toLowerCase().indexOf("</head");
     if (closingHead >= 0) {
       this.push(this.buffered.subarray(0, closingHead));
-      this.push(PUBLISHER_FAVICON_LINK);
+      this.push(this.favicon);
       this.push(this.buffered.subarray(closingHead));
       this.buffered = Buffer.alloc(0);
       this.injected = true;
@@ -916,7 +930,7 @@ class PublisherFaviconTransform extends Transform {
     }
 
     if (this.buffered.length >= HTML_HEAD_BUFFER_LIMIT) {
-      this.push(injectPublisherFavicon(this.buffered));
+      this.push(injectPublisherFavicon(this.buffered, this.favicon));
       this.buffered = Buffer.alloc(0);
       this.injected = true;
     }
@@ -924,19 +938,21 @@ class PublisherFaviconTransform extends Transform {
   }
 
   override _flush(callback: TransformCallback) {
-    this.push(this.injected ? this.buffered : injectPublisherFavicon(this.buffered));
+    this.push(
+      this.injected ? this.buffered : injectPublisherFavicon(this.buffered, this.favicon)
+    );
     callback();
   }
 }
 
-function injectPublisherFavicon(html: Buffer) {
+function injectPublisherFavicon(html: Buffer, favicon: Buffer) {
   const source = html.toString("latin1");
   const openingHead = /<head(?:\s[^>]*)?>/i.exec(source);
   if (openingHead?.index !== undefined) {
     const insertion = openingHead.index + openingHead[0].length;
     return Buffer.concat([
       html.subarray(0, insertion),
-      Buffer.from(PUBLISHER_FAVICON_LINK),
+      favicon,
       html.subarray(insertion)
     ]);
   }
@@ -945,7 +961,7 @@ function injectPublisherFavicon(html: Buffer) {
   const insertion = doctype?.index === 0 ? doctype[0].length : 0;
   return Buffer.concat([
     html.subarray(0, insertion),
-    Buffer.from(PUBLISHER_FAVICON_LINK),
+    favicon,
     html.subarray(insertion)
   ]);
 }
@@ -1177,13 +1193,24 @@ function sha256Etag(sha256: string | undefined) {
     : undefined;
 }
 
-function htmlRepresentationSha256(storedSha256: string | undefined) {
+function htmlRepresentationSha256(storedSha256: string | undefined, favicon: Buffer) {
   if (!storedSha256 || !/^[a-f0-9]{64}$/i.test(storedSha256)) return undefined;
   return crypto
     .createHash("sha256")
-    .update("publisher-favicon-v1\0")
+    .update("publisher-favicon-v2\0")
+    .update(favicon)
+    .update("\0")
     .update(storedSha256.toLowerCase())
     .digest("hex");
+}
+
+function publisherFaviconLink(url = DEFAULT_PUBLISHER_FAVICON_URL) {
+  if (!url.startsWith("/") || url.startsWith("//") || /[\s"<>]/.test(url)) {
+    throw new Error("publisherFaviconUrl must be a safe root-relative URL");
+  }
+  return Buffer.from(
+    `<link rel="icon" href="${url}" type="image/png" sizes="96x96">`
+  );
 }
 
 function parseHttpDate(value: string) {

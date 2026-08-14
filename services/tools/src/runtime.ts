@@ -22,6 +22,7 @@ import { loadPlatformConfig } from "./config.js";
 import { startAlignedScheduler } from "./scheduler.js";
 import { createPostgresScheduledTaskLeaseRepository } from "./scheduled-task-leases.js";
 import { PLATFORM_UI_BUILD } from "./build-identity.js";
+import { favicons } from "./favicons.js";
 import { MoneyImportService } from "../money/money-import-service.js";
 import { createPostgresMoneyRepository } from "../money/money-repository.js";
 import { MoneyMarketDataService } from "../money/money-market-data-service.js";
@@ -125,6 +126,7 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
       uploadToken: config.artifact.uploadToken,
       externalUpload: true,
       publicBaseUrl: config.publicOrigin,
+      publisherFaviconUrl: favicons.publisher,
       maxUploadBytes: config.artifact.maxUploadBytes,
       maxHtmlUploadBytes: config.artifact.maxHtmlUploadBytes,
       maxConcurrentUploads: config.artifact.maxConcurrentUploads,
