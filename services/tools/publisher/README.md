@@ -94,9 +94,10 @@ only versioned `/publish|uploads/assets/:version/app.css|app.js` responses use
 private one-year immutable caching.
 
 HTML is streamed from the private bucket with sandbox, no-referrer, no-sniff,
-and no-index headers. Temporary downloads support `HEAD` and one standard byte
-range. Missing, revoked, and expired capability URLs return `404`. Malformed
-canonical or legacy percent encoding returns `404`.
+and no-index headers. Delivery adds the Publisher favicon to HTML responses
+without changing the stored artifact. Temporary downloads support `HEAD` and
+one standard byte range. Missing, revoked, and expired capability URLs return
+`404`. Malformed canonical or legacy percent encoding returns `404`.
 
 Errors use JSON with stable `error` and `message` fields. Notable statuses are
 `401 unauthorized`, `403 invalid_origin`, `404 upload_not_found`, `409

@@ -40,6 +40,10 @@ const PAGE_ID_PATTERN = /^[A-Za-z0-9_-]{32}$/;
 const HTML_MIME_TYPES = new Set(["text/html", "application/xhtml+xml"]);
 const HTML_EXTENSIONS = new Set([".html", ".htm"]);
 const HTML_CONTENT_TYPE = "text/html; charset=utf-8";
+const PUBLISHER_FAVICON_LINK =
+  '<link rel="icon" href="/assets/icons/publisher.png" type="image/png" sizes="96x96">';
+const PUBLISHER_FAVICON_BYTES = Buffer.byteLength(PUBLISHER_FAVICON_LINK);
+const HTML_HEAD_BUFFER_LIMIT = 256 * 1024;
 const SINGLE_BYTE_RANGE_PATTERN = /^bytes=(?:\d+-\d*|-\d+)$/i;
 const DEFAULT_UPLOAD_LIST_LIMIT = 25;
 const MAX_UPLOAD_LIST_LIMIT = 100;
@@ -354,7 +358,12 @@ async function readPageRoute(
     "X-Content-Type-Options": "nosniff",
     "X-Robots-Tag": "noindex, nofollow"
   });
-  applyRepresentationHeaders(headers, html.bytes, html.sha256, html.lastModified);
+  applyRepresentationHeaders(
+    headers,
+    html.bytes + PUBLISHER_FAVICON_BYTES,
+    htmlRepresentationSha256(html.sha256),
+    html.lastModified
+  );
   if (isNotModified(request, headers)) {
     html.body.destroy();
     return new Response(null, { status: 304, headers });
@@ -363,7 +372,7 @@ async function readPageRoute(
     html.body.destroy();
     return new Response(null, { status: 200, headers });
   }
-  return new Response(toWebStream(html.body), { headers });
+  return new Response(toWebStream(html.body.compose(new PublisherFaviconTransform())), { headers });
 }
 
 async function readFileRoute(
@@ -869,6 +878,78 @@ class ByteLimitTransform extends Transform {
   }
 }
 
+/** Adds the Publisher favicon without changing the artifact stored in object storage. */
+class PublisherFaviconTransform extends Transform {
+  private buffered = Buffer.alloc(0);
+  private injected = false;
+
+  override _transform(
+    chunk: unknown,
+    encoding: BufferEncoding,
+    callback: TransformCallback
+  ) {
+    const buffer = typeof chunk === "string"
+      ? Buffer.from(chunk, encoding)
+      : chunk instanceof Uint8Array
+        ? Buffer.from(chunk)
+        : undefined;
+    if (!buffer) {
+      callback(new TypeError("Stored HTML stream emitted a non-byte chunk"));
+      return;
+    }
+
+    if (this.injected) {
+      callback(null, buffer);
+      return;
+    }
+
+    this.buffered = Buffer.concat([this.buffered, buffer]);
+    const closingHead = this.buffered.toString("latin1").toLowerCase().indexOf("</head");
+    if (closingHead >= 0) {
+      this.push(this.buffered.subarray(0, closingHead));
+      this.push(PUBLISHER_FAVICON_LINK);
+      this.push(this.buffered.subarray(closingHead));
+      this.buffered = Buffer.alloc(0);
+      this.injected = true;
+      callback();
+      return;
+    }
+
+    if (this.buffered.length >= HTML_HEAD_BUFFER_LIMIT) {
+      this.push(injectPublisherFavicon(this.buffered));
+      this.buffered = Buffer.alloc(0);
+      this.injected = true;
+    }
+    callback();
+  }
+
+  override _flush(callback: TransformCallback) {
+    this.push(this.injected ? this.buffered : injectPublisherFavicon(this.buffered));
+    callback();
+  }
+}
+
+function injectPublisherFavicon(html: Buffer) {
+  const source = html.toString("latin1");
+  const openingHead = /<head(?:\s[^>]*)?>/i.exec(source);
+  if (openingHead?.index !== undefined) {
+    const insertion = openingHead.index + openingHead[0].length;
+    return Buffer.concat([
+      html.subarray(0, insertion),
+      Buffer.from(PUBLISHER_FAVICON_LINK),
+      html.subarray(insertion)
+    ]);
+  }
+
+  const doctype = /<!doctype\s[^>]*>/i.exec(source);
+  const insertion = doctype?.index === 0 ? doctype[0].length : 0;
+  return Buffer.concat([
+    html.subarray(0, insertion),
+    Buffer.from(PUBLISHER_FAVICON_LINK),
+    html.subarray(insertion)
+  ]);
+}
+
 function classifyUpload(
   originalName: string,
   mimeType: string,
@@ -1094,6 +1175,15 @@ function sha256Etag(sha256: string | undefined) {
   return sha256 && /^[a-f0-9]{64}$/i.test(sha256)
     ? `"sha256-${sha256.toLowerCase()}"`
     : undefined;
+}
+
+function htmlRepresentationSha256(storedSha256: string | undefined) {
+  if (!storedSha256 || !/^[a-f0-9]{64}$/i.test(storedSha256)) return undefined;
+  return crypto
+    .createHash("sha256")
+    .update("publisher-favicon-v1\0")
+    .update(storedSha256.toLowerCase())
+    .digest("hex");
 }
 
 function parseHttpDate(value: string) {
