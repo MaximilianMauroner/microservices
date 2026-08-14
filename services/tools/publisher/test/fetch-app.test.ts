@@ -115,6 +115,36 @@ describe("native artifact fetch handler", () => {
     expect([...storage.pages.values()][0]?.metadata.project).toBe("microservices");
   });
 
+  it("adds the Publisher favicon when serving HTML artifacts", async () => {
+    const storage = new MemoryUploadStorage();
+    const app = createFetchApp({ storage, uploadToken: "upload-token" });
+    const createdResponse = await app(
+      new Request("https://tools.example.test/api/uploads", {
+        method: "POST",
+        headers: { Authorization: "Bearer upload-token" },
+        body: multipart(
+          "index.html",
+          "<!doctype html><html><head><title>Plan</title></head><body>ok</body></html>",
+          "text/html"
+        )
+      })
+    );
+    const created = await createdResponse.json() as { id: string };
+    const storedBody = storage.pages.get(created.id)?.body.toString();
+
+    const response = await app(
+      new Request(`https://tools.example.test/artifacts/${created.id}`)
+    );
+    const html = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(html).toContain(
+      '<link rel="icon" href="/assets/icons/publisher.png" type="image/png" sizes="96x96"></head>'
+    );
+    expect(Number(response.headers.get("content-length"))).toBe(Buffer.byteLength(html));
+    expect(storedBody).not.toContain('rel="icon"');
+  });
+
   it("enforces the HTML limit while staging the multipart stream", async () => {
     const app = createFetchApp({
       storage: new MemoryUploadStorage(),
