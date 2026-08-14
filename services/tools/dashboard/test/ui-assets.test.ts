@@ -15,6 +15,14 @@ describe("static UI assets", () => {
     }
   });
 
+  test("favicon assets retain an alpha channel for rounded corners", async () => {
+    for (const name of ["tools", "publisher", "field-guide", "money", "status", "markdown-share", "network-console"]) {
+      const image = await readFile(new URL(`${name}.png`, icons));
+
+      expect(image[25]).toBe(6);
+    }
+  });
+
   test("operations script uses conditional writes and explicit conflicts", async () => {
     const script = await readFile(new URL("ops.js", assets), "utf8");
 
