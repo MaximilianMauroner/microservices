@@ -20,6 +20,7 @@ import {
   safeFileName
 } from "./file-metadata.js";
 import {
+  FileUpdateConflictError,
   HtmlUpdateConflictError,
   RangeNotSatisfiableError,
   type ListUploadsOptions,
@@ -230,7 +231,37 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
           );
         }
         if (request.method === "PATCH") {
-          const project = await readProjectUpdate(request);
+          const update = await readUploadUpdate(request, getNow(options));
+          if (update.kind === "expiry") {
+            try {
+              const updated = await options.storage.updateFileExpiry(
+                externalUploadId,
+                update.expiresAt,
+                { signal: request.signal }
+              );
+              if (!updated) {
+                throw new ArtifactRequestError(
+                  404,
+                  "upload_not_found",
+                  "The file upload was not found."
+                );
+              }
+            } catch (error) {
+              if (error instanceof FileUpdateConflictError) {
+                throw new ArtifactRequestError(
+                  409,
+                  "upload_conflict",
+                  "The file changed or was revoked before the expiry update completed."
+                );
+              }
+              throw error;
+            }
+            return jsonResponse({
+              id: externalUploadId,
+              expiresAt: update.expiresAt?.toISOString() ?? null
+            });
+          }
+          const { project } = update;
           try {
             const updated = await options.storage.updateHtmlProject(
               externalUploadId,
@@ -401,7 +432,7 @@ async function readFileRoute(
       headOnly: true,
       signal: request.signal
     });
-    if (!metadata || metadata.expiresAt <= getNow(options)) {
+    if (!metadata || isExpired(metadata.expiresAt, getNow(options))) {
       metadata?.body.destroy();
       return new Response(null, { status: 404 });
     }
@@ -415,7 +446,7 @@ async function readFileRoute(
       headOnly: true,
       signal: request.signal
     });
-    if (!metadata || metadata.expiresAt <= getNow(options)) {
+    if (!metadata || isExpired(metadata.expiresAt, getNow(options))) {
       metadata?.body.destroy();
       return new Response(null, { status: 404 });
     }
@@ -431,7 +462,7 @@ async function readFileRoute(
       range,
       signal: request.signal
     });
-    if (!file || file.expiresAt <= getNow(options)) {
+    if (!file || isExpired(file.expiresAt, getNow(options))) {
       file?.body.destroy();
       return new Response(null, { status: 404 });
     }
@@ -456,7 +487,7 @@ async function readFileRoute(
     return new Response(toWebStream(file.body), { status, headers });
   } catch (error) {
     if (error instanceof RangeNotSatisfiableError) {
-      if (error.expiresAt && error.expiresAt <= getNow(options)) {
+      if (isExpired(error.expiresAt, getNow(options))) {
         return new Response(null, { status: 404 });
       }
       return rangeNotSatisfiable(error.totalBytes);
@@ -1022,7 +1053,10 @@ function requireMultipartUpload(request: Request) {
   }
 }
 
-async function readProjectUpdate(request: Request) {
+async function readUploadUpdate(request: Request, now: Date): Promise<
+  | { kind: "project"; project: string }
+  | { kind: "expiry"; expiresAt: Date | null }
+> {
   if (request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !== "application/json") {
     throw new ArtifactRequestError(
       415,
@@ -1032,25 +1066,66 @@ async function readProjectUpdate(request: Request) {
   }
   const raw = await request.text();
   if (Buffer.byteLength(raw, "utf8") > 1024) {
-    throw new ArtifactRequestError(413, "payload_too_large", "Project update is too large.");
+    throw new ArtifactRequestError(413, "payload_too_large", "Upload update is too large.");
   }
   let input: unknown;
   try {
     input = JSON.parse(raw);
   } catch {
-    throw new ArtifactRequestError(400, "invalid_project", "Project update is invalid JSON.");
+    throw new ArtifactRequestError(400, "invalid_upload_update", "Upload update is invalid JSON.");
   }
-  const project = input && typeof input === "object" && "project" in input
-    ? normalizeProjectName(String(input.project))
-    : undefined;
-  if (!project) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
     throw new ArtifactRequestError(
       400,
-      "invalid_project",
-      "Project must be a non-empty string of at most 240 UTF-8 bytes."
+      "invalid_upload_update",
+      "Upload update must contain a project or expiresAt value."
     );
   }
-  return project;
+  const keys = Object.keys(input);
+  if (keys.length !== 1 || (keys[0] !== "project" && keys[0] !== "expiresAt")) {
+    throw new ArtifactRequestError(
+      400,
+      "invalid_upload_update",
+      "Upload update must contain only a project or expiresAt value."
+    );
+  }
+  if ("project" in input) {
+    const project = normalizeProjectName(String(input.project));
+    if (!project) {
+      throw new ArtifactRequestError(
+        400,
+        "invalid_project",
+        "Project must be a non-empty string of at most 240 UTF-8 bytes."
+      );
+    }
+    return { kind: "project", project };
+  }
+  if (!("expiresAt" in input)) {
+    throw new ArtifactRequestError(
+      400,
+      "invalid_upload_update",
+      "Upload update must contain a project or expiresAt value."
+    );
+  }
+  if (input.expiresAt === null) return { kind: "expiry", expiresAt: null };
+  if (typeof input.expiresAt !== "string") {
+    throw new ArtifactRequestError(400, "invalid_expiry", "expiresAt must be an ISO timestamp or null.");
+  }
+  const expiresAt = new Date(input.expiresAt);
+  if (Number.isNaN(expiresAt.getTime()) || expiresAt.toISOString() !== input.expiresAt) {
+    throw new ArtifactRequestError(400, "invalid_expiry", "expiresAt must be an ISO timestamp or null.");
+  }
+  if (expiresAt <= now) {
+    throw new ArtifactRequestError(400, "invalid_expiry", "File expiry must be in the future.");
+  }
+  if (expiresAt.getTime() - now.getTime() > MAX_TEMPORARY_FILE_RETENTION_MS) {
+    throw new ArtifactRequestError(400, "invalid_expiry", "File expiry cannot be more than 100 years away.");
+  }
+  return { kind: "expiry", expiresAt };
+}
+
+function isExpired(expiresAt: Date | undefined, now: Date) {
+  return Boolean(expiresAt && expiresAt <= now);
 }
 
 function isMultipartContentType(contentType: string) {

@@ -169,6 +169,45 @@ describe("S3 upload storage", () => {
     storage.close?.();
   });
 
+  it("changes file expiry metadata and removes it for permanent files", async () => {
+    const copies: CopyObjectCommand[] = [];
+    vi.spyOn(S3Client.prototype, "send").mockImplementation(async (command) => {
+      if (command instanceof HeadObjectCommand) {
+        return {
+          ETag: '"current-etag"',
+          CacheControl: "private, no-store",
+          ContentDisposition: 'attachment; filename="report.pdf"',
+          ContentType: "application/pdf",
+          Metadata: {
+            bytes: "12",
+            sha256: "a".repeat(64),
+            "expires-at": "2026-08-17T12:00:00.000Z"
+          }
+        } as never;
+      }
+      if (command instanceof CopyObjectCommand) {
+        copies.push(command);
+        return {} as never;
+      }
+      throw new Error("Unexpected S3 command");
+    });
+    const storage = createS3UploadStorage(storageConfig);
+    const expiresAt = new Date("2026-08-30T12:00:00.000Z");
+
+    await expect(storage.updateFileExpiry("stable-id", expiresAt)).resolves.toBe(true);
+    await expect(storage.updateFileExpiry("stable-id", null)).resolves.toBe(true);
+
+    expect(copies[0]?.input).toMatchObject({
+      Key: "files/stable-id",
+      CopySourceIfMatch: '"current-etag"',
+      Expires: expiresAt,
+      Metadata: { "expires-at": expiresAt.toISOString() }
+    });
+    expect(copies[1]?.input.Expires).toBeUndefined();
+    expect(copies[1]?.input.Metadata).not.toHaveProperty("expires-at");
+    storage.close?.();
+  });
+
   it("streams HTML bodies with representation metadata", async () => {
     const body = Buffer.from("<html>streamed</html>");
     vi.spyOn(S3Client.prototype, "send").mockImplementation(async (command) => {

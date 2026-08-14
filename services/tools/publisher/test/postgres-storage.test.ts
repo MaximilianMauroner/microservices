@@ -8,7 +8,8 @@ const now = new Date("2026-08-09T12:00:00.000Z");
 const uploads = [
   { id: "a", key: "pages/a.html", kind: "html" as const, originalName: "Plan.html", contentType: "text/html", bytes: 12, updatedAt: new Date("2026-08-09T11:00:00.000Z"), project: "microservices" },
   { id: "b", key: "files/b", kind: "file" as const, originalName: "build.zip", contentType: "application/zip", bytes: 24, updatedAt: new Date("2026-08-09T10:00:00.000Z"), expiresAt: new Date("2026-08-10T10:00:00.000Z") },
-  { id: "c", key: "files/c", kind: "file" as const, originalName: "later.zip", contentType: "application/zip", bytes: 48, updatedAt: new Date("2026-08-09T09:00:00.000Z"), expiresAt: new Date("2026-08-20T10:00:00.000Z") }
+  { id: "c", key: "files/c", kind: "file" as const, originalName: "later.zip", contentType: "application/zip", bytes: 48, updatedAt: new Date("2026-08-09T09:00:00.000Z"), expiresAt: new Date("2026-08-20T10:00:00.000Z") },
+  { id: "d", key: "files/d", kind: "file" as const, originalName: "permanent.zip", contentType: "application/zip", bytes: 64, updatedAt: new Date("2026-08-09T08:00:00.000Z") }
 ];
 
 describe("Postgres artifact metadata paging", () => {
@@ -31,9 +32,9 @@ describe("Postgres artifact metadata paging", () => {
     expect(second.uploads[0]?.id).toBe("b");
   });
 
-  it("keeps persistent artifacts separate from expiring files", () => {
+  it("keeps permanent artifacts separate from expiring files", () => {
     const page = pageArtifactMetadata(uploads, now, { limit: 10, expiry: "persistent" });
-    expect(page.uploads.map(({ id }) => id)).toEqual(["a"]);
+    expect(page.uploads.map(({ id }) => id)).toEqual(["a", "d"]);
   });
 
   it("retains the durable operation when metadata finalization fails", async () => {
