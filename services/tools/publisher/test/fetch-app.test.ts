@@ -19,7 +19,7 @@ import type {
 
 class MemoryUploadStorage implements UploadStorage {
   readonly pages = new Map<string, { body: Buffer; metadata: PutHtmlMetadata }>();
-  readonly files = new Map<string, { body: Buffer; metadata: PutTemporaryFileMetadata }>();
+  readonly files = new Map<string, { body: Buffer; metadata: Omit<PutTemporaryFileMetadata, "expiresAt"> & { expiresAt?: Date } }>();
 
   async putHtml(id: string, filePath: string, metadata: PutHtmlMetadata, _options?: PutHtmlOptions) {
     this.pages.set(id, { body: await readFile(filePath), metadata });
@@ -50,7 +50,7 @@ class MemoryUploadStorage implements UploadStorage {
       bytes: file.body.length,
       contentType: file.metadata.contentType,
       originalName: file.metadata.originalName,
-      expiresAt: file.metadata.expiresAt,
+      ...(file.metadata.expiresAt ? { expiresAt: file.metadata.expiresAt } : {}),
       sha256: file.metadata.sha256,
       lastModified: new Date("2026-01-01T00:00:00.000Z")
     };
@@ -64,6 +64,13 @@ class MemoryUploadStorage implements UploadStorage {
     const page = this.pages.get(id);
     if (!page) return false;
     page.metadata = { ...page.metadata, project };
+    return true;
+  }
+
+  async updateFileExpiry(id: string, expiresAt: Date | null) {
+    const file = this.files.get(id);
+    if (!file) return false;
+    file.metadata = { ...file.metadata, expiresAt: expiresAt ?? undefined };
     return true;
   }
 
@@ -240,6 +247,72 @@ describe("native artifact fetch handler", () => {
     );
     expect(revokedResponse.status).toBe(204);
     expect((await app(new Request(created.url))).status).toBe(404);
+  });
+
+  it("lets the authenticated browser change a file expiry or make it permanent", async () => {
+    const storage = new MemoryUploadStorage();
+    const now = new Date("2026-08-14T12:00:00.000Z");
+    const app = createFetchApp({
+      storage,
+      uploadToken: "upload-token",
+      publicBaseUrl: "https://tools.example.test",
+      externalUpload: true,
+      now: () => now
+    });
+    const createdResponse = await app(
+      new Request("https://tools.example.test/api/external-uploads", {
+        method: "POST",
+        headers: { Origin: "https://tools.example.test" },
+        body: multipart("report.pdf", "report", "application/pdf")
+      })
+    );
+    const created = await createdResponse.json() as { id: string; url: string };
+    const expiresAt = "2026-08-30T12:00:00.000Z";
+
+    const expiryResponse = await app(
+      new Request(`https://tools.example.test/api/external-uploads/${created.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Origin: "https://tools.example.test" },
+        body: JSON.stringify({ expiresAt })
+      })
+    );
+    expect(expiryResponse.status).toBe(200);
+    expect(await expiryResponse.json()).toEqual({ id: created.id, expiresAt });
+    expect(storage.files.get(created.id)?.metadata.expiresAt).toEqual(new Date(expiresAt));
+
+    const permanentResponse = await app(
+      new Request(`https://tools.example.test/api/external-uploads/${created.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Origin: "https://tools.example.test" },
+        body: JSON.stringify({ expiresAt: null })
+      })
+    );
+    expect(permanentResponse.status).toBe(200);
+    expect(await permanentResponse.json()).toEqual({ id: created.id, expiresAt: null });
+    expect(storage.files.get(created.id)?.metadata.expiresAt).toBeUndefined();
+    expect((await app(new Request(created.url))).status).toBe(200);
+  });
+
+  it("rejects file expiry timestamps in the past", async () => {
+    const storage = new MemoryUploadStorage();
+    const app = createFetchApp({
+      storage,
+      uploadToken: "upload-token",
+      publicBaseUrl: "https://tools.example.test",
+      externalUpload: true,
+      now: () => new Date("2026-08-14T12:00:00.000Z")
+    });
+
+    const response = await app(
+      new Request(`https://tools.example.test/api/external-uploads/${"a".repeat(32)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Origin: "https://tools.example.test" },
+        body: JSON.stringify({ expiresAt: "2026-08-14T11:59:59.000Z" })
+      })
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: "invalid_expiry" });
   });
 
   it("rejects cross-origin browser lifecycle mutations", async () => {

@@ -2,11 +2,13 @@ import crypto from "node:crypto";
 import postgres, { type Sql, type TransactionSql } from "postgres";
 import {
   htmlKey,
+  RangeNotSatisfiableError,
   temporaryFileKey,
   type ListUploadsOptions,
   type S3UploadStorageConfig,
   type StoredUploadPage,
   type StoredUploadSummary,
+  type StoredTemporaryFile,
   type UploadListCursor,
   type UploadStorage
 } from "./storage.js";
@@ -92,15 +94,24 @@ export function createMetadataBackedUploadStorage(
     async getTemporaryFile(id, options) {
       await reconcileArtifactOperations(bodies, sql, options);
       const row = await find(sql, id, "file");
-      if (!row || !row.expires_at) return null;
-      const object = await bodies.getTemporaryFile(id, options);
+      if (!row) return null;
+      let object: StoredTemporaryFile | null;
+      try {
+        object = await bodies.getTemporaryFile(id, options);
+      } catch (error) {
+        if (error instanceof RangeNotSatisfiableError) {
+          throw new RangeNotSatisfiableError(error.totalBytes, row.expires_at ?? undefined);
+        }
+        throw error;
+      }
       if (!object) return null;
+      const { expiresAt: _objectExpiry, ...body } = object;
       return {
-        ...object,
+        ...body,
         bytes: Number(row.bytes),
         contentType: row.content_type,
         originalName: row.filename,
-        expiresAt: row.expires_at,
+        ...(row.expires_at ? { expiresAt: row.expires_at } : {}),
         lastModified: row.updated_at
       };
     },
@@ -119,6 +130,17 @@ export function createMetadataBackedUploadStorage(
         update artifacts.objects set project = ${project}, updated_at = now()
         where id = ${id} and kind = 'html' and revoked_at is null returning id
       `;
+      return rows.length === 1;
+    },
+    async updateFileExpiry(id, expiresAt, options) {
+      await reconcileArtifactOperations(bodies, sql, options);
+      const bodyUpdated = await bodies.updateFileExpiry(id, expiresAt, options);
+      if (!bodyUpdated) return false;
+      const rows = await sql<{ id: string }[]>`
+        update artifacts.objects set expires_at = ${expiresAt}, updated_at = now()
+        where id = ${id} and kind = 'file' and revoked_at is null returning id
+      `;
+      if (rows.length === 0) await bodies.deleteUpload(id, options);
       return rows.length === 1;
     },
     async deleteUpload(id, options) {

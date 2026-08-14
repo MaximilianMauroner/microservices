@@ -45,4 +45,20 @@ describe("Manage artifact library", () => {
     expect(html).toContain('data-suite-accent="violet"');
     expect(html).not.toContain("Tools architecture and monitoring");
   });
+
+  it("shows the compact expiry control for a selected file", () => {
+    const html = renderToStaticMarkup(<ManagePage initial={{ uploads: initial.uploads.toReversed() }} />);
+
+    expect(html).toContain("File expiry");
+    expect(html).toContain("Change");
+    expect(html).toContain("left ·");
+  });
+
+  it("labels files without an expiry as permanent", () => {
+    const { expiresAt: _expiry, ...file } = initial.uploads[1]!;
+    const html = renderToStaticMarkup(<ManagePage initial={{ uploads: [file] }} />);
+
+    expect(html).toContain("Permanent");
+    expect(html).toContain("available until revoked");
+  });
 });

@@ -3,6 +3,7 @@ import type { RefObject } from "react";
 import { Link } from "@tanstack/react-router";
 import {
   Copy,
+  CalendarClock,
   Download,
   ExternalLink,
   FileText,
@@ -30,9 +31,11 @@ import { Alert } from "../../src/components/ui/alert.js";
 import { Badge } from "../../src/components/ui/badge.js";
 import { Button } from "../../src/components/ui/button.js";
 import { Card } from "../../src/components/ui/card.js";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../../src/components/ui/dialog.js";
 import { Input } from "../../src/components/ui/input.js";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "../../src/components/ui/sheet.js";
 import { useIsMobile } from "../../src/components/ui/use-mobile.js";
+import { Switch } from "../../src/components/ui/switch.js";
 import {
   Table,
   TableBody,
@@ -158,6 +161,38 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
     }
   }
 
+  async function changeFileExpiry(expiresAt: string | null) {
+    if (!selected || selected.kind !== "file") return false;
+    setBusy(true);
+    setMessage(undefined);
+    try {
+      const response = await fetch(`/api/external-uploads/${selected.id}`, {
+        method: "PATCH",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ expiresAt })
+      });
+      const updated = await readPayload<{ expiresAt: string | null }>(response, "File expiry could not be changed.");
+      setUploads((current) => current.map((upload) => {
+        if (upload.id !== selected.id) return upload;
+        const { expiresAt: _oldExpiry, ...withoutExpiry } = upload;
+        return updated.expiresAt ? { ...withoutExpiry, expiresAt: updated.expiresAt } : withoutExpiry;
+      }));
+      setMessage({
+        text: updated.expiresAt
+          ? `${selected.filename} now expires ${formatDate(updated.expiresAt)}.`
+          : `${selected.filename} is now permanent and remains available until revoked.`,
+        tone: "success"
+      });
+      return true;
+    } catch (error) {
+      setMessage({ text: errorMessage(error), tone: "error" });
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function revokeSelected() {
     if (!selected) return;
     setBusy(true);
@@ -213,8 +248,8 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
 
         <section className="mb-3 grid grid-cols-2 gap-2 lg:grid-cols-4" aria-label="Artifact summary">
           <Metric label="Artifacts" value={uploads.length} />
-          <Metric label="Persistent" value={uploads.filter((upload) => upload.kind === "html").length} />
-          <Metric label="Temporary" value={uploads.filter((upload) => upload.kind === "file").length} />
+          <Metric label="Permanent" value={uploads.filter((upload) => !upload.expiresAt).length} />
+          <Metric label="Temporary" value={uploads.filter((upload) => Boolean(upload.expiresAt)).length} />
           <Metric label="Expiring soon" value={expiringSoon} attention={expiringSoon > 0} />
         </section>
 
@@ -225,7 +260,7 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
           </label>
           <div className="grid grid-cols-3 gap-2 sm:flex">
             <AppSelect value={kind} onValueChange={(value) => setKind(value as KindFilter)} aria-label="Filter by type" options={[{ value: "all", label: "All types" }, { value: "html", label: "Plans" }, { value: "file", label: "Files" }]} />
-            <AppSelect value={expiry} onValueChange={(value) => setExpiry(value as ExpiryFilter)} aria-label="Filter by expiry" options={[{ value: "all", label: "Any expiry" }, { value: "24h", label: "Next 24 hours" }, { value: "7d", label: "Next 7 days" }, { value: "persistent", label: "Persistent" }]} />
+            <AppSelect value={expiry} onValueChange={(value) => setExpiry(value as ExpiryFilter)} aria-label="Filter by expiry" options={[{ value: "all", label: "Any expiry" }, { value: "24h", label: "Next 24 hours" }, { value: "7d", label: "Next 7 days" }, { value: "persistent", label: "Permanent" }]} />
             <AppSelect value={sort} onValueChange={(value) => setSort(value as SortOrder)} aria-label="Sort artifacts" options={[{ value: "newest", label: "Newest" }, { value: "oldest", label: "Oldest" }, { value: "filename", label: "Filename" }, { value: "expiry", label: "Expiry" }]} />
           </div>
         </section>
@@ -241,11 +276,12 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
             replaceInput={replaceInput}
             onReplace={replaceSelected}
             onChangeProject={changeProject}
+            onChangeExpiry={changeFileExpiry}
             onCopy={copySelectedUrl}
             onRevoke={revokeSelected}
           /> : null}
         </section>
-        {isMobile ? <Sheet open={mobileInspectorOpen} onOpenChange={setMobileInspectorOpen}><SheetContent className="w-full overflow-y-auto"><SheetHeader className="border-b"><SheetTitle>Artifact details</SheetTitle><SheetDescription>Inspect and maintain one shared artifact.</SheetDescription></SheetHeader><div className="p-4 pt-0"><ArtifactInspector key={selected?.id ?? "none"} upload={selected} busy={busy} knownProjects={projects.map(([project]) => project)} replaceInput={replaceInput} onReplace={replaceSelected} onChangeProject={changeProject} onCopy={copySelectedUrl} onRevoke={revokeSelected} /></div></SheetContent></Sheet> : null}
+        {isMobile ? <Sheet open={mobileInspectorOpen} onOpenChange={setMobileInspectorOpen}><SheetContent className="w-full overflow-y-auto"><SheetHeader className="border-b"><SheetTitle>Artifact details</SheetTitle><SheetDescription>Inspect and maintain one shared artifact.</SheetDescription></SheetHeader><div className="p-4 pt-0"><ArtifactInspector key={selected?.id ?? "none"} upload={selected} busy={busy} knownProjects={projects.map(([project]) => project)} replaceInput={replaceInput} onReplace={replaceSelected} onChangeProject={changeProject} onChangeExpiry={changeFileExpiry} onCopy={copySelectedUrl} onRevoke={revokeSelected} /></div></SheetContent></Sheet> : null}
       </main>
     </>
   );
@@ -275,13 +311,58 @@ function ArtifactTable({ uploads, selectedId, onSelect, hasMore, busy, onLoadMor
   </Card>;
 }
 
-function ArtifactInspector({ upload, busy, knownProjects, replaceInput, onReplace, onChangeProject, onCopy, onRevoke }: { upload?: UploadSummary; busy: boolean; knownProjects: string[]; replaceInput: RefObject<HTMLInputElement | null>; onReplace: (file: File) => Promise<void>; onChangeProject: (project: string) => Promise<void>; onCopy: () => Promise<void>; onRevoke: () => Promise<void> }) {
+function ArtifactInspector({ upload, busy, knownProjects, replaceInput, onReplace, onChangeProject, onChangeExpiry, onCopy, onRevoke }: { upload?: UploadSummary; busy: boolean; knownProjects: string[]; replaceInput: RefObject<HTMLInputElement | null>; onReplace: (file: File) => Promise<void>; onChangeProject: (project: string) => Promise<void>; onChangeExpiry: (expiresAt: string | null) => Promise<boolean>; onCopy: () => Promise<void>; onRevoke: () => Promise<void> }) {
   const [project, setProject] = useState(upload?.project ?? "");
   const currentProject = upload?.project ?? "";
   if (!upload) return <Card className="grid min-h-64 place-items-center p-6 text-center text-sm text-muted-foreground">Select an artifact.</Card>;
   const canUpdate = upload.kind === "html";
   const projectChanged = project.trim() !== currentProject && project.trim().length > 0;
-  return <Card key={upload.id} className="gap-0 py-0 lg:sticky lg:top-[4.5rem]"><div className="border-b p-4"><LifecycleBadge upload={upload} /><h2 className="mt-3 break-words font-semibold">{upload.filename}</h2><p className="mt-1 text-xs text-muted-foreground">{formatBytes(upload.bytes)} · updated {formatDate(upload.updatedAt)}</p></div><dl className="grid gap-0"><InspectorDetail label="Capability URL" value={upload.url} mono /><InspectorDetail label="Content type" value={upload.contentType} /><InspectorDetail label="Identifier" value={upload.id} mono />{upload.expiresAt ? <InspectorDetail label="Expires" value={formatDate(upload.expiresAt)} /> : null}</dl><div className="grid grid-cols-2 gap-2 border-t p-3"><Input ref={replaceInput} className="hidden" type="file" accept=".html,.htm,text/html,application/xhtml+xml" onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) void onReplace(file); }} aria-label="Choose replacement HTML file" tabIndex={-1} /><Button type="button" size="sm" disabled={!canUpdate || busy} onClick={() => replaceInput.current?.click()}><Upload /> Replace file</Button><Button nativeButton={false} variant="outline" size="sm" render={<a href={upload.url} target="_blank" rel="noreferrer" />}><ExternalLink /> Open</Button><Button type="button" variant="outline" size="sm" onClick={() => void onCopy()}><Copy /> Copy URL</Button></div>{canUpdate ? <div className="border-t p-3"><label className="text-xs font-medium" htmlFor="artifact-project">Project</label><div className="mt-2 flex gap-2"><Input id="artifact-project" list="artifact-projects" value={project} onChange={(event) => setProject(event.currentTarget.value)} placeholder="Project name" /><datalist id="artifact-projects">{knownProjects.filter((value) => value !== UNASSIGNED_PROJECT).map((value) => <option key={value} value={value} />)}</datalist><Button type="button" variant="outline" size="sm" disabled={!projectChanged || busy} onClick={() => void onChangeProject(project.trim())}><Folder /> Save</Button></div></div> : null}<div className="border-t border-rose-950 p-3"><h3 className="text-xs font-semibold text-destructive">Revoke artifact</h3><p className="mt-1 text-xs text-muted-foreground">The capability URL will stop working immediately.</p><AlertDialog><AlertDialogTrigger className="mt-3" render={<Button type="button" variant="destructive" size="sm" disabled={busy} />}><Trash2 /> Revoke…</AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Revoke {upload.filename}?</AlertDialogTitle><AlertDialogDescription>This permanently removes the stored artifact. Anyone using its capability URL will receive a not-found response.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={() => void onRevoke()}>Revoke artifact</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></div></Card>;
+  return <Card key={upload.id} className="gap-0 py-0 lg:sticky lg:top-[4.5rem]">
+    <div className="border-b p-4"><LifecycleBadge upload={upload} /><h2 className="mt-3 break-words font-semibold">{upload.filename}</h2><p className="mt-1 text-xs text-muted-foreground">{formatBytes(upload.bytes)} · updated {formatDate(upload.updatedAt)}</p></div>
+    <dl className="grid gap-0"><InspectorDetail label="Capability URL" value={upload.url} mono /><InspectorDetail label="Content type" value={upload.contentType} /><InspectorDetail label="Identifier" value={upload.id} mono /></dl>
+    <div className="grid grid-cols-2 gap-2 border-t p-3"><Input ref={replaceInput} className="hidden" type="file" accept=".html,.htm,text/html,application/xhtml+xml" onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) void onReplace(file); }} aria-label="Choose replacement HTML file" tabIndex={-1} /><Button type="button" size="sm" disabled={!canUpdate || busy} onClick={() => replaceInput.current?.click()}><Upload /> Replace file</Button><Button nativeButton={false} variant="outline" size="sm" render={<a href={upload.url} target="_blank" rel="noreferrer" />}><ExternalLink /> Open</Button><Button type="button" variant="outline" size="sm" onClick={() => void onCopy()}><Copy /> Copy URL</Button></div>
+    {canUpdate ? <div className="border-t p-3"><label className="text-xs font-medium" htmlFor="artifact-project">Project</label><div className="mt-2 flex gap-2"><Input id="artifact-project" list="artifact-projects" value={project} onChange={(event) => setProject(event.currentTarget.value)} placeholder="Project name" /><datalist id="artifact-projects">{knownProjects.filter((value) => value !== UNASSIGNED_PROJECT).map((value) => <option key={value} value={value} />)}</datalist><Button type="button" variant="outline" size="sm" disabled={!projectChanged || busy} onClick={() => void onChangeProject(project.trim())}><Folder /> Save</Button></div></div> : <FileExpiryControl upload={upload} busy={busy} onChange={onChangeExpiry} />}
+    <div className="border-t border-rose-950 p-3"><h3 className="text-xs font-semibold text-destructive">Revoke artifact</h3><p className="mt-1 text-xs text-muted-foreground">The capability URL will stop working immediately.</p><AlertDialog><AlertDialogTrigger className="mt-3" render={<Button type="button" variant="destructive" size="sm" disabled={busy} />}><Trash2 /> Revoke…</AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Revoke {upload.filename}?</AlertDialogTitle><AlertDialogDescription>This permanently removes the stored artifact. Anyone using its capability URL will receive a not-found response.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={() => void onRevoke()}>Revoke artifact</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></div>
+  </Card>;
+}
+
+function FileExpiryControl({ upload, busy, onChange }: { upload: UploadSummary; busy: boolean; onChange: (expiresAt: string | null) => Promise<boolean> }) {
+  const [open, setOpen] = useState(false);
+  const [permanent, setPermanent] = useState(!upload.expiresAt);
+  const [expiry, setExpiry] = useState(() => formatDateTimeLocal(upload.expiresAt ? new Date(upload.expiresAt) : addDays(new Date(), 3)));
+  const parsedExpiry = new Date(expiry);
+  const validExpiry = !Number.isNaN(parsedExpiry.getTime()) && parsedExpiry > new Date();
+
+  function selectDuration(days: number) {
+    setPermanent(false);
+    setExpiry(formatDateTimeLocal(addDays(new Date(), days)));
+  }
+
+  async function save() {
+    if (!permanent && !validExpiry) return;
+    if (await onChange(permanent ? null : parsedExpiry.toISOString())) setOpen(false);
+  }
+
+  return <div className="border-t p-3">
+    <div className="flex items-center justify-between gap-3">
+      <div><h3 className="text-xs font-medium">File expiry</h3><p className="mt-1 text-xs text-muted-foreground">{upload.expiresAt ? `${formatTimeRemaining(upload.expiresAt)} left · ${formatDate(upload.expiresAt)}` : "Permanent · available until revoked"}</p></div>
+      <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => setOpen(true)}><CalendarClock /> Change</Button>
+    </div>
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogContent>
+        <DialogHeader><DialogTitle>Change file expiry</DialogTitle><DialogDescription>{upload.filename} {upload.expiresAt ? `expires ${formatDate(upload.expiresAt)}.` : "is permanent."}</DialogDescription></DialogHeader>
+        <div className="flex items-center justify-between gap-4 rounded-lg border p-3"><div><label className="text-sm font-medium" htmlFor="file-permanent">Permanent</label><p className="mt-1 text-xs text-muted-foreground">Keep the file until you revoke it.</p></div><Switch id="file-permanent" checked={permanent} onCheckedChange={setPermanent} aria-label="Keep file permanently" /></div>
+        <div className={permanent ? "pointer-events-none opacity-40" : ""} aria-disabled={permanent}>
+          <p className="mb-2 text-xs font-medium">Keep from now</p>
+          <div className="grid grid-cols-3 gap-2">{[1, 3, 7, 14, 30].map((days) => <Button key={days} type="button" variant="outline" size="sm" onClick={() => selectDuration(days)}>{days} {days === 1 ? "day" : "days"}</Button>)}</div>
+          <label className="mt-4 block text-xs font-medium" htmlFor="file-expiry">Exact expiry</label>
+          <Input id="file-expiry" className="mt-2" type="datetime-local" value={expiry} min={formatDateTimeLocal(new Date())} onChange={(event) => { setPermanent(false); setExpiry(event.currentTarget.value); }} disabled={permanent} />
+          <p className={`mt-2 text-xs ${validExpiry ? "text-muted-foreground" : "text-destructive"}`}>{validExpiry ? `New expiry: ${formatDate(parsedExpiry.toISOString())}` : "Choose a future date and time."}</p>
+        </div>
+        <DialogFooter><Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button><Button type="button" disabled={busy || (!permanent && !validExpiry)} onClick={() => void save()}>{busy ? "Saving…" : "Change expiry"}</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
+  </div>;
 }
 
 function InspectorDetail({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
@@ -290,8 +371,9 @@ function InspectorDetail({ label, value, mono = false }: { label: string; value:
 
 function LifecycleBadge({ upload }: { upload: UploadSummary }) {
   if (upload.kind === "html") return <Badge variant="default">Persistent</Badge>;
+  if (!upload.expiresAt) return <Badge variant="default">Permanent</Badge>;
   const soon = expiresWithin(upload, 24 * 60 * 60 * 1000);
-  return <Badge variant={soon ? "destructive" : "outline"}>{upload.expiresAt ? `${formatTimeRemaining(upload.expiresAt)} left` : "Temporary"}</Badge>;
+  return <Badge variant={soon ? "destructive" : "outline"}>{formatTimeRemaining(upload.expiresAt)} left</Badge>;
 }
 
 function projectCounts(uploads: UploadSummary[]): Array<[string, number]> {
@@ -311,7 +393,7 @@ function filterAndSortUploads(uploads: UploadSummary[], filters: { projectFilter
     if (filters.projectFilter !== ALL_PROJECTS && project !== filters.projectFilter) return false;
     if (filters.kind !== "all" && upload.kind !== filters.kind) return false;
     if (query && !`${upload.filename} ${upload.url} ${upload.project ?? ""}`.toLocaleLowerCase().includes(query)) return false;
-    if (filters.expiry === "persistent" && upload.kind !== "html") return false;
+    if (filters.expiry === "persistent" && upload.expiresAt) return false;
     if (filters.expiry === "24h" && (!upload.expiresAt || new Date(upload.expiresAt).getTime() > now + 24 * 60 * 60 * 1000)) return false;
     if (filters.expiry === "7d" && (!upload.expiresAt || new Date(upload.expiresAt).getTime() > now + 7 * 24 * 60 * 60 * 1000)) return false;
     return true;
@@ -371,4 +453,13 @@ function formatTimeRemaining(value: string) {
   if (remaining < 3_600_000) return `${Math.max(1, Math.ceil(remaining / 60_000))}m`;
   if (remaining < 86_400_000) return `${Math.ceil(remaining / 3_600_000)}h`;
   return `${Math.ceil(remaining / 86_400_000)}d`;
+}
+
+function addDays(date: Date, days: number) {
+  return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
+}
+
+function formatDateTimeLocal(date: Date) {
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
 }

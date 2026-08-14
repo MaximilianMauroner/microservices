@@ -1,6 +1,6 @@
 # Artifact Publisher
 
-Artifact Publisher stores self-contained HTML plans and temporary downloads in
+Artifact Publisher stores self-contained HTML plans and shared downloads in
 a private S3-compatible bucket. Production routes are mounted by
 `services/tools`; unguessable delivery URLs are public, unlisted read
 capabilities, while upload/list/revoke surfaces use the Publisher Cloudflare
@@ -10,7 +10,8 @@ Access audience or native bearer authentication.
 - Canonical file URLs are `/files/:id/:filename`.
 - Capability delivery supports unauthenticated `GET` and `HEAD` only.
 - HTML persists until revoked.
-- Other files expire after three days by default.
+- Other files expire after three days by default. The artifact console can set
+  an exact future expiry or keep a file until it is revoked.
 - `/api/uploads*` requires the native upload bearer token and intentionally
   does not require browser Access.
 - `/publisher` and `/api/external-uploads` are available only through the unified
@@ -72,6 +73,24 @@ curl -fsS -X DELETE "$PUBLIC_BASE_URL/api/uploads/$UPLOAD_ID" \
   -H "Authorization: Bearer $UPLOAD_TOKEN"
 ```
 
+The authenticated browser console changes a file's expiry through the
+same-origin lifecycle route. An ISO timestamp must be in the future. `null`
+makes the file permanent:
+
+```http
+PATCH /api/external-uploads/:id
+Content-Type: application/json
+
+{"expiresAt":"2026-08-30T12:00:00.000Z"}
+```
+
+```http
+PATCH /api/external-uploads/:id
+Content-Type: application/json
+
+{"expiresAt":null}
+```
+
 ## Browser and read behavior
 
 The unified `/publisher` UI creates temporary files, while `/publisher/artifacts` owns the
@@ -85,6 +104,7 @@ case-insensitive filename `q`, `expiry=all|24h|7d|persistent`, and
 `sort=newest|oldest|filename|expiry`. Filtering and sorting cover the complete
 candidate set before pagination. Cursors are opaque versioned positions bound
 to normalized criteria; changing any criterion requires a fresh listing.
+The `persistent` filter returns HTML artifacts and files with no expiry.
 Recent-upload destinations on the current browser origin use an internal
 chevron and open in the current tab. Cross-origin destinations use an external
 arrow, open in a new tab with `rel=noreferrer`, and include an accessible
@@ -95,7 +115,7 @@ private one-year immutable caching.
 
 HTML is streamed from the private bucket with sandbox, no-referrer, no-sniff,
 and no-index headers. Delivery adds the Publisher favicon to HTML responses
-without changing the stored artifact. Temporary downloads support `HEAD` and
+without changing the stored artifact. File downloads support `HEAD` and
 one standard byte range. Missing, revoked, and expired capability URLs return
 `404`. Malformed canonical or legacy percent encoding returns `404`.
 
@@ -106,7 +126,7 @@ range_not_satisfiable`, and `503 upload_capacity_reached`.
 
 ## Cleanup
 
-Cleanup checks each object's stored expiry at startup and at the configured
+Cleanup checks each expiring file at startup and at the configured
 interval without overlapping sweeps. A failure on one object does not stop
-later cleanup work. Production cleanup runs inside the always-awake unified
-platform service.
+later cleanup work. Files with no expiry remain until revoked. Production
+cleanup runs inside the always-awake unified platform service.

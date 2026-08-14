@@ -82,7 +82,7 @@ export type StoredTemporaryFile = {
   contentRange?: string;
   contentType: string;
   originalName: string;
-  expiresAt: Date;
+  expiresAt?: Date;
   sha256?: string;
   lastModified?: Date;
 };
@@ -140,6 +140,11 @@ export interface UploadStorage {
     project: string,
     options?: StorageOperationOptions
   ): Promise<boolean>;
+  updateFileExpiry(
+    id: string,
+    expiresAt: Date | null,
+    options?: StorageOperationOptions
+  ): Promise<boolean>;
   deleteUpload(id: string, options?: StorageOperationOptions): Promise<void>;
   deleteExpiredTemporaryFiles(
     expiresAtOrBefore: Date,
@@ -171,6 +176,13 @@ export class HtmlUpdateConflictError extends Error {
   constructor() {
     super("The HTML page changed or was deleted before the update completed");
     this.name = "HtmlUpdateConflictError";
+  }
+}
+
+export class FileUpdateConflictError extends Error {
+  constructor() {
+    super("The file changed or was deleted before the expiry update completed");
+    this.name = "FileUpdateConflictError";
   }
 }
 
@@ -311,9 +323,6 @@ export function createS3UploadStorage(config: S3UploadStorageConfig): UploadStor
 
         const metadata = result.Metadata ?? {};
         const expiresAt = parseMetadataDate(metadata["expires-at"]) ?? result.Expires;
-        if (!expiresAt) {
-          throw new Error(`Temporary file ${id} is missing expires-at metadata`);
-        }
 
         return {
           body: await readableBody(result.Body),
@@ -321,7 +330,7 @@ export function createS3UploadStorage(config: S3UploadStorageConfig): UploadStor
           contentRange: result.ContentRange,
           contentType: result.ContentType ?? "application/octet-stream",
           originalName: readOriginalNameMetadata(metadata, `${id}.bin`),
-          expiresAt,
+          ...(expiresAt ? { expiresAt } : {}),
           sha256: metadata.sha256,
           lastModified: result.LastModified
         };
@@ -436,6 +445,39 @@ export function createS3UploadStorage(config: S3UploadStorageConfig): UploadStor
       } catch (error) {
         if (isNotFoundError(error)) return false;
         if (isConditionalWriteConflictError(error)) throw new HtmlUpdateConflictError();
+        throw error;
+      }
+    },
+
+    async updateFileExpiry(id, expiresAt, options) {
+      const key = temporaryFileKey(id);
+      try {
+        const current = await client.send(
+          new HeadObjectCommand({ Bucket: config.bucket, Key: key }),
+          requestOptions(options)
+        );
+        const metadata = { ...(current.Metadata ?? {}) };
+        if (expiresAt) metadata["expires-at"] = expiresAt.toISOString();
+        else delete metadata["expires-at"];
+        await client.send(
+          new CopyObjectCommand({
+            Bucket: config.bucket,
+            Key: key,
+            CopySource: `${config.bucket}/${key}`,
+            CopySourceIfMatch: current.ETag,
+            MetadataDirective: "REPLACE",
+            Metadata: metadata,
+            CacheControl: current.CacheControl,
+            ContentDisposition: current.ContentDisposition,
+            ContentType: current.ContentType,
+            ...(expiresAt ? { Expires: expiresAt } : {})
+          }),
+          requestOptions(options)
+        );
+        return true;
+      } catch (error) {
+        if (isNotFoundError(error)) return false;
+        if (isConditionalWriteConflictError(error)) throw new FileUpdateConflictError();
         throw error;
       }
     },
@@ -717,7 +759,7 @@ async function headUploadSummary(
 
     const expiresAt =
       parseMetadataDate(metadata["expires-at"]) ?? result.Expires;
-    if (!expiresAt || expiresAt <= asOf) {
+    if (expiresAt && expiresAt <= asOf) {
       return null;
     }
     return {
@@ -727,7 +769,7 @@ async function headUploadSummary(
       bytes: result.ContentLength ?? 0,
       contentType: result.ContentType ?? "application/octet-stream",
       updatedAt,
-      expiresAt
+      ...(expiresAt ? { expiresAt } : {})
     };
   } catch (error) {
     if (isNotFoundError(error)) {
@@ -814,15 +856,12 @@ async function headTemporaryFile(
     );
     const metadata = result.Metadata ?? {};
     const expiresAt = parseMetadataDate(metadata["expires-at"]) ?? result.Expires;
-    if (!expiresAt) {
-      throw new Error(`Temporary file ${id} is missing expires-at metadata`);
-    }
 
     return {
       bytes: result.ContentLength ?? 0,
       contentType: result.ContentType ?? "application/octet-stream",
       originalName: readOriginalNameMetadata(metadata, `${id}.bin`),
-      expiresAt,
+      ...(expiresAt ? { expiresAt } : {}),
       sha256: metadata.sha256,
       lastModified: result.LastModified
     };
