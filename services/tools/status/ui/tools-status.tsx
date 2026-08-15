@@ -56,7 +56,7 @@ function ToolsStatusView({ snapshot, publicOrigin, view, actor }: { snapshot: Pu
           <Card id="services" className="status-card" aria-labelledby="services-title">
             <header className="status-card__header">
               <h2 id="services-title">Current status by service</h2>
-              <Badge variant={overallBadgeVariant(overall)} className={`overall-badge overall-badge--${overall}`}>
+              <Badge variant={overallBadgeVariant(overall)} className={`overall-badge overall-badge--${overall} h-auto`}>
                 <StatusMark state={overall} />
                 {summary.badge}
               </Badge>
