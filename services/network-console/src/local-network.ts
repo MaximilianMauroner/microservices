@@ -54,6 +54,7 @@ export type PortListener = ParsedPortListener & {
 
 export type Website = {
   faviconUrl?: string;
+  kind: "api" | "website";
   onlineSince?: string;
   port: number;
   processes: ProcessRef[];
@@ -71,6 +72,7 @@ export type WebsiteProbeCandidate = {
 
 export type WebsiteProbeResult = {
   faviconPath?: string;
+  kind: "api" | "website";
   path: string;
   status: number;
   title: string;
@@ -610,13 +612,14 @@ async function discoverWebsites(
 
       return {
         faviconUrl: buildWebsiteFaviconUrl(result.faviconPath, new URL(result.path, publicUrl).toString()),
+        kind: result.kind,
         port,
         processes: uniqueProcesses(listeners.flatMap((listener) => listener.processes)),
         scopeLabel: listeners.some((listener) => listener.scope === "all-interfaces")
           ? SCOPE_LABELS["all-interfaces"]
           : SCOPE_LABELS["tailscale-only"],
         status: result.status,
-        title: result.title || `Website on port ${port}`,
+        title: result.title || `${result.kind === "api" ? "API" : "Website"} on port ${port}`,
         url: new URL(result.path, publicUrl).toString()
       };
     })
@@ -646,11 +649,12 @@ async function discoverWebsites(
         const websiteUrl = new URL(result.path, route.publicUrl).toString();
         return {
           faviconUrl: buildWebsiteFaviconUrl(result.faviconPath, websiteUrl),
+          kind: result.kind,
           port: route.port,
           processes,
           scopeLabel: "Tailscale Serve",
           status: result.status,
-          title: result.title || `Website on port ${route.port}`,
+          title: result.title || `${result.kind === "api" ? "API" : "Website"} on port ${route.port}`,
           url: websiteUrl
         };
       })
@@ -709,17 +713,35 @@ function buildHttpUrl(host: string, port: number) {
   return `http://${formatUrlHost(normalizeAddress(host))}${port === 80 ? "" : `:${port}`}/`;
 }
 
-async function probeWebsite(candidate: WebsiteProbeCandidate): Promise<WebsiteProbeResult | null> {
+export async function probeWebsite(
+  candidate: WebsiteProbeCandidate
+): Promise<WebsiteProbeResult | null> {
   try {
     const response = await fetch(candidate.probeUrl, {
       headers: {
-        accept: "text/html,application/xhtml+xml"
+        accept: "text/html,application/xhtml+xml,application/json"
       },
       redirect: "follow",
       signal: AbortSignal.timeout(WEBSITE_PROBE_TIMEOUT_MS)
     });
     const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
-    if (response.status < 200 || response.status >= 400 || !contentType.includes("text/html")) {
+    if (response.status < 200 || response.status >= 400) {
+      await response.body?.cancel();
+      return null;
+    }
+
+    if (contentType.includes("json")) {
+      const body = await response.json().catch(() => undefined);
+      const finalUrl = new URL(response.url || candidate.probeUrl);
+      return {
+        kind: "api",
+        path: `${finalUrl.pathname}${finalUrl.search}`,
+        status: response.status,
+        title: getApiTitle(body)
+      };
+    }
+
+    if (!contentType.includes("text/html")) {
       await response.body?.cancel();
       return null;
     }
@@ -729,9 +751,10 @@ async function probeWebsite(candidate: WebsiteProbeCandidate): Promise<WebsitePr
       return null;
     }
 
-    const finalUrl = new URL(response.url);
+    const finalUrl = new URL(response.url || candidate.probeUrl);
     return {
       faviconPath: metadata.faviconPath,
+      kind: "website",
       path: `${finalUrl.pathname}${finalUrl.search}`,
       status: response.status,
       title: metadata.title
@@ -739,6 +762,21 @@ async function probeWebsite(candidate: WebsiteProbeCandidate): Promise<WebsitePr
   } catch {
     return null;
   }
+}
+
+function getApiTitle(value: unknown) {
+  if (!isRecord(value)) {
+    return "";
+  }
+
+  for (const property of ["title", "name", "message"] as const) {
+    const candidate = value[property];
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+
+  return "";
 }
 
 function buildWebsiteFaviconUrl(faviconPath: string | undefined, websiteUrl: string) {
@@ -951,7 +989,9 @@ function renderDashboard(snapshot: NetworkSnapshot, dashboardPort: number) {
       ? `http://${snapshot.tailscale.dnsName}/`
       : "Unavailable";
   const warnings = snapshot.tailscale.warnings;
-  const websitePorts = new Set(snapshot.websites.map((website) => website.port));
+  const websites = snapshot.websites.filter((service) => service.kind === "website");
+  const apis = snapshot.websites.filter((service) => service.kind === "api");
+  const websitePorts = new Set(snapshot.websites.map((service) => service.port));
   const otherListeners = snapshot.ports.filter(
     (listener) => listener.port !== dashboardPort && !websitePorts.has(listener.port)
   );
@@ -1045,6 +1085,10 @@ function renderDashboard(snapshot: NetworkSnapshot, dashboardPort: number) {
         font-size: 13px;
       }
 
+      .service-section + .service-section {
+        margin-top: 24px;
+      }
+
       .website-grid {
         display: grid;
         gap: 12px;
@@ -1097,6 +1141,22 @@ function renderDashboard(snapshot: NetworkSnapshot, dashboardPort: number) {
         flex: 0 0 auto;
         height: 28px;
         object-fit: contain;
+        padding: 4px;
+        width: 28px;
+      }
+
+      .api-icon {
+        align-items: center;
+        background: #eef2f6;
+        border: 1px solid #d8dee4;
+        border-radius: 6px;
+        display: inline-flex;
+        flex: 0 0 auto;
+        font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+        font-size: 10px;
+        font-weight: 750;
+        height: 28px;
+        justify-content: center;
         padding: 4px;
         width: 28px;
       }
@@ -1263,6 +1323,7 @@ function renderDashboard(snapshot: NetworkSnapshot, dashboardPort: number) {
           border-color: #30363d;
         }
 
+        .api-icon,
         .website-favicon {
           background: #21262d;
           border-color: #30363d;
@@ -1310,7 +1371,8 @@ function renderDashboard(snapshot: NetworkSnapshot, dashboardPort: number) {
           <h1>${escapeHtml(snapshot.hostname)}</h1>
           <div class="meta">
             <span>${escapeHtml(snapshot.generatedAt)}</span>
-            <span>${snapshot.websites.length} website${snapshot.websites.length === 1 ? "" : "s"}</span>
+            <span>${websites.length} website${websites.length === 1 ? "" : "s"}</span>
+            <span>${apis.length} API${apis.length === 1 ? "" : "s"}</span>
             <span>${otherPortCount} other port${otherPortCount === 1 ? "" : "s"}</span>
             <a href="/api/ports">JSON</a>
           </div>
@@ -1322,15 +1384,26 @@ function renderDashboard(snapshot: NetworkSnapshot, dashboardPort: number) {
         </div>
       </header>
       ${warnings.length > 0 ? renderWarnings(warnings) : ""}
-      <section aria-labelledby="websites-heading">
+      <section class="service-section" aria-labelledby="websites-heading">
         <div class="section-heading">
           <h2 id="websites-heading">Websites</h2>
           <span>Reachable HTML services</span>
         </div>
         ${
-          snapshot.websites.length > 0
-            ? `<div class="website-grid">${snapshot.websites.map((website) => renderWebsiteCard(website, snapshot.generatedAt)).join("")}</div>`
+          websites.length > 0
+            ? `<div class="website-grid">${websites.map((website) => renderWebsiteCard(website, snapshot.generatedAt)).join("")}</div>`
             : `<div class="empty-websites">No reachable websites detected.</div>`
+        }
+      </section>
+      <section class="service-section" aria-labelledby="apis-heading">
+        <div class="section-heading">
+          <h2 id="apis-heading">APIs</h2>
+          <span>Reachable JSON services</span>
+        </div>
+        ${
+          apis.length > 0
+            ? `<div class="website-grid">${apis.map((api) => renderWebsiteCard(api, snapshot.generatedAt)).join("")}</div>`
+            : `<div class="empty-websites">No reachable APIs detected.</div>`
         }
       </section>
       <details class="listener-details">
@@ -1396,7 +1469,7 @@ function renderWebsiteCard(website: Website, generatedAt: string) {
     <a class="website-link" href="${escapeAttribute(website.url)}" target="_blank" rel="noopener" aria-label="Open ${escapeAttribute(website.title)} on port ${website.port} in a new tab">
       <div class="website-card-top">
         <div class="website-identity">
-          <img class="website-favicon" src="${escapeAttribute(faviconUrl)}" alt="" loading="lazy">
+          ${website.kind === "api" ? `<span class="api-icon">API</span>` : `<img class="website-favicon" src="${escapeAttribute(faviconUrl)}" alt="" loading="lazy">`}
           <div class="website-title">${escapeHtml(website.title)}</div>
         </div>
         <span class="port-chip">:${website.port}</span>
