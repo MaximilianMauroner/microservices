@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   collectNetworkSnapshot,
   createLocalNetworkDashboardApp,
   parseSsListeners,
+  probeWebsite,
   type CommandRunner,
   type WebsiteProbe
 } from "../src/local-network.js";
@@ -27,6 +28,7 @@ const WEBSITE_PROBE: WebsiteProbe = async (candidate) => {
   }
 
   return {
+    kind: "website",
     path: "/orders",
     status: 200,
     title: "Example App"
@@ -185,6 +187,54 @@ describe("local network dashboard", () => {
     });
   });
 
+  it("renders JSON services as APIs", async () => {
+    const baseRunner = createFixtureRunner();
+    const runner: CommandRunner = async (command, args) => {
+      const key = `${command} ${args.join(" ")}`;
+      if (key === "ss -H -lntup") {
+        return {
+          stdout: [
+            SS_OUTPUT,
+            `tcp LISTEN 0 4096 ${TEST_TAILSCALE_IPV4}:8317 0.0.0.0:* users:(("cli-proxy-api",pid=1137,fd=3))`
+          ].join("\n"),
+          stderr: ""
+        };
+      }
+      if (key === "ps -o pid=,etimes= -p 863,1137") {
+        return { stdout: "863 3600\n1137 600\n", stderr: "" };
+      }
+      return baseRunner(command, args);
+    };
+    const websiteProbe: WebsiteProbe = async (candidate) => {
+      if (candidate.port === 8317) {
+        return {
+          kind: "api",
+          path: "/",
+          status: 200,
+          title: "CLI Proxy API Server"
+        };
+      }
+      return WEBSITE_PROBE(candidate);
+    };
+    const app = createLocalNetworkDashboardApp({ runner, websiteProbe });
+
+    const html = await (await app.request("/")).text();
+    expect(html).toContain("1 API");
+    expect(html).toContain("Reachable JSON services");
+    expect(html).toContain("CLI Proxy API Server");
+    expect(html).toContain(`href="http://${TEST_TAILSCALE_IPV4}:8317/"`);
+    expect(html).toContain("cli-proxy-api");
+
+    const snapshot = await (await app.request("/api/ports")).json();
+    expect(snapshot.websites).toContainEqual(
+      expect.objectContaining({
+        kind: "api",
+        port: 8317,
+        title: "CLI Proxy API Server"
+      })
+    );
+  });
+
   it("discovers HTTPS and path-mounted websites from Tailscale Serve", async () => {
     const baseRunner = createFixtureRunner();
     const runner: CommandRunner = async (command, args) => {
@@ -233,10 +283,10 @@ describe("local network dashboard", () => {
     const websiteProbe: WebsiteProbe = async (candidate) => {
       candidates.push(candidate);
       if (candidate.publicUrl === `https://${TEST_TAILSCALE_DNS}:41731/`) {
-        return { path: "/", status: 200, title: "T3 Code" };
+        return { kind: "website", path: "/", status: 200, title: "T3 Code" };
       }
       if (candidate.publicUrl === `https://${TEST_TAILSCALE_DNS}/tokdash`) {
-        return { path: "/tokdash", status: 200, title: "Tokdash" };
+        return { kind: "website", path: "/tokdash", status: 200, title: "Tokdash" };
       }
       return null;
     };
@@ -273,6 +323,30 @@ describe("local network dashboard", () => {
         url: `https://${TEST_TAILSCALE_DNS}:41731/`
       })
     ]);
+  });
+
+  it("discovers JSON APIs", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ message: "CLI Proxy API Server" }), {
+        headers: { "content-type": "application/json; charset=utf-8" },
+        status: 200
+      })
+    );
+
+    await expect(
+      probeWebsite({
+        port: 8317,
+        probeUrl: "http://100.64.0.10:8317/",
+        publicUrl: "http://workstation.example.ts.net:8317/"
+      })
+    ).resolves.toEqual({
+      kind: "api",
+      path: "/",
+      status: 200,
+      title: "CLI Proxy API Server"
+    });
+
+    fetchSpy.mockRestore();
   });
 
   it("warns when tailscale status returns malformed json", async () => {
