@@ -65,12 +65,18 @@ describe("Postgres schema contract", () => {
   });
 
   it("scopes runtime pushes to one schema each", async () => {
-    const [tools, artifacts] = await Promise.all([
+    const [tools, artifacts, runtimeSchema] = await Promise.all([
       readFile(new URL("../drizzle.tools.config.ts", import.meta.url), "utf8"),
       readFile(new URL("../drizzle.artifacts.config.ts", import.meta.url), "utf8"),
+      readFile(new URL("../../database/postgres-schema.ts", import.meta.url), "utf8"),
     ]);
     expect(tools).toContain('schemaFilter: ["tools"]');
+    expect(tools).toContain('"feedback_forms"');
+    expect(tools).toContain('"feedback_submissions"');
     expect(tools).not.toContain('"objects"');
+    const configuredToolsTables = new Set([...tools.matchAll(/^\s+"([^"]+)",?$/gm)].map((match) => match[1]));
+    const declaredToolsTables = [...runtimeSchema.matchAll(/toolsSchema\.table\("([^"]+)"/g)].map((match) => match[1]);
+    expect(declaredToolsTables.filter((table) => !configuredToolsTables.has(table))).toEqual([]);
     expect(artifacts).toContain('schemaFilter: ["artifacts"]');
     expect(artifacts).toContain('tablesFilter: ["objects", "operations"]');
   });
