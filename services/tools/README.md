@@ -9,7 +9,8 @@ The platform service is the single production compute and browser-authentication
 | Health routes and fixed public assets | Public |
 | `/artifacts/*` and `/files/*` `GET`/`HEAD` | Public unlisted capability URL |
 | `/sign-in` and `/api/auth/*` | Public authentication flow |
-| `/`, `/status`, `/money`, `/publish`, `/review`, `/manage/*`, `/tools/private/*`, and their browser APIs | Better Auth Google session |
+| `/`, `/status`, `/money`, `/feedback`, `/publish`, `/review`, `/manage/*`, `/tools/private/*`, and their browser APIs | Better Auth Google session |
+| `/feedback/f/:token` `GET`/`HEAD`/`POST` | Public unlisted capability URL |
 | `/api/uploads*`, `/api/agent*`, and `/api/heartbeat/tower` | Existing native bearer token |
 
 TanStack document requests and protected server functions resolve the same

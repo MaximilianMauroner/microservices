@@ -130,7 +130,7 @@ describe("TanStack Start public pages", () => {
     expect(html).toContain("Infrastructure");
     expect(html).not.toContain("Public console");
     expect(html).toContain("Publisher");
-    expect(html).toContain("0 of 7 operational");
+    expect(html).toContain("0 of 8 operational");
   });
 
   it("renders status semantics and the rolling availability window", () => {

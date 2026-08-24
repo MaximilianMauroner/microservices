@@ -5,7 +5,7 @@ import { readOnly } from "../src/route-handlers.js";
 describe("primary page ownership", () => {
   it("registers explicit React routes without legacy browser splats", () => {
     const source = readFileSync(new URL("../src/routeTree.gen.ts", import.meta.url), "utf8");
-    for (const path of ["/status", "/field-guide", "/publisher", "/publisher/artifacts", "/documents", "/money"]) {
+    for (const path of ["/status", "/field-guide", "/publisher", "/publisher/artifacts", "/documents", "/money", "/feedback", "/feedback/forms/$formId", "/feedback/responses/$submissionId", "/feedback/f/$token"]) {
       expect(source).toContain(`fullPath: '${path}'`);
     }
     for (const path of ["/review", "/publish", "/manage", "/manage/status", "/manage/documents", "/tools/private/money", "/ops", "/uploads", "/p", "/f", "/status/private"]) {
@@ -58,6 +58,17 @@ describe("primary page ownership", () => {
     const source = readFileSync(new URL("../src/protected-data.ts", import.meta.url), "utf8");
     const moneyLoader = source.slice(source.indexOf("getMoneyTrackerPageData"), source.indexOf("getPrivateStatusPageData"));
     expect(moneyLoader).toContain(".middleware([requirePlatformSession])");
+  });
+
+  it("keeps the public feedback form outside the private feedback route guards", () => {
+    const layout = readFileSync(new URL("../src/routes/feedback.tsx", import.meta.url), "utf8");
+    const list = readFileSync(new URL("../src/routes/feedback/index.tsx", import.meta.url), "utf8");
+    const form = readFileSync(new URL("../src/routes/feedback/forms/$formId.tsx", import.meta.url), "utf8");
+    const response = readFileSync(new URL("../src/routes/feedback/responses/$submissionId.tsx", import.meta.url), "utf8");
+    const publicForm = readFileSync(new URL("../src/routes/feedback/f/$token.tsx", import.meta.url), "utf8");
+    expect(layout).not.toContain("requireRouteSession");
+    expect(publicForm).not.toContain("requireRouteSession");
+    for (const source of [list, form, response]) expect(source).toContain("requireRouteSession");
   });
 
   it("rejects catalog mutations with an explicit read-only response", async () => {
