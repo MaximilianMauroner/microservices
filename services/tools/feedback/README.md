@@ -5,16 +5,20 @@ and responses through the existing Better Auth Google session at `/feedback`.
 Respondents use an unlisted capability URL at `/feedback/f/:token` without an
 account.
 
-Each form stores English source text and an editable German translation. Public
-forms use `?lang=en` or `?lang=de` and show a language switch. The optional
-identity question can be removed per form. Existing submissions keep their
-localized question snapshot when the form changes later.
+Each form is written in either German or English. Public forms do not show a
+language switch. New forms start as empty drafts after the owner selects one
+language. The optional identity question can be removed per form. Existing
+submissions keep their question snapshot when the form changes later.
 
 The private form editor can copy a versioned JSON document containing the form
-content and response schema. It can also copy a translation prompt or apply a
-pasted version 1 document before saving. JSON imports may add, remove, or
+content and response schema. It can also copy a generation prompt or apply a
+pasted schema document before saving. New copies use the single-language
+version 2 format, while legacy version 1 documents still import as English.
+JSON imports may add, remove, or
 reorder up to 20 `choice`, `short_text`, and `long_text` questions. Question
 IDs become stable response keys and must remain unique lowercase identifiers.
+The generation prompt asks whether the form should be German or English before
+it produces JSON.
 
 PostgreSQL owns forms and responses in the `tools` schema. The application does
 not persist respondent IP addresses, user agents, referrers, or cookies with a

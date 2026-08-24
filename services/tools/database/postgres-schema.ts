@@ -68,6 +68,7 @@ export const scheduledTaskRuns = toolsSchema.table("scheduled_task_runs", {
 export const feedbackForms = toolsSchema.table("feedback_forms", {
   id: uuid("id").primaryKey(),
   publicToken: text("public_token").notNull().unique(),
+  language: text("language").notNull().default("en"),
   title: text("title").notNull(),
   introduction: text("introduction").notNull(),
   questions: jsonb("questions").$type<readonly Record<string, unknown>[]>().notNull(),
@@ -76,6 +77,7 @@ export const feedbackForms = toolsSchema.table("feedback_forms", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
 }, (table) => [
+  check("feedback_forms_language_check", sql`${table.language} in ('en', 'de')`),
   check("feedback_forms_status_check", sql`${table.status} in ('draft', 'active', 'closed')`),
   index("feedback_forms_updated_idx").on(table.updatedAt),
 ]);
