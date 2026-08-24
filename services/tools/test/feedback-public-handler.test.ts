@@ -21,6 +21,14 @@ describe("public feedback submission", () => {
     expect(createSubmission).toHaveBeenCalledOnce();
   });
 
+  it("accepts same-origin browser posts when the proxy strips Origin", async () => {
+    const createSubmission = vi.fn().mockResolvedValue("submission-id");
+    const request = new Request("http://internal.example.test/feedback/f/token", { method: "POST", headers: { "sec-fetch-site": "same-origin", "content-type": "application/x-www-form-urlencoded" }, body: "comfort=Mixed" });
+    const response = await submitPublicFeedback(input(request, { getPublicForm: vi.fn().mockResolvedValue(form), createSubmission }, "https://internal.example.test"));
+    expect(response.status).toBe(303);
+    expect(createSubmission).toHaveBeenCalledOnce();
+  });
+
   it("snapshots translated question text while keeping canonical choice values", async () => {
     const createSubmission = vi.fn().mockResolvedValue("submission-id");
     await submitPublicFeedback(input(new Request("https://tools.example.test/feedback/f/token?lang=de", { method: "POST", headers: { origin: "https://tools.example.test", "content-type": "application/x-www-form-urlencoded" }, body: "comfort=Mixed" }), { getPublicForm: vi.fn().mockResolvedValue(form), createSubmission }));
