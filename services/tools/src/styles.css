@@ -6,13 +6,24 @@
 @source "../money";
 @source "../feedback";
 
+.feedback-success {
+  --feedback-heal: #72e5a6;
+  --feedback-heart: #ff7ca8;
+  --feedback-mana: #78b8ff;
+  border-color: color-mix(in oklab, var(--feedback-heal) 28%, var(--border));
+  background:
+    radial-gradient(circle at 50% 34%, color-mix(in oklab, var(--feedback-heal) 16%, transparent) 0, transparent 38%),
+    linear-gradient(180deg, #111820 0%, #090d13 72%);
+  box-shadow: 0 26px 80px rgb(0 0 0 / 55%), inset 0 1px rgb(255 255 255 / 4%);
+}
+
 .feedback-success-glow {
   position: absolute;
-  inset: 15% 20% auto;
-  height: 12rem;
+  inset: 8% 18% auto;
+  height: 16rem;
   border-radius: 999px;
-  background: color-mix(in oklab, var(--primary) 22%, transparent);
-  filter: blur(70px);
+  background: color-mix(in oklab, var(--feedback-heal) 20%, transparent);
+  filter: blur(85px);
   pointer-events: none;
 }
 
@@ -29,15 +40,15 @@
   position: relative;
   z-index: 2;
   width: 5.25rem;
-  color: var(--primary);
-  filter: drop-shadow(0 0 20px color-mix(in oklab, var(--primary) 45%, transparent));
+  color: var(--feedback-heart);
+  filter: drop-shadow(0 0 24px color-mix(in oklab, var(--feedback-heart) 55%, transparent));
   animation: feedback-heal-pulse 1.8s ease-in-out both;
 }
 
 .feedback-success-ring {
   position: absolute;
   inset: 1.5rem;
-  border: 2px solid var(--primary);
+  border: 2px solid var(--feedback-heal);
   border-radius: 999px;
   opacity: 0;
   animation: feedback-heal-ring 1.4s ease-out 0.2s both;
@@ -46,7 +57,8 @@
 .feedback-success-particle {
   position: absolute;
   z-index: 3;
-  color: var(--primary);
+  color: var(--feedback-heal);
+  text-shadow: 0 0 14px color-mix(in oklab, var(--feedback-heal) 70%, transparent);
   font-size: 1.45rem;
   font-weight: 800;
   opacity: 0;
@@ -61,11 +73,12 @@
   display: inline-flex;
   align-items: center;
   gap: 0.65rem;
-  border: 1px solid color-mix(in oklab, var(--primary) 40%, var(--border));
+  border: 1px solid color-mix(in oklab, var(--feedback-heal) 48%, var(--border));
   border-radius: 999px;
   padding: 0.45rem 0.75rem;
-  background: color-mix(in oklab, var(--primary) 10%, var(--card));
-  color: var(--primary);
+  background: color-mix(in oklab, var(--feedback-heal) 10%, #0c1414);
+  color: var(--feedback-heal);
+  box-shadow: 0 0 28px color-mix(in oklab, var(--feedback-heal) 10%, transparent);
   animation: feedback-level-up 0.65s cubic-bezier(.2,.9,.3,1.25) 0.75s both;
 }
 
@@ -74,6 +87,8 @@
 
 .feedback-success-meter {
   transform-origin: left;
+  background: linear-gradient(90deg, var(--feedback-mana), var(--feedback-heal));
+  box-shadow: 0 0 18px color-mix(in oklab, var(--feedback-heal) 25%, transparent);
   animation: feedback-meter-fill 1.2s cubic-bezier(.2,.8,.2,1) 0.45s both;
 }
 
