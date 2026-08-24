@@ -13,18 +13,19 @@ describe("public feedback submission", () => {
     expect(createSubmission).toHaveBeenCalledWith(form, { comfort: "Mixed", disliked: "Please listen" }, expect.any(Array));
   });
 
-  it("uses the proxy host for same-origin checks", async () => {
+  it("submits when a proxy strips the Origin header", async () => {
     const createSubmission = vi.fn().mockResolvedValue("submission-id");
-    const request = new Request("http://internal.example.test/feedback/f/token", { method: "POST", headers: { origin: "https://public.example.test", host: "internal.example.test", "x-forwarded-host": "public.example.test", "x-forwarded-proto": "https", "content-type": "application/x-www-form-urlencoded" }, body: "comfort=Mixed" });
-    const response = await submitPublicFeedback(input(request, { getPublicForm: vi.fn().mockResolvedValue(form), createSubmission }, "https://internal.example.test"));
+    const request = new Request("http://internal.example.test/feedback/f/token", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: "comfort=Mixed" });
+    const response = await submitPublicFeedback(input(request, { getPublicForm: vi.fn().mockResolvedValue(form), createSubmission }));
     expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe("/feedback/f/token?lang=en&submitted=1");
     expect(createSubmission).toHaveBeenCalledOnce();
   });
 
-  it("accepts same-origin browser posts when the proxy strips Origin", async () => {
+  it("uses the capability token instead of the Origin header", async () => {
     const createSubmission = vi.fn().mockResolvedValue("submission-id");
-    const request = new Request("http://internal.example.test/feedback/f/token", { method: "POST", headers: { "sec-fetch-site": "same-origin", "content-type": "application/x-www-form-urlencoded" }, body: "comfort=Mixed" });
-    const response = await submitPublicFeedback(input(request, { getPublicForm: vi.fn().mockResolvedValue(form), createSubmission }, "https://internal.example.test"));
+    const request = new Request("https://tools.example.test/feedback/f/token", { method: "POST", headers: { origin: "https://other.example.test", "content-type": "application/x-www-form-urlencoded" }, body: "comfort=Mixed" });
+    const response = await submitPublicFeedback(input(request, { getPublicForm: vi.fn().mockResolvedValue(form), createSubmission }));
     expect(response.status).toBe(303);
     expect(createSubmission).toHaveBeenCalledOnce();
   });
@@ -36,13 +37,6 @@ describe("public feedback submission", () => {
     expect(createSubmission.mock.calls[0]?.[1]).toEqual({ comfort: "Mixed" });
   });
 
-  it("rejects a cross-origin post without reading a form", async () => {
-    const getPublicForm = vi.fn();
-    const response = await submitPublicFeedback(input(new Request("https://tools.example.test/feedback/f/token", { method: "POST", headers: { origin: "https://other.example.test", "content-type": "application/x-www-form-urlencoded" }, body: "comfort=Mixed" }), { getPublicForm, createSubmission: vi.fn() }));
-    expect(response.status).toBe(403);
-    expect(getPublicForm).not.toHaveBeenCalled();
-  });
-
   it("does not insert honeypot submissions", async () => {
     const createSubmission = vi.fn();
     const response = await submitPublicFeedback(input(new Request("https://tools.example.test/feedback/f/token", { method: "POST", headers: { origin: "https://tools.example.test", "content-type": "application/x-www-form-urlencoded" }, body: "website=spam.example&comfort=Mixed" }), { getPublicForm: vi.fn(), createSubmission }));
@@ -51,6 +45,6 @@ describe("public feedback submission", () => {
   });
 });
 
-function input(request: Request, feedback: { getPublicForm: ReturnType<typeof vi.fn>; createSubmission: ReturnType<typeof vi.fn> }, publicOrigin = "https://tools.example.test") {
-  return { request, params: { token: "token" }, context: { runtime: { publicOrigin, feedback } } } as unknown as Parameters<typeof submitPublicFeedback>[0];
+function input(request: Request, feedback: { getPublicForm: ReturnType<typeof vi.fn>; createSubmission: ReturnType<typeof vi.fn> }) {
+  return { request, params: { token: "token" }, context: { runtime: { publicOrigin: "https://tools.example.test", feedback } } } as unknown as Parameters<typeof submitPublicFeedback>[0];
 }

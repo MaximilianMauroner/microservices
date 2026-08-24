@@ -4,9 +4,6 @@ import { FeedbackValidationError, feedbackLocale, localizeFeedbackForm, validate
 const MAXIMUM_BODY_BYTES = 32 * 1024;
 
 export async function submitPublicFeedback({ request, context, params }: PlatformRouteInput) {
-  const origin = request.headers.get("origin");
-  const sameOriginBrowserPost = request.headers.get("sec-fetch-site") === "same-origin";
-  if (!sameOriginBrowserPost && (!origin || !requestOrigins(request, context.runtime.publicOrigin).has(origin))) return json({ error: "invalid_origin" }, 403);
   const contentType = request.headers.get("content-type")?.toLowerCase() ?? "";
   if (!contentType.startsWith("application/x-www-form-urlencoded")) return json({ error: "invalid_content_type" }, 415);
   try {
@@ -29,19 +26,6 @@ export async function submitPublicFeedback({ request, context, params }: Platfor
     return json({ error: "invalid_request" }, 400);
   }
 }
-
-function requestOrigins(request: Request, publicOrigin: string) {
-  const requestUrl = new URL(request.url);
-  const origins = new Set([requestUrl.origin, new URL(publicOrigin).origin]);
-  const host = firstForwardedValue(request.headers.get("x-forwarded-host")) ?? request.headers.get("host");
-  const protocol = firstForwardedValue(request.headers.get("x-forwarded-proto")) ?? requestUrl.protocol.slice(0, -1);
-  if (host && (protocol === "http" || protocol === "https")) {
-    try { origins.add(new URL(`${protocol}://${host}`).origin); } catch { /* Ignore malformed proxy headers. */ }
-  }
-  return origins;
-}
-
-function firstForwardedValue(value: string | null) { return value?.split(",", 1)[0]?.trim() || undefined; }
 
 function redirectToForm(token: string, locale: string, submitted: boolean, error?: string) {
   const query = new URLSearchParams({ lang: locale, ...(submitted ? { submitted: "1" } : { error: error ?? "invalid_request" }) });
