@@ -13,6 +13,14 @@ describe("public feedback submission", () => {
     expect(createSubmission).toHaveBeenCalledWith(form, { comfort: "Mixed", disliked: "Please listen" }, expect.any(Array));
   });
 
+  it("uses the public request host for same-origin checks", async () => {
+    const createSubmission = vi.fn().mockResolvedValue("submission-id");
+    const request = new Request("https://public.example.test/feedback/f/token", { method: "POST", headers: { origin: "https://public.example.test", "content-type": "application/x-www-form-urlencoded" }, body: "comfort=Mixed" });
+    const response = await submitPublicFeedback(input(request, { getPublicForm: vi.fn().mockResolvedValue(form), createSubmission }, "https://internal.example.test"));
+    expect(response.status).toBe(303);
+    expect(createSubmission).toHaveBeenCalledOnce();
+  });
+
   it("snapshots translated question text while keeping canonical choice values", async () => {
     const createSubmission = vi.fn().mockResolvedValue("submission-id");
     await submitPublicFeedback(input(new Request("https://tools.example.test/feedback/f/token?lang=de", { method: "POST", headers: { origin: "https://tools.example.test", "content-type": "application/x-www-form-urlencoded" }, body: "comfort=Mixed" }), { getPublicForm: vi.fn().mockResolvedValue(form), createSubmission }));
@@ -35,6 +43,6 @@ describe("public feedback submission", () => {
   });
 });
 
-function input(request: Request, feedback: { getPublicForm: ReturnType<typeof vi.fn>; createSubmission: ReturnType<typeof vi.fn> }) {
-  return { request, params: { token: "token" }, context: { runtime: { publicOrigin: "https://tools.example.test", feedback } } } as unknown as Parameters<typeof submitPublicFeedback>[0];
+function input(request: Request, feedback: { getPublicForm: ReturnType<typeof vi.fn>; createSubmission: ReturnType<typeof vi.fn> }, publicOrigin = "https://tools.example.test") {
+  return { request, params: { token: "token" }, context: { runtime: { publicOrigin, feedback } } } as unknown as Parameters<typeof submitPublicFeedback>[0];
 }
