@@ -1,12 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { PublicFeedbackPage } from "../../../../feedback/public-page.js";
 import { submitPublicFeedback } from "../../../../feedback/public-handler.js";
+import { parsePublicFeedbackSearch } from "../../../../feedback/public-search.js";
 import { getPublicFeedbackForm } from "../../../../feedback/server-functions.js";
 
-type PublicFeedbackSearch = { lang?: "en" | "de"; submitted?: boolean; error?: string };
-
 export const Route = createFileRoute("/feedback/f/$token")({
-  validateSearch: (search: Record<string, unknown>): PublicFeedbackSearch => ({ lang: search.lang === "de" ? "de" : "en", submitted: search.submitted === true || search.submitted === "1" ? true : undefined, error: typeof search.error === "string" ? search.error : undefined }),
+  validateSearch: parsePublicFeedbackSearch,
   loaderDeps: ({ search }) => ({ locale: search.lang ?? "en" }),
   loader: ({ params, deps }) => getPublicFeedbackForm({ data: { token: params.token, locale: deps.locale } }),
   head: () => ({ meta: [{ title: "Private feedback" }, { name: "robots", content: "noindex, nofollow" }] }),
