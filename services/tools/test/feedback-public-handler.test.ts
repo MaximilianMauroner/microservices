@@ -37,6 +37,15 @@ describe("public feedback submission", () => {
     expect(createSubmission.mock.calls[0]?.[1]).toEqual({ comfort: "Mixed" });
   });
 
+  it("returns to the form instead of showing JSON when storage fails", async () => {
+    const response = await submitPublicFeedback(input(new Request("https://tools.example.test/feedback/f/token?lang=de", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: "comfort=Mixed" }), {
+      getPublicForm: vi.fn().mockResolvedValue(form),
+      createSubmission: vi.fn().mockRejectedValue(new Error("database unavailable")),
+    }));
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe("/feedback/f/token?lang=de&error=submission_failed");
+  });
+
   it("does not insert honeypot submissions", async () => {
     const createSubmission = vi.fn();
     const response = await submitPublicFeedback(input(new Request("https://tools.example.test/feedback/f/token", { method: "POST", headers: { origin: "https://tools.example.test", "content-type": "application/x-www-form-urlencoded" }, body: "website=spam.example&comfort=Mixed" }), { getPublicForm: vi.fn(), createSubmission }));

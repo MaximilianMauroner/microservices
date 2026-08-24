@@ -23,7 +23,7 @@ export async function submitPublicFeedback({ request, context, params }: Platfor
     const locale = feedbackLocale(new URL(request.url).searchParams.get("lang") ?? undefined);
     if (error instanceof FeedbackValidationError) return redirectToForm(params.token, locale, false, error.code);
     if (error instanceof RequestTooLargeError) return json({ error: "request_too_large" }, 413);
-    return json({ error: "invalid_request" }, 400);
+    return redirectToForm(params.token, locale, false, "submission_failed");
   }
 }
 
