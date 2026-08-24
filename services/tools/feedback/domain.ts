@@ -128,6 +128,7 @@ export function validateFeedbackQuestions(value: unknown): readonly FeedbackQues
     if (question.kind === "choice") {
       if (!Array.isArray(question.options) || question.options.length < 2 || question.options.length > 12 || question.options.some((option) => typeof option !== "string" || !option.trim() || option.length > 120)) throw new FeedbackValidationError("invalid_questions", "Choice questions need between 2 and 12 nonempty options.");
       const options = question.options.map((option) => (option as string).trim());
+      if (options.some(looksLikeMachineKey)) throw new FeedbackValidationError("invalid_questions", "Choice options must be readable labels, not snake_case keys.");
       if (new Set(options).size !== options.length) throw new FeedbackValidationError("invalid_questions", "Choice options must be unique.");
       return { id: question.id, kind: question.kind, prompt, options };
     }
@@ -148,10 +149,14 @@ export function validateFeedbackTranslation(value: FeedbackTranslation, question
   const optionLabels = Object.fromEntries(questions.filter((question) => question.kind === "choice").map((question) => {
     const labels = value.optionLabels[question.id];
     if (!labels || labels.length !== question.options?.length || labels.some((label) => !label.trim() || label.length > 120)) throw new FeedbackValidationError("invalid_translation", "Translated choice labels must match the available choices.");
-    return [question.id, labels.map((label) => label.trim())];
+    const cleaned = labels.map((label) => label.trim());
+    if (cleaned.some(looksLikeMachineKey)) throw new FeedbackValidationError("invalid_translation", "Translated choices must use readable labels, not snake_case keys.");
+    return [question.id, cleaned];
   }));
   return { title, introduction, questionPrompts, optionLabels };
 }
+
+function looksLikeMachineKey(value: string) { return /^[a-z0-9]+(?:_[a-z0-9]+)+$/.test(value); }
 
 export class FeedbackValidationError extends Error {
   constructor(readonly code: string, message: string) {

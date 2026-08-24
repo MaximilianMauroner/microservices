@@ -62,7 +62,7 @@ You may add, remove, or reorder questions in form.questions. Supported question 
 - short_text: id, kind, and prompt, with answers limited to 300 characters
 - long_text: id, kind, and prompt, with answers limited to 4000 characters
 
-Question ids become response property names. Use unique lowercase ids matching ^[a-z][a-z0-9_]{0,63}$ and never use website. Keep canonical choice options language-neutral and stable. Add matching German questionPrompts and optionLabels for every question. The German optionLabels array must have the same length and order as its canonical options array. Update responseSchema so its properties exactly match form.questions. Every question is optional. Preserve version 1 and return the complete document without Markdown fences.
+Question ids become response property names. Use unique lowercase ids matching ^[a-z][a-z0-9_]{0,63}$ and never use website. Choice options are visible to respondents and stored as response values, so write them as concise, natural English display labels such as "Very comfortable", never identifiers such as "very_comfortable". Keep them stable after publishing. Add matching German questionPrompts and natural German display labels in optionLabels for every question. Never copy English options or snake_case identifiers into German optionLabels. The German optionLabels array must have the same length and order as its canonical options array. Update responseSchema so its properties exactly match form.questions. Every question is optional. Preserve version 1 and return the complete document without Markdown fences.
 
 ${feedbackSchemaJson(content)}`;
 }
