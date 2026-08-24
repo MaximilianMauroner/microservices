@@ -11,8 +11,8 @@ import {
 import { reconcileRuntimeSchema } from "./runtime-schema-reconciliation.js";
 
 const mode = process.argv[2];
-if (mode !== "production" && mode !== "test") {
-  throw new Error("Schema push mode must be either production or test.");
+if (mode !== "production" && mode !== "development" && mode !== "test") {
+  throw new Error("Schema push mode must be production, development, or test.");
 }
 
 const url = resolvePushDatabase(process.env, mode satisfies PushMode);

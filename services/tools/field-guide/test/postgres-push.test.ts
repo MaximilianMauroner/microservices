@@ -15,11 +15,33 @@ const serviceDirectory = fileURLToPath(new URL("..", import.meta.url));
 const tsxCli = fileURLToPath(import.meta.resolve("tsx/cli"));
 
 describe("PostgreSQL schema push", () => {
-  it("separates production and disposable-test authorization", async () => {
+  it("separates production, development, and disposable-test authorization", async () => {
     const production = "postgres://user:pass@production.example/field_guide";
+    const development = "postgres://user:pass@development.example/field_guide";
     const disposable = "postgres://user:pass@test.example/field_guide_test";
     expect(resolvePushDatabase({ DATABASE_URL: production, FIELD_GUIDE_SCHEMA_PUSH_CONFIRM: "field-guide-console-production" }, "production")).toBe(production);
+    expect(resolvePushDatabase({
+      DATABASE_URL: development,
+      FIELD_GUIDE_DEVELOPMENT_SCHEMA_PUSH_CONFIRM: "field-guide-console-development",
+      NODE_ENV: "development",
+      TOOLS_ENVIRONMENT: "development",
+      RAILWAY_ENVIRONMENT_NAME: "dev",
+    }, "development")).toBe(development);
     expect(resolvePushDatabase({ TEST_DATABASE_URL: disposable, FIELD_GUIDE_TEST_DATABASE_CONFIRM: "field-guide-console-test" }, "test")).toBe(disposable);
+    expect(() => resolvePushDatabase({
+      DATABASE_URL: development,
+      FIELD_GUIDE_DEVELOPMENT_SCHEMA_PUSH_CONFIRM: "field-guide-console-development",
+      NODE_ENV: "production",
+      TOOLS_ENVIRONMENT: "development",
+      RAILWAY_ENVIRONMENT_NAME: "dev",
+    }, "development")).toThrow("unavailable when NODE_ENV=production");
+    expect(() => resolvePushDatabase({
+      DATABASE_URL: development,
+      FIELD_GUIDE_DEVELOPMENT_SCHEMA_PUSH_CONFIRM: "field-guide-console-development",
+      NODE_ENV: "development",
+      TOOLS_ENVIRONMENT: "development",
+      RAILWAY_ENVIRONMENT_NAME: "production",
+    }, "development")).toThrow("Railway dev environment");
     expect(() => resolvePushDatabase({ TEST_DATABASE_URL: production }, "test")).toThrow("Disposable test schema push requires");
     expect(() => resolvePushDatabase({ TEST_DATABASE_URL: disposable, FIELD_GUIDE_TEST_DATABASE_CONFIRM: "field-guide-console-test" }, "production")).toThrow("DATABASE_URL is required");
     await expect(verifyDisposableDatabase({ readRelationKind: async () => "r", readValue: async () => "wrong" })).rejects.toThrow("sentinel value");
@@ -73,6 +95,7 @@ describe("PostgreSQL schema push", () => {
     ]);
     const scripts = JSON.parse(servicePackage).scripts;
     expect(scripts["db:push-postgres"]).toBe("tsx src/push-postgres.ts production");
+    expect(scripts["db:push-postgres:development"]).toBe("FIELD_GUIDE_DEVELOPMENT_SCHEMA_PUSH_CONFIRM=field-guide-console-development node --env-file-if-exists=../.env.local --import tsx src/push-postgres.ts development");
     expect(scripts["db:push-postgres:test"]).toBe("tsx src/push-postgres.ts test");
     expect(rootRailway).toBeTruthy();
     expect(serviceRailway).toBeTruthy();

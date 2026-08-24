@@ -283,6 +283,7 @@ describe("Postgres schema contract", () => {
     };
     expect(packageJson.scripts["db:push-sqlite"]).toBeUndefined();
     expect(packageJson.scripts["db:push-postgres"]).toBe("tsx src/push-postgres.ts production");
+    expect(packageJson.scripts["db:push-postgres:development"]).toContain("push-postgres.ts development");
     expect(packageJson.scripts["db:generate"]).toBeUndefined();
     expect(Object.values(packageJson.scripts).join(" ")).not.toContain("--force");
     expect(packageJson.dependencies["drizzle-orm"]).toBe("1.0.0-rc.4");

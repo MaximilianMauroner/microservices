@@ -101,6 +101,7 @@ describe("TanStack Start public pages", () => {
     expect(html).toContain('aria-label="Private"');
     expect(html).toContain('aria-label="Not monitored"');
     expect(html).toContain("Useful things,");
+    expect(html).toContain("xl:grid-cols-4");
     expect(html).toContain("Publisher");
     expect(html).toContain("Field Guide");
     expect(html).toContain("Markdown Share");

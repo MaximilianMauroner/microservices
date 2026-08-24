@@ -56,16 +56,26 @@ export function parseFeedbackSchemaJson(text: string): FeedbackEditableContent {
 }
 
 export function feedbackSchemaPrompt(content: FeedbackEditableContent) {
-  return `First ask me exactly: "Should this form be written in German or English?"
+  return `Before you touch the JSON, ask me these six questions in one message:
+1. Should this form be written in German or English?
+2. What is this feedback form about? Ask for the event, product, service, interaction, or situation, plus the context you need to understand it.
+3. Who will answer it?
+4. What should the answers help you learn, improve, or decide?
+5. Which topics must the questions cover, and are there any topics or personal details to avoid?
+6. How long should the form be, and what tone should it use?
 
-Wait for my answer. Do not return JSON before I answer. Then create or revise this Feedback schema entirely in the chosen language and return JSON only.
+Wait for my answers. Do not return JSON early. Then write or revise the Feedback schema in the chosen language. Return only the complete JSON document, without Markdown fences. Treat the existing form below as a draft. Replace anything that does not fit my answers.
+
+Make every question earn its place. Each one must help with a goal I named. Ask one thing at a time. Use neutral, specific wording that the intended respondents will understand on the first read. Cut leading questions, assumptions, and duplicates. Do not ask for a name or contact details unless I request it.
+
+Put easy, broad questions first and more specific ones later. End with an open question only if it can uncover something the other questions miss. For choice questions, write distinct options in parallel language and cover the answers people are likely to give. Do not pad the list. Use short_text for concise facts. Use long_text only when a thoughtful explanation is worth the effort.
 
 You may add, remove, or reorder questions in form.questions. Supported question kinds are:
 - choice: id, kind, prompt, and 2 to 12 unique options
 - short_text: id, kind, and prompt, with answers limited to 300 characters
 - long_text: id, kind, and prompt, with answers limited to 4000 characters
 
-Set form.language to en or de to match the chosen language. Write the title, introduction, prompts, and choice options only in that language. Question ids become response property names. Use unique lowercase ids matching ^[a-z][a-z0-9_]{0,63}$ and never use website. Choice options are visible to respondents and stored as response values, so write concise, natural display labels, never identifiers such as "very_comfortable". Keep them stable after publishing. Update responseSchema so its properties exactly match form.questions. Every question is optional. Preserve version 2 and return the complete document without Markdown fences.
+Set form.language to en or de to match the chosen language. Write the title, introduction, prompts, and choice options only in that language. Question ids become response property names. Use unique lowercase ids matching ^[a-z][a-z0-9_]{0,63}$ and never use website. Choice options are visible to respondents and stored as response values. Write concise display labels, never identifiers such as "very_comfortable". Keep them stable after publishing. Update responseSchema so its properties exactly match form.questions. Every question is optional. Preserve version 2.
 
 ${feedbackSchemaJson(content)}`;
 }
