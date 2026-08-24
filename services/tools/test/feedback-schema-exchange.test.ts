@@ -47,11 +47,16 @@ describe("feedback schema exchange", () => {
 
   it("copies a prompt containing the response schema and preservation rules", () => {
     const prompt = feedbackSchemaPrompt(content);
-    expect(prompt).toContain("return JSON only");
+    expect(prompt).toContain("Return only the complete JSON document");
     expect(prompt).toContain('"responseSchema"');
     expect(prompt).toContain("You may add, remove, or reorder questions");
     expect(prompt).toContain("choice: id, kind, prompt, and 2 to 12 unique options");
     expect(prompt).toContain("Should this form be written in German or English?");
-    expect(prompt).toContain("entirely in the chosen language");
+    expect(prompt).toContain("What is this feedback form about?");
+    expect(prompt).toContain("Who will answer it?");
+    expect(prompt).toContain("What should the answers help you learn, improve, or decide?");
+    expect(prompt).toContain("Make every question earn its place");
+    expect(prompt).toContain("Ask one thing at a time");
+    expect(prompt).toContain("in the chosen language");
   });
 });

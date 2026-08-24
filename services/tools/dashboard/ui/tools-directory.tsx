@@ -67,7 +67,7 @@ export function ToolsDirectory({ snapshot }: { snapshot: PublicSnapshotDocument 
         </div>
       </section>
 
-      <section className="grid gap-3 pt-5 sm:gap-4 sm:pt-8 md:grid-cols-2 xl:grid-cols-3" aria-label="Products">
+      <section className="grid gap-3 pt-5 sm:gap-4 sm:pt-8 md:grid-cols-2 xl:grid-cols-4" aria-label="Products">
         {primaryProducts.map((product, index) => {
           const Icon = typeof product.icon === "string" ? undefined : product.icon;
           const status = monitorStatus(product.monitorId, statuses);

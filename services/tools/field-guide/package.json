@@ -36,6 +36,7 @@
     "build": "pnpm run build:css && tsc -p tsconfig.build.json",
     "build:css": "tailwindcss -i ./src/review.css -o ./public/review.css --minify",
     "db:push-postgres": "tsx src/push-postgres.ts production",
+    "db:push-postgres:development": "FIELD_GUIDE_DEVELOPMENT_SCHEMA_PUSH_CONFIRM=field-guide-console-development node --env-file-if-exists=../.env.local --import tsx src/push-postgres.ts development",
     "db:push-postgres:test": "tsx src/push-postgres.ts test",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",

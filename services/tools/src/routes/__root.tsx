@@ -4,6 +4,7 @@ import {
   Scripts,
   createRootRoute
 } from "@tanstack/react-router";
+import { Toaster } from "../components/ui/toast.js";
 import "../styles.css";
 
 export const Route = createRootRoute({
@@ -24,6 +25,7 @@ function RootDocument() {
       </head>
       <body>
         <Outlet />
+        <Toaster />
         <Scripts />
       </body>
     </html>
