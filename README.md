@@ -12,8 +12,8 @@ TanStack Start monolith whose products live directly beneath `services/tools`.
 | Markdown Share | `services/markdown-share` | Cloudflare Workers | Collaborative Markdown application backed by Convex. |
 | Network Console | `services/network-console` | Local VM, Node.js | Private network and listening-port dashboard. |
 
-Tools contains the `dashboard`, `status`, `publisher`, `field-guide`, and
-`money` products. Code reused within Tools remains owned by the product or
+Tools contains the `dashboard`, `status`, `publisher`, `field-guide`, `money`,
+and `feedback` products. Code reused within Tools remains owned by the product or
 runtime module that provides it; there is no repository-wide shared package.
 
 ## Requirements

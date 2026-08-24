@@ -8,6 +8,7 @@ import tools from "../dashboard/public/assets/icons/tools.png?url&no-inline";
 
 export const favicons = {
   directory: tools,
+  feedback: tools,
   fieldGuide,
   markdownShare,
   money,

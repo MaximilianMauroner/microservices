@@ -11,6 +11,7 @@ import { products, type ProductAccent, type ProductDefinition, type ProductId } 
 const REFRESH_INTERVAL_MS = 60_000;
 
 const productIcons: Record<ProductId, string> = {
+  feedback: favicons.feedback,
   publisher: favicons.publisher,
   "field-guide": favicons.fieldGuide,
   money: favicons.money,
@@ -88,7 +89,7 @@ export function ToolsDirectory({ snapshot }: { snapshot: PublicSnapshotDocument 
           </article>;
           return product.external
             ? <a key={product.id} href={product.href} target="_blank" rel="noreferrer">{card}</a>
-            : <Link key={product.id} to={product.href as "/publisher" | "/field-guide" | "/money" | "/status"} preload="intent">{card}</Link>;
+            : <Link key={product.id} to={product.href as "/feedback" | "/publisher" | "/field-guide" | "/money" | "/status"} preload="intent">{card}</Link>;
         })}
       </section>
 

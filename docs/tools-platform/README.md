@@ -2,7 +2,7 @@
 
 Tools is one TanStack Start monolith deployed as a single Railway service. Its
 products live directly under `services/tools`: Dashboard, Status, Publisher,
-Field Guide, and Money. They share authentication, configuration, lifecycle,
+Field Guide, Money, and Feedback. They share authentication, configuration, lifecycle,
 health checks, and deployment.
 
 The process also owns leased scheduled work for Status. It must remain awake,

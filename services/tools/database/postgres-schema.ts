@@ -65,6 +65,34 @@ export const scheduledTaskRuns = toolsSchema.table("scheduled_task_runs", {
   result: jsonb("result").$type<Record<string, unknown>>(),
 }, (table) => [primaryKey({ columns: [table.taskId, table.slot] })]);
 
+export const feedbackForms = toolsSchema.table("feedback_forms", {
+  id: uuid("id").primaryKey(),
+  publicToken: text("public_token").notNull().unique(),
+  title: text("title").notNull(),
+  introduction: text("introduction").notNull(),
+  questions: jsonb("questions").$type<readonly Record<string, unknown>[]>().notNull(),
+  status: text("status").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+}, (table) => [
+  check("feedback_forms_status_check", sql`${table.status} in ('draft', 'active', 'closed')`),
+  index("feedback_forms_updated_idx").on(table.updatedAt),
+]);
+
+export const feedbackSubmissions = toolsSchema.table("feedback_submissions", {
+  id: uuid("id").primaryKey(),
+  formId: uuid("form_id").notNull().references(() => feedbackForms.id, { onDelete: "cascade" }),
+  questionSnapshot: jsonb("question_snapshot").$type<readonly Record<string, unknown>[]>().notNull(),
+  answers: jsonb("answers").$type<Record<string, string>>().notNull(),
+  submittedAt: timestamp("submitted_at", { withTimezone: true }).notNull(),
+  reviewState: text("review_state").notNull(),
+  followUpState: text("follow_up_state").notNull(),
+}, (table) => [
+  check("feedback_submissions_review_check", sql`${table.reviewState} in ('unread', 'reviewed', 'archived')`),
+  check("feedback_submissions_follow_up_check", sql`${table.followUpState} in ('none', 'wanted', 'done')`),
+  index("feedback_submissions_form_date_idx").on(table.formId, table.submittedAt),
+]);
+
 export const moneyAccounts = toolsSchema.table("money_accounts", {
   id: uuid("id").primaryKey(),
   provider: text("provider").notNull(),

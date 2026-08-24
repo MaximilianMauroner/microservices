@@ -27,6 +27,7 @@ import { MoneyImportService } from "../money/money-import-service.js";
 import { createPostgresMoneyRepository } from "../money/money-repository.js";
 import { MoneyMarketDataService } from "../money/money-market-data-service.js";
 import { createPostgresMoneyMarketDataRepository } from "../money/money-market-data-repository.js";
+import { createPostgresFeedbackRepository, type FeedbackRepository } from "../feedback/repository.js";
 import {
   createPlatformAuth,
   resolvePlatformPrincipal,
@@ -44,6 +45,7 @@ export type PlatformRuntime = {
   heartbeats: ReturnType<typeof createHeartbeats>;
   moneyImports: MoneyImportService;
   moneyMarketData: MoneyMarketDataService;
+  feedback: FeedbackRepository;
   stop: () => Promise<void>;
 };
 
@@ -100,6 +102,7 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
   const activityTracker = new ActivityTracker();
   const moneyImports = new MoneyImportService(createPostgresMoneyRepository(config.databaseUrl, { readOnly: config.readOnly }));
   const moneyMarketData = new MoneyMarketDataService(createPostgresMoneyMarketDataRepository(config.databaseUrl, { readOnly: config.readOnly }));
+  const feedback = createPostgresFeedbackRepository(config.databaseUrl, { readOnly: config.readOnly });
   const fieldGuideHandle = await createRepository(config.fieldGuide, {
     readOnly: config.readOnly
   });
@@ -188,7 +191,8 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
         ...Object.values(services).map((service) => service.close()),
         heartbeatRepository.close(),
         moneyImports.close(),
-        moneyMarketData.close()
+        moneyMarketData.close(),
+        feedback.close()
       ]);
     };
 
@@ -209,11 +213,13 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
       heartbeats,
       moneyImports,
       moneyMarketData,
+      feedback,
       health: async () => {
         await Promise.all([
           ...Object.values(services).map((service) => service.readiness()),
           moneyImports.readiness(),
-          moneyMarketData.readiness()
+          moneyMarketData.readiness(),
+          feedback.readiness()
         ]);
       },
       stop
@@ -224,6 +230,7 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
     await heartbeatRepository.close();
     await moneyImports.close();
     await moneyMarketData.close();
+    await feedback.close();
     throw error;
   }
 }
