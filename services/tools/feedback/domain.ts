@@ -15,13 +15,7 @@ export type FeedbackQuestion = Readonly<{
   optionLabels?: readonly string[];
 }>;
 
-export type FeedbackLocale = "en" | "de";
-export type FeedbackTranslation = Readonly<{
-  title: string;
-  introduction: string;
-  questionPrompts: Readonly<Record<string, string>>;
-  optionLabels: Readonly<Record<string, readonly string[]>>;
-}>;
+export type FeedbackLanguage = "en" | "de";
 
 export type FeedbackFormStatus = "draft" | "active" | "closed";
 export type FeedbackReviewState = "unread" | "reviewed" | "archived";
@@ -30,10 +24,10 @@ export type FeedbackFollowUpState = "none" | "wanted" | "done";
 export type FeedbackForm = Readonly<{
   id: string;
   publicToken: string;
+  language: FeedbackLanguage;
   title: string;
   introduction: string;
   questions: readonly FeedbackQuestion[];
-  translations: Readonly<Partial<Record<FeedbackLocale, FeedbackTranslation>>>;
   status: FeedbackFormStatus;
   createdAt: string;
   updatedAt: string;
@@ -53,37 +47,15 @@ export type FeedbackSubmission = Readonly<{
 }>;
 
 export const DEFAULT_FEEDBACK_INTRODUCTION = "Thanks for hanging out with me. I care about how people feel around me, and I know some feedback can be awkward to say in the moment. Every question is optional, and you do not need to give your name.";
-export const DEFAULT_GERMAN_TRANSLATION: FeedbackTranslation = {
-  title: "Feedback nach unserem Treffen",
-  introduction: "Danke für unser Treffen. Mir ist wichtig, wie sich andere Menschen in meiner Nähe fühlen. Manche Rückmeldungen sind im Moment selbst schwer auszusprechen. Jede Frage ist freiwillig, und du musst deinen Namen nicht angeben.",
-  questionPrompts: {
-    comfort: "Wie hast du dich während unseres Treffens gefühlt?",
-    disliked: "Gab es etwas, das ich gesagt oder getan habe, das dir nicht gefallen hat oder bei dem du dich unwohl gefühlt hast?",
-    different: "Gibt es etwas, das ich beim nächsten Mal anders machen sollte?",
-    enjoyed: "Gab es etwas, das dir besonders gefallen hat oder von dem du dir mehr wünschen würdest?",
-    follow_up: "Möchtest du, dass ich mich dazu bei dir melde?",
-    identity: "Dein Name oder deine Kontaktdaten"
-  },
-  optionLabels: {
-    comfort: ["Sehr wohl", "Meistens wohl", "Gemischt", "Eher unwohl", "Sehr unwohl"],
-    follow_up: ["Nein", "Ja", "Nur wenn du denkst, dass es helfen würde"]
-  }
-};
+export function assertFeedbackLanguage(value: string): FeedbackLanguage {
+  if (value !== "en" && value !== "de") throw new FeedbackValidationError("invalid_language", "Choose German or English.");
+  return value;
+}
 
-export function feedbackLocale(value: string | undefined): FeedbackLocale { return value === "de" ? "de" : "en"; }
-
-export function localizeFeedbackForm(form: FeedbackForm, locale: FeedbackLocale) {
-  const translation = locale === "en" ? undefined : form.translations[locale];
+export function localizeFeedbackForm(form: FeedbackForm) {
   return {
     ...form,
-    locale,
-    title: translation?.title || form.title,
-    introduction: translation?.introduction || form.introduction,
-    questions: form.questions.map((question) => ({
-      ...question,
-      prompt: translation?.questionPrompts[question.id] || question.prompt,
-      optionLabels: translation?.optionLabels[question.id]
-    }))
+    locale: form.language,
   };
 }
 export type LocalizedFeedbackForm = ReturnType<typeof localizeFeedbackForm>;
@@ -134,26 +106,6 @@ export function validateFeedbackQuestions(value: unknown): readonly FeedbackQues
     }
     return { id: question.id, kind: question.kind, prompt };
   });
-}
-
-export function validateFeedbackTranslation(value: FeedbackTranslation, questions: readonly FeedbackQuestion[]): FeedbackTranslation {
-  const title = assertFeedbackText(value.title, "title");
-  const introduction = assertFeedbackText(value.introduction, "introduction");
-  const questionIds = new Set(questions.map((question) => question.id));
-  const questionPrompts = Object.fromEntries(Object.entries(value.questionPrompts).filter(([id]) => questionIds.has(id)).map(([id, prompt]) => {
-    const cleaned = prompt.trim();
-    if (!cleaned || cleaned.length > 300) throw new FeedbackValidationError("invalid_translation", "Translated question prompts must be between 1 and 300 characters.");
-    return [id, cleaned];
-  }));
-  if (questions.some((question) => !questionPrompts[question.id])) throw new FeedbackValidationError("invalid_translation", "Every question needs a German prompt.");
-  const optionLabels = Object.fromEntries(questions.filter((question) => question.kind === "choice").map((question) => {
-    const labels = value.optionLabels[question.id];
-    if (!labels || labels.length !== question.options?.length || labels.some((label) => !label.trim() || label.length > 120)) throw new FeedbackValidationError("invalid_translation", "Translated choice labels must match the available choices.");
-    const cleaned = labels.map((label) => label.trim());
-    if (cleaned.some(looksLikeMachineKey)) throw new FeedbackValidationError("invalid_translation", "Translated choices must use readable labels, not snake_case keys.");
-    return [question.id, cleaned];
-  }));
-  return { title, introduction, questionPrompts, optionLabels };
 }
 
 function looksLikeMachineKey(value: string) { return /^[a-z0-9]+(?:_[a-z0-9]+)+$/.test(value); }
