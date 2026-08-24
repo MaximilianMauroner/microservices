@@ -113,17 +113,25 @@ export function assertFeedbackText(value: string, field: "title" | "introduction
   return cleaned;
 }
 
-export function validateFeedbackQuestions(value: readonly FeedbackQuestion[]): readonly FeedbackQuestion[] {
-  if (value.length < 1 || value.length > 12) throw new FeedbackValidationError("invalid_questions", "A form must have between 1 and 12 questions.");
-  const template = new Map<string, FeedbackQuestion>(FEEDBACK_TEMPLATE.map((question) => [question.id, question]));
+export function validateFeedbackQuestions(value: unknown): readonly FeedbackQuestion[] {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 20) throw new FeedbackValidationError("invalid_questions", "A form must have between 1 and 20 questions.");
   const seen = new Set<string>();
-  return value.map((question) => {
-    const original = template.get(question.id);
-    if (!original || seen.has(question.id) || question.kind !== original.kind) throw new FeedbackValidationError("invalid_questions", "The question set is invalid.");
+  return value.map((raw) => {
+    if (typeof raw !== "object" || raw === null || Array.isArray(raw)) throw new FeedbackValidationError("invalid_questions", "Each question must be an object.");
+    const question = raw as Record<string, unknown>;
+    if (typeof question.id !== "string" || !/^[a-z][a-z0-9_]{0,63}$/.test(question.id) || question.id === "website" || seen.has(question.id)) throw new FeedbackValidationError("invalid_questions", "Question IDs must be unique lowercase keys and cannot use website.");
+    if (question.kind !== "choice" && question.kind !== "short_text" && question.kind !== "long_text") throw new FeedbackValidationError("invalid_questions", "Question kind must be choice, short_text, or long_text.");
+    if (typeof question.prompt !== "string") throw new FeedbackValidationError("invalid_question_prompt", "Every question needs a prompt.");
     seen.add(question.id);
     const prompt = question.prompt.trim();
     if (!prompt || prompt.length > 300) throw new FeedbackValidationError("invalid_question_prompt", "Question prompts must be between 1 and 300 characters.");
-    return { ...original, prompt, optionLabels: undefined };
+    if (question.kind === "choice") {
+      if (!Array.isArray(question.options) || question.options.length < 2 || question.options.length > 12 || question.options.some((option) => typeof option !== "string" || !option.trim() || option.length > 120)) throw new FeedbackValidationError("invalid_questions", "Choice questions need between 2 and 12 nonempty options.");
+      const options = question.options.map((option) => (option as string).trim());
+      if (new Set(options).size !== options.length) throw new FeedbackValidationError("invalid_questions", "Choice options must be unique.");
+      return { id: question.id, kind: question.kind, prompt, options };
+    }
+    return { id: question.id, kind: question.kind, prompt };
   });
 }
 
@@ -136,6 +144,7 @@ export function validateFeedbackTranslation(value: FeedbackTranslation, question
     if (!cleaned || cleaned.length > 300) throw new FeedbackValidationError("invalid_translation", "Translated question prompts must be between 1 and 300 characters.");
     return [id, cleaned];
   }));
+  if (questions.some((question) => !questionPrompts[question.id])) throw new FeedbackValidationError("invalid_translation", "Every question needs a German prompt.");
   const optionLabels = Object.fromEntries(questions.filter((question) => question.kind === "choice").map((question) => {
     const labels = value.optionLabels[question.id];
     if (!labels || labels.length !== question.options?.length || labels.some((label) => !label.trim() || label.length > 120)) throw new FeedbackValidationError("invalid_translation", "Translated choice labels must match the available choices.");
