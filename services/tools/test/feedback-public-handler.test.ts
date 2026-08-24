@@ -13,9 +13,9 @@ describe("public feedback submission", () => {
     expect(createSubmission).toHaveBeenCalledWith(form, { comfort: "Mixed", disliked: "Please listen" }, expect.any(Array));
   });
 
-  it("uses the public request host for same-origin checks", async () => {
+  it("uses the proxy host for same-origin checks", async () => {
     const createSubmission = vi.fn().mockResolvedValue("submission-id");
-    const request = new Request("https://public.example.test/feedback/f/token", { method: "POST", headers: { origin: "https://public.example.test", "content-type": "application/x-www-form-urlencoded" }, body: "comfort=Mixed" });
+    const request = new Request("http://internal.example.test/feedback/f/token", { method: "POST", headers: { origin: "https://public.example.test", host: "internal.example.test", "x-forwarded-host": "public.example.test", "x-forwarded-proto": "https", "content-type": "application/x-www-form-urlencoded" }, body: "comfort=Mixed" });
     const response = await submitPublicFeedback(input(request, { getPublicForm: vi.fn().mockResolvedValue(form), createSubmission }, "https://internal.example.test"));
     expect(response.status).toBe(303);
     expect(createSubmission).toHaveBeenCalledOnce();
