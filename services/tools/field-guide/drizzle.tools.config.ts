@@ -15,6 +15,8 @@ export default defineConfig({
     "heartbeats",
     "monitor_overrides",
     "scheduled_task_runs",
+    "feedback_forms",
+    "feedback_submissions",
     "checker_states",
     "history_partitions",
     "money_accounts",
