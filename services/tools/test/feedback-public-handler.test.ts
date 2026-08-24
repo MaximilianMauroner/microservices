@@ -1,16 +1,23 @@
 import { describe, expect, it, vi } from "vitest";
 import { submitPublicFeedback } from "../feedback/public-handler.js";
-import { DEFAULT_FEEDBACK_INTRODUCTION, FEEDBACK_TEMPLATE, type FeedbackForm } from "../feedback/domain.js";
+import { DEFAULT_FEEDBACK_INTRODUCTION, DEFAULT_GERMAN_TRANSLATION, FEEDBACK_TEMPLATE, type FeedbackForm } from "../feedback/domain.js";
 
-const form: FeedbackForm = { id: "d9a728ca-4953-44bd-bc46-c636fb6e39d4", publicToken: "token", title: "Post-hangout feedback", introduction: DEFAULT_FEEDBACK_INTRODUCTION, questions: FEEDBACK_TEMPLATE, status: "active", createdAt: "2026-08-24T12:00:00.000Z", updatedAt: "2026-08-24T12:00:00.000Z", responseCount: 0, unreadCount: 0 };
+const form: FeedbackForm = { id: "d9a728ca-4953-44bd-bc46-c636fb6e39d4", publicToken: "token", title: "Post-hangout feedback", introduction: DEFAULT_FEEDBACK_INTRODUCTION, questions: FEEDBACK_TEMPLATE, translations: { de: DEFAULT_GERMAN_TRANSLATION }, status: "active", createdAt: "2026-08-24T12:00:00.000Z", updatedAt: "2026-08-24T12:00:00.000Z", responseCount: 0, unreadCount: 0 };
 
 describe("public feedback submission", () => {
   it("stores a valid same-origin response and redirects", async () => {
     const createSubmission = vi.fn().mockResolvedValue("submission-id");
     const response = await submitPublicFeedback(input(new Request("https://tools.example.test/feedback/f/token", { method: "POST", headers: { origin: "https://tools.example.test", "content-type": "application/x-www-form-urlencoded" }, body: "comfort=Mixed&disliked=Please+listen" }), { getPublicForm: vi.fn().mockResolvedValue(form), createSubmission }));
     expect(response.status).toBe(303);
-    expect(response.headers.get("location")).toBe("/feedback/f/token?submitted=1");
-    expect(createSubmission).toHaveBeenCalledWith(form, { comfort: "Mixed", disliked: "Please listen" });
+    expect(response.headers.get("location")).toBe("/feedback/f/token?lang=en&submitted=1");
+    expect(createSubmission).toHaveBeenCalledWith(form, { comfort: "Mixed", disliked: "Please listen" }, expect.any(Array));
+  });
+
+  it("snapshots translated question text while keeping canonical choice values", async () => {
+    const createSubmission = vi.fn().mockResolvedValue("submission-id");
+    await submitPublicFeedback(input(new Request("https://tools.example.test/feedback/f/token?lang=de", { method: "POST", headers: { origin: "https://tools.example.test", "content-type": "application/x-www-form-urlencoded" }, body: "comfort=Mixed" }), { getPublicForm: vi.fn().mockResolvedValue(form), createSubmission }));
+    expect(createSubmission.mock.calls[0]?.[2][0].prompt).toBe("Wie hast du dich während unseres Treffens gefühlt?");
+    expect(createSubmission.mock.calls[0]?.[1]).toEqual({ comfort: "Mixed" });
   });
 
   it("rejects a cross-origin post without reading a form", async () => {

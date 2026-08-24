@@ -1,5 +1,5 @@
 import type { PlatformRouteInput } from "../src/route-handlers.js";
-import { FeedbackValidationError, validateFeedbackAnswers } from "./domain.js";
+import { FeedbackValidationError, feedbackLocale, localizeFeedbackForm, validateFeedbackAnswers } from "./domain.js";
 
 const MAXIMUM_BODY_BYTES = 32 * 1024;
 
@@ -11,23 +11,26 @@ export async function submitPublicFeedback({ request, context, params }: Platfor
   try {
     const body = await boundedBody(request);
     const fields = new URLSearchParams(new TextDecoder("utf-8", { fatal: true }).decode(body));
-    if (fields.get("website")) return redirectToForm(params.token, true);
+    const locale = feedbackLocale(new URL(request.url).searchParams.get("lang") ?? undefined);
+    if (fields.get("website")) return redirectToForm(params.token, locale, true);
     const form = await context.runtime.feedback.getPublicForm(params.token);
     if (!form) return notFound();
     const entries: Record<string, FormDataEntryValue> = {};
     for (const [key, value] of fields) entries[key] = value;
     const answers = validateFeedbackAnswers(form.questions, entries);
-    await context.runtime.feedback.createSubmission(form, answers);
-    return redirectToForm(params.token, true);
+    const localized = localizeFeedbackForm(form, locale);
+    await context.runtime.feedback.createSubmission(form, answers, localized.questions);
+    return redirectToForm(params.token, locale, true);
   } catch (error) {
-    if (error instanceof FeedbackValidationError) return redirectToForm(params.token, false, error.code);
+    const locale = feedbackLocale(new URL(request.url).searchParams.get("lang") ?? undefined);
+    if (error instanceof FeedbackValidationError) return redirectToForm(params.token, locale, false, error.code);
     if (error instanceof RequestTooLargeError) return json({ error: "request_too_large" }, 413);
     return json({ error: "invalid_request" }, 400);
   }
 }
 
-function redirectToForm(token: string, submitted: boolean, error?: string) {
-  const query = submitted ? "submitted=1" : `error=${encodeURIComponent(error ?? "invalid_request")}`;
+function redirectToForm(token: string, locale: string, submitted: boolean, error?: string) {
+  const query = new URLSearchParams({ lang: locale, ...(submitted ? { submitted: "1" } : { error: error ?? "invalid_request" }) });
   return new Response(null, { status: 303, headers: { "Cache-Control": "no-store", Location: `/feedback/f/${encodeURIComponent(token)}?${query}` } });
 }
 function notFound() { return new Response("Feedback form not found.", { status: 404, headers: { "Cache-Control": "no-store", "Content-Type": "text/plain; charset=utf-8" } }); }

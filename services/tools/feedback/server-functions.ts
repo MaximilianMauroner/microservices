@@ -1,6 +1,6 @@
 import { createServerFn, getGlobalStartContext } from "@tanstack/react-start";
 import { requirePlatformSession } from "../src/auth-middleware.js";
-import { assertFeedbackFollowUpState, assertFeedbackFormStatus, assertFeedbackReviewState, assertFeedbackText, validateFeedbackQuestions, type FeedbackFollowUpState, type FeedbackFormStatus, type FeedbackQuestion, type FeedbackReviewState } from "./domain.js";
+import { assertFeedbackFollowUpState, assertFeedbackFormStatus, assertFeedbackReviewState, assertFeedbackText, feedbackLocale, localizeFeedbackForm, validateFeedbackQuestions, validateFeedbackTranslation, type FeedbackFollowUpState, type FeedbackFormStatus, type FeedbackQuestion, type FeedbackReviewState, type FeedbackTranslation } from "./domain.js";
 
 function repository() {
   const runtime = getGlobalStartContext()?.runtime;
@@ -31,8 +31,11 @@ export const getFeedbackSubmission = createServerFn({ method: "GET" })
   });
 
 export const getPublicFeedbackForm = createServerFn({ method: "GET" })
-  .validator((input: { token: string }) => input)
-  .handler(({ data }) => repository().getPublicForm(data.token));
+  .validator((input: { token: string; locale?: string }) => input)
+  .handler(async ({ data }) => {
+    const form = await repository().getPublicForm(data.token);
+    return form ? localizeFeedbackForm(form, feedbackLocale(data.locale)) : undefined;
+  });
 
 export const createFeedbackForm = createServerFn({ method: "POST" })
   .middleware([requirePlatformSession])
@@ -41,8 +44,11 @@ export const createFeedbackForm = createServerFn({ method: "POST" })
 
 export const updateFeedbackForm = createServerFn({ method: "POST" })
   .middleware([requirePlatformSession])
-  .validator((input: { formId: string; title: string; introduction: string; questions: readonly FeedbackQuestion[] }) => input)
-  .handler(({ data }) => repository().updateForm(data.formId, { title: assertFeedbackText(data.title, "title"), introduction: assertFeedbackText(data.introduction, "introduction"), questions: validateFeedbackQuestions(data.questions) }));
+  .validator((input: { formId: string; title: string; introduction: string; questions: readonly FeedbackQuestion[]; german: FeedbackTranslation }) => input)
+  .handler(({ data }) => {
+    const questions = validateFeedbackQuestions(data.questions);
+    return repository().updateForm(data.formId, { title: assertFeedbackText(data.title, "title"), introduction: assertFeedbackText(data.introduction, "introduction"), questions, translations: { de: validateFeedbackTranslation(data.german, questions) } });
+  });
 
 export const setFeedbackFormStatus = createServerFn({ method: "POST" })
   .middleware([requirePlatformSession])

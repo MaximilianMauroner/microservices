@@ -5,6 +5,11 @@ and responses through the existing Better Auth Google session at `/feedback`.
 Respondents use an unlisted capability URL at `/feedback/f/:token` without an
 account.
 
+Each form stores English source text and an editable German translation. Public
+forms use `?lang=en` or `?lang=de` and show a language switch. The optional
+identity question can be removed per form. Existing submissions keep their
+localized question snapshot when the form changes later.
+
 PostgreSQL owns forms and responses in the `tools` schema. The application does
 not persist respondent IP addresses, user agents, referrers, or cookies with a
 response. Infrastructure may still keep ordinary request logs, so public copy
