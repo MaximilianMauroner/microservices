@@ -4,12 +4,12 @@ import type { ReactNode } from "react";
 export function PublicFeedbackPage({ form, submitted, error }: { form: LocalizedFeedbackForm; submitted: boolean; error?: string }) {
   const de = form.locale === "de";
   const alternate = de ? "en" : "de";
-  if (submitted) return <PublicFrame locale={form.locale}><LanguageLink locale={alternate} label={de ? "English" : "Deutsch"} /><FeedbackThankYou de={de} /></PublicFrame>;
+  if (submitted) return <PublicFrame locale={form.locale} wide><LanguageLink locale={alternate} label={de ? "English" : "Deutsch"} /><FeedbackThankYou de={de} /></PublicFrame>;
   return <PublicFrame locale={form.locale}><LanguageLink locale={alternate} label={de ? "English" : "Deutsch"} /><header><p className="font-mono text-xs uppercase tracking-[0.18em] text-primary">{de ? "Private Rückmeldung" : "Private feedback"}</p><h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">{form.title}</h1><p className="mt-4 whitespace-pre-wrap text-muted-foreground">{form.introduction}</p></header>{error ? <div role="alert" className="mt-6 rounded-lg border border-destructive/50 bg-destructive/5 p-4 text-sm text-destructive">{de ? "Bitte beantworte mindestens eine Frage und prüfe, ob eine Antwort zu lang ist." : "Please write or select at least one answer and check that no answer is too long."}</div> : null}<form method="post" className="mt-8 grid gap-6"><div className="hidden" aria-hidden="true"><label>Website<input name="website" tabIndex={-1} autoComplete="off" /></label></div>{form.questions.map((question) => <fieldset key={question.id} className="rounded-xl border bg-card p-5"><legend className="px-1 text-sm font-semibold">{question.prompt}</legend>{question.kind === "choice" ? <div className="mt-3 grid gap-2">{question.options?.map((option, index) => <label key={option} className="flex min-h-11 items-center gap-3 rounded-lg border px-3 py-2 hover:bg-accent"><input type="radio" name={question.id} value={option} /><span>{question.optionLabels?.[index] ?? option}</span></label>)}</div> : question.kind === "long_text" ? <textarea className="mt-3 min-h-32 w-full rounded-lg border bg-background px-3 py-2" name={question.id} maxLength={4000} /> : <input className="mt-3 w-full rounded-lg border bg-background px-3 py-2" name={question.id} maxLength={300} />}</fieldset>)}<button className="min-h-12 rounded-lg bg-primary px-5 py-3 font-semibold text-primary-foreground" type="submit">{de ? "Rückmeldung senden" : "Send feedback"}</button><p className="text-center text-xs text-muted-foreground">{de ? "Alle Fragen sind freiwillig, aber mindestens eine Antwort ist nötig." : "Every question is optional, but the form needs at least one answer."}</p></form></PublicFrame>;
 }
 
 function FeedbackThankYou({ de }: { de: boolean }) {
-  return <section className="feedback-success relative overflow-hidden rounded-3xl border border-primary/30 bg-card px-6 py-12 text-center shadow-2xl sm:px-12 sm:py-16">
+  return <section className="feedback-success relative overflow-hidden rounded-3xl border px-6 py-14 text-center shadow-2xl sm:px-12 sm:py-20">
     <div className="feedback-success-glow" aria-hidden="true" />
     <div className="feedback-success-visual" aria-hidden="true">
       <span className="feedback-success-ring" />
@@ -29,5 +29,5 @@ function FeedbackThankYou({ de }: { de: boolean }) {
   </section>;
 }
 
-function PublicFrame({ children, locale }: { children: ReactNode; locale: string }) { return <main lang={locale} className="mx-auto min-h-screen w-[min(680px,calc(100%_-_2rem))] py-10 sm:py-16">{children}</main>; }
+function PublicFrame({ children, locale, wide = false }: { children: ReactNode; locale: string; wide?: boolean }) { return <main lang={locale} className={`mx-auto min-h-screen ${wide ? "w-[min(860px,calc(100%_-_2rem))]" : "w-[min(680px,calc(100%_-_2rem))]"} py-10 sm:py-16`}>{children}</main>; }
 function LanguageLink({ locale, label }: { locale: string; label: string }) { return <div className="mb-6 flex justify-end"><a className="rounded-full border px-3 py-1 text-sm hover:bg-accent" href={`?lang=${locale}`}>{label}</a></div>; }
