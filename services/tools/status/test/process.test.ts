@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import type { Readable } from "node:stream";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -13,6 +14,17 @@ import {
 } from "./helpers.js";
 
 describe("one-shot process", () => {
+  it("keeps the library entry side-effect free and starts the CLI from a separate entry", async () => {
+    const [libraryEntry, cliEntry, packageJson] = await Promise.all([
+      readFile(new URL("../src/index.ts", import.meta.url), "utf8"),
+      readFile(new URL("../src/cli.ts", import.meta.url), "utf8"),
+      readFile(new URL("../package.json", import.meta.url), "utf8")
+    ]);
+    expect(libraryEntry).not.toContain("import.meta.main");
+    expect(cliEntry).toContain("runCheckerCli");
+    expect(JSON.parse(packageJson).scripts.start).toBe("tsx src/cli.ts");
+  });
+
   it("closes its store after a terminal run without listening", async () => {
     const store = new MemoryStore();
     await executeChecker({

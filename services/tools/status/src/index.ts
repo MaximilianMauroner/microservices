@@ -140,13 +140,3 @@ export async function runCheckerCli(
     }
   }
 }
-
-if (import.meta.main) {
-  void runCheckerCli().catch((error: unknown) => {
-    consoleLogger.error("checker_process_terminal", {
-      outcome: "failed",
-      errorType: error instanceof Error ? error.name : "UnknownError"
-    });
-    process.exitCode = 1;
-  });
-}
