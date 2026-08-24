@@ -18,6 +18,16 @@ describe("feedback schema exchange", () => {
     expect(() => parseFeedbackSchemaJson(JSON.stringify(changed))).toThrow("unique lowercase keys");
   });
 
+  it("rejects machine keys used as visible choice labels", () => {
+    const english = JSON.parse(feedbackSchemaJson(content));
+    english.form.questions[0].options[0] = "very_comfortable";
+    expect(() => parseFeedbackSchemaJson(JSON.stringify(english))).toThrow("readable labels");
+
+    const german = JSON.parse(feedbackSchemaJson(content));
+    german.form.german.optionLabels.comfort[0] = "very_comfortable";
+    expect(() => parseFeedbackSchemaJson(JSON.stringify(german))).toThrow("readable labels");
+  });
+
   it("allows pasted JSON to add, remove, and reorder questions", () => {
     const changed = JSON.parse(feedbackSchemaJson(content));
     changed.form.questions = [
@@ -36,5 +46,6 @@ describe("feedback schema exchange", () => {
     expect(prompt).toContain('"responseSchema"');
     expect(prompt).toContain("You may add, remove, or reorder questions");
     expect(prompt).toContain("choice: id, kind, prompt, and 2 to 12 unique options");
+    expect(prompt).toContain("natural German display labels");
   });
 });
