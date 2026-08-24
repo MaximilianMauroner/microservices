@@ -13,16 +13,18 @@ describe("public feedback confirmation", () => {
 
   it("renders the animated English thank-you state", () => {
     const html = renderToStaticMarkup(<PublicFeedbackPage form={localizeFeedbackForm(form, "en")} submitted />);
-    expect(html).toContain("Thank you for your feedback");
+    expect(html).toContain("Thank you for sharing");
     expect(html).toContain("LEVEL UP");
+    expect(html.match(/\+1/g)).toHaveLength(5);
     expect(html).toContain("feedback-success-heart");
     expect(html).toContain("feedback-success-meter");
   });
 
   it("renders the German thank-you copy", () => {
     const html = renderToStaticMarkup(<PublicFeedbackPage form={localizeFeedbackForm(form, "de")} submitted />);
-    expect(html).toContain("Danke für deine Rückmeldung");
-    expect(html).toContain("+1 Vertrauen");
-    expect(html).toContain("Du kannst diese Seite jetzt schließen.");
+    expect(html).toContain("Danke fürs Teilen");
+    expect(html).toContain("LEVEL UP");
+    expect(html).not.toContain("+1 Vertrauen");
+    expect(html).toContain("Du kannst die Seite jetzt schließen.");
   });
 });

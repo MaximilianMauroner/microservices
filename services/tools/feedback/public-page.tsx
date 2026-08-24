@@ -13,19 +13,20 @@ function FeedbackThankYou({ de }: { de: boolean }) {
     <div className="feedback-success-glow" aria-hidden="true" />
     <div className="feedback-success-visual" aria-hidden="true">
       <span className="feedback-success-ring" />
-      <span className="feedback-success-particle feedback-success-particle-one">+</span>
-      <span className="feedback-success-particle feedback-success-particle-two">+</span>
-      <span className="feedback-success-particle feedback-success-particle-three">+</span>
+      <span className="feedback-success-particle feedback-success-particle-one">+1</span>
+      <span className="feedback-success-particle feedback-success-particle-two">+1</span>
+      <span className="feedback-success-particle feedback-success-particle-three">+1</span>
+      <span className="feedback-success-particle feedback-success-particle-four">+1</span>
       <svg className="feedback-success-heart" viewBox="0 0 64 64" fill="none"><path d="M32 54S9 41 9 22.5C9 14.5 15 9 22.5 9c4.5 0 7.8 2.2 9.5 5.1C33.7 11.2 37 9 41.5 9 49 9 55 14.5 55 22.5 55 41 32 54 32 54Z" fill="currentColor" /><path d="M32 22v16M24 30h16" stroke="var(--primary-foreground)" strokeWidth="4" strokeLinecap="round" /></svg>
     </div>
-    <div className="feedback-success-level"><span>{de ? "LEVEL AUF" : "LEVEL UP"}</span><strong>{de ? "+1 Vertrauen" : "+1 trust"}</strong></div>
-    <h1 className="mt-6 text-3xl font-semibold tracking-tight sm:text-4xl">{de ? "Danke für deine Rückmeldung" : "Thank you for your feedback"}</h1>
-    <p className="mx-auto mt-4 max-w-md text-base leading-7 text-muted-foreground">{de ? "Deine Antwort ist angekommen. Ein bisschen Ehrlichkeit heilt manchmal erstaunlich viel." : "Your response made it through. A little honesty can restore a surprising amount."}</p>
+    <div className="feedback-success-level"><span>LEVEL UP</span></div>
+    <h1 className="mt-6 text-3xl font-semibold tracking-tight sm:text-4xl">{de ? "Danke fürs Teilen" : "Thank you for sharing"}</h1>
+    <p className="mx-auto mt-4 max-w-md text-base leading-7 text-muted-foreground">{de ? "Deine Rückmeldung wurde gesendet. Danke für deine Ehrlichkeit und deine Zeit." : "Your feedback was sent. Thank you for your honesty and your time."}</p>
     <div className="mx-auto mt-8 max-w-sm text-left">
-      <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground"><span>{de ? "Verbindung" : "Connection"}</span><span>{de ? "Geheilt" : "Healed"}</span></div>
+      <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground"><span>{de ? "Vertrauen" : "Trust"}</span><span>+1</span></div>
       <div className="mt-2 h-3 overflow-hidden rounded-full border bg-background"><div className="feedback-success-meter h-full rounded-full bg-primary" /></div>
     </div>
-    <p className="mt-8 text-sm text-muted-foreground">{de ? "Du kannst diese Seite jetzt schließen." : "You can close this page now."}</p>
+    <p className="mt-8 text-sm text-muted-foreground">{de ? "Du kannst die Seite jetzt schließen." : "You can close this page now."}</p>
   </section>;
 }
 
