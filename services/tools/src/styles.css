@@ -59,7 +59,7 @@
   z-index: 3;
   color: var(--feedback-heal);
   text-shadow: 0 0 14px color-mix(in oklab, var(--feedback-heal) 70%, transparent);
-  font-size: 1.45rem;
+  font-size: 0.9rem;
   font-weight: 800;
   opacity: 0;
   animation: feedback-heal-rise 1.5s ease-out both;
@@ -68,6 +68,7 @@
 .feedback-success-particle-one { left: 0.5rem; top: 3.2rem; animation-delay: 0.15s; }
 .feedback-success-particle-two { right: 0.45rem; top: 2.2rem; animation-delay: 0.45s; }
 .feedback-success-particle-three { right: 1.6rem; bottom: 0.25rem; animation-delay: 0.75s; }
+.feedback-success-particle-four { left: 1.5rem; top: 0.65rem; animation-delay: 0.95s; }
 
 .feedback-success-level {
   display: inline-flex;
@@ -83,7 +84,6 @@
 }
 
 .feedback-success-level span { font-size: 0.65rem; font-weight: 800; letter-spacing: 0.16em; }
-.feedback-success-level strong { font-size: 0.8rem; }
 
 .feedback-success-meter {
   transform-origin: left;
