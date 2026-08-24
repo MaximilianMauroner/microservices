@@ -27,4 +27,12 @@ describe("public feedback confirmation", () => {
     expect(html).not.toContain("+1 Vertrauen");
     expect(html).toContain("Du kannst die Seite jetzt schließen.");
   });
+
+  it("uses the route locale for German form controls and submission", () => {
+    const html = renderToStaticMarkup(<PublicFeedbackPage form={localizeFeedbackForm(form, "en")} locale="de" submitted={false} />);
+    expect(html).toContain("Rückmeldung senden");
+    expect(html).toContain("Alle Fragen sind freiwillig");
+    expect(html).toContain('action="?lang=de"');
+    expect(html).not.toContain("Send feedback");
+  });
 });
