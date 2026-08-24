@@ -5,7 +5,8 @@ const MAXIMUM_BODY_BYTES = 32 * 1024;
 
 export async function submitPublicFeedback({ request, context, params }: PlatformRouteInput) {
   const origin = request.headers.get("origin");
-  if (!origin || !requestOrigins(request, context.runtime.publicOrigin).has(origin)) return json({ error: "invalid_origin" }, 403);
+  const sameOriginBrowserPost = request.headers.get("sec-fetch-site") === "same-origin";
+  if (!sameOriginBrowserPost && (!origin || !requestOrigins(request, context.runtime.publicOrigin).has(origin))) return json({ error: "invalid_origin" }, 403);
   const contentType = request.headers.get("content-type")?.toLowerCase() ?? "";
   if (!contentType.startsWith("application/x-www-form-urlencoded")) return json({ error: "invalid_content_type" }, 415);
   try {
