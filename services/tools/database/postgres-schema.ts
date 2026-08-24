@@ -71,6 +71,7 @@ export const feedbackForms = toolsSchema.table("feedback_forms", {
   title: text("title").notNull(),
   introduction: text("introduction").notNull(),
   questions: jsonb("questions").$type<readonly Record<string, unknown>[]>().notNull(),
+  translations: jsonb("translations").$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
   status: text("status").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),

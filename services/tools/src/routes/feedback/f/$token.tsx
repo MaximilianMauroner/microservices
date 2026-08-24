@@ -3,11 +3,12 @@ import { PublicFeedbackPage } from "../../../../feedback/public-page.js";
 import { submitPublicFeedback } from "../../../../feedback/public-handler.js";
 import { getPublicFeedbackForm } from "../../../../feedback/server-functions.js";
 
-type PublicFeedbackSearch = { submitted?: boolean; error?: string };
+type PublicFeedbackSearch = { lang?: "en" | "de"; submitted?: boolean; error?: string };
 
 export const Route = createFileRoute("/feedback/f/$token")({
-  validateSearch: (search: Record<string, unknown>): PublicFeedbackSearch => ({ submitted: search.submitted === true || search.submitted === "1" ? true : undefined, error: typeof search.error === "string" ? search.error : undefined }),
-  loader: ({ params }) => getPublicFeedbackForm({ data: { token: params.token } }),
+  validateSearch: (search: Record<string, unknown>): PublicFeedbackSearch => ({ lang: search.lang === "de" ? "de" : "en", submitted: search.submitted === true || search.submitted === "1" ? true : undefined, error: typeof search.error === "string" ? search.error : undefined }),
+  loaderDeps: ({ search }) => ({ locale: search.lang ?? "en" }),
+  loader: ({ params, deps }) => getPublicFeedbackForm({ data: { token: params.token, locale: deps.locale } }),
   head: () => ({ meta: [{ title: "Private feedback" }, { name: "robots", content: "noindex, nofollow" }] }),
   component: PublicRoute,
   server: { handlers: { POST: submitPublicFeedback } }

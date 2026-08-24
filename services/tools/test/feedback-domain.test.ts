@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FEEDBACK_TEMPLATE, FeedbackValidationError, validateFeedbackAnswers } from "../feedback/domain.js";
+import { DEFAULT_GERMAN_TRANSLATION, FEEDBACK_TEMPLATE, FeedbackValidationError, localizeFeedbackForm, validateFeedbackAnswers, validateFeedbackQuestions, type FeedbackForm } from "../feedback/domain.js";
 
 describe("feedback answer validation", () => {
   it("accepts a partial anonymous response", () => {
@@ -14,5 +14,17 @@ describe("feedback answer validation", () => {
 
   it("ignores the honeypot field during answer validation", () => {
     expect(validateFeedbackAnswers(FEEDBACK_TEMPLATE, { website: "", enjoyed: "The walk" })).toEqual({ enjoyed: "The walk" });
+  });
+
+  it("allows the optional identity question to be removed", () => {
+    const questions = validateFeedbackQuestions(FEEDBACK_TEMPLATE.filter((question) => question.id !== "identity"));
+    expect(questions.some((question) => question.id === "identity")).toBe(false);
+  });
+
+  it("localizes form content and choice labels", () => {
+    const form = { id: "form", publicToken: "token", title: "Feedback", introduction: "Intro", questions: FEEDBACK_TEMPLATE, translations: { de: DEFAULT_GERMAN_TRANSLATION }, status: "active", createdAt: "2026-08-24T12:00:00.000Z", updatedAt: "2026-08-24T12:00:00.000Z", responseCount: 0, unreadCount: 0 } satisfies FeedbackForm;
+    const localized = localizeFeedbackForm(form, "de");
+    expect(localized.title).toBe("Feedback nach unserem Treffen");
+    expect(localized.questions[0]?.optionLabels?.[2]).toBe("Gemischt");
   });
 });
