@@ -17,5 +17,5 @@ function PublicRoute() {
   const form = Route.useLoaderData();
   const search = Route.useSearch();
   if (!form) return <main className="mx-auto w-[min(620px,calc(100%_-_2rem))] py-20"><h1 className="text-2xl font-semibold">Feedback form not found</h1><p className="mt-3 text-muted-foreground">This link may have been closed or replaced.</p></main>;
-  return <PublicFeedbackPage form={form} submitted={search.submitted === true} error={search.error} />;
+  return <PublicFeedbackPage form={form} locale={search.lang ?? "en"} submitted={search.submitted === true} error={search.error} />;
 }
