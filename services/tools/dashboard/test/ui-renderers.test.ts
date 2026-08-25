@@ -155,6 +155,8 @@ const privateSnapshot: PrivateSnapshotDocument = {
 describe("public page", () => {
   test("renders a categorized Tools directory with access and availability labels", () => {
     const html = renderPublicPage(publicSnapshot);
+    expect(html).toContain("Availability updates every 30 minutes");
+    expect(html).not.toContain("Availability updates every five minutes");
 
     expect(html).toContain('<main id="main"');
     expect(html).toContain('<link rel="canonical" href="https://tools.mauroner.net/">');

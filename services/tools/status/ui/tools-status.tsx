@@ -93,7 +93,7 @@ function ToolsStatusView({ snapshot, publicOrigin, view, actor }: { snapshot: Pu
           ) : null}
         </main>
         <footer className="status-footer">
-          <div className="status-wrap"><span className="footer-mark" aria-hidden="true">M</span><span>Managed by Mauroner</span><span aria-hidden="true">·</span><span>Five-minute checks</span></div>
+          <div className="status-wrap"><span className="footer-mark" aria-hidden="true">M</span><span>Managed by Mauroner</span><span aria-hidden="true">·</span><span>30-minute checks</span></div>
         </footer>
       </div>
     </>

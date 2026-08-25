@@ -64,7 +64,7 @@ export function renderPublicPage(
         }).join("")}
       </section>
     </main>
-    <footer class="site-footer"><div class="wrap">Mauroner Tools · Availability updates every five minutes</div></footer>`;
+    <footer class="site-footer"><div class="wrap">Mauroner Tools · Availability updates every 30 minutes</div></footer>`;
   return pageShell({
     title: "Mauroner Tools",
     description: "Publishing, review, status, and operations tools.",
@@ -127,7 +127,7 @@ function renderStatusView(
       ${options.privateView ? privateStatusIdentity(options.actor) : privateStatusCallout()}
     </main>
     <footer class="status-footer">
-      <div class="status-wrap"><span class="footer-mark" aria-hidden="true">M</span><span>Managed by Mauroner</span><span aria-hidden="true">·</span><span>Five-minute checks</span></div>
+      <div class="status-wrap"><span class="footer-mark" aria-hidden="true">M</span><span>Managed by Mauroner</span><span aria-hidden="true">·</span><span>30-minute checks</span></div>
     </footer>
   </div>`;
 
