@@ -5,11 +5,11 @@ products live directly under `services/tools`: Dashboard, Status, Publisher,
 Field Guide, Money, and Feedback. They share authentication, configuration, lifecycle,
 health checks, and deployment.
 
-The process also owns leased scheduled work for Status. It must remain awake,
-but multiple replicas are safe because PostgreSQL arbitrates each schedule
-slot. Dashboard and monitor definitions are typed code. PostgreSQL stores
-runtime state; object storage holds artifact bodies and derived status
-snapshots.
+Status work runs in a dedicated bounded Railway cron process. The main Tools
+service can sleep between real traffic and the cron's 30-minute probes.
+PostgreSQL arbitrates repeated schedule slots. Dashboard and monitor definitions
+are typed code. PostgreSQL stores runtime state; object storage holds artifact
+bodies and derived status snapshots.
 
 - [runtime-boundaries.md](./runtime-boundaries.md): service and product ownership.
 - [access-incident.md](./access-incident.md): authentication containment and recovery.

@@ -72,8 +72,9 @@ pnpm --dir services/tools run start
 ```
 
 The predeploy step applies the Tools migration and the Field Guide Postgres
-schema. Tools must remain awake while it owns scheduled work. `/live` reports
-process liveness; `/health` reports dependency readiness.
+schema. Status work runs in a dedicated Railway cron service, so Tools can sleep
+between real traffic and scheduled probes. `/live` reports process liveness;
+`/health` reports dependency readiness.
 
 Production requires `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
 `BETTER_AUTH_SECRET`, and `AUTH_ALLOWED_GOOGLE_SUBJECT`. Machine APIs retain
