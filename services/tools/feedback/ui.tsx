@@ -71,6 +71,8 @@ export function FeedbackFormPage({ form, submissions, publicOrigin }: { form: Fe
   const [questions, setQuestions] = useState<readonly FeedbackQuestion[]>(form.questions);
   const [schemaText, setSchemaText] = useState("");
   const [schemaNotice, setSchemaNotice] = useState<string>();
+  const [mobileEditorOpen, setMobileEditorOpen] = useState(false);
+  const [mobileToolsOpen, setMobileToolsOpen] = useState(false);
   const publicUrl = `${publicOrigin}/feedback/f/${form.publicToken}`;
   async function run(action: () => Promise<unknown>) { setBusy(true); setError(undefined); try { await action(); await router.invalidate(); } catch (caught) { setError(message(caught)); } finally { setBusy(false); } }
   async function save(event: FormEvent) { event.preventDefault(); await run(() => updateFeedbackForm({ data: { formId: form.id, language, title, introduction, questions } })); }
@@ -107,9 +109,8 @@ export function FeedbackFormPage({ form, submissions, publicOrigin }: { form: Fe
       </section>
       <div className="mt-7 grid gap-5 lg:grid-cols-[minmax(0,1fr)_23rem]">
         <div className="grid gap-6 self-start">
-          <details className="feedback-mobile-section lg:contents">
-            <summary className="cursor-pointer rounded-2xl border bg-card/80 p-5 font-semibold lg:hidden">Edit form <span className="mt-1 block text-xs font-normal text-muted-foreground">Title, introduction, and questions</span></summary>
-          <form className={`${card} mt-2 p-5 sm:p-6 lg:mt-0`} onSubmit={save}>
+          <button className="rounded-2xl border bg-card/80 p-5 text-left font-semibold lg:hidden" type="button" aria-expanded={mobileEditorOpen} aria-controls="feedback-form-editor" onClick={() => setMobileEditorOpen((open) => !open)}>Edit form <span className="mt-1 block text-xs font-normal text-muted-foreground">Title, introduction, and questions</span></button>
+          <form id="feedback-form-editor" className={`${card} ${mobileEditorOpen ? "block" : "hidden"} p-5 sm:p-6 lg:block`} onSubmit={save}>
             <h2 className="font-semibold">Form text</h2><p className="mt-1 text-sm text-muted-foreground">This content is shown in one language only.</p>
             <div className="mt-5 grid gap-4 sm:grid-cols-2"><label className="grid gap-1.5 text-sm font-medium">Language<select className={input} value={language} onChange={(event) => setLanguage(event.target.value as FeedbackLanguage)}><option value="de">German</option><option value="en">English</option></select></label><label className="grid gap-1.5 text-sm font-medium">Title<input className={input} maxLength={120} placeholder="Enter a title" value={title} onChange={(event) => setTitle(event.target.value)} /></label></div>
             <label className="mt-4 grid gap-1.5 text-sm font-medium">Introduction<textarea className={`${input} min-h-28`} maxLength={2000} placeholder="Explain what this feedback is for" value={introduction} onChange={(event) => setIntroduction(event.target.value)} /></label>
@@ -117,16 +118,15 @@ export function FeedbackFormPage({ form, submissions, publicOrigin }: { form: Fe
             <FeedbackQuestionEditor questions={questions} onChange={setQuestions} />
             {error ? <p className="mt-4 text-sm text-destructive">{error}</p> : null}<button className={`${button} mt-5 w-full bg-primary text-primary-foreground hover:bg-primary/90`} disabled={busy}>Save form</button>
           </form>
-          </details>
           <section className="hidden lg:block"><h2 className="text-lg font-semibold">Responses</h2><div className="mt-3 grid gap-2">{submissions.length ? submissions.map((submission) => <SubmissionLink key={submission.id} submission={submission} />) : <p className="rounded-xl border border-dashed p-5 text-sm text-muted-foreground">No responses yet.</p>}</div></section>
         </div>
         <aside className="grid gap-4 self-start">
-          <details className="feedback-mobile-section lg:contents">
-          <summary className="cursor-pointer rounded-2xl border bg-card/80 p-5 font-semibold lg:hidden">More tools <span className="mt-1 block text-xs font-normal text-muted-foreground">Link settings, schema, export, and deletion</span></summary>
+          <button className="rounded-2xl border bg-card/80 p-5 text-left font-semibold lg:hidden" type="button" aria-expanded={mobileToolsOpen} aria-controls="feedback-more-tools" onClick={() => setMobileToolsOpen((open) => !open)}>More tools <span className="mt-1 block text-xs font-normal text-muted-foreground">Link settings, schema, export, and deletion</span></button>
+          <div id="feedback-more-tools" className={`${mobileToolsOpen ? "grid" : "hidden"} gap-4 lg:grid`}>
           <details className="rounded-2xl border border-emerald-500/25 bg-emerald-500/[0.05] p-5" open><summary className="cursor-pointer font-semibold">Schema prompt <span className="ml-2 rounded-full border border-emerald-500/25 px-2 py-0.5 text-[10px] font-medium text-emerald-300">Version 2</span></summary><p className="mt-3 text-sm text-muted-foreground">The prompt collects the form topic, audience, goals, constraints, language, and tone before generating it.</p><div className="mt-3 rounded-xl border border-emerald-500/20 bg-background/70 p-3 font-mono text-xs leading-5 text-emerald-200">Ask before writing JSON:<br />language · topic · audience · goals · constraints · tone</div><div className="mt-3 grid grid-cols-2 gap-2"><button className={button} type="button" onClick={() => copySchema("json")}>Copy JSON</button><button className={`${button} bg-primary text-primary-foreground hover:bg-primary/90`} type="button" onClick={() => copySchema("prompt")}>Copy prompt</button></div><textarea className={`${input} mt-3 min-h-48 font-mono text-xs`} placeholder="Paste Feedback schema JSON here" value={schemaText} onChange={(event) => setSchemaText(event.target.value)} /><button className={`${button} mt-2 w-full`} type="button" disabled={!schemaText.trim()} onClick={applySchema}>Apply pasted JSON</button>{schemaNotice ? <p className="mt-2 text-xs text-muted-foreground" role="status">{schemaNotice}</p> : null}</details>
           <section className={`${card} p-5`}><h2 className="font-semibold">Public link</h2><p className="mt-1 break-all text-xs text-muted-foreground">{publicUrl}</p><div className="mt-3 grid grid-cols-2 gap-2"><button className={button} type="button" onClick={() => void copyFeedbackText(publicUrl, "Link copied")}>Copy link</button><a className={button} href={publicUrl} target="_blank" rel="noreferrer">Preview</a></div><div className="mt-2 grid grid-cols-2 gap-2"><button className={button} disabled={busy} onClick={() => run(() => setFeedbackFormStatus({ data: { formId: form.id, status: form.status === "active" ? "closed" : "active" } }))}>{form.status === "active" ? "Close" : "Activate"}</button><button className={button} disabled={busy} onClick={() => window.confirm("Rotate this link? The current link will stop working.") && run(() => rotateFeedbackToken({ data: { formId: form.id } }))}>Rotate link</button></div><a className={`${button} mt-2 w-full`} href={`/api/feedback/forms/${form.id}/export`}>Export CSV</a></section>
           <section className="rounded-2xl border border-destructive/35 p-5"><h2 className="font-semibold text-destructive">Delete form</h2><p className="mt-1 text-sm text-muted-foreground">This permanently deletes every response.</p><button className={`${button} mt-3 w-full text-destructive`} disabled={busy} onClick={remove}>Delete permanently</button></section>
-          </details>
+          </div>
         </aside>
       </div>
     </main>
