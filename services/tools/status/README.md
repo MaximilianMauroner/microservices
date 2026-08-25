@@ -12,8 +12,8 @@ revision checks keep repeated invocations idempotent.
 ## Required configuration
 
 - `TOOLS_ENVIRONMENT`: URL-safe environment identity included in deterministic
-  run IDs. Run IDs retain five-minute slots so an operator can retry a failed
-  pass without colliding with the original invocation.
+  run IDs. Run IDs retain five-minute slots, so retries in the same slot reuse
+  the original ID and remain idempotent.
 - `DATABASE_URL`: Postgres connection used for runs, observations, incidents,
   heartbeats, pause overrides, checker state, and history.
 - `S3_BUCKET`, `S3_ENDPOINT`, `S3_REGION`, `S3_ACCESS_KEY_ID`,

@@ -146,6 +146,8 @@ describe("TanStack Start public pages", () => {
     expect(html).toContain("private-status-link");
     expect(html).toContain("Sign out");
     expect(html).toContain('data-suite-accent="cyan"');
+    expect(html).toContain("30-minute checks");
+    expect(html).not.toContain("Five-minute checks");
     expect(html.match(/class="uptime-day /g)).toHaveLength(90);
   });
 
