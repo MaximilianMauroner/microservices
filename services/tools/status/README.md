@@ -22,6 +22,8 @@ revision checks keep repeated invocations idempotent.
 - `CHECK_CONCURRENCY`: optional `1..32`, default `6`.
 - `PROBE_TIMEOUT_MS`: optional total probe timeout `1000..60000`, default
   `10000`.
+- `TOWER_HEARTBEAT_STALE_AFTER_MS`: optional Tower heartbeat freshness window,
+  default 40 minutes for the production 30-minute heartbeat cadence.
 - `DISCORD_WEBHOOK_URL`: optional; when absent, pending notifications remain in
   the durable outbox.
 

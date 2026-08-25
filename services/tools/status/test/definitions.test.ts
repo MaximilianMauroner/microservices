@@ -33,6 +33,9 @@ describe("monitor definitions", () => {
       products.flatMap(({ monitorId }) => monitorId ? [monitorId] : []),
       definitions
     )).not.toThrow();
+    expect(definitions.find(({ id }) => id === "tower")).toMatchObject({
+      staleAfterMs: 40 * 60_000
+    });
     expect(() => assertMonitorIdentities(["known"], ["missing"], [
       { id: "known", kind: "http", url: "https://known.example", scope: "public", expectedStatus: [200], timeoutMs: 1000 }
     ])).toThrow(/unknownProducts=missing/);
