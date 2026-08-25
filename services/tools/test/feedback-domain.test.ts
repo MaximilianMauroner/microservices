@@ -1,14 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { FEEDBACK_TEMPLATE, FeedbackValidationError, localizeFeedbackForm, validateFeedbackAnswers, validateFeedbackQuestions, type FeedbackForm } from "../feedback/domain.js";
+import { FEEDBACK_TEMPLATE, FeedbackValidationError, feedbackChoiceDetailsKey, localizeFeedbackForm, validateFeedbackAnswers, validateFeedbackQuestions, type FeedbackForm } from "../feedback/domain.js";
 
 describe("feedback answer validation", () => {
   it("accepts a partial anonymous response", () => {
     expect(validateFeedbackAnswers(FEEDBACK_TEMPLATE, { comfort: "Mixed", disliked: "  Please stop interrupting me.  " })).toEqual({ comfort: "Mixed", disliked: "Please stop interrupting me." });
   });
 
+  it("accepts optional context for a choice answer", () => {
+    const detailsKey = feedbackChoiceDetailsKey("comfort");
+    expect(validateFeedbackAnswers(FEEDBACK_TEMPLATE, { comfort: "Mixed", [detailsKey]: "  I needed more quiet time.  " })).toEqual({ comfort: "Mixed", [detailsKey]: "I needed more quiet time." });
+    expect(validateFeedbackAnswers(FEEDBACK_TEMPLATE, { [detailsKey]: "The options did not quite fit." })).toEqual({ [detailsKey]: "The options did not quite fit." });
+  });
+
   it("rejects empty, unknown, and invalid choice answers", () => {
     expect(() => validateFeedbackAnswers(FEEDBACK_TEMPLATE, {})).toThrowError(FeedbackValidationError);
     expect(() => validateFeedbackAnswers(FEEDBACK_TEMPLATE, { surprise: "value" })).toThrow("unknown answer");
+    expect(() => validateFeedbackAnswers(FEEDBACK_TEMPLATE, { "details:disliked": "Not a choice question" })).toThrow("unknown answer");
     expect(() => validateFeedbackAnswers(FEEDBACK_TEMPLATE, { comfort: "Perfect" })).toThrow("not available");
   });
 

@@ -25,5 +25,6 @@ describe("feedback copy UI", () => {
     expect(feedbackUi).toContain("More tools");
     expect(feedbackUi).toContain('aria-controls="feedback-form-editor"');
     expect(feedbackUi).toContain('lg:block`} onSubmit={save}');
+    expect(feedbackUi).toContain("Additional context");
   });
 });

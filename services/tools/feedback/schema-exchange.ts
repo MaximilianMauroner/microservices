@@ -1,6 +1,7 @@
 import {
   assertFeedbackLanguage,
   assertFeedbackText,
+  feedbackChoiceDetailsKey,
   validateFeedbackQuestions,
   type FeedbackLanguage,
   type FeedbackQuestion,
@@ -14,6 +15,13 @@ export type FeedbackEditableContent = Readonly<{
 }>;
 
 export function feedbackSchemaJson(content: FeedbackEditableContent) {
+  const responseProperties: Record<string, unknown> = {};
+  for (const question of content.questions) {
+    responseProperties[question.id] = question.kind === "choice"
+      ? { type: "string", enum: question.options }
+      : { type: "string", maxLength: question.kind === "long_text" ? 4_000 : 300 };
+    if (question.kind === "choice") responseProperties[feedbackChoiceDetailsKey(question.id)] = { type: "string", maxLength: 4_000, description: "Optional explanation for the selected answer" };
+  }
   return JSON.stringify({
     version: 2,
     capabilities: {
@@ -33,9 +41,7 @@ export function feedbackSchemaJson(content: FeedbackEditableContent) {
     responseSchema: {
       type: "object",
       additionalProperties: false,
-      properties: Object.fromEntries(content.questions.map((question) => [question.id, question.kind === "choice"
-        ? { type: "string", enum: question.options }
-        : { type: "string", maxLength: question.kind === "long_text" ? 4_000 : 300 }]))
+      properties: responseProperties
     }
   }, null, 2);
 }
@@ -75,7 +81,7 @@ You may add, remove, or reorder questions in form.questions. Supported question 
 - short_text: id, kind, and prompt, with answers limited to 300 characters
 - long_text: id, kind, and prompt, with answers limited to 4000 characters
 
-Set form.language to en or de to match the chosen language. Write the title, introduction, prompts, and choice options only in that language. Question ids become response property names. Use unique lowercase ids matching ^[a-z][a-z0-9_]{0,63}$ and never use website. Choice options are visible to respondents and stored as response values. Write concise display labels, never identifiers such as "very_comfortable". Keep them stable after publishing. Update responseSchema so its properties exactly match form.questions. Every question is optional. Preserve version 2.
+Set form.language to en or de to match the chosen language. Write the title, introduction, prompts, and choice options only in that language. Question ids become response property names. Use unique lowercase ids matching ^[a-z][a-z0-9_]{0,63}$ and never use website. Choice options are visible to respondents and stored as response values. Each choice also has an optional details:<question_id> response property with up to 4000 characters. Write concise display labels, never identifiers such as "very_comfortable". Keep them stable after publishing. Update responseSchema so its properties match the questions and their optional choice details. Every question is optional. Preserve version 2.
 
 ${feedbackSchemaJson(content)}`;
 }
