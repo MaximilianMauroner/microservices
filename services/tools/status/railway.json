@@ -5,7 +5,7 @@
   },
   "deploy": {
     "startCommand": "pnpm --dir services/tools/status run start",
-    "cronSchedule": "*/5 * * * *",
+    "cronSchedule": "*/30 * * * *",
     "restartPolicyType": "NEVER"
   }
 }

@@ -1,7 +1,7 @@
 # Status
 
 Status is presented by Tools and checked by a separate Railway cron service.
-Railway starts `pnpm --dir services/tools/status run start` every five minutes
+Railway starts `pnpm --dir services/tools/status run start` every 30 minutes
 from this directory's `railway.json`; the process runs one bounded monitoring
 pass, closes its resources, and exits.
 
@@ -12,7 +12,8 @@ revision checks keep repeated invocations idempotent.
 ## Required configuration
 
 - `TOOLS_ENVIRONMENT`: URL-safe environment identity included in deterministic
-  five-minute run IDs.
+  run IDs. Run IDs retain five-minute slots so an operator can retry a failed
+  pass without colliding with the original invocation.
 - `DATABASE_URL`: Postgres connection used for runs, observations, incidents,
   heartbeats, pause overrides, checker state, and history.
 - `S3_BUCKET`, `S3_ENDPOINT`, `S3_REGION`, `S3_ACCESS_KEY_ID`,
@@ -44,5 +45,6 @@ exponential backoff.
 
 Configure the Railway service to use `/services/tools/status/railway.json` and
 provide the required variables. Configure explicit CPU/RAM limits and a project
-usage alert. Checker shutdown is bounded and awaits database and snapshot-store
-cleanup before exiting.
+usage alert. The 30-minute production cadence lets the monitored Tools service
+and PostgreSQL sleep between checks. Checker shutdown is bounded and awaits
+database and snapshot-store cleanup before exiting.

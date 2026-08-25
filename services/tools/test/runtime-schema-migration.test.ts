@@ -21,7 +21,7 @@ describe("runtime schema management", () => {
     expect(JSON.parse(previewConfig).deploy.sleepApplication).toBe(false);
     expect(JSON.parse(statusConfig).deploy).toMatchObject({
       startCommand: "pnpm --dir services/tools/status run start",
-      cronSchedule: "*/5 * * * *",
+      cronSchedule: "*/30 * * * *",
       restartPolicyType: "NEVER"
     });
     expect(runtimeSource).not.toContain("executeChecker");
