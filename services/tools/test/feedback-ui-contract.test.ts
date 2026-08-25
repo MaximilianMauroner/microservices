@@ -23,5 +23,7 @@ describe("feedback copy UI", () => {
     expect(feedbackUi).toContain("Recent responses");
     expect(feedbackUi).toContain("Edit form");
     expect(feedbackUi).toContain("More tools");
+    expect(feedbackUi).toContain('aria-controls="feedback-form-editor"');
+    expect(feedbackUi).toContain('lg:block`} onSubmit={save}');
   });
 });

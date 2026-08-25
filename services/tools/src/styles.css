@@ -130,11 +130,6 @@
   .feedback-success-particle { display: none; }
 }
 
-@media (min-width: 1024px) {
-  .feedback-mobile-section:not([open]) > :not(summary) { display: block; }
-  .feedback-mobile-section > summary { display: none; }
-}
-
 :root {
   --background: #000000;
   --foreground: #ffffff;
