@@ -13,4 +13,15 @@ describe("feedback copy UI", () => {
     expect(feedbackUi).toContain('copyFeedbackText(publicUrl, "Link copied")');
     expect(feedbackUi).toContain("<FeedbackQuestionEditor questions={questions} onChange={setQuestions} />");
   });
+
+  it("renders the action-first mobile overview", async () => {
+    const feedbackUi = await readFile(new URL("../feedback/ui.tsx", import.meta.url), "utf8");
+
+    expect(feedbackUi).toContain('aria-label="Feedback overview"');
+    expect(feedbackUi).toContain("View public form");
+    expect(feedbackUi).toContain("Total responses");
+    expect(feedbackUi).toContain("Recent responses");
+    expect(feedbackUi).toContain("Edit form");
+    expect(feedbackUi).toContain("More tools");
+  });
 });
