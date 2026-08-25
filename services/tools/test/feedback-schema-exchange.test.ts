@@ -9,6 +9,7 @@ describe("feedback schema exchange", () => {
     const json = feedbackSchemaJson(content);
     expect(JSON.parse(json).version).toBe(2);
     expect(JSON.parse(json).responseSchema.properties.comfort.enum).toEqual(FEEDBACK_TEMPLATE[0].options);
+    expect(JSON.parse(json).responseSchema.properties["details:comfort"].maxLength).toBe(4000);
     expect(parseFeedbackSchemaJson(json)).toEqual(content);
   });
 
@@ -51,6 +52,7 @@ describe("feedback schema exchange", () => {
     expect(prompt).toContain('"responseSchema"');
     expect(prompt).toContain("You may add, remove, or reorder questions");
     expect(prompt).toContain("choice: id, kind, prompt, and 2 to 12 unique options");
+    expect(prompt).toContain("details:<question_id>");
     expect(prompt).toContain("Should this form be written in German or English?");
     expect(prompt).toContain("What is this feedback form about?");
     expect(prompt).toContain("Who will answer it?");

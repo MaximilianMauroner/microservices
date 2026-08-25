@@ -33,8 +33,17 @@ describe("public feedback confirmation", () => {
     const html = renderToStaticMarkup(<PublicFeedbackPage form={localizeFeedbackForm(germanForm)} submitted={false} />);
     expect(html).toContain("Rückmeldung senden");
     expect(html).toContain("Alle Fragen sind freiwillig");
+    expect(html).toContain("Möchtest du deine Auswahl näher erklären?");
+    expect(html).toContain('name="details:comfort"');
     expect(html).not.toContain("English");
     expect(html).not.toContain("Deutsch");
     expect(html).not.toContain("Send feedback");
+  });
+
+  it("offers an optional explanation after every choice question", () => {
+    const html = renderToStaticMarkup(<PublicFeedbackPage form={localizeFeedbackForm(form)} submitted={false} />);
+    expect(html.match(/Would you like to explain your choice\?/g)).toHaveLength(2);
+    expect(html).toContain('name="details:comfort"');
+    expect(html).toContain('name="details:follow_up"');
   });
 });

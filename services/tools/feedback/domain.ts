@@ -47,6 +47,8 @@ export type FeedbackSubmission = Readonly<{
 }>;
 
 export const DEFAULT_FEEDBACK_INTRODUCTION = "Thanks for hanging out with me. I care about how people feel around me, and I know some feedback can be awkward to say in the moment. Every question is optional, and you do not need to give your name.";
+export function feedbackChoiceDetailsKey(questionId: string) { return `details:${questionId}`; }
+
 export function assertFeedbackLanguage(value: string): FeedbackLanguage {
   if (value !== "en" && value !== "de") throw new FeedbackValidationError("invalid_language", "Choose German or English.");
   return value;
@@ -62,16 +64,18 @@ export type LocalizedFeedbackForm = ReturnType<typeof localizeFeedbackForm>;
 
 export function validateFeedbackAnswers(questions: readonly FeedbackQuestion[], input: Record<string, FormDataEntryValue>): Record<string, string> {
   const allowed = new Map(questions.map((question) => [question.id, question]));
+  const choiceDetails = new Map(questions.filter((question) => question.kind === "choice").map((question) => [feedbackChoiceDetailsKey(question.id), question]));
   const answers: Record<string, string> = {};
   for (const [key, raw] of Object.entries(input)) {
     if (key === "website") continue;
     const question = allowed.get(key);
-    if (!question || typeof raw !== "string") throw new FeedbackValidationError("invalid_answer", "The response contains an unknown answer.");
+    const detailQuestion = choiceDetails.get(key);
+    if ((!question && !detailQuestion) || typeof raw !== "string") throw new FeedbackValidationError("invalid_answer", "The response contains an unknown answer.");
     const value = raw.trim();
     if (!value) continue;
-    const maximum = question.kind === "long_text" ? 4_000 : 300;
+    const maximum = detailQuestion || question?.kind === "long_text" ? 4_000 : 300;
     if (value.length > maximum) throw new FeedbackValidationError("answer_too_long", `An answer exceeds ${maximum} characters.`);
-    if (question.kind === "choice" && !question.options?.includes(value)) throw new FeedbackValidationError("invalid_choice", "A selected answer is not available.");
+    if (question?.kind === "choice" && !question.options?.includes(value)) throw new FeedbackValidationError("invalid_choice", "A selected answer is not available.");
     answers[key] = value;
   }
   if (Object.keys(answers).length === 0) throw new FeedbackValidationError("empty_submission", "Write or select at least one answer before submitting.");

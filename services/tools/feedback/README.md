@@ -17,6 +17,9 @@ version 2 format, while legacy version 1 documents still import as English.
 JSON imports may add, remove, or
 reorder up to 20 `choice`, `short_text`, and `long_text` questions. Question
 IDs become stable response keys and must remain unique lowercase identifiers.
+Every choice question also accepts an optional written explanation. The answer
+uses the `details:<question_id>` key so the selected option and its context stay
+separate in storage, the private response view, and CSV exports.
 The generation prompt asks whether the form should be German or English before
 it produces JSON.
 
