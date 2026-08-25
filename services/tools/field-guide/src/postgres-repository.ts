@@ -44,6 +44,7 @@ export class PostgresReviewRepository implements ReviewRepository {
   constructor(url: string, options: { readOnly?: boolean } = {}) {
     this.sql = postgres(url, {
       max: 5,
+      idle_timeout: 120,
       connection: {
         search_path: FIELD_GUIDE_SCHEMA,
         ...(options.readOnly ? { default_transaction_read_only: true } : {})

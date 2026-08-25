@@ -43,7 +43,7 @@ export function createPostgresUploadStorage(
   databaseUrl: string
 ): UploadStorage {
   const bodies = createS3UploadStorage(s3Config);
-  const sql = postgres(databaseUrl, { max: 5 });
+  const sql = postgres(databaseUrl, { max: 5, idle_timeout: 120 });
   return createMetadataBackedUploadStorage(bodies, sql);
 }
 

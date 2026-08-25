@@ -32,7 +32,7 @@ export interface FeedbackRepository {
 }
 
 export function createPostgresFeedbackRepository(databaseUrl: string, options: { readOnly?: boolean } = {}): FeedbackRepository {
-  return feedbackRepository(postgres(databaseUrl, { max: 3, connection: options.readOnly ? { default_transaction_read_only: true } : undefined }));
+  return feedbackRepository(postgres(databaseUrl, { max: 3, idle_timeout: 120, connection: options.readOnly ? { default_transaction_read_only: true } : undefined }));
 }
 
 export function feedbackRepository(sql: Sql): FeedbackRepository {

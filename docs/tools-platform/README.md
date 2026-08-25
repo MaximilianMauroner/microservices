@@ -11,6 +11,11 @@ PostgreSQL arbitrates repeated schedule slots. Dashboard and monitor definitions
 are typed code. PostgreSQL stores runtime state; object storage holds artifact
 bodies and derived status snapshots.
 
+The web process closes idle PostgreSQL connections after two minutes. Keep that
+timeout below Railway's ten-minute inactivity window. Hourly artifact cleanup
+and daily market-data work may wake the service, but neither should keep it
+awake between runs.
+
 - [runtime-boundaries.md](./runtime-boundaries.md): service and product ownership.
 - [access-incident.md](./access-incident.md): authentication containment and recovery.
 - [bucket-recovery.md](./bucket-recovery.md): PostgreSQL and object-storage recovery.

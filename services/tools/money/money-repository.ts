@@ -173,7 +173,7 @@ export interface MoneyRepository {
 }
 
 export function createPostgresMoneyRepository(databaseUrl: string, options: { readOnly?: boolean } = {}): MoneyRepository {
-  return postgresMoneyRepository(postgres(databaseUrl, { max: 4, connection: options.readOnly ? { default_transaction_read_only: true } : undefined }));
+  return postgresMoneyRepository(postgres(databaseUrl, { max: 4, idle_timeout: 120, connection: options.readOnly ? { default_transaction_read_only: true } : undefined }));
 }
 
 export function postgresMoneyRepository(sql: Sql): MoneyRepository {

@@ -193,7 +193,7 @@
         "scope": "public",
         "url": "https://tools.mauroner.net/health/tower"
       },
-      "privateNotes": "Tower posts a bearer-authenticated heartbeat every minute; health becomes stale after three minutes."
+      "privateNotes": "Tower posts a bearer-authenticated heartbeat every 30 minutes; health becomes stale after 40 minutes."
     },
     {
       "id": "home-assistant",

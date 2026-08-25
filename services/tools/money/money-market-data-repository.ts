@@ -66,7 +66,7 @@ export interface MoneyMarketDataRepository {
 }
 
 export function createPostgresMoneyMarketDataRepository(databaseUrl: string, options: { readOnly?: boolean } = {}) {
-  return postgresMoneyMarketDataRepository(postgres(databaseUrl, { max: 3, connection: options.readOnly ? { default_transaction_read_only: true } : undefined }));
+  return postgresMoneyMarketDataRepository(postgres(databaseUrl, { max: 3, idle_timeout: 120, connection: options.readOnly ? { default_transaction_read_only: true } : undefined }));
 }
 
 export function postgresMoneyMarketDataRepository(sql: Sql): MoneyMarketDataRepository {

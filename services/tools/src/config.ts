@@ -49,7 +49,7 @@ export function loadPlatformConfig(env: Environment = process.env) {
     ),
     towerHeartbeatStaleAfterMs: positiveInteger(
       env.TOWER_HEARTBEAT_STALE_AFTER_MS,
-      3 * 60 * 1000,
+      40 * 60 * 1000,
       "TOWER_HEARTBEAT_STALE_AFTER_MS"
     )
   };

@@ -24,7 +24,7 @@ export interface ScheduledTaskLeaseRepository {
 export function createPostgresScheduledTaskLeaseRepository(
   databaseUrl: string
 ): ScheduledTaskLeaseRepository {
-  return postgresScheduledTaskLeaseRepository(postgres(databaseUrl, { max: 2 }));
+  return postgresScheduledTaskLeaseRepository(postgres(databaseUrl, { max: 2, idle_timeout: 120 }));
 }
 
 export function postgresScheduledTaskLeaseRepository(
