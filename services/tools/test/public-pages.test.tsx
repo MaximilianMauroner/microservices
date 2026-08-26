@@ -115,6 +115,9 @@ describe("TanStack Start public pages", () => {
     expect(html).toContain('href="/money"');
     expect(html).toContain('href="/publisher"');
     expect(html).toContain('href="/status"');
+    expect(html.indexOf("Publisher")).toBeLessThan(html.indexOf("Feedback"));
+    expect(html.indexOf("Money")).toBeLessThan(html.indexOf("Feedback"));
+    expect(html.indexOf("Feedback")).toBeLessThan(html.indexOf("Status"));
     for (const product of ["publisher", "field-guide", "money", "status", "markdown-share", "network-console"]) {
       expect(html).toContain(`/assets/icons/${product}.png`);
     }

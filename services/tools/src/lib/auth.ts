@@ -7,7 +7,7 @@ import { tanstackStartCookies } from "better-auth/tanstack-start";
 import type { PlatformPrincipal } from "@tools-platform/security";
 import type { PlatformAuthConfig } from "../config.js";
 
-const SESSION_SECONDS = 12 * 60 * 60;
+const SESSION_SECONDS = 7 * 24 * 60 * 60;
 
 export function createPlatformAuth(config: PlatformAuthConfig) {
   return betterAuth({
