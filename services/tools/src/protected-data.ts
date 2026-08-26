@@ -14,7 +14,7 @@ import type {
   Summary
 } from "@tools-platform/field-guide";
 import { requirePlatformSession } from "./auth-middleware.js";
-import { internalPlatformRequest, readPlatformJson } from "./server-data.js";
+import { internalPlatformRequest, readPlatformJson, readPlatformResponse } from "./server-data.js";
 import { MONEY_LEDGER_SCOPES, type MoneyLedgerViewScope, type MoneyLedgerSnapshot } from "../money/money-repository.js";
 import type { MoneyMarketSnapshot } from "../money/money-market-data-service.js";
 
@@ -153,10 +153,12 @@ export const getPrivateStatusPageData = createServerFn({ method: "GET" })
 export const getManagePageData = createServerFn({ method: "GET" })
   .middleware([requirePlatformSession])
   .handler(async (): Promise<ManagePageData> => {
-    const { context, request } = internalPlatformRequest(
-      "/api/external-uploads?limit=100&sort=newest"
+    const pathname = "/api/external-uploads?limit=100&sort=newest";
+    const { context } = internalPlatformRequest(pathname);
+    const response = await readPlatformResponse(
+      context.runtime.services.publisher.handle,
+      pathname
     );
-    const response = await context.runtime.services.publisher.handle(request);
     if (!response.ok) throw new Error(`Artifact inventory request failed: ${response.status}`);
     return response.json() as Promise<ManagePageData>;
   });
