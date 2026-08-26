@@ -11,6 +11,6 @@ describe("focused authentication card", () => {
     const html = renderToStaticMarkup(<SignInPanel state={state} />);
     expect(html).toContain(heading);
     expect(html).toContain(action);
-    expect(html).toContain("Secure session · 12 hours");
+    expect(html).toContain("Secure session · 7 days");
   });
 });

@@ -23,7 +23,7 @@ are private and non-cacheable.
 ## Browser authentication
 
 Better Auth runs without an auth database. It uses a secure, HTTP-only,
-same-site encrypted cookie with a 12-hour lifetime. Google is the only provider
+same-site encrypted cookie with a seven-day lifetime. Google is the only provider
 and requests only the default OpenID, email, and profile scopes. The verified
 Google `sub` must exactly match `AUTH_ALLOWED_GOOGLE_SUBJECT` before a session
 is created.
