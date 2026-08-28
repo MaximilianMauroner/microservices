@@ -89,6 +89,8 @@ export function ToolsDirectory({ snapshot }: { snapshot: PublicSnapshotDocument 
           </article>;
           return product.external
             ? <a key={product.id} href={product.href} target="_blank" rel="noreferrer">{card}</a>
+            : product.id === "markdown-share"
+              ? <a key={product.id} href={product.href}>{card}</a>
             : <Link key={product.id} to={product.href as "/feedback" | "/publisher" | "/field-guide" | "/money" | "/status" | "/markdown"} preload="intent">{card}</Link>;
         })}
       </section>

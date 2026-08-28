@@ -16,4 +16,14 @@ describe("integrated Markdown Share theme", () => {
     expect(styles).toMatch(/\.landing-shell,\s*\.status-shell\s*\{[^}]*color: var\(--ink\);/s);
     expect(styles).toMatch(/\.editor-shell\s*\{[^}]*color: var\(--ink\);/s);
   });
+
+  it("prints the preview without hiding application mount ancestors", async () => {
+    const styles = await readFile(new URL("./styles.css", import.meta.url), "utf8");
+    const printStyles = styles.slice(styles.indexOf("@media print"));
+
+    expect(printStyles).not.toContain("#root");
+    expect(printStyles).toContain(".editor-shell > :not(.workspace)");
+    expect(printStyles).toContain(".editor-shell .workspace > :not(.preview-panel)");
+    expect(printStyles).toContain(".editor-shell .preview-panel > :not(#print-preview)");
+  });
 });

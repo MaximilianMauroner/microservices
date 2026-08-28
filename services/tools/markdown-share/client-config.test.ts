@@ -11,6 +11,10 @@ describe("Markdown Share browser configuration", () => {
       "http://127.0.0.1:3210",
       "ws://127.0.0.1:3210",
     ]);
+    expect(loadMarkdownShareClientConfig("http://[::1]:3210").connectOrigins).toEqual([
+      "http://[::1]:3210",
+      "ws://[::1]:3210",
+    ]);
   });
 
   it.each([undefined, "", "not a url", "http://example.convex.cloud", "https://example.convex.cloud/path"])("rejects %s", (value) => {
