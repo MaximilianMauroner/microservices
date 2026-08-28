@@ -19,6 +19,7 @@ import { Route as HealthRouteImport } from './routes/health'
 import { Route as LiveRouteImport } from './routes/live'
 import { Route as MoneyRouteImport } from './routes/money'
 import { Route as PublisherRouteImport } from './routes/publisher'
+import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as StatusRouteImport } from './routes/status'
 import { Route as ApiAgentRouteImport } from './routes/api/agent'
@@ -104,6 +105,11 @@ const MoneyRoute = MoneyRouteImport.update({
 const PublisherRoute = PublisherRouteImport.update({
   id: '/publisher',
   path: '/publisher',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SignInRoute = SignInRouteImport.update({
@@ -301,6 +307,7 @@ export interface FileRoutesByFullPath {
   '/live': typeof LiveRoute
   '/money': typeof MoneyRoute
   '/publisher': typeof PublisherRouteWithChildren
+  '/settings': typeof SettingsRoute
   '/sign-in': typeof SignInRoute
   '/status': typeof StatusRoute
   '/api/agent': typeof ApiAgentRouteWithChildren
@@ -347,6 +354,7 @@ export interface FileRoutesByTo {
   '/health': typeof HealthRouteWithChildren
   '/live': typeof LiveRoute
   '/money': typeof MoneyRoute
+  '/settings': typeof SettingsRoute
   '/sign-in': typeof SignInRoute
   '/status': typeof StatusRoute
   '/api/agent': typeof ApiAgentRouteWithChildren
@@ -396,6 +404,7 @@ export interface FileRoutesById {
   '/live': typeof LiveRoute
   '/money': typeof MoneyRoute
   '/publisher': typeof PublisherRouteWithChildren
+  '/settings': typeof SettingsRoute
   '/sign-in': typeof SignInRoute
   '/status': typeof StatusRoute
   '/api/agent': typeof ApiAgentRouteWithChildren
@@ -446,6 +455,7 @@ export interface FileRouteTypes {
     | '/live'
     | '/money'
     | '/publisher'
+    | '/settings'
     | '/sign-in'
     | '/status'
     | '/api/agent'
@@ -492,6 +502,7 @@ export interface FileRouteTypes {
     | '/health'
     | '/live'
     | '/money'
+    | '/settings'
     | '/sign-in'
     | '/status'
     | '/api/agent'
@@ -540,6 +551,7 @@ export interface FileRouteTypes {
     | '/live'
     | '/money'
     | '/publisher'
+    | '/settings'
     | '/sign-in'
     | '/status'
     | '/api/agent'
@@ -589,6 +601,7 @@ export interface RootRouteChildren {
   LiveRoute: typeof LiveRoute
   MoneyRoute: typeof MoneyRoute
   PublisherRoute: typeof PublisherRouteWithChildren
+  SettingsRoute: typeof SettingsRoute
   SignInRoute: typeof SignInRoute
   StatusRoute: typeof StatusRoute
   ApiAgentRoute: typeof ApiAgentRouteWithChildren
@@ -682,6 +695,13 @@ declare module '@tanstack/react-router' {
       path: '/publisher'
       fullPath: '/publisher'
       preLoaderRoute: typeof PublisherRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/sign-in': {
@@ -1067,6 +1087,7 @@ const rootRouteChildren: RootRouteChildren = {
   LiveRoute: LiveRoute,
   MoneyRoute: MoneyRoute,
   PublisherRoute: PublisherRouteWithChildren,
+  SettingsRoute: SettingsRoute,
   SignInRoute: SignInRoute,
   StatusRoute: StatusRoute,
   ApiAgentRoute: ApiAgentRouteWithChildren,
