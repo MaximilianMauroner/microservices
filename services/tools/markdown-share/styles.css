@@ -55,7 +55,7 @@ button:disabled {
   min-height: 100vh;
   display: grid;
   place-items: center;
-  padding: 40px 24px;
+  padding: clamp(18px, 3vw, 40px) 24px;
   color: var(--markdown-share-ink);
   background:
     linear-gradient(rgba(63, 58, 48, 0.045) 1px, transparent 1px),
@@ -69,8 +69,8 @@ button:disabled {
 }
 
 .landing-card {
-  width: min(760px, 100%);
-  padding: clamp(34px, 7vw, 72px);
+  width: min(900px, 100%);
+  padding: clamp(32px, 5vw, 54px);
   border: 1px solid var(--markdown-share-line);
   background: rgba(255, 253, 248, 0.96);
   box-shadow: 12px 12px 0 #d9d1c2;
@@ -100,15 +100,15 @@ button:disabled {
 }
 
 .landing-card h1 {
-  max-width: 660px;
+  max-width: 720px;
   margin: 0;
-  font: 600 clamp(3.2rem, 8vw, 6rem) / 0.87 "Newsreader", serif;
+  font: 600 clamp(3.2rem, 6vw, 5.25rem) / 0.88 "Newsreader", serif;
   letter-spacing: -0.055em;
 }
 
 .landing-copy {
-  max-width: 620px;
-  margin: 30px 0 38px;
+  max-width: 640px;
+  margin: 24px 0 30px;
   color: var(--markdown-share-muted);
   font-size: 1.05rem;
   line-height: 1.7;
@@ -192,7 +192,7 @@ button:disabled {
 }
 
 .recent-documents {
-  margin-top: 34px;
+  margin-top: 28px;
   padding-top: 22px;
   border-top: 1px solid var(--markdown-share-line);
 }
@@ -289,7 +289,7 @@ button:disabled {
   display: flex;
   flex-wrap: wrap;
   gap: 10px 24px;
-  margin-top: 50px;
+  margin-top: 36px;
   padding-top: 18px;
   border-top: 1px solid var(--markdown-share-line);
   color: var(--markdown-share-muted);
@@ -1450,16 +1450,35 @@ button:disabled {
 @media (max-width: 600px) {
   .landing-shell,
   .status-shell {
-    padding: 18px;
+    place-items: start center;
+    padding: 12px;
   }
 
   .landing-card {
-    padding: 30px 24px;
-    box-shadow: 6px 6px 0 #d9d1c2;
+    padding: 24px 20px;
+    box-shadow: 5px 5px 0 #d9d1c2;
   }
 
   .landing-card h1 {
-    font-size: 3.25rem;
+    font-size: clamp(2.7rem, 14vw, 3.25rem);
+    line-height: 0.9;
+  }
+
+  .brand-mark,
+  .wordmark-icon,
+  .status-glyph {
+    width: 42px;
+    height: 42px;
+  }
+
+  .eyebrow {
+    margin-top: 22px;
+  }
+
+  .landing-copy {
+    margin: 20px 0 26px;
+    font-size: 0.95rem;
+    line-height: 1.55;
   }
 
   .filename-row {
@@ -1468,11 +1487,27 @@ button:disabled {
 
   .filename-row button {
     min-height: 50px;
+    width: 100%;
   }
 
   .recent-documents-heading {
     display: grid;
     gap: 5px;
+  }
+
+  .recent-documents li > a {
+    padding: 13px 12px;
+  }
+
+  .recent-documents li button {
+    min-width: 72px;
+    padding: 0 12px;
+  }
+
+  .promise-row {
+    gap: 10px 18px;
+    margin-top: 30px;
+    line-height: 1.35;
   }
 
   .checkpoint-backdrop {
@@ -1514,6 +1549,21 @@ button:disabled {
     --markdown-share-editor-padding-block: 22px;
     --markdown-share-editor-padding-inline: 18px;
     --markdown-share-line-number-gutter-width: 2.25rem;
+  }
+}
+
+@media (max-width: 380px) {
+  .landing-card {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+
+  .landing-card h1 {
+    font-size: 2.65rem;
+  }
+
+  .recent-documents-heading h2 {
+    font-size: 1.3rem;
   }
 }
 
