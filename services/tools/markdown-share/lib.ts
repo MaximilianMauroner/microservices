@@ -1,3 +1,4 @@
+/** Public Markdown Share routes live under one narrow Tools prefix. */
 export const TOKEN_PATTERN =
   /^(?:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|[a-z0-9]{20,64})$/;
 
@@ -21,11 +22,13 @@ export function normalizeFilename(input: string): string {
 }
 
 export function documentPath(filename: string, token: string): string {
-  return `/d/${encodeURIComponent(filename)}--${token}`;
+  return `/markdown/d/${encodeURIComponent(filename)}--${token}`;
 }
 
 export function parseDocumentRoute(pathname: string): DocumentRoute | null {
-  const match = pathname.match(/^\/d\/([^/]+)--([a-z0-9-]+)\/?$/i);
+  const match = pathname.match(
+    /^\/markdown\/d\/([^/]+)--([a-z0-9-]+)\/?$/i,
+  );
   if (!match?.[1] || !match[2]) {
     return null;
   }

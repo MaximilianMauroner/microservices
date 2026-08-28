@@ -15,6 +15,8 @@ describe("DocumentsPage", () => {
     expect(html).toContain('data-slot="table"');
     expect(html).toContain("recent.md");
     expect(html).toContain("New document");
+    expect(html).toContain('href="https://markdown.example.test/markdown"');
+    expect(html).toContain('href="https://markdown.example.test/markdown/d/recent.md--aaaaaaaaaaaaaaaaaaaaaaaa"');
     expect(html).toContain('data-suite-accent="rose"');
   });
 

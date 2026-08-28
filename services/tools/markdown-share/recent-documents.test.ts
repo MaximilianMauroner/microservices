@@ -4,7 +4,7 @@ import {
   parseRecentDocuments,
   upsertRecentDocument,
   type RecentDocument,
-} from "./recent-documents";
+} from "./recent-documents.js";
 
 const FIRST_TOKEN = "81f2a9dd-9ca3-4e4c-9d30-13d3f50dcf3b";
 const SECOND_TOKEN = "j57dzxnpat8g9sbksewde1dznh8bczet";

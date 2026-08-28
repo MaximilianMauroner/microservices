@@ -65,7 +65,6 @@ services:
       ARTIFACT_S3_FORCE_PATH_STYLE: true
       LOCAL_PLATFORM_BROWSER_ORIGIN: http://localhost:3000
       LOCAL_PLATFORM_INTERNAL_ORIGIN: http://platform:3000
-      LOCAL_MARKDOWN_PUBLIC_ORIGIN: http://localhost:8787
       LOCAL_MARKDOWN_INTERNAL_ORIGIN: http://markdown-mock:8787
       SEED_RETRY_ATTEMPTS: 30
     command: ["pnpm", "--dir", "services/tools/status", "run", "seed-local"]
@@ -88,6 +87,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.local
+      args:
+        VITE_CONVEX_URL: ${VITE_CONVEX_URL:-http://localhost:3210}
     depends_on:
       minio-seed:
         condition: service_completed_successfully
@@ -119,7 +120,7 @@ services:
       AGENT_API_TOKEN: local-agent-api-token-000000000000000000
       MARKDOWN_SHARE_ADMIN_ENDPOINT: http://markdown-mock:8787/admin/documents
       MARKDOWN_SHARE_ADMIN_TOKEN: local-markdown-admin-token-local-development-001
-      MARKDOWN_SHARE_PUBLIC_ORIGIN: http://localhost:8787
+      VITE_CONVEX_URL: ${VITE_CONVEX_URL:-http://localhost:3210}
       TOWER_HEARTBEAT_TOKEN: local-tower-heartbeat-token-000000000000000
       TOOLS_ENVIRONMENT: local
       CHECKER_INTERVAL_MS: 300000

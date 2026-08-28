@@ -8,7 +8,7 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["test/**/*.test.{ts,tsx}"],
+    include: ["test/**/*.test.{ts,tsx}", "markdown-share/**/*.test.{ts,tsx}"],
     setupFiles: ["./test/router-link-mock.tsx"]
   }
 });

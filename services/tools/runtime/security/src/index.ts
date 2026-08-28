@@ -80,9 +80,17 @@ export function classifyRoute(pathname: string, method: string): RouteAccess {
     return { kind: "public" };
   }
 
+  if ((normalizedMethod === "GET" || normalizedMethod === "HEAD") && isHashedBrowserAssetPath(pathname)) {
+    return { kind: "public" };
+  }
+
   if (matchesPrefix(pathname, ["/api/auth"])) return { kind: "public" };
 
   if (/^\/feedback\/f\/[^/]+$/.test(pathname) && (normalizedMethod === "GET" || normalizedMethod === "HEAD" || normalizedMethod === "POST")) {
+    return { kind: "public" };
+  }
+
+  if (isMarkdownSharePath(pathname) && (normalizedMethod === "GET" || normalizedMethod === "HEAD")) {
     return { kind: "public" };
   }
 
@@ -147,6 +155,14 @@ export function isAgentPath(pathname: string): boolean {
 
 export function isHeartbeatPath(pathname: string): boolean {
   return matchesPrefix(pathname, ["/api/status/heartbeats"]);
+}
+
+export function isMarkdownSharePath(pathname: string): boolean {
+  return pathname === "/markdown" || pathname === "/markdown/" || /^\/markdown\/d\/[^/]+\/?$/.test(pathname);
+}
+
+export function isHashedBrowserAssetPath(pathname: string): boolean {
+  return /^\/assets\/[A-Za-z0-9_]+-[A-Za-z0-9_-]{8,}\.(?:css|js|png)$/.test(pathname);
 }
 
 function matchesPrefix(pathname: string, prefixes: readonly string[]): boolean {

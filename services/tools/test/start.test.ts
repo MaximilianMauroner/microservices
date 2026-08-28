@@ -1,7 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { requirePlatformSession } from "../src/auth-middleware.js";
 import { routerSsrOptions } from "../src/router-options.js";
 import { documentContentSecurityPolicy } from "../src/content-security-policy.js";
+
+beforeAll(async () => {
+  vi.stubEnv("VITE_CONVEX_URL", "https://example.convex.cloud");
+  await import("../src/start.js");
+});
 
 async function runSessionMiddleware(authenticated: boolean) {
   const server = requirePlatformSession.options.server;
@@ -56,5 +61,21 @@ describe("TanStack Start request boundaries", () => {
     const production = documentContentSecurityPolicy("request-nonce", false);
     expect(production).toContain("style-src 'self' 'nonce-request-nonce';");
     expect(production).not.toContain("style-src 'self' 'unsafe-inline'");
+  });
+
+  it("allows only the configured Convex origins on Markdown Share documents", () => {
+    const policy = documentContentSecurityPolicy("request-nonce", false, [
+      "https://example.convex.cloud",
+      "wss://example.convex.cloud"
+    ], true);
+    expect(policy).toContain("connect-src 'self' https://example.convex.cloud wss://example.convex.cloud;");
+    expect(policy).toContain("img-src 'self' data: https:;");
+    expect(policy).not.toContain("connect-src *");
+  });
+
+  it("keeps HTTPS images blocked on other Tools documents", () => {
+    const policy = documentContentSecurityPolicy("request-nonce", false);
+    expect(policy).toContain("img-src 'self' data:;");
+    expect(policy).not.toContain("img-src 'self' data: https:;");
   });
 });

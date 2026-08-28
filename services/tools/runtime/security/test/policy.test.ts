@@ -12,6 +12,10 @@ describe("central platform route policy", () => {
     expect(classifyRoute("/api/auth/callback/google", "GET")).toEqual({ kind: "public" });
     expect(classifyRoute("/feedback/f/token", "GET")).toEqual({ kind: "public" });
     expect(classifyRoute("/feedback/f/token", "POST")).toEqual({ kind: "public" });
+    expect(classifyRoute("/markdown", "GET")).toEqual({ kind: "public" });
+    expect(classifyRoute("/markdown/d/notes.md--capability", "HEAD")).toEqual({ kind: "public" });
+    expect(classifyRoute("/markdown", "POST")).toEqual({ kind: "human-session" });
+    expect(classifyRoute("/markdown/private", "GET")).toEqual({ kind: "human-session" });
     expect(classifyRoute("/feedback", "GET")).toEqual({ kind: "human-session" });
     expect(classifyRoute("/feedback/f/token", "DELETE")).toEqual({ kind: "human-session" });
     expect(classifyRoute("/feedback/f", "GET")).toEqual({ kind: "human-session" });
@@ -46,6 +50,10 @@ describe("central platform route policy", () => {
     expect(classifyRoute("/assets/local-time.js", "GET")).toEqual({ kind: "public" });
     expect(classifyRoute("/assets/icons/money.png", "GET")).toEqual({ kind: "public" });
     expect(classifyRoute("/assets/icons/tools.png", "GET")).toEqual({ kind: "public" });
+    expect(classifyRoute("/assets/App-B71UvkP1.js", "GET")).toEqual({ kind: "public" });
+    expect(classifyRoute("/assets/styles-DHyxYeeB.css", "HEAD")).toEqual({ kind: "public" });
+    expect(classifyRoute("/assets/App-B71UvkP1.js.map", "GET")).toEqual({ kind: "human-session" });
+    expect(classifyRoute("/assets/unhashed.js", "GET")).toEqual({ kind: "human-session" });
     expect(classifyRoute("/assets/ops.js.map", "GET")).toEqual({ kind: "human-session" });
     expect(classifyRoute("/api/agentic", "GET")).toEqual({ kind: "human-session" });
   });

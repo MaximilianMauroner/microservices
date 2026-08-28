@@ -9,8 +9,7 @@ const valid = {
   S3_SECRET_ACCESS_KEY: "secret",
   PUBLIC_ORIGIN: "https://tools.example.test",
   MARKDOWN_SHARE_ADMIN_ENDPOINT: "https://convex.example.test/admin/documents",
-  MARKDOWN_SHARE_ADMIN_TOKEN: "a".repeat(32),
-  MARKDOWN_SHARE_PUBLIC_ORIGIN: "https://markdown.example.test"
+  MARKDOWN_SHARE_ADMIN_TOKEN: "a".repeat(32)
 };
 
 describe("configuration", () => {
@@ -29,7 +28,7 @@ describe("configuration", () => {
       markdownShare: {
         adminEndpoint: "https://convex.example.test/admin/documents",
         adminToken: "a".repeat(32),
-        publicOrigin: "https://markdown.example.test"
+        publicOrigin: "https://tools.example.test"
       }
     });
   });
@@ -43,7 +42,5 @@ describe("configuration", () => {
       .toThrow("Missing required environment variable: PUBLIC_ORIGIN");
     expect(() => loadConfig({ ...valid, MARKDOWN_SHARE_ADMIN_TOKEN: "short" }))
       .toThrow("MARKDOWN_SHARE_ADMIN_TOKEN must contain between 32 and 512 characters");
-    expect(() => loadConfig({ ...valid, MARKDOWN_SHARE_PUBLIC_ORIGIN: "https://markdown.example.test/path" }))
-      .toThrow("MARKDOWN_SHARE_PUBLIC_ORIGIN must be an HTTPS origin");
   });
 });

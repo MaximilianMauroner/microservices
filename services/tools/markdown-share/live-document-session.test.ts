@@ -4,7 +4,7 @@ import {
   classifySyncError,
   editorSaveLabel,
   editorSaveStatus,
-} from "./live-document-session";
+} from "./live-document-session.js";
 
 describe("live document session", () => {
   it("recognizes structured document-unavailable errors", () => {

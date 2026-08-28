@@ -1,3 +1,4 @@
+/** User-controlled preview typography stored in the current browser. */
 export type DisplaySettings = {
   fontScale: number;
   lineSpacing: number;

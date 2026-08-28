@@ -30,12 +30,7 @@ const PLATFORM_BROWSER_ORIGIN = env(
   "LOCAL_PLATFORM_BROWSER_ORIGIN",
   "http://localhost:3000"
 );
-const MARKDOWN_PUBLIC_ORIGIN = env(
-  "LOCAL_MARKDOWN_PUBLIC_ORIGIN",
-  "http://localhost:8787"
-);
 const TOOLS_HOST = "tools.mauroner.net";
-const MARKDOWN_HOST = "markdown-share-alpha.mauroner.workers.dev";
 
 const toolsBucket = loadBucketConfig("TOOLS");
 const artifactBucket = loadBucketConfig("ARTIFACT");
@@ -133,12 +128,6 @@ function localizeLinkUrl(value: string): string {
   const parsed = new URL(value);
   if (parsed.hostname === TOOLS_HOST) {
     return new URL(parsed.pathname + parsed.search, PLATFORM_BROWSER_ORIGIN).toString();
-  }
-  if (parsed.hostname === MARKDOWN_HOST) {
-    return new URL(
-      parsed.pathname + parsed.search,
-      MARKDOWN_PUBLIC_ORIGIN
-    ).toString();
   }
   return value;
 }

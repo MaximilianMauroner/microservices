@@ -43,6 +43,7 @@ const products = [
   { label: "Field Guide", to: "/field-guide", icon: favicons.fieldGuide, match: (path: string) => path.startsWith("/field-guide") },
   { label: "Money", to: "/money", icon: favicons.money, match: (path: string) => path.startsWith("/money") },
   { label: "Feedback", to: "/feedback", icon: favicons.feedback, match: (path: string) => path.startsWith("/feedback") },
+  { label: "Markdown Share", to: "/markdown", icon: favicons.markdownShare, match: (path: string) => path.startsWith("/markdown") },
   { label: "Status", to: "/status", icon: favicons.status, match: (path: string) => path.startsWith("/status") }
 ] as const;
 
@@ -95,7 +96,7 @@ export function ToolsSidebar() {
                     className="h-10 px-3 text-sm"
                     tooltip={item.label}
                     isActive={item.match(pathname)}
-                    render={<Link to={item.to} preload="intent" />}
+                    render={item.to === "/markdown" ? <a href={item.to} /> : <Link to={item.to} preload="intent" />}
                   >
                     <img className="size-5 rounded" src={item.icon} alt="" width={20} height={20} />
                     <span>{item.label}</span>
@@ -152,7 +153,6 @@ export function ToolsSidebar() {
           <SidebarGroupLabel className="px-3 text-xs normal-case tracking-normal">External</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              <ExternalItem label="Markdown Share" href="https://markdown-share-alpha.mauroner.workers.dev/" icon={favicons.markdownShare} />
               <ExternalItem label="Network Console" href="https://coding.tailbc92d.ts.net" icon={favicons.networkConsole} />
             </SidebarMenu>
           </SidebarGroupContent>
