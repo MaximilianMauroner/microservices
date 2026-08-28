@@ -103,5 +103,7 @@ describe("Markdown document inventory page", () => {
     expect(html).toContain('<script src="/assets/markdown-admin.js?v=5e41cd2" defer></script>');
     expect(html).toContain("operator&lt;admin@example.test&gt;");
     expect(html).not.toContain("operator<admin@example.test>");
+    expect(html).toContain('href="https://markdown.example.test/markdown"');
+    expect(html).toContain('href="https://markdown.example.test/markdown/d/recent-notes.md--j57dzxnpat8g9sbksewde1dznh8bczet"');
   });
 });
