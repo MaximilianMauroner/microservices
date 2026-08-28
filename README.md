@@ -51,11 +51,12 @@ pnpm run docker:up
 ```
 
 The Markdown Share browser needs a Convex deployment. Run `pnpm run
-start:markdown-share` in another terminal to use the default local Convex URL,
-`http://localhost:3210`. You can instead set `VITE_CONVEX_URL` to a real
-development deployment URL before `pnpm run docker:up`. Docker passes this URL
-to both the browser build and the Tools runtime. The administration mock stays
-on port 8787 and does not implement the Convex browser protocol.
+start:markdown-share` in another terminal. Convex uses the selected development
+deployment and writes its URL to `services/markdown-share/.env.local`. If that
+URL is not `http://localhost:3210`, set `VITE_CONVEX_URL` to it before `pnpm run
+docker:up`. Docker passes this URL to both the browser build and the Tools
+runtime. The administration mock stays on port 8787 and does not implement the
+Convex browser protocol.
 
 Then open:
 
