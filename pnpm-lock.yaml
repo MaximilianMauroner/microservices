@@ -114,6 +114,9 @@ importers:
       '@tools-platform/field-guide':
         specifier: workspace:*
         version: link:field-guide
+      '@tools-platform/markdown-share':
+        specifier: workspace:*
+        version: link:../markdown-share
       '@tools-platform/security':
         specifier: workspace:*
         version: link:runtime/security

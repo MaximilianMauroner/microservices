@@ -7,7 +7,8 @@ COPY . .
 RUN corepack enable \
     && corepack prepare pnpm@11.16.0 --activate \
     && pnpm install --frozen-lockfile
-ENV VITE_CONVEX_URL=http://localhost:8787
+ARG VITE_CONVEX_URL=http://localhost:3210
+ENV VITE_CONVEX_URL=${VITE_CONVEX_URL}
 RUN pnpm run build
 
 CMD ["pnpm", "--dir", "services/tools", "run", "start"]

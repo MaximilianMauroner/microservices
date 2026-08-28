@@ -7,8 +7,8 @@ import {
   useRef,
   useState,
 } from "react";
-import { api } from "../../markdown-share/convex/_generated/api.js";
-import type { Id } from "../../markdown-share/convex/_generated/dataModel.js";
+import { api } from "@tools-platform/markdown-share/api";
+import type { Id } from "@tools-platform/markdown-share/data-model";
 
 type CheckpointSummary = {
   _id: Id<"checkpoints">;

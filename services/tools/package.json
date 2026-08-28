@@ -21,6 +21,7 @@
     "@tools-platform/artifact-publisher": "workspace:*",
     "@tools-platform/domain": "workspace:*",
     "@tools-platform/field-guide": "workspace:*",
+    "@tools-platform/markdown-share": "workspace:*",
     "@tools-platform/security": "workspace:*",
     "@tools-platform/tools-checker": "workspace:*",
     "@tools-platform/web": "workspace:*",

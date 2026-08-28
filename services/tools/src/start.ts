@@ -62,7 +62,8 @@ const platformRequestMiddleware = createMiddleware().server(
           process.env.NODE_ENV === "development",
           markdownShare
             ? loadMarkdownShareClientConfig(process.env.VITE_CONVEX_URL).connectOrigins
-            : []
+            : [],
+          markdownShare
         )
       );
     }

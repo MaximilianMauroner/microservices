@@ -1,7 +1,7 @@
 import { useMutation, useQuery } from "convex/react";
 import { useEffect, useState } from "react";
 import { favicons } from "../src/favicons.js";
-import { api } from "../../markdown-share/convex/_generated/api.js";
+import { api } from "@tools-platform/markdown-share/api";
 import { CollaborativeWorkspace } from "./collaborative-workspace";
 import {
   documentPath,
