@@ -18,6 +18,29 @@ describe("integrated Markdown Share theme", () => {
     expect(customProperties.every((property) => property.startsWith("--markdown-share-"))).toBe(true);
   });
 
+  it("keeps runtime custom-property writes aligned with the stylesheet", async () => {
+    const [styles, workspace, viewport] = await Promise.all([
+      readFile(new URL("./styles.css", import.meta.url), "utf8"),
+      readFile(
+        new URL("./collaborative-workspace.tsx", import.meta.url),
+        "utf8",
+      ),
+      readFile(new URL("./workspace-viewport.ts", import.meta.url), "utf8"),
+    ]);
+    const runtimeProperties = [...`${workspace}\n${viewport}`.matchAll(/"(--[a-z][a-z-]+)"/g)]
+      .map(([, property]) => property);
+
+    expect(runtimeProperties).toEqual([
+      "--markdown-share-preview-font-scale",
+      "--markdown-share-preview-line-height",
+      "--markdown-share-app-height",
+      "--markdown-share-app-height",
+    ]);
+    expect(
+      runtimeProperties.every((property) => styles.includes(property)),
+    ).toBe(true);
+  });
+
   it("sets dark text on every route shell", async () => {
     const styles = await readFile(new URL("./styles.css", import.meta.url), "utf8");
 
