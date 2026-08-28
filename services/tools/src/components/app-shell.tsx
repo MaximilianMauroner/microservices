@@ -1,15 +1,9 @@
 import { PLATFORM_UI_BUILD } from "../build-identity.js";
 import { Link } from "@tanstack/react-router";
-import { authClient } from "../lib/auth-client.js";
 import type { ProductAccent } from "../product-accent.js";
 import { favicons } from "../favicons.js";
 
 export function AppShell({ product, showSignOut, accent, icon }: { product: string; showSignOut: boolean; accent?: ProductAccent; icon?: string }) {
-  async function signOut() {
-    await authClient.signOut();
-    window.location.assign("/");
-  }
-
   return (
     <>
       <a className="suite-skip skip-link" href="#main">Skip to content</a>
@@ -25,17 +19,7 @@ export function AppShell({ product, showSignOut, accent, icon }: { product: stri
             <span className="text-muted-foreground/45" aria-hidden="true">·</span>
             <span className="truncate text-xs font-semibold text-muted-foreground">{product}</span>
           </div>
-          <nav className="flex items-center gap-1" aria-label={`${product} session`}>
-            {showSignOut ? (
-              <button
-                className="inline-flex h-11 items-center rounded-full border px-3 text-xs font-semibold text-muted-foreground hover:bg-accent hover:text-foreground sm:h-8"
-                type="button"
-                onClick={() => void signOut()}
-              >
-                Sign out
-              </button>
-            ) : null}
-          </nav>
+          {showSignOut ? <span className="sr-only">Account actions are in the sidebar</span> : null}
         </div>
       </header>
     </>

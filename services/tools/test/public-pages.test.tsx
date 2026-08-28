@@ -147,7 +147,7 @@ describe("TanStack Start public pages", () => {
     expect(html).toContain('class="uptime-bar-scroll"');
     expect(html).toContain("uptime-scroll-hint");
     expect(html).toContain("private-status-link");
-    expect(html).toContain("Sign out");
+    expect(html).toContain("Account actions are in the sidebar");
     expect(html).toContain('data-suite-accent="cyan"');
     expect(html).toContain("30-minute checks");
     expect(html).not.toContain("Five-minute checks");

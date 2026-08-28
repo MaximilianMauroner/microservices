@@ -2,9 +2,13 @@ import {
   HeadContent,
   Outlet,
   Scripts,
-  createRootRoute
+  createRootRoute,
+  useRouterState
 } from "@tanstack/react-router";
+import type { CSSProperties } from "react";
 import { Toaster } from "../components/ui/toast.js";
+import { SidebarProvider, SidebarTrigger } from "../components/ui/sidebar.js";
+import { ToolsSidebar } from "../components/tools-sidebar.js";
 import "../styles.css";
 
 export const Route = createRootRoute({
@@ -18,16 +22,34 @@ export const Route = createRootRoute({
 });
 
 function RootDocument() {
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const hasWorkspaceSidebar = isWorkspacePath(pathname);
+
   return (
     <html lang="en" data-theme="dark" suppressHydrationWarning>
       <head>
         <HeadContent />
       </head>
       <body>
-        <Outlet />
-        <Toaster />
+        {hasWorkspaceSidebar ? (
+          <SidebarProvider style={{ "--sidebar-width": "18rem" } as CSSProperties}>
+            <ToolsSidebar />
+            <div className="relative flex w-full min-w-0 flex-1 flex-col bg-background">
+              <SidebarTrigger className="fixed left-3 top-3 z-50 md:hidden" />
+              <Outlet />
+              <Toaster />
+            </div>
+          </SidebarProvider>
+        ) : (
+          <><Outlet /><Toaster /></>
+        )}
         <Scripts />
       </body>
     </html>
   );
+}
+
+export function isWorkspacePath(pathname: string) {
+  if (pathname.startsWith("/feedback/f/")) return false;
+  return pathname === "/" || ["/documents", "/feedback", "/field-guide", "/money", "/publisher", "/status"].some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
