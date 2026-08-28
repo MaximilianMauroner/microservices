@@ -391,6 +391,105 @@ describe("decision record review", () => {
     expect(detail.promotionCandidateId).toBe(candidate.candidateId);
   });
 
+  it("carries correction prevention through promotion and agent sync", async () => {
+    const { app } = setup();
+    const correctionRecord = {
+      ...record,
+      decisionRecordId: crypto.randomUUID(),
+      correction: {
+        failedInvariant: "Managed sync must preserve files owned by another system.",
+        selectedLayer: "skill_or_rule" as const,
+        mechanism: "skills/maintain-field-guides/SKILL.md#Correction elimination",
+        higherLevelRejections: {
+          architecture: "The target has mixed ownership by design.",
+          automated_check: "The ownership boundary depends on declared fleet policy.",
+        },
+      },
+    };
+    await callApp(app, "/api/agent/decision-records", {
+      method: "POST",
+      json: { idempotencyKey: correctionRecord.decisionRecordId, record: correctionRecord },
+    });
+    await callApp(app, `/api/review/decision-records/${correctionRecord.decisionRecordId}/feedback`, {
+      method: "POST",
+      headers: { Origin: origin },
+      json: { action: "down" },
+    });
+    const candidateId = crypto.randomUUID();
+    const promoted = await callApp(app, "/api/review/decision-records/promotions", {
+      method: "POST",
+      headers: { Origin: origin },
+      json: {
+        idempotencyKey: candidateId,
+        decisionRecordIds: [correctionRecord.decisionRecordId],
+        candidate: {
+          candidateId,
+          scope: "project",
+          projectKey: record.projectKey,
+          projectDisplayName: record.projectDisplayName,
+          lessonKey: "preserve-managed-ownership",
+          title: "Preserve managed ownership",
+          body: "Respect each declared owner during sync.",
+          rationale: "The correction exposed a repeatable ownership failure.",
+          createdAt: now.toISOString(),
+        },
+      },
+    });
+    expect(promoted.status).toBe(201);
+
+    const queue = await responseJson<{ items: Array<{ candidate: Record<string, unknown> }> }>(
+      await callApp(app, "/api/review/queue?scope=project"),
+    );
+    expect(queue.items[0]?.candidate).toMatchObject({
+      stance: "rule",
+      strength: "advisory",
+      preventionLayer: "skill_or_rule",
+      mechanism: correctionRecord.correction.mechanism,
+    });
+    expect(queue.items[0]?.candidate.evidence).toEqual([
+      expect.objectContaining({
+        excerpt: expect.stringContaining("Failed invariant: Managed sync must preserve files owned by another system."),
+      }),
+    ]);
+
+    await callApp(app, `/api/review/candidates/${candidateId}/rounds/1/verdict`, {
+      method: "POST",
+      headers: { Origin: origin },
+      json: { action: "approve" },
+    });
+    const decisions = await responseJson<{ decisions: Array<Record<string, unknown>> }>(
+      await callApp(app, "/api/agent/decisions"),
+    );
+    expect(decisions.decisions[0]).toMatchObject({
+      preventionLayer: "skill_or_rule",
+      mechanism: correctionRecord.correction.mechanism,
+    });
+  });
+
+  it("rejects a correction that skips a stronger layer without a reason", async () => {
+    const { app } = setup();
+    const response = await callApp(app, "/api/agent/decision-records", {
+      method: "POST",
+      json: {
+        idempotencyKey: crypto.randomUUID(),
+        record: {
+          ...record,
+          decisionRecordId: crypto.randomUUID(),
+          correction: {
+            failedInvariant: "Generated output must stay outside Git.",
+            selectedLayer: "skill_or_rule",
+            mechanism: "skills/html-communication/SKILL.md#Document",
+            higherLevelRejections: { architecture: "Artifacts must remain in the workspace." },
+          },
+        },
+      },
+    });
+    expect(response.status).toBe(400);
+    expect(await responseJson(response)).toMatchObject({
+      message: "correction.higherLevelRejections must explain every stronger prevention layer.",
+    });
+  });
+
   it("rejects a global promotion assembled from different source projects", async () => {
     const { app } = setup();
     const records = [

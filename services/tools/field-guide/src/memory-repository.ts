@@ -395,6 +395,7 @@ export class MemoryReviewRepository implements ReviewRepository {
           }
         : {}),
       ...candidateOrigin(candidate),
+      ...candidateEnforcement(candidate),
       lessonKey: candidate.lessonKey,
       title: candidate.title,
       body: candidate.body,
@@ -473,4 +474,13 @@ function candidateOrigin(candidate: Candidate) {
   return foundProjectKey && foundProjectDisplayName
     ? { foundProjectKey, foundProjectDisplayName }
     : {};
+}
+
+function candidateEnforcement(candidate: Candidate) {
+  return {
+    ...(candidate.stance ? { stance: candidate.stance } : {}),
+    ...(candidate.strength ? { strength: candidate.strength } : {}),
+    ...(candidate.mechanism ? { mechanism: candidate.mechanism } : {}),
+    ...(candidate.preventionLayer ? { preventionLayer: candidate.preventionLayer } : {}),
+  };
 }
