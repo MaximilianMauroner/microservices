@@ -7,7 +7,7 @@ import {
   getScrollProgress,
   getScrollTop,
   useWorkspaceViewport,
-} from "./workspace-viewport";
+} from "./workspace-viewport.js";
 
 let root: Root;
 let host: HTMLDivElement;
@@ -98,11 +98,20 @@ describe("workspace viewport", () => {
 
   it("removes browser state and scheduled frames when unmounted", () => {
     act(() => root.render(<ViewportHarness />));
-    expect(document.documentElement.style.getPropertyValue("--app-height")).not.toBe("");
+    expect(
+      document.documentElement.style.getPropertyValue(
+        "--markdown-share-app-height",
+      ),
+    ).not.toBe("");
+    expect(document.documentElement.style.getPropertyValue("--app-height")).toBe("");
     expect(frames.size).toBeGreaterThan(0);
 
     act(() => root.unmount());
-    expect(document.documentElement.style.getPropertyValue("--app-height")).toBe("");
+    expect(
+      document.documentElement.style.getPropertyValue(
+        "--markdown-share-app-height",
+      ),
+    ).toBe("");
     expect(frames.size).toBe(0);
     root = createRoot(host);
   });

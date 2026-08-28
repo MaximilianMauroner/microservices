@@ -50,7 +50,7 @@ export function DocumentsPage({ initial }: { initial: DocumentsPageData }) {
           <h1>Manage active documents.</h1>
           <p className="workspace-header__description">Find expiring work, verify checkpoints, and open the document that needs attention.</p>
         </div>
-        <div className="workspace-header__actions"><Button nativeButton={false} render={<a href={initial.publicOrigin} target="_blank" rel="noreferrer" />}><PlusIcon />New document<ArrowUpRightIcon /></Button></div>
+        <div className="workspace-header__actions"><Button nativeButton={false} render={<a href={new URL("/markdown", initial.publicOrigin).toString()} target="_blank" rel="noreferrer" />}><PlusIcon />New document<ArrowUpRightIcon /></Button></div>
       </header>
 
       <section className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="Document overview">
@@ -114,7 +114,7 @@ export function filterDocuments(documents: MarkdownAdminDocument[], now: number,
   return documents.filter((document) => (!query || document.filename.toLocaleLowerCase().includes(query)) && (filters.checkpoints === "all" || (filters.checkpoints === "with" ? document.checkpointCount > 0 : document.checkpointCount === 0)) && (expiryLimit === null || document.expiresAt <= expiryLimit)).sort((left, right) => filters.sort === "expiry-asc" ? left.expiresAt - right.expiresAt : filters.sort === "created-desc" ? right.createdAt - left.createdAt : filters.sort === "name-asc" ? left.filename.localeCompare(right.filename) : right.updatedAt - left.updatedAt);
 }
 
-function documentUrl(document: MarkdownAdminDocument, publicOrigin: string) { return new URL(`/d/${encodeURIComponent(document.filename)}--${encodeURIComponent(document.token)}`, publicOrigin).toString(); }
+function documentUrl(document: MarkdownAdminDocument, publicOrigin: string) { return new URL(`/markdown/d/${encodeURIComponent(document.filename)}--${encodeURIComponent(document.token)}`, publicOrigin).toString(); }
 function relativePast(value: number, now: number) { const minutes = Math.floor(Math.max(0, now - value) / 60_000); if (minutes < 1) return "just now"; if (minutes < 60) return `${minutes}m ago`; const hours = Math.floor(minutes / 60); if (hours < 24) return `${hours}h ago`; return `${Math.floor(hours / 24)}d ago`; }
 function remaining(value: number, now: number) { const hours = Math.ceil(Math.max(0, value - now) / 3_600_000); if (hours < 24) return `${hours}h`; const days = Math.ceil(hours / 24); return `${days}d`; }
 function formatDate(value: number) { return new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)); }

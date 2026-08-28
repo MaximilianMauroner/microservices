@@ -6,7 +6,7 @@ import { UndoRedo } from "@tiptap/extensions/undo-redo";
 import { useEditor } from "@tiptap/react";
 import { sendableSteps } from "prosemirror-collab";
 import { useCallback, useEffect, useState } from "react";
-import { markdownFromJson } from "./lib";
+import { markdownFromJson } from "./lib.js";
 
 type SyncFailureKind = "document-unavailable" | "retryable";
 

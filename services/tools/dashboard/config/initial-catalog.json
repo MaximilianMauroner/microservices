@@ -70,7 +70,7 @@
         {
           "id": "editor",
           "label": "Open Markdown Share",
-          "url": "https://markdown-share-alpha.mauroner.workers.dev/",
+          "url": "https://tools.mauroner.net/markdown",
           "access": "public"
         },
         {
@@ -85,7 +85,7 @@
         "enabled": true,
         "paused": false,
         "scope": "public",
-        "url": "https://markdown-share-alpha.mauroner.workers.dev/"
+        "url": "https://tools.mauroner.net/markdown"
       },
       "privateNotes": "Documents expire seven days after the latest accepted edit; the inventory requires an authenticated browser session."
     },

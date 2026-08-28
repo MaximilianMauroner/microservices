@@ -168,7 +168,7 @@ describe("tools web routes", () => {
     expect(adminHtml).toContain("Markdown documents");
     expect(adminHtml).toContain("private-notes.md");
     expect(adminHtml).toContain(
-      "https://markdown.example.test/d/private-notes.md--j57dzxnpat8g9sbksewde1dznh8bczet"
+      "https://markdown.example.test/markdown/d/private-notes.md--j57dzxnpat8g9sbksewde1dznh8bczet"
     );
     expect(adminHtml).not.toContain("document body");
   });

@@ -1,9 +1,10 @@
 import { createCsrfMiddleware, createMiddleware, createStart } from "@tanstack/react-start";
-import { classifyRoute, type PlatformPrincipal } from "@tools-platform/security";
+import { classifyRoute, isMarkdownSharePath, type PlatformPrincipal } from "@tools-platform/security";
 import { authenticatePlatformRequest } from "./app.js";
 import { getPlatformRuntime, type PlatformRuntime } from "./runtime.js";
 import { PLATFORM_UI_BUILD } from "./build-identity.js";
 import { documentContentSecurityPolicy } from "./content-security-policy.js";
+import { markdownShareClientConfig } from "./markdown-share-config.server.js";
 
 export type PlatformRequestContext = {
   runtime: PlatformRuntime;
@@ -47,6 +48,7 @@ const platformRequestMiddleware = createMiddleware().server(
     const response = result.response as Response;
     const headers = new Headers(response.headers);
     const pathname = new URL(request.url).pathname;
+    const markdownShare = isMarkdownSharePath(pathname);
     headers.set("Referrer-Policy", "no-referrer");
     headers.set("X-Content-Type-Options", "nosniff");
     if (
@@ -57,7 +59,11 @@ const platformRequestMiddleware = createMiddleware().server(
         "Content-Security-Policy",
         documentContentSecurityPolicy(
           nonce,
-          process.env.NODE_ENV === "development"
+          process.env.NODE_ENV === "development",
+          markdownShare
+            ? markdownShareClientConfig.connectOrigins
+            : [],
+          markdownShare
         )
       );
     }
@@ -66,6 +72,11 @@ const platformRequestMiddleware = createMiddleware().server(
     }
     if (classifyRoute(pathname, request.method).kind === "human-session") {
       headers.set("Cache-Control", "private, no-store");
+    }
+    if (markdownShare) {
+      headers.set("Cache-Control", "private, no-store");
+      headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()");
+      headers.set("X-Robots-Tag", "noindex, nofollow");
     }
     if (headers.get("Content-Type")?.startsWith("text/html")) {
       const cacheControl = headers.get("Cache-Control");

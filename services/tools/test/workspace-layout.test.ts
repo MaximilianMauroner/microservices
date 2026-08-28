@@ -6,7 +6,7 @@ describe("workspace layout", () => {
     expect(isWorkspacePath(pathname)).toBe(true);
   });
 
-  it.each(["/sign-in", "/feedback/f/public-token", "/artifacts/public-id", "/files/public-id", "/health"])("keeps public or infrastructure route %s outside the workspace shell", (pathname) => {
+  it.each(["/sign-in", "/feedback/f/public-token", "/markdown", "/markdown/d/notes.md--token", "/artifacts/public-id", "/files/public-id", "/health"])("keeps public or infrastructure route %s outside the workspace shell", (pathname) => {
     expect(isWorkspacePath(pathname)).toBe(false);
   });
 });

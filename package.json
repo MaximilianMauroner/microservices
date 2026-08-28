@@ -13,7 +13,7 @@
     "docker:down": "docker compose down",
     "docker:reset": "docker compose down -v",
     "start:network-console": "pnpm --dir services/network-console run start",
-    "start:markdown-share": "pnpm --dir services/markdown-share run dev",
+    "start:markdown-share": "pnpm --dir services/markdown-share run convex:dev",
     "start:tools": "pnpm --dir services/tools run start",
     "start:status": "pnpm --dir services/tools/status run start",
     "test": "pnpm run test:publisher && pnpm run test:field-guide && pnpm run test:markdown-share && pnpm run test:network-console && pnpm run test:tools-security && pnpm run test:tools && pnpm run test:tools-domain && pnpm run test:status && pnpm run test:dashboard",

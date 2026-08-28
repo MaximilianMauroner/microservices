@@ -5,6 +5,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 
+/** Responsive editor pane state owned by the Markdown Share browser UI. */
 export type WorkspacePane = "source" | "preview";
 
 export function getScrollProgress(
@@ -80,7 +81,7 @@ export function useWorkspaceViewport() {
 
     const syncAppHeight = () => {
       window.document.documentElement.style.setProperty(
-        "--app-height",
+        "--markdown-share-app-height",
         `${viewport?.height ?? window.innerHeight}px`,
       );
     };
@@ -135,7 +136,9 @@ export function useWorkspaceViewport() {
     return () => {
       window.removeEventListener("resize", handleWindowResize);
       viewport?.removeEventListener("resize", handleViewportResize);
-      window.document.documentElement.style.removeProperty("--app-height");
+      window.document.documentElement.style.removeProperty(
+        "--markdown-share-app-height",
+      );
       if (frame !== null) {
         window.cancelAnimationFrame(frame);
       }

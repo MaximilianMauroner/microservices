@@ -10,9 +10,10 @@ import {
   useRef,
   useState,
 } from "react";
+import { favicons } from "../src/favicons.js";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { api } from "../convex/_generated/api";
+import { api } from "@tools-platform/markdown-share/api";
 import { useDocumentHistory } from "./document-history";
 import {
   DEFAULT_DISPLAY_SETTINGS,
@@ -237,15 +238,15 @@ function EditorWorkspace({
       className={`editor-shell${viewport.isPreviewOnly ? " preview-only" : ""}${syncFailure ? " has-sync-error" : ""}`}
       style={
         {
-          "--preview-font-scale": displaySettings.fontScale,
-          "--preview-line-height": displaySettings.lineSpacing,
+          "--markdown-share-preview-font-scale": displaySettings.fontScale,
+          "--markdown-share-preview-line-height": displaySettings.lineSpacing,
         } as React.CSSProperties
       }
     >
       <header className="topbar">
         <div className="topbar-identity">
-          <a className="wordmark" href="/" aria-label="Markdown Share home">
-            <img className="wordmark-icon" src="/favicon.png?v=20260812-2" alt="" />
+          <a className="wordmark" href="/markdown" aria-label="Markdown Share home">
+            <img className="wordmark-icon" src={favicons.markdownShare} alt="" />
             <span className="wordmark-name">Markdown Share</span>
           </a>
           <div className="document-identity">
@@ -523,10 +524,10 @@ function CenteredStatus({
   return (
     <main className="status-shell">
       <div className="status-card">
-        <img className="status-glyph" src="/favicon.png?v=20260812-2" alt="" />
+        <img className="status-glyph" src={favicons.markdownShare} alt="" />
         <h1>{label}</h1>
         {detail ? <p>{detail}</p> : null}
-        <a href="/">Create a new document</a>
+        <a href="/markdown">Create a new document</a>
       </div>
     </main>
   );

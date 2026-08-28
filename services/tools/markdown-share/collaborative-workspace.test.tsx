@@ -72,7 +72,7 @@ vi.mock("@convex-dev/prosemirror-sync/tiptap", async () => {
   };
 });
 
-import { CollaborativeWorkspace } from "./collaborative-workspace";
+import { CollaborativeWorkspace } from "./collaborative-workspace.js";
 
 describe("collaborative workspace", () => {
   let container: HTMLDivElement;
@@ -106,6 +106,23 @@ describe("collaborative workspace", () => {
     expect(sourcePanel?.classList.contains("mobile-inactive")).toBe(true);
     expect(previewPanel?.classList.contains("mobile-active")).toBe(true);
     expect(previewTab?.getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("sets the preview custom properties used by the stylesheet", () => {
+    const workspace = container.querySelector<HTMLElement>(".editor-shell");
+
+    expect(
+      workspace?.style.getPropertyValue(
+        "--markdown-share-preview-font-scale",
+      ),
+    ).toBe("1");
+    expect(
+      workspace?.style.getPropertyValue(
+        "--markdown-share-preview-line-height",
+      ),
+    ).toBe("1.7");
+    expect(workspace?.style.getPropertyValue("--preview-font-scale")).toBe("");
+    expect(workspace?.style.getPropertyValue("--preview-line-height")).toBe("");
   });
 
   afterEach(async () => {
