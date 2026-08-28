@@ -73,11 +73,7 @@ import type { MoneyCategory } from "./money-enums.js";
 import type { MoneyActivityPage } from "./money-repository.js";
 import { groupMonth, type GroupedMonth, type Month } from "./money-history.js";
 import { MoneyPlanningCard } from "./money-planning-card.js";
-import {
-  MoneyNav,
-  moneyViewTitle,
-  type MoneyTrackerView,
-} from "./money-tracker-navigation.js";
+import { moneyViewTitle, type MoneyTrackerView } from "./money-tracker-navigation.js";
 
 export type { MoneyTrackerView } from "./money-tracker-navigation.js";
 type Period = "6m" | "1y" | "5y" | "all";
@@ -243,7 +239,6 @@ export function MoneyTrackerPage(
           ) : null}
         </header>
         <div className="money-layout">
-          <MoneyNav />
           <div className="money-content space-y-4">
             <Suspense fallback={<MoneyViewFallback />}>
             {props.view === "overview" ? (

@@ -9,6 +9,7 @@ import type { CSSProperties } from "react";
 import { Toaster } from "../components/ui/toast.js";
 import { SidebarProvider, SidebarTrigger } from "../components/ui/sidebar.js";
 import { ToolsSidebar } from "../components/tools-sidebar.js";
+import { ThemeProvider } from "../components/theme-provider.js";
 import "../styles.css";
 
 export const Route = createRootRoute({
@@ -31,8 +32,8 @@ function RootDocument() {
         <HeadContent />
       </head>
       <body>
-        {hasWorkspaceSidebar ? (
-          <SidebarProvider style={{ "--sidebar-width": "18rem" } as CSSProperties}>
+        <ThemeProvider>{hasWorkspaceSidebar ? (
+          <SidebarProvider style={{ "--sidebar-width": "16.5rem" } as CSSProperties}>
             <ToolsSidebar />
             <div className="relative flex w-full min-w-0 flex-1 flex-col bg-background">
               <SidebarTrigger className="fixed left-3 top-3 z-50 md:hidden" />
@@ -42,7 +43,7 @@ function RootDocument() {
           </SidebarProvider>
         ) : (
           <><Outlet /><Toaster /></>
-        )}
+        )}</ThemeProvider>
         <Scripts />
       </body>
     </html>
@@ -51,5 +52,5 @@ function RootDocument() {
 
 export function isWorkspacePath(pathname: string) {
   if (pathname.startsWith("/feedback/f/")) return false;
-  return pathname === "/" || ["/documents", "/feedback", "/field-guide", "/money", "/publisher", "/status"].some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+  return pathname === "/" || ["/documents", "/feedback", "/field-guide", "/money", "/publisher", "/settings", "/status"].some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
