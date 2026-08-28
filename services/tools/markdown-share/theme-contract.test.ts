@@ -48,6 +48,15 @@ describe("integrated Markdown Share theme", () => {
     expect(styles).toMatch(/\.editor-shell\s*\{[^}]*color: var\(--markdown-share-ink\);/s);
   });
 
+  it("keeps the landing page fluid across desktop and phone widths", async () => {
+    const styles = await readFile(new URL("./styles.css", import.meta.url), "utf8");
+
+    expect(styles).toContain("width: min(900px, 100%);");
+    expect(styles).toContain("font: 600 clamp(3.2rem, 6vw, 5.25rem)");
+    expect(styles).toMatch(/@media \(max-width: 600px\)[\s\S]*?\.filename-row\s*\{\s*grid-template-columns: 1fr;/);
+    expect(styles).toMatch(/@media \(max-width: 380px\)[\s\S]*?\.landing-card h1\s*\{\s*font-size: 2.65rem;/);
+  });
+
   it("prints the preview without hiding application mount ancestors", async () => {
     const styles = await readFile(new URL("./styles.css", import.meta.url), "utf8");
     const printStyles = styles.slice(styles.indexOf("@media print"));
