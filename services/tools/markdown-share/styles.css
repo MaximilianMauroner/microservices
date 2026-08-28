@@ -56,11 +56,16 @@ button:disabled {
   display: grid;
   place-items: center;
   padding: 40px 24px;
+  color: var(--ink);
   background:
     linear-gradient(rgba(63, 58, 48, 0.045) 1px, transparent 1px),
     linear-gradient(90deg, rgba(63, 58, 48, 0.045) 1px, transparent 1px),
     #f4f0e8;
   background-size: 28px 28px;
+}
+
+.editor-shell {
+  color: var(--ink);
 }
 
 .landing-card {

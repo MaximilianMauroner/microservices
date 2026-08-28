@@ -62,8 +62,15 @@ describe("TanStack Start request boundaries", () => {
     const policy = documentContentSecurityPolicy("request-nonce", false, [
       "https://example.convex.cloud",
       "wss://example.convex.cloud"
-    ]);
+    ], true);
     expect(policy).toContain("connect-src 'self' https://example.convex.cloud wss://example.convex.cloud;");
+    expect(policy).toContain("img-src 'self' data: https:;");
     expect(policy).not.toContain("connect-src *");
+  });
+
+  it("keeps HTTPS images blocked on other Tools documents", () => {
+    const policy = documentContentSecurityPolicy("request-nonce", false);
+    expect(policy).toContain("img-src 'self' data:;");
+    expect(policy).not.toContain("img-src 'self' data: https:;");
   });
 });

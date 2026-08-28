@@ -44,11 +44,18 @@ Status scheduling runs inside Tools and is not a standalone deployment.
 ## Local stack
 
 Start the production-shaped local stack, which includes PostgreSQL, MinIO, a
-Markdown mock, database setup, seed work, and Tools:
+Markdown administration mock, database setup, seed work, and Tools:
 
 ```bash
 pnpm run docker:up
 ```
+
+The Markdown Share browser needs a Convex deployment. Run `pnpm run
+start:markdown-share` in another terminal to use the default local Convex URL,
+`http://localhost:3210`. You can instead set `VITE_CONVEX_URL` to a real
+development deployment URL before `pnpm run docker:up`. Docker passes this URL
+to both the browser build and the Tools runtime. The administration mock stays
+on port 8787 and does not implement the Convex browser protocol.
 
 Then open:
 

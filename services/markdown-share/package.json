@@ -1,8 +1,12 @@
 {
-  "name": "markdown-share",
+  "name": "@tools-platform/markdown-share",
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "exports": {
+    "./api": "./convex/_generated/api.js",
+    "./data-model": "./convex/_generated/dataModel.js"
+  },
   "scripts": {
     "convex:dev": "convex dev",
     "convex:deploy": "convex deploy",

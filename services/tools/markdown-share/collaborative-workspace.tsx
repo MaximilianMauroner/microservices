@@ -13,7 +13,7 @@ import {
 import { favicons } from "../src/favicons.js";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { api } from "../../markdown-share/convex/_generated/api.js";
+import { api } from "@tools-platform/markdown-share/api";
 import { useDocumentHistory } from "./document-history";
 import {
   DEFAULT_DISPLAY_SETTINGS,
