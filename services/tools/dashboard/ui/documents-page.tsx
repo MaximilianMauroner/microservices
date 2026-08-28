@@ -50,7 +50,7 @@ export function DocumentsPage({ initial }: { initial: DocumentsPageData }) {
           <h1>Manage active documents.</h1>
           <p className="workspace-header__description">Find expiring work, verify checkpoints, and open the document that needs attention.</p>
         </div>
-        <div className="workspace-header__actions"><Button nativeButton={false} render={<a href={initial.publicOrigin} target="_blank" rel="noreferrer" />}><PlusIcon />New document<ArrowUpRightIcon /></Button></div>
+        <div className="workspace-header__actions"><Button nativeButton={false} render={<a href={new URL("/markdown", initial.publicOrigin).toString()} target="_blank" rel="noreferrer" />}><PlusIcon />New document<ArrowUpRightIcon /></Button></div>
       </header>
 
       <section className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="Document overview">

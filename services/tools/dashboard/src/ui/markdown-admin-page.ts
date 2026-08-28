@@ -51,7 +51,7 @@ export function renderMarkdownAdminPage(
           <h1 id="markdown-admin-title">Document inventory</h1>
           <p class="admin-lede">See what is active, recently edited, checkpointed, and approaching expiry across Markdown Share.</p>
           <div class="form-actions admin-heading-actions">
-            <a class="button button--primary button-link" href="${escapeHtml(model.publicOrigin)}" target="_blank" rel="noreferrer">New document <span aria-hidden="true">↗</span></a>
+            <a class="button button--primary button-link" href="${escapeHtml(new URL("/markdown", model.publicOrigin).toString())}" target="_blank" rel="noreferrer">New document <span aria-hidden="true">↗</span></a>
             <a class="button button-link" href="/manage">Catalog administration</a>
           </div>
         </div>

@@ -5,15 +5,15 @@
   font-family: "Manrope", sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
-  --ink: #24231f;
-  --muted: #716e66;
-  --paper: #fffdf8;
-  --line: #d9d3c7;
-  --accent: #e11d48;
-  --accent-hover: #be123c;
-  --accent-soft: #fda4af;
-  --green: #2b8467;
-  --app-height: 100dvh;
+  --markdown-share-ink: #24231f;
+  --markdown-share-muted: #716e66;
+  --markdown-share-paper: #fffdf8;
+  --markdown-share-line: #d9d3c7;
+  --markdown-share-accent: #e11d48;
+  --markdown-share-accent-hover: #be123c;
+  --markdown-share-accent-soft: #fda4af;
+  --markdown-share-green: #2b8467;
+  --markdown-share-app-height: 100dvh;
 }
 
 * {
@@ -56,7 +56,7 @@ button:disabled {
   display: grid;
   place-items: center;
   padding: 40px 24px;
-  color: var(--ink);
+  color: var(--markdown-share-ink);
   background:
     linear-gradient(rgba(63, 58, 48, 0.045) 1px, transparent 1px),
     linear-gradient(90deg, rgba(63, 58, 48, 0.045) 1px, transparent 1px),
@@ -65,13 +65,13 @@ button:disabled {
 }
 
 .editor-shell {
-  color: var(--ink);
+  color: var(--markdown-share-ink);
 }
 
 .landing-card {
   width: min(760px, 100%);
   padding: clamp(34px, 7vw, 72px);
-  border: 1px solid var(--line);
+  border: 1px solid var(--markdown-share-line);
   background: rgba(255, 253, 248, 0.96);
   box-shadow: 12px 12px 0 #d9d1c2;
 }
@@ -84,7 +84,7 @@ button:disabled {
   width: 48px;
   height: 48px;
   color: #2d0b10;
-  background: var(--accent-soft);
+  background: var(--markdown-share-accent-soft);
   font-family: "DM Mono", monospace;
   font-weight: 500;
   letter-spacing: -0.1em;
@@ -93,7 +93,7 @@ button:disabled {
 
 .eyebrow {
   margin: 28px 0 10px;
-  color: var(--accent);
+  color: var(--markdown-share-accent);
   font: 500 0.76rem/1 "DM Mono", monospace;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -109,7 +109,7 @@ button:disabled {
 .landing-copy {
   max-width: 620px;
   margin: 30px 0 38px;
-  color: var(--muted);
+  color: var(--markdown-share-muted);
   font-size: 1.05rem;
   line-height: 1.7;
 }
@@ -135,13 +135,13 @@ button:disabled {
   border: 1px solid #a7a093;
   border-radius: 0;
   outline: none;
-  color: var(--ink);
+  color: var(--markdown-share-ink);
   background: #fff;
   font-family: "DM Mono", monospace;
 }
 
 .filename-row input:focus {
-  border-color: var(--accent);
+  border-color: var(--markdown-share-accent);
   box-shadow: 0 0 0 3px rgba(234, 91, 52, 0.12);
 }
 
@@ -150,7 +150,7 @@ button:disabled {
 .button-secondary {
   min-height: 44px;
   padding: 0 18px;
-  border: 1px solid var(--ink);
+  border: 1px solid var(--markdown-share-ink);
   border-radius: 0;
   font-weight: 700;
 }
@@ -158,18 +158,18 @@ button:disabled {
 .filename-row button,
 .button-primary {
   color: #fff;
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--markdown-share-accent);
+  border-color: var(--markdown-share-accent);
 }
 
 .filename-row button:hover,
 .button-primary:hover {
-  background: var(--accent-hover);
-  border-color: var(--accent-hover);
+  background: var(--markdown-share-accent-hover);
+  border-color: var(--markdown-share-accent-hover);
 }
 
 .button-secondary {
-  color: var(--ink);
+  color: var(--markdown-share-ink);
   background: transparent;
 }
 
@@ -184,7 +184,7 @@ button:disabled {
 }
 
 .field-note {
-  color: var(--muted);
+  color: var(--markdown-share-muted);
 }
 
 .form-error {
@@ -194,7 +194,7 @@ button:disabled {
 .recent-documents {
   margin-top: 34px;
   padding-top: 22px;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--markdown-share-line);
 }
 
 .recent-documents-heading {
@@ -211,7 +211,7 @@ button:disabled {
 }
 
 .recent-documents-heading span {
-  color: var(--muted);
+  color: var(--markdown-share-muted);
   font: 500 0.64rem/1 "DM Mono", monospace;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -229,7 +229,7 @@ button:disabled {
   min-width: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  border: 1px solid var(--line);
+  border: 1px solid var(--markdown-share-line);
   background: #fff;
 }
 
@@ -238,7 +238,7 @@ button:disabled {
   display: grid;
   gap: 4px;
   padding: 12px 14px;
-  color: var(--ink);
+  color: var(--markdown-share-ink);
   text-decoration: none;
 }
 
@@ -257,7 +257,7 @@ button:disabled {
 
 .recent-documents li span,
 .recent-documents-empty {
-  color: var(--muted);
+  color: var(--markdown-share-muted);
   font-size: 0.74rem;
 }
 
@@ -265,8 +265,8 @@ button:disabled {
   align-self: stretch;
   padding: 0 14px;
   border: 0;
-  border-left: 1px solid var(--line);
-  color: var(--muted);
+  border-left: 1px solid var(--markdown-share-line);
+  color: var(--markdown-share-muted);
   background: transparent;
   font-size: 0.68rem;
   font-weight: 700;
@@ -282,7 +282,7 @@ button:disabled {
 .recent-documents-empty {
   margin: 0;
   padding: 14px;
-  border: 1px dashed var(--line);
+  border: 1px dashed var(--markdown-share-line);
 }
 
 .promise-row {
@@ -291,8 +291,8 @@ button:disabled {
   gap: 10px 24px;
   margin-top: 50px;
   padding-top: 18px;
-  border-top: 1px solid var(--line);
-  color: var(--muted);
+  border-top: 1px solid var(--markdown-share-line);
+  color: var(--markdown-share-muted);
   font: 500 0.72rem/1 "DM Mono", monospace;
   text-transform: uppercase;
 }
@@ -300,7 +300,7 @@ button:disabled {
 .editor-shell {
   height: 100vh;
   height: 100dvh;
-  height: var(--app-height, 100dvh);
+  height: var(--markdown-share-app-height, 100dvh);
   overflow: hidden;
   display: grid;
   grid-template-rows: 44px minmax(0, 1fr);
@@ -337,8 +337,8 @@ button:disabled {
   justify-content: space-between;
   gap: 10px;
   padding: 0 10px;
-  border-bottom: 1px solid var(--line);
-  background: var(--paper);
+  border-bottom: 1px solid var(--markdown-share-line);
+  background: var(--markdown-share-paper);
 }
 
 .topbar-identity {
@@ -354,7 +354,7 @@ button:disabled {
   align-items: center;
   gap: 8px;
   width: max-content;
-  color: var(--ink);
+  color: var(--markdown-share-ink);
   font-weight: 800;
   font-size: 0.82rem;
   text-decoration: none;
@@ -372,7 +372,7 @@ button:disabled {
   align-items: baseline;
   gap: 7px;
   padding-left: 12px;
-  border-left: 1px solid var(--line);
+  border-left: 1px solid var(--markdown-share-line);
 }
 
 .document-identity strong {
@@ -386,7 +386,7 @@ button:disabled {
 
 .document-identity span,
 .presence-label {
-  color: var(--muted);
+  color: var(--markdown-share-muted);
   font-size: 0.72rem;
 }
 
@@ -420,7 +420,7 @@ button:disabled {
   align-items: center;
   gap: 5px;
   min-width: 0;
-  color: var(--muted);
+  color: var(--markdown-share-muted);
   font: 600 0.68rem/1 "DM Mono", monospace;
   white-space: nowrap;
 }
@@ -430,7 +430,7 @@ button:disabled {
   height: 7px;
   flex: none;
   border-radius: 50%;
-  background: var(--green);
+  background: var(--markdown-share-green);
   box-shadow: 0 0 0 3px rgba(43, 132, 103, 0.12);
 }
 
@@ -460,10 +460,10 @@ button:disabled {
   display: grid;
   place-items: center;
   margin-left: -7px;
-  border: 2px solid var(--paper);
+  border: 2px solid var(--markdown-share-paper);
   border-radius: 50%;
   color: #fff;
-  background: var(--green);
+  background: var(--markdown-share-green);
   font-size: 0.62rem;
   font-weight: 800;
 }
@@ -475,7 +475,7 @@ button:disabled {
 .presence-label {
   margin-left: 6px;
   white-space: nowrap;
-  color: var(--ink);
+  color: var(--markdown-share-ink);
   font-weight: 700;
 }
 
@@ -484,7 +484,7 @@ button:disabled {
   height: 7px;
   margin-left: 7px;
   border-radius: 50%;
-  background: var(--green);
+  background: var(--markdown-share-green);
   box-shadow: 0 0 0 3px rgba(43, 132, 103, 0.12);
 }
 
@@ -500,7 +500,7 @@ button:disabled {
   padding: 0 10px;
   border: 1px solid #a7a093;
   border-radius: 0;
-  color: var(--ink);
+  color: var(--markdown-share-ink);
   background: rgba(255, 253, 248, 0.94);
   font: 600 0.64rem/1 "DM Mono", monospace;
   white-space: nowrap;
@@ -518,7 +518,7 @@ button:disabled {
 .history-trigger:focus-visible,
 .panel-overlay-action:hover,
 .panel-overlay-action:focus-visible {
-  border-color: var(--ink);
+  border-color: var(--markdown-share-ink);
   background: #eee9df;
 }
 
@@ -529,15 +529,15 @@ button:disabled {
   min-width: 190px;
   display: grid;
   padding: 5px;
-  border: 1px solid var(--ink);
-  background: var(--paper);
+  border: 1px solid var(--markdown-share-ink);
+  background: var(--markdown-share-paper);
   box-shadow: 6px 6px 0 rgba(36, 35, 31, 0.22);
 }
 
 .action-menu p {
   margin: 0;
   padding: 8px 9px 6px;
-  color: var(--muted);
+  color: var(--markdown-share-muted);
   font: 600 0.6rem/1 "DM Mono", monospace;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -547,7 +547,7 @@ button:disabled {
   min-height: 36px;
   padding: 0 9px;
   border: 0;
-  color: var(--ink);
+  color: var(--markdown-share-ink);
   background: transparent;
   font: 600 0.7rem/1 "DM Mono", monospace;
   text-align: left;
@@ -576,7 +576,7 @@ button:disabled {
   gap: 10px;
   margin-top: 5px;
   padding: 5px 9px 8px;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--markdown-share-line);
 }
 
 .display-settings p {
@@ -587,7 +587,7 @@ button:disabled {
 .display-settings label {
   display: grid;
   gap: 6px;
-  color: var(--ink);
+  color: var(--markdown-share-ink);
   font: 600 0.66rem/1 "DM Mono", monospace;
 }
 
@@ -598,25 +598,25 @@ button:disabled {
 }
 
 .display-settings output {
-  color: var(--muted);
+  color: var(--markdown-share-muted);
   font-variant-numeric: tabular-nums;
 }
 
 .display-settings input[type="range"] {
   width: 100%;
-  accent-color: var(--accent);
+  accent-color: var(--markdown-share-accent);
 }
 
 .action-menu .display-settings-reset {
   min-height: 30px;
   padding: 0;
-  color: var(--muted);
+  color: var(--markdown-share-muted);
   font-size: 0.62rem;
 }
 
 .action-menu .display-settings-reset:hover,
 .action-menu .display-settings-reset:focus-visible {
-  color: var(--ink);
+  color: var(--markdown-share-ink);
 }
 
 .workspace {
@@ -641,7 +641,7 @@ button:disabled {
   min-width: 0;
   min-height: 0;
   display: block;
-  background: var(--paper);
+  background: var(--markdown-share-paper);
 }
 
 .panel > .editor-scroll,
@@ -696,7 +696,7 @@ button:disabled {
 .editor-shell.preview-only {
   height: 100vh;
   height: 100dvh;
-  height: var(--app-height, 100dvh);
+  height: var(--markdown-share-app-height, 100dvh);
   overflow: hidden;
   grid-template-rows: minmax(0, 1fr);
 }
@@ -727,7 +727,7 @@ button:disabled {
 .preview-only #print-preview {
   height: 100vh;
   height: 100dvh;
-  height: var(--app-height, 100dvh);
+  height: var(--markdown-share-app-height, 100dvh);
 }
 
 .preview-mode-exit {
@@ -737,17 +737,17 @@ button:disabled {
   right: 14px;
   min-height: 34px;
   padding: 0 12px;
-  border: 1px solid var(--ink);
+  border: 1px solid var(--markdown-share-ink);
   border-radius: 0;
-  color: var(--paper);
+  color: var(--markdown-share-paper);
   background: rgba(36, 35, 31, 0.9);
   font: 600 0.68rem/1 "DM Mono", monospace;
 }
 
 .preview-mode-exit:hover,
 .preview-mode-exit:focus-visible {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--markdown-share-accent);
+  border-color: var(--markdown-share-accent);
 }
 
 .dialog-close {
@@ -755,7 +755,7 @@ button:disabled {
   padding: 0 9px;
   border: 1px solid #a7a093;
   border-radius: 0;
-  color: var(--ink);
+  color: var(--markdown-share-ink);
   background: transparent;
   font: 600 0.62rem/1 "DM Mono", monospace;
   letter-spacing: 0;
@@ -764,7 +764,7 @@ button:disabled {
 }
 
 .dialog-close:hover {
-  border-color: var(--ink);
+  border-color: var(--markdown-share-ink);
   background: #eee9df;
 }
 
@@ -784,8 +784,8 @@ button:disabled {
   height: min(780px, calc(100vh - 44px));
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
-  border: 1px solid var(--ink);
-  background: var(--paper);
+  border: 1px solid var(--markdown-share-ink);
+  background: var(--markdown-share-paper);
   box-shadow: 12px 12px 0 rgba(36, 35, 31, 0.35);
 }
 
@@ -795,7 +795,7 @@ button:disabled {
   justify-content: space-between;
   gap: 20px;
   padding: 16px 20px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--markdown-share-line);
 }
 
 .checkpoint-dialog-header .eyebrow {
@@ -817,14 +817,14 @@ button:disabled {
   align-items: end;
   gap: 12px;
   padding: 12px 20px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--markdown-share-line);
   background: #f3eee5;
 }
 
 .checkpoint-selectors label {
   display: grid;
   gap: 5px;
-  color: var(--muted);
+  color: var(--markdown-share-muted);
   font: 600 0.64rem/1 "DM Mono", monospace;
   letter-spacing: 0.07em;
   text-transform: uppercase;
@@ -836,7 +836,7 @@ button:disabled {
   padding: 0 10px;
   border: 1px solid #a7a093;
   border-radius: 0;
-  color: var(--ink);
+  color: var(--markdown-share-ink);
   background: #fff;
   font: 500 0.76rem/1 "DM Mono", monospace;
   text-transform: none;
@@ -844,7 +844,7 @@ button:disabled {
 
 .compare-arrow {
   padding-bottom: 10px;
-  color: var(--muted);
+  color: var(--markdown-share-muted);
   font-family: "DM Mono", monospace;
 }
 
@@ -858,7 +858,7 @@ button:disabled {
   display: flex;
   gap: 14px;
   padding: 8px 20px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--markdown-share-line);
   font: 600 0.7rem/1 "DM Mono", monospace;
 }
 
@@ -929,7 +929,7 @@ button:disabled {
   min-height: 0;
   place-items: center;
   padding: 40px;
-  color: var(--muted);
+  color: var(--markdown-share-muted);
   background: #fbfaf6;
   font: 500 0.78rem/1.5 "DM Mono", monospace;
   text-align: center;
@@ -946,9 +946,9 @@ button:disabled {
 }
 
 .editor-document {
-  --editor-padding-block: clamp(24px, 4vw, 58px);
-  --editor-padding-inline: clamp(24px, 4vw, 58px);
-  --line-number-gutter-width: 2.75rem;
+  --markdown-share-editor-padding-block: clamp(24px, 4vw, 58px);
+  --markdown-share-editor-padding-inline: clamp(24px, 4vw, 58px);
+  --markdown-share-line-number-gutter-width: 2.75rem;
 
   position: relative;
   min-width: 100%;
@@ -960,7 +960,7 @@ button:disabled {
   z-index: 2;
   top: 0;
   bottom: 0;
-  left: calc(var(--line-number-gutter-width) - 1px);
+  left: calc(var(--markdown-share-line-number-gutter-width) - 1px);
   border-right: 1px solid #484943;
   content: "";
   pointer-events: none;
@@ -970,13 +970,13 @@ button:disabled {
   min-width: 100%;
   min-height: 100%;
   display: grid;
-  grid-template-columns: var(--line-number-gutter-width) minmax(0, 1fr);
+  grid-template-columns: var(--markdown-share-line-number-gutter-width) minmax(0, 1fr);
   align-content: start;
-  padding-block: var(--editor-padding-block);
+  padding-block: var(--markdown-share-editor-padding-block);
   background: linear-gradient(
     to right,
-    #292a27 0 var(--line-number-gutter-width),
-    transparent var(--line-number-gutter-width)
+    #292a27 0 var(--markdown-share-line-number-gutter-width),
+    transparent var(--markdown-share-line-number-gutter-width)
   );
   user-select: none;
 }
@@ -1002,7 +1002,7 @@ button:disabled {
 .line-wrap-measure {
   grid-column: 2;
   min-width: 0;
-  padding-inline: var(--editor-padding-inline);
+  padding-inline: var(--markdown-share-editor-padding-inline);
   visibility: hidden;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -1013,7 +1013,7 @@ button:disabled {
   z-index: 1;
   top: 0;
   right: 0;
-  left: var(--line-number-gutter-width);
+  left: var(--markdown-share-line-number-gutter-width);
   min-width: 0;
   min-height: 100%;
 }
@@ -1021,7 +1021,7 @@ button:disabled {
 .tiptap {
   min-height: 100%;
   min-width: 0;
-  padding: var(--editor-padding-block) var(--editor-padding-inline);
+  padding: var(--markdown-share-editor-padding-block) var(--markdown-share-editor-padding-inline);
   outline: none;
   color: #ece8df;
   caret-color: #ff8b69;
@@ -1053,9 +1053,9 @@ button:disabled {
 .markdown-body {
   color: #282723;
   font-family: "Manrope", sans-serif;
-  font-size: calc(1rem * var(--preview-font-scale, 1));
+  font-size: calc(1rem * var(--markdown-share-preview-font-scale, 1));
   font-weight: 400;
-  line-height: var(--preview-line-height, 1.72);
+  line-height: var(--markdown-share-preview-line-height, 1.72);
   font-synthesis: style;
   overflow-wrap: anywhere;
 }
@@ -1065,7 +1065,7 @@ button:disabled {
 }
 
 .markdown-body .markdown-spacer {
-  height: calc(1em * var(--preview-line-height, 1.72));
+  height: calc(1em * var(--markdown-share-preview-line-height, 1.72));
 }
 
 .markdown-body .markdown-spacer + * {
@@ -1083,7 +1083,7 @@ button:disabled {
 
 .markdown-body h1 {
   padding-bottom: 0.25em;
-  border-bottom: 2px solid var(--ink);
+  border-bottom: 2px solid var(--markdown-share-ink);
   font-size: clamp(2.4rem, 5vw, 4.2rem);
 }
 
@@ -1102,7 +1102,7 @@ button:disabled {
 .markdown-body blockquote {
   margin-left: 0;
   padding-left: 1.2em;
-  border-left: 4px solid var(--accent);
+  border-left: 4px solid var(--markdown-share-accent);
   color: #625f57;
 }
 
@@ -1134,7 +1134,7 @@ button:disabled {
 .markdown-body th,
 .markdown-body td {
   padding: 8px 10px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--markdown-share-line);
   text-align: left;
 }
 
@@ -1143,15 +1143,15 @@ button:disabled {
 }
 
 .markdown-body input[type="checkbox"] {
-  accent-color: var(--accent);
+  accent-color: var(--markdown-share-accent);
 }
 
 .status-card,
 .configuration-error {
   width: min(580px, 100%);
   padding: 42px;
-  border: 1px solid var(--line);
-  background: var(--paper);
+  border: 1px solid var(--markdown-share-line);
+  background: var(--markdown-share-paper);
   box-shadow: 8px 8px 0 #d9d1c2;
 }
 
@@ -1163,14 +1163,14 @@ button:disabled {
 
 .status-card p,
 .configuration-error p {
-  color: var(--muted);
+  color: var(--markdown-share-muted);
   line-height: 1.6;
 }
 
 .status-card a {
   display: inline-block;
   margin-top: 16px;
-  color: var(--ink);
+  color: var(--markdown-share-ink);
   font-weight: 700;
 }
 
@@ -1178,7 +1178,7 @@ button:disabled {
   .editor-shell {
     height: 100svh;
     height: 100dvh;
-    height: var(--app-height, 100dvh);
+    height: var(--markdown-share-app-height, 100dvh);
     min-height: 0;
     grid-template-rows: calc(44px + env(safe-area-inset-top)) minmax(0, 1fr);
     overflow: hidden;
@@ -1281,7 +1281,7 @@ button:disabled {
       height: 14px;
       display: grid;
       place-items: center;
-      color: var(--green);
+      color: var(--markdown-share-green);
       background: transparent;
       box-shadow: none;
       font-size: 0.68rem;
@@ -1359,7 +1359,7 @@ button:disabled {
     padding-left: max(3px, env(safe-area-inset-left));
     padding-right: max(3px, env(safe-area-inset-right));
     background: #ece7de;
-    box-shadow: inset 0 -1px var(--line);
+    box-shadow: inset 0 -1px var(--markdown-share-line);
   }
 
   .mobile-view-tabs {
@@ -1376,20 +1376,20 @@ button:disabled {
     padding: 0 8px;
     border: 0;
     border-radius: 4px;
-    color: var(--muted);
+    color: var(--markdown-share-muted);
     background: transparent;
     font-size: 0.7rem;
     font-weight: 700;
   }
 
   .mobile-view-tab[aria-selected="true"] {
-    color: var(--ink);
-    background: var(--paper);
+    color: var(--markdown-share-ink);
+    background: var(--markdown-share-paper);
     box-shadow: 0 1px 3px rgba(36, 35, 31, 0.16);
   }
 
   .mobile-view-tab:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--markdown-share-accent);
     outline-offset: 1px;
   }
 
@@ -1511,9 +1511,9 @@ button:disabled {
   }
 
   .editor-document {
-    --editor-padding-block: 22px;
-    --editor-padding-inline: 18px;
-    --line-number-gutter-width: 2.25rem;
+    --markdown-share-editor-padding-block: 22px;
+    --markdown-share-editor-padding-inline: 18px;
+    --markdown-share-line-number-gutter-width: 2.25rem;
   }
 }
 
@@ -1598,10 +1598,10 @@ button:disabled {
   #print-preview.markdown-body {
     color: #282723;
     font-family: Arial, Helvetica, sans-serif;
-    font-size: calc(11pt * var(--preview-font-scale, 1));
+    font-size: calc(11pt * var(--markdown-share-preview-font-scale, 1));
     font-weight: 400;
     letter-spacing: 0.015em;
-    line-height: var(--preview-line-height, 1.7);
+    line-height: var(--markdown-share-preview-line-height, 1.7);
     orphans: 3;
     print-color-adjust: exact;
     text-rendering: optimizeLegibility;
