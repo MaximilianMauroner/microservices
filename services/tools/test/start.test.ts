@@ -1,7 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { requirePlatformSession } from "../src/auth-middleware.js";
 import { routerSsrOptions } from "../src/router-options.js";
 import { documentContentSecurityPolicy } from "../src/content-security-policy.js";
+
+beforeAll(async () => {
+  vi.stubEnv("VITE_CONVEX_URL", "https://example.convex.cloud");
+  await import("../src/start.js");
+});
 
 async function runSessionMiddleware(authenticated: boolean) {
   const server = requirePlatformSession.options.server;

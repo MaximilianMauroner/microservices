@@ -6,6 +6,10 @@ import { PLATFORM_UI_BUILD } from "./build-identity.js";
 import { documentContentSecurityPolicy } from "./content-security-policy.js";
 import { loadMarkdownShareClientConfig } from "../markdown-share/client-config.js";
 
+const markdownShareClientConfig = loadMarkdownShareClientConfig(
+  process.env.VITE_CONVEX_URL
+);
+
 export type PlatformRequestContext = {
   runtime: PlatformRuntime;
   request: Request;
@@ -61,7 +65,7 @@ const platformRequestMiddleware = createMiddleware().server(
           nonce,
           process.env.NODE_ENV === "development",
           markdownShare
-            ? loadMarkdownShareClientConfig(process.env.VITE_CONVEX_URL).connectOrigins
+            ? markdownShareClientConfig.connectOrigins
             : [],
           markdownShare
         )

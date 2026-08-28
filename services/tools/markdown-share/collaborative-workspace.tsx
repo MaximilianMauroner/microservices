@@ -238,8 +238,8 @@ function EditorWorkspace({
       className={`editor-shell${viewport.isPreviewOnly ? " preview-only" : ""}${syncFailure ? " has-sync-error" : ""}`}
       style={
         {
-          "--preview-font-scale": displaySettings.fontScale,
-          "--preview-line-height": displaySettings.lineSpacing,
+          "--markdown-share-preview-font-scale": displaySettings.fontScale,
+          "--markdown-share-preview-line-height": displaySettings.lineSpacing,
         } as React.CSSProperties
       }
     >
