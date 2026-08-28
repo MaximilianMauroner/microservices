@@ -9,7 +9,7 @@ export function loadMonitorDefinitions(env: Readonly<Record<string, string | und
     http("tools-directory", `${origin}/health/tools`),
     http("artifact-publisher", `${origin}/health/publisher`),
     http("field-guide-console", `${origin}/health/review`),
-    http("markdown-share", requiredOrigin(env.MARKDOWN_SHARE_PUBLIC_ORIGIN, "MARKDOWN_SHARE_PUBLIC_ORIGIN")),
+    http("markdown-share", `${origin}/markdown`),
     { id: "network-console", kind: "http", url: "https://coding.tailbc92d.ts.net/health", scope: "tailnet", expectedStatus: [200], timeoutMs: 10_000 },
     http("home-assistant", "https://homeassistant.mauroner.net/"),
     { id: "tower", kind: "heartbeat", scope: "public", checkUrl: `${origin}/health/tower`, staleAfterMs: positiveInteger(env.TOWER_HEARTBEAT_STALE_AFTER_MS, 40 * 60_000) }

@@ -43,7 +43,7 @@ describe("initial catalog", () => {
     ).toMatchObject({
       "artifact-publisher": "https://tools.mauroner.net/health/publisher",
       "field-guide-console": "https://tools.mauroner.net/health/review",
-      "markdown-share": "https://markdown-share-alpha.mauroner.workers.dev/",
+      "markdown-share": "https://tools.mauroner.net/markdown",
       "home-assistant": "https://homeassistant.mauroner.net/",
       tower: "https://tools.mauroner.net/health/tower",
       "tools-directory": "https://tools.mauroner.net/health/tools",
@@ -70,6 +70,7 @@ describe("initial catalog", () => {
       )
     ).toEqual({
       "artifact-publisher:upload": "/publisher",
+      "markdown-share:editor": "/markdown",
       "markdown-share:documents": "/documents",
       "field-guide-console:console": "/field-guide",
       "tools-directory:directory": "/",

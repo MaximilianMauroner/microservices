@@ -1,3 +1,4 @@
+/** Minimal tree shape used by the blank-line preservation plugin. */
 type MarkdownNode = {
   type: string;
   children?: MarkdownNode[];

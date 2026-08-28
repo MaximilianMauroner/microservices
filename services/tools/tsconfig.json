@@ -26,6 +26,8 @@
     "field-guide/ui/**/*.tsx",
     "money/**/*.ts",
     "money/**/*.tsx",
+    "markdown-share/**/*.ts",
+    "markdown-share/**/*.tsx",
     "test/**/*.ts",
     "test/**/*.tsx"
   ]

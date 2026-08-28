@@ -9,11 +9,11 @@ TanStack Start monolith whose products live directly beneath `services/tools`.
 | Service | Path | Runtime | Purpose |
 | --- | --- | --- | --- |
 | Tools | `services/tools` | Railway, Node.js | Authenticated product monolith and product-owned scheduled work. |
-| Markdown Share | `services/markdown-share` | Cloudflare Workers | Collaborative Markdown application backed by Convex. |
+| Markdown Share backend | `services/markdown-share` | Convex | Document state, realtime collaboration, checkpoints, and retention. |
 | Network Console | `services/network-console` | Local VM, Node.js | Private network and listening-port dashboard. |
 
 Tools contains the `dashboard`, `status`, `publisher`, `field-guide`, `money`,
-and `feedback` products. Code reused within Tools remains owned by the product or
+`feedback`, and Markdown Share browser products. Code reused within Tools remains owned by the product or
 runtime module that provides it; there is no repository-wide shared package.
 
 ## Requirements
@@ -35,7 +35,7 @@ Run an independently deployed service:
 
 ```bash
 pnpm run start:tools
-pnpm run start:markdown-share
+pnpm run start:markdown-share # Convex backend development
 pnpm run start:network-console
 ```
 
@@ -54,7 +54,8 @@ Then open:
 
 - `http://localhost:3000` for Tools
 - `http://localhost:9001` for the MinIO console
-- `http://localhost:8787` for the Markdown mock
+- `http://localhost:3000/markdown` for the integrated Markdown Share frontend
+- `http://localhost:8787` for the local Markdown administration mock
 
 Stop the stack with `pnpm run docker:down`. To also delete its local database
 and object-storage volumes, run `pnpm run docker:reset`.

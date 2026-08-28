@@ -1,48 +1,34 @@
-# Markdown Share alpha
+# Markdown Share Convex backend
 
-A capability-link Markdown editor with Convex-backed metadata, seven-day
-retention, ProseMirror OT synchronization, anonymous presence, a live GFM
-preview, and browser PDF export. Cloudflare Workers Static Assets hosts only the
-compiled frontend; all application data and realtime behavior live in Convex.
+Convex owns Markdown Share document metadata, ProseMirror synchronization,
+anonymous presence, checkpoints, seven-day retention, cleanup, and the protected
+administration HTTP action. Tools serves the browser application from
+`/markdown`.
 
-## Local setup
+## Local development
 
 ```sh
 pnpm install
-cd services/markdown-share
-pnpm exec convex dev
-pnpm run dev
+pnpm run convex:dev
 ```
 
-`convex dev` writes `VITE_CONVEX_URL` to `.env.local`. Documents are editable by
-anyone holding their unguessable URL and are deleted seven days after the latest
-accepted editor change.
+`convex dev` writes the local deployment URL to `.env.local`. Supply that value
+as `VITE_CONVEX_URL` when building or starting Tools. Documents remain editable
+by anyone holding their unguessable capability URL.
 
 ## Verification and deployment
 
 ```sh
 pnpm run typecheck
 pnpm run test
-pnpm run deploy:production
+pnpm run convex:deploy
 ```
 
-`deploy:production` uses Convex's `--cmd-url-env-var-name` flow to inject the
-production `VITE_CONVEX_URL` into the frontend build, then deploys that exact
-artifact with Wrangler. Its build runs through the repository's `heavy-check`
-guard. PDF export uses the browser print dialog and a print-only preview.
+Deploy Convex before Tools if the generated API contract changes. Cloudflare and
+Wrangler are not part of Markdown Share deployment.
 
-The shipped Cloudflare `_headers` file keeps capability URLs out of referrers
-and search indexes, denies framing, disables MIME sniffing, and restricts
-frontend connections to this app and its production Convex deployment.
+## Legacy capability retirement
 
-### Legacy capability retirement
-
-The public frontend no longer sends client-generated UUID capabilities, and
-`documents.create` now accepts only server-generated capabilities. Deploy this
-source state before removing the remaining compatibility data. Server-generated
-capabilities use a transient Convex seed ID and leave no claim row.
-
-After that deployment is confirmed live, an operator may delete legacy claim
-rows and remove `capabilityClaims`, its backfill mutations, and legacy cleanup
-branches. Do not purge those claims before the create-argument removal is live,
-because an old backend could still accept a previously used capability.
+The backend still contains the bounded legacy capability cleanup path. Do not
+remove legacy claim data until the deployed backend no longer accepts the old
+client-generated capability contract.

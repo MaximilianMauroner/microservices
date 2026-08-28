@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 
-describe("Markdown Share theme", () => {
+describe("integrated Markdown Share theme", () => {
   it("uses the suite rose ramp for interactive accents", async () => {
     const styles = await readFile(new URL("./styles.css", import.meta.url), "utf8");
 

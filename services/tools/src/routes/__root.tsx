@@ -51,6 +51,6 @@ function RootDocument() {
 }
 
 export function isWorkspacePath(pathname: string) {
-  if (pathname.startsWith("/feedback/f/")) return false;
+  if (pathname.startsWith("/feedback/f/") || pathname === "/markdown" || pathname.startsWith("/markdown/")) return false;
   return pathname === "/" || ["/documents", "/feedback", "/field-guide", "/money", "/publisher", "/settings", "/status"].some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }

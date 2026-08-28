@@ -14,7 +14,7 @@ The private Markdown inventory also requires:
 
 - `MARKDOWN_SHARE_ADMIN_ENDPOINT`, the production Convex HTTP Action URL
 - `MARKDOWN_SHARE_ADMIN_TOKEN`, a 32+ character service secret shared with Convex
-- `MARKDOWN_SHARE_PUBLIC_ORIGIN`, the Markdown Share browser origin
+- `PUBLIC_ORIGIN`, also used for the integrated Markdown Share browser origin
 
 Tools authenticates browser requests before dispatching them to this module and
 supplies a verified principal for attribution.

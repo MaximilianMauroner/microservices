@@ -11,6 +11,7 @@ The platform service is the single production compute and browser-authentication
 | `/sign-in` and `/api/auth/*` | Public authentication flow |
 | `/`, `/status`, `/money`, `/feedback`, `/publish`, `/review`, `/manage/*`, `/tools/private/*`, and their browser APIs | Better Auth Google session |
 | `/feedback/f/:token` `GET`/`HEAD`/`POST` | Public unlisted capability URL |
+| `/markdown` and `/markdown/d/:capability` `GET`/`HEAD` | Public creation and unlisted capability pages |
 | `/api/uploads*`, `/api/agent*`, and `/api/heartbeat/tower` | Existing native bearer token |
 
 TanStack document requests and protected server functions resolve the same
@@ -35,6 +36,7 @@ Required variables:
 - `GOOGLE_CLIENT_SECRET`
 - `BETTER_AUTH_SECRET`, at least 32 non-whitespace characters
 - `AUTH_ALLOWED_GOOGLE_SUBJECT`
+- `VITE_CONVEX_URL`, the public Convex origin used by the Markdown Share browser client and CSP
 
 The Google OAuth web client must register this exact callback URL:
 
