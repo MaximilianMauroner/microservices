@@ -14,53 +14,73 @@ import type { UploadSummary } from "../../src/protected-data.js";
 export function PublishPage() {
   const [busy, setBusy] = useState(false);
   const [dragging, setDragging] = useState(false);
-  const [result, setResult] = useState<UploadSummary>();
+  const [results, setResults] = useState<UploadSummary[]>([]);
+  const [progress, setProgress] = useState<{ completed: number; total: number }>();
   const [message, setMessage] = useState<{ text: string; tone: "success" | "error" }>();
   const fileInput = useRef<HTMLInputElement>(null);
 
-  async function uploadFile(file: File) {
+  async function uploadFiles(files: File[]) {
+    if (files.length === 0 || busy) return;
     setBusy(true);
-    setResult(undefined);
+    setResults([]);
+    setProgress({ completed: 0, total: files.length });
     setMessage(undefined);
+    const uploaded: UploadSummary[] = [];
+    const failures: string[] = [];
     try {
-      const form = new FormData();
-      form.append("file", file);
-      const response = await fetch("/api/external-uploads", {
-        method: "POST",
-        credentials: "same-origin",
-        body: form
-      });
-      const payload = await response.json().catch(() => ({})) as UploadSummary & { message?: string };
-      if (!response.ok) throw new Error(payload.message ?? `Upload failed (HTTP ${response.status}).`);
-      setResult(payload);
-      setMessage({ text: `${payload.filename} is ready to share.`, tone: "success" });
-    } catch (error) {
-      setMessage({ text: error instanceof Error ? error.message : "The upload failed.", tone: "error" });
+      for (const [index, file] of files.entries()) {
+        setProgress({ completed: index, total: files.length });
+        try {
+          const form = new FormData();
+          form.append("file", file);
+          const response = await fetch("/api/external-uploads", {
+            method: "POST",
+            credentials: "same-origin",
+            body: form
+          });
+          const payload = await response.json().catch(() => ({})) as UploadSummary & { message?: string };
+          if (!response.ok) throw new Error(payload.message ?? `Upload failed (HTTP ${response.status}).`);
+          uploaded.push(payload);
+          setResults([...uploaded]);
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : "The upload failed.";
+          failures.push(`${file.name}: ${reason}`);
+        }
+      }
+
+      if (failures.length === 0) {
+        setMessage({
+          text: uploaded.length === 1 ? `${uploaded[0]!.filename} is ready to share.` : `${uploaded.length} files are ready to share.`,
+          tone: "success"
+        });
+      } else {
+        const summary = uploaded.length > 0 ? `${uploaded.length} uploaded, ${failures.length} failed.` : `${failures.length} upload${failures.length === 1 ? "" : "s"} failed.`;
+        setMessage({ text: `${summary} ${failures.join(" ")}`, tone: "error" });
+      }
     } finally {
       setBusy(false);
+      setProgress(undefined);
       if (fileInput.current) fileInput.current.value = "";
     }
   }
 
   function chooseFile(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.currentTarget.files?.[0];
-    if (file) void uploadFile(file);
+    void uploadFiles(Array.from(event.currentTarget.files ?? []));
   }
 
   function dropFile(event: DragEvent<HTMLDivElement>) {
     event.preventDefault();
     setDragging(false);
-    const file = event.dataTransfer.files[0];
-    if (file) void uploadFile(file);
+    void uploadFiles(Array.from(event.dataTransfer.files));
   }
 
-  async function copyResultUrl() {
-    if (!result) return;
+  async function copyResultUrls(selected: UploadSummary[]) {
+    if (selected.length === 0) return;
     try {
-      await navigator.clipboard.writeText(result.url);
-      setMessage({ text: "Capability URL copied.", tone: "success" });
+      await navigator.clipboard.writeText(capabilityUrlText(selected));
+      setMessage({ text: selected.length === 1 ? "Capability URL copied." : `${selected.length} capability URLs copied.`, tone: "success" });
     } catch {
-      setMessage({ text: "The URL could not be copied. Open the upload to copy it manually.", tone: "error" });
+      setMessage({ text: "The URLs could not be copied. Open the uploads to copy them manually.", tone: "error" });
     }
   }
 
@@ -85,11 +105,11 @@ export function PublishPage() {
           <Card className={`grid min-h-72 place-items-center border border-dashed text-center transition-colors ${dragging ? "border-foreground bg-secondary" : ""}`} onDragEnter={(event) => { event.preventDefault(); setDragging(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setDragging(false)} onDrop={dropFile}>
             <div className="max-w-md p-6">
               <div className="mx-auto mb-4 grid size-11 place-items-center rounded-full border text-muted-foreground" aria-hidden="true"><Upload /></div>
-              <strong className="text-lg">{busy ? "Uploading…" : "Drop a file here"}</strong>
+              <strong className="text-lg">{busy && progress ? `Uploading ${progress.completed + 1} of ${progress.total}…` : "Drop files here"}</strong>
               <p className="mt-2 text-sm text-muted-foreground">Browser uploads are temporary, unlisted downloads that expire automatically.</p>
-              <Input className="hidden" ref={fileInput} type="file" onChange={chooseFile} aria-label="Choose a file to upload" tabIndex={-1} />
+              <Input className="hidden" ref={fileInput} type="file" multiple onChange={chooseFile} aria-label="Choose files to upload" tabIndex={-1} />
               <Button className="mt-5" type="button" size="sm" onClick={() => fileInput.current?.click()} disabled={busy}>
-                {busy ? "Working…" : "Choose file"}
+                {busy ? "Working…" : "Choose files"}
               </Button>
             </div>
           </Card>
@@ -100,10 +120,29 @@ export function PublishPage() {
           </aside>
         </section>
 
-        {result ? <Card className="mt-4 gap-0 py-0"><div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><Badge variant="default">Ready</Badge><h2 className="mt-3 truncate font-semibold">{result.filename}</h2><p className="mt-1 truncate font-mono text-xs text-muted-foreground">{result.url}</p><p className="mt-2 text-xs text-muted-foreground">{formatBytes(result.bytes)}{result.expiresAt ? ` · expires ${formatDate(result.expiresAt)}` : ""}</p></div><div className="flex shrink-0 gap-2"><Button type="button" variant="outline" size="sm" onClick={() => void copyResultUrl()}><Copy /> Copy URL</Button><Button nativeButton={false} size="sm" render={<a href={result.url} target="_blank" rel="noreferrer" />}><ExternalLink /> Open</Button></div></div></Card> : null}
+        <UploadResultsList results={results} onCopyAll={() => void copyResultUrls(results)} onCopy={(result) => void copyResultUrls([result])} />
       </main>
     </>
   );
+}
+
+export function UploadResultsList({ results, onCopyAll, onCopy }: { results: UploadSummary[]; onCopyAll: () => void; onCopy: (result: UploadSummary) => void }) {
+  if (results.length === 0) return null;
+  return (
+    <section className="mt-4" aria-labelledby="uploaded-files-title">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h2 id="uploaded-files-title" className="font-semibold">Uploaded files ({results.length})</h2>
+        {results.length > 1 ? <Button type="button" variant="outline" size="sm" onClick={onCopyAll}><Copy /> Copy all URLs</Button> : null}
+      </div>
+      <div className="grid gap-3">
+        {results.map((result) => <Card key={result.id} className="gap-0 py-0"><div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><Badge variant="default">Ready</Badge><h3 className="mt-3 truncate font-semibold">{result.filename}</h3><p className="mt-1 truncate font-mono text-xs text-muted-foreground">{result.url}</p><p className="mt-2 text-xs text-muted-foreground">{formatBytes(result.bytes)}{result.expiresAt ? ` · expires ${formatDate(result.expiresAt)}` : ""}</p></div><div className="flex shrink-0 gap-2"><Button type="button" variant="outline" size="sm" onClick={() => onCopy(result)}><Copy /> Copy URL</Button><Button nativeButton={false} size="sm" render={<a href={result.url} target="_blank" rel="noreferrer" />}><ExternalLink /> Open</Button></div></div></Card>)}
+      </div>
+    </section>
+  );
+}
+
+export function capabilityUrlText(results: UploadSummary[]) {
+  return results.map(({ url }) => url).join("\n");
 }
 
 function formatBytes(bytes: number) {
