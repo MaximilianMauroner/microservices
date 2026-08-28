@@ -4,7 +4,7 @@ import { getFunctionName, type FunctionReference } from "convex/server";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { buildDiffRows, useDocumentHistory } from "./document-history";
+import { buildDiffRows, useDocumentHistory } from "./document-history.js";
 
 const mocks = vi.hoisted(() => ({
   saveCheckpoint: vi.fn(async () => null),

@@ -7,7 +7,7 @@ import {
   markdownFromJson,
   normalizeFilename,
   parseDocumentRoute,
-} from "./lib";
+} from "./lib.js";
 
 const TOKEN = "81f2a9dd-9ca3-4e4c-9d30-13d3f50dcf3b";
 
@@ -34,7 +34,7 @@ describe("document links", () => {
   });
 
   it("rejects missing and non-v4 tokens", () => {
-    expect(parseDocumentRoute("/d/notes.md--guessable")).toBeNull();
+    expect(parseDocumentRoute("/markdown/d/notes.md--guessable")).toBeNull();
     expect(
       parseDocumentRoute(
         "/d/notes.md--81f2a9dd-9ca3-1e4c-9d30-13d3f50dcf3b",

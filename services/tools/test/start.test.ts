@@ -57,4 +57,13 @@ describe("TanStack Start request boundaries", () => {
     expect(production).toContain("style-src 'self' 'nonce-request-nonce';");
     expect(production).not.toContain("style-src 'self' 'unsafe-inline'");
   });
+
+  it("allows only the configured Convex origins on Markdown Share documents", () => {
+    const policy = documentContentSecurityPolicy("request-nonce", false, [
+      "https://example.convex.cloud",
+      "wss://example.convex.cloud"
+    ]);
+    expect(policy).toContain("connect-src 'self' https://example.convex.cloud wss://example.convex.cloud;");
+    expect(policy).not.toContain("connect-src *");
+  });
 });

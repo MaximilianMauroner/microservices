@@ -24,13 +24,14 @@ export function loadConfig(
     throw new Error("PORT must be an integer between 1 and 65535");
   }
 
+  const trustedOrigin = parseOrigin(
+    required(env, "PUBLIC_ORIGIN"),
+    "PUBLIC_ORIGIN",
+    env.NODE_ENV === "development"
+  );
   return {
     port,
-    trustedOrigin: parseOrigin(
-      required(env, "PUBLIC_ORIGIN"),
-      "PUBLIC_ORIGIN",
-      env.NODE_ENV === "development"
-    ),
+    trustedOrigin,
     bucket: {
       endpoint: parseOrigin(
         required(env, "S3_ENDPOINT"),
@@ -53,11 +54,7 @@ export function loadConfig(
         required(env, "MARKDOWN_SHARE_ADMIN_TOKEN"),
         "MARKDOWN_SHARE_ADMIN_TOKEN"
       ),
-      publicOrigin: parseOrigin(
-        required(env, "MARKDOWN_SHARE_PUBLIC_ORIGIN"),
-        "MARKDOWN_SHARE_PUBLIC_ORIGIN",
-        env.NODE_ENV === "development"
-      )
+      publicOrigin: trustedOrigin
     }
   };
 }

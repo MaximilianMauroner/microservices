@@ -4,8 +4,9 @@ Repository location defines runtime ownership:
 
 - `services/tools` is the integrated TanStack application. Its products share
   client navigation, authentication, health, lifecycle, and deployment.
-- Other `services/*` directories are independently hosted services. Links to
-  them cross a document and runtime boundary.
+- Other `services/*` directories are independently hosted services. Markdown
+  Share is split intentionally: Tools owns its browser routes while
+  `services/markdown-share` owns its Convex state and scheduled work.
 - Direct children of `services/tools/*` are products in the Tools monolith.
 - Scheduled work belongs to the product that owns its state. Tools products run
   leased tasks in the Tools process; Markdown Share uses Convex scheduling.

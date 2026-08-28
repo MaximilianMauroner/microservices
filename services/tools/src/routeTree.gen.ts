@@ -17,6 +17,7 @@ import { Route as FeedbackRouteImport } from './routes/feedback'
 import { Route as FieldGuideRouteImport } from './routes/field-guide'
 import { Route as HealthRouteImport } from './routes/health'
 import { Route as LiveRouteImport } from './routes/live'
+import { Route as MarkdownRouteImport } from './routes/markdown'
 import { Route as MoneyRouteImport } from './routes/money'
 import { Route as PublisherRouteImport } from './routes/publisher'
 import { Route as SettingsRouteImport } from './routes/settings'
@@ -32,6 +33,7 @@ import { Route as AssetsSplatRouteImport } from './routes/assets/$'
 import { Route as FeedbackIndexRouteImport } from './routes/feedback/index'
 import { Route as FilesIdRouteImport } from './routes/files/$id'
 import { Route as HealthComponentRouteImport } from './routes/health/$component'
+import { Route as MarkdownIndexRouteImport } from './routes/markdown/index'
 import { Route as PublisherIndexRouteImport } from './routes/publisher/index'
 import { Route as PublisherArtifactsRouteImport } from './routes/publisher/artifacts'
 import { Route as ApiAgentSplatRouteImport } from './routes/api/agent/$'
@@ -51,6 +53,7 @@ import { Route as FeedbackFTokenRouteImport } from './routes/feedback/f/$token'
 import { Route as FeedbackFormsFormIdRouteImport } from './routes/feedback/forms/$formId'
 import { Route as FeedbackResponsesSubmissionIdRouteImport } from './routes/feedback/responses/$submissionId'
 import { Route as FilesIdSplatRouteImport } from './routes/files/$id/$'
+import { Route as MarkdownDSlugRouteImport } from './routes/markdown/d/$slug'
 import { Route as ApiMoneyImportsImportIdRouteImport } from './routes/api/money/imports/$importId'
 import { Route as ApiMoneyImportsPreviewRouteImport } from './routes/api/money/imports/preview'
 import { Route as ApiMoneyImportsReimportRouteImport } from './routes/api/money/imports/reimport'
@@ -95,6 +98,11 @@ const HealthRoute = HealthRouteImport.update({
 const LiveRoute = LiveRouteImport.update({
   id: '/live',
   path: '/live',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MarkdownRoute = MarkdownRouteImport.update({
+  id: '/markdown',
+  path: '/markdown',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MoneyRoute = MoneyRouteImport.update({
@@ -171,6 +179,11 @@ const HealthComponentRoute = HealthComponentRouteImport.update({
   id: '/$component',
   path: '/$component',
   getParentRoute: () => HealthRoute,
+} as any)
+const MarkdownIndexRoute = MarkdownIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => MarkdownRoute,
 } as any)
 const PublisherIndexRoute = PublisherIndexRouteImport.update({
   id: '/',
@@ -268,6 +281,11 @@ const FilesIdSplatRoute = FilesIdSplatRouteImport.update({
   path: '/$',
   getParentRoute: () => FilesIdRoute,
 } as any)
+const MarkdownDSlugRoute = MarkdownDSlugRouteImport.update({
+  id: '/d/$slug',
+  path: '/d/$slug',
+  getParentRoute: () => MarkdownRoute,
+} as any)
 const ApiMoneyImportsImportIdRoute = ApiMoneyImportsImportIdRouteImport.update({
   id: '/$importId',
   path: '/$importId',
@@ -305,6 +323,7 @@ export interface FileRoutesByFullPath {
   '/field-guide': typeof FieldGuideRoute
   '/health': typeof HealthRouteWithChildren
   '/live': typeof LiveRoute
+  '/markdown': typeof MarkdownRouteWithChildren
   '/money': typeof MoneyRoute
   '/publisher': typeof PublisherRouteWithChildren
   '/settings': typeof SettingsRoute
@@ -321,6 +340,7 @@ export interface FileRoutesByFullPath {
   '/health/$component': typeof HealthComponentRoute
   '/publisher/artifacts': typeof PublisherArtifactsRoute
   '/feedback/': typeof FeedbackIndexRoute
+  '/markdown/': typeof MarkdownIndexRoute
   '/publisher/': typeof PublisherIndexRoute
   '/api/agent/$': typeof ApiAgentSplatRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -339,6 +359,7 @@ export interface FileRoutesByFullPath {
   '/feedback/forms/$formId': typeof FeedbackFormsFormIdRoute
   '/feedback/responses/$submissionId': typeof FeedbackResponsesSubmissionIdRoute
   '/files/$id/$': typeof FilesIdSplatRoute
+  '/markdown/d/$slug': typeof MarkdownDSlugRoute
   '/api/money/imports/$importId': typeof ApiMoneyImportsImportIdRoute
   '/api/money/imports/preview': typeof ApiMoneyImportsPreviewRoute
   '/api/money/imports/reimport': typeof ApiMoneyImportsReimportRoute
@@ -368,6 +389,7 @@ export interface FileRoutesByTo {
   '/health/$component': typeof HealthComponentRoute
   '/publisher/artifacts': typeof PublisherArtifactsRoute
   '/feedback': typeof FeedbackIndexRoute
+  '/markdown': typeof MarkdownIndexRoute
   '/publisher': typeof PublisherIndexRoute
   '/api/agent/$': typeof ApiAgentSplatRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -386,6 +408,7 @@ export interface FileRoutesByTo {
   '/feedback/forms/$formId': typeof FeedbackFormsFormIdRoute
   '/feedback/responses/$submissionId': typeof FeedbackResponsesSubmissionIdRoute
   '/files/$id/$': typeof FilesIdSplatRoute
+  '/markdown/d/$slug': typeof MarkdownDSlugRoute
   '/api/money/imports/$importId': typeof ApiMoneyImportsImportIdRoute
   '/api/money/imports/preview': typeof ApiMoneyImportsPreviewRoute
   '/api/money/imports/reimport': typeof ApiMoneyImportsReimportRoute
@@ -402,6 +425,7 @@ export interface FileRoutesById {
   '/field-guide': typeof FieldGuideRoute
   '/health': typeof HealthRouteWithChildren
   '/live': typeof LiveRoute
+  '/markdown': typeof MarkdownRouteWithChildren
   '/money': typeof MoneyRoute
   '/publisher': typeof PublisherRouteWithChildren
   '/settings': typeof SettingsRoute
@@ -418,6 +442,7 @@ export interface FileRoutesById {
   '/health/$component': typeof HealthComponentRoute
   '/publisher/artifacts': typeof PublisherArtifactsRoute
   '/feedback/': typeof FeedbackIndexRoute
+  '/markdown/': typeof MarkdownIndexRoute
   '/publisher/': typeof PublisherIndexRoute
   '/api/agent/$': typeof ApiAgentSplatRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -436,6 +461,7 @@ export interface FileRoutesById {
   '/feedback/forms/$formId': typeof FeedbackFormsFormIdRoute
   '/feedback/responses/$submissionId': typeof FeedbackResponsesSubmissionIdRoute
   '/files/$id/$': typeof FilesIdSplatRoute
+  '/markdown/d/$slug': typeof MarkdownDSlugRoute
   '/api/money/imports/$importId': typeof ApiMoneyImportsImportIdRoute
   '/api/money/imports/preview': typeof ApiMoneyImportsPreviewRoute
   '/api/money/imports/reimport': typeof ApiMoneyImportsReimportRoute
@@ -453,6 +479,7 @@ export interface FileRouteTypes {
     | '/field-guide'
     | '/health'
     | '/live'
+    | '/markdown'
     | '/money'
     | '/publisher'
     | '/settings'
@@ -469,6 +496,7 @@ export interface FileRouteTypes {
     | '/health/$component'
     | '/publisher/artifacts'
     | '/feedback/'
+    | '/markdown/'
     | '/publisher/'
     | '/api/agent/$'
     | '/api/auth/$'
@@ -487,6 +515,7 @@ export interface FileRouteTypes {
     | '/feedback/forms/$formId'
     | '/feedback/responses/$submissionId'
     | '/files/$id/$'
+    | '/markdown/d/$slug'
     | '/api/money/imports/$importId'
     | '/api/money/imports/preview'
     | '/api/money/imports/reimport'
@@ -516,6 +545,7 @@ export interface FileRouteTypes {
     | '/health/$component'
     | '/publisher/artifacts'
     | '/feedback'
+    | '/markdown'
     | '/publisher'
     | '/api/agent/$'
     | '/api/auth/$'
@@ -534,6 +564,7 @@ export interface FileRouteTypes {
     | '/feedback/forms/$formId'
     | '/feedback/responses/$submissionId'
     | '/files/$id/$'
+    | '/markdown/d/$slug'
     | '/api/money/imports/$importId'
     | '/api/money/imports/preview'
     | '/api/money/imports/reimport'
@@ -549,6 +580,7 @@ export interface FileRouteTypes {
     | '/field-guide'
     | '/health'
     | '/live'
+    | '/markdown'
     | '/money'
     | '/publisher'
     | '/settings'
@@ -565,6 +597,7 @@ export interface FileRouteTypes {
     | '/health/$component'
     | '/publisher/artifacts'
     | '/feedback/'
+    | '/markdown/'
     | '/publisher/'
     | '/api/agent/$'
     | '/api/auth/$'
@@ -583,6 +616,7 @@ export interface FileRouteTypes {
     | '/feedback/forms/$formId'
     | '/feedback/responses/$submissionId'
     | '/files/$id/$'
+    | '/markdown/d/$slug'
     | '/api/money/imports/$importId'
     | '/api/money/imports/preview'
     | '/api/money/imports/reimport'
@@ -599,6 +633,7 @@ export interface RootRouteChildren {
   FieldGuideRoute: typeof FieldGuideRoute
   HealthRoute: typeof HealthRouteWithChildren
   LiveRoute: typeof LiveRoute
+  MarkdownRoute: typeof MarkdownRouteWithChildren
   MoneyRoute: typeof MoneyRoute
   PublisherRoute: typeof PublisherRouteWithChildren
   SettingsRoute: typeof SettingsRoute
@@ -681,6 +716,13 @@ declare module '@tanstack/react-router' {
       path: '/live'
       fullPath: '/live'
       preLoaderRoute: typeof LiveRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/markdown': {
+      id: '/markdown'
+      path: '/markdown'
+      fullPath: '/markdown'
+      preLoaderRoute: typeof MarkdownRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/money': {
@@ -787,6 +829,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/health/$component'
       preLoaderRoute: typeof HealthComponentRouteImport
       parentRoute: typeof HealthRoute
+    }
+    '/markdown/': {
+      id: '/markdown/'
+      path: '/'
+      fullPath: '/markdown/'
+      preLoaderRoute: typeof MarkdownIndexRouteImport
+      parentRoute: typeof MarkdownRoute
     }
     '/publisher/': {
       id: '/publisher/'
@@ -921,6 +970,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof FilesIdSplatRouteImport
       parentRoute: typeof FilesIdRoute
     }
+    '/markdown/d/$slug': {
+      id: '/markdown/d/$slug'
+      path: '/d/$slug'
+      fullPath: '/markdown/d/$slug'
+      preLoaderRoute: typeof MarkdownDSlugRouteImport
+      parentRoute: typeof MarkdownRoute
+    }
     '/api/money/imports/$importId': {
       id: '/api/money/imports/$importId'
       path: '/$importId'
@@ -987,6 +1043,20 @@ const HealthRouteChildren: HealthRouteChildren = {
 
 const HealthRouteWithChildren =
   HealthRoute._addFileChildren(HealthRouteChildren)
+
+interface MarkdownRouteChildren {
+  MarkdownIndexRoute: typeof MarkdownIndexRoute
+  MarkdownDSlugRoute: typeof MarkdownDSlugRoute
+}
+
+const MarkdownRouteChildren: MarkdownRouteChildren = {
+  MarkdownIndexRoute: MarkdownIndexRoute,
+  MarkdownDSlugRoute: MarkdownDSlugRoute,
+}
+
+const MarkdownRouteWithChildren = MarkdownRoute._addFileChildren(
+  MarkdownRouteChildren,
+)
 
 interface PublisherRouteChildren {
   PublisherArtifactsRoute: typeof PublisherArtifactsRoute
@@ -1085,6 +1155,7 @@ const rootRouteChildren: RootRouteChildren = {
   FieldGuideRoute: FieldGuideRoute,
   HealthRoute: HealthRouteWithChildren,
   LiveRoute: LiveRoute,
+  MarkdownRoute: MarkdownRouteWithChildren,
   MoneyRoute: MoneyRoute,
   PublisherRoute: PublisherRouteWithChildren,
   SettingsRoute: SettingsRoute,

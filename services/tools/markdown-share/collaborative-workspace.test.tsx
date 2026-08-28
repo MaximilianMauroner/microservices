@@ -72,7 +72,7 @@ vi.mock("@convex-dev/prosemirror-sync/tiptap", async () => {
   };
 });
 
-import { CollaborativeWorkspace } from "./collaborative-workspace";
+import { CollaborativeWorkspace } from "./collaborative-workspace.js";
 
 describe("collaborative workspace", () => {
   let container: HTMLDivElement;

@@ -111,7 +111,7 @@ describe("TanStack Start public pages", () => {
     expect(html).toContain("bg-cyan-300");
     expect(html).toContain("bg-rose-300");
     expect(html).toContain("bg-blue-300");
-    expect(html).toContain('href="https://markdown-share-alpha.mauroner.workers.dev/"');
+    expect(html).toContain('href="/markdown"');
     expect(html).toContain('href="/money"');
     expect(html).toContain('href="/publisher"');
     expect(html).toContain('href="/status"');

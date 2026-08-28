@@ -7,12 +7,11 @@ describe("monitor definitions", () => {
   it("owns HTTP and heartbeat check behavior in typed code", () => {
     const definitions = loadMonitorDefinitions({
       PUBLIC_ORIGIN: "https://tools.example/ignored",
-      MARKDOWN_SHARE_PUBLIC_ORIGIN: "https://markdown.example/path",
       TOWER_HEARTBEAT_STALE_AFTER_MS: "240000"
     });
     expect(definitions.find(({ id }) => id === "markdown-share")).toMatchObject({
       kind: "http",
-      url: "https://markdown.example"
+      url: "https://tools.example/markdown"
     });
     expect(definitions.find(({ id }) => id === "tower")).toEqual({
       id: "tower",
@@ -25,8 +24,7 @@ describe("monitor definitions", () => {
 
   it("uses the same stable IDs in definitions, catalog entries, and products", () => {
     const definitions = loadMonitorDefinitions({
-      PUBLIC_ORIGIN: "https://tools.example",
-      MARKDOWN_SHARE_PUBLIC_ORIGIN: "https://markdown.example"
+      PUBLIC_ORIGIN: "https://tools.example"
     });
     expect(() => assertMonitorIdentities(
       catalogSource.entries.map(({ id }) => id),

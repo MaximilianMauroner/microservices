@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_DISPLAY_SETTINGS,
   parseDisplaySettings,
-} from "./display-settings";
+} from "./display-settings.js";
 
 describe("display settings", () => {
   it("uses defaults for missing or malformed settings", () => {

@@ -1,4 +1,4 @@
-import { TOKEN_PATTERN } from "./lib";
+import { TOKEN_PATTERN } from "./lib.js";
 
 export const RECENT_DOCUMENTS_STORAGE_KEY =
   "markdown-share:recent-documents";

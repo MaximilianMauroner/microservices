@@ -166,7 +166,7 @@ function renderDocument(
   const updatedAt = new Date(document.updatedAt).toISOString();
   const expiresAt = new Date(document.expiresAt).toISOString();
   const href = new URL(
-    `/d/${encodeURIComponent(document.filename)}--${encodeURIComponent(document.token)}`,
+    `/markdown/d/${encodeURIComponent(document.filename)}--${encodeURIComponent(document.token)}`,
     publicOrigin,
   ).toString();
   const expiryRemaining = document.expiresAt - now;

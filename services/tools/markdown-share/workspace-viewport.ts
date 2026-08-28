@@ -5,6 +5,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 
+/** Responsive editor pane state owned by the Markdown Share browser UI. */
 export type WorkspacePane = "source" | "preview";
 
 export function getScrollProgress(
