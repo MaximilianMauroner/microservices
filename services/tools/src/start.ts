@@ -4,11 +4,7 @@ import { authenticatePlatformRequest } from "./app.js";
 import { getPlatformRuntime, type PlatformRuntime } from "./runtime.js";
 import { PLATFORM_UI_BUILD } from "./build-identity.js";
 import { documentContentSecurityPolicy } from "./content-security-policy.js";
-import { loadMarkdownShareClientConfig } from "../markdown-share/client-config.js";
-
-const markdownShareClientConfig = loadMarkdownShareClientConfig(
-  process.env.VITE_CONVEX_URL
-);
+import { markdownShareClientConfig } from "./markdown-share-config.server.js";
 
 export type PlatformRequestContext = {
   runtime: PlatformRuntime;
