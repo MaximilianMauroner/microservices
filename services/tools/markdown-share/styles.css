@@ -1528,17 +1528,14 @@ button:disabled {
     }
   }
 
-  body > :not(#root),
-  #root > :not(.editor-shell),
   .editor-shell > :not(.workspace),
-  .workspace > :not(.preview-panel),
-  .preview-panel > :not(#print-preview) {
+  .editor-shell .workspace > :not(.preview-panel),
+  .editor-shell .preview-panel > :not(#print-preview) {
     display: none !important;
   }
 
   html,
-  body,
-  #root {
+  body {
     min-height: 0;
     height: auto;
     overflow: visible;

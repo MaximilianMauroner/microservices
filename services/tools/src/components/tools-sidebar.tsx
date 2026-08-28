@@ -96,7 +96,7 @@ export function ToolsSidebar() {
                     className="h-10 px-3 text-sm"
                     tooltip={item.label}
                     isActive={item.match(pathname)}
-                    render={<Link to={item.to} preload="intent" />}
+                    render={item.to === "/markdown" ? <a href={item.to} /> : <Link to={item.to} preload="intent" />}
                   >
                     <img className="size-5 rounded" src={item.icon} alt="" width={20} height={20} />
                     <span>{item.label}</span>
