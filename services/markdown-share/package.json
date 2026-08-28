@@ -5,7 +5,9 @@
   "type": "module",
   "exports": {
     "./api": "./convex/_generated/api.js",
-    "./data-model": "./convex/_generated/dataModel.js"
+    "./data-model": {
+      "types": "./convex/_generated/dataModel.d.ts"
+    }
   },
   "scripts": {
     "convex:dev": "convex dev",
