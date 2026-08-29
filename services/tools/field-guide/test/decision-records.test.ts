@@ -474,6 +474,78 @@ describe("decision record review", () => {
     });
   });
 
+  it("requires every record in a correction promotion to share the complete analysis", async () => {
+    const baseCorrection = {
+      failedInvariant: "Managed sync must preserve declared ownership.",
+      selectedLayer: "skill_or_rule" as const,
+      mechanism: "skills/maintain-field-guides/SKILL.md#Correction elimination",
+      higherLevelRejections: {
+        architecture: "Mixed ownership is intentional.",
+        automated_check: "Fleet policy is unavailable to a local check.",
+      },
+    };
+    async function promotePair(secondCorrection: typeof baseCorrection) {
+      const { app } = setup();
+      const records = [
+        { ...record, decisionRecordId: crypto.randomUUID(), correction: baseCorrection },
+        { ...record, decisionRecordId: crypto.randomUUID(), correction: secondCorrection },
+      ];
+      for (const value of records) {
+        await callApp(app, "/api/agent/decision-records", {
+          method: "POST",
+          json: { idempotencyKey: value.decisionRecordId, record: value },
+        });
+        await callApp(app, `/api/review/decision-records/${value.decisionRecordId}/feedback`, {
+          method: "POST",
+          headers: { Origin: origin },
+          json: { action: "up" },
+        });
+      }
+      return callApp(app, "/api/review/decision-records/promotions", {
+        method: "POST",
+        headers: { Origin: origin },
+        json: {
+          idempotencyKey: crypto.randomUUID(),
+          decisionRecordIds: records.map((value) => value.decisionRecordId),
+          candidate: {
+            candidateId: crypto.randomUUID(),
+            scope: "project",
+            projectKey: record.projectKey,
+            projectDisplayName: record.projectDisplayName,
+            lessonKey: "shared-correction-analysis",
+            title: "Share correction analysis",
+            body: "Promote only consistent corrections.",
+            rationale: "Promotion stores one structured analysis.",
+            createdAt: now.toISOString(),
+          },
+        },
+      });
+    }
+
+    expect((await promotePair({ ...baseCorrection })).status).toBe(201);
+
+    const invariantConflict = await promotePair({
+      ...baseCorrection,
+      failedInvariant: "Managed sync must preserve every existing file.",
+    });
+    expect(invariantConflict.status).toBe(400);
+    expect(await responseJson(invariantConflict)).toMatchObject({
+      message: "Promoted corrections must share one correction analysis.",
+    });
+
+    const rejectionConflict = await promotePair({
+      ...baseCorrection,
+      higherLevelRejections: {
+        ...baseCorrection.higherLevelRejections,
+        architecture: "A separate destination would break required paths.",
+      },
+    });
+    expect(rejectionConflict.status).toBe(400);
+    expect(await responseJson(rejectionConflict)).toMatchObject({
+      message: "Promoted corrections must share one correction analysis.",
+    });
+  });
+
   it("rejects a correction that skips a stronger layer without a reason", async () => {
     const { app } = setup();
     const response = await callApp(app, "/api/agent/decision-records", {

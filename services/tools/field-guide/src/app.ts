@@ -807,8 +807,11 @@ async function parseDecisionPromotion(value: unknown, repository: ReviewReposito
     correction && correctionItems.some((item) =>
       !item.record.correction ||
       item.record.correction.selectedLayer !== correction.selectedLayer ||
-      item.record.correction.mechanism !== correction.mechanism)
-  ) throw new InputError("Promoted corrections must share one prevention layer and mechanism.");
+      item.record.correction.mechanism !== correction.mechanism ||
+      item.record.correction.failedInvariant !== correction.failedInvariant ||
+      preventionLayers.some((layer) =>
+        item.record.correction?.higherLevelRejections[layer] !== correction.higherLevelRejections[layer]))
+  ) throw new InputError("Promoted corrections must share one correction analysis.");
   const evidence = items.map((item) => ({
     excerpt: [
       ...(item.record.correction
