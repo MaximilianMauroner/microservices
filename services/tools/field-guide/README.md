@@ -4,6 +4,19 @@ Field Guide is a product inside the Tools monolith. It reviews project and
 global field-guide candidates and task-scoped agent decision records. Submitted
 content is immutable. Feedback and verdict amendments are append-only.
 
+## Correction flow
+
+An optional correction analysis distinguishes a correction from a normal
+decision record. It names the failed invariant, selected prevention layer,
+mechanism, and the reason each stronger layer cannot work. Review feedback does
+not make it active.
+
+A reviewer may promote a reviewed correction into an inactive candidate. The
+service carries its prevention layer and mechanism into the candidate and every
+later decision. Candidate approval makes the lesson available to Fleet sync.
+The sync client applies the reviewed lesson and checks a project mechanism
+before activation.
+
 The browser UI is mounted at `/field-guide` by `services/tools`. Internal
 `/api/review*` routes use the shared Better Auth session. Native-token
 `/api/agent*` routes require `AGENT_API_TOKEN`.

@@ -66,9 +66,9 @@ it.skipIf(!databaseUrl || !databaseConfirmed)(
     const createdAt = new Date("2026-07-26T00:00:00Z");
     const candidate = {
       candidateId,
-      scope: "project" as const,
-      projectKey: "integration",
-      projectDisplayName: "Integration project",
+      scope: "global" as const,
+      foundProjectKey: "owner/integration",
+      foundProjectDisplayName: "Integration project",
       lessonKey: "preserve-existing",
       title: "Preserve existing decisions",
       body: "Keep the append-only audit history during schema pushes.",
@@ -92,6 +92,10 @@ it.skipIf(!databaseUrl || !databaseConfirmed)(
         createdAt,
         "owner@example.com",
       );
+      expect(original).toMatchObject({
+        foundProjectKey: candidate.foundProjectKey,
+        foundProjectDisplayName: candidate.foundProjectDisplayName,
+      });
       const existingAmendment = await repository.amendDecision(
         candidateId,
         1,
@@ -99,6 +103,10 @@ it.skipIf(!databaseUrl || !databaseConfirmed)(
         new Date("2026-07-27T00:00:00Z"),
         "owner@example.com",
       );
+      expect(existingAmendment).toMatchObject({
+        foundProjectKey: candidate.foundProjectKey,
+        foundProjectDisplayName: candidate.foundProjectDisplayName,
+      });
       await repository.createReceipt(
         receiptKey,
         existingAmendment.decisionId,
@@ -189,7 +197,14 @@ it.skipIf(!databaseUrl || !databaseConfirmed)(
         effect: "activate",
         amendsDecisionId: existingAmendment.decisionId,
       });
-      const history = await repository.history(undefined, 10_000, "project");
+      const history = await repository.history(undefined, 10_000, "global");
+      expect(history.decisions.filter((decision) => decision.candidateId === candidateId))
+        .toEqual(expect.arrayContaining([
+          expect.objectContaining({
+            foundProjectKey: candidate.foundProjectKey,
+            foundProjectDisplayName: candidate.foundProjectDisplayName,
+          }),
+        ]));
       expect(history.decisions
         .filter((decision) => decision.candidateId === candidateId)
         .map((decision) => decision.decisionId)).toEqual([
@@ -200,8 +215,15 @@ it.skipIf(!databaseUrl || !databaseConfirmed)(
       const feed = await repository.decisions(
         encodeCursor((BigInt(beforeEvents[0].sequence) - 1n).toString()),
         10,
-        "project",
+        "global",
       );
+      expect(feed.decisions.filter((decision) => decision.candidateId === candidateId))
+        .toEqual(expect.arrayContaining([
+          expect.objectContaining({
+            foundProjectKey: candidate.foundProjectKey,
+            foundProjectDisplayName: candidate.foundProjectDisplayName,
+          }),
+        ]));
       expect(feed.decisions
         .filter((decision) => decision.candidateId === candidateId)
         .map((decision) => decision.decisionId)).toEqual([

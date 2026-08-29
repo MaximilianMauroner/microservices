@@ -111,6 +111,137 @@ describe("field guide review transport", () => {
     });
   });
 
+  it("requires source-project provenance for enforced global candidates", async () => {
+    const { app } = setup();
+    const global = {
+      ...candidate,
+      candidateId: "22222222-2222-4222-8222-222222222222",
+      scope: "global" as const,
+      projectKey: undefined,
+      projectDisplayName: undefined,
+      strength: "blocking" as const,
+      mechanism: "config/enforcement.ts",
+    };
+    const missing = await callApp(app, "/api/agent/candidates", {
+      method: "POST",
+      json: { idempotencyKey: "enforced-global-missing-origin", candidate: global },
+    });
+    expect(missing.status).toBe(400);
+    expect(await responseJson(missing)).toMatchObject({
+      message: "Enforced global candidates require found project fields.",
+    });
+    const layered = await callApp(app, "/api/agent/candidates", {
+      method: "POST",
+      json: {
+        idempotencyKey: "layered-global-missing-origin",
+        candidate: {
+          ...global,
+          candidateId: "77777777-7777-4777-8777-777777777777",
+          strength: "advisory",
+          preventionLayer: "skill_or_rule",
+          higherLevelRejections: {
+            architecture: "The runtime boundary is fixed.",
+            automated_check: "The policy is not machine-readable.",
+          },
+        },
+      },
+    });
+    expect(layered.status).toBe(400);
+    expect(await responseJson(layered)).toMatchObject({
+      message: "Enforced global candidates require found project fields.",
+    });
+
+    const accepted = await callApp(app, "/api/agent/candidates", {
+      method: "POST",
+      json: {
+        idempotencyKey: "enforced-global-with-origin",
+        candidate: {
+          ...global,
+          candidateId: "33333333-3333-4333-8333-333333333333",
+          foundProjectKey: "owner/repo",
+          foundProjectDisplayName: "Repo",
+        },
+      },
+    });
+    expect(accepted.status).toBe(201);
+
+    const legacy = await callApp(app, "/api/agent/candidates", {
+      method: "POST",
+      json: {
+        idempotencyKey: "legacy-global-without-origin",
+        candidate: {
+          ...candidate,
+          candidateId: "44444444-4444-4444-8444-444444444444",
+          scope: "global",
+          projectKey: undefined,
+          projectDisplayName: undefined,
+        },
+      },
+    });
+    expect(legacy.status).toBe(201);
+  });
+
+  it("requires the exact stronger-layer rejection map for direct candidates", async () => {
+    const { app } = setup();
+    const base = {
+      ...candidate,
+      preventionLayer: "skill_or_rule" as const,
+      strength: "advisory" as const,
+      mechanism: "skills/review/SKILL.md",
+      higherLevelRejections: {
+        architecture: "The runtime boundary is fixed.",
+        automated_check: "The policy is not machine-readable.",
+      },
+    };
+    const cases = [
+      {
+        name: "missing",
+        higherLevelRejections: { architecture: "The runtime boundary is fixed." },
+      },
+      {
+        name: "extra",
+        higherLevelRejections: {
+          ...base.higherLevelRejections,
+          human_review: "Human review is weaker than the selected layer.",
+        },
+      },
+      {
+        name: "inapplicable",
+        preventionLayer: undefined,
+        strength: undefined,
+        mechanism: undefined,
+        higherLevelRejections: { architecture: "No prevention layer was selected." },
+      },
+    ];
+    for (const [index, value] of cases.entries()) {
+      const { name, ...enforcement } = value;
+      const response = await callApp(app, "/api/agent/candidates", {
+        method: "POST",
+        json: {
+          idempotencyKey: `rejection-map-${name}`,
+          candidate: {
+            ...base,
+            ...enforcement,
+            candidateId: `55555555-5555-4555-8555-55555555555${index}`,
+          },
+        },
+      });
+      expect(response.status).toBe(400);
+      expect(await responseJson(response)).toMatchObject({
+        message: "higherLevelRejections must explain every stronger prevention layer and no others.",
+      });
+    }
+
+    const accepted = await callApp(app, "/api/agent/candidates", {
+      method: "POST",
+      json: {
+        idempotencyKey: "rejection-map-exact",
+        candidate: { ...base, candidateId: "66666666-6666-4666-8666-666666666666" },
+      },
+    });
+    expect(accepted.status).toBe(201);
+  });
+
   it("schedules reviews, records the authenticated reviewer, and prevents conflicting verdicts", async () => {
     const reviewerAuth: Authenticator = () => ({
       ok: true,
