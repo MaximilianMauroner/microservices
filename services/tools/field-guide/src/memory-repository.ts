@@ -482,5 +482,7 @@ function candidateEnforcement(candidate: Candidate) {
     ...(candidate.strength ? { strength: candidate.strength } : {}),
     ...(candidate.mechanism ? { mechanism: candidate.mechanism } : {}),
     ...(candidate.preventionLayer ? { preventionLayer: candidate.preventionLayer } : {}),
+    ...(candidate.failedInvariant ? { failedInvariant: candidate.failedInvariant } : {}),
+    ...(candidate.higherLevelRejections ? { higherLevelRejections: candidate.higherLevelRejections } : {}),
   };
 }
