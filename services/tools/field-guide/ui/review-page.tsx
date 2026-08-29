@@ -8,6 +8,7 @@ import type {
   DecisionFeedback,
   DecisionRecordItem,
   DecisionReviewState,
+  LessonEnforcement,
   QueueItem,
   Scope
 } from "@tools-platform/field-guide";
@@ -367,7 +368,26 @@ function QueueInspector({ item, onComplete, onNotice }: { item: QueueItem; onCom
       window.location.reload();
     } catch (error) { onNotice({ text: error instanceof Error ? error.message : "Scope update failed.", tone: "error" }); setBusy(false); }
   }
-  return <Card className={`queue-card queue-card--${item.status}`}><div className="queue-card__meta"><Badge variant="outline">{queueProject(item)}</Badge><span>{item.kind === "initial" ? "New candidate" : "Revalidation"}</span><span>Round {item.round}</span>{item.dueAt ? <time dateTime={item.dueAt} suppressHydrationWarning>{relativeTime(item.dueAt)}</time> : null}</div><h2>{candidate.title}</h2><p className="queue-card__body">{candidate.body}</p><div className="queue-card__rationale"><span className="eyebrow">Why remember this</span><p>{candidate.rationale}</p></div>{candidate.evidence.length ? <Accordion multiple><AccordionItem value="evidence"><AccordionTrigger>Evidence <Badge variant="outline">{candidate.evidence.length}</Badge></AccordionTrigger><AccordionContent><div className="review-evidence">{candidate.evidence.map((evidence) => <blockquote key={evidence.excerpt}>{evidence.excerpt}<div className="app-mono">{evidence.commitHashes.join(" · ")}</div></blockquote>)}</div></AccordionContent></AccordionItem></Accordion> : null}<div className="queue-card__footer"><div>{actions.map(({ action, label, variant }) => <Button key={action} type="button" variant={variant} size="sm" disabled={busy} onClick={() => void verdict(action)}>{label}</Button>)}<Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => setDeferOpen((open) => !open)}>Defer</Button></div>{item.kind === "initial" ? <Button type="button" variant="ghost" size="sm" disabled={busy || (candidate.scope === "global" && !candidate.foundProjectKey)} onClick={() => void changeScope()}>{candidate.scope === "project" ? "Promote to global" : "Demote to project"}</Button> : null}</div>{deferOpen ? <div className="review-actions"><Label>Review again after<Input type="datetime-local" value={deferUntil} onChange={(event) => setDeferUntil(event.currentTarget.value)} /></Label><Button type="button" variant="secondary" size="sm" disabled={!deferUntil || busy} onClick={() => void verdict("defer", deferUntil)}>Confirm defer</Button></div> : null}</Card>;
+  return <Card className={`queue-card queue-card--${item.status}`}><div className="queue-card__meta"><Badge variant="outline">{queueProject(item)}</Badge><span>{item.kind === "initial" ? "New candidate" : "Revalidation"}</span><span>Round {item.round}</span>{item.dueAt ? <time dateTime={item.dueAt} suppressHydrationWarning>{relativeTime(item.dueAt)}</time> : null}</div><h2>{candidate.title}</h2><p className="queue-card__body">{candidate.body}</p><div className="queue-card__rationale"><span className="eyebrow">Why remember this</span><p>{candidate.rationale}</p></div><CandidateEnforcementDetails candidate={candidate} />{candidate.evidence.length ? <Accordion multiple><AccordionItem value="evidence"><AccordionTrigger>Evidence <Badge variant="outline">{candidate.evidence.length}</Badge></AccordionTrigger><AccordionContent><div className="review-evidence">{candidate.evidence.map((evidence) => <blockquote key={evidence.excerpt}>{evidence.excerpt}<div className="app-mono">{evidence.commitHashes.join(" · ")}</div></blockquote>)}</div></AccordionContent></AccordionItem></Accordion> : null}<div className="queue-card__footer"><div>{actions.map(({ action, label, variant }) => <Button key={action} type="button" variant={variant} size="sm" disabled={busy} onClick={() => void verdict(action)}>{label}</Button>)}<Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => setDeferOpen((open) => !open)}>Defer</Button></div>{item.kind === "initial" ? <Button type="button" variant="ghost" size="sm" disabled={busy || (candidate.scope === "global" && !candidate.foundProjectKey)} onClick={() => void changeScope()}>{candidate.scope === "project" ? "Promote to global" : "Demote to project"}</Button> : null}</div>{deferOpen ? <div className="review-actions"><Label>Review again after<Input type="datetime-local" value={deferUntil} onChange={(event) => setDeferUntil(event.currentTarget.value)} /></Label><Button type="button" variant="secondary" size="sm" disabled={!deferUntil || busy} onClick={() => void verdict("defer", deferUntil)}>Confirm defer</Button></div> : null}</Card>;
+}
+
+export function CandidateEnforcementDetails({ candidate }: { candidate: LessonEnforcement }) {
+  const rejections = Object.entries(candidate.higherLevelRejections ?? {});
+  const fields = [
+    ["Stance", candidate.stance],
+    ["Strength", candidate.strength],
+    ["Prevention layer", candidate.preventionLayer],
+    ["Mechanism", candidate.mechanism],
+    ["Failed invariant", candidate.failedInvariant],
+  ].filter((field): field is [string, string] => Boolean(field[1]));
+  if (!fields.length && !rejections.length) return null;
+  return <section aria-labelledby="candidate-enforcement-title" className="rounded-lg border bg-muted/30 p-4">
+    <p id="candidate-enforcement-title" className="text-xs font-medium text-muted-foreground">Enforcement and correction</p>
+    <dl className="mt-3 grid gap-3 text-sm">
+      {fields.map(([label, value]) => <div key={label}><dt className="font-medium">{label}</dt><dd className="mt-1 text-muted-foreground">{value}</dd></div>)}
+      {rejections.length ? <div><dt className="font-medium">Stronger layers considered</dt><dd><ul className="mt-1 list-disc space-y-1 pl-5 text-muted-foreground">{rejections.map(([layer, reason]) => <li key={layer}><span className="font-medium text-foreground">{layer}</span>: {reason}</li>)}</ul></dd></div> : null}
+    </dl>
+  </section>;
 }
 
 function queueProject(item: QueueItem) { return item.candidate.projectDisplayName ?? item.candidate.projectKey ?? "Global"; }
