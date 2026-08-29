@@ -396,6 +396,8 @@ describe("decision record review", () => {
     const correctionRecord = {
       ...record,
       decisionRecordId: crypto.randomUUID(),
+      summary: "s".repeat(512),
+      choice: "c".repeat(2000),
       correction: {
         failedInvariant: "Managed sync must preserve files owned by another system.",
         selectedLayer: "skill_or_rule" as const,
@@ -445,12 +447,16 @@ describe("decision record review", () => {
       strength: "advisory",
       preventionLayer: "skill_or_rule",
       mechanism: correctionRecord.correction.mechanism,
+      failedInvariant: correctionRecord.correction.failedInvariant,
+      higherLevelRejections: correctionRecord.correction.higherLevelRejections,
     });
     expect(queue.items[0]?.candidate.evidence).toEqual([
       expect.objectContaining({
         excerpt: expect.stringContaining("Failed invariant: Managed sync must preserve files owned by another system."),
       }),
     ]);
+    expect((queue.items[0]?.candidate.evidence as Array<{ excerpt: string }>)[0]?.excerpt)
+      .toContain(`Prevention: skill_or_rule through ${correctionRecord.correction.mechanism}`);
 
     await callApp(app, `/api/review/candidates/${candidateId}/rounds/1/verdict`, {
       method: "POST",
@@ -463,6 +469,8 @@ describe("decision record review", () => {
     expect(decisions.decisions[0]).toMatchObject({
       preventionLayer: "skill_or_rule",
       mechanism: correctionRecord.correction.mechanism,
+      failedInvariant: correctionRecord.correction.failedInvariant,
+      higherLevelRejections: correctionRecord.correction.higherLevelRejections,
     });
   });
 

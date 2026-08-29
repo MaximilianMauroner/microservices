@@ -12,6 +12,8 @@ export type LessonEnforcement = {
   strength?: LessonStrength;
   mechanism?: string;
   preventionLayer?: PreventionLayer;
+  failedInvariant?: string;
+  higherLevelRejections?: Partial<Record<PreventionLayer, string>>;
 };
 export type Candidate = {
   candidateId: string;

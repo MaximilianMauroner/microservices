@@ -478,6 +478,20 @@ function parseLessonEnforcement(value: Record<string, unknown>) {
     if (mechanism === undefined)
       throw new InputError("A prevention layer requires a mechanism.");
   }
+  const failedInvariant = value.failedInvariant === undefined
+    ? undefined
+    : text(value.failedInvariant, "failedInvariant", 1000);
+  const rejectionValue = value.higherLevelRejections === undefined
+    ? undefined
+    : record(value.higherLevelRejections);
+  if (rejectionValue && Object.keys(rejectionValue).some((key) => !preventionLayers.includes(key as typeof preventionLayers[number])))
+    throw new InputError("higherLevelRejections is invalid.");
+  const higherLevelRejections = rejectionValue
+    ? Object.fromEntries(Object.entries(rejectionValue).map(([layer, reason]) => [
+        layer,
+        text(reason, `higherLevelRejections.${layer}`, 1000),
+      ]))
+    : undefined;
   return {
     ...(stance !== undefined ? { stance: stance as typeof lessonStances[number] } : {}),
     ...(strength !== undefined ? { strength: strength as typeof lessonStrengths[number] } : {}),
@@ -485,6 +499,8 @@ function parseLessonEnforcement(value: Record<string, unknown>) {
     ...(preventionLayer !== undefined
       ? { preventionLayer: preventionLayer as typeof preventionLayers[number] }
       : {}),
+    ...(failedInvariant !== undefined ? { failedInvariant } : {}),
+    ...(higherLevelRejections !== undefined ? { higherLevelRejections } : {}),
   };
 }
 
@@ -795,14 +811,14 @@ async function parseDecisionPromotion(value: unknown, repository: ReviewReposito
   ) throw new InputError("Promoted corrections must share one prevention layer and mechanism.");
   const evidence = items.map((item) => ({
     excerpt: [
-      item.record.summary,
-      `Choice: ${item.record.choice}`,
       ...(item.record.correction
         ? [
             `Failed invariant: ${item.record.correction.failedInvariant}`,
             `Prevention: ${item.record.correction.selectedLayer} through ${item.record.correction.mechanism}`,
           ]
         : []),
+      item.record.summary,
+      `Choice: ${item.record.choice}`,
     ]
       .join("\n").slice(0, 2000),
     commitHashes: [...new Set(item.record.evidence.flatMap((entry) => entry.commitHashes))].slice(0, 20),
@@ -832,6 +848,8 @@ async function parseDecisionPromotion(value: unknown, repository: ReviewReposito
             : "advisory" as const,
           mechanism: correction.mechanism,
           preventionLayer: correction.selectedLayer,
+          failedInvariant: correction.failedInvariant,
+          higherLevelRejections: correction.higherLevelRejections,
         }
       : parseLessonEnforcement(draft)),
   };
