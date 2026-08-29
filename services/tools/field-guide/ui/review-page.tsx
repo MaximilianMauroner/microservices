@@ -396,7 +396,7 @@ function HistoryWorkspace({ data, search, onLoadMore, setNotice }: { data: Revie
   return <><ReviewScopeTabs search={search} /><div className="review-list">{!data.history?.decisions.length ? <Empty title="No decisions yet" body="Reviewed lessons will appear here as an immutable ledger." /> : data.history.decisions.map((decision) => <HistoryCard key={decision.decisionId} decision={decision} onNotice={setNotice} />)}{data.history?.nextCursor ? <div className="review-actions"><Button type="button" variant="ghost" onClick={onLoadMore}>Load older history</Button></div> : null}</div></>;
 }
 
-function HistoryCard({ decision, onNotice }: { decision: Decision; onNotice: (notice: { text: string; tone: "success" | "error" }) => void }) {
+export function HistoryCard({ decision, onNotice }: { decision: Decision; onNotice: (notice: { text: string; tone: "success" | "error" }) => void }) {
   const [open, setOpen] = useState(false);
   const [action, setAction] = useState(decision.roundKind === "initial" ? "approve" : "confirm_valid");
   const [deferUntil, setDeferUntil] = useState("");
@@ -419,6 +419,7 @@ function HistoryCard({ decision, onNotice }: { decision: Decision; onNotice: (no
         <div className="history-row__badges"><Badge variant={actionVariant}>{humanAction(decision.action)}</Badge><Badge variant={decision.isCurrent ? "outline" : "secondary"}>{decision.isCurrent ? "Current" : "Superseded"}</Badge></div>
       </div>
       <dl className="history-row__meta"><div><dt>Guide state</dt><dd>{decision.effect === "activate" ? "Active" : "Archived"}</dd></div><div><dt>Reviewed</dt><dd><time dateTime={decision.reviewedAt} suppressHydrationWarning>{relativeTime(decision.reviewedAt)}</time></dd></div><div><dt>Reviewer</dt><dd>{decision.reviewer}</dd></div></dl>
+      <CandidateEnforcementDetails candidate={decision} />
       {decision.evidence.length ? <Accordion><AccordionItem value="evidence"><AccordionTrigger>Evidence <Badge variant="outline">{decision.evidence.length}</Badge></AccordionTrigger><AccordionContent><div className="review-evidence">{decision.evidence.map((evidence) => <blockquote key={evidence.excerpt}>{evidence.excerpt}</blockquote>)}</div></AccordionContent></AccordionItem></Accordion> : <p className="history-row__empty-evidence">No evidence attached</p>}
     </div>
     {decision.canAmend ? <div className="history-row__footer"><Button type="button" variant="outline" size="sm" onClick={() => setOpen((value) => !value)}>{open ? "Cancel update" : "Update decision"}</Button>{open ? <div className="history-row__amendment"><AppSelect value={action} onValueChange={setAction} options={[{ value: decision.roundKind === "initial" ? "approve" : "confirm_valid", label: decision.roundKind === "initial" ? "Approve" : "Still valid" }, { value: decision.roundKind === "initial" ? "reject" : "mark_invalid", label: decision.roundKind === "initial" ? "Reject" : "No longer valid" }, { value: "defer", label: "Defer" }]} />{action === "defer" ? <Input type="datetime-local" value={deferUntil} onChange={(event) => setDeferUntil(event.currentTarget.value)} /> : null}<Button type="button" variant="secondary" size="sm" disabled={busy || (action === "defer" && !deferUntil)} onClick={() => void amend()}>{busy ? "Saving…" : "Save amendment"}</Button></div> : null}</div> : null}
