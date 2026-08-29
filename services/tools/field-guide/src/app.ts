@@ -484,12 +484,18 @@ function parseLessonEnforcement(value: Record<string, unknown>) {
   const rejectionValue = value.higherLevelRejections === undefined
     ? undefined
     : record(value.higherLevelRejections);
-  if (rejectionValue && Object.keys(rejectionValue).some((key) => !preventionLayers.includes(key as typeof preventionLayers[number])))
-    throw new InputError("higherLevelRejections is invalid.");
+  const expectedRejectionLayers = preventionLayer === undefined
+    ? []
+    : preventionLayers.slice(0, preventionLayers.indexOf(preventionLayer as typeof preventionLayers[number]));
+  const rejectionKeys = Object.keys(rejectionValue ?? {});
+  if (
+    rejectionKeys.length !== expectedRejectionLayers.length ||
+    rejectionKeys.some((key) => !expectedRejectionLayers.includes(key as typeof preventionLayers[number]))
+  ) throw new InputError("higherLevelRejections must explain every stronger prevention layer and no others.");
   const higherLevelRejections = rejectionValue
-    ? Object.fromEntries(Object.entries(rejectionValue).map(([layer, reason]) => [
+    ? Object.fromEntries(expectedRejectionLayers.map((layer) => [
         layer,
-        text(reason, `higherLevelRejections.${layer}`, 1000),
+        text(rejectionValue[layer], `higherLevelRejections.${layer}`, 1000),
       ]))
     : undefined;
   return {
@@ -601,6 +607,9 @@ function parseCandidate(value: unknown) {
       project.projectDisplayName !== foundProject.foundProjectDisplayName)
   )
     throw new InputError("Project and found project fields must match.");
+  const enforcement = parseLessonEnforcement(candidateValue);
+  if (scope === "global" && (enforcement.strength === "blocking" || enforcement.preventionLayer !== undefined) && !foundProject)
+    throw new InputError("Enforced global candidates require found project fields.");
   const candidate: Candidate = {
     candidateId: uuid(candidateValue.candidateId, "candidateId"),
     scope: scope as Scope,
@@ -612,7 +621,7 @@ function parseCandidate(value: unknown) {
     rationale: text(candidateValue.rationale, "rationale", 4000),
     evidence,
     createdAt: iso(candidateValue.createdAt, "createdAt"),
-    ...parseLessonEnforcement(candidateValue),
+    ...enforcement,
   };
   return {
     idempotencyKey: text(body.idempotencyKey, "idempotencyKey", 128),
