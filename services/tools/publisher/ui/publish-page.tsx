@@ -10,6 +10,7 @@ import { Button } from "../../src/components/ui/button.js";
 import { Card } from "../../src/components/ui/card.js";
 import { Input } from "../../src/components/ui/input.js";
 import type { UploadSummary } from "../../src/protected-data.js";
+import { waitForPublisher } from "./publisher-request.js";
 
 export function PublishPage() {
   const [busy, setBusy] = useState(false);
@@ -31,6 +32,7 @@ export function PublishPage() {
       for (const [index, file] of files.entries()) {
         setProgress({ completed: index, total: files.length });
         try {
+          await waitForPublisher();
           const form = new FormData();
           form.append("file", file);
           const response = await fetch("/api/external-uploads", {

@@ -1,12 +1,11 @@
 import { getGlobalStartContext } from "@tanstack/react-start";
 import { attachPlatformPrincipal } from "@tools-platform/security";
+import {
+  TRANSIENT_RESPONSE_RETRY_DELAYS_MS,
+  retryTransientResponse
+} from "./response-retry.js";
 
 type PlatformHandler = (request: Request) => Promise<Response>;
-
-// Railway can wake the web and Postgres services independently. A read made
-// during Postgres startup is reported by a mounted service as a 5xx response;
-// give that short recovery window a bounded retry budget.
-const PLATFORM_DATA_RETRY_DELAYS_MS = [100, 250, 500, 1_000] as const;
 
 export function internalPlatformRequest(pathname: string, init: RequestInit = {}) {
   const context = getGlobalStartContext();
@@ -39,12 +38,9 @@ export async function readPlatformJson<T>(handler: PlatformHandler, pathname: st
 
 export async function retryTransientPlatformResponse(
   operation: () => Promise<Response>,
-  retryDelaysMs: readonly number[] = PLATFORM_DATA_RETRY_DELAYS_MS
+  retryDelaysMs: readonly number[] = TRANSIENT_RESPONSE_RETRY_DELAYS_MS
 ): Promise<Response> {
-  for (let attempt = 0; ; attempt += 1) {
-    const response = await operation();
-    const retryDelayMs = retryDelaysMs[attempt];
-    if (response.status < 500 || retryDelayMs === undefined) return response;
-    await new Promise<void>((resolve) => setTimeout(resolve, retryDelayMs));
-  }
+  // Railway can wake the web and Postgres services independently. Keep the
+  // loader pending while Postgres finishes starting instead of exposing a 5xx.
+  return retryTransientResponse(operation, retryDelaysMs);
 }
