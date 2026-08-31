@@ -8,6 +8,7 @@ import {
   verifyDisposableDatabase,
   type PushMode,
 } from "./postgres-push-guard.js";
+import { waitForPostgres } from "./postgres-readiness.js";
 import { reconcileRuntimeSchema } from "./runtime-schema-reconciliation.js";
 
 const mode = process.argv[2];
@@ -16,6 +17,18 @@ if (mode !== "production" && mode !== "development" && mode !== "test") {
 }
 
 const url = resolvePushDatabase(process.env, mode satisfies PushMode);
+if (mode === "production") {
+  await waitForPostgres(
+    () => checkPostgres(url),
+    undefined,
+    undefined,
+    ({ attempt, delayMs }) => console.warn(JSON.stringify({
+      event: "postgres.readiness.retry",
+      attempt,
+      delayMs
+    }))
+  );
+}
 if (mode === "test") {
   const database = postgres(url, { max: 1 });
   try {
@@ -29,6 +42,15 @@ if (mode === "test") {
     });
   } finally {
     await database.end();
+  }
+}
+
+async function checkPostgres(url: string) {
+  const database = postgres(url, { max: 1, connect_timeout: 2, idle_timeout: 1 });
+  try {
+    await database`select 1`;
+  } finally {
+    await database.end({ timeout: 1 });
   }
 }
 
