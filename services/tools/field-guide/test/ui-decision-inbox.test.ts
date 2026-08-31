@@ -40,4 +40,13 @@ describe("decision inbox client behavior", () => {
     expect(feedback).toContain("nextRecordId=state.decisionItems[currentIndex+1]");
     expect(feedback).toContain("state.selectedRecord=nextRecordId");
   });
+
+  it("shows the correction invariant and prevention choice during review", async () => {
+    const source = await readFile(new URL("../src/ui.ts", import.meta.url), "utf8");
+    expect(source).toContain("function correctionMarkup(record)");
+    expect(source).toContain("Correction prevention");
+    expect(source).toContain("correction.failedInvariant");
+    expect(source).toContain("correction.selectedLayer");
+    expect(source).toContain("correction.mechanism");
+  });
 });

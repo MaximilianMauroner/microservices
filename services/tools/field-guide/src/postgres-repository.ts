@@ -173,6 +173,8 @@ export class PostgresReviewRepository implements ReviewRepository {
         canAmend:true,
         scope: c.scope,
         ...(c.scope==="project"?{projectKey:c.projectKey,projectDisplayName:c.projectDisplayName}:{}),
+        ...candidateOrigin(c),
+        ...candidateEnforcement(c),
         lessonKey: c.lessonKey,
         title: c.title,
         body: c.body,
@@ -249,6 +251,8 @@ export class PostgresReviewRepository implements ReviewRepository {
         canAmend:true,
         scope:candidate.scope,
         ...(candidate.scope==="project"?{projectKey:candidate.projectKey,projectDisplayName:candidate.projectDisplayName}:{}),
+        ...candidateOrigin(candidate),
+        ...candidateEnforcement(candidate),
         lessonKey:candidate.lessonKey,
         title:candidate.title,
         body:candidate.body,
@@ -299,6 +303,8 @@ function toDecision(r: EventRow): Decision {
     canAmend:r.can_amend,
     scope: c.scope,
     ...(c.scope==="project"?{projectKey:c.projectKey,projectDisplayName:c.projectDisplayName}:{}),
+    ...candidateOrigin(c),
+    ...candidateEnforcement(c),
     lessonKey: c.lessonKey,
     title: c.title,
     body: c.body,
@@ -308,6 +314,25 @@ function toDecision(r: EventRow): Decision {
     ...(r.next_review_at
       ? { nextReviewAt: r.next_review_at.toISOString() }
       : {}),
+  };
+}
+
+function candidateOrigin(candidate: Candidate) {
+  const foundProjectKey = candidate.foundProjectKey ?? candidate.projectKey;
+  const foundProjectDisplayName = candidate.foundProjectDisplayName ?? candidate.projectDisplayName;
+  return foundProjectKey && foundProjectDisplayName
+    ? { foundProjectKey, foundProjectDisplayName }
+    : {};
+}
+
+function candidateEnforcement(candidate: Candidate) {
+  return {
+    ...(candidate.stance ? { stance: candidate.stance } : {}),
+    ...(candidate.strength ? { strength: candidate.strength } : {}),
+    ...(candidate.mechanism ? { mechanism: candidate.mechanism } : {}),
+    ...(candidate.preventionLayer ? { preventionLayer: candidate.preventionLayer } : {}),
+    ...(candidate.failedInvariant ? { failedInvariant: candidate.failedInvariant } : {}),
+    ...(candidate.higherLevelRejections ? { higherLevelRejections: candidate.higherLevelRejections } : {}),
   };
 }
 
