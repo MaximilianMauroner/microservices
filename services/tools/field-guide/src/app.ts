@@ -450,6 +450,93 @@ const iso = (value: unknown, name: string) => {
   return new Date(string).toISOString();
 };
 
+const preventionLayers = ["architecture", "automated_check", "skill_or_rule", "human_review"] as const;
+const lessonStances = ["prohibition", "rule", "preference", "default"] as const;
+const lessonStrengths = ["blocking", "advisory"] as const;
+
+function parseLessonEnforcement(value: Record<string, unknown>) {
+  const stance = value.stance;
+  if (stance !== undefined && !lessonStances.includes(stance as typeof lessonStances[number]))
+    throw new InputError("stance is invalid.");
+  const strength = value.strength;
+  if (strength !== undefined && !lessonStrengths.includes(strength as typeof lessonStrengths[number]))
+    throw new InputError("strength is invalid.");
+  const mechanism = value.mechanism === undefined
+    ? undefined
+    : text(value.mechanism, "mechanism", 512);
+  const preventionLayer = value.preventionLayer;
+  if (preventionLayer !== undefined && !preventionLayers.includes(preventionLayer as typeof preventionLayers[number]))
+    throw new InputError("preventionLayer is invalid.");
+  if (strength === "blocking" && mechanism === undefined)
+    throw new InputError("Blocking guidance requires a mechanism.");
+  if (preventionLayer !== undefined) {
+    const expectedStrength = preventionLayer === "architecture" || preventionLayer === "automated_check"
+      ? "blocking"
+      : "advisory";
+    if (strength !== expectedStrength)
+      throw new InputError(`${preventionLayer} requires ${expectedStrength} strength.`);
+    if (mechanism === undefined)
+      throw new InputError("A prevention layer requires a mechanism.");
+  }
+  const failedInvariant = value.failedInvariant === undefined
+    ? undefined
+    : text(value.failedInvariant, "failedInvariant", 1000);
+  const rejectionValue = value.higherLevelRejections === undefined
+    ? undefined
+    : record(value.higherLevelRejections);
+  const expectedRejectionLayers = preventionLayer === undefined
+    ? []
+    : preventionLayers.slice(0, preventionLayers.indexOf(preventionLayer as typeof preventionLayers[number]));
+  const rejectionKeys = Object.keys(rejectionValue ?? {});
+  if (
+    rejectionKeys.length !== expectedRejectionLayers.length ||
+    rejectionKeys.some((key) => !expectedRejectionLayers.includes(key as typeof preventionLayers[number]))
+  ) throw new InputError("higherLevelRejections must explain every stronger prevention layer and no others.");
+  const higherLevelRejections = rejectionValue
+    ? Object.fromEntries(expectedRejectionLayers.map((layer) => [
+        layer,
+        text(rejectionValue[layer], `higherLevelRejections.${layer}`, 1000),
+      ]))
+    : undefined;
+  return {
+    ...(stance !== undefined ? { stance: stance as typeof lessonStances[number] } : {}),
+    ...(strength !== undefined ? { strength: strength as typeof lessonStrengths[number] } : {}),
+    ...(mechanism !== undefined ? { mechanism } : {}),
+    ...(preventionLayer !== undefined
+      ? { preventionLayer: preventionLayer as typeof preventionLayers[number] }
+      : {}),
+    ...(failedInvariant !== undefined ? { failedInvariant } : {}),
+    ...(higherLevelRejections !== undefined ? { higherLevelRejections } : {}),
+  };
+}
+
+function parseCorrection(value: unknown) {
+  const correction = record(value);
+  const expectedKeys = ["failedInvariant", "selectedLayer", "mechanism", "higherLevelRejections"];
+  if (Object.keys(correction).some((key) => !expectedKeys.includes(key)) || Object.keys(correction).length !== expectedKeys.length)
+    throw new InputError("correction is invalid.");
+  const selectedLayer = correction.selectedLayer;
+  if (!preventionLayers.includes(selectedLayer as typeof preventionLayers[number]))
+    throw new InputError("correction.selectedLayer is invalid.");
+  const higherLevelRejections = record(correction.higherLevelRejections);
+  const expectedLayers = preventionLayers.slice(0, preventionLayers.indexOf(selectedLayer as typeof preventionLayers[number]));
+  if (
+    Object.keys(higherLevelRejections).length !== expectedLayers.length ||
+    Object.keys(higherLevelRejections).some((key) => !expectedLayers.includes(key as typeof preventionLayers[number]))
+  ) throw new InputError("correction.higherLevelRejections must explain every stronger prevention layer.");
+  return {
+    failedInvariant: text(correction.failedInvariant, "correction.failedInvariant", 1000),
+    selectedLayer: selectedLayer as typeof preventionLayers[number],
+    mechanism: text(correction.mechanism, "correction.mechanism", 512),
+    higherLevelRejections: Object.fromEntries(
+      expectedLayers.map((layer) => [
+        layer,
+        text(higherLevelRejections[layer], `correction.higherLevelRejections.${layer}`, 1000),
+      ]),
+    ),
+  };
+}
+
 function parseCandidate(value: unknown) {
   const body = record(value);
   const candidateValue = record(body.candidate);
@@ -520,9 +607,12 @@ function parseCandidate(value: unknown) {
       project.projectDisplayName !== foundProject.foundProjectDisplayName)
   )
     throw new InputError("Project and found project fields must match.");
+  const enforcement = parseLessonEnforcement(candidateValue);
+  if (scope === "global" && (enforcement.strength === "blocking" || enforcement.preventionLayer !== undefined) && !foundProject)
+    throw new InputError("Enforced global candidates require found project fields.");
   const candidate: Candidate = {
     candidateId: uuid(candidateValue.candidateId, "candidateId"),
-    scope,
+    scope: scope as Scope,
     ...project,
     ...foundProject,
     lessonKey: text(candidateValue.lessonKey, "lessonKey", 128),
@@ -531,6 +621,7 @@ function parseCandidate(value: unknown) {
     rationale: text(candidateValue.rationale, "rationale", 4000),
     evidence,
     createdAt: iso(candidateValue.createdAt, "createdAt"),
+    ...enforcement,
   };
   return {
     idempotencyKey: text(body.idempotencyKey, "idempotencyKey", 128),
@@ -598,11 +689,11 @@ function parseDecisionRecord(value: unknown) {
   });
   if (source.confidence !== "low" && source.confidence !== "medium" && source.confidence !== "high")
     throw new InputError("confidence is invalid.");
-  const parsed: DecisionRecord = {
-    schemaVersion: 1,
+  const base = {
+    schemaVersion: 1 as const,
     decisionRecordId: uuid(source.decisionRecordId, "decisionRecordId"),
     taskId: text(source.taskId, "taskId", 256),
-    scope,
+    scope: scope as Scope,
     ...project,
     ...(source.foundProjectKey !== undefined ? foundProject : {}),
     summary: text(source.summary, "summary", 512),
@@ -611,12 +702,16 @@ function parseDecisionRecord(value: unknown) {
     choice: text(source.choice, "choice", 2000),
     rationale: text(source.rationale, "rationale", 4000),
     consequences,
-    confidence: source.confidence,
+    confidence: source.confidence as "low" | "medium" | "high",
     evidence,
     ...(source.device !== undefined ? { device: text(source.device, "device", 128) } : {}),
     ...(source.harness !== undefined ? { harness: text(source.harness, "harness", 128) } : {}),
     ...(source.skill !== undefined ? { skill: text(source.skill, "skill", 128) } : {}),
     createdAt: iso(source.createdAt, "createdAt"),
+  };
+  const parsed: DecisionRecord = {
+    ...base,
+    ...(source.correction !== undefined ? { correction: parseCorrection(source.correction) } : {}),
   };
   rejectSensitiveContent(parsed);
   const idempotencyKey = text(body.idempotencyKey, "idempotencyKey", 128);
@@ -713,8 +808,30 @@ async function parseDecisionPromotion(value: unknown, repository: ReviewReposito
     (project.projectKey !== sourceProject.foundProjectKey ||
       project.projectDisplayName !== sourceProject.foundProjectDisplayName)
   ) throw new InputError("Project candidate identity must match source project provenance.");
+  const correctionItems = items.filter((item) => item.record.correction !== undefined);
+  if (correctionItems.length > 0 && correctionItems.length !== items.length)
+    throw new InputError("A promotion cannot mix correction and normal decision records.");
+  const correction = correctionItems[0]?.record.correction;
+  if (
+    correction && correctionItems.some((item) =>
+      !item.record.correction ||
+      item.record.correction.selectedLayer !== correction.selectedLayer ||
+      item.record.correction.mechanism !== correction.mechanism ||
+      item.record.correction.failedInvariant !== correction.failedInvariant ||
+      preventionLayers.some((layer) =>
+        item.record.correction?.higherLevelRejections[layer] !== correction.higherLevelRejections[layer]))
+  ) throw new InputError("Promoted corrections must share one correction analysis.");
   const evidence = items.map((item) => ({
-    excerpt: [item.record.summary, `Choice: ${item.record.choice}`]
+    excerpt: [
+      ...(item.record.correction
+        ? [
+            `Failed invariant: ${item.record.correction.failedInvariant}`,
+            `Prevention: ${item.record.correction.selectedLayer} through ${item.record.correction.mechanism}`,
+          ]
+        : []),
+      item.record.summary,
+      `Choice: ${item.record.choice}`,
+    ]
       .join("\n").slice(0, 2000),
     commitHashes: [...new Set(item.record.evidence.flatMap((entry) => entry.commitHashes))].slice(0, 20),
   }));
@@ -735,6 +852,18 @@ async function parseDecisionPromotion(value: unknown, repository: ReviewReposito
     rationale: text(draft.rationale, "rationale", 4000),
     evidence,
     createdAt: iso(draft.createdAt, "createdAt"),
+    ...(correction
+      ? {
+          stance: "rule" as const,
+          strength: correction.selectedLayer === "architecture" || correction.selectedLayer === "automated_check"
+            ? "blocking" as const
+            : "advisory" as const,
+          mechanism: correction.mechanism,
+          preventionLayer: correction.selectedLayer,
+          failedInvariant: correction.failedInvariant,
+          higherLevelRejections: correction.higherLevelRejections,
+        }
+      : parseLessonEnforcement(draft)),
   };
   rejectSensitiveContent(candidate);
   const idempotencyKey = text(body.idempotencyKey, "idempotencyKey", 128);

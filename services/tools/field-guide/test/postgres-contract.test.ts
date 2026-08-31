@@ -273,6 +273,16 @@ describe("Postgres schema contract", () => {
     expect(types).not.toContain("migrate():");
   });
 
+  it("projects source-project provenance from PostgreSQL decisions", async () => {
+    const repository = await readFile(
+      new URL("../src/postgres-repository.ts", import.meta.url),
+      "utf8",
+    );
+    expect(repository.match(/\.\.\.candidateOrigin\(/g)).toHaveLength(3);
+    expect(repository).toContain("candidate.foundProjectKey ?? candidate.projectKey");
+    expect(repository).toContain("candidate.foundProjectDisplayName ?? candidate.projectDisplayName");
+  });
+
   it("uses an explicit guarded PostgreSQL push", async () => {
     const packageJson = JSON.parse(
       await readFile(new URL("../package.json", import.meta.url), "utf8"),

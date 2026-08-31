@@ -4,6 +4,17 @@ export type Evidence = {
   sessionRef?: string;
   commitHashes: string[];
 };
+export type LessonStance = "prohibition" | "rule" | "preference" | "default";
+export type LessonStrength = "blocking" | "advisory";
+export type PreventionLayer = "architecture" | "automated_check" | "skill_or_rule" | "human_review";
+export type LessonEnforcement = {
+  stance?: LessonStance;
+  strength?: LessonStrength;
+  mechanism?: string;
+  preventionLayer?: PreventionLayer;
+  failedInvariant?: string;
+  higherLevelRejections?: Partial<Record<PreventionLayer, string>>;
+};
 export type Candidate = {
   candidateId: string;
   scope: Scope;
@@ -19,7 +30,7 @@ export type Candidate = {
   rationale: string;
   evidence: Evidence[];
   createdAt: string;
-};
+} & LessonEnforcement;
 export type Action =
   "approve" | "reject" | "defer" | "confirm_valid" | "mark_invalid";
 export type RoundKind = "initial" | "scheduled";
@@ -46,7 +57,7 @@ export type Decision = {
   reviewedAt: string;
   reviewer: string;
   nextReviewAt?: string;
-};
+} & LessonEnforcement;
 export type Summary = { pending: number; due: number; overdue: number };
 export type QueueItem = {
   candidate: Candidate;
@@ -69,7 +80,13 @@ export type DecisionRecordEvidence = {
   excerpt: string;
   commitHashes: string[];
 };
-export type DecisionRecord = {
+export type CorrectionAnalysis = {
+  failedInvariant: string;
+  selectedLayer: PreventionLayer;
+  mechanism: string;
+  higherLevelRejections: Partial<Record<PreventionLayer, string>>;
+};
+type DecisionRecordBase = {
   schemaVersion: 1;
   decisionRecordId: string;
   taskId: string;
@@ -90,6 +107,9 @@ export type DecisionRecord = {
   harness?: string;
   skill?: string;
   createdAt: string;
+};
+export type DecisionRecord = DecisionRecordBase & {
+  correction?: CorrectionAnalysis;
 };
 export type DecisionFeedbackAction = "up" | "down" | "dismiss";
 export type DecisionFeedback = {
