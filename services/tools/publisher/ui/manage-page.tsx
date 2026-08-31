@@ -45,6 +45,7 @@ import {
   TableRow
 } from "../../src/components/ui/table.js";
 import type { ManagePageData, UploadSummary } from "../../src/protected-data.js";
+import { fetchPublisherRead, waitForPublisher } from "./publisher-request.js";
 
 type KindFilter = "all" | UploadSummary["kind"];
 type ExpiryFilter = "all" | "24h" | "7d" | "persistent";
@@ -79,7 +80,7 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
   async function refresh(options: { announce?: boolean } = {}) {
     setBusy(true);
     try {
-      const response = await fetch("/api/external-uploads?limit=100&sort=newest", {
+      const response = await fetchPublisherRead("/api/external-uploads?limit=100&sort=newest", {
         credentials: "same-origin"
       });
       const payload = await readPayload<ManagePageData>(response, "Artifact inventory could not be refreshed.");
@@ -100,7 +101,7 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
     if (!nextCursor) return;
     setBusy(true);
     try {
-      const response = await fetch(`/api/external-uploads?limit=100&sort=newest&cursor=${encodeURIComponent(nextCursor)}`, {
+      const response = await fetchPublisherRead(`/api/external-uploads?limit=100&sort=newest&cursor=${encodeURIComponent(nextCursor)}`, {
         credentials: "same-origin"
       });
       const payload = await readPayload<ManagePageData>(response, "Older artifacts could not be loaded.");
@@ -118,6 +119,7 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
     setBusy(true);
     setMessage(undefined);
     try {
+      await waitForPublisher();
       const form = new FormData();
       if (selected.project) form.set("project", selected.project);
       form.set("file", file);
@@ -143,6 +145,7 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
     setBusy(true);
     setMessage(undefined);
     try {
+      await waitForPublisher();
       const response = await fetch(`/api/external-uploads/${selected.id}`, {
         method: "PATCH",
         credentials: "same-origin",
@@ -166,6 +169,7 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
     setBusy(true);
     setMessage(undefined);
     try {
+      await waitForPublisher();
       const response = await fetch(`/api/external-uploads/${selected.id}`, {
         method: "PATCH",
         credentials: "same-origin",
@@ -198,6 +202,7 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
     setBusy(true);
     setMessage(undefined);
     try {
+      await waitForPublisher();
       const response = await fetch(`/api/external-uploads/${selected.id}`, {
         method: "DELETE",
         credentials: "same-origin"
