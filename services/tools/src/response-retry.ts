@@ -13,14 +13,15 @@ type Fetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Respons
 
 export async function retryTransientResponse(
   operation: ResponseOperation,
-  retryDelaysMs: readonly number[] = TRANSIENT_RESPONSE_RETRY_DELAYS_MS
+  retryDelaysMs: readonly number[] = TRANSIENT_RESPONSE_RETRY_DELAYS_MS,
+  signal?: AbortSignal | null
 ): Promise<Response> {
   for (let attempt = 0; ; attempt += 1) {
     const response = await operation();
     const retryDelayMs = retryDelaysMs[attempt];
     if (!isServerError(response) || retryDelayMs === undefined) return response;
     await discard(response);
-    await waitForRetry(retryDelayMs);
+    await waitForRetry(retryDelayMs, signal);
   }
 }
 

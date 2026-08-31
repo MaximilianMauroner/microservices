@@ -1,6 +1,10 @@
 import { InvalidHeartbeatTokenError, UnknownHeartbeatMonitorError } from "@tools-platform/tools-checker";
 import type { PlatformRequestContext } from "./start.js";
 import { favicons } from "./favicons.js";
+import {
+  TRANSIENT_RESPONSE_RETRY_DELAYS_MS,
+  retryTransientResponse
+} from "./response-retry.js";
 
 export type PlatformRouteInput = {
   request: Request;
@@ -21,7 +25,20 @@ export function fieldGuide({ request, context }: PlatformRouteInput) {
 }
 
 export function artifact({ request, context }: PlatformRouteInput) {
-  return context.runtime.services.publisher.handle(request);
+  return handleArtifactRequest(request, context.runtime.services.publisher.handle);
+}
+
+type ArtifactHandler = (request: Request) => Promise<Response>;
+
+export function handleArtifactRequest(
+  request: Request,
+  handler: ArtifactHandler,
+  retryDelaysMs: readonly number[] = TRANSIENT_RESPONSE_RETRY_DELAYS_MS
+) {
+  const operation = () => handler(request);
+  return request.method === "GET" || request.method === "HEAD"
+    ? retryTransientResponse(operation, retryDelaysMs, request.signal)
+    : operation();
 }
 
 export function favicon({ request }: PlatformRouteInput) {
