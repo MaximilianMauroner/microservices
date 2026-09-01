@@ -10,8 +10,8 @@ coverage/
 /.field-guide/scratch/
 /.scratch/
 /.review/
-/.agent/sessions/
-/.agent/artifacts/
-/.agent/review/
+/.agents/sessions/
+/.agents/artifacts/
+/.agents/review/
 services/tools/.output/
-/.agent/artifacts/
+/.agents/artifacts/
