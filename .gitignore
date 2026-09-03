@@ -4,4 +4,6 @@ dist/
 .railway/
 coverage/
 .DS_Store
-/.field-guide/sessions/
+/.agents/sessions/
+/.agents/artifacts/
+/.agents/review/
