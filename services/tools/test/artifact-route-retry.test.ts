@@ -1,7 +1,56 @@
 import { Readable } from "node:stream";
 import { createFetchApp } from "@tools-platform/artifact-publisher";
 import { describe, expect, it, vi } from "vitest";
-import { handleArtifactRequest } from "../src/route-handlers.js";
+import {
+  handleArtifactRequest,
+  handleFieldGuideRequest
+} from "../src/route-handlers.js";
+
+describe("field-guide route cold-wake retries", () => {
+  it("retries an idempotent decision-record submission with the same body", async () => {
+    const bodies: unknown[] = [];
+    const handler = vi.fn(async (request: Request) => {
+      bodies.push(await request.json());
+      return handler.mock.calls.length === 1
+        ? new Response(null, { status: 500 })
+        : Response.json({ status: "created", decisionRecordId: "record-id" }, { status: 201 });
+    });
+    const body = {
+      idempotencyKey: "record-id",
+      record: { decisionRecordId: "record-id" }
+    };
+    const request = new Request("https://tools.example.test/api/agent/decision-records", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+
+    const response = await handleFieldGuideRequest(request, handler, [0]);
+
+    expect(response.status).toBe(201);
+    expect(await response.json()).toEqual({
+      status: "created",
+      decisionRecordId: "record-id"
+    });
+    expect(handler).toHaveBeenCalledTimes(2);
+    expect(bodies).toEqual([body, body]);
+  });
+
+  it.each([
+    ["POST", "/api/agent/candidates"],
+    ["POST", "/api/review/decision-records/record-id/feedback"],
+    ["GET", "/api/agent/decision-records"]
+  ])("does not retry %s %s", async (method, path) => {
+    const handler = vi.fn().mockResolvedValue(new Response(null, { status: 500 }));
+    const request = new Request(`https://tools.example.test${path}`, { method });
+
+    const response = await handleFieldGuideRequest(request, handler, [0]);
+
+    expect(response.status).toBe(500);
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(handler).toHaveBeenCalledWith(request);
+  });
+});
 
 describe("artifact route cold-wake retries", () => {
   it("hides a transient storage failure from a public artifact reader", async () => {

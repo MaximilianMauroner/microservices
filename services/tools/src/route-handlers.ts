@@ -21,7 +21,7 @@ export function readOnly() {
 }
 
 export function fieldGuide({ request, context }: PlatformRouteInput) {
-  return context.runtime.services.review.handle(request);
+  return handleFieldGuideRequest(request, context.runtime.services.review.handle);
 }
 
 export function artifact({ request, context }: PlatformRouteInput) {
@@ -29,6 +29,26 @@ export function artifact({ request, context }: PlatformRouteInput) {
 }
 
 type ArtifactHandler = (request: Request) => Promise<Response>;
+
+type FieldGuideHandler = (request: Request) => Promise<Response>;
+
+/**
+ * Decision-record submission is safe to repeat because its record ID is also
+ * its idempotency key. Keep the first caller connected while PostgreSQL wakes.
+ */
+export function handleFieldGuideRequest(
+  request: Request,
+  handler: FieldGuideHandler,
+  retryDelaysMs: readonly number[] = TRANSIENT_RESPONSE_RETRY_DELAYS_MS
+) {
+  const url = new URL(request.url);
+  const retryable = request.method === "POST" &&
+    url.pathname.replace(/\/+$/, "").toLowerCase() === "/api/agent/decision-records";
+  const operation = () => handler(request.clone());
+  return retryable
+    ? retryTransientResponse(operation, retryDelaysMs, request.signal)
+    : handler(request);
+}
 
 export function handleArtifactRequest(
   request: Request,

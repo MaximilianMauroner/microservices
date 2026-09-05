@@ -48,8 +48,18 @@ describe("decision record review", () => {
   it("ingests records idempotently and exposes the unresolved task inbox", async () => {
     const { app } = setup();
     const body = { idempotencyKey: record.decisionRecordId, record };
-    expect((await callApp(app, "/api/agent/decision-records", { method: "POST", json: body })).status).toBe(201);
-    expect((await callApp(app, "/api/agent/decision-records", { method: "POST", json: body })).status).toBe(200);
+    const created = await callApp(app, "/api/agent/decision-records", { method: "POST", json: body });
+    expect(created.status).toBe(201);
+    expect(await responseJson(created)).toEqual({
+      status: "created",
+      decisionRecordId: record.decisionRecordId,
+    });
+    const replay = await callApp(app, "/api/agent/decision-records", { method: "POST", json: body });
+    expect(replay.status).toBe(200);
+    expect(await responseJson(replay)).toEqual({
+      status: "replay",
+      decisionRecordId: record.decisionRecordId,
+    });
     expect((await callApp(app, "/api/agent/decision-records", {
       method: "POST",
       json: { ...body, record: { ...record, summary: "Changed" } },
