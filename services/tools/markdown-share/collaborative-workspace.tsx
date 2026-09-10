@@ -33,6 +33,13 @@ import {
   markdownSourceLines,
 } from "./lib";
 import {
+  applyThemeChoice,
+  loadThemeChoice,
+  storeThemeChoice,
+  THEME_CHOICES,
+  type ThemeChoice,
+} from "./theme";
+import {
   useLiveDocumentEditor,
   useSyncFailure,
   type SyncFailure,
@@ -58,6 +65,7 @@ type PublicDocument = {
   createdAt: number;
   updatedAt: number;
   expiresAt: number;
+  pinned: boolean;
 };
 
 export function CollaborativeWorkspace({
@@ -147,7 +155,11 @@ function EditorWorkspace({
   syncFailure: SyncFailure | null;
 }) {
   const [copied, setCopied] = useState(false);
+  const [pinBusy, setPinBusy] = useState(false);
   const [topbarMenuOpen, setTopbarMenuOpen] = useState(false);
+  const setPinned = useMutation(api.documents.setPinned);
+  const [themeChoice, setThemeChoice] =
+    useState<ThemeChoice>(loadThemeChoice);
   const [displaySettings, setDisplaySettings] =
     useState<DisplaySettings>(loadDisplaySettings);
   const topbarMenuRef = useRef<HTMLDivElement>(null);
@@ -179,6 +191,11 @@ function EditorWorkspace({
       // The settings remain active for this session when storage is unavailable.
     }
   }, [displaySettings]);
+
+  useEffect(() => {
+    storeThemeChoice(themeChoice);
+    applyThemeChoice(themeChoice);
+  }, [themeChoice]);
 
   useEffect(() => {
     if (!topbarMenuOpen) {
@@ -233,6 +250,15 @@ function EditorWorkspace({
     window.print();
   };
 
+  const togglePin = async () => {
+    setPinBusy(true);
+    try {
+      await setPinned({ token: document.token, pinned: !document.pinned });
+    } finally {
+      setPinBusy(false);
+    }
+  };
+
   return (
     <main
       className={`editor-shell${viewport.isPreviewOnly ? " preview-only" : ""}${syncFailure ? " has-sync-error" : ""}`}
@@ -251,6 +277,11 @@ function EditorWorkspace({
           </a>
           <div className="document-identity">
             <strong title={document.filename}>{document.filename}</strong>
+            {document.pinned ? (
+              <span className="pin-badge" title="Pinned for 30 days">
+                Pinned
+              </span>
+            ) : null}
             <span className="expiry-full">
               expires in {formatExpiry(document.expiresAt)}
             </span>
@@ -344,6 +375,30 @@ function EditorWorkspace({
                 >
                   Full screen preview
                 </button>
+                <button
+                  type="button"
+                  disabled={pinBusy}
+                  onClick={() => void togglePin()}
+                >
+                  {document.pinned
+                    ? "Unpin (back to 7-day expiry)"
+                    : "Pin for 30 days"}
+                </button>
+                <div className="theme-control">
+                  <p>Theme</p>
+                  <div className="theme-options" role="group" aria-label="Color theme">
+                    {THEME_CHOICES.map((choice) => (
+                      <button
+                        key={choice}
+                        type="button"
+                        aria-pressed={themeChoice === choice}
+                        onClick={() => setThemeChoice(choice)}
+                      >
+                        {choice.slice(0, 1).toUpperCase() + choice.slice(1)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <div className="display-settings">
                   <p>Display settings</p>
                   <label>

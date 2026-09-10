@@ -5,7 +5,12 @@ import {
   MAX_FILENAME_LENGTH,
   MAX_MARKDOWN_LENGTH,
 } from "./constants";
-import { createDocument, findDocument } from "./documentLifecycle";
+import {
+  createDocument,
+  findDocument,
+  requireLiveDocument,
+  setDocumentPinned,
+} from "./documentLifecycle";
 
 const publicDocument = v.object({
   token: v.string(),
@@ -13,6 +18,7 @@ const publicDocument = v.object({
   createdAt: v.number(),
   updatedAt: v.number(),
   expiresAt: v.number(),
+  pinned: v.boolean(),
 });
 
 function validateCreateInput(filename: string, markdown: string) {
@@ -39,6 +45,7 @@ function toPublicDocument(document: {
   createdAt: number;
   updatedAt: number;
   expiresAt: number;
+  pinned?: boolean;
 }) {
   return {
     token: document.token,
@@ -46,6 +53,7 @@ function toPublicDocument(document: {
     createdAt: document.createdAt,
     updatedAt: document.updatedAt,
     expiresAt: document.expiresAt,
+    pinned: document.pinned ?? false,
   };
 }
 
@@ -63,6 +71,16 @@ export const create = mutation({
       markdown: args.markdown,
     });
     return toPublicDocument(document);
+  },
+});
+
+export const setPinned = mutation({
+  args: { token: v.string(), pinned: v.boolean() },
+  returns: publicDocument,
+  handler: async (ctx, args) => {
+    const document = await requireLiveDocument(ctx, args.token);
+    const updated = await setDocumentPinned(ctx, document, args.pinned);
+    return toPublicDocument(updated);
   },
 });
 

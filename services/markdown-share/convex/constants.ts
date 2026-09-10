@@ -1,4 +1,5 @@
 export const RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+export const PINNED_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 export const MAX_MARKDOWN_LENGTH = 500_000;
 export const MAX_FILENAME_LENGTH = 80;
 export const MAX_CHECKPOINTS = 20;

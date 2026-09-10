@@ -4,7 +4,7 @@ import prosemirrorTest from "@convex-dev/prosemirror-sync/test";
 import presenceTest from "@convex-dev/presence/test";
 import schema from "./schema";
 import { api, components, internal } from "./_generated/api";
-import { MAX_MARKDOWN_LENGTH, RETENTION_MS } from "./constants";
+import { MAX_MARKDOWN_LENGTH, PINNED_RETENTION_MS, RETENTION_MS } from "./constants";
 
 const modules = import.meta.glob(["./**/*.ts", "!./**/*.test.ts"]);
 const LEGACY_TOKEN = "81f2a9dd-9ca3-4e4c-9d30-13d3f50dcf3b";
@@ -655,5 +655,113 @@ describe("editor protocol and retention", () => {
         steps: [insertStep(markdown, "!")],
       }),
     ).rejects.toThrow("500,000");
+  });
+});
+
+describe("pin retention", () => {
+  it("exposes pin state on create and get", async () => {
+    vi.useFakeTimers({ now: 100_000 });
+    const test = setup();
+    const created = await test.mutation(api.documents.create, {
+      filename: "pin-state.md",
+      markdown: "pinned?",
+    });
+
+    expect(created.pinned).toBe(false);
+    expect(created.expiresAt).toBe(100_000 + RETENTION_MS);
+    await expect(
+      test.query(api.documents.get, { token: created.token }),
+    ).resolves.toMatchObject({ pinned: false });
+  });
+
+  it("extends expiry to 30 days when pinned", async () => {
+    vi.useFakeTimers({ now: 200_000 });
+    const test = setup();
+    const created = await test.mutation(api.documents.create, {
+      filename: "pin-extend.md",
+      markdown: "hello",
+    });
+
+    vi.advanceTimersByTime(50_000);
+    const pinned = await test.mutation(api.documents.setPinned, {
+      token: created.token,
+      pinned: true,
+    });
+
+    expect(pinned.pinned).toBe(true);
+    expect(pinned.expiresAt).toBe(created.updatedAt + PINNED_RETENTION_MS);
+    await expect(
+      test.query(api.documents.get, { token: created.token }),
+    ).resolves.toMatchObject({
+      pinned: true,
+      expiresAt: created.updatedAt + PINNED_RETENTION_MS,
+    });
+  });
+
+  it("keeps the 30-day window across edits while pinned", async () => {
+    vi.useFakeTimers({ now: 300_000 });
+    const test = setup();
+    const markdown = "hello";
+    const created = await test.mutation(api.documents.create, {
+      filename: "pin-edit.md",
+      markdown,
+    });
+    await test.mutation(api.documents.setPinned, {
+      token: created.token,
+      pinned: true,
+    });
+
+    vi.advanceTimersByTime(90_000);
+    await expect(
+      test.mutation(api.editor.submitSteps, {
+        id: created.token,
+        version: 1,
+        clientId: "pin-client",
+        steps: [insertStep(markdown, "!")],
+      }),
+    ).resolves.toEqual({ status: "synced" });
+
+    await expect(
+      test.query(api.documents.get, { token: created.token }),
+    ).resolves.toMatchObject({
+      pinned: true,
+      updatedAt: 390_000,
+      expiresAt: 390_000 + PINNED_RETENTION_MS,
+    });
+  });
+
+  it("returns to 7 days when unpinned", async () => {
+    vi.useFakeTimers({ now: 400_000 });
+    const test = setup();
+    const markdown = "hello";
+    const created = await test.mutation(api.documents.create, {
+      filename: "unpin.md",
+      markdown,
+    });
+    await test.mutation(api.documents.setPinned, {
+      token: created.token,
+      pinned: true,
+    });
+
+    vi.advanceTimersByTime(90_000);
+    await test.mutation(api.editor.submitSteps, {
+      id: created.token,
+      version: 1,
+      clientId: "unpin-client",
+      steps: [insertStep(markdown, "!")],
+    });
+
+    const unpinned = await test.mutation(api.documents.setPinned, {
+      token: created.token,
+      pinned: false,
+    });
+    expect(unpinned.pinned).toBe(false);
+    expect(unpinned.expiresAt).toBe(490_000 + RETENTION_MS);
+    await expect(
+      test.query(api.documents.get, { token: created.token }),
+    ).resolves.toMatchObject({
+      pinned: false,
+      expiresAt: 490_000 + RETENTION_MS,
+    });
   });
 });
