@@ -8,9 +8,19 @@ import {
   createServerCapability,
   ensureCapabilityClaim,
 } from "./capabilities";
-import { LEGACY_TOKEN_PATTERN, MAX_CHECKPOINTS, RETENTION_MS } from "./constants";
+import {
+  LEGACY_TOKEN_PATTERN,
+  MAX_CHECKPOINTS,
+  PINNED_RETENTION_MS,
+  RETENTION_MS,
+} from "./constants";
 
 type ReadContext = Pick<QueryCtx, "db"> | Pick<MutationCtx, "db">;
+
+/** Retention window for a document, longer while it is pinned. */
+export function retentionFor(pinned: boolean | undefined): number {
+  return pinned ? PINNED_RETENTION_MS : RETENTION_MS;
+}
 const prosemirrorSync = new ProsemirrorSync(components.prosemirrorSync);
 const presence = new Presence(components.presence);
 
@@ -89,8 +99,22 @@ export async function renewDocumentRetention(
   const now = Date.now();
   await ctx.db.patch("documents", document._id, {
     updatedAt: now,
-    expiresAt: now + RETENTION_MS,
+    expiresAt: now + retentionFor(document.pinned),
   });
+}
+
+/** Toggles the 30-day pin and re-anchors expiry to the last edit. */
+export async function setDocumentPinned(
+  ctx: MutationCtx,
+  document: Doc<"documents">,
+  pinned: boolean,
+): Promise<Doc<"documents">> {
+  const expiresAt = document.updatedAt + retentionFor(pinned);
+  await ctx.db.patch("documents", document._id, { pinned, expiresAt });
+  await ctx.scheduler.runAt(expiresAt, internal.cleanup.expire, {
+    token: document.token,
+  });
+  return { ...document, pinned, expiresAt };
 }
 
 async function deleteDocumentCascade(
