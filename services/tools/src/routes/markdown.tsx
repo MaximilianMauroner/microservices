@@ -10,7 +10,8 @@ export const Route = createFileRoute("/markdown")({
       { title: "Markdown Share" },
       { name: "description", content: "A seven-day collaborative Markdown workspace." },
       { name: "robots", content: "noindex, nofollow" },
-      { name: "theme-color", content: "#f4f0e8" },
+      { name: "theme-color", content: "#f4f0e8", media: "(prefers-color-scheme: light)" },
+      { name: "theme-color", content: "#161514", media: "(prefers-color-scheme: dark)" },
     ],
     links: [
       faviconLink(favicons.markdownShare),

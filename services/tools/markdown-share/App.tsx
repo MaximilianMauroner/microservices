@@ -11,6 +11,13 @@ import {
   parseDocumentRoute,
 } from "./lib";
 import {
+  applyThemeChoice,
+  loadThemeChoice,
+  storeThemeChoice,
+  THEME_CHOICES,
+  type ThemeChoice,
+} from "./theme";
+import {
   forgetRecentDocument,
   readRecentDocuments,
   rememberRecentDocument,
@@ -31,8 +38,15 @@ function LandingPage() {
   const [name, setName] = useState("notes.md");
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [themeChoice, setThemeChoice] =
+    useState<ThemeChoice>(loadThemeChoice);
   const [recentDocuments, setRecentDocuments] =
     useState<RecentDocument[]>(readRecentDocuments);
+
+  useEffect(() => {
+    storeThemeChoice(themeChoice);
+    applyThemeChoice(themeChoice);
+  }, [themeChoice]);
 
   const handleCreate = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -93,6 +107,22 @@ function LandingPage() {
           </p>
           {error ? <p className="form-error">{error}</p> : null}
         </form>
+
+        <div className="theme-control landing-theme">
+          <p>Theme</p>
+          <div className="theme-options" role="group" aria-label="Color theme">
+            {THEME_CHOICES.map((choice) => (
+              <button
+                key={choice}
+                type="button"
+                aria-pressed={themeChoice === choice}
+                onClick={() => setThemeChoice(choice)}
+              >
+                {choice.slice(0, 1).toUpperCase() + choice.slice(1)}
+              </button>
+            ))}
+          </div>
+        </div>
 
         <section
           className="recent-documents"

@@ -8,6 +8,7 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
     expiresAt: v.number(),
+    pinned: v.optional(v.boolean()),
     cleanupJobId: v.optional(v.id("_scheduled_functions")),
   })
     .index("by_token", ["token"])

@@ -48,6 +48,38 @@ describe("integrated Markdown Share theme", () => {
     expect(styles).toMatch(/\.editor-shell\s*\{[^}]*color: var\(--markdown-share-ink\);/s);
   });
 
+  it("follows the OS dark preference unless light is pinned", async () => {
+    const styles = await readFile(new URL("./styles.css", import.meta.url), "utf8");
+
+    expect(styles).toContain("@media (prefers-color-scheme: dark)");
+    expect(styles).toContain(':root:not([data-theme="light"])');
+    expect(styles).toContain(':root[data-theme="dark"]');
+    expect(styles).toContain(':root[data-theme="light"]');
+  });
+
+  it("keeps the rose ramp identical in both themes", async () => {
+    const styles = await readFile(new URL("./styles.css", import.meta.url), "utf8");
+    const darkBlocks = [
+      ...styles.matchAll(/:root\[data-theme="dark"\]\s*\{([^}]*)\}/gs),
+      ...styles.matchAll(/:root:not\(\[data-theme="light"\]\)\s*\{([^}]*)\}/gs),
+    ].map(([, block]) => block);
+
+    expect(darkBlocks.length).toBeGreaterThan(0);
+    for (const block of darkBlocks) {
+      expect(block).not.toContain("--markdown-share-accent:");
+      expect(block).not.toContain("--markdown-share-accent-soft:");
+    }
+  });
+
+  it("defines a dark surface and code palette away from the light look", async () => {
+    const styles = await readFile(new URL("./styles.css", import.meta.url), "utf8");
+
+    expect(styles).toContain("--markdown-share-bg: #161514");
+    expect(styles).toContain("--markdown-share-paper: #211f1c");
+    expect(styles).toContain("--markdown-share-preview-bg: #1c1a18");
+    expect(styles).toContain("--markdown-share-code-bg: #100f0e");
+  });
+
   it("keeps the landing page fluid across desktop and phone widths", async () => {
     const styles = await readFile(new URL("./styles.css", import.meta.url), "utf8");
 

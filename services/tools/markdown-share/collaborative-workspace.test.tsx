@@ -17,6 +17,7 @@ const publicDocument = {
   createdAt: 1_000,
   updatedAt: 1_000,
   expiresAt: Date.now() + 60_000,
+  pinned: false,
 };
 let reportSyncError: ((error: Error) => void) | undefined;
 
