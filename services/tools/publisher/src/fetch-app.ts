@@ -218,7 +218,7 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
         if (!options.externalUpload) return externalUploadUnavailable();
         requireSameOrigin(request, url, options.publicBaseUrl);
         // Awaited so handler rejections reach the shared error mapper below.
-        return await initChunkedUpload(request, maxUploadBytes);
+        return await initChunkedUpload(request, maxUploadBytes, "browser");
       }
 
       const chunkRemainder = matchPath(url.pathname, "/api/external-uploads/chunks/");
@@ -227,7 +227,7 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
         requireSameOrigin(request, url, options.publicBaseUrl);
         const chunkPut = matchChunkPut(chunkRemainder);
         if (request.method === "PUT" && chunkPut) {
-          return await putUploadChunk(request, chunkPut.sessionId, chunkPut.index);
+          return await putUploadChunk(request, chunkPut.sessionId, chunkPut.index, "browser");
         }
         const chunkComplete = matchChunkComplete(chunkRemainder);
         if (request.method === "POST" && chunkComplete) {
@@ -239,12 +239,13 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
             uploadGate,
             maxUploadBytes,
             temporaryFileRetentionMs,
-            activityTracker
+            activityTracker,
+            "browser"
           );
         }
         const chunkSession = matchChunkSession(chunkRemainder);
         if (request.method === "DELETE" && chunkSession) {
-          return await abortChunkedUpload(chunkSession);
+          return await abortChunkedUpload(chunkSession, "browser");
         }
         throw new ArtifactRequestError(
           404,
@@ -352,6 +353,43 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
           maxHtmlUploadBytes,
           temporaryFileRetentionMs,
           activityTracker
+        );
+      }
+
+      if (request.method === "POST" && url.pathname === "/api/uploads/chunks") {
+        requireBearer(request, uploadToken);
+        return await initChunkedUpload(request, maxUploadBytes, "native");
+      }
+
+      const nativeChunkRemainder = matchPath(url.pathname, "/api/uploads/chunks/");
+      if (nativeChunkRemainder !== undefined) {
+        requireBearer(request, uploadToken);
+        const chunkPut = matchChunkPut(nativeChunkRemainder);
+        if (request.method === "PUT" && chunkPut) {
+          return await putUploadChunk(request, chunkPut.sessionId, chunkPut.index, "native");
+        }
+        const chunkComplete = matchChunkComplete(nativeChunkRemainder);
+        if (request.method === "POST" && chunkComplete) {
+          return await completeChunkedUpload(
+            request,
+            url,
+            options,
+            chunkComplete,
+            uploadGate,
+            maxUploadBytes,
+            temporaryFileRetentionMs,
+            activityTracker,
+            "native"
+          );
+        }
+        const chunkSession = matchChunkSession(nativeChunkRemainder);
+        if (request.method === "DELETE" && chunkSession) {
+          return await abortChunkedUpload(chunkSession, "native");
+        }
+        throw new ArtifactRequestError(
+          404,
+          "not_found",
+          "API route was not found."
         );
       }
 
@@ -756,6 +794,7 @@ async function upload(
 
 type ChunkSessionManifest = {
   version: 1;
+  audience: "browser" | "native";
   originalName: string;
   contentType: string;
   totalBytes: number;
@@ -807,6 +846,7 @@ async function readChunkManifest(sessionId: string): Promise<ChunkSessionManifes
     const manifest = JSON.parse(raw) as ChunkSessionManifest;
     if (
       manifest?.version !== 1 ||
+      !["browser", "native"].includes(manifest.audience) ||
       typeof manifest.originalName !== "string" ||
       typeof manifest.contentType !== "string" ||
       !Number.isSafeInteger(manifest.totalBytes) ||
@@ -851,7 +891,11 @@ async function sweepStaleChunkSessions() {
   }
 }
 
-async function initChunkedUpload(request: Request, maxUploadBytes: number): Promise<Response> {
+async function initChunkedUpload(
+  request: Request,
+  maxUploadBytes: number,
+  audience: ChunkSessionManifest["audience"]
+): Promise<Response> {
   if (request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !== "application/json") {
     throw new ArtifactRequestError(
       415,
@@ -916,6 +960,7 @@ async function initChunkedUpload(request: Request, maxUploadBytes: number): Prom
 
   const manifest: ChunkSessionManifest = {
     version: 1,
+    audience,
     originalName: filename,
     contentType: normalizeMimeType(contentType),
     totalBytes: total,
@@ -985,7 +1030,12 @@ class ChunkLimitTransform extends Transform {
   }
 }
 
-async function putUploadChunk(request: Request, sessionId: string, index: number): Promise<Response> {
+async function putUploadChunk(
+  request: Request,
+  sessionId: string,
+  index: number,
+  audience: ChunkSessionManifest["audience"]
+): Promise<Response> {
   if (!PAGE_ID_PATTERN.test(sessionId)) {
     throw new ArtifactRequestError(400, "invalid_upload_id", "Upload ID is invalid.");
   }
@@ -997,6 +1047,7 @@ async function putUploadChunk(request: Request, sessionId: string, index: number
       "The chunked upload was not found or expired."
     );
   }
+  requireChunkAudience(manifest, audience);
   if (index < 0 || index >= manifest.totalChunks) {
     throw new ArtifactRequestError(400, "invalid_chunk_index", "Chunk index is out of range.");
   }
@@ -1035,7 +1086,8 @@ async function completeChunkedUpload(
   gate: ReturnType<typeof createUploadGate>,
   maxUploadBytes: number,
   temporaryFileRetentionMs: number,
-  activityTracker: ActivityTracker
+  activityTracker: ActivityTracker,
+  audience: ChunkSessionManifest["audience"]
 ): Promise<Response> {
   if (!PAGE_ID_PATTERN.test(sessionId)) {
     throw new ArtifactRequestError(400, "invalid_upload_id", "Upload ID is invalid.");
@@ -1048,6 +1100,7 @@ async function completeChunkedUpload(
       "The chunked upload was not found or expired."
     );
   }
+  requireChunkAudience(manifest, audience);
   if (manifest.totalBytes > maxUploadBytes) {
     throw new ArtifactRequestError(
       413,
@@ -1163,12 +1216,30 @@ async function completeChunkedUpload(
   );
 }
 
-async function abortChunkedUpload(sessionId: string): Promise<Response> {
+async function abortChunkedUpload(
+  sessionId: string,
+  audience: ChunkSessionManifest["audience"]
+): Promise<Response> {
   if (!PAGE_ID_PATTERN.test(sessionId)) {
     throw new ArtifactRequestError(400, "invalid_upload_id", "Upload ID is invalid.");
   }
+  const manifest = await readChunkManifest(sessionId);
+  if (manifest) requireChunkAudience(manifest, audience);
   await removeChunkSession(sessionId);
   return new Response(null, { status: 204 });
+}
+
+function requireChunkAudience(
+  manifest: ChunkSessionManifest,
+  audience: ChunkSessionManifest["audience"]
+) {
+  if (manifest.audience !== audience) {
+    throw new ArtifactRequestError(
+      404,
+      "upload_not_found",
+      "The chunked upload was not found or expired."
+    );
+  }
 }
 
 type UploadMode =

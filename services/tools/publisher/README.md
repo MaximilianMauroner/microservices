@@ -73,6 +73,23 @@ curl -fsS -X DELETE "$PUBLIC_BASE_URL/api/uploads/$UPLOAD_ID" \
   -H "Authorization: Bearer $UPLOAD_TOKEN"
 ```
 
+Large native file uploads use the same chunk protocol as the browser under
+`/api/uploads/chunks`. Every request retains the native bearer credential:
+
+```http
+POST /api/uploads/chunks
+Authorization: Bearer <upload token>
+Content-Type: application/json
+
+{"filename":"backup.bin","contentType":"application/octet-stream","totalBytes":262144000,"totalChunks":13,"chunkBytes":20971520}
+```
+
+Send each raw chunk with `PUT /api/uploads/chunks/:sessionId/:index`, then call
+`POST /api/uploads/chunks/:sessionId/complete`. Use `DELETE
+/api/uploads/chunks/:sessionId` to abandon a session. The bearer token is
+required for all four operations. Chunked native uploads create temporary
+files; HTML replacement continues to use the multipart endpoint.
+
 The authenticated browser console changes a file's expiry through the
 same-origin lifecycle route. An ISO timestamp must be in the future. `null`
 makes the file permanent:
