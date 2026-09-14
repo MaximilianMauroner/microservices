@@ -5,7 +5,7 @@ import { readOnly } from "../src/route-handlers.js";
 describe("primary page ownership", () => {
   it("registers explicit React routes without legacy browser splats", () => {
     const source = readFileSync(new URL("../src/routeTree.gen.ts", import.meta.url), "utf8");
-    for (const path of ["/status", "/field-guide", "/publisher", "/publisher/artifacts", "/documents", "/money", "/feedback", "/feedback/forms/$formId", "/feedback/responses/$submissionId", "/feedback/f/$token", "/markdown/", "/markdown/d/$slug"]) {
+    for (const path of ["/status", "/publisher", "/publisher/artifacts", "/documents", "/money", "/feedback", "/feedback/forms/$formId", "/feedback/responses/$submissionId", "/feedback/f/$token", "/markdown/", "/markdown/d/$slug"]) {
       expect(source).toContain(`fullPath: '${path}'`);
     }
     for (const path of ["/review", "/publish", "/manage", "/manage/status", "/manage/documents", "/tools/private/money", "/ops", "/uploads", "/p", "/f", "/status/private"]) {
@@ -19,29 +19,6 @@ describe("primary page ownership", () => {
     expect(source).toContain("window.setInterval");
     expect(source).toContain("void router.invalidate()");
     expect(source).toContain("window.clearInterval(interval)");
-  });
-
-  it("uses preloaded client navigation for review links", () => {
-    const source = readFileSync(new URL("../field-guide/ui/review-page.tsx", import.meta.url), "utf8");
-    const reviewLinks = [...source.matchAll(/<Link to="\/field-guide"[^>]*>/g)].map(([link]) => link);
-    expect(reviewLinks.length).toBeGreaterThan(0);
-    expect(reviewLinks.every((link) => link.includes('preload="intent"'))).toBe(true);
-    expect(reviewLinks.every((link) => !link.includes("reloadDocument"))).toBe(true);
-    const linkTabs = [...source.matchAll(/<TabsTrigger[^>]*render=\{<Link[^>]*>/g)]
-      .map(([trigger]) => trigger);
-    expect(linkTabs.length).toBeGreaterThan(0);
-    expect(linkTabs.every((trigger) => trigger.includes("nativeButton={false}"))).toBe(true);
-    expect(source).toContain("window.location.replace(`/field-guide?${params}`)");
-    expect(source).not.toContain("useNavigate");
-  });
-
-  it("waits for matching loader data when switching review views", () => {
-    const source = readFileSync(new URL("../field-guide/ui/review-page.tsx", import.meta.url), "utf8");
-
-    expect(source).toContain('search.view === "decisions" && data.view === "decisions" && data.decisions');
-    expect(source).toContain('search.view === "queue" && data.view === "queue" && data.queue');
-    expect(source).toContain('search.view === "history" && data.view === "history" && data.history');
-    expect(source).not.toContain("queue: data.queue!");
   });
 
   it("keeps catalog operations read-only while Manage uses publisher lifecycle routes", () => {

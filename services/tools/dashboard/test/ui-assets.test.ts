@@ -6,7 +6,7 @@ const icons = new URL("icons/", assets);
 
 describe("static UI assets", () => {
   test("tool icons remain canonical 96px PNG assets", async () => {
-    for (const name of ["publisher", "field-guide", "money", "status", "markdown-share", "network-console"]) {
+    for (const name of ["publisher", "money", "status", "markdown-share", "network-console"]) {
       const image = await readFile(new URL(`${name}.png`, icons));
 
       expect(image.subarray(1, 4).toString("ascii")).toBe("PNG");
@@ -16,7 +16,7 @@ describe("static UI assets", () => {
   });
 
   test("favicon assets retain an alpha channel for rounded corners", async () => {
-    for (const name of ["tools", "publisher", "field-guide", "money", "status", "markdown-share", "network-console"]) {
+    for (const name of ["tools", "publisher", "money", "status", "markdown-share", "network-console"]) {
       const image = await readFile(new URL(`${name}.png`, icons));
 
       expect(image[25]).toBe(6);

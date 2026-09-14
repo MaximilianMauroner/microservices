@@ -6,8 +6,6 @@ dist/
 .railway/
 coverage/
 .DS_Store
-/.field-guide/sessions/
-/.field-guide/scratch/
 /.scratch/
 /.review/
 /.agents/sessions/

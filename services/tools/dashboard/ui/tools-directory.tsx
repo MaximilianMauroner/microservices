@@ -13,7 +13,6 @@ const REFRESH_INTERVAL_MS = 60_000;
 const productIcons: Record<ProductId, string> = {
   feedback: favicons.feedback,
   publisher: favicons.publisher,
-  "field-guide": favicons.fieldGuide,
   money: favicons.money,
   status: favicons.status,
   "markdown-share": favicons.markdownShare,
@@ -91,7 +90,7 @@ export function ToolsDirectory({ snapshot }: { snapshot: PublicSnapshotDocument 
             ? <a key={product.id} href={product.href} target="_blank" rel="noreferrer">{card}</a>
             : product.id === "markdown-share"
               ? <a key={product.id} href={product.href}>{card}</a>
-            : <Link key={product.id} to={product.href as "/feedback" | "/publisher" | "/field-guide" | "/money" | "/status" | "/markdown"} preload="intent">{card}</Link>;
+            : <Link key={product.id} to={product.href as "/feedback" | "/publisher" | "/money" | "/status" | "/markdown"} preload="intent">{card}</Link>;
         })}
       </section>
 

@@ -40,7 +40,6 @@ import {
 const products = [
   { label: "Dashboard", to: "/", icon: favicons.directory, match: (path: string) => path === "/" },
   { label: "Publisher", to: "/publisher", icon: favicons.publisher, match: (path: string) => path.startsWith("/publisher") },
-  { label: "Field Guide", to: "/field-guide", icon: favicons.fieldGuide, match: (path: string) => path.startsWith("/field-guide") },
   { label: "Money", to: "/money", icon: favicons.money, match: (path: string) => path.startsWith("/money") },
   { label: "Feedback", to: "/feedback", icon: favicons.feedback, match: (path: string) => path.startsWith("/feedback") },
   { label: "Markdown Share", to: "/markdown", icon: favicons.markdownShare, match: (path: string) => path.startsWith("/markdown") },
@@ -105,13 +104,6 @@ export function ToolsSidebar() {
                     <SidebarMenuSub>
                       <SubLink label="Publish" to="/publisher" active={pathname === "/publisher" || pathname === "/publisher/"} />
                       <SubLink label="Published artifacts" to="/publisher/artifacts" active={pathname === "/publisher/artifacts"} />
-                    </SidebarMenuSub>
-                  ) : null}
-                  {item.to === "/field-guide" && pathname.startsWith("/field-guide") ? (
-                    <SidebarMenuSub>
-                      <SearchSubLink label="Decisions" to="/field-guide" search={{ view: "decisions" }} active={!search.view || search.view === "decisions"} />
-                      <SearchSubLink label="Candidates" to="/field-guide" search={{ view: "queue" }} active={search.view === "queue"} />
-                      <SearchSubLink label="History" to="/field-guide" search={{ view: "history" }} active={search.view === "history"} />
                     </SidebarMenuSub>
                   ) : null}
                   {item.to === "/money" && pathname.startsWith("/money") ? (
@@ -211,7 +203,7 @@ function SubLink({ label, to, active }: { label: string; to: "/publisher" | "/pu
   return <SidebarMenuSubItem><SidebarMenuSubButton isActive={active} render={<Link to={to} preload="intent" />}><span>{label}</span></SidebarMenuSubButton></SidebarMenuSubItem>;
 }
 
-function SearchSubLink({ label, to, search, active }: { label: string; to: "/field-guide" | "/money"; search: Record<string, unknown>; active: boolean }) {
+function SearchSubLink({ label, to, search, active }: { label: string; to: "/money"; search: Record<string, unknown>; active: boolean }) {
   return <SidebarMenuSubItem><SidebarMenuSubButton isActive={active} render={<Link to={to} search={search} preload="intent" />}><span>{label}</span></SidebarMenuSubButton></SidebarMenuSubItem>;
 }
 

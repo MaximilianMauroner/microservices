@@ -9,10 +9,10 @@ The platform service is the single production compute and browser-authentication
 | Health routes and fixed public assets | Public |
 | `/artifacts/*` and `/files/*` `GET`/`HEAD` | Public unlisted capability URL |
 | `/sign-in` and `/api/auth/*` | Public authentication flow |
-| `/`, `/status`, `/money`, `/feedback`, `/publish`, `/review`, `/manage/*`, `/tools/private/*`, and their browser APIs | Better Auth Google session |
+| `/`, `/status`, `/money`, `/feedback`, `/publish`, `/manage/*`, `/tools/private/*`, and their browser APIs | Better Auth Google session |
 | `/feedback/f/:token` `GET`/`HEAD`/`POST` | Public unlisted capability URL |
 | `/markdown` and `/markdown/d/:capability` `GET`/`HEAD` | Public creation and unlisted capability pages |
-| `/api/uploads*`, `/api/agent*`, and `/api/heartbeat/tower` | Existing native bearer token |
+| `/api/uploads*` and `/api/heartbeat/tower` | Existing native bearer token |
 
 TanStack document requests and protected server functions resolve the same
 application session. Private SPA navigation therefore stays inside the router;
@@ -48,8 +48,8 @@ Google uses online access only. The application does not request offline
 refresh-token capability or retain a provider-account cookie. Changing
 `BETTER_AUTH_SECRET` invalidates existing sessions.
 
-Tools uses one Railway PostgreSQL instance with separate `tools`,
-`field_guide`, and `artifacts` schemas. Artifact bodies remain in private object
+Tools uses one Railway PostgreSQL instance with separate `tools` and
+`artifacts` schemas. Artifact bodies remain in private object
 storage; metadata and interrupted-operation recovery live in PostgreSQL.
 Dashboard and monitor definitions are versioned code rather than editable
 database records.

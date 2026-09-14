@@ -2,7 +2,7 @@
 
 Tools is one TanStack Start monolith deployed as a single Railway service. Its
 products live directly under `services/tools`: Dashboard, Status, Publisher,
-Field Guide, Money, Feedback, and the Markdown Share frontend. They share authentication, configuration, lifecycle,
+Money, Feedback, and the Markdown Share frontend. They share authentication, configuration, lifecycle,
 health checks, and deployment.
 
 Status work runs in a dedicated bounded Railway cron process. The main Tools
@@ -33,5 +33,5 @@ awake between runs.
 - Upload, agent, and heartbeat APIs retain dedicated bearer credentials.
 
 Deployments run `pnpm run railway:predeploy` before starting Tools. That command
-applies the Tools and Field Guide migrations and reconciles artifact metadata.
+applies the Tools database schemas and reconciles artifact metadata.
 Never point a local or preview process at production data.

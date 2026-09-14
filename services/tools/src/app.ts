@@ -10,8 +10,9 @@ import {
   AuthenticationRequiredError,
   type PrincipalAuthenticator
 } from "@tools-platform/web";
-import type { Authentication, FetchHandler } from "@tools-platform/field-guide/http";
 import { signInLocation } from "./lib/auth-return-path.js";
+
+type FetchHandler = (request: Request) => Promise<Response>;
 
 export type PrincipalResolver = (
   request: Request
@@ -103,24 +104,6 @@ export function toolsPrincipalAuthentication(): PrincipalAuthenticator {
     const principal = getAttachedPlatformPrincipal(request);
     if (!principal) throw new AuthenticationRequiredError();
     return { id: principal.email };
-  };
-}
-
-export function reviewerAuthentication(request: Request): Authentication {
-  const principal = getAttachedPlatformPrincipal(request);
-  if (principal) return { ok: true, email: principal.email };
-  return {
-    ok: false,
-    response: new Response(
-      JSON.stringify({ error: "authentication_required" }),
-      {
-        status: 401,
-        headers: {
-          "Cache-Control": "no-store",
-          "Content-Type": "application/json; charset=utf-8"
-        }
-      }
-    )
   };
 }
 

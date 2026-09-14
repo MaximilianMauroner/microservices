@@ -20,35 +20,11 @@ export function readOnly() {
   return json({ error: "read_only" }, 405, { Allow: "GET, HEAD" });
 }
 
-export function fieldGuide({ request, context }: PlatformRouteInput) {
-  return handleFieldGuideRequest(request, context.runtime.services.review.handle);
-}
-
 export function artifact({ request, context }: PlatformRouteInput) {
   return handleArtifactRequest(request, context.runtime.services.publisher.handle);
 }
 
 type ArtifactHandler = (request: Request) => Promise<Response>;
-
-type FieldGuideHandler = (request: Request) => Promise<Response>;
-
-/**
- * Decision-record submission is safe to repeat because its record ID is also
- * its idempotency key. Keep the first caller connected while PostgreSQL wakes.
- */
-export function handleFieldGuideRequest(
-  request: Request,
-  handler: FieldGuideHandler,
-  retryDelaysMs: readonly number[] = TRANSIENT_RESPONSE_RETRY_DELAYS_MS
-) {
-  const url = new URL(request.url);
-  const retryable = request.method === "POST" &&
-    url.pathname.replace(/\/+$/, "").toLowerCase() === "/api/agent/decision-records";
-  const operation = () => handler(request.clone());
-  return retryable
-    ? retryTransientResponse(operation, retryDelaysMs, request.signal)
-    : handler(request);
-}
 
 export function handleArtifactRequest(
   request: Request,
@@ -87,7 +63,7 @@ export async function health({ context }: PlatformRouteInput) {
 export async function componentHealth({ context, params }: PlatformRouteInput) {
   const service = params.component === "tools"
     ? context.runtime.services.manage
-    : params.component === "publisher" || params.component === "review"
+    : params.component === "publisher"
       ? context.runtime.services[params.component]
       : undefined;
   if (!service) return json({ error: "not_found" }, 404);

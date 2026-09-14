@@ -1,9 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { createFetchApp, createPostgresUploadStorage, ActivityTracker } from "@tools-platform/artifact-publisher";
-import { createApp as createFieldGuideApp } from "@tools-platform/field-guide/app";
-import { agentAuth } from "@tools-platform/field-guide/auth";
-import { createRepository } from "@tools-platform/field-guide/repository";
-import reviewStylesheet from "../../../services/tools/field-guide/public/review.css?raw";
 import {
   createApp as createToolsApp,
   createMarkdownAdminClient,
@@ -13,7 +9,6 @@ import {
 import { createHeartbeats, createPostgresHeartbeatRepository, loadMonitorDefinitions } from "@tools-platform/tools-checker";
 import type { PublicSnapshotDocument } from "@tools-platform/domain";
 import {
-  reviewerAuthentication,
   toolsPrincipalAuthentication,
   type PlatformServices,
   type PrincipalResolver
@@ -103,10 +98,6 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
   const moneyImports = new MoneyImportService(createPostgresMoneyRepository(config.databaseUrl, { readOnly: config.readOnly }));
   const moneyMarketData = new MoneyMarketDataService(createPostgresMoneyMarketDataRepository(config.databaseUrl, { readOnly: config.readOnly }));
   const feedback = createPostgresFeedbackRepository(config.databaseUrl, { readOnly: config.readOnly });
-  const fieldGuideHandle = await createRepository(config.fieldGuide, {
-    readOnly: config.readOnly
-  });
-
   try {
     const tools = createToolsApp({
       storage: toolsStorage,
@@ -114,14 +105,6 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
       markdownAdmin,
       markdownSharePublicOrigin: config.markdownShare.publicOrigin,
       trustedOrigin: config.publicOrigin
-    });
-    const fieldGuide = createFieldGuideApp({
-      repository: fieldGuideHandle.repository,
-      agentAuth: agentAuth(config.fieldGuide.agentApiToken),
-      reviewerAuth: reviewerAuthentication,
-      publicBaseUrl: config.publicOrigin,
-      stylesheet: reviewStylesheet,
-      decisionRecordArchiveDays: config.fieldGuide.decisionRecordArchiveDays
     });
     const artifact = createFetchApp({
       activityTracker,
@@ -173,11 +156,6 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
         handle: artifact,
         readiness: async () => { await artifactStorage.listUploads(new Date(), { limit: 1 }); },
         close: () => artifactStorage.close?.()
-      },
-      review: {
-        handle: fieldGuide,
-        readiness: async () => { await fieldGuideHandle.repository.summary(new Date()); },
-        close: () => fieldGuideHandle.close()
       }
     };
     const stop = async () => {
@@ -225,7 +203,6 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
       stop
     };
   } catch (error) {
-    await fieldGuideHandle.close();
     artifactStorage.close?.();
     await heartbeatRepository.close();
     await moneyImports.close();

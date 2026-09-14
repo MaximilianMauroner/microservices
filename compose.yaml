@@ -2,7 +2,7 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: field_guide
+      POSTGRES_DB: postgres
       POSTGRES_USER: local
       POSTGRES_PASSWORD: local
     ports:
@@ -10,7 +10,7 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U local -d field_guide"]
+      test: ["CMD-SHELL", "pg_isready -U local -d postgres"]
       interval: 5s
       timeout: 3s
       retries: 30
@@ -36,9 +36,9 @@ services:
         condition: service_healthy
     restart: "no"
     environment:
-      DATABASE_URL: postgres://local:local@postgres:5432/field_guide
-      FIELD_GUIDE_SCHEMA_PUSH_CONFIRM: field-guide-console-production
-    command: ["pnpm", "--dir", "services/tools/field-guide", "run", "db:push-postgres"]
+      DATABASE_URL: postgres://local:local@postgres:5432/postgres
+      TOOLS_SCHEMA_PUSH_CONFIRM: tools-platform-production
+    command: ["pnpm", "--dir", "services/tools", "run", "db:push-postgres"]
 
   minio-seed:
     build:
@@ -99,7 +99,7 @@ services:
       PORT: 3000
       PUBLIC_ORIGIN: http://localhost:3000
       PLATFORM_READ_ONLY: false
-      DATABASE_URL: postgres://local:local@postgres:5432/field_guide
+      DATABASE_URL: postgres://local:local@postgres:5432/postgres
       GOOGLE_CLIENT_ID: local-client.apps.googleusercontent.com
       GOOGLE_CLIENT_SECRET: local-google-client-secret
       BETTER_AUTH_SECRET: local-better-auth-secret-000000000000000000
@@ -117,7 +117,6 @@ services:
       ARTIFACT_S3_SECRET_ACCESS_KEY: local-minio-password
       ARTIFACT_S3_FORCE_PATH_STYLE: true
       UPLOAD_TOKEN: local-upload-token-00000000000000000000000000
-      AGENT_API_TOKEN: local-agent-api-token-000000000000000000
       MARKDOWN_SHARE_ADMIN_ENDPOINT: http://markdown-mock:8787/admin/documents
       MARKDOWN_SHARE_ADMIN_TOKEN: local-markdown-admin-token-local-development-001
       VITE_CONVEX_URL: ${VITE_CONVEX_URL:-http://localhost:3210}

@@ -62,10 +62,6 @@ const STATIC_ASSETS = {
     file: "../public/assets/icons/publisher.png",
     contentType: "image/png"
   },
-  "/assets/icons/field-guide.png": {
-    file: "../public/assets/icons/field-guide.png",
-    contentType: "image/png"
-  },
   "/assets/icons/status.png": {
     file: "../public/assets/icons/status.png",
     contentType: "image/png"

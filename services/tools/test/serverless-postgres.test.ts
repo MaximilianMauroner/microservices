@@ -4,7 +4,6 @@ import { describe, expect, it } from "vitest";
 const productionPoolSources = [
   "../status/src/heartbeat-repository.ts",
   "../publisher/src/postgres-storage.ts",
-  "../field-guide/src/postgres-repository.ts",
   "../money/money-repository.ts",
   "../money/money-market-data-repository.ts",
   "../feedback/repository.ts",

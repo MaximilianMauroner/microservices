@@ -1,5 +1,4 @@
 import { loadConfig as loadArtifactConfig } from "@tools-platform/artifact-publisher";
-import { loadConfig as loadFieldGuideConfig } from "@tools-platform/field-guide/config";
 import { loadConfig as loadToolsConfig } from "@tools-platform/web";
 
 type Environment = Readonly<Record<string, string | undefined>>;
@@ -27,12 +26,6 @@ export function loadPlatformConfig(env: Environment = process.env) {
     PUBLIC_BASE_URL: publicOrigin,
     ...bucketEnvironment(env, "ARTIFACT")
   });
-  const fieldGuide = loadFieldGuideConfig({
-    ...env,
-    PORT: port,
-    PUBLIC_BASE_URL: publicOrigin,
-    DATABASE_URL: databaseUrl
-  });
   return {
     port: tools.port,
     readOnly,
@@ -41,7 +34,6 @@ export function loadPlatformConfig(env: Environment = process.env) {
     auth: loadPlatformAuthConfig(env, tools.trustedOrigin),
     tools,
     artifact,
-    fieldGuide,
     markdownShare: tools.markdownShare,
     towerHeartbeatToken: secret(
       required(env, "TOWER_HEARTBEAT_TOKEN"),

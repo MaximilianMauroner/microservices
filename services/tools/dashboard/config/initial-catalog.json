@@ -1,20 +1,13 @@
 {
   "schemaVersion": 1,
-  "revision": "seed-2026-07-31-heartbeats",
-  "updatedAt": "2026-07-31T07:00:00.000Z",
+  "revision": "seed-2026-09-14-remove-retired-review",
+  "updatedAt": "2026-09-14T12:00:00.000Z",
   "groups": [
     {
       "id": "publishing",
       "name": "Publishing & sharing",
       "description": "Small services for publishing and sharing durable artifacts.",
       "order": 0,
-      "visibility": "public"
-    },
-    {
-      "id": "review",
-      "name": "Review & feedback",
-      "description": "Focused consoles for reviewing and approving work.",
-      "order": 1,
       "visibility": "public"
     },
     {
@@ -88,31 +81,6 @@
         "url": "https://tools.mauroner.net/markdown"
       },
       "privateNotes": "Documents expire seven days after the latest accepted edit; the inventory requires an authenticated browser session."
-    },
-    {
-      "id": "field-guide-console",
-      "groupId": "review",
-      "name": "Field Guide Console",
-      "description": "Restricted review and approval console.",
-      "order": 0,
-      "visibility": "public",
-      "lifecycle": "active",
-      "links": [
-        {
-          "id": "console",
-          "label": "Open Field Guide",
-          "url": "https://tools.mauroner.net/field-guide",
-          "access": "restricted"
-        }
-      ],
-      "monitor": {
-        "tracking": "http",
-        "enabled": true,
-        "paused": false,
-        "scope": "public",
-        "url": "https://tools.mauroner.net/health/review"
-      },
-      "privateNotes": "Runs inside the unified platform service behind the authenticated browser session."
     },
     {
       "id": "tools-directory",

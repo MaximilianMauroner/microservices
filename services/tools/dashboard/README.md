@@ -18,13 +18,12 @@ The private Markdown inventory also requires:
 
 Tools authenticates browser requests before dispatching them to this module and
 supplies a verified principal for attribution.
-Native-token `/api/uploads*` and `/api/agent*` routes keep their own bearer
-credentials.
+Native-token `/api/uploads*` routes keep their own bearer credentials.
 
 `GET /live` reports process liveness. `GET /health` checks all shared
-dependencies. The component endpoints `/health/tools`, `/health/publisher`,
-and `/health/review` report only their named dependency and require no browser
-session so the checker can report each component truthfully.
+dependencies. The component endpoints `/health/tools` and `/health/publisher`
+report only their named dependency and require no browser session so the checker
+can report each component truthfully.
 
 ## Data ownership
 

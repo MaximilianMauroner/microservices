@@ -12,8 +12,8 @@ TanStack Start monolith whose products live directly beneath `services/tools`.
 | Markdown Share backend | `services/markdown-share` | Convex | Document state, realtime collaboration, checkpoints, and retention. |
 | Network Console | `services/network-console` | Local VM, Node.js | Private network and listening-port dashboard. |
 
-Tools contains the `dashboard`, `status`, `publisher`, `field-guide`, `money`,
-`feedback`, and Markdown Share browser products. Code reused within Tools remains owned by the product or
+Tools contains the `dashboard`, `status`, `publisher`, `money`, `feedback`, and
+Markdown Share browser products. Code reused within Tools remains owned by the product or
 runtime module that provides it; there is no repository-wide shared package.
 
 ## Requirements
@@ -80,8 +80,7 @@ Railway builds the repository root with Railpack and starts Tools with:
 pnpm --dir services/tools run start
 ```
 
-The predeploy step applies the Tools migration and the Field Guide Postgres
-schema. Status work runs in a dedicated Railway cron service, so Tools can sleep
+The predeploy step applies the Tools PostgreSQL schemas. Status work runs in a dedicated Railway cron service, so Tools can sleep
 between real traffic and scheduled probes. `/live` reports process liveness;
 `/health` reports dependency readiness.
 

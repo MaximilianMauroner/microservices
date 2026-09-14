@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import { getAttachedPlatformPrincipal } from "@tools-platform/security";
 import {
   createPlatformHandler,
-  reviewerAuthentication,
   type PlatformHandler,
   type PrincipalResolver
 } from "../src/app.js";
@@ -34,7 +33,6 @@ function app() {
     resolvePrincipal,
     services: {
       publisher: mounted(async () => new Response("artifact")),
-      review: mounted(async () => new Response("field-guide")),
       manage: mounted(async () => new Response("tools"))
     },
     publicOrigin: "https://tools.example.test"
@@ -96,10 +94,6 @@ describe("platform fetch gateway", () => {
           request.headers.get("authorization") === "Bearer upload-token"
             ? new Response("upload-ok")
             : new Response(JSON.stringify({ error: "invalid_upload_token" }), { status: 401 })),
-        review: mounted(async (request) =>
-          request.headers.get("authorization") === "Bearer agent-token"
-            ? new Response("agent-ok")
-            : new Response(JSON.stringify({ error: "invalid_agent_token" }), { status: 401 })),
         manage: mounted(async () => new Response("tools"))
       },
       publicOrigin: "https://tools.example.test"
@@ -111,10 +105,6 @@ describe("platform fetch gateway", () => {
       headers: { Authorization: "Bearer upload-token" },
       body: "payload"
     })).status).toBe(200);
-    expect((await request(platform, "/api/agent/status")).status).toBe(401);
-    expect((await request(platform, "/api/agent/status", {
-      headers: { Authorization: "Bearer agent-token" }
-    })).status).toBe(200);
   });
 
   it("attaches the generic principal for mounted service attribution", async () => {
@@ -123,7 +113,6 @@ describe("platform fetch gateway", () => {
       resolvePrincipal,
       services: {
         publisher: mounted(async () => new Response()),
-        review: mounted(async () => new Response()),
         manage: mounted(async (request) => {
           attached = getAttachedPlatformPrincipal(request);
           return new Response();
@@ -134,9 +123,5 @@ describe("platform fetch gateway", () => {
     await request(platform, "/manage", { headers: { Cookie: "session=valid" } });
     expect(attached).toEqual(principal);
 
-    const auth = reviewerAuthentication(
-      Object.assign(new Request("https://tools.example.test/review"), {})
-    );
-    expect(auth.ok).toBe(false);
   });
 });
