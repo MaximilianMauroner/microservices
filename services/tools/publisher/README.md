@@ -99,6 +99,34 @@ through same-origin `/api/external-uploads`. The Better Auth session is
 validated at the platform boundary; the browser never receives the native
 upload token.
 
+Files larger than 80 MB are split by the browser into 20 MB chunk requests
+and reassembled by the server, because public edge proxies cap a single
+request body well below the application limit (Cloudflare allows 100 MB on
+Free/Pro plans):
+
+```http
+POST /api/external-uploads/chunks
+Content-Type: application/json
+
+{"filename":"backup.bin","contentType":"application/octet-stream","totalBytes":262144000,"totalChunks":13,"chunkBytes":20971520}
+```
+
+```http
+PUT /api/external-uploads/chunks/:sessionId/:index
+Content-Type: application/octet-stream
+
+<raw chunk bytes>
+```
+
+```http
+POST /api/external-uploads/chunks/:sessionId/complete
+```
+
+A complete call with missing chunks returns `409 incomplete_upload` with a
+`missing` index list so the client can resume them. `DELETE
+/api/external-uploads/chunks/:sessionId` abandons a session. Sessions expire
+after two hours. Chunked uploads always create temporary files.
+
 `GET /api/external-uploads` accepts `kind=all|html|file`, a normalized
 case-insensitive filename `q`, `expiry=all|24h|7d|persistent`, and
 `sort=newest|oldest|filename|expiry`. Filtering and sorting cover the complete
@@ -121,7 +149,7 @@ one standard byte range. Missing, revoked, and expired capability URLs return
 
 Errors use JSON with stable `error` and `message` fields. Notable statuses are
 `401 unauthorized`, `403 invalid_origin`, `404 upload_not_found`, `409
-upload_conflict`, `413 payload_too_large`, `415 unsupported_media_type`, `416
+upload_conflict`, `409 incomplete_upload`, `413 payload_too_large`, `415 unsupported_media_type`, `416
 range_not_satisfiable`, and `503 upload_capacity_reached`.
 
 ## Cleanup
