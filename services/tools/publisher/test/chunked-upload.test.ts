@@ -114,6 +114,27 @@ async function initSession(
   return payload.sessionId;
 }
 
+async function initNativeSession(
+  app: ReturnType<typeof createFetchApp>,
+  totalBytes: number,
+  totalChunks: number,
+  chunkBytes = CHUNK_BYTES
+) {
+  const response = await app(
+    new Request(`${ORIGIN}/api/uploads/chunks`, {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer upload-token",
+        "Content-Type": "application/json"
+      },
+      body: initBody(totalBytes, totalChunks, chunkBytes)
+    })
+  );
+  const payload = (await response.json()) as { sessionId: string };
+  expect(response.status).toBe(201);
+  return payload.sessionId;
+}
+
 describe("chunked browser uploads", () => {
   it("reassembles small chunk requests into one temporary file", async () => {
     const storage = new ChunkTestStorage();
@@ -296,5 +317,86 @@ describe("chunked browser uploads", () => {
   it("keeps chunk sizes within edge-proxy friendly bounds", () => {
     expect(CHUNKED_UPLOAD_MIN_CHUNK_BYTES).toBeGreaterThan(0);
     expect(CHUNKED_UPLOAD_MAX_CHUNK_BYTES).toBeLessThanOrEqual(100 * 1024 * 1024);
+  });
+});
+
+describe("chunked native uploads", () => {
+  it("reassembles bearer-authenticated chunks into one temporary file", async () => {
+    const storage = new ChunkTestStorage();
+    const app = testApp(storage);
+    const totalBytes = CHUNK_BYTES * 2 + 17;
+    const content = Buffer.alloc(totalBytes, 9);
+    const sessionId = await initNativeSession(app, totalBytes, 3);
+
+    for (let index = 0; index < 3; index += 1) {
+      const start = index * CHUNK_BYTES;
+      const end = Math.min(start + CHUNK_BYTES, totalBytes);
+      const response = await app(
+        new Request(`${ORIGIN}/api/uploads/chunks/${sessionId}/${index}`, {
+          method: "PUT",
+          headers: { Authorization: "Bearer upload-token" },
+          body: content.subarray(start, end)
+        })
+      );
+      expect(response.status).toBe(200);
+    }
+
+    const complete = await app(
+      new Request(`${ORIGIN}/api/uploads/chunks/${sessionId}/complete`, {
+        method: "POST",
+        headers: { Authorization: "Bearer upload-token" }
+      })
+    );
+    expect(complete.status).toBe(201);
+    const payload = (await complete.json()) as { id: string; kind: string; bytes: number };
+    expect(payload).toMatchObject({ kind: "file", bytes: totalBytes });
+    expect(storage.files.get(payload.id)?.body.equals(content)).toBe(true);
+  });
+
+  it("requires the native bearer token on every chunk route", async () => {
+    const storage = new ChunkTestStorage();
+    const app = testApp(storage);
+    const init = await app(
+      new Request(`${ORIGIN}/api/uploads/chunks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: initBody(CHUNK_BYTES * 2, 2)
+      })
+    );
+    expect(init.status).toBe(401);
+
+    const sessionId = await initNativeSession(app, CHUNK_BYTES * 2, 2);
+    const put = await app(
+      new Request(`${ORIGIN}/api/uploads/chunks/${sessionId}/0`, {
+        method: "PUT",
+        body: Buffer.alloc(CHUNK_BYTES)
+      })
+    );
+    expect(put.status).toBe(401);
+
+    const complete = await app(
+      new Request(`${ORIGIN}/api/uploads/chunks/${sessionId}/complete`, { method: "POST" })
+    );
+    expect(complete.status).toBe(401);
+
+    const abort = await app(
+      new Request(`${ORIGIN}/api/uploads/chunks/${sessionId}`, { method: "DELETE" })
+    );
+    expect(abort.status).toBe(401);
+  });
+
+  it("cannot use a browser chunk session through the native API", async () => {
+    const storage = new ChunkTestStorage();
+    const app = testApp(storage);
+    const sessionId = await initSession(app, CHUNK_BYTES * 2, 2);
+    const response = await app(
+      new Request(`${ORIGIN}/api/uploads/chunks/${sessionId}/0`, {
+        method: "PUT",
+        headers: { Authorization: "Bearer upload-token" },
+        body: Buffer.alloc(CHUNK_BYTES)
+      })
+    );
+    expect(response.status).toBe(404);
+    expect(await response.json()).toMatchObject({ error: "upload_not_found" });
   });
 });
