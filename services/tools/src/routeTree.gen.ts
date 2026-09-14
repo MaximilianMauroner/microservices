@@ -14,7 +14,6 @@ import { Route as DocumentsRouteImport } from './routes/documents'
 import { Route as FaviconDoticoRouteImport } from './routes/favicon[.]ico'
 import { Route as FaviconDotsvgRouteImport } from './routes/favicon[.]svg'
 import { Route as FeedbackRouteImport } from './routes/feedback'
-import { Route as FieldGuideRouteImport } from './routes/field-guide'
 import { Route as HealthRouteImport } from './routes/health'
 import { Route as LiveRouteImport } from './routes/live'
 import { Route as MarkdownRouteImport } from './routes/markdown'
@@ -23,9 +22,7 @@ import { Route as PublisherRouteImport } from './routes/publisher'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as StatusRouteImport } from './routes/status'
-import { Route as ApiAgentRouteImport } from './routes/api/agent'
 import { Route as ApiExternalUploadsRouteImport } from './routes/api/external-uploads'
-import { Route as ApiReviewRouteImport } from './routes/api/review'
 import { Route as ApiUploadsRouteImport } from './routes/api/uploads'
 import { Route as ArtifactsSplatRouteImport } from './routes/artifacts/$'
 import { Route as ArtifactsIdRouteImport } from './routes/artifacts/$id'
@@ -36,7 +33,6 @@ import { Route as HealthComponentRouteImport } from './routes/health/$component'
 import { Route as MarkdownIndexRouteImport } from './routes/markdown/index'
 import { Route as PublisherIndexRouteImport } from './routes/publisher/index'
 import { Route as PublisherArtifactsRouteImport } from './routes/publisher/artifacts'
-import { Route as ApiAgentSplatRouteImport } from './routes/api/agent/$'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiExternalUploadsSplatRouteImport } from './routes/api/external-uploads/$'
 import { Route as ApiMoneyActivityRouteImport } from './routes/api/money/activity'
@@ -47,7 +43,6 @@ import { Route as ApiMoneyMarketDataRouteImport } from './routes/api/money/marke
 import { Route as ApiMoneyTransfersRouteImport } from './routes/api/money/transfers'
 import { Route as ApiOpsSplatRouteImport } from './routes/api/ops/$'
 import { Route as ApiPublicCatalogRouteImport } from './routes/api/public/catalog'
-import { Route as ApiReviewSplatRouteImport } from './routes/api/review/$'
 import { Route as ApiUploadsSplatRouteImport } from './routes/api/uploads/$'
 import { Route as FeedbackFTokenRouteImport } from './routes/feedback/f/$token'
 import { Route as FeedbackFormsFormIdRouteImport } from './routes/feedback/forms/$formId'
@@ -83,11 +78,6 @@ const FaviconDotsvgRoute = FaviconDotsvgRouteImport.update({
 const FeedbackRoute = FeedbackRouteImport.update({
   id: '/feedback',
   path: '/feedback',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const FieldGuideRoute = FieldGuideRouteImport.update({
-  id: '/field-guide',
-  path: '/field-guide',
   getParentRoute: () => rootRouteImport,
 } as any)
 const HealthRoute = HealthRouteImport.update({
@@ -130,19 +120,9 @@ const StatusRoute = StatusRouteImport.update({
   path: '/status',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiAgentRoute = ApiAgentRouteImport.update({
-  id: '/api/agent',
-  path: '/api/agent',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ApiExternalUploadsRoute = ApiExternalUploadsRouteImport.update({
   id: '/api/external-uploads',
   path: '/api/external-uploads',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiReviewRoute = ApiReviewRouteImport.update({
-  id: '/api/review',
-  path: '/api/review',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiUploadsRoute = ApiUploadsRouteImport.update({
@@ -195,11 +175,6 @@ const PublisherArtifactsRoute = PublisherArtifactsRouteImport.update({
   path: '/artifacts',
   getParentRoute: () => PublisherRoute,
 } as any)
-const ApiAgentSplatRoute = ApiAgentSplatRouteImport.update({
-  id: '/$',
-  path: '/$',
-  getParentRoute: () => ApiAgentRoute,
-} as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
@@ -249,11 +224,6 @@ const ApiPublicCatalogRoute = ApiPublicCatalogRouteImport.update({
   id: '/api/public/catalog',
   path: '/api/public/catalog',
   getParentRoute: () => rootRouteImport,
-} as any)
-const ApiReviewSplatRoute = ApiReviewSplatRouteImport.update({
-  id: '/$',
-  path: '/$',
-  getParentRoute: () => ApiReviewRoute,
 } as any)
 const ApiUploadsSplatRoute = ApiUploadsSplatRouteImport.update({
   id: '/$',
@@ -320,7 +290,6 @@ export interface FileRoutesByFullPath {
   '/favicon.ico': typeof FaviconDoticoRoute
   '/favicon.svg': typeof FaviconDotsvgRoute
   '/feedback': typeof FeedbackRouteWithChildren
-  '/field-guide': typeof FieldGuideRoute
   '/health': typeof HealthRouteWithChildren
   '/live': typeof LiveRoute
   '/markdown': typeof MarkdownRouteWithChildren
@@ -329,9 +298,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof SettingsRoute
   '/sign-in': typeof SignInRoute
   '/status': typeof StatusRoute
-  '/api/agent': typeof ApiAgentRouteWithChildren
   '/api/external-uploads': typeof ApiExternalUploadsRouteWithChildren
-  '/api/review': typeof ApiReviewRouteWithChildren
   '/api/uploads': typeof ApiUploadsRouteWithChildren
   '/artifacts/$': typeof ArtifactsSplatRoute
   '/artifacts/$id': typeof ArtifactsIdRoute
@@ -342,7 +309,6 @@ export interface FileRoutesByFullPath {
   '/feedback/': typeof FeedbackIndexRoute
   '/markdown/': typeof MarkdownIndexRoute
   '/publisher/': typeof PublisherIndexRoute
-  '/api/agent/$': typeof ApiAgentSplatRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/external-uploads/$': typeof ApiExternalUploadsSplatRoute
   '/api/money/activity': typeof ApiMoneyActivityRoute
@@ -353,7 +319,6 @@ export interface FileRoutesByFullPath {
   '/api/money/transfers': typeof ApiMoneyTransfersRoute
   '/api/ops/$': typeof ApiOpsSplatRoute
   '/api/public/catalog': typeof ApiPublicCatalogRoute
-  '/api/review/$': typeof ApiReviewSplatRoute
   '/api/uploads/$': typeof ApiUploadsSplatRoute
   '/feedback/f/$token': typeof FeedbackFTokenRoute
   '/feedback/forms/$formId': typeof FeedbackFormsFormIdRoute
@@ -371,16 +336,13 @@ export interface FileRoutesByTo {
   '/documents': typeof DocumentsRoute
   '/favicon.ico': typeof FaviconDoticoRoute
   '/favicon.svg': typeof FaviconDotsvgRoute
-  '/field-guide': typeof FieldGuideRoute
   '/health': typeof HealthRouteWithChildren
   '/live': typeof LiveRoute
   '/money': typeof MoneyRoute
   '/settings': typeof SettingsRoute
   '/sign-in': typeof SignInRoute
   '/status': typeof StatusRoute
-  '/api/agent': typeof ApiAgentRouteWithChildren
   '/api/external-uploads': typeof ApiExternalUploadsRouteWithChildren
-  '/api/review': typeof ApiReviewRouteWithChildren
   '/api/uploads': typeof ApiUploadsRouteWithChildren
   '/artifacts/$': typeof ArtifactsSplatRoute
   '/artifacts/$id': typeof ArtifactsIdRoute
@@ -391,7 +353,6 @@ export interface FileRoutesByTo {
   '/feedback': typeof FeedbackIndexRoute
   '/markdown': typeof MarkdownIndexRoute
   '/publisher': typeof PublisherIndexRoute
-  '/api/agent/$': typeof ApiAgentSplatRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/external-uploads/$': typeof ApiExternalUploadsSplatRoute
   '/api/money/activity': typeof ApiMoneyActivityRoute
@@ -402,7 +363,6 @@ export interface FileRoutesByTo {
   '/api/money/transfers': typeof ApiMoneyTransfersRoute
   '/api/ops/$': typeof ApiOpsSplatRoute
   '/api/public/catalog': typeof ApiPublicCatalogRoute
-  '/api/review/$': typeof ApiReviewSplatRoute
   '/api/uploads/$': typeof ApiUploadsSplatRoute
   '/feedback/f/$token': typeof FeedbackFTokenRoute
   '/feedback/forms/$formId': typeof FeedbackFormsFormIdRoute
@@ -422,7 +382,6 @@ export interface FileRoutesById {
   '/favicon.ico': typeof FaviconDoticoRoute
   '/favicon.svg': typeof FaviconDotsvgRoute
   '/feedback': typeof FeedbackRouteWithChildren
-  '/field-guide': typeof FieldGuideRoute
   '/health': typeof HealthRouteWithChildren
   '/live': typeof LiveRoute
   '/markdown': typeof MarkdownRouteWithChildren
@@ -431,9 +390,7 @@ export interface FileRoutesById {
   '/settings': typeof SettingsRoute
   '/sign-in': typeof SignInRoute
   '/status': typeof StatusRoute
-  '/api/agent': typeof ApiAgentRouteWithChildren
   '/api/external-uploads': typeof ApiExternalUploadsRouteWithChildren
-  '/api/review': typeof ApiReviewRouteWithChildren
   '/api/uploads': typeof ApiUploadsRouteWithChildren
   '/artifacts/$': typeof ArtifactsSplatRoute
   '/artifacts/$id': typeof ArtifactsIdRoute
@@ -444,7 +401,6 @@ export interface FileRoutesById {
   '/feedback/': typeof FeedbackIndexRoute
   '/markdown/': typeof MarkdownIndexRoute
   '/publisher/': typeof PublisherIndexRoute
-  '/api/agent/$': typeof ApiAgentSplatRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/external-uploads/$': typeof ApiExternalUploadsSplatRoute
   '/api/money/activity': typeof ApiMoneyActivityRoute
@@ -455,7 +411,6 @@ export interface FileRoutesById {
   '/api/money/transfers': typeof ApiMoneyTransfersRoute
   '/api/ops/$': typeof ApiOpsSplatRoute
   '/api/public/catalog': typeof ApiPublicCatalogRoute
-  '/api/review/$': typeof ApiReviewSplatRoute
   '/api/uploads/$': typeof ApiUploadsSplatRoute
   '/feedback/f/$token': typeof FeedbackFTokenRoute
   '/feedback/forms/$formId': typeof FeedbackFormsFormIdRoute
@@ -476,7 +431,6 @@ export interface FileRouteTypes {
     | '/favicon.ico'
     | '/favicon.svg'
     | '/feedback'
-    | '/field-guide'
     | '/health'
     | '/live'
     | '/markdown'
@@ -485,9 +439,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/sign-in'
     | '/status'
-    | '/api/agent'
     | '/api/external-uploads'
-    | '/api/review'
     | '/api/uploads'
     | '/artifacts/$'
     | '/artifacts/$id'
@@ -498,7 +450,6 @@ export interface FileRouteTypes {
     | '/feedback/'
     | '/markdown/'
     | '/publisher/'
-    | '/api/agent/$'
     | '/api/auth/$'
     | '/api/external-uploads/$'
     | '/api/money/activity'
@@ -509,7 +460,6 @@ export interface FileRouteTypes {
     | '/api/money/transfers'
     | '/api/ops/$'
     | '/api/public/catalog'
-    | '/api/review/$'
     | '/api/uploads/$'
     | '/feedback/f/$token'
     | '/feedback/forms/$formId'
@@ -527,16 +477,13 @@ export interface FileRouteTypes {
     | '/documents'
     | '/favicon.ico'
     | '/favicon.svg'
-    | '/field-guide'
     | '/health'
     | '/live'
     | '/money'
     | '/settings'
     | '/sign-in'
     | '/status'
-    | '/api/agent'
     | '/api/external-uploads'
-    | '/api/review'
     | '/api/uploads'
     | '/artifacts/$'
     | '/artifacts/$id'
@@ -547,7 +494,6 @@ export interface FileRouteTypes {
     | '/feedback'
     | '/markdown'
     | '/publisher'
-    | '/api/agent/$'
     | '/api/auth/$'
     | '/api/external-uploads/$'
     | '/api/money/activity'
@@ -558,7 +504,6 @@ export interface FileRouteTypes {
     | '/api/money/transfers'
     | '/api/ops/$'
     | '/api/public/catalog'
-    | '/api/review/$'
     | '/api/uploads/$'
     | '/feedback/f/$token'
     | '/feedback/forms/$formId'
@@ -577,7 +522,6 @@ export interface FileRouteTypes {
     | '/favicon.ico'
     | '/favicon.svg'
     | '/feedback'
-    | '/field-guide'
     | '/health'
     | '/live'
     | '/markdown'
@@ -586,9 +530,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/sign-in'
     | '/status'
-    | '/api/agent'
     | '/api/external-uploads'
-    | '/api/review'
     | '/api/uploads'
     | '/artifacts/$'
     | '/artifacts/$id'
@@ -599,7 +541,6 @@ export interface FileRouteTypes {
     | '/feedback/'
     | '/markdown/'
     | '/publisher/'
-    | '/api/agent/$'
     | '/api/auth/$'
     | '/api/external-uploads/$'
     | '/api/money/activity'
@@ -610,7 +551,6 @@ export interface FileRouteTypes {
     | '/api/money/transfers'
     | '/api/ops/$'
     | '/api/public/catalog'
-    | '/api/review/$'
     | '/api/uploads/$'
     | '/feedback/f/$token'
     | '/feedback/forms/$formId'
@@ -630,7 +570,6 @@ export interface RootRouteChildren {
   FaviconDoticoRoute: typeof FaviconDoticoRoute
   FaviconDotsvgRoute: typeof FaviconDotsvgRoute
   FeedbackRoute: typeof FeedbackRouteWithChildren
-  FieldGuideRoute: typeof FieldGuideRoute
   HealthRoute: typeof HealthRouteWithChildren
   LiveRoute: typeof LiveRoute
   MarkdownRoute: typeof MarkdownRouteWithChildren
@@ -639,9 +578,7 @@ export interface RootRouteChildren {
   SettingsRoute: typeof SettingsRoute
   SignInRoute: typeof SignInRoute
   StatusRoute: typeof StatusRoute
-  ApiAgentRoute: typeof ApiAgentRouteWithChildren
   ApiExternalUploadsRoute: typeof ApiExternalUploadsRouteWithChildren
-  ApiReviewRoute: typeof ApiReviewRouteWithChildren
   ApiUploadsRoute: typeof ApiUploadsRouteWithChildren
   ArtifactsSplatRoute: typeof ArtifactsSplatRoute
   ArtifactsIdRoute: typeof ArtifactsIdRoute
@@ -695,13 +632,6 @@ declare module '@tanstack/react-router' {
       path: '/feedback'
       fullPath: '/feedback'
       preLoaderRoute: typeof FeedbackRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/field-guide': {
-      id: '/field-guide'
-      path: '/field-guide'
-      fullPath: '/field-guide'
-      preLoaderRoute: typeof FieldGuideRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/health': {
@@ -760,25 +690,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof StatusRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/agent': {
-      id: '/api/agent'
-      path: '/api/agent'
-      fullPath: '/api/agent'
-      preLoaderRoute: typeof ApiAgentRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/api/external-uploads': {
       id: '/api/external-uploads'
       path: '/api/external-uploads'
       fullPath: '/api/external-uploads'
       preLoaderRoute: typeof ApiExternalUploadsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/review': {
-      id: '/api/review'
-      path: '/api/review'
-      fullPath: '/api/review'
-      preLoaderRoute: typeof ApiReviewRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/uploads': {
@@ -851,13 +767,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PublisherArtifactsRouteImport
       parentRoute: typeof PublisherRoute
     }
-    '/api/agent/$': {
-      id: '/api/agent/$'
-      path: '/$'
-      fullPath: '/api/agent/$'
-      preLoaderRoute: typeof ApiAgentSplatRouteImport
-      parentRoute: typeof ApiAgentRoute
-    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
@@ -927,13 +836,6 @@ declare module '@tanstack/react-router' {
       fullPath: '/api/public/catalog'
       preLoaderRoute: typeof ApiPublicCatalogRouteImport
       parentRoute: typeof rootRouteImport
-    }
-    '/api/review/$': {
-      id: '/api/review/$'
-      path: '/$'
-      fullPath: '/api/review/$'
-      preLoaderRoute: typeof ApiReviewSplatRouteImport
-      parentRoute: typeof ApiReviewRoute
     }
     '/api/uploads/$': {
       id: '/api/uploads/$'
@@ -1072,18 +974,6 @@ const PublisherRouteWithChildren = PublisherRoute._addFileChildren(
   PublisherRouteChildren,
 )
 
-interface ApiAgentRouteChildren {
-  ApiAgentSplatRoute: typeof ApiAgentSplatRoute
-}
-
-const ApiAgentRouteChildren: ApiAgentRouteChildren = {
-  ApiAgentSplatRoute: ApiAgentSplatRoute,
-}
-
-const ApiAgentRouteWithChildren = ApiAgentRoute._addFileChildren(
-  ApiAgentRouteChildren,
-)
-
 interface ApiExternalUploadsRouteChildren {
   ApiExternalUploadsSplatRoute: typeof ApiExternalUploadsSplatRoute
 }
@@ -1094,18 +984,6 @@ const ApiExternalUploadsRouteChildren: ApiExternalUploadsRouteChildren = {
 
 const ApiExternalUploadsRouteWithChildren =
   ApiExternalUploadsRoute._addFileChildren(ApiExternalUploadsRouteChildren)
-
-interface ApiReviewRouteChildren {
-  ApiReviewSplatRoute: typeof ApiReviewSplatRoute
-}
-
-const ApiReviewRouteChildren: ApiReviewRouteChildren = {
-  ApiReviewSplatRoute: ApiReviewSplatRoute,
-}
-
-const ApiReviewRouteWithChildren = ApiReviewRoute._addFileChildren(
-  ApiReviewRouteChildren,
-)
 
 interface ApiUploadsRouteChildren {
   ApiUploadsSplatRoute: typeof ApiUploadsSplatRoute
@@ -1152,7 +1030,6 @@ const rootRouteChildren: RootRouteChildren = {
   FaviconDoticoRoute: FaviconDoticoRoute,
   FaviconDotsvgRoute: FaviconDotsvgRoute,
   FeedbackRoute: FeedbackRouteWithChildren,
-  FieldGuideRoute: FieldGuideRoute,
   HealthRoute: HealthRouteWithChildren,
   LiveRoute: LiveRoute,
   MarkdownRoute: MarkdownRouteWithChildren,
@@ -1161,9 +1038,7 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsRoute: SettingsRoute,
   SignInRoute: SignInRoute,
   StatusRoute: StatusRoute,
-  ApiAgentRoute: ApiAgentRouteWithChildren,
   ApiExternalUploadsRoute: ApiExternalUploadsRouteWithChildren,
-  ApiReviewRoute: ApiReviewRouteWithChildren,
   ApiUploadsRoute: ApiUploadsRouteWithChildren,
   ArtifactsSplatRoute: ArtifactsSplatRoute,
   ArtifactsIdRoute: ArtifactsIdRoute,

@@ -22,8 +22,6 @@
     "status/ui/**/*.tsx",
     "publisher/ui/**/*.ts",
     "publisher/ui/**/*.tsx",
-    "field-guide/ui/**/*.ts",
-    "field-guide/ui/**/*.tsx",
     "money/**/*.ts",
     "money/**/*.tsx",
     "markdown-share/**/*.ts",

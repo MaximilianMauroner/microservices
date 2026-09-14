@@ -103,10 +103,8 @@ describe("TanStack Start public pages", () => {
     expect(html).toContain("Useful things,");
     expect(html).toContain("xl:grid-cols-4");
     expect(html).toContain("Publisher");
-    expect(html).toContain("Field Guide");
     expect(html).toContain("Markdown Share");
     expect(html).toContain("bg-violet-300");
-    expect(html).toContain("bg-amber-300");
     expect(html).toContain("bg-lime-300");
     expect(html).toContain("bg-cyan-300");
     expect(html).toContain("bg-rose-300");
@@ -118,7 +116,7 @@ describe("TanStack Start public pages", () => {
     expect(html.indexOf("Publisher")).toBeLessThan(html.indexOf("Feedback"));
     expect(html.indexOf("Money")).toBeLessThan(html.indexOf("Feedback"));
     expect(html.indexOf("Feedback")).toBeLessThan(html.indexOf("Status"));
-    for (const product of ["publisher", "field-guide", "money", "status", "markdown-share", "network-console"]) {
+    for (const product of ["publisher", "money", "status", "markdown-share", "network-console"]) {
       expect(html).toContain(`/assets/icons/${product}.png`);
     }
   });
@@ -134,7 +132,7 @@ describe("TanStack Start public pages", () => {
     expect(html).toContain("Infrastructure");
     expect(html).not.toContain("Public console");
     expect(html).toContain("Publisher");
-    expect(html).toContain("0 of 8 operational");
+    expect(html).toContain("0 of 7 operational");
   });
 
   it("renders status semantics and the rolling availability window", () => {

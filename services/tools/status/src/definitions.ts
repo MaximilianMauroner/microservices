@@ -8,7 +8,6 @@ export function loadMonitorDefinitions(env: Readonly<Record<string, string | und
   return [
     http("tools-directory", `${origin}/health/tools`),
     http("artifact-publisher", `${origin}/health/publisher`),
-    http("field-guide-console", `${origin}/health/review`),
     http("markdown-share", `${origin}/markdown`),
     { id: "network-console", kind: "http", url: "https://coding.tailbc92d.ts.net/health", scope: "tailnet", expectedStatus: [200], timeoutMs: 10_000 },
     http("home-assistant", "https://homeassistant.mauroner.net/"),

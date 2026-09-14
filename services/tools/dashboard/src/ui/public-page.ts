@@ -19,7 +19,6 @@ type OverallState = "operational" | "attention" | "outage" | "unknown";
 
 const TOOL_ICON_PATHS: Readonly<Record<string, string>> = {
   "artifact-publisher": "/assets/icons/publisher.png",
-  "field-guide-console": "/assets/icons/field-guide.png",
   "markdown-share": "/assets/icons/markdown-share.png",
   "tools-directory": "/assets/icons/status.png",
   "network-console": "/assets/icons/network-console.png"

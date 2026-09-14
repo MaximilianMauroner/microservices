@@ -21,20 +21,18 @@ describe("initial catalog", () => {
         .map(({ id, name }) => ({ id, name }))
     ).toEqual([
       { id: "publishing", name: "Publishing & sharing" },
-      { id: "review", name: "Review & feedback" },
       { id: "operations", name: "Operations" },
       { id: "private-infrastructure", name: "Private infrastructure" }
     ]);
     expect(catalog.entries.map(({ id }) => id).sort()).toEqual([
       "artifact-publisher",
-      "field-guide-console",
       "home-assistant",
       "markdown-share",
       "network-console",
       "tools-directory",
       "tower"
     ]);
-    expect(catalog.entries).toHaveLength(7);
+    expect(catalog.entries).toHaveLength(6);
     expect(catalog.entries.some(({ id }) => id === "tools-checker")).toBe(false);
     expect(
       Object.fromEntries(
@@ -42,7 +40,6 @@ describe("initial catalog", () => {
       ),
     ).toMatchObject({
       "artifact-publisher": "https://tools.mauroner.net/health/publisher",
-      "field-guide-console": "https://tools.mauroner.net/health/review",
       "markdown-share": "https://tools.mauroner.net/markdown",
       "home-assistant": "https://homeassistant.mauroner.net/",
       tower: "https://tools.mauroner.net/health/tower",
@@ -72,7 +69,6 @@ describe("initial catalog", () => {
       "artifact-publisher:upload": "/publisher",
       "markdown-share:editor": "/markdown",
       "markdown-share:documents": "/documents",
-      "field-guide-console:console": "/field-guide",
       "tools-directory:directory": "/",
       "tools-directory:status": "/status"
     });

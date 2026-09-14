@@ -3,75 +3,10 @@ import type {
   PrivateSnapshotDocument
 } from "@tools-platform/domain";
 import type { MarkdownAdminSnapshot } from "@tools-platform/web";
-import type {
-  DecisionRecordPage,
-  DecisionRecordItem,
-  DecisionReviewState,
-  Decision,
-  HistoryPage,
-  QueueItem,
-  Scope,
-  Summary
-} from "@tools-platform/field-guide";
 import { requirePlatformSession } from "./auth-middleware.js";
 import { internalPlatformRequest, readPlatformJson, readPlatformResponse } from "./server-data.js";
 import { MONEY_LEDGER_SCOPES, type MoneyLedgerViewScope, type MoneyLedgerSnapshot } from "../money/money-repository.js";
 import type { MoneyMarketSnapshot } from "../money/money-market-data-service.js";
-
-export type ReviewView = "decisions" | "queue" | "history";
-
-export type ReviewLoaderInput = {
-  scope: Scope;
-  view: ReviewView;
-  reviewState: DecisionReviewState;
-  filters?: Partial<{
-    projectKey: string;
-    taskId: string;
-    device: string;
-    harness: string;
-    skill: string;
-    from: string;
-    to: string;
-  }>;
-};
-
-export type ReviewPageData = {
-  actor: string;
-  scope: Scope;
-  view: ReviewView;
-  reviewState: DecisionReviewState;
-  decisions?: DecisionRecordPage;
-  queue?: { items: QueueItem[]; summary: Summary };
-  history?: HistoryPage & { summary: Summary };
-};
-
-export const getReviewPageData = createServerFn({ method: "GET" })
-  .middleware([requirePlatformSession])
-  .validator((input: ReviewLoaderInput) => input)
-  .handler(async ({ data }): Promise<ReviewPageData> => {
-    const { context } = internalPlatformRequest("/api/review/queue");
-    const actor = context.principal?.email ?? "Authenticated user";
-    if (data.view === "queue") {
-      const query = new URLSearchParams({ scope: data.scope });
-      const result = await readPlatformJson<{ items: QueueItem[]; summary: Summary }>(context.runtime.services.review.handle, `/api/review/queue?${query}`);
-      return { actor, scope: data.scope, view: data.view, reviewState: data.reviewState, queue: result };
-    }
-    if (data.view === "history") {
-      const query = new URLSearchParams({ scope: data.scope, limit: "25" });
-      const result = await readPlatformJson<HistoryPage & { summary: Summary }>(context.runtime.services.review.handle, `/api/review/history?${query}`);
-      return { actor, scope: data.scope, view: data.view, reviewState: data.reviewState, history: result };
-    }
-    const query = new URLSearchParams({
-      scope: data.scope,
-      reviewState: data.reviewState,
-      limit: "25"
-    });
-    for (const [key, value] of Object.entries(data.filters ?? {})) {
-      if (value) query.set(key, value);
-    }
-    const result = await readPlatformJson<DecisionRecordPage>(context.runtime.services.review.handle, `/api/review/decision-records?${query}`);
-    return { actor, scope: data.scope, view: data.view, reviewState: data.reviewState, decisions: result };
-  });
 
 export type UploadSummary = {
   id: string;
@@ -176,6 +111,3 @@ export const getDocumentsPageData = createServerFn({ method: "GET" })
       actor: context.principal?.email ?? "Authenticated user"
     };
   });
-
-export type ReviewDetailData = DecisionRecordItem;
-export type ReviewHistoryDecision = Decision;

@@ -232,12 +232,12 @@ describe("native artifact fetch handler", () => {
           "Content-Type": "application/json",
           Origin: "https://tools.example.test"
         },
-        body: JSON.stringify({ project: "field-guide" })
+        body: JSON.stringify({ project: "documentation" })
       })
     );
     expect(projectResponse.status).toBe(200);
-    expect(await projectResponse.json()).toEqual({ id: created.id, project: "field-guide" });
-    expect(storage.pages.get(created.id)?.metadata.project).toBe("field-guide");
+    expect(await projectResponse.json()).toEqual({ id: created.id, project: "documentation" });
+    expect(storage.pages.get(created.id)?.metadata.project).toBe("documentation");
 
     const revokedResponse = await app(
       new Request(`https://tools.example.test/api/external-uploads/${created.id}`, {

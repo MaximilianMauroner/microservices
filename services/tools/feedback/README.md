@@ -39,7 +39,7 @@ When the development database is behind the checked-in schema, apply the
 guarded development push before starting Vite:
 
 ```bash
-pnpm --dir services/tools/field-guide run db:push-postgres:development
+pnpm --dir services/tools run db:push-postgres:development
 ```
 
 The command reads `services/tools/.env.local` and refuses production-marked or

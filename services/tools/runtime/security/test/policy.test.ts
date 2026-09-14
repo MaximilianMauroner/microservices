@@ -30,9 +30,7 @@ describe("central platform route policy", () => {
     expect(classifyRoute("/artifacts/abc", "POST")).toEqual({ kind: "human-session" });
     expect(classifyRoute("/files/abc/index.html", "DELETE")).toEqual({ kind: "human-session" });
     expect(classifyRoute("/api/uploads", "POST")).toEqual({ kind: "machine", service: "uploads" });
-    expect(classifyRoute("/api/agent/status", "GET")).toEqual({ kind: "machine", service: "agent" });
     expect(classifyRoute("/api/status/heartbeats/tower", "POST")).toEqual({ kind: "machine", service: "heartbeat" });
-    expect(classifyRoute("/api/review/queue", "GET")).toEqual({ kind: "human-session" });
     expect(classifyRoute("/api/money/imports", "POST")).toEqual({ kind: "human-session" });
     expect(classifyRoute("/api/money/activity", "GET")).toEqual({ kind: "human-session" });
     expect(classifyRoute("/api/money/categories", "POST")).toEqual({ kind: "human-session" });
@@ -55,7 +53,6 @@ describe("central platform route policy", () => {
     expect(classifyRoute("/assets/App-B71UvkP1.js.map", "GET")).toEqual({ kind: "human-session" });
     expect(classifyRoute("/assets/unhashed.js", "GET")).toEqual({ kind: "human-session" });
     expect(classifyRoute("/assets/ops.js.map", "GET")).toEqual({ kind: "human-session" });
-    expect(classifyRoute("/api/agentic", "GET")).toEqual({ kind: "human-session" });
   });
 
   it("attaches a verified principal without exposing it as a header", () => {

@@ -1,6 +1,6 @@
 import postgres from "postgres";
 import { afterAll, beforeEach, expect, it } from "vitest";
-import { DISPOSABLE_DATABASE_SENTINEL, withVerifiedDisposableDatabase } from "../field-guide/src/postgres-push-guard.js";
+import { DISPOSABLE_DATABASE_SENTINEL, withVerifiedDisposableDatabase } from "../database/postgres-push-guard.js";
 import { parseMoneyImport } from "../money/money-import-domain.js";
 import { createPostgresMoneyRepository, type MoneyRepository } from "../money/money-repository.js";
 import { moneyTrackerTrendStats } from "../money/money-tracker-domain.js";
@@ -19,7 +19,7 @@ beforeEach(async () => {
       select c.relkind::text kind from pg_class c join pg_namespace n on n.oid = c.relnamespace
       where n.nspname = 'public' and c.relname = ${DISPOSABLE_DATABASE_SENTINEL.relation}`)[0]?.kind,
     readValue: async () => (await admin<{ value: string }[]>`
-      select sentinel_value value from public.field_guide_review_test_sentinel
+      select sentinel_value value from public.tools_runtime_test_sentinel
       where sentinel_key = ${DISPOSABLE_DATABASE_SENTINEL.key}`)[0]?.value,
   }, async () => {
     await admin`truncate tools.money_balance_snapshots, tools.money_category_rules, tools.money_investment_events, tools.money_transactions, tools.money_imports, tools.money_accounts cascade`;

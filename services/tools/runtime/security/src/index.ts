@@ -27,18 +27,17 @@ export function getAttachedPlatformPrincipal(
   return (request as RequestWithPrincipal)[verifiedPrincipal];
 }
 
-export type ServiceFamily = "manage" | "publisher" | "review";
+export type ServiceFamily = "manage" | "publisher";
 
 /** Returns the mounted service that owns a path, independently of its auth mode. */
 export function serviceForPath(pathname: string): ServiceFamily {
   if (isArtifactPath(pathname)) return "publisher";
-  if (isFieldGuidePath(pathname)) return "review";
   return "manage";
 }
 
 export type RouteAccess =
   | { kind: "public" }
-  | { kind: "machine"; service: "uploads" | "agent" | "heartbeat" }
+  | { kind: "machine"; service: "uploads" | "heartbeat" }
   | { kind: "server-function" }
   | { kind: "human-session" };
 
@@ -53,7 +52,6 @@ const PUBLIC_PATHS = new Set([
   "/assets/ops.js",
   "/assets/tools.css",
   "/assets/icons/publisher.png",
-  "/assets/icons/field-guide.png",
   "/assets/icons/status.png",
   "/assets/icons/money.png",
   "/assets/icons/markdown-share.png",
@@ -63,7 +61,6 @@ const PUBLIC_PATHS = new Set([
   "/health",
   "/health/tools",
   "/health/publisher",
-  "/health/review",
   "/health/tower"
 ]);
 
@@ -104,9 +101,7 @@ export function classifyRoute(pathname: string, method: string): RouteAccess {
   if (isMachineApiPath(pathname)) {
     return {
       kind: "machine",
-      service: isAgentPath(pathname)
-        ? "agent"
-        : isHeartbeatPath(pathname)
+      service: isHeartbeatPath(pathname)
           ? "heartbeat"
           : "uploads"
     };
@@ -137,20 +132,11 @@ export function isArtifactPath(pathname: string): boolean {
   ]);
 }
 
-export function isFieldGuidePath(pathname: string): boolean {
-  return matchesPrefix(pathname, ["/field-guide", "/api/review", "/api/agent"]);
-}
-
 export function isMachineApiPath(pathname: string): boolean {
   return (
-    isAgentPath(pathname) ||
     isHeartbeatPath(pathname) ||
     matchesPrefix(pathname, ["/api/uploads"])
   );
-}
-
-export function isAgentPath(pathname: string): boolean {
-  return matchesPrefix(pathname, ["/api/agent"]);
 }
 
 export function isHeartbeatPath(pathname: string): boolean {

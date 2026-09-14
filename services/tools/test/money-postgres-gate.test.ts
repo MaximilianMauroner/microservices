@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { DISPOSABLE_DATABASE_SENTINEL, withVerifiedDisposableDatabase } from "../field-guide/src/postgres-push-guard.js";
+import { DISPOSABLE_DATABASE_SENTINEL, withVerifiedDisposableDatabase } from "../database/postgres-push-guard.js";
 
 describe("money PostgreSQL destructive-test gate", () => {
   it("allows cleanup only after the canonical sentinel matches", async () => {

@@ -1,4 +1,3 @@
-import fieldGuide from "../dashboard/public/assets/icons/field-guide.png?url&no-inline";
 import markdownShare from "../dashboard/public/assets/icons/markdown-share.png?url&no-inline";
 import money from "../dashboard/public/assets/icons/money.png?url&no-inline";
 import networkConsole from "../dashboard/public/assets/icons/network-console.png?url&no-inline";
@@ -9,7 +8,6 @@ import tools from "../dashboard/public/assets/icons/tools.png?url&no-inline";
 export const favicons = {
   directory: tools,
   feedback: tools,
-  fieldGuide,
   markdownShare,
   money,
   networkConsole,
