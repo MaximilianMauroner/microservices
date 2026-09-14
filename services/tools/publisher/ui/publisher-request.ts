@@ -16,11 +16,12 @@ export function fetchPublisherRead(
 
 export async function waitForPublisher(
   retryDelaysMs: readonly number[] = TRANSIENT_RESPONSE_RETRY_DELAYS_MS,
-  fetcher: Fetcher = globalThis.fetch
+  fetcher: Fetcher = globalThis.fetch,
+  signal?: AbortSignal | null
 ) {
   const response = await retryTransientFetch(
     "/health/publisher",
-    { credentials: "same-origin" },
+    signal ? { credentials: "same-origin", signal } : { credentials: "same-origin" },
     retryDelaysMs,
     fetcher
   );

@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { createReadStream, createWriteStream } from "node:fs";
-import { readFile, unlink } from "node:fs/promises";
+import { mkdir, open, readdir, readFile, rm, stat, unlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { pipeline } from "node:stream/promises";
@@ -33,6 +33,15 @@ import {
 export const MAX_SINGLE_PUT_UPLOAD_BYTES = 5_000_000_000;
 export const DEFAULT_MAX_UPLOAD_BYTES = MAX_SINGLE_PUT_UPLOAD_BYTES;
 export const DEFAULT_MAX_HTML_UPLOAD_BYTES = 25_000_000;
+// Single HTTP requests through the public edge proxy are capped well below the
+// application limit (Cloudflare allows 100 MB on Free/Pro plans), so large
+// browser uploads are split into small chunk requests and reassembled here.
+export const CHUNKED_UPLOAD_MAX_CHUNKS = 250;
+export const CHUNKED_UPLOAD_MIN_CHUNK_BYTES = 1024 * 1024;
+export const CHUNKED_UPLOAD_MAX_CHUNK_BYTES = 64 * 1024 * 1024;
+const CHUNKED_UPLOAD_SESSION_PREFIX = "artifact-chunks-";
+const CHUNKED_UPLOAD_SESSION_TTL_MS = 2 * 60 * 60 * 1000;
+const CHUNKED_UPLOAD_INIT_MAX_BYTES = 4096;
 export const DEFAULT_MAX_CONCURRENT_UPLOADS = 1;
 export const DEFAULT_TEMPORARY_FILE_RETENTION_MS = 3 * 24 * 60 * 60 * 1000;
 export const MAX_TEMPORARY_FILE_RETENTION_MS = 100 * 365 * 24 * 60 * 60 * 1000;
@@ -202,6 +211,45 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
           maxHtmlUploadBytes,
           temporaryFileRetentionMs,
           activityTracker
+        );
+      }
+
+      if (request.method === "POST" && url.pathname === "/api/external-uploads/chunks") {
+        if (!options.externalUpload) return externalUploadUnavailable();
+        requireSameOrigin(request, url, options.publicBaseUrl);
+        // Awaited so handler rejections reach the shared error mapper below.
+        return await initChunkedUpload(request, maxUploadBytes);
+      }
+
+      const chunkRemainder = matchPath(url.pathname, "/api/external-uploads/chunks/");
+      if (chunkRemainder !== undefined) {
+        if (!options.externalUpload) return externalUploadUnavailable();
+        requireSameOrigin(request, url, options.publicBaseUrl);
+        const chunkPut = matchChunkPut(chunkRemainder);
+        if (request.method === "PUT" && chunkPut) {
+          return await putUploadChunk(request, chunkPut.sessionId, chunkPut.index);
+        }
+        const chunkComplete = matchChunkComplete(chunkRemainder);
+        if (request.method === "POST" && chunkComplete) {
+          return await completeChunkedUpload(
+            request,
+            url,
+            options,
+            chunkComplete,
+            uploadGate,
+            maxUploadBytes,
+            temporaryFileRetentionMs,
+            activityTracker
+          );
+        }
+        const chunkSession = matchChunkSession(chunkRemainder);
+        if (request.method === "DELETE" && chunkSession) {
+          return await abortChunkedUpload(chunkSession);
+        }
+        throw new ArtifactRequestError(
+          404,
+          "not_found",
+          "API route was not found."
         );
       }
 
@@ -704,6 +752,423 @@ async function upload(
     (response) => response,
     (error) => artifactErrorResponse(error)
   );
+}
+
+type ChunkSessionManifest = {
+  version: 1;
+  originalName: string;
+  contentType: string;
+  totalBytes: number;
+  totalChunks: number;
+  chunkBytes: number;
+  createdAt: string;
+};
+
+function matchChunkPut(remainder: string): { sessionId: string; index: number } | undefined {
+  const match = /^([A-Za-z0-9_-]{32})\/(\d+)$/.exec(remainder);
+  if (!match) return undefined;
+  const index = Number(match[2]);
+  if (!Number.isSafeInteger(index)) return undefined;
+  return { sessionId: match[1]!, index };
+}
+
+function matchChunkComplete(remainder: string): string | undefined {
+  const match = /^([A-Za-z0-9_-]{32})\/complete$/.exec(remainder);
+  return match?.[1];
+}
+
+function matchChunkSession(remainder: string): string | undefined {
+  const match = /^([A-Za-z0-9_-]{32})$/.exec(remainder);
+  return match?.[1];
+}
+
+function chunkSessionDir(sessionId: string) {
+  return path.join(os.tmpdir(), `${CHUNKED_UPLOAD_SESSION_PREFIX}${sessionId}`);
+}
+
+function chunkPartPath(sessionId: string, index: number) {
+  return path.join(chunkSessionDir(sessionId), `${index}.part`);
+}
+
+function expectedChunkBytes(manifest: ChunkSessionManifest, index: number) {
+  return index < manifest.totalChunks - 1
+    ? manifest.chunkBytes
+    : manifest.totalBytes - (manifest.totalChunks - 1) * manifest.chunkBytes;
+}
+
+async function readChunkManifest(sessionId: string): Promise<ChunkSessionManifest | null> {
+  let raw: string;
+  try {
+    raw = await readFile(path.join(chunkSessionDir(sessionId), "manifest.json"), "utf8");
+  } catch {
+    return null;
+  }
+  try {
+    const manifest = JSON.parse(raw) as ChunkSessionManifest;
+    if (
+      manifest?.version !== 1 ||
+      typeof manifest.originalName !== "string" ||
+      typeof manifest.contentType !== "string" ||
+      !Number.isSafeInteger(manifest.totalBytes) ||
+      !Number.isSafeInteger(manifest.totalChunks) ||
+      !Number.isSafeInteger(manifest.chunkBytes) ||
+      typeof manifest.createdAt !== "string" ||
+      Number.isNaN(Date.parse(manifest.createdAt))
+    ) return null;
+    if (Date.now() - Date.parse(manifest.createdAt) > CHUNKED_UPLOAD_SESSION_TTL_MS) {
+      await removeChunkSession(sessionId);
+      return null;
+    }
+    return manifest;
+  } catch {
+    return null;
+  }
+}
+
+async function removeChunkSession(sessionId: string) {
+  try {
+    await rm(chunkSessionDir(sessionId), { recursive: true, force: true });
+  } catch (error) {
+    console.error("failed to clean up a chunked upload session", error);
+  }
+}
+
+async function sweepStaleChunkSessions() {
+  try {
+    const entries = await readdir(os.tmpdir());
+    for (const entry of entries) {
+      if (!entry.startsWith(CHUNKED_UPLOAD_SESSION_PREFIX)) continue;
+      const sessionId = entry.slice(CHUNKED_UPLOAD_SESSION_PREFIX.length);
+      if (!PAGE_ID_PATTERN.test(sessionId)) continue;
+      const manifest = await readChunkManifest(sessionId);
+      if (manifest === null) {
+        // readChunkManifest already removes expired sessions; anything else is
+        // left alone so a concurrent init is never deleted mid-write.
+      }
+    }
+  } catch (error) {
+    console.error("failed to sweep stale chunked upload sessions", error);
+  }
+}
+
+async function initChunkedUpload(request: Request, maxUploadBytes: number): Promise<Response> {
+  if (request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !== "application/json") {
+    throw new ArtifactRequestError(
+      415,
+      "unsupported_media_type",
+      "Expected application/json."
+    );
+  }
+  const raw = await request.text();
+  if (Buffer.byteLength(raw, "utf8") > CHUNKED_UPLOAD_INIT_MAX_BYTES) {
+    throw new ArtifactRequestError(413, "payload_too_large", "Chunked upload description is too large.");
+  }
+  let input: unknown;
+  try {
+    input = JSON.parse(raw);
+  } catch {
+    throw new ArtifactRequestError(400, "invalid_chunked_upload", "Chunked upload description is invalid JSON.");
+  }
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    throw new ArtifactRequestError(400, "invalid_chunked_upload", "Chunked upload description must be an object.");
+  }
+  const { filename, contentType, totalBytes, totalChunks, chunkBytes } = input as Record<string, unknown>;
+  if (typeof filename !== "string" || filename.trim().length === 0 || Buffer.byteLength(filename, "utf8") > 255) {
+    throw new ArtifactRequestError(400, "invalid_filename", "Filename must be 1 to 255 characters.");
+  }
+  if (typeof contentType !== "string" || contentType.length === 0 || contentType.length > 255) {
+    throw new ArtifactRequestError(400, "invalid_content_type", "Content type must be 1 to 255 characters.");
+  }
+  if (!Number.isSafeInteger(totalBytes) || (totalBytes as number) < 1) {
+    throw new ArtifactRequestError(400, "invalid_total_bytes", "totalBytes must be a positive integer.");
+  }
+  if ((totalBytes as number) > maxUploadBytes) {
+    throw new ArtifactRequestError(
+      413,
+      "payload_too_large",
+      "The uploaded file exceeds the configured size limit."
+    );
+  }
+  if (!Number.isSafeInteger(totalChunks) || (totalChunks as number) < 2 || (totalChunks as number) > CHUNKED_UPLOAD_MAX_CHUNKS) {
+    throw new ArtifactRequestError(
+      400,
+      "invalid_chunk_plan",
+      `totalChunks must be an integer between 2 and ${CHUNKED_UPLOAD_MAX_CHUNKS}.`
+    );
+  }
+  if (
+    !Number.isSafeInteger(chunkBytes) ||
+    (chunkBytes as number) < CHUNKED_UPLOAD_MIN_CHUNK_BYTES ||
+    (chunkBytes as number) > CHUNKED_UPLOAD_MAX_CHUNK_BYTES
+  ) {
+    throw new ArtifactRequestError(
+      400,
+      "invalid_chunk_plan",
+      `chunkBytes must be between ${CHUNKED_UPLOAD_MIN_CHUNK_BYTES} and ${CHUNKED_UPLOAD_MAX_CHUNK_BYTES}.`
+    );
+  }
+  const total = totalBytes as number;
+  const chunks = totalChunks as number;
+  const nominal = chunkBytes as number;
+  if ((chunks - 1) * nominal >= total || total > chunks * nominal) {
+    throw new ArtifactRequestError(400, "invalid_chunk_plan", "Chunk plan does not cover the total file size.");
+  }
+
+  const manifest: ChunkSessionManifest = {
+    version: 1,
+    originalName: filename,
+    contentType: normalizeMimeType(contentType),
+    totalBytes: total,
+    totalChunks: chunks,
+    chunkBytes: nominal,
+    createdAt: new Date().toISOString()
+  };
+  let sessionId = "";
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    sessionId = generatePageId();
+    try {
+      await mkdir(chunkSessionDir(sessionId), { recursive: false });
+      break;
+    } catch (error) {
+      if ((error as { code?: string }).code !== "EEXIST") throw error;
+      sessionId = "";
+    }
+  }
+  if (!sessionId) throw new Error("Could not allocate a chunked upload session");
+  await writeFile(path.join(chunkSessionDir(sessionId), "manifest.json"), JSON.stringify(manifest), "utf8");
+  await sweepStaleChunkSessions();
+  return jsonResponse(
+    {
+      sessionId,
+      chunkBytes: nominal,
+      totalChunks: chunks,
+      totalBytes: total,
+      expiresAt: new Date(Date.now() + CHUNKED_UPLOAD_SESSION_TTL_MS).toISOString()
+    },
+    201
+  );
+}
+
+class ChunkLimitTransform extends Transform {
+  received = 0;
+
+  constructor(private readonly expected: number, private readonly index: number) {
+    super();
+  }
+
+  override _transform(
+    chunk: unknown,
+    encoding: BufferEncoding,
+    callback: TransformCallback
+  ) {
+    const buffer = typeof chunk === "string"
+      ? Buffer.from(chunk, encoding)
+      : chunk instanceof Uint8Array
+        ? Buffer.from(chunk)
+        : undefined;
+    if (!buffer) {
+      callback(new TypeError("Chunk stream emitted a non-byte chunk"));
+      return;
+    }
+    if (this.received + buffer.length > this.expected) {
+      callback(
+        new ArtifactRequestError(
+          400,
+          "invalid_chunk",
+          `Chunk ${this.index} must be exactly ${this.expected} bytes.`
+        )
+      );
+      return;
+    }
+    this.received += buffer.length;
+    callback(null, buffer);
+  }
+}
+
+async function putUploadChunk(request: Request, sessionId: string, index: number): Promise<Response> {
+  if (!PAGE_ID_PATTERN.test(sessionId)) {
+    throw new ArtifactRequestError(400, "invalid_upload_id", "Upload ID is invalid.");
+  }
+  const manifest = await readChunkManifest(sessionId);
+  if (!manifest) {
+    throw new ArtifactRequestError(
+      404,
+      "upload_not_found",
+      "The chunked upload was not found or expired."
+    );
+  }
+  if (index < 0 || index >= manifest.totalChunks) {
+    throw new ArtifactRequestError(400, "invalid_chunk_index", "Chunk index is out of range.");
+  }
+  if (!request.body) {
+    throw new ArtifactRequestError(400, "invalid_chunk", "Chunk body is empty.");
+  }
+  const expected = expectedChunkBytes(manifest, index);
+  const partPath = chunkPartPath(sessionId, index);
+  const limiter = new ChunkLimitTransform(expected, index);
+  const output = createWriteStream(partPath, { flags: "w" });
+  try {
+    const input = Readable.fromWeb(
+      request.body as unknown as import("node:stream/web").ReadableStream<Uint8Array>
+    );
+    await pipeline(input, limiter, output, { signal: request.signal });
+    const actual = (await stat(partPath)).size;
+    if (actual !== expected) {
+      throw new ArtifactRequestError(
+        400,
+        "invalid_chunk",
+        `Chunk ${index} must be exactly ${expected} bytes.`
+      );
+    }
+  } catch (error) {
+    await safeUnlink(partPath);
+    throw error;
+  }
+  return jsonResponse({ sessionId, index, bytes: expected });
+}
+
+async function completeChunkedUpload(
+  request: Request,
+  url: URL,
+  options: FetchArtifactAppOptions,
+  sessionId: string,
+  gate: ReturnType<typeof createUploadGate>,
+  maxUploadBytes: number,
+  temporaryFileRetentionMs: number,
+  activityTracker: ActivityTracker
+): Promise<Response> {
+  if (!PAGE_ID_PATTERN.test(sessionId)) {
+    throw new ArtifactRequestError(400, "invalid_upload_id", "Upload ID is invalid.");
+  }
+  const manifest = await readChunkManifest(sessionId);
+  if (!manifest) {
+    throw new ArtifactRequestError(
+      404,
+      "upload_not_found",
+      "The chunked upload was not found or expired."
+    );
+  }
+  if (manifest.totalBytes > maxUploadBytes) {
+    throw new ArtifactRequestError(
+      413,
+      "payload_too_large",
+      "The uploaded file exceeds the configured size limit."
+    );
+  }
+  const missing: number[] = [];
+  for (let index = 0; index < manifest.totalChunks; index += 1) {
+    try {
+      const size = (await stat(chunkPartPath(sessionId, index))).size;
+      if (size !== expectedChunkBytes(manifest, index)) missing.push(index);
+    } catch {
+      missing.push(index);
+    }
+  }
+  if (missing.length > 0) {
+    return jsonResponse(
+      {
+        error: "incomplete_upload",
+        message: `Chunks ${missing.join(", ")} are still missing. Upload them, then complete the upload.`,
+        missing
+      },
+      409
+    );
+  }
+
+  const release = gate.tryAcquire();
+  if (!release) {
+    return jsonResponse(
+      {
+        error: "upload_capacity_reached",
+        message: "The service is already processing its maximum number of uploads."
+      },
+      503,
+      { Connection: "close", "Retry-After": "1" }
+    );
+  }
+
+  return activityTracker.track(
+    (async () => {
+      let cleanupId: string | undefined;
+      let responseSent = false;
+      const dir = chunkSessionDir(sessionId);
+      const assembledPath = path.join(dir, "assembled");
+      try {
+        const assembled = await open(assembledPath, "w");
+        try {
+          for (let index = 0; index < manifest.totalChunks; index += 1) {
+            const part = createReadStream(chunkPartPath(sessionId, index), { signal: request.signal });
+            for await (const chunk of part) {
+              await assembled.write(chunk as Uint8Array);
+            }
+          }
+        } finally {
+          await assembled.close();
+        }
+        const assembledBytes = (await stat(assembledPath)).size;
+        if (assembledBytes !== manifest.totalBytes) {
+          throw new Error("Reassembled chunked upload has an unexpected size");
+        }
+        const id = generatePageId();
+        const originalName = safeFileName(manifest.originalName, "download");
+        const baseUrl = getPublicBaseUrl(request, options.publicBaseUrl);
+        const sha256 = await sha256File(assembledPath, request.signal);
+        throwIfAborted(request.signal);
+        const expiresAt = new Date(getNow(options).getTime() + temporaryFileRetentionMs);
+        cleanupId = id;
+        await options.storage.putTemporaryFile(
+          id,
+          assembledPath,
+          {
+            bytes: manifest.totalBytes,
+            contentType: manifest.contentType,
+            expiresAt,
+            originalName,
+            sha256
+          },
+          { signal: request.signal }
+        );
+        throwIfAborted(request.signal);
+        responseSent = true;
+        return jsonResponse(
+          {
+            id,
+            kind: "file",
+            filename: originalName,
+            contentType: manifest.contentType,
+            url: `${baseUrl}/files/${id}/${encodeURIComponent(originalName)}`,
+            bytes: manifest.totalBytes,
+            expiresAt: expiresAt.toISOString(),
+            sha256
+          },
+          201
+        );
+      } catch (error) {
+        if (cleanupId && !responseSent) {
+          try {
+            await options.storage.deleteUpload(cleanupId, { signal: request.signal });
+          } catch (cleanupError) {
+            console.error("failed to clean up an interrupted upload", cleanupError);
+          }
+        }
+        throw error;
+      } finally {
+        release();
+        await removeChunkSession(sessionId);
+      }
+    })()
+  ).then(
+    (response) => response,
+    (error) => artifactErrorResponse(error)
+  );
+}
+
+async function abortChunkedUpload(sessionId: string): Promise<Response> {
+  if (!PAGE_ID_PATTERN.test(sessionId)) {
+    throw new ArtifactRequestError(400, "invalid_upload_id", "Upload ID is invalid.");
+  }
+  await removeChunkSession(sessionId);
+  return new Response(null, { status: 204 });
 }
 
 type UploadMode =
