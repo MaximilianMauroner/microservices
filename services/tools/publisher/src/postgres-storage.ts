@@ -88,14 +88,20 @@ export function createMetadataBackedUploadStorage(
         uploadLinkId: metadata.uploadLinkId, sha256: metadata.sha256, now
       };
       let finalized = false;
+      let finalizationOperation: OperationOwner | undefined;
       await runDurableMutation({
         prepare: () => prepare(sql, id, "put_file", intended),
         mutate: () => bodies.putTemporaryFile(id, filePath, metadata, options),
         reconcile: (operation) => reconcileOperation(bodies, sql, { operation_id: operation.operationId, owner_id: operation.ownerId, artifact_id: id, operation_kind: "put_file", payload: intended }, options),
-        finalize: async (operation) => { finalized = await finalizePut(sql, operation, intended); }
+        finalize: async (operation) => {
+          finalizationOperation = operation;
+          finalized = await finalizePut(sql, operation, intended);
+        }
       });
       if (!finalized) {
+        if (!finalizationOperation) throw new Error("Guest upload finalization lost its operation owner");
         await bodies.deleteUpload(id, options);
+        await finalizeDelete(sql, finalizationOperation, id);
         throw new UploadLinkInactiveError();
       }
     },
@@ -214,8 +220,13 @@ async function finalizePut(sql: Sql, operation: OperationOwner, value: UpsertArt
     const finalized = value.uploadLinkId
       ? await lockActiveUploadLink(tx, value.uploadLinkId)
       : true;
-    if (finalized) await upsert(tx, value);
-    await tx`delete from artifacts.operations where operation_id = ${operation.operationId} and owner_id = ${operation.ownerId}`;
+    if (finalized) {
+      await upsert(tx, value);
+      await tx`delete from artifacts.operations where operation_id = ${operation.operationId} and owner_id = ${operation.ownerId}`;
+    } else {
+      await tx`update artifacts.operations set operation_kind = 'delete', payload = null
+        where operation_id = ${operation.operationId} and owner_id = ${operation.ownerId}`;
+    }
     return finalized;
   });
 }
@@ -260,8 +271,12 @@ async function reconcileOperation(bodies: UploadStorage, sql: Sql, operation: Pe
     ? await bodies.getHtml(operation.artifact_id, { ...options, headOnly: true })
     : await bodies.getTemporaryFile(operation.artifact_id, { ...options, headOnly: true });
   if (stored?.sha256 === payload.sha256) {
-    const finalized = await finalizePut(sql, owner(operation), payload);
-    if (!finalized) await bodies.deleteUpload(operation.artifact_id, options);
+    const operationOwner = owner(operation);
+    const finalized = await finalizePut(sql, operationOwner, payload);
+    if (!finalized) {
+      await bodies.deleteUpload(operation.artifact_id, options);
+      await finalizeDelete(sql, operationOwner, operation.artifact_id);
+    }
   }
   else await sql`delete from artifacts.operations where operation_id = ${operation.operation_id} and owner_id = ${operation.owner_id}`;
 }

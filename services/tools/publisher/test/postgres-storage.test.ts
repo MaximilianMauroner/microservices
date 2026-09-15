@@ -93,7 +93,8 @@ describe("Postgres artifact metadata paging", () => {
 
     expect(source).toContain("where id = ${uploadLinkId}::uuid and revoked_at is null and expires_at > now()");
     expect(source).toContain("for update`");
-    expect(source).toContain("if (!finalized) await bodies.deleteUpload(operation.artifact_id, options)");
+    expect(source).toContain("set operation_kind = 'delete', payload = null");
+    expect(source).toContain("await finalizeDelete(sql, operationOwner, operation.artifact_id)");
     expect(source).toContain("throw new UploadLinkInactiveError()");
   });
 });
