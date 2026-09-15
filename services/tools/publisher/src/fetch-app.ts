@@ -218,7 +218,10 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
         requireSameOrigin(request, url, options.publicBaseUrl);
         requireUploadLinks(options);
         const durationMs = await readUploadLinkDuration(request);
-        const created = await options.uploadLinks!.create(new Date(getNow(options).getTime() + durationMs));
+        const created = await options.uploadLinks!.create(
+          new Date(getNow(options).getTime() + durationMs),
+          { signal: request.signal }
+        );
         const baseUrl = getPublicBaseUrl(request, options.publicBaseUrl);
         return jsonResponse({ ...serializeUploadLink(created), url: `${baseUrl}/drop/${created.token}` }, 201);
       }
@@ -2506,11 +2509,34 @@ function artifactErrorResponse(error: unknown) {
   if (error instanceof URIError) {
     return new Response(null, { status: 404 });
   }
-  console.error(error);
+  console.error(JSON.stringify({
+    event: "artifact.request_failed",
+    errorType: error instanceof Error ? error.name : "UnknownError",
+    ...postgresErrorCode(error)
+  }));
   return jsonResponse(
     { error: "internal_server_error", message: "The request failed." },
     500
   );
+}
+
+function postgresErrorCode(error: unknown): { errorCode?: string } {
+  const code = findErrorCode(error, new Set());
+  return typeof code === "string" ? { errorCode: code } : {};
+}
+
+function findErrorCode(error: unknown, seen: Set<unknown>): string | undefined {
+  if (!(error instanceof Error) || seen.has(error)) return undefined;
+  seen.add(error);
+  const code = (error as Error & { code?: unknown }).code;
+  if (typeof code === "string") return code;
+  if (error instanceof AggregateError) {
+    for (const nested of error.errors) {
+      const nestedCode = findErrorCode(nested, seen);
+      if (nestedCode) return nestedCode;
+    }
+  }
+  return findErrorCode(error.cause, seen);
 }
 
 function encodeUploadListCursor(
