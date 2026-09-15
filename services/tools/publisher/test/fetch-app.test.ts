@@ -239,6 +239,38 @@ describe("native artifact fetch handler", () => {
     });
   });
 
+  it("logs a nested PostgreSQL code when upload-link creation fails", async () => {
+    const uploadLinks = new MemoryUploadLinkRepository();
+    uploadLinks.create = vi.fn(async () => {
+      throw new AggregateError([
+        Object.assign(new Error("connection closed"), { code: "CONNECTION_CLOSED" })
+      ], "database unavailable");
+    });
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const app = createFetchApp({
+      storage: new MemoryUploadStorage(),
+      uploadLinks,
+      uploadToken: "upload-token",
+      publicBaseUrl: "https://tools.example.test"
+    });
+
+    try {
+      const response = await app(new Request("https://tools.example.test/api/upload-links", {
+        method: "POST",
+        headers: { Origin: "https://tools.example.test", "Content-Type": "application/json" },
+        body: JSON.stringify({ durationMs: 86_400_000 })
+      }));
+      expect(response.status).toBe(500);
+      expect(error).toHaveBeenCalledWith(JSON.stringify({
+        event: "artifact.request_failed",
+        errorType: "AggregateError",
+        errorCode: "CONNECTION_CLOSED"
+      }));
+    } finally {
+      error.mockRestore();
+    }
+  });
+
   it("paginates upload-link history with opaque keyset cursors", async () => {
     class PagedUploadLinks extends MemoryUploadLinkRepository {
       readonly links = Array.from({ length: 25 }, (_, index): UploadLink => ({
