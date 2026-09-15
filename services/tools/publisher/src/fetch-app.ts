@@ -23,6 +23,7 @@ import {
 } from "./upload-links.js";
 import {
   attachmentDisposition,
+  MAX_FILE_NAME_BYTES,
   MAX_PROJECT_NAME_BYTES,
   normalizeMimeType,
   normalizeProjectName,
@@ -54,6 +55,7 @@ const CHUNKED_UPLOAD_SESSION_TTL_MS = 2 * 60 * 60 * 1000;
 const CHUNKED_UPLOAD_INIT_MAX_BYTES = 4096;
 const MAX_INCOMPLETE_DROP_SESSIONS_PER_LINK = 3;
 const MAX_PENDING_DROP_CHUNK_INITS = 16;
+const MAX_CONCURRENT_DROP_CHUNK_WRITES = 8;
 export const DEFAULT_MAX_CONCURRENT_UPLOADS = 1;
 export const DEFAULT_TEMPORARY_FILE_RETENTION_MS = 3 * 24 * 60 * 60 * 1000;
 export const MAX_TEMPORARY_FILE_RETENTION_MS = 100 * 365 * 24 * 60 * 60 * 1000;
@@ -157,6 +159,7 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
     MAX_INCOMPLETE_DROP_SESSIONS_PER_LINK,
     MAX_PENDING_DROP_CHUNK_INITS
   );
+  const dropChunkWriteGate = createUploadGate(MAX_CONCURRENT_DROP_CHUNK_WRITES);
   const uploadToken = requireUploadToken(options.uploadToken);
 
   return async function artifactFetch(request: Request): Promise<Response> {
@@ -297,6 +300,14 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
         }
         const chunkPut = matchChunkPut(dropChunk.remainder);
         if (request.method === "PUT" && chunkPut) {
+          const release = dropChunkWriteGate.tryAcquire();
+          if (!release) {
+            await consumeBody(request);
+            return jsonResponse({
+              error: "upload_capacity_reached",
+              message: "Too many guest chunks are being written. Try again shortly."
+            }, 503, { Connection: "close", "Retry-After": "1" });
+          }
           const guestBodySignal = AbortSignal.any([
             request.signal,
             AbortSignal.timeout(guestUploadBodyTimeoutMs)
@@ -319,6 +330,8 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
               );
             }
             throw error;
+          } finally {
+            release();
           }
         }
         const chunkComplete = matchChunkComplete(dropChunk.remainder);
@@ -2288,10 +2301,31 @@ function uniqueArchiveName(filename: string, used: Set<string>) {
   const stem = extensionAt > 0 ? safe.slice(0, extensionAt) : safe;
   const extension = extensionAt > 0 ? safe.slice(extensionAt) : "";
   for (let index = 2; ; index += 1) {
-    const candidate = `${stem} (${index})${extension}`;
+    const suffix = ` (${index})`;
+    const stemBudget = Math.max(
+      0,
+      MAX_FILE_NAME_BYTES - Buffer.byteLength(suffix + extension, "utf8")
+    );
+    const boundedStem = truncateArchiveName(stem, stemBudget);
+    const candidate = truncateArchiveName(
+      `${boundedStem}${suffix}${extension}`,
+      MAX_FILE_NAME_BYTES
+    );
     const candidateKey = archiveNameKey(candidate);
     if (!used.has(candidateKey)) { used.add(candidateKey); return candidate; }
   }
+}
+
+function truncateArchiveName(value: string, maxBytes: number) {
+  let result = "";
+  let bytes = 0;
+  for (const character of value) {
+    const characterBytes = Buffer.byteLength(character, "utf8");
+    if (bytes + characterBytes > maxBytes) break;
+    result += character;
+    bytes += characterBytes;
+  }
+  return result;
 }
 
 function portableArchiveName(filename: string) {

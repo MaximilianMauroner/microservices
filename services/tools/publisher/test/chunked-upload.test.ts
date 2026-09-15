@@ -294,6 +294,52 @@ describe("chunked browser uploads", () => {
     expect(gate).toContain('signal.addEventListener("abort", job.abort, { once: true })');
   });
 
+  it("bounds concurrent guest chunk writes and releases capacity", async () => {
+    const storage = new ChunkTestStorage();
+    const app = testApp(storage, { uploadLinks: guestLinks(), guestUploadBodyTimeoutMs: 10_000 });
+    const base = `${ORIGIN}/api/drop/${DROP_TOKEN}/uploads/chunks`;
+    const initialized = await app(new Request(base, {
+      method: "POST",
+      headers: { Origin: ORIGIN, "Content-Type": "application/json" },
+      body: initBody(CHUNK_BYTES * 10, 10)
+    }));
+    const { sessionId } = await initialized.json() as { sessionId: string };
+    const controllers: ReadableStreamDefaultController<Uint8Array>[] = [];
+    const stalled: Promise<Response>[] = [];
+    for (let index = 0; index < 8; index += 1) {
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) { controllers.push(controller); controller.enqueue(new Uint8Array([1])); }
+      });
+      stalled.push(app(new Request(`${base}/${sessionId}/${index}`, {
+        method: "PUT",
+        headers: { Origin: ORIGIN, "Content-Type": "application/octet-stream" },
+        body,
+        duplex: "half"
+      } as RequestInit)));
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+
+    const rejected = await app(new Request(`${base}/${sessionId}/8`, {
+      method: "PUT",
+      headers: { Origin: ORIGIN, "Content-Type": "application/octet-stream" },
+      body: Buffer.alloc(CHUNK_BYTES, 8)
+    }));
+    expect(rejected.status).toBe(503);
+    expect(rejected.headers.get("retry-after")).toBe("1");
+    expect(await rejected.json()).toMatchObject({ error: "upload_capacity_reached" });
+
+    controllers.forEach((controller) => controller.close());
+    const stalledResponses = await Promise.all(stalled);
+    expect(stalledResponses.every((response) => response.status === 400)).toBe(true);
+    const retried = await app(new Request(`${base}/${sessionId}/0`, {
+      method: "PUT",
+      headers: { Origin: ORIGIN, "Content-Type": "application/octet-stream" },
+      body: Buffer.alloc(CHUNK_BYTES, 1)
+    }));
+    expect(retried.status).toBe(200);
+    await app(new Request(`${base}/${sessionId}`, { method: "DELETE", headers: { Origin: ORIGIN } }));
+  });
+
   it("reassembles small chunk requests into one temporary file", async () => {
     const storage = new ChunkTestStorage();
     const app = testApp(storage);

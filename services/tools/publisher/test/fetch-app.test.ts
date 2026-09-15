@@ -183,6 +183,9 @@ describe("native artifact fetch handler", () => {
     expect(page).toContain("for(;;)");
     expect(page).toContain("uploadSmallFile");
     expect(page).toContain("if(response.status!==503)return readResponse(response)");
+    expect(page).toContain("initializeUpload");
+    expect(page).toContain("upload_initialization_busy");
+    expect(page).toContain("putChunk");
     expect(page).toContain("waiting for upload capacity");
 
     const uploadResponse = await app(new Request(`https://tools.example.test/api/drop/${uploadLinks.token}/uploads`, {
@@ -506,6 +509,30 @@ describe("native artifact fetch handler", () => {
     expect(strFromU8(archive["_PT¹.csv"]!)).toBe("LPT¹.csv");
     expect(strFromU8(archive["report_.pdf"]!)).toBe("report?.pdf");
     expect(strFromU8(archive["trailing__"]!)).toBe("trailing. ");
+  });
+
+  it("keeps duplicate archive filenames within the component byte limit", async () => {
+    const storage = new MemoryUploadStorage();
+    const uploadLinks = new MemoryUploadLinkRepository();
+    await uploadLinks.create(new Date("2026-09-16T12:00:00.000Z"));
+    const filename = `${"a".repeat(236)}.txt`;
+    for (const [index, id] of ["a".repeat(32), "b".repeat(32)].entries()) {
+      storage.files.set(id, {
+        body: Buffer.from(String(index)),
+        metadata: { bytes: 1, originalName: filename, sha256: id[0]!.repeat(64), contentType: "text/plain", expiresAt: new Date("2026-09-16T12:00:00.000Z") }
+      });
+    }
+    uploadLinks.files = [
+      { id: "a".repeat(32), filename, bytes: 1 },
+      { id: "b".repeat(32), filename, bytes: 1 }
+    ];
+    const app = createFetchApp({ storage, uploadLinks, uploadToken: "upload-token" });
+
+    const response = await app(new Request(`https://tools.example.test/api/upload-links/${uploadLinks.id}/download`));
+    const names = Object.keys(unzipSync(new Uint8Array(await response.arrayBuffer())));
+
+    expect(names).toEqual([filename, `${"a".repeat(232)} (2).txt`]);
+    expect(names.every((name) => Buffer.byteLength(name, "utf8") <= 240)).toBe(true);
   });
 
   it("tracks bulk-download archive production until storage reads finish", async () => {
