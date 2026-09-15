@@ -183,6 +183,9 @@ describe("native artifact fetch handler", () => {
     expect(page).toContain('class="picker">Choose files</span>');
     expect(page).toContain('id="submit" type="submit" disabled');
     expect(page).not.toContain('src="/assets/icons/publisher.png"');
+    expect(page).toContain("button.disabled=uploading||files.length===0");
+    expect(page).toContain("drop.addEventListener('drop',e=>{if(uploading)return;");
+    expect(page).toContain("if(uploading||!files.length)return");
     expect(page).toContain("/chunks");
     expect(page).toContain("20*1024*1024");
     expect(page).toContain("Retry-After");

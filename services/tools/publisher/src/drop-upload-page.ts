@@ -24,12 +24,13 @@ const DROP_UPLOAD_STYLES = `
 const DROP_UPLOAD_SCRIPT = `
 const form=document.getElementById('form'),input=document.getElementById('files'),button=document.getElementById('submit'),message=document.getElementById('message'),results=document.getElementById('results'),drop=document.getElementById('drop'),selection=document.getElementById('selection');
 const SINGLE_REQUEST_LIMIT=80*1024*1024,CHUNK_BYTES=20*1024*1024;
+let uploading=false;
 document.getElementById('expiry').textContent=new Intl.DateTimeFormat(undefined,{dateStyle:'medium',timeStyle:'short'}).format(new Date(document.getElementById('expiry').dateTime));
-function updateSelection(){const files=Array.from(input.files||[]);selection.textContent=files.length===0?'No files selected':files.length===1?files[0].name:files.length+' files selected';drop.classList.toggle('has-files',files.length>0);button.disabled=files.length===0}
+function updateSelection(){const files=Array.from(input.files||[]);selection.textContent=files.length===0?'No files selected':files.length===1?files[0].name:files.length+' files selected';drop.classList.toggle('has-files',files.length>0);button.disabled=uploading||files.length===0}
 input.addEventListener('change',updateSelection);
 for(const name of ['dragenter','dragover'])drop.addEventListener(name,e=>{e.preventDefault();drop.classList.add('is-over')});
 for(const name of ['dragleave','drop'])drop.addEventListener(name,e=>{e.preventDefault();drop.classList.remove('is-over')});
-drop.addEventListener('drop',e=>{if(e.dataTransfer.files.length){input.files=e.dataTransfer.files;updateSelection()}});
+drop.addEventListener('drop',e=>{if(uploading)return;if(e.dataTransfer.files.length){input.files=e.dataTransfer.files;updateSelection()}});
 const uploadBase=()=>location.pathname.replace(/\\/$/,'').replace(/^\\/drop\\//,'/api/drop/')+'/uploads';
 async function readResponse(response){const payload=await response.json().catch(()=>({}));if(!response.ok)throw new Error(payload.message||'Upload failed.');return payload}
 function retryDelay(response){const value=response.headers.get('Retry-After');if(!value)return 1000;const seconds=Number(value);if(Number.isFinite(seconds))return Math.max(0,seconds*1000);const date=Date.parse(value);return Number.isFinite(date)?Math.max(0,date-Date.now()):1000}
@@ -40,7 +41,7 @@ async function putChunk(sessionPath,index,body,item,file,totalChunks){for(;;){co
 async function uploadFile(file,item){if(file.size<=SINGLE_REQUEST_LIMIT)return uploadSmallFile(file,item);
 const totalChunks=Math.ceil(file.size/CHUNK_BYTES);const initialized=await initializeUpload(file,item,{filename:file.name,contentType:file.type||'application/octet-stream',totalBytes:file.size,totalChunks,chunkBytes:CHUNK_BYTES});
 const sessionPath=uploadBase()+'/chunks/'+initialized.sessionId;try{for(let index=0;index<totalChunks;index++){item.textContent='Uploading '+file.name+' — chunk '+(index+1)+' of '+totalChunks;const start=index*CHUNK_BYTES,end=Math.min(file.size,start+CHUNK_BYTES);await putChunk(sessionPath,index,file.slice(start,end),item,file,totalChunks)}return await completeUpload(sessionPath,item,file)}catch(error){void fetch(sessionPath,{method:'DELETE',headers:{Accept:'application/json'}});throw error}}
-form.addEventListener('submit',async e=>{e.preventDefault();const files=Array.from(input.files||[]);if(!files.length)return;button.disabled=true;input.disabled=true;results.innerHTML='';let ok=0;
+form.addEventListener('submit',async e=>{e.preventDefault();const files=Array.from(input.files||[]);if(uploading||!files.length)return;uploading=true;button.disabled=true;input.disabled=true;results.innerHTML='';let ok=0;
 for(let i=0;i<files.length;i++){const file=files[i],item=document.createElement('li');item.textContent='Uploading '+file.name+' ('+(i+1)+' of '+files.length+')…';results.append(item);message.textContent='Uploading '+(i+1)+' of '+files.length+'…';
 try{await uploadFile(file,item);item.className='ok';item.textContent='Uploaded '+file.name;ok++;}catch(error){item.className='error';item.textContent=file.name+': '+(error instanceof Error?error.message:'Upload failed.');}}
-message.textContent=ok===files.length?(ok===1?'File sent successfully.':ok+' files sent successfully.'):ok+' of '+files.length+' files sent.';input.disabled=false;input.value='';updateSelection();});`;
+message.textContent=ok===files.length?(ok===1?'File sent successfully.':ok+' files sent successfully.'):ok+' of '+files.length+' files sent.';uploading=false;input.disabled=false;input.value='';updateSelection();});`;
