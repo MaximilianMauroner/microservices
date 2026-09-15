@@ -144,7 +144,8 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
     options.guestUploadBodyTimeoutMs ?? DEFAULT_GUEST_UPLOAD_BODY_TIMEOUT_MS,
     "guestUploadBodyTimeoutMs"
   );
-  const publisherFavicon = publisherFaviconLink(options.publisherFaviconUrl);
+  const publisherFaviconUrl = options.publisherFaviconUrl ?? DEFAULT_PUBLISHER_FAVICON_URL;
+  const publisherFavicon = publisherFaviconLink(publisherFaviconUrl);
   if (maxHtmlUploadBytes > maxUploadBytes) {
     throw new Error("maxHtmlUploadBytes must be less than or equal to maxUploadBytes");
   }
@@ -171,7 +172,11 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
         if (!link) return dropLinkNotFound();
         const nonce = crypto.randomBytes(18).toString("base64");
         return withDropUploadHeaders(new Response(
-          request.method === "HEAD" ? null : renderDropUploadPage(link.expiresAt, nonce),
+          request.method === "HEAD" ? null : renderDropUploadPage(
+            link.expiresAt,
+            nonce,
+            publisherFaviconUrl
+          ),
           { headers: { "Cache-Control": "private, no-store", "Content-Type": "text/html; charset=utf-8" } }
         ), nonce);
       }
