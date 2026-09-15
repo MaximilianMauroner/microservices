@@ -34,6 +34,8 @@ describe("Publisher upload page", () => {
     expect(html).toContain('multiple=""');
     expect(html).toContain("Drop files here");
     expect(html).toContain("Choose files");
+    expect(html).toContain("Guest upload links");
+    expect(html).toContain("Create upload link");
   });
 
   it("renders every uploaded file and one copy-all action", () => {

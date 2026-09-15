@@ -6,12 +6,21 @@ import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import { Readable, Transform, type TransformCallback } from "node:stream";
 import busboy from "busboy";
+import { Zip, ZipPassThrough } from "fflate";
 import { ActivityTracker } from "./activity-tracker.js";
 import {
   EXTERNAL_UPLOAD_SCRIPT,
   EXTERNAL_UPLOAD_STYLES,
   renderExternalUploadPage
 } from "./external-upload-page.js";
+import { renderDropUploadPage } from "./drop-upload-page.js";
+import {
+  MAX_UPLOAD_LINK_DURATION_MS,
+  MIN_UPLOAD_LINK_DURATION_MS,
+  UPLOAD_LINK_TOKEN_PATTERN,
+  type UploadLink,
+  type UploadLinkRepository
+} from "./upload-links.js";
 import {
   attachmentDisposition,
   MAX_PROJECT_NAME_BYTES,
@@ -47,6 +56,7 @@ export const DEFAULT_TEMPORARY_FILE_RETENTION_MS = 3 * 24 * 60 * 60 * 1000;
 export const MAX_TEMPORARY_FILE_RETENTION_MS = 100 * 365 * 24 * 60 * 60 * 1000;
 
 const PAGE_ID_PATTERN = /^[A-Za-z0-9_-]{32}$/;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const HTML_MIME_TYPES = new Set(["text/html", "application/xhtml+xml"]);
 const HTML_EXTENSIONS = new Set([".html", ".htm"]);
 const HTML_CONTENT_TYPE = "text/html; charset=utf-8";
@@ -94,6 +104,7 @@ export type FetchArtifactAppOptions = {
   storage: UploadStorage;
   uploadToken: string;
   externalUpload?: boolean;
+  uploadLinks?: UploadLinkRepository;
   publicBaseUrl?: string;
   publisherFaviconUrl?: string;
   maxUploadBytes?: number;
@@ -137,6 +148,76 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
   return async function artifactFetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     try {
+      const dropToken = matchDropPage(url.pathname);
+      if ((request.method === "GET" || request.method === "HEAD") && dropToken) {
+        const link = await options.uploadLinks?.findActive(dropToken, getNow(options));
+        if (!link) return dropLinkNotFound();
+        const nonce = crypto.randomBytes(18).toString("base64");
+        return withDropUploadHeaders(new Response(
+          request.method === "HEAD" ? null : renderDropUploadPage(link.expiresAt, nonce),
+          { headers: { "Cache-Control": "private, no-store", "Content-Type": "text/html; charset=utf-8" } }
+        ), nonce);
+      }
+
+      if (request.method === "GET" && url.pathname === "/api/upload-links") {
+        requireUploadLinks(options);
+        const links = await options.uploadLinks!.list();
+        return jsonResponse({ links: links.map(serializeUploadLink) });
+      }
+
+      const uploadLinkDownload = /^\/api\/upload-links\/([^/]+)\/download$/.exec(url.pathname)?.[1];
+      if (request.method === "GET" && uploadLinkDownload) {
+        requireUploadLinks(options);
+        if (!UUID_PATTERN.test(uploadLinkDownload)) {
+          throw new ArtifactRequestError(400, "invalid_upload_link_id", "Upload link ID is invalid.");
+        }
+        const files = await options.uploadLinks!.listFiles(uploadLinkDownload, getNow(options));
+        if (!files) throw new ArtifactRequestError(404, "upload_link_not_found", "Upload link was not found.");
+        return downloadUploadLinkFiles(files, options.storage, uploadLinkDownload, request.signal);
+      }
+
+      if (request.method === "POST" && url.pathname === "/api/upload-links") {
+        requireSameOrigin(request, url, options.publicBaseUrl);
+        requireUploadLinks(options);
+        const durationMs = await readUploadLinkDuration(request);
+        const created = await options.uploadLinks!.create(new Date(getNow(options).getTime() + durationMs));
+        const baseUrl = getPublicBaseUrl(request, options.publicBaseUrl);
+        return jsonResponse({ ...serializeUploadLink(created), url: `${baseUrl}/drop/${created.token}` }, 201);
+      }
+
+      const uploadLinkId = matchPath(url.pathname, "/api/upload-links/");
+      if (request.method === "DELETE" && uploadLinkId !== undefined) {
+        requireSameOrigin(request, url, options.publicBaseUrl);
+        requireUploadLinks(options);
+        if (!UUID_PATTERN.test(uploadLinkId)) {
+          throw new ArtifactRequestError(400, "invalid_upload_link_id", "Upload link ID is invalid.");
+        }
+        const revoked = await options.uploadLinks!.revoke(uploadLinkId, getNow(options));
+        if (!revoked) {
+          throw new ArtifactRequestError(404, "upload_link_not_found", "Upload link was not found.");
+        }
+        return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
+      }
+
+      const dropUploadToken = matchDropUpload(url.pathname);
+      if (request.method === "POST" && dropUploadToken) {
+        requireSameOrigin(request, url, options.publicBaseUrl);
+        requireMultipartUpload(request);
+        const link = await options.uploadLinks?.findActive(dropUploadToken, getNow(options));
+        if (!link) return dropLinkNotFound();
+        return upload(
+          request,
+          url,
+          options,
+          { kind: "create", temporaryOnly: true, uploadLinkId: link.id, expiresAt: link.expiresAt },
+          uploadGate,
+          maxUploadBytes,
+          maxHtmlUploadBytes,
+          temporaryFileRetentionMs,
+          activityTracker
+        );
+      }
+
       if (request.method === "GET" || request.method === "HEAD") {
         const page = await readPageRoute(
           request,
@@ -741,9 +822,9 @@ async function upload(
           );
         }
 
-        const expiresAt = new Date(
-          getNow(options).getTime() + temporaryFileRetentionMs
-        );
+        const expiresAt = mode.kind === "create" && mode.expiresAt
+          ? new Date(Math.max(mode.expiresAt.getTime(), getNow(options).getTime() + temporaryFileRetentionMs))
+          : new Date(getNow(options).getTime() + temporaryFileRetentionMs);
         cleanupId = id;
         await options.storage.putTemporaryFile(
           id,
@@ -753,7 +834,8 @@ async function upload(
             contentType: uploadType.contentType,
             expiresAt,
             originalName,
-            sha256
+            sha256,
+            ...(mode.kind === "create" && mode.uploadLinkId ? { uploadLinkId: mode.uploadLinkId } : {})
           },
           { signal: request.signal }
         );
@@ -1243,7 +1325,7 @@ function requireChunkAudience(
 }
 
 type UploadMode =
-  | { kind: "create"; temporaryOnly?: boolean }
+  | { kind: "create"; temporaryOnly?: boolean; uploadLinkId?: string; expiresAt?: Date }
   | { kind: "update"; id: string };
 
 type StagedUpload = {
@@ -1722,6 +1804,135 @@ function withExternalUploadHeaders(response: Response) {
     status: response.status,
     headers
   });
+}
+
+function withDropUploadHeaders(response: Response, nonce?: string) {
+  const headers = new Headers(response.headers);
+  const inline = nonce ? `'nonce-${nonce}'` : "'none'";
+  headers.set("Content-Security-Policy", `default-src 'none'; connect-src 'self'; img-src 'self'; script-src ${inline}; style-src ${inline}; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`);
+  headers.set("Cross-Origin-Opener-Policy", "same-origin");
+  headers.set("Referrer-Policy", "no-referrer");
+  headers.set("X-Content-Type-Options", "nosniff");
+  headers.set("X-Frame-Options", "DENY");
+  headers.set("X-Robots-Tag", "noindex, nofollow");
+  return new Response(response.body, { status: response.status, headers });
+}
+
+function matchDropPage(pathname: string) {
+  const match = /^\/drop\/([^/]+)\/?$/.exec(pathname);
+  return match?.[1] && UPLOAD_LINK_TOKEN_PATTERN.test(match[1]) ? match[1] : undefined;
+}
+
+function matchDropUpload(pathname: string) {
+  const match = /^\/api\/drop\/([^/]+)\/uploads$/.exec(pathname);
+  return match?.[1] && UPLOAD_LINK_TOKEN_PATTERN.test(match[1]) ? match[1] : undefined;
+}
+
+function requireUploadLinks(options: FetchArtifactAppOptions) {
+  if (!options.uploadLinks) {
+    throw new ArtifactRequestError(503, "upload_links_unavailable", "Upload links are not configured.");
+  }
+}
+
+async function readUploadLinkDuration(request: Request) {
+  if (request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !== "application/json") {
+    throw new ArtifactRequestError(415, "unsupported_media_type", "Expected application/json.");
+  }
+  const raw = await request.text();
+  if (Buffer.byteLength(raw, "utf8") > 1024) {
+    throw new ArtifactRequestError(413, "payload_too_large", "Upload link request is too large.");
+  }
+  let input: unknown;
+  try { input = JSON.parse(raw); }
+  catch { throw new ArtifactRequestError(400, "invalid_upload_link", "Upload link request is invalid JSON."); }
+  const durationMs = (input as { durationMs?: unknown } | null)?.durationMs;
+  if (!Number.isSafeInteger(durationMs) || (durationMs as number) < MIN_UPLOAD_LINK_DURATION_MS || (durationMs as number) > MAX_UPLOAD_LINK_DURATION_MS) {
+    throw new ArtifactRequestError(400, "invalid_upload_link_duration", "Duration must be between 5 minutes and 30 days.");
+  }
+  return durationMs as number;
+}
+
+function serializeUploadLink(link: UploadLink) {
+  return {
+    id: link.id,
+    createdAt: link.createdAt.toISOString(),
+    expiresAt: link.expiresAt.toISOString(),
+    fileCount: link.fileCount,
+    ...(link.revokedAt ? { revokedAt: link.revokedAt.toISOString() } : {})
+  };
+}
+
+function dropLinkNotFound() {
+  return withDropUploadHeaders(new Response("This upload link is unavailable.", {
+    status: 404,
+    headers: { "Cache-Control": "private, no-store", "Content-Type": "text/plain; charset=utf-8" }
+  }));
+}
+
+function downloadUploadLinkFiles(
+  files: readonly { id: string; filename: string }[],
+  storage: UploadStorage,
+  linkId: string,
+  signal: AbortSignal
+) {
+  const stream = new TransformStream<Uint8Array, Uint8Array>();
+  const writer = stream.writable.getWriter();
+  let writes = Promise.resolve();
+  const zip = new Zip((error, chunk, final) => {
+    if (error) {
+      writes = writes.then(() => writer.abort(error));
+      return;
+    }
+    if (chunk.length > 0) writes = writes.then(() => writer.write(chunk));
+    if (final) writes = writes.then(() => writer.close());
+  });
+  const abort = () => zip.terminate();
+  signal.addEventListener("abort", abort, { once: true });
+  void (async () => {
+    const usedNames = new Set<string>();
+    try {
+      for (const file of files) {
+        if (signal.aborted) throw new DOMException("Download aborted", "AbortError");
+        const stored = await storage.getTemporaryFile(file.id, { signal });
+        if (!stored) continue;
+        const entry = new ZipPassThrough(uniqueArchiveName(file.filename, usedNames));
+        zip.add(entry);
+        for await (const chunk of stored.body) {
+          entry.push(chunk instanceof Uint8Array ? chunk : Buffer.from(chunk));
+          await writes;
+        }
+        entry.push(new Uint8Array(), true);
+        await writes;
+      }
+      zip.end();
+      await writes;
+    } catch (error) {
+      zip.terminate();
+      await writer.abort(error).catch(() => undefined);
+    } finally {
+      signal.removeEventListener("abort", abort);
+    }
+  })();
+  return new Response(stream.readable, {
+    headers: {
+      "Cache-Control": "private, no-store",
+      "Content-Disposition": attachmentDisposition(`uploads-${linkId.slice(0, 8)}.zip`),
+      "Content-Type": "application/zip",
+      "X-Content-Type-Options": "nosniff"
+    }
+  });
+}
+
+function uniqueArchiveName(filename: string, used: Set<string>) {
+  const safe = safeFileName(filename, "download");
+  if (!used.has(safe)) { used.add(safe); return safe; }
+  const extensionAt = safe.lastIndexOf(".");
+  const stem = extensionAt > 0 ? safe.slice(0, extensionAt) : safe;
+  const extension = extensionAt > 0 ? safe.slice(extensionAt) : "";
+  for (let index = 2; ; index += 1) {
+    const candidate = `${stem} (${index})${extension}`;
+    if (!used.has(candidate)) { used.add(candidate); return candidate; }
+  }
 }
 
 function matchCapabilityPath(pathname: string, prefixes: readonly string[]) {

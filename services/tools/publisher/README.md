@@ -16,6 +16,10 @@ Access audience or native bearer authentication.
   does not require browser Access.
 - `/publisher` and `/api/external-uploads` are available only through the unified
   platform's browser Access adapter.
+- `/api/upload-links` creates and revokes time-limited guest upload capabilities.
+- `/drop/:token` lets a guest upload any number of temporary files without a
+  browser session. PostgreSQL stores only the token hash; the secret URL is
+  returned once, expires after 5 minutes to 30 days, and can be revoked early.
 
 ## Configuration
 
@@ -115,6 +119,14 @@ artifact inventory and lifecycle actions
 through same-origin `/api/external-uploads`. The Better Auth session is
 validated at the platform boundary; the browser never receives the native
 upload token.
+
+The same page can create a guest upload link for 1 hour, 1 day, 3 days, 7 days,
+or 30 days. Link management stays session-protected. The guest page and its
+single-file requests are public capability routes; multiple selected files are
+sent sequentially. Guest pages cannot list prior uploads. Received files use
+at least the link lifetime for retention and appear in the authenticated
+library. The owner can stream every still-retained file received through one
+link as a single ZIP, including after revoking that link.
 
 Files larger than 80 MB are split by the browser into 20 MB chunk requests
 and reassembled by the server, because public edge proxies cap a single

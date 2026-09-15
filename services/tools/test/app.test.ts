@@ -76,6 +76,7 @@ describe("platform fetch gateway", () => {
       "/api/auth/callback/google",
       "/assets/tools.css",
       "/health",
+      "/drop/guest-upload-token",
       "/artifacts/01234567890123456789012345678901",
       "/files/01234567890123456789012345678901/index.html"
     ]) {
@@ -84,6 +85,8 @@ describe("platform fetch gateway", () => {
 
     expect((await request(platform, "/artifacts/id", { method: "POST" })).status).toBe(401);
     expect((await request(platform, "/files/id/index.html", { method: "DELETE" })).status).toBe(401);
+    expect((await request(platform, "/api/drop/guest-upload-token/uploads", { method: "POST" })).status).toBe(200);
+    expect((await request(platform, "/api/upload-links", { method: "POST" })).status).toBe(401);
   });
 
   it("keeps machine APIs on their native service tokens", async () => {

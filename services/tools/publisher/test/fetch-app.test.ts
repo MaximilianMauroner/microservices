@@ -1,8 +1,10 @@
 import { readFile } from "node:fs/promises";
 import { Readable } from "node:stream";
 import { describe, expect, it } from "vitest";
+import { strFromU8, unzipSync } from "fflate";
 import { ActivityTracker } from "../src/activity-tracker.js";
 import { createFetchApp } from "../src/fetch-app.js";
+import type { CreatedUploadLink, UploadLink, UploadLinkRepository } from "../src/upload-links.js";
 import type {
   GetStoredObjectOptions,
   GetTemporaryFileOptions,
@@ -84,6 +86,28 @@ class MemoryUploadStorage implements UploadStorage {
   }
 }
 
+class MemoryUploadLinkRepository implements UploadLinkRepository {
+  readonly token = "u".repeat(43);
+  readonly id = "123e4567-e89b-42d3-a456-426614174000";
+  link: UploadLink | undefined;
+  files: { id: string; filename: string; bytes: number }[] = [];
+
+  async create(expiresAt: Date): Promise<CreatedUploadLink> {
+    this.link = { id: this.id, createdAt: new Date("2026-09-15T12:00:00.000Z"), expiresAt, fileCount: this.files.length };
+    return { ...this.link, token: this.token };
+  }
+  async list() { return this.link ? [this.link] : []; }
+  async findActive(token: string, now: Date) {
+    return token === this.token && this.link && !this.link.revokedAt && this.link.expiresAt > now ? this.link : null;
+  }
+  async listFiles(id: string) { return this.link?.id === id ? this.files : null; }
+  async revoke(id: string, now: Date) {
+    if (!this.link || id !== this.link.id) return false;
+    this.link = { ...this.link, revokedAt: this.link.revokedAt ?? now };
+    return true;
+  }
+}
+
 function multipart(filename: string, content: string, type: string, project?: string) {
   const form = new FormData();
   if (project) form.set("project", project);
@@ -92,6 +116,91 @@ function multipart(filename: string, content: string, type: string, project?: st
 }
 
 describe("native artifact fetch handler", () => {
+  it("creates an expiring guest upload link, accepts files, and revokes access", async () => {
+    const storage = new MemoryUploadStorage();
+    const uploadLinks = new MemoryUploadLinkRepository();
+    const now = new Date("2026-09-15T12:00:00.000Z");
+    const app = createFetchApp({
+      storage,
+      uploadLinks,
+      externalUpload: true,
+      uploadToken: "upload-token",
+      publicBaseUrl: "https://tools.example.test",
+      now: () => now
+    });
+
+    const createResponse = await app(new Request("https://tools.example.test/api/upload-links", {
+      method: "POST",
+      headers: { Origin: "https://tools.example.test", "Content-Type": "application/json" },
+      body: JSON.stringify({ durationMs: 86_400_000 })
+    }));
+    expect(createResponse.status).toBe(201);
+    expect(await createResponse.json()).toMatchObject({
+      id: uploadLinks.id,
+      url: `https://tools.example.test/drop/${uploadLinks.token}`,
+      expiresAt: "2026-09-16T12:00:00.000Z"
+    });
+
+    const pageResponse = await app(new Request(`https://tools.example.test/drop/${uploadLinks.token}`));
+    expect(pageResponse.status).toBe(200);
+    expect(await pageResponse.text()).toContain("Choose as many files as you need");
+
+    const uploadResponse = await app(new Request(`https://tools.example.test/api/drop/${uploadLinks.token}/uploads`, {
+      method: "POST",
+      headers: { Origin: "https://tools.example.test" },
+      body: multipart("from-guest.txt", "hello", "text/plain")
+    }));
+    expect(uploadResponse.status).toBe(201);
+    const uploaded = await uploadResponse.json() as { id: string; filename: string; bytes: number; kind: string };
+    expect(uploaded).toMatchObject({ filename: "from-guest.txt", kind: "file" });
+    uploadLinks.files = [{ id: uploaded.id, filename: uploaded.filename, bytes: uploaded.bytes }];
+    expect(storage.files.size).toBe(1);
+
+    const downloadResponse = await app(new Request(`https://tools.example.test/api/upload-links/${uploadLinks.id}/download`));
+    expect(downloadResponse.status).toBe(200);
+    expect(downloadResponse.headers.get("content-type")).toBe("application/zip");
+    const archive = unzipSync(new Uint8Array(await downloadResponse.arrayBuffer()));
+    expect(strFromU8(archive["from-guest.txt"]!)).toBe("hello");
+
+    const revokeResponse = await app(new Request(`https://tools.example.test/api/upload-links/${uploadLinks.id}`, {
+      method: "DELETE",
+      headers: { Origin: "https://tools.example.test" }
+    }));
+    expect(revokeResponse.status).toBe(204);
+    expect((await app(new Request(`https://tools.example.test/drop/${uploadLinks.token}`))).status).toBe(404);
+    const downloadAfterRevoke = await app(new Request(`https://tools.example.test/api/upload-links/${uploadLinks.id}/download`));
+    expect(downloadAfterRevoke.status).toBe(200);
+    expect(strFromU8(unzipSync(new Uint8Array(await downloadAfterRevoke.arrayBuffer()))["from-guest.txt"]!)).toBe("hello");
+    expect((await app(new Request(`https://tools.example.test/api/drop/${uploadLinks.token}/uploads`, {
+      method: "POST",
+      headers: { Origin: "https://tools.example.test" },
+      body: multipart("blocked.txt", "no", "text/plain")
+    }))).status).toBe(404);
+  });
+
+  it("rejects invalid upload-link durations and cross-origin creation", async () => {
+    const app = createFetchApp({
+      storage: new MemoryUploadStorage(),
+      uploadLinks: new MemoryUploadLinkRepository(),
+      uploadToken: "upload-token",
+      publicBaseUrl: "https://tools.example.test"
+    });
+    const invalid = await app(new Request("https://tools.example.test/api/upload-links", {
+      method: "POST",
+      headers: { Origin: "https://tools.example.test", "Content-Type": "application/json" },
+      body: JSON.stringify({ durationMs: 1000 })
+    }));
+    expect(invalid.status).toBe(400);
+    expect(await invalid.json()).toMatchObject({ error: "invalid_upload_link_duration" });
+
+    const crossOrigin = await app(new Request("https://tools.example.test/api/upload-links", {
+      method: "POST",
+      headers: { Origin: "https://evil.example", "Content-Type": "application/json" },
+      body: JSON.stringify({ durationMs: 86_400_000 })
+    }));
+    expect(crossOrigin.status).toBe(403);
+  });
+
   it("streams a multipart HTML upload to storage without buffering the request", async () => {
     const storage = new MemoryUploadStorage();
     const app = createFetchApp({

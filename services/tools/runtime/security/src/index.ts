@@ -91,6 +91,14 @@ export function classifyRoute(pathname: string, method: string): RouteAccess {
     return { kind: "public" };
   }
 
+  if (/^\/drop\/[^/]+\/?$/.test(pathname) && (normalizedMethod === "GET" || normalizedMethod === "HEAD")) {
+    return { kind: "public" };
+  }
+
+  if (/^\/api\/drop\/[^/]+\/uploads$/.test(pathname) && normalizedMethod === "POST") {
+    return { kind: "public" };
+  }
+
   if (
     (normalizedMethod === "GET" || normalizedMethod === "HEAD") &&
     matchesPrefix(pathname, ["/artifacts", "/files"])
@@ -127,6 +135,9 @@ export function isArtifactPath(pathname: string): boolean {
     "/publisher",
     "/api/uploads",
     "/api/external-uploads",
+    "/api/upload-links",
+    "/api/drop",
+    "/drop",
     "/artifacts",
     "/files"
   ]);

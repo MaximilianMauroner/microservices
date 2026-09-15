@@ -25,6 +25,7 @@ type ArtifactRow = {
   created_at: Date;
   updated_at: Date;
   expires_at: Date | null;
+  upload_link_id: string | null;
 };
 
 type PendingOperation = {
@@ -82,7 +83,8 @@ export function createMetadataBackedUploadStorage(
       const intended: UpsertArtifact = {
         id, kind: "file", filename: metadata.originalName,
         contentType: metadata.contentType, bytes: metadata.bytes,
-        objectKey: temporaryFileKey(id), expiresAt: metadata.expiresAt, sha256: metadata.sha256, now
+        objectKey: temporaryFileKey(id), expiresAt: metadata.expiresAt,
+        uploadLinkId: metadata.uploadLinkId, sha256: metadata.sha256, now
       };
       await runDurableMutation({
         prepare: () => prepare(sql, id, "put_file", intended),
@@ -175,7 +177,7 @@ export function createMetadataBackedUploadStorage(
 
 type UpsertArtifact = {
   id: string; kind: "html" | "file"; filename: string; contentType: string;
-  bytes: number; objectKey: string; project?: string; expiresAt?: Date; sha256: string; now: Date;
+  bytes: number; objectKey: string; project?: string; expiresAt?: Date; uploadLinkId?: string; sha256: string; now: Date;
 };
 
 export async function runDurableMutation(options: {
@@ -262,13 +264,14 @@ function hydratePayload(payload: UpsertArtifact): UpsertArtifact {
 async function upsert(sql: Sql | TransactionSql, value: UpsertArtifact) {
   await sql`
     insert into artifacts.objects
-      (id, kind, filename, content_type, bytes, object_key, project, created_at, updated_at, expires_at)
+      (id, kind, filename, content_type, bytes, object_key, project, created_at, updated_at, expires_at, upload_link_id)
     values (${value.id}, ${value.kind}, ${value.filename}, ${value.contentType}, ${value.bytes},
-      ${value.objectKey}, ${value.project ?? null}, ${value.now}, ${value.now}, ${value.expiresAt ?? null})
+      ${value.objectKey}, ${value.project ?? null}, ${value.now}, ${value.now}, ${value.expiresAt ?? null}, ${value.uploadLinkId ?? null})
     on conflict (id) do update set
       kind = excluded.kind, filename = excluded.filename, content_type = excluded.content_type,
       bytes = excluded.bytes, object_key = excluded.object_key, project = excluded.project,
-      updated_at = excluded.updated_at, expires_at = excluded.expires_at, revoked_at = null
+      updated_at = excluded.updated_at, expires_at = excluded.expires_at,
+      upload_link_id = excluded.upload_link_id, revoked_at = null
   `;
 }
 

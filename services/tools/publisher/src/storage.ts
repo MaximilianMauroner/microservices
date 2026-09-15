@@ -100,6 +100,7 @@ export type PutTemporaryFileMetadata = {
   sha256: string;
   contentType: string;
   expiresAt: Date;
+  uploadLinkId?: string;
 };
 
 export type StoredUploadSummary = {

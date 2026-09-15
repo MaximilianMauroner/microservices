@@ -23,10 +23,12 @@ import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as StatusRouteImport } from './routes/status'
 import { Route as ApiExternalUploadsRouteImport } from './routes/api/external-uploads'
+import { Route as ApiUploadLinksRouteImport } from './routes/api/upload-links'
 import { Route as ApiUploadsRouteImport } from './routes/api/uploads'
 import { Route as ArtifactsSplatRouteImport } from './routes/artifacts/$'
 import { Route as ArtifactsIdRouteImport } from './routes/artifacts/$id'
 import { Route as AssetsSplatRouteImport } from './routes/assets/$'
+import { Route as DropSplatRouteImport } from './routes/drop/$'
 import { Route as FeedbackIndexRouteImport } from './routes/feedback/index'
 import { Route as FilesIdRouteImport } from './routes/files/$id'
 import { Route as HealthComponentRouteImport } from './routes/health/$component'
@@ -34,6 +36,7 @@ import { Route as MarkdownIndexRouteImport } from './routes/markdown/index'
 import { Route as PublisherIndexRouteImport } from './routes/publisher/index'
 import { Route as PublisherArtifactsRouteImport } from './routes/publisher/artifacts'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as ApiDropSplatRouteImport } from './routes/api/drop/$'
 import { Route as ApiExternalUploadsSplatRouteImport } from './routes/api/external-uploads/$'
 import { Route as ApiMoneyActivityRouteImport } from './routes/api/money/activity'
 import { Route as ApiMoneyBalancesRouteImport } from './routes/api/money/balances'
@@ -43,6 +46,7 @@ import { Route as ApiMoneyMarketDataRouteImport } from './routes/api/money/marke
 import { Route as ApiMoneyTransfersRouteImport } from './routes/api/money/transfers'
 import { Route as ApiOpsSplatRouteImport } from './routes/api/ops/$'
 import { Route as ApiPublicCatalogRouteImport } from './routes/api/public/catalog'
+import { Route as ApiUploadLinksSplatRouteImport } from './routes/api/upload-links/$'
 import { Route as ApiUploadsSplatRouteImport } from './routes/api/uploads/$'
 import { Route as FeedbackFTokenRouteImport } from './routes/feedback/f/$token'
 import { Route as FeedbackFormsFormIdRouteImport } from './routes/feedback/forms/$formId'
@@ -125,6 +129,11 @@ const ApiExternalUploadsRoute = ApiExternalUploadsRouteImport.update({
   path: '/api/external-uploads',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiUploadLinksRoute = ApiUploadLinksRouteImport.update({
+  id: '/api/upload-links',
+  path: '/api/upload-links',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiUploadsRoute = ApiUploadsRouteImport.update({
   id: '/api/uploads',
   path: '/api/uploads',
@@ -143,6 +152,11 @@ const ArtifactsIdRoute = ArtifactsIdRouteImport.update({
 const AssetsSplatRoute = AssetsSplatRouteImport.update({
   id: '/assets/$',
   path: '/assets/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DropSplatRoute = DropSplatRouteImport.update({
+  id: '/drop/$',
+  path: '/drop/$',
   getParentRoute: () => rootRouteImport,
 } as any)
 const FeedbackIndexRoute = FeedbackIndexRouteImport.update({
@@ -178,6 +192,11 @@ const PublisherArtifactsRoute = PublisherArtifactsRouteImport.update({
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiDropSplatRoute = ApiDropSplatRouteImport.update({
+  id: '/api/drop/$',
+  path: '/api/drop/$',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiExternalUploadsSplatRoute = ApiExternalUploadsSplatRouteImport.update({
@@ -224,6 +243,11 @@ const ApiPublicCatalogRoute = ApiPublicCatalogRouteImport.update({
   id: '/api/public/catalog',
   path: '/api/public/catalog',
   getParentRoute: () => rootRouteImport,
+} as any)
+const ApiUploadLinksSplatRoute = ApiUploadLinksSplatRouteImport.update({
+  id: '/$',
+  path: '/$',
+  getParentRoute: () => ApiUploadLinksRoute,
 } as any)
 const ApiUploadsSplatRoute = ApiUploadsSplatRouteImport.update({
   id: '/$',
@@ -299,10 +323,12 @@ export interface FileRoutesByFullPath {
   '/sign-in': typeof SignInRoute
   '/status': typeof StatusRoute
   '/api/external-uploads': typeof ApiExternalUploadsRouteWithChildren
+  '/api/upload-links': typeof ApiUploadLinksRouteWithChildren
   '/api/uploads': typeof ApiUploadsRouteWithChildren
   '/artifacts/$': typeof ArtifactsSplatRoute
   '/artifacts/$id': typeof ArtifactsIdRoute
   '/assets/$': typeof AssetsSplatRoute
+  '/drop/$': typeof DropSplatRoute
   '/files/$id': typeof FilesIdRouteWithChildren
   '/health/$component': typeof HealthComponentRoute
   '/publisher/artifacts': typeof PublisherArtifactsRoute
@@ -310,6 +336,7 @@ export interface FileRoutesByFullPath {
   '/markdown/': typeof MarkdownIndexRoute
   '/publisher/': typeof PublisherIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/drop/$': typeof ApiDropSplatRoute
   '/api/external-uploads/$': typeof ApiExternalUploadsSplatRoute
   '/api/money/activity': typeof ApiMoneyActivityRoute
   '/api/money/balances': typeof ApiMoneyBalancesRoute
@@ -319,6 +346,7 @@ export interface FileRoutesByFullPath {
   '/api/money/transfers': typeof ApiMoneyTransfersRoute
   '/api/ops/$': typeof ApiOpsSplatRoute
   '/api/public/catalog': typeof ApiPublicCatalogRoute
+  '/api/upload-links/$': typeof ApiUploadLinksSplatRoute
   '/api/uploads/$': typeof ApiUploadsSplatRoute
   '/feedback/f/$token': typeof FeedbackFTokenRoute
   '/feedback/forms/$formId': typeof FeedbackFormsFormIdRoute
@@ -343,10 +371,12 @@ export interface FileRoutesByTo {
   '/sign-in': typeof SignInRoute
   '/status': typeof StatusRoute
   '/api/external-uploads': typeof ApiExternalUploadsRouteWithChildren
+  '/api/upload-links': typeof ApiUploadLinksRouteWithChildren
   '/api/uploads': typeof ApiUploadsRouteWithChildren
   '/artifacts/$': typeof ArtifactsSplatRoute
   '/artifacts/$id': typeof ArtifactsIdRoute
   '/assets/$': typeof AssetsSplatRoute
+  '/drop/$': typeof DropSplatRoute
   '/files/$id': typeof FilesIdRouteWithChildren
   '/health/$component': typeof HealthComponentRoute
   '/publisher/artifacts': typeof PublisherArtifactsRoute
@@ -354,6 +384,7 @@ export interface FileRoutesByTo {
   '/markdown': typeof MarkdownIndexRoute
   '/publisher': typeof PublisherIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/drop/$': typeof ApiDropSplatRoute
   '/api/external-uploads/$': typeof ApiExternalUploadsSplatRoute
   '/api/money/activity': typeof ApiMoneyActivityRoute
   '/api/money/balances': typeof ApiMoneyBalancesRoute
@@ -363,6 +394,7 @@ export interface FileRoutesByTo {
   '/api/money/transfers': typeof ApiMoneyTransfersRoute
   '/api/ops/$': typeof ApiOpsSplatRoute
   '/api/public/catalog': typeof ApiPublicCatalogRoute
+  '/api/upload-links/$': typeof ApiUploadLinksSplatRoute
   '/api/uploads/$': typeof ApiUploadsSplatRoute
   '/feedback/f/$token': typeof FeedbackFTokenRoute
   '/feedback/forms/$formId': typeof FeedbackFormsFormIdRoute
@@ -391,10 +423,12 @@ export interface FileRoutesById {
   '/sign-in': typeof SignInRoute
   '/status': typeof StatusRoute
   '/api/external-uploads': typeof ApiExternalUploadsRouteWithChildren
+  '/api/upload-links': typeof ApiUploadLinksRouteWithChildren
   '/api/uploads': typeof ApiUploadsRouteWithChildren
   '/artifacts/$': typeof ArtifactsSplatRoute
   '/artifacts/$id': typeof ArtifactsIdRoute
   '/assets/$': typeof AssetsSplatRoute
+  '/drop/$': typeof DropSplatRoute
   '/files/$id': typeof FilesIdRouteWithChildren
   '/health/$component': typeof HealthComponentRoute
   '/publisher/artifacts': typeof PublisherArtifactsRoute
@@ -402,6 +436,7 @@ export interface FileRoutesById {
   '/markdown/': typeof MarkdownIndexRoute
   '/publisher/': typeof PublisherIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/drop/$': typeof ApiDropSplatRoute
   '/api/external-uploads/$': typeof ApiExternalUploadsSplatRoute
   '/api/money/activity': typeof ApiMoneyActivityRoute
   '/api/money/balances': typeof ApiMoneyBalancesRoute
@@ -411,6 +446,7 @@ export interface FileRoutesById {
   '/api/money/transfers': typeof ApiMoneyTransfersRoute
   '/api/ops/$': typeof ApiOpsSplatRoute
   '/api/public/catalog': typeof ApiPublicCatalogRoute
+  '/api/upload-links/$': typeof ApiUploadLinksSplatRoute
   '/api/uploads/$': typeof ApiUploadsSplatRoute
   '/feedback/f/$token': typeof FeedbackFTokenRoute
   '/feedback/forms/$formId': typeof FeedbackFormsFormIdRoute
@@ -440,10 +476,12 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/status'
     | '/api/external-uploads'
+    | '/api/upload-links'
     | '/api/uploads'
     | '/artifacts/$'
     | '/artifacts/$id'
     | '/assets/$'
+    | '/drop/$'
     | '/files/$id'
     | '/health/$component'
     | '/publisher/artifacts'
@@ -451,6 +489,7 @@ export interface FileRouteTypes {
     | '/markdown/'
     | '/publisher/'
     | '/api/auth/$'
+    | '/api/drop/$'
     | '/api/external-uploads/$'
     | '/api/money/activity'
     | '/api/money/balances'
@@ -460,6 +499,7 @@ export interface FileRouteTypes {
     | '/api/money/transfers'
     | '/api/ops/$'
     | '/api/public/catalog'
+    | '/api/upload-links/$'
     | '/api/uploads/$'
     | '/feedback/f/$token'
     | '/feedback/forms/$formId'
@@ -484,10 +524,12 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/status'
     | '/api/external-uploads'
+    | '/api/upload-links'
     | '/api/uploads'
     | '/artifacts/$'
     | '/artifacts/$id'
     | '/assets/$'
+    | '/drop/$'
     | '/files/$id'
     | '/health/$component'
     | '/publisher/artifacts'
@@ -495,6 +537,7 @@ export interface FileRouteTypes {
     | '/markdown'
     | '/publisher'
     | '/api/auth/$'
+    | '/api/drop/$'
     | '/api/external-uploads/$'
     | '/api/money/activity'
     | '/api/money/balances'
@@ -504,6 +547,7 @@ export interface FileRouteTypes {
     | '/api/money/transfers'
     | '/api/ops/$'
     | '/api/public/catalog'
+    | '/api/upload-links/$'
     | '/api/uploads/$'
     | '/feedback/f/$token'
     | '/feedback/forms/$formId'
@@ -531,10 +575,12 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/status'
     | '/api/external-uploads'
+    | '/api/upload-links'
     | '/api/uploads'
     | '/artifacts/$'
     | '/artifacts/$id'
     | '/assets/$'
+    | '/drop/$'
     | '/files/$id'
     | '/health/$component'
     | '/publisher/artifacts'
@@ -542,6 +588,7 @@ export interface FileRouteTypes {
     | '/markdown/'
     | '/publisher/'
     | '/api/auth/$'
+    | '/api/drop/$'
     | '/api/external-uploads/$'
     | '/api/money/activity'
     | '/api/money/balances'
@@ -551,6 +598,7 @@ export interface FileRouteTypes {
     | '/api/money/transfers'
     | '/api/ops/$'
     | '/api/public/catalog'
+    | '/api/upload-links/$'
     | '/api/uploads/$'
     | '/feedback/f/$token'
     | '/feedback/forms/$formId'
@@ -579,12 +627,15 @@ export interface RootRouteChildren {
   SignInRoute: typeof SignInRoute
   StatusRoute: typeof StatusRoute
   ApiExternalUploadsRoute: typeof ApiExternalUploadsRouteWithChildren
+  ApiUploadLinksRoute: typeof ApiUploadLinksRouteWithChildren
   ApiUploadsRoute: typeof ApiUploadsRouteWithChildren
   ArtifactsSplatRoute: typeof ArtifactsSplatRoute
   ArtifactsIdRoute: typeof ArtifactsIdRoute
   AssetsSplatRoute: typeof AssetsSplatRoute
+  DropSplatRoute: typeof DropSplatRoute
   FilesIdRoute: typeof FilesIdRouteWithChildren
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiDropSplatRoute: typeof ApiDropSplatRoute
   ApiMoneyActivityRoute: typeof ApiMoneyActivityRoute
   ApiMoneyBalancesRoute: typeof ApiMoneyBalancesRoute
   ApiMoneyCategoriesRoute: typeof ApiMoneyCategoriesRoute
@@ -697,6 +748,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiExternalUploadsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/upload-links': {
+      id: '/api/upload-links'
+      path: '/api/upload-links'
+      fullPath: '/api/upload-links'
+      preLoaderRoute: typeof ApiUploadLinksRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/uploads': {
       id: '/api/uploads'
       path: '/api/uploads'
@@ -723,6 +781,13 @@ declare module '@tanstack/react-router' {
       path: '/assets/$'
       fullPath: '/assets/$'
       preLoaderRoute: typeof AssetsSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/drop/$': {
+      id: '/drop/$'
+      path: '/drop/$'
+      fullPath: '/drop/$'
+      preLoaderRoute: typeof DropSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/feedback/': {
@@ -772,6 +837,13 @@ declare module '@tanstack/react-router' {
       path: '/api/auth/$'
       fullPath: '/api/auth/$'
       preLoaderRoute: typeof ApiAuthSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/drop/$': {
+      id: '/api/drop/$'
+      path: '/api/drop/$'
+      fullPath: '/api/drop/$'
+      preLoaderRoute: typeof ApiDropSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/external-uploads/$': {
@@ -836,6 +908,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/api/public/catalog'
       preLoaderRoute: typeof ApiPublicCatalogRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/api/upload-links/$': {
+      id: '/api/upload-links/$'
+      path: '/$'
+      fullPath: '/api/upload-links/$'
+      preLoaderRoute: typeof ApiUploadLinksSplatRouteImport
+      parentRoute: typeof ApiUploadLinksRoute
     }
     '/api/uploads/$': {
       id: '/api/uploads/$'
@@ -985,6 +1064,18 @@ const ApiExternalUploadsRouteChildren: ApiExternalUploadsRouteChildren = {
 const ApiExternalUploadsRouteWithChildren =
   ApiExternalUploadsRoute._addFileChildren(ApiExternalUploadsRouteChildren)
 
+interface ApiUploadLinksRouteChildren {
+  ApiUploadLinksSplatRoute: typeof ApiUploadLinksSplatRoute
+}
+
+const ApiUploadLinksRouteChildren: ApiUploadLinksRouteChildren = {
+  ApiUploadLinksSplatRoute: ApiUploadLinksSplatRoute,
+}
+
+const ApiUploadLinksRouteWithChildren = ApiUploadLinksRoute._addFileChildren(
+  ApiUploadLinksRouteChildren,
+)
+
 interface ApiUploadsRouteChildren {
   ApiUploadsSplatRoute: typeof ApiUploadsSplatRoute
 }
@@ -1039,12 +1130,15 @@ const rootRouteChildren: RootRouteChildren = {
   SignInRoute: SignInRoute,
   StatusRoute: StatusRoute,
   ApiExternalUploadsRoute: ApiExternalUploadsRouteWithChildren,
+  ApiUploadLinksRoute: ApiUploadLinksRouteWithChildren,
   ApiUploadsRoute: ApiUploadsRouteWithChildren,
   ArtifactsSplatRoute: ArtifactsSplatRoute,
   ArtifactsIdRoute: ArtifactsIdRoute,
   AssetsSplatRoute: AssetsSplatRoute,
+  DropSplatRoute: DropSplatRoute,
   FilesIdRoute: FilesIdRouteWithChildren,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiDropSplatRoute: ApiDropSplatRoute,
   ApiMoneyActivityRoute: ApiMoneyActivityRoute,
   ApiMoneyBalancesRoute: ApiMoneyBalancesRoute,
   ApiMoneyCategoriesRoute: ApiMoneyCategoriesRoute,
