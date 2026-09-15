@@ -85,7 +85,9 @@ describe("Manage artifact library", () => {
 
     expect(selectProject).toContain("while (cursor)");
     expect(selectProject).toContain("remaining.push(...payload.uploads)");
+    expect(selectProject.indexOf("if (busy) return")).toBeLessThan(selectProject.indexOf("setProjectFilter(value)"));
     expect(source).toContain("onSelect={(value) => void selectProject(value)}");
+    expect(source).toContain("disabled={busy}");
   });
 
   it("preserves loaded pages while updating rows and exact summaries", async () => {

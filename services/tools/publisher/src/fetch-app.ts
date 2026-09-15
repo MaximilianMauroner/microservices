@@ -69,6 +69,7 @@ const SINGLE_BYTE_RANGE_PATTERN = /^bytes=(?:\d+-\d*|-\d+)$/i;
 const DEFAULT_UPLOAD_LIST_LIMIT = 25;
 const MAX_UPLOAD_LIST_LIMIT = 100;
 const MAX_UPLOAD_LIST_CURSOR_LENGTH = 2048;
+const UPLOAD_LINK_PAGE_SIZE = 20;
 const UPLOAD_KEY_PATTERN =
   /^(?:pages\/[A-Za-z0-9_-]{32}\.html|files\/[A-Za-z0-9_-]{32})$/;
 const FAVICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
@@ -170,9 +171,20 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
 
       if (request.method === "GET" && url.pathname === "/api/upload-links") {
         requireUploadLinks(options);
-        const links = await options.uploadLinks!.list();
+        const before = parseUploadLinkCursor(singleQuery(url.searchParams, "cursor"));
+        const batch = await options.uploadLinks!.list({
+          limit: UPLOAD_LINK_PAGE_SIZE + 1,
+          ...(before ? { before } : {})
+        });
+        const links = batch.slice(0, UPLOAD_LINK_PAGE_SIZE);
+        const nextCursor = batch.length > UPLOAD_LINK_PAGE_SIZE
+          ? encodeUploadLinkCursor(links.at(-1)!)
+          : undefined;
         return jsonResponse(
-          { links: links.map(serializeUploadLink) },
+          {
+            links: links.map(serializeUploadLink),
+            ...(nextCursor ? { nextCursor } : {})
+          },
           200,
           { "Cache-Control": "private, no-store" }
         );
@@ -2431,6 +2443,37 @@ function encodeUploadListCursor(
     }),
     "utf8"
   ).toString("base64url");
+}
+
+function encodeUploadLinkCursor(link: Pick<UploadLink, "createdAt" | "id">) {
+  return Buffer.from(JSON.stringify({
+    version: 1,
+    createdAt: link.createdAt.toISOString(),
+    id: link.id
+  }), "utf8").toString("base64url");
+}
+
+function parseUploadLinkCursor(value: string | undefined) {
+  if (value === undefined) return undefined;
+  if (!value || value.length > MAX_UPLOAD_LIST_CURSOR_LENGTH) {
+    throw new ArtifactRequestError(400, "invalid_pagination", "cursor is invalid.");
+  }
+  try {
+    const parsed: unknown = JSON.parse(Buffer.from(value, "base64url").toString("utf8"));
+    if (!parsed || typeof parsed !== "object") throw new Error("invalid cursor");
+    const candidate = parsed as Record<string, unknown>;
+    if (candidate.version !== 1 || typeof candidate.createdAt !== "string" ||
+      typeof candidate.id !== "string" || !UUID_PATTERN.test(candidate.id)) {
+      throw new Error("invalid cursor");
+    }
+    const createdAt = new Date(candidate.createdAt);
+    if (Number.isNaN(createdAt.getTime()) || createdAt.toISOString() !== candidate.createdAt) {
+      throw new Error("invalid cursor");
+    }
+    return { createdAt, id: candidate.id };
+  } catch {
+    throw new ArtifactRequestError(400, "invalid_pagination", "cursor is invalid.");
+  }
 }
 
 function parseUploadListOptions(search: URLSearchParams): Omit<ListUploadsOptions, "signal"> {

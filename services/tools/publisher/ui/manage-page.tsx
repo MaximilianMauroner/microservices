@@ -130,8 +130,9 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
   }
 
   async function selectProject(value: string) {
+    if (busy) return;
     setProjectFilter(value);
-    if (value === ALL_PROJECTS || !nextCursor || busy) return;
+    if (value === ALL_PROJECTS || !nextCursor) return;
     setBusy(true);
     try {
       let cursor: string | undefined = nextCursor;
@@ -317,7 +318,7 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
         </section>
 
         <section className="grid items-start gap-3 lg:grid-cols-[12rem_minmax(0,1fr)_20rem]" aria-label="Artifact library">
-          <ProjectNavigation projects={projects} active={projectFilter} onSelect={(value) => void selectProject(value)} total={summary.total} />
+          <ProjectNavigation projects={projects} active={projectFilter} onSelect={(value) => void selectProject(value)} total={summary.total} disabled={busy} />
           <ArtifactTable uploads={visibleUploads} loaded={uploads.length} total={summary.total} selectedId={selectedId} onSelect={(id) => { setSelectedId(id); setMobileInspectorOpen(true); }} hasMore={Boolean(nextCursor)} busy={busy} onLoadMore={loadOlder} />
           {!isMobile ? <ArtifactInspector
             key={selected?.id ?? "none"}
@@ -342,13 +343,13 @@ function Metric({ label, value, attention = false }: { label: string; value: num
   return <Card className="gap-0 p-4"><span className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">{label}</span><strong className={`mt-1 text-2xl${attention ? " text-amber-300" : ""}`}>{value}</strong></Card>;
 }
 
-function ProjectNavigation({ projects, active, onSelect, total }: { projects: Array<[string, number]>; active: string; onSelect: (value: string) => void; total: number }) {
+function ProjectNavigation({ projects, active, onSelect, total, disabled }: { projects: Array<[string, number]>; active: string; onSelect: (value: string) => void; total: number; disabled: boolean }) {
   const unassigned = projects.find(([project]) => project === UNASSIGNED_PROJECT)?.[1] ?? 0;
-  return <Card className="gap-0 overflow-hidden py-2"><h2 className="px-3 pb-2 text-xs font-semibold uppercase tracking-[0.1em] text-muted-foreground">Projects</h2><nav className="flex gap-1 overflow-x-auto px-1.5 pb-1 lg:grid lg:gap-0.5 lg:overflow-visible lg:pb-0" aria-label="Artifact projects"><ProjectButton label="All artifacts" count={total} active={active === ALL_PROJECTS} onClick={() => onSelect(ALL_PROJECTS)} />{projects.filter(([project]) => project !== UNASSIGNED_PROJECT).map(([project, count]) => <ProjectButton key={project} label={project} count={count} active={active === project} onClick={() => onSelect(project)} />)}{unassigned ? <ProjectButton label="Unassigned" count={unassigned} active={active === UNASSIGNED_PROJECT} onClick={() => onSelect(UNASSIGNED_PROJECT)} /> : null}</nav></Card>;
+  return <Card className="gap-0 overflow-hidden py-2"><h2 className="px-3 pb-2 text-xs font-semibold uppercase tracking-[0.1em] text-muted-foreground">Projects</h2><nav className="flex gap-1 overflow-x-auto px-1.5 pb-1 lg:grid lg:gap-0.5 lg:overflow-visible lg:pb-0" aria-label="Artifact projects"><ProjectButton label="All artifacts" count={total} active={active === ALL_PROJECTS} onClick={() => onSelect(ALL_PROJECTS)} disabled={disabled} />{projects.filter(([project]) => project !== UNASSIGNED_PROJECT).map(([project, count]) => <ProjectButton key={project} label={project} count={count} active={active === project} onClick={() => onSelect(project)} disabled={disabled} />)}{unassigned ? <ProjectButton label="Unassigned" count={unassigned} active={active === UNASSIGNED_PROJECT} onClick={() => onSelect(UNASSIGNED_PROJECT)} disabled={disabled} /> : null}</nav></Card>;
 }
 
-function ProjectButton({ label, count, active, onClick }: { label: string; count: number; active: boolean; onClick: () => void }) {
-  return <button className={`flex min-h-11 min-w-36 shrink-0 items-center justify-between gap-2 rounded-md px-2 py-2 text-left text-xs transition-colors hover:bg-muted lg:min-h-0 lg:min-w-0${active ? " bg-secondary text-foreground" : " text-muted-foreground"}`} type="button" aria-current={active ? "true" : undefined} onClick={onClick}><span className="truncate">{label}</span><Badge variant="outline">{count}</Badge></button>;
+function ProjectButton({ label, count, active, onClick, disabled }: { label: string; count: number; active: boolean; onClick: () => void; disabled: boolean }) {
+  return <button className={`flex min-h-11 min-w-36 shrink-0 items-center justify-between gap-2 rounded-md px-2 py-2 text-left text-xs transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50 lg:min-h-0 lg:min-w-0${active ? " bg-secondary text-foreground" : " text-muted-foreground"}`} type="button" aria-current={active ? "true" : undefined} onClick={onClick} disabled={disabled}><span className="truncate">{label}</span><Badge variant="outline">{count}</Badge></button>;
 }
 
 function ArtifactTable({ uploads, loaded, total, selectedId, onSelect, hasMore, busy, onLoadMore }: { uploads: UploadSummary[]; loaded: number; total: number; selectedId?: string; onSelect: (id: string) => void; hasMore: boolean; busy: boolean; onLoadMore: () => Promise<void> }) {

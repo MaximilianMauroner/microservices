@@ -27,6 +27,7 @@ export function UploadLinkManager() {
   const [links, setLinks] = useState<UploadLinkSummary[]>([]);
   const [durationMs, setDurationMs] = useState<number>(durations[1].value);
   const [created, setCreated] = useState<CreatedUploadLink>();
+  const [nextCursor, setNextCursor] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
 
@@ -35,10 +36,29 @@ export function UploadLinkManager() {
     await fetch("/api/upload-links", { headers: { Accept: "application/json" } })
       .then(async (response) => {
         if (!response.ok) throw new Error("Upload links could not be loaded.");
-        return response.json() as Promise<{ links: UploadLinkSummary[] }>;
+        return response.json() as Promise<{ links: UploadLinkSummary[]; nextCursor?: string }>;
       })
-      .then((payload) => setLinks(payload.links))
+      .then((payload) => { setLinks(payload.links); setNextCursor(payload.nextCursor); })
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Upload links could not be loaded."));
+  }
+
+  async function loadOlderLinks() {
+    if (!nextCursor || busy) return;
+    setBusy(true);
+    setError(undefined);
+    try {
+      const response = await fetch(`/api/upload-links?cursor=${encodeURIComponent(nextCursor)}`, {
+        headers: { Accept: "application/json" }
+      });
+      if (!response.ok) throw new Error("Older upload links could not be loaded.");
+      const payload = await response.json() as { links: UploadLinkSummary[]; nextCursor?: string };
+      setLinks((current) => [...current, ...payload.links]);
+      setNextCursor(payload.nextCursor);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Older upload links could not be loaded.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   useEffect(() => {
@@ -124,6 +144,7 @@ export function UploadLinkManager() {
             </div>
           </div></Card>;
         })}
+        {nextCursor ? <div className="flex justify-center pt-1"><Button type="button" variant="ghost" size="sm" onClick={() => void loadOlderLinks()} disabled={busy}>Load older links</Button></div> : null}
       </div> : null}
     </section>
   );

@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { strFromU8, unzipSync } from "fflate";
 import { ActivityTracker } from "../src/activity-tracker.js";
 import { createFetchApp } from "../src/fetch-app.js";
-import type { CreatedUploadLink, UploadLink, UploadLinkRepository } from "../src/upload-links.js";
+import type { CreatedUploadLink, UploadLink, UploadLinkListOptions, UploadLinkRepository } from "../src/upload-links.js";
 import type {
   GetStoredObjectOptions,
   GetTemporaryFileOptions,
@@ -96,7 +96,7 @@ class MemoryUploadLinkRepository implements UploadLinkRepository {
     this.link = { id: this.id, createdAt: new Date("2026-09-15T12:00:00.000Z"), expiresAt, fileCount: this.files.length };
     return { ...this.link, token: this.token };
   }
-  async list() { return this.link ? [this.link] : []; }
+  async list(_options: UploadLinkListOptions) { return this.link ? [this.link] : []; }
   async find(token: string) { return token === this.token ? this.link ?? null : null; }
   async findActive(token: string, now: Date) {
     return token === this.token && this.link && !this.link.revokedAt && this.link.expiresAt > now ? this.link : null;
@@ -181,6 +181,8 @@ describe("native artifact fetch handler", () => {
     expect(page).toContain("20*1024*1024");
     expect(page).toContain("Retry-After");
     expect(page).toContain("for(;;)");
+    expect(page).toContain("uploadSmallFile");
+    expect(page).toContain("if(response.status!==503)return readResponse(response)");
     expect(page).toContain("waiting for upload capacity");
 
     const uploadResponse = await app(new Request(`https://tools.example.test/api/drop/${uploadLinks.token}/uploads`, {
@@ -232,6 +234,53 @@ describe("native artifact fetch handler", () => {
       error: "upload_link_unavailable",
       message: "This upload link has expired or was revoked."
     });
+  });
+
+  it("paginates upload-link history with opaque keyset cursors", async () => {
+    class PagedUploadLinks extends MemoryUploadLinkRepository {
+      readonly links = Array.from({ length: 25 }, (_, index): UploadLink => ({
+        id: `123e4567-e89b-42d3-a456-${String(index + 1).padStart(12, "0")}`,
+        createdAt: new Date(Date.UTC(2026, 8, 15, 12, 0, 25 - index)),
+        expiresAt: new Date("2026-09-16T12:00:00.000Z"),
+        fileCount: index
+      }));
+
+      override async list(options: UploadLinkListOptions) {
+        const start = options.before
+          ? this.links.findIndex((link) => link.id === options.before!.id) + 1
+          : 0;
+        return this.links.slice(start, start + options.limit);
+      }
+    }
+    const app = createFetchApp({
+      storage: new MemoryUploadStorage(),
+      uploadLinks: new PagedUploadLinks(),
+      uploadToken: "upload-token"
+    });
+
+    const first = await app(new Request("https://tools.example.test/api/upload-links"));
+    const firstPage = await first.json() as { links: UploadLink[]; nextCursor: string };
+    expect(firstPage.links).toHaveLength(20);
+    expect(firstPage.nextCursor).toBeTypeOf("string");
+
+    const second = await app(new Request(`https://tools.example.test/api/upload-links?cursor=${encodeURIComponent(firstPage.nextCursor)}`));
+    const secondPage = await second.json() as { links: UploadLink[]; nextCursor?: string };
+    expect(secondPage.links).toHaveLength(5);
+    expect(secondPage.nextCursor).toBeUndefined();
+    expect(new Set([...firstPage.links, ...secondPage.links].map((link) => link.id)).size).toBe(25);
+
+    const invalid = await app(new Request("https://tools.example.test/api/upload-links?cursor=invalid"));
+    expect(invalid.status).toBe(400);
+    expect(await invalid.json()).toMatchObject({ error: "invalid_pagination" });
+  });
+
+  it("bounds upload-link history queries with a keyset limit", async () => {
+    const source = await readFile(new URL("../src/upload-links.ts", import.meta.url), "utf8");
+    const schema = await readFile(new URL("../../database/postgres-schema.ts", import.meta.url), "utf8");
+    expect(source).toContain("where (l.created_at, l.id) <");
+    expect(source).toContain("order by created_at desc, id desc");
+    expect(source).toContain("limit ${options.limit}");
+    expect(schema).toContain('index("upload_links_history_idx").on(table.createdAt.desc(), table.id.desc())');
   });
 
   it("revalidates a guest capability after staging and before storing", async () => {

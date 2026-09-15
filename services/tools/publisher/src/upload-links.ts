@@ -15,10 +15,14 @@ export type UploadLink = Readonly<{
 
 export type CreatedUploadLink = UploadLink & Readonly<{ token: string }>;
 export type UploadLinkFile = Readonly<{ id: string; filename: string; bytes: number }>;
+export type UploadLinkListOptions = Readonly<{
+  limit: number;
+  before?: Readonly<{ createdAt: Date; id: string }>;
+}>;
 
 export interface UploadLinkRepository {
   create(expiresAt: Date): Promise<CreatedUploadLink>;
-  list(): Promise<readonly UploadLink[]>;
+  list(options: UploadLinkListOptions): Promise<readonly UploadLink[]>;
   find(token: string): Promise<UploadLink | null>;
   findActive(token: string, now: Date): Promise<UploadLink | null>;
   listFiles(id: string, now: Date): Promise<readonly UploadLinkFile[] | null>;
@@ -43,13 +47,23 @@ export function createPostgresUploadLinkRepository(databaseUrl: string): UploadL
         returning id::text, created_at, expires_at, revoked_at`;
       return { ...toUploadLink(rows[0]!), token };
     },
-    async list() {
-      const rows = await sql<UploadLinkRow[]>`
-        select id::text, created_at, expires_at, revoked_at,
-          (select count(*)::int from artifacts.objects o where o.upload_link_id = l.id
-            and o.kind = 'file' and o.revoked_at is null and (o.expires_at is null or o.expires_at > now())) file_count
-        from artifacts.upload_links l
-        order by created_at desc`;
+    async list(options) {
+      const rows = options.before
+        ? await sql<UploadLinkRow[]>`
+          select id::text, created_at, expires_at, revoked_at,
+            (select count(*)::int from artifacts.objects o where o.upload_link_id = l.id
+              and o.kind = 'file' and o.revoked_at is null and (o.expires_at is null or o.expires_at > now())) file_count
+          from artifacts.upload_links l
+          where (l.created_at, l.id) < (${options.before.createdAt}, ${options.before.id}::uuid)
+          order by created_at desc, id desc
+          limit ${options.limit}`
+        : await sql<UploadLinkRow[]>`
+          select id::text, created_at, expires_at, revoked_at,
+            (select count(*)::int from artifacts.objects o where o.upload_link_id = l.id
+              and o.kind = 'file' and o.revoked_at is null and (o.expires_at is null or o.expires_at > now())) file_count
+          from artifacts.upload_links l
+          order by created_at desc, id desc
+          limit ${options.limit}`;
       return rows.map(toUploadLink);
     },
     async find(token) {

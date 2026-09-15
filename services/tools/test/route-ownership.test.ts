@@ -37,6 +37,13 @@ describe("primary page ownership", () => {
     expect(source).not.toContain("active ? <Button type=\"button\"");
   });
 
+  it("loads upload-link history in bounded pages", () => {
+    const source = readFileSync(new URL("../publisher/ui/upload-link-manager.tsx", import.meta.url), "utf8");
+    expect(source).toContain("setNextCursor(payload.nextCursor)");
+    expect(source).toContain("/api/upload-links?cursor=");
+    expect(source).toContain("Load older links");
+  });
+
   it("protects private money data with the shared session middleware", () => {
     const source = readFileSync(new URL("../src/protected-data.ts", import.meta.url), "utf8");
     const moneyLoader = source.slice(source.indexOf("getMoneyTrackerPageData"), source.indexOf("getPrivateStatusPageData"));

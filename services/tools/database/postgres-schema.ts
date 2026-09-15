@@ -366,4 +366,5 @@ export const uploadLinks = artifactsSchema.table("upload_links", {
 }, (table) => [
   check("upload_links_expiry_check", sql`${table.expiresAt} > ${table.createdAt}`),
   index("upload_links_active_idx").on(table.expiresAt, table.revokedAt),
+  index("upload_links_history_idx").on(table.createdAt.desc(), table.id.desc()),
 ]);

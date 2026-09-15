@@ -128,6 +128,8 @@ cannot list prior uploads. Received files use
 at least the link lifetime for retention and appear in the authenticated
 library. The owner can stream every still-retained file received through one
 link as a ZIP64 archive, including after revoking that link.
+The private upload-link history loads 20 newest-first rows at a time through an
+opaque keyset cursor, with older rows available on demand.
 
 Files larger than 80 MB are split by the browser into 20 MB chunk requests
 and reassembled by the server, because public edge proxies cap a single
