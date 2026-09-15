@@ -312,6 +312,50 @@ describe("native artifact fetch handler", () => {
     expect(retry.status).toBe(201);
   });
 
+  it("parses guest chunk plans before entering the shared allocation gate", async () => {
+    const uploadLinks = new MemoryUploadLinkRepository();
+    await uploadLinks.create(new Date("2026-09-16T12:00:00.000Z"));
+    const stalledBody = new ReadableStream<Uint8Array>({
+      start(controller) { controller.enqueue(new TextEncoder().encode("{")); }
+    });
+    const app = createFetchApp({
+      storage: new MemoryUploadStorage(),
+      uploadLinks,
+      uploadToken: "upload-token",
+      publicBaseUrl: "https://tools.example.test",
+      guestUploadBodyTimeoutMs: 20
+    });
+    const endpoint = `https://tools.example.test/api/drop/${uploadLinks.token}/uploads/chunks`;
+    const stalled = app(new Request(endpoint, {
+      method: "POST",
+      headers: { Origin: "https://tools.example.test", "Content-Type": "application/json" },
+      body: stalledBody,
+      duplex: "half"
+    } as RequestInit));
+    const valid = await app(new Request(endpoint, {
+      method: "POST",
+      headers: { Origin: "https://tools.example.test", "Content-Type": "application/json" },
+      body: JSON.stringify({
+        filename: "valid.bin",
+        contentType: "application/octet-stream",
+        totalBytes: 2_097_152,
+        totalChunks: 2,
+        chunkBytes: 1_048_576
+      })
+    }));
+
+    expect(valid.status).toBe(201);
+    const { sessionId } = await valid.json() as { sessionId: string };
+    const timedOut = await stalled;
+    expect(timedOut.status).toBe(408);
+    expect(await timedOut.json()).toMatchObject({ error: "upload_timeout" });
+    const cancelled = await app(new Request(`${endpoint}/${sessionId}`, {
+      method: "DELETE",
+      headers: { Origin: "https://tools.example.test" }
+    }));
+    expect(cancelled.status).toBe(204);
+  });
+
   it("deduplicates case-insensitive filenames in bulk-download archives", async () => {
     const storage = new MemoryUploadStorage();
     const uploadLinks = new MemoryUploadLinkRepository();

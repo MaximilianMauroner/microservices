@@ -245,8 +245,25 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
         const link = await options.uploadLinks?.findActive(dropChunk.token, getNow(options));
         if (!link) return dropLinkUnavailable();
         if (request.method === "POST" && dropChunk.remainder === "") {
+          const guestBodySignal = AbortSignal.any([
+            request.signal,
+            AbortSignal.timeout(guestUploadBodyTimeoutMs)
+          ]);
+          let plan: ChunkedUploadPlan;
+          try {
+            plan = await readChunkedUploadPlan(request, maxUploadBytes, guestBodySignal);
+          } catch (error) {
+            if (!request.signal.aborted && guestBodySignal.aborted) {
+              throw new ArtifactRequestError(
+                408,
+                "upload_timeout",
+                "The guest upload body was not received before the upload deadline."
+              );
+            }
+            throw error;
+          }
           return await dropChunkInitGate.run(link.id, () =>
-            initChunkedUpload(request, maxUploadBytes, "drop", link.id)
+            initChunkedUpload(plan, "drop", link.id)
           );
         }
         const chunkPut = matchChunkPut(dropChunk.remainder);
@@ -344,7 +361,8 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
         if (!options.externalUpload) return externalUploadUnavailable();
         requireSameOrigin(request, url, options.publicBaseUrl);
         // Awaited so handler rejections reach the shared error mapper below.
-        return await initChunkedUpload(request, maxUploadBytes, "browser");
+        const plan = await readChunkedUploadPlan(request, maxUploadBytes, request.signal);
+        return await initChunkedUpload(plan, "browser");
       }
 
       const chunkRemainder = matchPath(url.pathname, "/api/external-uploads/chunks/");
@@ -484,7 +502,8 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
 
       if (request.method === "POST" && url.pathname === "/api/uploads/chunks") {
         requireBearer(request, uploadToken);
-        return await initChunkedUpload(request, maxUploadBytes, "native");
+        const plan = await readChunkedUploadPlan(request, maxUploadBytes, request.signal);
+        return await initChunkedUpload(plan, "native");
       }
 
       const nativeChunkRemainder = matchPath(url.pathname, "/api/uploads/chunks/");
@@ -947,6 +966,11 @@ type ChunkSessionManifest = {
   createdAt: string;
 };
 
+type ChunkedUploadPlan = Pick<
+  ChunkSessionManifest,
+  "originalName" | "contentType" | "totalBytes" | "totalChunks" | "chunkBytes"
+>;
+
 function matchChunkPut(remainder: string): { sessionId: string; index: number } | undefined {
   const match = /^([A-Za-z0-9_-]{32})\/(\d+)$/.exec(remainder);
   if (!match) return undefined;
@@ -1075,12 +1099,42 @@ function createDropChunkInitGate(maxSessionsPerLink: number) {
   };
 }
 
-async function initChunkedUpload(
+async function readLimitedBody(request: Request, maxBytes: number, signal: AbortSignal) {
+  if (!request.body) return "";
+  if (signal.aborted) throw signal.reason;
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let bytes = 0;
+  const abort = () => { void reader.cancel(signal.reason).catch(() => undefined); };
+  signal.addEventListener("abort", abort, { once: true });
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (signal.aborted) throw signal.reason;
+      if (done) break;
+      bytes += value.byteLength;
+      if (bytes > maxBytes) {
+        await reader.cancel();
+        throw new ArtifactRequestError(
+          413,
+          "payload_too_large",
+          "Chunked upload description is too large."
+        );
+      }
+      chunks.push(value);
+    }
+  } finally {
+    signal.removeEventListener("abort", abort);
+    reader.releaseLock();
+  }
+  return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk))).toString("utf8");
+}
+
+async function readChunkedUploadPlan(
   request: Request,
   maxUploadBytes: number,
-  audience: ChunkSessionManifest["audience"],
-  uploadLinkId?: string
-): Promise<Response> {
+  signal: AbortSignal
+): Promise<ChunkedUploadPlan> {
   if (request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !== "application/json") {
     throw new ArtifactRequestError(
       415,
@@ -1088,10 +1142,7 @@ async function initChunkedUpload(
       "Expected application/json."
     );
   }
-  const raw = await request.text();
-  if (Buffer.byteLength(raw, "utf8") > CHUNKED_UPLOAD_INIT_MAX_BYTES) {
-    throw new ArtifactRequestError(413, "payload_too_large", "Chunked upload description is too large.");
-  }
+  const raw = await readLimitedBody(request, CHUNKED_UPLOAD_INIT_MAX_BYTES, signal);
   let input: unknown;
   try {
     input = JSON.parse(raw);
@@ -1143,12 +1194,34 @@ async function initChunkedUpload(
     throw new ArtifactRequestError(400, "invalid_chunk_plan", "Chunk plan does not cover the total file size.");
   }
 
+  return {
+    originalName: filename,
+    contentType: normalizeMimeType(contentType),
+    totalBytes: total,
+    totalChunks: chunks,
+    chunkBytes: nominal
+  };
+}
+
+async function initChunkedUpload(
+  plan: ChunkedUploadPlan,
+  audience: ChunkSessionManifest["audience"],
+  uploadLinkId?: string
+): Promise<Response> {
+  const {
+    originalName,
+    contentType,
+    totalBytes: total,
+    totalChunks: chunks,
+    chunkBytes: nominal
+  } = plan;
+
   const manifest: ChunkSessionManifest = {
     version: 1,
     audience,
     ...(uploadLinkId ? { uploadLinkId } : {}),
-    originalName: filename,
-    contentType: normalizeMimeType(contentType),
+    originalName,
+    contentType,
     totalBytes: total,
     totalChunks: chunks,
     chunkBytes: nominal,
