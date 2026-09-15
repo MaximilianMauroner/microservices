@@ -175,7 +175,13 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
         }
         const files = await options.uploadLinks!.listFiles(uploadLinkDownload, getNow(options));
         if (!files) throw new ArtifactRequestError(404, "upload_link_not_found", "Upload link was not found.");
-        return downloadUploadLinkFiles(files, options.storage, uploadLinkDownload, request.signal);
+        return downloadUploadLinkFiles(
+          files,
+          options.storage,
+          uploadLinkDownload,
+          request.signal,
+          activityTracker
+        );
       }
 
       if (request.method === "POST" && url.pathname === "/api/upload-links") {
@@ -1968,7 +1974,8 @@ function downloadUploadLinkFiles(
   files: readonly { id: string; filename: string }[],
   storage: UploadStorage,
   linkId: string,
-  signal: AbortSignal
+  signal: AbortSignal,
+  activityTracker: ActivityTracker
 ) {
   const output = createArchiveOutput();
   const archive = new ZipWriter(output.writable, {
@@ -1976,7 +1983,7 @@ function downloadUploadLinkFiles(
     level: 0,
     useWebWorkers: false
   });
-  void (async () => {
+  const production = (async () => {
     const usedNames = new Set<string>();
     try {
       for (const file of files) {
@@ -1995,6 +2002,7 @@ function downloadUploadLinkFiles(
       console.error("failed to stream upload-link archive", error);
     }
   })();
+  void activityTracker.track(production);
   return new Response(output.readable, {
     headers: {
       "Cache-Control": "private, no-store",
@@ -2039,14 +2047,20 @@ function createArchiveOutput() {
 
 function uniqueArchiveName(filename: string, used: Set<string>) {
   const safe = safeFileName(filename, "download");
-  if (!used.has(safe)) { used.add(safe); return safe; }
+  const key = archiveNameKey(safe);
+  if (!used.has(key)) { used.add(key); return safe; }
   const extensionAt = safe.lastIndexOf(".");
   const stem = extensionAt > 0 ? safe.slice(0, extensionAt) : safe;
   const extension = extensionAt > 0 ? safe.slice(extensionAt) : "";
   for (let index = 2; ; index += 1) {
     const candidate = `${stem} (${index})${extension}`;
-    if (!used.has(candidate)) { used.add(candidate); return candidate; }
+    const candidateKey = archiveNameKey(candidate);
+    if (!used.has(candidateKey)) { used.add(candidateKey); return candidate; }
   }
+}
+
+function archiveNameKey(filename: string) {
+  return filename.normalize("NFKC").toLocaleLowerCase("en-US");
 }
 
 function matchCapabilityPath(pathname: string, prefixes: readonly string[]) {

@@ -148,6 +148,9 @@ describe("native artifact fetch handler", () => {
     expect(page).toContain("Choose as many files as you need");
     expect(page).toContain("/chunks");
     expect(page).toContain("20*1024*1024");
+    expect(page).toContain("Retry-After");
+    expect(page).toContain("error.preserveSession=true");
+    expect(page).toContain("if(!error.preserveSession)");
 
     const uploadResponse = await app(new Request(`https://tools.example.test/api/drop/${uploadLinks.token}/uploads`, {
       method: "POST",
@@ -224,6 +227,60 @@ describe("native artifact fetch handler", () => {
     } finally {
       errorLog.mockRestore();
     }
+  });
+
+  it("deduplicates case-insensitive filenames in bulk-download archives", async () => {
+    const storage = new MemoryUploadStorage();
+    const uploadLinks = new MemoryUploadLinkRepository();
+    await uploadLinks.create(new Date("2026-09-16T12:00:00.000Z"));
+    const metadata = { bytes: 5, originalName: "Report.pdf", sha256: "a".repeat(64), contentType: "application/pdf", expiresAt: new Date("2026-09-16T12:00:00.000Z") };
+    storage.files.set("a".repeat(32), { body: Buffer.from("first"), metadata });
+    storage.files.set("b".repeat(32), { body: Buffer.from("second"), metadata: { ...metadata, bytes: 6, originalName: "report.pdf", sha256: "b".repeat(64) } });
+    uploadLinks.files = [
+      { id: "a".repeat(32), filename: "Report.pdf", bytes: 5 },
+      { id: "b".repeat(32), filename: "report.pdf", bytes: 6 }
+    ];
+    const app = createFetchApp({ storage, uploadLinks, uploadToken: "upload-token" });
+
+    const response = await app(new Request(`https://tools.example.test/api/upload-links/${uploadLinks.id}/download`));
+    const archive = unzipSync(new Uint8Array(await response.arrayBuffer()));
+
+    expect(Object.keys(archive)).toEqual(["Report.pdf", "report (2).pdf"]);
+    expect(strFromU8(archive["Report.pdf"]!)).toBe("first");
+    expect(strFromU8(archive["report (2).pdf"]!)).toBe("second");
+  });
+
+  it("tracks bulk-download archive production until storage reads finish", async () => {
+    let releaseRead!: () => void;
+    const readReleased = new Promise<void>((resolve) => { releaseRead = resolve; });
+    class BlockingStorage extends MemoryUploadStorage {
+      override async getTemporaryFile(id: string, options?: GetTemporaryFileOptions) {
+        await readReleased;
+        return super.getTemporaryFile(id, options);
+      }
+    }
+    const storage = new BlockingStorage();
+    const uploadLinks = new MemoryUploadLinkRepository();
+    const activityTracker = new ActivityTracker();
+    await uploadLinks.create(new Date("2026-09-16T12:00:00.000Z"));
+    storage.files.set("a".repeat(32), {
+      body: Buffer.from("first"),
+      metadata: { bytes: 5, originalName: "first.txt", sha256: "a".repeat(64), contentType: "text/plain", expiresAt: new Date("2026-09-16T12:00:00.000Z") }
+    });
+    uploadLinks.files = [{ id: "a".repeat(32), filename: "first.txt", bytes: 5 }];
+    const app = createFetchApp({ storage, uploadLinks, uploadToken: "upload-token", activityTracker });
+
+    const response = await app(new Request(`https://tools.example.test/api/upload-links/${uploadLinks.id}/download`));
+    const consumed = response.arrayBuffer();
+    let idle = false;
+    const waiting = activityTracker.waitForIdle().then(() => { idle = true; });
+    await Promise.resolve();
+    expect(idle).toBe(false);
+
+    releaseRead();
+    await consumed;
+    await waiting;
+    expect(idle).toBe(true);
   });
 
   it("rejects invalid upload-link durations and cross-origin creation", async () => {
