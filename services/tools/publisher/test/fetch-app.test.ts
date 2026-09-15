@@ -88,7 +88,7 @@ class MemoryUploadStorage implements UploadStorage {
 
 class MemoryUploadLinkRepository implements UploadLinkRepository {
   readonly token = "u".repeat(43);
-  readonly id = "123e4567-e89b-42d3-a456-426614174000";
+  readonly id = "123e4567-e89b-42d3-a456-426614174001";
   link: UploadLink | undefined;
   files: { id: string; filename: string; bytes: number }[] = [];
 
@@ -231,6 +231,36 @@ describe("native artifact fetch handler", () => {
     });
   });
 
+  it("revalidates a guest capability after staging and before storing", async () => {
+    class RevokedDuringUploadLinks extends MemoryUploadLinkRepository {
+      private activeChecks = 0;
+      override async findActive(token: string, now: Date) {
+        this.activeChecks += 1;
+        return this.activeChecks === 1 ? super.findActive(token, now) : null;
+      }
+    }
+    const storage = new MemoryUploadStorage();
+    const uploadLinks = new RevokedDuringUploadLinks();
+    await uploadLinks.create(new Date("2026-09-16T12:00:00.000Z"));
+    const app = createFetchApp({
+      storage,
+      uploadLinks,
+      uploadToken: "upload-token",
+      publicBaseUrl: "https://tools.example.test",
+      now: () => new Date("2026-09-15T12:00:00.000Z")
+    });
+
+    const response = await app(new Request(`https://tools.example.test/api/drop/${uploadLinks.token}/uploads`, {
+      method: "POST",
+      headers: { Origin: "https://tools.example.test" },
+      body: multipart("revoked.txt", "must not persist", "text/plain")
+    }));
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toMatchObject({ error: "upload_link_unavailable" });
+    expect(storage.files.size).toBe(0);
+  });
+
   it("fails a bulk-download stream when a later object cannot be fetched", async () => {
     class FailingStorage extends MemoryUploadStorage {
       override async getTemporaryFile(id: string, options?: GetTemporaryFileOptions) {
@@ -349,6 +379,23 @@ describe("native artifact fetch handler", () => {
     const timedOut = await stalled;
     expect(timedOut.status).toBe(408);
     expect(await timedOut.json()).toMatchObject({ error: "upload_timeout" });
+    const stalledChunkBody = new ReadableStream<Uint8Array>({
+      start(controller) { controller.enqueue(new Uint8Array([1])); }
+    });
+    const stalledChunk = await app(new Request(`${endpoint}/${sessionId}/0`, {
+      method: "PUT",
+      headers: { Origin: "https://tools.example.test", "Content-Type": "application/octet-stream" },
+      body: stalledChunkBody,
+      duplex: "half"
+    } as RequestInit));
+    expect(stalledChunk.status).toBe(408);
+    expect(await stalledChunk.json()).toMatchObject({ error: "upload_timeout" });
+    const retriedChunk = await app(new Request(`${endpoint}/${sessionId}/0`, {
+      method: "PUT",
+      headers: { Origin: "https://tools.example.test", "Content-Type": "application/octet-stream" },
+      body: Buffer.alloc(1_048_576, 1)
+    }));
+    expect(retriedChunk.status).toBe(200);
     const cancelled = await app(new Request(`${endpoint}/${sessionId}`, {
       method: "DELETE",
       headers: { Origin: "https://tools.example.test" }

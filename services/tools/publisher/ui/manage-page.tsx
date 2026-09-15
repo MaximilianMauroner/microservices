@@ -117,6 +117,34 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
     }
   }
 
+  async function selectProject(value: string) {
+    setProjectFilter(value);
+    if (value === ALL_PROJECTS || !nextCursor || busy) return;
+    setBusy(true);
+    try {
+      let cursor: string | undefined = nextCursor;
+      const remaining: UploadSummary[] = [];
+      while (cursor) {
+        const response = await fetchPublisherRead(
+          `/api/external-uploads?limit=100&sort=newest&cursor=${encodeURIComponent(cursor)}`,
+          { credentials: "same-origin" }
+        );
+        const payload = await readPayload<ManagePageData>(
+          response,
+          "Project artifacts could not be loaded."
+        );
+        remaining.push(...payload.uploads);
+        cursor = payload.nextCursor;
+      }
+      setUploads((current) => [...current, ...remaining]);
+      setNextCursor(undefined);
+    } catch (error) {
+      setMessage({ text: errorMessage(error), tone: "error" });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function replaceSelected(file: File) {
     if (!selected || selected.kind !== "html") return;
     setBusy(true);
@@ -266,7 +294,7 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
         </section>
 
         <section className="grid items-start gap-3 lg:grid-cols-[12rem_minmax(0,1fr)_20rem]" aria-label="Artifact library">
-          <ProjectNavigation projects={projects} active={projectFilter} onSelect={setProjectFilter} total={summary.total} />
+          <ProjectNavigation projects={projects} active={projectFilter} onSelect={(value) => void selectProject(value)} total={summary.total} />
           <ArtifactTable uploads={visibleUploads} loaded={uploads.length} total={summary.total} selectedId={selectedId} onSelect={(id) => { setSelectedId(id); setMobileInspectorOpen(true); }} hasMore={Boolean(nextCursor)} busy={busy} onLoadMore={loadOlder} />
           {!isMobile ? <ArtifactInspector
             key={selected?.id ?? "none"}

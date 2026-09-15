@@ -223,7 +223,15 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
           request,
           url,
           options,
-          { kind: "create", temporaryOnly: true, uploadLinkId: link.id, expiresAt: link.expiresAt },
+          {
+            kind: "create",
+            temporaryOnly: true,
+            uploadLinkId: link.id,
+            expiresAt: link.expiresAt,
+            ensureActive: async () => Boolean(
+              await options.uploadLinks?.findActive(dropUploadToken, getNow(options))
+            )
+          },
           uploadGate,
           maxUploadBytes,
           maxHtmlUploadBytes,
@@ -268,7 +276,29 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
         }
         const chunkPut = matchChunkPut(dropChunk.remainder);
         if (request.method === "PUT" && chunkPut) {
-          return await putUploadChunk(request, chunkPut.sessionId, chunkPut.index, "drop", link.id);
+          const guestBodySignal = AbortSignal.any([
+            request.signal,
+            AbortSignal.timeout(guestUploadBodyTimeoutMs)
+          ]);
+          try {
+            return await putUploadChunk(
+              request,
+              chunkPut.sessionId,
+              chunkPut.index,
+              "drop",
+              link.id,
+              guestBodySignal
+            );
+          } catch (error) {
+            if (!request.signal.aborted && guestBodySignal.aborted) {
+              throw new ArtifactRequestError(
+                408,
+                "upload_timeout",
+                "The guest upload body was not received before the upload deadline."
+              );
+            }
+            throw error;
+          }
         }
         const chunkComplete = matchChunkComplete(dropChunk.remainder);
         if (request.method === "POST" && chunkComplete) {
@@ -906,6 +936,13 @@ async function upload(
           ? new Date(Math.max(mode.expiresAt.getTime(), getNow(options).getTime() + temporaryFileRetentionMs))
           : new Date(getNow(options).getTime() + temporaryFileRetentionMs);
         cleanupId = id;
+        if (mode.kind === "create" && mode.ensureActive && !(await mode.ensureActive())) {
+          throw new ArtifactRequestError(
+            404,
+            "upload_link_unavailable",
+            "This upload link has expired or was revoked."
+          );
+        }
         await options.storage.putTemporaryFile(
           id,
           staged.filePath,
@@ -1294,7 +1331,8 @@ async function putUploadChunk(
   sessionId: string,
   index: number,
   audience: ChunkSessionManifest["audience"],
-  uploadLinkId?: string
+  uploadLinkId?: string,
+  signal = request.signal
 ): Promise<Response> {
   if (!PAGE_ID_PATTERN.test(sessionId)) {
     throw new ArtifactRequestError(400, "invalid_upload_id", "Upload ID is invalid.");
@@ -1322,7 +1360,7 @@ async function putUploadChunk(
     const input = Readable.fromWeb(
       request.body as unknown as import("node:stream/web").ReadableStream<Uint8Array>
     );
-    await pipeline(input, limiter, output, { signal: request.signal });
+    await pipeline(input, limiter, output, { signal });
     const actual = (await stat(partPath)).size;
     if (actual !== expected) {
       throw new ArtifactRequestError(
@@ -1509,7 +1547,13 @@ function requireChunkAudience(
 }
 
 type UploadMode =
-  | { kind: "create"; temporaryOnly?: boolean; uploadLinkId?: string; expiresAt?: Date }
+  | {
+      kind: "create";
+      temporaryOnly?: boolean;
+      uploadLinkId?: string;
+      expiresAt?: Date;
+      ensureActive?: () => Promise<boolean>;
+    }
   | { kind: "update"; id: string };
 
 type StagedUpload = {

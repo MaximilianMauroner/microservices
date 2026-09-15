@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { ManagePage } from "../publisher/ui/manage-page.js";
@@ -73,5 +74,17 @@ describe("Manage artifact library", () => {
 
     expect(html).toContain("Permanent");
     expect(html).toContain("available until revoked");
+  });
+
+  it("loads remaining inventory pages before applying a summarized project filter", async () => {
+    const source = await readFile(new URL("../publisher/ui/manage-page.tsx", import.meta.url), "utf8");
+    const selectProject = source.slice(
+      source.indexOf("async function selectProject"),
+      source.indexOf("async function replaceSelected")
+    );
+
+    expect(selectProject).toContain("while (cursor)");
+    expect(selectProject).toContain("remaining.push(...payload.uploads)");
+    expect(source).toContain("onSelect={(value) => void selectProject(value)}");
   });
 });
