@@ -217,7 +217,7 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
       if (request.method === "POST" && url.pathname === "/api/upload-links") {
         requireSameOrigin(request, url, options.publicBaseUrl);
         requireUploadLinks(options);
-        const durationMs = await readUploadLinkDuration(request);
+        const durationMs = await readUploadLinkDuration(request, url);
         const created = await options.uploadLinks!.create(
           new Date(getNow(options).getTime() + durationMs)
         );
@@ -2182,7 +2182,15 @@ function requireUploadLinks(options: FetchArtifactAppOptions) {
   }
 }
 
-async function readUploadLinkDuration(request: Request) {
+async function readUploadLinkDuration(request: Request, url: URL) {
+  const queryDurations = url.searchParams.getAll("durationMs");
+  if (queryDurations.length > 0) {
+    const rawDuration = queryDurations[0]!;
+    if (queryDurations.length !== 1 || !/^\d+$/.test(rawDuration)) {
+      throw invalidUploadLinkDuration();
+    }
+    return validateUploadLinkDuration(Number(rawDuration));
+  }
   if (request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !== "application/json") {
     throw new ArtifactRequestError(415, "unsupported_media_type", "Expected application/json.");
   }
@@ -2193,11 +2201,18 @@ async function readUploadLinkDuration(request: Request) {
   let input: unknown;
   try { input = JSON.parse(raw); }
   catch { throw new ArtifactRequestError(400, "invalid_upload_link", "Upload link request is invalid JSON."); }
-  const durationMs = (input as { durationMs?: unknown } | null)?.durationMs;
+  return validateUploadLinkDuration((input as { durationMs?: unknown } | null)?.durationMs);
+}
+
+function validateUploadLinkDuration(durationMs: unknown) {
   if (!Number.isSafeInteger(durationMs) || (durationMs as number) < MIN_UPLOAD_LINK_DURATION_MS || (durationMs as number) > MAX_UPLOAD_LINK_DURATION_MS) {
-    throw new ArtifactRequestError(400, "invalid_upload_link_duration", "Duration must be between 5 minutes and 30 days.");
+    throw invalidUploadLinkDuration();
   }
   return durationMs as number;
+}
+
+function invalidUploadLinkDuration() {
+  return new ArtifactRequestError(400, "invalid_upload_link_duration", "Duration must be between 5 minutes and 30 days.");
 }
 
 function serializeUploadLink(link: UploadLink) {
