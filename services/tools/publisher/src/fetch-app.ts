@@ -215,14 +215,11 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
       }
 
       if (request.method === "POST" && url.pathname === "/api/upload-links") {
-        const creationSignal = request.signal.aborted ? undefined : request.signal;
         requireSameOrigin(request, url, options.publicBaseUrl);
         requireUploadLinks(options);
         const durationMs = await readUploadLinkDuration(request);
-        throwIfRequestAborted(creationSignal);
         const created = await options.uploadLinks!.create(
-          new Date(getNow(options).getTime() + durationMs),
-          creationSignal ? { signal: creationSignal } : undefined
+          new Date(getNow(options).getTime() + durationMs)
         );
         const baseUrl = getPublicBaseUrl(request, options.publicBaseUrl);
         return jsonResponse({ ...serializeUploadLink(created), url: `${baseUrl}/drop/${created.token}` }, 201);
@@ -669,11 +666,6 @@ function isRequestAbort(error: unknown, signal: AbortSignal) {
   if (!signal.aborted) return false;
   if (error === signal.reason) return true;
   return error instanceof Error && error.name === "AbortError";
-}
-
-function throwIfRequestAborted(signal?: AbortSignal) {
-  if (!signal?.aborted) return;
-  throw signal.reason instanceof Error ? signal.reason : new DOMException("The request was aborted.", "AbortError");
 }
 
 async function readPageRoute(
