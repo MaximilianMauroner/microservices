@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 import { requirePlatformSession } from "../src/auth-middleware.js";
 import { routerSsrOptions } from "../src/router-options.js";
 import { documentContentSecurityPolicy } from "../src/content-security-policy.js";
+import { uploadLinkPostMiddleware } from "../src/routes/api/upload-links.js";
 
 beforeAll(async () => {
   vi.stubEnv("VITE_CONVEX_URL", "https://example.convex.cloud");
@@ -32,6 +33,31 @@ async function runSessionMiddleware(authenticated: boolean) {
 }
 
 describe("TanStack Start request boundaries", () => {
+  it("dispatches upload-link creation before TanStack's document fallback", async () => {
+    const handle = vi.fn(async () => new Response(JSON.stringify({ id: "link-id" }), {
+      status: 201,
+      headers: { "Content-Type": "application/json" }
+    }));
+    const next = vi.fn();
+    const server = uploadLinkPostMiddleware.options.server;
+    if (!server) throw new Error("upload-link route middleware is missing");
+
+    const response = await server({
+      request: new Request("https://tools.example.test/api/upload-links?durationMs=86400000", {
+        method: "POST"
+      }),
+      context: {
+        runtime: { services: { publisher: { handle } } }
+      },
+      next
+    } as never) as Response;
+
+    expect(response.status).toBe(201);
+    expect(await response.json()).toEqual({ id: "link-id" });
+    expect(handle).toHaveBeenCalledOnce();
+    expect(next).not.toHaveBeenCalled();
+  });
+
   it("shares one principal across protected server functions", async () => {
     await expect(runSessionMiddleware(true)).resolves.toMatchObject({
       result: "authorized"
