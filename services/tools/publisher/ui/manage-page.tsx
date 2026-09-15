@@ -50,6 +50,10 @@ import { fetchPublisherRead, waitForPublisher } from "./publisher-request.js";
 type KindFilter = "all" | UploadSummary["kind"];
 type ExpiryFilter = "all" | "24h" | "7d" | "persistent";
 type SortOrder = "newest" | "oldest" | "filename" | "expiry";
+type ProjectUsageGroup = {
+  label: string;
+  projects: Array<[string, number]>;
+};
 
 const ALL_PROJECTS = "__all__";
 const UNASSIGNED_PROJECT = "__unassigned__";
@@ -345,7 +349,61 @@ function Metric({ label, value, attention = false }: { label: string; value: num
 
 function ProjectNavigation({ projects, active, onSelect, total, disabled }: { projects: Array<[string, number]>; active: string; onSelect: (value: string) => void; total: number; disabled: boolean }) {
   const unassigned = projects.find(([project]) => project === UNASSIGNED_PROJECT)?.[1] ?? 0;
-  return <Card className="gap-0 overflow-hidden py-2"><h2 className="px-3 pb-2 text-xs font-semibold uppercase tracking-[0.1em] text-muted-foreground">Projects</h2><nav className="flex gap-1 overflow-x-auto px-1.5 pb-1 lg:grid lg:gap-0.5 lg:overflow-visible lg:pb-0" aria-label="Artifact projects"><ProjectButton label="All artifacts" count={total} active={active === ALL_PROJECTS} onClick={() => onSelect(ALL_PROJECTS)} disabled={disabled} />{projects.filter(([project]) => project !== UNASSIGNED_PROJECT).map(([project, count]) => <ProjectButton key={project} label={project} count={count} active={active === project} onClick={() => onSelect(project)} disabled={disabled} />)}{unassigned ? <ProjectButton label="Unassigned" count={unassigned} active={active === UNASSIGNED_PROJECT} onClick={() => onSelect(UNASSIGNED_PROJECT)} disabled={disabled} /> : null}</nav></Card>;
+  const groups = groupProjectsByUsage(projects);
+  const oneOffs = groups.find((group) => group.label === "One-off projects");
+  const recurringGroups = groups.filter((group) => group !== oneOffs);
+  const [showOneOffs, setShowOneOffs] = useState(false);
+  const visibleOneOffs = showOneOffs
+    ? oneOffs?.projects ?? []
+    : oneOffs?.projects.filter(([project]) => project === active) ?? [];
+
+  return <Card className="gap-0 overflow-hidden py-2">
+    <h2 className="px-3 pb-2 text-xs font-semibold uppercase tracking-[0.1em] text-muted-foreground">Projects</h2>
+    <nav className="flex gap-1 overflow-x-auto px-1.5 pb-1 lg:grid lg:gap-0.5 lg:overflow-visible lg:pb-0" aria-label="Artifact projects">
+      <ProjectButton label="All artifacts" count={total} active={active === ALL_PROJECTS} onClick={() => onSelect(ALL_PROJECTS)} disabled={disabled} />
+      {unassigned ? <ProjectButton label="Unassigned" count={unassigned} active={active === UNASSIGNED_PROJECT} onClick={() => onSelect(UNASSIGNED_PROJECT)} disabled={disabled} /> : null}
+      {recurringGroups.map((group) => <ProjectGroup key={group.label} group={group} active={active} onSelect={onSelect} disabled={disabled} />)}
+      {oneOffs ? <div className="contents lg:block lg:border-t lg:pt-2">
+        <button
+          className="flex min-h-11 min-w-44 shrink-0 items-center justify-between gap-2 rounded-md px-2 py-2 text-left text-xs font-medium text-muted-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50 lg:min-h-0 lg:min-w-0"
+          type="button"
+          aria-expanded={showOneOffs}
+          onClick={() => setShowOneOffs((current) => !current)}
+          disabled={disabled}
+        >
+          <span>{showOneOffs ? "Hide one-off projects" : "Show one-off projects"}</span>
+          <Badge variant="outline">{oneOffs.projects.length}</Badge>
+        </button>
+        {visibleOneOffs.length > 0 ? <div className="contents lg:mt-1 lg:grid lg:gap-0.5">{visibleOneOffs.map(([project, count]) => <ProjectButton key={project} label={project} count={count} active={active === project} onClick={() => onSelect(project)} disabled={disabled} />)}</div> : null}
+      </div> : null}
+    </nav>
+  </Card>;
+}
+
+function ProjectGroup({ group, active, onSelect, disabled }: { group: ProjectUsageGroup; active: string; onSelect: (value: string) => void; disabled: boolean }) {
+  return <section className="contents lg:block lg:border-t lg:pt-2" aria-label={group.label}>
+    <h3 className="hidden px-2 pb-1 text-[0.65rem] font-semibold uppercase tracking-[0.1em] text-muted-foreground lg:block">{group.label}</h3>
+    <div className="contents lg:grid lg:gap-0.5">{group.projects.map(([project, count]) => <ProjectButton key={project} label={project} count={count} active={active === project} onClick={() => onSelect(project)} disabled={disabled} />)}</div>
+  </section>;
+}
+
+export function groupProjectsByUsage(projects: Array<[string, number]>): ProjectUsageGroup[] {
+  const assigned = projects
+    .filter(([project]) => project !== UNASSIGNED_PROJECT)
+    .toSorted(([leftProject, leftCount], [rightProject, rightCount]) => rightCount - leftCount || leftProject.localeCompare(rightProject));
+  const definitions: Array<{ label: string; minimum: number; maximum: number }> = [
+    { label: "100+ uses", minimum: 100, maximum: Number.POSITIVE_INFINITY },
+    { label: "10–99 uses", minimum: 10, maximum: 99 },
+    { label: "2–9 uses", minimum: 2, maximum: 9 },
+    { label: "One-off projects", minimum: 1, maximum: 1 }
+  ];
+
+  return definitions
+    .map(({ label, minimum, maximum }) => ({
+      label,
+      projects: assigned.filter(([, count]) => count >= minimum && count <= maximum)
+    }))
+    .filter((group) => group.projects.length > 0);
 }
 
 function ProjectButton({ label, count, active, onClick, disabled }: { label: string; count: number; active: boolean; onClick: () => void; disabled: boolean }) {

@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { ManagePage } from "../publisher/ui/manage-page.js";
+import { groupProjectsByUsage, ManagePage } from "../publisher/ui/manage-page.js";
 import type { ManagePageData } from "../src/protected-data.js";
 
 const initial: ManagePageData = {
@@ -107,5 +107,47 @@ describe("Manage artifact library", () => {
 
     expect(source).toContain("lg:grid-cols-[16rem_minmax(0,1fr)_20rem]");
     expect(source).toContain("xl:grid-cols-[24rem_minmax(0,1fr)_20rem]");
+  });
+
+  it("groups projects by usage and hides one-off projects by default", () => {
+    const html = renderToStaticMarkup(<ManagePage initial={{
+      ...initial,
+      summary: {
+        ...initial.summary!,
+        projects: [
+          { project: "daily-driver", count: 100 },
+          { project: "regular-work", count: 10 },
+          { project: "small-project", count: 2 },
+          { project: "single-time-plan", count: 1 }
+        ]
+      }
+    }} />);
+
+    expect(html).toContain("100+ uses");
+    expect(html).toContain("10–99 uses");
+    expect(html).toContain("2–9 uses");
+    expect(html).toContain("daily-driver");
+    expect(html).toContain("regular-work");
+    expect(html).toContain("small-project");
+    expect(html).toContain("Show one-off projects");
+    expect(html).not.toContain(">single-time-plan</span>");
+    expect(html).toContain('aria-expanded="false"');
+  });
+
+  it("uses exact project usage boundaries and sorts each group by usage", () => {
+    expect(groupProjectsByUsage([
+      ["one", 1],
+      ["two", 2],
+      ["nine", 9],
+      ["ten", 10],
+      ["ninety-nine", 99],
+      ["hundred", 100],
+      ["powerhouse", 200]
+    ])).toEqual([
+      { label: "100+ uses", projects: [["powerhouse", 200], ["hundred", 100]] },
+      { label: "10–99 uses", projects: [["ninety-nine", 99], ["ten", 10]] },
+      { label: "2–9 uses", projects: [["nine", 9], ["two", 2]] },
+      { label: "One-off projects", projects: [["one", 1]] }
+    ]);
   });
 });
