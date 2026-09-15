@@ -155,6 +155,7 @@ describe("native artifact fetch handler", () => {
       externalUpload: true,
       uploadToken: "upload-token",
       publicBaseUrl: "https://tools.example.test",
+      publisherFaviconUrl: "/assets/publisher-build-hash.png",
       now: () => now
     });
 
@@ -177,6 +178,11 @@ describe("native artifact fetch handler", () => {
     expect(pageResponse.status).toBe(200);
     const page = await pageResponse.text();
     expect(page).toContain("Choose as many files as you need");
+    expect(page).toContain('<link rel="icon" href="/assets/publisher-build-hash.png"');
+    expect(page).toContain('<img src="/assets/publisher-build-hash.png"');
+    expect(page).toContain('class="picker">Choose files</span>');
+    expect(page).toContain('id="submit" type="submit" disabled');
+    expect(page).not.toContain('src="/assets/icons/publisher.png"');
     expect(page).toContain("/chunks");
     expect(page).toContain("20*1024*1024");
     expect(page).toContain("Retry-After");
