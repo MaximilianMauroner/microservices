@@ -101,4 +101,11 @@ describe("Manage artifact library", () => {
     expect(lifecycleUpdates).toContain("await refreshSummary()");
     expect(lifecycleUpdates).not.toContain("await refresh()");
   });
+
+  it("widens the desktop project navigation for full repository names", async () => {
+    const source = await readFile(new URL("../publisher/ui/manage-page.tsx", import.meta.url), "utf8");
+
+    expect(source).toContain("lg:grid-cols-[16rem_minmax(0,1fr)_20rem]");
+    expect(source).toContain("xl:grid-cols-[24rem_minmax(0,1fr)_20rem]");
+  });
 });
