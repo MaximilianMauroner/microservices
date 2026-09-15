@@ -427,6 +427,38 @@ describe("native artifact fetch handler", () => {
     expect(strFromU8(archive["report (2).pdf"]!)).toBe("second");
   });
 
+  it("uses Windows-portable filenames in bulk-download archives", async () => {
+    const storage = new MemoryUploadStorage();
+    const uploadLinks = new MemoryUploadLinkRepository();
+    await uploadLinks.create(new Date("2026-09-16T12:00:00.000Z"));
+    const filenames = ["CON.txt", "aux", "LPT¹.csv", "report?.pdf", "trailing. "];
+    uploadLinks.files = filenames.map((filename, index) => {
+      const id = String(index + 1).repeat(32);
+      storage.files.set(id, {
+        body: Buffer.from(filename),
+        metadata: {
+          bytes: Buffer.byteLength(filename),
+          originalName: filename,
+          sha256: String(index + 1).repeat(64),
+          contentType: "application/octet-stream",
+          expiresAt: new Date("2026-09-16T12:00:00.000Z")
+        }
+      });
+      return { id, filename, bytes: Buffer.byteLength(filename) };
+    });
+    const app = createFetchApp({ storage, uploadLinks, uploadToken: "upload-token" });
+
+    const response = await app(new Request(`https://tools.example.test/api/upload-links/${uploadLinks.id}/download`));
+    const archive = unzipSync(new Uint8Array(await response.arrayBuffer()));
+
+    expect(Object.keys(archive)).toEqual(["_ON.txt", "_ux", "_PT¹.csv", "report_.pdf", "trailing__"]);
+    expect(strFromU8(archive["_ON.txt"]!)).toBe("CON.txt");
+    expect(strFromU8(archive["_ux"]!)).toBe("aux");
+    expect(strFromU8(archive["_PT¹.csv"]!)).toBe("LPT¹.csv");
+    expect(strFromU8(archive["report_.pdf"]!)).toBe("report?.pdf");
+    expect(strFromU8(archive["trailing__"]!)).toBe("trailing. ");
+  });
+
   it("tracks bulk-download archive production until storage reads finish", async () => {
     let releaseRead!: () => void;
     const readReleased = new Promise<void>((resolve) => { releaseRead = resolve; });

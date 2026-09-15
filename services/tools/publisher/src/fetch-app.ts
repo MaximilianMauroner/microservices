@@ -2217,7 +2217,7 @@ function createArchiveOutput() {
 }
 
 function uniqueArchiveName(filename: string, used: Set<string>) {
-  const safe = safeFileName(filename, "download");
+  const safe = portableArchiveName(safeFileName(filename, "download"));
   const key = archiveNameKey(safe);
   if (!used.has(key)) { used.add(key); return safe; }
   const extensionAt = safe.lastIndexOf(".");
@@ -2228,6 +2228,17 @@ function uniqueArchiveName(filename: string, used: Set<string>) {
     const candidateKey = archiveNameKey(candidate);
     if (!used.has(candidateKey)) { used.add(candidateKey); return candidate; }
   }
+}
+
+function portableArchiveName(filename: string) {
+  let portable = filename
+    .replace(/[\u0000-\u001F\u007F<>:"/\\|?*]/g, "_")
+    .replace(/[ .]+$/g, (suffix) => "_".repeat(suffix.length));
+  const deviceStem = portable.split(".", 1)[0]?.replace(/[ .]+$/g, "").normalize("NFKC") ?? "";
+  if (/^(?:con|prn|aux|nul|com[1-9]|lpt[1-9]|conin\$|conout\$)$/i.test(deviceStem)) {
+    portable = `_${portable.slice(1)}`;
+  }
+  return portable;
 }
 
 function archiveNameKey(filename: string) {
