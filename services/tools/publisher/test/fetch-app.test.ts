@@ -297,7 +297,7 @@ describe("native artifact fetch handler", () => {
     expect(create).toHaveBeenCalledWith(expect.any(Date));
   });
 
-  it("creates an upload link when the server adapter closes its signal while reading the buffered body", async () => {
+  it("creates an upload link without reading a body that the server adapter may close", async () => {
     const uploadLinks = new MemoryUploadLinkRepository();
     const create = vi.spyOn(uploadLinks, "create");
     const app = createFetchApp({
@@ -307,21 +307,39 @@ describe("native artifact fetch handler", () => {
       publicBaseUrl: "https://tools.example.test"
     });
     const controller = new AbortController();
-    const request = new Request("https://tools.example.test/api/upload-links", {
+    const request = new Request("https://tools.example.test/api/upload-links?durationMs=86400000", {
       method: "POST",
-      headers: { Origin: "https://tools.example.test", "Content-Type": "application/json" },
-      body: JSON.stringify({ durationMs: 86_400_000 }),
+      headers: { Origin: "https://tools.example.test" },
       signal: controller.signal
     });
-    vi.spyOn(request, "text").mockImplementation(async () => {
+    const text = vi.spyOn(request, "text").mockImplementation(async () => {
       controller.abort(new DOMException("Adapter request was closed.", "AbortError"));
-      return JSON.stringify({ durationMs: 86_400_000 });
+      throw controller.signal.reason;
     });
 
     const response = await app(request);
 
     expect(response.status).toBe(201);
+    expect(text).not.toHaveBeenCalled();
     expect(create).toHaveBeenCalledWith(expect.any(Date));
+  });
+
+  it("rejects duplicate or malformed upload-link duration query parameters", async () => {
+    const app = createFetchApp({
+      storage: new MemoryUploadStorage(),
+      uploadLinks: new MemoryUploadLinkRepository(),
+      uploadToken: "upload-token",
+      publicBaseUrl: "https://tools.example.test"
+    });
+
+    for (const query of ["durationMs=86400000&durationMs=86400000", "durationMs=1e6"]) {
+      const response = await app(new Request(`https://tools.example.test/api/upload-links?${query}`, {
+        method: "POST",
+        headers: { Origin: "https://tools.example.test" }
+      }));
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({ error: "invalid_upload_link_duration" });
+    }
   });
 
   it("paginates upload-link history with opaque keyset cursors", async () => {

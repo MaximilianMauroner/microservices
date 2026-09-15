@@ -79,10 +79,9 @@ export function UploadLinkManager() {
     setBusy(true);
     setError(undefined);
     try {
-      const response = await fetch("/api/upload-links", {
+      const response = await fetch(`/api/upload-links?durationMs=${durationMs}`, {
         method: "POST",
-        headers: { Accept: "application/json", "Content-Type": "application/json" },
-        body: JSON.stringify({ durationMs })
+        headers: { Accept: "application/json" }
       });
       const payload = await response.json() as CreatedUploadLink & { message?: string };
       if (!response.ok) throw new Error(payload.message ?? "Upload link could not be created.");
