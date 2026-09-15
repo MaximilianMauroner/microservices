@@ -253,12 +253,15 @@ describe("native artifact fetch handler", () => {
       uploadToken: "upload-token",
       publicBaseUrl: "https://tools.example.test"
     });
+    const controller = new AbortController();
+    controller.abort(new DOMException("Adapter request was already closed.", "AbortError"));
 
     try {
       const response = await app(new Request("https://tools.example.test/api/upload-links", {
         method: "POST",
         headers: { Origin: "https://tools.example.test", "Content-Type": "application/json" },
-        body: JSON.stringify({ durationMs: 86_400_000 })
+        body: JSON.stringify({ durationMs: 86_400_000 }),
+        signal: controller.signal
       }));
       expect(response.status).toBe(500);
       expect(error).toHaveBeenCalledWith(JSON.stringify({
@@ -269,6 +272,55 @@ describe("native artifact fetch handler", () => {
     } finally {
       error.mockRestore();
     }
+  });
+
+  it("creates an upload link when the server adapter supplies a pre-aborted signal", async () => {
+    const uploadLinks = new MemoryUploadLinkRepository();
+    const create = vi.spyOn(uploadLinks, "create");
+    const app = createFetchApp({
+      storage: new MemoryUploadStorage(),
+      uploadLinks,
+      uploadToken: "upload-token",
+      publicBaseUrl: "https://tools.example.test"
+    });
+    const controller = new AbortController();
+    controller.abort(new DOMException("Adapter request was already closed.", "AbortError"));
+
+    const response = await app(new Request("https://tools.example.test/api/upload-links", {
+      method: "POST",
+      headers: { Origin: "https://tools.example.test", "Content-Type": "application/json" },
+      body: JSON.stringify({ durationMs: 86_400_000 }),
+      signal: controller.signal
+    }));
+
+    expect(response.status).toBe(201);
+    expect(create).toHaveBeenCalledWith(expect.any(Date), undefined);
+  });
+
+  it("does not create an upload link when a live request aborts while its body is read", async () => {
+    const uploadLinks = new MemoryUploadLinkRepository();
+    const create = vi.spyOn(uploadLinks, "create");
+    const app = createFetchApp({
+      storage: new MemoryUploadStorage(),
+      uploadLinks,
+      uploadToken: "upload-token",
+      publicBaseUrl: "https://tools.example.test"
+    });
+    const controller = new AbortController();
+    const aborted = new DOMException("The browser disconnected.", "AbortError");
+    const request = new Request("https://tools.example.test/api/upload-links", {
+      method: "POST",
+      headers: { Origin: "https://tools.example.test", "Content-Type": "application/json" },
+      body: JSON.stringify({ durationMs: 86_400_000 }),
+      signal: controller.signal
+    });
+    vi.spyOn(request, "text").mockImplementation(async () => {
+      controller.abort(aborted);
+      return JSON.stringify({ durationMs: 86_400_000 });
+    });
+
+    await expect(app(request)).rejects.toBe(aborted);
+    expect(create).not.toHaveBeenCalled();
   });
 
   it("paginates upload-link history with opaque keyset cursors", async () => {
