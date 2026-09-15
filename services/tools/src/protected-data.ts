@@ -23,6 +23,15 @@ export type UploadSummary = {
 export type UploadPageData = {
   uploads: UploadSummary[];
   nextCursor?: string;
+  summary?: UploadInventorySummary;
+};
+
+export type UploadInventorySummary = {
+  total: number;
+  permanent: number;
+  temporary: number;
+  expiringSoon: number;
+  projects: Array<{ project: string | null; count: number }>;
 };
 
 export type ManagePageData = UploadPageData;
@@ -88,7 +97,7 @@ export const getPrivateStatusPageData = createServerFn({ method: "GET" })
 export const getManagePageData = createServerFn({ method: "GET" })
   .middleware([requirePlatformSession])
   .handler(async (): Promise<ManagePageData> => {
-    const pathname = "/api/external-uploads?limit=100&sort=newest";
+    const pathname = "/api/external-uploads?limit=100&sort=newest&includeSummary=true";
     const { context } = internalPlatformRequest(pathname);
     const response = await readPlatformResponse(
       context.runtime.services.publisher.handle,

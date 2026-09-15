@@ -163,6 +163,11 @@ case-insensitive filename `q`, `expiry=all|24h|7d|persistent`, and
 candidate set before pagination. Cursors are opaque versioned positions bound
 to normalized criteria; changing any criterion requires a fresh listing.
 The `persistent` filter returns HTML artifacts and files with no expiry.
+Passing `includeSummary=true` on the first page also returns exact inventory
+counts for total, permanent, temporary, expiring-soon, and project membership.
+Those counts cover the complete retained inventory and are independent of the
+page size; continuation requests omit the summary so loading older rows does
+not repeat the aggregate work.
 Recent-upload destinations on the current browser origin use an internal
 chevron and open in the current tab. Cross-origin destinations use an external
 arrow, open in a new tab with `rel=noreferrer`, and include an accessible

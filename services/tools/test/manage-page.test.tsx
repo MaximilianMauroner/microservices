@@ -4,6 +4,16 @@ import { ManagePage } from "../publisher/ui/manage-page.js";
 import type { ManagePageData } from "../src/protected-data.js";
 
 const initial: ManagePageData = {
+  summary: {
+    total: 142,
+    permanent: 92,
+    temporary: 50,
+    expiringSoon: 8,
+    projects: [
+      { project: "microservices", count: 41 },
+      { project: null, count: 101 }
+    ]
+  },
   uploads: [
     {
       id: "a".repeat(32),
@@ -41,6 +51,9 @@ describe("Manage artifact library", () => {
     expect(html).toContain("Replace file");
     expect(html).toContain("Copy URL");
     expect(html).toContain("Revoke artifact");
+    expect(html).toContain("Total artifacts");
+    expect(html).toContain("2 of 142 loaded");
+    expect(html).toContain(">142<");
     expect(html).toContain('href="/publisher"');
     expect(html).toContain('data-suite-accent="violet"');
     expect(html).not.toContain("Tools architecture and monitoring");

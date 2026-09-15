@@ -32,6 +32,21 @@ describe("Postgres artifact metadata paging", () => {
     expect(second.uploads[0]?.id).toBe("b");
   });
 
+  it("reports full inventory totals independently of the page size", () => {
+    const page = pageArtifactMetadata(uploads, now, { limit: 1, includeSummary: true });
+    expect(page.uploads).toHaveLength(1);
+    expect(page.summary).toEqual({
+      total: 4,
+      permanent: 2,
+      temporary: 2,
+      expiringSoon: 1,
+      projects: [
+        { project: "microservices", count: 1 },
+        { project: null, count: 3 }
+      ]
+    });
+  });
+
   it("keeps permanent artifacts separate from expiring files", () => {
     const page = pageArtifactMetadata(uploads, now, { limit: 10, expiry: "persistent" });
     expect(page.uploads.map(({ id }) => id)).toEqual(["a", "d"]);

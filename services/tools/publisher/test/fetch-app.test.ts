@@ -117,6 +117,34 @@ function multipart(filename: string, content: string, type: string, project?: st
 }
 
 describe("native artifact fetch handler", () => {
+  it("returns an exact inventory summary when the first page requests it", async () => {
+    const storage = new MemoryUploadStorage();
+    storage.listUploads = vi.fn(async (_asOf, options) => ({
+      uploads: [],
+      ...(options.includeSummary ? {
+        summary: {
+          total: 142,
+          permanent: 92,
+          temporary: 50,
+          expiringSoon: 8,
+          projects: [{ project: "microservices", count: 41 }]
+        }
+      } : {})
+    }));
+    const app = createFetchApp({
+      storage,
+      externalUpload: true,
+      uploadToken: "upload-token",
+      publicBaseUrl: "https://tools.example.test"
+    });
+
+    const response = await app(new Request("https://tools.example.test/api/external-uploads?limit=100&includeSummary=true"));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ summary: { total: 142, permanent: 92 } });
+    expect(storage.listUploads).toHaveBeenCalledWith(expect.any(Date), expect.objectContaining({ limit: 100, includeSummary: true }));
+  });
+
   it("creates an expiring guest upload link, accepts files, and revokes access", async () => {
     const storage = new MemoryUploadStorage();
     const uploadLinks = new MemoryUploadLinkRepository();

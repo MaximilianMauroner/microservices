@@ -12,7 +12,7 @@ import {
   type UploadListCursor,
   type UploadStorage
 } from "./storage.js";
-import { createS3UploadStorage } from "./storage.js";
+import { createS3UploadStorage, summarizeUploads } from "./storage.js";
 
 type ArtifactRow = {
   id: string;
@@ -298,10 +298,11 @@ export function pageArtifactMetadata(
   asOf: Date,
   options: ListUploadsOptions
 ): StoredUploadPage {
+  const active = uploads.filter((item) => !item.expiresAt || item.expiresAt > asOf);
   const query = options.q?.trim().normalize("NFKC").toLowerCase() ?? "";
   const expiry = options.expiry ?? "all";
   const sort = options.sort ?? "newest";
-  const ordered = uploads
+  const ordered = active
     .filter((item) => !options.kind || item.kind === options.kind)
     .filter((item) => !query || item.originalName.normalize("NFKC").toLowerCase().includes(query))
     .filter((item) => expiry === "all" || expiry === "persistent" ? expiry === "all" || !item.expiresAt : Boolean(item.expiresAt && item.expiresAt <= new Date(asOf.getTime() + (expiry === "24h" ? 86_400_000 : 604_800_000))))
@@ -312,6 +313,7 @@ export function pageArtifactMetadata(
   const last = visible.at(-1);
   return {
     uploads: visible.map(({ key: _key, ...item }) => item),
+    ...(options.includeSummary ? { summary: summarizeUploads(active, asOf) } : {}),
     ...(last && selected.length > options.limit ? { nextCursor: {
       version: 1, criteria: options.criteria ?? "legacy:newest", updatedAt: last.updatedAt,
       key: last.key, originalName: last.originalName, ...(last.expiresAt ? { expiresAt: last.expiresAt } : {})

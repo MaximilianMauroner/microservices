@@ -735,6 +735,7 @@ async function listExternalUploads(
         ...(upload.project ? { project: upload.project } : {}),
         ...(upload.expiresAt ? { expiresAt: upload.expiresAt.toISOString() } : {})
       })),
+      ...(page.summary ? { summary: page.summary } : {}),
       ...(page.nextCursor
         ? {
             nextCursor: encodeUploadListCursor(
@@ -2292,6 +2293,7 @@ function parseUploadListOptions(search: URLSearchParams): Omit<ListUploadsOption
   const rawQuery = singleQuery(search, "q");
   const rawExpiry = singleQuery(search, "expiry");
   const rawSort = singleQuery(search, "sort");
+  const rawIncludeSummary = singleQuery(search, "includeSummary");
   const limit = rawLimit === undefined ? DEFAULT_UPLOAD_LIST_LIMIT : Number(rawLimit);
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > MAX_UPLOAD_LIST_LIMIT) {
     throw new ArtifactRequestError(
@@ -2321,8 +2323,12 @@ function parseUploadListOptions(search: URLSearchParams): Omit<ListUploadsOption
       : (() => { throw new ArtifactRequestError(400, "invalid_pagination", "kind must be all, html, or file."); })();
   const criteria = JSON.stringify({ q, kind: kind ?? "all", expiry, sort });
   const cursor = rawCursor === undefined ? undefined : decodeUploadListCursor(rawCursor, criteria, q === "" && expiry === "all" && sort === "newest");
+  if (rawIncludeSummary !== undefined && rawIncludeSummary !== "true") {
+    throw new ArtifactRequestError(400, "invalid_pagination", "includeSummary must be true when provided.");
+  }
   return {
     limit,
+    ...(rawIncludeSummary === "true" ? { includeSummary: true } : {}),
     criteria,
     ...(kind ? { kind } : {}),
     ...(q ? { q } : {}),

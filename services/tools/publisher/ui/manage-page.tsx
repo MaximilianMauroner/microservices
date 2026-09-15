@@ -44,7 +44,7 @@ import {
   TableHeader,
   TableRow
 } from "../../src/components/ui/table.js";
-import type { ManagePageData, UploadSummary } from "../../src/protected-data.js";
+import type { ManagePageData, UploadInventorySummary, UploadSummary } from "../../src/protected-data.js";
 import { fetchPublisherRead, waitForPublisher } from "./publisher-request.js";
 
 type KindFilter = "all" | UploadSummary["kind"];
@@ -58,6 +58,7 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
   const isMobile = useIsMobile();
   const [uploads, setUploads] = useState(initial.uploads);
   const [nextCursor, setNextCursor] = useState(initial.nextCursor);
+  const [summary, setSummary] = useState<UploadInventorySummary>(() => initial.summary ?? summarizeLoaded(initial.uploads));
   const [selectedId, setSelectedId] = useState(initial.uploads[0]?.id);
   const [projectFilter, setProjectFilter] = useState(ALL_PROJECTS);
   const [query, setQuery] = useState("");
@@ -69,23 +70,25 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
   const [mobileInspectorOpen, setMobileInspectorOpen] = useState(false);
   const replaceInput = useRef<HTMLInputElement>(null);
 
-  const projects = useMemo(() => projectCounts(uploads), [uploads]);
+  const projects = useMemo(() => summary.projects
+    .map(({ project, count }) => [project ?? UNASSIGNED_PROJECT, count] as [string, number])
+    .sort(([left], [right]) => left === UNASSIGNED_PROJECT ? 1 : right === UNASSIGNED_PROJECT ? -1 : left.localeCompare(right)), [summary]);
   const visibleUploads = useMemo(
     () => filterAndSortUploads(uploads, { projectFilter, query, kind, expiry, sort }),
     [expiry, kind, projectFilter, query, sort, uploads]
   );
   const selected = uploads.find((upload) => upload.id === selectedId);
-  const expiringSoon = uploads.filter((upload) => expiresWithin(upload, 24 * 60 * 60 * 1000)).length;
 
   async function refresh(options: { announce?: boolean } = {}) {
     setBusy(true);
     try {
-      const response = await fetchPublisherRead("/api/external-uploads?limit=100&sort=newest", {
+      const response = await fetchPublisherRead("/api/external-uploads?limit=100&sort=newest&includeSummary=true", {
         credentials: "same-origin"
       });
       const payload = await readPayload<ManagePageData>(response, "Artifact inventory could not be refreshed.");
       setUploads(payload.uploads);
       setNextCursor(payload.nextCursor);
+      if (payload.summary) setSummary(payload.summary);
       setSelectedId((current) => payload.uploads.some((upload) => upload.id === current)
         ? current
         : payload.uploads[0]?.id);
@@ -153,9 +156,7 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
         body: JSON.stringify({ project })
       });
       await readPayload(response, "Project could not be changed.");
-      setUploads((current) => current.map((upload) => upload.id === selected.id
-        ? { ...upload, project }
-        : upload));
+      await refresh();
       setMessage({ text: `Moved ${selected.filename} to ${project}.`, tone: "success" });
     } catch (error) {
       setMessage({ text: errorMessage(error), tone: "error" });
@@ -177,11 +178,7 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
         body: JSON.stringify({ expiresAt })
       });
       const updated = await readPayload<{ expiresAt: string | null }>(response, "File expiry could not be changed.");
-      setUploads((current) => current.map((upload) => {
-        if (upload.id !== selected.id) return upload;
-        const { expiresAt: _oldExpiry, ...withoutExpiry } = upload;
-        return updated.expiresAt ? { ...withoutExpiry, expiresAt: updated.expiresAt } : withoutExpiry;
-      }));
+      await refresh();
       setMessage({
         text: updated.expiresAt
           ? `${selected.filename} now expires ${formatDate(updated.expiresAt)}.`
@@ -208,9 +205,7 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
         credentials: "same-origin"
       });
       if (!response.ok) await readPayload(response, "Artifact could not be revoked.");
-      const remaining = uploads.filter((upload) => upload.id !== selected.id);
-      setUploads(remaining);
-      setSelectedId(remaining[0]?.id);
+      await refresh();
       setMessage({ text: `${selected.filename} was revoked. Its capability URL no longer works.`, tone: "success" });
     } catch (error) {
       setMessage({ text: errorMessage(error), tone: "error" });
@@ -252,10 +247,10 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
         {message ? <Alert className="mb-4" variant={message.tone === "error" ? "destructive" : "default"}>{message.text}</Alert> : null}
 
         <section className="mb-3 grid grid-cols-2 gap-2 lg:grid-cols-4" aria-label="Artifact summary">
-          <Metric label="Artifacts" value={uploads.length} />
-          <Metric label="Permanent" value={uploads.filter((upload) => !upload.expiresAt).length} />
-          <Metric label="Temporary" value={uploads.filter((upload) => Boolean(upload.expiresAt)).length} />
-          <Metric label="Expiring soon" value={expiringSoon} attention={expiringSoon > 0} />
+          <Metric label="Total artifacts" value={summary.total} />
+          <Metric label="Permanent" value={summary.permanent} />
+          <Metric label="Temporary" value={summary.temporary} />
+          <Metric label="Expiring soon" value={summary.expiringSoon} attention={summary.expiringSoon > 0} />
         </section>
 
         <section className="mb-3 flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between" aria-label="Artifact filters">
@@ -271,8 +266,8 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
         </section>
 
         <section className="grid items-start gap-3 lg:grid-cols-[12rem_minmax(0,1fr)_20rem]" aria-label="Artifact library">
-          <ProjectNavigation projects={projects} active={projectFilter} onSelect={setProjectFilter} total={uploads.length} />
-          <ArtifactTable uploads={visibleUploads} selectedId={selectedId} onSelect={(id) => { setSelectedId(id); setMobileInspectorOpen(true); }} hasMore={Boolean(nextCursor)} busy={busy} onLoadMore={loadOlder} />
+          <ProjectNavigation projects={projects} active={projectFilter} onSelect={setProjectFilter} total={summary.total} />
+          <ArtifactTable uploads={visibleUploads} loaded={uploads.length} total={summary.total} selectedId={selectedId} onSelect={(id) => { setSelectedId(id); setMobileInspectorOpen(true); }} hasMore={Boolean(nextCursor)} busy={busy} onLoadMore={loadOlder} />
           {!isMobile ? <ArtifactInspector
             key={selected?.id ?? "none"}
             upload={selected}
@@ -305,12 +300,12 @@ function ProjectButton({ label, count, active, onClick }: { label: string; count
   return <button className={`flex min-h-11 min-w-36 shrink-0 items-center justify-between gap-2 rounded-md px-2 py-2 text-left text-xs transition-colors hover:bg-muted lg:min-h-0 lg:min-w-0${active ? " bg-secondary text-foreground" : " text-muted-foreground"}`} type="button" aria-current={active ? "true" : undefined} onClick={onClick}><span className="truncate">{label}</span><Badge variant="outline">{count}</Badge></button>;
 }
 
-function ArtifactTable({ uploads, selectedId, onSelect, hasMore, busy, onLoadMore }: { uploads: UploadSummary[]; selectedId?: string; onSelect: (id: string) => void; hasMore: boolean; busy: boolean; onLoadMore: () => Promise<void> }) {
+function ArtifactTable({ uploads, loaded, total, selectedId, onSelect, hasMore, busy, onLoadMore }: { uploads: UploadSummary[]; loaded: number; total: number; selectedId?: string; onSelect: (id: string) => void; hasMore: boolean; busy: boolean; onLoadMore: () => Promise<void> }) {
   const isMobile = useIsMobile();
   const [mobileLimit, setMobileLimit] = useState(50);
   const mobileUploads = uploads.slice(0, mobileLimit);
   return <Card className="gap-0 overflow-hidden py-0">
-    <div className="flex items-center justify-between border-b px-4 py-3"><h2 className="font-semibold">Artifact library</h2><span className="text-xs text-muted-foreground">{uploads.length} shown</span></div>
+    <div className="flex items-center justify-between border-b px-4 py-3"><h2 className="font-semibold">Artifact library</h2><span className="text-xs text-muted-foreground">{uploads.length === loaded ? `${loaded} of ${total} loaded` : `${uploads.length} shown · ${loaded} of ${total} loaded`}</span></div>
     {uploads.length === 0 ? <div className="grid min-h-72 place-items-center p-8 text-center"><div><h3 className="font-semibold">No artifacts match</h3><p className="mt-1 text-sm text-muted-foreground">Try another search, project, or lifecycle filter.</p></div></div> : isMobile ? <div className="divide-y" role="list" aria-label="Artifacts">{mobileUploads.map((upload) => <article key={upload.id} role="listitem"><button className={`grid min-h-20 w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 p-3 text-left transition-colors hover:bg-muted${selectedId === upload.id ? " bg-secondary shadow-[inset_3px_0_var(--foreground)]" : ""}`} type="button" aria-current={selectedId === upload.id ? "true" : undefined} onClick={() => onSelect(upload.id)}><span className="grid size-11 shrink-0 place-items-center rounded-md border text-muted-foreground">{upload.kind === "html" ? <FileText /> : <Download />}</span><span className="min-w-0"><strong className="block truncate text-sm">{upload.filename}</strong><small className="mt-1 block truncate text-xs text-muted-foreground">{upload.project ?? "Unassigned"} · {formatRelativeDate(upload.updatedAt)}</small></span><LifecycleBadge upload={upload} /></button></article>)}{mobileUploads.length < uploads.length ? <div className="p-3 text-center"><Button type="button" variant="outline" onClick={() => setMobileLimit((current) => current + 50)}>Show 50 more</Button></div> : null}</div> : <Table><TableHeader><TableRow><TableHead>Artifact</TableHead><TableHead>Project</TableHead><TableHead>Lifecycle</TableHead><TableHead>Updated</TableHead></TableRow></TableHeader><TableBody>{uploads.map((upload) => <TableRow key={upload.id} data-state={selectedId === upload.id ? "selected" : undefined} className={`cursor-pointer${selectedId === upload.id ? " shadow-[inset_2px_0_var(--foreground)]" : ""}`} onClick={() => onSelect(upload.id)}><TableCell><button className="flex max-w-[25rem] items-center gap-3 text-left" type="button"><span className="grid size-9 shrink-0 place-items-center rounded-md border text-muted-foreground">{upload.kind === "html" ? <FileText /> : <Download />}</span><span className="min-w-0"><strong className="block truncate text-sm">{upload.filename}</strong><small className="block truncate font-mono text-xs text-muted-foreground">{shortUrl(upload.url)}</small></span></button></TableCell><TableCell className="text-xs text-muted-foreground">{upload.project ?? "Unassigned"}</TableCell><TableCell><LifecycleBadge upload={upload} /></TableCell><TableCell className="text-xs text-muted-foreground">{formatRelativeDate(upload.updatedAt)}</TableCell></TableRow>)}</TableBody></Table>}
     {hasMore ? <div className="flex justify-center border-t p-3"><Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => void onLoadMore()}>Load older artifacts</Button></div> : null}
   </Card>;
@@ -388,6 +383,19 @@ function projectCounts(uploads: UploadSummary[]): Array<[string, number]> {
     counts.set(project, (counts.get(project) ?? 0) + 1);
   }
   return [...counts].sort(([left], [right]) => left === UNASSIGNED_PROJECT ? 1 : right === UNASSIGNED_PROJECT ? -1 : left.localeCompare(right));
+}
+
+function summarizeLoaded(uploads: UploadSummary[]): UploadInventorySummary {
+  return {
+    total: uploads.length,
+    permanent: uploads.filter((upload) => !upload.expiresAt).length,
+    temporary: uploads.filter((upload) => Boolean(upload.expiresAt)).length,
+    expiringSoon: uploads.filter((upload) => expiresWithin(upload, 24 * 60 * 60 * 1000)).length,
+    projects: projectCounts(uploads).map(([project, count]) => ({
+      project: project === UNASSIGNED_PROJECT ? null : project,
+      count
+    }))
+  };
 }
 
 function filterAndSortUploads(uploads: UploadSummary[], filters: { projectFilter: string; query: string; kind: KindFilter; expiry: ExpiryFilter; sort: SortOrder }) {
