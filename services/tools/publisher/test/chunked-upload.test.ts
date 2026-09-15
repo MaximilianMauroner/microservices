@@ -189,6 +189,41 @@ describe("chunked browser uploads", () => {
     expect(payload.expiresAt).toBe("2026-08-21T12:00:00.000Z");
   });
 
+  it("revalidates a guest capability before committing a chunked upload", async () => {
+    const storage = new ChunkTestStorage();
+    const links = guestLinks();
+    const findActive = links.findActive.bind(links);
+    let activeChecks = 0;
+    links.findActive = async (token, now) => {
+      activeChecks += 1;
+      return activeChecks <= 4 ? findActive(token, now) : null;
+    };
+    const app = testApp(storage, { uploadLinks: links });
+    const base = `${ORIGIN}/api/drop/${DROP_TOKEN}/uploads/chunks`;
+    const initialized = await app(new Request(base, {
+      method: "POST",
+      headers: { Origin: ORIGIN, "Content-Type": "application/json" },
+      body: initBody(CHUNK_BYTES * 2, 2)
+    }));
+    const { sessionId } = await initialized.json() as { sessionId: string };
+    for (let index = 0; index < 2; index += 1) {
+      expect((await app(new Request(`${base}/${sessionId}/${index}`, {
+        method: "PUT",
+        headers: { Origin: ORIGIN, "Content-Type": "application/octet-stream" },
+        body: Buffer.alloc(CHUNK_BYTES, index)
+      }))).status).toBe(200);
+    }
+
+    const completed = await app(new Request(`${base}/${sessionId}/complete`, {
+      method: "POST",
+      headers: { Origin: ORIGIN }
+    }));
+
+    expect(completed.status).toBe(404);
+    expect(await completed.json()).toMatchObject({ error: "upload_link_unavailable" });
+    expect(storage.files.size).toBe(0);
+  });
+
   it("bounds incomplete guest sessions and frees capacity when one is cancelled", async () => {
     const storage = new ChunkTestStorage();
     const app = testApp(storage, { uploadLinks: guestLinks() });

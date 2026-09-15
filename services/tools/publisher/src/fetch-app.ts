@@ -304,7 +304,10 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
         if (request.method === "POST" && chunkComplete) {
           return await completeChunkedUpload(
             request, url, options, chunkComplete, uploadGate, maxUploadBytes,
-            temporaryFileRetentionMs, activityTracker, "drop", link
+            temporaryFileRetentionMs, activityTracker, "drop", link,
+            async () => Boolean(
+              await options.uploadLinks?.findActive(dropChunk.token, getNow(options))
+            )
           );
         }
         throw new ArtifactRequestError(404, "not_found", "API route was not found.");
@@ -1386,7 +1389,8 @@ async function completeChunkedUpload(
   temporaryFileRetentionMs: number,
   activityTracker: ActivityTracker,
   audience: ChunkSessionManifest["audience"],
-  uploadLink?: UploadLink
+  uploadLink?: UploadLink,
+  ensureActive?: () => Promise<boolean>
 ): Promise<Response> {
   if (!PAGE_ID_PATTERN.test(sessionId)) {
     throw new ArtifactRequestError(400, "invalid_upload_id", "Upload ID is invalid.");
@@ -1470,6 +1474,13 @@ async function completeChunkedUpload(
           ? new Date(Math.max(uploadLink.expiresAt.getTime(), getNow(options).getTime() + temporaryFileRetentionMs))
           : new Date(getNow(options).getTime() + temporaryFileRetentionMs);
         cleanupId = id;
+        if (ensureActive && !(await ensureActive())) {
+          throw new ArtifactRequestError(
+            404,
+            "upload_link_unavailable",
+            "This upload link has expired or was revoked."
+          );
+        }
         await options.storage.putTemporaryFile(
           id,
           assembledPath,
