@@ -274,7 +274,7 @@ describe("native artifact fetch handler", () => {
     }
   });
 
-  it("creates an upload link when the server adapter supplies a pre-aborted signal", async () => {
+  it("creates an upload link without forwarding a detached server-adapter signal", async () => {
     const uploadLinks = new MemoryUploadLinkRepository();
     const create = vi.spyOn(uploadLinks, "create");
     const app = createFetchApp({
@@ -294,10 +294,10 @@ describe("native artifact fetch handler", () => {
     }));
 
     expect(response.status).toBe(201);
-    expect(create).toHaveBeenCalledWith(expect.any(Date), undefined);
+    expect(create).toHaveBeenCalledWith(expect.any(Date));
   });
 
-  it("does not create an upload link when a live request aborts while its body is read", async () => {
+  it("creates an upload link when the server adapter closes its signal while reading the buffered body", async () => {
     const uploadLinks = new MemoryUploadLinkRepository();
     const create = vi.spyOn(uploadLinks, "create");
     const app = createFetchApp({
@@ -307,7 +307,6 @@ describe("native artifact fetch handler", () => {
       publicBaseUrl: "https://tools.example.test"
     });
     const controller = new AbortController();
-    const aborted = new DOMException("The browser disconnected.", "AbortError");
     const request = new Request("https://tools.example.test/api/upload-links", {
       method: "POST",
       headers: { Origin: "https://tools.example.test", "Content-Type": "application/json" },
@@ -315,12 +314,14 @@ describe("native artifact fetch handler", () => {
       signal: controller.signal
     });
     vi.spyOn(request, "text").mockImplementation(async () => {
-      controller.abort(aborted);
+      controller.abort(new DOMException("Adapter request was closed.", "AbortError"));
       return JSON.stringify({ durationMs: 86_400_000 });
     });
 
-    await expect(app(request)).rejects.toBe(aborted);
-    expect(create).not.toHaveBeenCalled();
+    const response = await app(request);
+
+    expect(response.status).toBe(201);
+    expect(create).toHaveBeenCalledWith(expect.any(Date));
   });
 
   it("paginates upload-link history with opaque keyset cursors", async () => {
