@@ -53,6 +53,7 @@ const CHUNKED_UPLOAD_SESSION_PREFIX = "artifact-chunks-";
 const CHUNKED_UPLOAD_SESSION_TTL_MS = 2 * 60 * 60 * 1000;
 const CHUNKED_UPLOAD_INIT_MAX_BYTES = 4096;
 const MAX_INCOMPLETE_DROP_SESSIONS_PER_LINK = 3;
+const MAX_PENDING_DROP_CHUNK_INITS = 16;
 export const DEFAULT_MAX_CONCURRENT_UPLOADS = 1;
 export const DEFAULT_TEMPORARY_FILE_RETENTION_MS = 3 * 24 * 60 * 60 * 1000;
 export const MAX_TEMPORARY_FILE_RETENTION_MS = 100 * 365 * 24 * 60 * 60 * 1000;
@@ -152,7 +153,10 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
   }
 
   const uploadGate = createUploadGate(maxConcurrentUploads);
-  const dropChunkInitGate = createDropChunkInitGate(MAX_INCOMPLETE_DROP_SESSIONS_PER_LINK);
+  const dropChunkInitGate = createDropChunkInitGate(
+    MAX_INCOMPLETE_DROP_SESSIONS_PER_LINK,
+    MAX_PENDING_DROP_CHUNK_INITS
+  );
   const uploadToken = requireUploadToken(options.uploadToken);
 
   return async function artifactFetch(request: Request): Promise<Response> {
@@ -287,7 +291,7 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
             }
             throw error;
           }
-          return await dropChunkInitGate.run(link.id, () =>
+          return await dropChunkInitGate.run(link.id, request.signal, () =>
             initChunkedUpload(plan, "drop", link.id)
           );
         }
@@ -1130,28 +1134,76 @@ async function countDropChunkSessions(uploadLinkId: string) {
   return count;
 }
 
-function createDropChunkInitGate(maxSessionsPerLink: number) {
-  let tail = Promise.resolve();
+function createDropChunkInitGate(maxSessionsPerLink: number, maxPending: number) {
+  type PendingInitialization = {
+    signal: AbortSignal;
+    abort: () => void;
+    reject: (reason: unknown) => void;
+    execute: () => Promise<void>;
+  };
+  const pending: PendingInitialization[] = [];
+  let running = false;
+
+  const startNext = () => {
+    if (running) return;
+    const job = pending.shift();
+    if (!job) return;
+    job.signal.removeEventListener("abort", job.abort);
+    if (job.signal.aborted) {
+      job.reject(job.signal.reason ?? new DOMException("Request aborted", "AbortError"));
+      queueMicrotask(startNext);
+      return;
+    }
+    running = true;
+    void job.execute().finally(() => {
+      running = false;
+      startNext();
+    });
+  };
+
   return {
-    async run<T>(uploadLinkId: string, initialize: () => Promise<T>): Promise<T> {
-      let release!: () => void;
-      const previous = tail;
-      tail = new Promise<void>((resolve) => { release = resolve; });
-      await previous;
-      try {
-        await sweepStaleChunkSessions();
-        if (await countDropChunkSessions(uploadLinkId) >= maxSessionsPerLink) {
-          throw new ArtifactRequestError(
-            429,
-            "too_many_incomplete_uploads",
-            "Finish or cancel an incomplete upload before starting another.",
-            { "Retry-After": "60" }
-          );
-        }
-        return await initialize();
-      } finally {
-        release();
+    run<T>(uploadLinkId: string, signal: AbortSignal, initialize: () => Promise<T>): Promise<T> {
+      if (signal.aborted) return Promise.reject(signal.reason);
+      if (pending.length >= maxPending) {
+        return Promise.reject(new ArtifactRequestError(
+          429,
+          "upload_initialization_busy",
+          "Too many upload initializations are waiting. Try again shortly.",
+          { "Retry-After": "1" }
+        ));
       }
+      return new Promise<T>((resolve, reject) => {
+        const job: PendingInitialization = {
+          signal,
+          reject,
+          abort: () => {
+            const index = pending.indexOf(job);
+            if (index < 0) return;
+            pending.splice(index, 1);
+            signal.removeEventListener("abort", job.abort);
+            reject(signal.reason ?? new DOMException("Request aborted", "AbortError"));
+          },
+          execute: async () => {
+            try {
+              await sweepStaleChunkSessions();
+              if (await countDropChunkSessions(uploadLinkId) >= maxSessionsPerLink) {
+                throw new ArtifactRequestError(
+                  429,
+                  "too_many_incomplete_uploads",
+                  "Finish or cancel an incomplete upload before starting another.",
+                  { "Retry-After": "60" }
+                );
+              }
+              resolve(await initialize());
+            } catch (error) {
+              reject(error);
+            }
+          }
+        };
+        signal.addEventListener("abort", job.abort, { once: true });
+        pending.push(job);
+        startNext();
+      });
     }
   };
 }

@@ -261,6 +261,39 @@ describe("chunked browser uploads", () => {
     }
   });
 
+  it("bounds the pending guest initialization queue", async () => {
+    const storage = new ChunkTestStorage();
+    const app = testApp(storage, { uploadLinks: guestLinks() });
+    const base = `${ORIGIN}/api/drop/${DROP_TOKEN}/uploads/chunks`;
+    const responses = await Promise.all(Array.from({ length: 24 }, () => app(new Request(base, {
+      method: "POST",
+      headers: { Origin: ORIGIN, "Content-Type": "application/json" },
+      body: initBody(CHUNK_BYTES * 2, 2)
+    }))));
+    const payloads = await Promise.all(responses.map(async (response) => ({
+      status: response.status,
+      body: await response.json() as { error?: string; sessionId?: string }
+    })));
+
+    expect(payloads.filter(({ body }) => body.error === "upload_initialization_busy").length).toBeGreaterThan(0);
+    const sessions = payloads.flatMap(({ status, body }) => status === 201 && body.sessionId ? [body.sessionId] : []);
+    expect(sessions).toHaveLength(3);
+    for (const sessionId of sessions) {
+      await app(new Request(`${base}/${sessionId}`, { method: "DELETE", headers: { Origin: ORIGIN } }));
+    }
+  });
+
+  it("removes aborted requests from the guest initialization queue", async () => {
+    const source = await readFile(new URL("../src/fetch-app.ts", import.meta.url), "utf8");
+    const gate = source.slice(
+      source.indexOf("function createDropChunkInitGate"),
+      source.indexOf("async function readLimitedBody")
+    );
+    expect(gate).toContain("pending.length >= maxPending");
+    expect(gate).toContain("pending.splice(index, 1)");
+    expect(gate).toContain('signal.addEventListener("abort", job.abort, { once: true })');
+  });
+
   it("reassembles small chunk requests into one temporary file", async () => {
     const storage = new ChunkTestStorage();
     const app = testApp(storage);

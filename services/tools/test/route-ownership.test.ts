@@ -44,6 +44,13 @@ describe("primary page ownership", () => {
     expect(source).toContain("Load older links");
   });
 
+  it("ignores upload-link refreshes made stale by lifecycle changes", () => {
+    const source = readFileSync(new URL("../publisher/ui/upload-link-manager.tsx", import.meta.url), "utf8");
+    expect(source).toContain("const linksRevision = useRef(0)");
+    expect(source).toContain("if (revision !== linksRevision.current) return");
+    expect(source).toContain("linksRevision.current += 1");
+  });
+
   it("protects private money data with the shared session middleware", () => {
     const source = readFileSync(new URL("../src/protected-data.ts", import.meta.url), "utf8");
     const moneyLoader = source.slice(source.indexOf("getMoneyTrackerPageData"), source.indexOf("getPrivateStatusPageData"));

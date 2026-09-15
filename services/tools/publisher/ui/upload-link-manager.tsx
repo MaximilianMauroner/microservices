@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Copy, Download, Link2, Plus, RotateCcw, X } from "lucide-react";
 import { Alert } from "../../src/components/ui/alert.js";
 import { Badge } from "../../src/components/ui/badge.js";
@@ -30,16 +30,26 @@ export function UploadLinkManager() {
   const [nextCursor, setNextCursor] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  const linksRevision = useRef(0);
 
   async function loadLinks() {
+    const revision = ++linksRevision.current;
     setError(undefined);
     await fetch("/api/upload-links", { headers: { Accept: "application/json" } })
       .then(async (response) => {
         if (!response.ok) throw new Error("Upload links could not be loaded.");
         return response.json() as Promise<{ links: UploadLinkSummary[]; nextCursor?: string }>;
       })
-      .then((payload) => { setLinks(payload.links); setNextCursor(payload.nextCursor); })
-      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Upload links could not be loaded."));
+      .then((payload) => {
+        if (revision !== linksRevision.current) return;
+        setLinks(payload.links);
+        setNextCursor(payload.nextCursor);
+      })
+      .catch((reason: unknown) => {
+        if (revision === linksRevision.current) {
+          setError(reason instanceof Error ? reason.message : "Upload links could not be loaded.");
+        }
+      });
   }
 
   async function loadOlderLinks() {
@@ -76,6 +86,7 @@ export function UploadLinkManager() {
       });
       const payload = await response.json() as CreatedUploadLink & { message?: string };
       if (!response.ok) throw new Error(payload.message ?? "Upload link could not be created.");
+      linksRevision.current += 1;
       setCreated(payload);
       setLinks((current) => [payload, ...current]);
     } catch (reason) {
@@ -91,6 +102,7 @@ export function UploadLinkManager() {
     try {
       const response = await fetch(`/api/upload-links/${id}`, { method: "DELETE", headers: { Accept: "application/json" } });
       if (!response.ok) throw new Error("Upload link could not be revoked.");
+      linksRevision.current += 1;
       const revokedAt = new Date().toISOString();
       setLinks((current) => current.map((link) => link.id === id ? { ...link, revokedAt } : link));
       if (created?.id === id) setCreated((current) => current ? { ...current, revokedAt } : current);
