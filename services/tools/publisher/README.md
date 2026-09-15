@@ -178,7 +178,8 @@ one standard byte range. Missing, revoked, and expired capability URLs return
 `404`. Malformed canonical or legacy percent encoding returns `404`.
 
 Errors use JSON with stable `error` and `message` fields. Notable statuses are
-`401 unauthorized`, `403 invalid_origin`, `404 upload_not_found`, `409
+`401 unauthorized`, `403 invalid_origin`, `404 upload_not_found`, `408
+upload_timeout`, `409
 upload_conflict`, `409 incomplete_upload`, `413 payload_too_large`, `415 unsupported_media_type`, `416
 range_not_satisfiable`, and `503 upload_capacity_reached`.
 

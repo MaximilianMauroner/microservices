@@ -169,7 +169,9 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
       await Promise.all([
         marketDataScheduler?.close() ?? Promise.resolve(),
         cleanup?.wait() ?? Promise.resolve(),
-        activityTracker.waitForIdle(),
+        activityTracker.waitForIdle()
+      ]);
+      await Promise.all([
         ...Object.values(services).map((service) => service.close()),
         heartbeatRepository.close(),
         moneyImports.close(),

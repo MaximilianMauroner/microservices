@@ -55,6 +55,7 @@ const MAX_INCOMPLETE_DROP_SESSIONS_PER_LINK = 3;
 export const DEFAULT_MAX_CONCURRENT_UPLOADS = 1;
 export const DEFAULT_TEMPORARY_FILE_RETENTION_MS = 3 * 24 * 60 * 60 * 1000;
 export const MAX_TEMPORARY_FILE_RETENTION_MS = 100 * 365 * 24 * 60 * 60 * 1000;
+export const DEFAULT_GUEST_UPLOAD_BODY_TIMEOUT_MS = 5 * 60 * 1000;
 
 const PAGE_ID_PATTERN = /^[A-Za-z0-9_-]{32}$/;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -112,6 +113,7 @@ export type FetchArtifactAppOptions = {
   maxHtmlUploadBytes?: number;
   maxConcurrentUploads?: number;
   temporaryFileRetentionMs?: number;
+  guestUploadBodyTimeoutMs?: number;
   now?: () => Date;
 };
 
@@ -132,6 +134,10 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
   const temporaryFileRetentionMs = positiveIntegerOption(
     options.temporaryFileRetentionMs ?? DEFAULT_TEMPORARY_FILE_RETENTION_MS,
     "temporaryFileRetentionMs"
+  );
+  const guestUploadBodyTimeoutMs = positiveIntegerOption(
+    options.guestUploadBodyTimeoutMs ?? DEFAULT_GUEST_UPLOAD_BODY_TIMEOUT_MS,
+    "guestUploadBodyTimeoutMs"
   );
   const publisherFavicon = publisherFaviconLink(options.publisherFaviconUrl);
   if (maxHtmlUploadBytes > maxUploadBytes) {
@@ -222,7 +228,8 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
           maxUploadBytes,
           maxHtmlUploadBytes,
           temporaryFileRetentionMs,
-          activityTracker
+          activityTracker,
+          guestUploadBodyTimeoutMs
         );
       }
 
@@ -752,7 +759,8 @@ async function upload(
   maxUploadBytes: number,
   maxHtmlUploadBytes: number,
   temporaryFileRetentionMs: number,
-  activityTracker: ActivityTracker
+  activityTracker: ActivityTracker,
+  guestUploadBodyTimeoutMs?: number
 ): Promise<Response> {
   const release = gate.tryAcquire();
   if (!release) {
@@ -773,12 +781,26 @@ async function upload(
       let cleanupId: string | undefined;
       let responseSent = false;
       try {
-        staged = await stageMultipart(request, {
-          maxUploadBytes,
-          maxHtmlUploadBytes,
-          temporaryOnly: mode.kind === "create" && mode.temporaryOnly === true,
-          signal: request.signal
-        });
+        const guestBodySignal = guestUploadBodyTimeoutMs === undefined
+          ? request.signal
+          : AbortSignal.any([request.signal, AbortSignal.timeout(guestUploadBodyTimeoutMs)]);
+        try {
+          staged = await stageMultipart(request, {
+            maxUploadBytes,
+            maxHtmlUploadBytes,
+            temporaryOnly: mode.kind === "create" && mode.temporaryOnly === true,
+            signal: guestBodySignal
+          });
+        } catch (error) {
+          if (!request.signal.aborted && guestBodySignal.aborted) {
+            throw new ArtifactRequestError(
+              408,
+              "upload_timeout",
+              "The guest upload body was not received before the upload deadline."
+            );
+          }
+          throw error;
+        }
         const uploadType = classifyUpload(
           staged.originalName,
           staged.contentType,
@@ -1539,8 +1561,21 @@ async function stageMultipart(
 
   const parserDone = new Promise<void>((resolve) => parser.once("close", resolve));
   input.on("error", (error) => parser.destroy(error));
+  const abort = () => {
+    const reason = options.signal.reason instanceof Error
+      ? options.signal.reason
+      : new DOMException("Upload aborted", "AbortError");
+    input.destroy(reason);
+    parser.destroy(reason);
+  };
+  if (options.signal.aborted) abort();
+  else options.signal.addEventListener("abort", abort, { once: true });
   input.pipe(parser);
-  await parserDone;
+  try {
+    await parserDone;
+  } finally {
+    options.signal.removeEventListener("abort", abort);
+  }
   const staged = await filePromise?.catch((error) => {
     parserError ??= error;
     return undefined;
@@ -1989,7 +2024,9 @@ function downloadUploadLinkFiles(
       for (const file of files) {
         if (signal.aborted) throw new DOMException("Download aborted", "AbortError");
         const stored = await storage.getTemporaryFile(file.id, { signal });
-        if (!stored) continue;
+        if (!stored) {
+          throw new Error(`Upload-link file ${file.id} disappeared during archive creation`);
+        }
         await archive.add(
           uniqueArchiveName(file.filename, usedNames),
           Readable.toWeb(stored.body) as ReadableStream<Uint8Array>,

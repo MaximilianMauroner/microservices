@@ -149,8 +149,8 @@ describe("native artifact fetch handler", () => {
     expect(page).toContain("/chunks");
     expect(page).toContain("20*1024*1024");
     expect(page).toContain("Retry-After");
-    expect(page).toContain("error.preserveSession=true");
-    expect(page).toContain("if(!error.preserveSession)");
+    expect(page).toContain("for(;;)");
+    expect(page).toContain("waiting for upload capacity");
 
     const uploadResponse = await app(new Request(`https://tools.example.test/api/drop/${uploadLinks.token}/uploads`, {
       method: "POST",
@@ -227,6 +227,61 @@ describe("native artifact fetch handler", () => {
     } finally {
       errorLog.mockRestore();
     }
+  });
+
+  it("fails a bulk-download stream when a selected object disappears", async () => {
+    const storage = new MemoryUploadStorage();
+    const uploadLinks = new MemoryUploadLinkRepository();
+    await uploadLinks.create(new Date("2026-09-16T12:00:00.000Z"));
+    uploadLinks.files = [{ id: "a".repeat(32), filename: "missing.txt", bytes: 5 }];
+    const app = createFetchApp({ storage, uploadLinks, uploadToken: "upload-token" });
+    const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const response = await app(new Request(`https://tools.example.test/api/upload-links/${uploadLinks.id}/download`));
+      await expect(response.arrayBuffer()).rejects.toThrow("disappeared during archive creation");
+    } finally {
+      errorLog.mockRestore();
+    }
+  });
+
+  it("times out stalled guest multipart bodies and releases upload capacity", async () => {
+    const storage = new MemoryUploadStorage();
+    const uploadLinks = new MemoryUploadLinkRepository();
+    await uploadLinks.create(new Date("2026-09-16T12:00:00.000Z"));
+    const boundary = "stalled-boundary";
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(
+          `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="slow.txt"\r\nContent-Type: text/plain\r\n\r\na`
+        ));
+      }
+    });
+    const app = createFetchApp({
+      storage,
+      uploadLinks,
+      uploadToken: "upload-token",
+      publicBaseUrl: "https://tools.example.test",
+      maxConcurrentUploads: 1,
+      guestUploadBodyTimeoutMs: 20
+    });
+    const stalled = await app(new Request(`https://tools.example.test/api/drop/${uploadLinks.token}/uploads`, {
+      method: "POST",
+      headers: {
+        Origin: "https://tools.example.test",
+        "Content-Type": `multipart/form-data; boundary=${boundary}`
+      },
+      body,
+      duplex: "half"
+    } as RequestInit));
+
+    expect(stalled.status).toBe(408);
+    expect(await stalled.json()).toMatchObject({ error: "upload_timeout" });
+    const retry = await app(new Request(`https://tools.example.test/api/drop/${uploadLinks.token}/uploads`, {
+      method: "POST",
+      headers: { Origin: "https://tools.example.test" },
+      body: multipart("retry.txt", "ok", "text/plain")
+    }));
+    expect(retry.status).toBe(201);
   });
 
   it("deduplicates case-insensitive filenames in bulk-download archives", async () => {
