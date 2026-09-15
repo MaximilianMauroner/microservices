@@ -1,5 +1,5 @@
 const DEFAULT_CONTENT_TYPE = "application/octet-stream";
-const MAX_FILE_NAME_BYTES = 240;
+export const MAX_FILE_NAME_BYTES = 240;
 export const MAX_PROJECT_NAME_BYTES = 240;
 const MIME_TYPE_PATTERN =
   /^[!#$%&'*+.^_`|~0-9A-Za-z-]+\/[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;

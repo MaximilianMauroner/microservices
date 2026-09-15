@@ -18,6 +18,7 @@ import {
   shouldUseChunkedUpload,
   uploadChunkedFile
 } from "./chunked-upload.js";
+import { UploadLinkManager } from "./upload-link-manager.js";
 
 type ItemStatus = "queued" | "checking" | "uploading" | "processing" | "done" | "error" | "cancelled";
 
@@ -523,6 +524,7 @@ export function PublishPage() {
             onRetry={(key) => void retryKeys([key])}
           />
         ) : null}
+        <UploadLinkManager />
       </main>
     </>
   );

@@ -10,9 +10,10 @@ import {
   type StoredUploadSummary,
   type StoredTemporaryFile,
   type UploadListCursor,
+  UploadLinkInactiveError,
   type UploadStorage
 } from "./storage.js";
-import { createS3UploadStorage } from "./storage.js";
+import { createS3UploadStorage, summarizeUploads } from "./storage.js";
 
 type ArtifactRow = {
   id: string;
@@ -25,6 +26,7 @@ type ArtifactRow = {
   created_at: Date;
   updated_at: Date;
   expires_at: Date | null;
+  upload_link_id: string | null;
 };
 
 type PendingOperation = {
@@ -64,7 +66,7 @@ export function createMetadataBackedUploadStorage(
         prepare: () => prepare(sql, id, "put_html", intended),
         mutate: () => bodies.putHtml(id, filePath, metadata, options),
         reconcile: (operation) => reconcileOperation(bodies, sql, { operation_id: operation.operationId, owner_id: operation.ownerId, artifact_id: id, operation_kind: "put_html", payload: intended }, options),
-        finalize: (operation) => finalizePut(sql, operation, intended)
+        finalize: async (operation) => { await finalizePut(sql, operation, intended); }
       });
     },
     async getHtml(id, options) {
@@ -82,14 +84,26 @@ export function createMetadataBackedUploadStorage(
       const intended: UpsertArtifact = {
         id, kind: "file", filename: metadata.originalName,
         contentType: metadata.contentType, bytes: metadata.bytes,
-        objectKey: temporaryFileKey(id), expiresAt: metadata.expiresAt, sha256: metadata.sha256, now
+        objectKey: temporaryFileKey(id), expiresAt: metadata.expiresAt,
+        uploadLinkId: metadata.uploadLinkId, sha256: metadata.sha256, now
       };
+      let finalized = false;
+      let finalizationOperation: OperationOwner | undefined;
       await runDurableMutation({
         prepare: () => prepare(sql, id, "put_file", intended),
         mutate: () => bodies.putTemporaryFile(id, filePath, metadata, options),
         reconcile: (operation) => reconcileOperation(bodies, sql, { operation_id: operation.operationId, owner_id: operation.ownerId, artifact_id: id, operation_kind: "put_file", payload: intended }, options),
-        finalize: (operation) => finalizePut(sql, operation, intended)
+        finalize: async (operation) => {
+          finalizationOperation = operation;
+          finalized = await finalizePut(sql, operation, intended);
+        }
       });
+      if (!finalized) {
+        if (!finalizationOperation) throw new Error("Guest upload finalization lost its operation owner");
+        await bodies.deleteUpload(id, options);
+        await finalizeDelete(sql, finalizationOperation, id);
+        throw new UploadLinkInactiveError();
+      }
     },
     async getTemporaryFile(id, options) {
       await reconcileArtifactOperations(bodies, sql, options);
@@ -175,7 +189,7 @@ export function createMetadataBackedUploadStorage(
 
 type UpsertArtifact = {
   id: string; kind: "html" | "file"; filename: string; contentType: string;
-  bytes: number; objectKey: string; project?: string; expiresAt?: Date; sha256: string; now: Date;
+  bytes: number; objectKey: string; project?: string; expiresAt?: Date; uploadLinkId?: string; sha256: string; now: Date;
 };
 
 export async function runDurableMutation(options: {
@@ -201,11 +215,28 @@ async function prepare(sql: Sql, artifactId: string, kind: PendingOperation["ope
 }
 
 async function finalizePut(sql: Sql, operation: OperationOwner, value: UpsertArtifact) {
-  await sql.begin(async (tx) => {
+  return await sql.begin(async (tx) => {
     await requireOwnership(tx, operation);
-    await upsert(tx, value);
-    await tx`delete from artifacts.operations where operation_id = ${operation.operationId} and owner_id = ${operation.ownerId}`;
+    const finalized = value.uploadLinkId
+      ? await lockActiveUploadLink(tx, value.uploadLinkId)
+      : true;
+    if (finalized) {
+      await upsert(tx, value);
+      await tx`delete from artifacts.operations where operation_id = ${operation.operationId} and owner_id = ${operation.ownerId}`;
+    } else {
+      await tx`update artifacts.operations set operation_kind = 'delete', payload = null
+        where operation_id = ${operation.operationId} and owner_id = ${operation.ownerId}`;
+    }
+    return finalized;
   });
+}
+
+async function lockActiveUploadLink(sql: TransactionSql, uploadLinkId: string) {
+  const rows = await sql<{ id: string }[]>`
+    select id::text from artifacts.upload_links
+    where id = ${uploadLinkId}::uuid and revoked_at is null and expires_at > now()
+    for update`;
+  return rows.length === 1;
 }
 
 async function finalizeDelete(sql: Sql, operation: OperationOwner, id: string) {
@@ -239,7 +270,14 @@ async function reconcileOperation(bodies: UploadStorage, sql: Sql, operation: Pe
   const stored = operation.operation_kind === "put_html"
     ? await bodies.getHtml(operation.artifact_id, { ...options, headOnly: true })
     : await bodies.getTemporaryFile(operation.artifact_id, { ...options, headOnly: true });
-  if (stored?.sha256 === payload.sha256) await finalizePut(sql, owner(operation), payload);
+  if (stored?.sha256 === payload.sha256) {
+    const operationOwner = owner(operation);
+    const finalized = await finalizePut(sql, operationOwner, payload);
+    if (!finalized) {
+      await bodies.deleteUpload(operation.artifact_id, options);
+      await finalizeDelete(sql, operationOwner, operation.artifact_id);
+    }
+  }
   else await sql`delete from artifacts.operations where operation_id = ${operation.operation_id} and owner_id = ${operation.owner_id}`;
 }
 
@@ -262,14 +300,14 @@ function hydratePayload(payload: UpsertArtifact): UpsertArtifact {
 async function upsert(sql: Sql | TransactionSql, value: UpsertArtifact) {
   await sql`
     insert into artifacts.objects
-      (id, kind, filename, content_type, bytes, object_key, project, created_at, updated_at, expires_at)
+      (id, kind, filename, content_type, bytes, object_key, project, created_at, updated_at, expires_at, upload_link_id)
     values (${value.id}, ${value.kind}, ${value.filename}, ${value.contentType}, ${value.bytes},
-      ${value.objectKey}, ${value.project ?? null}, ${value.now}, ${value.now}, ${value.expiresAt ?? null})
+      ${value.objectKey}, ${value.project ?? null}, ${value.now}, ${value.now}, ${value.expiresAt ?? null}, ${value.uploadLinkId ?? null})
     on conflict (id) do update set
       kind = excluded.kind, filename = excluded.filename, content_type = excluded.content_type,
       bytes = excluded.bytes, object_key = excluded.object_key, project = excluded.project,
-      updated_at = excluded.updated_at, expires_at = excluded.expires_at, revoked_at = null
-  `;
+      updated_at = excluded.updated_at, expires_at = excluded.expires_at,
+      upload_link_id = excluded.upload_link_id, revoked_at = null`;
 }
 
 async function find(sql: Sql, id: string, kind: "html" | "file") {
@@ -295,10 +333,11 @@ export function pageArtifactMetadata(
   asOf: Date,
   options: ListUploadsOptions
 ): StoredUploadPage {
+  const active = uploads.filter((item) => !item.expiresAt || item.expiresAt > asOf);
   const query = options.q?.trim().normalize("NFKC").toLowerCase() ?? "";
   const expiry = options.expiry ?? "all";
   const sort = options.sort ?? "newest";
-  const ordered = uploads
+  const ordered = active
     .filter((item) => !options.kind || item.kind === options.kind)
     .filter((item) => !query || item.originalName.normalize("NFKC").toLowerCase().includes(query))
     .filter((item) => expiry === "all" || expiry === "persistent" ? expiry === "all" || !item.expiresAt : Boolean(item.expiresAt && item.expiresAt <= new Date(asOf.getTime() + (expiry === "24h" ? 86_400_000 : 604_800_000))))
@@ -309,6 +348,7 @@ export function pageArtifactMetadata(
   const last = visible.at(-1);
   return {
     uploads: visible.map(({ key: _key, ...item }) => item),
+    ...(options.includeSummary ? { summary: summarizeUploads(active, asOf) } : {}),
     ...(last && selected.length > options.limit ? { nextCursor: {
       version: 1, criteria: options.criteria ?? "legacy:newest", updatedAt: last.updatedAt,
       key: last.key, originalName: last.originalName, ...(last.expiresAt ? { expiresAt: last.expiresAt } : {})

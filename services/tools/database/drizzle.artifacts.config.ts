@@ -8,5 +8,5 @@ export default defineConfig({
   schema: "./postgres-schema.ts",
   dbCredentials: { url: databaseUrl },
   schemaFilter: ["artifacts"],
-  tablesFilter: ["objects", "operations"],
+  tablesFilter: ["objects", "operations", "upload_links"],
 });

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { createFetchApp, createPostgresUploadStorage, ActivityTracker } from "@tools-platform/artifact-publisher";
+import { createFetchApp, createPostgresUploadLinkRepository, createPostgresUploadStorage, ActivityTracker } from "@tools-platform/artifact-publisher";
 import {
   createApp as createToolsApp,
   createMarkdownAdminClient,
@@ -94,6 +94,7 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
     token: config.markdownShare.adminToken
   });
   const artifactStorage = createPostgresUploadStorage(config.artifact.s3, config.databaseUrl);
+  const uploadLinks = createPostgresUploadLinkRepository(config.databaseUrl);
   const activityTracker = new ActivityTracker();
   const moneyImports = new MoneyImportService(createPostgresMoneyRepository(config.databaseUrl, { readOnly: config.readOnly }));
   const moneyMarketData = new MoneyMarketDataService(createPostgresMoneyMarketDataRepository(config.databaseUrl, { readOnly: config.readOnly }));
@@ -111,6 +112,7 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
       storage: artifactStorage,
       uploadToken: config.artifact.uploadToken,
       externalUpload: true,
+      uploadLinks,
       publicBaseUrl: config.publicOrigin,
       publisherFaviconUrl: favicons.publisher,
       maxUploadBytes: config.artifact.maxUploadBytes,
@@ -154,8 +156,15 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
       },
       publisher: {
         handle: artifact,
-        readiness: async () => { await artifactStorage.listUploads(new Date(), { limit: 1 }); },
-        close: () => artifactStorage.close?.()
+        readiness: async () => {
+          await Promise.all([
+            artifactStorage.listUploads(new Date(), { limit: 1 }),
+            uploadLinks.readiness?.()
+          ]);
+        },
+        close: async () => {
+          await Promise.all([artifactStorage.close?.(), uploadLinks.close?.()]);
+        }
       }
     };
     const stop = async () => {
@@ -165,7 +174,9 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
       await Promise.all([
         marketDataScheduler?.close() ?? Promise.resolve(),
         cleanup?.wait() ?? Promise.resolve(),
-        activityTracker.waitForIdle(),
+        activityTracker.waitForIdle()
+      ]);
+      await Promise.all([
         ...Object.values(services).map((service) => service.close()),
         heartbeatRepository.close(),
         moneyImports.close(),
@@ -204,6 +215,7 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
     };
   } catch (error) {
     artifactStorage.close?.();
+    uploadLinks.close?.();
     await heartbeatRepository.close();
     await moneyImports.close();
     await moneyMarketData.close();

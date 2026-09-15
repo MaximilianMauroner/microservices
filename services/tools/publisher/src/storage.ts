@@ -42,6 +42,7 @@ export type UploadExpiryFilter = "all" | "24h" | "7d" | "persistent";
 
 export type ListUploadsOptions = StorageOperationOptions & {
   limit: number;
+  includeSummary?: boolean;
   kind?: StoredUploadSummary["kind"];
   q?: string;
   expiry?: UploadExpiryFilter;
@@ -53,6 +54,15 @@ export type ListUploadsOptions = StorageOperationOptions & {
 export type StoredUploadPage = {
   uploads: StoredUploadSummary[];
   nextCursor?: UploadListCursor;
+  summary?: StoredUploadInventorySummary;
+};
+
+export type StoredUploadInventorySummary = {
+  total: number;
+  permanent: number;
+  temporary: number;
+  expiringSoon: number;
+  projects: Array<{ project: string | null; count: number }>;
 };
 
 export type PutHtmlOptions = StorageOperationOptions & {
@@ -100,7 +110,15 @@ export type PutTemporaryFileMetadata = {
   sha256: string;
   contentType: string;
   expiresAt: Date;
+  uploadLinkId?: string;
 };
+
+export class UploadLinkInactiveError extends Error {
+  constructor() {
+    super("This upload link has expired or was revoked.");
+    this.name = "UploadLinkInactiveError";
+  }
+}
 
 export type StoredUploadSummary = {
   id: string;
@@ -355,9 +373,9 @@ export function createS3UploadStorage(config: S3UploadStorageConfig): UploadStor
 
     async listUploads(asOf, options) {
       const prefixes =
-        options.kind === "html"
+        !options.includeSummary && options.kind === "html"
           ? ([[HTML_PREFIX, "html"]] as const)
-          : options.kind === "file"
+          : !options.includeSummary && options.kind === "file"
             ? ([[TEMPORARY_FILE_PREFIX, "file"]] as const)
             : ([
                 [HTML_PREFIX, "html"],
@@ -392,6 +410,7 @@ export function createS3UploadStorage(config: S3UploadStorageConfig): UploadStor
       )).filter((summary): summary is ListedUploadSummary => summary !== null);
       const normalizedQuery = options.q?.trim().normalize("NFKC").toLowerCase() ?? "";
       const filtered = summaries
+        .filter((upload) => !options.kind || upload.kind === options.kind)
         .filter((upload) => !normalizedQuery || upload.originalName.normalize("NFKC").toLowerCase().includes(normalizedQuery))
         .filter((upload) => matchesExpiry(upload, options.expiry ?? "all", asOf))
         .sort(uploadComparator(sort));
@@ -404,6 +423,7 @@ export function createS3UploadStorage(config: S3UploadStorageConfig): UploadStor
       const last = uploads.at(-1);
       return {
         uploads: uploads.map(({ key: _key, ...upload }) => upload),
+        ...(options.includeSummary ? { summary: summarizeUploads(summaries, asOf) } : {}),
         ...(last && page.length > options.limit
           ? {
               nextCursor: {
@@ -573,10 +593,30 @@ type ListedUploadSummary = StoredUploadSummary & { key: string };
 
 function requiresFullMetadataScan(options: ListUploadsOptions): boolean {
   const sort = options.sort ?? "newest";
-  return Boolean(options.q) ||
+  return Boolean(options.includeSummary) ||
+    Boolean(options.q) ||
     (options.expiry ?? "all") !== "all" ||
     sort === "filename" ||
     sort === "expiry";
+}
+
+export function summarizeUploads(
+  uploads: Array<StoredUploadSummary>,
+  asOf: Date
+): StoredUploadInventorySummary {
+  const active = uploads.filter((upload) => !upload.expiresAt || upload.expiresAt > asOf);
+  const projectCounts = new Map<string | null, number>();
+  for (const upload of active) {
+    const project = upload.project ?? null;
+    projectCounts.set(project, (projectCounts.get(project) ?? 0) + 1);
+  }
+  return {
+    total: active.length,
+    permanent: active.filter((upload) => !upload.expiresAt).length,
+    temporary: active.filter((upload) => Boolean(upload.expiresAt)).length,
+    expiringSoon: active.filter((upload) => upload.expiresAt && upload.expiresAt <= new Date(asOf.getTime() + 86_400_000)).length,
+    projects: [...projectCounts].map(([project, count]) => ({ project, count }))
+  };
 }
 
 async function listUploadsFast(
