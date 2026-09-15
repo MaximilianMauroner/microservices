@@ -20,9 +20,12 @@ import type {
   StoredUploadPage,
   UploadStorage
 } from "../src/storage.js";
+import type { UploadLinkRepository } from "../src/upload-links.js";
 
 const ORIGIN = "https://tools.example.test";
 const CHUNK_BYTES = 1024 * 1024;
+const DROP_TOKEN = "u".repeat(43);
+const DROP_LINK_ID = "123e4567-e89b-42d3-a456-426614174000";
 
 class ChunkTestStorage implements UploadStorage {
   readonly files = new Map<string, { body: Buffer; metadata: PutTemporaryFileMetadata }>();
@@ -86,6 +89,22 @@ function testApp(storage: UploadStorage, overrides: Record<string, unknown> = {}
   });
 }
 
+function guestLinks(): UploadLinkRepository {
+  const link = {
+    id: DROP_LINK_ID,
+    createdAt: new Date("2026-08-14T12:00:00.000Z"),
+    expiresAt: new Date("2026-08-21T12:00:00.000Z"),
+    fileCount: 0
+  };
+  return {
+    async create() { return { ...link, token: DROP_TOKEN }; },
+    async list() { return [link]; },
+    async findActive(token) { return token === DROP_TOKEN ? link : null; },
+    async listFiles() { return []; },
+    async revoke() { return true; }
+  };
+}
+
 function initBody(totalBytes: number, totalChunks: number, chunkBytes = CHUNK_BYTES) {
   return JSON.stringify({
     filename: "backup.bin",
@@ -136,6 +155,39 @@ async function initNativeSession(
 }
 
 describe("chunked browser uploads", () => {
+  it("reassembles capability-scoped guest chunks and attributes the file", async () => {
+    const storage = new ChunkTestStorage();
+    const app = testApp(storage, { uploadLinks: guestLinks() });
+    const totalBytes = CHUNK_BYTES * 2;
+    const content = Buffer.alloc(totalBytes, 9);
+    const base = `${ORIGIN}/api/drop/${DROP_TOKEN}/uploads/chunks`;
+    const initialized = await app(new Request(base, {
+      method: "POST",
+      headers: { Origin: ORIGIN, "Content-Type": "application/json" },
+      body: initBody(totalBytes, 2)
+    }));
+    expect(initialized.status).toBe(201);
+    const { sessionId } = await initialized.json() as { sessionId: string };
+
+    for (let index = 0; index < 2; index += 1) {
+      const response = await app(new Request(`${base}/${sessionId}/${index}`, {
+        method: "PUT",
+        headers: { Origin: ORIGIN, "Content-Type": "application/octet-stream" },
+        body: content.subarray(index * CHUNK_BYTES, (index + 1) * CHUNK_BYTES)
+      }));
+      expect(response.status).toBe(200);
+    }
+    const completed = await app(new Request(`${base}/${sessionId}/complete`, {
+      method: "POST",
+      headers: { Origin: ORIGIN }
+    }));
+    expect(completed.status).toBe(201);
+    const payload = await completed.json() as { id: string; expiresAt: string };
+    expect(storage.files.get(payload.id)?.metadata.uploadLinkId).toBe(DROP_LINK_ID);
+    expect(storage.files.get(payload.id)?.body.equals(content)).toBe(true);
+    expect(payload.expiresAt).toBe("2026-08-21T12:00:00.000Z");
+  });
+
   it("reassembles small chunk requests into one temporary file", async () => {
     const storage = new ChunkTestStorage();
     const app = testApp(storage);

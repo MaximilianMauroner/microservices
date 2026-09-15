@@ -95,7 +95,10 @@ export function classifyRoute(pathname: string, method: string): RouteAccess {
     return { kind: "public" };
   }
 
-  if (/^\/api\/drop\/[^/]+\/uploads$/.test(pathname) && normalizedMethod === "POST") {
+  if (
+    /^\/api\/drop\/[^/]+\/uploads(?:\/chunks(?:\/[A-Za-z0-9_-]{32}(?:\/(?:\d+|complete))?)?)?$/.test(pathname) &&
+    ["POST", "PUT", "DELETE"].includes(normalizedMethod)
+  ) {
     return { kind: "public" };
   }
 

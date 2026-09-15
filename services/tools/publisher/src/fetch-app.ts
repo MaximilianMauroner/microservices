@@ -5,8 +5,8 @@ import os from "node:os";
 import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import { Readable, Transform, type TransformCallback } from "node:stream";
+import { ZipWriter } from "@zip.js/zip.js";
 import busboy from "busboy";
-import { Zip, ZipPassThrough } from "fflate";
 import { ActivityTracker } from "./activity-tracker.js";
 import {
   EXTERNAL_UPLOAD_SCRIPT,
@@ -204,7 +204,7 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
         requireSameOrigin(request, url, options.publicBaseUrl);
         requireMultipartUpload(request);
         const link = await options.uploadLinks?.findActive(dropUploadToken, getNow(options));
-        if (!link) return dropLinkNotFound();
+        if (!link) return dropLinkUnavailable();
         return upload(
           request,
           url,
@@ -216,6 +216,32 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
           temporaryFileRetentionMs,
           activityTracker
         );
+      }
+
+      const dropChunk = matchDropChunk(url.pathname);
+      if (dropChunk) {
+        requireSameOrigin(request, url, options.publicBaseUrl);
+        const link = await options.uploadLinks?.findActive(dropChunk.token, getNow(options));
+        if (!link) return dropLinkUnavailable();
+        if (request.method === "POST" && dropChunk.remainder === "") {
+          return await initChunkedUpload(request, maxUploadBytes, "drop", link.id);
+        }
+        const chunkPut = matchChunkPut(dropChunk.remainder);
+        if (request.method === "PUT" && chunkPut) {
+          return await putUploadChunk(request, chunkPut.sessionId, chunkPut.index, "drop", link.id);
+        }
+        const chunkComplete = matchChunkComplete(dropChunk.remainder);
+        if (request.method === "POST" && chunkComplete) {
+          return await completeChunkedUpload(
+            request, url, options, chunkComplete, uploadGate, maxUploadBytes,
+            temporaryFileRetentionMs, activityTracker, "drop", link
+          );
+        }
+        const chunkSession = matchChunkSession(dropChunk.remainder);
+        if (request.method === "DELETE" && chunkSession) {
+          return await abortChunkedUpload(chunkSession, "drop", link.id);
+        }
+        throw new ArtifactRequestError(404, "not_found", "API route was not found.");
       }
 
       if (request.method === "GET" || request.method === "HEAD") {
@@ -876,7 +902,8 @@ async function upload(
 
 type ChunkSessionManifest = {
   version: 1;
-  audience: "browser" | "native";
+  audience: "browser" | "native" | "drop";
+  uploadLinkId?: string;
   originalName: string;
   contentType: string;
   totalBytes: number;
@@ -928,7 +955,8 @@ async function readChunkManifest(sessionId: string): Promise<ChunkSessionManifes
     const manifest = JSON.parse(raw) as ChunkSessionManifest;
     if (
       manifest?.version !== 1 ||
-      !["browser", "native"].includes(manifest.audience) ||
+      !["browser", "native", "drop"].includes(manifest.audience) ||
+      (manifest.audience === "drop" && (typeof manifest.uploadLinkId !== "string" || !UUID_PATTERN.test(manifest.uploadLinkId))) ||
       typeof manifest.originalName !== "string" ||
       typeof manifest.contentType !== "string" ||
       !Number.isSafeInteger(manifest.totalBytes) ||
@@ -976,7 +1004,8 @@ async function sweepStaleChunkSessions() {
 async function initChunkedUpload(
   request: Request,
   maxUploadBytes: number,
-  audience: ChunkSessionManifest["audience"]
+  audience: ChunkSessionManifest["audience"],
+  uploadLinkId?: string
 ): Promise<Response> {
   if (request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !== "application/json") {
     throw new ArtifactRequestError(
@@ -1043,6 +1072,7 @@ async function initChunkedUpload(
   const manifest: ChunkSessionManifest = {
     version: 1,
     audience,
+    ...(uploadLinkId ? { uploadLinkId } : {}),
     originalName: filename,
     contentType: normalizeMimeType(contentType),
     totalBytes: total,
@@ -1116,7 +1146,8 @@ async function putUploadChunk(
   request: Request,
   sessionId: string,
   index: number,
-  audience: ChunkSessionManifest["audience"]
+  audience: ChunkSessionManifest["audience"],
+  uploadLinkId?: string
 ): Promise<Response> {
   if (!PAGE_ID_PATTERN.test(sessionId)) {
     throw new ArtifactRequestError(400, "invalid_upload_id", "Upload ID is invalid.");
@@ -1129,7 +1160,7 @@ async function putUploadChunk(
       "The chunked upload was not found or expired."
     );
   }
-  requireChunkAudience(manifest, audience);
+  requireChunkAudience(manifest, audience, uploadLinkId);
   if (index < 0 || index >= manifest.totalChunks) {
     throw new ArtifactRequestError(400, "invalid_chunk_index", "Chunk index is out of range.");
   }
@@ -1169,7 +1200,8 @@ async function completeChunkedUpload(
   maxUploadBytes: number,
   temporaryFileRetentionMs: number,
   activityTracker: ActivityTracker,
-  audience: ChunkSessionManifest["audience"]
+  audience: ChunkSessionManifest["audience"],
+  uploadLink?: UploadLink
 ): Promise<Response> {
   if (!PAGE_ID_PATTERN.test(sessionId)) {
     throw new ArtifactRequestError(400, "invalid_upload_id", "Upload ID is invalid.");
@@ -1182,7 +1214,7 @@ async function completeChunkedUpload(
       "The chunked upload was not found or expired."
     );
   }
-  requireChunkAudience(manifest, audience);
+  requireChunkAudience(manifest, audience, uploadLink?.id);
   if (manifest.totalBytes > maxUploadBytes) {
     throw new ArtifactRequestError(
       413,
@@ -1249,7 +1281,9 @@ async function completeChunkedUpload(
         const baseUrl = getPublicBaseUrl(request, options.publicBaseUrl);
         const sha256 = await sha256File(assembledPath, request.signal);
         throwIfAborted(request.signal);
-        const expiresAt = new Date(getNow(options).getTime() + temporaryFileRetentionMs);
+        const expiresAt = uploadLink
+          ? new Date(Math.max(uploadLink.expiresAt.getTime(), getNow(options).getTime() + temporaryFileRetentionMs))
+          : new Date(getNow(options).getTime() + temporaryFileRetentionMs);
         cleanupId = id;
         await options.storage.putTemporaryFile(
           id,
@@ -1259,7 +1293,8 @@ async function completeChunkedUpload(
             contentType: manifest.contentType,
             expiresAt,
             originalName,
-            sha256
+            sha256,
+            ...(uploadLink ? { uploadLinkId: uploadLink.id } : {})
           },
           { signal: request.signal }
         );
@@ -1300,22 +1335,24 @@ async function completeChunkedUpload(
 
 async function abortChunkedUpload(
   sessionId: string,
-  audience: ChunkSessionManifest["audience"]
+  audience: ChunkSessionManifest["audience"],
+  uploadLinkId?: string
 ): Promise<Response> {
   if (!PAGE_ID_PATTERN.test(sessionId)) {
     throw new ArtifactRequestError(400, "invalid_upload_id", "Upload ID is invalid.");
   }
   const manifest = await readChunkManifest(sessionId);
-  if (manifest) requireChunkAudience(manifest, audience);
+  if (manifest) requireChunkAudience(manifest, audience, uploadLinkId);
   await removeChunkSession(sessionId);
   return new Response(null, { status: 204 });
 }
 
 function requireChunkAudience(
   manifest: ChunkSessionManifest,
-  audience: ChunkSessionManifest["audience"]
+  audience: ChunkSessionManifest["audience"],
+  uploadLinkId?: string
 ) {
-  if (manifest.audience !== audience) {
+  if (manifest.audience !== audience || (audience === "drop" && manifest.uploadLinkId !== uploadLinkId)) {
     throw new ArtifactRequestError(
       404,
       "upload_not_found",
@@ -1828,6 +1865,12 @@ function matchDropUpload(pathname: string) {
   return match?.[1] && UPLOAD_LINK_TOKEN_PATTERN.test(match[1]) ? match[1] : undefined;
 }
 
+function matchDropChunk(pathname: string) {
+  const match = /^\/api\/drop\/([^/]+)\/uploads\/chunks(?:\/(.*))?$/.exec(pathname);
+  if (!match?.[1] || !UPLOAD_LINK_TOKEN_PATTERN.test(match[1])) return undefined;
+  return { token: match[1], remainder: match[2] ?? "" };
+}
+
 function requireUploadLinks(options: FetchArtifactAppOptions) {
   if (!options.uploadLinks) {
     throw new ArtifactRequestError(503, "upload_links_unavailable", "Upload links are not configured.");
@@ -1869,25 +1912,25 @@ function dropLinkNotFound() {
   }));
 }
 
+function dropLinkUnavailable() {
+  return jsonResponse({
+    error: "upload_link_unavailable",
+    message: "This upload link has expired or was revoked."
+  }, 404);
+}
+
 function downloadUploadLinkFiles(
   files: readonly { id: string; filename: string }[],
   storage: UploadStorage,
   linkId: string,
   signal: AbortSignal
 ) {
-  const stream = new TransformStream<Uint8Array, Uint8Array>();
-  const writer = stream.writable.getWriter();
-  let writes = Promise.resolve();
-  const zip = new Zip((error, chunk, final) => {
-    if (error) {
-      writes = writes.then(() => writer.abort(error));
-      return;
-    }
-    if (chunk.length > 0) writes = writes.then(() => writer.write(chunk));
-    if (final) writes = writes.then(() => writer.close());
+  const output = new TransformStream<Uint8Array, Uint8Array>();
+  const archive = new ZipWriter(output.writable, {
+    zip64: true,
+    level: 0,
+    useWebWorkers: false
   });
-  const abort = () => zip.terminate();
-  signal.addEventListener("abort", abort, { once: true });
   void (async () => {
     const usedNames = new Set<string>();
     try {
@@ -1895,25 +1938,19 @@ function downloadUploadLinkFiles(
         if (signal.aborted) throw new DOMException("Download aborted", "AbortError");
         const stored = await storage.getTemporaryFile(file.id, { signal });
         if (!stored) continue;
-        const entry = new ZipPassThrough(uniqueArchiveName(file.filename, usedNames));
-        zip.add(entry);
-        for await (const chunk of stored.body) {
-          entry.push(chunk instanceof Uint8Array ? chunk : Buffer.from(chunk));
-          await writes;
-        }
-        entry.push(new Uint8Array(), true);
-        await writes;
+        await archive.add(
+          uniqueArchiveName(file.filename, usedNames),
+          Readable.toWeb(stored.body) as ReadableStream<Uint8Array>,
+          { signal, zip64: true, level: 0, useWebWorkers: false }
+        );
       }
-      zip.end();
-      await writes;
+      await archive.close(undefined, { zip64: true });
     } catch (error) {
-      zip.terminate();
-      await writer.abort(error).catch(() => undefined);
-    } finally {
-      signal.removeEventListener("abort", abort);
+      await archive.close(undefined, { zip64: true }).catch(() => undefined);
+      console.error("failed to stream upload-link archive", error);
     }
   })();
-  return new Response(stream.readable, {
+  return new Response(output.readable, {
     headers: {
       "Cache-Control": "private, no-store",
       "Content-Disposition": attachmentDisposition(`uploads-${linkId.slice(0, 8)}.zip`),

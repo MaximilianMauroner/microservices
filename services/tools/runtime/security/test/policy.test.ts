@@ -14,6 +14,9 @@ describe("central platform route policy", () => {
     expect(classifyRoute("/feedback/f/token", "POST")).toEqual({ kind: "public" });
     expect(classifyRoute("/drop/upload-capability", "GET")).toEqual({ kind: "public" });
     expect(classifyRoute("/api/drop/upload-capability/uploads", "POST")).toEqual({ kind: "public" });
+    expect(classifyRoute(`/api/drop/upload-capability/uploads/chunks/${"a".repeat(32)}/3`, "PUT")).toEqual({ kind: "public" });
+    expect(classifyRoute(`/api/drop/upload-capability/uploads/chunks/${"a".repeat(32)}/complete`, "POST")).toEqual({ kind: "public" });
+    expect(classifyRoute(`/api/drop/upload-capability/uploads/chunks/${"a".repeat(32)}`, "DELETE")).toEqual({ kind: "public" });
     expect(classifyRoute("/api/upload-links", "POST")).toEqual({ kind: "human-session" });
     expect(classifyRoute("/api/upload-links/link-id/download", "GET")).toEqual({ kind: "human-session" });
     expect(classifyRoute("/api/drop/upload-capability/uploads", "GET")).toEqual({ kind: "human-session" });

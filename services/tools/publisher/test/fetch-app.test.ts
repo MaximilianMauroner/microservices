@@ -143,7 +143,10 @@ describe("native artifact fetch handler", () => {
 
     const pageResponse = await app(new Request(`https://tools.example.test/drop/${uploadLinks.token}`));
     expect(pageResponse.status).toBe(200);
-    expect(await pageResponse.text()).toContain("Choose as many files as you need");
+    const page = await pageResponse.text();
+    expect(page).toContain("Choose as many files as you need");
+    expect(page).toContain("/chunks");
+    expect(page).toContain("20*1024*1024");
 
     const uploadResponse = await app(new Request(`https://tools.example.test/api/drop/${uploadLinks.token}/uploads`, {
       method: "POST",
@@ -159,7 +162,9 @@ describe("native artifact fetch handler", () => {
     const downloadResponse = await app(new Request(`https://tools.example.test/api/upload-links/${uploadLinks.id}/download`));
     expect(downloadResponse.status).toBe(200);
     expect(downloadResponse.headers.get("content-type")).toBe("application/zip");
-    const archive = unzipSync(new Uint8Array(await downloadResponse.arrayBuffer()));
+    const archiveBytes = new Uint8Array(await downloadResponse.arrayBuffer());
+    expect(Buffer.from(archiveBytes).indexOf(Buffer.from([0x50, 0x4b, 0x06, 0x06]))).toBeGreaterThanOrEqual(0);
+    const archive = unzipSync(archiveBytes);
     expect(strFromU8(archive["from-guest.txt"]!)).toBe("hello");
 
     const revokeResponse = await app(new Request(`https://tools.example.test/api/upload-links/${uploadLinks.id}`, {
@@ -171,11 +176,16 @@ describe("native artifact fetch handler", () => {
     const downloadAfterRevoke = await app(new Request(`https://tools.example.test/api/upload-links/${uploadLinks.id}/download`));
     expect(downloadAfterRevoke.status).toBe(200);
     expect(strFromU8(unzipSync(new Uint8Array(await downloadAfterRevoke.arrayBuffer()))["from-guest.txt"]!)).toBe("hello");
-    expect((await app(new Request(`https://tools.example.test/api/drop/${uploadLinks.token}/uploads`, {
+    const unavailable = await app(new Request(`https://tools.example.test/api/drop/${uploadLinks.token}/uploads`, {
       method: "POST",
       headers: { Origin: "https://tools.example.test" },
       body: multipart("blocked.txt", "no", "text/plain")
-    }))).status).toBe(404);
+    }));
+    expect(unavailable.status).toBe(404);
+    expect(await unavailable.json()).toEqual({
+      error: "upload_link_unavailable",
+      message: "This upload link has expired or was revoked."
+    });
   });
 
   it("rejects invalid upload-link durations and cross-origin creation", async () => {
