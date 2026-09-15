@@ -5,7 +5,7 @@ import { readOnly } from "../src/route-handlers.js";
 describe("primary page ownership", () => {
   it("registers explicit React routes without legacy browser splats", () => {
     const source = readFileSync(new URL("../src/routeTree.gen.ts", import.meta.url), "utf8");
-    for (const path of ["/status", "/publisher", "/publisher/artifacts", "/documents", "/money", "/feedback", "/feedback/forms/$formId", "/feedback/responses/$submissionId", "/feedback/f/$token", "/markdown/", "/markdown/d/$slug"]) {
+    for (const path of ["/status", "/publisher", "/publisher/artifacts", "/documents", "/money", "/feedback", "/feedback/forms/$formId", "/feedback/responses/$submissionId", "/feedback/f/$token", "/markdown/", "/markdown/d/$slug", "/drop/$", "/api/drop/$", "/api/upload-links", "/api/upload-links/$"]) {
       expect(source).toContain(`fullPath: '${path}'`);
     }
     for (const path of ["/review", "/publish", "/manage", "/manage/status", "/manage/documents", "/tools/private/money", "/ops", "/uploads", "/p", "/f", "/status/private"]) {
@@ -29,6 +29,26 @@ describe("primary page ownership", () => {
     expect(page).not.toContain("/api/ops/catalog");
     expect(route).toContain("handlers: { GET: tools, HEAD: tools, POST: readOnly, PUT: readOnly, PATCH: readOnly, DELETE: readOnly }");
     expect(route).not.toMatch(/\b(POST|PUT|PATCH|DELETE): tools/);
+  });
+
+  it("keeps upload-link revocation available independently of the browser clock", () => {
+    const source = readFileSync(new URL("../publisher/ui/upload-link-manager.tsx", import.meta.url), "utf8");
+    expect(source).toContain("!link.revokedAt ? <Button");
+    expect(source).not.toContain("active ? <Button type=\"button\"");
+  });
+
+  it("loads upload-link history in bounded pages", () => {
+    const source = readFileSync(new URL("../publisher/ui/upload-link-manager.tsx", import.meta.url), "utf8");
+    expect(source).toContain("setNextCursor(payload.nextCursor)");
+    expect(source).toContain("/api/upload-links?cursor=");
+    expect(source).toContain("Load older links");
+  });
+
+  it("ignores upload-link refreshes made stale by lifecycle changes", () => {
+    const source = readFileSync(new URL("../publisher/ui/upload-link-manager.tsx", import.meta.url), "utf8");
+    expect(source).toContain("const linksRevision = useRef(0)");
+    expect(source).toContain("if (revision !== linksRevision.current) return");
+    expect(source).toContain("linksRevision.current += 1");
   });
 
   it("protects private money data with the shared session middleware", () => {

@@ -32,6 +32,21 @@ describe("Postgres artifact metadata paging", () => {
     expect(second.uploads[0]?.id).toBe("b");
   });
 
+  it("reports full inventory totals independently of the page size", () => {
+    const page = pageArtifactMetadata(uploads, now, { limit: 1, includeSummary: true });
+    expect(page.uploads).toHaveLength(1);
+    expect(page.summary).toEqual({
+      total: 4,
+      permanent: 2,
+      temporary: 2,
+      expiringSoon: 1,
+      projects: [
+        { project: "microservices", count: 1 },
+        { project: null, count: 3 }
+      ]
+    });
+  });
+
   it("keeps permanent artifacts separate from expiring files", () => {
     const page = pageArtifactMetadata(uploads, now, { limit: 10, expiry: "persistent" });
     expect(page.uploads.map(({ id }) => id)).toEqual(["a", "d"]);
@@ -71,5 +86,15 @@ describe("Postgres artifact metadata paging", () => {
     expect(source).toContain("where lease_until <= now()");
     expect(source).toContain("and owner_id = ${operation.ownerId} for update");
     expect(schema).toContain('uniqueIndex("artifact_operations_artifact_idx")');
+  });
+
+  it("finalizes guest artifacts only while their upload link is active", async () => {
+    const source = await readFile(new URL("../src/postgres-storage.ts", import.meta.url), "utf8");
+
+    expect(source).toContain("where id = ${uploadLinkId}::uuid and revoked_at is null and expires_at > now()");
+    expect(source).toContain("for update`");
+    expect(source).toContain("set operation_kind = 'delete', payload = null");
+    expect(source).toContain("await finalizeDelete(sql, operationOwner, operation.artifact_id)");
+    expect(source).toContain("throw new UploadLinkInactiveError()");
   });
 });

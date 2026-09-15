@@ -16,6 +16,10 @@ Access audience or native bearer authentication.
   does not require browser Access.
 - `/publisher` and `/api/external-uploads` are available only through the unified
   platform's browser Access adapter.
+- `/api/upload-links` creates and revokes time-limited guest upload capabilities.
+- `/drop/:token` lets a guest upload any number of temporary files without a
+  browser session. PostgreSQL stores only the token hash; the secret URL is
+  returned once, expires after 5 minutes to 30 days, and can be revoked early.
 
 ## Configuration
 
@@ -116,6 +120,17 @@ through same-origin `/api/external-uploads`. The Better Auth session is
 validated at the platform boundary; the browser never receives the native
 upload token.
 
+The same page can create a guest upload link for 1 hour, 1 day, 3 days, 7 days,
+or 30 days. Link management stays session-protected. The guest page and its
+upload requests are public capability routes; multiple selected files are sent
+sequentially, and files above 80 MB use token-scoped 20 MB chunks. Guest pages
+cannot list prior uploads. Received files use
+at least the link lifetime for retention and appear in the authenticated
+library. The owner can stream every still-retained file received through one
+link as a ZIP64 archive, including after revoking that link.
+The private upload-link history loads 20 newest-first rows at a time through an
+opaque keyset cursor, with older rows available on demand.
+
 Files larger than 80 MB are split by the browser into 20 MB chunk requests
 and reassembled by the server, because public edge proxies cap a single
 request body well below the application limit (Cloudflare allows 100 MB on
@@ -150,6 +165,11 @@ case-insensitive filename `q`, `expiry=all|24h|7d|persistent`, and
 candidate set before pagination. Cursors are opaque versioned positions bound
 to normalized criteria; changing any criterion requires a fresh listing.
 The `persistent` filter returns HTML artifacts and files with no expiry.
+Passing `includeSummary=true` on the first page also returns exact inventory
+counts for total, permanent, temporary, expiring-soon, and project membership.
+Those counts cover the complete retained inventory and are independent of the
+page size; continuation requests omit the summary so loading older rows does
+not repeat the aggregate work.
 Recent-upload destinations on the current browser origin use an internal
 chevron and open in the current tab. Cross-origin destinations use an external
 arrow, open in a new tab with `rel=noreferrer`, and include an accessible
@@ -165,7 +185,8 @@ one standard byte range. Missing, revoked, and expired capability URLs return
 `404`. Malformed canonical or legacy percent encoding returns `404`.
 
 Errors use JSON with stable `error` and `message` fields. Notable statuses are
-`401 unauthorized`, `403 invalid_origin`, `404 upload_not_found`, `409
+`401 unauthorized`, `403 invalid_origin`, `404 upload_not_found`, `408
+upload_timeout`, `409
 upload_conflict`, `409 incomplete_upload`, `413 payload_too_large`, `415 unsupported_media_type`, `416
 range_not_satisfiable`, and `503 upload_capacity_reached`.
 

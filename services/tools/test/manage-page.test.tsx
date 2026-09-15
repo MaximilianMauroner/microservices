@@ -1,9 +1,20 @@
+import { readFile } from "node:fs/promises";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { ManagePage } from "../publisher/ui/manage-page.js";
 import type { ManagePageData } from "../src/protected-data.js";
 
 const initial: ManagePageData = {
+  summary: {
+    total: 142,
+    permanent: 92,
+    temporary: 50,
+    expiringSoon: 8,
+    projects: [
+      { project: "microservices", count: 41 },
+      { project: null, count: 101 }
+    ]
+  },
   uploads: [
     {
       id: "a".repeat(32),
@@ -41,6 +52,9 @@ describe("Manage artifact library", () => {
     expect(html).toContain("Replace file");
     expect(html).toContain("Copy URL");
     expect(html).toContain("Revoke artifact");
+    expect(html).toContain("Total artifacts");
+    expect(html).toContain("2 of 142 loaded");
+    expect(html).toContain(">142<");
     expect(html).toContain('href="/publisher"');
     expect(html).toContain('data-suite-accent="violet"');
     expect(html).not.toContain("Tools architecture and monitoring");
@@ -60,5 +74,31 @@ describe("Manage artifact library", () => {
 
     expect(html).toContain("Permanent");
     expect(html).toContain("available until revoked");
+  });
+
+  it("loads remaining inventory pages before applying a summarized project filter", async () => {
+    const source = await readFile(new URL("../publisher/ui/manage-page.tsx", import.meta.url), "utf8");
+    const selectProject = source.slice(
+      source.indexOf("async function selectProject"),
+      source.indexOf("async function replaceSelected")
+    );
+
+    expect(selectProject).toContain("while (cursor)");
+    expect(selectProject).toContain("remaining.push(...payload.uploads)");
+    expect(selectProject.indexOf("if (busy) return")).toBeLessThan(selectProject.indexOf("setProjectFilter(value)"));
+    expect(source).toContain("onSelect={(value) => void selectProject(value)}");
+    expect(source).toContain("disabled={busy}");
+  });
+
+  it("preserves loaded pages while updating rows and exact summaries", async () => {
+    const source = await readFile(new URL("../publisher/ui/manage-page.tsx", import.meta.url), "utf8");
+    const lifecycleUpdates = source.slice(
+      source.indexOf("async function changeProject"),
+      source.indexOf("async function copySelectedUrl")
+    );
+
+    expect(lifecycleUpdates).toContain("setUploads((current)");
+    expect(lifecycleUpdates).toContain("await refreshSummary()");
+    expect(lifecycleUpdates).not.toContain("await refresh()");
   });
 });

@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import { Readable, Transform, type TransformCallback } from "node:stream";
+import { ZipWriter } from "@zip.js/zip.js";
 import busboy from "busboy";
 import { ActivityTracker } from "./activity-tracker.js";
 import {
@@ -12,8 +13,17 @@ import {
   EXTERNAL_UPLOAD_STYLES,
   renderExternalUploadPage
 } from "./external-upload-page.js";
+import { renderDropUploadPage } from "./drop-upload-page.js";
+import {
+  MAX_UPLOAD_LINK_DURATION_MS,
+  MIN_UPLOAD_LINK_DURATION_MS,
+  UPLOAD_LINK_TOKEN_PATTERN,
+  type UploadLink,
+  type UploadLinkRepository
+} from "./upload-links.js";
 import {
   attachmentDisposition,
+  MAX_FILE_NAME_BYTES,
   MAX_PROJECT_NAME_BYTES,
   normalizeMimeType,
   normalizeProjectName,
@@ -23,6 +33,7 @@ import {
   FileUpdateConflictError,
   HtmlUpdateConflictError,
   RangeNotSatisfiableError,
+  UploadLinkInactiveError,
   type ListUploadsOptions,
   type UploadExpiryFilter,
   type UploadListCursor,
@@ -42,11 +53,16 @@ export const CHUNKED_UPLOAD_MAX_CHUNK_BYTES = 64 * 1024 * 1024;
 const CHUNKED_UPLOAD_SESSION_PREFIX = "artifact-chunks-";
 const CHUNKED_UPLOAD_SESSION_TTL_MS = 2 * 60 * 60 * 1000;
 const CHUNKED_UPLOAD_INIT_MAX_BYTES = 4096;
+const MAX_INCOMPLETE_DROP_SESSIONS_PER_LINK = 3;
+const MAX_PENDING_DROP_CHUNK_INITS = 16;
+const MAX_CONCURRENT_DROP_CHUNK_WRITES = 8;
 export const DEFAULT_MAX_CONCURRENT_UPLOADS = 1;
 export const DEFAULT_TEMPORARY_FILE_RETENTION_MS = 3 * 24 * 60 * 60 * 1000;
 export const MAX_TEMPORARY_FILE_RETENTION_MS = 100 * 365 * 24 * 60 * 60 * 1000;
+export const DEFAULT_GUEST_UPLOAD_BODY_TIMEOUT_MS = 5 * 60 * 1000;
 
 const PAGE_ID_PATTERN = /^[A-Za-z0-9_-]{32}$/;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const HTML_MIME_TYPES = new Set(["text/html", "application/xhtml+xml"]);
 const HTML_EXTENSIONS = new Set([".html", ".htm"]);
 const HTML_CONTENT_TYPE = "text/html; charset=utf-8";
@@ -56,6 +72,7 @@ const SINGLE_BYTE_RANGE_PATTERN = /^bytes=(?:\d+-\d*|-\d+)$/i;
 const DEFAULT_UPLOAD_LIST_LIMIT = 25;
 const MAX_UPLOAD_LIST_LIMIT = 100;
 const MAX_UPLOAD_LIST_CURSOR_LENGTH = 2048;
+const UPLOAD_LINK_PAGE_SIZE = 20;
 const UPLOAD_KEY_PATTERN =
   /^(?:pages\/[A-Za-z0-9_-]{32}\.html|files\/[A-Za-z0-9_-]{32})$/;
 const FAVICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
@@ -94,12 +111,14 @@ export type FetchArtifactAppOptions = {
   storage: UploadStorage;
   uploadToken: string;
   externalUpload?: boolean;
+  uploadLinks?: UploadLinkRepository;
   publicBaseUrl?: string;
   publisherFaviconUrl?: string;
   maxUploadBytes?: number;
   maxHtmlUploadBytes?: number;
   maxConcurrentUploads?: number;
   temporaryFileRetentionMs?: number;
+  guestUploadBodyTimeoutMs?: number;
   now?: () => Date;
 };
 
@@ -121,6 +140,10 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
     options.temporaryFileRetentionMs ?? DEFAULT_TEMPORARY_FILE_RETENTION_MS,
     "temporaryFileRetentionMs"
   );
+  const guestUploadBodyTimeoutMs = positiveIntegerOption(
+    options.guestUploadBodyTimeoutMs ?? DEFAULT_GUEST_UPLOAD_BODY_TIMEOUT_MS,
+    "guestUploadBodyTimeoutMs"
+  );
   const publisherFavicon = publisherFaviconLink(options.publisherFaviconUrl);
   if (maxHtmlUploadBytes > maxUploadBytes) {
     throw new Error("maxHtmlUploadBytes must be less than or equal to maxUploadBytes");
@@ -132,11 +155,198 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
   }
 
   const uploadGate = createUploadGate(maxConcurrentUploads);
+  const dropChunkInitGate = createDropChunkInitGate(
+    MAX_INCOMPLETE_DROP_SESSIONS_PER_LINK,
+    MAX_PENDING_DROP_CHUNK_INITS
+  );
+  const dropChunkWriteGate = createUploadGate(MAX_CONCURRENT_DROP_CHUNK_WRITES);
   const uploadToken = requireUploadToken(options.uploadToken);
 
   return async function artifactFetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     try {
+      const dropToken = matchDropPage(url.pathname);
+      if ((request.method === "GET" || request.method === "HEAD") && dropToken) {
+        const link = await options.uploadLinks?.findActive(dropToken, getNow(options));
+        if (!link) return dropLinkNotFound();
+        const nonce = crypto.randomBytes(18).toString("base64");
+        return withDropUploadHeaders(new Response(
+          request.method === "HEAD" ? null : renderDropUploadPage(link.expiresAt, nonce),
+          { headers: { "Cache-Control": "private, no-store", "Content-Type": "text/html; charset=utf-8" } }
+        ), nonce);
+      }
+
+      if (request.method === "GET" && url.pathname === "/api/upload-links") {
+        requireUploadLinks(options);
+        const before = parseUploadLinkCursor(singleQuery(url.searchParams, "cursor"));
+        const batch = await options.uploadLinks!.list({
+          limit: UPLOAD_LINK_PAGE_SIZE + 1,
+          ...(before ? { before } : {})
+        });
+        const links = batch.slice(0, UPLOAD_LINK_PAGE_SIZE);
+        const nextCursor = batch.length > UPLOAD_LINK_PAGE_SIZE
+          ? encodeUploadLinkCursor(links.at(-1)!)
+          : undefined;
+        return jsonResponse(
+          {
+            links: links.map(serializeUploadLink),
+            ...(nextCursor ? { nextCursor } : {})
+          },
+          200,
+          { "Cache-Control": "private, no-store" }
+        );
+      }
+
+      const uploadLinkDownload = /^\/api\/upload-links\/([^/]+)\/download$/.exec(url.pathname)?.[1];
+      if (request.method === "GET" && uploadLinkDownload) {
+        requireUploadLinks(options);
+        if (!UUID_PATTERN.test(uploadLinkDownload)) {
+          throw new ArtifactRequestError(400, "invalid_upload_link_id", "Upload link ID is invalid.");
+        }
+        const files = await options.uploadLinks!.listFiles(uploadLinkDownload, getNow(options));
+        if (!files) throw new ArtifactRequestError(404, "upload_link_not_found", "Upload link was not found.");
+        return downloadUploadLinkFiles(
+          files,
+          options.storage,
+          uploadLinkDownload,
+          request.signal,
+          activityTracker
+        );
+      }
+
+      if (request.method === "POST" && url.pathname === "/api/upload-links") {
+        requireSameOrigin(request, url, options.publicBaseUrl);
+        requireUploadLinks(options);
+        const durationMs = await readUploadLinkDuration(request);
+        const created = await options.uploadLinks!.create(new Date(getNow(options).getTime() + durationMs));
+        const baseUrl = getPublicBaseUrl(request, options.publicBaseUrl);
+        return jsonResponse({ ...serializeUploadLink(created), url: `${baseUrl}/drop/${created.token}` }, 201);
+      }
+
+      const uploadLinkId = matchPath(url.pathname, "/api/upload-links/");
+      if (request.method === "DELETE" && uploadLinkId !== undefined) {
+        requireSameOrigin(request, url, options.publicBaseUrl);
+        requireUploadLinks(options);
+        if (!UUID_PATTERN.test(uploadLinkId)) {
+          throw new ArtifactRequestError(400, "invalid_upload_link_id", "Upload link ID is invalid.");
+        }
+        const revoked = await options.uploadLinks!.revoke(uploadLinkId, getNow(options));
+        if (!revoked) {
+          throw new ArtifactRequestError(404, "upload_link_not_found", "Upload link was not found.");
+        }
+        return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
+      }
+
+      const dropUploadToken = matchDropUpload(url.pathname);
+      if (request.method === "POST" && dropUploadToken) {
+        requireSameOrigin(request, url, options.publicBaseUrl);
+        requireMultipartUpload(request);
+        const link = await options.uploadLinks?.findActive(dropUploadToken, getNow(options));
+        if (!link) return dropLinkUnavailable();
+        return upload(
+          request,
+          url,
+          options,
+          {
+            kind: "create",
+            temporaryOnly: true,
+            uploadLinkId: link.id,
+            expiresAt: link.expiresAt,
+            ensureActive: async () => Boolean(
+              await options.uploadLinks?.findActive(dropUploadToken, getNow(options))
+            )
+          },
+          uploadGate,
+          maxUploadBytes,
+          maxHtmlUploadBytes,
+          temporaryFileRetentionMs,
+          activityTracker,
+          guestUploadBodyTimeoutMs
+        );
+      }
+
+      const dropChunk = matchDropChunk(url.pathname);
+      if (dropChunk) {
+        requireSameOrigin(request, url, options.publicBaseUrl);
+        const chunkSession = matchChunkSession(dropChunk.remainder);
+        if (request.method === "DELETE" && chunkSession) {
+          const link = await options.uploadLinks?.find(dropChunk.token);
+          if (!link) return dropLinkUnavailable();
+          return await abortChunkedUpload(chunkSession, "drop", link.id);
+        }
+        const link = await options.uploadLinks?.findActive(dropChunk.token, getNow(options));
+        if (!link) return dropLinkUnavailable();
+        if (request.method === "POST" && dropChunk.remainder === "") {
+          const guestBodySignal = AbortSignal.any([
+            request.signal,
+            AbortSignal.timeout(guestUploadBodyTimeoutMs)
+          ]);
+          let plan: ChunkedUploadPlan;
+          try {
+            plan = await readChunkedUploadPlan(request, maxUploadBytes, guestBodySignal);
+          } catch (error) {
+            if (!request.signal.aborted && guestBodySignal.aborted) {
+              throw new ArtifactRequestError(
+                408,
+                "upload_timeout",
+                "The guest upload body was not received before the upload deadline."
+              );
+            }
+            throw error;
+          }
+          return await dropChunkInitGate.run(link.id, request.signal, () =>
+            initChunkedUpload(plan, "drop", link.id)
+          );
+        }
+        const chunkPut = matchChunkPut(dropChunk.remainder);
+        if (request.method === "PUT" && chunkPut) {
+          const release = dropChunkWriteGate.tryAcquire();
+          if (!release) {
+            await consumeBody(request);
+            return jsonResponse({
+              error: "upload_capacity_reached",
+              message: "Too many guest chunks are being written. Try again shortly."
+            }, 503, { Connection: "close", "Retry-After": "1" });
+          }
+          const guestBodySignal = AbortSignal.any([
+            request.signal,
+            AbortSignal.timeout(guestUploadBodyTimeoutMs)
+          ]);
+          try {
+            return await putUploadChunk(
+              request,
+              chunkPut.sessionId,
+              chunkPut.index,
+              "drop",
+              link.id,
+              guestBodySignal
+            );
+          } catch (error) {
+            if (!request.signal.aborted && guestBodySignal.aborted) {
+              throw new ArtifactRequestError(
+                408,
+                "upload_timeout",
+                "The guest upload body was not received before the upload deadline."
+              );
+            }
+            throw error;
+          } finally {
+            release();
+          }
+        }
+        const chunkComplete = matchChunkComplete(dropChunk.remainder);
+        if (request.method === "POST" && chunkComplete) {
+          return await completeChunkedUpload(
+            request, url, options, chunkComplete, uploadGate, maxUploadBytes,
+            temporaryFileRetentionMs, activityTracker, "drop", link,
+            async () => Boolean(
+              await options.uploadLinks?.findActive(dropChunk.token, getNow(options))
+            )
+          );
+        }
+        throw new ArtifactRequestError(404, "not_found", "API route was not found.");
+      }
+
       if (request.method === "GET" || request.method === "HEAD") {
         const page = await readPageRoute(
           request,
@@ -218,7 +428,8 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
         if (!options.externalUpload) return externalUploadUnavailable();
         requireSameOrigin(request, url, options.publicBaseUrl);
         // Awaited so handler rejections reach the shared error mapper below.
-        return await initChunkedUpload(request, maxUploadBytes, "browser");
+        const plan = await readChunkedUploadPlan(request, maxUploadBytes, request.signal);
+        return await initChunkedUpload(plan, "browser");
       }
 
       const chunkRemainder = matchPath(url.pathname, "/api/external-uploads/chunks/");
@@ -358,7 +569,8 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
 
       if (request.method === "POST" && url.pathname === "/api/uploads/chunks") {
         requireBearer(request, uploadToken);
-        return await initChunkedUpload(request, maxUploadBytes, "native");
+        const plan = await readChunkedUploadPlan(request, maxUploadBytes, request.signal);
+        return await initChunkedUpload(plan, "native");
       }
 
       const nativeChunkRemainder = matchPath(url.pathname, "/api/uploads/chunks/");
@@ -609,6 +821,7 @@ async function listExternalUploads(
         ...(upload.project ? { project: upload.project } : {}),
         ...(upload.expiresAt ? { expiresAt: upload.expiresAt.toISOString() } : {})
       })),
+      ...(page.summary ? { summary: page.summary } : {}),
       ...(page.nextCursor
         ? {
             nextCursor: encodeUploadListCursor(
@@ -633,7 +846,8 @@ async function upload(
   maxUploadBytes: number,
   maxHtmlUploadBytes: number,
   temporaryFileRetentionMs: number,
-  activityTracker: ActivityTracker
+  activityTracker: ActivityTracker,
+  guestUploadBodyTimeoutMs?: number
 ): Promise<Response> {
   const release = gate.tryAcquire();
   if (!release) {
@@ -654,12 +868,26 @@ async function upload(
       let cleanupId: string | undefined;
       let responseSent = false;
       try {
-        staged = await stageMultipart(request, {
-          maxUploadBytes,
-          maxHtmlUploadBytes,
-          temporaryOnly: mode.kind === "create" && mode.temporaryOnly === true,
-          signal: request.signal
-        });
+        const guestBodySignal = guestUploadBodyTimeoutMs === undefined
+          ? request.signal
+          : AbortSignal.any([request.signal, AbortSignal.timeout(guestUploadBodyTimeoutMs)]);
+        try {
+          staged = await stageMultipart(request, {
+            maxUploadBytes,
+            maxHtmlUploadBytes,
+            temporaryOnly: mode.kind === "create" && mode.temporaryOnly === true,
+            signal: guestBodySignal
+          });
+        } catch (error) {
+          if (!request.signal.aborted && guestBodySignal.aborted) {
+            throw new ArtifactRequestError(
+              408,
+              "upload_timeout",
+              "The guest upload body was not received before the upload deadline."
+            );
+          }
+          throw error;
+        }
         const uploadType = classifyUpload(
           staged.originalName,
           staged.contentType,
@@ -741,10 +969,17 @@ async function upload(
           );
         }
 
-        const expiresAt = new Date(
-          getNow(options).getTime() + temporaryFileRetentionMs
-        );
+        const expiresAt = mode.kind === "create" && mode.expiresAt
+          ? new Date(Math.max(mode.expiresAt.getTime(), getNow(options).getTime() + temporaryFileRetentionMs))
+          : new Date(getNow(options).getTime() + temporaryFileRetentionMs);
         cleanupId = id;
+        if (mode.kind === "create" && mode.ensureActive && !(await mode.ensureActive())) {
+          throw new ArtifactRequestError(
+            404,
+            "upload_link_unavailable",
+            "This upload link has expired or was revoked."
+          );
+        }
         await options.storage.putTemporaryFile(
           id,
           staged.filePath,
@@ -753,7 +988,8 @@ async function upload(
             contentType: uploadType.contentType,
             expiresAt,
             originalName,
-            sha256
+            sha256,
+            ...(mode.kind === "create" && mode.uploadLinkId ? { uploadLinkId: mode.uploadLinkId } : {})
           },
           { signal: request.signal }
         );
@@ -794,7 +1030,8 @@ async function upload(
 
 type ChunkSessionManifest = {
   version: 1;
-  audience: "browser" | "native";
+  audience: "browser" | "native" | "drop";
+  uploadLinkId?: string;
   originalName: string;
   contentType: string;
   totalBytes: number;
@@ -802,6 +1039,11 @@ type ChunkSessionManifest = {
   chunkBytes: number;
   createdAt: string;
 };
+
+type ChunkedUploadPlan = Pick<
+  ChunkSessionManifest,
+  "originalName" | "contentType" | "totalBytes" | "totalChunks" | "chunkBytes"
+>;
 
 function matchChunkPut(remainder: string): { sessionId: string; index: number } | undefined {
   const match = /^([A-Za-z0-9_-]{32})\/(\d+)$/.exec(remainder);
@@ -846,7 +1088,8 @@ async function readChunkManifest(sessionId: string): Promise<ChunkSessionManifes
     const manifest = JSON.parse(raw) as ChunkSessionManifest;
     if (
       manifest?.version !== 1 ||
-      !["browser", "native"].includes(manifest.audience) ||
+      !["browser", "native", "drop"].includes(manifest.audience) ||
+      (manifest.audience === "drop" && (typeof manifest.uploadLinkId !== "string" || !UUID_PATTERN.test(manifest.uploadLinkId))) ||
       typeof manifest.originalName !== "string" ||
       typeof manifest.contentType !== "string" ||
       !Number.isSafeInteger(manifest.totalBytes) ||
@@ -891,11 +1134,129 @@ async function sweepStaleChunkSessions() {
   }
 }
 
-async function initChunkedUpload(
+async function countDropChunkSessions(uploadLinkId: string) {
+  let count = 0;
+  const entries = await readdir(os.tmpdir());
+  for (const entry of entries) {
+    if (!entry.startsWith(CHUNKED_UPLOAD_SESSION_PREFIX)) continue;
+    const sessionId = entry.slice(CHUNKED_UPLOAD_SESSION_PREFIX.length);
+    if (!PAGE_ID_PATTERN.test(sessionId)) continue;
+    const manifest = await readChunkManifest(sessionId);
+    if (manifest?.audience === "drop" && manifest.uploadLinkId === uploadLinkId) count += 1;
+  }
+  return count;
+}
+
+function createDropChunkInitGate(maxSessionsPerLink: number, maxPending: number) {
+  type PendingInitialization = {
+    signal: AbortSignal;
+    abort: () => void;
+    reject: (reason: unknown) => void;
+    execute: () => Promise<void>;
+  };
+  const pending: PendingInitialization[] = [];
+  let running = false;
+
+  const startNext = () => {
+    if (running) return;
+    const job = pending.shift();
+    if (!job) return;
+    job.signal.removeEventListener("abort", job.abort);
+    if (job.signal.aborted) {
+      job.reject(job.signal.reason ?? new DOMException("Request aborted", "AbortError"));
+      queueMicrotask(startNext);
+      return;
+    }
+    running = true;
+    void job.execute().finally(() => {
+      running = false;
+      startNext();
+    });
+  };
+
+  return {
+    run<T>(uploadLinkId: string, signal: AbortSignal, initialize: () => Promise<T>): Promise<T> {
+      if (signal.aborted) return Promise.reject(signal.reason);
+      if (pending.length >= maxPending) {
+        return Promise.reject(new ArtifactRequestError(
+          429,
+          "upload_initialization_busy",
+          "Too many upload initializations are waiting. Try again shortly.",
+          { "Retry-After": "1" }
+        ));
+      }
+      return new Promise<T>((resolve, reject) => {
+        const job: PendingInitialization = {
+          signal,
+          reject,
+          abort: () => {
+            const index = pending.indexOf(job);
+            if (index < 0) return;
+            pending.splice(index, 1);
+            signal.removeEventListener("abort", job.abort);
+            reject(signal.reason ?? new DOMException("Request aborted", "AbortError"));
+          },
+          execute: async () => {
+            try {
+              await sweepStaleChunkSessions();
+              if (await countDropChunkSessions(uploadLinkId) >= maxSessionsPerLink) {
+                throw new ArtifactRequestError(
+                  429,
+                  "too_many_incomplete_uploads",
+                  "Finish or cancel an incomplete upload before starting another.",
+                  { "Retry-After": "60" }
+                );
+              }
+              resolve(await initialize());
+            } catch (error) {
+              reject(error);
+            }
+          }
+        };
+        signal.addEventListener("abort", job.abort, { once: true });
+        pending.push(job);
+        startNext();
+      });
+    }
+  };
+}
+
+async function readLimitedBody(request: Request, maxBytes: number, signal: AbortSignal) {
+  if (!request.body) return "";
+  if (signal.aborted) throw signal.reason;
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let bytes = 0;
+  const abort = () => { void reader.cancel(signal.reason).catch(() => undefined); };
+  signal.addEventListener("abort", abort, { once: true });
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (signal.aborted) throw signal.reason;
+      if (done) break;
+      bytes += value.byteLength;
+      if (bytes > maxBytes) {
+        await reader.cancel();
+        throw new ArtifactRequestError(
+          413,
+          "payload_too_large",
+          "Chunked upload description is too large."
+        );
+      }
+      chunks.push(value);
+    }
+  } finally {
+    signal.removeEventListener("abort", abort);
+    reader.releaseLock();
+  }
+  return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk))).toString("utf8");
+}
+
+async function readChunkedUploadPlan(
   request: Request,
   maxUploadBytes: number,
-  audience: ChunkSessionManifest["audience"]
-): Promise<Response> {
+  signal: AbortSignal
+): Promise<ChunkedUploadPlan> {
   if (request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !== "application/json") {
     throw new ArtifactRequestError(
       415,
@@ -903,10 +1264,7 @@ async function initChunkedUpload(
       "Expected application/json."
     );
   }
-  const raw = await request.text();
-  if (Buffer.byteLength(raw, "utf8") > CHUNKED_UPLOAD_INIT_MAX_BYTES) {
-    throw new ArtifactRequestError(413, "payload_too_large", "Chunked upload description is too large.");
-  }
+  const raw = await readLimitedBody(request, CHUNKED_UPLOAD_INIT_MAX_BYTES, signal);
   let input: unknown;
   try {
     input = JSON.parse(raw);
@@ -958,11 +1316,34 @@ async function initChunkedUpload(
     throw new ArtifactRequestError(400, "invalid_chunk_plan", "Chunk plan does not cover the total file size.");
   }
 
+  return {
+    originalName: filename,
+    contentType: normalizeMimeType(contentType),
+    totalBytes: total,
+    totalChunks: chunks,
+    chunkBytes: nominal
+  };
+}
+
+async function initChunkedUpload(
+  plan: ChunkedUploadPlan,
+  audience: ChunkSessionManifest["audience"],
+  uploadLinkId?: string
+): Promise<Response> {
+  const {
+    originalName,
+    contentType,
+    totalBytes: total,
+    totalChunks: chunks,
+    chunkBytes: nominal
+  } = plan;
+
   const manifest: ChunkSessionManifest = {
     version: 1,
     audience,
-    originalName: filename,
-    contentType: normalizeMimeType(contentType),
+    ...(uploadLinkId ? { uploadLinkId } : {}),
+    originalName,
+    contentType,
     totalBytes: total,
     totalChunks: chunks,
     chunkBytes: nominal,
@@ -1034,7 +1415,9 @@ async function putUploadChunk(
   request: Request,
   sessionId: string,
   index: number,
-  audience: ChunkSessionManifest["audience"]
+  audience: ChunkSessionManifest["audience"],
+  uploadLinkId?: string,
+  signal = request.signal
 ): Promise<Response> {
   if (!PAGE_ID_PATTERN.test(sessionId)) {
     throw new ArtifactRequestError(400, "invalid_upload_id", "Upload ID is invalid.");
@@ -1047,7 +1430,7 @@ async function putUploadChunk(
       "The chunked upload was not found or expired."
     );
   }
-  requireChunkAudience(manifest, audience);
+  requireChunkAudience(manifest, audience, uploadLinkId);
   if (index < 0 || index >= manifest.totalChunks) {
     throw new ArtifactRequestError(400, "invalid_chunk_index", "Chunk index is out of range.");
   }
@@ -1062,7 +1445,7 @@ async function putUploadChunk(
     const input = Readable.fromWeb(
       request.body as unknown as import("node:stream/web").ReadableStream<Uint8Array>
     );
-    await pipeline(input, limiter, output, { signal: request.signal });
+    await pipeline(input, limiter, output, { signal });
     const actual = (await stat(partPath)).size;
     if (actual !== expected) {
       throw new ArtifactRequestError(
@@ -1087,7 +1470,9 @@ async function completeChunkedUpload(
   maxUploadBytes: number,
   temporaryFileRetentionMs: number,
   activityTracker: ActivityTracker,
-  audience: ChunkSessionManifest["audience"]
+  audience: ChunkSessionManifest["audience"],
+  uploadLink?: UploadLink,
+  ensureActive?: () => Promise<boolean>
 ): Promise<Response> {
   if (!PAGE_ID_PATTERN.test(sessionId)) {
     throw new ArtifactRequestError(400, "invalid_upload_id", "Upload ID is invalid.");
@@ -1100,7 +1485,7 @@ async function completeChunkedUpload(
       "The chunked upload was not found or expired."
     );
   }
-  requireChunkAudience(manifest, audience);
+  requireChunkAudience(manifest, audience, uploadLink?.id);
   if (manifest.totalBytes > maxUploadBytes) {
     throw new ArtifactRequestError(
       413,
@@ -1167,8 +1552,17 @@ async function completeChunkedUpload(
         const baseUrl = getPublicBaseUrl(request, options.publicBaseUrl);
         const sha256 = await sha256File(assembledPath, request.signal);
         throwIfAborted(request.signal);
-        const expiresAt = new Date(getNow(options).getTime() + temporaryFileRetentionMs);
+        const expiresAt = uploadLink
+          ? new Date(Math.max(uploadLink.expiresAt.getTime(), getNow(options).getTime() + temporaryFileRetentionMs))
+          : new Date(getNow(options).getTime() + temporaryFileRetentionMs);
         cleanupId = id;
+        if (ensureActive && !(await ensureActive())) {
+          throw new ArtifactRequestError(
+            404,
+            "upload_link_unavailable",
+            "This upload link has expired or was revoked."
+          );
+        }
         await options.storage.putTemporaryFile(
           id,
           assembledPath,
@@ -1177,7 +1571,8 @@ async function completeChunkedUpload(
             contentType: manifest.contentType,
             expiresAt,
             originalName,
-            sha256
+            sha256,
+            ...(uploadLink ? { uploadLinkId: uploadLink.id } : {})
           },
           { signal: request.signal }
         );
@@ -1218,22 +1613,24 @@ async function completeChunkedUpload(
 
 async function abortChunkedUpload(
   sessionId: string,
-  audience: ChunkSessionManifest["audience"]
+  audience: ChunkSessionManifest["audience"],
+  uploadLinkId?: string
 ): Promise<Response> {
   if (!PAGE_ID_PATTERN.test(sessionId)) {
     throw new ArtifactRequestError(400, "invalid_upload_id", "Upload ID is invalid.");
   }
   const manifest = await readChunkManifest(sessionId);
-  if (manifest) requireChunkAudience(manifest, audience);
+  if (manifest) requireChunkAudience(manifest, audience, uploadLinkId);
   await removeChunkSession(sessionId);
   return new Response(null, { status: 204 });
 }
 
 function requireChunkAudience(
   manifest: ChunkSessionManifest,
-  audience: ChunkSessionManifest["audience"]
+  audience: ChunkSessionManifest["audience"],
+  uploadLinkId?: string
 ) {
-  if (manifest.audience !== audience) {
+  if (manifest.audience !== audience || (audience === "drop" && manifest.uploadLinkId !== uploadLinkId)) {
     throw new ArtifactRequestError(
       404,
       "upload_not_found",
@@ -1243,7 +1640,13 @@ function requireChunkAudience(
 }
 
 type UploadMode =
-  | { kind: "create"; temporaryOnly?: boolean }
+  | {
+      kind: "create";
+      temporaryOnly?: boolean;
+      uploadLinkId?: string;
+      expiresAt?: Date;
+      ensureActive?: () => Promise<boolean>;
+    }
   | { kind: "update"; id: string };
 
 type StagedUpload = {
@@ -1369,8 +1772,21 @@ async function stageMultipart(
 
   const parserDone = new Promise<void>((resolve) => parser.once("close", resolve));
   input.on("error", (error) => parser.destroy(error));
+  const abort = () => {
+    const reason = options.signal.reason instanceof Error
+      ? options.signal.reason
+      : new DOMException("Upload aborted", "AbortError");
+    input.destroy(reason);
+    parser.destroy(reason);
+  };
+  if (options.signal.aborted) abort();
+  else options.signal.addEventListener("abort", abort, { once: true });
   input.pipe(parser);
-  await parserDone;
+  try {
+    await parserDone;
+  } finally {
+    options.signal.removeEventListener("abort", abort);
+  }
   const staged = await filePromise?.catch((error) => {
     parserError ??= error;
     return undefined;
@@ -1724,6 +2140,209 @@ function withExternalUploadHeaders(response: Response) {
   });
 }
 
+function withDropUploadHeaders(response: Response, nonce?: string) {
+  const headers = new Headers(response.headers);
+  const inline = nonce ? `'nonce-${nonce}'` : "'none'";
+  headers.set("Content-Security-Policy", `default-src 'none'; connect-src 'self'; img-src 'self'; script-src ${inline}; style-src ${inline}; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`);
+  headers.set("Cross-Origin-Opener-Policy", "same-origin");
+  headers.set("Referrer-Policy", "no-referrer");
+  headers.set("X-Content-Type-Options", "nosniff");
+  headers.set("X-Frame-Options", "DENY");
+  headers.set("X-Robots-Tag", "noindex, nofollow");
+  return new Response(response.body, { status: response.status, headers });
+}
+
+function matchDropPage(pathname: string) {
+  const match = /^\/drop\/([^/]+)\/?$/.exec(pathname);
+  return match?.[1] && UPLOAD_LINK_TOKEN_PATTERN.test(match[1]) ? match[1] : undefined;
+}
+
+function matchDropUpload(pathname: string) {
+  const match = /^\/api\/drop\/([^/]+)\/uploads$/.exec(pathname);
+  return match?.[1] && UPLOAD_LINK_TOKEN_PATTERN.test(match[1]) ? match[1] : undefined;
+}
+
+function matchDropChunk(pathname: string) {
+  const match = /^\/api\/drop\/([^/]+)\/uploads\/chunks(?:\/(.*))?$/.exec(pathname);
+  if (!match?.[1] || !UPLOAD_LINK_TOKEN_PATTERN.test(match[1])) return undefined;
+  return { token: match[1], remainder: match[2] ?? "" };
+}
+
+function requireUploadLinks(options: FetchArtifactAppOptions) {
+  if (!options.uploadLinks) {
+    throw new ArtifactRequestError(503, "upload_links_unavailable", "Upload links are not configured.");
+  }
+}
+
+async function readUploadLinkDuration(request: Request) {
+  if (request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !== "application/json") {
+    throw new ArtifactRequestError(415, "unsupported_media_type", "Expected application/json.");
+  }
+  const raw = await request.text();
+  if (Buffer.byteLength(raw, "utf8") > 1024) {
+    throw new ArtifactRequestError(413, "payload_too_large", "Upload link request is too large.");
+  }
+  let input: unknown;
+  try { input = JSON.parse(raw); }
+  catch { throw new ArtifactRequestError(400, "invalid_upload_link", "Upload link request is invalid JSON."); }
+  const durationMs = (input as { durationMs?: unknown } | null)?.durationMs;
+  if (!Number.isSafeInteger(durationMs) || (durationMs as number) < MIN_UPLOAD_LINK_DURATION_MS || (durationMs as number) > MAX_UPLOAD_LINK_DURATION_MS) {
+    throw new ArtifactRequestError(400, "invalid_upload_link_duration", "Duration must be between 5 minutes and 30 days.");
+  }
+  return durationMs as number;
+}
+
+function serializeUploadLink(link: UploadLink) {
+  return {
+    id: link.id,
+    createdAt: link.createdAt.toISOString(),
+    expiresAt: link.expiresAt.toISOString(),
+    fileCount: link.fileCount,
+    ...(link.revokedAt ? { revokedAt: link.revokedAt.toISOString() } : {})
+  };
+}
+
+function dropLinkNotFound() {
+  return withDropUploadHeaders(new Response("This upload link is unavailable.", {
+    status: 404,
+    headers: { "Cache-Control": "private, no-store", "Content-Type": "text/plain; charset=utf-8" }
+  }));
+}
+
+function dropLinkUnavailable() {
+  return jsonResponse({
+    error: "upload_link_unavailable",
+    message: "This upload link has expired or was revoked."
+  }, 404);
+}
+
+function downloadUploadLinkFiles(
+  files: readonly { id: string; filename: string }[],
+  storage: UploadStorage,
+  linkId: string,
+  signal: AbortSignal,
+  activityTracker: ActivityTracker
+) {
+  const output = createArchiveOutput();
+  const archive = new ZipWriter(output.writable, {
+    zip64: true,
+    level: 0,
+    useWebWorkers: false
+  });
+  const production = (async () => {
+    const usedNames = new Set<string>();
+    try {
+      for (const file of files) {
+        if (signal.aborted) throw new DOMException("Download aborted", "AbortError");
+        const stored = await storage.getTemporaryFile(file.id, { signal });
+        if (!stored) {
+          throw new Error(`Upload-link file ${file.id} disappeared during archive creation`);
+        }
+        await archive.add(
+          uniqueArchiveName(file.filename, usedNames),
+          Readable.toWeb(stored.body) as ReadableStream<Uint8Array>,
+          { signal, zip64: true, level: 0, useWebWorkers: false }
+        );
+      }
+      await archive.close(undefined, { zip64: true });
+    } catch (error) {
+      output.fail(error);
+      console.error("failed to stream upload-link archive", error);
+    }
+  })();
+  void activityTracker.track(production);
+  return new Response(output.readable, {
+    headers: {
+      "Cache-Control": "private, no-store",
+      "Content-Disposition": attachmentDisposition(`uploads-${linkId.slice(0, 8)}.zip`),
+      "Content-Type": "application/zip",
+      "X-Content-Type-Options": "nosniff"
+    }
+  });
+}
+
+function createArchiveOutput() {
+  let controller!: ReadableStreamDefaultController<Uint8Array>;
+  let closed = false;
+  let resume: (() => void) | undefined;
+  const readable = new ReadableStream<Uint8Array>({
+    start(value) { controller = value; },
+    pull() { resume?.(); resume = undefined; },
+    cancel() { closed = true; resume?.(); resume = undefined; }
+  });
+  const fail = (reason: unknown) => {
+    if (closed) return;
+    closed = true;
+    resume?.();
+    resume = undefined;
+    controller.error(reason);
+  };
+  const writable = new WritableStream<Uint8Array>({
+    async write(chunk) {
+      if (closed) throw new DOMException("Archive output is closed", "AbortError");
+      controller.enqueue(chunk);
+      if ((controller.desiredSize ?? 1) <= 0) {
+        await new Promise<void>((resolve) => { resume = resolve; });
+      }
+    },
+    close() {
+      if (!closed) { closed = true; controller.close(); }
+    },
+    abort: fail
+  });
+  return { readable, writable, fail };
+}
+
+function uniqueArchiveName(filename: string, used: Set<string>) {
+  const safe = portableArchiveName(safeFileName(filename, "download"));
+  const key = archiveNameKey(safe);
+  if (!used.has(key)) { used.add(key); return safe; }
+  const extensionAt = safe.lastIndexOf(".");
+  const stem = extensionAt > 0 ? safe.slice(0, extensionAt) : safe;
+  const extension = extensionAt > 0 ? safe.slice(extensionAt) : "";
+  for (let index = 2; ; index += 1) {
+    const suffix = ` (${index})`;
+    const stemBudget = Math.max(
+      0,
+      MAX_FILE_NAME_BYTES - Buffer.byteLength(suffix + extension, "utf8")
+    );
+    const boundedStem = truncateArchiveName(stem, stemBudget);
+    const candidate = truncateArchiveName(
+      `${boundedStem}${suffix}${extension}`,
+      MAX_FILE_NAME_BYTES
+    );
+    const candidateKey = archiveNameKey(candidate);
+    if (!used.has(candidateKey)) { used.add(candidateKey); return candidate; }
+  }
+}
+
+function truncateArchiveName(value: string, maxBytes: number) {
+  let result = "";
+  let bytes = 0;
+  for (const character of value) {
+    const characterBytes = Buffer.byteLength(character, "utf8");
+    if (bytes + characterBytes > maxBytes) break;
+    result += character;
+    bytes += characterBytes;
+  }
+  return result;
+}
+
+function portableArchiveName(filename: string) {
+  let portable = filename
+    .replace(/[\u0000-\u001F\u007F<>:"/\\|?*]/g, "_")
+    .replace(/[ .]+$/g, (suffix) => "_".repeat(suffix.length));
+  const deviceStem = portable.split(".", 1)[0]?.replace(/[ .]+$/g, "").normalize("NFKC") ?? "";
+  if (/^(?:con|prn|aux|nul|com[1-9]|lpt[1-9]|conin\$|conout\$)$/i.test(deviceStem)) {
+    portable = `_${portable.slice(1)}`;
+  }
+  return portable;
+}
+
+function archiveNameKey(filename: string) {
+  return filename.normalize("NFKC").toLocaleLowerCase("en-US");
+}
+
 function matchCapabilityPath(pathname: string, prefixes: readonly string[]) {
   for (const prefix of prefixes) {
     if (pathname.startsWith(prefix)) return pathname.slice(prefix.length);
@@ -1881,6 +2500,9 @@ function artifactErrorResponse(error: unknown) {
   if (error instanceof HtmlPayloadTooLargeError) {
     return jsonResponse({ error: "html_payload_too_large", message: error.message }, 413);
   }
+  if (error instanceof UploadLinkInactiveError) {
+    return jsonResponse({ error: "upload_link_unavailable", message: error.message }, 404);
+  }
   if (error instanceof URIError) {
     return new Response(null, { status: 404 });
   }
@@ -1909,6 +2531,37 @@ function encodeUploadListCursor(
   ).toString("base64url");
 }
 
+function encodeUploadLinkCursor(link: Pick<UploadLink, "createdAt" | "id">) {
+  return Buffer.from(JSON.stringify({
+    version: 1,
+    createdAt: link.createdAt.toISOString(),
+    id: link.id
+  }), "utf8").toString("base64url");
+}
+
+function parseUploadLinkCursor(value: string | undefined) {
+  if (value === undefined) return undefined;
+  if (!value || value.length > MAX_UPLOAD_LIST_CURSOR_LENGTH) {
+    throw new ArtifactRequestError(400, "invalid_pagination", "cursor is invalid.");
+  }
+  try {
+    const parsed: unknown = JSON.parse(Buffer.from(value, "base64url").toString("utf8"));
+    if (!parsed || typeof parsed !== "object") throw new Error("invalid cursor");
+    const candidate = parsed as Record<string, unknown>;
+    if (candidate.version !== 1 || typeof candidate.createdAt !== "string" ||
+      typeof candidate.id !== "string" || !UUID_PATTERN.test(candidate.id)) {
+      throw new Error("invalid cursor");
+    }
+    const createdAt = new Date(candidate.createdAt);
+    if (Number.isNaN(createdAt.getTime()) || createdAt.toISOString() !== candidate.createdAt) {
+      throw new Error("invalid cursor");
+    }
+    return { createdAt, id: candidate.id };
+  } catch {
+    throw new ArtifactRequestError(400, "invalid_pagination", "cursor is invalid.");
+  }
+}
+
 function parseUploadListOptions(search: URLSearchParams): Omit<ListUploadsOptions, "signal"> {
   const rawLimit = singleQuery(search, "limit");
   const rawKind = singleQuery(search, "kind");
@@ -1916,6 +2569,7 @@ function parseUploadListOptions(search: URLSearchParams): Omit<ListUploadsOption
   const rawQuery = singleQuery(search, "q");
   const rawExpiry = singleQuery(search, "expiry");
   const rawSort = singleQuery(search, "sort");
+  const rawIncludeSummary = singleQuery(search, "includeSummary");
   const limit = rawLimit === undefined ? DEFAULT_UPLOAD_LIST_LIMIT : Number(rawLimit);
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > MAX_UPLOAD_LIST_LIMIT) {
     throw new ArtifactRequestError(
@@ -1945,8 +2599,12 @@ function parseUploadListOptions(search: URLSearchParams): Omit<ListUploadsOption
       : (() => { throw new ArtifactRequestError(400, "invalid_pagination", "kind must be all, html, or file."); })();
   const criteria = JSON.stringify({ q, kind: kind ?? "all", expiry, sort });
   const cursor = rawCursor === undefined ? undefined : decodeUploadListCursor(rawCursor, criteria, q === "" && expiry === "all" && sort === "newest");
+  if (rawIncludeSummary !== undefined && rawIncludeSummary !== "true") {
+    throw new ArtifactRequestError(400, "invalid_pagination", "includeSummary must be true when provided.");
+  }
   return {
     limit,
+    ...(rawIncludeSummary === "true" ? { includeSummary: true } : {}),
     criteria,
     ...(kind ? { kind } : {}),
     ...(q ? { q } : {}),

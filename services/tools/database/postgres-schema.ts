@@ -336,9 +336,11 @@ export const objects = artifactsSchema.table("objects", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
   expiresAt: timestamp("expires_at", { withTimezone: true }),
   revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  uploadLinkId: uuid("upload_link_id"),
 }, (table) => [
   check("objects_kind_check", sql`${table.kind} in ('html', 'file')`),
   check("objects_bytes_check", sql`${table.bytes} >= 0`),
+  index("objects_upload_link_idx").on(table.uploadLinkId),
 ]);
 
 export const operations = artifactsSchema.table("operations", {
@@ -353,4 +355,16 @@ export const operations = artifactsSchema.table("operations", {
   check("operations_operation_kind_check", sql`${table.operationKind} in ('put_html', 'put_file', 'delete')`),
   index("artifact_operations_created_idx").on(table.createdAt),
   uniqueIndex("artifact_operations_artifact_idx").on(table.artifactId),
+]);
+
+export const uploadLinks = artifactsSchema.table("upload_links", {
+  id: uuid("id").primaryKey(),
+  tokenHash: text("token_hash").notNull().unique(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+}, (table) => [
+  check("upload_links_expiry_check", sql`${table.expiresAt} > ${table.createdAt}`),
+  index("upload_links_active_idx").on(table.expiresAt, table.revokedAt),
+  index("upload_links_history_idx").on(table.createdAt.desc(), table.id.desc()),
 ]);
