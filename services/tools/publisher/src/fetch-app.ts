@@ -51,6 +51,7 @@ export const CHUNKED_UPLOAD_MAX_CHUNK_BYTES = 64 * 1024 * 1024;
 const CHUNKED_UPLOAD_SESSION_PREFIX = "artifact-chunks-";
 const CHUNKED_UPLOAD_SESSION_TTL_MS = 2 * 60 * 60 * 1000;
 const CHUNKED_UPLOAD_INIT_MAX_BYTES = 4096;
+const MAX_INCOMPLETE_DROP_SESSIONS_PER_LINK = 3;
 export const DEFAULT_MAX_CONCURRENT_UPLOADS = 1;
 export const DEFAULT_TEMPORARY_FILE_RETENTION_MS = 3 * 24 * 60 * 60 * 1000;
 export const MAX_TEMPORARY_FILE_RETENTION_MS = 100 * 365 * 24 * 60 * 60 * 1000;
@@ -143,6 +144,7 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
   }
 
   const uploadGate = createUploadGate(maxConcurrentUploads);
+  const dropChunkInitGate = createDropChunkInitGate(MAX_INCOMPLETE_DROP_SESSIONS_PER_LINK);
   const uploadToken = requireUploadToken(options.uploadToken);
 
   return async function artifactFetch(request: Request): Promise<Response> {
@@ -221,10 +223,18 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
       const dropChunk = matchDropChunk(url.pathname);
       if (dropChunk) {
         requireSameOrigin(request, url, options.publicBaseUrl);
+        const chunkSession = matchChunkSession(dropChunk.remainder);
+        if (request.method === "DELETE" && chunkSession) {
+          const link = await options.uploadLinks?.find(dropChunk.token);
+          if (!link) return dropLinkUnavailable();
+          return await abortChunkedUpload(chunkSession, "drop", link.id);
+        }
         const link = await options.uploadLinks?.findActive(dropChunk.token, getNow(options));
         if (!link) return dropLinkUnavailable();
         if (request.method === "POST" && dropChunk.remainder === "") {
-          return await initChunkedUpload(request, maxUploadBytes, "drop", link.id);
+          return await dropChunkInitGate.run(link.id, () =>
+            initChunkedUpload(request, maxUploadBytes, "drop", link.id)
+          );
         }
         const chunkPut = matchChunkPut(dropChunk.remainder);
         if (request.method === "PUT" && chunkPut) {
@@ -236,10 +246,6 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
             request, url, options, chunkComplete, uploadGate, maxUploadBytes,
             temporaryFileRetentionMs, activityTracker, "drop", link
           );
-        }
-        const chunkSession = matchChunkSession(dropChunk.remainder);
-        if (request.method === "DELETE" && chunkSession) {
-          return await abortChunkedUpload(chunkSession, "drop", link.id);
         }
         throw new ArtifactRequestError(404, "not_found", "API route was not found.");
       }
@@ -999,6 +1005,45 @@ async function sweepStaleChunkSessions() {
   } catch (error) {
     console.error("failed to sweep stale chunked upload sessions", error);
   }
+}
+
+async function countDropChunkSessions(uploadLinkId: string) {
+  let count = 0;
+  const entries = await readdir(os.tmpdir());
+  for (const entry of entries) {
+    if (!entry.startsWith(CHUNKED_UPLOAD_SESSION_PREFIX)) continue;
+    const sessionId = entry.slice(CHUNKED_UPLOAD_SESSION_PREFIX.length);
+    if (!PAGE_ID_PATTERN.test(sessionId)) continue;
+    const manifest = await readChunkManifest(sessionId);
+    if (manifest?.audience === "drop" && manifest.uploadLinkId === uploadLinkId) count += 1;
+  }
+  return count;
+}
+
+function createDropChunkInitGate(maxSessionsPerLink: number) {
+  let tail = Promise.resolve();
+  return {
+    async run<T>(uploadLinkId: string, initialize: () => Promise<T>): Promise<T> {
+      let release!: () => void;
+      const previous = tail;
+      tail = new Promise<void>((resolve) => { release = resolve; });
+      await previous;
+      try {
+        await sweepStaleChunkSessions();
+        if (await countDropChunkSessions(uploadLinkId) >= maxSessionsPerLink) {
+          throw new ArtifactRequestError(
+            429,
+            "too_many_incomplete_uploads",
+            "Finish or cancel an incomplete upload before starting another.",
+            { "Retry-After": "60" }
+          );
+        }
+        return await initialize();
+      } finally {
+        release();
+      }
+    }
+  };
 }
 
 async function initChunkedUpload(
@@ -1925,7 +1970,7 @@ function downloadUploadLinkFiles(
   linkId: string,
   signal: AbortSignal
 ) {
-  const output = new TransformStream<Uint8Array, Uint8Array>();
+  const output = createArchiveOutput();
   const archive = new ZipWriter(output.writable, {
     zip64: true,
     level: 0,
@@ -1946,7 +1991,7 @@ function downloadUploadLinkFiles(
       }
       await archive.close(undefined, { zip64: true });
     } catch (error) {
-      await archive.close(undefined, { zip64: true }).catch(() => undefined);
+      output.fail(error);
       console.error("failed to stream upload-link archive", error);
     }
   })();
@@ -1958,6 +2003,38 @@ function downloadUploadLinkFiles(
       "X-Content-Type-Options": "nosniff"
     }
   });
+}
+
+function createArchiveOutput() {
+  let controller!: ReadableStreamDefaultController<Uint8Array>;
+  let closed = false;
+  let resume: (() => void) | undefined;
+  const readable = new ReadableStream<Uint8Array>({
+    start(value) { controller = value; },
+    pull() { resume?.(); resume = undefined; },
+    cancel() { closed = true; resume?.(); resume = undefined; }
+  });
+  const fail = (reason: unknown) => {
+    if (closed) return;
+    closed = true;
+    resume?.();
+    resume = undefined;
+    controller.error(reason);
+  };
+  const writable = new WritableStream<Uint8Array>({
+    async write(chunk) {
+      if (closed) throw new DOMException("Archive output is closed", "AbortError");
+      controller.enqueue(chunk);
+      if ((controller.desiredSize ?? 1) <= 0) {
+        await new Promise<void>((resolve) => { resume = resolve; });
+      }
+    },
+    close() {
+      if (!closed) { closed = true; controller.close(); }
+    },
+    abort: fail
+  });
+  return { readable, writable, fail };
 }
 
 function uniqueArchiveName(filename: string, used: Set<string>) {

@@ -31,6 +31,12 @@ describe("primary page ownership", () => {
     expect(route).not.toMatch(/\b(POST|PUT|PATCH|DELETE): tools/);
   });
 
+  it("keeps upload-link revocation available independently of the browser clock", () => {
+    const source = readFileSync(new URL("../publisher/ui/upload-link-manager.tsx", import.meta.url), "utf8");
+    expect(source).toContain("!link.revokedAt ? <Button");
+    expect(source).not.toContain("active ? <Button type=\"button\"");
+  });
+
   it("protects private money data with the shared session middleware", () => {
     const source = readFileSync(new URL("../src/protected-data.ts", import.meta.url), "utf8");
     const moneyLoader = source.slice(source.indexOf("getMoneyTrackerPageData"), source.indexOf("getPrivateStatusPageData"));

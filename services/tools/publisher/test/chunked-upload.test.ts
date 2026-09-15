@@ -99,6 +99,7 @@ function guestLinks(): UploadLinkRepository {
   return {
     async create() { return { ...link, token: DROP_TOKEN }; },
     async list() { return [link]; },
+    async find(token) { return token === DROP_TOKEN ? link : null; },
     async findActive(token) { return token === DROP_TOKEN ? link : null; },
     async listFiles() { return []; },
     async revoke() { return true; }
@@ -186,6 +187,43 @@ describe("chunked browser uploads", () => {
     expect(storage.files.get(payload.id)?.metadata.uploadLinkId).toBe(DROP_LINK_ID);
     expect(storage.files.get(payload.id)?.body.equals(content)).toBe(true);
     expect(payload.expiresAt).toBe("2026-08-21T12:00:00.000Z");
+  });
+
+  it("bounds incomplete guest sessions and frees capacity when one is cancelled", async () => {
+    const storage = new ChunkTestStorage();
+    const app = testApp(storage, { uploadLinks: guestLinks() });
+    const base = `${ORIGIN}/api/drop/${DROP_TOKEN}/uploads/chunks`;
+    const sessions: string[] = [];
+    for (let index = 0; index < 3; index += 1) {
+      const response = await app(new Request(base, {
+        method: "POST",
+        headers: { Origin: ORIGIN, "Content-Type": "application/json" },
+        body: initBody(CHUNK_BYTES * 2, 2)
+      }));
+      expect(response.status).toBe(201);
+      sessions.push(((await response.json()) as { sessionId: string }).sessionId);
+    }
+    const limited = await app(new Request(base, {
+      method: "POST",
+      headers: { Origin: ORIGIN, "Content-Type": "application/json" },
+      body: initBody(CHUNK_BYTES * 2, 2)
+    }));
+    expect(limited.status).toBe(429);
+    expect(await limited.json()).toMatchObject({ error: "too_many_incomplete_uploads" });
+
+    expect((await app(new Request(`${base}/${sessions.shift()}`, {
+      method: "DELETE", headers: { Origin: ORIGIN }
+    }))).status).toBe(204);
+    const replacement = await app(new Request(base, {
+      method: "POST",
+      headers: { Origin: ORIGIN, "Content-Type": "application/json" },
+      body: initBody(CHUNK_BYTES * 2, 2)
+    }));
+    expect(replacement.status).toBe(201);
+    sessions.push(((await replacement.json()) as { sessionId: string }).sessionId);
+    for (const sessionId of sessions) {
+      await app(new Request(`${base}/${sessionId}`, { method: "DELETE", headers: { Origin: ORIGIN } }));
+    }
   });
 
   it("reassembles small chunk requests into one temporary file", async () => {

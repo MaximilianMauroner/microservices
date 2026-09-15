@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { Readable } from "node:stream";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { strFromU8, unzipSync } from "fflate";
 import { ActivityTracker } from "../src/activity-tracker.js";
 import { createFetchApp } from "../src/fetch-app.js";
@@ -97,6 +97,7 @@ class MemoryUploadLinkRepository implements UploadLinkRepository {
     return { ...this.link, token: this.token };
   }
   async list() { return this.link ? [this.link] : []; }
+  async find(token: string) { return token === this.token ? this.link ?? null : null; }
   async findActive(token: string, now: Date) {
     return token === this.token && this.link && !this.link.revokedAt && this.link.expiresAt > now ? this.link : null;
   }
@@ -159,6 +160,14 @@ describe("native artifact fetch handler", () => {
     uploadLinks.files = [{ id: uploaded.id, filename: uploaded.filename, bytes: uploaded.bytes }];
     expect(storage.files.size).toBe(1);
 
+    const chunkInit = await app(new Request(`https://tools.example.test/api/drop/${uploadLinks.token}/uploads/chunks`, {
+      method: "POST",
+      headers: { Origin: "https://tools.example.test", "Content-Type": "application/json" },
+      body: JSON.stringify({ filename: "partial.bin", contentType: "application/octet-stream", totalBytes: 2_097_152, totalChunks: 2, chunkBytes: 1_048_576 })
+    }));
+    expect(chunkInit.status).toBe(201);
+    const { sessionId: partialSessionId } = await chunkInit.json() as { sessionId: string };
+
     const downloadResponse = await app(new Request(`https://tools.example.test/api/upload-links/${uploadLinks.id}/download`));
     expect(downloadResponse.status).toBe(200);
     expect(downloadResponse.headers.get("content-type")).toBe("application/zip");
@@ -172,6 +181,9 @@ describe("native artifact fetch handler", () => {
       headers: { Origin: "https://tools.example.test" }
     }));
     expect(revokeResponse.status).toBe(204);
+    expect((await app(new Request(`https://tools.example.test/api/drop/${uploadLinks.token}/uploads/chunks/${partialSessionId}`, {
+      method: "DELETE", headers: { Origin: "https://tools.example.test" }
+    }))).status).toBe(204);
     expect((await app(new Request(`https://tools.example.test/drop/${uploadLinks.token}`))).status).toBe(404);
     const downloadAfterRevoke = await app(new Request(`https://tools.example.test/api/upload-links/${uploadLinks.id}/download`));
     expect(downloadAfterRevoke.status).toBe(200);
@@ -186,6 +198,32 @@ describe("native artifact fetch handler", () => {
       error: "upload_link_unavailable",
       message: "This upload link has expired or was revoked."
     });
+  });
+
+  it("fails a bulk-download stream when a later object cannot be fetched", async () => {
+    class FailingStorage extends MemoryUploadStorage {
+      override async getTemporaryFile(id: string, options?: GetTemporaryFileOptions) {
+        if (id === "b".repeat(32)) throw new Error("storage unavailable");
+        return super.getTemporaryFile(id, options);
+      }
+    }
+    const storage = new FailingStorage();
+    const uploadLinks = new MemoryUploadLinkRepository();
+    await uploadLinks.create(new Date("2026-09-16T12:00:00.000Z"));
+    const metadata = { bytes: 5, originalName: "first.txt", sha256: "a".repeat(64), contentType: "text/plain", expiresAt: new Date("2026-09-16T12:00:00.000Z") };
+    storage.files.set("a".repeat(32), { body: Buffer.from("first"), metadata });
+    uploadLinks.files = [
+      { id: "a".repeat(32), filename: "first.txt", bytes: 5 },
+      { id: "b".repeat(32), filename: "second.txt", bytes: 6 }
+    ];
+    const app = createFetchApp({ storage, uploadLinks, uploadToken: "upload-token" });
+    const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const response = await app(new Request(`https://tools.example.test/api/upload-links/${uploadLinks.id}/download`));
+      await expect(response.arrayBuffer()).rejects.toThrow("storage unavailable");
+    } finally {
+      errorLog.mockRestore();
+    }
   });
 
   it("rejects invalid upload-link durations and cross-origin creation", async () => {

@@ -120,7 +120,7 @@ export function UploadLinkManager() {
             <div className="min-w-0"><div className="flex items-center gap-2"><Link2 className="size-4" aria-hidden="true" /><Badge variant={active ? "default" : "secondary"}>{link.revokedAt ? "Revoked" : active ? "Active" : "Expired"}</Badge></div><p className="mt-2 text-xs text-muted-foreground">{link.fileCount} {link.fileCount === 1 ? "file" : "files"} received · created {formatDate(link.createdAt)} · expires {formatDate(link.expiresAt)}</p></div>
             <div className="flex shrink-0 flex-wrap gap-2">
               {link.fileCount > 0 ? <Button nativeButton={false} variant="outline" size="sm" render={<a href={`/api/upload-links/${link.id}/download`} />}><Download /> Download all</Button> : null}
-              {active ? <Button type="button" variant="outline" size="sm" onClick={() => void revokeLink(link.id)} disabled={busy}><X /> Revoke</Button> : null}
+              {!link.revokedAt ? <Button type="button" variant="outline" size="sm" onClick={() => void revokeLink(link.id)} disabled={busy}><X /> Revoke</Button> : null}
             </div>
           </div></Card>;
         })}

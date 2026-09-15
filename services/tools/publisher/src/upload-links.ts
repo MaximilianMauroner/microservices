@@ -19,6 +19,7 @@ export type UploadLinkFile = Readonly<{ id: string; filename: string; bytes: num
 export interface UploadLinkRepository {
   create(expiresAt: Date): Promise<CreatedUploadLink>;
   list(): Promise<readonly UploadLink[]>;
+  find(token: string): Promise<UploadLink | null>;
   findActive(token: string, now: Date): Promise<UploadLink | null>;
   listFiles(id: string, now: Date): Promise<readonly UploadLinkFile[] | null>;
   revoke(id: string, now: Date): Promise<boolean>;
@@ -50,14 +51,17 @@ export function createPostgresUploadLinkRepository(databaseUrl: string): UploadL
         order by created_at desc`;
       return rows.map(toUploadLink);
     },
-    async findActive(token, now) {
+    async find(token) {
       if (!UPLOAD_LINK_TOKEN_PATTERN.test(token)) return null;
       const rows = await sql<UploadLinkRow[]>`
         select id::text, created_at, expires_at, revoked_at
         from artifacts.upload_links
-        where token_hash = ${uploadLinkTokenHash(token)}
-          and revoked_at is null and expires_at > ${now}`;
+        where token_hash = ${uploadLinkTokenHash(token)}`;
       return rows[0] ? toUploadLink(rows[0]) : null;
+    },
+    async findActive(token, now) {
+      const link = await this.find(token);
+      return link && !link.revokedAt && link.expiresAt > now ? link : null;
     },
     async listFiles(id, now) {
       const links = await sql<{ id: string }[]>`select id::text from artifacts.upload_links where id = ${id}::uuid`;
