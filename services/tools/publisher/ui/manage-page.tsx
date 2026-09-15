@@ -317,7 +317,7 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
           </div>
         </section>
 
-        <section className="grid items-start gap-3 lg:grid-cols-[12rem_minmax(0,1fr)_20rem]" aria-label="Artifact library">
+        <section className="grid items-start gap-3 lg:grid-cols-[16rem_minmax(0,1fr)_20rem] xl:grid-cols-[24rem_minmax(0,1fr)_20rem]" aria-label="Artifact library">
           <ProjectNavigation projects={projects} active={projectFilter} onSelect={(value) => void selectProject(value)} total={summary.total} disabled={busy} />
           <ArtifactTable uploads={visibleUploads} loaded={uploads.length} total={summary.total} selectedId={selectedId} onSelect={(id) => { setSelectedId(id); setMobileInspectorOpen(true); }} hasMore={Boolean(nextCursor)} busy={busy} onLoadMore={loadOlder} />
           {!isMobile ? <ArtifactInspector
