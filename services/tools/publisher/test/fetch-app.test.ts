@@ -169,6 +169,9 @@ describe("native artifact fetch handler", () => {
       url: `https://tools.example.test/drop/${uploadLinks.token}`,
       expiresAt: "2026-09-16T12:00:00.000Z"
     });
+    const listResponse = await app(new Request("https://tools.example.test/api/upload-links"));
+    expect(listResponse.status).toBe(200);
+    expect(listResponse.headers.get("cache-control")).toBe("private, no-store");
 
     const pageResponse = await app(new Request(`https://tools.example.test/drop/${uploadLinks.token}`));
     expect(pageResponse.status).toBe(200);

@@ -113,6 +113,13 @@ export type PutTemporaryFileMetadata = {
   uploadLinkId?: string;
 };
 
+export class UploadLinkInactiveError extends Error {
+  constructor() {
+    super("This upload link has expired or was revoked.");
+    this.name = "UploadLinkInactiveError";
+  }
+}
+
 export type StoredUploadSummary = {
   id: string;
   kind: "html" | "file";

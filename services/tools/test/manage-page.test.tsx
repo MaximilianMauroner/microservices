@@ -87,4 +87,16 @@ describe("Manage artifact library", () => {
     expect(selectProject).toContain("remaining.push(...payload.uploads)");
     expect(source).toContain("onSelect={(value) => void selectProject(value)}");
   });
+
+  it("preserves loaded pages while updating rows and exact summaries", async () => {
+    const source = await readFile(new URL("../publisher/ui/manage-page.tsx", import.meta.url), "utf8");
+    const lifecycleUpdates = source.slice(
+      source.indexOf("async function changeProject"),
+      source.indexOf("async function copySelectedUrl")
+    );
+
+    expect(lifecycleUpdates).toContain("setUploads((current)");
+    expect(lifecycleUpdates).toContain("await refreshSummary()");
+    expect(lifecycleUpdates).not.toContain("await refresh()");
+  });
 });

@@ -156,7 +156,12 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
       },
       publisher: {
         handle: artifact,
-        readiness: async () => { await artifactStorage.listUploads(new Date(), { limit: 1 }); },
+        readiness: async () => {
+          await Promise.all([
+            artifactStorage.listUploads(new Date(), { limit: 1 }),
+            uploadLinks.readiness?.()
+          ]);
+        },
         close: async () => {
           await Promise.all([artifactStorage.close?.(), uploadLinks.close?.()]);
         }

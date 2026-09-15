@@ -117,6 +117,18 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
     }
   }
 
+  async function refreshSummary() {
+    const response = await fetchPublisherRead(
+      "/api/external-uploads?limit=1&sort=newest&includeSummary=true",
+      { credentials: "same-origin" }
+    );
+    const payload = await readPayload<ManagePageData>(
+      response,
+      "Artifact summary could not be refreshed."
+    );
+    if (payload.summary) setSummary(payload.summary);
+  }
+
   async function selectProject(value: string) {
     setProjectFilter(value);
     if (value === ALL_PROJECTS || !nextCursor || busy) return;
@@ -160,7 +172,7 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
         body: form
       });
       const updated = await readPayload<UploadSummary>(response, "Artifact could not be replaced.");
-      await refresh();
+      setUploads((current) => current.map((upload) => upload.id === updated.id ? updated : upload));
       setSelectedId(updated.id);
       setMessage({ text: `${updated.filename} replaced the artifact without changing its URL.`, tone: "success" });
     } catch (error) {
@@ -184,7 +196,10 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
         body: JSON.stringify({ project })
       });
       await readPayload(response, "Project could not be changed.");
-      await refresh();
+      setUploads((current) => current.map((upload) => upload.id === selected.id
+        ? { ...upload, project }
+        : upload));
+      await refreshSummary();
       setMessage({ text: `Moved ${selected.filename} to ${project}.`, tone: "success" });
     } catch (error) {
       setMessage({ text: errorMessage(error), tone: "error" });
@@ -206,7 +221,12 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
         body: JSON.stringify({ expiresAt })
       });
       const updated = await readPayload<{ expiresAt: string | null }>(response, "File expiry could not be changed.");
-      await refresh();
+      setUploads((current) => current.map((upload) => {
+        if (upload.id !== selected.id) return upload;
+        const { expiresAt: _oldExpiry, ...withoutExpiry } = upload;
+        return updated.expiresAt ? { ...withoutExpiry, expiresAt: updated.expiresAt } : withoutExpiry;
+      }));
+      await refreshSummary();
       setMessage({
         text: updated.expiresAt
           ? `${selected.filename} now expires ${formatDate(updated.expiresAt)}.`
@@ -233,7 +253,10 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
         credentials: "same-origin"
       });
       if (!response.ok) await readPayload(response, "Artifact could not be revoked.");
-      await refresh();
+      const remaining = uploads.filter((upload) => upload.id !== selected.id);
+      setUploads(remaining);
+      setSelectedId(remaining[0]?.id);
+      await refreshSummary();
       setMessage({ text: `${selected.filename} was revoked. Its capability URL no longer works.`, tone: "success" });
     } catch (error) {
       setMessage({ text: errorMessage(error), tone: "error" });

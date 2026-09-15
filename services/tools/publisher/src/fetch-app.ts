@@ -32,6 +32,7 @@ import {
   FileUpdateConflictError,
   HtmlUpdateConflictError,
   RangeNotSatisfiableError,
+  UploadLinkInactiveError,
   type ListUploadsOptions,
   type UploadExpiryFilter,
   type UploadListCursor,
@@ -170,7 +171,11 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
       if (request.method === "GET" && url.pathname === "/api/upload-links") {
         requireUploadLinks(options);
         const links = await options.uploadLinks!.list();
-        return jsonResponse({ links: links.map(serializeUploadLink) });
+        return jsonResponse(
+          { links: links.map(serializeUploadLink) },
+          200,
+          { "Cache-Control": "private, no-store" }
+        );
       }
 
       const uploadLinkDownload = /^\/api\/upload-links\/([^/]+)\/download$/.exec(url.pathname)?.[1];
@@ -2385,6 +2390,9 @@ function artifactErrorResponse(error: unknown) {
   }
   if (error instanceof HtmlPayloadTooLargeError) {
     return jsonResponse({ error: "html_payload_too_large", message: error.message }, 413);
+  }
+  if (error instanceof UploadLinkInactiveError) {
+    return jsonResponse({ error: "upload_link_unavailable", message: error.message }, 404);
   }
   if (error instanceof URIError) {
     return new Response(null, { status: 404 });

@@ -23,6 +23,7 @@ export interface UploadLinkRepository {
   findActive(token: string, now: Date): Promise<UploadLink | null>;
   listFiles(id: string, now: Date): Promise<readonly UploadLinkFile[] | null>;
   revoke(id: string, now: Date): Promise<boolean>;
+  readiness?(): Promise<void>;
   close?(): void | Promise<void>;
 }
 
@@ -79,6 +80,9 @@ export function createPostgresUploadLinkRepository(databaseUrl: string): UploadL
         update artifacts.upload_links set revoked_at = coalesce(revoked_at, ${now})
         where id = ${id}::uuid returning id::text`;
       return rows.length === 1;
+    },
+    async readiness() {
+      await sql`select 1 from artifacts.upload_links limit 1`;
     },
     close: () => sql.end()
   };

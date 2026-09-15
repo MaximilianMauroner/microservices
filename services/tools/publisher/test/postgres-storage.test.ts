@@ -87,4 +87,13 @@ describe("Postgres artifact metadata paging", () => {
     expect(source).toContain("and owner_id = ${operation.ownerId} for update");
     expect(schema).toContain('uniqueIndex("artifact_operations_artifact_idx")');
   });
+
+  it("finalizes guest artifacts only while their upload link is active", async () => {
+    const source = await readFile(new URL("../src/postgres-storage.ts", import.meta.url), "utf8");
+
+    expect(source).toContain("where id = ${uploadLinkId}::uuid and revoked_at is null and expires_at > now()");
+    expect(source).toContain("for update`");
+    expect(source).toContain("if (!finalized) await bodies.deleteUpload(operation.artifact_id, options)");
+    expect(source).toContain("throw new UploadLinkInactiveError()");
+  });
 });

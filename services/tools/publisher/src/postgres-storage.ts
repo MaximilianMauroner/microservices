@@ -10,6 +10,7 @@ import {
   type StoredUploadSummary,
   type StoredTemporaryFile,
   type UploadListCursor,
+  UploadLinkInactiveError,
   type UploadStorage
 } from "./storage.js";
 import { createS3UploadStorage, summarizeUploads } from "./storage.js";
@@ -65,7 +66,7 @@ export function createMetadataBackedUploadStorage(
         prepare: () => prepare(sql, id, "put_html", intended),
         mutate: () => bodies.putHtml(id, filePath, metadata, options),
         reconcile: (operation) => reconcileOperation(bodies, sql, { operation_id: operation.operationId, owner_id: operation.ownerId, artifact_id: id, operation_kind: "put_html", payload: intended }, options),
-        finalize: (operation) => finalizePut(sql, operation, intended)
+        finalize: async (operation) => { await finalizePut(sql, operation, intended); }
       });
     },
     async getHtml(id, options) {
@@ -86,12 +87,17 @@ export function createMetadataBackedUploadStorage(
         objectKey: temporaryFileKey(id), expiresAt: metadata.expiresAt,
         uploadLinkId: metadata.uploadLinkId, sha256: metadata.sha256, now
       };
+      let finalized = false;
       await runDurableMutation({
         prepare: () => prepare(sql, id, "put_file", intended),
         mutate: () => bodies.putTemporaryFile(id, filePath, metadata, options),
         reconcile: (operation) => reconcileOperation(bodies, sql, { operation_id: operation.operationId, owner_id: operation.ownerId, artifact_id: id, operation_kind: "put_file", payload: intended }, options),
-        finalize: (operation) => finalizePut(sql, operation, intended)
+        finalize: async (operation) => { finalized = await finalizePut(sql, operation, intended); }
       });
+      if (!finalized) {
+        await bodies.deleteUpload(id, options);
+        throw new UploadLinkInactiveError();
+      }
     },
     async getTemporaryFile(id, options) {
       await reconcileArtifactOperations(bodies, sql, options);
@@ -203,11 +209,23 @@ async function prepare(sql: Sql, artifactId: string, kind: PendingOperation["ope
 }
 
 async function finalizePut(sql: Sql, operation: OperationOwner, value: UpsertArtifact) {
-  await sql.begin(async (tx) => {
+  return await sql.begin(async (tx) => {
     await requireOwnership(tx, operation);
-    await upsert(tx, value);
+    const finalized = value.uploadLinkId
+      ? await lockActiveUploadLink(tx, value.uploadLinkId)
+      : true;
+    if (finalized) await upsert(tx, value);
     await tx`delete from artifacts.operations where operation_id = ${operation.operationId} and owner_id = ${operation.ownerId}`;
+    return finalized;
   });
+}
+
+async function lockActiveUploadLink(sql: TransactionSql, uploadLinkId: string) {
+  const rows = await sql<{ id: string }[]>`
+    select id::text from artifacts.upload_links
+    where id = ${uploadLinkId}::uuid and revoked_at is null and expires_at > now()
+    for update`;
+  return rows.length === 1;
 }
 
 async function finalizeDelete(sql: Sql, operation: OperationOwner, id: string) {
@@ -241,7 +259,10 @@ async function reconcileOperation(bodies: UploadStorage, sql: Sql, operation: Pe
   const stored = operation.operation_kind === "put_html"
     ? await bodies.getHtml(operation.artifact_id, { ...options, headOnly: true })
     : await bodies.getTemporaryFile(operation.artifact_id, { ...options, headOnly: true });
-  if (stored?.sha256 === payload.sha256) await finalizePut(sql, owner(operation), payload);
+  if (stored?.sha256 === payload.sha256) {
+    const finalized = await finalizePut(sql, owner(operation), payload);
+    if (!finalized) await bodies.deleteUpload(operation.artifact_id, options);
+  }
   else await sql`delete from artifacts.operations where operation_id = ${operation.operation_id} and owner_id = ${operation.owner_id}`;
 }
 
@@ -271,8 +292,7 @@ async function upsert(sql: Sql | TransactionSql, value: UpsertArtifact) {
       kind = excluded.kind, filename = excluded.filename, content_type = excluded.content_type,
       bytes = excluded.bytes, object_key = excluded.object_key, project = excluded.project,
       updated_at = excluded.updated_at, expires_at = excluded.expires_at,
-      upload_link_id = excluded.upload_link_id, revoked_at = null
-  `;
+      upload_link_id = excluded.upload_link_id, revoked_at = null`;
 }
 
 async function find(sql: Sql, id: string, kind: "html" | "file") {
