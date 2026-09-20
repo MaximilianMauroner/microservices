@@ -19,6 +19,7 @@ import {
   XAxis,
   YAxis,
   type TooltipContentProps,
+  type TooltipValueType,
 } from "recharts";
 import type { MoneyTrackerPageData } from "../src/protected-data.js";
 import type { MoneyImportPreview } from "./money-import-domain.js";
@@ -2561,7 +2562,7 @@ function PortfolioChartTooltip({
   active,
   payload,
   label,
-}: TooltipContentProps<number, string>) {
+}: TooltipContentProps<TooltipValueType, string | number>) {
   const point = payload?.find((item) => item.payload)?.payload as
     PortfolioChartPoint | undefined;
   if (!active || !point) return null;
