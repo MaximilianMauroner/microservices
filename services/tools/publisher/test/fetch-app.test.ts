@@ -487,7 +487,8 @@ describe("native artifact fetch handler", () => {
       uploadToken: "upload-token",
       publicBaseUrl: "https://tools.example.test",
       maxConcurrentUploads: 1,
-      guestUploadBodyTimeoutMs: 20
+      guestUploadBodyTimeoutMs: 20,
+      now: () => new Date("2026-09-15T12:00:00.000Z")
     });
     const stalled = await app(new Request(`https://tools.example.test/api/drop/${uploadLinks.token}/uploads`, {
       method: "POST",
@@ -520,7 +521,8 @@ describe("native artifact fetch handler", () => {
       uploadLinks,
       uploadToken: "upload-token",
       publicBaseUrl: "https://tools.example.test",
-      guestUploadBodyTimeoutMs: 20
+      guestUploadBodyTimeoutMs: 20,
+      now: () => new Date("2026-09-15T12:00:00.000Z")
     });
     const endpoint = `https://tools.example.test/api/drop/${uploadLinks.token}/uploads/chunks`;
     const stalled = app(new Request(endpoint, {
