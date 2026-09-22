@@ -122,7 +122,9 @@ export function createMetadataBackedUploadStorage(
       const { expiresAt: _objectExpiry, ...body } = object;
       return {
         ...body,
-        bytes: Number(row.bytes),
+        // A ranged read carries one slice. Its own length has to survive, or the
+        // response states a Content-Length that contradicts its Content-Range.
+        bytes: body.contentRange ? body.bytes : Number(row.bytes),
         contentType: row.content_type,
         originalName: row.filename,
         ...(row.expires_at ? { expiresAt: row.expires_at } : {}),
