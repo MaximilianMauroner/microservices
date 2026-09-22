@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFile } from "node:fs/promises";
-import { assertOperationOwnership, pageArtifactMetadata, runDurableMutation } from "../src/postgres-storage.js";
+import { Readable } from "node:stream";
+import { assertOperationOwnership, createMetadataBackedUploadStorage, pageArtifactMetadata, runDurableMutation } from "../src/postgres-storage.js";
 import { vi } from "vitest";
 import { artifactId } from "../src/artifact-backfill.js";
 
@@ -96,5 +97,54 @@ describe("Postgres artifact metadata paging", () => {
     expect(source).toContain("set operation_kind = 'delete', payload = null");
     expect(source).toContain("await finalizeDelete(sql, operationOwner, operation.artifact_id)");
     expect(source).toContain("throw new UploadLinkInactiveError()");
+  });
+});
+
+describe("Ranged temporary file reads", () => {
+  const total = 123_569_134;
+  const row = {
+    id: "file-id", kind: "file", filename: "lecture.mp4", content_type: "video/mp4",
+    bytes: String(total), object_key: "files/file-id", project: null,
+    created_at: now, updated_at: now, expires_at: null
+  };
+  const fakeSql = (() => {
+    const sql = async (strings: TemplateStringsArray) => {
+      const text = strings.join("?");
+      if (text.includes("artifacts.operations")) return [];
+      if (text.includes("from artifacts.objects")) return [row];
+      return [];
+    };
+    return sql as unknown as Parameters<typeof createMetadataBackedUploadStorage>[1];
+  })();
+
+  const bodiesReturning = (slice: { bytes: number; contentRange?: string }) =>
+    ({
+      async getTemporaryFile() {
+        return {
+          body: Readable.from(Buffer.alloc(0)),
+          bytes: slice.bytes,
+          contentType: "application/octet-stream",
+          originalName: "stored.bin",
+          sha256: "a".repeat(64),
+          lastModified: now,
+          ...(slice.contentRange ? { contentRange: slice.contentRange } : {})
+        };
+      }
+    }) as unknown as Parameters<typeof createMetadataBackedUploadStorage>[0];
+
+  it("reports the slice length, so Content-Length matches Content-Range", async () => {
+    const storage = createMetadataBackedUploadStorage(
+      bodiesReturning({ bytes: 8192, contentRange: `bytes 0-8191/${total}` }),
+      fakeSql
+    );
+    const file = await storage.getTemporaryFile("file-id", { range: "bytes=0-8191" });
+    expect(file?.bytes).toBe(8192);
+    expect(file?.contentRange).toBe(`bytes 0-8191/${total}`);
+  });
+
+  it("reports the full artifact size when the read is not ranged", async () => {
+    const storage = createMetadataBackedUploadStorage(bodiesReturning({ bytes: total }), fakeSql);
+    const file = await storage.getTemporaryFile("file-id", {});
+    expect(file?.bytes).toBe(total);
   });
 });

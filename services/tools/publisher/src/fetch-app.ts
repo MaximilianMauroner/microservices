@@ -780,6 +780,9 @@ async function readFileRoute(
 
     const headers = new Headers({
       "Accept-Ranges": "bytes",
+      // Artifact pages run sandboxed, so they reach this file across origins.
+      // The URL is already the capability, and no credentials travel with it.
+      "Access-Control-Allow-Origin": "*",
       "Cache-Control": "private, no-store",
       "Content-Disposition": attachmentDisposition(file.originalName),
       "Content-Type": normalizeMimeType(file.contentType),

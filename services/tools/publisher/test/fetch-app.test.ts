@@ -145,6 +145,26 @@ describe("native artifact fetch handler", () => {
     expect(storage.listUploads).toHaveBeenCalledWith(expect.any(Date), expect.objectContaining({ limit: 100, includeSummary: true }));
   });
 
+  it("lets a sandboxed artifact page read a stored file across origins", async () => {
+    const storage = new MemoryUploadStorage();
+    const id = "a".repeat(32);
+    storage.files.set(id, {
+      body: Buffer.from("lecture"),
+      metadata: { originalName: "lecture.mp4", contentType: "video/mp4", bytes: 7, sha256: "b".repeat(64) }
+    });
+    const app = createFetchApp({
+      storage,
+      uploadToken: "upload-token",
+      publicBaseUrl: "https://tools.example.test"
+    });
+
+    const response = await app(new Request(`https://tools.example.test/files/${id}/lecture.mp4`));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("access-control-allow-origin")).toBe("*");
+    expect(response.headers.get("content-type")).toBe("video/mp4");
+  });
+
   it("creates an expiring guest upload link, accepts files, and revokes access", async () => {
     const storage = new MemoryUploadStorage();
     const uploadLinks = new MemoryUploadLinkRepository();
