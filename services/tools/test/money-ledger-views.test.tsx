@@ -210,14 +210,17 @@ describe("Option A money ledger views", () => {
   });
 
   it("surfaces analytical confidence and actionable repairs in one data-quality view", () => {
+    const currentMonth = new Date().toISOString().slice(0, 7);
     const html = renderToStaticMarkup(<MoneyDataView
       accounts={["cash", "broker"]}
+      accountLabels={{ cash: "Cash account", broker: "Broker account" }}
       categoryRules={[{ id: "rule-1", accountName: "Cash", description: "Net Interest Paid to 'Instant Access Savings", category: "income", updatedAt: "2026-08-09T05:08:51.000Z" }]}
       accountRoles={{ cash: "cash", broker: "investment" }}
-      accountLastObserved={{ cash: "2026-08-01", broker: "2026-08-01" }}
+      accountLastObserved={{ cash: `${currentMonth}-01`, broker: "2026-08-01" }}
+      currentMonthTransactionAccounts={[]}
       imports={[{ id: "import-1", digest: "digest", format: "revolut_cash_statement_v1", filename: "cash.tsv", bytes: 1200, rowCount: 100, insertedCount: 90, duplicateCount: 10, committedAt: "2026-08-09T05:08:51.000Z", actor: "operator@example.test" }]}
       marketData={{ ...emptyMarketData, positions: [{ canonicalKey: "ETF", name: "ETF", assetClass: "etf", quantity: "1", costBasisMinor: 10_000, state: "unpriced" }], totals: { ...emptyMarketData.totals, complete: false } }}
-      months={[{ date: "2026-08-01", total: 100, values: { cash: 50, broker: 50 }, observedAccounts: ["cash", "broker"] }]}
+      months={[{ date: `${currentMonth}-01`, total: 100, values: { cash: 50, broker: 50 }, observedAccounts: ["cash"] }]}
       revertedCount={2}
       spending={{ months: [], categories: [{ category: "groceries", amountMinor: 100, count: 2 }, { category: "uncategorized", amountMinor: 50, count: 1 }], categoryMonths: [], merchantMonths: [], categoryActivity: [], uncategorizedCount: 1 }}
       transactionCount={100}
@@ -225,6 +228,13 @@ describe("Option A money ledger views", () => {
     />);
 
     expect(html).toContain("Data quality summary");
+    expect(html).toContain(`Account data for ${currentMonth}`);
+    expect(html).toContain("1 of 2 accounts have no imported transactions or balance observation this month");
+    expect(html).toContain("Data present");
+    expect(html).toContain("Cash account");
+    expect(html).toContain("Broker account");
+    expect(html).toContain("Needs data");
+    expect(html).toContain("Choose or drop money exports");
     expect(html).toContain("66.7%");
     expect(html).toContain("Active category rules");
     expect(html).toContain("Net Interest Paid to &#x27;Instant Access Savings");
