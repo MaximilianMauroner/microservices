@@ -16,6 +16,9 @@ The private Markdown inventory also requires:
 - `MARKDOWN_SHARE_ADMIN_TOKEN`, a 32+ character service secret shared with Convex
 - `PUBLIC_ORIGIN`, also used for the integrated Markdown Share browser origin
 
+The Markdown inventory loads 50 active documents per request. The browser can
+continue through additional pages with a private cursor until all are loaded.
+
 Tools authenticates browser requests before dispatching them to this module and
 supplies a verified principal for attribution.
 Native-token `/api/uploads*` routes keep their own bearer credentials.

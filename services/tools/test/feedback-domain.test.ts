@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { FEEDBACK_TEMPLATE, FeedbackValidationError, feedbackChoiceDetailsKey, localizeFeedbackForm, validateFeedbackAnswers, validateFeedbackQuestions, type FeedbackForm } from "../feedback/domain.js";
+import { FEEDBACK_TEMPLATE, FeedbackValidationError, feedbackChoiceDetailsKey, localizeFeedbackForm, validateFeedbackAnswers, validateFeedbackQuestions, wantsFeedbackFollowUp, type FeedbackForm } from "../feedback/domain.js";
+import { addFeedbackFollowUpQuestions } from "../feedback/question-editor.js";
 
 describe("feedback answer validation", () => {
   it("accepts a partial anonymous response", () => {
@@ -26,6 +27,16 @@ describe("feedback answer validation", () => {
   it("allows the optional identity question to be removed", () => {
     const questions = validateFeedbackQuestions(FEEDBACK_TEMPLATE.filter((question) => question.id !== "identity"));
     expect(questions.some((question) => question.id === "identity")).toBe(false);
+  });
+
+  it("requires contact information only when a respondent requests follow-up", () => {
+    const questions = addFeedbackFollowUpQuestions([], "en");
+    expect(validateFeedbackAnswers(questions, { follow_up: "No, thanks" })).toEqual({ follow_up: "No, thanks" });
+    expect(() => validateFeedbackAnswers(questions, { follow_up: "A meeting" })).toThrow("Add a way to contact you");
+    const answers = validateFeedbackAnswers(questions, { follow_up: "A meeting", follow_up_contact: "  alex@example.test  " });
+    expect(answers.follow_up_contact).toBe("alex@example.test");
+    expect(wantsFeedbackFollowUp(questions, answers)).toBe(true);
+    expect(wantsFeedbackFollowUp(questions, { follow_up: "No, thanks" })).toBe(false);
   });
 
   it("uses the form's one selected language", () => {

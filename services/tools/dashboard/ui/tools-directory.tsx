@@ -50,7 +50,8 @@ export function ToolsDirectory({ snapshot }: { snapshot: PublicSnapshotDocument 
   const primaryProducts: readonly DirectoryProduct[] = products.map((product) => ({ ...product, icon: productIcons[product.id] }));
   const infrastructureProducts = catalogProducts(snapshot);
   const directoryProducts = [...primaryProducts, ...infrastructureProducts];
-  const operational = directoryProducts.filter((product) => monitorStatus(product.monitorId, statuses)?.status === "up").length;
+  const monitorIds = new Set(directoryProducts.flatMap((product) => product.monitorId ? [product.monitorId] : []));
+  const operational = [...monitorIds].filter((id) => statuses[id]?.status === "up").length;
 
   return <>
     <AppShell product="Dashboard" icon={favicons.directory} showSignOut />
@@ -62,7 +63,7 @@ export function ToolsDirectory({ snapshot }: { snapshot: PublicSnapshotDocument 
         </div>
         <div className="flex items-center gap-3 rounded-full border bg-card px-4 py-2 text-sm text-muted-foreground">
           <span className="size-2 rounded-full bg-primary" aria-hidden="true" />
-          {operational} of {directoryProducts.length} operational
+          {operational} of {monitorIds.size} health checks passing
         </div>
       </section>
 
@@ -83,7 +84,7 @@ export function ToolsDirectory({ snapshot }: { snapshot: PublicSnapshotDocument 
                 <ArrowUpRight className="size-5 text-black/55 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-black" aria-hidden="true" />
               </div>
               <p className="mt-1 truncate text-xs text-black/65 sm:mt-2 sm:text-sm sm:leading-6">{product.description}</p>
-              <ProductMetadata access={product.access} status={status} />
+              <ProductMetadata access={product.access} status={status} sharedMonitor={product.monitorId === "tools-directory"} />
             </div>
           </article>;
           return product.external
@@ -193,7 +194,7 @@ function infrastructureStatus(status: PublicMonitorStatus | undefined) {
   return "Not monitored";
 }
 
-function ProductMetadata({ access, status }: { access: "private" | "tailnet" | "public"; status: PublicMonitorStatus | undefined }) {
+function ProductMetadata({ access, status, sharedMonitor = false }: { access: "private" | "tailnet" | "public"; status: PublicMonitorStatus | undefined; sharedMonitor?: boolean }) {
   const AccessIcon = access === "private" ? LockKeyhole : access === "tailnet" ? Network : Globe2;
   const accessLabel = access === "private" ? "Private" : access === "tailnet" ? "Tailnet" : "Public";
   const StatusIcon = status?.status === "up" ? Activity : status?.status === "down" ? CircleOff : status?.status === "paused" ? CirclePause : status?.status === "checking" ? Activity : CircleOff;
@@ -202,7 +203,8 @@ function ProductMetadata({ access, status }: { access: "private" | "tailnet" | "
 
   return <div className="mt-2 flex items-center gap-2 text-black/70 sm:mt-5">
     <MetadataIcon icon={AccessIcon} label={accessLabel} />
-    <MetadataIcon icon={StatusIcon} label={statusLabel} className={statusTone} />
+    <MetadataIcon icon={StatusIcon} label={sharedMonitor ? `Tools service: ${statusLabel.toLowerCase()}` : statusLabel} className={statusTone} />
+    {sharedMonitor ? <span className="text-[0.65rem] font-medium text-black/70">Shared Tools check</span> : null}
   </div>;
 }
 

@@ -73,6 +73,8 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
   const [message, setMessage] = useState<{ text: string; tone: "success" | "error" }>();
   const [mobileInspectorOpen, setMobileInspectorOpen] = useState(false);
   const replaceInput = useRef<HTMLInputElement>(null);
+  const loadingAllRef = useRef(false);
+  const [loadingAll, setLoadingAll] = useState(false);
 
   const projects = useMemo(() => summary.projects
     .map(({ project, count }) => [project ?? UNASSIGNED_PROJECT, count] as [string, number])
@@ -90,12 +92,23 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
         credentials: "same-origin"
       });
       const payload = await readPayload<ManagePageData>(response, "Artifact inventory could not be refreshed.");
-      setUploads(payload.uploads);
-      setNextCursor(payload.nextCursor);
+      const complete = Boolean(query || kind !== "all" || expiry !== "all" || sort !== "newest" || projectFilter !== ALL_PROJECTS);
+      const refreshed = [...payload.uploads];
+      let cursor = payload.nextCursor;
+      if (complete) {
+        while (cursor) {
+          const pageResponse = await fetchPublisherRead(`/api/external-uploads?limit=100&sort=newest&cursor=${encodeURIComponent(cursor)}`, { credentials: "same-origin" });
+          const page = await readPayload<ManagePageData>(pageResponse, "Artifact inventory could not be refreshed.");
+          refreshed.push(...page.uploads);
+          cursor = page.nextCursor;
+        }
+      }
+      setUploads(refreshed);
+      setNextCursor(cursor);
       if (payload.summary) setSummary(payload.summary);
-      setSelectedId((current) => payload.uploads.some((upload) => upload.id === current)
+      setSelectedId((current) => refreshed.some((upload) => upload.id === current)
         ? current
-        : payload.uploads[0]?.id);
+        : refreshed[0]?.id);
       if (options.announce) setMessage({ text: "Artifact inventory refreshed.", tone: "success" });
     } catch (error) {
       setMessage({ text: errorMessage(error), tone: "error" });
@@ -133,10 +146,10 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
     if (payload.summary) setSummary(payload.summary);
   }
 
-  async function selectProject(value: string) {
-    if (busy) return;
-    setProjectFilter(value);
-    if (value === ALL_PROJECTS || !nextCursor) return;
+  async function loadCompleteLibrary() {
+    if (!nextCursor || loadingAllRef.current) return;
+    loadingAllRef.current = true;
+    setLoadingAll(true);
     setBusy(true);
     try {
       let cursor: string | undefined = nextCursor;
@@ -158,8 +171,16 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
     } catch (error) {
       setMessage({ text: errorMessage(error), tone: "error" });
     } finally {
+      loadingAllRef.current = false;
+      setLoadingAll(false);
       setBusy(false);
     }
+  }
+
+  async function selectProject(value: string) {
+    if (busy) return;
+    setProjectFilter(value);
+    if (value !== ALL_PROJECTS) await loadCompleteLibrary();
   }
 
   async function replaceSelected(file: File) {
@@ -312,18 +333,18 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
         <section className="mb-3 flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between" aria-label="Artifact filters">
           <label className="relative block w-full lg:max-w-md">
             <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-            <Input className="pl-9" value={query} onChange={(event) => setQuery(event.currentTarget.value)} placeholder="Search artifacts, URLs, or projects" aria-label="Search artifacts" />
+            <Input className="pl-9" value={query} onChange={(event) => { setQuery(event.currentTarget.value); void loadCompleteLibrary(); }} placeholder="Search artifacts, URLs, or projects" aria-label="Search artifacts" />
           </label>
           <div className="grid grid-cols-3 gap-2 sm:flex">
-            <AppSelect value={kind} onValueChange={(value) => setKind(value as KindFilter)} aria-label="Filter by type" options={[{ value: "all", label: "All types" }, { value: "html", label: "Plans" }, { value: "file", label: "Files" }]} />
-            <AppSelect value={expiry} onValueChange={(value) => setExpiry(value as ExpiryFilter)} aria-label="Filter by expiry" options={[{ value: "all", label: "Any expiry" }, { value: "24h", label: "Next 24 hours" }, { value: "7d", label: "Next 7 days" }, { value: "persistent", label: "Permanent" }]} />
-            <AppSelect value={sort} onValueChange={(value) => setSort(value as SortOrder)} aria-label="Sort artifacts" options={[{ value: "newest", label: "Newest" }, { value: "oldest", label: "Oldest" }, { value: "filename", label: "Filename" }, { value: "expiry", label: "Expiry" }]} />
+            <AppSelect value={kind} onValueChange={(value) => { setKind(value as KindFilter); void loadCompleteLibrary(); }} aria-label="Filter by type" options={[{ value: "all", label: "All types" }, { value: "html", label: "Plans" }, { value: "file", label: "Files" }]} />
+            <AppSelect value={expiry} onValueChange={(value) => { setExpiry(value as ExpiryFilter); void loadCompleteLibrary(); }} aria-label="Filter by expiry" options={[{ value: "all", label: "Any expiry" }, { value: "24h", label: "Next 24 hours" }, { value: "7d", label: "Next 7 days" }, { value: "persistent", label: "Permanent" }]} />
+            <AppSelect value={sort} onValueChange={(value) => { setSort(value as SortOrder); void loadCompleteLibrary(); }} aria-label="Sort artifacts" options={[{ value: "newest", label: "Newest" }, { value: "oldest", label: "Oldest" }, { value: "filename", label: "Filename" }, { value: "expiry", label: "Expiry" }]} />
           </div>
         </section>
 
         <section className="grid items-start gap-3 lg:grid-cols-[16rem_minmax(0,1fr)_20rem] xl:grid-cols-[24rem_minmax(0,1fr)_20rem]" aria-label="Artifact library">
           <ProjectNavigation projects={projects} active={projectFilter} onSelect={(value) => void selectProject(value)} total={summary.total} disabled={busy} />
-          <ArtifactTable uploads={visibleUploads} loaded={uploads.length} total={summary.total} selectedId={selectedId} onSelect={(id) => { setSelectedId(id); setMobileInspectorOpen(true); }} hasMore={Boolean(nextCursor)} busy={busy} onLoadMore={loadOlder} />
+          <ArtifactTable uploads={visibleUploads} loaded={uploads.length} total={summary.total} selectedId={selectedId} onSelect={(id) => { setSelectedId(id); setMobileInspectorOpen(true); }} hasMore={Boolean(nextCursor)} busy={busy} loadingAll={loadingAll} onLoadMore={loadOlder} />
           {!isMobile ? <ArtifactInspector
             key={selected?.id ?? "none"}
             upload={selected}
@@ -410,13 +431,14 @@ function ProjectButton({ label, count, active, onClick, disabled }: { label: str
   return <button className={`flex min-h-11 min-w-36 shrink-0 items-center justify-between gap-2 rounded-md px-2 py-2 text-left text-xs transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50 lg:min-h-0 lg:min-w-0${active ? " bg-secondary text-foreground" : " text-muted-foreground"}`} type="button" aria-current={active ? "true" : undefined} onClick={onClick} disabled={disabled}><span className="truncate">{label}</span><Badge variant="outline">{count}</Badge></button>;
 }
 
-function ArtifactTable({ uploads, loaded, total, selectedId, onSelect, hasMore, busy, onLoadMore }: { uploads: UploadSummary[]; loaded: number; total: number; selectedId?: string; onSelect: (id: string) => void; hasMore: boolean; busy: boolean; onLoadMore: () => Promise<void> }) {
+function ArtifactTable({ uploads, loaded, total, selectedId, onSelect, hasMore, busy, loadingAll, onLoadMore }: { uploads: UploadSummary[]; loaded: number; total: number; selectedId?: string; onSelect: (id: string) => void; hasMore: boolean; busy: boolean; loadingAll: boolean; onLoadMore: () => Promise<void> }) {
   const isMobile = useIsMobile();
   const [mobileLimit, setMobileLimit] = useState(50);
   const mobileUploads = uploads.slice(0, mobileLimit);
   return <Card className="gap-0 overflow-hidden py-0">
     <div className="flex items-center justify-between border-b px-4 py-3"><h2 className="font-semibold">Artifact library</h2><span className="text-xs text-muted-foreground">{uploads.length === loaded ? `${loaded} of ${total} loaded` : `${uploads.length} shown · ${loaded} of ${total} loaded`}</span></div>
-    {uploads.length === 0 ? <div className="grid min-h-72 place-items-center p-8 text-center"><div><h3 className="font-semibold">No artifacts match</h3><p className="mt-1 text-sm text-muted-foreground">Try another search, project, or lifecycle filter.</p></div></div> : isMobile ? <div className="divide-y" role="list" aria-label="Artifacts">{mobileUploads.map((upload) => <article key={upload.id} role="listitem"><button className={`grid min-h-20 w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 p-3 text-left transition-colors hover:bg-muted${selectedId === upload.id ? " bg-secondary shadow-[inset_3px_0_var(--foreground)]" : ""}`} type="button" aria-current={selectedId === upload.id ? "true" : undefined} onClick={() => onSelect(upload.id)}><span className="grid size-11 shrink-0 place-items-center rounded-md border text-muted-foreground">{upload.kind === "html" ? <FileText /> : <Download />}</span><span className="min-w-0"><strong className="block truncate text-sm">{upload.filename}</strong><small className="mt-1 block truncate text-xs text-muted-foreground">{upload.project ?? "Unassigned"} · {formatRelativeDate(upload.updatedAt)}</small></span><LifecycleBadge upload={upload} /></button></article>)}{mobileUploads.length < uploads.length ? <div className="p-3 text-center"><Button type="button" variant="outline" onClick={() => setMobileLimit((current) => current + 50)}>Show 50 more</Button></div> : null}</div> : <Table><TableHeader><TableRow><TableHead>Artifact</TableHead><TableHead>Project</TableHead><TableHead>Lifecycle</TableHead><TableHead>Updated</TableHead></TableRow></TableHeader><TableBody>{uploads.map((upload) => <TableRow key={upload.id} data-state={selectedId === upload.id ? "selected" : undefined} className={`cursor-pointer${selectedId === upload.id ? " shadow-[inset_2px_0_var(--foreground)]" : ""}`} onClick={() => onSelect(upload.id)}><TableCell><button className="flex max-w-[25rem] items-center gap-3 text-left" type="button"><span className="grid size-9 shrink-0 place-items-center rounded-md border text-muted-foreground">{upload.kind === "html" ? <FileText /> : <Download />}</span><span className="min-w-0"><strong className="block truncate text-sm">{upload.filename}</strong><small className="block truncate font-mono text-xs text-muted-foreground">{shortUrl(upload.url)}</small></span></button></TableCell><TableCell className="text-xs text-muted-foreground">{upload.project ?? "Unassigned"}</TableCell><TableCell><LifecycleBadge upload={upload} /></TableCell><TableCell className="text-xs text-muted-foreground">{formatRelativeDate(upload.updatedAt)}</TableCell></TableRow>)}</TableBody></Table>}
+    {loadingAll ? <p className="border-b px-4 py-2 text-xs text-muted-foreground" role="status">Loading the full library so search and filters include older artifacts…</p> : null}
+    {uploads.length === 0 ? <div className="grid min-h-72 place-items-center p-8 text-center"><div><h3 className="font-semibold">{loadingAll ? "Searching the full library…" : "No artifacts match"}</h3><p className="mt-1 text-sm text-muted-foreground">{loadingAll ? "Older artifacts are still loading." : "Try another search, project, or lifecycle filter."}</p></div></div> : isMobile ? <div className="divide-y" role="list" aria-label="Artifacts">{mobileUploads.map((upload) => <article key={upload.id} role="listitem"><button className={`grid min-h-20 w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 p-3 text-left transition-colors hover:bg-muted${selectedId === upload.id ? " bg-secondary shadow-[inset_3px_0_var(--foreground)]" : ""}`} type="button" aria-current={selectedId === upload.id ? "true" : undefined} onClick={() => onSelect(upload.id)}><span className="grid size-11 shrink-0 place-items-center rounded-md border text-muted-foreground">{upload.kind === "html" ? <FileText /> : <Download />}</span><span className="min-w-0"><strong className="block truncate text-sm">{upload.filename}</strong><small className="mt-1 block truncate text-xs text-muted-foreground">{upload.project ?? "Unassigned"} · {formatRelativeDate(upload.updatedAt)}</small></span><LifecycleBadge upload={upload} /></button></article>)}{mobileUploads.length < uploads.length ? <div className="p-3 text-center"><Button type="button" variant="outline" onClick={() => setMobileLimit((current) => current + 50)}>Show 50 more</Button></div> : null}</div> : <Table><TableHeader><TableRow><TableHead>Artifact</TableHead><TableHead>Project</TableHead><TableHead>Lifecycle</TableHead><TableHead>Updated</TableHead></TableRow></TableHeader><TableBody>{uploads.map((upload) => <TableRow key={upload.id} data-state={selectedId === upload.id ? "selected" : undefined} className={`cursor-pointer${selectedId === upload.id ? " shadow-[inset_2px_0_var(--foreground)]" : ""}`} onClick={() => onSelect(upload.id)}><TableCell><button className="flex max-w-[25rem] items-center gap-3 text-left" type="button"><span className="grid size-9 shrink-0 place-items-center rounded-md border text-muted-foreground">{upload.kind === "html" ? <FileText /> : <Download />}</span><span className="min-w-0"><strong className="block truncate text-sm">{upload.filename}</strong><small className="block truncate font-mono text-xs text-muted-foreground">{shortUrl(upload.url)}</small></span></button></TableCell><TableCell className="text-xs text-muted-foreground">{upload.project ?? "Unassigned"}</TableCell><TableCell><LifecycleBadge upload={upload} /></TableCell><TableCell className="text-xs text-muted-foreground">{formatRelativeDate(upload.updatedAt)}</TableCell></TableRow>)}</TableBody></Table>}
     {hasMore ? <div className="flex justify-center border-t p-3"><Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => void onLoadMore()}>Load older artifacts</Button></div> : null}
   </Card>;
 }

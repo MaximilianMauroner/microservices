@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_FEEDBACK_INTRODUCTION, FEEDBACK_TEMPLATE, localizeFeedbackForm, type FeedbackForm } from "../feedback/domain.js";
 import { PublicFeedbackPage } from "../feedback/public-page.js";
 import { parsePublicFeedbackSearch } from "../feedback/public-search.js";
+import { addFeedbackFollowUpQuestions } from "../feedback/question-editor.js";
 
 const form = { id: "form", publicToken: "token", language: "en", title: "Feedback", introduction: DEFAULT_FEEDBACK_INTRODUCTION, questions: FEEDBACK_TEMPLATE, status: "active", createdAt: "2026-08-24T12:00:00.000Z", updatedAt: "2026-08-24T12:00:00.000Z", responseCount: 0, unreadCount: 0 } satisfies FeedbackForm;
 const germanForm = { ...form, language: "de", title: "Rückmeldung", introduction: "Danke für deine Zeit." } satisfies FeedbackForm;
@@ -45,5 +46,13 @@ describe("public feedback confirmation", () => {
     expect(html.match(/Would you like to explain your choice\?/g)).toHaveLength(2);
     expect(html).toContain('name="details:comfort"');
     expect(html).toContain('name="details:follow_up"');
+  });
+
+  it("explains the contact requirement when the form offers a meeting", () => {
+    const meetingForm = { ...form, questions: addFeedbackFollowUpQuestions([], "en") };
+    const html = renderToStaticMarkup(<PublicFeedbackPage form={localizeFeedbackForm(meetingForm)} submitted={false} error="follow_up_contact_required" />);
+    expect(html).toContain("A meeting");
+    expect(html).toContain("Add a way to contact you for the follow-up or meeting.");
+    expect(html).toContain("If you request follow-up or a meeting, add contact details.");
   });
 });

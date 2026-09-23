@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import {
   FeedbackQuestionEditor,
+  addFeedbackFollowUpQuestions,
   addFeedbackQuestion,
   changeFeedbackQuestionKind,
   moveFeedbackQuestion,
@@ -10,19 +11,20 @@ import type { FeedbackQuestion } from "../feedback/domain.js";
 
 describe("manual feedback question editor", () => {
   it("offers every question kind when the form is empty", () => {
-    const html = renderToStaticMarkup(<FeedbackQuestionEditor questions={[]} onChange={vi.fn()} />);
+    const html = renderToStaticMarkup(<FeedbackQuestionEditor questions={[]} language="en" onChange={vi.fn()} />);
 
     expect(html).toContain("Add choice");
     expect(html).toContain("Add short answer");
     expect(html).toContain("Add long answer");
     expect(html).toContain("Build the questions here");
+    expect(html).toContain("Add follow-up or meeting options");
     expect(html).toContain('data-slot="button"');
     expect(html).toContain('data-slot="card"');
   });
 
   it("uses the shared form controls for an editable question", () => {
     const questions = [{ id: "question_1", kind: "choice", prompt: "How was it?", options: ["Good", "Bad"] }] satisfies readonly FeedbackQuestion[];
-    const html = renderToStaticMarkup(<FeedbackQuestionEditor questions={questions} onChange={vi.fn()} />);
+    const html = renderToStaticMarkup(<FeedbackQuestionEditor questions={questions} language="en" onChange={vi.fn()} />);
 
     expect(html).toContain('data-slot="native-select"');
     expect(html).toContain('data-slot="textarea"');
@@ -37,6 +39,18 @@ describe("manual feedback question editor", () => {
 
     expect(first[0]).toMatchObject({ id: "question_1", kind: "short_text", prompt: "" });
     expect(second[1]).toMatchObject({ id: "question_2", kind: "choice", options: ["", ""] });
+  });
+
+  it("adds optional follow-up, meeting, and contact questions in the form language", () => {
+    const questions = addFeedbackFollowUpQuestions([], "en");
+    expect(questions.map((question) => question.id)).toEqual(["follow_up", "follow_up_contact", "follow_up_context"]);
+    expect(questions[0]?.options).toEqual(["No, thanks", "A follow-up question", "A meeting"]);
+    expect(addFeedbackFollowUpQuestions(questions, "en")).toBe(questions);
+    expect(addFeedbackFollowUpQuestions([], "de")[0]?.options).toEqual(["Nein, danke", "Eine Rückfrage", "Ein Treffen"]);
+    const existing = [{ id: "follow_up", kind: "choice", prompt: "Contact me?", options: ["No", "Yes"] }] satisfies readonly FeedbackQuestion[];
+    const expanded = addFeedbackFollowUpQuestions(existing, "en");
+    expect(expanded[0]?.options).toEqual(["No", "Yes", "A follow-up question", "A meeting"]);
+    expect(expanded.map((question) => question.id)).toEqual(["follow_up", "follow_up_contact", "follow_up_context"]);
   });
 
   it("changes type without changing the response key", () => {

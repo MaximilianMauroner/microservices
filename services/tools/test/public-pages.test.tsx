@@ -100,6 +100,9 @@ describe("TanStack Start public pages", () => {
     expect(html).toContain('data-suite-shell="orbit"');
     expect(html).toContain('aria-label="Private"');
     expect(html).toContain('aria-label="Not monitored"');
+    expect(html).toContain('aria-label="Tools service: not monitored"');
+    expect(html).toContain("Shared Tools check");
+    expect(html).toContain("1 of 4 health checks passing");
     expect(html).toContain("Useful things,");
     expect(html).toContain("xl:grid-cols-4");
     expect(html).toContain("Publisher");
@@ -132,7 +135,7 @@ describe("TanStack Start public pages", () => {
     expect(html).toContain("Infrastructure");
     expect(html).not.toContain("Public console");
     expect(html).toContain("Publisher");
-    expect(html).toContain("0 of 7 operational");
+    expect(html).toContain("0 of 5 health checks passing");
   });
 
   it("renders status semantics and the rolling availability window", () => {

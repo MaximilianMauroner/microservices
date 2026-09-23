@@ -7,7 +7,8 @@ import {
   type FeedbackFormStatus,
   type FeedbackQuestion,
   type FeedbackReviewState,
-  type FeedbackSubmission
+  type FeedbackSubmission,
+  wantsFeedbackFollowUp
 } from "./domain.js";
 
 type FormRow = { id: string; public_token: string; language: FeedbackLanguage; title: string; introduction: string; questions: unknown; status: FeedbackFormStatus; created_at: Date; updated_at: Date; response_count: number; unread_count: number };
@@ -78,7 +79,7 @@ export function feedbackRepository(sql: Sql): FeedbackRepository {
     async createSubmission(form, answers, questionSnapshot = form.questions) {
       const id = randomUUID();
       await sql`insert into tools.feedback_submissions (id, form_id, question_snapshot, answers, submitted_at, review_state, follow_up_state)
-        values (${id}, ${form.id}, ${sql.json([...questionSnapshot])}, ${sql.json(answers)}, ${new Date()}, 'unread', ${answers.follow_up && answers.follow_up !== "No" ? "wanted" : "none"})`;
+        values (${id}, ${form.id}, ${sql.json([...questionSnapshot])}, ${sql.json(answers)}, ${new Date()}, 'unread', ${wantsFeedbackFollowUp(questionSnapshot, answers) ? "wanted" : "none"})`;
       return id;
     },
     async listSubmissions(formId) {

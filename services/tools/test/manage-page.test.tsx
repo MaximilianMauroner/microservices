@@ -78,15 +78,12 @@ describe("Manage artifact library", () => {
 
   it("loads remaining inventory pages before applying a summarized project filter", async () => {
     const source = await readFile(new URL("../publisher/ui/manage-page.tsx", import.meta.url), "utf8");
-    const selectProject = source.slice(
-      source.indexOf("async function selectProject"),
-      source.indexOf("async function replaceSelected")
-    );
-
-    expect(selectProject).toContain("while (cursor)");
-    expect(selectProject).toContain("remaining.push(...payload.uploads)");
-    expect(selectProject.indexOf("if (busy) return")).toBeLessThan(selectProject.indexOf("setProjectFilter(value)"));
+    const completeLibrary = source.slice(source.indexOf("async function loadCompleteLibrary"), source.indexOf("async function replaceSelected"));
+    expect(completeLibrary).toContain("while (cursor)");
+    expect(completeLibrary).toContain("remaining.push(...payload.uploads)");
+    expect(completeLibrary).toContain("if (busy) return;");
     expect(source).toContain("onSelect={(value) => void selectProject(value)}");
+    expect(source).toContain("void loadCompleteLibrary();");
     expect(source).toContain("disabled={busy}");
   });
 
