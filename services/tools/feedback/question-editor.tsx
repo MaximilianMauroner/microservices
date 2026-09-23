@@ -8,18 +8,28 @@ import { Input } from "../src/components/ui/input.js";
 import { Label } from "../src/components/ui/label.js";
 import { NativeSelect, NativeSelectOption } from "../src/components/ui/native-select.js";
 import { Textarea } from "../src/components/ui/textarea.js";
-import type { FeedbackQuestion } from "./domain.js";
+import type { FeedbackLanguage, FeedbackQuestion } from "./domain.js";
 
 type QuestionKind = FeedbackQuestion["kind"];
 
 export function FeedbackQuestionEditor({
   questions,
+  language,
   onChange,
 }: {
   questions: readonly FeedbackQuestion[];
+  language: FeedbackLanguage;
   onChange: (questions: readonly FeedbackQuestion[]) => void;
 }) {
   const canAdd = questions.length < 20;
+  const missingFollowUpQuestions = ["follow_up", "follow_up_contact", "follow_up_context"].filter((id) => !questions.some((question) => question.id === id)).length;
+  const questionOption = language === "de" ? "Eine Rückfrage" : "A follow-up question";
+  const meetingOption = language === "de" ? "Ein Treffen" : "A meeting";
+  const existingFollowUp = questions.find((question) => question.id === "follow_up");
+  const missingOptions = existingFollowUp?.kind === "choice" ? [questionOption, meetingOption].filter((option) => !existingFollowUp.options?.includes(option)) : [];
+  const canAddFollowUp = questions.length + missingFollowUpQuestions <= 20
+    && (!existingFollowUp || (existingFollowUp.kind === "choice" && (existingFollowUp.options?.length ?? 0) + missingOptions.length <= 12))
+    && (missingFollowUpQuestions > 0 || missingOptions.length > 0);
   const add = (kind: QuestionKind) => onChange(addFeedbackQuestion(questions, kind));
   const update = (id: string, change: (question: FeedbackQuestion) => FeedbackQuestion) => {
     onChange(questions.map((question) => question.id === id ? change(question) : question));
@@ -34,6 +44,7 @@ export function FeedbackQuestionEditor({
         </div>
         {questions.length ? <QuestionKindButtons disabled={!canAdd} onAdd={add} /> : null}
       </div>
+      <Button className="mt-3" variant="outline" size="sm" type="button" disabled={!canAddFollowUp} onClick={() => onChange(addFeedbackFollowUpQuestions(questions, language))}><PlusIcon data-icon="inline-start" />Add follow-up or meeting options</Button>
 
       {questions.length ? (
         <div className="mt-3 grid gap-3">
@@ -102,6 +113,27 @@ export function FeedbackQuestionEditor({
       )}
     </section>
   );
+}
+
+export function addFeedbackFollowUpQuestions(questions: readonly FeedbackQuestion[], language: FeedbackLanguage): readonly FeedbackQuestion[] {
+  const de = language === "de";
+  const questionOption = de ? "Eine Rückfrage" : "A follow-up question";
+  const meetingOption = de ? "Ein Treffen" : "A meeting";
+  const ids = new Set(questions.map((question) => question.id));
+  const existingFollowUp = questions.find((question) => question.id === "follow_up");
+  const missingOptions = existingFollowUp?.kind === "choice" ? [questionOption, meetingOption].filter((option) => !existingFollowUp.options?.includes(option)) : [];
+  if (existingFollowUp && (existingFollowUp.kind !== "choice" || (existingFollowUp.options?.length ?? 0) + missingOptions.length > 12)) return questions;
+  const additions: FeedbackQuestion[] = [
+    ...(!ids.has("follow_up") ? [{ id: "follow_up", kind: "choice" as const, prompt: de ? "Möchtest du eine Rückfrage oder ein Treffen?" : "Would you like a follow-up question or a meeting?", options: de ? ["Nein, danke", questionOption, meetingOption] : ["No, thanks", questionOption, meetingOption] }] : []),
+    ...(!ids.has("follow_up_contact") ? [{ id: "follow_up_contact", kind: "short_text" as const, prompt: de ? "Wie kann ich dich dafür erreichen?" : "How can I reach you for that?" }] : []),
+    ...(!ids.has("follow_up_context") ? [{ id: "follow_up_context", kind: "long_text" as const, prompt: de ? "Welche Frage oder weitere Information möchtest du vor einem Treffen mitteilen?" : "What question or other information would you like to share before a meeting?" }] : []),
+  ];
+  if (questions.length + additions.length > 20) return questions;
+  const expanded = questions.map((question) => question.id === "follow_up" && question.kind === "choice" && missingOptions.length
+    ? { ...question, options: [...(question.options ?? []), ...missingOptions] }
+    : question);
+  if (!additions.length && expanded.every((question, index) => question === questions[index])) return questions;
+  return [...expanded, ...additions];
 }
 
 function QuestionKindButtons({ disabled, onAdd }: { disabled: boolean; onAdd: (kind: QuestionKind) => void }) {

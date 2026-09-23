@@ -1,7 +1,7 @@
 "use client";
 
-import { Link, useNavigate, useRouter } from "@tanstack/react-router";
-import { useState, type FormEvent } from "react";
+import { Link, useBlocker, useNavigate, useRouter } from "@tanstack/react-router";
+import { useRef, useState, type FormEvent } from "react";
 import { AppShell } from "../src/components/app-shell.js";
 import { favicons } from "../src/favicons.js";
 import { feedbackChoiceDetailsKey, type FeedbackForm, type FeedbackFollowUpState, type FeedbackLanguage, type FeedbackQuestion, type FeedbackReviewState, type FeedbackSubmission } from "./domain.js";
@@ -73,6 +73,9 @@ export function FeedbackFormPage({ form, submissions, publicOrigin }: { form: Fe
   const [schemaNotice, setSchemaNotice] = useState<string>();
   const [mobileEditorOpen, setMobileEditorOpen] = useState(false);
   const [mobileToolsOpen, setMobileToolsOpen] = useState(false);
+  const allowLeave = useRef(false);
+  const unsaved = language !== form.language || title !== form.title || introduction !== form.introduction || JSON.stringify(questions) !== JSON.stringify(form.questions);
+  useBlocker({ disabled: !unsaved, enableBeforeUnload: unsaved, shouldBlockFn: () => !allowLeave.current && !window.confirm("Discard unsaved form changes?") });
   const publicUrl = `${publicOrigin}/feedback/f/${form.publicToken}`;
   async function run(action: () => Promise<unknown>) { setBusy(true); setError(undefined); try { await action(); await router.invalidate(); } catch (caught) { setError(message(caught)); } finally { setBusy(false); } }
   async function save(event: FormEvent) { event.preventDefault(); await run(() => updateFeedbackForm({ data: { formId: form.id, language, title, introduction, questions } })); }
@@ -94,7 +97,7 @@ export function FeedbackFormPage({ form, submissions, publicOrigin }: { form: Fe
       setSchemaNotice("Schema applied to the editor. Save the form to store it."); setError(undefined);
     } catch (caught) { setSchemaNotice(message(caught)); }
   }
-  async function remove() { if (!window.confirm(`Delete ${form.title} and all ${form.responseCount} responses permanently?`)) return; await run(async () => { await deleteFeedbackForm({ data: { formId: form.id } }); await navigate({ to: "/feedback" }); }); }
+  async function remove() { if (!window.confirm(`Delete ${form.title} and all ${form.responseCount} responses permanently?`)) return; await run(async () => { await deleteFeedbackForm({ data: { formId: form.id } }); allowLeave.current = true; try { await navigate({ to: "/feedback" }); } catch (error) { allowLeave.current = false; throw error; } }); }
   return <>
     <AppShell product="Feedback" icon={favicons.feedback} showSignOut accent="rose" />
     <main id="main" className="mx-auto w-[min(1120px,calc(100%_-_2rem))] pb-20 pt-8">
@@ -115,8 +118,8 @@ export function FeedbackFormPage({ form, submissions, publicOrigin }: { form: Fe
             <div className="mt-5 grid gap-4 sm:grid-cols-2"><label className="grid gap-1.5 text-sm font-medium">Language<select className={input} value={language} onChange={(event) => setLanguage(event.target.value as FeedbackLanguage)}><option value="de">German</option><option value="en">English</option></select></label><label className="grid gap-1.5 text-sm font-medium">Title<input className={input} maxLength={120} placeholder="Enter a title" value={title} onChange={(event) => setTitle(event.target.value)} /></label></div>
             <label className="mt-4 grid gap-1.5 text-sm font-medium">Introduction<textarea className={`${input} min-h-28`} maxLength={2000} placeholder="Explain what this feedback is for" value={introduction} onChange={(event) => setIntroduction(event.target.value)} /></label>
             <label className="mt-4 flex items-center gap-2 text-sm font-medium"><input type="checkbox" checked={questions.some((question) => question.id === "identity")} onChange={(event) => setIdentityQuestion(event.target.checked)} />{language === "de" ? "Name oder Kontaktdaten abfragen" : "Include name or contact details"}</label>
-            <FeedbackQuestionEditor questions={questions} onChange={setQuestions} />
-            {error ? <p className="mt-4 text-sm text-destructive">{error}</p> : null}<button className={`${button} mt-5 w-full bg-primary text-primary-foreground hover:bg-primary/90`} disabled={busy}>Save form</button>
+            <FeedbackQuestionEditor questions={questions} language={language} onChange={setQuestions} />
+            {error ? <p className="mt-4 text-sm text-destructive">{error}</p> : null}{unsaved ? <p className="mt-4 text-sm text-amber-300" role="status">Unsaved changes</p> : null}<button className={`${button} mt-5 w-full bg-primary text-primary-foreground hover:bg-primary/90`} disabled={busy}>Save form</button>
           </form>
           <section className="hidden lg:block"><h2 className="text-lg font-semibold">Responses</h2><div className="mt-3 grid gap-2">{submissions.length ? submissions.map((submission) => <SubmissionLink key={submission.id} submission={submission} />) : <p className="rounded-xl border border-dashed p-5 text-sm text-muted-foreground">No responses yet.</p>}</div></section>
         </div>

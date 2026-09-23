@@ -352,6 +352,15 @@ describe("private admin inventory", () => {
         limit: 10,
       }),
     ).toEqual({ documents: [], truncated: false });
+
+    const firstPage = await test.query(internal.admin.listActiveDocuments, { now: 20_000, limit: 1 });
+    expect(firstPage.documents).toHaveLength(1);
+    expect(firstPage.truncated).toBe(true);
+    expect(firstPage.nextCursor).toBeTypeOf("string");
+    const secondPage = await test.query(internal.admin.listActiveDocuments, { now: 20_000, limit: 1, cursor: firstPage.nextCursor });
+    expect(secondPage.documents).toHaveLength(1);
+    expect(secondPage.documents[0]?.token).not.toBe(firstPage.documents[0]?.token);
+    expect(secondPage.truncated).toBe(false);
   });
 
   it("caps inventory reads", async () => {

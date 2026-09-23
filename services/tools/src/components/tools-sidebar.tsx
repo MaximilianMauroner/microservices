@@ -111,7 +111,7 @@ export function ToolsSidebar() {
                       {(["overview", "accounts", "investments", "cash-flow", "transactions", "categories", "insights", "predictions", "data"] as const).map((view) => (
                         <SearchSubLink
                           key={view}
-                          label={view === "cash-flow" ? "Cash flow" : view === "data" ? "Data quality" : `${view[0]!.toUpperCase()}${view.slice(1)}`}
+                          label={view === "cash-flow" ? "Cash flow" : view === "data" ? "Uploads & data" : `${view[0]!.toUpperCase()}${view.slice(1)}`}
                           to="/money"
                           search={{ view: view === "overview" ? undefined : view }}
                           active={view === "overview" ? !search.view || search.view === "overview" : search.view === view}

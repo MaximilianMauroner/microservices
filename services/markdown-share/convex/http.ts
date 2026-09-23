@@ -2,7 +2,7 @@ import { httpRouter } from "convex/server";
 import { internal } from "./_generated/api";
 import { env, httpAction } from "./_generated/server";
 
-const ADMIN_DOCUMENT_LIMIT = 200;
+const ADMIN_DOCUMENT_LIMIT = 50;
 const MAX_BEARER_TOKEN_LENGTH = 512;
 const encoder = new TextEncoder();
 
@@ -24,11 +24,23 @@ http.route({
       });
     }
 
-    const generatedAt = Date.now();
-    const result = await ctx.runQuery(internal.admin.listActiveDocuments, {
-      now: generatedAt,
-      limit: ADMIN_DOCUMENT_LIMIT,
-    });
+    const search = new URL(request.url).searchParams;
+    const cursor = search.get("cursor");
+    const rawAsOf = search.get("asOf");
+    if (cursor !== null && (cursor.length === 0 || cursor.length > 1024)) return json({ error: "invalid_cursor" }, 400);
+    if (rawAsOf !== null && (!/^\d+$/.test(rawAsOf) || !Number.isSafeInteger(Number(rawAsOf)) || Number(rawAsOf) > Date.now())) return json({ error: "invalid_as_of" }, 400);
+    if (cursor && rawAsOf === null) return json({ error: "missing_as_of" }, 400);
+    const generatedAt = rawAsOf === null ? Date.now() : Number(rawAsOf);
+    let result;
+    try {
+      result = await ctx.runQuery(internal.admin.listActiveDocuments, {
+        now: generatedAt,
+        limit: ADMIN_DOCUMENT_LIMIT,
+        ...(cursor ? { cursor } : {}),
+      });
+    } catch {
+      return json({ error: cursor ? "invalid_cursor" : "inventory_unavailable" }, cursor ? 400 : 503);
+    }
     return json({ generatedAt, ...result });
   }),
 });

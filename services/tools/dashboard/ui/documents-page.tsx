@@ -26,10 +26,31 @@ export function DocumentsPage({ initial }: { initial: DocumentsPageData }) {
   const [sort, setSort] = useState<SortOrder>("updated-desc");
   const [copied, setCopied] = useState<string>();
   const [mobileLimit, setMobileLimit] = useState(50);
-  const documents = useMemo(() => filterDocuments(initial.documents, initial.generatedAt, { query, checkpoints, expiry, sort }), [checkpoints, expiry, initial.documents, initial.generatedAt, query, sort]);
-  const editedRecently = initial.documents.filter((document) => document.updatedAt >= initial.generatedAt - 86_400_000).length;
-  const checkpointVersions = initial.documents.reduce((total, document) => total + document.checkpointCount, 0);
-  const nextExpiry = [...initial.documents].sort((left, right) => left.expiresAt - right.expiresAt)[0];
+  const [loadedDocuments, setLoadedDocuments] = useState(initial.documents);
+  const [nextCursor, setNextCursor] = useState(initial.nextCursor);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string>();
+  const documents = useMemo(() => filterDocuments(loadedDocuments, initial.generatedAt, { query, checkpoints, expiry, sort }), [checkpoints, expiry, loadedDocuments, initial.generatedAt, query, sort]);
+  const editedRecently = loadedDocuments.filter((document) => document.updatedAt >= initial.generatedAt - 86_400_000).length;
+  const checkpointVersions = loadedDocuments.reduce((total, document) => total + document.checkpointCount, 0);
+  const nextExpiry = [...loadedDocuments].sort((left, right) => left.expiresAt - right.expiresAt)[0];
+
+  async function loadMore() {
+    if (!nextCursor || loading) return;
+    setLoading(true);
+    setLoadError(undefined);
+    try {
+      const response = await fetch(`/api/ops/documents?cursor=${encodeURIComponent(nextCursor)}&asOf=${initial.generatedAt}`, { credentials: "same-origin" });
+      if (!response.ok) throw new Error("Older documents could not be loaded.");
+      const page = await response.json() as DocumentsPageData;
+      setLoadedDocuments((current) => [...current, ...page.documents.filter((document) => !current.some((item) => item.token === document.token))]);
+      setNextCursor(page.nextCursor);
+    } catch {
+      setLoadError("Older documents could not be loaded. Try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   async function copyLink(document: MarkdownAdminDocument) {
     try {
@@ -54,17 +75,18 @@ export function DocumentsPage({ initial }: { initial: DocumentsPageData }) {
       </header>
 
       <section className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="Document overview">
-        <Metric label="Active documents" value={String(initial.documents.length)} detail={initial.truncated ? "First 200 loaded" : "Complete inventory"} />
-        <Metric label="Edited in 24 hours" value={String(editedRecently)} detail="Recent activity" />
-        <Metric label="Checkpoint versions" value={String(checkpointVersions)} detail="Durable recovery points" />
+        <Metric label="Active documents" value={String(loadedDocuments.length)} detail={nextCursor ? "Loaded so far" : "Complete inventory"} />
+        <Metric label="Edited in 24 hours" value={String(editedRecently)} detail={nextCursor ? "Loaded documents only" : "Recent activity"} />
+        <Metric label="Checkpoint versions" value={String(checkpointVersions)} detail={nextCursor ? "Loaded documents only" : "Durable recovery points"} />
         <Metric label="Next expiry" value={nextExpiry ? remaining(nextExpiry.expiresAt, initial.generatedAt) : "None"} detail={nextExpiry?.filename ?? "No active documents"} attention={Boolean(nextExpiry && nextExpiry.expiresAt - initial.generatedAt <= 86_400_000)} />
       </section>
 
-      {initial.truncated ? <Alert className="mb-4">Showing the first 200 active documents.</Alert> : null}
+      {nextCursor ? <Alert className="mb-4">More documents are available. Search and filters apply to loaded documents.</Alert> : null}
+      {loadError ? <Alert className="mb-4" variant="destructive" role="alert">{loadError}</Alert> : null}
       <Card className="gap-0 overflow-hidden py-0">
         <CardHeader className="border-b py-5">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div><CardTitle>Document inventory</CardTitle><CardDescription>{documents.length} of {initial.documents.length} documents shown · signed in as {initial.actor}</CardDescription></div>
+            <div><CardTitle>Document inventory</CardTitle><CardDescription>{documents.length} of {loadedDocuments.length} loaded documents shown · signed in as {initial.actor}</CardDescription></div>
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[minmax(13rem,1fr)_11rem_10rem_11rem]">
               <Input type="search" value={query} onChange={(event) => setQuery(event.currentTarget.value)} placeholder="Search filename" aria-label="Search documents" />
               <AppSelect value={checkpoints} onValueChange={(value) => setCheckpoints(value as CheckpointFilter)} aria-label="Filter by checkpoints" options={[{ value: "all", label: "All checkpoints" }, { value: "with", label: "With checkpoints" }, { value: "without", label: "Without checkpoints" }]} />
@@ -83,6 +105,7 @@ export function DocumentsPage({ initial }: { initial: DocumentsPageData }) {
             <TableCell><div className="flex justify-end gap-1"><Button type="button" variant="ghost" size="sm" onClick={() => void copyLink(document)}>{copied === document.token ? <CheckIcon /> : <CopyIcon />}{copied === document.token ? "Copied" : "Copy"}</Button><Button nativeButton={false} variant="ghost" size="sm" render={<a href={documentUrl(document, initial.publicOrigin)} target="_blank" rel="noreferrer" />}>Open<ArrowUpRightIcon /></Button></div></TableCell>
           </TableRow>)}</TableBody>
         </Table></div>}
+        {nextCursor ? <div className="flex justify-center border-t p-4"><Button type="button" variant="outline" disabled={loading} onClick={() => void loadMore()}>{loading ? "Loading more documents…" : "Load more documents"}</Button></div> : null}
       </Card>
     </main>
   </>;

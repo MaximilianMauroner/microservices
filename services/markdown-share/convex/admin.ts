@@ -17,10 +17,12 @@ export const listActiveDocuments = internalQuery({
   args: {
     now: v.number(),
     limit: v.number(),
+    cursor: v.optional(v.string()),
   },
   returns: v.object({
     documents: v.array(adminDocument),
     truncated: v.boolean(),
+    nextCursor: v.optional(v.string()),
   }),
   handler: async (ctx, args) => {
     if (
@@ -34,12 +36,12 @@ export const listActiveDocuments = internalQuery({
       });
     }
 
-    const matches = await ctx.db
+    const page = await ctx.db
       .query("documents")
       .withIndex("by_expires_at", (index) => index.gt("expiresAt", args.now))
-      .take(args.limit + 1);
+      .paginate({ numItems: args.limit, cursor: args.cursor ?? null });
     const documents = await Promise.all(
-      matches.slice(0, args.limit).map(async (document) => {
+      page.page.map(async (document) => {
         const checkpoints = await ctx.db
           .query("checkpoints")
           .withIndex("by_document_and_created_at", (index) =>
@@ -64,7 +66,8 @@ export const listActiveDocuments = internalQuery({
     );
     return {
       documents,
-      truncated: matches.length > args.limit,
+      truncated: !page.isDone,
+      ...(!page.isDone ? { nextCursor: page.continueCursor } : {}),
     };
   },
 });

@@ -3,7 +3,7 @@ import {
   BUCKET_KEYS,
   HISTORY_SCHEMA_VERSION
 } from "@tools-platform/domain";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   AuthenticationRequiredError,
   createApp,
@@ -206,6 +206,15 @@ describe("tools web routes", () => {
     expect(await response.json()).toEqual({
       error: "markdown_admin_unavailable"
     });
+  });
+
+  it("passes document pagination cursors only through the authenticated admin route", async () => {
+    const list = vi.fn(async (cursor?: string, asOf?: number) => ({ generatedAt: asOf ?? 1_000, documents: [], truncated: Boolean(cursor), ...(cursor ? { nextCursor: "next-page" } : {}) }));
+    const app = testApp(seededBucket(), allowed, quiet, { list });
+    const response = await app(new Request("https://tools.example.test/api/ops/documents?cursor=previous-page&asOf=1000"));
+    expect(response.status).toBe(200);
+    expect(list).toHaveBeenCalledWith("previous-page", 1_000);
+    expect(await response.json()).toMatchObject({ nextCursor: "next-page" });
   });
 
   it("enforces exact-origin JSON CSRF boundaries after authentication", async () => {

@@ -57,6 +57,15 @@ describe("Markdown admin client", () => {
       MarkdownAdminUnavailableError
     );
   });
+
+  it("passes a private pagination cursor to the upstream inventory", async () => {
+    let request: Request | undefined;
+    const client = createMarkdownAdminClient({ endpoint: "https://convex.example.test/admin/documents", token: "a".repeat(32), fetch: async (input, init) => { request = new Request(input, init); return Response.json({ ...snapshot, truncated: true, nextCursor: "next-page" }); } });
+    await expect(client.list("previous-page", 1_000)).resolves.toMatchObject({ nextCursor: "next-page" });
+    expect(new URL(request!.url).searchParams.get("cursor")).toBe("previous-page");
+    expect(new URL(request!.url).searchParams.get("asOf")).toBe("1000");
+    expect(request?.headers.get("authorization")).toBe(`Bearer ${"a".repeat(32)}`);
+  });
 });
 
 describe("Markdown document inventory page", () => {

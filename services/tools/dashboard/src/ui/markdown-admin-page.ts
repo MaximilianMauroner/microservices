@@ -63,7 +63,7 @@ export function renderMarkdownAdminPage(
       </section>
 
       <section class="dashboard-metrics" aria-label="Inventory overview">
-        ${renderMetric("Active documents", String(documents.length), model.snapshot.truncated ? "Showing the first 200" : "Complete inventory")}
+        ${renderMetric("Active documents", String(documents.length), model.snapshot.truncated ? "First page loaded" : "Complete inventory")}
         ${renderMetric("Edited in 24 hours", String(editedRecently), editedRecently === 1 ? "document with recent activity" : "documents with recent activity")}
         ${renderMetric("Checkpoint versions", String(checkpointVersions), `${checkpointedDocuments} of ${documents.length} documents protected`)}
         ${renderMetric("Next expiry", nextExpiry, nextToExpire ? nextToExpire.filename : "No active documents", nextExpiryTone)}
@@ -77,7 +77,7 @@ export function renderMarkdownAdminPage(
           </div>
           <p class="collection-state" data-document-count aria-live="polite">${documents.length} ${documents.length === 1 ? "document" : "documents"}</p>
         </div>
-        ${model.snapshot.truncated ? '<div class="notice notice--pending" role="status">Showing the first 200 active documents. Refine the upstream query to inspect older results.</div>' : ""}
+        ${model.snapshot.truncated ? '<div class="notice notice--pending" role="status">This view shows only the first page. Open Tools Documents to load more.</div>' : ""}
         ${documents.length === 0 ? '<p class="empty-row markdown-empty">No active Markdown documents.</p>' : renderInventory(documents, model.publicOrigin, now)}
       </section>
     </main>`;

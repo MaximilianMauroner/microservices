@@ -15,10 +15,11 @@ export interface MarkdownAdminSnapshot {
   generatedAt: number;
   documents: MarkdownAdminDocument[];
   truncated: boolean;
+  nextCursor?: string;
 }
 
 export interface MarkdownAdminReader {
-  list(): Promise<MarkdownAdminSnapshot>;
+  list(cursor?: string, asOf?: number): Promise<MarkdownAdminSnapshot>;
 }
 
 export type MarkdownAdminFetch = (
@@ -42,9 +43,12 @@ export function createMarkdownAdminClient(config: {
   const request = config.fetch ?? fetch;
   const timeoutMs = config.timeoutMs ?? 8_000;
   return {
-    async list() {
+    async list(cursor, asOf) {
       try {
-        const response = await request(config.endpoint, {
+        const endpoint = new URL(config.endpoint);
+        if (cursor) endpoint.searchParams.set("cursor", cursor);
+        if (asOf !== undefined) endpoint.searchParams.set("asOf", String(asOf));
+        const response = await request(endpoint, {
           method: "GET",
           headers: {
             Accept: "application/json",
@@ -70,10 +74,13 @@ export function decodeMarkdownAdminSnapshot(
   if (!Array.isArray(rawDocuments) || rawDocuments.length > MAX_DOCUMENTS) {
     throw new MarkdownAdminUnavailableError();
   }
+  const nextCursor = record.nextCursor;
+  if (nextCursor !== undefined && (typeof nextCursor !== "string" || nextCursor.length === 0 || nextCursor.length > 1024)) throw new MarkdownAdminUnavailableError();
   return {
     generatedAt: timestamp(record.generatedAt),
     documents: rawDocuments.map(decodeDocument),
     truncated: boolean(record.truncated),
+    ...(nextCursor ? { nextCursor } : {}),
   };
 }
 

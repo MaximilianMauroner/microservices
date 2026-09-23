@@ -48,6 +48,11 @@ export type FeedbackSubmission = Readonly<{
 
 export const DEFAULT_FEEDBACK_INTRODUCTION = "Thanks for hanging out with me. I care about how people feel around me, and I know some feedback can be awkward to say in the moment. Every question is optional, and you do not need to give your name.";
 export function feedbackChoiceDetailsKey(questionId: string) { return `details:${questionId}`; }
+export function wantsFeedbackFollowUp(questions: readonly FeedbackQuestion[], answers: Readonly<Record<string, string>>) {
+  const answer = answers.follow_up;
+  const options = questions.find((question) => question.id === "follow_up")?.options;
+  return Boolean(answer && options && options.indexOf(answer) > 0);
+}
 
 export function assertFeedbackLanguage(value: string): FeedbackLanguage {
   if (value !== "en" && value !== "de") throw new FeedbackValidationError("invalid_language", "Choose German or English.");
@@ -79,6 +84,9 @@ export function validateFeedbackAnswers(questions: readonly FeedbackQuestion[], 
     answers[key] = value;
   }
   if (Object.keys(answers).length === 0) throw new FeedbackValidationError("empty_submission", "Write or select at least one answer before submitting.");
+  if (wantsFeedbackFollowUp(questions, answers) && questions.some((question) => question.id === "follow_up_contact") && !answers.follow_up_contact && !answers.identity) {
+    throw new FeedbackValidationError("follow_up_contact_required", "Add a way to contact you for a follow-up or meeting.");
+  }
   return answers;
 }
 

@@ -243,7 +243,7 @@ async function route(
     if (request.method === "GET" && url.pathname === "/api/ops/documents") {
       return json(
         {
-          ...await markdownAdmin.list(),
+          ...await markdownAdmin.list(url.searchParams.get("cursor") ?? undefined, url.searchParams.has("asOf") ? Number(url.searchParams.get("asOf")) : undefined),
           publicOrigin: markdownSharePublicOrigin
         },
         { headers: { "Cache-Control": "private, no-store" } }
