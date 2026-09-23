@@ -46,6 +46,22 @@ export type FeedbackSubmission = Readonly<{
   followUpState: FeedbackFollowUpState;
 }>;
 
+export type SharedFeedbackResponse = Readonly<{
+  formTitle: string;
+  language: FeedbackLanguage;
+  questionSnapshot: readonly FeedbackQuestion[];
+  answers: Readonly<Record<string, string>>;
+  submittedAt: string;
+  expiresAt: string;
+}>;
+
+export type FeedbackShareDays = 1 | 7 | 30;
+export function parseFeedbackShareDays(value: string | null): FeedbackShareDays | undefined {
+  if (value === null || value === "") return undefined;
+  if (value === "1" || value === "7" || value === "30") return Number(value) as FeedbackShareDays;
+  throw new FeedbackValidationError("invalid_share_duration", "Choose a valid sharing period.");
+}
+
 export const DEFAULT_FEEDBACK_INTRODUCTION = "Thanks for hanging out with me. I care about how people feel around me, and I know some feedback can be awkward to say in the moment. Every question is optional, and you do not need to give your name.";
 export function feedbackChoiceDetailsKey(questionId: string) { return `details:${questionId}`; }
 export function wantsFeedbackFollowUp(questions: readonly FeedbackQuestion[], answers: Readonly<Record<string, string>>) {

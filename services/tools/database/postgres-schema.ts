@@ -90,6 +90,8 @@ export const feedbackSubmissions = toolsSchema.table("feedback_submissions", {
   submittedAt: timestamp("submitted_at", { withTimezone: true }).notNull(),
   reviewState: text("review_state").notNull(),
   followUpState: text("follow_up_state").notNull(),
+  shareTokenHash: text("share_token_hash").unique(),
+  shareExpiresAt: timestamp("share_expires_at", { withTimezone: true }),
 }, (table) => [
   check("feedback_submissions_review_check", sql`${table.reviewState} in ('unread', 'reviewed', 'archived')`),
   check("feedback_submissions_follow_up_check", sql`${table.followUpState} in ('none', 'wanted', 'done')`),

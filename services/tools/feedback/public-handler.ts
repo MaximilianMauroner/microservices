@@ -1,5 +1,5 @@
 import type { PlatformRouteInput } from "../src/route-handlers.js";
-import { FeedbackValidationError, validateFeedbackAnswers } from "./domain.js";
+import { FeedbackValidationError, parseFeedbackShareDays, validateFeedbackAnswers } from "./domain.js";
 
 const MAXIMUM_BODY_BYTES = 32 * 1024;
 
@@ -13,10 +13,11 @@ export async function submitPublicFeedback({ request, context, params }: Platfor
     const form = await context.runtime.feedback.getPublicForm(params.token);
     if (!form) return notFound();
     const entries: Record<string, FormDataEntryValue> = {};
-    for (const [key, value] of fields) entries[key] = value;
+    const shareDays = parseFeedbackShareDays(fields.get("__share_days"));
+    for (const [key, value] of fields) if (key !== "__share_days") entries[key] = value;
     const answers = validateFeedbackAnswers(form.questions, entries);
-    await context.runtime.feedback.createSubmission(form, answers, form.questions);
-    return redirectToForm(params.token, true);
+    const created = await context.runtime.feedback.createSubmission(form, answers, form.questions, shareDays);
+    return redirectToForm(params.token, true, undefined, created.shareToken, created.shareExpiresAt);
   } catch (error) {
     if (error instanceof FeedbackValidationError) return redirectToForm(params.token, false, error.code);
     if (error instanceof RequestTooLargeError) return json({ error: "request_too_large" }, 413);
@@ -24,9 +25,10 @@ export async function submitPublicFeedback({ request, context, params }: Platfor
   }
 }
 
-function redirectToForm(token: string, submitted: boolean, error?: string) {
+function redirectToForm(token: string, submitted: boolean, error?: string, shareToken?: string, shareExpiresAt?: string) {
   const query = new URLSearchParams(submitted ? { submitted: "1" } : { error: error ?? "invalid_request" });
-  return new Response(null, { status: 303, headers: { "Cache-Control": "no-store", Location: `/feedback/f/${encodeURIComponent(token)}?${query}` } });
+  if (submitted && shareToken && shareExpiresAt) { query.set("share", shareToken); query.set("expires", shareExpiresAt); }
+  return new Response(null, { status: 303, headers: { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer", Location: `/feedback/f/${encodeURIComponent(token)}?${query}` } });
 }
 function notFound() { return new Response("Feedback form not found.", { status: 404, headers: { "Cache-Control": "no-store", "Content-Type": "text/plain; charset=utf-8" } }); }
 function json(body: unknown, status: number) { return new Response(JSON.stringify(body), { status, headers: { "Cache-Control": "no-store", "Content-Type": "application/json; charset=utf-8" } }); }

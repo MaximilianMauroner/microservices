@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { DEFAULT_FEEDBACK_INTRODUCTION, FEEDBACK_TEMPLATE, localizeFeedbackForm, type FeedbackForm } from "../feedback/domain.js";
-import { PublicFeedbackPage } from "../feedback/public-page.js";
+import { PublicFeedbackPage, SharedFeedbackResponsePage } from "../feedback/public-page.js";
 import { parsePublicFeedbackSearch } from "../feedback/public-search.js";
 import { addFeedbackFollowUpQuestions } from "../feedback/question-editor.js";
 
@@ -10,7 +10,7 @@ const germanForm = { ...form, language: "de", title: "Rückmeldung", introductio
 
 describe("public feedback confirmation", () => {
   it("keeps the submitted flag when TanStack parses it as a number", () => {
-    expect(parsePublicFeedbackSearch({ submitted: 1 })).toEqual({ submitted: true, error: undefined });
+    expect(parsePublicFeedbackSearch({ submitted: 1 })).toMatchObject({ submitted: true, error: undefined });
   });
 
   it("renders the animated English thank-you state", () => {
@@ -28,6 +28,22 @@ describe("public feedback confirmation", () => {
     expect(html).toContain("LEVEL UP");
     expect(html).not.toContain("+1 Vertrauen");
     expect(html).toContain("Du kannst die Seite jetzt schließen.");
+  });
+
+  it("offers optional link expiry and shows a completed response link", () => {
+    const formHtml = renderToStaticMarkup(<PublicFeedbackPage form={localizeFeedbackForm(form)} submitted={false} />);
+    expect(formHtml).toContain('name="__share_days"');
+    expect(formHtml).toContain('value="30"');
+    const thanksHtml = renderToStaticMarkup(<PublicFeedbackPage form={localizeFeedbackForm(form)} submitted shareUrl="https://tools.example.test/feedback/share/token" shareExpiresAt="2026-10-01T12:00:00.000Z" />);
+    expect(thanksHtml).toContain("Keep this link");
+    expect(thanksHtml).toContain("https://tools.example.test/feedback/share/token");
+  });
+
+  it("shows only the shared answer snapshot on the response page", () => {
+    const html = renderToStaticMarkup(<SharedFeedbackResponsePage response={{ formTitle: "Feedback", language: "en", questionSnapshot: [{ id: "comfort", kind: "choice", prompt: "How was it?", options: ["Good", "Bad"] }], answers: { comfort: "Good", "details:comfort": "I felt welcome" }, submittedAt: "2026-09-23T12:00:00.000Z", expiresAt: "2026-09-30T12:00:00.000Z" }} />);
+    expect(html).toContain("How was it?");
+    expect(html).toContain("I felt welcome");
+    expect(html).not.toContain("Mark reviewed");
   });
 
   it("uses the form language without rendering a language switch", () => {

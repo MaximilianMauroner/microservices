@@ -1,8 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { FEEDBACK_TEMPLATE, FeedbackValidationError, feedbackChoiceDetailsKey, localizeFeedbackForm, validateFeedbackAnswers, validateFeedbackQuestions, wantsFeedbackFollowUp, type FeedbackForm } from "../feedback/domain.js";
+import { FEEDBACK_TEMPLATE, FeedbackValidationError, feedbackChoiceDetailsKey, localizeFeedbackForm, parseFeedbackShareDays, validateFeedbackAnswers, validateFeedbackQuestions, wantsFeedbackFollowUp, type FeedbackForm } from "../feedback/domain.js";
 import { addFeedbackFollowUpQuestions } from "../feedback/question-editor.js";
 
 describe("feedback answer validation", () => {
+  it("accepts only the offered sharing periods", () => {
+    expect(parseFeedbackShareDays(null)).toBeUndefined();
+    expect(parseFeedbackShareDays("1")).toBe(1);
+    expect(parseFeedbackShareDays("7")).toBe(7);
+    expect(parseFeedbackShareDays("30")).toBe(30);
+    expect(() => parseFeedbackShareDays("365")).toThrow(FeedbackValidationError);
+  });
   it("accepts a partial anonymous response", () => {
     expect(validateFeedbackAnswers(FEEDBACK_TEMPLATE, { comfort: "Mixed", disliked: "  Please stop interrupting me.  " })).toEqual({ comfort: "Mixed", disliked: "Please stop interrupting me." });
   });

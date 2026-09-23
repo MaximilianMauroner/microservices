@@ -51,6 +51,7 @@ import { Route as ApiUploadsSplatRouteImport } from './routes/api/uploads/$'
 import { Route as FeedbackFTokenRouteImport } from './routes/feedback/f/$token'
 import { Route as FeedbackFormsFormIdRouteImport } from './routes/feedback/forms/$formId'
 import { Route as FeedbackResponsesSubmissionIdRouteImport } from './routes/feedback/responses/$submissionId'
+import { Route as FeedbackShareTokenRouteImport } from './routes/feedback/share/$token'
 import { Route as FilesIdSplatRouteImport } from './routes/files/$id/$'
 import { Route as MarkdownDSlugRouteImport } from './routes/markdown/d/$slug'
 import { Route as ApiMoneyImportsImportIdRouteImport } from './routes/api/money/imports/$importId'
@@ -270,6 +271,11 @@ const FeedbackResponsesSubmissionIdRoute =
     path: '/responses/$submissionId',
     getParentRoute: () => FeedbackRoute,
   } as any)
+const FeedbackShareTokenRoute = FeedbackShareTokenRouteImport.update({
+  id: '/share/$token',
+  path: '/share/$token',
+  getParentRoute: () => FeedbackRoute,
+} as any)
 const FilesIdSplatRoute = FilesIdSplatRouteImport.update({
   id: '/$',
   path: '/$',
@@ -351,6 +357,7 @@ export interface FileRoutesByFullPath {
   '/feedback/f/$token': typeof FeedbackFTokenRoute
   '/feedback/forms/$formId': typeof FeedbackFormsFormIdRoute
   '/feedback/responses/$submissionId': typeof FeedbackResponsesSubmissionIdRoute
+  '/feedback/share/$token': typeof FeedbackShareTokenRoute
   '/files/$id/$': typeof FilesIdSplatRoute
   '/markdown/d/$slug': typeof MarkdownDSlugRoute
   '/api/money/imports/$importId': typeof ApiMoneyImportsImportIdRoute
@@ -399,6 +406,7 @@ export interface FileRoutesByTo {
   '/feedback/f/$token': typeof FeedbackFTokenRoute
   '/feedback/forms/$formId': typeof FeedbackFormsFormIdRoute
   '/feedback/responses/$submissionId': typeof FeedbackResponsesSubmissionIdRoute
+  '/feedback/share/$token': typeof FeedbackShareTokenRoute
   '/files/$id/$': typeof FilesIdSplatRoute
   '/markdown/d/$slug': typeof MarkdownDSlugRoute
   '/api/money/imports/$importId': typeof ApiMoneyImportsImportIdRoute
@@ -451,6 +459,7 @@ export interface FileRoutesById {
   '/feedback/f/$token': typeof FeedbackFTokenRoute
   '/feedback/forms/$formId': typeof FeedbackFormsFormIdRoute
   '/feedback/responses/$submissionId': typeof FeedbackResponsesSubmissionIdRoute
+  '/feedback/share/$token': typeof FeedbackShareTokenRoute
   '/files/$id/$': typeof FilesIdSplatRoute
   '/markdown/d/$slug': typeof MarkdownDSlugRoute
   '/api/money/imports/$importId': typeof ApiMoneyImportsImportIdRoute
@@ -504,6 +513,7 @@ export interface FileRouteTypes {
     | '/feedback/f/$token'
     | '/feedback/forms/$formId'
     | '/feedback/responses/$submissionId'
+    | '/feedback/share/$token'
     | '/files/$id/$'
     | '/markdown/d/$slug'
     | '/api/money/imports/$importId'
@@ -552,6 +562,7 @@ export interface FileRouteTypes {
     | '/feedback/f/$token'
     | '/feedback/forms/$formId'
     | '/feedback/responses/$submissionId'
+    | '/feedback/share/$token'
     | '/files/$id/$'
     | '/markdown/d/$slug'
     | '/api/money/imports/$importId'
@@ -603,6 +614,7 @@ export interface FileRouteTypes {
     | '/feedback/f/$token'
     | '/feedback/forms/$formId'
     | '/feedback/responses/$submissionId'
+    | '/feedback/share/$token'
     | '/files/$id/$'
     | '/markdown/d/$slug'
     | '/api/money/imports/$importId'
@@ -944,6 +956,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof FeedbackResponsesSubmissionIdRouteImport
       parentRoute: typeof FeedbackRoute
     }
+    '/feedback/share/$token': {
+      id: '/feedback/share/$token'
+      path: '/share/$token'
+      fullPath: '/feedback/share/$token'
+      preLoaderRoute: typeof FeedbackShareTokenRouteImport
+      parentRoute: typeof FeedbackRoute
+    }
     '/files/$id/$': {
       id: '/files/$id/$'
       path: '/$'
@@ -1001,6 +1020,7 @@ interface FeedbackRouteChildren {
   FeedbackFTokenRoute: typeof FeedbackFTokenRoute
   FeedbackFormsFormIdRoute: typeof FeedbackFormsFormIdRoute
   FeedbackResponsesSubmissionIdRoute: typeof FeedbackResponsesSubmissionIdRoute
+  FeedbackShareTokenRoute: typeof FeedbackShareTokenRoute
 }
 
 const FeedbackRouteChildren: FeedbackRouteChildren = {
@@ -1008,6 +1028,7 @@ const FeedbackRouteChildren: FeedbackRouteChildren = {
   FeedbackFTokenRoute: FeedbackFTokenRoute,
   FeedbackFormsFormIdRoute: FeedbackFormsFormIdRoute,
   FeedbackResponsesSubmissionIdRoute: FeedbackResponsesSubmissionIdRoute,
+  FeedbackShareTokenRoute: FeedbackShareTokenRoute,
 }
 
 const FeedbackRouteWithChildren = FeedbackRoute._addFileChildren(
