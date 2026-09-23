@@ -228,12 +228,13 @@ describe("Option A money ledger views", () => {
     />);
 
     expect(html).toContain("Data quality summary");
-    expect(html).toContain(`Account data for ${currentMonth}`);
-    expect(html).toContain("1 of 2 accounts have no imported transactions or balance observation this month");
-    expect(html).toContain("Data present");
+    expect(html).toContain(`Account activity for ${currentMonth}`);
+    expect(html).toContain("1 of 2 accounts have no recorded transactions or balance this month");
+    expect(html).toContain("An imported statement can have no transactions for this month.");
+    expect(html).toContain("Records found");
     expect(html).toContain("Cash account");
     expect(html).toContain("Broker account");
-    expect(html).toContain("Needs data");
+    expect(html).toContain("No records");
     expect(html).toContain("Choose or drop money exports");
     expect(html).toContain("66.7%");
     expect(html).toContain("Active category rules");

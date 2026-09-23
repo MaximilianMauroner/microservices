@@ -1348,19 +1348,20 @@ export function MoneyImportsView({
     observed: observedThisMonth.has(account),
     lastObserved: accountLastObserved[account],
   })).sort((left, right) => Number(left.observed) - Number(right.observed) || left.label.localeCompare(right.label));
-  const missingCount = accountStatus.filter((account) => !account.observed).length;
+  const noRecordsCount = accountStatus.filter((account) => !account.observed).length;
   const dropDisabled = busy !== undefined || reimporting;
   return (
     <section className="grid items-start gap-3 lg:grid-cols-[minmax(0,1.25fr)_minmax(20rem,.75fr)]">
       <Card className="lg:col-span-2">
         <CardHeader className="border-b">
-          <CardTitle>Account data for {currentMonth}</CardTitle>
-          <CardDescription>{accountStatus.length ? `${missingCount} of ${accountStatus.length} accounts have no imported transactions or balance observation this month` : "Accounts appear here after your first import"}</CardDescription>
+          <CardTitle>Account activity for {currentMonth}</CardTitle>
+          <CardDescription>{accountStatus.length ? `${noRecordsCount} of ${accountStatus.length} accounts have no recorded transactions or balance this month` : "Accounts appear here after your first import"}</CardDescription>
         </CardHeader>
+        {accountStatus.length ? <p className="px-6 pt-4 text-xs text-muted-foreground">No records does not mean an upload is missing. An imported statement can have no transactions for this month.</p> : null}
         {accountStatus.length ? <CardContent className="grid gap-2 pt-4 sm:grid-cols-2 lg:grid-cols-3">
           {accountStatus.map((account) => <div key={account.id} className="flex items-start justify-between gap-3 rounded-md border px-3 py-2">
             <div className="min-w-0"><strong className="block truncate text-sm" title={account.label}>{account.label}</strong><span className="text-xs text-muted-foreground">{account.role === "investment" ? "Investment" : "Cash"} · {account.lastObserved ? `Last balance ${account.lastObserved.slice(0, 7)}` : "No balance yet"}</span></div>
-            <Badge variant={account.observed ? "outline" : "destructive"}>{account.observed ? "Data present" : "Needs data"}</Badge>
+            <Badge variant="outline">{account.observed ? "Records found" : "No records"}</Badge>
           </div>)}
         </CardContent> : null}
       </Card>
