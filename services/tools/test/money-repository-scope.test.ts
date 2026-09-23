@@ -31,6 +31,6 @@ describe("Money ledger query scopes", () => {
   });
 
   it("keeps the full scope for repository integration coverage only", () => {
-    expect(moneyLedgerQueriesFor("all")).toHaveLength(16);
+    expect(moneyLedgerQueriesFor("all")).toHaveLength(17);
   });
 });

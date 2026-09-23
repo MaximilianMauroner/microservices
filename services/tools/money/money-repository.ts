@@ -81,6 +81,7 @@ export type MoneyPlanningAnalytics = Readonly<{
 }>;
 export type MoneyLedgerSnapshot = MoneyTrackerSnapshot & Readonly<{
   imports: readonly MoneyImportSummary[]; activity: readonly MoneyActivityItem[]; transactionCount: number; revertedCount: number;
+  currentMonthTransactionAccounts: readonly string[];
   transferReview: Readonly<{ linkedPairs: number; unlinkedCount: number; unresolvedPositiveCount: number; unresolvedNegativeCount: number }>;
   transferReviewGroups: readonly MoneyTransferReviewGroup[];
   categoryRules: readonly MoneyCategoryRule[];
@@ -95,6 +96,7 @@ export type MoneyLedgerViewScope = (typeof MONEY_LEDGER_SCOPES)[number];
 export type MoneyLedgerScope = MoneyLedgerViewScope | "all";
 const MONEY_LEDGER_QUERY_SCOPES = {
   imports: ["data"],
+  currentMonthTransactions: ["data"],
   categoryRules: ["data"],
   activity: ["transactions"],
   counts: ["overview", "transactions", "data"],
@@ -325,8 +327,11 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
     async readLedgerSnapshot(scope) {
       const queries = new Set(moneyLedgerQueriesFor(scope));
       const needs = (query: MoneyLedgerQuery) => queries.has(query);
-      const [imports, categoryRules, activity, count, transfers, transferReviewItems, monthly, categories, categoryMonths, merchantMonths, categoryActivity, events, investmentTotals, tradeMarkers, realizedEvents, snapshotRows] = await Promise.all([
+      const [imports, currentMonthTransactions, categoryRules, activity, count, transfers, transferReviewItems, monthly, categories, categoryMonths, merchantMonths, categoryActivity, events, investmentTotals, tradeMarkers, realizedEvents, snapshotRows] = await Promise.all([
         needs("imports") ? sql<ImportRow[]>`select id, digest, format, filename, bytes, source_row_count, inserted_row_count, duplicate_row_count, committed_at, created_by from tools.money_imports order by committed_at desc limit 50` : emptyRows<ImportRow>(),
+        needs("currentMonthTransactions") ? sql<{ account_id: string }[]>`select distinct account_id::text account_id from tools.money_transactions
+          where status = 'completed' and local_date >= date_trunc('month', current_date)
+            and local_date < date_trunc('month', current_date) + interval '1 month'` : emptyRows<{ account_id: string }>(),
         needs("categoryRules") ? sql<CategoryRuleRow[]>`select r.id, a.display_name account_name,
           coalesce((select t.description from tools.money_transactions t
             where t.account_id = r.account_id and lower(t.description) = r.match_value
@@ -489,7 +494,7 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
       ]);
       const spending = spendingAnalytics(monthly, categories, categoryMonths, merchantMonths, categoryActivity);
       return {
-        imports: imports.map(summary), categoryRules: categoryRules.map(categoryRule), activity: activity.map(activityItem), transactionCount: Number(count[0]?.count ?? 0), revertedCount: Number(count[0]?.reverted_count ?? 0),
+        imports: imports.map(summary), currentMonthTransactionAccounts: currentMonthTransactions.map((row) => row.account_id), categoryRules: categoryRules.map(categoryRule), activity: activity.map(activityItem), transactionCount: Number(count[0]?.count ?? 0), revertedCount: Number(count[0]?.reverted_count ?? 0),
         transferReview: transferReview(transfers[0]), transferReviewGroups: transferReviewGroups(transferReviewItems),
         spending, investments: investmentAnalytics(events, investmentTotals[0], tradeMarkers, realizedEvents), planning: planningAnalytics(spending.months, transferReview(transfers[0])), ...balanceSnapshot(snapshotRows)
       };

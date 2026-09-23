@@ -946,9 +946,11 @@ export function MoneyActivityView({
 
 export function MoneyDataView({
   accounts,
+  accountLabels,
   accountLastObserved,
   accountRoles,
   categoryRules,
+  currentMonthTransactionAccounts,
   imports,
   marketData,
   months,
@@ -959,9 +961,11 @@ export function MoneyDataView({
 }: Pick<
   MoneyTrackerPageData,
   | "accounts"
+  | "accountLabels"
   | "accountLastObserved"
   | "accountRoles"
   | "categoryRules"
+  | "currentMonthTransactionAccounts"
   | "imports"
   | "marketData"
   | "months"
@@ -1174,17 +1178,25 @@ export function MoneyDataView({
           </AlertDescription>
         </Alert>
       ) : null}
-      <MoneyImportsView imports={imports} />
+      <MoneyImportsView accounts={accounts} accountLabels={accountLabels} accountLastObserved={accountLastObserved} accountRoles={accountRoles} currentMonthTransactionAccounts={currentMonthTransactionAccounts} imports={imports} months={months} />
     </>
   );
 }
 
 export function MoneyImportsView({
+  accounts,
+  accountLabels,
+  accountLastObserved,
+  accountRoles,
+  currentMonthTransactionAccounts,
   imports,
-}: Pick<MoneyTrackerPageData, "imports">) {
+  months,
+}: Pick<MoneyTrackerPageData, "accounts" | "accountLabels" | "accountLastObserved" | "accountRoles" | "currentMonthTransactionAccounts" | "imports" | "months">) {
   const router = useRouter();
   const input = useRef<HTMLInputElement>(null);
+  const dragDepth = useRef(0);
   const [files, setFiles] = useState<MoneyImportFile[]>([]);
+  const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState<"preview" | "commit">();
   const [progress, setProgress] = useState(0);
   const [operationTotal, setOperationTotal] = useState(0);
@@ -1323,8 +1335,35 @@ export function MoneyImportsView({
     (item) => item.preview && !item.receipt,
   ).length;
   const completedCount = files.filter((item) => item.receipt).length;
+  const currentMonth = new Date().toISOString().slice(0, 7);
+  const currentMonthDate = `${currentMonth}-01`;
+  const observedThisMonth = new Set([
+    ...currentMonthTransactionAccounts,
+    ...(months.find((month) => month.date === currentMonthDate)?.observedAccounts ?? []),
+  ]);
+  const accountStatus = accounts.map((account) => ({
+    id: account,
+    label: accountLabels[account] ?? account,
+    role: accountRoles[account],
+    observed: observedThisMonth.has(account),
+    lastObserved: accountLastObserved[account],
+  })).sort((left, right) => Number(left.observed) - Number(right.observed) || left.label.localeCompare(right.label));
+  const missingCount = accountStatus.filter((account) => !account.observed).length;
+  const dropDisabled = busy !== undefined || reimporting;
   return (
     <section className="grid items-start gap-3 lg:grid-cols-[minmax(0,1.25fr)_minmax(20rem,.75fr)]">
+      <Card className="lg:col-span-2">
+        <CardHeader className="border-b">
+          <CardTitle>Account data for {currentMonth}</CardTitle>
+          <CardDescription>{accountStatus.length ? `${missingCount} of ${accountStatus.length} accounts have no imported transactions or balance observation this month` : "Accounts appear here after your first import"}</CardDescription>
+        </CardHeader>
+        {accountStatus.length ? <CardContent className="grid gap-2 pt-4 sm:grid-cols-2 lg:grid-cols-3">
+          {accountStatus.map((account) => <div key={account.id} className="flex items-start justify-between gap-3 rounded-md border px-3 py-2">
+            <div className="min-w-0"><strong className="block truncate text-sm" title={account.label}>{account.label}</strong><span className="text-xs text-muted-foreground">{account.role === "investment" ? "Investment" : "Cash"} · {account.lastObserved ? `Last balance ${account.lastObserved.slice(0, 7)}` : "No balance yet"}</span></div>
+            <Badge variant={account.observed ? "outline" : "destructive"}>{account.observed ? "Data present" : "Needs data"}</Badge>
+          </div>)}
+        </CardContent> : null}
+      </Card>
       <Card>
         <CardHeader className="border-b">
           <CardTitle>Import statements</CardTitle>
@@ -1347,7 +1386,11 @@ export function MoneyImportsView({
           <button
             type="button"
             disabled={busy !== undefined || reimporting}
-            className="grid min-h-44 w-full place-items-center rounded-lg border border-dashed bg-muted/25 p-6 text-center transition-colors hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-60"
+            className={`grid min-h-44 w-full place-items-center rounded-lg border border-dashed p-6 text-center transition-colors hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-60 ${dragging ? "border-cyan-300 bg-cyan-300/10" : "bg-muted/25"}`}
+            onDragEnter={(event) => { event.preventDefault(); if (dropDisabled) return; dragDepth.current += 1; setDragging(true); }}
+            onDragOver={(event) => { event.preventDefault(); if (!dropDisabled) event.dataTransfer.dropEffect = "copy"; }}
+            onDragLeave={(event) => { event.preventDefault(); dragDepth.current = Math.max(0, dragDepth.current - 1); if (!dragDepth.current) setDragging(false); }}
+            onDrop={(event) => { event.preventDefault(); dragDepth.current = 0; setDragging(false); if (!dropDisabled && event.dataTransfer.files.length) choose(event.dataTransfer.files); }}
             onClick={() => {
               if (input.current) {
                 input.current.value = "";
@@ -1360,14 +1403,14 @@ export function MoneyImportsView({
               <strong className="block">
                 {files.length
                   ? `${files.length.toLocaleString("en-GB")} file${files.length === 1 ? "" : "s"} selected`
-                  : "Choose money exports"}
+                  : dragging ? "Drop files to preview" : "Choose or drop money exports"}
               </strong>
               <span className="mt-1 block text-sm text-muted-foreground">
                 {files.length
                   ? formatBytes(
                       files.reduce((total, item) => total + item.file.size, 0),
                     )
-                  : "Select one or more XLSX, TSV, or CSV files, up to 10 MB each"}
+                  : "Choose or drop XLSX, TSV, or CSV files, up to 10 MB each"}
               </span>
             </span>
           </button>
