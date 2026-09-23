@@ -13,6 +13,10 @@ The editor can add an optional follow-up or meeting question set. A respondent
 who selects a follow-up question or meeting must leave contact details; these
 responses enter the existing follow-up review queue.
 Unsaved editor changes are shown before saving and guarded when leaving the form.
+Respondents may optionally create a read-only response link when they submit,
+lasting 1, 7, or 30 days. The link appears on the confirmation page,
+and anyone holding it can read that response until it expires or is deleted.
+Only a SHA-256 hash of the random share token is stored in PostgreSQL.
 
 The private form editor can copy a versioned JSON document containing the form
 content and response schema. It can also copy a generation prompt or apply a

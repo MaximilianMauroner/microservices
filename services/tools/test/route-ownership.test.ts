@@ -5,7 +5,7 @@ import { readOnly } from "../src/route-handlers.js";
 describe("primary page ownership", () => {
   it("registers explicit React routes without legacy browser splats", () => {
     const source = readFileSync(new URL("../src/routeTree.gen.ts", import.meta.url), "utf8");
-    for (const path of ["/status", "/publisher", "/publisher/artifacts", "/documents", "/money", "/feedback", "/feedback/forms/$formId", "/feedback/responses/$submissionId", "/feedback/f/$token", "/markdown/", "/markdown/d/$slug", "/drop/$", "/api/drop/$", "/api/upload-links", "/api/upload-links/$"]) {
+    for (const path of ["/status", "/publisher", "/publisher/artifacts", "/documents", "/money", "/feedback", "/feedback/forms/$formId", "/feedback/responses/$submissionId", "/feedback/f/$token", "/feedback/share/$token", "/markdown/", "/markdown/d/$slug", "/drop/$", "/api/drop/$", "/api/upload-links", "/api/upload-links/$"]) {
       expect(source).toContain(`fullPath: '${path}'`);
     }
     for (const path of ["/review", "/publish", "/manage", "/manage/status", "/manage/documents", "/tools/private/money", "/ops", "/uploads", "/p", "/f", "/status/private"]) {
@@ -63,8 +63,10 @@ describe("primary page ownership", () => {
     const form = readFileSync(new URL("../src/routes/feedback/forms/$formId.tsx", import.meta.url), "utf8");
     const response = readFileSync(new URL("../src/routes/feedback/responses/$submissionId.tsx", import.meta.url), "utf8");
     const publicForm = readFileSync(new URL("../src/routes/feedback/f/$token.tsx", import.meta.url), "utf8");
+    const sharedResponse = readFileSync(new URL("../src/routes/feedback/share/$token.tsx", import.meta.url), "utf8");
     expect(layout).not.toContain("requireRouteSession");
     expect(publicForm).not.toContain("requireRouteSession");
+    expect(sharedResponse).not.toContain("requireRouteSession");
     for (const source of [list, form, response]) expect(source).toContain("requireRouteSession");
   });
 

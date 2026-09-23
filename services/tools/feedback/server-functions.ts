@@ -34,8 +34,12 @@ export const getPublicFeedbackForm = createServerFn({ method: "GET" })
   .validator((input: { token: string }) => input)
   .handler(async ({ data }) => {
     const form = await repository().getPublicForm(data.token);
-    return form ? localizeFeedbackForm(form) : undefined;
+    return form ? { form: localizeFeedbackForm(form), publicOrigin: getGlobalStartContext()!.runtime.publicOrigin } : undefined;
   });
+
+export const getSharedFeedbackResponse = createServerFn({ method: "GET" })
+  .validator((input: { token: string }) => input)
+  .handler(({ data }) => repository().getSharedResponse(data.token));
 
 export const createFeedbackForm = createServerFn({ method: "POST" })
   .middleware([requirePlatformSession])

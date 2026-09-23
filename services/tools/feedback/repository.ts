@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import postgres, { type Sql } from "postgres";
 import {
   type FeedbackFollowUpState,
@@ -8,11 +8,15 @@ import {
   type FeedbackQuestion,
   type FeedbackReviewState,
   type FeedbackSubmission,
+  type FeedbackShareDays,
+  type SharedFeedbackResponse,
   wantsFeedbackFollowUp
 } from "./domain.js";
 
 type FormRow = { id: string; public_token: string; language: FeedbackLanguage; title: string; introduction: string; questions: unknown; status: FeedbackFormStatus; created_at: Date; updated_at: Date; response_count: number; unread_count: number };
 type SubmissionRow = { id: string; form_id: string; form_title: string; question_snapshot: unknown; answers: unknown; submitted_at: Date; review_state: FeedbackReviewState; follow_up_state: FeedbackFollowUpState };
+type SharedResponseRow = { form_title: string; language: FeedbackLanguage; question_snapshot: unknown; answers: unknown; submitted_at: Date; share_expires_at: Date };
+export type CreatedFeedbackSubmission = Readonly<{ id: string; shareToken?: string; shareExpiresAt?: string }>;
 
 export interface FeedbackRepository {
   listForms(): Promise<readonly FeedbackForm[]>;
@@ -23,7 +27,8 @@ export interface FeedbackRepository {
   setFormStatus(id: string, status: FeedbackFormStatus): Promise<FeedbackForm | undefined>;
   rotateToken(id: string): Promise<FeedbackForm | undefined>;
   deleteForm(id: string): Promise<boolean>;
-  createSubmission(form: FeedbackForm, answers: Readonly<Record<string, string>>, questionSnapshot?: readonly FeedbackQuestion[]): Promise<string>;
+  createSubmission(form: FeedbackForm, answers: Readonly<Record<string, string>>, questionSnapshot?: readonly FeedbackQuestion[], shareDays?: FeedbackShareDays): Promise<CreatedFeedbackSubmission>;
+  getSharedResponse(token: string): Promise<SharedFeedbackResponse | undefined>;
   listSubmissions(formId: string): Promise<readonly FeedbackSubmission[]>;
   getSubmission(id: string): Promise<FeedbackSubmission | undefined>;
   updateSubmission(id: string, input: { reviewState: FeedbackReviewState; followUpState: FeedbackFollowUpState }): Promise<FeedbackSubmission | undefined>;
@@ -76,11 +81,20 @@ export function feedbackRepository(sql: Sql): FeedbackRepository {
       const rows = await sql<{ id: string }[]>`delete from tools.feedback_forms where id = ${id} returning id`;
       return rows.length === 1;
     },
-    async createSubmission(form, answers, questionSnapshot = form.questions) {
+    async createSubmission(form, answers, questionSnapshot = form.questions, shareDays) {
       const id = randomUUID();
-      await sql`insert into tools.feedback_submissions (id, form_id, question_snapshot, answers, submitted_at, review_state, follow_up_state)
-        values (${id}, ${form.id}, ${sql.json([...questionSnapshot])}, ${sql.json(answers)}, ${new Date()}, 'unread', ${wantsFeedbackFollowUp(questionSnapshot, answers) ? "wanted" : "none"})`;
-      return id;
+      const shareToken = shareDays ? randomBytes(32).toString("base64url") : undefined;
+      const shareExpiresAt = shareDays ? new Date(Date.now() + shareDays * 86_400_000) : undefined;
+      await sql`insert into tools.feedback_submissions (id, form_id, question_snapshot, answers, submitted_at, review_state, follow_up_state, share_token_hash, share_expires_at)
+        values (${id}, ${form.id}, ${sql.json([...questionSnapshot])}, ${sql.json(answers)}, ${new Date()}, 'unread', ${wantsFeedbackFollowUp(questionSnapshot, answers) ? "wanted" : "none"}, ${shareToken ? hashShareToken(shareToken) : null}, ${shareExpiresAt ?? null})`;
+      return { id, ...(shareToken && shareExpiresAt ? { shareToken, shareExpiresAt: shareExpiresAt.toISOString() } : {}) };
+    },
+    async getSharedResponse(token) {
+      if (!/^[A-Za-z0-9_-]{43}$/.test(token)) return undefined;
+      const [row] = await sql<SharedResponseRow[]>`select f.title as form_title, f.language, s.question_snapshot, s.answers, s.submitted_at, s.share_expires_at
+        from tools.feedback_submissions s join tools.feedback_forms f on f.id = s.form_id
+        where s.share_token_hash = ${hashShareToken(token)} and s.share_expires_at > ${new Date()}`;
+      return row ? { formTitle: row.form_title, language: row.language, questionSnapshot: row.question_snapshot as FeedbackQuestion[], answers: row.answers as Record<string, string>, submittedAt: row.submitted_at.toISOString(), expiresAt: row.share_expires_at.toISOString() } : undefined;
     },
     async listSubmissions(formId) {
       const rows = await sql<SubmissionRow[]>`select s.id, s.form_id, f.title as form_title, s.question_snapshot, s.answers, s.submitted_at, s.review_state, s.follow_up_state
@@ -106,6 +120,7 @@ export function feedbackRepository(sql: Sql): FeedbackRepository {
 }
 
 function publicToken() { return randomBytes(24).toString("base64url"); }
+function hashShareToken(token: string) { return createHash("sha256").update(token).digest("hex"); }
 function required<T>(value: T | undefined): T { if (!value) throw new Error("Feedback record was not found after mutation."); return value; }
 function formFromRow(row: FormRow): FeedbackForm { return { id: row.id, publicToken: row.public_token, language: row.language ?? "en", title: row.title, introduction: row.introduction, questions: row.questions as FeedbackQuestion[], status: row.status, createdAt: row.created_at.toISOString(), updatedAt: row.updated_at.toISOString(), responseCount: row.response_count, unreadCount: row.unread_count }; }
 function submissionFromRow(row: SubmissionRow): FeedbackSubmission { return { id: row.id, formId: row.form_id, formTitle: row.form_title, questionSnapshot: row.question_snapshot as FeedbackQuestion[], answers: row.answers as Record<string, string>, submittedAt: row.submitted_at.toISOString(), reviewState: row.review_state, followUpState: row.follow_up_state }; }
