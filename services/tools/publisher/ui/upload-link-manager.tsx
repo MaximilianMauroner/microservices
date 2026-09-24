@@ -31,6 +31,7 @@ export function UploadLinkManager() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const linksRevision = useRef(0);
+  const createdRef = useRef<HTMLDivElement>(null);
 
   async function loadLinks() {
     const revision = ++linksRevision.current;
@@ -88,6 +89,7 @@ export function UploadLinkManager() {
       linksRevision.current += 1;
       setCreated(payload);
       setLinks((current) => [payload, ...current]);
+      requestAnimationFrame(() => createdRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Upload link could not be created.");
     } finally {
@@ -138,10 +140,10 @@ export function UploadLinkManager() {
           </label>
           <Button type="button" size="sm" onClick={() => void createLink()} disabled={busy}><Plus /> Create upload link</Button>
         </div>
-        {created ? <div className="rounded-lg border border-primary/30 bg-secondary p-4" aria-live="polite">
+        {created ? <div ref={createdRef} className="rounded-lg border border-primary/30 bg-secondary p-4" aria-live="polite">
           <div className="flex items-center gap-2"><Badge>New link</Badge><span className="text-xs text-muted-foreground">Copy it now; the secret is not stored.</span></div>
           <p className="mt-3 break-all font-mono text-xs">{created.url}</p>
-          <Button className="mt-3" type="button" variant="outline" size="sm" onClick={() => void copyCreated()}><Copy /> Copy link</Button>
+          <div className="mt-3 flex flex-wrap gap-2"><Button type="button" variant="outline" size="sm" onClick={() => void copyCreated()}><Copy /> Copy link</Button><Button nativeButton={false} variant="outline" size="sm" render={<a href={created.url} target="_blank" rel="noreferrer" />}><Link2 /> Open link</Button></div>
         </div> : null}
       </Card>
       {links.length > 0 ? <div className="mt-3 grid gap-2" aria-label="Upload links">
@@ -150,12 +152,15 @@ export function UploadLinkManager() {
           return <Card key={link.id} className="gap-0 py-0"><div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0"><div className="flex items-center gap-2"><Link2 className="size-4" aria-hidden="true" /><Badge variant={active ? "default" : "secondary"}>{link.revokedAt ? "Revoked" : active ? "Active" : "Expired"}</Badge></div><p className="mt-2 text-xs text-muted-foreground">{link.fileCount} {link.fileCount === 1 ? "file" : "files"} received · created {formatDate(link.createdAt)} · expires {formatDate(link.expiresAt)}</p></div>
             <div className="flex shrink-0 flex-wrap gap-2">
+              {active && created?.id === link.id ? <><Button type="button" variant="outline" size="sm" onClick={() => void copyCreated()}><Copy /> Copy</Button><Button nativeButton={false} variant="outline" size="sm" render={<a href={created.url} target="_blank" rel="noreferrer" />}><Link2 /> Open</Button></> : null}
+              {active && created?.id !== link.id ? <Button type="button" variant="outline" size="sm" onClick={() => void createLink()} disabled={busy}><Plus /> New shareable link</Button> : null}
               {link.fileCount > 0 ? <Button nativeButton={false} variant="outline" size="sm" render={<a href={`/api/upload-links/${link.id}/download`} />}><Download /> Download all</Button> : null}
               {!link.revokedAt ? <Button type="button" variant="outline" size="sm" onClick={() => void revokeLink(link.id)} disabled={busy}><X /> Revoke</Button> : null}
             </div>
           </div></Card>;
         })}
         {nextCursor ? <div className="flex justify-center pt-1"><Button type="button" variant="ghost" size="sm" onClick={() => void loadOlderLinks()} disabled={busy}>Load older links</Button></div> : null}
+        <p className="text-xs text-muted-foreground">For links created earlier, the secret URL cannot be recovered. Create a new shareable link using the selected duration, then revoke the old link if it is no longer needed.</p>
       </div> : null}
     </section>
   );

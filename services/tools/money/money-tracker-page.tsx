@@ -141,6 +141,8 @@ export function MoneyTrackerPage(
     view: MoneyTrackerView;
     category?: MoneyCategory;
     review?: boolean;
+    fromMonth?: string;
+    toMonth?: string;
   },
 ) {
   const [period, setPeriod] = useState<Period>("1y");
@@ -246,6 +248,7 @@ export function MoneyTrackerPage(
                 {...props}
                 position={position}
                 months={months}
+                accountMonths={props.months}
                 latest={latest}
                 trends={trends}
                 period={period}
@@ -264,6 +267,8 @@ export function MoneyTrackerPage(
                 transferReviewGroups={props.transferReviewGroups}
                 initialCategory={props.category}
                 initialReviewOnly={props.review}
+                initialFromMonth={props.fromMonth}
+                initialToMonth={props.toMonth}
               />
             ) : null}
             {props.view === "cash-flow" ? (
@@ -353,6 +358,7 @@ function Overview({
   transferReview,
   position,
   months,
+  accountMonths,
   latest,
   trends,
   period,
@@ -360,6 +366,7 @@ function Overview({
 }: MoneyTrackerPageData & {
   position: MoneyFinancialPosition;
   months: GroupedMonth[];
+  accountMonths: MoneyTrackerPageData["months"];
   latest?: GroupedMonth;
   trends: MoneyTrackerTrendStats;
   period: Period;
@@ -380,6 +387,8 @@ function Overview({
     transferReview.unresolvedNegativeCount;
   const observedAccounts = position.cash.observedAccountCount;
   const carriedAccounts = position.cash.carriedAccountCount;
+  const latestAccountMonth = accountMonths.at(-1);
+  const reusedAccounts = latestAccountMonth ? accounts.filter((account) => latestAccountMonth.values[account] !== undefined && !latestAccountMonth.observedAccounts.includes(account)).length : 0;
   const unpricedPositions = marketData.positions.filter(
     (position) => position.state === "unpriced",
   ).length;
@@ -390,7 +399,7 @@ function Overview({
     Number(spending.uncategorizedCount > 0) +
     Number(unresolvedTransfers > 0) +
     Number(unpricedPositions + stalePositions > 0) +
-    Number(carriedAccounts > 0);
+    Number(reusedAccounts > 0);
   return (
     <>
       <section
@@ -400,7 +409,7 @@ function Overview({
         <Metric
           label="Known net worth"
           value={formatMinor(position.knownNetWorthMinor, "EUR")}
-          detail={`${formatSigned(trends.periodChange?.change)} selected range · ${carriedAccounts ? `${carriedAccounts} carried` : "cash observed"} · ${unpricedPositions ? `${unpricedPositions} unpriced` : stalePositions ? `${stalePositions} stale` : "prices current"}`}
+          detail={`${formatSigned(trends.periodChange?.change)} selected range · ${carriedAccounts} cash carried · ${reusedAccounts} accounts reused · ${unpricedPositions ? `${unpricedPositions} unpriced` : stalePositions ? `${stalePositions} stale` : "prices current"}`}
           tone={tone(trends.periodChange?.change)}
         />
         <Metric
@@ -447,16 +456,16 @@ function Overview({
                 </CardDescription>
               </div>
               <Badge variant={attentionCount ? "destructive" : "outline"}>
-                {attentionCount} issue types
+                {attentionCount} {attentionCount === 1 ? "issue type" : "issue types"}
               </Badge>
             </div>
           </CardHeader>
           <CardContent className="divide-y p-0">
             <AttentionRow
-              label="Carried balances"
-              value={carriedAccounts.toLocaleString("en-GB")}
-              detail="Check when each account was last observed"
-              ready={carriedAccounts === 0}
+              label="Reused account balances"
+              value={reusedAccounts.toLocaleString("en-GB")}
+              detail={`All tracked accounts in ${latestAccountMonth?.date ?? "the latest month"}; ${carriedAccounts} cash balances affect net worth`}
+              ready={reusedAccounts === 0}
               view="accounts"
               action="Open accounts"
             />
@@ -520,7 +529,7 @@ function Overview({
           </CardHeader>
           <CardContent className="space-y-3 pt-5">
             {recentCashFlow.length ? (
-              recentCashFlow.map((month) => {
+              [...recentCashFlow].reverse().map((month) => {
                 const otherCashFlow =
                   month.refundsMinor - month.feesMinor - month.taxesMinor;
                 return (
@@ -703,9 +712,9 @@ function Insights({
         aria-label="Balance summary"
       >
         <Metric
-          label="Known net worth"
+          label="Current known net worth"
           value={formatMinor(position.knownNetWorthMinor, "EUR")}
-          detail={formatTrendPercent(trends.yearOverYear?.total.percent)}
+          detail={`As of ${position.asOf} · cash ${position.cash.observationDate ?? "unknown"} · prices ${position.portfolio.priceDate ?? "unknown"}`}
           tone={tone(trends.yearOverYear?.total.change)}
         />
         <Metric
@@ -725,9 +734,9 @@ function Insights({
         />
         {trends.drawdown ? (
           <Metric
-            label="Balance drawdown"
+            label="Historical snapshot drawdown"
             value={formatTrendPercent(trends.drawdown.percent)}
-            detail={formatSigned(trends.drawdown.change)}
+            detail={`${formatSigned(trends.drawdown.change)} · ${trends.highWaterMark?.date ?? "unknown"} to ${latest?.date ?? "unknown"}`}
             tone={tone(trends.drawdown.change)}
           />
         ) : null}
@@ -859,6 +868,7 @@ function Insights({
               </ComposedChart>
             </ChartContainer>
           </MountedChart>
+          <ChartKey entries={[["Cash", colors[0]], ["Investment balances", colors[1]], ["Tracked total", "#fafafa"], ["Linear trend", "#facc15"]]} />
           <BalanceDataDisclosure months={months} includeTrend />
         </ChartCard>
         <Card>
@@ -1048,8 +1058,10 @@ function Insights({
         <AlertTitle>How to read these trends</AlertTitle>
         <AlertDescription>
           Momentum compares the latest three-month average with the previous
-          three months. Drawdown compares the current balance with the
-          selected-range high. Tracked totals can include carried balances;
+          three months. Drawdown compares the latest monthly snapshot with the
+          selected-range monthly high. Current known net worth uses the latest
+          cash balance and market prices, so it can differ from that history.
+          Tracked totals can include carried balances;
           changes include deposits, withdrawals, and market movement, so they
           are not investment returns.
         </AlertDescription>
@@ -1564,6 +1576,7 @@ function Predictions({
               </ComposedChart>
             </ChartContainer>
           </MountedChart>
+          <ChartKey entries={[["Observed total", "#fafafa"], ["80% range", "#84cc16"], ["Central estimate", "#a3e635"], ["Inflation benchmark", "#fbbf24"]]} />
           <PredictionScenarioTable prediction={prediction} />
           <PredictionDataDisclosure points={prediction.forecast} />
         </ChartCard>
@@ -1572,7 +1585,7 @@ function Predictions({
         <AlertTitle>Trajectory, not a guarantee</AlertTitle>
         <AlertDescription>
           This is a statistical extrapolation of monthly tracked totals. It
-          It continues the recent average contribution and compounds the
+          continues the recent average contribution and compounds the
           portfolio&apos;s flow-adjusted return. Future deposits, withdrawals,
           market regimes, and missing prices can move the outcome outside the
           displayed range.
@@ -2374,6 +2387,7 @@ function AccountGroupChart({
           </ComposedChart>
         </ChartContainer>
       </MountedChart>
+      <ChartKey entries={[...accounts.map((account, index) => [accountLabels[account] ?? account, palette[index % palette.length]!] as const), [`${label} total`, "#fafafa"]]} />
       <AccountDataDisclosure
         months={months}
         accounts={accounts}
@@ -2641,8 +2655,7 @@ export function History({
           <CardHeader className="border-b">
             <CardTitle>Selected-period extremes</CardTitle>
             <CardDescription>
-              Tracked balances, including reused values where noted in the
-              ledger
+              Highest and lowest use {comparableMonths.length} of {months.length} ledger months with a value for every tracked account. Months missing an account are excluded; reused values remain included.
             </CardDescription>
           </CardHeader>
           <CardContent className="divide-y p-0">
@@ -2809,6 +2822,7 @@ function BalanceChart({
             </ComposedChart>
           </ChartContainer>
         </MountedChart>
+        <ChartKey entries={[["Cash", colors[0]], ["Investment balances", colors[1]], ["Tracked total", "#fafafa"]]} />
         <BalanceDataDisclosure months={months} />
       </CardContent>
     </Card>
@@ -2994,6 +3008,9 @@ function ChartCard({
       <CardContent className="pt-5">{children}</CardContent>
     </Card>
   );
+}
+function ChartKey({ entries }: { entries: readonly (readonly [string, string])[] }) {
+  return <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs text-muted-foreground" aria-label="Chart key">{entries.map(([label, color]) => <span key={label} className="inline-flex items-center gap-2"><span className="size-2.5 rounded-full border border-foreground/20" style={{ backgroundColor: color }} aria-hidden="true" />{label}</span>)}</div>;
 }
 function MountedChart({
   children,

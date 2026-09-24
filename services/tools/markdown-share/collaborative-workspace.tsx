@@ -271,6 +271,7 @@ function EditorWorkspace({
     >
       <header className="topbar">
         <div className="topbar-identity">
+          <a className="tools-return tools-return-compact" href="/" aria-label="Back to Tools dashboard"><span aria-hidden="true">←</span><span className="tools-return-label">Tools</span></a>
           <a className="wordmark" href="/markdown" aria-label="Markdown Share home">
             <img className="wordmark-icon" src={favicons.markdownShare} alt="" />
             <span className="wordmark-name">Markdown Share</span>

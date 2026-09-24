@@ -9,7 +9,7 @@ describe("public feedback submission", () => {
     const createSubmission = vi.fn().mockResolvedValue({ id: "submission-id" });
     const response = await submitPublicFeedback(input(new Request("https://tools.example.test/feedback/f/token", { method: "POST", headers: { origin: "https://tools.example.test", "content-type": "application/x-www-form-urlencoded" }, body: "comfort=Mixed&details%3Acomfort=I+needed+more+quiet&disliked=Please+listen" }), { getPublicForm: vi.fn().mockResolvedValue(form), createSubmission }));
     expect(response.status).toBe(303);
-    expect(response.headers.get("location")).toBe("/feedback/f/token?submitted=1");
+    expect(response.headers.get("location")).toBe("/feedback/confirmation?locale=en");
     expect(createSubmission).toHaveBeenCalledWith(form, { comfort: "Mixed", [feedbackChoiceDetailsKey("comfort")]: "I needed more quiet", disliked: "Please listen" }, expect.any(Array), undefined);
   });
 
@@ -18,9 +18,23 @@ describe("public feedback submission", () => {
     const expiresAt = "2026-10-01T12:00:00.000Z";
     const createSubmission = vi.fn().mockResolvedValue({ id: "submission-id", shareToken, shareExpiresAt: expiresAt });
     const response = await submitPublicFeedback(input(new Request("https://tools.example.test/feedback/f/token", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: "comfort=Mixed&__share_days=7" }), { getPublicForm: vi.fn().mockResolvedValue(form), createSubmission }));
-    expect(response.headers.get("location")).toBe(`/feedback/f/token?submitted=1&share=${shareToken}&expires=${encodeURIComponent(expiresAt)}`);
+    expect(response.headers.get("location")).toBe(`/feedback/confirmation?locale=en&share=${shareToken}&expires=${encodeURIComponent(expiresAt)}`);
     expect(response.headers.get("referrer-policy")).toBe("no-referrer");
     expect(createSubmission).toHaveBeenCalledWith(form, { comfort: "Mixed" }, expect.any(Array), 7);
+  });
+
+  it("returns an inline error for fetch submissions without losing form state", async () => {
+    const request = new Request("https://tools.example.test/feedback/f/token", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" }, body: "comfort=Mixed" });
+    const response = await submitPublicFeedback(input(request, { getPublicForm: vi.fn().mockResolvedValue(form), createSubmission: vi.fn().mockRejectedValue(new Error("database unavailable")) }));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "submission_failed" });
+  });
+
+  it("returns a standalone confirmation location for a successful fetch submission", async () => {
+    const request = new Request("https://tools.example.test/feedback/f/token", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" }, body: "comfort=Mixed" });
+    const response = await submitPublicFeedback(input(request, { getPublicForm: vi.fn().mockResolvedValue(form), createSubmission: vi.fn().mockResolvedValue({ id: "submission-id" }) }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ location: "/feedback/confirmation?locale=en" });
   });
 
   it("keeps a custom share_days question separate from the sharing control", async () => {
@@ -42,7 +56,7 @@ describe("public feedback submission", () => {
     const request = new Request("http://internal.example.test/feedback/f/token", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: "comfort=Mixed" });
     const response = await submitPublicFeedback(input(request, { getPublicForm: vi.fn().mockResolvedValue(form), createSubmission }));
     expect(response.status).toBe(303);
-    expect(response.headers.get("location")).toBe("/feedback/f/token?submitted=1");
+    expect(response.headers.get("location")).toBe("/feedback/confirmation?locale=en");
     expect(createSubmission).toHaveBeenCalledOnce();
   });
 

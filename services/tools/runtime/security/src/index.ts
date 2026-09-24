@@ -87,6 +87,8 @@ export function classifyRoute(pathname: string, method: string): RouteAccess {
     return { kind: "public" };
   }
 
+  if (pathname === "/feedback/confirmation" && (normalizedMethod === "GET" || normalizedMethod === "HEAD")) return { kind: "public" };
+
   if (/^\/feedback\/share\/[A-Za-z0-9_-]{43}$/.test(pathname) && (normalizedMethod === "GET" || normalizedMethod === "HEAD")) {
     return { kind: "public" };
   }

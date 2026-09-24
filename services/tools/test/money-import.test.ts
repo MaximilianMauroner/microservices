@@ -247,8 +247,8 @@ describe("money import service", () => {
   it("allowlists complete-ledger activity filters and sorting", async () => {
     const repository = new MemoryMoneyRepository();
     const service = new MoneyImportService(repository);
-    await service.readActivityPage({ query: " coffee ", accountId: "00000000-0000-4000-8000-000000000000", category: "dining", sort: "amount", direction: "asc", offset: 0, limit: 50 });
-    expect(repository.lastActivityInput).toEqual({ query: "coffee", accountId: "00000000-0000-4000-8000-000000000000", category: "dining", sort: "amount", direction: "asc", offset: 0, limit: 50 });
+    await service.readActivityPage({ query: " coffee ", accountId: "00000000-0000-4000-8000-000000000000", category: "dining", fromMonth: "2026-06", toMonth: "2026-07", sort: "amount", direction: "asc", offset: 0, limit: 50 });
+    expect(repository.lastActivityInput).toEqual({ query: "coffee", accountId: "00000000-0000-4000-8000-000000000000", category: "dining", fromMonth: "2026-06", toMonth: "2026-07", sort: "amount", direction: "asc", offset: 0, limit: 50 });
     expect(() => service.readActivityPage({ query: "", sort: "amount desc; drop table", offset: 0, limit: 50 })).toThrow("activity sort is invalid");
   });
 

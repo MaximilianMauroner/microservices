@@ -15,7 +15,7 @@ export type ProductDefinition = Readonly<{
 
 /** Product identity and navigation are deployed with the monolith, not stored as runtime data. */
 export const products = [
-  { id: "publisher", name: "Publisher", description: "Publish durable plans and files.", href: "/publisher", access: "private", accent: "violet", monitorId: "artifact-publisher", external: false },
+  { id: "publisher", name: "Publisher", description: "Publish durable plans and expiring file links.", href: "/publisher", access: "private", accent: "violet", monitorId: "artifact-publisher", external: false },
   { id: "money", name: "Money", description: "Track accounts, changes, and net worth.", href: "/money", access: "private", accent: "lime", monitorId: "tools-directory", external: false },
   { id: "feedback", name: "Feedback", description: "Collect private feedback through unlisted forms.", href: "/feedback", access: "private", accent: "rose", monitorId: "tools-directory", external: false },
   { id: "status", name: "Status", description: "Availability, incidents, and heartbeats.", href: "/status", access: "private", accent: "cyan", monitorId: "tools-directory", external: false },

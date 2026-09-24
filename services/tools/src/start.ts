@@ -73,7 +73,7 @@ const platformRequestMiddleware = createMiddleware().server(
     if (classifyRoute(pathname, request.method).kind === "human-session") {
       headers.set("Cache-Control", "private, no-store");
     }
-    if (pathname.startsWith("/feedback/f/") || pathname.startsWith("/feedback/share/")) {
+    if (pathname.startsWith("/feedback/f/") || pathname.startsWith("/feedback/share/") || pathname === "/feedback/confirmation") {
       headers.set("Cache-Control", "private, no-store");
       headers.set("X-Robots-Tag", "noindex, nofollow");
     }

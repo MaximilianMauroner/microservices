@@ -133,6 +133,8 @@ export async function getMoneyActivity(input: PlatformRouteInput) {
       ...(url.searchParams.get("flow") ? { flow: url.searchParams.get("flow")! } : {}),
       ...(url.searchParams.get("accountId") ? { accountId: url.searchParams.get("accountId")! } : {}),
       ...(url.searchParams.get("category") ? { category: url.searchParams.get("category")! } : {}),
+      ...(validMonth(url.searchParams.get("fromMonth")) ? { fromMonth: url.searchParams.get("fromMonth")! } : {}),
+      ...(validMonth(url.searchParams.get("toMonth")) ? { toMonth: url.searchParams.get("toMonth")! } : {}),
       reviewOnly: url.searchParams.get("review") === "true",
       ...(url.searchParams.get("sort") ? { sort: url.searchParams.get("sort")! } : {}),
       ...(url.searchParams.get("direction") ? { direction: url.searchParams.get("direction")! } : {}),
@@ -143,6 +145,8 @@ export async function getMoneyActivity(input: PlatformRouteInput) {
     return importError(error);
   }
 }
+
+function validMonth(value: string | null): boolean { return value !== null && /^\d{4}-(0[1-9]|1[0-2])$/.test(value); }
 
 export async function getMoneyMarketData(input: PlatformRouteInput) {
   if (!input.context.principal) return json({ error: "authentication_required" }, 401);

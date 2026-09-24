@@ -30,6 +30,13 @@ describe("public feedback confirmation", () => {
     expect(html).toContain("Du kannst die Seite jetzt schließen.");
   });
 
+  it("previews an inactive form without enabling submission", () => {
+    const html = renderToStaticMarkup(<PublicFeedbackPage form={localizeFeedbackForm({ ...form, status: "closed" })} submitted={false} preview />);
+    expect(html).toContain("Preview: answers will not be submitted.");
+    expect(html).toContain('type="submit"');
+    expect(html).toContain("disabled");
+  });
+
   it("offers optional link expiry and shows a completed response link", () => {
     const formHtml = renderToStaticMarkup(<PublicFeedbackPage form={localizeFeedbackForm(form)} submitted={false} />);
     expect(formHtml).toContain('name="__share_days"');

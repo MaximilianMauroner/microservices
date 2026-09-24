@@ -77,7 +77,7 @@ export class MoneyImportService {
     return this.repository.readLedgerSnapshot(scope);
   }
 
-  readActivityPage(input: Readonly<{ query: string; flow?: string; accountId?: string; category?: string; reviewOnly?: boolean; sort?: string; direction?: string; offset: number; limit: number }>) {
+  readActivityPage(input: Readonly<{ query: string; flow?: string; accountId?: string; category?: string; fromMonth?: string; toMonth?: string; reviewOnly?: boolean; sort?: string; direction?: string; offset: number; limit: number }>) {
     const query = input.query.trim().slice(0, 100);
     const flows = ["spend", "income", "refund", "transfer", "trade", "investment_income", "fee", "tax", "balance_adjustment"] as const;
     const flow = input.flow && flows.includes(input.flow as typeof flows[number]) ? input.flow as typeof flows[number] : undefined;
@@ -91,9 +91,11 @@ export class MoneyImportService {
     if (!direction) throw new MoneyImportValidationError("invalid_sort", "The activity sort direction is invalid.");
     if (input.category && !category) throw new MoneyImportValidationError("invalid_category", "The activity category filter is invalid.");
     if (accountId) assertUuid(accountId, "invalid_account", "The activity account filter is invalid.");
+    if (input.fromMonth && !/^\d{4}-(0[1-9]|1[0-2])$/.test(input.fromMonth)) throw new MoneyImportValidationError("invalid_month", "The activity start month is invalid.");
+    if (input.toMonth && !/^\d{4}-(0[1-9]|1[0-2])$/.test(input.toMonth)) throw new MoneyImportValidationError("invalid_month", "The activity end month is invalid.");
     if (!Number.isSafeInteger(input.offset) || input.offset < 0) throw new MoneyImportValidationError("invalid_offset", "The activity offset is invalid.");
     if (!Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > 500) throw new MoneyImportValidationError("invalid_limit", "The activity limit is invalid.");
-    return this.repository.readActivityPage({ query, ...(flow ? { flow } : {}), ...(accountId ? { accountId } : {}), ...(category ? { category } : {}), ...(input.reviewOnly ? { reviewOnly: true } : {}), sort, direction, offset: input.offset, limit: input.limit });
+    return this.repository.readActivityPage({ query, ...(flow ? { flow } : {}), ...(accountId ? { accountId } : {}), ...(category ? { category } : {}), ...(input.fromMonth ? { fromMonth: input.fromMonth } : {}), ...(input.toMonth ? { toMonth: input.toMonth } : {}), ...(input.reviewOnly ? { reviewOnly: true } : {}), sort, direction, offset: input.offset, limit: input.limit });
   }
 
   setTransactionCategory(input: Readonly<{ transactionId: string; category: string; actor: string; createRule: boolean }>) {

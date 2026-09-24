@@ -345,8 +345,8 @@ html:has([data-suite-accent]) {
   .allocation-tile--stocks { border-color: var(--treemap-stocks-border); background: var(--treemap-stocks); }
   .allocation-tile--cash { border-color: var(--treemap-cash-border); background: var(--treemap-cash); }
   .workspace-page, .app-page, .status-wrap { width: min(1180px, calc(100% - 2rem)); margin-inline: auto; }
-  .workspace-page { padding-block: 2.5rem 5rem; }
-  .workspace-page--wide { width: min(1380px, calc(100% - 2rem)); }
+  .workspace-page { width: min(1320px, calc(100% - 2rem)); padding-block: 2.5rem 5rem; }
+  .workspace-page--wide { width: min(1520px, calc(100% - 2rem)); }
   .workspace-page--narrow { width: min(900px, calc(100% - 2rem)); }
   .workspace-header { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2rem; align-items: end; padding-bottom: 2.25rem; margin-bottom: 2rem; border-bottom: 1px solid var(--surface-border); }
   .workspace-header__eyebrow { color: var(--primary); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .7rem; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; }

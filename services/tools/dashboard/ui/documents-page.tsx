@@ -52,6 +52,26 @@ export function DocumentsPage({ initial }: { initial: DocumentsPageData }) {
     }
   }
 
+  async function searchRemaining() {
+    if (!nextCursor || loading) return;
+    setLoading(true);
+    setLoadError(undefined);
+    try {
+      let cursor: string | undefined = nextCursor;
+      const remaining: MarkdownAdminDocument[] = [];
+      while (cursor) {
+        const response = await fetch(`/api/ops/documents?cursor=${encodeURIComponent(cursor)}&asOf=${initial.generatedAt}`, { credentials: "same-origin" });
+        if (!response.ok) throw new Error("Older documents could not be loaded.");
+        const page = await response.json() as DocumentsPageData;
+        remaining.push(...page.documents);
+        cursor = page.nextCursor;
+      }
+      setLoadedDocuments((current) => [...current, ...remaining.filter((document) => !current.some((item) => item.token === document.token))]);
+      setNextCursor(undefined);
+    } catch { setLoadError("Search could not cover all older documents. Try again."); }
+    finally { setLoading(false); }
+  }
+
   async function copyLink(document: MarkdownAdminDocument) {
     try {
       await navigator.clipboard.writeText(documentUrl(document, initial.publicOrigin));
@@ -95,7 +115,7 @@ export function DocumentsPage({ initial }: { initial: DocumentsPageData }) {
             </div>
           </div>
         </CardHeader>
-        {documents.length === 0 ? <Empty className="min-h-72"><EmptyHeader><EmptyMedia variant="icon"><FileTextIcon /></EmptyMedia><EmptyTitle>No documents match</EmptyTitle><EmptyDescription>Adjust the filters or create a new Markdown document.</EmptyDescription></EmptyHeader></Empty> : isMobile ? <MobileDocumentInventory documents={documents.slice(0, mobileLimit)} total={documents.length} generatedAt={initial.generatedAt} publicOrigin={initial.publicOrigin} copied={copied} onCopy={copyLink} onShowMore={() => setMobileLimit((current) => current + 50)} /> : <div className="overflow-x-auto"><Table>
+        {documents.length === 0 ? <Empty className="min-h-72"><EmptyHeader><EmptyMedia variant="icon"><FileTextIcon /></EmptyMedia><EmptyTitle>{nextCursor ? "No matches in loaded documents" : "No documents match"}</EmptyTitle><EmptyDescription>{nextCursor ? "Older documents have not been searched yet." : "Adjust the filters or create a new Markdown document."}</EmptyDescription>{nextCursor ? <Button type="button" disabled={loading} onClick={() => void searchRemaining()}>{loading ? "Searching older documents…" : "Search remaining documents"}</Button> : null}</EmptyHeader></Empty> : isMobile ? <MobileDocumentInventory documents={documents.slice(0, mobileLimit)} total={documents.length} generatedAt={initial.generatedAt} publicOrigin={initial.publicOrigin} copied={copied} onCopy={copyLink} onShowMore={() => setMobileLimit((current) => current + 50)} /> : <div className="overflow-x-auto"><Table>
           <TableHeader><TableRow><TableHead>Document</TableHead><TableHead>Last activity</TableHead><TableHead>Checkpoints</TableHead><TableHead>Expires</TableHead><TableHead><span className="sr-only">Actions</span></TableHead></TableRow></TableHeader>
           <TableBody>{documents.map((document) => <TableRow key={document.token}>
             <TableCell className="min-w-56"><div className="font-medium">{document.filename}</div><div className="mt-1 text-xs text-muted-foreground">Created {relativePast(document.createdAt, initial.generatedAt)}</div></TableCell>

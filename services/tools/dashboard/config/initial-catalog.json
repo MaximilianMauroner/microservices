@@ -86,7 +86,7 @@
       "id": "tools-directory",
       "groupId": "operations",
       "name": "Tools Status & Directory",
-      "description": "The public catalog and five-minute status snapshots at tools.mauroner.net.",
+      "description": "The public catalog and 30-minute status snapshots at tools.mauroner.net.",
       "order": 0,
       "visibility": "public",
       "lifecycle": "active",
@@ -111,7 +111,7 @@
         "scope": "public",
         "url": "https://tools.mauroner.net/health/tools"
       },
-      "privateNotes": "A dedicated Railway cron service publishes five-minute status snapshots."
+      "privateNotes": "A dedicated Railway cron service publishes 30-minute status snapshots."
     },
     {
       "id": "network-console",

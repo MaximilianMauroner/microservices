@@ -241,7 +241,7 @@ function StatusDetails({ status }: { status: PublicMonitorStatus | undefined }) 
 
 function StatusMark({ state, large = false }: { state: OverallState; large?: boolean }) {
   const symbol = state === "operational" ? "✓" : state === "outage" ? "!" : "·";
-  const label = state === "operational" ? "Operational" : state === "outage" ? "Service interruption" : state === "attention" ? "Checking" : "Limited visibility";
+  const label = state === "operational" ? "Operational" : state === "outage" ? "Service interruption" : state === "attention" ? "Inconclusive" : "Limited visibility";
   return <span className={`status-mark status-mark--${state}${large ? " status-mark--large" : ""}`} role="img" aria-label={label}>{symbol}</span>;
 }
 
@@ -264,7 +264,7 @@ function overallState(entries: PublicCatalogEntry[], statuses: PublicSnapshotDoc
 function overallSummary(state: OverallState, count: number) {
   const coverage = count === 0 ? "" : `${count} ${count === 1 ? "service" : "services"} not measured`;
   if (state === "outage") return { title: "Some services are unavailable", detail: "The monitor has detected an active service interruption.", badge: "Service interruption", coverage };
-  if (state === "attention") return { title: "Service checks are in progress", detail: "A fresh availability result will appear shortly.", badge: "Checking", coverage };
+  if (state === "attention") return { title: "Some service results are inconclusive", detail: "Review the latest recorded check for each service. The next scheduled check may update this status.", badge: "Review checks", coverage };
   if (state === "operational") return { title: "All monitored services operational", detail: "No service interruptions have been detected.", badge: "Operational", coverage };
   return { title: "Monitoring visibility is limited", detail: "No service currently has a measured availability result.", badge: "Limited visibility", coverage };
 }

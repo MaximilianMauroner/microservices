@@ -34,7 +34,8 @@ import {
   SidebarMenuSubButton,
   SidebarMenuSubItem,
   SidebarRail,
-  SidebarTrigger
+  SidebarTrigger,
+  useSidebar
 } from "./ui/sidebar.js";
 
 const products = [
@@ -50,6 +51,7 @@ export function ToolsSidebar() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const search = useRouterState({ select: (state) => state.location.search as Record<string, unknown> });
   const contentRef = useRef<HTMLDivElement>(null);
+  const { setOpenMobile } = useSidebar();
   const { data: session } = authClient.useSession();
   const { theme, setTheme } = useTheme();
   const userName = session?.user.name || "Account";
@@ -58,6 +60,7 @@ export function ToolsSidebar() {
 
   useEffect(() => {
     contentRef.current?.scrollTo({ top: 0 });
+    setOpenMobile(false);
   }, [pathname]);
 
   async function signOut() {
