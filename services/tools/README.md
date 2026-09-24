@@ -36,6 +36,7 @@ Required variables:
 - `GOOGLE_CLIENT_ID`
 - `GOOGLE_CLIENT_SECRET`
 - `BETTER_AUTH_SECRET`, at least 32 non-whitespace characters
+- `FEEDBACK_ENCRYPTION_KEY`, a base64url-encoded 32-byte key for response encryption
 - `AUTH_ALLOWED_GOOGLE_SUBJECT`
 - `VITE_CONVEX_URL`, the public Convex origin used by the Markdown Share browser client and CSP
 

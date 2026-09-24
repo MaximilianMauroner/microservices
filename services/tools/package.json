@@ -8,6 +8,7 @@
     "db:push-postgres": "tsx database/push-postgres.ts production",
     "db:push-postgres:development": "TOOLS_DEVELOPMENT_SCHEMA_PUSH_CONFIRM=tools-platform-development node --env-file-if-exists=.env.local --import tsx database/push-postgres.ts development",
     "db:push-postgres:test": "tsx database/push-postgres.ts test",
+    "feedback:encrypt-existing": "tsx feedback/encrypt-existing.ts",
     "dev": "vite dev",
     "start": "node .output/server/index.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",

@@ -1,5 +1,6 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import postgres, { type Sql } from "postgres";
+import { createFeedbackEncryption } from "./encryption.js";
 import {
   type FeedbackFollowUpState,
   type FeedbackForm,
@@ -15,7 +16,7 @@ import {
 
 type FormRow = { id: string; public_token: string; language: FeedbackLanguage; title: string; introduction: string; questions: unknown; status: FeedbackFormStatus; created_at: Date; updated_at: Date; response_count: number; unread_count: number };
 type SubmissionRow = { id: string; form_id: string; form_title: string; question_snapshot: unknown; answers: unknown; submitted_at: Date; review_state: FeedbackReviewState; follow_up_state: FeedbackFollowUpState };
-type SharedResponseRow = { form_title: string; language: FeedbackLanguage; question_snapshot: unknown; answers: unknown; submitted_at: Date; share_expires_at: Date };
+type SharedResponseRow = { id: string; form_title: string; language: FeedbackLanguage; question_snapshot: unknown; answers: unknown; submitted_at: Date; share_expires_at: Date };
 export type CreatedFeedbackSubmission = Readonly<{ id: string; shareToken?: string; shareExpiresAt?: string }>;
 
 export interface FeedbackRepository {
@@ -37,11 +38,12 @@ export interface FeedbackRepository {
   close(): Promise<void>;
 }
 
-export function createPostgresFeedbackRepository(databaseUrl: string, options: { readOnly?: boolean } = {}): FeedbackRepository {
-  return feedbackRepository(postgres(databaseUrl, { max: 3, idle_timeout: 120, connection: options.readOnly ? { default_transaction_read_only: true } : undefined }));
+export function createPostgresFeedbackRepository(databaseUrl: string, options: { readOnly?: boolean; encryptionKey: Buffer }): FeedbackRepository {
+  return feedbackRepository(postgres(databaseUrl, { max: 3, idle_timeout: 120, connection: options.readOnly ? { default_transaction_read_only: true } : undefined }), options.encryptionKey);
 }
 
-export function feedbackRepository(sql: Sql): FeedbackRepository {
+export function feedbackRepository(sql: Sql, key: Buffer): FeedbackRepository {
+  const encryption = createFeedbackEncryption(key);
   const formSelect = sql`select f.id, f.public_token, f.language, f.title, f.introduction, f.questions, f.status, f.created_at, f.updated_at,
     count(s.id)::int as response_count, count(s.id) filter (where s.review_state = 'unread')::int as unread_count
     from tools.feedback_forms f left join tools.feedback_submissions s on s.form_id = f.id`;
@@ -85,26 +87,28 @@ export function feedbackRepository(sql: Sql): FeedbackRepository {
       const id = randomUUID();
       const shareToken = shareDays ? randomBytes(32).toString("base64url") : undefined;
       const shareExpiresAt = shareDays ? new Date(Date.now() + shareDays * 86_400_000) : undefined;
+      const encryptedSnapshot = encryption.encrypt([...questionSnapshot], id, "question_snapshot");
+      const encryptedAnswers = encryption.encrypt(answers, id, "answers");
       await sql`insert into tools.feedback_submissions (id, form_id, question_snapshot, answers, submitted_at, review_state, follow_up_state, share_token_hash, share_expires_at)
-        values (${id}, ${form.id}, ${sql.json([...questionSnapshot])}, ${sql.json(answers)}, ${new Date()}, 'unread', ${wantsFeedbackFollowUp(questionSnapshot, answers) ? "wanted" : "none"}, ${shareToken ? hashShareToken(shareToken) : null}, ${shareExpiresAt ?? null})`;
+        values (${id}, ${form.id}, ${sql.json(encryptedSnapshot)}, ${sql.json(encryptedAnswers)}, ${new Date()}, 'unread', ${wantsFeedbackFollowUp(questionSnapshot, answers) ? "wanted" : "none"}, ${shareToken ? hashShareToken(shareToken) : null}, ${shareExpiresAt ?? null})`;
       return { id, ...(shareToken && shareExpiresAt ? { shareToken, shareExpiresAt: shareExpiresAt.toISOString() } : {}) };
     },
     async getSharedResponse(token) {
       if (!/^[A-Za-z0-9_-]{43}$/.test(token)) return undefined;
-      const [row] = await sql<SharedResponseRow[]>`select f.title as form_title, f.language, s.question_snapshot, s.answers, s.submitted_at, s.share_expires_at
+      const [row] = await sql<SharedResponseRow[]>`select s.id, f.title as form_title, f.language, s.question_snapshot, s.answers, s.submitted_at, s.share_expires_at
         from tools.feedback_submissions s join tools.feedback_forms f on f.id = s.form_id
         where s.share_token_hash = ${hashShareToken(token)} and s.share_expires_at > ${new Date()}`;
-      return row ? { formTitle: row.form_title, language: row.language, questionSnapshot: row.question_snapshot as FeedbackQuestion[], answers: row.answers as Record<string, string>, submittedAt: row.submitted_at.toISOString(), expiresAt: row.share_expires_at.toISOString() } : undefined;
+      return row ? { formTitle: row.form_title, language: row.language, questionSnapshot: encryption.decrypt<FeedbackQuestion[]>(row.question_snapshot, row.id, "question_snapshot"), answers: encryption.decrypt<Record<string, string>>(row.answers, row.id, "answers"), submittedAt: row.submitted_at.toISOString(), expiresAt: row.share_expires_at.toISOString() } : undefined;
     },
     async listSubmissions(formId) {
       const rows = await sql<SubmissionRow[]>`select s.id, s.form_id, f.title as form_title, s.question_snapshot, s.answers, s.submitted_at, s.review_state, s.follow_up_state
         from tools.feedback_submissions s join tools.feedback_forms f on f.id = s.form_id where s.form_id = ${formId} order by s.submitted_at desc`;
-      return rows.map(submissionFromRow);
+      return rows.map((row) => submissionFromRow(row, encryption));
     },
     async getSubmission(id) {
       const [row] = await sql<SubmissionRow[]>`select s.id, s.form_id, f.title as form_title, s.question_snapshot, s.answers, s.submitted_at, s.review_state, s.follow_up_state
         from tools.feedback_submissions s join tools.feedback_forms f on f.id = s.form_id where s.id = ${id}`;
-      return row ? submissionFromRow(row) : undefined;
+      return row ? submissionFromRow(row, encryption) : undefined;
     },
     async updateSubmission(id, input) {
       await sql`update tools.feedback_submissions set review_state = ${input.reviewState}, follow_up_state = ${input.followUpState} where id = ${id}`;
@@ -123,4 +127,4 @@ function publicToken() { return randomBytes(24).toString("base64url"); }
 function hashShareToken(token: string) { return createHash("sha256").update(token).digest("hex"); }
 function required<T>(value: T | undefined): T { if (!value) throw new Error("Feedback record was not found after mutation."); return value; }
 function formFromRow(row: FormRow): FeedbackForm { return { id: row.id, publicToken: row.public_token, language: row.language ?? "en", title: row.title, introduction: row.introduction, questions: row.questions as FeedbackQuestion[], status: row.status, createdAt: row.created_at.toISOString(), updatedAt: row.updated_at.toISOString(), responseCount: row.response_count, unreadCount: row.unread_count }; }
-function submissionFromRow(row: SubmissionRow): FeedbackSubmission { return { id: row.id, formId: row.form_id, formTitle: row.form_title, questionSnapshot: row.question_snapshot as FeedbackQuestion[], answers: row.answers as Record<string, string>, submittedAt: row.submitted_at.toISOString(), reviewState: row.review_state, followUpState: row.follow_up_state }; }
+function submissionFromRow(row: SubmissionRow, encryption: ReturnType<typeof createFeedbackEncryption>): FeedbackSubmission { return { id: row.id, formId: row.form_id, formTitle: row.form_title, questionSnapshot: encryption.decrypt<FeedbackQuestion[]>(row.question_snapshot, row.id, "question_snapshot"), answers: encryption.decrypt<Record<string, string>>(row.answers, row.id, "answers"), submittedAt: row.submitted_at.toISOString(), reviewState: row.review_state, followUpState: row.follow_up_state }; }

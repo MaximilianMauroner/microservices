@@ -98,7 +98,7 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
   const activityTracker = new ActivityTracker();
   const moneyImports = new MoneyImportService(createPostgresMoneyRepository(config.databaseUrl, { readOnly: config.readOnly }));
   const moneyMarketData = new MoneyMarketDataService(createPostgresMoneyMarketDataRepository(config.databaseUrl, { readOnly: config.readOnly }));
-  const feedback = createPostgresFeedbackRepository(config.databaseUrl, { readOnly: config.readOnly });
+  const feedback = createPostgresFeedbackRepository(config.databaseUrl, { readOnly: config.readOnly, encryptionKey: config.feedbackEncryptionKey });
   try {
     const tools = createToolsApp({
       storage: toolsStorage,
