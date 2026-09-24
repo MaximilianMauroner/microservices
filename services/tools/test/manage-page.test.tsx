@@ -76,14 +76,17 @@ describe("Manage artifact library", () => {
     expect(html).toContain("available until revoked");
   });
 
-  it("loads remaining inventory pages before applying a summarized project filter", async () => {
+  it("keeps filters responsive and offers an explicit search of older artifacts", async () => {
     const source = await readFile(new URL("../publisher/ui/manage-page.tsx", import.meta.url), "utf8");
     const completeLibrary = source.slice(source.indexOf("async function loadCompleteLibrary"), source.indexOf("async function replaceSelected"));
     expect(completeLibrary).toContain("while (cursor)");
     expect(completeLibrary).toContain("remaining.push(...payload.uploads)");
-    expect(completeLibrary).toContain("if (busy) return;");
+    expect(completeLibrary).toContain("if (!nextCursor || loadingAllRef.current) return;");
     expect(source).toContain("onSelect={(value) => void selectProject(value)}");
-    expect(source).toContain("void loadCompleteLibrary();");
+    expect(source).toContain("Search remaining artifacts");
+    expect(source).toContain("No matches in loaded artifacts");
+    expect(source).toContain("const selected = visibleUploads.find((upload) => upload.id === selectedId)");
+    expect(source).not.toContain("void loadCompleteLibrary();");
     expect(source).toContain("disabled={busy}");
   });
 

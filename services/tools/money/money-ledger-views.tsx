@@ -114,6 +114,8 @@ export function MoneyActivityView({
   transferReviewGroups,
   initialCategory,
   initialReviewOnly = false,
+  initialFromMonth,
+  initialToMonth,
 }: Pick<
   MoneyTrackerPageData,
   | "activity"
@@ -124,7 +126,7 @@ export function MoneyActivityView({
 > &
   Partial<
     Pick<MoneyTrackerPageData, "accounts" | "accountLabels" | "spending">
-  > & { initialCategory?: MoneyCategory; initialReviewOnly?: boolean }) {
+  > & { initialCategory?: MoneyCategory; initialReviewOnly?: boolean; initialFromMonth?: string; initialToMonth?: string }) {
   const router = useRouter();
   const isMobile = useIsMobile();
   const [rows, setRows] = useState(activity);
@@ -170,12 +172,14 @@ export function MoneyActivityView({
         (flow === "all" || item.flowKind === flow) &&
         (account === "all" || item.accountId === account) &&
         (category === "all" || item.category === category) &&
+        (!initialFromMonth || item.occurredAt.slice(0, 7) >= initialFromMonth) &&
+        (!initialToMonth || item.occurredAt.slice(0, 7) <= initialToMonth) &&
         (!normalized ||
           `${item.description} ${item.accountName} ${item.sourceType}`
             .toLocaleLowerCase("en-GB")
             .includes(normalized)),
     );
-  }, [account, category, rows, flow, query, reviewOnly]);
+  }, [account, category, rows, flow, query, reviewOnly, initialFromMonth, initialToMonth]);
   const mobileViewKey = `${account}\0${category}\0${flow}\0${query}\0${reviewOnly}\0${sort.key}\0${sort.direction}`;
   const mobileLimit = mobileWindow.key === mobileViewKey ? mobileWindow.limit : 50;
   const renderedRows = isMobile ? visible.slice(0, mobileLimit) : visible;
@@ -226,6 +230,8 @@ export function MoneyActivityView({
       if (flow !== "all") parameters.set("flow", flow);
       if (account !== "all") parameters.set("accountId", account);
       if (category !== "all") parameters.set("category", category);
+      if (initialFromMonth) parameters.set("fromMonth", initialFromMonth);
+      if (initialToMonth) parameters.set("toMonth", initialToMonth);
       parameters.set("sort", sort.key);
       parameters.set("direction", sort.direction);
       if (review) parameters.set("review", "true");
@@ -251,7 +257,7 @@ export function MoneyActivityView({
       window.clearTimeout(timeout);
       requestSequence.current += 1;
     };
-  }, [account, category, flow, query, reviewOnly, sort]);
+  }, [account, category, flow, query, reviewOnly, sort, initialFromMonth, initialToMonth]);
   const changeSort = (key: MoneyActivitySortKey) =>
     setSort((current) =>
       nextMoneySort(current, key, [
@@ -613,7 +619,7 @@ export function MoneyActivityView({
             <CardTitle>Transaction activity</CardTitle>
             <CardDescription>
               Search, filters, and sorting query the complete ledger. Category
-              rules remain account-scoped.
+              rules remain account-scoped. {initialFromMonth || initialToMonth ? `Showing ${initialFromMonth ?? "earliest month"} to ${initialToMonth ?? "latest month"}.` : ""}
             </CardDescription>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -951,6 +957,7 @@ export function MoneyDataView({
   accountRoles,
   categoryRules,
   currentMonthTransactionAccounts,
+  recentTransactionMonths,
   imports,
   marketData,
   months,
@@ -966,6 +973,7 @@ export function MoneyDataView({
   | "accountRoles"
   | "categoryRules"
   | "currentMonthTransactionAccounts"
+  | "recentTransactionMonths"
   | "imports"
   | "marketData"
   | "months"
@@ -1178,7 +1186,7 @@ export function MoneyDataView({
           </AlertDescription>
         </Alert>
       ) : null}
-      <MoneyImportsView accounts={accounts} accountLabels={accountLabels} accountLastObserved={accountLastObserved} accountRoles={accountRoles} currentMonthTransactionAccounts={currentMonthTransactionAccounts} imports={imports} months={months} />
+      <MoneyImportsView accounts={accounts} accountLabels={accountLabels} accountLastObserved={accountLastObserved} accountRoles={accountRoles} currentMonthTransactionAccounts={currentMonthTransactionAccounts} recentTransactionMonths={recentTransactionMonths} imports={imports} months={months} />
     </>
   );
 }
@@ -1189,9 +1197,10 @@ export function MoneyImportsView({
   accountLastObserved,
   accountRoles,
   currentMonthTransactionAccounts,
+  recentTransactionMonths,
   imports,
   months,
-}: Pick<MoneyTrackerPageData, "accounts" | "accountLabels" | "accountLastObserved" | "accountRoles" | "currentMonthTransactionAccounts" | "imports" | "months">) {
+}: Pick<MoneyTrackerPageData, "accounts" | "accountLabels" | "accountLastObserved" | "accountRoles" | "currentMonthTransactionAccounts" | "recentTransactionMonths" | "imports" | "months">) {
   const router = useRouter();
   const input = useRef<HTMLInputElement>(null);
   const dragDepth = useRef(0);
@@ -1335,10 +1344,11 @@ export function MoneyImportsView({
     (item) => item.preview && !item.receipt,
   ).length;
   const completedCount = files.filter((item) => item.receipt).length;
-  const currentMonth = new Date().toISOString().slice(0, 7);
+  const today = new Date();
+  const currentMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
   const currentMonthDate = `${currentMonth}-01`;
   const observedThisMonth = new Set([
-    ...currentMonthTransactionAccounts,
+    ...(recentTransactionMonths ? recentTransactionMonths.filter((item) => item.month === currentMonth).map((item) => item.accountId) : currentMonthTransactionAccounts),
     ...(months.find((month) => month.date === currentMonthDate)?.observedAccounts ?? []),
   ]);
   const accountStatus = accounts.map((account) => ({
@@ -1352,19 +1362,6 @@ export function MoneyImportsView({
   const dropDisabled = busy !== undefined || reimporting;
   return (
     <section className="grid items-start gap-3 lg:grid-cols-[minmax(0,1.25fr)_minmax(20rem,.75fr)]">
-      <Card className="lg:col-span-2">
-        <CardHeader className="border-b">
-          <CardTitle>Account activity for {currentMonth}</CardTitle>
-          <CardDescription>{accountStatus.length ? `${noRecordsCount} of ${accountStatus.length} accounts have no recorded transactions or balance this month` : "Accounts appear here after your first import"}</CardDescription>
-        </CardHeader>
-        {accountStatus.length ? <p className="px-6 pt-4 text-xs text-muted-foreground">No records does not mean an upload is missing. An imported statement can have no transactions for this month.</p> : null}
-        {accountStatus.length ? <CardContent className="grid gap-2 pt-4 sm:grid-cols-2 lg:grid-cols-3">
-          {accountStatus.map((account) => <div key={account.id} className="flex items-start justify-between gap-3 rounded-md border px-3 py-2">
-            <div className="min-w-0"><strong className="block truncate text-sm" title={account.label}>{account.label}</strong><span className="text-xs text-muted-foreground">{account.role === "investment" ? "Investment" : "Cash"} · {account.lastObserved ? `Last balance ${account.lastObserved.slice(0, 7)}` : "No balance yet"}</span></div>
-            <Badge variant="outline">{account.observed ? "Records found" : "No records"}</Badge>
-          </div>)}
-        </CardContent> : null}
-      </Card>
       <Card>
         <CardHeader className="border-b">
           <CardTitle>Import statements</CardTitle>
@@ -1572,6 +1569,19 @@ export function MoneyImportsView({
             />
           )}
         </CardContent>
+      </Card>
+      <Card className="lg:col-span-2">
+        <CardHeader className="border-b">
+          <CardTitle>Account activity for {currentMonth}</CardTitle>
+          <CardDescription>{accountStatus.length ? `${noRecordsCount} of ${accountStatus.length} accounts have no recorded transactions or balance this month` : "Accounts appear here after your first import"}</CardDescription>
+        </CardHeader>
+        {accountStatus.length ? <p className="px-6 pt-4 text-xs text-muted-foreground">Activity shows transactions and balances. Statement coverage is unknown because imports do not record the period each file covers. No records does not mean an upload is missing.</p> : null}
+        {accountStatus.length ? <CardContent className="grid gap-2 pt-4 sm:grid-cols-2 lg:grid-cols-3">
+          {accountStatus.map((account) => <div key={account.id} className="flex items-start justify-between gap-3 rounded-md border px-3 py-2">
+            <div className="min-w-0"><strong className="block truncate text-sm" title={account.label}>{account.label}</strong><span className="text-xs text-muted-foreground">{account.role === "investment" ? "Investment" : "Cash"} · {account.lastObserved ? `Last balance ${account.lastObserved.slice(0, 7)}` : "No balance yet"}</span></div>
+            <div className="shrink-0 text-right"><Badge variant="outline">{account.observed ? "Activity found" : "No activity"}</Badge><span className="mt-1 block text-xs text-muted-foreground">Coverage unknown</span></div>
+          </div>)}
+        </CardContent> : null}
       </Card>
     </section>
   );
@@ -2108,6 +2118,9 @@ export function MoneyInvestmentsView({
                   <AreaChartForPortfolio data={chartHistory} />
                 </ChartContainer>
                 <div className="mt-2 flex flex-wrap gap-4 text-xs text-muted-foreground">
+                  <span><i className="mr-1.5 inline-block size-2 rounded-full bg-cyan-300" />Market value</span>
+                  <span><i className="mr-1.5 inline-block size-2 rounded-full bg-zinc-400" />FIFO cost basis</span>
+                  <span><i className="mr-1.5 inline-block size-2 rounded-full bg-yellow-300" />90-day average</span>
                   <span>
                     <i className="mr-1.5 inline-block size-2 rounded-full bg-emerald-400" />
                     Purchase
@@ -2135,6 +2148,7 @@ export function MoneyInvestmentsView({
                   >
                     <PortfolioBenchmarkChart data={chartHistory} />
                   </ChartContainer>
+                  <div className="mt-2 flex flex-wrap gap-4 text-xs text-muted-foreground" aria-label="Benchmark chart key"><span><i className="mr-1.5 inline-block size-2 rounded-full bg-cyan-300" />Actual portfolio</span><span><i className="mr-1.5 inline-block size-2 rounded-full bg-pink-400" />Euro-area inflation</span><span><i className="mr-1.5 inline-block size-2 rounded-full bg-purple-400" />7% annual target</span></div>
                 </div>
                 <PortfolioHistoryDisclosure history={history} />
               </>

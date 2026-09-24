@@ -522,6 +522,11 @@ button:disabled {
   gap: 12px;
 }
 
+.tools-return { color: var(--markdown-share-muted); font-size: 0.78rem; text-decoration: none; }
+.tools-return:hover, .tools-return:focus-visible { color: var(--markdown-share-accent); text-decoration: underline; }
+.tools-return-compact { flex: none; white-space: nowrap; }
+.tools-return-label { margin-left: 0.25em; }
+
 .wordmark {
   flex: none;
   display: inline-flex;
@@ -1322,6 +1327,12 @@ button:disabled {
   color: var(--markdown-share-preview-link);
 }
 
+.markdown-body ul { list-style: disc outside; padding-left: 1.6em; }
+.markdown-body ol { list-style: decimal outside; padding-left: 1.6em; }
+.markdown-body li { display: list-item; padding-left: 0.15em; }
+.markdown-body li + li { margin-top: 0.2em; }
+.markdown-body li > ul, .markdown-body li > ol { margin-top: 0.2em; }
+
 .markdown-body blockquote {
   margin-left: 0;
   padding-left: 1.2em;
@@ -1436,6 +1447,8 @@ button:disabled {
     gap: 7px;
     overflow: hidden;
   }
+
+  .tools-return-label { display: none; }
 
   .wordmark-name,
   .expiry-full {

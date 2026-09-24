@@ -419,7 +419,7 @@ export function PublishPage() {
               <div className="max-w-md p-6">
                 <div className="mx-auto mb-4 grid size-11 place-items-center rounded-full border text-muted-foreground" aria-hidden="true"><Upload /></div>
                 <strong className="text-lg">Drop files here</strong>
-                <p className="mt-2 text-sm text-muted-foreground">Browser uploads are temporary, unlisted downloads that expire automatically.</p>
+                <p className="mt-2 text-sm text-muted-foreground">File links expire after 3 days by default; the exact expiry is shown after upload. Anyone with the link can download the file.</p>
                 <Input className="hidden" ref={fileInput} type="file" multiple onChange={chooseFile} aria-label="Choose files to upload" tabIndex={-1} />
                 <Button className="mt-5" type="button" size="sm" onClick={() => fileInput.current?.click()} disabled={busy}>
                   {busy ? "Working…" : "Choose files"}
@@ -505,14 +505,14 @@ export function PublishPage() {
                     </Button>
                   ) : null}
                 </div>
-                <p className="mt-3 text-xs text-muted-foreground">Browser uploads are temporary, unlisted downloads that expire automatically.</p>
+                <p className="mt-3 text-xs text-muted-foreground">File links expire after 3 days by default; the exact expiry is shown after upload. Anyone with the link can download the file.</p>
               </div>
             )}
           </Card>
           <aside className="rounded-xl border bg-card p-5" aria-label="Upload policy">
             <h2 className="font-semibold">Upload policy</h2>
             <p className="mt-2 text-sm text-muted-foreground">Generated URLs are public, unlisted capability links. Anyone with the URL can download the file until it expires or is revoked.</p>
-            <dl className="mt-5 grid gap-3 text-xs"><div><dt className="text-muted-foreground">Delivery</dt><dd className="mt-1 font-medium">Temporary download</dd></div><div><dt className="text-muted-foreground">Access</dt><dd className="mt-1 font-medium">Unlisted URL</dd></div><div><dt className="text-muted-foreground">Maintenance</dt><dd className="mt-1 font-medium">Manage artifact library</dd></div></dl>
+            <dl className="mt-5 grid gap-3 text-xs"><div><dt className="text-muted-foreground">Delivery</dt><dd className="mt-1 font-medium">Expires after 3 days by default</dd></div><div><dt className="text-muted-foreground">Access</dt><dd className="mt-1 font-medium">Unlisted URL</dd></div><div><dt className="text-muted-foreground">Maintenance</dt><dd className="mt-1 font-medium">Manage artifact library</dd></div></dl>
           </aside>
         </section>
 

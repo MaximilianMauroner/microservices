@@ -210,7 +210,8 @@ describe("Option A money ledger views", () => {
   });
 
   it("surfaces analytical confidence and actionable repairs in one data-quality view", () => {
-    const currentMonth = new Date().toISOString().slice(0, 7);
+    const today = new Date();
+    const currentMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
     const html = renderToStaticMarkup(<MoneyDataView
       accounts={["cash", "broker"]}
       accountLabels={{ cash: "Cash account", broker: "Broker account" }}
@@ -230,11 +231,12 @@ describe("Option A money ledger views", () => {
     expect(html).toContain("Data quality summary");
     expect(html).toContain(`Account activity for ${currentMonth}`);
     expect(html).toContain("1 of 2 accounts have no recorded transactions or balance this month");
-    expect(html).toContain("An imported statement can have no transactions for this month.");
-    expect(html).toContain("Records found");
+    expect(html).toContain("Statement coverage is unknown");
+    expect(html).toContain("Activity found");
     expect(html).toContain("Cash account");
     expect(html).toContain("Broker account");
-    expect(html).toContain("No records");
+    expect(html).toContain("No activity");
+    expect(html).toContain("Coverage unknown");
     expect(html).toContain("Choose or drop money exports");
     expect(html).toContain("66.7%");
     expect(html).toContain("Active category rules");

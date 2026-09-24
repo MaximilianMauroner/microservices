@@ -75,6 +75,7 @@ function LandingPage() {
   return (
     <main className="landing-shell">
       <section className="landing-card">
+        <a className="tools-return" href="/">← Tools dashboard</a>
         <img className="brand-mark" src={favicons.markdownShare} alt="" />
         <p className="eyebrow">A temporary shared page</p>
         <h1>
@@ -82,8 +83,8 @@ function LandingPage() {
         </h1>
         <p className="landing-copy">
           Edit together in real time, preview as you type, and export a clean
-          PDF. No account. Links stay private to this browser. Gone seven days
-          after the last edit.
+          PDF. No account. Anyone with the document link can open it. Unpinned
+          documents expire seven days after the last edit; pinned documents last 30 days.
         </p>
 
         <form className="create-form" onSubmit={handleCreate}>
@@ -161,7 +162,7 @@ function LandingPage() {
 
         <div className="promise-row" aria-label="Product features">
           <span>Convex realtime</span>
-          <span>7-day retention</span>
+          <span>7 days · pinned 30 days</span>
           <span>PDF export</span>
         </div>
       </section>

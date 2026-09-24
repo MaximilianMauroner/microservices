@@ -4,12 +4,13 @@ import { FeedbackValidationError, parseFeedbackShareDays, validateFeedbackAnswer
 const MAXIMUM_BODY_BYTES = 32 * 1024;
 
 export async function submitPublicFeedback({ request, context, params }: PlatformRouteInput) {
+  const wantsJson = request.headers.get("accept")?.includes("application/json") ?? false;
   const contentType = request.headers.get("content-type")?.toLowerCase() ?? "";
   if (!contentType.startsWith("application/x-www-form-urlencoded")) return json({ error: "invalid_content_type" }, 415);
   try {
     const body = await boundedBody(request);
     const fields = new URLSearchParams(new TextDecoder("utf-8", { fatal: true }).decode(body));
-    if (fields.get("website")) return redirectToForm(params.token, true);
+    if (fields.get("website")) return submissionResult(params.token, true, undefined, undefined, undefined, wantsJson);
     const form = await context.runtime.feedback.getPublicForm(params.token);
     if (!form) return notFound();
     const entries: Record<string, FormDataEntryValue> = {};
@@ -17,18 +18,21 @@ export async function submitPublicFeedback({ request, context, params }: Platfor
     for (const [key, value] of fields) if (key !== "__share_days") entries[key] = value;
     const answers = validateFeedbackAnswers(form.questions, entries);
     const created = await context.runtime.feedback.createSubmission(form, answers, form.questions, shareDays);
-    return redirectToForm(params.token, true, undefined, created.shareToken, created.shareExpiresAt);
+    return submissionResult(params.token, true, undefined, created.shareToken, created.shareExpiresAt, wantsJson, form.language);
   } catch (error) {
-    if (error instanceof FeedbackValidationError) return redirectToForm(params.token, false, error.code);
+    if (error instanceof FeedbackValidationError) return submissionResult(params.token, false, error.code, undefined, undefined, wantsJson);
     if (error instanceof RequestTooLargeError) return json({ error: "request_too_large" }, 413);
-    return redirectToForm(params.token, false, "submission_failed");
+    return submissionResult(params.token, false, "submission_failed", undefined, undefined, wantsJson);
   }
 }
 
-function redirectToForm(token: string, submitted: boolean, error?: string, shareToken?: string, shareExpiresAt?: string) {
-  const query = new URLSearchParams(submitted ? { submitted: "1" } : { error: error ?? "invalid_request" });
+function submissionResult(token: string, submitted: boolean, error?: string, shareToken?: string, shareExpiresAt?: string, wantsJson = false, locale?: string) {
+  if (wantsJson && !submitted) return json({ error: error ?? "invalid_request" }, 400);
+  const query = new URLSearchParams(submitted ? { locale: locale === "de" ? "de" : "en" } : { error: error ?? "invalid_request" });
   if (submitted && shareToken && shareExpiresAt) { query.set("share", shareToken); query.set("expires", shareExpiresAt); }
-  return new Response(null, { status: 303, headers: { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer", Location: `/feedback/f/${encodeURIComponent(token)}?${query}` } });
+  const location = submitted ? `/feedback/confirmation?${query}` : `/feedback/f/${encodeURIComponent(token)}?${query}`;
+  if (wantsJson) return json({ location }, 200);
+  return new Response(null, { status: 303, headers: { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer", Location: location } });
 }
 function notFound() { return new Response("Feedback form not found.", { status: 404, headers: { "Cache-Control": "no-store", "Content-Type": "text/plain; charset=utf-8" } }); }
 function json(body: unknown, status: number) { return new Response(JSON.stringify(body), { status, headers: { "Cache-Control": "no-store", "Content-Type": "application/json; charset=utf-8" } }); }

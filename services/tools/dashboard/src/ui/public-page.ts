@@ -25,7 +25,7 @@ const TOOL_ICON_PATHS: Readonly<Record<string, string>> = {
 };
 
 const STATUS_LABELS: Record<MonitorStatus, string> = {
-  checking: "Checking",
+  checking: "Inconclusive",
   up: "Operational",
   down: "Unavailable",
   paused: "Monitoring paused",
@@ -550,7 +550,7 @@ function uptimeSummary(
         : status.status === "down"
           ? "Unavailable"
           : status.status === "checking"
-            ? "Checking"
+            ? "Inconclusive"
             : status.status === "paused"
               ? "Monitoring paused"
               : "Collecting uptime";
@@ -668,9 +668,9 @@ function overallSummary(state: OverallState, unmeasuredCount: number): {
   }
   if (state === "attention") {
     return {
-      title: "Service checks are in progress",
-      detail: "A fresh availability result will appear shortly.",
-      badge: "Checking",
+      title: "Some service results are inconclusive",
+      detail: "Review the latest recorded check for each service. The next scheduled check may update this status.",
+      badge: "Review checks",
       coverage: unmeasuredLabel(unmeasuredCount)
     };
   }
@@ -724,7 +724,7 @@ function statusMark(state: OverallState, large: boolean): string {
     : state === "outage"
       ? "Service interruption"
       : state === "attention"
-        ? "Checking"
+        ? "Inconclusive"
         : "Limited visibility";
   return `<span class="status-mark status-mark--${state}${large ? " status-mark--large" : ""}" role="img" aria-label="${label}">${symbol}</span>`;
 }

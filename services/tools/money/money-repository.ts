@@ -58,6 +58,18 @@ export type MoneyCategoryRule = Readonly<{
   category: MoneyCategory;
   updatedAt: string;
 }>;
+export type MoneyCategoryRuleInput = Readonly<{
+  accountId: string;
+  matchField: "description" | "mcc" | "source_type";
+  matchValue: string;
+  category: MoneyCategory;
+}>;
+export type MoneyCategoryRulePreview = Readonly<{
+  matchCount: number;
+  changeCount: number;
+  manualCount: number;
+  examples: readonly Readonly<{ id: string; date: string; description: string; category: MoneyCategory; amountMinor: number; currency: string }> [];
+}>;
 export type MoneySpendingAnalytics = Readonly<{
   months: readonly Readonly<{ month: string; observed: boolean; spendMinor: number; refundsMinor: number; incomeMinor: number; feesMinor: number; taxesMinor: number; netCashFlowMinor: number }>[];
   categories: readonly Readonly<{ category: MoneyCategory; amountMinor: number; count: number }>[];
@@ -82,6 +94,7 @@ export type MoneyPlanningAnalytics = Readonly<{
 export type MoneyLedgerSnapshot = MoneyTrackerSnapshot & Readonly<{
   imports: readonly MoneyImportSummary[]; activity: readonly MoneyActivityItem[]; transactionCount: number; revertedCount: number;
   currentMonthTransactionAccounts: readonly string[];
+  recentTransactionMonths?: readonly Readonly<{ accountId: string; month: string }>[];
   transferReview: Readonly<{ linkedPairs: number; unlinkedCount: number; unresolvedPositiveCount: number; unresolvedNegativeCount: number }>;
   transferReviewGroups: readonly MoneyTransferReviewGroup[];
   categoryRules: readonly MoneyCategoryRule[];
@@ -90,7 +103,7 @@ export type MoneyLedgerSnapshot = MoneyTrackerSnapshot & Readonly<{
 export type MoneyActivityPage = Readonly<{ items: readonly MoneyActivityItem[]; total: number; hasMore: boolean }>;
 export type MoneyActivitySortKey = "date" | "description" | "account" | "flow" | "category" | "costs" | "amount";
 export type MoneyActivitySortDirection = "asc" | "desc";
-export type MoneyActivityPageInput = Readonly<{ query: string; flow?: MoneyLedgerTransaction["flowKind"]; accountId?: string; category?: MoneyCategory; reviewOnly?: boolean; sort?: MoneyActivitySortKey; direction?: MoneyActivitySortDirection; offset: number; limit: number }>;
+export type MoneyActivityPageInput = Readonly<{ query: string; flow?: MoneyLedgerTransaction["flowKind"]; accountId?: string; category?: MoneyCategory; fromMonth?: string; toMonth?: string; reviewOnly?: boolean; sort?: MoneyActivitySortKey; direction?: MoneyActivitySortDirection; offset: number; limit: number }>;
 export const MONEY_LEDGER_SCOPES = ["overview", "transactions", "cash-flow", "categories", "investments", "accounts", "insights", "predictions", "data"] as const;
 export type MoneyLedgerViewScope = (typeof MONEY_LEDGER_SCOPES)[number];
 export type MoneyLedgerScope = MoneyLedgerViewScope | "all";
@@ -166,6 +179,8 @@ export interface MoneyRepository {
   readLedgerSnapshot(scope: MoneyLedgerScope): Promise<MoneyLedgerSnapshot>;
   readActivityPage(input: MoneyActivityPageInput): Promise<MoneyActivityPage>;
   setTransactionCategory(input: Readonly<{ transactionId: string; category: MoneyCategory; actor: string; createRule: boolean }>): Promise<Readonly<{ affectedCount: number }>>;
+  previewCategoryRule(input: MoneyCategoryRuleInput): Promise<MoneyCategoryRulePreview>;
+  createCategoryRule(input: MoneyCategoryRuleInput & Readonly<{ actor: string; expectedMatchCount: number }>): Promise<Readonly<{ affectedCount: number }>>;
   deleteCategoryRule(ruleId: string): Promise<Readonly<{ affectedCount: number }> | undefined>;
   setTransferDisposition(input: Readonly<{ transactionId: string; disposition: MoneyTransferDisposition }>): Promise<void>;
   setTransferDispositions(input: Readonly<{ transactionIds: readonly string[]; disposition: MoneyTransferDisposition }>): Promise<Readonly<{ affectedCount: number }>>;
@@ -329,9 +344,9 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
       const needs = (query: MoneyLedgerQuery) => queries.has(query);
       const [imports, currentMonthTransactions, categoryRules, activity, count, transfers, transferReviewItems, monthly, categories, categoryMonths, merchantMonths, categoryActivity, events, investmentTotals, tradeMarkers, realizedEvents, snapshotRows] = await Promise.all([
         needs("imports") ? sql<ImportRow[]>`select id, digest, format, filename, bytes, source_row_count, inserted_row_count, duplicate_row_count, committed_at, created_by from tools.money_imports order by committed_at desc limit 50` : emptyRows<ImportRow>(),
-        needs("currentMonthTransactions") ? sql<{ account_id: string }[]>`select distinct account_id::text account_id from tools.money_transactions
-          where status = 'completed' and local_date >= date_trunc('month', current_date)
-            and local_date < date_trunc('month', current_date) + interval '1 month'` : emptyRows<{ account_id: string }>(),
+        needs("currentMonthTransactions") ? sql<{ account_id: string; month: string }[]>`select distinct account_id::text account_id, to_char(local_date, 'YYYY-MM') month from tools.money_transactions
+          where status = 'completed' and local_date >= date_trunc('month', current_date) - interval '1 month'
+            and local_date < date_trunc('month', current_date) + interval '2 months'` : emptyRows<{ account_id: string; month: string }>(),
         needs("categoryRules") ? sql<CategoryRuleRow[]>`select r.id, a.display_name account_name,
           coalesce((select t.description from tools.money_transactions t
             where t.account_id = r.account_id and lower(t.description) = r.match_value
@@ -494,7 +509,7 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
       ]);
       const spending = spendingAnalytics(monthly, categories, categoryMonths, merchantMonths, categoryActivity);
       return {
-        imports: imports.map(summary), currentMonthTransactionAccounts: currentMonthTransactions.map((row) => row.account_id), categoryRules: categoryRules.map(categoryRule), activity: activity.map(activityItem), transactionCount: Number(count[0]?.count ?? 0), revertedCount: Number(count[0]?.reverted_count ?? 0),
+        imports: imports.map(summary), currentMonthTransactionAccounts: currentMonthTransactions.filter((row) => row.month === new Date().toISOString().slice(0, 7)).map((row) => row.account_id), recentTransactionMonths: currentMonthTransactions.map((row) => ({ accountId: row.account_id, month: row.month })), categoryRules: categoryRules.map(categoryRule), activity: activity.map(activityItem), transactionCount: Number(count[0]?.count ?? 0), revertedCount: Number(count[0]?.reverted_count ?? 0),
         transferReview: transferReview(transfers[0]), transferReviewGroups: transferReviewGroups(transferReviewItems),
         spending, investments: investmentAnalytics(events, investmentTotals[0], tradeMarkers, realizedEvents), planning: planningAnalytics(spending.months, transferReview(transfers[0])), ...balanceSnapshot(snapshotRows)
       };
@@ -518,6 +533,8 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
             and (${input.flow ?? null}::text is null or t.flow_kind = ${input.flow ?? null})
             and (${input.accountId ?? null}::uuid is null or t.account_id = ${input.accountId ?? null}::uuid)
             and (${input.category ?? null}::text is null or t.category = ${input.category ?? null})
+            and (${input.fromMonth ? `${input.fromMonth}-01` : null}::date is null or t.local_date >= ${input.fromMonth ? `${input.fromMonth}-01` : null}::date)
+            and (${input.toMonth ? `${input.toMonth}-01` : null}::date is null or t.local_date < (${input.toMonth ? `${input.toMonth}-01` : null}::date + interval '1 month'))
             and (${input.reviewOnly ?? false} = false or (t.status = 'completed' and t.flow_kind = 'transfer' and t.transfer_group_id is null and t.transfer_disposition is null))
           order by ${order} ${direction}, t.occurred_at desc, t.source_row desc, t.id desc limit ${input.limit} offset ${input.offset}`,
         sql<{ count: string }[]>`select count(*)::text count from (${effectiveTransactions(sql)}) t join tools.money_accounts a on a.id = t.account_id
@@ -525,6 +542,8 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
             and (${input.flow ?? null}::text is null or t.flow_kind = ${input.flow ?? null})
             and (${input.accountId ?? null}::uuid is null or t.account_id = ${input.accountId ?? null}::uuid)
             and (${input.category ?? null}::text is null or t.category = ${input.category ?? null})
+            and (${input.fromMonth ? `${input.fromMonth}-01` : null}::date is null or t.local_date >= ${input.fromMonth ? `${input.fromMonth}-01` : null}::date)
+            and (${input.toMonth ? `${input.toMonth}-01` : null}::date is null or t.local_date < (${input.toMonth ? `${input.toMonth}-01` : null}::date + interval '1 month'))
             and (${input.reviewOnly ?? false} = false or (t.status = 'completed' and t.flow_kind = 'transfer' and t.transfer_group_id is null and t.transfer_disposition is null))`
       ]);
       const total = Number(count[0]?.count ?? 0);

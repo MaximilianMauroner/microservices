@@ -348,7 +348,7 @@ describe("public page", () => {
         }
       }
     });
-    expect(checking).toContain("Service checks are in progress");
+    expect(checking).toContain("Some service results are inconclusive");
 
     const limited = renderStatusPage({
       ...publicSnapshot,

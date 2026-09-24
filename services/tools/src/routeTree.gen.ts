@@ -30,6 +30,7 @@ import { Route as ArtifactsIdRouteImport } from './routes/artifacts/$id'
 import { Route as AssetsSplatRouteImport } from './routes/assets/$'
 import { Route as DropSplatRouteImport } from './routes/drop/$'
 import { Route as FeedbackIndexRouteImport } from './routes/feedback/index'
+import { Route as FeedbackConfirmationRouteImport } from './routes/feedback/confirmation'
 import { Route as FilesIdRouteImport } from './routes/files/$id'
 import { Route as HealthComponentRouteImport } from './routes/health/$component'
 import { Route as MarkdownIndexRouteImport } from './routes/markdown/index'
@@ -163,6 +164,11 @@ const DropSplatRoute = DropSplatRouteImport.update({
 const FeedbackIndexRoute = FeedbackIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => FeedbackRoute,
+} as any)
+const FeedbackConfirmationRoute = FeedbackConfirmationRouteImport.update({
+  id: '/confirmation',
+  path: '/confirmation',
   getParentRoute: () => FeedbackRoute,
 } as any)
 const FilesIdRoute = FilesIdRouteImport.update({
@@ -335,6 +341,7 @@ export interface FileRoutesByFullPath {
   '/artifacts/$id': typeof ArtifactsIdRoute
   '/assets/$': typeof AssetsSplatRoute
   '/drop/$': typeof DropSplatRoute
+  '/feedback/confirmation': typeof FeedbackConfirmationRoute
   '/files/$id': typeof FilesIdRouteWithChildren
   '/health/$component': typeof HealthComponentRoute
   '/publisher/artifacts': typeof PublisherArtifactsRoute
@@ -384,6 +391,7 @@ export interface FileRoutesByTo {
   '/artifacts/$id': typeof ArtifactsIdRoute
   '/assets/$': typeof AssetsSplatRoute
   '/drop/$': typeof DropSplatRoute
+  '/feedback/confirmation': typeof FeedbackConfirmationRoute
   '/files/$id': typeof FilesIdRouteWithChildren
   '/health/$component': typeof HealthComponentRoute
   '/publisher/artifacts': typeof PublisherArtifactsRoute
@@ -437,6 +445,7 @@ export interface FileRoutesById {
   '/artifacts/$id': typeof ArtifactsIdRoute
   '/assets/$': typeof AssetsSplatRoute
   '/drop/$': typeof DropSplatRoute
+  '/feedback/confirmation': typeof FeedbackConfirmationRoute
   '/files/$id': typeof FilesIdRouteWithChildren
   '/health/$component': typeof HealthComponentRoute
   '/publisher/artifacts': typeof PublisherArtifactsRoute
@@ -491,6 +500,7 @@ export interface FileRouteTypes {
     | '/artifacts/$id'
     | '/assets/$'
     | '/drop/$'
+    | '/feedback/confirmation'
     | '/files/$id'
     | '/health/$component'
     | '/publisher/artifacts'
@@ -540,6 +550,7 @@ export interface FileRouteTypes {
     | '/artifacts/$id'
     | '/assets/$'
     | '/drop/$'
+    | '/feedback/confirmation'
     | '/files/$id'
     | '/health/$component'
     | '/publisher/artifacts'
@@ -592,6 +603,7 @@ export interface FileRouteTypes {
     | '/artifacts/$id'
     | '/assets/$'
     | '/drop/$'
+    | '/feedback/confirmation'
     | '/files/$id'
     | '/health/$component'
     | '/publisher/artifacts'
@@ -809,6 +821,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof FeedbackIndexRouteImport
       parentRoute: typeof FeedbackRoute
     }
+    '/feedback/confirmation': {
+      id: '/feedback/confirmation'
+      path: '/confirmation'
+      fullPath: '/feedback/confirmation'
+      preLoaderRoute: typeof FeedbackConfirmationRouteImport
+      parentRoute: typeof FeedbackRoute
+    }
     '/files/$id': {
       id: '/files/$id'
       path: '/files/$id'
@@ -1016,6 +1035,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface FeedbackRouteChildren {
+  FeedbackConfirmationRoute: typeof FeedbackConfirmationRoute
   FeedbackIndexRoute: typeof FeedbackIndexRoute
   FeedbackFTokenRoute: typeof FeedbackFTokenRoute
   FeedbackFormsFormIdRoute: typeof FeedbackFormsFormIdRoute
@@ -1024,6 +1044,7 @@ interface FeedbackRouteChildren {
 }
 
 const FeedbackRouteChildren: FeedbackRouteChildren = {
+  FeedbackConfirmationRoute: FeedbackConfirmationRoute,
   FeedbackIndexRoute: FeedbackIndexRoute,
   FeedbackFTokenRoute: FeedbackFTokenRoute,
   FeedbackFormsFormIdRoute: FeedbackFormsFormIdRoute,

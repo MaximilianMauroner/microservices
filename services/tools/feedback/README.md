@@ -16,7 +16,26 @@ Unsaved editor changes are shown before saving and guarded when leaving the form
 Respondents may optionally create a read-only response link when they submit,
 lasting 1, 7, or 30 days. The link appears on the confirmation page,
 and anyone holding it can read that response until it expires or is deleted.
+The confirmation page at `/feedback/confirmation` remains available after the
+form is closed or rotated. Submission errors stay on the form so typed answers
+can be corrected and sent again.
 Only a SHA-256 hash of the random share token is stored in PostgreSQL.
+
+Response answers and their question snapshots are encrypted before being stored
+in PostgreSQL using AES-256-GCM. Set `FEEDBACK_ENCRYPTION_KEY` to a random
+base64url-encoded 32-byte key, kept outside the database and backed up securely.
+Generate one with `node -p "require('node:crypto').randomBytes(32).toString('base64url')"`.
+The application refuses to start without a valid key. Losing or changing the
+key makes encrypted responses unreadable. The form definitions, submission
+timestamps, review state, and sharing expiry remain readable database metadata.
+CSV exports, the private response view, and valid shared links decrypt on read.
+
+Existing plaintext responses remain readable until the guarded backfill runs.
+Configure the key, deploy the new application, and wait for older instances to
+stop before running the backfill against the intended database with
+`FEEDBACK_ENCRYPT_EXISTING_CONFIRM=encrypt-existing-feedback pnpm --dir services/tools run feedback:encrypt-existing`.
+It skips rows already encrypted and reports how many it changed. Do not rotate
+the key without a separate re-encryption migration.
 
 The private form editor can copy a versioned JSON document containing the form
 content and response schema. It can also copy a generation prompt or apply a

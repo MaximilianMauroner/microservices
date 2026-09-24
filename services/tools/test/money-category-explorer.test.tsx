@@ -36,6 +36,9 @@ describe("money category explorer", () => {
     expect(html).toContain("Merchant groups");
     expect(html).toContain("Market");
     expect(html).toContain("Recent transactions");
+    expect(html).toContain("category=groceries");
+    expect(html).toContain("fromMonth=2026-06");
+    expect(html).toContain("toMonth=2026-07");
     expect(html).toContain("rule");
     expect(html).toContain("View exact graph data");
     expect(html).toContain("Biggest contributors");

@@ -18,13 +18,14 @@ describe("feedback copy UI", () => {
     const feedbackUi = await readFile(new URL("../feedback/ui.tsx", import.meta.url), "utf8");
 
     expect(feedbackUi).toContain('aria-label="Feedback overview"');
-    expect(feedbackUi).toContain("View public form");
+    expect(feedbackUi).toContain("Preview form");
     expect(feedbackUi).toContain("Total responses");
     expect(feedbackUi).toContain("Recent responses");
     expect(feedbackUi).toContain("Edit form");
     expect(feedbackUi).toContain("More tools");
     expect(feedbackUi).toContain('aria-controls="feedback-form-editor"');
-    expect(feedbackUi).toContain('lg:block`} onSubmit={save}');
+    expect(feedbackUi).toContain('activePanel === "edit" ? "block" : "hidden"');
+    expect(feedbackUi).toContain("Preview form");
     expect(feedbackUi).toContain("Additional context");
   });
 });
