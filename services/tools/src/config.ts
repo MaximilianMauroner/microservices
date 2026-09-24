@@ -1,5 +1,6 @@
 import { loadConfig as loadArtifactConfig } from "@tools-platform/artifact-publisher";
 import { loadConfig as loadToolsConfig } from "@tools-platform/web";
+import { parseFeedbackEncryptionKey } from "../feedback/encryption.js";
 
 type Environment = Readonly<Record<string, string | undefined>>;
 
@@ -31,6 +32,7 @@ export function loadPlatformConfig(env: Environment = process.env) {
     readOnly,
     publicOrigin: tools.trustedOrigin,
     databaseUrl,
+    feedbackEncryptionKey: parseFeedbackEncryptionKey(env.FEEDBACK_ENCRYPTION_KEY),
     auth: loadPlatformAuthConfig(env, tools.trustedOrigin),
     tools,
     artifact,
