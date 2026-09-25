@@ -60,6 +60,17 @@ export async function updateMoneyCategory(input: PlatformRouteInput) {
   if (rejected) return rejected;
   try {
     const body = await jsonBody(input.request);
+    if (body.action === "previewRule" || body.action === "createRule") {
+      const rule = {
+        accountId: stringField(body, "accountId"),
+        matchField: stringField(body, "matchField"),
+        matchValue: stringField(body, "matchValue"),
+        category: stringField(body, "category")
+      };
+      if (body.action === "previewRule") return json(await input.context.runtime.moneyImports.previewCategoryRule(rule));
+      if (typeof body.expectedMatchCount !== "number") throw new MoneyImportValidationError("invalid_rule_preview", "Preview the rule before applying it.");
+      return json({ ok: true, ...await input.context.runtime.moneyImports.createCategoryRule({ ...rule, actor: input.context.principal!.email, expectedMatchCount: body.expectedMatchCount }) });
+    }
     const result = await input.context.runtime.moneyImports.setTransactionCategory({
       transactionId: stringField(body, "transactionId"),
       category: stringField(body, "category"),

@@ -7,6 +7,7 @@ import { moneyMarketInstrumentName } from "./money-market-data-catalog.js";
 import {
   MONEY_CATEGORIES,
   SPARKASSE_TRANSFER_TYPES,
+  MoneyImportValidationError,
   inferMoneyCategory,
   type MoneyBalanceSnapshotInput,
   type MoneyCategory,
@@ -68,7 +69,7 @@ export type MoneyCategoryRulePreview = Readonly<{
   matchCount: number;
   changeCount: number;
   manualCount: number;
-  examples: readonly Readonly<{ id: string; date: string; description: string; category: MoneyCategory; amountMinor: number; currency: string }> [];
+  examples: readonly Readonly<{ id: string; date: string; description: string; category: MoneyCategory; categoryOrigin: "source" | "rule" | "manual"; amountMinor: number; currency: string }> [];
 }>;
 export type MoneySpendingAnalytics = Readonly<{
   months: readonly Readonly<{ month: string; observed: boolean; spendMinor: number; refundsMinor: number; incomeMinor: number; feesMinor: number; taxesMinor: number; netCashFlowMinor: number }>[];
@@ -347,13 +348,13 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
         needs("currentMonthTransactions") ? sql<{ account_id: string; month: string }[]>`select distinct account_id::text account_id, to_char(local_date, 'YYYY-MM') month from tools.money_transactions
           where status = 'completed' and local_date >= date_trunc('month', current_date) - interval '1 month'
             and local_date < date_trunc('month', current_date) + interval '2 months'` : emptyRows<{ account_id: string; month: string }>(),
-        needs("categoryRules") ? sql<CategoryRuleRow[]>`select r.id, a.display_name account_name,
+        needs("categoryRules") ? sql<CategoryRuleRow[]>`select r.id, a.display_name account_name, r.match_field,
           coalesce((select t.description from tools.money_transactions t
             where t.account_id = r.account_id and lower(t.description) = r.match_value
             order by t.occurred_at desc, t.source_row desc limit 1), r.match_value) match_value,
           r.category, r.updated_at
           from tools.money_category_rules r join tools.money_accounts a on a.id = r.account_id
-          where r.active and r.match_field = 'description' order by r.updated_at desc, r.id` : emptyRows<CategoryRuleRow>(),
+          where r.active order by r.updated_at desc, r.id` : emptyRows<CategoryRuleRow>(),
         needs("activity") ? sql<ActivityRow[]>`select t.id, t.occurred_at, t.account_id::text account_id, a.display_name account_name, t.description, t.amount_minor, t.fee_minor, t.tax_minor, t.currency, t.status, t.source_type, t.flow_kind, t.category, t.category_origin, t.transfer_group_id, t.transfer_disposition
           from (${effectiveTransactions(sql)}) t join tools.money_accounts a on a.id = t.account_id
           order by t.occurred_at desc, t.source_row desc limit 50` : emptyRows<ActivityRow>(),
@@ -553,16 +554,59 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
     setTransactionCategory(input) {
       if (!MONEY_CATEGORIES.includes(input.category)) throw new Error("Unsupported money category.");
       return sql.begin(async (tx) => {
-        const [row] = await tx<{ description: string; account_id: string }[]>`update tools.money_transactions set category = ${input.category}, category_origin = 'manual' where id = ${input.transactionId} returning description, account_id`;
+        const [row] = await tx<{ description: string; account_id: string; flow_kind: string }[]>`update tools.money_transactions set category = ${input.category}, category_origin = 'manual' where id = ${input.transactionId} returning description, account_id, flow_kind`;
         if (!row) throw new Error("Money transaction not found.");
+        if (input.createRule && row.flow_kind !== 'spend' && row.flow_kind !== 'refund') throw new Error('Category rules can only be created for spending and refund rows.');
         if (!input.createRule || !row.description) return { affectedCount: 1 };
         const value = row.description.toLocaleLowerCase("en-GB");
+        await tx`select id from tools.money_accounts where id = ${row.account_id} for update`;
+        const [priority] = await tx<{ next_priority: number }[]>`select coalesce(max(priority), 99) + 1 next_priority from tools.money_category_rules where account_id = ${row.account_id}`;
         await tx`insert into tools.money_category_rules (id, account_id, priority, match_field, match_value, category, active, created_at, updated_at, created_by)
-          values (${randomUUID()}, ${row.account_id}, 100, 'description', ${value}, ${input.category}, true, now(), now(), ${input.actor})
-          on conflict (account_id, match_field, match_value) do update set category = excluded.category, active = true, updated_at = now(), created_by = excluded.created_by`;
+          values (${randomUUID()}, ${row.account_id}, ${priority!.next_priority}, 'description', ${value}, ${input.category}, true, now(), now(), ${input.actor})
+          on conflict (account_id, match_field, match_value) do update set category = excluded.category, priority = excluded.priority, active = true, updated_at = now(), created_by = excluded.created_by`;
         const updated = await tx<{ id: string }[]>`update tools.money_transactions set category = ${input.category}, category_origin = 'rule'
-          where account_id = ${row.account_id} and lower(description) = ${value} and category_origin <> 'manual' returning id`;
+          where account_id = ${row.account_id} and lower(description) = ${value} and flow_kind in ('spend', 'refund') and category_origin <> 'manual' returning id`;
         return { affectedCount: updated.length + 1 };
+      });
+    },
+
+    async previewCategoryRule(input) {
+      const rows = await sql<{ id: string; local_date: string; description: string; category: MoneyCategory; category_origin: "source" | "rule" | "manual"; amount_minor: string; currency: string }[]>`
+        select t.id, t.local_date::text local_date, t.description, t.category, t.category_origin, t.amount_minor, t.currency
+        from (${effectiveTransactions(sql)}) t
+        where t.account_id = ${input.accountId} and t.flow_kind in ('spend', 'refund')
+          and ((${input.matchField} = 'description' and lower(t.description) = ${input.matchValue})
+            or (${input.matchField} = 'mcc' and t.mcc = ${input.matchValue})
+            or (${input.matchField} = 'source_type' and lower(t.source_type) = ${input.matchValue}))
+        order by t.local_date desc, t.id`;
+      return {
+        matchCount: rows.length,
+        changeCount: rows.filter((row) => row.category_origin !== 'manual' && row.category !== input.category).length,
+        manualCount: rows.filter((row) => row.category_origin === 'manual').length,
+        examples: rows.slice(0, 20).map((row) => ({ id: row.id, date: row.local_date, description: row.description, category: row.category, categoryOrigin: row.category_origin, amountMinor: integer(row.amount_minor), currency: row.currency }))
+      };
+    },
+
+    createCategoryRule(input) {
+      return sql.begin(async (tx) => {
+        const rows = await tx<{ id: string; category: MoneyCategory; category_origin: string }[]>`
+          select t.id, t.category, t.category_origin from tools.money_transactions t
+          where t.id in (select id from (${effectiveTransactions(tx)}) effective)
+            and t.account_id = ${input.accountId} and t.flow_kind in ('spend', 'refund')
+            and ((${input.matchField} = 'description' and lower(t.description) = ${input.matchValue})
+              or (${input.matchField} = 'mcc' and t.mcc = ${input.matchValue})
+              or (${input.matchField} = 'source_type' and lower(t.source_type) = ${input.matchValue}))
+          order by t.id for update`;
+        if (rows.length !== input.expectedMatchCount) throw new MoneyImportValidationError('rule_preview_stale', 'The matching transactions changed. Preview the rule again.');
+        if (!rows.length) throw new MoneyImportValidationError('rule_no_matches', 'The rule does not match any spending transactions.');
+        await tx`select id from tools.money_accounts where id = ${input.accountId} for update`;
+        const [priority] = await tx<{ next_priority: number }[]>`select coalesce(max(priority), 99) + 1 next_priority from tools.money_category_rules where account_id = ${input.accountId}`;
+        await tx`insert into tools.money_category_rules (id, account_id, priority, match_field, match_value, category, active, created_at, updated_at, created_by)
+          values (${randomUUID()}, ${input.accountId}, ${priority!.next_priority}, ${input.matchField}, ${input.matchValue}, ${input.category}, true, now(), now(), ${input.actor})
+          on conflict (account_id, match_field, match_value) do update set category = excluded.category, priority = excluded.priority, active = true, updated_at = now(), created_by = excluded.created_by`;
+        const editable = rows.filter((row) => row.category_origin !== 'manual');
+        if (editable.length) await tx`update tools.money_transactions set category = ${input.category}, category_origin = 'rule' where id in ${tx(editable.map((row) => row.id))}`;
+        return { affectedCount: editable.filter((row) => row.category !== input.category).length };
       });
     },
 
@@ -639,7 +683,7 @@ type CategoryMonthRow = CategoryRow & { month: string };
 type MerchantMonthRow = CategoryMonthRow & { description: string; source_type: string };
 type InvestmentRow = { symbol: string | null; name: string | null; asset_class: string | null; quantity: string; bought_minor: string; sold_minor: string; income_minor: string; fees_minor: string; taxes_minor: string; event_count: string; currency: string };
 type InvestmentTotalsRow = { event_count: string; bought_minor: string; sold_minor: string; income_minor: string; fees_minor: string; taxes_minor: string };
-type CategoryRuleRow = { id: string; account_name: string; match_value: string; category: MoneyCategory; updated_at: Date };
+type CategoryRuleRow = { id: string; account_name: string; match_field: "description" | "mcc" | "source_type"; match_value: string; category: MoneyCategory; updated_at: Date };
 type RealizedEventRow = { account_id: string; occurred_at: Date; source_row: number; source_key: string; event_kind: MoneyInvestmentEventInput["eventKind"]; symbol: string | null; quantity: string | null; base_amount_minor: string; base_fee_minor: string };
 type TradeMarkerRow = { local_date: string; event_kind: "buy" | "sell"; symbol: string; name: string | null; quantity: string; base_amount_minor: string; base_fee_minor: string; currency: string };
 type SnapshotRow = { account_id: string; snapshot_date: string | null; value_minor: string | null; currency: string; display_name: string; role: "cash" | "investment"; provider: string };
@@ -650,7 +694,7 @@ type ReimportRow = { id: string; source_key: string; flow_kind: MoneyLedgerTrans
 
 function receipt(row: ImportRow, replay: boolean): MoneyImportReceipt { return { id: row.id, digest: row.digest, format: row.format, filename: row.filename, rowCount: row.source_row_count, insertedCount: row.inserted_row_count, duplicateCount: row.duplicate_row_count, committedAt: row.committed_at.toISOString(), replay }; }
 function summary(row: ImportRow): MoneyImportSummary { const { replay: _, ...item } = receipt(row, false); return { ...item, bytes: Number(row.bytes), actor: row.created_by }; }
-function categoryRule(row: CategoryRuleRow): MoneyCategoryRule { return { id: row.id, accountName: row.account_name, description: moneyDisplayDescription(row.match_value), category: row.category, updatedAt: row.updated_at.toISOString() }; }
+function categoryRule(row: CategoryRuleRow): MoneyCategoryRule { return { id: row.id, accountName: row.account_name, description: row.match_field === "description" ? moneyDisplayDescription(row.match_value) : `${row.match_field === "mcc" ? "MCC" : "Source type"}: ${row.match_value}`, category: row.category, updatedAt: row.updated_at.toISOString() }; }
 function activityItem(row: ActivityRow): MoneyActivityItem {
   const description = moneyDisplayDescription(row.description);
   const category = activityCategory(row);
@@ -785,7 +829,7 @@ async function applyCategoryRules(tx: postgres.TransactionSql, transactionIds: s
       (r.match_field = 'description' and r.match_value = lower(t.description)) or
       (r.match_field = 'mcc' and r.match_value = t.mcc) or
       (r.match_field = 'source_type' and r.match_value = lower(t.source_type)))
-    where t.id in ${tx(transactionIds)} and t.category_origin <> 'manual'
+    where t.id in ${tx(transactionIds)} and t.flow_kind in ('spend', 'refund') and t.category_origin <> 'manual'
   ) update tools.money_transactions t set category = matches.category, category_origin = 'rule'
     from matches where matches.id = t.id and matches.rank = 1`;
 }

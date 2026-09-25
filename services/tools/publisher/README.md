@@ -77,6 +77,18 @@ curl -fsS -X DELETE "$PUBLIC_BASE_URL/api/uploads/$UPLOAD_ID" \
   -H "Authorization: Bearer $UPLOAD_TOKEN"
 ```
 
+Set an exact future expiry on a file with the same native bearer credential.
+Send an ISO timestamp in UTC; the response returns the saved expiry. This
+also works after a chunked native upload. An HTML plan cannot be given an
+expiry through this route.
+
+```bash
+curl -fsS -X PATCH "$PUBLIC_BASE_URL/api/uploads/$UPLOAD_ID" \
+  -H "Authorization: Bearer $UPLOAD_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data '{"expiresAt":"2026-10-01T12:00:00.000Z"}'
+```
+
 Large native file uploads use the same chunk protocol as the browser under
 `/api/uploads/chunks`. Every request retains the native bearer credential:
 

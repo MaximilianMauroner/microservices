@@ -613,6 +613,28 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
       }
 
       const uploadId = matchPath(url.pathname, "/api/uploads/");
+      if (uploadId !== undefined && request.method === "PATCH") {
+        requireBearer(request, uploadToken);
+        if (!PAGE_ID_PATTERN.test(uploadId)) {
+          throw new ArtifactRequestError(400, "invalid_upload_id", "Upload ID is invalid.");
+        }
+        const update = await readUploadUpdate(request, getNow(options));
+        if (update.kind !== "expiry") {
+          throw new ArtifactRequestError(400, "invalid_upload_update", "Native uploads can only change file expiry.");
+        }
+        try {
+          const updated = await options.storage.updateFileExpiry(uploadId, update.expiresAt, { signal: request.signal });
+          if (!updated) {
+            throw new ArtifactRequestError(404, "upload_not_found", "The file upload was not found.");
+          }
+        } catch (error) {
+          if (error instanceof FileUpdateConflictError) {
+            throw new ArtifactRequestError(409, "upload_conflict", "The file changed or was revoked before the expiry update completed.");
+          }
+          throw error;
+        }
+        return jsonResponse({ id: uploadId, expiresAt: update.expiresAt?.toISOString() ?? null });
+      }
       if (uploadId !== undefined && request.method === "PUT") {
         requireBearer(request, uploadToken);
         if (!PAGE_ID_PATTERN.test(uploadId)) {
