@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "@tanstack/react-router";
+import { Link, useRouter } from "@tanstack/react-router";
 import {
   Check,
   FileSpreadsheet,
@@ -48,6 +48,7 @@ import {
   MoneyRowActionCue,
 } from "./money-row-action.js";
 import { MoneyCategoryPicker } from "./money-category-picker.js";
+import { MoneyCategoryRuleBuilder } from "./money-category-rule-builder.js";
 import {
   Alert,
   AlertDescription,
@@ -65,7 +66,7 @@ import {
   AlertDialogTrigger,
 } from "../src/components/ui/alert-dialog.js";
 import { Badge } from "../src/components/ui/badge.js";
-import { Button } from "../src/components/ui/button.js";
+import { Button, buttonVariants } from "../src/components/ui/button.js";
 import {
   Card,
   CardContent,
@@ -203,7 +204,7 @@ export function MoneyActivityView({
         ),
       );
       setRuleCandidate(
-        createRule
+        createRule || (item.flowKind !== "spend" && item.flowKind !== "refund")
           ? undefined
           : { ...item, category, categoryOrigin: "manual" },
       );
@@ -589,18 +590,7 @@ export function MoneyActivityView({
               Apply this exact description to other transactions in{" "}
               {ruleCandidate.accountName}?
             </span>
-            <Button
-              className="ml-3"
-              type="button"
-              size="sm"
-              variant="outline"
-              disabled={saving === ruleCandidate.id}
-              onClick={() =>
-                void categorize(ruleCandidate, ruleCandidate.category, true)
-              }
-            >
-              Create account rule
-            </Button>
+            <Link className={buttonVariants({ className: "ml-3", size: "sm", variant: "outline" })} to="/money" search={{ view: "data" }}>Preview a rule</Link>
           </AlertDescription>
         </Alert>
       ) : null}
@@ -1063,6 +1053,7 @@ export function MoneyDataView({
           }
         />
       </section>
+      <MoneyCategoryRuleBuilder accounts={cashAccounts} accountLabels={accountLabels} />
       <section className="grid items-start gap-3 lg:grid-cols-3">
         <Card>
           <CardHeader className="border-b">
@@ -1104,7 +1095,7 @@ export function MoneyDataView({
           <CardHeader className="border-b">
             <CardTitle>Active category rules</CardTitle>
             <CardDescription>
-              Exact descriptions scoped to one account
+              Exact matches scoped to one account
             </CardDescription>
           </CardHeader>
           {ruleError ? (

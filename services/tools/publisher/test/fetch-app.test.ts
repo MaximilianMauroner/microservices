@@ -926,6 +926,49 @@ describe("native artifact fetch handler", () => {
     expect((await app(new Request(created.url))).status).toBe(200);
   });
 
+  it("lets a native bearer caller set file expiry without a browser session", async () => {
+    const storage = new MemoryUploadStorage();
+    const now = new Date("2026-08-14T12:00:00.000Z");
+    const app = createFetchApp({
+      storage,
+      uploadToken: "upload-token",
+      publicBaseUrl: "https://tools.example.test",
+      now: () => now
+    });
+    const createdResponse = await app(new Request("https://tools.example.test/api/uploads", {
+      method: "POST",
+      headers: { Authorization: "Bearer upload-token" },
+      body: multipart("report.pdf", "report", "application/pdf")
+    }));
+    expect(createdResponse.status).toBe(201);
+    const created = await createdResponse.json() as { id: string };
+    const url = `https://tools.example.test/api/uploads/${created.id}`;
+    const expiresAt = "2026-08-30T12:00:00.000Z";
+    const body = JSON.stringify({ expiresAt });
+
+    const unauthorized = await app(new Request(url, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body
+    }));
+    expect(unauthorized.status).toBe(401);
+
+    const updated = await app(new Request(url, {
+      method: "PATCH",
+      headers: { Authorization: "Bearer upload-token", "Content-Type": "application/json" },
+      body
+    }));
+    expect(updated.status).toBe(200);
+    expect(await updated.json()).toEqual({ id: created.id, expiresAt });
+    expect(storage.files.get(created.id)?.metadata.expiresAt).toEqual(new Date(expiresAt));
+
+    const invalid = await app(new Request(url, {
+      method: "PATCH",
+      headers: { Authorization: "Bearer upload-token", "Content-Type": "application/json" },
+      body: JSON.stringify({ expiresAt: "2026-08-14T11:59:59.000Z" })
+    }));
+    expect(invalid.status).toBe(400);
+    expect(storage.files.get(created.id)?.metadata.expiresAt).toEqual(new Date(expiresAt));
+  });
+
   it("rejects file expiry timestamps in the past", async () => {
     const storage = new MemoryUploadStorage();
     const app = createFetchApp({

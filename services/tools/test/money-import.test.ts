@@ -303,6 +303,20 @@ describe("money import service", () => {
     expect(() => service.setTransferDisposition({ transactionId: "00000000-0000-4000-8000-000000000000", disposition: "uncategorized" })).toThrow("valid transfer disposition");
   });
 
+  it("normalizes an exact category rule and requires a matching preview", async () => {
+    const repository = new MemoryMoneyRepository();
+    const preview = vi.spyOn(repository, "previewCategoryRule");
+    const create = vi.spyOn(repository, "createCategoryRule");
+    const service = new MoneyImportService(repository);
+    const rule = { accountId: "00000000-0000-4000-8000-000000000000", matchField: "description", matchValue: "  Café Shop  ", category: "dining" };
+    await service.previewCategoryRule(rule);
+    expect(preview).toHaveBeenCalledWith({ ...rule, matchValue: "café shop" });
+    expect(() => service.createCategoryRule({ ...rule, actor: "operator@example.test", expectedMatchCount: 0 })).toThrow("Preview the rule");
+    await service.createCategoryRule({ ...rule, actor: "operator@example.test", expectedMatchCount: 2 });
+    expect(create).toHaveBeenCalledWith({ ...rule, matchValue: "café shop", actor: "operator@example.test", expectedMatchCount: 2 });
+    expect(() => service.previewCategoryRule({ ...rule, matchField: "mcc", matchValue: "text" })).toThrow("valid exact match");
+  });
+
   it("validates import deletion identifiers and reports missing imports", async () => {
     const service = new MoneyImportService(new MemoryMoneyRepository());
     await expect(service.deleteImport("not-an-import")).rejects.toMatchObject({ code: "invalid_import" });
@@ -515,6 +529,8 @@ class MemoryMoneyRepository implements MoneyRepository {
   async readActivityPage(input: MoneyActivityPageInput) { this.lastActivityInput = input; return { items: [], total: 0, hasMore: false }; }
 
   async setTransactionCategory() { return { affectedCount: 1 }; }
+  async previewCategoryRule() { return { matchCount: 0, changeCount: 0, manualCount: 0, examples: [] }; }
+  async createCategoryRule() { return { affectedCount: 0 }; }
   async deleteCategoryRule() { return undefined; }
   async setTransferDisposition() {}
   async setTransferDispositions() { return { affectedCount: 0 }; }
