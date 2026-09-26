@@ -26,16 +26,25 @@ export function artifact({ request, context }: PlatformRouteInput) {
 
 type ArtifactHandler = (request: Request) => Promise<Response>;
 
-export function handleArtifactRequest(
+export async function handleArtifactRequest(
   request: Request,
   handler: ArtifactHandler,
   retryDelaysMs: readonly number[] = TRANSIENT_RESPONSE_RETRY_DELAYS_MS
 ) {
   const operation = () => handler(request);
-  return request.method === "GET" || request.method === "HEAD"
-    ? retryTransientResponse(operation, retryDelaysMs, request.signal)
-    : operation();
+  try {
+    return request.method === "GET" || request.method === "HEAD"
+      ? await retryTransientResponse(operation, retryDelaysMs, request.signal)
+      : await operation();
+  } catch (error) {
+    // A closed browser connection cancels the storage read. Nobody reads this response, so it is not a server error.
+    if (request.signal.aborted) return new Response(null, { status: CLIENT_CLOSED_REQUEST });
+    throw error;
+  }
 }
+
+/** Nginx convention for a request the client abandoned; Railway reports the same status. */
+const CLIENT_CLOSED_REQUEST = 499;
 
 export function favicon({ request }: PlatformRouteInput) {
   return new Response(null, {
