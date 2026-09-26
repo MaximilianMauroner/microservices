@@ -23,7 +23,18 @@ beforeEach(async () => {
       select sentinel_value value from public.tools_runtime_test_sentinel
       where sentinel_key = ${DISPOSABLE_DATABASE_SENTINEL.key}`)[0]?.value,
   }, async () => {
-    await admin`truncate tools.money_balance_snapshots, tools.money_category_rules, tools.money_investment_events, tools.money_transactions, tools.money_imports, tools.money_accounts cascade`;
+    await admin`truncate tools.money_balance_snapshots, tools.money_category_rules, tools.money_transfer_rules, tools.money_transfer_pair_rules, tools.money_investment_events, tools.money_transactions, tools.money_imports, tools.money_accounts cascade`;
+    // Transfer rules are data. These fixtures stand in for the owner's stored rules.
+    const rule = (priority: number, disposition: string, sourceType: string | null, match = "any", value: string | null = null, sign = "any") =>
+      admin`insert into tools.money_transfer_rules (id, priority, provider, source_type, description_match, match_value, amount_sign, disposition, created_at, updated_at, created_by)
+        values (gen_random_uuid(), ${priority}, ${sourceType === "Exchange" ? null : "revolut"}, ${sourceType}, ${match}, ${value}, ${sign}, ${disposition}, now(), now(), 'fixture')`;
+    await rule(900, "excluded", "Exchange");
+    await rule(800, "internal_transfer", "Card Payment", "equals", "hype");
+    await rule(600, "income", "Topup", "contains", "provincia autonoma bolzano");
+    await rule(100, "refund", "Topup", "any", null, "positive");
+    await rule(100, "spend", "Topup", "any", null, "negative");
+    await rule(100, "refund", "Transfer", "any", null, "positive");
+    await rule(100, "spend", "Transfer", "any", null, "negative");
   });
 });
 
@@ -98,6 +109,20 @@ it.skipIf(!repository || !admin)("reads check-in days and explains cash changes 
   expect(spending.reduce((sum, row) => sum + row.amountMinor, 0)).toBe(6_000);
   expect(spending.filter((row) => row.date > "2026-08-24").reduce((sum, row) => sum + row.amountMinor, 0)).toBe(5_000);
   expect(spending).toContainEqual(expect.objectContaining({ date: "2026-09-05", merchant: "Grocer", amountMinor: 3_000 }));
+});
+
+it.skipIf(!repository || !admin)("classifies transfers with stored rules that change without a deploy", async () => {
+  await commitCash(repository!, cash([
+    "Transfer\tCurrent\t2026-05-02 12:00:00\t2026-05-02 12:00:00\tTo My Savings\t-50\t0\tEUR\tCOMPLETED\t50"
+  ]), "stored-rule.tsv");
+  const disposition = async () => (await repository!.readActivityPage({ query: "To My Savings", offset: 0, limit: 10 })).items[0]?.transferDisposition;
+  expect(await disposition()).toBe("spend");
+
+  await admin!`insert into tools.money_transfer_rules (id, priority, provider, source_type, description_match, match_value, amount_sign, disposition, note, created_at, updated_at, created_by)
+    values (gen_random_uuid(), 700, 'revolut', 'Transfer', 'equals', 'to my savings', 'any', 'internal_transfer', 'Own savings account', now(), now(), 'fixture')`;
+  await repository!.reimportAll();
+  expect(await disposition()).toBe("internal_transfer");
+  expect((await repository!.readLedgerSnapshot("data")).transferRules).toContainEqual(expect.objectContaining({ matchValue: "to my savings", note: "Own savings account" }));
 });
 
 it.skipIf(!repository || !admin)("lists and removes account-scoped category rules without losing the direct edit", async () => {

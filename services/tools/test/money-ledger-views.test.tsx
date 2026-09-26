@@ -216,6 +216,8 @@ describe("Option A money ledger views", () => {
       accounts={["cash", "broker"]}
       accountLabels={{ cash: "Cash account", broker: "Broker account" }}
       categoryRules={[{ id: "rule-1", accountName: "Cash", description: "Net Interest Paid to 'Instant Access Savings", category: "income", updatedAt: "2026-08-09T05:08:51.000Z" }]}
+      transferRules={[{ id: "transfer-rule-1", priority: 700, provider: "revolut", sourceType: "Topup", descriptionMatch: "starts_with", matchValue: "top-up by *", amountSign: "any", disposition: "internal_transfer", note: "Own card top-ups" }]}
+      transferPairRules={[{ id: "pair-rule-1", debitProvider: "sparkasse", debitSourceType: "BEZAHLUNG EU LAENDER", debitMatchValue: "wallet", creditProvider: "revolut", creditSourceType: "Topup" }]}
       accountRoles={{ cash: "cash", broker: "investment" }}
       accountLastObserved={{ cash: `${currentMonth}-01`, broker: "2026-08-01" }}
       currentMonthTransactionAccounts={[]}
@@ -240,6 +242,9 @@ describe("Option A money ledger views", () => {
     expect(html).toContain("Choose or drop money exports");
     expect(html).toContain("66.7%");
     expect(html).toContain("Active category rules");
+    expect(html).toContain("Transfer rules");
+    expect(html).toContain("Own card top-ups");
+    expect(html).toContain("Pair card funding");
     expect(html).toContain("Net Interest Paid to &#x27;Instant Access Savings");
     expect(html).toContain("Repair queue");
     expect(html).toContain("/money?view=transactions&amp;category=uncategorized");

@@ -16,7 +16,14 @@ import {
   type MoneyLedgerTransaction,
   type MoneyTransferDisposition
 } from "./money-import-domain.js";
-import { inferTransferDisposition, matchSparkasseCardFundingPairs } from "./money-transfer-inference.js";
+import {
+  inferTransferDisposition,
+  isCardFundingDebit,
+  isRuleTransferCandidate,
+  matchCardFundingPairs,
+  type MoneyTransferPairRule,
+  type MoneyTransferRule
+} from "./money-transfer-inference.js";
 import type { MoneyCashFlowDay, MoneyCashItemDay, MoneyCashSnapshotPoint, MoneySpendingRow } from "./money-checkin-domain.js";
 
 export type MoneyImportCommitInput = Readonly<{
@@ -100,6 +107,8 @@ export type MoneyLedgerSnapshot = MoneyTrackerSnapshot & Readonly<{
   transferReview: Readonly<{ linkedPairs: number; unlinkedCount: number; unresolvedPositiveCount: number; unresolvedNegativeCount: number }>;
   transferReviewGroups: readonly MoneyTransferReviewGroup[];
   categoryRules: readonly MoneyCategoryRule[];
+  transferRules: readonly MoneyTransferRule[];
+  transferPairRules: readonly MoneyTransferPairRule[];
   spending: MoneySpendingAnalytics; investments: MoneyInvestmentAnalytics; planning: MoneyPlanningAnalytics;
 }>;
 export type MoneyActivityPage = Readonly<{ items: readonly MoneyActivityItem[]; total: number; hasMore: boolean }>;
@@ -113,6 +122,7 @@ const MONEY_LEDGER_QUERY_SCOPES = {
   imports: ["data"],
   currentMonthTransactions: ["data"],
   categoryRules: ["data"],
+  transferRules: ["data"],
   activity: ["transactions"],
   counts: ["overview", "transactions", "data"],
   transferSummary: ["overview", "transactions", "cash-flow", "insights", "data"],
@@ -349,7 +359,8 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
     async readLedgerSnapshot(scope) {
       const queries = new Set(moneyLedgerQueriesFor(scope));
       const needs = (query: MoneyLedgerQuery) => queries.has(query);
-      const [imports, currentMonthTransactions, categoryRules, activity, count, transfers, transferReviewItems, monthly, categories, categoryMonths, merchantMonths, categoryActivity, events, investmentTotals, tradeMarkers, realizedEvents, snapshotRows] = await Promise.all([
+      const [transferRuleSet, imports, currentMonthTransactions, categoryRules, activity, count, transfers, transferReviewItems, monthly, categories, categoryMonths, merchantMonths, categoryActivity, events, investmentTotals, tradeMarkers, realizedEvents, snapshotRows] = await Promise.all([
+        needs("transferRules") ? readTransferRules(sql) : { rules: [], pairRules: [] },
         needs("imports") ? sql<ImportRow[]>`select id, digest, format, filename, bytes, source_row_count, inserted_row_count, duplicate_row_count, committed_at, created_by from tools.money_imports order by committed_at desc limit 50` : emptyRows<ImportRow>(),
         needs("currentMonthTransactions") ? sql<{ account_id: string; month: string }[]>`select distinct account_id::text account_id, to_char(local_date, 'YYYY-MM') as month from tools.money_transactions
           where status = 'completed' and local_date >= date_trunc('month', current_date) - interval '1 month'
@@ -482,7 +493,7 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
       ]);
       const spending = spendingAnalytics(monthly, categories, categoryMonths, merchantMonths, categoryActivity);
       return {
-        imports: imports.map(summary), currentMonthTransactionAccounts: currentMonthTransactions.filter((row) => row.month === new Date().toISOString().slice(0, 7)).map((row) => row.account_id), recentTransactionMonths: currentMonthTransactions.map((row) => ({ accountId: row.account_id, month: row.month })), categoryRules: categoryRules.map(categoryRule), activity: activity.map(activityItem), transactionCount: Number(count[0]?.count ?? 0), revertedCount: Number(count[0]?.reverted_count ?? 0),
+        imports: imports.map(summary), currentMonthTransactionAccounts: currentMonthTransactions.filter((row) => row.month === new Date().toISOString().slice(0, 7)).map((row) => row.account_id), recentTransactionMonths: currentMonthTransactions.map((row) => ({ accountId: row.account_id, month: row.month })), categoryRules: categoryRules.map(categoryRule), transferRules: transferRuleSet.rules, transferPairRules: transferRuleSet.pairRules, activity: activity.map(activityItem), transactionCount: Number(count[0]?.count ?? 0), revertedCount: Number(count[0]?.reverted_count ?? 0),
         transferReview: transferReview(transfers[0]), transferReviewGroups: transferReviewGroups(transferReviewItems),
         spending, investments: investmentAnalytics(events, investmentTotals[0], tradeMarkers, realizedEvents), planning: planningAnalytics(spending.months, transferReview(transfers[0])), ...balanceSnapshot(snapshotRows)
       };
@@ -737,7 +748,9 @@ type SpendingRow = { local_date: string; category: MoneyCategory; description: s
 type CashFlowRow = { account_id: string; local_date: string; income_minor: string; spending_minor: string; transfers_minor: string; trades_minor: string };
 type SnapshotRow = { account_id: string; snapshot_date: string | null; value_minor: string | null; currency: string; display_name: string; role: "cash" | "investment"; provider: string };
 type TransferRow = { id: string; account_id: string; provider: string; source_type: string; occurred_at: Date; local_date: string; description: string; amount_minor: string; currency: string };
-type TransferInferenceRow = { id: string; provider: string; account_role: "cash" | "investment"; source_type: string; description: string; amount_minor: string };
+type TransferInferenceRow = { id: string; provider: string; source_type: string; description: string; amount_minor: string };
+type TransferRuleRow = { id: string; priority: number; provider: string | null; source_type: string | null; description_match: MoneyTransferRule["descriptionMatch"]; match_value: string | null; amount_sign: MoneyTransferRule["amountSign"]; disposition: MoneyTransferDisposition; note: string | null };
+type TransferPairRuleRow = { id: string; debit_provider: string; debit_source_type: string; debit_match_value: string; credit_provider: string; credit_source_type: string; note: string | null };
 type TransferReviewRow = { linked_pairs: string; unlinked_count: string; unresolved_positive_count: string; unresolved_negative_count: string };
 type ReimportRow = { id: string; source_key: string; flow_kind: MoneyLedgerTransaction["flowKind"]; source_type: string; description: string; mcc: string | null };
 
@@ -978,34 +991,24 @@ async function linkUnambiguousTransfers(tx: postgres.TransactionSql) {
   await tx`update tools.money_transactions set transfer_disposition = 'excluded'
     where status = 'completed' and flow_kind = 'transfer' and source_type = 'Exchange'
       and transfer_group_id is null and transfer_disposition is null`;
-  const rows = await tx<TransferRow[]>`select t.id, t.account_id, a.provider, t.source_type, t.occurred_at, t.local_date::text, lower(trim(t.description)) description, t.amount_minor::text, t.currency
+  const { rules, pairRules } = await readTransferRules(tx);
+  const unresolved = await tx<TransferRow[]>`select t.id, t.account_id, a.provider, t.source_type, t.occurred_at, t.local_date::text, lower(trim(t.description)) description, t.amount_minor::text, t.currency
     from (${effectiveTransactions(tx)}) t join tools.money_accounts a on a.id = t.account_id
     where t.flow_kind = 'transfer' and t.amount_minor <> 0
-      and t.transfer_group_id is null and t.transfer_disposition is null and (
-        t.source_type in ('Transfer', 'Topup', 'CASH TOP-UP', 'CASH WITHDRAWAL', 'CUSTOMER_INBOUND', 'CUSTOMER_INPAYMENT')
-        or t.source_type like 'TRANSFER%'
-        or (a.provider = 'sparkasse' and (
-          t.source_type in ${tx([...SPARKASSE_TRANSFER_TYPES])}
-          or (t.source_type = 'BEZAHLUNG EU LAENDER' and lower(t.description) ~ '\\m(revolut|trade republic)\\M')
-        ))
-        or (a.provider = 'revolut' and t.source_type = 'Card Payment' and lower(trim(t.description)) = 'hype')
-      )`;
+      and t.transfer_group_id is null and t.transfer_disposition is null`;
+  const inference = (row: TransferRow) => ({ provider: row.provider, sourceType: row.source_type, description: row.description, amountMinor: integer(row.amount_minor) });
+  const rows = unresolved.filter((row) => isStatementTransfer(row) || isRuleTransferCandidate(inference(row), rules, pairRules));
   const used = new Set<string>();
   const pairs: Array<readonly [string, string]> = [];
-  for (const pair of matchSparkasseCardFundingPairs(rows.map((row) => ({
+  for (const pair of matchCardFundingPairs(rows.map((row) => ({
     id: row.id, accountId: row.account_id, provider: row.provider, sourceType: row.source_type,
     description: row.description, localDate: row.local_date, amountMinor: integer(row.amount_minor), currency: row.currency
-  })))) {
+  })), pairRules)) {
     pairs.push(pair);
     used.add(pair[0]);
     used.add(pair[1]);
   }
-  // Card funding with a recorded purchase date needs its card-specific match.
-  // A settlement-date-only match can attach it to the wrong top-up.
-  const genericRows = rows.filter((row) => !(row.provider === 'sparkasse'
-    && row.source_type === 'BEZAHLUNG EU LAENDER'
-    && /\bvom\s+\d{2}\/\d{2}\/\d{2}\b/.test(row.description)
-    && /\b(revolut|trade republic)\b/.test(row.description)));
+  const genericRows = rows.filter((row) => !isCardFundingDebit(inference(row), pairRules));
   collectExactTransferPairs(genericRows, used, pairs);
   collectDateTransferPairs(genericRows, used, pairs);
   if (pairs.length) {
@@ -1033,11 +1036,51 @@ async function linkUnambiguousTransfers(tx: postgres.TransactionSql) {
         where t.id = assignments.id and t.transfer_group_id is null and t.transfer_disposition is null`;
     }
   }
-  await inferUnlinkedTransferDispositions(tx);
+  await inferUnlinkedTransferDispositions(tx, rules);
 }
 
-async function inferUnlinkedTransferDispositions(tx: postgres.TransactionSql) {
-  const rows = await tx<TransferInferenceRow[]>`select t.id, a.provider, a.role account_role,
+const SPARKASSE_TRANSFER_TYPE_SET = new Set<string>(SPARKASSE_TRANSFER_TYPES);
+
+/** Statement types that always describe money moving between accounts. Owner-specific evidence lives in transfer rules. */
+function isStatementTransfer(row: TransferRow) {
+  return ["Transfer", "Topup", "CASH TOP-UP", "CASH WITHDRAWAL", "CUSTOMER_INBOUND", "CUSTOMER_INPAYMENT"].includes(row.source_type)
+    || row.source_type.startsWith("TRANSFER")
+    || (row.provider === "sparkasse" && SPARKASSE_TRANSFER_TYPE_SET.has(row.source_type));
+}
+
+async function readTransferRules(sql: Sql | TransactionSql) {
+  const [rules, pairRules] = await Promise.all([
+    sql<TransferRuleRow[]>`select id, priority, provider, source_type, description_match, match_value, amount_sign, disposition, note
+      from tools.money_transfer_rules where active order by priority desc, created_at, id`,
+    sql<TransferPairRuleRow[]>`select id, debit_provider, debit_source_type, debit_match_value, credit_provider, credit_source_type, note
+      from tools.money_transfer_pair_rules where active order by created_at, id`
+  ]);
+  return {
+    rules: rules.map((row): MoneyTransferRule => ({
+      id: row.id,
+      priority: row.priority,
+      ...(row.provider === null ? {} : { provider: row.provider }),
+      ...(row.source_type === null ? {} : { sourceType: row.source_type }),
+      descriptionMatch: row.description_match,
+      ...(row.match_value === null ? {} : { matchValue: row.match_value }),
+      amountSign: row.amount_sign,
+      disposition: row.disposition,
+      ...(row.note === null ? {} : { note: row.note })
+    })),
+    pairRules: pairRules.map((row): MoneyTransferPairRule => ({
+      id: row.id,
+      debitProvider: row.debit_provider,
+      debitSourceType: row.debit_source_type,
+      debitMatchValue: row.debit_match_value,
+      creditProvider: row.credit_provider,
+      creditSourceType: row.credit_source_type,
+      ...(row.note === null ? {} : { note: row.note })
+    }))
+  };
+}
+
+async function inferUnlinkedTransferDispositions(tx: postgres.TransactionSql, rules: readonly MoneyTransferRule[]) {
+  const rows = await tx<TransferInferenceRow[]>`select t.id, a.provider,
       t.source_type, t.description, t.amount_minor::text
     from tools.money_transactions t join tools.money_accounts a on a.id = t.account_id
     where t.status = 'completed' and t.flow_kind = 'transfer'
@@ -1046,11 +1089,10 @@ async function inferUnlinkedTransferDispositions(tx: postgres.TransactionSql) {
   for (const row of rows) {
     const disposition = inferTransferDisposition({
       provider: row.provider,
-      accountRole: row.account_role,
       sourceType: row.source_type,
       description: row.description,
       amountMinor: integer(row.amount_minor),
-    });
+    }, rules);
     if (!disposition) continue;
     dispositions.set(disposition, [...(dispositions.get(disposition) ?? []), row.id]);
   }
