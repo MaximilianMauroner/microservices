@@ -72,6 +72,7 @@ import {
 import type { MoneyCategory } from "./money-enums.js";
 import type { MoneyActivityPage } from "./money-repository.js";
 import { groupMonth, type GroupedMonth, type Month } from "./money-history.js";
+import { MoneyCheckInCard } from "./money-checkin-card.js";
 import { MoneyPlanningCard } from "./money-planning-card.js";
 import { moneyViewTitle, type MoneyTrackerView } from "./money-tracker-navigation.js";
 
@@ -287,6 +288,7 @@ export function MoneyTrackerPage(
               <MoneyInvestmentsView
                 investments={props.investments}
                 marketData={props.marketData}
+                checkIn={props.checkIn}
               />
             ) : null}
             {props.view === "accounts" ? (
@@ -352,6 +354,8 @@ function MoneyViewFallback() {
 
 function Overview({
   accounts,
+  accountLabels,
+  checkIn,
   marketData,
   revertedCount,
   spending,
@@ -444,6 +448,9 @@ function Overview({
           tone={tone(marketData.totals.knownUnrealizedGainMinor)}
         />
       </section>
+      {checkIn ? (
+        <MoneyCheckInCard checkIn={checkIn} accountLabels={accountLabels} />
+      ) : null}
       <section className="grid items-start gap-3 lg:grid-cols-[minmax(0,1.7fr)_minmax(18rem,.7fr)]">
         <BalanceChart months={months} period={period} onPeriod={onPeriod} />
         <Card>

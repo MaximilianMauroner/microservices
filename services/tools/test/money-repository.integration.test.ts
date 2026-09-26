@@ -2,6 +2,7 @@ import postgres from "postgres";
 import { afterAll, beforeEach, expect, it } from "vitest";
 import { DISPOSABLE_DATABASE_SENTINEL, withVerifiedDisposableDatabase } from "../database/postgres-push-guard.js";
 import { parseMoneyImport } from "../money/money-import-domain.js";
+import { cashMovesSince } from "../money/money-checkin-domain.js";
 import { createPostgresMoneyRepository, type MoneyRepository } from "../money/money-repository.js";
 import { moneyTrackerTrendStats } from "../money/money-tracker-domain.js";
 
@@ -74,6 +75,24 @@ it.skipIf(!repository || !admin)("executes import replay, transfer review, analy
   expect(duplicateAccounts.map((id) => snapshot.accountRoles[id])).toEqual(["cash"]);
   expect(snapshot.accountLastObserved).toEqual(expect.objectContaining(Object.fromEntries(duplicateAccounts.map((id) => [id, "2026-02-01"]))));
   expect(snapshot.months.at(-1)?.observedAccounts).toEqual(expect.arrayContaining(duplicateAccounts));
+});
+
+it.skipIf(!repository || !admin)("reads check-in days and explains cash changes since a check-in", async () => {
+  await commitCash(repository!, cash([
+    "Card Payment\tCurrent\t2026-08-10 12:00:00\t2026-08-10 12:00:00\tBakery\t-10\t0\tEUR\tCOMPLETED\t90",
+    "Topup\tCurrent\t2026-08-20 12:00:00\t2026-08-20 12:00:00\tPayment from Employer\t100\t0\tEUR\tCOMPLETED\t190",
+    "Card Payment\tCurrent\t2026-09-05 12:00:00\t2026-09-05 12:00:00\tGrocer\t-30\t0\tEUR\tCOMPLETED\t160",
+    "Transfer\tCurrent\t2026-09-10 12:00:00\t2026-09-10 12:00:00\tExternal payment\t-20\t0\tEUR\tCOMPLETED\t140"
+  ]), "check-in.tsv");
+
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Berlin" }).format(new Date());
+  expect(await repository!.readCheckInDays()).toEqual([today]);
+  const result = cashMovesSince({ baseline: "2026-08-24", ...await repository!.readCashSince("2026-08-24") });
+  expect(result).toEqual({
+    moves: [expect.objectContaining({ baselineMinor: 19_000, currentMinor: 14_000, changeMinor: -5_000, incomeMinor: 0, spendingMinor: -5_000, transfersMinor: 0, tradesMinor: 0, otherMinor: 0 })],
+    baselineTotalMinor: 19_000,
+    currentTotalMinor: 14_000
+  });
 });
 
 it.skipIf(!repository || !admin)("lists and removes account-scoped category rules without losing the direct edit", async () => {
@@ -323,6 +342,9 @@ it.skipIf(!repository || !admin)("derives Trade Republic cash snapshots from its
   expect(snapshot.accountLastObserved[account!]).toBe("2026-02-01");
   expect(snapshot.months.find((month) => month.date === "2026-01-01")?.values[account!]).toBe(1_000);
   expect(snapshot.months.find((month) => month.date === "2026-02-01")?.values[account!]).toBe(799);
+
+  const { moves } = cashMovesSince({ baseline: "2026-01-31", ...await repository!.readCashSince("2026-01-31") });
+  expect(moves).toEqual([expect.objectContaining({ accountId: account, baselineMinor: 100_000, currentMinor: 79_900, changeMinor: -20_100, tradesMinor: -20_000, spendingMinor: -100, otherMinor: 0 })]);
 });
 
 it.skipIf(!repository || !admin)("reports reverted rows beyond the initial activity page", async () => {

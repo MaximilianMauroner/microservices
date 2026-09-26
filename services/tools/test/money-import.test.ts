@@ -535,6 +535,8 @@ class MemoryMoneyRepository implements MoneyRepository {
   async setTransferDisposition() {}
   async setTransferDispositions() { return { affectedCount: 0 }; }
   async addManualBalance() {}
+  async readCheckInDays() { return []; }
+  async readCashSince() { return { snapshots: [], flows: [] }; }
 
   async readiness() {}
   async close() {}

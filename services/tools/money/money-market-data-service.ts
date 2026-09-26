@@ -1,3 +1,4 @@
+import { lotEvent, positionMovesSince, type MoneyCheckInPositions } from "./money-checkin-domain.js";
 import { fifoInvestmentLots } from "./money-investment-domain.js";
 import { MONEY_MARKET_INSTRUMENTS } from "./money-market-data-catalog.js";
 import { marketValueMinor } from "./money-market-data-domain.js";
@@ -38,6 +39,8 @@ export type MoneyMarketSnapshot = Readonly<{
     knownUnrealizedGainMinor: number;
     complete: boolean;
   }>;
+  /** Present when the caller asks for moves since a check-in day. */
+  movesSince?: MoneyCheckInPositions;
 }>;
 
 export type MoneyMarketSyncResult = Readonly<{
@@ -76,13 +79,13 @@ export class MoneyMarketDataService {
     return this.currentSync;
   }
 
-  async snapshot(): Promise<MoneyMarketSnapshot> {
+  async snapshot(options: Readonly<{ since?: string }> = {}): Promise<MoneyMarketSnapshot> {
     const now = this.now();
     const [inputs, historyInputs] = await Promise.all([
       this.repository.readValuationInputs(),
       this.repository.readHistoryInputs()
     ]);
-    const analytics = fifoInvestmentLots(lotEvents(inputs.events));
+    const analytics = fifoInvestmentLots(inputs.events.map(lotEvent));
     const prices = new Map(inputs.prices.map((price) => [price.canonicalKey, price]));
     const definitions = new Map(MONEY_MARKET_INSTRUMENTS.map((definition) => [definition.canonicalKey, definition]));
     const aggregated = new Map<string, { quantity: string; costBasisMinor: number }>();
@@ -137,7 +140,8 @@ export class MoneyMarketDataService {
         knownMarketValueMinor: valued.reduce((sum, position) => sum + position.marketValueMinor, 0),
         knownUnrealizedGainMinor: valued.reduce((sum, position) => sum + position.unrealizedGainMinor, 0),
         complete: positions.every((position) => position.state !== "unpriced")
-      }
+      },
+      ...(options.since ? { movesSince: positionMovesSince({ baseline: options.since, ...historyInputs, current: positions }) } : {})
     };
   }
 
@@ -229,7 +233,7 @@ function historyPoints(inputs: Awaited<ReturnType<MoneyMarketDataRepository["rea
     while (inflationIndex < inflationIndices.length && inflationIndices[inflationIndex]!.date <= date) {
       latestInflation = Number(inflationIndices[inflationIndex++]!.value);
     }
-    const openPositions = fifoInvestmentLots(lotEvents(activeEvents)).openPositions;
+    const openPositions = fifoInvestmentLots(activeEvents.map(lotEvent)).openPositions;
     if (!openPositions.length) {
       previousCostBasisMinor = 0;
       previousDate = date;
@@ -274,19 +278,6 @@ function historyPoints(inputs: Awaited<ReturnType<MoneyMarketDataRepository["rea
 
 function daysBetween(left: string, right: string) {
   return (new Date(`${right}T00:00:00Z`).valueOf() - new Date(`${left}T00:00:00Z`).valueOf()) / 86_400_000;
-}
-
-function lotEvents(events: readonly import("./money-market-data-repository.js").MoneyMarketValuationEvent[]) {
-  return events.map((event) => ({
-    accountKey: event.accountKey,
-    occurredAt: event.occurredAt,
-    sourceOrder: event.sourceOrder,
-    eventKind: event.eventKind,
-    symbol: event.canonicalKey,
-    ...(event.quantity ? { quantity: event.quantity } : {}),
-    baseAmountMinor: event.baseAmountMinor,
-    baseFeeMinor: event.baseFeeMinor
-  }));
 }
 
 const QUANTITY_SCALE = 1_000_000_000_000n;

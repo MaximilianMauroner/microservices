@@ -56,6 +56,32 @@ describe("money market-data service", () => {
     });
   });
 
+  it("reports each position's market move since a check-in", async () => {
+    const repository = fakeRepository();
+    const events = [
+      investmentEvent("2026-01-01", "buy", "2", -20_000),
+      investmentEvent("2026-02-01", "sell", "0.5", 8_000)
+    ];
+    repository.readValuationInputs = vi.fn().mockResolvedValue({
+      events,
+      prices: [{ canonicalKey: "listing:XNAS:AAPL", providerKey: "AAPL", close: "250", priceDate: "2026-08-07", currency: "USD", quotePerEuro: "1.25" }]
+    });
+    repository.readHistoryInputs = vi.fn().mockResolvedValue({
+      events,
+      prices: [{ canonicalKey: "listing:XNAS:AAPL", date: "2026-01-01", close: "100", currency: "USD" }],
+      usdRates: [{ date: "2026-01-01", quoteCurrency: "USD", quotePerEuro: "1.25" }],
+      inflationIndices: []
+    });
+    const service = new MoneyMarketDataService(repository, undefined, undefined, () => new Date("2026-08-10T12:00:00Z"));
+
+    expect((await service.snapshot()).movesSince).toBeUndefined();
+    expect((await service.snapshot({ since: "2026-01-15" })).movesSince).toMatchObject({
+      baseline: "2026-01-15",
+      moves: [{ canonicalKey: "listing:XNAS:AAPL", baselineValueMinor: 16_000, soldMinor: 8_000, currentValueMinor: 30_000, moveMinor: 22_000, returnPercent: 137.5, closed: false }],
+      unpricedNames: []
+    });
+  });
+
   it("continues other series after a provider failure and refreshes ECB rates", async () => {
     const repository = fakeRepository();
     repository.syncTargets = vi.fn().mockResolvedValue([

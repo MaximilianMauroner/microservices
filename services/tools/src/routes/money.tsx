@@ -7,7 +7,7 @@ import { faviconLink, favicons } from "../favicons.js";
 import { requireRouteSession } from "../auth-session.js";
 import { MONEY_CATEGORIES, type MoneyCategory } from "../../money/money-enums.js";
 
-type MoneySearch = { view?: Exclude<MoneyTrackerView, "overview">; category?: MoneyCategory; review?: boolean; fromMonth?: string; toMonth?: string };
+type MoneySearch = { view?: Exclude<MoneyTrackerView, "overview">; category?: MoneyCategory; review?: boolean; fromMonth?: string; toMonth?: string; since?: string };
 
 export const Route = createFileRoute("/money")({
   beforeLoad: ({ location }) => requireRouteSession(location.href),
@@ -16,9 +16,10 @@ export const Route = createFileRoute("/money")({
     category: typeof search.category === "string" && MONEY_CATEGORIES.includes(search.category as MoneyCategory) ? search.category as MoneyCategory : undefined,
     review: search.review === true || search.review === "true" ? true : undefined,
     fromMonth: typeof search.fromMonth === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(search.fromMonth) ? search.fromMonth : undefined,
-    toMonth: typeof search.toMonth === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(search.toMonth) ? search.toMonth : undefined
+    toMonth: typeof search.toMonth === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(search.toMonth) ? search.toMonth : undefined,
+    since: typeof search.since === "string" && /^\d{4}-\d{2}-\d{2}$/.test(search.since) ? search.since : undefined
   }),
-  loaderDeps: ({ search }) => ({ view: (search.view ?? "overview") as MoneyTrackerView }),
+  loaderDeps: ({ search }) => ({ view: (search.view ?? "overview") as MoneyTrackerView, since: search.since }),
   loader: ({ deps }) => getMoneyTrackerPageData({ data: deps }),
   pendingComponent: MoneyTrackerPendingRoute,
   pendingMs: 0,

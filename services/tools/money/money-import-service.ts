@@ -1,3 +1,4 @@
+import { cashMovesSince } from "./money-checkin-domain.js";
 import {
   MONEY_IMPORT_MAX_BYTES,
   MONEY_CATEGORIES,
@@ -75,6 +76,14 @@ export class MoneyImportService {
 
   readLedgerSnapshot(scope: MoneyLedgerScope): Promise<MoneyLedgerSnapshot> {
     return this.repository.readLedgerSnapshot(scope);
+  }
+
+  readCheckInDays() {
+    return this.repository.readCheckInDays();
+  }
+
+  async readCashMovesSince(baseline: string) {
+    return cashMovesSince({ baseline, ...await this.repository.readCashSince(baseline) });
   }
 
   readActivityPage(input: Readonly<{ query: string; flow?: string; accountId?: string; category?: string; fromMonth?: string; toMonth?: string; reviewOnly?: boolean; sort?: string; direction?: string; offset: number; limit: number }>) {
