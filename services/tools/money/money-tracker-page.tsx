@@ -448,8 +448,8 @@ function Overview({
           tone={tone(marketData.totals.knownUnrealizedGainMinor)}
         />
       </section>
-      {checkIn ? (
-        <MoneyCheckInCard checkIn={checkIn} accountLabels={accountLabels} />
+      {checkIn?.overview ? (
+        <MoneyCheckInCard checkIn={checkIn} overview={checkIn.overview} accountLabels={accountLabels} />
       ) : null}
       <section className="grid items-start gap-3 lg:grid-cols-[minmax(0,1.7fr)_minmax(18rem,.7fr)]">
         <BalanceChart months={months} period={period} onPeriod={onPeriod} />

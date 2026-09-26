@@ -1,4 +1,4 @@
-import { cashMovesSince } from "./money-checkin-domain.js";
+import { cashMovesSince, spendingSince } from "./money-checkin-domain.js";
 import {
   MONEY_IMPORT_MAX_BYTES,
   MONEY_CATEGORIES,
@@ -84,6 +84,11 @@ export class MoneyImportService {
 
   async readCashMovesSince(baseline: string) {
     return cashMovesSince({ baseline, ...await this.repository.readCashSince(baseline) });
+  }
+
+  async readSpendingSince(baseline: string, previousBaseline?: string) {
+    const rows = await this.repository.readSpendingSince(previousBaseline ?? baseline);
+    return spendingSince({ baseline, ...(previousBaseline ? { previousBaseline } : {}), rows });
   }
 
   readActivityPage(input: Readonly<{ query: string; flow?: string; accountId?: string; category?: string; fromMonth?: string; toMonth?: string; reviewOnly?: boolean; sort?: string; direction?: string; offset: number; limit: number }>) {

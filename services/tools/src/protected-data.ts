@@ -7,7 +7,7 @@ import { requirePlatformSession } from "./auth-middleware.js";
 import { internalPlatformRequest, readPlatformJson, readPlatformResponse } from "./server-data.js";
 import { MONEY_LEDGER_SCOPES, type MoneyLedgerViewScope, type MoneyLedgerSnapshot } from "../money/money-repository.js";
 import type { MoneyMarketSnapshot } from "../money/money-market-data-service.js";
-import { checkInBaseline, moneyCheckIn, type MoneyCheckIn } from "../money/money-checkin-domain.js";
+import { checkInBaseline, moneyCheckIn, previousCheckIn, type MoneyCheckIn } from "../money/money-checkin-domain.js";
 
 export type UploadSummary = {
   id: string;
@@ -64,16 +64,18 @@ export const getMoneyTrackerPageData = createServerFn({ method: "GET" })
     const needsCheckIn = data.view === "overview" || data.view === "investments";
     const days = needsCheckIn ? await moneyImports.readCheckInDays() : [];
     const baseline = checkInBaseline(days, data.since);
-    const [ledger, { movesSince, ...marketData }, cash] = await Promise.all([
+    const overviewBaseline = data.view === "overview" ? baseline : undefined;
+    const [ledger, { movesSince, ...marketData }, cash, spending] = await Promise.all([
       moneyImports.readLedgerSnapshot(data.view),
       needsMarketData ? moneyMarketData.snapshot({ since: baseline }) : Promise.resolve(emptyMarketSnapshot()),
-      baseline ? moneyImports.readCashMovesSince(baseline) : undefined
+      overviewBaseline ? moneyImports.readCashMovesSince(overviewBaseline) : undefined,
+      overviewBaseline ? moneyImports.readSpendingSince(overviewBaseline, previousCheckIn(days, overviewBaseline)) : undefined
     ]);
     return {
       actor: context.principal?.email ?? "Authenticated user",
       ...ledger,
       marketData,
-      ...(movesSince && cash ? { checkIn: moneyCheckIn({ days, positions: movesSince, cash }) } : {})
+      ...(movesSince ? { checkIn: moneyCheckIn({ days, positions: movesSince, ...(cash ? { cash } : {}), ...(spending ? { spending } : {}) }) } : {})
     };
   });
 
