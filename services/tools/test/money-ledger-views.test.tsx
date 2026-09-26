@@ -1,10 +1,12 @@
-import { renderToStaticMarkup } from "react-dom/server";
+import type { ReactElement } from "react";
+import { renderToStaticMarkup as renderMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { MoneyActivityView, MoneyDataView, MoneyInvestmentsView, MoneySpendingView, portfolioChartPoints, portfolioMovingAverage } from "../money/money-ledger-views.js";
-import { MoneyPlanningCard } from "../money/money-planning-card.js";
+import { MoneyActivityView, MoneyImportHistory, MoneyInvestmentsView, portfolioChartPoints, portfolioMovingAverage } from "../money/money-ledger-views.js";
 import { MoneyRulesView } from "../money/money-rules-view.js";
-import { History } from "../money/money-tracker-page.js";
 import { groupMonth } from "../money/money-history.js";
+
+/** Currency amounts use a no-break space before the euro sign. */
+const renderToStaticMarkup = (element: ReactElement) => renderMarkup(element).replaceAll("\u00a0", " ");
 
 const activity = [
   {
@@ -26,18 +28,18 @@ const activity = [
   {
     id: "transaction-2",
     occurredAt: "2026-08-09T04:08:51.000Z",
-    accountName: "Revolut Current",
-    description: "Own account transfer",
-    amountMinor: 1_000,
+    accountName: "Sparkasse",
+    description: "Revolut card funding",
+    amountMinor: -25_000,
     feeMinor: 0,
     taxMinor: 0,
     currency: "EUR",
-    status: "reverted" as const,
+    status: "completed" as const,
     sourceType: "Transfer",
     flowKind: "transfer" as const,
-    category: "uncategorized" as const,
+    category: "transfer" as const,
     categoryOrigin: "source" as const,
-    needsTransferReview: false
+    needsTransferReview: true
   },
   {
     id: "transaction-3",
@@ -51,7 +53,7 @@ const activity = [
     status: "completed" as const,
     sourceType: "Transfer",
     flowKind: "transfer" as const,
-    category: "uncategorized" as const,
+    category: "transfer" as const,
     categoryOrigin: "source" as const,
     transferGroupId: "00000000-0000-4000-8000-000000000001",
     transferDisposition: "internal_transfer" as const,
@@ -66,117 +68,72 @@ const emptyMarketData = {
   totals: { costBasisMinor: 0, knownMarketValueMinor: 0, knownUnrealizedGainMinor: 0, complete: true }
 } as const;
 
-describe("Option A money ledger views", () => {
-  it("renders auditable activity with sortable ledger controls", () => {
-    const accountIds = ["00000000-0000-4000-8000-000000000010", "00000000-0000-4000-8000-000000000011"];
-    const html = renderToStaticMarkup(<MoneyActivityView activity={activity} accounts={accountIds} accountLabels={{ [accountIds[0]!]: "Savings", [accountIds[1]!]: "Savings" }} transactionCount={8_030} revertedCount={17} transferReview={{ linkedPairs: 12, unlinkedCount: 4, unresolvedPositiveCount: 1, unresolvedNegativeCount: 1 }} transferReviewGroups={[]} />);
+const noInvestments = { positions: [], trades: [], totals: { eventCount: 0, boughtMinor: 0, soldMinor: 0, incomeMinor: 0, feesMinor: 0, taxesMinor: 0 }, realized: { positions: [], totals: { saleCount: 0, proceedsMinor: 0, costBasisMinor: 0, gainMinor: 0, unmatchedSaleCount: 0 } } };
 
-    expect(html).toContain("Transaction activity");
-    expect(html).toContain("8,030");
-    expect(html).toContain("17");
+describe("Money transactions", () => {
+  it("edits categories in the row and sends transfers to review", () => {
+    const accountIds = ["00000000-0000-4000-8000-000000000010", "00000000-0000-4000-8000-000000000011"];
+    const html = renderToStaticMarkup(<MoneyActivityView activity={activity} accounts={accountIds} accountLabels={{ [accountIds[0]!]: "Savings", [accountIds[1]!]: "Savings" }} transactionCount={8_030} reviewCounts={{ uncategorized: 3, transfers: 2 }} />);
+
+    expect(html).toContain("8,030 rows");
     expect(html).toContain("Coffee");
-    expect(html).toContain("Revolut Current");
-    expect(html).toContain("Needs category");
-    expect(html).toContain("17 reverted excluded");
+    expect(html).toContain('aria-label="Category for Coffee: Uncategorized"');
+    expect(html).toContain("Choose category");
+    expect(html).toMatch(/href="\/money\?view=review"[^>]*>Transfer to classify/);
+    expect(html).toContain("matched transfer");
+    expect(html).toMatch(/Needs review.*>5</s);
     expect(html).toContain('aria-sort="descending"');
-    expect(html).not.toContain(">Status</button>");
-    expect(html).toContain("Matched transfer pairs");
-    expect(html).toContain("Unresolved transfer rows");
-    expect(html).toContain("Show transfer review rows");
-    expect(html).toContain('aria-label="Category for Coffee"');
-    expect(html).toContain("Uncategorized");
-    expect(html).toContain('data-slot="popover-trigger"');
     expect(html).toContain(`value="${accountIds[0]}"`);
     expect(html).toContain(`value="${accountIds[1]}"`);
-    expect(html).not.toContain("Transfer treatment");
+    expect(html).toContain("−3,50 €");
+    expect(html).toContain("0,10 € costs");
   });
 
   it("distinguishes an empty search result from an empty ledger", () => {
-    const summary = { linkedPairs: 0, unlinkedCount: 0, unresolvedPositiveCount: 0, unresolvedNegativeCount: 0 };
-    const noMatches = renderToStaticMarkup(<MoneyActivityView activity={[]} transactionCount={10} revertedCount={0} transferReview={summary} transferReviewGroups={[]} />);
-    const noImports = renderToStaticMarkup(<MoneyActivityView activity={[]} transactionCount={0} revertedCount={0} transferReview={summary} transferReviewGroups={[]} />);
-    expect(noMatches).toContain("No matching activity");
-    expect(noMatches).not.toContain("No transactions imported");
+    const counts = { uncategorized: 0, transfers: 0 };
+    const noMatches = renderToStaticMarkup(<MoneyActivityView activity={[]} transactionCount={10} reviewCounts={counts} />);
+    const noImports = renderToStaticMarkup(<MoneyActivityView activity={[]} transactionCount={0} reviewCounts={counts} />);
+    const noReview = renderToStaticMarkup(<MoneyActivityView activity={[]} transactionCount={10} reviewCounts={counts} initialReviewOnly />);
+    expect(noMatches).toContain("No matching rows");
     expect(noImports).toContain("No transactions imported");
+    expect(noReview).toContain("Nothing to review");
   });
 
-  it("opens directly into URL-selected repair queues", () => {
-    const html = renderToStaticMarkup(<MoneyActivityView activity={activity} transactionCount={3} revertedCount={0} transferReview={{ linkedPairs: 0, unlinkedCount: 1, unresolvedPositiveCount: 1, unresolvedNegativeCount: 0 }} transferReviewGroups={[]} initialCategory="uncategorized" initialReviewOnly />);
-    expect(html).toContain("Show all activity");
-    expect(html).toContain("Grouped transfer review");
-    expect(html).toMatch(/option value="uncategorized" selected/);
+  it("opens with URL filters applied", () => {
+    const html = renderToStaticMarkup(<MoneyActivityView activity={activity} transactionCount={3} reviewCounts={{ uncategorized: 1, transfers: 1 }} initialCategory="groceries" initialReviewOnly />);
+    expect(html).toMatch(/aria-pressed="true"[^>]*>Needs review/);
+    expect(html).toMatch(/value="groceries" selected/);
   });
+});
 
-  it("opens exact grouped transfer details with bulk range-selection controls", () => {
-    const transferItems = [
-      { ...activity[1]!, id: "review-1", status: "completed" as const, description: "Revolut card funding", amountMinor: -25_000, needsTransferReview: true },
-      { ...activity[1]!, id: "review-2", status: "completed" as const, description: "Revolut card funding", amountMinor: -25_000, needsTransferReview: true }
-    ];
-    const html = renderToStaticMarkup(<MoneyActivityView activity={activity} transactionCount={3} revertedCount={0} transferReview={{ linkedPairs: 0, unlinkedCount: 2, unresolvedPositiveCount: 0, unresolvedNegativeCount: 2 }} transferReviewGroups={[{ representativeId: "review-1", accountName: "Sparkasse · 0004", description: "Revolut card funding", sourceType: "BEZAHLUNG EU LAENDER", direction: "outflow", currency: "EUR", count: 2, totalMinor: -50_000, items: transferItems }]} initialReviewOnly />);
-    expect(html).toContain("2 exact unresolved rows");
-    expect(html).toContain('aria-pressed="true"');
-    expect(html).toContain("Shift-click another to select the range");
-    expect(html).toContain('aria-label="Select all 2 rows"');
-    expect(html).toContain("Apply to 0");
-  });
-
-  it("shows scenarios with unresolved transfers excluded and only blocks on insufficient history", () => {
-    const history = renderToStaticMarkup(<MoneyPlanningCard planning={{ ready: false, unresolvedTransferCount: 0, medianMonthlyNetMinor: 0, observedMonthCount: 0, projections: [] }} />);
-    const scenario = renderToStaticMarkup(<MoneyPlanningCard planning={{ ready: true, unresolvedTransferCount: 2, medianMonthlyNetMinor: 1_000, observedMonthCount: 6, projections: [{ months: 6, changeMinor: 6_000 }, { months: 12, changeMinor: 12_000 }, { months: 60, changeMinor: 60_000 }] }} />);
-    expect(history).toContain("Not enough history");
-    expect(scenario).toContain("Simple 6-month run rate");
-    expect(scenario).toContain("Simple 5-year run rate");
-    expect(scenario).toContain("2 unresolved transfer rows excluded");
-    expect(scenario).not.toContain("Scenario needs transfer review");
-  });
-
-  it("states the bounded spending and investment contracts", () => {
-    const spending = renderToStaticMarkup(<MoneySpendingView spending={{ months: [{ month: "2026-08", observed: true, spendMinor: 350, refundsMinor: 0, incomeMinor: 0, feesMinor: 10, taxesMinor: 0, netCashFlowMinor: -360 }], categories: [{ category: "uncategorized", amountMinor: 350, count: 1 }], categoryMonths: [], merchantMonths: [], categoryActivity: [], uncategorizedCount: 1 }} transferReview={{ linkedPairs: 0, unlinkedCount: 0, unresolvedPositiveCount: 0, unresolvedNegativeCount: 0 }} />);
-    const investments = renderToStaticMarkup(<MoneyInvestmentsView marketData={emptyMarketData} investments={{ positions: [], trades: [], totals: { eventCount: 0, boughtMinor: 0, soldMinor: 0, incomeMinor: 0, feesMinor: 0, taxesMinor: 0 }, realized: { positions: [], totals: { saleCount: 0, proceedsMinor: 0, costBasisMinor: 0, gainMinor: 0, unmatchedSaleCount: 0 } } }} />);
-
-    expect(spending).toContain("excluding transfers, trades, adjustments, and reverted rows");
-    expect(spending).toContain("3,50");
-    expect(spending).toMatch(/>12M<.*>5Y<.*>All</);
-    expect(investments).toContain("Portfolio valuation");
-    expect(investments).toMatch(/>1Y<.*>5Y<.*>All</);
-    expect(investments).toContain("Imported investment activity");
-    expect(investments).toContain("No realized gains yet");
-  });
-
-  it("qualifies incomplete cash flow and shows uncategorized financial impact", () => {
-    const html = renderToStaticMarkup(<MoneySpendingView spending={{ months: [{ month: "2026-07", observed: true, spendMinor: 1_000, refundsMinor: 0, incomeMinor: 2_000, feesMinor: 0, taxesMinor: 0, netCashFlowMinor: 1_000 }], categories: [{ category: "uncategorized", amountMinor: 750, count: 3 }], categoryMonths: [], merchantMonths: [], categoryActivity: [], uncategorizedCount: 3 }} transferReview={{ linkedPairs: 2, unlinkedCount: 4, unresolvedPositiveCount: 3, unresolvedNegativeCount: 1 }} />);
-    expect(html).toContain("Cash flow is incomplete");
-    expect(html).toContain("4 transfer rows still need treatment");
-    expect(html).toContain("Classified net flow");
-    expect(html).toContain("Uncategorized spending");
-    expect(html).toContain("7,50");
-  });
-
-  it("shows FIFO realized gains separately from current valuation", () => {
-    const html = renderToStaticMarkup(<MoneyInvestmentsView marketData={emptyMarketData} investments={{ positions: [], trades: [], totals: { eventCount: 3, boughtMinor: 20_000, soldMinor: 30_000, incomeMinor: 0, feesMinor: 0, taxesMinor: 0 }, realized: { positions: [{ symbol: "ABC", soldQuantity: "1", saleCount: 1, proceedsMinor: 30_000, costBasisMinor: 20_000, gainMinor: 10_000 }], totals: { saleCount: 1, proceedsMinor: 30_000, costBasisMinor: 20_000, gainMinor: 10_000, unmatchedSaleCount: 0 } } }} />);
-    expect(html).toContain("Realized gains and losses");
+describe("Money investments", () => {
+  it("folds FIFO realized gains below the current positions", () => {
+    const html = renderToStaticMarkup(<MoneyInvestmentsView marketData={emptyMarketData} investments={{ ...noInvestments, totals: { ...noInvestments.totals, eventCount: 3, boughtMinor: 20_000, soldMinor: 30_000 }, realized: { positions: [{ symbol: "ABC", soldQuantity: "1", saleCount: 1, proceedsMinor: 30_000, costBasisMinor: 20_000, gainMinor: 10_000 }], totals: { saleCount: 1, proceedsMinor: 30_000, costBasisMinor: 20_000, gainMinor: 10_000, unmatchedSaleCount: 0 } } }} />);
+    expect(html).toMatch(/<details class="money-twin"><summary>Realized gains · 1 matched sale · \+100 €/);
     expect(html).toContain("FIFO basis");
     expect(html).toContain("+50.0%");
-    expect(html).toContain("+100,00");
+    expect(html).toContain("No open positions");
+    expect(html).toContain("No valuation history yet");
   });
 
-  it("shows auditable cost basis and return for priced positions", () => {
+  it("shows weight, gain, and old prices for positions", () => {
     const html = renderToStaticMarkup(<MoneyInvestmentsView marketData={{
       asOf: "2026-08-10T12:00:00.000Z",
-      positions: [{ canonicalKey: "aum5", providerKey: "AUM5.DE", name: "Amundi S&amp;P 500", assetClass: "etf", quantity: "57.339404", costBasisMinor: 567_780, close: "134.01", currency: "EUR", marketValueMinor: 768_438, unrealizedGainMinor: 200_658, priceDate: "2026-08-10", state: "fresh" }],
-      history: [{ date: "2026-08-10", costBasisMinor: 567_780, knownMarketValueMinor: 768_438, knownUnrealizedGainMinor: 200_658, inflationBenchmarkMinor: 590_000, target7PercentMinor: 610_000, complete: true }],
-      totals: { costBasisMinor: 567_780, knownMarketValueMinor: 768_438, knownUnrealizedGainMinor: 200_658, complete: true }
-    }} investments={{ positions: [], trades: [], totals: { eventCount: 0, boughtMinor: 0, soldMinor: 0, incomeMinor: 0, feesMinor: 0, taxesMinor: 0 }, realized: { positions: [], totals: { saleCount: 0, proceedsMinor: 0, costBasisMinor: 0, gainMinor: 0, unmatchedSaleCount: 0 } } }} />);
+      positions: [
+        { canonicalKey: "aum5", providerKey: "AUM5.DE", name: "Amundi S&P 500", assetClass: "etf", quantity: "57.339404", costBasisMinor: 567_780, close: "134.01", currency: "EUR", marketValueMinor: 768_438, unrealizedGainMinor: 200_658, priceDate: "2026-08-10", state: "fresh" },
+        { canonicalKey: "asml", providerKey: "ASML.AS", name: "ASML", assetClass: "equity", quantity: "2", costBasisMinor: 150_000, close: "700", currency: "EUR", marketValueMinor: 140_000, unrealizedGainMinor: -10_000, priceDate: "2026-07-30", state: "stale" }
+      ],
+      history: [{ date: "2026-08-10", costBasisMinor: 717_780, knownMarketValueMinor: 908_438, knownUnrealizedGainMinor: 190_658, inflationBenchmarkMinor: 740_000, target7PercentMinor: 760_000, complete: true }],
+      totals: { costBasisMinor: 717_780, knownMarketValueMinor: 908_438, knownUnrealizedGainMinor: 190_658, complete: true }
+    }} investments={noInvestments} />);
 
-    expect(html).toContain("FIFO");
-    expect(html).toContain("avg");
-    expect(html).toContain("99,02");
     expect(html).toContain("+35.3%");
-    expect(html).toContain("View exact portfolio data");
-    expect(html).toContain("Allocation and concentration");
-    expect(html).toContain("Largest position");
-    expect(html).not.toContain("Yahoo closes");
-    expect(html).not.toContain("ECB USD/EUR");
+    expect(html).toContain("84.6%");
+    expect(html).toContain("Price from 30 Jul");
+    expect(html).toContain("1 without a current price");
+    expect(html).toContain("View portfolio values as a table");
+    expect(html).toMatch(/Largest.*Amundi S&amp;P 500 84\.6%/s);
+    expect(html).toContain("Growth against inflation and the 7% target");
   });
 
   it("bounds portfolio graph points while preserving trade markers and basis changes", () => {
@@ -209,51 +166,10 @@ describe("Option A money ledger views", () => {
     ]);
     expect(points.map((point) => point.movingAverage90)).toEqual([100, 150, 250]);
   });
+});
 
-  it("surfaces analytical confidence and actionable repairs in one data-quality view", () => {
-    const today = new Date();
-    const currentMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
-    const html = renderToStaticMarkup(<MoneyDataView
-      accounts={["cash", "broker"]}
-      accountLabels={{ cash: "Cash account", broker: "Broker account" }}
-      accountRoles={{ cash: "cash", broker: "investment" }}
-      accountLastObserved={{ cash: `${currentMonth}-01`, broker: "2026-08-01" }}
-      currentMonthTransactionAccounts={[]}
-      imports={Array.from({ length: 6 }, (_, index) => ({ id: `import-${index}`, digest: `digest-${index}`, format: "revolut_cash_statement_v1", filename: `cash-${index}.tsv`, bytes: 1200, rowCount: 100, insertedCount: 90, duplicateCount: 10, committedAt: "2026-08-09T05:08:51.000Z", actor: "operator@example.test" }))}
-      marketData={{ ...emptyMarketData, positions: [{ canonicalKey: "ETF", name: "ETF", assetClass: "etf", quantity: "1", costBasisMinor: 10_000, state: "unpriced" }], totals: { ...emptyMarketData.totals, complete: false } }}
-      months={[{ date: `${currentMonth}-01`, total: 100, values: { cash: 50, broker: 50 }, observedAccounts: ["cash"] }]}
-      revertedCount={2}
-      spending={{ months: [], categories: [{ category: "groceries", amountMinor: 100, count: 2 }, { category: "uncategorized", amountMinor: 50, count: 1 }], categoryMonths: [], merchantMonths: [], categoryActivity: [], uncategorizedCount: 1 }}
-      transactionCount={100}
-      transferReview={{ linkedPairs: 4, unlinkedCount: 1, unresolvedPositiveCount: 1, unresolvedNegativeCount: 0 }}
-    />);
-
-    expect(html).toContain("Data quality summary");
-    expect(html).toContain(`Account activity for ${currentMonth}`);
-    expect(html).toContain("1 of 2 accounts have no recorded transactions or balance this month");
-    expect(html).toContain("Statement coverage is unknown");
-    expect(html).toContain("Activity found");
-    expect(html).toContain("Cash account");
-    expect(html).toContain("Broker account");
-    expect(html).toContain("No activity");
-    expect(html).toContain("Coverage unknown");
-    expect(html).toContain("Choose or drop money exports");
-    expect(html).toContain("66.7%");
-    expect(html).not.toContain("Transfer rules");
-    expect(html).not.toContain("Create a category rule");
-    expect(html).toContain("Repair queue");
-    expect(html).toContain("/money?view=transactions&amp;category=uncategorized");
-    expect(html).toContain("/money?view=transactions&amp;review=true");
-    expect(html).toContain("positions need pricing attention");
-    expect(html.match(/lucide-chevron-right/g)).toHaveLength(4);
-    expect(html).toContain("focus-visible:ring-inset");
-    expect(html).not.toContain("Imported formats");
-    expect(html).toContain('aria-label="Delete cash-4.tsv"');
-    expect(html).not.toContain('aria-label="Delete cash-5.tsv"');
-    expect(html).toContain("Show all 6 imports");
-  });
-
-  it("lists automatic category and transfer rules in the rules view", () => {
+describe("Money rules and imports", () => {
+  it("lists automatic category and transfer rules", () => {
     const html = renderToStaticMarkup(<MoneyRulesView
       accounts={["cash", "broker"]}
       accountLabels={{ cash: "Cash account", broker: "Broker account" }}
@@ -272,45 +188,14 @@ describe("Option A money ledger views", () => {
     expect(html).toContain("Own-account transfer");
     expect(html).toContain("Pair card funding");
     expect(html).toContain("Topup · 2 unresolved");
-    expect(html).toContain("<strong>2</strong> transfer rows are unresolved");
   });
 
-  it("renders disambiguated balance labels instead of stable account ids", () => {
-    const html = renderToStaticMarkup(<History accountRoles={{ cash: "cash", broker: "investment", "id-cash": "cash", "id-investment": "investment" }} accounts={["id-cash", "id-investment"]} accountLabels={{ "id-cash": "Duplicate · manual a1", "id-investment": "Duplicate · manual b2" }} months={[{ date: "2026-08-01", values: { "id-cash": 10, "id-investment": 20 }, observedAccounts: ["id-cash", "id-investment"], total: 30, money: 10, stocks: 20, trend: 30 }]} />);
-    expect(html).toContain("Duplicate · manual a1");
-    expect(html).toContain("Duplicate · manual b2");
-    expect(html).not.toContain(">id-cash<");
-  });
-
-  it("omits an investment subtotal when no investment snapshots exist", () => {
-    const html = renderToStaticMarkup(<History accounts={["cash", "broker"]} accountLabels={{ cash: "Cash", broker: "Broker" }} accountRoles={{ cash: "cash", broker: "investment" }} months={[{ date: "2026-08-01", values: { cash: 10 }, observedAccounts: ["cash"], total: 10, money: 10, stocks: 0, trend: 10 }]} />);
-    expect(html).not.toContain("Investment snapshots");
-    expect(html).toContain("Investment market values are shown in Investments");
-  });
-
-  it("distinguishes a missing investment snapshot from a recorded zero", () => {
-    const html = renderToStaticMarkup(<History accounts={["cash", "broker"]} accountLabels={{ cash: "Cash", broker: "Broker" }} accountRoles={{ cash: "cash", broker: "investment" }} months={[
-      { date: "2026-07-01", values: { cash: 10 }, observedAccounts: ["cash"], total: 10, money: 10, stocks: 0, trend: 10 },
-      { date: "2026-08-01", values: { cash: 10, broker: 0 }, observedAccounts: ["cash", "broker"], total: 10, money: 10, stocks: 0, trend: 10 }
-    ]} />);
-    expect(html).toContain("Investment snapshots");
-    expect(html.match(/aria-label="No investment snapshot"/g)).toHaveLength(1);
-    expect(html).toMatch(/2026-08-01.*0,00/s);
-  });
-
-  it("labels carried balances instead of presenting them as freshly observed", () => {
-    const html = renderToStaticMarkup(<History accountRoles={{ cash: "cash", broker: "investment", "id-cash": "cash", "id-investment": "investment" }} accounts={["cash", "broker"]} accountLabels={{ cash: "Cash", broker: "Broker" }} months={[{ date: "2026-08-01", values: { cash: 10, broker: 20 }, observedAccounts: ["cash"], total: 30, money: 10, stocks: 20, trend: 30 }]} />);
-    expect(html).toContain("1 reused");
-    expect(html).toContain("most recent earlier balance was used");
-    expect(html).not.toContain('data-variant="destructive"');
-  });
-
-  it("suppresses balance changes when a later-added account leaves an endpoint incomplete", () => {
-    const html = renderToStaticMarkup(<History accountRoles={{ cash: "cash", broker: "investment", "id-cash": "cash", "id-investment": "investment" }} accounts={["cash", "broker"]} accountLabels={{ cash: "Cash", broker: "Broker" }} months={[
-      { date: "2026-07-01", values: { cash: 10 }, observedAccounts: ["cash"], total: 10, money: 10, stocks: 0, trend: 10 },
-      { date: "2026-08-01", values: { cash: 10, broker: 20 }, observedAccounts: ["cash", "broker"], total: 30, money: 10, stocks: 20, trend: 30 }
-    ]} />);
-    expect(html).toContain("Not comparable: account coverage changed");
+  it("lists every import with its own delete action", () => {
+    const html = renderToStaticMarkup(<MoneyImportHistory imports={Array.from({ length: 6 }, (_, index) => ({ id: `import-${index}`, digest: `digest-${index}`, format: "revolut_cash_statement_v1", filename: `cash-${index}.tsv`, bytes: 1200, rowCount: 100, insertedCount: 90, duplicateCount: 10, committedAt: "2026-08-09T05:08:51.000Z", actor: "operator@example.test" }))} />);
+    expect(html).toContain('aria-label="Delete cash-0.tsv"');
+    expect(html).toContain('aria-label="Delete cash-5.tsv"');
+    expect(html).toContain("Rebuild data");
+    expect(html).toContain("revolut cash statement · 1.2 KB");
   });
 
   it("uses persisted account roles instead of label suffixes for allocation", () => {

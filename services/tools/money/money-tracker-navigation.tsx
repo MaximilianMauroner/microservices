@@ -1,19 +1,79 @@
 import { Link } from "@tanstack/react-router";
 
-export type MoneyTrackerView = "overview" | "cash-flow" | "transactions" | "investments" | "accounts" | "categories" | "insights" | "predictions" | "rules" | "data";
+export const MONEY_VIEWS = ["overview", "spending", "transactions", "accounts", "investments", "plan", "review"] as const;
+export type MoneyTrackerView = (typeof MONEY_VIEWS)[number];
+export const MONEY_REVIEW_TABS = ["queue", "rules", "imports"] as const;
+export type MoneyReviewTab = (typeof MONEY_REVIEW_TABS)[number];
+
+const TITLES: Record<MoneyTrackerView, string> = {
+  overview: "Overview",
+  spending: "Spending",
+  transactions: "Transactions",
+  accounts: "Accounts",
+  investments: "Investments",
+  plan: "Plan",
+  review: "Review",
+};
 
 export function moneyViewTitle(view: MoneyTrackerView) {
-  return view === "overview" ? "Overview" : view === "cash-flow" ? "Cash flow" : view === "transactions" ? "Transactions" : view === "investments" ? "Investments" : view === "accounts" ? "Accounts" : view === "categories" ? "Categories" : view === "insights" ? "Insights" : view === "predictions" ? "Predictions" : view === "rules" ? "Rules" : "Uploads & data quality";
+  return TITLES[view];
 }
 
-export function MoneyNav() {
-  return <nav className="money-nav" aria-label="Money"><NavGroup label="Portfolio"><NavItem view="overview">Overview</NavItem><NavItem view="accounts">Accounts</NavItem><NavItem view="investments">Investments</NavItem></NavGroup><NavGroup label="Operations"><NavItem view="cash-flow">Cash flow</NavItem><NavItem view="transactions">Transactions</NavItem></NavGroup><NavGroup label="Analysis"><NavItem view="categories">Categories</NavItem><NavItem view="insights">Insights</NavItem><NavItem view="predictions">Predictions</NavItem></NavGroup><NavGroup label="System"><NavItem view="data">Uploads & data</NavItem><NavItem view="rules">Rules</NavItem></NavGroup></nav>;
+/** Views from before the redesign, mapped to the view that now holds their content. */
+const LEGACY_VIEWS: Record<string, { view: MoneyTrackerView; tab?: MoneyReviewTab }> = {
+  "cash-flow": { view: "spending" },
+  categories: { view: "spending" },
+  insights: { view: "overview" },
+  predictions: { view: "plan" },
+  data: { view: "review" },
+  rules: { view: "review", tab: "rules" },
+};
+
+export function legacyMoneyView(view: unknown) {
+  return typeof view === "string" ? LEGACY_VIEWS[view] : undefined;
 }
 
-function NavGroup({ label, children }: { label: string; children: React.ReactNode }) {
-  return <div className="money-nav__group"><span className="money-nav__label">{label}</span>{children}</div>;
+/** Rows that keep data out of the totals until someone reviews them. */
+export function moneyReviewCount(counts: { uncategorized: number; transfers: number } | undefined) {
+  return counts ? counts.uncategorized + counts.transfers : 0;
 }
 
-function NavItem({ view, children }: { view: MoneyTrackerView; children: React.ReactNode }) {
-  return <Link to="/money" search={{ view: view === "overview" ? undefined : view }} preload="intent" activeOptions={{ exact: true }} className="money-nav__item">{children}</Link>;
+/** Reads the review counts from Money route loader data, which the workspace sidebar sees as unknown. */
+export function moneyReviewCounts(loaderData: unknown) {
+  if (typeof loaderData !== "object" || loaderData === null || !("reviewCounts" in loaderData)) return undefined;
+  const counts = loaderData.reviewCounts;
+  return typeof counts === "object" && counts !== null && "uncategorized" in counts && "transfers" in counts
+    && typeof counts.uncategorized === "number" && typeof counts.transfers === "number"
+    ? { uncategorized: counts.uncategorized, transfers: counts.transfers }
+    : undefined;
+}
+
+/** Phone navigation. On wider screens the workspace sidebar lists the same views. */
+export function MoneyNav({ current, reviewCount }: { current: MoneyTrackerView; reviewCount: number }) {
+  return (
+    <nav className="money-nav md:hidden" aria-label="Money">
+      {MONEY_VIEWS.map((view) => (
+        <Link
+          key={view}
+          to="/money"
+          search={{ view: view === "overview" ? undefined : view }}
+          preload="intent"
+          activeOptions={{ exact: true, includeSearch: true }}
+          aria-current={view === current ? "page" : undefined}
+          className="money-nav__item"
+        >
+          {TITLES[view]}
+          {view === "review" && reviewCount ? <MoneyReviewBadge count={reviewCount} /> : null}
+        </Link>
+      ))}
+    </nav>
+  );
+}
+
+export function MoneyReviewBadge({ count }: { count: number }) {
+  return (
+    <span className="money-review-badge" aria-label={`${count} to review`}>
+      {count > 999 ? "999+" : count}
+    </span>
+  );
 }
