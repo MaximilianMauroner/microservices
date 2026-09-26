@@ -64,8 +64,8 @@ export function MoneyCategoryRuleBuilder({ accounts, accountLabels }: { accounts
         </label>
       </div>
       <Button type="button" variant="outline" disabled={busy || !accountId || !matchValue.trim() || category === "uncategorized"} onClick={() => void submit("previewRule")}>Preview matches</Button>
-      {error ? <p role="alert" className="text-sm text-rose-300">{error}</p> : null}
-      {success ? <p role="status" className="text-sm text-emerald-300">{success}</p> : null}
+      {error ? <p role="alert" className="text-sm text-negative">{error}</p> : null}
+      {success ? <p role="status" className="text-sm text-positive">{success}</p> : null}
       {preview ? <div className="space-y-3 rounded-md border p-3 text-sm">
         <p><strong>{preview.matchCount}</strong> historical matches · <strong>{preview.changeCount}</strong> category changes · <strong>{preview.manualCount}</strong> manual choices kept</p>
         {preview.examples.length ? <div className="max-h-64 divide-y overflow-auto">{preview.examples.map((row) => <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] gap-3 py-2" key={row.id}><span>{row.date}</span><span className="truncate" title={row.description}>{row.description}</span><span>{row.category.replaceAll("_", " ")}{row.categoryOrigin === "manual" ? " · manual" : ""}</span></div>)}</div> : <p>No matching spending rows. Check the exact value and account.</p>}

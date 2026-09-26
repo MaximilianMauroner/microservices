@@ -291,7 +291,7 @@ function HeadToHeadColumn({ column, scale }: { column: Column; scale: number }) 
   return (
     <section aria-label={column.title} className="min-w-0">
       <h3 className="mb-1 flex items-baseline gap-2 border-b px-2.5 pb-1.5 text-[.68rem] font-semibold uppercase tracking-[.08em]">
-        <span className={column.tone === "up" ? "text-emerald-400" : "text-rose-400"}>{column.title}</span>
+        <span className={column.tone === "up" ? "text-positive" : "text-negative"}>{column.title}</span>
         <span className={`font-mono normal-case tracking-normal ${toneClass(column.tone)}`}>{formatSignedMoney(total)}</span>
         <span className="font-normal normal-case tracking-normal text-muted-foreground">· {rows.length}</span>
       </h3>
@@ -475,7 +475,7 @@ export function formatPercent(value: number) {
 }
 
 export function changeClass(value: number) {
-  return value < 0 ? "text-rose-400" : value > 0 ? "text-emerald-400" : "text-muted-foreground";
+  return value < 0 ? "text-negative" : value > 0 ? "text-positive" : "text-muted-foreground";
 }
 
 function toneOf(valueMinor: number): Tone | undefined {
@@ -483,5 +483,5 @@ function toneOf(valueMinor: number): Tone | undefined {
 }
 
 function toneClass(tone: Tone) {
-  return tone === "up" ? "text-emerald-400" : "text-rose-400";
+  return tone === "up" ? "text-positive" : "text-negative";
 }

@@ -128,7 +128,7 @@ export function UploadLinkManager() {
           <h2 id="upload-links-title" className="text-xl font-semibold">Guest upload links</h2>
           <p className="mt-1 text-sm text-muted-foreground">Anyone with an active link can send any number of files without signing in.</p>
         </div>
-        <Button type="button" variant="ghost" size="sm" onClick={() => void loadLinks()} disabled={busy}><RotateCcw /> Refresh</Button>
+        <Button type="button" variant="outline" size="sm" onClick={() => void loadLinks()} disabled={busy}><RotateCcw /> Refresh</Button>
       </div>
       {error ? <Alert className="mb-3" variant="destructive">{error}</Alert> : null}
       <Card className="gap-4 p-5">
@@ -159,7 +159,7 @@ export function UploadLinkManager() {
             </div>
           </div></Card>;
         })}
-        {nextCursor ? <div className="flex justify-center pt-1"><Button type="button" variant="ghost" size="sm" onClick={() => void loadOlderLinks()} disabled={busy}>Load older links</Button></div> : null}
+        {nextCursor ? <div className="flex justify-center pt-1"><Button type="button" variant="outline" size="sm" onClick={() => void loadOlderLinks()} disabled={busy}>Load older links</Button></div> : null}
         <p className="text-xs text-muted-foreground">For links created earlier, the secret URL cannot be recovered. Create a new shareable link using the selected duration, then revoke the old link if it is no longer needed.</p>
       </div> : null}
     </section>

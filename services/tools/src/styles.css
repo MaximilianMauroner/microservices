@@ -5,10 +5,19 @@
 @source "../money";
 @source "../feedback";
 
+/* `dark:` follows the app theme on <html data-theme>, not the OS setting. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
 .feedback-success {
   --feedback-heal: #72e5a6;
   --feedback-heart: #ff7ca8;
   --feedback-mana: #78b8ff;
+  /* The card stays dark in both themes, so it carries its own text and surface colors. */
+  --foreground: #f5f5f5;
+  --muted-foreground: #a3a3a3;
+  --background: #05080c;
+  --border: #1f2a33;
+  color: var(--foreground);
   border-color: color-mix(in oklab, var(--feedback-heal) 28%, var(--border));
   background:
     radial-gradient(circle at 50% 34%, color-mix(in oklab, var(--feedback-heal) 16%, transparent) 0, transparent 38%),
@@ -146,9 +155,13 @@
   --accent-foreground: #ffffff;
   --destructive: #ff7474;
   --destructive-foreground: #000000;
+  /* Status text: gains, losses, and warnings. Pastel on dark, deep on light. */
+  --positive: #6ee7b7;
+  --negative: #fda4af;
+  --warning: #fcd34d;
   --border: #252525;
   --surface-border: var(--border);
-  --input: #383838;
+  --input: var(--control-border);
   --ring: #74a7ff;
   --sidebar: #080808;
   --sidebar-foreground: #d4d4d4;
@@ -158,6 +171,11 @@
   --sidebar-accent-foreground: #ffffff;
   --sidebar-border: #252525;
   --sidebar-ring: #74a7ff;
+  /* Resting surface and edge for outlined controls; strong enough to read as a button, not text. */
+  --control: #121212;
+  --control-hover: #1f1f1f;
+  --control-border: #4a4a4a;
+  --control-border-hover: #5a5a5a;
   --treemap-stocks: #171126;
   --treemap-stocks-border: #b9a1ff;
   --treemap-cash: #0b2221;
@@ -182,9 +200,12 @@ html[data-theme="light"] {
   --accent-foreground: #171717;
   --destructive: #c73333;
   --destructive-foreground: #ffffff;
+  --positive: #047857;
+  --negative: #be123c;
+  --warning: #b45309;
   --border: #dedede;
   --surface-border: var(--border);
-  --input: #d0d0d0;
+  --input: var(--control-border);
   --ring: #2563eb;
   --sidebar: #f4f4f5;
   --sidebar-foreground: #343434;
@@ -194,6 +215,10 @@ html[data-theme="light"] {
   --sidebar-accent-foreground: #171717;
   --sidebar-border: #d8d8da;
   --sidebar-ring: #2563eb;
+  --control: #ffffff;
+  --control-hover: #f1f1f1;
+  --control-border: #c4c4c4;
+  --control-border-hover: #a8a8a8;
 }
 
 html:has([data-suite-accent="lime"]) {
@@ -264,6 +289,82 @@ html:has([data-suite-accent="blue"]) {
 
 html:has([data-suite-accent]) {
   --surface-border: color-mix(in oklab, var(--product-accent) 18%, var(--border));
+  /* Outlined controls take the product color, so every tool's buttons match its accent. */
+  --control: color-mix(in oklab, var(--product-accent-soft) 45%, #0e0e0e);
+  --control-hover: var(--product-accent-soft);
+  --control-border: color-mix(in oklab, var(--product-accent-border) 60%, #4a4a4a);
+  --control-border-hover: var(--product-accent-border);
+  /* Fields carry a lighter tint than buttons: they also tint input fills and off switches. */
+  --input: color-mix(in oklab, var(--product-accent-border) 40%, #3c3c3c);
+}
+
+/* The accent blocks above are tuned for dark surfaces. Light mode uses deeper primaries so
+   tool-colored text stays readable on white, and paler tints for soft surfaces. */
+html[data-theme="light"]:has([data-suite-accent="lime"]) {
+  --primary: #4d7c0f;
+  --primary-foreground: #ffffff;
+  --secondary: #ecfccb;
+  --secondary-foreground: #3f6212;
+  --ring: #65a30d;
+  --product-accent-soft: #f7fee7;
+  --product-accent-border: #84cc16;
+}
+
+html[data-theme="light"]:has([data-suite-accent="violet"]) {
+  --primary: #6d28d9;
+  --primary-foreground: #ffffff;
+  --secondary: #ede9fe;
+  --secondary-foreground: #5b21b6;
+  --ring: #7c3aed;
+  --product-accent-soft: #f5f3ff;
+  --product-accent-border: #8b5cf6;
+}
+
+html[data-theme="light"]:has([data-suite-accent="amber"]) {
+  --primary: #b45309;
+  --primary-foreground: #ffffff;
+  --secondary: #fef3c7;
+  --secondary-foreground: #92400e;
+  --ring: #d97706;
+  --product-accent-soft: #fffbeb;
+  --product-accent-border: #f59e0b;
+}
+
+html[data-theme="light"]:has([data-suite-accent="cyan"]) {
+  --primary: #0e7490;
+  --primary-foreground: #ffffff;
+  --secondary: #cffafe;
+  --secondary-foreground: #155e75;
+  --ring: #0891b2;
+  --product-accent-soft: #ecfeff;
+  --product-accent-border: #06b6d4;
+}
+
+html[data-theme="light"]:has([data-suite-accent="rose"]) {
+  /* Pink-leaning so the primary action never reads as the destructive red. */
+  --primary: #be185d;
+  --primary-foreground: #ffffff;
+  --secondary: #ffe4e6;
+  --secondary-foreground: #9f1239;
+  --ring: #e11d48;
+  --product-accent-soft: #fff1f2;
+  --product-accent-border: #fb7185;
+}
+
+html[data-theme="light"]:has([data-suite-accent="blue"]) {
+  --primary: #1d4ed8;
+  --primary-foreground: #ffffff;
+  --secondary: #dbeafe;
+  --secondary-foreground: #1e40af;
+  --ring: #2563eb;
+  --product-accent-soft: #eff6ff;
+  --product-accent-border: #60a5fa;
+}
+
+html[data-theme="light"]:has([data-suite-accent]) {
+  --input: #c9c9c9;
+  --control: #ffffff;
+  --control-border: color-mix(in oklab, var(--product-accent-border) 55%, #c4c4c4);
 }
 
 @theme inline {
@@ -283,6 +384,9 @@ html:has([data-suite-accent]) {
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
+  --color-positive: var(--positive);
+  --color-negative: var(--negative);
+  --color-warning: var(--warning);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -294,6 +398,10 @@ html:has([data-suite-accent]) {
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+  --color-control: var(--control);
+  --color-control-hover: var(--control-hover);
+  --color-control-border: var(--control-border);
+  --color-control-border-hover: var(--control-border-hover);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -359,14 +467,14 @@ html:has([data-suite-accent]) {
   .money-content, .money-content > *, .money-content [data-slot="card"], .money-content [data-slot="card-content"] { min-width: 0; }
   .money-content [data-slot="card-content"] { max-width: 100%; }
   .money-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; align-items: start; margin-top: 1rem; }
-  .money-nav { position: sticky; top: 4.5rem; display: grid; gap: .75rem; padding: .55rem .4rem; border: 1px solid var(--surface-border); border-radius: var(--radius); background: #050505; }
+  .money-nav { position: sticky; top: 4.5rem; display: grid; gap: .75rem; padding: .55rem .4rem; border: 1px solid var(--surface-border); border-radius: var(--radius); background: var(--card); }
   .money-nav__group { display: grid; gap: .2rem; }
   .money-nav__label { padding: .2rem .65rem; color: #737373; font-size: .62rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
   .money-nav__item { display: flex; min-height: 2.25rem; align-items: center; border-radius: calc(var(--radius) - 2px); padding: .45rem .65rem; color: var(--muted-foreground); font-size: .8rem; font-weight: 600; transition: background-color 120ms ease, color 120ms ease; }
   .money-nav__item:hover { background: var(--accent); color: var(--foreground); }
-  .money-nav__item[aria-current="page"] { background: var(--product-accent-soft, #1a1a1a); color: var(--primary); box-shadow: inset 2px 0 var(--primary); }
+  .money-nav__item[aria-current="page"] { background: var(--product-accent-soft, #1a1a1a); color: var(--secondary-foreground); box-shadow: inset 2px 0 var(--primary); }
   .money-inline-link { color: var(--muted-foreground); font-size: .75rem; font-weight: 650; white-space: nowrap; }
-  .money-inline-link:hover { color: #fff; text-decoration: underline; text-underline-offset: 3px; }
+  .money-inline-link:hover { color: var(--foreground); text-decoration: underline; text-underline-offset: 3px; }
   .money-category-map { display: grid; gap: .1rem; padding: .5rem; }
   .money-category-map--compact { padding-block: .65rem; }
   .money-category-bar { display: grid; width: 100%; gap: .45rem; padding: .6rem .7rem; border: 1px solid transparent; border-radius: calc(var(--radius) - 2px); color: var(--foreground); text-align: left; transition: background-color 120ms ease, border-color 120ms ease; }
@@ -515,8 +623,8 @@ html:has([data-suite-accent]) {
   .status-updated, .status-coverage { font-size: .75rem; }
   .status-mark { display: inline-grid; width: 1.3rem; height: 1.3rem; place-items: center; border: 1px solid var(--border); border-radius: 999px; font-size: .7rem; }
   .status-mark--large { width: 2.5rem; height: 2.5rem; font-size: 1rem; }
-  .status-mark--operational { border-color: #166534; color: #4ade80; }
-  .status-mark--outage { border-color: #7f1d1d; color: #f87171; }
+  .status-mark--operational { border-color: color-mix(in oklab, var(--positive) 45%, transparent); color: var(--positive); }
+  .status-mark--outage { border-color: color-mix(in oklab, var(--destructive) 45%, transparent); color: var(--destructive); }
   .status-card { gap: 0; padding: 0; overflow: hidden; }
   .status-card__header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem; border-bottom: 1px solid var(--border); }
   .status-card__header h2 { font-weight: 650; }
@@ -536,7 +644,7 @@ html:has([data-suite-accent]) {
   .service-state { color: var(--muted-foreground); font-size: .75rem; }
   .service-description { margin-top: .45rem; color: var(--muted-foreground); font-size: .8rem; }
   .uptime-bar { display: grid; grid-template-columns: repeat(90, minmax(2px, 1fr)); gap: 2px; height: 2.2rem; margin-top: 1rem; }
-  .uptime-day { position: relative; min-width: 2px; border-radius: 2px; background: #27272a; }
+  .uptime-day { position: relative; min-width: 2px; border-radius: 2px; background: color-mix(in oklab, var(--foreground) 15%, transparent); }
   .uptime-day--operational { background: #22c55e; }
   .uptime-day--attention { background: #eab308; }
   .uptime-day--outage { background: #ef4444; }
@@ -547,7 +655,7 @@ html:has([data-suite-accent]) {
   .uptime-popover__header, .uptime-popover__metrics { display: flex; justify-content: space-between; gap: .5rem; }
   .uptime-popover__metrics small, .uptime-popover__footer { display: block; color: var(--muted-foreground); font-size: .65rem; }
   .uptime-legend, .service-meta, .service-links { display: flex; flex-wrap: wrap; gap: .75rem; margin-top: .65rem; color: var(--muted-foreground); font-size: .68rem; }
-  .uptime-key { display: inline-block; width: .5rem; height: .5rem; margin-right: .25rem; border-radius: 2px; background: #27272a; }
+  .uptime-key { display: inline-block; width: .5rem; height: .5rem; margin-right: .25rem; border-radius: 2px; background: color-mix(in oklab, var(--foreground) 15%, transparent); }
   .uptime-key--operational { background: #22c55e; }.uptime-key--attention { background: #eab308; }.uptime-key--outage { background: #ef4444; }
   .service-meta { justify-content: space-between; }
   .service-links { gap: .4rem; }
@@ -613,7 +721,7 @@ html:has([data-suite-accent]) {
       gap: 0;
       padding: .35rem;
       border-radius: 0 0 var(--radius) var(--radius);
-      background: rgba(5, 5, 5, .96);
+      background: color-mix(in oklab, var(--card) 96%, transparent);
       box-shadow: 16px 0 20px -18px var(--primary) inset;
       overscroll-behavior-x: contain;
       scroll-snap-type: x proximity;

@@ -9,7 +9,7 @@ describe("feedback copy UI", () => {
     ]);
 
     expect(root).toContain("<Toaster />");
-    expect(feedbackUi).toContain('bg-primary text-primary-foreground hover:bg-primary/90');
+    expect(feedbackUi).toContain('const primaryButton = buttonVariants({ size: "lg" });');
     expect(feedbackUi).toContain('copyFeedbackText(publicUrl, "Link copied")');
     expect(feedbackUi).toContain("<FeedbackQuestionEditor questions={questions} language={language} onChange={setQuestions} />");
   });

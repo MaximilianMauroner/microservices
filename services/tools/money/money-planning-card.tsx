@@ -55,7 +55,7 @@ export function MoneyPlanningCard({
                     run rate
                   </p>
                   <strong
-                    className={`mt-1 block font-mono text-lg ${item.changeMinor < 0 ? "text-rose-300" : "text-emerald-300"}`}
+                    className={`mt-1 block font-mono text-lg ${item.changeMinor < 0 ? "text-negative" : "text-positive"}`}
                   >
                     {signedEuro(item.changeMinor)}
                   </strong>
