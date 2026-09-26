@@ -32,6 +32,8 @@ import type {
 } from "./money-checkin-domain.js";
 
 const VISIBLE_PER_COLUMN = 6;
+/** Phones stack the count under the label so all three tabs fit; wider screens size each tab to its label. */
+const CHECK_IN_TAB = "sm:flex-none sm:px-3 max-sm:h-auto max-sm:min-h-11 max-sm:min-w-0 max-sm:flex-col max-sm:whitespace-normal max-sm:px-1 max-sm:text-xs";
 const currency = new Intl.NumberFormat("de-DE", {
   style: "currency",
   currency: "EUR",
@@ -124,14 +126,14 @@ export function MoneyCheckInCard({
           ))}
         </ol>
         <Tabs defaultValue="positions">
-          <TabsList className="grid h-auto w-full grid-cols-3 sm:inline-flex sm:w-fit">
-            <TabsTrigger className="h-auto min-h-11 min-w-0 flex-col whitespace-normal px-1 text-xs sm:min-h-0 sm:flex-row sm:px-2 sm:text-sm" value="positions">
+          <TabsList className="max-sm:grid max-sm:h-auto max-sm:w-full max-sm:grid-cols-3">
+            <TabsTrigger className={CHECK_IN_TAB} value="positions">
               Positions <Count value={checkIn.positions.length} />
             </TabsTrigger>
-            <TabsTrigger className="h-auto min-h-11 min-w-0 flex-col whitespace-normal px-1 text-xs sm:min-h-0 sm:flex-row sm:px-2 sm:text-sm" value="cash">
+            <TabsTrigger className={CHECK_IN_TAB} value="cash">
               Cash accounts <Count value={overview.cash.length} />
             </TabsTrigger>
-            <TabsTrigger className="h-auto min-h-11 min-w-0 flex-col whitespace-normal px-1 text-xs sm:min-h-0 sm:flex-row sm:px-2 sm:text-sm" value="spending">
+            <TabsTrigger className={CHECK_IN_TAB} value="spending">
               Spending <Count value={spending.categories.length} />
             </TabsTrigger>
           </TabsList>
