@@ -954,6 +954,8 @@ export function MoneyDataView({
   accountLastObserved,
   accountRoles,
   categoryRules,
+  transferRules,
+  transferPairRules,
   currentMonthTransactionAccounts,
   recentTransactionMonths,
   imports,
@@ -970,6 +972,8 @@ export function MoneyDataView({
   | "accountLastObserved"
   | "accountRoles"
   | "categoryRules"
+  | "transferRules"
+  | "transferPairRules"
   | "currentMonthTransactionAccounts"
   | "recentTransactionMonths"
   | "imports"
@@ -1145,6 +1149,7 @@ export function MoneyDataView({
             )}
           </CardContent>
         </Card>
+        <TransferRulesCard rules={transferRules} pairRules={transferPairRules} />
         <Card>
           <CardHeader className="border-b">
             <CardTitle>Repair queue</CardTitle>
@@ -3676,6 +3681,53 @@ function formatBytes(bytes: number) {
 function flowLabel(flow: string) {
   return flow.replaceAll("_", " ");
 }
+/** Read-only view of the stored rules that classify and pair unlinked transfers. */
+function TransferRulesCard({
+  rules,
+  pairRules,
+}: { rules: MoneyTrackerPageData["transferRules"]; pairRules: MoneyTrackerPageData["transferPairRules"] }) {
+  return (
+    <Card>
+      <CardHeader className="border-b">
+        <CardTitle>Transfer rules</CardTitle>
+        <CardDescription>
+          Stored rules for unlinked transfers, first match wins
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="max-h-96 divide-y overflow-y-auto p-0">
+        {pairRules.map((rule) => (
+          <div className="px-4 py-2.5" key={rule.id}>
+            <p className="text-sm font-medium">Pair card funding · {formatLabel(rule.creditProvider)}</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {formatLabel(rule.debitProvider)} {rule.debitSourceType} naming “{rule.debitMatchValue}” → {formatLabel(rule.creditProvider)} {rule.creditSourceType} on the purchase date
+            </p>
+          </div>
+        ))}
+        {rules.map((rule) => (
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 px-4 py-2.5" key={rule.id}>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium" title={rule.note}>
+                {rule.note ?? transferRuleSummary(rule)}
+              </p>
+              <p className="mt-0.5 truncate text-xs text-muted-foreground">{transferRuleSummary(rule)}</p>
+            </div>
+            <Badge variant="outline">{formatLabel(rule.disposition)}</Badge>
+          </div>
+        ))}
+        {!rules.length && !pairRules.length ? (
+          <EmptyLedger title="No transfer rules" description="Unlinked transfers wait for review until a rule matches them." />
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function transferRuleSummary(rule: MoneyTrackerPageData["transferRules"][number]) {
+  const description = rule.descriptionMatch === "any" ? "any description" : `description ${formatLabel(rule.descriptionMatch)} “${rule.matchValue}”`;
+  const sign = rule.amountSign === "any" ? "" : ` · ${rule.amountSign} amounts`;
+  return `${rule.provider ? formatLabel(rule.provider) : "Any provider"} · ${rule.sourceType ?? "any type"} · ${description}${sign}`;
+}
+
 function formatLabel(value: string) {
   return value.replace(/_v\d$/, "").replaceAll("_", " ");
 }

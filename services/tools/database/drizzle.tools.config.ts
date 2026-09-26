@@ -14,6 +14,6 @@ export default defineConfig({
     "history_partitions", "money_accounts", "money_imports", "money_instruments",
     "money_instrument_aliases", "money_market_series", "money_daily_prices", "money_fx_rates",
     "money_inflation_indices", "money_transactions", "money_investment_events",
-    "money_category_rules", "money_balance_snapshots"
+    "money_category_rules", "money_balance_snapshots", "money_transfer_rules", "money_transfer_pair_rules"
   ],
 });

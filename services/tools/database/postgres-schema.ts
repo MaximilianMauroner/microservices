@@ -296,6 +296,48 @@ export const moneyCategoryRules = toolsSchema.table("money_category_rules", {
   index("money_category_rules_priority_idx").on(table.priority),
 ]);
 
+/** Ordered transfer disposition rules; owner-specific evidence stays in data, not code. */
+export const moneyTransferRules = toolsSchema.table("money_transfer_rules", {
+  id: uuid("id").primaryKey(),
+  priority: integer("priority").notNull(),
+  provider: text("provider"),
+  sourceType: text("source_type"),
+  descriptionMatch: text("description_match").notNull(),
+  matchValue: text("match_value"),
+  amountSign: text("amount_sign").notNull().default("any"),
+  disposition: text("disposition").notNull(),
+  note: text("note"),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+  createdBy: text("created_by").notNull(),
+}, (table) => [
+  check("money_transfer_rules_match_check", sql`${table.descriptionMatch} in ('any', 'equals', 'starts_with', 'contains', 'word')`),
+  check("money_transfer_rules_value_check", sql`(${table.descriptionMatch} = 'any') = (${table.matchValue} is null)`),
+  check("money_transfer_rules_value_case_check", sql`${table.matchValue} = lower(${table.matchValue})`),
+  check("money_transfer_rules_sign_check", sql`${table.amountSign} in ('any', 'positive', 'negative')`),
+  check("money_transfer_rules_disposition_check", sql`${table.disposition} in ('internal_transfer', 'income', 'spend', 'refund', 'excluded')`),
+  index("money_transfer_rules_priority_idx").on(table.priority),
+]);
+
+/** Card debits that name a destination, paired with that provider's top-ups on the purchase date. */
+export const moneyTransferPairRules = toolsSchema.table("money_transfer_pair_rules", {
+  id: uuid("id").primaryKey(),
+  debitProvider: text("debit_provider").notNull(),
+  debitSourceType: text("debit_source_type").notNull(),
+  debitMatchValue: text("debit_match_value").notNull(),
+  creditProvider: text("credit_provider").notNull(),
+  creditSourceType: text("credit_source_type").notNull(),
+  note: text("note"),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+  createdBy: text("created_by").notNull(),
+}, (table) => [
+  check("money_transfer_pair_rules_value_case_check", sql`${table.debitMatchValue} = lower(${table.debitMatchValue})`),
+  uniqueIndex("money_transfer_pair_rules_unique_idx").on(table.debitProvider, table.debitSourceType, table.debitMatchValue),
+]);
+
 export const moneyBalanceSnapshots = toolsSchema.table("money_balance_snapshots", {
   accountId: uuid("account_id").notNull().references(() => moneyAccounts.id),
   snapshotDate: date("snapshot_date").notNull(),
