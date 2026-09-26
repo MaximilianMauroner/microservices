@@ -58,7 +58,7 @@ export function FeedbackQuestionEditor({
                 <div className="flex items-center gap-1.5 self-end sm:self-auto">
                   <Button variant="outline" size="icon-sm" type="button" title="Move up" aria-label={`Move question ${index + 1} up`} disabled={index === 0} onClick={() => onChange(moveFeedbackQuestion(questions, index, -1))}><ArrowUpIcon /></Button>
                   <Button variant="outline" size="icon-sm" type="button" title="Move down" aria-label={`Move question ${index + 1} down`} disabled={index === questions.length - 1} onClick={() => onChange(moveFeedbackQuestion(questions, index, 1))}><ArrowDownIcon /></Button>
-                  <Button variant="destructive" size="icon-sm" type="button" title="Remove question" aria-label={`Remove question ${index + 1}`} onClick={() => onChange(questions.filter(({ id }) => id !== question.id))}><Trash2Icon /></Button>
+                  <Button variant="destructive-subtle" size="icon-sm" type="button" title="Remove question" aria-label={`Remove question ${index + 1}`} onClick={() => onChange(questions.filter(({ id }) => id !== question.id))}><Trash2Icon /></Button>
                 </div>
               </CardHeader>
 
@@ -88,7 +88,7 @@ export function FeedbackQuestionEditor({
                       {(question.options ?? []).map((option, optionIndex) => (
                         <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2" key={`${question.id}:${optionIndex}`}>
                           <Input maxLength={120} aria-label={`Option ${optionIndex + 1} for question ${index + 1}`} placeholder={`Option ${optionIndex + 1}`} value={option} onChange={(event) => update(question.id, (current) => ({ ...current, options: current.options?.map((item, currentIndex) => currentIndex === optionIndex ? event.target.value : item) }))} />
-                          <Button variant="ghost" size="icon-sm" type="button" title="Remove option" disabled={(question.options?.length ?? 0) <= 2} aria-label={`Remove option ${optionIndex + 1}`} onClick={() => update(question.id, (current) => ({ ...current, options: current.options?.filter((_, currentIndex) => currentIndex !== optionIndex) }))}><Trash2Icon /></Button>
+                          <Button variant="destructive-subtle" size="icon-sm" type="button" title="Remove option" disabled={(question.options?.length ?? 0) <= 2} aria-label={`Remove option ${optionIndex + 1}`} onClick={() => update(question.id, (current) => ({ ...current, options: current.options?.filter((_, currentIndex) => currentIndex !== optionIndex) }))}><Trash2Icon /></Button>
                         </div>
                       ))}
                     </div>

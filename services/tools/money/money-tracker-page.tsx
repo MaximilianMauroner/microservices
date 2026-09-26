@@ -1427,7 +1427,7 @@ function Predictions({
                 <Button
                   type="button"
                   size="sm"
-                  variant="ghost"
+                  variant="outline"
                   onClick={() => setContributionOverride(undefined)}
                 >
                   Use historical
@@ -3369,7 +3369,7 @@ function Metric({
           <span
             className={
               valueTone === "negative"
-                ? "mt-1 block text-xs text-rose-400"
+                ? "mt-1 block text-xs text-negative"
                 : "mt-1 block text-xs text-muted-foreground"
             }
           >
@@ -3561,8 +3561,8 @@ function changeClass(value?: number) {
   return value === undefined
     ? "text-muted-foreground"
     : value < 0
-      ? "text-rose-400"
-      : "text-emerald-400";
+      ? "text-negative"
+      : "text-positive";
 }
 function rangeValuesForAccount(months: Month[], account: string) {
   const values = months

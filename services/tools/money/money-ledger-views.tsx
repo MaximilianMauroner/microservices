@@ -513,7 +513,7 @@ export function MoneyActivityView({
                           {selectedTransferRows.size ? <span className="ml-2 text-xs text-muted-foreground">{signedMoney(selectedTransferTotal, selectedTransferGroup.currency)}</span> : <span className="ml-2 text-xs text-muted-foreground">Click, then Shift-click for a range</span>}
                         </div>
                         <div className="flex items-center gap-2">
-                          {selectedTransferRows.size ? <Button type="button" size="sm" variant="ghost" onClick={() => toggleAllTransferRows(false)}>Clear</Button> : null}
+                          {selectedTransferRows.size ? <Button type="button" size="sm" variant="outline" onClick={() => toggleAllTransferRows(false)}>Clear</Button> : null}
                           <select
                             aria-label="Treatment for selected transfer rows"
                             className="h-8 rounded-md border border-input bg-background px-2 text-xs"
@@ -562,7 +562,7 @@ export function MoneyActivityView({
                                 </td>
                                 <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">{formatDate(item.occurredAt)}</td>
                                 <td className="max-w-80 px-4 py-3"><p className="truncate font-medium" title={item.description}>{item.description}</p><p className="text-xs text-muted-foreground">{item.sourceType}</p></td>
-                                <td className={`px-4 py-3 text-right font-mono font-medium ${item.amountMinor < 0 ? "text-rose-300" : "text-emerald-300"}`}>{signedMoney(item.amountMinor, item.currency)}</td>
+                                <td className={`px-4 py-3 text-right font-mono font-medium ${item.amountMinor < 0 ? "text-negative" : "text-positive"}`}>{signedMoney(item.amountMinor, item.currency)}</td>
                               </tr>;
                             })}
                           </tbody>
@@ -747,7 +747,7 @@ export function MoneyActivityView({
                           </p>
                         </div>
                         <strong
-                          className={`shrink-0 font-mono text-sm ${item.amountMinor < 0 ? "text-rose-300" : "text-emerald-300"}`}
+                          className={`shrink-0 font-mono text-sm ${item.amountMinor < 0 ? "text-negative" : "text-positive"}`}
                         >
                           {signedMoney(item.amountMinor, item.currency)}
                         </strong>
@@ -890,7 +890,7 @@ export function MoneyActivityView({
                               : "—"}
                           </td>
                           <td
-                            className={`px-4 py-3 text-right font-mono font-medium ${item.amountMinor < 0 ? "text-rose-300" : "text-emerald-300"}`}
+                            className={`px-4 py-3 text-right font-mono font-medium ${item.amountMinor < 0 ? "text-negative" : "text-positive"}`}
                           >
                             {signedMoney(item.amountMinor, item.currency)}
                           </td>
@@ -1432,13 +1432,13 @@ export function MoneyImportsView({
                         render={
                           <Button
                             type="button"
-                            variant="ghost"
+                            variant="destructive-subtle"
                             size="icon-sm"
                             disabled={deleting !== undefined || reimporting}
                           />
                         }
                       >
-                        <Trash2 className="text-rose-300" />
+                        <Trash2 />
                       </AlertDialogTrigger>
                       <AlertDialogContent>
                         <AlertDialogHeader>
@@ -1490,7 +1490,7 @@ export function MoneyImportsView({
             <div className="px-4 py-2">
               <Button
                 type="button"
-                variant="ghost"
+                variant="outline"
                 size="sm"
                 aria-expanded={showAllImports}
                 onClick={() => setShowAllImports((current) => !current)}
@@ -2142,7 +2142,7 @@ export function MoneyInvestmentsView({
               <DataRow label="Valuation date" value={latestPriceDate ?? "—"} />
             </div>
             {unpricedCount || staleCount ? (
-              <p className="mt-4 text-xs text-rose-300">
+              <p className="mt-4 text-xs text-negative">
                 Pricing needs attention:{" "}
                 {unpricedCount ? `${unpricedCount} unpriced` : ""}
                 {unpricedCount && staleCount ? " · " : ""}
@@ -2609,8 +2609,8 @@ function PortfolioChartTooltip({
               <strong
                 className={
                   trade.eventKind === "buy"
-                    ? "text-emerald-300"
-                    : "text-rose-300"
+                    ? "text-positive"
+                    : "text-negative"
                 }
               >
                 {trade.eventKind === "buy" ? "Purchase" : "Sale"} ·{" "}
@@ -2874,12 +2874,12 @@ function InvestmentActivityHistory({
                       {money(item.costBasisMinor, "EUR")}
                     </td>
                     <td
-                      className={`px-4 py-3 text-right font-mono font-medium ${item.gainMinor < 0 ? "text-rose-300" : "text-emerald-300"}`}
+                      className={`px-4 py-3 text-right font-mono font-medium ${item.gainMinor < 0 ? "text-negative" : "text-positive"}`}
                     >
                       {signedMoney(item.gainMinor, "EUR")}
                     </td>
                     <td
-                      className={`px-4 py-3 text-right font-mono ${item.gainMinor < 0 ? "text-rose-300" : "text-emerald-300"}`}
+                      className={`px-4 py-3 text-right font-mono ${item.gainMinor < 0 ? "text-negative" : "text-positive"}`}
                     >
                       {gainPercent(item.gainMinor, item.costBasisMinor)}
                     </td>
@@ -2990,10 +2990,10 @@ function InvestmentActivityHistory({
                     <td className="px-4 py-3 text-right font-mono">
                       {money(item.soldMinor, item.currency)}
                     </td>
-                    <td className="px-4 py-3 text-right font-mono text-emerald-300">
+                    <td className="px-4 py-3 text-right font-mono text-positive">
                       {money(item.incomeMinor, item.currency)}
                     </td>
-                    <td className="px-4 py-3 text-right font-mono text-rose-300">
+                    <td className="px-4 py-3 text-right font-mono text-negative">
                       {money(item.feesMinor + item.taxesMinor, item.currency)}
                     </td>
                   </tr>
@@ -3107,12 +3107,12 @@ export function MoneyBalanceEntry({
           </Button>
         </form>
         {error ? (
-          <p className="mt-3 text-sm text-rose-300" role="alert">
+          <p className="mt-3 text-sm text-negative" role="alert">
             {error}
           </p>
         ) : null}
         {saved ? (
-          <p className="mt-3 text-sm text-emerald-300" role="status">
+          <p className="mt-3 text-sm text-positive" role="status">
             Snapshot saved.
           </p>
         ) : null}
@@ -3239,7 +3239,7 @@ function BatchImportPanel({
                 </Alert>
               ))}
               {item.error ? (
-                <p className="text-sm text-rose-300" role="alert">
+                <p className="text-sm text-negative" role="alert">
                   {item.error}
                 </p>
               ) : null}
@@ -3546,8 +3546,8 @@ function toneClass(value?: number) {
   return value === undefined || value === 0
     ? ""
     : value < 0
-      ? "text-rose-300"
-      : "text-emerald-300";
+      ? "text-negative"
+      : "text-positive";
 }
 function gainPercent(gainMinor: number, costBasisMinor: number) {
   return costBasisMinor

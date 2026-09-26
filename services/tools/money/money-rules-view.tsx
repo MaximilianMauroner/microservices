@@ -102,7 +102,7 @@ function CategoryRulesCard({ rules }: { rules: MoneyTrackerPageData["categoryRul
         <CardTitle>Category rules</CardTitle>
         <CardDescription>Exact matches scoped to one account. Manual categories always win.</CardDescription>
       </CardHeader>
-      {error ? <p className="px-4 pt-3 text-xs text-rose-300" role="alert">{error}</p> : null}
+      {error ? <p className="px-4 pt-3 text-xs text-negative" role="alert">{error}</p> : null}
       <CardContent className="max-h-[28rem] divide-y overflow-y-auto p-0">
         {rules.map((rule) => (
           <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-2.5" key={rule.id}>
@@ -112,7 +112,7 @@ function CategoryRulesCard({ rules }: { rules: MoneyTrackerPageData["categoryRul
                 {rule.accountName} · {formatLabel(rule.category)}
               </p>
             </div>
-            <Button type="button" size="sm" variant="ghost" disabled={deleting === rule.id} onClick={() => void remove(rule.id)}>
+            <Button type="button" size="sm" variant="outline" disabled={deleting === rule.id} onClick={() => void remove(rule.id)}>
               {deleting === rule.id ? "Removing…" : "Remove"}
             </Button>
           </div>
@@ -223,8 +223,8 @@ function TransferRuleBuilder({ options, unresolved }: { options: MoneyTrackerPag
         <Button type="button" variant="outline" disabled={busy || !scoped} onClick={() => void submit("previewRule")}>
           Preview matches
         </Button>
-        {error ? <p role="alert" className="text-sm text-rose-300">{error}</p> : null}
-        {success ? <p role="status" className="text-sm text-emerald-300">{success}</p> : null}
+        {error ? <p role="alert" className="text-sm text-negative">{error}</p> : null}
+        {success ? <p role="status" className="text-sm text-positive">{success}</p> : null}
         {preview ? (
           <div className="space-y-3 rounded-md border p-3 text-sm">
             <p>
@@ -277,7 +277,7 @@ function TransferRulesCard({ rules, pairRules }: { rules: MoneyTrackerPageData["
         <CardTitle>Transfer rules</CardTitle>
         <CardDescription>Checked from top to bottom. The first matching rule decides.</CardDescription>
       </CardHeader>
-      {error ? <p className="px-4 pt-3 text-xs text-rose-300" role="alert">{error}</p> : null}
+      {error ? <p className="px-4 pt-3 text-xs text-negative" role="alert">{error}</p> : null}
       <CardContent className="max-h-[36rem] divide-y overflow-y-auto p-0">
         {pairRules.map((rule) => (
           <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-2.5" key={rule.id}>
@@ -298,7 +298,7 @@ function TransferRulesCard({ rules, pairRules }: { rules: MoneyTrackerPageData["
             </div>
             <Badge variant="outline">{DISPOSITION_LABELS[rule.disposition]}</Badge>
             <AlertDialog>
-              <AlertDialogTrigger render={<Button type="button" size="sm" variant="ghost" disabled={deleting !== undefined} />}>
+              <AlertDialogTrigger render={<Button type="button" size="sm" variant="outline" disabled={deleting !== undefined} />}>
                 {deleting === rule.id ? "Removing…" : "Remove"}
               </AlertDialogTrigger>
               <AlertDialogContent>

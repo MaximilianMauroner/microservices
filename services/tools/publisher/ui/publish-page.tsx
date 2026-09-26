@@ -500,7 +500,7 @@ export function PublishPage() {
                     </Button>
                   ) : null}
                   {!busy ? (
-                    <Button type="button" size="sm" variant="ghost" onClick={clearUploads}>
+                    <Button type="button" size="sm" variant="outline" onClick={clearUploads}>
                       Dismiss
                     </Button>
                   ) : null}
