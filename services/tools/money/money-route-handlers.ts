@@ -95,6 +95,41 @@ export async function deleteMoneyCategoryRule(input: PlatformRouteInput) {
   }
 }
 
+export async function saveMoneyTransferRule(input: PlatformRouteInput) {
+  const rejected = validateMutationRequest(input);
+  if (rejected) return rejected;
+  try {
+    const body = await jsonBody(input.request);
+    const rule = {
+      provider: optionalStringField(body, "provider"),
+      sourceType: optionalStringField(body, "sourceType"),
+      descriptionMatch: stringField(body, "descriptionMatch"),
+      matchValue: optionalStringField(body, "matchValue"),
+      amountSign: stringField(body, "amountSign"),
+      disposition: stringField(body, "disposition"),
+      note: optionalStringField(body, "note")
+    };
+    if (body.action === "previewRule") return json(await input.context.runtime.moneyImports.previewTransferRule(rule));
+    if (body.action !== "createRule") throw new MoneyImportValidationError("invalid_request", "Expected a preview or create action.");
+    if (typeof body.expectedMatchCount !== "number") throw new MoneyImportValidationError("invalid_rule_preview", "Preview the rule before saving it.");
+    return json({ ok: true, ...await input.context.runtime.moneyImports.createTransferRule({ ...rule, actor: input.context.principal!.email, expectedMatchCount: body.expectedMatchCount }) });
+  } catch (error) {
+    return importError(error);
+  }
+}
+
+export async function deleteMoneyTransferRule(input: PlatformRouteInput) {
+  const rejected = validateMutationRequest(input);
+  if (rejected) return rejected;
+  try {
+    const body = await jsonBody(input.request);
+    await input.context.runtime.moneyImports.deleteTransferRule(stringField(body, "ruleId"));
+    return json({ ok: true });
+  } catch (error) {
+    return importError(error);
+  }
+}
+
 export async function updateMoneyTransfer(input: PlatformRouteInput) {
   const rejected = validateMutationRequest(input);
   if (rejected) return rejected;
@@ -300,7 +335,7 @@ async function fileBytes(file: File) {
 function importError(error: unknown) {
   if (error instanceof MoneyImportValidationError) {
     const status = error.code === "file_too_large" || error.code === "request_too_large" ? 413
-      : error.code === "import_not_found" || error.code === "category_rule_not_found" ? 404 : 400;
+      : error.code === "import_not_found" || error.code === "category_rule_not_found" || error.code === "transfer_rule_not_found" ? 404 : 400;
     return json({ error: error.code, message: error.message }, status);
   }
   const databaseError = error as { code?: unknown; constraint_name?: unknown };

@@ -122,7 +122,33 @@ it.skipIf(!repository || !admin)("classifies transfers with stored rules that ch
     values (gen_random_uuid(), 700, 'revolut', 'Transfer', 'equals', 'to my savings', 'any', 'internal_transfer', 'Own savings account', now(), now(), 'fixture')`;
   await repository!.reimportAll();
   expect(await disposition()).toBe("internal_transfer");
-  expect((await repository!.readLedgerSnapshot("data")).transferRules).toContainEqual(expect.objectContaining({ matchValue: "to my savings", note: "Own savings account" }));
+  expect((await repository!.readLedgerSnapshot("rules")).transferRules).toContainEqual(expect.objectContaining({ matchValue: "to my savings", note: "Own savings account" }));
+});
+
+it.skipIf(!repository || !admin)("creates a transfer rule that classifies only unresolved rows and keeps them after removal", async () => {
+  await admin!`delete from tools.money_transfer_rules where source_type = 'Transfer'`;
+  await commitCash(repository!, cash([
+    "Transfer\tCurrent\t2026-05-04 12:00:00\t2026-05-04 12:00:00\tTo Broker Deposit\t-30\t0\tEUR\tCOMPLETED\t70",
+    "Transfer\tCurrent\t2026-05-05 12:00:00\t2026-05-05 12:00:00\tFrom Friend\t40\t0\tEUR\tCOMPLETED\t110"
+  ]), "rule-builder.tsv");
+  const [reviewed] = (await repository!.readActivityPage({ query: "From Friend", offset: 0, limit: 10 })).items;
+  await repository!.setTransferDisposition({ transactionId: reviewed!.id, disposition: "income" });
+  const rule = { provider: "revolut", sourceType: "Transfer", descriptionMatch: "any", amountSign: "any", disposition: "excluded", note: "Broker deposits" } as const;
+
+  expect(await repository!.previewTransferRule(rule)).toEqual({ matchCount: 1, examples: [expect.objectContaining({ description: "To Broker Deposit", amountMinor: -3_000 })] });
+  await expect(repository!.createTransferRule({ ...rule, actor: "integration@example.test", expectedMatchCount: 0 })).rejects.toThrow("Preview the rule again");
+  expect(await repository!.createTransferRule({ ...rule, actor: "integration@example.test", expectedMatchCount: 1 })).toEqual({ affectedCount: 1 });
+
+  const disposition = async (query: string) => (await repository!.readActivityPage({ query, offset: 0, limit: 10 })).items[0]?.transferDisposition;
+  expect(await disposition("To Broker Deposit")).toBe("excluded");
+  expect(await disposition("From Friend")).toBe("income");
+  const snapshot = await repository!.readLedgerSnapshot("rules");
+  expect(snapshot.transferRules[0]).toMatchObject({ priority: 910, note: "Broker deposits", disposition: "excluded" });
+  expect(snapshot.transferRuleOptions).toContainEqual({ provider: "revolut", sourceType: "Transfer", count: 2, unresolvedCount: 0 });
+
+  expect(await repository!.deleteTransferRule(snapshot.transferRules[0]!.id)).toBe(true);
+  expect(await repository!.deleteTransferRule(snapshot.transferRules[0]!.id)).toBe(false);
+  expect(await disposition("To Broker Deposit")).toBe("excluded");
 });
 
 it.skipIf(!repository || !admin)("lists and removes account-scoped category rules without losing the direct edit", async () => {

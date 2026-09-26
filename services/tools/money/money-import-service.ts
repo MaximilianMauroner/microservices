@@ -9,7 +9,10 @@ import {
   type MoneyTransferDisposition,
   type MoneyImportPreview
 } from "./money-import-domain.js";
-import type { MoneyCategoryRuleInput, MoneyImportReceipt, MoneyLedgerScope, MoneyLedgerSnapshot, MoneyRepository } from "./money-repository.js";
+import type { MoneyCategoryRuleInput, MoneyImportReceipt, MoneyLedgerScope, MoneyLedgerSnapshot, MoneyRepository, MoneyTransferRuleInput } from "./money-repository.js";
+import { MONEY_TRANSFER_RULE_MATCHES, MONEY_TRANSFER_RULE_SIGNS, type MoneyTransferRuleMatch, type MoneyTransferRuleSign } from "./money-transfer-inference.js";
+
+type TransferRuleFields = Readonly<{ provider?: string; sourceType?: string; descriptionMatch: string; matchValue?: string; amountSign: string; disposition: string; note?: string }>;
 
 export class MoneyImportService {
   constructor(private readonly repository: MoneyRepository) {}
@@ -138,6 +141,22 @@ export class MoneyImportService {
     return deleted;
   }
 
+  previewTransferRule(input: TransferRuleFields) {
+    return this.repository.previewTransferRule(validateTransferRule(input));
+  }
+
+  createTransferRule(input: TransferRuleFields & Readonly<{ actor: string; expectedMatchCount: number }>) {
+    if (!Number.isSafeInteger(input.expectedMatchCount) || input.expectedMatchCount < 0 || input.expectedMatchCount > 100_000) {
+      throw new MoneyImportValidationError("invalid_rule_preview", "Preview the rule before saving it.");
+    }
+    return this.repository.createTransferRule({ ...validateTransferRule(input), actor: input.actor, expectedMatchCount: input.expectedMatchCount });
+  }
+
+  async deleteTransferRule(ruleId: string) {
+    assertUuid(ruleId, "invalid_transfer_rule", "The transfer-rule identifier is invalid.");
+    if (!await this.repository.deleteTransferRule(ruleId)) throw new MoneyImportValidationError("transfer_rule_not_found", "The transfer rule no longer exists.");
+  }
+
   setTransferDisposition(input: Readonly<{ transactionId: string; disposition: string }>) {
     assertTransactionId(input.transactionId);
     if (!MONEY_TRANSFER_DISPOSITIONS.includes(input.disposition as MoneyTransferDisposition)) {
@@ -201,6 +220,45 @@ function validateCategoryRule(input: Readonly<{ accountId: string; matchField: s
 
 function assertTransactionId(value: string) {
   assertUuid(value, "invalid_transaction", "The transaction identifier is invalid.");
+}
+
+function validateTransferRule(input: TransferRuleFields): MoneyTransferRuleInput {
+  if (!MONEY_TRANSFER_RULE_MATCHES.includes(input.descriptionMatch as MoneyTransferRuleMatch)) {
+    throw new MoneyImportValidationError("invalid_rule_field", "Select a supported description match.");
+  }
+  if (!MONEY_TRANSFER_RULE_SIGNS.includes(input.amountSign as MoneyTransferRuleSign)) {
+    throw new MoneyImportValidationError("invalid_rule_sign", "Select incoming, outgoing, or both.");
+  }
+  if (!MONEY_TRANSFER_DISPOSITIONS.includes(input.disposition as MoneyTransferDisposition)) {
+    throw new MoneyImportValidationError("invalid_transfer_disposition", "Select a valid transfer disposition.");
+  }
+  const descriptionMatch = input.descriptionMatch as MoneyTransferRuleMatch;
+  const provider = ruleText(input.provider, 100);
+  const sourceType = ruleText(input.sourceType, 100);
+  const note = ruleText(input.note, 200);
+  const matchValue = descriptionMatch === "any" ? undefined : ruleText(input.matchValue, 250)?.toLocaleLowerCase("en-GB");
+  if (descriptionMatch !== "any" && !matchValue) throw new MoneyImportValidationError("invalid_rule_value", "Enter the description text to match.");
+  if (!provider && !sourceType && !matchValue) {
+    throw new MoneyImportValidationError("invalid_rule_scope", "Choose a provider, statement type, or description so the rule cannot match every transfer.");
+  }
+  return {
+    ...(provider ? { provider } : {}),
+    ...(sourceType ? { sourceType } : {}),
+    descriptionMatch,
+    ...(matchValue ? { matchValue } : {}),
+    amountSign: input.amountSign as MoneyTransferRuleSign,
+    disposition: input.disposition as MoneyTransferDisposition,
+    ...(note ? { note } : {})
+  };
+}
+
+function ruleText(value: string | undefined, maxLength: number) {
+  const text = value?.trim();
+  if (!text) return undefined;
+  if (text.length > maxLength || /[\u0000-\u001f\u007f]/.test(text)) {
+    throw new MoneyImportValidationError("invalid_rule_value", `Enter rule text up to ${maxLength} characters.`);
+  }
+  return text;
 }
 
 function assertUuid(value: string, code: string, message: string) {

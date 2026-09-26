@@ -1,13 +1,13 @@
 import { Link } from "@tanstack/react-router";
 
-export type MoneyTrackerView = "overview" | "cash-flow" | "transactions" | "investments" | "accounts" | "categories" | "insights" | "predictions" | "data";
+export type MoneyTrackerView = "overview" | "cash-flow" | "transactions" | "investments" | "accounts" | "categories" | "insights" | "predictions" | "rules" | "data";
 
 export function moneyViewTitle(view: MoneyTrackerView) {
-  return view === "overview" ? "Overview" : view === "cash-flow" ? "Cash flow" : view === "transactions" ? "Transactions" : view === "investments" ? "Investments" : view === "accounts" ? "Accounts" : view === "categories" ? "Categories" : view === "insights" ? "Insights" : view === "predictions" ? "Predictions" : "Uploads & data quality";
+  return view === "overview" ? "Overview" : view === "cash-flow" ? "Cash flow" : view === "transactions" ? "Transactions" : view === "investments" ? "Investments" : view === "accounts" ? "Accounts" : view === "categories" ? "Categories" : view === "insights" ? "Insights" : view === "predictions" ? "Predictions" : view === "rules" ? "Rules" : "Uploads & data quality";
 }
 
 export function MoneyNav() {
-  return <nav className="money-nav" aria-label="Money"><NavGroup label="Portfolio"><NavItem view="overview">Overview</NavItem><NavItem view="accounts">Accounts</NavItem><NavItem view="investments">Investments</NavItem></NavGroup><NavGroup label="Operations"><NavItem view="cash-flow">Cash flow</NavItem><NavItem view="transactions">Transactions</NavItem></NavGroup><NavGroup label="Analysis"><NavItem view="categories">Categories</NavItem><NavItem view="insights">Insights</NavItem><NavItem view="predictions">Predictions</NavItem></NavGroup><NavGroup label="System"><NavItem view="data">Uploads & data</NavItem></NavGroup></nav>;
+  return <nav className="money-nav" aria-label="Money"><NavGroup label="Portfolio"><NavItem view="overview">Overview</NavItem><NavItem view="accounts">Accounts</NavItem><NavItem view="investments">Investments</NavItem></NavGroup><NavGroup label="Operations"><NavItem view="cash-flow">Cash flow</NavItem><NavItem view="transactions">Transactions</NavItem></NavGroup><NavGroup label="Analysis"><NavItem view="categories">Categories</NavItem><NavItem view="insights">Insights</NavItem><NavItem view="predictions">Predictions</NavItem></NavGroup><NavGroup label="System"><NavItem view="data">Uploads & data</NavItem><NavItem view="rules">Rules</NavItem></NavGroup></nav>;
 }
 
 function NavGroup({ label, children }: { label: string; children: React.ReactNode }) {

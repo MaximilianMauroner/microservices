@@ -111,7 +111,7 @@ export function ToolsSidebar() {
                   ) : null}
                   {item.to === "/money" && pathname.startsWith("/money") ? (
                     <SidebarMenuSub>
-                      {(["overview", "accounts", "investments", "cash-flow", "transactions", "categories", "insights", "predictions", "data"] as const).map((view) => (
+                      {(["overview", "accounts", "investments", "cash-flow", "transactions", "categories", "insights", "predictions", "data", "rules"] as const).map((view) => (
                         <SearchSubLink
                           key={view}
                           label={view === "cash-flow" ? "Cash flow" : view === "data" ? "Uploads & data" : `${view[0]!.toUpperCase()}${view.slice(1)}`}

@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { MoneyActivityView, MoneyDataView, MoneyInvestmentsView, MoneySpendingView, portfolioChartPoints, portfolioMovingAverage } from "../money/money-ledger-views.js";
 import { MoneyPlanningCard } from "../money/money-planning-card.js";
+import { MoneyRulesView } from "../money/money-rules-view.js";
 import { History } from "../money/money-tracker-page.js";
 import { groupMonth } from "../money/money-history.js";
 
@@ -215,13 +216,10 @@ describe("Option A money ledger views", () => {
     const html = renderToStaticMarkup(<MoneyDataView
       accounts={["cash", "broker"]}
       accountLabels={{ cash: "Cash account", broker: "Broker account" }}
-      categoryRules={[{ id: "rule-1", accountName: "Cash", description: "Net Interest Paid to 'Instant Access Savings", category: "income", updatedAt: "2026-08-09T05:08:51.000Z" }]}
-      transferRules={[{ id: "transfer-rule-1", priority: 700, provider: "revolut", sourceType: "Topup", descriptionMatch: "starts_with", matchValue: "top-up by *", amountSign: "any", disposition: "internal_transfer", note: "Own card top-ups" }]}
-      transferPairRules={[{ id: "pair-rule-1", debitProvider: "sparkasse", debitSourceType: "BEZAHLUNG EU LAENDER", debitMatchValue: "wallet", creditProvider: "revolut", creditSourceType: "Topup" }]}
       accountRoles={{ cash: "cash", broker: "investment" }}
       accountLastObserved={{ cash: `${currentMonth}-01`, broker: "2026-08-01" }}
       currentMonthTransactionAccounts={[]}
-      imports={[{ id: "import-1", digest: "digest", format: "revolut_cash_statement_v1", filename: "cash.tsv", bytes: 1200, rowCount: 100, insertedCount: 90, duplicateCount: 10, committedAt: "2026-08-09T05:08:51.000Z", actor: "operator@example.test" }]}
+      imports={Array.from({ length: 6 }, (_, index) => ({ id: `import-${index}`, digest: `digest-${index}`, format: "revolut_cash_statement_v1", filename: `cash-${index}.tsv`, bytes: 1200, rowCount: 100, insertedCount: 90, duplicateCount: 10, committedAt: "2026-08-09T05:08:51.000Z", actor: "operator@example.test" }))}
       marketData={{ ...emptyMarketData, positions: [{ canonicalKey: "ETF", name: "ETF", assetClass: "etf", quantity: "1", costBasisMinor: 10_000, state: "unpriced" }], totals: { ...emptyMarketData.totals, complete: false } }}
       months={[{ date: `${currentMonth}-01`, total: 100, values: { cash: 50, broker: 50 }, observedAccounts: ["cash"] }]}
       revertedCount={2}
@@ -241,11 +239,8 @@ describe("Option A money ledger views", () => {
     expect(html).toContain("Coverage unknown");
     expect(html).toContain("Choose or drop money exports");
     expect(html).toContain("66.7%");
-    expect(html).toContain("Active category rules");
-    expect(html).toContain("Transfer rules");
-    expect(html).toContain("Own card top-ups");
-    expect(html).toContain("Pair card funding");
-    expect(html).toContain("Net Interest Paid to &#x27;Instant Access Savings");
+    expect(html).not.toContain("Transfer rules");
+    expect(html).not.toContain("Create a category rule");
     expect(html).toContain("Repair queue");
     expect(html).toContain("/money?view=transactions&amp;category=uncategorized");
     expect(html).toContain("/money?view=transactions&amp;review=true");
@@ -253,7 +248,31 @@ describe("Option A money ledger views", () => {
     expect(html.match(/lucide-chevron-right/g)).toHaveLength(4);
     expect(html).toContain("focus-visible:ring-inset");
     expect(html).not.toContain("Imported formats");
-    expect(html).toContain('aria-label="Delete cash.tsv"');
+    expect(html).toContain('aria-label="Delete cash-4.tsv"');
+    expect(html).not.toContain('aria-label="Delete cash-5.tsv"');
+    expect(html).toContain("Show all 6 imports");
+  });
+
+  it("lists automatic category and transfer rules in the rules view", () => {
+    const html = renderToStaticMarkup(<MoneyRulesView
+      accounts={["cash", "broker"]}
+      accountLabels={{ cash: "Cash account", broker: "Broker account" }}
+      accountRoles={{ cash: "cash", broker: "investment" }}
+      categoryRules={[{ id: "rule-1", accountName: "Cash", description: "Net Interest Paid to 'Instant Access Savings", category: "income", updatedAt: "2026-08-09T05:08:51.000Z" }]}
+      transferRules={[{ id: "transfer-rule-1", priority: 700, provider: "revolut", sourceType: "Topup", descriptionMatch: "starts_with", matchValue: "top-up by *", amountSign: "any", disposition: "internal_transfer", note: "Own card top-ups" }]}
+      transferPairRules={[{ id: "pair-rule-1", debitProvider: "sparkasse", debitSourceType: "BEZAHLUNG EU LAENDER", debitMatchValue: "wallet", creditProvider: "revolut", creditSourceType: "Topup" }]}
+      transferRuleOptions={[{ provider: "revolut", sourceType: "Topup", count: 12, unresolvedCount: 2 }]}
+      transferReview={{ linkedPairs: 4, unlinkedCount: 2, unresolvedPositiveCount: 1, unresolvedNegativeCount: 1 }}
+    />);
+
+    expect(html).toContain("Create a category rule");
+    expect(html).toContain("Net Interest Paid to &#x27;Instant Access Savings");
+    expect(html).toContain("Create a transfer rule");
+    expect(html).toContain("Own card top-ups");
+    expect(html).toContain("Own-account transfer");
+    expect(html).toContain("Pair card funding");
+    expect(html).toContain("Topup · 2 unresolved");
+    expect(html).toContain("<strong>2</strong> transfer rows are unresolved");
   });
 
   it("renders disambiguated balance labels instead of stable account ids", () => {
