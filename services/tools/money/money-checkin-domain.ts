@@ -1,5 +1,6 @@
 import { fifoInvestmentLots } from "./money-investment-domain.js";
 import { marketValueMinor, type MoneyFxRate } from "./money-market-data-domain.js";
+import type { MoneyCategory } from "./money-enums.js";
 import type { MoneyHistoricalPrice, MoneyMarketValuationEvent } from "./money-market-data-repository.js";
 
 /** A check-in is a Europe/Berlin day with at least one committed statement import. */
@@ -33,6 +34,17 @@ export type MoneyCashFlowDay = Readonly<{
   tradesMinor: number;
 }>;
 
+/** Income or spending on one cash account and day, grouped by payer or merchant. */
+export type MoneyCashItemDay = Readonly<{
+  accountId: string;
+  date: string;
+  kind: "income" | "spending";
+  label: string;
+  amountMinor: number;
+}>;
+
+export type MoneyCheckInDriver = Readonly<{ label: string; amountMinor: number }>;
+
 export type MoneyCheckInCashMove = Readonly<{
   accountId: string;
   baselineMinor: number;
@@ -43,6 +55,8 @@ export type MoneyCheckInCashMove = Readonly<{
   transfersMinor: number;
   tradesMinor: number;
   otherMinor: number;
+  /** The largest flow in the direction of the change. */
+  driver?: MoneyCheckInDriver;
 }>;
 
 export type MoneyCheckInCash = Readonly<{
@@ -51,11 +65,24 @@ export type MoneyCheckInCash = Readonly<{
   currentTotalMinor: number;
 }>;
 
-export type MoneyCheckIn = Readonly<{
-  days: readonly string[];
-  baseline: string;
-  positions: readonly MoneyCheckInPositionMove[];
-  unpricedNames: readonly string[];
+export type MoneySpendingRow = Readonly<{ date: string; category: MoneyCategory; merchant: string; amountMinor: number }>;
+
+export type MoneyCheckInSpendingCategory = Readonly<{
+  category: MoneyCategory;
+  currentMinor: number;
+  previousMinor: number;
+  merchants: readonly MoneyCheckInDriver[];
+}>;
+
+export type MoneyCheckInSpending = Readonly<{
+  /** The check-in before the baseline. Without it there is no comparison period. */
+  previousBaseline?: string;
+  currentTotalMinor: number;
+  previousTotalMinor: number;
+  categories: readonly MoneyCheckInSpendingCategory[];
+}>;
+
+export type MoneyCheckInOverview = Readonly<{
   cash: readonly MoneyCheckInCashMove[];
   bridge: Readonly<{
     baselineNetWorthMinor: number;
@@ -65,12 +92,26 @@ export type MoneyCheckIn = Readonly<{
     otherMinor: number;
     currentNetWorthMinor: number;
   }>;
+  spending: MoneyCheckInSpending;
+}>;
+
+export type MoneyCheckIn = Readonly<{
+  days: readonly string[];
+  baseline: string;
+  positions: readonly MoneyCheckInPositionMove[];
+  unpricedNames: readonly string[];
+  /** Cash, bridge, and spending are only loaded for Overview. */
+  overview?: MoneyCheckInOverview;
 }>;
 
 /** Uses the requested check-in when it exists, otherwise the one before the latest upload. */
 export function checkInBaseline(days: readonly string[], requested?: string) {
   if (requested && days.includes(requested)) return requested;
   return days.at(-2) ?? days.at(-1);
+}
+
+export function previousCheckIn(days: readonly string[], baseline: string) {
+  return days.filter((day) => day < baseline).at(-1);
 }
 
 /**
@@ -157,6 +198,7 @@ export function cashMovesSince(input: Readonly<{
   baseline: string;
   snapshots: readonly MoneyCashSnapshotPoint[];
   flows: readonly MoneyCashFlowDay[];
+  items: readonly MoneyCashItemDay[];
 }>): MoneyCheckInCash {
   const byAccount = groupByKey([...input.snapshots].sort((left, right) => left.date.localeCompare(right.date)), (point) => point.accountId);
   const moves: MoneyCheckInCashMove[] = [];
@@ -168,7 +210,8 @@ export function cashMovesSince(input: Readonly<{
     baselineTotalMinor += start?.valueMinor ?? 0;
     currentTotalMinor += end.valueMinor;
     if (end === start) continue;
-    const flows = input.flows.filter((flow) => flow.accountId === accountId && (!start || flow.date > start.date) && flow.date <= end.date);
+    const inWindow = (entry: Readonly<{ accountId: string; date: string }>) => entry.accountId === accountId && (!start || entry.date > start.date) && entry.date <= end.date;
+    const flows = input.flows.filter(inWindow);
     const sum = (key: "incomeMinor" | "spendingMinor" | "transfersMinor" | "tradesMinor") => flows.reduce((total, flow) => total + flow[key], 0);
     const baselineMinor = start?.valueMinor ?? 0;
     const changeMinor = end.valueMinor - baselineMinor;
@@ -176,6 +219,13 @@ export function cashMovesSince(input: Readonly<{
     const spendingMinor = sum("spendingMinor");
     const transfersMinor = sum("transfersMinor");
     const tradesMinor = sum("tradesMinor");
+    const otherMinor = changeMinor - incomeMinor - spendingMinor - transfersMinor - tradesMinor;
+    const candidates = [
+      ...totalsByLabel(input.items.filter(inWindow)),
+      { label: transfersMinor > 0 ? "Transfers in" : "Transfers out", amountMinor: transfersMinor },
+      { label: "Trades", amountMinor: tradesMinor },
+    ].filter((candidate) => changeMinor !== 0 && candidate.amountMinor !== 0 && candidate.amountMinor > 0 === changeMinor > 0);
+    const driver = candidates.sort((left, right) => Math.abs(right.amountMinor) - Math.abs(left.amountMinor))[0];
     moves.push({
       accountId,
       baselineMinor,
@@ -185,36 +235,71 @@ export function cashMovesSince(input: Readonly<{
       spendingMinor,
       transfersMinor,
       tradesMinor,
-      otherMinor: changeMinor - incomeMinor - spendingMinor - transfersMinor - tradesMinor
+      otherMinor,
+      ...(driver ? { driver } : {})
     });
   }
   moves.sort((left, right) => right.changeMinor - left.changeMinor || left.accountId.localeCompare(right.accountId));
   return { moves, baselineTotalMinor, currentTotalMinor };
 }
 
+/** Splits spending into the current check-in period and the one before it, by category. */
+export function spendingSince(input: Readonly<{ baseline: string; previousBaseline?: string; rows: readonly MoneySpendingRow[] }>): MoneyCheckInSpending {
+  const current = input.rows.filter((row) => row.date > input.baseline);
+  const previous = input.previousBaseline ? input.rows.filter((row) => row.date > input.previousBaseline! && row.date <= input.baseline) : [];
+  const categories = [...new Set([...current, ...previous].map((row) => row.category))].map((category) => {
+    const now = current.filter((row) => row.category === category);
+    return {
+      category,
+      currentMinor: sumMinor(now),
+      previousMinor: sumMinor(previous.filter((row) => row.category === category)),
+      merchants: totalsByLabel(now.map((row) => ({ label: row.merchant, amountMinor: row.amountMinor }))).slice(0, 3)
+    };
+  }).sort((left, right) => right.currentMinor - left.currentMinor || left.category.localeCompare(right.category));
+  return {
+    ...(input.previousBaseline ? { previousBaseline: input.previousBaseline } : {}),
+    currentTotalMinor: sumMinor(current),
+    previousTotalMinor: sumMinor(previous),
+    categories
+  };
+}
+
 /** Builds the net worth bridge. Other holds what the classified flows do not explain. */
-export function moneyCheckIn(input: Readonly<{ days: readonly string[]; positions: MoneyCheckInPositions; cash: MoneyCheckInCash }>): MoneyCheckIn {
-  const { positions, cash } = input;
+export function moneyCheckIn(input: Readonly<{ days: readonly string[]; positions: MoneyCheckInPositions; cash?: MoneyCheckInCash; spending?: MoneyCheckInSpending }>): MoneyCheckIn {
+  const { positions, cash, spending } = input;
+  const base = { days: input.days, baseline: positions.baseline, positions: positions.moves, unpricedNames: positions.unpricedNames };
+  if (!cash || !spending) return base;
   const baselineNetWorthMinor = cash.baselineTotalMinor + positions.moves.reduce((sum, move) => sum + move.baselineValueMinor, 0);
   const currentNetWorthMinor = cash.currentTotalMinor + positions.moves.reduce((sum, move) => sum + move.currentValueMinor, 0);
   const marketMinor = positions.moves.reduce((sum, move) => sum + move.moveMinor, 0);
   const incomeMinor = cash.moves.reduce((sum, move) => sum + move.incomeMinor, 0);
   const spendingMinor = cash.moves.reduce((sum, move) => sum + move.spendingMinor, 0);
   return {
-    days: input.days,
-    baseline: positions.baseline,
-    positions: positions.moves,
-    unpricedNames: positions.unpricedNames,
-    cash: cash.moves,
-    bridge: {
-      baselineNetWorthMinor,
-      marketMinor,
-      incomeMinor,
-      spendingMinor,
-      otherMinor: currentNetWorthMinor - baselineNetWorthMinor - marketMinor - incomeMinor - spendingMinor,
-      currentNetWorthMinor
+    ...base,
+    overview: {
+      cash: cash.moves,
+      bridge: {
+        baselineNetWorthMinor,
+        marketMinor,
+        incomeMinor,
+        spendingMinor,
+        otherMinor: currentNetWorthMinor - baselineNetWorthMinor - marketMinor - incomeMinor - spendingMinor,
+        currentNetWorthMinor
+      },
+      spending
     }
   };
+}
+
+function totalsByLabel(entries: readonly Readonly<{ label: string; amountMinor: number }>[]) {
+  const totals = new Map<string, number>();
+  for (const entry of entries) totals.set(entry.label, (totals.get(entry.label) ?? 0) + entry.amountMinor);
+  return [...totals].map(([label, amountMinor]) => ({ label, amountMinor }))
+    .sort((left, right) => Math.abs(right.amountMinor) - Math.abs(left.amountMinor) || left.label.localeCompare(right.label));
+}
+
+function sumMinor(rows: readonly Readonly<{ amountMinor: number }>[]) {
+  return rows.reduce((total, row) => total + row.amountMinor, 0);
 }
 
 export function lotEvent(event: MoneyMarketValuationEvent) {

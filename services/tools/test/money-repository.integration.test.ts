@@ -89,10 +89,15 @@ it.skipIf(!repository || !admin)("reads check-in days and explains cash changes 
   expect(await repository!.readCheckInDays()).toEqual([today]);
   const result = cashMovesSince({ baseline: "2026-08-24", ...await repository!.readCashSince("2026-08-24") });
   expect(result).toEqual({
-    moves: [expect.objectContaining({ baselineMinor: 19_000, currentMinor: 14_000, changeMinor: -5_000, incomeMinor: 0, spendingMinor: -5_000, transfersMinor: 0, tradesMinor: 0, otherMinor: 0 })],
+    moves: [expect.objectContaining({ baselineMinor: 19_000, currentMinor: 14_000, changeMinor: -5_000, incomeMinor: 0, spendingMinor: -5_000, transfersMinor: 0, tradesMinor: 0, otherMinor: 0, driver: { label: "Grocer", amountMinor: -3_000 } })],
     baselineTotalMinor: 19_000,
     currentTotalMinor: 14_000
   });
+
+  const spending = await repository!.readSpendingSince("2026-08-01");
+  expect(spending.reduce((sum, row) => sum + row.amountMinor, 0)).toBe(6_000);
+  expect(spending.filter((row) => row.date > "2026-08-24").reduce((sum, row) => sum + row.amountMinor, 0)).toBe(5_000);
+  expect(spending).toContainEqual(expect.objectContaining({ date: "2026-09-05", merchant: "Grocer", amountMinor: 3_000 }));
 });
 
 it.skipIf(!repository || !admin)("lists and removes account-scoped category rules without losing the direct edit", async () => {

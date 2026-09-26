@@ -17,7 +17,7 @@ import {
   type MoneyTransferDisposition
 } from "./money-import-domain.js";
 import { inferTransferDisposition, matchSparkasseCardFundingPairs } from "./money-transfer-inference.js";
-import type { MoneyCashFlowDay, MoneyCashSnapshotPoint } from "./money-checkin-domain.js";
+import type { MoneyCashFlowDay, MoneyCashItemDay, MoneyCashSnapshotPoint, MoneySpendingRow } from "./money-checkin-domain.js";
 
 export type MoneyImportCommitInput = Readonly<{
   digest: string; format: MoneyImportFormat; filename: string; bytes: number; rowCount: number; actor: string;
@@ -189,7 +189,9 @@ export interface MoneyRepository {
   addManualBalance(input: Readonly<({ accountId: string } | { accountName: string }) & { date: string; valueMinor: number; currency: string }>): Promise<void>;
   /** Europe/Berlin days with at least one committed import, oldest first. */
   readCheckInDays(): Promise<readonly string[]>;
-  readCashSince(baseline: string): Promise<Readonly<{ snapshots: readonly MoneyCashSnapshotPoint[]; flows: readonly MoneyCashFlowDay[] }>>;
+  readCashSince(baseline: string): Promise<Readonly<{ snapshots: readonly MoneyCashSnapshotPoint[]; flows: readonly MoneyCashFlowDay[]; items: readonly MoneyCashItemDay[] }>>;
+  /** Spending rows after a day, with the same definition as the category totals. */
+  readSpendingSince(from: string): Promise<readonly MoneySpendingRow[]>;
   readiness(): Promise<void>;
   close(): Promise<void>;
 }
@@ -660,29 +662,22 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
       }
       let from = baseline;
       for (const start of starts.values()) if (start === undefined || start < from) from = start ?? "0001-01-01";
-      const rows = await sql<CashFlowRow[]>`with cash_accounts as (
-          select source.id source_id, coalesce(trade_republic_cash.id, source.id)::text cash_id
-          from tools.money_accounts source
-          left join tools.money_accounts trade_republic_cash
-            on source.provider = 'portfolio_export' and trade_republic_cash.provider = 'portfolio_export' and trade_republic_cash.role = 'cash'
-            and regexp_replace(trade_republic_cash.external_ref, ':(cash|investment)$', '') = regexp_replace(source.external_ref, ':(cash|investment)$', '')
-            and not exists (select 1 from tools.money_balance_snapshots s where s.account_id = trade_republic_cash.id)
-        ), classified as (
-          select c.cash_id, t.local_date, t.flow_kind, t.base_amount_minor, t.base_fee_minor, t.base_tax_minor,
-            case
-              when t.flow_kind = 'transfer' and t.transfer_group_id is not null then 'internal_transfer'
-              when t.flow_kind = 'transfer' then coalesce(t.transfer_disposition, 'unreviewed')
-              else t.flow_kind
-            end effective_flow
-          from (${effectiveTransactions(sql)}) t join cash_accounts c on c.source_id = t.account_id
-          where t.base_currency = 'EUR' and t.flow_kind <> 'balance_adjustment' and t.local_date > ${from}
-        )
-        select cash_id account_id, local_date::text local_date,
-          sum(case when effective_flow in ('income', 'investment_income', 'refund') then base_amount_minor else 0 end)::text income_minor,
-          sum(case when effective_flow in ('spend', 'fee', 'tax') then base_amount_minor else 0 end - base_fee_minor - base_tax_minor)::text spending_minor,
-          sum(case when flow_kind = 'trade' then base_amount_minor else 0 end)::text trades_minor,
-          sum(case when flow_kind <> 'trade' and effective_flow not in ('income', 'investment_income', 'refund', 'spend', 'fee', 'tax') then base_amount_minor else 0 end)::text transfers_minor
-        from classified group by cash_id, local_date order by local_date`;
+      const [rows, items] = await Promise.all([
+        sql<CashFlowRow[]>`with classified as (${classifiedCashTransactions(sql, from)})
+          select cash_id account_id, local_date::text local_date,
+            sum(case when effective_flow in ('income', 'investment_income', 'refund') then base_amount_minor else 0 end)::text income_minor,
+            sum(case when effective_flow in ('spend', 'fee', 'tax') then base_amount_minor else 0 end - base_fee_minor - base_tax_minor)::text spending_minor,
+            sum(case when flow_kind = 'trade' then base_amount_minor else 0 end)::text trades_minor,
+            sum(case when flow_kind <> 'trade' and effective_flow not in ('income', 'investment_income', 'refund', 'spend', 'fee', 'tax') then base_amount_minor else 0 end)::text transfers_minor
+          from classified group by cash_id, local_date order by local_date`,
+        sql<CashItemRow[]>`with classified as (${classifiedCashTransactions(sql, from)})
+          select cash_id account_id, local_date::text local_date,
+            case when effective_flow in ('income', 'investment_income', 'refund') then 'income' else 'spending' end kind,
+            description, source_type,
+            sum(case when effective_flow in ('income', 'investment_income', 'refund') then base_amount_minor else base_amount_minor - base_fee_minor - base_tax_minor end)::text amount_minor
+          from classified where effective_flow in ('income', 'investment_income', 'refund', 'spend', 'fee', 'tax')
+          group by cash_id, local_date, 3, description, source_type`
+      ]);
       return {
         snapshots,
         flows: rows.map((row) => ({
@@ -692,8 +687,33 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
           spendingMinor: integer(row.spending_minor),
           transfersMinor: integer(row.transfers_minor),
           tradesMinor: integer(row.trades_minor)
+        })),
+        items: items.map((row) => ({
+          accountId: row.account_id,
+          date: row.local_date,
+          kind: row.kind,
+          label: moneyMerchantName(row.description, row.source_type),
+          amountMinor: integer(row.amount_minor)
         }))
       };
+    },
+
+    async readSpendingSince(from) {
+      const rows = await sql<SpendingRow[]>`with classified as (
+          select local_date, category, description, source_type, base_amount_minor, flow_kind, case
+            when flow_kind = 'transfer' and transfer_group_id is not null then 'internal_transfer'
+            when flow_kind = 'transfer' then coalesce(transfer_disposition, 'unreviewed') else flow_kind end effective_flow
+          from (${effectiveTransactions(sql)}) effective where base_currency = 'EUR' and local_date > ${from}
+        ) select local_date::text local_date, category, description, source_type,
+          sum(case when flow_kind = 'transfer' then -base_amount_minor else abs(base_amount_minor) end)::text amount_minor
+        from classified where effective_flow = 'spend'
+        group by local_date, category, description, source_type`;
+      return rows.map((row) => ({
+        date: row.local_date,
+        category: row.category,
+        merchant: moneyMerchantName(row.description, row.source_type),
+        amountMinor: integer(row.amount_minor)
+      }));
     },
 
     async readiness() { await sql`select 1 from tools.money_imports limit 1`; },
@@ -712,6 +732,8 @@ type InvestmentTotalsRow = { event_count: string; bought_minor: string; sold_min
 type CategoryRuleRow = { id: string; account_name: string; match_field: "description" | "mcc" | "source_type"; match_value: string; category: MoneyCategory; updated_at: Date };
 type RealizedEventRow = { account_id: string; occurred_at: Date; source_row: number; source_key: string; event_kind: MoneyInvestmentEventInput["eventKind"]; symbol: string | null; quantity: string | null; base_amount_minor: string; base_fee_minor: string };
 type TradeMarkerRow = { local_date: string; event_kind: "buy" | "sell"; symbol: string; name: string | null; quantity: string; base_amount_minor: string; base_fee_minor: string; currency: string };
+type CashItemRow = { account_id: string; local_date: string; kind: "income" | "spending"; description: string; source_type: string; amount_minor: string };
+type SpendingRow = { local_date: string; category: MoneyCategory; description: string; source_type: string; amount_minor: string };
 type CashFlowRow = { account_id: string; local_date: string; income_minor: string; spending_minor: string; transfers_minor: string; trades_minor: string };
 type SnapshotRow = { account_id: string; snapshot_date: string | null; value_minor: string | null; currency: string; display_name: string; role: "cash" | "investment"; provider: string };
 type TransferRow = { id: string; account_id: string; provider: string; source_type: string; occurred_at: Date; local_date: string; description: string; amount_minor: string; currency: string };
@@ -784,6 +806,26 @@ function planningAnalytics(months: MoneySpendingAnalytics["months"], review: Mon
   const ready = recent.length >= 6;
   return { ready, unresolvedTransferCount, medianMonthlyNetMinor: median, observedMonthCount: recent.length,
     projections: ready ? ([6, 12, 60] as const).map((projectionMonths) => ({ months: projectionMonths, changeMinor: median * projectionMonths })) : [] };
+}
+
+/** Cash-account transactions after a day. Trade Republic rows count toward its derived cash account. */
+function classifiedCashTransactions(sql: Sql, from: string) {
+  return sql`select c.cash_id, t.local_date, t.flow_kind, t.description, t.source_type, t.base_amount_minor, t.base_fee_minor, t.base_tax_minor,
+      case
+        when t.flow_kind = 'transfer' and t.transfer_group_id is not null then 'internal_transfer'
+        when t.flow_kind = 'transfer' then coalesce(t.transfer_disposition, 'unreviewed')
+        else t.flow_kind
+      end effective_flow
+    from (${effectiveTransactions(sql)}) t
+    join (
+      select source.id source_id, coalesce(trade_republic_cash.id, source.id)::text cash_id
+      from tools.money_accounts source
+      left join tools.money_accounts trade_republic_cash
+        on source.provider = 'portfolio_export' and trade_republic_cash.provider = 'portfolio_export' and trade_republic_cash.role = 'cash'
+        and regexp_replace(trade_republic_cash.external_ref, ':(cash|investment)$', '') = regexp_replace(source.external_ref, ':(cash|investment)$', '')
+        and not exists (select 1 from tools.money_balance_snapshots s where s.account_id = trade_republic_cash.id)
+    ) c on c.source_id = t.account_id
+    where t.base_currency = 'EUR' and t.flow_kind <> 'balance_adjustment' and t.local_date > ${from}`;
 }
 
 /** Explicit balance snapshots, monthly Trade Republic cash derived from its ledger, and unobserved accounts. */

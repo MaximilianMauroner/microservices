@@ -79,6 +79,10 @@ const CATEGORY_GROUPS = [
   { label: "Other", categories: ["other", "uncategorized"] },
 ] as const satisfies readonly Readonly<{ label: string; categories: readonly MoneyCategory[] }>[];
 
+export function moneyCategoryLabel(category: MoneyCategory) {
+  return CATEGORY_META[category].label;
+}
+
 export function moneyCategorySearchValue(category: MoneyCategory) {
   const meta = CATEGORY_META[category];
   return `${meta.label} ${category} ${meta.searchTerms}`;
