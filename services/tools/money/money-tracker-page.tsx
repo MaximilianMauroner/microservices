@@ -72,7 +72,7 @@ import {
 import type { MoneyCategory } from "./money-enums.js";
 import type { MoneyActivityPage } from "./money-repository.js";
 import { groupMonth, type GroupedMonth, type Month } from "./money-history.js";
-import { MoneyCheckInCard } from "./money-checkin-card.js";
+import { formatDay, MoneyCheckInCard } from "./money-checkin-card.js";
 import { MoneyPlanningCard } from "./money-planning-card.js";
 import { moneyViewTitle, type MoneyTrackerView } from "./money-tracker-navigation.js";
 
@@ -307,6 +307,7 @@ export function MoneyTrackerPage(
                 <History
                   accounts={balanceAccounts}
                   accountLabels={props.accountLabels}
+                  accountRoles={props.accountRoles}
                   months={visibleAccountMonths}
                 />
                 <MoneyBalanceEntry
@@ -455,7 +456,7 @@ function Overview({
         <BalanceChart months={months} period={period} onPeriod={onPeriod} />
         <Card>
           <CardHeader className="border-b">
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <CardTitle>Needs attention</CardTitle>
                 <CardDescription>
@@ -541,10 +542,10 @@ function Overview({
                   month.refundsMinor - month.feesMinor - month.taxesMinor;
                 return (
                   <div
-                    className="grid grid-cols-1 items-center gap-2 text-xs sm:grid-cols-[4.5rem_minmax(5rem,1fr)_minmax(5rem,1fr)_8rem_6rem] sm:gap-3"
+                    className="grid grid-cols-2 items-center gap-x-5 gap-y-2 border-b pb-4 text-xs last:border-0 last:pb-0"
                     key={month.month}
                   >
-                    <span className="text-muted-foreground">{month.month}</span>
+                    <span className="col-span-2 font-medium text-muted-foreground">{month.month}</span>
                     <CashFlowBar
                       label="Income"
                       value={month.incomeMinor}
@@ -721,7 +722,7 @@ function Insights({
         <Metric
           label="Current known net worth"
           value={formatMinor(position.knownNetWorthMinor, "EUR")}
-          detail={`As of ${position.asOf} · cash ${position.cash.observationDate ?? "unknown"} · prices ${position.portfolio.priceDate ?? "unknown"}`}
+          detail={`As of ${formatDay(position.asOf.slice(0, 10))} · cash ${position.cash.observationDate ?? "unknown"} · prices ${position.portfolio.priceDate ?? "unknown"}`}
           tone={tone(trends.yearOverYear?.total.change)}
         />
         <Metric
@@ -1860,10 +1861,15 @@ function Accounts({
           role="region"
           aria-label="Account detail table"
         >
-          <table className="w-full min-w-[68rem] text-sm">
+          <table className="money-account-table w-full min-w-[60rem] table-fixed text-xs [&_td]:px-2 [&_td:not(:first-child)]:whitespace-nowrap [&_th]:px-2 [&_th_button]:h-auto [&_th_button]:min-h-8 [&_th_button]:whitespace-normal [&_th_button]:px-0">
             <caption className="sr-only">
               Balances, changes, allocation and observation dates by account
             </caption>
+            <colgroup>
+              {[16, 8, 10, 9, 7, 10, 7, 6, 9, 18].map((width, index) => (
+                <col key={index} style={{ width: `${width}%` }} />
+              ))}
+            </colgroup>
             <thead className="border-b text-xs text-muted-foreground">
               <tr>
                 <MoneySortableHead
@@ -2409,12 +2415,24 @@ function AccountGroupChart({
 export function History({
   accounts,
   accountLabels,
+  accountRoles,
   months,
 }: {
   accounts: string[];
   accountLabels: Record<string, string>;
+  accountRoles: Record<string, "cash" | "investment">;
   months: GroupedMonth[];
 }) {
+  const investmentAccounts = accounts.filter(
+    (account) => accountRoles[account] === "investment",
+  );
+  const investmentBalance = (month: GroupedMonth) =>
+    investmentAccounts.some((account) => month.values[account] !== undefined)
+      ? month.stocks
+      : undefined;
+  const hasInvestmentSnapshots = months.some(
+    (month) => investmentBalance(month) !== undefined,
+  );
   const [sort, setSort] = useState<MoneySort<HistorySortKey>>({
     key: "date",
     direction: "desc",
@@ -2490,7 +2508,7 @@ export function History({
               : sort.key === "money"
                 ? row.month.money
                 : sort.key === "stocks"
-                  ? row.month.stocks
+                  ? investmentBalance(row.month)
                   : sort.key === "coverage"
                     ? row.reused + row.unavailable
                     : row.month.values[sort.key.slice("account:".length)];
@@ -2545,7 +2563,8 @@ export function History({
           <CardDescription>
             Click a header to sort. “Reused” means the most recent earlier
             balance was used because no new statement balance was available that
-            month.
+            month. Investment market values are shown in Investments; this ledger
+            contains statement balances. Scroll horizontally to see all accounts.
           </CardDescription>
         </CardHeader>
         <CardContent
@@ -2588,13 +2607,15 @@ export function History({
                   onSort={changeSort}
                   align="right"
                 />
-                <MoneySortableHead
-                  label="Investment account balances"
-                  sortKey="stocks"
-                  active={sort}
-                  onSort={changeSort}
-                  align="right"
-                />
+                {hasInvestmentSnapshots ? (
+                  <MoneySortableHead
+                    label="Investment snapshots"
+                    sortKey="stocks"
+                    active={sort}
+                    onSort={changeSort}
+                    align="right"
+                  />
+                ) : null}
                 {accounts.map((account) => (
                   <MoneySortableHead
                     label={accountLabels[account] ?? account}
@@ -2631,9 +2652,13 @@ export function History({
                   <td className="px-4 py-3 text-right font-mono">
                     {preciseCurrency.format(month.money)}
                   </td>
-                  <td className="px-4 py-3 text-right font-mono">
-                    {preciseCurrency.format(month.stocks)}
-                  </td>
+                  {hasInvestmentSnapshots ? (
+                    <td className="px-4 py-3 text-right font-mono">
+                      {investmentBalance(month) === undefined ? (
+                        <span className="text-muted-foreground" aria-label="No investment snapshot">—</span>
+                      ) : preciseCurrency.format(month.stocks)}
+                    </td>
+                  ) : null}
                   {accounts.map((account) => (
                     <td
                       className="px-4 py-3 text-right font-mono"
@@ -2868,11 +2893,11 @@ function AttentionRow({
     <Link
       to="/money"
       search={{ view, ...search }}
-      className={`grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 px-4 py-3 ${MONEY_ROW_ACTION_CLASS}`}
+      className={`grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-2 px-4 py-3 ${MONEY_ROW_ACTION_CLASS}`}
     >
       {details}
       <Badge variant="destructive">{value}</Badge>
-      <MoneyRowActionCue label={action} />
+      <span className="col-span-2"><MoneyRowActionCue label={action} /></span>
     </Link>
   );
 }
@@ -2890,9 +2915,9 @@ function CashFlowBar({
 }) {
   return (
     <div className="min-w-0">
-      <div className="mb-1 flex justify-between gap-2">
+      <div className="mb-1 flex flex-wrap justify-between gap-x-2 gap-y-1">
         <span className="text-muted-foreground">{label}</span>
-        <span className="font-mono">{formatMinor(value, "EUR")}</span>
+        <span className="whitespace-nowrap font-mono">{formatMinor(value, "EUR")}</span>
       </div>
       <div className="h-1.5 overflow-hidden rounded-full bg-muted">
         <div

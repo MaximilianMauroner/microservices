@@ -257,21 +257,37 @@ describe("Option A money ledger views", () => {
   });
 
   it("renders disambiguated balance labels instead of stable account ids", () => {
-    const html = renderToStaticMarkup(<History accounts={["id-cash", "id-investment"]} accountLabels={{ "id-cash": "Duplicate · manual a1", "id-investment": "Duplicate · manual b2" }} months={[{ date: "2026-08-01", values: { "id-cash": 10, "id-investment": 20 }, observedAccounts: ["id-cash", "id-investment"], total: 30, money: 10, stocks: 20, trend: 30 }]} />);
+    const html = renderToStaticMarkup(<History accountRoles={{ cash: "cash", broker: "investment", "id-cash": "cash", "id-investment": "investment" }} accounts={["id-cash", "id-investment"]} accountLabels={{ "id-cash": "Duplicate · manual a1", "id-investment": "Duplicate · manual b2" }} months={[{ date: "2026-08-01", values: { "id-cash": 10, "id-investment": 20 }, observedAccounts: ["id-cash", "id-investment"], total: 30, money: 10, stocks: 20, trend: 30 }]} />);
     expect(html).toContain("Duplicate · manual a1");
     expect(html).toContain("Duplicate · manual b2");
     expect(html).not.toContain(">id-cash<");
   });
 
+  it("omits an investment subtotal when no investment snapshots exist", () => {
+    const html = renderToStaticMarkup(<History accounts={["cash", "broker"]} accountLabels={{ cash: "Cash", broker: "Broker" }} accountRoles={{ cash: "cash", broker: "investment" }} months={[{ date: "2026-08-01", values: { cash: 10 }, observedAccounts: ["cash"], total: 10, money: 10, stocks: 0, trend: 10 }]} />);
+    expect(html).not.toContain("Investment snapshots");
+    expect(html).toContain("Investment market values are shown in Investments");
+  });
+
+  it("distinguishes a missing investment snapshot from a recorded zero", () => {
+    const html = renderToStaticMarkup(<History accounts={["cash", "broker"]} accountLabels={{ cash: "Cash", broker: "Broker" }} accountRoles={{ cash: "cash", broker: "investment" }} months={[
+      { date: "2026-07-01", values: { cash: 10 }, observedAccounts: ["cash"], total: 10, money: 10, stocks: 0, trend: 10 },
+      { date: "2026-08-01", values: { cash: 10, broker: 0 }, observedAccounts: ["cash", "broker"], total: 10, money: 10, stocks: 0, trend: 10 }
+    ]} />);
+    expect(html).toContain("Investment snapshots");
+    expect(html.match(/aria-label="No investment snapshot"/g)).toHaveLength(1);
+    expect(html).toMatch(/2026-08-01.*0,00/s);
+  });
+
   it("labels carried balances instead of presenting them as freshly observed", () => {
-    const html = renderToStaticMarkup(<History accounts={["cash", "broker"]} accountLabels={{ cash: "Cash", broker: "Broker" }} months={[{ date: "2026-08-01", values: { cash: 10, broker: 20 }, observedAccounts: ["cash"], total: 30, money: 10, stocks: 20, trend: 30 }]} />);
+    const html = renderToStaticMarkup(<History accountRoles={{ cash: "cash", broker: "investment", "id-cash": "cash", "id-investment": "investment" }} accounts={["cash", "broker"]} accountLabels={{ cash: "Cash", broker: "Broker" }} months={[{ date: "2026-08-01", values: { cash: 10, broker: 20 }, observedAccounts: ["cash"], total: 30, money: 10, stocks: 20, trend: 30 }]} />);
     expect(html).toContain("1 reused");
     expect(html).toContain("most recent earlier balance was used");
     expect(html).not.toContain('data-variant="destructive"');
   });
 
   it("suppresses balance changes when a later-added account leaves an endpoint incomplete", () => {
-    const html = renderToStaticMarkup(<History accounts={["cash", "broker"]} accountLabels={{ cash: "Cash", broker: "Broker" }} months={[
+    const html = renderToStaticMarkup(<History accountRoles={{ cash: "cash", broker: "investment", "id-cash": "cash", "id-investment": "investment" }} accounts={["cash", "broker"]} accountLabels={{ cash: "Cash", broker: "Broker" }} months={[
       { date: "2026-07-01", values: { cash: 10 }, observedAccounts: ["cash"], total: 10, money: 10, stocks: 0, trend: 10 },
       { date: "2026-08-01", values: { cash: 10, broker: 20 }, observedAccounts: ["cash", "broker"], total: 30, money: 10, stocks: 20, trend: 30 }
     ]} />);
