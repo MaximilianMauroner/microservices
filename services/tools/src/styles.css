@@ -359,7 +359,6 @@ html:has([data-suite-accent]) {
   .money-content, .money-content > *, .money-content [data-slot="card"], .money-content [data-slot="card-content"] { min-width: 0; }
   .money-content [data-slot="card-content"] { max-width: 100%; }
   .money-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; align-items: start; margin-top: 1rem; }
-  .money-content { min-width: 0; }
   .money-nav { position: sticky; top: 4.5rem; display: grid; gap: .75rem; padding: .55rem .4rem; border: 1px solid var(--surface-border); border-radius: var(--radius); background: #050505; }
   .money-nav__group { display: grid; gap: .2rem; }
   .money-nav__label { padding: .2rem .65rem; color: #737373; font-size: .62rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }

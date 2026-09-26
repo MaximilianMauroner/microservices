@@ -72,7 +72,7 @@ import {
 import type { MoneyCategory } from "./money-enums.js";
 import type { MoneyActivityPage } from "./money-repository.js";
 import { groupMonth, type GroupedMonth, type Month } from "./money-history.js";
-import { formatDay, MoneyCheckInCard } from "./money-checkin-card.js";
+import { MoneyCheckInCard } from "./money-checkin-card.js";
 import { MoneyPlanningCard } from "./money-planning-card.js";
 import { moneyViewTitle, type MoneyTrackerView } from "./money-tracker-navigation.js";
 
@@ -722,7 +722,7 @@ function Insights({
         <Metric
           label="Current known net worth"
           value={formatMinor(position.knownNetWorthMinor, "EUR")}
-          detail={`As of ${formatDay(position.asOf.slice(0, 10))} · cash ${position.cash.observationDate ?? "unknown"} · prices ${position.portfolio.priceDate ?? "unknown"}`}
+          detail={`As of ${formatActivityDate(position.asOf)} · cash ${position.cash.observationDate ?? "unknown"} · prices ${position.portfolio.priceDate ?? "unknown"}`}
           tone={tone(trends.yearOverYear?.total.change)}
         />
         <Metric
@@ -1861,7 +1861,7 @@ function Accounts({
           role="region"
           aria-label="Account detail table"
         >
-          <table className="money-account-table w-full min-w-[60rem] table-fixed text-xs [&_td]:px-2 [&_td:not(:first-child)]:whitespace-nowrap [&_th]:px-2 [&_th_button]:h-auto [&_th_button]:min-h-8 [&_th_button]:whitespace-normal [&_th_button]:px-0">
+          <table className="w-full min-w-[60rem] table-fixed text-xs [&_td]:px-2 [&_td:not(:first-child)]:whitespace-nowrap [&_th]:px-2 [&_th_button]:h-auto [&_th_button]:min-h-8 [&_th_button]:whitespace-normal [&_th_button]:px-0">
             <caption className="sr-only">
               Balances, changes, allocation and observation dates by account
             </caption>

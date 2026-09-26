@@ -1,3 +1,4 @@
+import { retryTransientOperation } from "./response-retry.js";
 import type { ScheduledTaskLeaseRepository, ScheduledTaskResult } from "./scheduled-task-leases.js";
 
 export interface SchedulerLogger {
@@ -14,6 +15,8 @@ export function startAlignedScheduler(options: {
     ownerId: string;
     durationMs: number;
   }>;
+  /** Delays between lease attempts while the database is unavailable, for example during a cold wake. */
+  leaseRetryDelaysMs?: readonly number[];
   run: () => Promise<void>;
   logger: SchedulerLogger;
   now?: () => number;
@@ -31,12 +34,13 @@ export function startAlignedScheduler(options: {
   const execute = async (startedAt: number) => {
     const slot = new Date(Math.floor((startedAt - phaseOffsetMs) / options.intervalMs) * options.intervalMs + phaseOffsetMs);
     if (options.lease) {
-      const acquired = await options.lease.repository.acquire({
-        taskId: options.lease.taskId,
+      const lease = options.lease;
+      const acquired = await retryTransientOperation(() => lease.repository.acquire({
+        taskId: lease.taskId,
         slot,
-        ownerId: options.lease.ownerId,
-        leaseDurationMs: options.lease.durationMs
-      });
+        ownerId: lease.ownerId,
+        leaseDurationMs: lease.durationMs
+      }), options.leaseRetryDelaysMs);
       if (!acquired) {
         options.logger.info("checker.scheduled.skipped", { startedAt });
         return;

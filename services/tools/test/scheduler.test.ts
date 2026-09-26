@@ -117,6 +117,32 @@ describe("aligned scheduler", () => {
     await scheduler.close();
   });
 
+  it("waits for a waking database before claiming the slot", async () => {
+    const repository = {
+      acquire: vi.fn()
+        .mockRejectedValueOnce(new AggregateError([], "connect ECONNREFUSED"))
+        .mockResolvedValueOnce(true),
+      complete: vi.fn().mockResolvedValue(undefined),
+      close: vi.fn().mockResolvedValue(undefined)
+    };
+    const run = vi.fn().mockResolvedValue(undefined);
+    const logger = { info: vi.fn(), error: vi.fn() };
+    const scheduler = startAlignedScheduler({
+      intervalMs: 300_000,
+      lease: { repository, taskId: "checker", ownerId: "instance-4", durationMs: 270_000 },
+      leaseRetryDelaysMs: [0],
+      run,
+      logger,
+      now: () => 0
+    });
+
+    await scheduler.close();
+
+    expect(repository.acquire).toHaveBeenCalledTimes(2);
+    expect(run).toHaveBeenCalledOnce();
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
   it("records failed runs before releasing shutdown", async () => {
     const repository = {
       acquire: vi.fn().mockResolvedValue(true),

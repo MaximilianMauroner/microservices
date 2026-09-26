@@ -49,6 +49,22 @@ export async function retryTransientFetch(
   }
 }
 
+/** Repeats idempotent background work while a dependency, such as a waking database, is unavailable. */
+export async function retryTransientOperation<T>(
+  operation: () => Promise<T>,
+  retryDelaysMs: readonly number[] = TRANSIENT_RESPONSE_RETRY_DELAYS_MS
+): Promise<T> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      const retryDelayMs = retryDelaysMs[attempt];
+      if (retryDelayMs === undefined) throw error;
+      await waitForRetry(retryDelayMs);
+    }
+  }
+}
+
 function isServerError(response: Response) {
   return response.status >= 500 && response.status <= 599;
 }

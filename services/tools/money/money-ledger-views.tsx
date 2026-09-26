@@ -784,7 +784,7 @@ export function MoneyActivityView({
                 </div>
               ) : (
                 <div className="overflow-x-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" tabIndex={0} role="region" aria-label="Transaction detail table">
-                  <table className="money-activity-table w-full min-w-[56rem] table-fixed text-sm [&_td]:px-2 [&_th]:px-2 [&_td:last-child]:whitespace-nowrap">
+                  <table className="w-full min-w-[56rem] table-fixed text-sm [&_td]:px-2 [&_th]:px-2 [&_td:last-child]:whitespace-nowrap">
                     <caption className="sr-only">
                       Transactions matching the current filters and sort
                     </caption>
