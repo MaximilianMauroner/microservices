@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { projectMoneyTrajectory } from "../money/money-tracker-page.js";
+import { projectMoneyTrajectory } from "../money/money-plan-domain.js";
 
 const months = Array.from({ length: 12 }, (_, index) => ({
   date: `2025-${String(index + 1).padStart(2, "0")}`,

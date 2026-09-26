@@ -1,7 +1,8 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { ExternalLinkIcon, FileArchiveIcon, FilesIcon, LaptopIcon, LogOutIcon, MoonIcon, MoreVerticalIcon, PlusIcon, SettingsIcon, SunIcon } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { favicons } from "../favicons.js";
+import { MONEY_VIEWS, MoneyReviewBadge, moneyReviewCount, moneyReviewCounts, moneyViewTitle } from "../../money/money-tracker-navigation.js";
 import { authClient } from "../lib/auth-client.js";
 import { Avatar, AvatarFallback } from "./ui/avatar.js";
 import { useTheme, type ThemePreference } from "./theme-provider.js";
@@ -50,6 +51,8 @@ const products = [
 export function ToolsSidebar() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const search = useRouterState({ select: (state) => state.location.search as Record<string, unknown> });
+  // The Money route loads the review counts with its data; the badge is hidden elsewhere.
+  const moneyReview = useRouterState({ select: (state) => moneyReviewCount(moneyReviewCounts(state.matches.find((match) => match.routeId === "/money")?.loaderData)) });
   const contentRef = useRef<HTMLDivElement>(null);
   const { setOpenMobile } = useSidebar();
   const { data: session } = authClient.useSession();
@@ -111,13 +114,14 @@ export function ToolsSidebar() {
                   ) : null}
                   {item.to === "/money" && pathname.startsWith("/money") ? (
                     <SidebarMenuSub>
-                      {(["overview", "accounts", "investments", "cash-flow", "transactions", "categories", "insights", "predictions", "data", "rules"] as const).map((view) => (
+                      {MONEY_VIEWS.map((view) => (
                         <SearchSubLink
                           key={view}
-                          label={view === "cash-flow" ? "Cash flow" : view === "data" ? "Uploads & data" : `${view[0]!.toUpperCase()}${view.slice(1)}`}
+                          label={moneyViewTitle(view)}
                           to="/money"
                           search={{ view: view === "overview" ? undefined : view }}
                           active={view === "overview" ? !search.view || search.view === "overview" : search.view === view}
+                          badge={view === "review" && moneyReview ? <MoneyReviewBadge count={moneyReview} /> : null}
                         />
                       ))}
                     </SidebarMenuSub>
@@ -206,8 +210,8 @@ function SubLink({ label, to, active }: { label: string; to: "/publisher" | "/pu
   return <SidebarMenuSubItem><SidebarMenuSubButton isActive={active} render={<Link to={to} preload="intent" />}><span>{label}</span></SidebarMenuSubButton></SidebarMenuSubItem>;
 }
 
-function SearchSubLink({ label, to, search, active }: { label: string; to: "/money"; search: Record<string, unknown>; active: boolean }) {
-  return <SidebarMenuSubItem><SidebarMenuSubButton isActive={active} render={<Link to={to} search={search} preload="intent" />}><span>{label}</span></SidebarMenuSubButton></SidebarMenuSubItem>;
+function SearchSubLink({ label, to, search, active, badge }: { label: string; to: "/money"; search: Record<string, unknown>; active: boolean; badge: ReactNode }) {
+  return <SidebarMenuSubItem><SidebarMenuSubButton isActive={active} render={<Link to={to} search={search} preload="intent" />}><span>{label}</span>{badge}</SidebarMenuSubButton></SidebarMenuSubItem>;
 }
 
 function ExternalItem({ label, href, icon }: { label: string; href: string; icon: string }) {

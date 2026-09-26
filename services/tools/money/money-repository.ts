@@ -108,6 +108,18 @@ export type MoneyPlanningAnalytics = Readonly<{
   observedMonthCount: number;
   projections: readonly Readonly<{ months: 6 | 12 | 60; changeMinor: number }>[];
 }>;
+/** An uncategorized spending row with the categories that earlier rows with the same description used. */
+export type MoneyReviewCategoryItem = MoneyActivityItem & Readonly<{
+  /** Other uncategorized rows in the same account with the same description. */
+  similarCount: number;
+  suggestions: readonly MoneyCategory[];
+}>;
+export type MoneyReviewQueue = Readonly<{
+  items: readonly MoneyReviewCategoryItem[];
+  /** The most used spending categories, offered when a row has no history. */
+  commonCategories: readonly MoneyCategory[];
+}>;
+export type MoneyReviewCounts = Readonly<{ uncategorized: number; transfers: number }>;
 export type MoneyLedgerSnapshot = MoneyTrackerSnapshot & Readonly<{
   imports: readonly MoneyImportSummary[]; activity: readonly MoneyActivityItem[]; transactionCount: number; revertedCount: number;
   currentMonthTransactionAccounts: readonly string[];
@@ -119,34 +131,37 @@ export type MoneyLedgerSnapshot = MoneyTrackerSnapshot & Readonly<{
   transferPairRules: readonly MoneyTransferPairRule[];
   transferRuleOptions: readonly MoneyTransferRuleOption[];
   spending: MoneySpendingAnalytics; investments: MoneyInvestmentAnalytics; planning: MoneyPlanningAnalytics;
+  reviewCounts: MoneyReviewCounts; reviewQueue: MoneyReviewQueue;
 }>;
 export type MoneyActivityPage = Readonly<{ items: readonly MoneyActivityItem[]; total: number; hasMore: boolean }>;
 export type MoneyActivitySortKey = "date" | "description" | "account" | "flow" | "category" | "costs" | "amount";
 export type MoneyActivitySortDirection = "asc" | "desc";
 export type MoneyActivityPageInput = Readonly<{ query: string; flow?: MoneyLedgerTransaction["flowKind"]; accountId?: string; category?: MoneyCategory; fromMonth?: string; toMonth?: string; reviewOnly?: boolean; sort?: MoneyActivitySortKey; direction?: MoneyActivitySortDirection; offset: number; limit: number }>;
-export const MONEY_LEDGER_SCOPES = ["overview", "transactions", "cash-flow", "categories", "investments", "accounts", "insights", "predictions", "rules", "data"] as const;
+export const MONEY_LEDGER_SCOPES = ["overview", "spending", "transactions", "accounts", "investments", "plan", "review"] as const;
 export type MoneyLedgerViewScope = (typeof MONEY_LEDGER_SCOPES)[number];
 export type MoneyLedgerScope = MoneyLedgerViewScope | "all";
 const MONEY_LEDGER_QUERY_SCOPES = {
-  imports: ["data"],
-  currentMonthTransactions: ["data"],
-  categoryRules: ["rules"],
-  transferRules: ["rules"],
-  transferRuleOptions: ["rules"],
+  imports: ["review"],
+  currentMonthTransactions: ["review"],
+  categoryRules: ["review"],
+  transferRules: ["review"],
+  transferRuleOptions: ["review"],
   activity: ["transactions"],
-  counts: ["overview", "transactions", "data"],
-  transferSummary: ["overview", "transactions", "cash-flow", "insights", "rules", "data"],
-  transferReview: ["transactions"],
-  monthlyCashFlow: ["overview", "cash-flow", "insights", "data"],
-  categoryTotals: ["overview", "transactions", "cash-flow", "data"],
-  categoryMonths: ["categories"],
-  merchantMonths: ["categories"],
-  categoryActivity: ["categories"],
+  counts: ["transactions", "review"],
+  reviewCounts: ["overview", "spending", "transactions", "accounts", "investments", "plan", "review"],
+  reviewQueue: ["review"],
+  transferSummary: ["overview", "spending", "plan", "review"],
+  transferReview: ["review"],
+  monthlyCashFlow: ["overview", "spending", "plan"],
+  categoryTotals: ["spending"],
+  categoryMonths: ["overview", "spending"],
+  merchantMonths: ["spending"],
+  categoryActivity: ["spending"],
   investmentPositions: ["investments"],
   investmentTotals: ["investments"],
   tradeMarkers: ["investments"],
   realizedEvents: ["investments"],
-  balanceSnapshots: ["overview", "transactions", "accounts", "insights", "predictions", "data"]
+  balanceSnapshots: ["overview", "transactions", "accounts", "plan", "review"]
 } as const satisfies Record<string, readonly MoneyLedgerViewScope[]>;
 export type MoneyLedgerQuery = keyof typeof MONEY_LEDGER_QUERY_SCOPES;
 
@@ -374,7 +389,7 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
     async readLedgerSnapshot(scope) {
       const queries = new Set(moneyLedgerQueriesFor(scope));
       const needs = (query: MoneyLedgerQuery) => queries.has(query);
-      const [transferRuleSet, imports, currentMonthTransactions, categoryRules, activity, count, transfers, transferReviewItems, monthly, categories, categoryMonths, merchantMonths, categoryActivity, events, investmentTotals, tradeMarkers, realizedEvents, snapshotRows, transferRuleOptions] = await Promise.all([
+      const [transferRuleSet, imports, currentMonthTransactions, categoryRules, activity, count, transfers, transferReviewItems, monthly, categories, categoryMonths, merchantMonths, categoryActivity, events, investmentTotals, tradeMarkers, realizedEvents, snapshotRows, transferRuleOptions, reviewCounts, reviewQueue] = await Promise.all([
         needs("transferRules") ? readTransferRules(sql) : { rules: [], pairRules: [] },
         needs("imports") ? sql<ImportRow[]>`select id, digest, format, filename, bytes, source_row_count, inserted_row_count, duplicate_row_count, committed_at, created_by from tools.money_imports order by committed_at desc limit 50` : emptyRows<ImportRow>(),
         needs("currentMonthTransactions") ? sql<{ account_id: string; month: string }[]>`select distinct account_id::text account_id, to_char(local_date, 'YYYY-MM') as month from tools.money_transactions
@@ -508,14 +523,20 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
         needs("transferRuleOptions") ? sql<TransferRuleOptionRow[]>`select a.provider, t.source_type, count(*)::text count,
             count(*) filter (where t.transfer_group_id is null and t.transfer_disposition is null)::text unresolved_count
           from (${effectiveTransactions(sql)}) t join tools.money_accounts a on a.id = t.account_id
-          where t.flow_kind = 'transfer' group by a.provider, t.source_type order by a.provider, t.source_type` : emptyRows<TransferRuleOptionRow>()
+          where t.flow_kind = 'transfer' group by a.provider, t.source_type order by a.provider, t.source_type` : emptyRows<TransferRuleOptionRow>(),
+        needs("reviewCounts") ? sql<ReviewCountRow[]>`select
+            count(*) filter (where category = 'uncategorized' and (flow_kind = 'spend' or (flow_kind = 'transfer' and transfer_group_id is null and transfer_disposition = 'spend')) and base_currency = 'EUR')::text uncategorized,
+            count(*) filter (where flow_kind = 'transfer' and transfer_group_id is null and transfer_disposition is null)::text transfers
+          from (${effectiveTransactions(sql)}) effective` : emptyRows<ReviewCountRow>(),
+        needs("reviewQueue") ? readReviewQueue(sql) : { items: [], commonCategories: [] }
       ]);
       const spending = spendingAnalytics(monthly, categories, categoryMonths, merchantMonths, categoryActivity);
       return {
         imports: imports.map(summary), currentMonthTransactionAccounts: currentMonthTransactions.filter((row) => row.month === new Date().toISOString().slice(0, 7)).map((row) => row.account_id), recentTransactionMonths: currentMonthTransactions.map((row) => ({ accountId: row.account_id, month: row.month })), categoryRules: categoryRules.map(categoryRule), transferRules: transferRuleSet.rules, transferPairRules: transferRuleSet.pairRules,
         transferRuleOptions: transferRuleOptions.map((row) => ({ provider: row.provider, sourceType: row.source_type, count: integer(row.count), unresolvedCount: integer(row.unresolved_count) })), activity: activity.map(activityItem), transactionCount: Number(count[0]?.count ?? 0), revertedCount: Number(count[0]?.reverted_count ?? 0),
         transferReview: transferReview(transfers[0]), transferReviewGroups: transferReviewGroups(transferReviewItems),
-        spending, investments: investmentAnalytics(events, investmentTotals[0], tradeMarkers, realizedEvents), planning: planningAnalytics(spending.months, transferReview(transfers[0])), ...balanceSnapshot(snapshotRows)
+        spending, investments: investmentAnalytics(events, investmentTotals[0], tradeMarkers, realizedEvents), planning: planningAnalytics(spending.months, transferReview(transfers[0])), ...balanceSnapshot(snapshotRows),
+        reviewCounts: { uncategorized: integer(reviewCounts[0]?.uncategorized ?? "0"), transfers: integer(reviewCounts[0]?.transfers ?? "0") }, reviewQueue
       };
     },
 
@@ -530,6 +551,9 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
         : input.sort === "amount" ? sql`t.amount_minor`
         : sql`t.occurred_at`;
       const direction = input.direction === "asc" ? sql`asc` : sql`desc`;
+      // Review work: transfers without a treatment, and spending without a category.
+      const needsReview = sql`(t.status = 'completed' and ((t.flow_kind = 'transfer' and t.transfer_group_id is null and t.transfer_disposition is null)
+        or (t.category = 'uncategorized' and (t.flow_kind = 'spend' or (t.flow_kind = 'transfer' and t.transfer_group_id is null and t.transfer_disposition = 'spend')))))`;
       const [rows, count] = await Promise.all([
         sql<ActivityRow[]>`select t.id, t.occurred_at, t.account_id::text account_id, ${accountName} account_name, t.description, t.amount_minor, t.fee_minor, t.tax_minor, t.currency, t.status, t.source_type, t.flow_kind, t.category, t.category_origin, t.transfer_group_id, t.transfer_disposition
           from (${effectiveTransactions(sql)}) t join tools.money_accounts a on a.id = t.account_id
@@ -539,7 +563,7 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
             and (${input.category ?? null}::text is null or t.category = ${input.category ?? null})
             and (${input.fromMonth ? `${input.fromMonth}-01` : null}::date is null or t.local_date >= ${input.fromMonth ? `${input.fromMonth}-01` : null}::date)
             and (${input.toMonth ? `${input.toMonth}-01` : null}::date is null or t.local_date < (${input.toMonth ? `${input.toMonth}-01` : null}::date + interval '1 month'))
-            and (${input.reviewOnly ?? false} = false or (t.status = 'completed' and t.flow_kind = 'transfer' and t.transfer_group_id is null and t.transfer_disposition is null))
+            and (${input.reviewOnly ?? false} = false or ${needsReview})
           order by ${order} ${direction}, t.occurred_at desc, t.source_row desc, t.id desc limit ${input.limit} offset ${input.offset}`,
         sql<{ count: string }[]>`select count(*)::text count from (${effectiveTransactions(sql)}) t join tools.money_accounts a on a.id = t.account_id
           where (${input.query} = '' or t.description ilike ${pattern} escape '\\' or ${accountName} ilike ${pattern} escape '\\' or t.source_type ilike ${pattern} escape '\\')
@@ -548,7 +572,7 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
             and (${input.category ?? null}::text is null or t.category = ${input.category ?? null})
             and (${input.fromMonth ? `${input.fromMonth}-01` : null}::date is null or t.local_date >= ${input.fromMonth ? `${input.fromMonth}-01` : null}::date)
             and (${input.toMonth ? `${input.toMonth}-01` : null}::date is null or t.local_date < (${input.toMonth ? `${input.toMonth}-01` : null}::date + interval '1 month'))
-            and (${input.reviewOnly ?? false} = false or (t.status = 'completed' and t.flow_kind = 'transfer' and t.transfer_group_id is null and t.transfer_disposition is null))`
+            and (${input.reviewOnly ?? false} = false or ${needsReview})`
       ]);
       const total = Number(count[0]?.count ?? 0);
       return { items: rows.map(activityItem), total, hasMore: input.offset + rows.length < total };
@@ -800,6 +824,8 @@ type TransferRuleOptionRow = { provider: string; source_type: string; count: str
 type TransferRulePreviewRow = TransferInferenceRow & { local_date: string; account_name: string; currency: string };
 type TransferRuleRow = { id: string; priority: number; provider: string | null; source_type: string | null; description_match: MoneyTransferRule["descriptionMatch"]; match_value: string | null; amount_sign: MoneyTransferRule["amountSign"]; disposition: MoneyTransferDisposition; note: string | null };
 type TransferPairRuleRow = { id: string; debit_provider: string; debit_source_type: string; debit_match_value: string; credit_provider: string; credit_source_type: string; note: string | null };
+type ReviewCountRow = { uncategorized: string; transfers: string };
+type ReviewQueueRow = ActivityRow & { similar_count: string; suggestions: MoneyCategory[] };
 type TransferReviewRow = { linked_pairs: string; unlinked_count: string; unresolved_positive_count: string; unresolved_negative_count: string };
 type ReimportRow = { id: string; source_key: string; flow_kind: MoneyLedgerTransaction["flowKind"]; source_type: string; description: string; mcc: string | null };
 
@@ -819,6 +845,36 @@ function activityCategory(row: ActivityRow): MoneyCategory {
   if (row.flow_kind === "fee") return "fees";
   if (row.flow_kind === "income" || row.flow_kind === "investment_income") return "income";
   return row.category;
+}
+
+/** The newest uncategorized spending with category suggestions from earlier rows with the same description. */
+async function readReviewQueue(sql: Sql): Promise<MoneyReviewQueue> {
+  const [rows, common] = await Promise.all([
+    sql<ReviewQueueRow[]>`with effective as materialized (${effectiveTransactions(sql)}), queue as (
+        select t.id, t.occurred_at, t.account_id::text account_id, a.display_name account_name, t.description, t.amount_minor, t.fee_minor, t.tax_minor,
+          t.currency, t.status, t.source_type, t.flow_kind, t.category, t.category_origin, t.transfer_group_id, t.transfer_disposition, t.account_id account_uuid
+        from effective t join tools.money_accounts a on a.id = t.account_id
+        where t.category = 'uncategorized' and t.base_currency = 'EUR'
+          and (t.flow_kind = 'spend' or (t.flow_kind = 'transfer' and t.transfer_group_id is null and t.transfer_disposition = 'spend'))
+        order by t.occurred_at desc, t.source_row desc limit 40
+      ) select queue.*,
+        (select count(*) from effective other where other.account_id = queue.account_uuid and other.id <> queue.id
+          and lower(other.description) = lower(queue.description) and other.category = 'uncategorized' and other.flow_kind in ('spend', 'refund'))::text similar_count,
+        coalesce((select array_agg(used.category order by used.uses desc, used.category) from (
+          select other.category, count(*) uses from effective other
+          where lower(other.description) = lower(queue.description) and other.flow_kind in ('spend', 'refund')
+            and other.category not in ('uncategorized', 'transfer', 'income', 'adjustment')
+          group by other.category order by count(*) desc, other.category limit 3
+        ) used), '{}') suggestions
+      from queue order by queue.occurred_at desc`,
+    sql<{ category: MoneyCategory }[]>`select category from (${effectiveTransactions(sql)}) t
+      where t.flow_kind = 'spend' and t.category not in ('uncategorized', 'transfer', 'income', 'adjustment') and t.local_date >= current_date - interval '1 year'
+      group by category order by count(*) desc, category limit 6`
+  ]);
+  return {
+    items: rows.map((row) => ({ ...activityItem(row), similarCount: integer(row.similar_count), suggestions: row.suggestions })),
+    commonCategories: common.map((row) => row.category)
+  };
 }
 
 function spendingAnalytics(monthly: MonthlyRow[], categories: CategoryRow[], categoryMonths: CategoryMonthRow[], merchantMonths: MerchantMonthRow[], categoryActivity: ActivityRow[]): MoneySpendingAnalytics {

@@ -60,7 +60,7 @@ export const getMoneyTrackerPageData = createServerFn({ method: "GET" })
   .handler(async ({ data }): Promise<MoneyTrackerPageData> => {
     const { context } = internalPlatformRequest("/money");
     const { moneyImports, moneyMarketData } = context.runtime;
-    const needsMarketData = data.view === "overview" || data.view === "investments" || data.view === "accounts" || data.view === "insights" || data.view === "predictions" || data.view === "data";
+    const needsMarketData = data.view === "overview" || data.view === "investments" || data.view === "accounts" || data.view === "plan" || data.view === "review";
     const needsCheckIn = data.view === "overview" || data.view === "investments";
     const days = needsCheckIn ? await moneyImports.readCheckInDays() : [];
     const baseline = checkInBaseline(days, data.since);

@@ -122,7 +122,7 @@ it.skipIf(!repository || !admin)("classifies transfers with stored rules that ch
     values (gen_random_uuid(), 700, 'revolut', 'Transfer', 'equals', 'to my savings', 'any', 'internal_transfer', 'Own savings account', now(), now(), 'fixture')`;
   await repository!.reimportAll();
   expect(await disposition()).toBe("internal_transfer");
-  expect((await repository!.readLedgerSnapshot("rules")).transferRules).toContainEqual(expect.objectContaining({ matchValue: "to my savings", note: "Own savings account" }));
+  expect((await repository!.readLedgerSnapshot("review")).transferRules).toContainEqual(expect.objectContaining({ matchValue: "to my savings", note: "Own savings account" }));
 });
 
 it.skipIf(!repository || !admin)("creates a transfer rule that classifies only unresolved rows and keeps them after removal", async () => {
@@ -142,7 +142,7 @@ it.skipIf(!repository || !admin)("creates a transfer rule that classifies only u
   const disposition = async (query: string) => (await repository!.readActivityPage({ query, offset: 0, limit: 10 })).items[0]?.transferDisposition;
   expect(await disposition("To Broker Deposit")).toBe("excluded");
   expect(await disposition("From Friend")).toBe("income");
-  const snapshot = await repository!.readLedgerSnapshot("rules");
+  const snapshot = await repository!.readLedgerSnapshot("review");
   expect(snapshot.transferRules[0]).toMatchObject({ priority: 910, note: "Broker deposits", disposition: "excluded" });
   expect(snapshot.transferRuleOptions).toContainEqual({ provider: "revolut", sourceType: "Transfer", count: 2, unresolvedCount: 0 });
 
@@ -462,6 +462,28 @@ it.skipIf(!repository || !admin)("preserves signed transfer corrections in month
   for (const row of review.items) await repository!.setTransferDisposition({ transactionId: row.id, disposition: row.description.startsWith("Spend") ? "spend" : row.description.startsWith("Income") ? "income" : "refund" });
   const month = (await repository!.readLedgerSnapshot("all")).spending.months.find((item) => item.month === "2026-06");
   expect(month).toMatchObject({ spendMinor: -1_000, incomeMinor: -500, refundsMinor: -200, netCashFlowMinor: 300 });
+});
+
+it.skipIf(!repository || !admin)("queues uncategorized spending with suggestions from earlier rows with the same description", async () => {
+  await commitCash(repository!, cash([
+    "Card Payment\tCurrent\t2026-07-01 12:00:00\t2026-07-01 12:00:00\tStall 7\t-10\t0\tEUR\tCOMPLETED\t90",
+    "Card Payment\tCurrent\t2026-07-02 12:00:00\t2026-07-02 12:00:00\tStall 7\t-12\t0\tEUR\tCOMPLETED\t78",
+    "Card Payment\tCurrent\t2026-07-03 12:00:00\t2026-07-03 12:00:00\tStall 7\t-8\t0\tEUR\tCOMPLETED\t70",
+    "Card Payment\tCurrent\t2026-07-04 12:00:00\t2026-07-04 12:00:00\tKiosk 12\t-5\t0\tEUR\tCOMPLETED\t65",
+  ]), "queue.tsv");
+  const first = (await repository!.readActivityPage({ query: "Stall 7", sort: "date", direction: "asc", offset: 0, limit: 10 })).items[0]!;
+  await repository!.setTransactionCategory({ transactionId: first.id, category: "groceries", actor: "integration@example.test", createRule: false });
+
+  const { reviewCounts, reviewQueue } = await repository!.readLedgerSnapshot("review");
+  expect(reviewCounts.uncategorized).toBe(3);
+  const stall = reviewQueue.items.filter((item) => item.description === "Stall 7");
+  expect(stall).toHaveLength(2);
+  expect(stall.map((item) => item.similarCount)).toEqual([1, 1]);
+  expect(stall[0]!.suggestions).toEqual(["groceries"]);
+  expect(reviewQueue.items.find((item) => item.description === "Kiosk 12")).toMatchObject({ similarCount: 0, suggestions: [] });
+
+  const review = await repository!.readActivityPage({ query: "", reviewOnly: true, offset: 0, limit: 10 });
+  expect(review.items.map((item) => item.description).sort()).toEqual(["Kiosk 12", "Stall 7", "Stall 7"]);
 });
 
 function cash(rows: string[]) {

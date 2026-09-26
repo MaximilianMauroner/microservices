@@ -470,11 +470,6 @@ describe("money schema and Option A route contract", () => {
     expect(repository).toContain("SPARKASSE_TRANSFER_TYPES");
   });
 
-  it("uses the selected workspace views without legacy search values", () => {
-    const route = readFileSync(new URL("../src/routes/money.tsx", import.meta.url), "utf8");
-    for (const view of ["cash-flow", "transactions", "investments", "accounts", "categories", "insights", "predictions", "data"]) expect(route).toContain(`\"${view}\"`);
-    for (const old of ["activity", "spending", "balances", "imports", "history"]) expect(route).not.toContain(`search.view === \"${old}\"`);
-  });
 
 });
 
@@ -533,7 +528,8 @@ class MemoryMoneyRepository implements MoneyRepository {
       spending: { months: [], categories: [], categoryMonths: [], merchantMonths: [], categoryActivity: [], uncategorizedCount: 0 },
       investments: { positions: [], trades: [], totals: { eventCount: 0, boughtMinor: 0, soldMinor: 0, incomeMinor: 0, feesMinor: 0, taxesMinor: 0 }, realized: { positions: [], totals: { saleCount: 0, proceedsMinor: 0, costBasisMinor: 0, gainMinor: 0, unmatchedSaleCount: 0 } } },
       planning: { ready: true, unresolvedTransferCount: 0, medianMonthlyNetMinor: 0, observedMonthCount: 6, projections: [{ months: 6, changeMinor: 0 }, { months: 12, changeMinor: 0 }, { months: 60, changeMinor: 0 }] },
-      accountLastObserved: {}
+      accountLastObserved: {},
+      reviewCounts: { uncategorized: 0, transfers: 0 }, reviewQueue: { items: [], commonCategories: [] }
     };
   }
 
