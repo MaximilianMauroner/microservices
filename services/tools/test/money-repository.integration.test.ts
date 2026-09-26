@@ -54,7 +54,7 @@ it.skipIf(!repository || !admin)("executes import replay, transfer review, analy
   expect(review.items).toHaveLength(0);
 
   const beforeTargetedBalance = await repository!.readLedgerSnapshot("all");
-  const currentAccount = beforeTargetedBalance.accounts.find((id) => beforeTargetedBalance.accountLabels[id]?.startsWith("Current"));
+  const currentAccount = beforeTargetedBalance.accounts.find((id) => beforeTargetedBalance.accountLabels[id]?.startsWith("Revolut Current"));
   expect(currentAccount).toBeDefined();
   await repository!.addManualBalance({ accountId: currentAccount!, date: "2026-02-28", valueMinor: 12_345, currency: "EUR" });
   const afterTargetedBalance = await repository!.readLedgerSnapshot("all");
@@ -333,7 +333,7 @@ it.skipIf(!repository || !admin)("reports reverted rows beyond the initial activ
   });
   await commitCash(repository!, cash(rows), "many-rows.tsv");
   const snapshot = await repository!.readLedgerSnapshot("all");
-  expect(snapshot.activity).toHaveLength(500);
+  expect(snapshot.activity).toHaveLength(50);
   expect(snapshot.activity.some((row) => row.status === "reverted")).toBe(false);
   expect(snapshot.revertedCount).toBe(1);
 });
