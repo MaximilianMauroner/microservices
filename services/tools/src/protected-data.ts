@@ -7,6 +7,7 @@ import { requirePlatformSession } from "./auth-middleware.js";
 import { internalPlatformRequest, readPlatformJson, readPlatformResponse } from "./server-data.js";
 import { MONEY_LEDGER_SCOPES, type MoneyLedgerViewScope, type MoneyLedgerSnapshot } from "../money/money-repository.js";
 import type { MoneyMarketSnapshot } from "../money/money-market-data-service.js";
+import { checkInBaseline, moneyCheckIn, type MoneyCheckIn } from "../money/money-checkin-domain.js";
 
 export type UploadSummary = {
   id: string;
@@ -47,25 +48,32 @@ export type DocumentsPageData = MarkdownAdminSnapshot & {
   publicOrigin: string;
 };
 
-export type MoneyTrackerPageData = MoneyLedgerSnapshot & { actor: string; marketData: MoneyMarketSnapshot };
+export type MoneyTrackerPageData = MoneyLedgerSnapshot & { actor: string; marketData: MoneyMarketSnapshot; checkIn?: MoneyCheckIn };
 
 export const getMoneyTrackerPageData = createServerFn({ method: "GET" })
   .middleware([requirePlatformSession])
-  .validator((input: { view: MoneyLedgerViewScope }) => {
+  .validator((input: { view: MoneyLedgerViewScope; since?: string }) => {
     if (!MONEY_LEDGER_SCOPES.includes(input.view)) throw new Error("Invalid Money view");
+    if (input.since !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(input.since)) throw new Error("Invalid check-in date");
     return input;
   })
   .handler(async ({ data }): Promise<MoneyTrackerPageData> => {
     const { context } = internalPlatformRequest("/money");
+    const { moneyImports, moneyMarketData } = context.runtime;
     const needsMarketData = data.view === "overview" || data.view === "investments" || data.view === "accounts" || data.view === "insights" || data.view === "predictions" || data.view === "data";
-    const [ledger, marketData] = await Promise.all([
-      context.runtime.moneyImports.readLedgerSnapshot(data.view),
-      needsMarketData ? context.runtime.moneyMarketData.snapshot() : Promise.resolve(emptyMarketSnapshot())
+    const needsCheckIn = data.view === "overview" || data.view === "investments";
+    const days = needsCheckIn ? await moneyImports.readCheckInDays() : [];
+    const baseline = checkInBaseline(days, data.since);
+    const [ledger, { movesSince, ...marketData }, cash] = await Promise.all([
+      moneyImports.readLedgerSnapshot(data.view),
+      needsMarketData ? moneyMarketData.snapshot({ since: baseline }) : Promise.resolve(emptyMarketSnapshot()),
+      baseline ? moneyImports.readCashMovesSince(baseline) : undefined
     ]);
     return {
       actor: context.principal?.email ?? "Authenticated user",
       ...ledger,
-      marketData
+      marketData,
+      ...(movesSince && cash ? { checkIn: moneyCheckIn({ days, positions: movesSince, cash }) } : {})
     };
   });
 

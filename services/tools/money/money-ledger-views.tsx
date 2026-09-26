@@ -22,6 +22,13 @@ import {
   type TooltipValueType,
 } from "recharts";
 import type { MoneyTrackerPageData } from "../src/protected-data.js";
+import {
+  changeClass,
+  formatDay,
+  formatPercent,
+  MoneyCheckInPicker,
+} from "./money-checkin-card.js";
+import type { MoneyCheckInPositionMove } from "./money-checkin-domain.js";
 import type { MoneyImportPreview } from "./money-import-domain.js";
 import {
   MONEY_CATEGORIES,
@@ -98,6 +105,7 @@ type PositionSortKey =
   | "value"
   | "gain"
   | "return"
+  | "since"
   | "state";
 type RealizedSortKey =
   "asset" | "sales" | "quantity" | "proceeds" | "basis" | "gain" | "return";
@@ -1835,7 +1843,8 @@ const MAX_PORTFOLIO_CHART_POINTS = 480;
 export function MoneyInvestmentsView({
   investments,
   marketData,
-}: Pick<MoneyTrackerPageData, "investments" | "marketData">) {
+  checkIn,
+}: Pick<MoneyTrackerPageData, "investments" | "marketData" | "checkIn">) {
   const router = useRouter();
   const [period, setPeriod] = useState<"1y" | "5y" | "all">("1y");
   const [refreshing, setRefreshing] = useState(false);
@@ -1845,9 +1854,13 @@ export function MoneyInvestmentsView({
     "all" | "equity" | "etf" | "crypto"
   >("all");
   const [positionSort, setPositionSort] = useState<MoneySort<PositionSortKey>>({
-    key: "value",
+    key: checkIn ? "since" : "value",
     direction: "desc",
   });
+  const movesSince = useMemo(
+    () => new Map(checkIn?.positions.map((move) => [move.canonicalKey, move])),
+    [checkIn],
+  );
   const cutoff = new Date(marketData.asOf);
   cutoff.setUTCFullYear(cutoff.getUTCFullYear() - (period === "5y" ? 5 : 1));
   const cutoffDate = cutoff.toISOString().slice(0, 10);
@@ -1963,7 +1976,9 @@ export function MoneyInvestmentsView({
                           ? undefined
                           : position.unrealizedGainMinor /
                             position.costBasisMinor
-                        : position.state;
+                        : positionSort.key === "since"
+                          ? movesSince.get(position.canonicalKey)?.moveMinor
+                          : position.state;
         return (
           compareMoneyValues(
             value(left),
@@ -1972,7 +1987,7 @@ export function MoneyInvestmentsView({
           ) || left.name.localeCompare(right.name)
         );
       });
-  }, [marketData.positions, positionClass, positionQuery, positionSort]);
+  }, [marketData.positions, movesSince, positionClass, positionQuery, positionSort]);
   const changePositionSort = (key: PositionSortKey) =>
     setPositionSort((current) =>
       nextMoneySort(current, key, ["name", "class", "state"]),
@@ -2226,9 +2241,14 @@ export function MoneyInvestmentsView({
                 movement
               </CardDescription>
             </div>
-            <Badge variant="outline">
-              {visiblePositions.length} / {marketData.positions.length}
-            </Badge>
+            <div className="flex items-center gap-3">
+              {checkIn ? (
+                <MoneyCheckInPicker checkIn={checkIn} view="investments" />
+              ) : null}
+              <Badge variant="outline">
+                {visiblePositions.length} / {marketData.positions.length}
+              </Badge>
+            </div>
           </div>
           <div className="flex flex-wrap gap-2">
             <MoneyTableSearch
@@ -2299,6 +2319,15 @@ export function MoneyInvestmentsView({
                   onSort={changePositionSort}
                   align="right"
                 />
+                {checkIn ? (
+                  <MoneySortableHead
+                    label={`Since ${formatDay(checkIn.baseline)}`}
+                    sortKey="since"
+                    active={positionSort}
+                    onSort={changePositionSort}
+                    align="right"
+                  />
+                ) : null}
                 <MoneySortableHead
                   label="Gain/loss"
                   sortKey="gain"
@@ -2351,6 +2380,9 @@ export function MoneyInvestmentsView({
                       ? "—"
                       : money(position.marketValueMinor, "EUR")}
                   </td>
+                  {checkIn ? (
+                    <PositionMoveCell move={movesSince.get(position.canonicalKey)} />
+                  ) : null}
                   <td
                     className={`px-4 py-3 text-right font-mono ${toneClass(position.unrealizedGainMinor)}`}
                   >
@@ -2386,7 +2418,7 @@ export function MoneyInvestmentsView({
                 <tr>
                   <td
                     className="px-4 py-10 text-center text-muted-foreground"
-                    colSpan={8}
+                    colSpan={checkIn ? 9 : 8}
                   >
                     No positions match this filter.
                   </td>
@@ -2398,6 +2430,19 @@ export function MoneyInvestmentsView({
       </Card>
       <InvestmentActivityHistory investments={investments} />
     </>
+  );
+}
+
+function PositionMoveCell({ move }: { move?: MoneyCheckInPositionMove }) {
+  return (
+    <td className={`px-4 py-3 text-right font-mono ${move ? changeClass(move.moveMinor) : "text-muted-foreground"}`}>
+      {move ? signedMoney(move.moveMinor, "EUR") : "—"}
+      {move?.returnPercent === undefined ? null : (
+        <span className="mt-0.5 block text-xs text-muted-foreground">
+          {formatPercent(move.returnPercent)}
+        </span>
+      )}
+    </td>
   );
 }
 
