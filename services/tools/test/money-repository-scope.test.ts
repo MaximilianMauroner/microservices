@@ -31,7 +31,11 @@ describe("Money ledger query scopes", () => {
   });
 
   it("keeps the full scope for repository integration coverage only", () => {
-    expect(moneyLedgerQueriesFor("all")).toHaveLength(18);
-    expect(moneyLedgerQueriesFor("data")).toContain("transferRules");
+    expect(moneyLedgerQueriesFor("all")).toHaveLength(19);
+  });
+
+  it("loads rules only for the rules view", () => {
+    expect(moneyLedgerQueriesFor("rules")).toEqual(["categoryRules", "transferRules", "transferRuleOptions", "transferSummary"]);
+    expect(moneyLedgerQueriesFor("data")).not.toContain("transferRules");
   });
 });

@@ -44,6 +44,7 @@ import { Route as ApiMoneyBalancesRouteImport } from './routes/api/money/balance
 import { Route as ApiMoneyCategoriesRouteImport } from './routes/api/money/categories'
 import { Route as ApiMoneyImportsRouteImport } from './routes/api/money/imports'
 import { Route as ApiMoneyMarketDataRouteImport } from './routes/api/money/market-data'
+import { Route as ApiMoneyTransferRulesRouteImport } from './routes/api/money/transfer-rules'
 import { Route as ApiMoneyTransfersRouteImport } from './routes/api/money/transfers'
 import { Route as ApiOpsSplatRouteImport } from './routes/api/ops/$'
 import { Route as ApiPublicCatalogRouteImport } from './routes/api/public/catalog'
@@ -236,6 +237,11 @@ const ApiMoneyMarketDataRoute = ApiMoneyMarketDataRouteImport.update({
   path: '/api/money/market-data',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiMoneyTransferRulesRoute = ApiMoneyTransferRulesRouteImport.update({
+  id: '/api/money/transfer-rules',
+  path: '/api/money/transfer-rules',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiMoneyTransfersRoute = ApiMoneyTransfersRouteImport.update({
   id: '/api/money/transfers',
   path: '/api/money/transfers',
@@ -356,6 +362,7 @@ export interface FileRoutesByFullPath {
   '/api/money/categories': typeof ApiMoneyCategoriesRoute
   '/api/money/imports': typeof ApiMoneyImportsRouteWithChildren
   '/api/money/market-data': typeof ApiMoneyMarketDataRoute
+  '/api/money/transfer-rules': typeof ApiMoneyTransferRulesRoute
   '/api/money/transfers': typeof ApiMoneyTransfersRoute
   '/api/ops/$': typeof ApiOpsSplatRoute
   '/api/public/catalog': typeof ApiPublicCatalogRoute
@@ -406,6 +413,7 @@ export interface FileRoutesByTo {
   '/api/money/categories': typeof ApiMoneyCategoriesRoute
   '/api/money/imports': typeof ApiMoneyImportsRouteWithChildren
   '/api/money/market-data': typeof ApiMoneyMarketDataRoute
+  '/api/money/transfer-rules': typeof ApiMoneyTransferRulesRoute
   '/api/money/transfers': typeof ApiMoneyTransfersRoute
   '/api/ops/$': typeof ApiOpsSplatRoute
   '/api/public/catalog': typeof ApiPublicCatalogRoute
@@ -460,6 +468,7 @@ export interface FileRoutesById {
   '/api/money/categories': typeof ApiMoneyCategoriesRoute
   '/api/money/imports': typeof ApiMoneyImportsRouteWithChildren
   '/api/money/market-data': typeof ApiMoneyMarketDataRoute
+  '/api/money/transfer-rules': typeof ApiMoneyTransferRulesRoute
   '/api/money/transfers': typeof ApiMoneyTransfersRoute
   '/api/ops/$': typeof ApiOpsSplatRoute
   '/api/public/catalog': typeof ApiPublicCatalogRoute
@@ -515,6 +524,7 @@ export interface FileRouteTypes {
     | '/api/money/categories'
     | '/api/money/imports'
     | '/api/money/market-data'
+    | '/api/money/transfer-rules'
     | '/api/money/transfers'
     | '/api/ops/$'
     | '/api/public/catalog'
@@ -565,6 +575,7 @@ export interface FileRouteTypes {
     | '/api/money/categories'
     | '/api/money/imports'
     | '/api/money/market-data'
+    | '/api/money/transfer-rules'
     | '/api/money/transfers'
     | '/api/ops/$'
     | '/api/public/catalog'
@@ -618,6 +629,7 @@ export interface FileRouteTypes {
     | '/api/money/categories'
     | '/api/money/imports'
     | '/api/money/market-data'
+    | '/api/money/transfer-rules'
     | '/api/money/transfers'
     | '/api/ops/$'
     | '/api/public/catalog'
@@ -665,6 +677,7 @@ export interface RootRouteChildren {
   ApiMoneyCategoriesRoute: typeof ApiMoneyCategoriesRoute
   ApiMoneyImportsRoute: typeof ApiMoneyImportsRouteWithChildren
   ApiMoneyMarketDataRoute: typeof ApiMoneyMarketDataRoute
+  ApiMoneyTransferRulesRoute: typeof ApiMoneyTransferRulesRoute
   ApiMoneyTransfersRoute: typeof ApiMoneyTransfersRoute
   ApiOpsSplatRoute: typeof ApiOpsSplatRoute
   ApiPublicCatalogRoute: typeof ApiPublicCatalogRoute
@@ -917,6 +930,13 @@ declare module '@tanstack/react-router' {
       path: '/api/money/market-data'
       fullPath: '/api/money/market-data'
       preLoaderRoute: typeof ApiMoneyMarketDataRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/money/transfer-rules': {
+      id: '/api/money/transfer-rules'
+      path: '/api/money/transfer-rules'
+      fullPath: '/api/money/transfer-rules'
+      preLoaderRoute: typeof ApiMoneyTransferRulesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/money/transfers': {
@@ -1186,6 +1206,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiMoneyCategoriesRoute: ApiMoneyCategoriesRoute,
   ApiMoneyImportsRoute: ApiMoneyImportsRouteWithChildren,
   ApiMoneyMarketDataRoute: ApiMoneyMarketDataRoute,
+  ApiMoneyTransferRulesRoute: ApiMoneyTransferRulesRoute,
   ApiMoneyTransfersRoute: ApiMoneyTransfersRoute,
   ApiOpsSplatRoute: ApiOpsSplatRoute,
   ApiPublicCatalogRoute: ApiPublicCatalogRoute,

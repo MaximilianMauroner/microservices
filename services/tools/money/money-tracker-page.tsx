@@ -88,6 +88,9 @@ const MoneyActivityView = lazy(async () => ({
 const MoneyBalanceEntry = lazy(async () => ({
   default: (await import("./money-ledger-views.js")).MoneyBalanceEntry,
 }));
+const MoneyRulesView = lazy(async () => ({
+  default: (await import("./money-rules-view.js")).MoneyRulesView,
+}));
 const MoneyDataView = lazy(async () => ({
   default: (await import("./money-ledger-views.js")).MoneyDataView,
 }));
@@ -334,6 +337,7 @@ export function MoneyTrackerPage(
                 portfolioHistory={props.marketData.history}
               />
             ) : null}
+            {props.view === "rules" ? <MoneyRulesView {...props} /> : null}
             {props.view === "data" ? <MoneyDataView {...props} /> : null}
             </Suspense>
           </div>
@@ -2950,7 +2954,9 @@ function viewDescription(view: MoneyTrackerView) {
                 ? "Balance momentum, concentration, drawdown, trends, and a conservative run-rate scenario."
                 : view === "predictions"
                   ? "A projected net-worth range based on the trajectory and variability in your monthly history."
-                  : "Imports, reconciliation, coverage, rules, and analytical limits.";
+                  : view === "rules"
+                    ? "Automatic rules that categorize spending and classify transfers during every import."
+                    : "Imports, account coverage, and open data issues.";
 }
 function PeriodSelector({
   period,

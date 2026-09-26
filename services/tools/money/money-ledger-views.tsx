@@ -55,7 +55,6 @@ import {
   MoneyRowActionCue,
 } from "./money-row-action.js";
 import { MoneyCategoryPicker } from "./money-category-picker.js";
-import { MoneyCategoryRuleBuilder } from "./money-category-rule-builder.js";
 import {
   Alert,
   AlertDescription,
@@ -957,14 +956,13 @@ export function MoneyActivityView({
   );
 }
 
+const RECENT_IMPORT_COUNT = 5;
+
 export function MoneyDataView({
   accounts,
   accountLabels,
   accountLastObserved,
   accountRoles,
-  categoryRules,
-  transferRules,
-  transferPairRules,
   currentMonthTransactionAccounts,
   recentTransactionMonths,
   imports,
@@ -980,9 +978,6 @@ export function MoneyDataView({
   | "accountLabels"
   | "accountLastObserved"
   | "accountRoles"
-  | "categoryRules"
-  | "transferRules"
-  | "transferPairRules"
   | "currentMonthTransactionAccounts"
   | "recentTransactionMonths"
   | "imports"
@@ -993,9 +988,6 @@ export function MoneyDataView({
   | "transactionCount"
   | "transferReview"
 >) {
-  const router = useRouter();
-  const [deletingRule, setDeletingRule] = useState<string>();
-  const [ruleError, setRuleError] = useState<string>();
   const unresolvedTransfers =
     transferReview.unresolvedPositiveCount +
     transferReview.unresolvedNegativeCount;
@@ -1010,7 +1002,6 @@ export function MoneyDataView({
   const categoryCoverage = spendingRows
     ? (categorized / spendingRows) * 100
     : 0;
-  const latestImport = imports.at(0);
   const latestBalanceDate = months.at(-1)?.date;
   const cashAccounts = accounts.filter(
     (account) => accountRoles[account] === "cash",
@@ -1020,27 +1011,12 @@ export function MoneyDataView({
         (account) => accountLastObserved[account] === latestBalanceDate,
       ).length
     : 0;
-  const freshPositions = marketData.positions.filter(
-    (position) => position.state === "fresh",
-  ).length;
   const stalePositions = marketData.positions.filter(
     (position) => position.state === "stale",
   ).length;
   const unpricedPositions = marketData.positions.filter(
     (position) => position.state === "unpriced",
   ).length;
-  const deleteRule = async (ruleId: string) => {
-    setDeletingRule(ruleId);
-    setRuleError(undefined);
-    try {
-      await moneyJson("/api/money/categories", { ruleId }, "DELETE");
-      await router.invalidate();
-    } catch (caught) {
-      setRuleError(message(caught));
-    } finally {
-      setDeletingRule(undefined);
-    }
-  };
   return (
     <>
       <section
@@ -1050,7 +1026,7 @@ export function MoneyDataView({
         <LedgerMetric
           label="Ledger rows"
           value={transactionCount.toLocaleString("en-GB")}
-          detail={`${imports.length.toLocaleString("en-GB")} committed imports`}
+          detail={`${imports.length.toLocaleString("en-GB")} imports · ${revertedCount.toLocaleString("en-GB")} reverted rows excluded`}
         />
         <LedgerMetric
           label="Spend rows categorized"
@@ -1074,132 +1050,46 @@ export function MoneyDataView({
           }
         />
       </section>
-      <MoneyCategoryRuleBuilder accounts={cashAccounts} accountLabels={accountLabels} />
-      <section className="grid items-start gap-3 xl:grid-cols-2">
-        <Card>
-          <CardHeader className="border-b">
-            <CardTitle>Data health</CardTitle>
-            <CardDescription>
-              Ledger status and analytical limits
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="divide-y p-0">
-            <QualityRow
-              label="Completed ledger rows"
-              value={(transactionCount - revertedCount).toLocaleString("en-GB")}
-              state="Stored"
-            />
-            <QualityRow
-              label="Reverted source rows"
-              value={revertedCount.toLocaleString("en-GB")}
-              state="Excluded"
-            />
-            <QualityRow
-              label="Unresolved transfer rows"
-              value={unresolvedTransfers.toLocaleString("en-GB")}
-              state={unresolvedTransfers ? "Review" : "Clear"}
-            />
-            <QualityRow
-              label="Open-position pricing"
-              value={`${freshPositions} / ${marketData.positions.length} current`}
-              state={
-                unpricedPositions
-                  ? "Needs prices"
-                  : stalePositions
-                    ? "Stale"
-                    : "Current"
-              }
-            />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="border-b">
-            <CardTitle>Repair queue</CardTitle>
-            <CardDescription>
-              Current issues with direct destinations
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="divide-y p-0">
-            <RepairLink href="/money?view=transactions&category=uncategorized">
-              <strong>
-                {spending.uncategorizedCount.toLocaleString("en-GB")}
-              </strong>{" "}
-              uncategorized spending rows
-            </RepairLink>
-            <RepairLink href="/money?view=transactions&review=true">
-              <strong>{unresolvedTransfers.toLocaleString("en-GB")}</strong>{" "}
-              unresolved transfer rows
-            </RepairLink>
-            <RepairLink href="/money?view=investments">
-              <strong>{unpricedPositions + stalePositions}</strong> positions
-              need pricing attention
-            </RepairLink>
-            <RepairLink href="/money?view=accounts">
-              <strong>{cashAccounts.length - freshAccounts}</strong> cash
-              accounts not observed in {latestBalanceDate ?? "the latest month"}
-            </RepairLink>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="border-b">
-            <CardTitle>Active category rules</CardTitle>
-            <CardDescription>
-              Exact matches scoped to one account
-            </CardDescription>
-          </CardHeader>
-          {ruleError ? (
-            <p className="px-4 pt-3 text-xs text-rose-300" role="alert">
-              {ruleError}
-            </p>
-          ) : null}
-          <CardContent className="divide-y p-0">
-            {categoryRules.length ? (
-              categoryRules.map((rule) => (
-                <div
-                  className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 px-4 py-3"
-                  key={rule.id}
-                >
-                  <div className="min-w-0">
-                    <p className="break-words text-sm font-medium">
-                      {rule.description}
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {rule.accountName} · {formatLabel(rule.category)}
-                    </p>
-                  </div>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    disabled={deletingRule === rule.id}
-                    onClick={() => void deleteRule(rule.id)}
-                  >
-                    {deletingRule === rule.id ? "Removing…" : "Remove"}
-                  </Button>
-                </div>
-              ))
-            ) : (
-              <EmptyLedger
-                title="No category rules"
-                description="Create one after changing a transaction category."
-              />
-            )}
-          </CardContent>
-        </Card>
-        <TransferRulesCard rules={transferRules} pairRules={transferPairRules} />
-      </section>
-      {latestImport ? (
-        <Alert role="note">
-          <AlertTitle>Latest import</AlertTitle>
-          <AlertDescription>
-            {latestImport.filename} added{" "}
-            {latestImport.insertedCount.toLocaleString("en-GB")} rows on{" "}
-            {formatDate(latestImport.committedAt)}. Raw file bytes were
-            discarded after normalization.
-          </AlertDescription>
-        </Alert>
-      ) : null}
-      <MoneyImportsView accounts={accounts} accountLabels={accountLabels} accountLastObserved={accountLastObserved} accountRoles={accountRoles} currentMonthTransactionAccounts={currentMonthTransactionAccounts} recentTransactionMonths={recentTransactionMonths} imports={imports} months={months} />
+      <MoneyImportsView
+        accounts={accounts}
+        accountLabels={accountLabels}
+        accountLastObserved={accountLastObserved}
+        accountRoles={accountRoles}
+        currentMonthTransactionAccounts={currentMonthTransactionAccounts}
+        recentTransactionMonths={recentTransactionMonths}
+        imports={imports}
+        months={months}
+        repairQueue={
+          <Card>
+            <CardHeader className="border-b">
+              <CardTitle>Repair queue</CardTitle>
+              <CardDescription>
+                Current issues with direct destinations
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="divide-y p-0">
+              <RepairLink href="/money?view=transactions&category=uncategorized">
+                <strong>
+                  {spending.uncategorizedCount.toLocaleString("en-GB")}
+                </strong>{" "}
+                uncategorized spending rows
+              </RepairLink>
+              <RepairLink href="/money?view=transactions&review=true">
+                <strong>{unresolvedTransfers.toLocaleString("en-GB")}</strong>{" "}
+                unresolved transfer rows
+              </RepairLink>
+              <RepairLink href="/money?view=investments">
+                <strong>{unpricedPositions + stalePositions}</strong> positions
+                need pricing attention
+              </RepairLink>
+              <RepairLink href="/money?view=accounts">
+                <strong>{cashAccounts.length - freshAccounts}</strong> cash
+                accounts not observed in {latestBalanceDate ?? "the latest month"}
+              </RepairLink>
+            </CardContent>
+          </Card>
+        }
+      />
     </>
   );
 }
@@ -1213,8 +1103,11 @@ export function MoneyImportsView({
   recentTransactionMonths,
   imports,
   months,
-}: Pick<MoneyTrackerPageData, "accounts" | "accountLabels" | "accountLastObserved" | "accountRoles" | "currentMonthTransactionAccounts" | "recentTransactionMonths" | "imports" | "months">) {
+  repairQueue,
+}: Pick<MoneyTrackerPageData, "accounts" | "accountLabels" | "accountLastObserved" | "accountRoles" | "currentMonthTransactionAccounts" | "recentTransactionMonths" | "imports" | "months"> & { repairQueue: React.ReactNode }) {
   const router = useRouter();
+  const [showAllImports, setShowAllImports] = useState(false);
+  const visibleImports = showAllImports ? imports : imports.slice(0, RECENT_IMPORT_COUNT);
   const input = useRef<HTMLInputElement>(null);
   const dragDepth = useRef(0);
   const [files, setFiles] = useState<MoneyImportFile[]>([]);
@@ -1443,6 +1336,20 @@ export function MoneyImportsView({
           ) : null}
         </CardContent>
       </Card>
+      {repairQueue}
+      <Card>
+        <CardHeader className="border-b">
+          <CardTitle>Account activity for {currentMonth}</CardTitle>
+          <CardDescription>{accountStatus.length ? `${noRecordsCount} of ${accountStatus.length} accounts have no recorded transactions or balance this month` : "Accounts appear here after your first import"}</CardDescription>
+        </CardHeader>
+        {accountStatus.length ? <p className="px-6 pt-4 text-xs text-muted-foreground">Activity shows transactions and balances. Statement coverage is unknown because imports do not record the period each file covers. No records does not mean an upload is missing.</p> : null}
+        {accountStatus.length ? <CardContent className="grid gap-2 pt-4 sm:grid-cols-2">
+          {accountStatus.map((account) => <div key={account.id} className="flex items-start justify-between gap-3 rounded-md border px-3 py-2">
+            <div className="min-w-0"><strong className="block truncate text-sm" title={account.label}>{account.label}</strong><span className="text-xs text-muted-foreground">{account.role === "investment" ? "Investment" : "Cash"} · {account.lastObserved ? `Last balance ${account.lastObserved.slice(0, 7)}` : "No balance yet"}</span></div>
+            <div className="shrink-0 text-right"><Badge variant="outline">{account.observed ? "Activity found" : "No activity"}</Badge><span className="mt-1 block text-xs text-muted-foreground">Coverage unknown</span></div>
+          </div>)}
+        </CardContent> : null}
+      </Card>
       <Card>
         <CardHeader className="border-b">
           <div className="flex items-start justify-between gap-3">
@@ -1506,7 +1413,7 @@ export function MoneyImportsView({
         ) : null}
         <CardContent className="divide-y p-0">
           {imports.length ? (
-            imports.map((item) => (
+            visibleImports.map((item) => (
               <div className="space-y-1 px-4 py-3" key={item.id}>
                 <div className="flex items-start justify-between gap-3">
                   <strong
@@ -1566,12 +1473,10 @@ export function MoneyImportsView({
                     </AlertDialog>
                   </div>
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  {formatDate(item.committedAt)} · {formatBytes(item.bytes)} ·{" "}
+                <p className="truncate text-xs text-muted-foreground">
+                  {formatDate(item.committedAt)} · {formatLabel(item.format)} ·{" "}
+                  {formatBytes(item.bytes)} ·{" "}
                   {item.duplicateCount.toLocaleString("en-GB")} duplicates
-                </p>
-                <p className="text-[.65rem] uppercase tracking-wide text-muted-foreground">
-                  {formatLabel(item.format)}
                 </p>
               </div>
             ))
@@ -1581,20 +1486,22 @@ export function MoneyImportsView({
               description="Completed imports will appear here with their row counts and digest-backed receipt."
             />
           )}
+          {imports.length > RECENT_IMPORT_COUNT ? (
+            <div className="px-4 py-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                aria-expanded={showAllImports}
+                onClick={() => setShowAllImports((current) => !current)}
+              >
+                {showAllImports
+                  ? "Show recent imports"
+                  : `Show all ${imports.length.toLocaleString("en-GB")} imports`}
+              </Button>
+            </div>
+          ) : null}
         </CardContent>
-      </Card>
-      <Card className="lg:col-span-2">
-        <CardHeader className="border-b">
-          <CardTitle>Account activity for {currentMonth}</CardTitle>
-          <CardDescription>{accountStatus.length ? `${noRecordsCount} of ${accountStatus.length} accounts have no recorded transactions or balance this month` : "Accounts appear here after your first import"}</CardDescription>
-        </CardHeader>
-        {accountStatus.length ? <p className="px-6 pt-4 text-xs text-muted-foreground">Activity shows transactions and balances. Statement coverage is unknown because imports do not record the period each file covers. No records does not mean an upload is missing.</p> : null}
-        {accountStatus.length ? <CardContent className="grid gap-2 pt-4 sm:grid-cols-2 lg:grid-cols-3">
-          {accountStatus.map((account) => <div key={account.id} className="flex items-start justify-between gap-3 rounded-md border px-3 py-2">
-            <div className="min-w-0"><strong className="block truncate text-sm" title={account.label}>{account.label}</strong><span className="text-xs text-muted-foreground">{account.role === "investment" ? "Investment" : "Cash"} · {account.lastObserved ? `Last balance ${account.lastObserved.slice(0, 7)}` : "No balance yet"}</span></div>
-            <div className="shrink-0 text-right"><Badge variant="outline">{account.observed ? "Activity found" : "No activity"}</Badge><span className="mt-1 block text-xs text-muted-foreground">Coverage unknown</span></div>
-          </div>)}
-        </CardContent> : null}
       </Card>
     </section>
   );
@@ -3491,33 +3398,6 @@ function LedgerMetric({
     </Card>
   );
 }
-function QualityRow({
-  label,
-  value,
-  state,
-}: {
-  label: string;
-  value: string;
-  state: string;
-}) {
-  return (
-    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-3 text-sm">
-      <div>
-        <p className="font-medium">{label}</p>
-        <p className="mt-0.5 text-xs text-muted-foreground">{value}</p>
-      </div>
-      <Badge
-        variant={
-          state === "Review" || state === "Needs prices"
-            ? "destructive"
-            : "outline"
-        }
-      >
-        {state}
-      </Badge>
-    </div>
-  );
-}
 function EmptyLedger({
   title,
   description,
@@ -3690,53 +3570,6 @@ function formatBytes(bytes: number) {
 function flowLabel(flow: string) {
   return flow.replaceAll("_", " ");
 }
-/** Read-only view of the stored rules that classify and pair unlinked transfers. */
-function TransferRulesCard({
-  rules,
-  pairRules,
-}: { rules: MoneyTrackerPageData["transferRules"]; pairRules: MoneyTrackerPageData["transferPairRules"] }) {
-  return (
-    <Card>
-      <CardHeader className="border-b">
-        <CardTitle>Transfer rules</CardTitle>
-        <CardDescription>
-          Stored rules for unlinked transfers, first match wins
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="max-h-96 divide-y overflow-y-auto p-0">
-        {pairRules.map((rule) => (
-          <div className="px-4 py-2.5" key={rule.id}>
-            <p className="text-sm font-medium">Pair card funding · {formatLabel(rule.creditProvider)}</p>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {formatLabel(rule.debitProvider)} {rule.debitSourceType} naming “{rule.debitMatchValue}” → {formatLabel(rule.creditProvider)} {rule.creditSourceType} on the purchase date
-            </p>
-          </div>
-        ))}
-        {rules.map((rule) => (
-          <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 px-4 py-2.5" key={rule.id}>
-            <div className="min-w-0">
-              <p className="truncate text-sm font-medium" title={rule.note}>
-                {rule.note ?? transferRuleSummary(rule)}
-              </p>
-              <p className="mt-0.5 truncate text-xs text-muted-foreground">{transferRuleSummary(rule)}</p>
-            </div>
-            <Badge variant="outline">{formatLabel(rule.disposition)}</Badge>
-          </div>
-        ))}
-        {!rules.length && !pairRules.length ? (
-          <EmptyLedger title="No transfer rules" description="Unlinked transfers wait for review until a rule matches them." />
-        ) : null}
-      </CardContent>
-    </Card>
-  );
-}
-
-function transferRuleSummary(rule: MoneyTrackerPageData["transferRules"][number]) {
-  const description = rule.descriptionMatch === "any" ? "any description" : `description ${formatLabel(rule.descriptionMatch)} “${rule.matchValue}”`;
-  const sign = rule.amountSign === "any" ? "" : ` · ${rule.amountSign} amounts`;
-  return `${rule.provider ? formatLabel(rule.provider) : "Any provider"} · ${rule.sourceType ?? "any type"} · ${description}${sign}`;
-}
-
 function formatLabel(value: string) {
   return value.replace(/_v\d$/, "").replaceAll("_", " ");
 }

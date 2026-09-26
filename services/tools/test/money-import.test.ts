@@ -16,7 +16,8 @@ import type {
   MoneyActivityPageInput,
   MoneyImportReceipt,
   MoneyLedgerSnapshot,
-  MoneyRepository
+  MoneyRepository,
+  MoneyTransferRuleInput
 } from "../money/money-repository.js";
 import type { PlatformRouteInput } from "../src/route-handlers.js";
 
@@ -250,6 +251,15 @@ describe("money import service", () => {
     await service.readActivityPage({ query: " coffee ", accountId: "00000000-0000-4000-8000-000000000000", category: "dining", fromMonth: "2026-06", toMonth: "2026-07", sort: "amount", direction: "asc", offset: 0, limit: 50 });
     expect(repository.lastActivityInput).toEqual({ query: "coffee", accountId: "00000000-0000-4000-8000-000000000000", category: "dining", fromMonth: "2026-06", toMonth: "2026-07", sort: "amount", direction: "asc", offset: 0, limit: 50 });
     expect(() => service.readActivityPage({ query: "", sort: "amount desc; drop table", offset: 0, limit: 50 })).toThrow("activity sort is invalid");
+  });
+
+  it("normalizes transfer rules and rejects rules that would match every transfer", async () => {
+    const repository = new MemoryMoneyRepository();
+    const service = new MoneyImportService(repository);
+    await service.previewTransferRule({ provider: " ", sourceType: "Transfer", descriptionMatch: "contains", matchValue: "  To Broker ", amountSign: "negative", disposition: "internal_transfer" });
+    expect(repository.lastTransferRule).toEqual({ sourceType: "Transfer", descriptionMatch: "contains", matchValue: "to broker", amountSign: "negative", disposition: "internal_transfer" });
+    expect(() => service.previewTransferRule({ descriptionMatch: "any", matchValue: "ignored", amountSign: "any", disposition: "excluded" })).toThrow("cannot match every transfer");
+    expect(() => service.previewTransferRule({ sourceType: "Transfer", descriptionMatch: "equals", amountSign: "any", disposition: "excluded" })).toThrow("description text");
   });
 
   it("reports existing source rows during preview", async () => {
@@ -504,6 +514,7 @@ function routeInput(request: Request, preview: ReturnType<typeof vi.fn>) {
 class MemoryMoneyRepository implements MoneyRepository {
   readonly sourceKeys = new Set<string>();
   lastActivityInput?: MoneyActivityPageInput;
+  lastTransferRule?: MoneyTransferRuleInput;
 
   async existingSourceKeys(sourceKeys: readonly string[]) {
     return new Set(sourceKeys.filter((key) => this.sourceKeys.has(key)));
@@ -518,7 +529,7 @@ class MemoryMoneyRepository implements MoneyRepository {
 
   async readLedgerSnapshot(): Promise<MoneyLedgerSnapshot> {
     return {
-      imports: [], currentMonthTransactionAccounts: [], transferRules: [], transferPairRules: [], categoryRules: [], activity: [], transactionCount: 0, revertedCount: 0, transferReview: { linkedPairs: 0, unlinkedCount: 0, unresolvedPositiveCount: 0, unresolvedNegativeCount: 0 }, transferReviewGroups: [], accounts: [], accountLabels: {}, accountRoles: {}, months: [],
+      imports: [], currentMonthTransactionAccounts: [], transferRules: [], transferPairRules: [], transferRuleOptions: [], categoryRules: [], activity: [], transactionCount: 0, revertedCount: 0, transferReview: { linkedPairs: 0, unlinkedCount: 0, unresolvedPositiveCount: 0, unresolvedNegativeCount: 0 }, transferReviewGroups: [], accounts: [], accountLabels: {}, accountRoles: {}, months: [],
       spending: { months: [], categories: [], categoryMonths: [], merchantMonths: [], categoryActivity: [], uncategorizedCount: 0 },
       investments: { positions: [], trades: [], totals: { eventCount: 0, boughtMinor: 0, soldMinor: 0, incomeMinor: 0, feesMinor: 0, taxesMinor: 0 }, realized: { positions: [], totals: { saleCount: 0, proceedsMinor: 0, costBasisMinor: 0, gainMinor: 0, unmatchedSaleCount: 0 } } },
       planning: { ready: true, unresolvedTransferCount: 0, medianMonthlyNetMinor: 0, observedMonthCount: 6, projections: [{ months: 6, changeMinor: 0 }, { months: 12, changeMinor: 0 }, { months: 60, changeMinor: 0 }] },
@@ -532,6 +543,9 @@ class MemoryMoneyRepository implements MoneyRepository {
   async previewCategoryRule() { return { matchCount: 0, changeCount: 0, manualCount: 0, examples: [] }; }
   async createCategoryRule() { return { affectedCount: 0 }; }
   async deleteCategoryRule() { return undefined; }
+  async previewTransferRule(input: MoneyTransferRuleInput) { this.lastTransferRule = input; return { matchCount: 0, examples: [] }; }
+  async createTransferRule() { return { affectedCount: 0 }; }
+  async deleteTransferRule() { return false; }
   async setTransferDisposition() {}
   async setTransferDispositions() { return { affectedCount: 0 }; }
   async addManualBalance() {}
