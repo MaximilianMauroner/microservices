@@ -783,11 +783,20 @@ export function MoneyActivityView({
                   ))}
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[64rem] text-sm">
+                <div className="overflow-x-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" tabIndex={0} role="region" aria-label="Transaction detail table">
+                  <table className="money-activity-table w-full min-w-[56rem] table-fixed text-sm [&_td]:px-2 [&_th]:px-2 [&_td:last-child]:whitespace-nowrap">
                     <caption className="sr-only">
                       Transactions matching the current filters and sort
                     </caption>
+                    <colgroup>
+                      <col style={{ width: "7rem" }} />
+                      <col />
+                      <col style={{ width: "9rem" }} />
+                      <col style={{ width: "6rem" }} />
+                      <col style={{ width: "11rem" }} />
+                      <col style={{ width: "5rem" }} />
+                      <col style={{ width: "8rem" }} />
+                    </colgroup>
                     <thead className="border-b text-xs text-muted-foreground">
                       <tr>
                         <MoneySortableHead
@@ -852,7 +861,7 @@ export function MoneyActivityView({
                               {item.transferGroupId ? " · linked transfer" : ""}
                             </p>
                           </td>
-                          <td className="whitespace-nowrap px-4 py-3">
+                          <td className="break-words px-4 py-3">
                             {item.accountName}
                           </td>
                           <td className="px-4 py-3">
@@ -869,7 +878,7 @@ export function MoneyActivityView({
                                 void categorize(item, category)
                               }
                             />
-                            <span className="ml-2 text-[.65rem] text-muted-foreground">
+                            <span className="mt-1 block text-[.65rem] text-muted-foreground">
                               {item.categoryOrigin}
                             </span>
                           </td>
@@ -1066,7 +1075,7 @@ export function MoneyDataView({
         />
       </section>
       <MoneyCategoryRuleBuilder accounts={cashAccounts} accountLabels={accountLabels} />
-      <section className="grid items-start gap-3 lg:grid-cols-3">
+      <section className="grid items-start gap-3 xl:grid-cols-2">
         <Card>
           <CardHeader className="border-b">
             <CardTitle>Data health</CardTitle>
@@ -1101,6 +1110,34 @@ export function MoneyDataView({
                     : "Current"
               }
             />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="border-b">
+            <CardTitle>Repair queue</CardTitle>
+            <CardDescription>
+              Current issues with direct destinations
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="divide-y p-0">
+            <RepairLink href="/money?view=transactions&category=uncategorized">
+              <strong>
+                {spending.uncategorizedCount.toLocaleString("en-GB")}
+              </strong>{" "}
+              uncategorized spending rows
+            </RepairLink>
+            <RepairLink href="/money?view=transactions&review=true">
+              <strong>{unresolvedTransfers.toLocaleString("en-GB")}</strong>{" "}
+              unresolved transfer rows
+            </RepairLink>
+            <RepairLink href="/money?view=investments">
+              <strong>{unpricedPositions + stalePositions}</strong> positions
+              need pricing attention
+            </RepairLink>
+            <RepairLink href="/money?view=accounts">
+              <strong>{cashAccounts.length - freshAccounts}</strong> cash
+              accounts not observed in {latestBalanceDate ?? "the latest month"}
+            </RepairLink>
           </CardContent>
         </Card>
         <Card>
@@ -1150,34 +1187,6 @@ export function MoneyDataView({
           </CardContent>
         </Card>
         <TransferRulesCard rules={transferRules} pairRules={transferPairRules} />
-        <Card>
-          <CardHeader className="border-b">
-            <CardTitle>Repair queue</CardTitle>
-            <CardDescription>
-              Current issues with direct destinations
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="divide-y p-0">
-            <RepairLink href="/money?view=transactions&category=uncategorized">
-              <strong>
-                {spending.uncategorizedCount.toLocaleString("en-GB")}
-              </strong>{" "}
-              uncategorized spending rows
-            </RepairLink>
-            <RepairLink href="/money?view=transactions&review=true">
-              <strong>{unresolvedTransfers.toLocaleString("en-GB")}</strong>{" "}
-              unresolved transfer rows
-            </RepairLink>
-            <RepairLink href="/money?view=investments">
-              <strong>{unpricedPositions + stalePositions}</strong> positions
-              need pricing attention
-            </RepairLink>
-            <RepairLink href="/money?view=accounts">
-              <strong>{cashAccounts.length - freshAccounts}</strong> cash
-              accounts not observed in {latestBalanceDate ?? "the latest month"}
-            </RepairLink>
-          </CardContent>
-        </Card>
       </section>
       {latestImport ? (
         <Alert role="note">

@@ -124,14 +124,14 @@ export function MoneyCheckInCard({
           ))}
         </ol>
         <Tabs defaultValue="positions">
-          <TabsList>
-            <TabsTrigger value="positions">
+          <TabsList className="grid h-auto w-full grid-cols-3 sm:inline-flex sm:w-fit">
+            <TabsTrigger className="h-auto min-h-11 min-w-0 flex-col whitespace-normal px-1 text-xs sm:min-h-0 sm:flex-row sm:px-2 sm:text-sm" value="positions">
               Positions <Count value={checkIn.positions.length} />
             </TabsTrigger>
-            <TabsTrigger value="cash">
+            <TabsTrigger className="h-auto min-h-11 min-w-0 flex-col whitespace-normal px-1 text-xs sm:min-h-0 sm:flex-row sm:px-2 sm:text-sm" value="cash">
               Cash accounts <Count value={overview.cash.length} />
             </TabsTrigger>
-            <TabsTrigger value="spending">
+            <TabsTrigger className="h-auto min-h-11 min-w-0 flex-col whitespace-normal px-1 text-xs sm:min-h-0 sm:flex-row sm:px-2 sm:text-sm" value="spending">
               Spending <Count value={spending.categories.length} />
             </TabsTrigger>
           </TabsList>
