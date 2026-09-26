@@ -14,6 +14,7 @@ import {
   type PrincipalResolver
 } from "./app.js";
 import { loadPlatformConfig } from "./config.js";
+import { retryTransientOperation } from "./response-retry.js";
 import { startAlignedScheduler } from "./scheduler.js";
 import { createPostgresScheduledTaskLeaseRepository } from "./scheduled-task-leases.js";
 import { PLATFORM_UI_BUILD } from "./build-identity.js";
@@ -231,7 +232,7 @@ function startArtifactCleanup(
   let current: Promise<void> | undefined;
   const run = () => {
     if (current) return;
-    current = storage.deleteExpiredTemporaryFiles(new Date()).then(
+    current = retryTransientOperation(() => storage.deleteExpiredTemporaryFiles(new Date())).then(
       (deleted) => {
         if (deleted > 0) console.info(JSON.stringify({ event: "artifact.cleanup", deleted }));
       },
