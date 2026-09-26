@@ -345,7 +345,7 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
       const needs = (query: MoneyLedgerQuery) => queries.has(query);
       const [imports, currentMonthTransactions, categoryRules, activity, count, transfers, transferReviewItems, monthly, categories, categoryMonths, merchantMonths, categoryActivity, events, investmentTotals, tradeMarkers, realizedEvents, snapshotRows] = await Promise.all([
         needs("imports") ? sql<ImportRow[]>`select id, digest, format, filename, bytes, source_row_count, inserted_row_count, duplicate_row_count, committed_at, created_by from tools.money_imports order by committed_at desc limit 50` : emptyRows<ImportRow>(),
-        needs("currentMonthTransactions") ? sql<{ account_id: string; month: string }[]>`select distinct account_id::text account_id, to_char(local_date, 'YYYY-MM') month from tools.money_transactions
+        needs("currentMonthTransactions") ? sql<{ account_id: string; month: string }[]>`select distinct account_id::text account_id, to_char(local_date, 'YYYY-MM') as month from tools.money_transactions
           where status = 'completed' and local_date >= date_trunc('month', current_date) - interval '1 month'
             and local_date < date_trunc('month', current_date) + interval '2 months'` : emptyRows<{ account_id: string; month: string }>(),
         needs("categoryRules") ? sql<CategoryRuleRow[]>`select r.id, a.display_name account_name, r.match_field,
