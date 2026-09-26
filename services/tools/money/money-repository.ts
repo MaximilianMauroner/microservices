@@ -16,7 +16,7 @@ import {
   type MoneyLedgerTransaction,
   type MoneyTransferDisposition
 } from "./money-import-domain.js";
-import { inferTransferDisposition } from "./money-transfer-inference.js";
+import { inferTransferDisposition, matchSparkasseCardFundingPairs } from "./money-transfer-inference.js";
 
 export type MoneyImportCommitInput = Readonly<{
   digest: string; format: MoneyImportFormat; filename: string; bytes: number; rowCount: number; actor: string;
@@ -687,7 +687,7 @@ type CategoryRuleRow = { id: string; account_name: string; match_field: "descrip
 type RealizedEventRow = { account_id: string; occurred_at: Date; source_row: number; source_key: string; event_kind: MoneyInvestmentEventInput["eventKind"]; symbol: string | null; quantity: string | null; base_amount_minor: string; base_fee_minor: string };
 type TradeMarkerRow = { local_date: string; event_kind: "buy" | "sell"; symbol: string; name: string | null; quantity: string; base_amount_minor: string; base_fee_minor: string; currency: string };
 type SnapshotRow = { account_id: string; snapshot_date: string | null; value_minor: string | null; currency: string; display_name: string; role: "cash" | "investment"; provider: string };
-type TransferRow = { id: string; account_id: string; occurred_at: Date; local_date: string; description: string; amount_minor: string; currency: string };
+type TransferRow = { id: string; account_id: string; provider: string; source_type: string; occurred_at: Date; local_date: string; description: string; amount_minor: string; currency: string };
 type TransferInferenceRow = { id: string; provider: string; account_role: "cash" | "investment"; source_type: string; description: string; amount_minor: string };
 type TransferReviewRow = { linked_pairs: string; unlinked_count: string; unresolved_positive_count: string; unresolved_negative_count: string };
 type ReimportRow = { id: string; source_key: string; flow_kind: MoneyLedgerTransaction["flowKind"]; source_type: string; description: string; mcc: string | null };
@@ -870,7 +870,7 @@ async function linkUnambiguousTransfers(tx: postgres.TransactionSql) {
   await tx`update tools.money_transactions set transfer_disposition = 'excluded'
     where status = 'completed' and flow_kind = 'transfer' and source_type = 'Exchange'
       and transfer_group_id is null and transfer_disposition is null`;
-  const rows = await tx<TransferRow[]>`select t.id, t.account_id, t.occurred_at, t.local_date::text, lower(trim(t.description)) description, t.amount_minor::text, t.currency
+  const rows = await tx<TransferRow[]>`select t.id, t.account_id, a.provider, t.source_type, t.occurred_at, t.local_date::text, lower(trim(t.description)) description, t.amount_minor::text, t.currency
     from (${effectiveTransactions(tx)}) t join tools.money_accounts a on a.id = t.account_id
     where t.flow_kind = 'transfer' and t.amount_minor <> 0
       and t.transfer_group_id is null and t.transfer_disposition is null and (
@@ -884,8 +884,22 @@ async function linkUnambiguousTransfers(tx: postgres.TransactionSql) {
       )`;
   const used = new Set<string>();
   const pairs: Array<readonly [string, string]> = [];
-  collectExactTransferPairs(rows, used, pairs);
-  collectDateTransferPairs(rows, used, pairs);
+  for (const pair of matchSparkasseCardFundingPairs(rows.map((row) => ({
+    id: row.id, accountId: row.account_id, provider: row.provider, sourceType: row.source_type,
+    description: row.description, localDate: row.local_date, amountMinor: integer(row.amount_minor), currency: row.currency
+  })))) {
+    pairs.push(pair);
+    used.add(pair[0]);
+    used.add(pair[1]);
+  }
+  // Card funding with a recorded purchase date needs its card-specific match.
+  // A settlement-date-only match can attach it to the wrong top-up.
+  const genericRows = rows.filter((row) => !(row.provider === 'sparkasse'
+    && row.source_type === 'BEZAHLUNG EU LAENDER'
+    && /\bvom\s+\d{2}\/\d{2}\/\d{2}\b/.test(row.description)
+    && /\b(revolut|trade republic)\b/.test(row.description)));
+  collectExactTransferPairs(genericRows, used, pairs);
+  collectDateTransferPairs(genericRows, used, pairs);
   if (pairs.length) {
     const candidateIds = pairs.flatMap((pair) => pair).sort();
     const lockedIds = new Set<string>();
