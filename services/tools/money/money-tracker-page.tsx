@@ -478,7 +478,7 @@ function Accounts(props: MoneyTrackerPageData) {
                     <td className="hide-sm">{row.lastObserved ? old ? <Badge variant="outline" className="text-warning">{formatMonth(row.lastObserved, true)}</Badge> : <span className="text-muted-foreground">{formatMonth(row.lastObserved, true)}</span> : <span className="text-muted-foreground">Never</span>}</td>
                     <td className="num" onClick={(event) => event.stopPropagation()}>
                       {row.role === "cash" ? (
-                        <Button type="button" size="sm" variant={old ? "default" : "outline"} aria-expanded={editing === row.account} onClick={() => setEditing(editing === row.account ? undefined : row.account)}>
+                        <Button type="button" size="sm" variant="outline" aria-expanded={editing === row.account} onClick={() => setEditing(editing === row.account ? undefined : row.account)}>
                           Update
                         </Button>
                       ) : null}

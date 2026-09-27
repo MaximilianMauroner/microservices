@@ -53,7 +53,7 @@ export function FeedbackQuestionEditor({
               <CardHeader className="grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
                 <div>
                   <CardTitle>Question {index + 1}</CardTitle>
-                  <Badge className="mt-1 max-w-full font-mono text-[0.65rem]" title={`Response key: ${question.id}`} variant="outline">Response key: {question.id}</Badge>
+                  <Badge className="mt-1 max-w-full font-mono text-xs" title={`Response key: ${question.id}`} variant="outline">Response key: {question.id}</Badge>
                 </div>
                 <div className="flex items-center gap-1.5 self-end sm:self-auto">
                   <Button variant="outline" size="icon-sm" type="button" title="Move up" aria-label={`Move question ${index + 1} up`} disabled={index === 0} onClick={() => onChange(moveFeedbackQuestion(questions, index, -1))}><ArrowUpIcon /></Button>

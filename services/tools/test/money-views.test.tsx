@@ -5,7 +5,7 @@ import type { MoneyTrackerPageData } from "../src/protected-data.js";
 import { MoneyTrackerPage } from "../money/money-tracker-page.js";
 import { MoneySpendingView } from "../money/money-spending-view.js";
 import { MoneyReviewView } from "../money/money-review-view.js";
-import { legacyMoneyView, moneyReviewCounts } from "../money/money-tracker-navigation.js";
+import { moneyReviewCounts } from "../money/money-tracker-navigation.js";
 
 /** Currency amounts use a no-break space before the euro sign. */
 const renderToStaticMarkup = (element: ReactElement) => renderMarkup(element).replaceAll("\u00a0", " ");
@@ -124,10 +124,7 @@ describe("Money redesign views", () => {
     expect(html).toMatch(/Tagesgeld[\s\S]*Last balance Jan 2026/);
   });
 
-  it("maps bookmarks from the old views and reads review counts defensively", () => {
-    expect(legacyMoneyView("cash-flow")).toEqual({ view: "spending" });
-    expect(legacyMoneyView("rules")).toEqual({ view: "review", tab: "rules" });
-    expect(legacyMoneyView("spending")).toBeUndefined();
+  it("reads review counts defensively", () => {
     expect(moneyReviewCounts({ reviewCounts: { uncategorized: 2, transfers: 1 } })).toEqual({ uncategorized: 2, transfers: 1 });
     expect(moneyReviewCounts({ reviewCounts: { uncategorized: "2" } })).toBeUndefined();
     expect(moneyReviewCounts(undefined)).toBeUndefined();

@@ -104,7 +104,7 @@ export function SignInPanel({
           <GoogleMark />
           {submitting ? "Opening Google…" : state === "unauthorized" ? "Choose another Google account" : "Continue with Google"}
         </Button>
-        <p className="mt-4 text-center font-mono text-[0.68rem] uppercase tracking-[0.1em] text-muted-foreground">
+        <p className="mt-4 text-center font-mono text-xs uppercase tracking-[0.1em] text-muted-foreground">
           Secure session · 7 days
         </p>
       </CardContent>

@@ -1,14 +1,14 @@
 import { useEffect, useState } from "react";
 
-const timestampFormatter = new Intl.DateTimeFormat(undefined, {
+const timestampFormatter = new Intl.DateTimeFormat("en-GB", {
   year: "numeric",
   month: "short",
   day: "numeric",
-  hour: "numeric",
+  hour: "2-digit",
   minute: "2-digit",
   timeZoneName: "short"
 });
-const shortDateFormatter = new Intl.DateTimeFormat(undefined, {
+const shortDateFormatter = new Intl.DateTimeFormat("en-GB", {
   month: "short",
   day: "numeric"
 });
@@ -17,11 +17,11 @@ const dateKeyFormatter = new Intl.DateTimeFormat("en-CA", {
   month: "2-digit",
   day: "2-digit"
 });
-const clockFormatter = new Intl.DateTimeFormat(undefined, {
-  hour: "numeric",
+const clockFormatter = new Intl.DateTimeFormat("en-GB", {
+  hour: "2-digit",
   minute: "2-digit"
 });
-const zoneFormatter = new Intl.DateTimeFormat(undefined, {
+const zoneFormatter = new Intl.DateTimeFormat("en-GB", {
   timeZoneName: "short"
 });
 

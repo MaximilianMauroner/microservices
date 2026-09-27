@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { MoneyTrackerPage } from "../../money/money-tracker-page.js";
 import { MoneyTrackerPendingPage } from "../../money/money-tracker-pending-page.js";
-import { legacyMoneyView, MONEY_REVIEW_TABS, MONEY_VIEWS, type MoneyReviewTab, type MoneyTrackerView } from "../../money/money-tracker-navigation.js";
+import { MONEY_REVIEW_TABS, MONEY_VIEWS, type MoneyReviewTab, type MoneyTrackerView } from "../../money/money-tracker-navigation.js";
 import { getMoneyTrackerPageData } from "../protected-data.js";
 import { faviconLink, favicons } from "../favicons.js";
 import { requireRouteSession } from "../auth-session.js";
@@ -12,12 +12,10 @@ type MoneySearch = { view?: Exclude<MoneyTrackerView, "overview">; tab?: MoneyRe
 export const Route = createFileRoute("/money")({
   beforeLoad: ({ location }) => requireRouteSession(location.href),
   validateSearch: (search: Record<string, unknown>): MoneySearch => {
-    // Bookmarks from before the redesign open the view that now holds their content.
-    const legacy = legacyMoneyView(search.view);
-    const view = legacy?.view ?? MONEY_VIEWS.find((item) => item === search.view);
+    const view = MONEY_VIEWS.find((item) => item === search.view);
     return {
       view: view === "overview" ? undefined : view,
-      tab: legacy?.tab ?? MONEY_REVIEW_TABS.find((tab) => tab === search.tab),
+      tab: MONEY_REVIEW_TABS.find((tab) => tab === search.tab),
       category: typeof search.category === "string" && MONEY_CATEGORIES.includes(search.category as MoneyCategory) ? search.category as MoneyCategory : undefined,
       review: search.review === true || search.review === "true" ? true : undefined,
       fromMonth: typeof search.fromMonth === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(search.fromMonth) ? search.fromMonth : undefined,

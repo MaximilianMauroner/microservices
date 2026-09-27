@@ -52,6 +52,7 @@ export function ToolsDirectory({ snapshot }: { snapshot: PublicSnapshotDocument 
   const directoryProducts = [...primaryProducts, ...infrastructureProducts];
   const monitorIds = new Set(directoryProducts.flatMap((product) => product.monitorId ? [product.monitorId] : []));
   const operational = [...monitorIds].filter((id) => statuses[id]?.status === "up").length;
+  const healthTone = operational === monitorIds.size ? "bg-positive" : operational === 0 ? "bg-negative" : "bg-warning";
 
   return <>
     <AppShell product="Dashboard" icon={favicons.directory} showSignOut />
@@ -62,12 +63,12 @@ export function ToolsDirectory({ snapshot }: { snapshot: PublicSnapshotDocument 
           <h1 className="mt-3 max-w-3xl text-4xl font-semibold tracking-[-0.055em] sm:mt-4 sm:text-7xl">Useful things,<br />close at hand.</h1>
         </div>
         <div className="flex items-center gap-3 rounded-full border bg-card px-4 py-2 text-sm text-muted-foreground">
-          <span className="size-2 rounded-full bg-primary" aria-hidden="true" />
+          <span className={`size-2 rounded-full ${healthTone}`} aria-hidden="true" />
           {operational} of {monitorIds.size} health checks passing
         </div>
       </section>
 
-      <section className="grid gap-3 pt-5 sm:gap-4 sm:pt-8 md:grid-cols-2 xl:grid-cols-4" aria-label="Products">
+      <section className="grid grid-cols-1 gap-3 pt-5 sm:gap-4 sm:pt-8 md:grid-cols-2 xl:grid-cols-4" aria-label="Products">
         {primaryProducts.map((product, index) => {
           const Icon = typeof product.icon === "string" ? undefined : product.icon;
           const status = monitorStatus(product.monitorId, statuses);
@@ -97,7 +98,7 @@ export function ToolsDirectory({ snapshot }: { snapshot: PublicSnapshotDocument 
 
       {infrastructureProducts.length > 0 ? (
         <section className="pt-8" aria-labelledby="infrastructure-title">
-          <h2 id="infrastructure-title" className="mb-3 font-mono text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Infrastructure</h2>
+          <h2 id="infrastructure-title" className="mb-3 font-mono text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Infrastructure</h2>
           <div className="grid gap-2 md:grid-cols-2">
             {infrastructureProducts.map((product) => {
               const status = monitorStatus(product.monitorId, statuses);
@@ -115,11 +116,11 @@ export function ToolsDirectory({ snapshot }: { snapshot: PublicSnapshotDocument 
                     </span>
                     <span className="min-w-0">
                       <strong className="block truncate text-xs font-semibold text-foreground">{product.name}</strong>
-                      <span className="block truncate text-[0.68rem]">{product.description}</span>
+                      <span className="block truncate text-xs">{product.description}</span>
                     </span>
                   </span>
-                  <span className="flex shrink-0 items-center gap-2 text-[0.68rem]">
-                    <span className={`size-1.5 rounded-full ${status?.status === "up" ? "bg-lime-300" : status?.status === "down" ? "bg-rose-400" : "bg-muted-foreground"}`} aria-hidden="true" />
+                  <span className="flex shrink-0 items-center gap-2 text-xs">
+                    <span className={`size-1.5 rounded-full ${status?.status === "up" ? "bg-positive" : status?.status === "down" ? "bg-negative" : "bg-muted-foreground"}`} aria-hidden="true" />
                     {infrastructureStatus(status)}
                     <ArrowUpRight className="size-3.5 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" aria-hidden="true" />
                   </span>
@@ -197,20 +198,13 @@ function infrastructureStatus(status: PublicMonitorStatus | undefined) {
 function ProductMetadata({ access, status, sharedMonitor = false }: { access: "private" | "tailnet" | "public"; status: PublicMonitorStatus | undefined; sharedMonitor?: boolean }) {
   const AccessIcon = access === "private" ? LockKeyhole : access === "tailnet" ? Network : Globe2;
   const accessLabel = access === "private" ? "Private" : access === "tailnet" ? "Tailnet" : "Public";
-  const StatusIcon = status?.status === "up" ? Activity : status?.status === "down" ? CircleOff : status?.status === "paused" ? CirclePause : status?.status === "checking" ? Activity : CircleOff;
+  const StatusIcon = status?.status === "up" || status?.status === "checking" ? Activity : status?.status === "paused" ? CirclePause : CircleOff;
   const statusLabel = status?.status === "up" ? "Operational" : status?.status === "down" ? "Unavailable" : status?.status === "paused" ? "Paused" : status?.status === "checking" ? "Checking" : status?.status === "unavailable" ? "Not reachable here" : "Not monitored";
-  const statusTone = status?.status === "down" ? "text-black" : "text-black/70";
 
-  return <div className="mt-2 flex items-center gap-2 text-black/70 sm:mt-5">
-    <MetadataIcon icon={AccessIcon} label={accessLabel} />
-    <MetadataIcon icon={StatusIcon} label={sharedMonitor ? `Tools service: ${statusLabel.toLowerCase()}` : statusLabel} className={statusTone} />
-    {sharedMonitor ? <span className="text-[0.65rem] font-medium text-black/70">Shared Tools check</span> : null}
+  return <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-medium text-black/70 sm:mt-5">
+    <span className="inline-flex items-center gap-1.5"><AccessIcon className="size-3.5" aria-hidden="true" />{accessLabel}</span>
+    <span className={`inline-flex items-center gap-1.5${status?.status === "down" ? " text-black" : ""}`} title={sharedMonitor ? "From the shared Tools health check" : undefined}>
+      <StatusIcon className="size-3.5" aria-hidden="true" />{statusLabel}
+    </span>
   </div>;
-}
-
-function MetadataIcon({ icon: Icon, label, className = "" }: { icon: LucideIcon; label: string; className?: string }) {
-  return <span className={`group/meta relative grid size-7 place-items-center rounded-md border border-black/20 bg-black/10 ${className}`} tabIndex={0} aria-label={label}>
-    <Icon className="size-3.5" aria-hidden="true" />
-    <span className="pointer-events-none absolute bottom-[calc(100%+0.4rem)] left-1/2 z-20 -translate-x-1/2 whitespace-nowrap rounded-md bg-foreground px-2 py-1 text-[0.65rem] font-medium text-background opacity-0 shadow-lg transition-opacity group-hover/meta:opacity-100 group-focus/meta:opacity-100">{label}</span>
-  </span>;
 }
