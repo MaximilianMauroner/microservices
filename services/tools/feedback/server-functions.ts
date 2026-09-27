@@ -12,6 +12,13 @@ export const getFeedbackForms = createServerFn({ method: "GET" })
   .middleware([requirePlatformSession])
   .handler(() => repository().listForms());
 
+export const getFeedbackInbox = createServerFn({ method: "GET" })
+  .middleware([requirePlatformSession])
+  .handler(async () => {
+    const [forms, submissions] = await Promise.all([repository().listForms(), repository().listRecentSubmissions(200)]);
+    return { forms, submissions };
+  });
+
 export const getFeedbackFormPage = createServerFn({ method: "GET" })
   .middleware([requirePlatformSession])
   .validator((input: { formId: string }) => input)

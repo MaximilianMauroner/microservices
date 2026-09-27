@@ -111,6 +111,7 @@ export type FetchArtifactAppOptions = {
   storage: UploadStorage;
   uploadToken: string;
   externalUpload?: boolean;
+  browserPersistentUpload?: boolean;
   uploadLinks?: UploadLinkRepository;
   publicBaseUrl?: string;
   publisherFaviconUrl?: string;
@@ -429,6 +430,13 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
           temporaryFileRetentionMs,
           activityTracker
         );
+      }
+
+      if (request.method === "POST" && url.pathname === "/api/browser-html-uploads") {
+        if (!options.browserPersistentUpload) return externalUploadUnavailable();
+        requireSameOrigin(request, url, options.publicBaseUrl);
+        requireMultipartUpload(request);
+        return upload(request, url, options, { kind: "create", htmlOnly: true }, uploadGate, maxUploadBytes, maxHtmlUploadBytes, temporaryFileRetentionMs, activityTracker);
       }
 
       if (request.method === "POST" && url.pathname === "/api/external-uploads/chunks") {
@@ -931,6 +939,9 @@ async function upload(
           staged.contentType,
           mode.kind === "create" && mode.temporaryOnly === true
         );
+        if (mode.kind === "create" && mode.htmlOnly && uploadType.kind !== "html") {
+          throw new ArtifactRequestError(400, "html_upload_required", "Only HTML plans can be published here.");
+        }
         if (mode.kind === "update" && uploadType.kind !== "html") {
           throw new ArtifactRequestError(
             400,
@@ -1681,6 +1692,7 @@ type UploadMode =
   | {
       kind: "create";
       temporaryOnly?: boolean;
+      htmlOnly?: boolean;
       uploadLinkId?: string;
       expiresAt?: Date;
       ensureActive?: () => Promise<boolean>;

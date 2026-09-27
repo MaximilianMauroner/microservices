@@ -113,6 +113,7 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
       storage: artifactStorage,
       uploadToken: config.artifact.uploadToken,
       externalUpload: true,
+      browserPersistentUpload: true,
       uploadLinks,
       publicBaseUrl: config.publicOrigin,
       publisherFaviconUrl: favicons.publisher,

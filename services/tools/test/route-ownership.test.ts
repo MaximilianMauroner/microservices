@@ -5,7 +5,7 @@ import { readOnly } from "../src/route-handlers.js";
 describe("primary page ownership", () => {
   it("registers explicit React routes without legacy browser splats", () => {
     const source = readFileSync(new URL("../src/routeTree.gen.ts", import.meta.url), "utf8");
-    for (const path of ["/status", "/publisher", "/publisher/artifacts", "/documents", "/money", "/feedback", "/feedback/forms/$formId", "/feedback/responses/$submissionId", "/feedback/f/$token", "/feedback/share/$token", "/markdown/", "/markdown/d/$slug", "/drop/$", "/api/drop/$", "/api/upload-links", "/api/upload-links/$"]) {
+    for (const path of ["/status", "/publisher", "/publisher/artifacts", "/publisher/receive", "/documents", "/money", "/feedback", "/feedback/forms/", "/feedback/forms/$formId", "/feedback/responses/$submissionId", "/feedback/f/$token", "/feedback/share/$token", "/markdown/", "/markdown/d/$slug", "/drop/$", "/api/drop/$", "/api/upload-links", "/api/upload-links/$", "/api/browser-html-uploads"]) {
       expect(source).toContain(`fullPath: '${path}'`);
     }
     for (const path of ["/review", "/publish", "/manage", "/manage/status", "/manage/documents", "/tools/private/money", "/ops", "/uploads", "/p", "/f", "/status/private"]) {

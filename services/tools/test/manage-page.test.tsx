@@ -40,10 +40,10 @@ const initial: ManagePageData = {
 };
 
 describe("Manage artifact library", () => {
-  it("renders project navigation, lifecycle state, and selected artifact actions", () => {
+  it("renders a compact, selectable library with lifecycle and inspector actions", () => {
     const html = renderToStaticMarkup(<ManagePage initial={initial} />);
 
-    expect(html).toContain("Maintain every plan and file shared through Publish.");
+    expect(html).toContain(">Library</h1>");
     expect(html).toContain("microservices");
     expect(html).toContain("Unassigned");
     expect(html).toContain("plan.html");
@@ -52,7 +52,9 @@ describe("Manage artifact library", () => {
     expect(html).toContain("Replace file");
     expect(html).toContain("Copy URL");
     expect(html).toContain("Revoke artifact");
-    expect(html).toContain("Total artifacts");
+    expect(html).toContain("142 artifacts in 2 projects");
+    expect(html).toContain('aria-label="Select all visible artifacts"');
+    expect(html).toContain('aria-label="Select plan.html"');
     expect(html).toContain("2 of 142 loaded");
     expect(html).toContain(">142<");
     expect(html).toContain('href="/publisher"');
@@ -82,7 +84,7 @@ describe("Manage artifact library", () => {
     expect(completeLibrary).toContain("while (cursor)");
     expect(completeLibrary).toContain("remaining.push(...payload.uploads)");
     expect(completeLibrary).toContain("if (!nextCursor || loadingAllRef.current) return;");
-    expect(source).toContain("onSelect={(value) => void selectProject(value)}");
+    expect(source).toContain("onChange={(event) => selectProject(event.currentTarget.value)}");
     expect(source).toContain("Search remaining artifacts");
     expect(source).toContain("No matches in loaded artifacts");
     expect(source).toContain("const selected = visibleUploads.find((upload) => upload.id === selectedId)");
@@ -102,15 +104,15 @@ describe("Manage artifact library", () => {
     expect(lifecycleUpdates).not.toContain("await refresh()");
   });
 
-  it("widens the project navigation on wide screens without clipping the table at 1280px", async () => {
+  it("keeps the library and inspector in two columns with horizontal table overflow", async () => {
     const source = await readFile(new URL("../publisher/ui/manage-page.tsx", import.meta.url), "utf8");
 
-    expect(source).toContain("lg:grid-cols-[16rem_minmax(0,1fr)_20rem]");
-    expect(source).toContain("2xl:grid-cols-[24rem_minmax(0,1fr)_20rem]");
-    expect(source).not.toContain(" xl:grid-cols-");
+    expect(source).toContain("lg:grid-cols-[minmax(0,1fr)_20rem]");
+    expect(source).toContain('className="overflow-x-auto"');
+    expect(source).toContain("onToggle={toggleSelection}");
   });
 
-  it("groups projects by usage and hides one-off projects by default", () => {
+  it("keeps project usage in the compact project selector", () => {
     const html = renderToStaticMarkup(<ManagePage initial={{
       ...initial,
       summary: {
@@ -124,15 +126,12 @@ describe("Manage artifact library", () => {
       }
     }} />);
 
-    expect(html).toContain("100+ uses");
-    expect(html).toContain("10–99 uses");
-    expect(html).toContain("2–9 uses");
-    expect(html).toContain("daily-driver");
-    expect(html).toContain("regular-work");
-    expect(html).toContain("small-project");
-    expect(html).toContain("Show one-off projects");
-    expect(html).not.toContain(">single-time-plan</span>");
-    expect(html).toContain('aria-expanded="false"');
+    expect(html).toContain('aria-label="Project"');
+    expect(html).toContain("All projects");
+    expect(html).toContain("142 artifacts in 4 projects");
+    expect(html).toContain('label="100+ uses"');
+    expect(html).toContain('label="One-off projects"');
+    expect(html).not.toContain("Show one-off projects");
   });
 
   it("uses exact project usage boundaries and sorts each group by usage", () => {

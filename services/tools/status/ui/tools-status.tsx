@@ -7,13 +7,11 @@ import type {
 } from "@tools-platform/domain";
 import { Link } from "@tanstack/react-router";
 import { ArrowUpRight, ChevronRight, LockKeyhole } from "lucide-react";
+import { PageHeader } from "../../src/components/page-header.js";
 import { AppShell } from "../../src/components/app-shell.js";
 import { favicons } from "../../src/favicons.js";
 import { LocalDate, LocalTimeRange, LocalTimestamp } from "../../src/components/local-time.js";
-import { Badge } from "../../src/components/ui/badge.js";
 import { Button } from "../../src/components/ui/button.js";
-import { Card } from "../../src/components/ui/card.js";
-import { useIsMobile } from "../../src/components/ui/use-mobile.js";
 import { formatTimestamp, resolveBrowserLink } from "../../dashboard/ui/tools-directory-helpers.js";
 import { projectPrivateCatalog } from "../../dashboard/ui/private-catalog-projection.js";
 import { countLabel } from "../../src/lib/count-label.js";
@@ -34,120 +32,47 @@ export function PrivateToolsStatus({ snapshot, actor, publicOrigin }: { snapshot
 function ToolsStatusView({ snapshot, publicOrigin, view, actor }: { snapshot: PublicSnapshotDocument; publicOrigin: string; view: "public" | "combined" | "private"; actor?: string }) {
   const entries = [...snapshot.entries].sort(byOrderThenId);
   const overall = overallState(entries, snapshot.statuses);
-  const unmeasuredCount = entries.filter((entry) => {
-    const state = snapshot.statuses[entry.id]?.status;
-    return state !== "up" && state !== "down" && state !== "checking";
-  }).length;
-  const summary = overallSummary(overall, unmeasuredCount);
+  const up = entries.filter(({ id }) => snapshot.statuses[id]?.status === "up").length;
+  const down = entries.filter(({ id }) => snapshot.statuses[id]?.status === "down");
+  const checked = entries.flatMap(({ id }) => snapshot.statuses[id]?.checkedAt ? [snapshot.statuses[id]!.checkedAt!] : []).sort().at(-1);
+  const measured = entries.flatMap(({ id }) => snapshot.statuses[id]?.uptimeDays ?? []);
+  const successfulChecks = measured.reduce((sum, day) => sum + day.successfulChecks, 0);
+  const totalChecks = measured.reduce((sum, day) => sum + day.totalChecks, 0);
+  const latencies = entries.flatMap(({ id }) => snapshot.statuses[id]?.latencyMs === null || snapshot.statuses[id]?.latencyMs === undefined ? [] : [snapshot.statuses[id]!.latencyMs!]).sort((a, b) => a - b);
+  const incidents = entries.flatMap((entry) => (snapshot.statuses[entry.id]?.downtimeRecords ?? []).map((record) => ({ entry, record }))).sort((a, b) => b.record.startedAt.localeCompare(a.record.startedAt));
+  const recentIncidents = incidents.filter(({ record }) => !record.resolvedAt || new Date(record.startedAt).getTime() >= new Date(snapshot.generatedAt).getTime() - 30 * 86_400_000);
+  const summary = overallSummary(overall, entries.length - up - down.length);
 
-  return (
-    <>
-      <AppShell product="Status" accent="cyan" icon={favicons.status} />
-      <div className={`status-page status-page--${overall}`}>
-        <main id="main" className="status-wrap status-main">
-          <section className="status-hero" aria-labelledby="status-title">
-            <p className="eyebrow">System status</p>
-            <StatusMark state={overall} large />
-            <h1 id="status-title">{summary.title}</h1>
-            <p>{summary.detail}</p>
-            {summary.coverage ? <p className="status-coverage">{summary.coverage}</p> : null}
-            <p className="status-updated">
-              Last updated <LocalTimestamp value={snapshot.generatedAt} fallback={formatTimestamp(snapshot.generatedAt)} />
-            </p>
-          </section>
-          <Card id="services" className="gap-0 py-0" aria-labelledby="services-title">
-            <header className="status-card__header">
-              <h2 id="services-title">Current status by service</h2>
-              <Badge variant={overallBadgeVariant(overall)} className={`overall-badge overall-badge--${overall} h-auto`}>
-                <StatusMark state={overall} />
-                {summary.badge}
-              </Badge>
-            </header>
-            {entries.length === 0 ? (
-              <div className="status-empty"><h3>No services published yet</h3><p>The status catalog is being prepared.</p></div>
-            ) : (
-              <ul className="service-list" role="list">
-                {entries.map((entry) => (
-                  <ServiceRow
-                    key={entry.id}
-                    entry={entry}
-                    status={snapshot.statuses[entry.id]}
-                    generatedAt={snapshot.generatedAt}
-                    publicOrigin={publicOrigin}
-                  />
-                ))}
-              </ul>
-            )}
-          </Card>
-          {view === "private" ? (
-            <div className="private-status-identity"><Link to="/status" preload="intent">← All services</Link><span>Signed in as {actor}</span></div>
-          ) : view === "public" ? (
-            <section className="private-status-callout" aria-labelledby="private-status-title">
-              <div className="private-status-callout__icon" aria-hidden="true"><LockKeyhole className="size-4" /></div>
-              <div>
-                <h2 id="private-status-title">Private service status</h2>
-                <p>Sign in with Google to view availability for internal services.</p>
-              </div>
-              <Button variant="outline" className="private-status-link" render={<Link to="/" preload="intent" />}>
-                Open Tools <ChevronRight aria-hidden="true" />
-              </Button>
-            </section>
-          ) : null}
-        </main>
-        <footer className="status-footer">
-          <div className="status-wrap"><span className="footer-mark" aria-hidden="true">M</span><span>Managed by Mauroner</span><span aria-hidden="true">·</span><span>30-minute checks</span></div>
-        </footer>
+  return <>
+    <AppShell product="Status" accent="cyan" icon={favicons.status} />
+    <main id="main" className="tools-page status-compact">
+      <PageHeader title="Status" facts={<>Checked every 30 minutes · {checked ? <>last check <LocalTimestamp value={checked} fallback={formatTimestamp(checked)} /></> : "no checks recorded"}</>} />
+      <div className="grid gap-3">
+        <section className="overflow-hidden rounded-xl border bg-card" aria-label="Status summary">
+          <div className="flex items-start gap-3 p-4"><StatusMark state={overall} /><div><h2 className="text-base font-semibold">{down.length ? `${down.length} ${down.length === 1 ? "service is" : "services are"} down` : summary.title}</h2><p className="mt-1 text-sm text-muted-foreground">{down.length ? `${down.map((entry) => entry.name).join(", ")} ${down.length === 1 ? "has" : "have"} failed the latest check. ${up} of ${entries.length} services are operational.` : summary.detail}</p>{summary.coverage ? <p className="mt-1 text-xs text-muted-foreground">{summary.coverage}</p> : null}</div></div>
+          <dl className="status-stats grid grid-cols-2 border-t sm:grid-cols-4"><div className="p-3"><dt className="text-xs text-muted-foreground">Operational</dt><dd className="mt-1 text-lg font-semibold tabular-nums">{up} of {entries.length}</dd></div><div className="p-3"><dt className="text-xs text-muted-foreground">Observed uptime, 90 days</dt><dd className="mt-1 text-lg font-semibold tabular-nums">{totalChecks ? formatPercentage(successfulChecks, totalChecks) : "No data"}</dd></div><div className="p-3"><dt className="text-xs text-muted-foreground">Incidents, 30 days</dt><dd className="mt-1 text-lg font-semibold tabular-nums">{recentIncidents.length}</dd></div><div className="p-3"><dt className="text-xs text-muted-foreground">Median latest latency</dt><dd className="mt-1 text-lg font-semibold tabular-nums">{latencies.length ? `${latencies[Math.floor((latencies.length - 1) / 2)]} ms` : "No data"}</dd></div></dl>
+        </section>
+        <section className="overflow-hidden rounded-xl border bg-card" aria-labelledby="services-title"><div className="border-b px-4 py-3"><h2 id="services-title" className="text-sm font-semibold">Services</h2><p className="text-xs text-muted-foreground">Last 90 days · today at right · select a service for details</p></div>
+          {entries.length ? <ul className="divide-y" role="list">{entries.map((entry) => <ServiceRow key={entry.id} entry={entry} status={snapshot.statuses[entry.id]} generatedAt={snapshot.generatedAt} publicOrigin={publicOrigin} />)}</ul> : <div className="status-empty"><h3>No services published yet</h3><p>The status catalog is being prepared.</p></div>}
+          <div className="flex flex-wrap gap-4 border-t px-4 py-3 text-xs text-muted-foreground"><span><i className="uptime-key uptime-key--operational" />Up</span><span><i className="uptime-key uptime-key--attention" />Some checks failed</span><span><i className="uptime-key uptime-key--outage" />Down</span><span><i className="uptime-key uptime-key--unknown" />No data</span></div>
+        </section>
+        <section className="overflow-hidden rounded-xl border bg-card" aria-labelledby="incidents-title"><div className="flex items-center justify-between border-b px-4 py-3"><h2 id="incidents-title" className="text-sm font-semibold">Incidents</h2><span className="text-xs text-muted-foreground">Last 30 days</span></div>
+          {recentIncidents.length ? <ol className="divide-y">{recentIncidents.map(({ entry, record }) => <li key={`${entry.id}:${record.startedAt}`} className="grid grid-cols-[5rem_minmax(0,1fr)_auto] items-center gap-3 px-4 py-2.5 text-sm"><LocalDate value={record.startedAt} fallback={formatShortDate(new Date(record.startedAt))} /><span className="min-w-0"><strong className="block truncate font-medium">{entry.name}</strong><span className="block text-xs text-muted-foreground"><LocalTimeRange start={record.startedAt} end={record.resolvedAt} fallback={record.resolvedAt ? `${formatClock(new Date(record.startedAt))}–${formatClock(new Date(record.resolvedAt))} UTC` : `${formatClock(new Date(record.startedAt))}–ongoing UTC`} /></span></span><span className={`text-xs tabular-nums ${record.resolvedAt ? "text-muted-foreground" : "text-negative"}`}>{formatDuration(downtimeDuration(record, new Date(snapshot.generatedAt).getTime()))}</span></li>)}</ol> : <p className="px-4 py-5 text-sm text-muted-foreground">No recorded incidents in the last 30 days.</p>}
+        </section>
       </div>
-    </>
-  );
+      {view === "private" ? <div className="private-status-identity"><Link to="/status" preload="intent">← All services</Link><span>Signed in as {actor}</span></div> : view === "public" ? <section className="private-status-callout" aria-labelledby="private-status-title"><div className="private-status-callout__icon" aria-hidden="true"><LockKeyhole className="size-4" /></div><div><h2 id="private-status-title">Private service status</h2><p>Sign in with Google to view availability for internal services.</p></div><Button variant="outline" className="private-status-link" render={<Link to="/" preload="intent" />}>Open Tools <ChevronRight aria-hidden="true" /></Button></section> : null}
+    </main>
+  </>;
 }
 
-function ServiceRow({ entry, status, generatedAt, publicOrigin }: {
-  entry: PublicCatalogEntry;
-  status: PublicMonitorStatus | undefined;
-  generatedAt: string;
-  publicOrigin: string;
-}) {
-  const isMobile = useIsMobile();
+function ServiceRow({ entry, status, generatedAt, publicOrigin }: { entry: PublicCatalogEntry; status: PublicMonitorStatus | undefined; generatedAt: string; publicOrigin: string }) {
   const state = serviceState(status);
   const uptime = uptimeSummary(status, generatedAt);
   const links = entry.links.flatMap((link) => {
     const destination = safeHttpUrl(link.url);
     return destination ? [{ ...link, destination }] : [];
   });
-  const details = <>
-    <p className="service-description">{entry.description}</p>
-    <UptimeBar status={status} generatedAt={generatedAt} summary={uptime} />
-    <div className="uptime-legend" aria-hidden="true">
-      <span><i className="uptime-key uptime-key--operational" />Operational</span>
-      <span><i className="uptime-key uptime-key--attention" />Partial outage</span>
-      <span><i className="uptime-key uptime-key--outage" />Outage</span>
-      <span><i className="uptime-key uptime-key--unknown" />No data</span>
-    </div>
-    <div className="service-meta">
-      <span>{uptime.firstObservedDay ? `Observed since ${uptime.firstObservedDay}` : "No checks recorded"}</span>
-      <span>{uptime.totalChecks > 0 ? `${uptime.totalChecks} ${uptime.totalChecks === 1 ? "check" : "checks"} · ` : ""}<StatusDetails status={status} /></span>
-      <span>Today</span>
-    </div>
-    <DowntimeHistory status={status} generatedAt={generatedAt} />
-    {links.length > 0 ? (
-      <div className="service-links" role="group" aria-label={`${entry.name} links`}>
-        {links.map((link) => (
-          <ServiceLink key={link.id} href={link.destination} label={link.label} restricted={link.access === "restricted"} publicOrigin={publicOrigin} />
-        ))}
-      </div>
-    ) : null}
-  </>;
-  if (isMobile) return <li className="service-row service-row--compact"><details className="service-disclosure"><summary><span><StatusMark state={state} /><strong>{entry.name}</strong></span><span className={`service-state service-state--${state}`}>{uptime.label}</span></summary><div className="service-disclosure__body">{details}</div></details></li>;
-  return (
-    <li className="service-row">
-      <div className="service-heading">
-        <div><StatusMark state={state} /><h3>{entry.name}</h3></div>
-        <span className={`service-state service-state--${state}`}>{uptime.label}</span>
-      </div>
-      {details}
-    </li>
-  );
+  return <li><details className="status-service"><summary className="grid cursor-pointer list-none grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 px-4 py-3 marker:hidden lg:grid-cols-[minmax(9rem,1.2fr)_minmax(8rem,.8fr)_minmax(12rem,2fr)_5rem_5rem]"><span className="flex min-w-0 items-center gap-2"><StatusMark state={state} /><span className="min-w-0"><strong className="block truncate text-sm">{entry.name}</strong><span className="block truncate text-xs text-muted-foreground">{entry.description}</span></span></span><span className={`text-right text-xs lg:text-left ${state === "outage" ? "text-negative" : "text-muted-foreground"}`}>{state === "outage" ? "Down" : state === "operational" ? "Operational" : status?.status ?? "No data"}</span><span className="col-span-2 lg:col-span-1"><UptimeBar status={status} generatedAt={generatedAt} summary={uptime} /></span><span className="hidden text-right text-xs tabular-nums lg:block">{uptime.percentage === null ? "—" : `${uptime.percentage.toFixed(2)}%`}</span><span className="hidden text-right text-xs tabular-nums text-muted-foreground lg:block">{status?.latencyMs == null ? "—" : `${status.latencyMs} ms`}</span></summary><div className="grid gap-3 border-t bg-muted/20 px-4 py-3 text-xs sm:grid-cols-2"><div><p><StatusDetails status={status} /></p><p className="mt-1 text-muted-foreground">{uptime.firstObservedDay ? `Observed since ${uptime.firstObservedDay} across ${uptime.totalChecks} checks` : "No checks recorded"}</p><DowntimeHistory status={status} generatedAt={generatedAt} /></div><div><p className="text-muted-foreground">Links</p><div className="service-links">{links.length ? links.map((link) => <ServiceLink key={link.id} href={link.destination} label={link.label} restricted={link.access === "restricted"} publicOrigin={publicOrigin} />) : <span>No links published</span>}</div></div></div></details></li>;
 }
 
 function ServiceLink({ href, label, restricted, publicOrigin }: { href: string; label: string; restricted: boolean; publicOrigin: string }) {

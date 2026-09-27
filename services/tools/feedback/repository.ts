@@ -31,6 +31,7 @@ export interface FeedbackRepository {
   createSubmission(form: FeedbackForm, answers: Readonly<Record<string, string>>, questionSnapshot?: readonly FeedbackQuestion[], shareDays?: FeedbackShareDays): Promise<CreatedFeedbackSubmission>;
   getSharedResponse(token: string): Promise<SharedFeedbackResponse | undefined>;
   listSubmissions(formId: string): Promise<readonly FeedbackSubmission[]>;
+  listRecentSubmissions(limit: number): Promise<readonly FeedbackSubmission[]>;
   getSubmission(id: string): Promise<FeedbackSubmission | undefined>;
   updateSubmission(id: string, input: { reviewState: FeedbackReviewState; followUpState: FeedbackFollowUpState }): Promise<FeedbackSubmission | undefined>;
   deleteSubmission(id: string): Promise<boolean>;
@@ -103,6 +104,11 @@ export function feedbackRepository(sql: Sql, key: Buffer): FeedbackRepository {
     async listSubmissions(formId) {
       const rows = await sql<SubmissionRow[]>`select s.id, s.form_id, f.title as form_title, s.question_snapshot, s.answers, s.submitted_at, s.review_state, s.follow_up_state
         from tools.feedback_submissions s join tools.feedback_forms f on f.id = s.form_id where s.form_id = ${formId} order by s.submitted_at desc`;
+      return rows.map((row) => submissionFromRow(row, encryption));
+    },
+    async listRecentSubmissions(limit) {
+      const rows = await sql<SubmissionRow[]>`select s.id, s.form_id, f.title as form_title, s.question_snapshot, s.answers, s.submitted_at, s.review_state, s.follow_up_state
+        from tools.feedback_submissions s join tools.feedback_forms f on f.id = s.form_id order by s.submitted_at desc limit ${Math.max(1, Math.min(200, limit))}`;
       return rows.map((row) => submissionFromRow(row, encryption));
     },
     async getSubmission(id) {

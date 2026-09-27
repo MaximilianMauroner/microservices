@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { PublishPage, UploadResultsList, capabilityUrlText } from "../publisher/ui/publish-page.js";
+import { ReceiveFilesPage } from "../publisher/ui/upload-link-manager.js";
 import type { UploadSummary } from "../src/protected-data.js";
 
 const uploads: UploadSummary[] = [
@@ -34,8 +35,11 @@ describe("Publisher upload page", () => {
     expect(html).toContain('multiple=""');
     expect(html).toContain("Drop files here");
     expect(html).toContain("Choose files");
-    expect(html).toContain("Guest upload links");
-    expect(html).toContain("Create upload link");
+    expect(html).toContain("HTML project");
+    expect(html).toContain("File expiry");
+    const receive = renderToStaticMarkup(<ReceiveFilesPage />);
+    expect(receive).toContain("Receive files");
+    expect(receive).toContain("Create link");
   });
 
   it("renders every uploaded file and one copy-all action", () => {

@@ -1,17 +1,20 @@
 import { AppShell } from "./app-shell.js";
-import { Card, CardContent, CardHeader } from "./ui/card.js";
+import { PageHeader } from "./page-header.js";
 
 /** Shared, motion-free fallback shown only while a TanStack route loader is pending. */
 export function RoutePendingPage() {
-  return <><AppShell product="Tools" /><main id="main" className="app-page space-y-4" aria-busy="true">
-    <header className="app-heading mb-0"><div><p className="eyebrow">Mauroner Tools</p><h1>Loading page</h1><p>Preparing the latest data.</p></div></header>
-    <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Loading summary">
-      {Array.from({ length: 4 }, (_, index) => <Card key={index}><CardContent className="space-y-3 p-4"><Block className="h-3 w-24" /><Block className="h-7 w-32" /><Block className="h-3 w-20" /></CardContent></Card>)}
-    </section>
-    <section className="grid gap-3 lg:grid-cols-[minmax(0,1.7fr)_minmax(18rem,.7fr)]" aria-label="Loading content">
-      <Card><CardHeader className="border-b"><Block className="h-4 w-40" /><Block className="h-3 w-64 max-w-full" /></CardHeader><CardContent className="pt-5"><Block className="h-[19rem] w-full" /></CardContent></Card>
-      <Card><CardHeader className="border-b"><Block className="h-4 w-40" /><Block className="h-3 w-48 max-w-full" /></CardHeader><CardContent className="space-y-3 pt-5">{Array.from({ length: 5 }, (_, index) => <Block key={index} className="h-10 w-full" />)}</CardContent></Card>
-    </section>
+  return <><AppShell product="Tools" /><main id="main" className="tools-page" aria-busy="true">
+    <PageHeader title="Loading page" facts="Preparing the latest data." />
+    <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_19.5rem]" aria-label="Loading content">
+      <section className="space-y-3 rounded-xl bg-card p-4 ring-1 ring-[color:var(--surface-border)]">
+        <Block className="h-4 w-40" />
+        {Array.from({ length: 6 }, (_, index) => <Block key={index} className="h-9 w-full" />)}
+      </section>
+      <section className="space-y-3 rounded-xl bg-card p-4 ring-1 ring-[color:var(--surface-border)]">
+        <Block className="h-4 w-32" />
+        <Block className="h-24 w-full" />
+      </section>
+    </div>
   </main></>;
 }
 

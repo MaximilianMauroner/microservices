@@ -1,7 +1,8 @@
 "use client";
 
 import { Link, useBlocker, useNavigate, useRouter } from "@tanstack/react-router";
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { Check, Trash2 } from "lucide-react";
 import { AppShell } from "../src/components/app-shell.js";
 import { favicons } from "../src/favicons.js";
 import { feedbackChoiceDetailsKey, localizeFeedbackForm, type FeedbackForm, type FeedbackFollowUpState, type FeedbackLanguage, type FeedbackQuestion, type FeedbackReviewState, type FeedbackSubmission } from "./domain.js";
@@ -23,6 +24,9 @@ import { feedbackSchemaJson, feedbackSchemaPrompt, parseFeedbackSchemaJson } fro
 import { copyFeedbackText } from "./clipboard.js";
 import { FeedbackQuestionEditor } from "./question-editor.js";
 import { formatDateTime } from "../src/lib/format-date.js";
+import { PageHeader } from "../src/components/page-header.js";
+import { toggleVisibleAll, toggleVisibleRange } from "../src/lib/range-selection.js";
+import { Button } from "../src/components/ui/button.js";
 
 const button = buttonVariants({ variant: "outline", size: "lg" });
 const primaryButton = buttonVariants({ size: "lg" });
@@ -30,46 +34,107 @@ const dangerButton = buttonVariants({ variant: "destructive-outline", size: "lg"
 const tab = (active: boolean) => buttonVariants({ variant: active ? "secondary" : "ghost", size: "lg" });
 const input = "w-full rounded-lg border border-input bg-transparent px-3 py-2.5 text-sm outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-field";
 const card = "rounded-2xl border bg-card/80 shadow-[0_20px_60px_rgba(0,0,0,0.22)]";
+function editableTarget(target: EventTarget | null) { return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement || (target instanceof HTMLElement && target.isContentEditable); }
+
+export function FeedbackInbox({ forms, submissions }: { forms: readonly FeedbackForm[]; submissions: readonly FeedbackSubmission[] }) {
+  const router = useRouter();
+  const [responses, setResponses] = useState(submissions);
+  const [filter, setFilter] = useState<"unread" | "follow-up" | "all" | "archived">("unread");
+  const [formId, setFormId] = useState("");
+  const [activeId, setActiveId] = useState<string | undefined>(submissions.find((submission) => submission.reviewState === "unread")?.id ?? submissions[0]?.id);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [anchor, setAnchor] = useState<string>();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  const [reading, setReading] = useState(false);
+  const unread = forms.reduce((sum, form) => sum + form.unreadCount, 0);
+  const followUp = responses.filter((submission) => submission.followUpState === "wanted" && submission.reviewState !== "archived").length;
+  const visible = responses.filter((submission) => (!formId || submission.formId === formId) && (filter === "all" ? submission.reviewState !== "archived" : filter === "unread" ? submission.reviewState === "unread" : filter === "follow-up" ? submission.followUpState === "wanted" && submission.reviewState !== "archived" : submission.reviewState === "archived"));
+  const active = visible.find((submission) => submission.id === activeId) ?? visible[0];
+  useEffect(() => setResponses(submissions), [submissions]);
+  useEffect(() => { setSelectedIds(new Set()); setAnchor(undefined); }, [filter, formId]);
+  useEffect(() => { const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Delete" && selectedIds.size && !editableTarget(event.target)) { event.preventDefault(); void removeSelected(); } }; window.addEventListener("keydown", onKeyDown); return () => window.removeEventListener("keydown", onKeyDown); }, [selectedIds, responses, filter, formId]);
+  function toggle(id: string, shiftKey: boolean) {
+    setSelectedIds((current) => toggleVisibleRange(current, visible.map((submission) => submission.id), anchor, id, shiftKey));
+    if (!shiftKey) setAnchor(id);
+  }
+  async function update(submission: FeedbackSubmission, reviewState: FeedbackReviewState, followUpState: FeedbackFollowUpState) {
+    setBusy(true); setError(undefined);
+    try {
+      await updateFeedbackSubmission({ data: { submissionId: submission.id, reviewState, followUpState } });
+      setResponses((current) => current.map((item) => item.id === submission.id ? { ...item, reviewState, followUpState } : item));
+      void router.invalidate();
+    } catch (caught) { setError(message(caught)); }
+    finally { setBusy(false); }
+  }
+  async function removeSelected() {
+    const ids = visible.filter((submission) => selectedIds.has(submission.id));
+    if (!ids.length || !window.confirm(`Delete ${ids.length} ${ids.length === 1 ? "response" : "responses"} permanently? This cannot be undone.`)) return;
+    setBusy(true); setError(undefined);
+    const deleted: string[] = [];
+    try {
+      for (const submission of ids) { await deleteFeedbackSubmission({ data: { submissionId: submission.id } }); deleted.push(submission.id); }
+      void router.invalidate();
+    } catch (caught) { setError(`${deleted.length} deleted. ${message(caught)}`); }
+    finally { setResponses((current) => current.filter((item) => !deleted.includes(item.id))); setSelectedIds(new Set()); setBusy(false); }
+  }
+  return <>
+    <AppShell product="Feedback" icon={favicons.feedback} accent="rose" />
+    <main id="main" className="tools-page">
+      <PageHeader title="Responses" facts={`${unread} unread in ${forms.filter((form) => form.unreadCount > 0).length} ${forms.filter((form) => form.unreadCount > 0).length === 1 ? "form" : "forms"}`} actions={<NativeSelect className="w-44" aria-label="Form" value={formId} onChange={(event) => setFormId(event.target.value)}><option value="">All forms</option>{forms.map((form) => <option key={form.id} value={form.id}>{form.title || "Untitled form"}</option>)}</NativeSelect>} />
+      <div className="mb-3 flex flex-wrap items-center gap-1.5" role="group" aria-label="Response filters">{([["unread", `Unread ${unread}`], ["follow-up", `Follow-up ${followUp}`], ["all", "All"], ["archived", "Archived"]] as const).map(([value, label]) => <button key={value} type="button" aria-pressed={filter === value} onClick={() => { setFilter(value); setReading(false); }} className={`rounded-full border px-3 py-1.5 text-xs ${filter === value ? "border-primary bg-primary/10 text-foreground" : "text-muted-foreground hover:bg-accent"}`}>{label}</button>)}{visible.length ? <button type="button" className="ml-auto rounded-full border px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent" onClick={() => setSelectedIds((current) => toggleVisibleAll(current, visible.map((submission) => submission.id)))}>{visible.every((submission) => selectedIds.has(submission.id)) ? "Clear visible" : "Select visible"}</button> : null}</div>
+      {error ? <p className="mb-3 text-sm text-destructive" role="alert">{error}</p> : null}
+      {selectedIds.size ? <div className="mb-2 flex items-center gap-2 rounded-lg border bg-card px-3 py-2 text-sm"><strong>{selectedIds.size} selected</strong><Button size="sm" variant="destructive-subtle" disabled={busy} onClick={() => void removeSelected()}><Trash2 />Delete selected…</Button><Button size="sm" variant="ghost" onClick={() => setSelectedIds(new Set())}>Clear</Button></div> : null}
+      <section className="grid min-h-[27rem] overflow-hidden rounded-xl border bg-card lg:grid-cols-[minmax(16rem,22rem)_minmax(0,1fr)]" aria-label="Response inbox">
+        <div className={`max-h-[70vh] overflow-y-auto border-r ${reading ? "hidden lg:block" : "block"}`}>{visible.length ? visible.map((submission) => <div key={submission.id} className={`flex items-start gap-2 border-b px-3 py-3 ${active?.id === submission.id ? "bg-accent" : ""}`}><input type="checkbox" className="mt-1 size-4 accent-primary" aria-label={`Select response from ${submission.answers.identity || "Anonymous"}`} checked={selectedIds.has(submission.id)} readOnly onClick={(event) => toggle(submission.id, event.shiftKey)} /><button type="button" className="min-w-0 flex-1 text-left" aria-current={active?.id === submission.id ? "true" : undefined} onClick={(event) => { if (event.shiftKey || event.ctrlKey || event.metaKey) toggle(submission.id, event.shiftKey); else { setActiveId(submission.id); setReading(true); } }}><span className="flex items-center justify-between gap-2"><strong className="truncate text-sm">{submission.answers.identity || "Anonymous"}{submission.followUpState === "wanted" ? " ⚑" : ""}</strong><time className="shrink-0 text-xs text-muted-foreground">{formatDateTime(submission.submittedAt)}</time></span><span className="mt-1 block truncate text-xs text-muted-foreground">{submission.formTitle} · {submission.answers.comfort || "Response"}</span></button>{submission.reviewState === "unread" ? <span className="mt-1 size-2 shrink-0 rounded-full bg-primary" aria-label="Unread" /> : null}</div>) : <p className="p-5 text-sm text-muted-foreground">No responses in this view.</p>}</div>
+        <div className={`${reading ? "block" : "hidden lg:block"} min-w-0 p-4`}>{reading ? <div className="mb-3 flex items-center justify-between gap-2 lg:hidden"><Button variant="ghost" size="sm" onClick={() => setReading(false)}>← Responses</Button></div> : null}{active ? <><div className="flex flex-wrap items-start justify-between gap-2"><div><h2 className="text-base font-semibold">{active.answers.identity || "Anonymous response"}</h2><p className="text-xs text-muted-foreground">{active.formTitle} · {formatDateTime(active.submittedAt)}</p></div><span className="rounded-full border px-2 py-1 text-xs capitalize text-muted-foreground">{active.reviewState}</span></div><div className="mt-4 grid gap-3">{active.questionSnapshot.map((question) => <div key={question.id} className="border-b pb-3"><h3 className="text-xs text-muted-foreground">{question.prompt}</h3><p className="mt-1 whitespace-pre-wrap text-sm">{displayAnswer(question, active.answers[question.id]) || <span className="text-muted-foreground">No answer</span>}</p>{question.kind === "choice" && active.answers[feedbackChoiceDetailsKey(question.id)] ? <p className="mt-1 whitespace-pre-wrap text-xs text-muted-foreground">{active.answers[feedbackChoiceDetailsKey(question.id)]}</p> : null}</div>)}</div><div className="mt-4 flex flex-wrap gap-2"><Button size="sm" variant="outline" disabled={busy} onClick={() => void update(active, "reviewed", active.followUpState)}><Check />Mark reviewed</Button><Button size="sm" variant="outline" disabled={busy} onClick={() => void update(active, active.reviewState, active.followUpState === "done" ? "wanted" : "done")}>{active.followUpState === "done" ? "Reopen follow-up" : "Follow-up done"}</Button><Button size="sm" variant="ghost" disabled={busy} onClick={() => void update(active, active.reviewState === "archived" ? "reviewed" : "archived", active.followUpState)}>{active.reviewState === "archived" ? "Unarchive" : "Archive"}</Button></div></> : <p className="text-sm text-muted-foreground">Select a response to read it.</p>}</div>
+      </section>
+      <p className="mt-2 text-xs text-muted-foreground">Showing the 200 most recent responses. Responses remain encrypted at rest.</p>
+    </main>
+  </>;
+}
 
 export function FeedbackHome({ forms }: { forms: readonly FeedbackForm[] }) {
   const router = useRouter();
   const navigate = useNavigate();
-  const [language, setLanguage] = useState<FeedbackLanguage | "">("");
+  const [items, setItems] = useState(forms);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
-  async function create(event: FormEvent) {
-    event.preventDefault(); setBusy(true); setError(undefined);
+  const [newMenuOpen, setNewMenuOpen] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [anchor, setAnchor] = useState<string>();
+  useEffect(() => setItems(forms), [forms]);
+  useEffect(() => { const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Delete" && selectedIds.size && !editableTarget(event.target)) { event.preventDefault(); void removeSelected(); } }; window.addEventListener("keydown", onKeyDown); return () => window.removeEventListener("keydown", onKeyDown); }, [selectedIds, items]);
+  async function create(language: FeedbackLanguage) {
+    setBusy(true); setError(undefined);
     try {
-      if (!language) throw new Error("Choose German or English.");
       const form = await createFeedbackForm({ data: { language } });
       await navigate({ to: "/feedback/forms/$formId", params: { formId: form.id } });
     } catch (caught) { setError(message(caught)); } finally { setBusy(false); }
   }
+  function toggle(id: string, shiftKey: boolean) {
+    setSelectedIds((current) => toggleVisibleRange(current, items.map((form) => form.id), anchor, id, shiftKey));
+    if (!shiftKey) setAnchor(id);
+  }
+  async function removeSelected() {
+    const selected = items.filter((form) => selectedIds.has(form.id));
+    const responses = selected.reduce((sum, form) => sum + form.responseCount, 0);
+    if (!selected.length || !window.confirm(`Delete ${selected.length} ${selected.length === 1 ? "form" : "forms"} and ${responses} responses permanently? This cannot be undone.`)) return;
+    setBusy(true); setError(undefined);
+    const deleted: string[] = [];
+    try {
+      for (const form of selected) { await deleteFeedbackForm({ data: { formId: form.id } }); deleted.push(form.id); }
+      void router.invalidate();
+    } catch (caught) { setError(`${deleted.length} deleted. ${message(caught)}`); }
+    finally { setItems((current) => current.filter((form) => !deleted.includes(form.id))); setSelectedIds(new Set()); setBusy(false); }
+  }
   return <>
     <AppShell product="Feedback" icon={favicons.feedback} accent="rose" />
-    <main id="main" className="mx-auto w-[min(1120px,calc(100%_-_2rem))] pb-20 pt-10">
-      <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_22rem]">
-        <section>
-          <p className="font-mono text-xs uppercase tracking-[0.18em] text-primary">Private inbox</p>
-          <h1 className="mt-3 text-3xl font-semibold tracking-tight">Feedback forms</h1>
-          <p className="mt-3 max-w-2xl text-muted-foreground">Create an unlisted feedback link and read responses after signing in.</p>
-          <div className="mt-8 grid gap-3">
-            {forms.length ? forms.map((form) => <Link key={form.id} to="/feedback/forms/$formId" params={{ formId: form.id }} preload="intent" className="group rounded-2xl border bg-gradient-to-b from-card to-background/60 p-5 transition-colors hover:border-primary/35 hover:bg-accent">
-              <div className="flex items-start justify-between gap-4"><div><h2 className="font-semibold group-hover:text-primary">{form.title || `Untitled ${form.language === "de" ? "German" : "English"} form`}</h2><p className="mt-1 text-sm text-muted-foreground"><span className="capitalize">{form.language === "de" ? "German" : "English"}</span> · {form.responseCount} responses · {form.unreadCount} unread</p></div><span className="rounded-full border px-2.5 py-1 text-xs capitalize text-muted-foreground">{form.status}</span></div>
-            </Link>) : <div className="rounded-2xl border border-dashed p-8 text-center"><p className="font-medium">No forms yet</p><p className="mt-1 text-sm text-muted-foreground">Choose a language and create the first empty draft.</p></div>}
-          </div>
-        </section>
-        <aside className={`${card} p-5 lg:self-start`}>
-          <h2 className="font-semibold">Create an empty form</h2><p className="mt-1 text-sm text-muted-foreground">Choose its only language. You will add the content next.</p>
-          <form className="mt-5 grid gap-4" onSubmit={create}>
-            <div className="grid grid-cols-2 gap-2" role="group" aria-label="Form language">
-              {([['de', '🇩🇪', 'German'], ['en', '🇬🇧', 'English']] as const).map(([value, flag, label]) => <button key={value} className={`relative rounded-xl border px-3 py-4 text-center transition-colors ${language === value ? "border-primary bg-primary/10 text-primary" : "bg-background hover:bg-accent"}`} type="button" aria-pressed={language === value} onClick={() => setLanguage(value)}>{language === value ? <span className="absolute right-2 top-2 grid size-5 place-items-center rounded-full bg-primary text-xs font-black text-primary-foreground">✓</span> : null}<span className="block text-2xl" aria-hidden="true">{flag}</span><span className="mt-2 block text-sm font-semibold">{label}</span></button>)}
-            </div>
-            {error ? <p className="text-sm text-destructive">{error}</p> : null}<button className={cn(primaryButton, "w-full")} disabled={busy || !language}>{busy ? "Creating..." : "Create empty form"}</button>
-          </form>
-          <p className="mt-3 text-xs text-muted-foreground">No default title, introduction, or questions.</p>
-        </aside>
-      </div>
+    <main id="main" className="tools-page">
+      <PageHeader title="Forms" facts={`${items.filter((form) => form.status === "active").length} active forms`} actions={<div className="relative"><Button size="sm" aria-expanded={newMenuOpen} onClick={() => setNewMenuOpen((current) => !current)}>New form</Button>{newMenuOpen ? <div className="absolute right-0 z-20 mt-1 min-w-40 rounded-lg border bg-popover p-1 shadow-lg"><button type="button" className="block w-full rounded px-3 py-2 text-left text-sm hover:bg-accent" disabled={busy} onClick={() => void create("en")}>English form</button><button type="button" className="block w-full rounded px-3 py-2 text-left text-sm hover:bg-accent" disabled={busy} onClick={() => void create("de")}>German form</button></div> : null}</div>} />
+      {error ? <p className="mb-3 text-sm text-destructive" role="alert">{error}</p> : null}
+      {selectedIds.size ? <div className="mb-2 flex items-center gap-2 rounded-lg border bg-card px-3 py-2 text-sm"><strong>{selectedIds.size} selected</strong><Button size="sm" variant="destructive-subtle" disabled={busy} onClick={() => void removeSelected()}><Trash2 />Delete selected…</Button><Button size="sm" variant="ghost" onClick={() => setSelectedIds(new Set())}>Clear</Button></div> : null}
+      <section className="overflow-x-auto rounded-xl border bg-card" aria-label="Feedback forms"><table className="a3-select-table w-full text-sm"><thead className="border-b text-left text-xs text-muted-foreground"><tr><th className="w-10 px-3 py-2"><input type="checkbox" className="size-4 accent-primary" aria-label="Select all forms" checked={items.length > 0 && items.every((form) => selectedIds.has(form.id))} readOnly onClick={() => setSelectedIds((current) => toggleVisibleAll(current, items.map((form) => form.id)))} /></th><th className="px-3 py-2">Form</th><th className="px-3 py-2">Status</th><th className="hidden px-3 py-2 text-right sm:table-cell">Responses</th><th className="hidden px-3 py-2 text-right sm:table-cell">Unread</th><th className="hidden px-3 py-2 lg:table-cell">Updated</th></tr></thead><tbody className="divide-y">{items.map((form) => <tr key={form.id}><td className="px-3 py-2"><input type="checkbox" className="size-4 accent-primary" aria-label={`Select ${form.title || "Untitled form"}`} checked={selectedIds.has(form.id)} readOnly onClick={(event) => toggle(form.id, event.shiftKey)} /></td><td className="min-w-40 px-3 py-2"><Link to="/feedback/forms/$formId" params={{ formId: form.id }} preload="intent" className="block font-medium hover:text-primary">{form.title || `Untitled ${form.language === "de" ? "German" : "English"} form`}</Link><span className="text-xs text-muted-foreground">{form.language === "de" ? "German" : "English"} · {form.questions.length} questions<span className="sm:hidden"> · {form.responseCount} responses</span></span></td><td className="px-3 py-2"><span className="rounded-full border px-2 py-1 text-xs capitalize">{form.status}</span></td><td className="hidden px-3 py-2 text-right tabular-nums sm:table-cell">{form.responseCount}</td><td className="hidden px-3 py-2 text-right tabular-nums sm:table-cell">{form.unreadCount}</td><td className="hidden px-3 py-2 text-xs text-muted-foreground lg:table-cell">{formatDateTime(form.updatedAt)}</td></tr>)}</tbody></table>{items.length === 0 ? <p className="p-8 text-center text-sm text-muted-foreground">No forms yet. Create an English or German form to begin.</p> : null}</section>
     </main>
   </>;
 }
@@ -80,7 +145,7 @@ export function FeedbackFormPage({ form, submissions, publicOrigin }: { form: Fe
   const [questions, setQuestions] = useState<readonly FeedbackQuestion[]>(form.questions);
   const [schemaText, setSchemaText] = useState("");
   const [schemaNotice, setSchemaNotice] = useState<string>();
-  const [activePanel, setActivePanel] = useState<"responses" | "edit">("responses");
+  const [activePanel, setActivePanel] = useState<"responses" | "edit">("edit");
   const [mobileToolsOpen, setMobileToolsOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const allowLeave = useRef(false);
@@ -110,9 +175,9 @@ export function FeedbackFormPage({ form, submissions, publicOrigin }: { form: Fe
   async function remove() { if (!window.confirm(`Delete ${form.title} and all ${form.responseCount} responses permanently?`)) return; await run(async () => { await deleteFeedbackForm({ data: { formId: form.id } }); allowLeave.current = true; try { await navigate({ to: "/feedback" }); } catch (error) { allowLeave.current = false; throw error; } }); }
   return <>
     <AppShell product="Feedback" icon={favicons.feedback} accent="rose" />
-    <main id="main" className="mx-auto w-[min(1120px,calc(100%_-_2rem))] pb-20 pt-8">
-      <Link to="/feedback" className="text-sm text-muted-foreground hover:text-foreground">Back to forms</Link>
-      <div className="mt-5 flex flex-wrap items-start justify-between gap-4"><div><p className="font-mono text-xs uppercase tracking-[0.18em] text-primary">{language === "de" ? "German" : "English"} {form.status === "draft" ? "draft" : "form"}</p><h1 className="mt-2 text-3xl font-semibold tracking-tight">{form.title || "Untitled form"}</h1><p className="mt-2 text-sm text-muted-foreground">{form.responseCount} responses · {form.unreadCount} unread</p></div><span className="rounded-full border px-3 py-1 text-sm capitalize text-muted-foreground">{form.status}</span></div>
+    <main id="main" className="tools-page">
+      <PageHeader parent={{ label: "Forms", to: "/feedback/forms" }} title={<>{form.title || "Untitled form"} <span className="rounded-full border px-2 py-0.5 text-xs font-medium capitalize text-muted-foreground">{form.status}</span></>} facts={`${form.responseCount} responses · ${form.unreadCount} unread · ${language === "de" ? "German" : "English"}`} actions={<><Button nativeButton={false} variant="outline" size="sm" render={<Link to="/feedback" preload="intent" />}>Responses</Button><Button variant="ghost" size="sm" onClick={() => setPreviewOpen(true)}>Preview</Button></>} />
+      <div className="mb-3 flex min-w-0 items-center gap-2 rounded-lg border bg-card px-3 py-2 text-xs"><span className="shrink-0 font-medium">Public link</span><code className="min-w-0 flex-1 truncate text-muted-foreground">{publicUrl}</code><Button size="sm" onClick={() => void copyFeedbackText(publicUrl, "Link copied")}>Copy</Button></div>
       <div className="mt-6 flex gap-2" role="tablist" aria-label="Feedback form sections"><button type="button" role="tab" aria-selected={activePanel === "responses"} aria-controls="feedback-responses" className={tab(activePanel === "responses")} onClick={() => setActivePanel("responses")}>Responses ({submissions.length})</button><button type="button" role="tab" aria-selected={activePanel === "edit"} aria-controls="feedback-form-editor" className={tab(activePanel === "edit")} onClick={() => setActivePanel("edit")}>Edit form{unsaved ? " · Unsaved" : ""}</button></div>
       <section className={`mt-5 ${activePanel === "responses" ? "lg:hidden" : "hidden"}`} aria-label="Feedback overview">
         <div className="grid grid-cols-[1.2fr_1fr] gap-2"><button className={primaryButton} type="button" onClick={() => setPreviewOpen(true)}>Preview form</button><button className={button} type="button" onClick={() => void copyFeedbackText(publicUrl, "Link copied")}>Copy link</button></div>
@@ -121,9 +186,9 @@ export function FeedbackFormPage({ form, submissions, publicOrigin }: { form: Fe
         <div className="mt-2 grid gap-2">{submissions.length ? submissions.slice(0, 3).map((submission) => <SubmissionLink key={submission.id} submission={submission} />) : <p className="rounded-xl border border-dashed p-5 text-sm text-muted-foreground">No responses yet.</p>}</div>
         {submissions.length > 3 ? <details className="mt-2 rounded-xl border bg-card/50"><summary className="cursor-pointer px-4 py-3 text-center text-sm font-semibold">View all {submissions.length} responses</summary><div className="grid gap-2 border-t p-2">{submissions.slice(3).map((submission) => <SubmissionLink key={submission.id} submission={submission} />)}</div></details> : null}
       </section>
-      <div className="mt-7 grid gap-5 lg:grid-cols-[minmax(0,1fr)_23rem]">
+      <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_23rem]">
         <div className="grid gap-6 self-start">
-          <form id="feedback-form-editor" className={`${card} ${activePanel === "edit" ? "block" : "hidden"} p-5 sm:p-6`} onSubmit={save}>
+          <form id="feedback-form-editor" className={`rounded-xl border bg-card ${activePanel === "edit" ? "block" : "hidden"} p-4 sm:p-5`} onSubmit={save}>
             <h2 className="font-semibold">Form text</h2><p className="mt-1 text-sm text-muted-foreground">This content is shown in one language only.</p>
             <div className="mt-5 grid gap-4 sm:grid-cols-2"><label className="grid gap-1.5 text-sm font-medium">Language<NativeSelect className="w-full" value={language} onChange={(event) => setLanguage(event.target.value as FeedbackLanguage)}><option value="de">German</option><option value="en">English</option></NativeSelect></label><label className="grid gap-1.5 text-sm font-medium">Title<input className={input} maxLength={120} placeholder="Enter a title" value={title} onChange={(event) => setTitle(event.target.value)} /></label></div>
             <label className="mt-4 grid gap-1.5 text-sm font-medium">Introduction<textarea className={`${input} min-h-28`} maxLength={2000} placeholder="Explain what this feedback is for" value={introduction} onChange={(event) => setIntroduction(event.target.value)} /></label>
@@ -134,6 +199,7 @@ export function FeedbackFormPage({ form, submissions, publicOrigin }: { form: Fe
           <section id="feedback-responses" className={activePanel === "responses" ? "hidden lg:block" : "hidden"}><h2 className="text-lg font-semibold">Responses</h2><div className="mt-3 grid gap-2">{submissions.length ? submissions.map((submission) => <SubmissionLink key={submission.id} submission={submission} />) : <p className="rounded-xl border border-dashed p-5 text-sm text-muted-foreground">No responses yet.</p>}</div></section>
         </div>
         <aside className="grid gap-4 self-start">
+          <section className="hidden rounded-xl border bg-card p-4 lg:block" aria-label="Live preview"><div className="flex items-center justify-between gap-2"><h2 className="text-sm font-semibold">Preview</h2><span className="text-xs text-muted-foreground">What people see</span></div><div className="mx-auto mt-3 max-w-xs rounded-[1.5rem] border bg-background p-4"><h3 className="text-sm font-semibold">{title || "Untitled form"}</h3><p className="mt-2 line-clamp-3 text-xs text-muted-foreground">{introduction || "Add an introduction to explain this form."}</p>{questions.filter((question) => question.id !== "identity").slice(0, 2).map((question) => <div key={question.id} className="mt-4 border-t pt-3"><strong className="text-xs">{question.prompt || "Untitled question"}</strong><div className="mt-2 text-xs text-muted-foreground">{question.kind === "choice" ? question.options?.slice(0, 3).map((option) => <div key={option} className="mt-1 rounded border px-2 py-1">○ {option}</div>) : <div className="h-9 rounded border" />}</div></div>)}<div className="mt-4 rounded-md bg-primary px-3 py-2 text-center text-xs text-primary-foreground">Send feedback</div></div></section>
           <button className="rounded-2xl border bg-card/80 p-5 text-left font-semibold lg:hidden" type="button" aria-expanded={mobileToolsOpen} aria-controls="feedback-more-tools" onClick={() => setMobileToolsOpen((open) => !open)}>More tools <span className="mt-1 block text-xs font-normal text-muted-foreground">Link settings, schema, export, and deletion</span></button>
           <div id="feedback-more-tools" className={`${mobileToolsOpen ? "grid" : "hidden"} gap-4 lg:grid`}>
           <details className="rounded-2xl border border-emerald-500/25 bg-emerald-500/[0.05] p-5" open><summary className="cursor-pointer font-semibold">Schema prompt <span className="ml-2 rounded-full border border-emerald-500/25 px-2 py-0.5 text-xs font-medium text-positive">Version 2</span></summary><p className="mt-3 text-sm text-muted-foreground">The prompt collects the form topic, audience, goals, constraints, language, and tone before generating it.</p><div className="mt-3 rounded-xl border border-emerald-500/20 bg-background/70 p-3 font-mono text-xs leading-5 text-positive">Ask before writing JSON:<br />language · topic · audience · goals · constraints · tone</div><div className="mt-3 grid grid-cols-2 gap-2"><button className={button} type="button" onClick={() => copySchema("json")}>Copy JSON</button><button className={primaryButton} type="button" onClick={() => copySchema("prompt")}>Copy prompt</button></div><textarea className={`${input} mt-3 min-h-48 font-mono text-xs`} placeholder="Paste Feedback schema JSON here" value={schemaText} onChange={(event) => setSchemaText(event.target.value)} /><button className={cn(button, "mt-2 w-full")} type="button" disabled={!schemaText.trim()} onClick={applySchema}>Apply pasted JSON</button>{schemaNotice ? <p className="mt-2 text-xs text-muted-foreground" role="status">{schemaNotice}</p> : null}</details>

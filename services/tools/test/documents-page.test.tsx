@@ -11,10 +11,12 @@ const documents = [
 describe("DocumentsPage", () => {
   it("renders the task-focused inventory with shadcn table semantics", () => {
     const html = renderToStaticMarkup(<DocumentsPage initial={{ actor: "operator@example.test", publicOrigin: "https://markdown.example.test", generatedAt: now, documents, truncated: false }} />);
-    expect(html).toContain("Manage active documents");
+    expect(html).toContain(">Documents</h1>");
     expect(html).toContain('data-slot="table"');
     expect(html).toContain("recent.md");
     expect(html).toContain("New document");
+    expect(html).toContain('aria-label="Select all visible documents"');
+    expect(html).toContain("Expires within 24 h");
     expect(html).toContain('href="https://markdown.example.test/markdown"');
     expect(html).toContain('href="https://markdown.example.test/markdown/d/recent.md--aaaaaaaaaaaaaaaaaaaaaaaa"');
     expect(html).toContain('data-suite-accent="rose"');

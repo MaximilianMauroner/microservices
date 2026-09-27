@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { Link } from "@tanstack/react-router";
 import {
@@ -33,6 +33,7 @@ import { Button } from "../../src/components/ui/button.js";
 import { Card } from "../../src/components/ui/card.js";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../../src/components/ui/dialog.js";
 import { Input } from "../../src/components/ui/input.js";
+import { NativeSelect } from "../../src/components/ui/native-select.js";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "../../src/components/ui/sheet.js";
 import { useIsMobile } from "../../src/components/ui/use-mobile.js";
 import { Switch } from "../../src/components/ui/switch.js";
@@ -47,7 +48,8 @@ import {
 import type { ManagePageData, UploadInventorySummary, UploadSummary } from "../../src/protected-data.js";
 import { fetchPublisherRead, waitForPublisher } from "./publisher-request.js";
 import { formatDateTime } from "../../src/lib/format-date.js";
-import { MetricCard } from "../../src/components/metric-card.js";
+import { PageHeader } from "../../src/components/page-header.js";
+import { toggleVisibleAll, toggleVisibleRange } from "../../src/lib/range-selection.js";
 
 type KindFilter = "all" | UploadSummary["kind"];
 type ExpiryFilter = "all" | "24h" | "7d" | "persistent";
@@ -65,7 +67,10 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
   const [uploads, setUploads] = useState(initial.uploads);
   const [nextCursor, setNextCursor] = useState(initial.nextCursor);
   const [summary, setSummary] = useState<UploadInventorySummary>(() => initial.summary ?? summarizeLoaded(initial.uploads));
-  const [selectedId, setSelectedId] = useState(initial.uploads[0]?.id);
+  const [selectedId, setSelectedId] = useState<string | undefined>(initial.uploads[0]?.id);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
+  const [selectionAnchor, setSelectionAnchor] = useState<string>();
   const [projectFilter, setProjectFilter] = useState(ALL_PROJECTS);
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState<KindFilter>("all");
@@ -86,6 +91,48 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
     [expiry, kind, projectFilter, query, sort, uploads]
   );
   const selected = visibleUploads.find((upload) => upload.id === selectedId);
+  useEffect(() => { setSelectedIds(new Set()); setSelectionAnchor(undefined); }, [projectFilter, query, kind, expiry, sort]);
+  useEffect(() => {
+    function onDelete(event: KeyboardEvent) {
+      const target = event.target;
+      if (event.key !== "Delete" || selectedIds.size === 0 || target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement || (target instanceof HTMLElement && target.isContentEditable)) return;
+      event.preventDefault();
+      setBulkConfirmOpen(true);
+    }
+    window.addEventListener("keydown", onDelete);
+    return () => window.removeEventListener("keydown", onDelete);
+  }, [selectedIds]);
+
+  function toggleSelection(id: string, shiftKey: boolean, additive = true) {
+    const ids = visibleUploads.map((upload) => upload.id);
+    setSelectedIds((current) => toggleVisibleRange(additive ? current : new Set(), ids, selectionAnchor, id, shiftKey));
+    if (!shiftKey) setSelectionAnchor(id);
+  }
+
+  async function revokeSelection() {
+    const ids = visibleUploads.filter((upload) => selectedIds.has(upload.id));
+    setBulkConfirmOpen(false);
+    if (!ids.length) return;
+    setBusy(true);
+    const revoked: string[] = [];
+    try {
+      await waitForPublisher();
+      for (const upload of ids) {
+        const response = await fetch(`/api/external-uploads/${upload.id}`, { method: "DELETE", credentials: "same-origin" });
+        if (!response.ok) await readPayload(response, `${upload.filename} could not be revoked.`);
+        revoked.push(upload.id);
+      }
+      setMessage({ text: `${revoked.length} capability ${revoked.length === 1 ? "URL was" : "URLs were"} revoked and can no longer be used.`, tone: "success" });
+    } catch (error) {
+      setMessage({ text: `${revoked.length} revoked. ${errorMessage(error)}`, tone: "error" });
+    } finally {
+      setUploads((current) => current.filter((upload) => !revoked.includes(upload.id)));
+      setSelectedIds(new Set());
+      setSelectedId((current) => revoked.includes(current ?? "") ? uploads.find((upload) => !revoked.includes(upload.id))?.id : current);
+      if (revoked.length) { try { await refreshSummary(); } catch { /* Keep the successful revocations visible. */ } }
+      setBusy(false);
+    }
+  }
 
   async function refresh(options: { announce?: boolean } = {}) {
     setBusy(true);
@@ -279,60 +326,49 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
     }
   }
 
-  async function copySelectedUrl() {
-    if (!selected) return;
+  async function copyUrl(upload: UploadSummary) {
     try {
-      await navigator.clipboard.writeText(selected.url);
+      await navigator.clipboard.writeText(upload.url);
       setMessage({ text: "Capability URL copied.", tone: "success" });
     } catch {
       setMessage({ text: "The URL could not be copied. Open the artifact to copy it manually.", tone: "error" });
     }
   }
+  async function copySelectedUrl() { if (selected) await copyUrl(selected); }
 
   return (
     <>
       <AppShell product="Publisher" accent="violet" icon={favicons.publisher} />
-      <main id="main" className="workspace-page workspace-page--wide">
-        <section className="workspace-header" aria-labelledby="manage-title">
-          <div>
-            <p className="workspace-header__eyebrow">Artifact lifecycle</p>
-            <h1 id="manage-title">Artifacts</h1>
-            <p className="workspace-header__description">Maintain every plan and file shared through Publish.</p>
-          </div>
-          <div className="workspace-header__actions">
+      <main id="main" className="tools-page">
+        <PageHeader title="Library" facts={`${summary.total} artifacts in ${summary.projects.length} projects`} actions={<>
             <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void refresh({ announce: true })}>
               <RefreshCw /> Refresh
             </Button>
             <Button nativeButton={false} size="sm" render={<Link to="/publisher" preload="intent" />}>
               <Upload /> Publish new
             </Button>
-          </div>
-        </section>
+          </>} />
 
         {message ? <Alert className="mb-4" variant={message.tone === "error" ? "destructive" : "default"}>{message.text}</Alert> : null}
 
-        <section className="mb-3 grid grid-cols-2 gap-2 lg:grid-cols-4" aria-label="Artifact summary">
-          <MetricCard label="Total artifacts" value={summary.total} />
-          <MetricCard label="Permanent" value={summary.permanent} />
-          <MetricCard label="Temporary" value={summary.temporary} />
-          <MetricCard label="Expiring soon" value={summary.expiringSoon} attention={summary.expiringSoon > 0} />
-        </section>
-
-        <section className="mb-3 flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between" aria-label="Artifact filters">
+        <section className="mb-3 flex flex-wrap items-center gap-2" aria-label="Artifact filters">
           <label className="relative block w-full lg:max-w-md">
             <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
             <Input className="pl-9" value={query} onChange={(event) => { setQuery(event.currentTarget.value); }} placeholder="Search artifacts, URLs, or projects" aria-label="Search artifacts" />
           </label>
-          <div className="grid grid-cols-3 gap-2 sm:flex">
-            <AppSelect value={kind} onValueChange={(value) => { setKind(value as KindFilter); }} aria-label="Filter by type" options={[{ value: "all", label: "All types" }, { value: "html", label: "Plans" }, { value: "file", label: "Files" }]} />
-            <AppSelect value={expiry} onValueChange={(value) => { setExpiry(value as ExpiryFilter); }} aria-label="Filter by expiry" options={[{ value: "all", label: "Any expiry" }, { value: "24h", label: "Next 24 hours" }, { value: "7d", label: "Next 7 days" }, { value: "persistent", label: "Permanent" }]} />
-            <AppSelect value={sort} onValueChange={(value) => { setSort(value as SortOrder); }} aria-label="Sort artifacts" options={[{ value: "newest", label: "Newest" }, { value: "oldest", label: "Oldest" }, { value: "filename", label: "Filename" }, { value: "expiry", label: "Expiry" }]} />
+          <div className="flex flex-wrap items-center gap-1.5">
+            {([ ["all", "All", summary.total], ["html", "Plans", uploads.filter((upload) => upload.kind === "html").length], ["file", "Files", uploads.filter((upload) => upload.kind === "file").length] ] as const).map(([value, label, count]) => <button key={value} type="button" aria-pressed={kind === value} className={`rounded-full border px-3 py-1.5 text-xs ${kind === value ? "border-primary bg-primary/10 text-foreground" : "text-muted-foreground hover:bg-accent"}`} onClick={() => setKind(value)}>{label} <span className="tabular-nums">{count}{nextCursor && value !== "all" ? "+" : ""}</span></button>)}
+            {([ ["24h", "Expiring soon", summary.expiringSoon], ["7d", "Next 7 days", null], ["persistent", "Permanent", summary.permanent] ] as const).map(([value, label, count]) => <button key={value} type="button" aria-pressed={expiry === value} className={`rounded-full border px-3 py-1.5 text-xs ${expiry === value ? "border-primary bg-primary/10 text-foreground" : "text-muted-foreground hover:bg-accent"}`} onClick={() => setExpiry(expiry === value ? "all" : value)}>{label}{count === null ? "" : ` ${count}`}</button>)}
+          </div>
+          <div className="flex flex-wrap gap-2 lg:ml-auto">
+            <NativeSelect aria-label="Project" className="w-44" value={projectFilter} onChange={(event) => selectProject(event.currentTarget.value)}><option value={ALL_PROJECTS}>All projects</option>{projects.find(([value]) => value === UNASSIGNED_PROJECT) ? <option value={UNASSIGNED_PROJECT}>Unassigned ({projects.find(([value]) => value === UNASSIGNED_PROJECT)?.[1]})</option> : null}{groupProjectsByUsage(projects).map((group) => <optgroup key={group.label} label={group.label}>{group.projects.map(([value, count]) => <option key={value} value={value}>{value} ({count})</option>)}</optgroup>)}</NativeSelect>
+            <AppSelect value={sort} onValueChange={(value) => { setSort(value as SortOrder); }} aria-label="Sort artifacts" className="w-40" options={[{ value: "newest", label: "Newest" }, { value: "oldest", label: "Oldest" }, { value: "filename", label: "Filename" }, { value: "expiry", label: "Expiry" }]} />
           </div>
         </section>
 
-        <section className="grid items-start gap-3 lg:grid-cols-[16rem_minmax(0,1fr)_20rem] 2xl:grid-cols-[24rem_minmax(0,1fr)_20rem]" aria-label="Artifact library">
-          <ProjectNavigation projects={projects} active={projectFilter} onSelect={(value) => void selectProject(value)} total={summary.total} disabled={busy} />
-          <ArtifactTable uploads={visibleUploads} loaded={uploads.length} total={summary.total} selectedId={selectedId} onSelect={(id) => { setSelectedId(id); setMobileInspectorOpen(true); }} hasMore={Boolean(nextCursor)} busy={busy} loadingAll={loadingAll} onLoadMore={loadOlder} onSearchRemaining={loadCompleteLibrary} />
+        {selectedIds.size ? <div className="mb-2 flex flex-wrap items-center gap-2 rounded-lg border bg-card px-3 py-2 text-sm"><strong>{selectedIds.size} selected</strong><Button size="sm" variant="destructive-subtle" disabled={busy} onClick={() => setBulkConfirmOpen(true)}><Trash2 />Revoke selected…</Button><Button size="sm" variant="ghost" onClick={() => setSelectedIds(new Set())}>Clear</Button></div> : null}
+        <section className="grid items-start gap-3 lg:grid-cols-[minmax(0,1fr)_20rem]" aria-label="Artifact library">
+          <ArtifactTable uploads={visibleUploads} loaded={uploads.length} total={summary.total} selectedId={selectedId} selectedIds={selectedIds} onToggle={toggleSelection} onToggleAll={() => setSelectedIds((current) => toggleVisibleAll(current, visibleUploads.map((upload) => upload.id)))} onSelect={(id) => { setSelectedId(id); setMobileInspectorOpen(true); }} onCopy={copyUrl} hasMore={Boolean(nextCursor)} busy={busy} loadingAll={loadingAll} onLoadMore={loadOlder} onSearchRemaining={loadCompleteLibrary} />
           {!isMobile ? <ArtifactInspector
             key={selected?.id ?? "none"}
             upload={selected}
@@ -347,49 +383,10 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
           /> : null}
         </section>
         {isMobile ? <Sheet open={mobileInspectorOpen} onOpenChange={setMobileInspectorOpen}><SheetContent className="w-full overflow-y-auto"><SheetHeader className="border-b"><SheetTitle>Artifact details</SheetTitle><SheetDescription>Inspect and maintain one shared artifact.</SheetDescription></SheetHeader><div className="p-4 pt-0"><ArtifactInspector key={selected?.id ?? "none"} upload={selected} busy={busy} knownProjects={projects.map(([project]) => project)} replaceInput={replaceInput} onReplace={replaceSelected} onChangeProject={changeProject} onChangeExpiry={changeFileExpiry} onCopy={copySelectedUrl} onRevoke={revokeSelected} /></div></SheetContent></Sheet> : null}
+        <AlertDialog open={bulkConfirmOpen} onOpenChange={setBulkConfirmOpen}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Revoke {selectedIds.size} selected {selectedIds.size === 1 ? "artifact" : "artifacts"}?</AlertDialogTitle><AlertDialogDescription>Their public capability URLs will stop working immediately. This cannot be undone.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={() => void revokeSelection()}>Revoke permanently</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
       </main>
     </>
   );
-}
-
-function ProjectNavigation({ projects, active, onSelect, total, disabled }: { projects: Array<[string, number]>; active: string; onSelect: (value: string) => void; total: number; disabled: boolean }) {
-  const unassigned = projects.find(([project]) => project === UNASSIGNED_PROJECT)?.[1] ?? 0;
-  const groups = groupProjectsByUsage(projects);
-  const oneOffs = groups.find((group) => group.label === "One-off projects");
-  const recurringGroups = groups.filter((group) => group !== oneOffs);
-  const [showOneOffs, setShowOneOffs] = useState(false);
-  const visibleOneOffs = showOneOffs
-    ? oneOffs?.projects ?? []
-    : oneOffs?.projects.filter(([project]) => project === active) ?? [];
-
-  return <Card className="gap-0 overflow-hidden py-2">
-    <h2 className="px-3 pb-2 text-xs font-semibold uppercase tracking-[0.1em] text-muted-foreground">Projects</h2>
-    <nav className="flex gap-1 overflow-x-auto px-1.5 pb-1 lg:grid lg:gap-0.5 lg:overflow-visible lg:pb-0" aria-label="Artifact projects">
-      <ProjectButton label="All artifacts" count={total} active={active === ALL_PROJECTS} onClick={() => onSelect(ALL_PROJECTS)} disabled={disabled} />
-      {unassigned ? <ProjectButton label="Unassigned" count={unassigned} active={active === UNASSIGNED_PROJECT} onClick={() => onSelect(UNASSIGNED_PROJECT)} disabled={disabled} /> : null}
-      {recurringGroups.map((group) => <ProjectGroup key={group.label} group={group} active={active} onSelect={onSelect} disabled={disabled} />)}
-      {oneOffs ? <div className="contents lg:block lg:border-t lg:pt-2">
-        <button
-          className="flex min-h-11 min-w-44 shrink-0 items-center justify-between gap-2 rounded-md px-2 py-2 text-left text-xs font-medium text-muted-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50 lg:min-h-0 lg:min-w-0"
-          type="button"
-          aria-expanded={showOneOffs}
-          onClick={() => setShowOneOffs((current) => !current)}
-          disabled={disabled}
-        >
-          <span>{showOneOffs ? "Hide one-off projects" : "Show one-off projects"}</span>
-          <Badge variant="outline">{oneOffs.projects.length}</Badge>
-        </button>
-        {visibleOneOffs.length > 0 ? <div className="contents lg:mt-1 lg:grid lg:gap-0.5">{visibleOneOffs.map(([project, count]) => <ProjectButton key={project} label={project} count={count} active={active === project} onClick={() => onSelect(project)} disabled={disabled} />)}</div> : null}
-      </div> : null}
-    </nav>
-  </Card>;
-}
-
-function ProjectGroup({ group, active, onSelect, disabled }: { group: ProjectUsageGroup; active: string; onSelect: (value: string) => void; disabled: boolean }) {
-  return <section className="contents lg:block lg:border-t lg:pt-2" aria-label={group.label}>
-    <h3 className="hidden px-2 pb-1 text-xs font-semibold uppercase tracking-[0.1em] text-muted-foreground lg:block">{group.label}</h3>
-    <div className="contents lg:grid lg:gap-0.5">{group.projects.map(([project, count]) => <ProjectButton key={project} label={project} count={count} active={active === project} onClick={() => onSelect(project)} disabled={disabled} />)}</div>
-  </section>;
 }
 
 export function groupProjectsByUsage(projects: Array<[string, number]>): ProjectUsageGroup[] {
@@ -411,18 +408,20 @@ export function groupProjectsByUsage(projects: Array<[string, number]>): Project
     .filter((group) => group.projects.length > 0);
 }
 
-function ProjectButton({ label, count, active, onClick, disabled }: { label: string; count: number; active: boolean; onClick: () => void; disabled: boolean }) {
-  return <button className={`flex min-h-11 min-w-36 shrink-0 items-center justify-between gap-2 rounded-md px-2 py-2 text-left text-xs transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50 lg:min-h-0 lg:min-w-0${active ? " bg-secondary text-foreground" : " text-muted-foreground"}`} type="button" aria-current={active ? "true" : undefined} onClick={onClick} disabled={disabled}><span className="truncate">{label}</span><Badge variant="outline">{count}</Badge></button>;
-}
-
-function ArtifactTable({ uploads, loaded, total, selectedId, onSelect, hasMore, busy, loadingAll, onLoadMore, onSearchRemaining }: { uploads: UploadSummary[]; loaded: number; total: number; selectedId?: string; onSelect: (id: string) => void; hasMore: boolean; busy: boolean; loadingAll: boolean; onLoadMore: () => Promise<void>; onSearchRemaining: () => Promise<void> }) {
+function ArtifactTable({ uploads, loaded, total, selectedId, selectedIds, onToggle, onToggleAll, onSelect, onCopy, hasMore, busy, loadingAll, onLoadMore, onSearchRemaining }: { uploads: UploadSummary[]; loaded: number; total: number; selectedId?: string; selectedIds: Set<string>; onToggle: (id: string, shiftKey: boolean, additive?: boolean) => void; onToggleAll: () => void; onSelect: (id: string) => void; onCopy: (upload: UploadSummary) => Promise<void>; hasMore: boolean; busy: boolean; loadingAll: boolean; onLoadMore: () => Promise<void>; onSearchRemaining: () => Promise<void> }) {
   const isMobile = useIsMobile();
   const [mobileLimit, setMobileLimit] = useState(50);
-  const mobileUploads = uploads.slice(0, mobileLimit);
+  const shown = isMobile ? uploads.slice(0, mobileLimit) : uploads;
+  const allSelected = shown.length > 0 && shown.every((upload) => selectedIds.has(upload.id));
+  const selectionBox = (upload: UploadSummary) => <input
+    type="checkbox" className="size-4 shrink-0 accent-primary" aria-label={`Select ${upload.filename}`}
+    checked={selectedIds.has(upload.id)} readOnly
+    onClick={(event) => { event.stopPropagation(); onToggle(upload.id, event.shiftKey); }}
+  />;
   return <Card className="gap-0 overflow-hidden py-0">
-    <div className="flex items-center justify-between border-b px-4 py-3"><h2 className="font-semibold">Artifact library</h2><span className="text-xs text-muted-foreground">{uploads.length === loaded ? `${loaded} of ${total} loaded` : `${uploads.length} shown · ${loaded} of ${total} loaded`}</span></div>
+    <div className="flex items-center justify-between border-b px-4 py-3"><h2 className="font-semibold">Artifacts</h2><span className="text-xs text-muted-foreground">{uploads.length === loaded ? `${loaded} of ${total} loaded` : `${uploads.length} shown · ${loaded} of ${total} loaded`}</span></div>
     {loadingAll ? <p className="border-b px-4 py-2 text-xs text-muted-foreground" role="status">Loading the full library so search and filters include older artifacts…</p> : null}
-    {uploads.length === 0 ? <div className="grid min-h-72 place-items-center p-8 text-center"><div><h3 className="font-semibold">{loadingAll ? "Searching the full library…" : hasMore ? "No matches in loaded artifacts" : "No artifacts match"}</h3><p className="mt-1 text-sm text-muted-foreground">{loadingAll ? "Older artifacts are still loading." : hasMore ? "Older artifacts have not been searched yet." : "Try another search, project, or lifecycle filter."}</p></div></div> : isMobile ? <div className="divide-y" role="list" aria-label="Artifacts">{mobileUploads.map((upload) => <article key={upload.id} role="listitem"><button className={`grid min-h-20 w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 p-3 text-left transition-colors hover:bg-muted${selectedId === upload.id ? " bg-secondary shadow-[inset_3px_0_var(--primary)]" : ""}`} type="button" aria-current={selectedId === upload.id ? "true" : undefined} onClick={() => onSelect(upload.id)}><span className="grid size-11 shrink-0 place-items-center rounded-md border text-muted-foreground">{upload.kind === "html" ? <FileText /> : <Download />}</span><span className="min-w-0"><strong className="block truncate text-sm">{upload.filename}</strong><small className="mt-1 block truncate text-xs text-muted-foreground">{upload.project ?? "Unassigned"} · {formatRelativeDate(upload.updatedAt)}</small></span><LifecycleBadge upload={upload} /></button></article>)}{mobileUploads.length < uploads.length ? <div className="p-3 text-center"><Button type="button" variant="outline" onClick={() => setMobileLimit((current) => current + 50)}>Show 50 more</Button></div> : null}</div> : <Table><TableHeader><TableRow><TableHead>Artifact</TableHead><TableHead>Project</TableHead><TableHead>Lifecycle</TableHead><TableHead>Updated</TableHead></TableRow></TableHeader><TableBody>{uploads.map((upload) => <TableRow key={upload.id} data-state={selectedId === upload.id ? "selected" : undefined} className={`cursor-pointer${selectedId === upload.id ? " shadow-[inset_2px_0_var(--primary)]" : ""}`} onClick={() => onSelect(upload.id)}><TableCell className="w-full max-w-0"><button className="flex w-full min-w-0 items-center gap-3 text-left" type="button"><span className="grid size-9 shrink-0 place-items-center rounded-md border text-muted-foreground">{upload.kind === "html" ? <FileText /> : <Download />}</span><span className="min-w-0"><strong className="block truncate text-sm">{upload.filename}</strong><small className="block truncate font-mono text-xs text-muted-foreground">{shortUrl(upload.url)}</small></span></button></TableCell><TableCell className="max-w-36 truncate text-xs text-muted-foreground">{upload.project ?? "Unassigned"}</TableCell><TableCell><LifecycleBadge upload={upload} /></TableCell><TableCell className="text-xs text-muted-foreground">{formatRelativeDate(upload.updatedAt)}</TableCell></TableRow>)}</TableBody></Table>}
+    {uploads.length === 0 ? <div className="grid min-h-72 place-items-center p-8 text-center"><div><h3 className="font-semibold">{loadingAll ? "Searching the full library…" : hasMore ? "No matches in loaded artifacts" : "No artifacts match"}</h3><p className="mt-1 text-sm text-muted-foreground">{loadingAll ? "Older artifacts are still loading." : hasMore ? "Older artifacts have not been searched yet." : "Try another search, project, or lifecycle filter."}</p></div></div> : isMobile ? <div className="divide-y" role="list" aria-label="Artifacts">{shown.map((upload) => <article key={upload.id} role="listitem" className="flex items-center gap-2 px-3">{selectionBox(upload)}<button className={`grid min-h-16 min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 py-2 text-left transition-colors hover:bg-muted${selectedId === upload.id ? " bg-secondary" : ""}`} type="button" aria-current={selectedId === upload.id ? "true" : undefined} onClick={(event) => event.shiftKey || event.ctrlKey || event.metaKey ? onToggle(upload.id, event.shiftKey) : onSelect(upload.id)}><span className="grid size-9 shrink-0 place-items-center rounded-md border text-muted-foreground">{upload.kind === "html" ? <FileText /> : <Download />}</span><span className="min-w-0"><strong className="block truncate text-sm">{upload.filename}</strong><small className="mt-1 block truncate text-xs text-muted-foreground">{upload.project ?? "Unassigned"} · {formatRelativeDate(upload.updatedAt)}</small></span><LifecycleBadge upload={upload} /></button></article>)}{shown.length < uploads.length ? <div className="p-3 text-center"><Button type="button" variant="outline" onClick={() => setMobileLimit((current) => current + 50)}>Show 50 more</Button></div> : null}</div> : <div className="overflow-x-auto"><Table className="a3-select-table"><TableHeader><TableRow><TableHead className="w-10"><input type="checkbox" className="size-4 accent-primary" aria-label="Select all visible artifacts" checked={allSelected} readOnly onClick={() => onToggleAll()} /></TableHead><TableHead>Artifact</TableHead><TableHead>Project</TableHead><TableHead>Lifecycle</TableHead><TableHead>Updated</TableHead><TableHead><span className="sr-only">Actions</span></TableHead></TableRow></TableHeader><TableBody>{uploads.map((upload) => <TableRow key={upload.id} data-state={selectedId === upload.id ? "selected" : undefined} className={`cursor-pointer${selectedId === upload.id ? " shadow-[inset_2px_0_var(--primary)]" : ""}`} onClick={(event) => event.shiftKey || event.ctrlKey || event.metaKey ? onToggle(upload.id, event.shiftKey) : onSelect(upload.id)}><TableCell>{selectionBox(upload)}</TableCell><TableCell className="w-full max-w-0"><button className="flex w-full min-w-0 items-center gap-3 text-left" type="button" onClick={(event) => { event.stopPropagation(); if (event.shiftKey || event.ctrlKey || event.metaKey) onToggle(upload.id, event.shiftKey); else onSelect(upload.id); }}><span className="grid size-8 shrink-0 place-items-center rounded-md border text-muted-foreground">{upload.kind === "html" ? <FileText /> : <Download />}</span><span className="min-w-0"><strong className="block truncate text-sm">{upload.filename}</strong><small className="block truncate font-mono text-xs text-muted-foreground">{shortUrl(upload.url)}</small></span></button></TableCell><TableCell className="max-w-36 truncate text-xs text-muted-foreground">{upload.project ?? "Unassigned"}</TableCell><TableCell><LifecycleBadge upload={upload} /></TableCell><TableCell className="text-xs text-muted-foreground">{formatRelativeDate(upload.updatedAt)}</TableCell><TableCell><div className="flex gap-1"><Button size="icon-sm" variant="ghost" aria-label={`Copy link for ${upload.filename}`} onClick={(event) => { event.stopPropagation(); void onCopy(upload); }}><Copy /></Button><Button nativeButton={false} size="icon-sm" variant="ghost" aria-label={`Open ${upload.filename}`} render={<a href={upload.url} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()} />}><ExternalLink /></Button></div></TableCell></TableRow>)}</TableBody></Table></div>}
     {hasMore ? <div className="flex flex-wrap justify-center gap-2 border-t p-3"><Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void onLoadMore()}>Load older artifacts</Button><Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void onSearchRemaining()}>Search remaining artifacts</Button></div> : null}
   </Card>;
 }

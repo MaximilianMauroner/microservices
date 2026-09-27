@@ -22,6 +22,7 @@ import { Route as PublisherRouteImport } from './routes/publisher'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as StatusRouteImport } from './routes/status'
+import { Route as ApiBrowserHtmlUploadsRouteImport } from './routes/api/browser-html-uploads'
 import { Route as ApiExternalUploadsRouteImport } from './routes/api/external-uploads'
 import { Route as ApiUploadLinksRouteImport } from './routes/api/upload-links'
 import { Route as ApiUploadsRouteImport } from './routes/api/uploads'
@@ -36,6 +37,7 @@ import { Route as HealthComponentRouteImport } from './routes/health/$component'
 import { Route as MarkdownIndexRouteImport } from './routes/markdown/index'
 import { Route as PublisherIndexRouteImport } from './routes/publisher/index'
 import { Route as PublisherArtifactsRouteImport } from './routes/publisher/artifacts'
+import { Route as PublisherReceiveRouteImport } from './routes/publisher/receive'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiDropSplatRouteImport } from './routes/api/drop/$'
 import { Route as ApiExternalUploadsSplatRouteImport } from './routes/api/external-uploads/$'
@@ -51,6 +53,7 @@ import { Route as ApiPublicCatalogRouteImport } from './routes/api/public/catalo
 import { Route as ApiUploadLinksSplatRouteImport } from './routes/api/upload-links/$'
 import { Route as ApiUploadsSplatRouteImport } from './routes/api/uploads/$'
 import { Route as FeedbackFTokenRouteImport } from './routes/feedback/f/$token'
+import { Route as FeedbackFormsIndexRouteImport } from './routes/feedback/forms/index'
 import { Route as FeedbackFormsFormIdRouteImport } from './routes/feedback/forms/$formId'
 import { Route as FeedbackResponsesSubmissionIdRouteImport } from './routes/feedback/responses/$submissionId'
 import { Route as FeedbackShareTokenRouteImport } from './routes/feedback/share/$token'
@@ -127,6 +130,11 @@ const StatusRoute = StatusRouteImport.update({
   path: '/status',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiBrowserHtmlUploadsRoute = ApiBrowserHtmlUploadsRouteImport.update({
+  id: '/api/browser-html-uploads',
+  path: '/api/browser-html-uploads',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiExternalUploadsRoute = ApiExternalUploadsRouteImport.update({
   id: '/api/external-uploads',
   path: '/api/external-uploads',
@@ -195,6 +203,11 @@ const PublisherIndexRoute = PublisherIndexRouteImport.update({
 const PublisherArtifactsRoute = PublisherArtifactsRouteImport.update({
   id: '/artifacts',
   path: '/artifacts',
+  getParentRoute: () => PublisherRoute,
+} as any)
+const PublisherReceiveRoute = PublisherReceiveRouteImport.update({
+  id: '/receive',
+  path: '/receive',
   getParentRoute: () => PublisherRoute,
 } as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
@@ -272,6 +285,11 @@ const FeedbackFTokenRoute = FeedbackFTokenRouteImport.update({
   path: '/f/$token',
   getParentRoute: () => FeedbackRoute,
 } as any)
+const FeedbackFormsIndexRoute = FeedbackFormsIndexRouteImport.update({
+  id: '/forms/',
+  path: '/forms/',
+  getParentRoute: () => FeedbackRoute,
+} as any)
 const FeedbackFormsFormIdRoute = FeedbackFormsFormIdRouteImport.update({
   id: '/forms/$formId',
   path: '/forms/$formId',
@@ -340,6 +358,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof SettingsRoute
   '/sign-in': typeof SignInRoute
   '/status': typeof StatusRoute
+  '/api/browser-html-uploads': typeof ApiBrowserHtmlUploadsRoute
   '/api/external-uploads': typeof ApiExternalUploadsRouteWithChildren
   '/api/upload-links': typeof ApiUploadLinksRouteWithChildren
   '/api/uploads': typeof ApiUploadsRouteWithChildren
@@ -351,6 +370,7 @@ export interface FileRoutesByFullPath {
   '/files/$id': typeof FilesIdRouteWithChildren
   '/health/$component': typeof HealthComponentRoute
   '/publisher/artifacts': typeof PublisherArtifactsRoute
+  '/publisher/receive': typeof PublisherReceiveRoute
   '/feedback/': typeof FeedbackIndexRoute
   '/markdown/': typeof MarkdownIndexRoute
   '/publisher/': typeof PublisherIndexRoute
@@ -374,6 +394,7 @@ export interface FileRoutesByFullPath {
   '/feedback/share/$token': typeof FeedbackShareTokenRoute
   '/files/$id/$': typeof FilesIdSplatRoute
   '/markdown/d/$slug': typeof MarkdownDSlugRoute
+  '/feedback/forms/': typeof FeedbackFormsIndexRoute
   '/api/money/imports/$importId': typeof ApiMoneyImportsImportIdRoute
   '/api/money/imports/preview': typeof ApiMoneyImportsPreviewRoute
   '/api/money/imports/reimport': typeof ApiMoneyImportsReimportRoute
@@ -391,6 +412,7 @@ export interface FileRoutesByTo {
   '/settings': typeof SettingsRoute
   '/sign-in': typeof SignInRoute
   '/status': typeof StatusRoute
+  '/api/browser-html-uploads': typeof ApiBrowserHtmlUploadsRoute
   '/api/external-uploads': typeof ApiExternalUploadsRouteWithChildren
   '/api/upload-links': typeof ApiUploadLinksRouteWithChildren
   '/api/uploads': typeof ApiUploadsRouteWithChildren
@@ -402,6 +424,7 @@ export interface FileRoutesByTo {
   '/files/$id': typeof FilesIdRouteWithChildren
   '/health/$component': typeof HealthComponentRoute
   '/publisher/artifacts': typeof PublisherArtifactsRoute
+  '/publisher/receive': typeof PublisherReceiveRoute
   '/feedback': typeof FeedbackIndexRoute
   '/markdown': typeof MarkdownIndexRoute
   '/publisher': typeof PublisherIndexRoute
@@ -425,6 +448,7 @@ export interface FileRoutesByTo {
   '/feedback/share/$token': typeof FeedbackShareTokenRoute
   '/files/$id/$': typeof FilesIdSplatRoute
   '/markdown/d/$slug': typeof MarkdownDSlugRoute
+  '/feedback/forms': typeof FeedbackFormsIndexRoute
   '/api/money/imports/$importId': typeof ApiMoneyImportsImportIdRoute
   '/api/money/imports/preview': typeof ApiMoneyImportsPreviewRoute
   '/api/money/imports/reimport': typeof ApiMoneyImportsReimportRoute
@@ -446,6 +470,7 @@ export interface FileRoutesById {
   '/settings': typeof SettingsRoute
   '/sign-in': typeof SignInRoute
   '/status': typeof StatusRoute
+  '/api/browser-html-uploads': typeof ApiBrowserHtmlUploadsRoute
   '/api/external-uploads': typeof ApiExternalUploadsRouteWithChildren
   '/api/upload-links': typeof ApiUploadLinksRouteWithChildren
   '/api/uploads': typeof ApiUploadsRouteWithChildren
@@ -457,6 +482,7 @@ export interface FileRoutesById {
   '/files/$id': typeof FilesIdRouteWithChildren
   '/health/$component': typeof HealthComponentRoute
   '/publisher/artifacts': typeof PublisherArtifactsRoute
+  '/publisher/receive': typeof PublisherReceiveRoute
   '/feedback/': typeof FeedbackIndexRoute
   '/markdown/': typeof MarkdownIndexRoute
   '/publisher/': typeof PublisherIndexRoute
@@ -480,6 +506,7 @@ export interface FileRoutesById {
   '/feedback/share/$token': typeof FeedbackShareTokenRoute
   '/files/$id/$': typeof FilesIdSplatRoute
   '/markdown/d/$slug': typeof MarkdownDSlugRoute
+  '/feedback/forms/': typeof FeedbackFormsIndexRoute
   '/api/money/imports/$importId': typeof ApiMoneyImportsImportIdRoute
   '/api/money/imports/preview': typeof ApiMoneyImportsPreviewRoute
   '/api/money/imports/reimport': typeof ApiMoneyImportsReimportRoute
@@ -502,6 +529,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/sign-in'
     | '/status'
+    | '/api/browser-html-uploads'
     | '/api/external-uploads'
     | '/api/upload-links'
     | '/api/uploads'
@@ -513,6 +541,7 @@ export interface FileRouteTypes {
     | '/files/$id'
     | '/health/$component'
     | '/publisher/artifacts'
+    | '/publisher/receive'
     | '/feedback/'
     | '/markdown/'
     | '/publisher/'
@@ -536,6 +565,7 @@ export interface FileRouteTypes {
     | '/feedback/share/$token'
     | '/files/$id/$'
     | '/markdown/d/$slug'
+    | '/feedback/forms/'
     | '/api/money/imports/$importId'
     | '/api/money/imports/preview'
     | '/api/money/imports/reimport'
@@ -553,6 +583,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/sign-in'
     | '/status'
+    | '/api/browser-html-uploads'
     | '/api/external-uploads'
     | '/api/upload-links'
     | '/api/uploads'
@@ -564,6 +595,7 @@ export interface FileRouteTypes {
     | '/files/$id'
     | '/health/$component'
     | '/publisher/artifacts'
+    | '/publisher/receive'
     | '/feedback'
     | '/markdown'
     | '/publisher'
@@ -587,6 +619,7 @@ export interface FileRouteTypes {
     | '/feedback/share/$token'
     | '/files/$id/$'
     | '/markdown/d/$slug'
+    | '/feedback/forms'
     | '/api/money/imports/$importId'
     | '/api/money/imports/preview'
     | '/api/money/imports/reimport'
@@ -607,6 +640,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/sign-in'
     | '/status'
+    | '/api/browser-html-uploads'
     | '/api/external-uploads'
     | '/api/upload-links'
     | '/api/uploads'
@@ -618,6 +652,7 @@ export interface FileRouteTypes {
     | '/files/$id'
     | '/health/$component'
     | '/publisher/artifacts'
+    | '/publisher/receive'
     | '/feedback/'
     | '/markdown/'
     | '/publisher/'
@@ -641,6 +676,7 @@ export interface FileRouteTypes {
     | '/feedback/share/$token'
     | '/files/$id/$'
     | '/markdown/d/$slug'
+    | '/feedback/forms/'
     | '/api/money/imports/$importId'
     | '/api/money/imports/preview'
     | '/api/money/imports/reimport'
@@ -662,6 +698,7 @@ export interface RootRouteChildren {
   SettingsRoute: typeof SettingsRoute
   SignInRoute: typeof SignInRoute
   StatusRoute: typeof StatusRoute
+  ApiBrowserHtmlUploadsRoute: typeof ApiBrowserHtmlUploadsRoute
   ApiExternalUploadsRoute: typeof ApiExternalUploadsRouteWithChildren
   ApiUploadLinksRoute: typeof ApiUploadLinksRouteWithChildren
   ApiUploadsRoute: typeof ApiUploadsRouteWithChildren
@@ -778,6 +815,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof StatusRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/browser-html-uploads': {
+      id: '/api/browser-html-uploads'
+      path: '/api/browser-html-uploads'
+      fullPath: '/api/browser-html-uploads'
+      preLoaderRoute: typeof ApiBrowserHtmlUploadsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/external-uploads': {
       id: '/api/external-uploads'
       path: '/api/external-uploads'
@@ -874,6 +918,13 @@ declare module '@tanstack/react-router' {
       path: '/artifacts'
       fullPath: '/publisher/artifacts'
       preLoaderRoute: typeof PublisherArtifactsRouteImport
+      parentRoute: typeof PublisherRoute
+    }
+    '/publisher/receive': {
+      id: '/publisher/receive'
+      path: '/receive'
+      fullPath: '/publisher/receive'
+      preLoaderRoute: typeof PublisherReceiveRouteImport
       parentRoute: typeof PublisherRoute
     }
     '/api/auth/$': {
@@ -981,6 +1032,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof FeedbackFTokenRouteImport
       parentRoute: typeof FeedbackRoute
     }
+    '/feedback/forms/': {
+      id: '/feedback/forms/'
+      path: '/forms'
+      fullPath: '/feedback/forms/'
+      preLoaderRoute: typeof FeedbackFormsIndexRouteImport
+      parentRoute: typeof FeedbackRoute
+    }
     '/feedback/forms/$formId': {
       id: '/feedback/forms/$formId'
       path: '/forms/$formId'
@@ -1061,6 +1119,7 @@ interface FeedbackRouteChildren {
   FeedbackFormsFormIdRoute: typeof FeedbackFormsFormIdRoute
   FeedbackResponsesSubmissionIdRoute: typeof FeedbackResponsesSubmissionIdRoute
   FeedbackShareTokenRoute: typeof FeedbackShareTokenRoute
+  FeedbackFormsIndexRoute: typeof FeedbackFormsIndexRoute
 }
 
 const FeedbackRouteChildren: FeedbackRouteChildren = {
@@ -1070,6 +1129,7 @@ const FeedbackRouteChildren: FeedbackRouteChildren = {
   FeedbackFormsFormIdRoute: FeedbackFormsFormIdRoute,
   FeedbackResponsesSubmissionIdRoute: FeedbackResponsesSubmissionIdRoute,
   FeedbackShareTokenRoute: FeedbackShareTokenRoute,
+  FeedbackFormsIndexRoute: FeedbackFormsIndexRoute,
 }
 
 const FeedbackRouteWithChildren = FeedbackRoute._addFileChildren(
@@ -1103,11 +1163,13 @@ const MarkdownRouteWithChildren = MarkdownRoute._addFileChildren(
 
 interface PublisherRouteChildren {
   PublisherArtifactsRoute: typeof PublisherArtifactsRoute
+  PublisherReceiveRoute: typeof PublisherReceiveRoute
   PublisherIndexRoute: typeof PublisherIndexRoute
 }
 
 const PublisherRouteChildren: PublisherRouteChildren = {
   PublisherArtifactsRoute: PublisherArtifactsRoute,
+  PublisherReceiveRoute: PublisherReceiveRoute,
   PublisherIndexRoute: PublisherIndexRoute,
 }
 
@@ -1191,6 +1253,7 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsRoute: SettingsRoute,
   SignInRoute: SignInRoute,
   StatusRoute: StatusRoute,
+  ApiBrowserHtmlUploadsRoute: ApiBrowserHtmlUploadsRoute,
   ApiExternalUploadsRoute: ApiExternalUploadsRouteWithChildren,
   ApiUploadLinksRoute: ApiUploadLinksRouteWithChildren,
   ApiUploadsRoute: ApiUploadsRouteWithChildren,
