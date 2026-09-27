@@ -4,7 +4,7 @@ import { Card } from "../src/components/ui/card.js";
 import { moneyViewTitle, type MoneyTrackerView } from "./money-tracker-navigation.js";
 
 export function MoneyTrackerPendingPage({ view }: { view: MoneyTrackerView }) {
-  return <><AppShell product="Money" accent="lime" icon={favicons.money} showSignOut /><main id="main" className="money-page" aria-busy="true">
+  return <><AppShell product="Money" accent="lime" icon={favicons.money} /><main id="main" className="money-page" aria-busy="true">
     <header className="money-heading">
       <div><h1>{moneyViewTitle(view)}</h1><p>Loading private financial data.</p></div>
     </header>

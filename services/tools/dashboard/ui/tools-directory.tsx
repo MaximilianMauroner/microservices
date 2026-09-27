@@ -55,7 +55,7 @@ export function ToolsDirectory({ snapshot }: { snapshot: PublicSnapshotDocument 
   const healthTone = operational === monitorIds.size ? "bg-positive" : operational === 0 ? "bg-negative" : "bg-warning";
 
   return <>
-    <AppShell product="Dashboard" icon={favicons.directory} showSignOut />
+    <AppShell product="Dashboard" icon={favicons.directory} />
     <main id="main" className="mx-auto w-[min(1180px,calc(100%_-_2rem))] pb-20 pt-8 sm:pt-20">
       <section className="grid gap-6 border-b pb-8 sm:gap-8 sm:pb-12 lg:grid-cols-[1fr_auto] lg:items-end">
         <div>

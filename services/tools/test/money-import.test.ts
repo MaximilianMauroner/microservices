@@ -522,6 +522,10 @@ class MemoryMoneyRepository implements MoneyRepository {
   async deleteImport() { return undefined; }
   async reimportAll() { return { importCount: 0, transactionCount: 0, linkedPairCount: 0 }; }
 
+  async readReviewCounts() {
+    return { uncategorized: 0, transfers: 0 };
+  }
+
   async readLedgerSnapshot(): Promise<MoneyLedgerSnapshot> {
     return {
       imports: [], currentMonthTransactionAccounts: [], transferRules: [], transferPairRules: [], transferRuleOptions: [], categoryRules: [], activity: [], transactionCount: 0, revertedCount: 0, transferReview: { linkedPairs: 0, unlinkedCount: 0, unresolvedPositiveCount: 0, unresolvedNegativeCount: 0 }, transferReviewGroups: [], accounts: [], accountLabels: {}, accountRoles: {}, months: [],

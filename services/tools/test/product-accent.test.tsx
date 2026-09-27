@@ -7,7 +7,7 @@ import { productAccents } from "../src/product-accent.js";
 describe("product accent contract", () => {
   it("exposes every supported accent through the shared shell", () => {
     for (const accent of productAccents) {
-      const html = renderToStaticMarkup(<AppShell product={accent} accent={accent} showSignOut={false} />);
+      const html = renderToStaticMarkup(<AppShell product={accent} accent={accent} />);
       expect(html).toContain('data-suite-accent="' + accent + '"');
     }
   });
@@ -18,14 +18,14 @@ describe("product accent contract", () => {
   });
 
   it("allows a product icon to replace the generic shell mark", () => {
-    const html = renderToStaticMarkup(<AppShell product="Money" icon="/assets/icons/money.png" showSignOut={false} />);
+    const html = renderToStaticMarkup(<AppShell product="Money" icon="/assets/icons/money.png" />);
 
     expect(html).toContain('src="/assets/icons/money.png"');
     expect(html).not.toContain('aria-hidden="true">M</span>');
   });
 
   it("uses the tools favicon as the generic shell mark", () => {
-    const html = renderToStaticMarkup(<AppShell product="Dashboard" showSignOut={false} />);
+    const html = renderToStaticMarkup(<AppShell product="Dashboard" />);
 
     expect(html).toContain("tools.png");
     expect(html).not.toContain('aria-hidden="true">M</span>');

@@ -291,7 +291,7 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
 
   return (
     <>
-      <AppShell product="Publisher" accent="violet" icon={favicons.publisher} showSignOut />
+      <AppShell product="Publisher" accent="violet" icon={favicons.publisher} />
       <main id="main" className="workspace-page workspace-page--wide">
         <section className="workspace-header" aria-labelledby="manage-title">
           <div>

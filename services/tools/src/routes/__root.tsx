@@ -7,7 +7,7 @@ import {
 } from "@tanstack/react-router";
 import type { CSSProperties } from "react";
 import { Toaster } from "../components/ui/toast.js";
-import { SidebarProvider, SidebarTrigger } from "../components/ui/sidebar.js";
+import { SidebarProvider } from "../components/ui/sidebar.js";
 import { ToolsSidebar } from "../components/tools-sidebar.js";
 import { ThemeProvider } from "../components/theme-provider.js";
 import "../styles.css";
@@ -33,10 +33,9 @@ function RootDocument() {
       </head>
       <body>
         <ThemeProvider>{hasWorkspaceSidebar ? (
-          <SidebarProvider style={{ "--sidebar-width": "16.5rem" } as CSSProperties}>
+          <SidebarProvider style={{ "--sidebar-width": "15rem" } as CSSProperties}>
             <ToolsSidebar />
             <div className="relative flex w-full min-w-0 flex-1 flex-col bg-background">
-              <SidebarTrigger className="fixed left-3 top-3 z-50 md:hidden" />
               <Outlet />
               <Toaster />
             </div>

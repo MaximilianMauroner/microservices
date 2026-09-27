@@ -81,6 +81,10 @@ export class MoneyImportService {
     return this.repository.readLedgerSnapshot(scope);
   }
 
+  readReviewCounts() {
+    return this.repository.readReviewCounts();
+  }
+
   readCheckInDays() {
     return this.repository.readCheckInDays();
   }

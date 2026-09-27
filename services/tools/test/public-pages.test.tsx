@@ -146,7 +146,6 @@ describe("TanStack Start public pages", () => {
     expect(html).toContain('aria-label="Observed uptime: 100% across 1 check; 1 recorded day and 89 no-data days."');
     expect(html).toContain('class="uptime-bar-scroll"');
     expect(html).toContain("private-status-link");
-    expect(html).toContain("Account actions are in the sidebar");
     expect(html).toContain('data-suite-accent="cyan"');
     expect(html).toContain("30-minute checks");
     expect(html).not.toContain("Five-minute checks");

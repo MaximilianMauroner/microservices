@@ -1,26 +1,44 @@
+import { Link, useRouterState } from "@tanstack/react-router";
+import { MenuIcon } from "lucide-react";
 import { PLATFORM_UI_BUILD } from "../build-identity.js";
-import { Link } from "@tanstack/react-router";
 import type { ProductAccent } from "../product-accent.js";
 import { favicons } from "../favicons.js";
+import { currentProduct } from "./tools-nav.js";
+import { Button } from "./ui/button.js";
+import { useOptionalSidebar } from "./ui/sidebar.js";
 
-export function AppShell({ product, showSignOut, accent, icon }: { product: string; showSignOut: boolean; accent?: ProductAccent; icon?: string }) {
+/**
+ * Page chrome for every Tools page. On desktop the sidebar is the only navigation, so the bar is hidden;
+ * it stays in the document because its accent marker themes the page.
+ */
+export function AppShell({ product, accent, icon }: { product: string; accent?: ProductAccent; icon?: string }) {
+  const sidebar = useOptionalSidebar();
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const pages = currentProduct(pathname)?.pages?.filter((page) => !page.external);
   return (
     <>
       <a className="suite-skip skip-link" href="#main">Skip to content</a>
-      <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur-sm" data-suite-shell="orbit" data-suite-accent={accent} data-ui-build={PLATFORM_UI_BUILD}>
-        <div className="mx-auto flex h-14 w-[min(1380px,calc(100%_-_2rem))] items-center justify-between gap-4">
-          <div className="flex min-w-0 items-center gap-3">
-            <Link className="flex items-center gap-2 text-sm font-semibold" to="/" preload="intent" aria-label="Tools dashboard">
-              {icon
-                ? <img className="size-8 rounded-lg" src={icon} alt="" width={32} height={32} />
-                : <img className="size-8 rounded-lg" src={favicons.directory} alt="" width={32} height={32} />}
-              <span>Tools</span>
-            </Link>
-            <span className="text-muted-foreground/45" aria-hidden="true">·</span>
-            <span className="truncate text-xs font-semibold text-muted-foreground">{product}</span>
-          </div>
-          {showSignOut ? <span className="sr-only">Account actions are in the sidebar</span> : null}
+      <header className="sticky top-0 z-40 border-b bg-sidebar md:hidden" data-suite-shell="orbit" data-suite-accent={accent} data-ui-build={PLATFORM_UI_BUILD}>
+        <div className="flex h-13 items-center gap-2 px-2">
+          {sidebar ? <Button variant="ghost" size="icon" onClick={sidebar.toggleSidebar} aria-label="Open navigation"><MenuIcon /></Button> : null}
+          <img className="size-6 rounded-md" src={icon ?? favicons.directory} alt="" width={24} height={24} />
+          <span className="truncate text-sm font-semibold">{product}</span>
         </div>
+        {pages ? (
+          <nav className="flex gap-1 overflow-x-auto border-t px-2 py-1.5 [scrollbar-width:none]" aria-label={`${product} pages`}>
+            {pages.map((page) => (
+              <Link
+                key={page.to}
+                to={page.to}
+                preload="intent"
+                aria-current={page.match(pathname) ? "page" : undefined}
+                className="inline-flex h-8 shrink-0 items-center rounded-full px-3 text-sm font-medium text-muted-foreground aria-[current=page]:bg-secondary aria-[current=page]:text-secondary-foreground"
+              >
+                {page.label}
+              </Link>
+            ))}
+          </nav>
+        ) : null}
       </header>
     </>
   );

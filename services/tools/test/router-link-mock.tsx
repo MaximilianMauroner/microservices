@@ -6,6 +6,10 @@ vi.mock("@tanstack/react-router", async (importOriginal) => {
   return {
     ...router,
     useLocation: () => "/",
+    useRouterState: ({ select }: { select?: (state: { location: { pathname: string; search: Record<string, unknown> }; matches: [] }) => unknown } = {}) => {
+      const state = { location: { pathname: "/", search: {} }, matches: [] as [] };
+      return select ? select(state) : state;
+    },
     Link: ({ to, search, preload: _preload, children, ...props }: ComponentProps<"a"> & { to: string; search?: Record<string, unknown>; preload?: string }) => {
       const parameters = new URLSearchParams();
       for (const [key, value] of Object.entries(search ?? {})) if (value !== undefined) parameters.set(key, String(value));

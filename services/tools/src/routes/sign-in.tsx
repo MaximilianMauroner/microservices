@@ -57,7 +57,7 @@ function SignInRoute() {
 
   return (
     <>
-      <AppShell product="Sign in" showSignOut={false} />
+      <AppShell product="Sign in" />
       <main id="main" className="grid min-h-[calc(100svh-3.5rem)] place-items-center px-4 py-12">
         <SignInPanel
           state={unauthorized ? "unauthorized" : expired ? "expired" : "sign-in"}
