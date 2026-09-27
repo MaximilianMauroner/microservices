@@ -368,10 +368,10 @@ html[data-theme="light"]:has([data-suite-accent]) {
   .money-callout { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; padding: .6rem 1rem; border-top: 1px solid var(--border); font-size: .8125rem; }
   .money-callout__dot { width: .5rem; height: .5rem; flex: none; border-radius: 99px; background: var(--warning); }
   .money-callout__dot[data-tone="positive"] { background: var(--positive); }
-  .money-segmented { display: inline-flex; padding: 2px; border: 1px solid var(--border); border-radius: 99px; background: var(--muted); }
-  .money-segmented button { height: 1.75rem; padding: 0 .7rem; border-radius: 99px; color: var(--muted-foreground); font-size: .8rem; font-weight: 500; white-space: nowrap; transition: color 150ms ease, background-color 150ms ease; }
-  .money-segmented button:hover { color: var(--foreground); }
-  .money-segmented button[aria-pressed="true"] { background: var(--control); color: var(--foreground); box-shadow: 0 0 0 1px var(--control-border); }
+  .segmented { display: inline-flex; max-width: 100%; overflow-x: auto; scrollbar-width: none; padding: 2px; border: 1px solid var(--border); border-radius: 99px; background: var(--muted); }
+  .segmented button { display: inline-flex; align-items: center; gap: .35rem; height: 1.75rem; padding: 0 .7rem; border-radius: 99px; color: var(--muted-foreground); font-size: .8rem; font-weight: 500; white-space: nowrap; transition: color 150ms ease, background-color 150ms ease; }
+  .segmented button:hover { color: var(--foreground); }
+  .segmented button[aria-pressed="true"] { background: var(--control); color: var(--foreground); box-shadow: 0 0 0 1px var(--control-border); }
   .money-twin { border-top: 1px solid var(--border); }
   .money-twin > summary { display: flex; width: fit-content; align-items: center; gap: .5rem; padding: .6rem 1rem; color: var(--muted-foreground); font-size: .8rem; cursor: pointer; list-style: none; }
   .money-twin > summary::-webkit-details-marker { display: none; }

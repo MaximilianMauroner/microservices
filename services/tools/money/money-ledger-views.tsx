@@ -55,7 +55,6 @@ import {
   MoneyPanel,
   PanelBody,
   PanelFooter,
-  Segmented,
   SERIES,
   ShareBar,
   Stat,
@@ -83,6 +82,7 @@ import { Badge } from "../src/components/ui/badge.js";
 import { Button } from "../src/components/ui/button.js";
 import { NativeSelect, NativeSelectOption } from "../src/components/ui/native-select.js";
 import { useIsMobile } from "../src/components/ui/use-mobile.js";
+import { Segmented } from "../src/components/segmented.js";
 import {
   Tooltip,
   TooltipContent,
