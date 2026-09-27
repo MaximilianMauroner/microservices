@@ -7,6 +7,7 @@ import type { MoneyTrackerPageData } from "../src/protected-data.js";
 import type { MoneyCategory } from "./money-enums.js";
 import { buttonVariants } from "../src/components/ui/button.js";
 import { CategoryValue, moneyCategoryLabel } from "./money-category-picker.js";
+import { Segmented } from "../src/components/segmented.js";
 import {
   EmptyState,
   FlowChart,
@@ -20,7 +21,6 @@ import {
   MoneyPanel,
   MonthBars,
   PanelBody,
-  Segmented,
   SERIES,
   ShareBar,
   SparkBars,
