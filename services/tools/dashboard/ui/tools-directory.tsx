@@ -2,13 +2,20 @@
 
 import type { CatalogEntry, PrivateSnapshotDocument, PublicMonitorStatus, PublicSnapshotDocument } from "@tools-platform/domain";
 import { Link, useRouter } from "@tanstack/react-router";
-import { useEffect } from "react";
-import { Activity, ArrowUpRight, CircleOff, CirclePause, Globe2, LockKeyhole, Network, Server, type LucideIcon } from "lucide-react";
+import { useEffect, type ReactElement, type ReactNode } from "react";
+import { ArrowUpRight, CheckCircle2, ChevronRight } from "lucide-react";
+import type { AttentionSummary, DashboardData } from "../../src/attention.js";
 import { AppShell } from "../../src/components/app-shell.js";
+import { PageHeader } from "../../src/components/page-header.js";
+import { Button } from "../../src/components/ui/button.js";
 import { favicons } from "../../src/favicons.js";
-import { products, type ProductAccent, type ProductDefinition, type ProductId } from "../products.js";
+import { countLabel } from "../../src/lib/count-label.js";
+import { products, type ProductDefinition, type ProductId } from "../products.js";
 
 const REFRESH_INTERVAL_MS = 60_000;
+const TIME_ZONE = "Europe/Berlin";
+const dayFormatter = new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "short", timeZone: TIME_ZONE });
+const clockFormatter = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: TIME_ZONE });
 
 const productIcons: Record<ProductId, string> = {
   feedback: favicons.feedback,
@@ -19,20 +26,11 @@ const productIcons: Record<ProductId, string> = {
   "network-console": favicons.networkConsole
 };
 
-const accents: Record<ProductAccent, string> = {
-  lime: "border-lime-300 bg-lime-300 hover:bg-lime-200",
-  violet: "border-violet-300 bg-violet-300 hover:bg-violet-200",
-  amber: "border-amber-300 bg-amber-300 hover:bg-amber-200",
-  cyan: "border-cyan-300 bg-cyan-300 hover:bg-cyan-200",
-  rose: "border-rose-300 bg-rose-300 hover:bg-rose-200",
-  blue: "border-blue-300 bg-blue-300 hover:bg-blue-200"
-};
+type Snapshot = PublicSnapshotDocument | PrivateSnapshotDocument;
+type CatalogProduct = Pick<ProductDefinition, "id" | "name" | "description" | "href" | "monitorId">;
+type NeedsItem = { key: string; icon: string; text: string; tool: string; link: ReactNode; urgent: boolean };
 
-const catalogAccents = ["violet", "amber", "lime", "cyan", "rose", "blue"] as const satisfies readonly ProductAccent[];
-
-type DirectoryProduct = ProductDefinition & Readonly<{ icon: string | LucideIcon }>;
-
-export function ToolsDirectory({ snapshot }: { snapshot: PublicSnapshotDocument | PrivateSnapshotDocument; publicOrigin: string }) {
+export function ToolsDirectory({ snapshot, attention = {}, facts = {} }: { snapshot: Snapshot; publicOrigin: string; attention?: AttentionSummary; facts?: DashboardData["facts"] }) {
   const router = useRouter();
   useEffect(() => {
     const refresh = () => {
@@ -47,113 +45,123 @@ export function ToolsDirectory({ snapshot }: { snapshot: PublicSnapshotDocument 
   }, [router]);
 
   const statuses = statusMap(snapshot);
-  const primaryProducts: readonly DirectoryProduct[] = products.map((product) => ({ ...product, icon: productIcons[product.id] }));
-  const infrastructureProducts = catalogProducts(snapshot);
-  const directoryProducts = [...primaryProducts, ...infrastructureProducts];
-  const monitorIds = new Set(directoryProducts.flatMap((product) => product.monitorId ? [product.monitorId] : []));
+  const infrastructure = catalogProducts(snapshot);
+  const monitorIds = new Set([...products, ...infrastructure].flatMap((product) => product.monitorId ? [product.monitorId] : []));
   const operational = [...monitorIds].filter((id) => statuses[id]?.status === "up").length;
   const healthTone = operational === monitorIds.size ? "bg-positive" : operational === 0 ? "bg-negative" : "bg-warning";
+  const now = new Date(snapshot.generatedAt).getTime();
+  const needs = needsItems(attention, now);
 
   return <>
     <AppShell product="Dashboard" icon={favicons.directory} />
-    <main id="main" className="mx-auto w-[min(1180px,calc(100%_-_2rem))] pb-20 pt-8 sm:pt-20">
-      <section className="grid gap-6 border-b pb-8 sm:gap-8 sm:pb-12 lg:grid-cols-[1fr_auto] lg:items-end">
-        <div>
-          <p className="font-mono text-xs uppercase tracking-[0.18em] text-primary">Private workspace</p>
-          <h1 className="mt-3 max-w-3xl text-4xl font-semibold tracking-[-0.055em] sm:mt-4 sm:text-7xl">Useful things,<br />close at hand.</h1>
-        </div>
-        <div className="flex items-center gap-3 rounded-full border bg-card px-4 py-2 text-sm text-muted-foreground">
-          <span className={`size-2 rounded-full ${healthTone}`} aria-hidden="true" />
-          {operational} of {monitorIds.size} health checks passing
-        </div>
-      </section>
-
-      <section className="grid grid-cols-1 gap-3 pt-5 sm:gap-4 sm:pt-8 md:grid-cols-2 xl:grid-cols-4" aria-label="Products">
-        {primaryProducts.map((product, index) => {
-          const Icon = typeof product.icon === "string" ? undefined : product.icon;
-          const status = monitorStatus(product.monitorId, statuses);
-          const card = <article className={`group flex min-h-0 flex-row items-center justify-between gap-4 rounded-xl border p-4 text-black transition-colors sm:min-h-56 sm:flex-col sm:items-stretch sm:rounded-2xl sm:p-6 ${accents[product.accent]}`}>
-            <div className="flex items-start justify-between gap-4">
-              {typeof product.icon === "string"
-                ? <img className="size-14 rounded-xl sm:size-20" src={product.icon} alt="" width={80} height={80} />
-                : <span className="grid size-11 place-items-center rounded-full border border-black/25 bg-black/10 text-black sm:size-14">{Icon ? <Icon className="size-5 sm:size-6" aria-hidden="true" /> : null}</span>}
-              <span className="hidden font-mono text-xs text-black/45 sm:block">{String(index + 1).padStart(2, "0")}</span>
-            </div>
-            <div className="min-w-0 flex-1 sm:mt-10 sm:flex-none">
-              <div className="flex items-center justify-between gap-3">
-                <h2 className="truncate text-lg font-medium tracking-tight sm:text-2xl">{product.name}</h2>
-                <ArrowUpRight className="size-5 text-black/55 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-black" aria-hidden="true" />
-              </div>
-              <p className="mt-1 truncate text-xs text-black/65 sm:mt-2 sm:text-sm sm:leading-6">{product.description}</p>
-              <ProductMetadata access={product.access} status={status} sharedMonitor={product.monitorId === "tools-directory"} />
-            </div>
-          </article>;
-          return product.external
-            ? <a key={product.id} href={product.href} target="_blank" rel="noreferrer">{card}</a>
-            : product.id === "markdown-share"
-              ? <a key={product.id} href={product.href}>{card}</a>
-            : <Link key={product.id} to={product.href as "/feedback" | "/publisher" | "/money" | "/status" | "/markdown"} preload="intent">{card}</Link>;
-        })}
-      </section>
-
-      {infrastructureProducts.length > 0 ? (
-        <section className="pt-8" aria-labelledby="infrastructure-title">
-          <h2 id="infrastructure-title" className="mb-3 font-mono text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Infrastructure</h2>
-          <div className="grid gap-2 md:grid-cols-2">
-            {infrastructureProducts.map((product) => {
-              const status = monitorStatus(product.monitorId, statuses);
-              return (
-                <a
-                  className="group flex min-w-0 items-center justify-between gap-4 rounded-lg border bg-card px-4 py-3 text-muted-foreground hover:bg-accent hover:text-foreground"
-                  href={product.href}
-                  key={product.id}
-                  rel="noreferrer"
-                  target="_blank"
-                >
-                  <span className="flex min-w-0 items-center gap-3">
-                    <span className="grid size-8 shrink-0 place-items-center rounded-md border bg-background text-muted-foreground" aria-hidden="true">
-                      <Server className="size-4" />
-                    </span>
-                    <span className="min-w-0">
-                      <strong className="block truncate text-xs font-semibold text-foreground">{product.name}</strong>
-                      <span className="block truncate text-xs">{product.description}</span>
-                    </span>
-                  </span>
-                  <span className="flex shrink-0 items-center gap-2 text-xs">
-                    <span className={`size-1.5 rounded-full ${status?.status === "up" ? "bg-positive" : status?.status === "down" ? "bg-negative" : "bg-muted-foreground"}`} aria-hidden="true" />
-                    {infrastructureStatus(status)}
-                    <ArrowUpRight className="size-3.5 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" aria-hidden="true" />
-                  </span>
-                </a>
-              );
-            })}
-          </div>
+    <main id="main" className="tools-page">
+      <PageHeader
+        title="Dashboard"
+        facts={`${dayFormatter.format(new Date(snapshot.generatedAt))} · ${needs.length ? `${countLabel(needs.length, "thing")} need${needs.length === 1 ? "s" : ""} you` : "nothing needs you"}`}
+        actions={<span className="inline-flex h-8 items-center gap-2 rounded-full border bg-card px-3 text-sm text-muted-foreground"><span className={`size-2 rounded-full ${healthTone}`} aria-hidden="true" />{attention.servicesDown?.length ? `${countLabel(attention.servicesDown.length, "service")} down` : monitorIds.size - operational ? `${monitorIds.size - operational} checks need attention` : `${operational} of ${monitorIds.size} checks passing`}</span>}
+      />
+      <div className="grid grid-cols-1 gap-3">
+        <section className="rounded-xl bg-card ring-1 ring-[color:var(--surface-border)]" aria-labelledby="needs-title">
+          <div className="flex items-center justify-between gap-3 px-4 pt-3"><h2 id="needs-title" className="text-sm font-semibold">Needs you</h2><span className="text-xs text-muted-foreground">Ordered by urgency</span></div>
+          {needs.length ? <div className="mt-2">{([true, false] as const).map((urgent) => needs.some((item) => item.urgent === urgent) ? <div key={String(urgent)} className="border-t border-border/60 py-1"><h3 className="px-4 py-1.5 text-xs font-medium text-muted-foreground">{urgent ? "Time-sensitive" : "Ready to review"}</h3><ul className="divide-y divide-border/40" role="list">
+            {needs.filter((item) => item.urgent === urgent).map((item) => <li key={item.key} className="flex min-w-0 items-center gap-3 px-4 py-2.5">
+              <img className="size-5 shrink-0 rounded" src={item.icon} alt="" width={20} height={20} />
+              <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{item.text}</span><span className="block truncate text-xs text-muted-foreground">{item.tool}</span></span>
+              {item.link}
+            </li>)}
+          </ul></div> : null)}</div> : <p className="flex items-center gap-2 px-4 pb-4 pt-2 text-sm text-muted-foreground"><CheckCircle2 className="size-4 text-positive" aria-hidden="true" />Nothing needs you right now.</p>}
         </section>
-      ) : null}
+
+        <section aria-labelledby="workspace-title"><h2 id="workspace-title" className="mb-2 text-sm font-semibold">Your tools</h2><div className="grid grid-cols-1 gap-x-6 sm:grid-cols-2 xl:grid-cols-3">
+          {products.map((product) => {
+            const card = <>
+              <span className="flex min-w-0 items-center gap-2.5">
+                <img className="size-8 shrink-0 rounded-lg" src={productIcons[product.id]} alt="" width={32} height={32} />
+                <span className="min-w-0 flex-1"><strong className="block truncate text-sm font-semibold">{product.name}</strong><span className="block truncate text-xs text-muted-foreground">{toolFacts(product.id, { attention, facts, statuses, operational, total: monitorIds.size, now, monitorId: product.monitorId })}</span></span>
+                {product.external ? <ArrowUpRight className="size-4 text-muted-foreground" aria-hidden="true" /> : <ChevronRight className="size-4 text-muted-foreground" aria-hidden="true" />}
+              </span>
+            </>;
+            const className = "block min-w-0 border-b border-border/60 px-1 py-3 transition-colors hover:bg-accent";
+            return product.external
+              ? <a key={product.id} className={className} href={product.href} target="_blank" rel="noreferrer">{card}</a>
+              : product.id === "markdown-share"
+                ? <Link key={product.id} className={className} to="/documents" preload="intent">{card}</Link>
+                : <Link key={product.id} className={className} to={product.href as "/feedback" | "/publisher" | "/money" | "/status"} preload="intent">{card}</Link>;
+          })}
+        </div></section>
+
+        {infrastructure.length > 0 ? (
+          <details className="rounded-xl bg-card ring-1 ring-[color:var(--surface-border)]" aria-labelledby="infrastructure-title">
+            <summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-3 marker:hidden"><ChevronRight className="size-4 transition-transform [[open]>&]:rotate-90" aria-hidden="true" /><h2 id="infrastructure-title" className="text-sm font-semibold">Infrastructure</h2><span className="text-xs text-muted-foreground">{operational} of {monitorIds.size} checks passing</span></summary>
+            <ul className="grid gap-x-6 px-4 pb-2 pt-1 md:grid-cols-2" role="list">
+              {infrastructure.map((product) => {
+                const status = product.monitorId ? statuses[product.monitorId] : undefined;
+                return <li key={product.id} className="border-t border-border/60">
+                  <a className="group flex min-w-0 items-center gap-3 py-2.5" href={product.href} target="_blank" rel="noreferrer">
+                    <span className={`size-2 shrink-0 rounded-full ${status?.status === "up" ? "bg-positive" : status?.status === "down" ? "bg-negative" : "bg-muted-foreground"}`} aria-hidden="true" />
+                    <span className="min-w-0 flex-1"><strong className="block truncate text-sm font-medium">{product.name}</strong><span className="block truncate text-xs text-muted-foreground">{product.description}</span></span>
+                    <span className={`shrink-0 text-xs ${status?.status === "down" ? "text-negative" : "text-muted-foreground"}`}>{infrastructureStatus(status)}{status?.latencyMs ? ` · ${status.latencyMs} ms` : ""}</span>
+                    <ArrowUpRight className="size-3.5 shrink-0 text-muted-foreground group-hover:text-foreground" aria-hidden="true" />
+                  </a>
+                </li>;
+              })}
+            </ul>
+          </details>
+        ) : null}
+      </div>
     </main>
   </>;
 }
 
-function catalogProducts(snapshot: PublicSnapshotDocument | PrivateSnapshotDocument): DirectoryProduct[] {
+function needsItems(attention: AttentionSummary, now: number): NeedsItem[] {
+  const items: NeedsItem[] = [];
+  const open = (label: string, link: ReactElement) => <Button nativeButton={false} variant="outline" size="sm" render={link}>{label}</Button>;
+  for (const service of attention.servicesDown ?? []) {
+    items.push({ key: `status:${service.name}`, icon: favicons.status, tool: "Status", text: `${service.name} is down${service.since ? ` since ${clockFormatter.format(new Date(service.since))}` : ""}`, link: open("View incident", <Link to="/status" hash="incidents" preload="intent" />), urgent: true });
+  }
+  for (const document of (attention.documentsExpiring ?? []).slice(0, 3)) {
+    items.push({ key: `document:${document.filename}`, icon: favicons.markdownShare, tool: "Markdown Share", text: `${document.filename} expires in ${timeLeft(document.expiresAt - now)}`, link: open("Review document", <Link to="/documents" preload="intent" />), urgent: true });
+  }
+  if (attention.moneyReview) items.push({ key: "money", icon: favicons.money, tool: "Money", text: `${countLabel(attention.moneyReview, "row")} need${attention.moneyReview === 1 ? "s" : ""} review before the totals are exact`, link: open("Review", <Link to="/money" search={{ view: "review" }} preload="intent" />), urgent: false });
+  if (attention.feedbackUnread) items.push({ key: "feedback", icon: favicons.feedback, tool: "Feedback", text: countLabel(attention.feedbackUnread, "unread response"), link: open("Read", <Link to="/feedback" preload="intent" />), urgent: false });
+  return items;
+}
+
+function toolFacts(id: ProductId, input: { attention: AttentionSummary; facts: DashboardData["facts"]; statuses: Record<string, PublicMonitorStatus>; operational: number; total: number; now: number; monitorId?: string }): ReactNode {
+  const { attention, facts } = input;
+  const strong = (value: ReactNode, tone = "") => <strong className={`font-semibold tabular-nums ${tone || "text-foreground"}`}>{value}</strong>;
+  switch (id) {
+    case "publisher":
+      return facts.artifacts === undefined ? <span>Publish plans and files</span> : <span>{strong(facts.artifacts.toLocaleString("en-GB"))} artifacts</span>;
+    case "money":
+      return attention.moneyReview === undefined ? <span>Accounts, spending and plans</span> : attention.moneyReview ? <span>{strong(attention.moneyReview, "text-warning")} to review</span> : <span>Nothing to review</span>;
+    case "feedback":
+      return <>{facts.activeForms === undefined ? null : <span>{strong(facts.activeForms)} open {facts.activeForms === 1 ? "form" : "forms"}</span>}{attention.feedbackUnread === undefined ? null : <span>{strong(attention.feedbackUnread)} unread</span>}</>;
+    case "status":
+      return <span>{strong(`${input.operational} of ${input.total}`)} operational</span>;
+    case "markdown-share":
+      return facts.documents === undefined ? <span>Share rendered Markdown</span> : <><span>{strong(`${facts.documents}${facts.documentsTruncated ? "+" : ""}`)} {facts.documents === 1 ? "document" : "documents"}</span>{facts.nextDocumentExpiry ? <span>next expiry {strong(timeLeft(facts.nextDocumentExpiry - input.now))}</span> : null}</>;
+    case "network-console": {
+      const status = input.monitorId ? input.statuses[input.monitorId] : undefined;
+      return <><span>Tailnet only</span><span className={status?.status === "up" ? "text-positive" : status?.status === "down" ? "text-negative" : ""}>{infrastructureStatus(status)}</span></>;
+    }
+  }
+}
+
+export function timeLeft(ms: number) {
+  const hours = Math.max(1, Math.ceil(ms / 3_600_000));
+  return hours < 48 ? `${hours} h` : `${Math.round(hours / 24)} d`;
+}
+
+function catalogProducts(snapshot: Snapshot): CatalogProduct[] {
   if (!("catalog" in snapshot)) return [];
   const standardMonitorIds = new Set<string>(products.flatMap(({ monitorId }) => monitorId ? [monitorId] : []));
   return snapshot.catalog.entries
     .filter((entry) => entry.lifecycle === "active" && entry.monitor?.enabled && !standardMonitorIds.has(entry.id))
     .sort((left, right) => left.order - right.order || left.name.localeCompare(right.name))
-    .flatMap((entry, index) => {
+    .flatMap((entry) => {
       const link = preferredCatalogLink(entry);
-      if (!link) return [];
-      return [{
-        id: `catalog:${entry.id}`,
-        name: entry.name,
-        description: entry.description,
-        href: link.url,
-        access: catalogAccess(entry, link.url),
-        accent: catalogAccents[index % catalogAccents.length]!,
-        monitorId: entry.id,
-        external: true,
-        icon: Server
-      } satisfies DirectoryProduct];
+      return link ? [{ id: `catalog:${entry.id}`, name: entry.name, description: entry.description, href: link.url, monitorId: entry.id }] : [];
     });
 }
 
@@ -161,12 +169,7 @@ function preferredCatalogLink(entry: CatalogEntry) {
   return entry.links.find(({ access }) => access === "private") ?? entry.links.find(({ access }) => access === "restricted") ?? entry.links[0];
 }
 
-function catalogAccess(entry: CatalogEntry, href: string): ProductDefinition["access"] {
-  if (entry.monitor?.scope === "tailscale" || new URL(href).hostname.endsWith(".ts.net")) return "tailnet";
-  return entry.visibility === "public" && entry.links.some(({ url, access }) => url === href && access === "public") ? "public" : "private";
-}
-
-function statusMap(snapshot: PublicSnapshotDocument | PrivateSnapshotDocument) {
+function statusMap(snapshot: Snapshot): Record<string, PublicMonitorStatus> {
   if (!("catalog" in snapshot)) return snapshot.statuses;
   return Object.fromEntries(snapshot.catalog.entries.flatMap((entry) => {
     if (!entry.monitor?.enabled) return [];
@@ -183,28 +186,10 @@ function statusMap(snapshot: PublicSnapshotDocument | PrivateSnapshotDocument) {
   }));
 }
 
-function monitorStatus(id: string | undefined, statuses: Record<string, PublicMonitorStatus>) {
-  return id ? statuses[id] : undefined;
-}
-
 function infrastructureStatus(status: PublicMonitorStatus | undefined) {
   if (status?.status === "up") return "Operational";
   if (status?.status === "down") return "Unavailable";
   if (status?.status === "paused") return "Paused";
   if (status?.status === "checking") return "Checking";
   return "Not monitored";
-}
-
-function ProductMetadata({ access, status, sharedMonitor = false }: { access: "private" | "tailnet" | "public"; status: PublicMonitorStatus | undefined; sharedMonitor?: boolean }) {
-  const AccessIcon = access === "private" ? LockKeyhole : access === "tailnet" ? Network : Globe2;
-  const accessLabel = access === "private" ? "Private" : access === "tailnet" ? "Tailnet" : "Public";
-  const StatusIcon = status?.status === "up" || status?.status === "checking" ? Activity : status?.status === "paused" ? CirclePause : CircleOff;
-  const statusLabel = status?.status === "up" ? "Operational" : status?.status === "down" ? "Unavailable" : status?.status === "paused" ? "Paused" : status?.status === "checking" ? "Checking" : status?.status === "unavailable" ? "Not reachable here" : "Not monitored";
-
-  return <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-medium text-black/70 sm:mt-5">
-    <span className="inline-flex items-center gap-1.5"><AccessIcon className="size-3.5" aria-hidden="true" />{accessLabel}</span>
-    <span className={`inline-flex items-center gap-1.5${status?.status === "down" ? " text-black" : ""}`} title={sharedMonitor ? "From the shared Tools health check" : undefined}>
-      <StatusIcon className="size-3.5" aria-hidden="true" />{statusLabel}
-    </span>
-  </div>;
 }

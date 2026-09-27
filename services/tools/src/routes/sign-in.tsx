@@ -1,10 +1,8 @@
 import { useState } from "react";
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { getCurrentPrincipal } from "../auth-session.js";
-import { AppShell } from "../components/app-shell.js";
 import { favicons } from "../favicons.js";
 import { Button } from "../components/ui/button.js";
-import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card.js";
 import { authClient } from "../lib/auth-client.js";
 import { safeReturnPath, type SignInReason } from "../lib/auth-return-path.js";
 
@@ -56,16 +54,13 @@ function SignInRoute() {
   }
 
   return (
-    <>
-      <AppShell product="Sign in" />
-      <main id="main" className="grid min-h-[calc(100svh-3.5rem)] place-items-center px-4 py-12">
-        <SignInPanel
-          state={unauthorized ? "unauthorized" : expired ? "expired" : "sign-in"}
-          submitting={submitting}
-          onSignIn={() => void signIn()}
-        />
-      </main>
-    </>
+    <main id="main" className="grid min-h-svh place-items-center px-4 py-12">
+      <SignInPanel
+        state={unauthorized ? "unauthorized" : expired ? "expired" : "sign-in"}
+        submitting={submitting}
+        onSignIn={() => void signIn()}
+      />
+    </main>
   );
 }
 
@@ -79,36 +74,24 @@ export function SignInPanel({
   onSignIn?: () => void;
 }) {
   return (
-    <Card className="w-full max-w-[25rem] gap-0 rounded-[2rem] shadow-2xl shadow-black/25">
-      <CardHeader className="border-b px-6 py-5">
-        <img className="mb-4 size-10 rounded-xl" src={favicons.directory} alt="" width={40} height={40} />
-        <p className="workspace-header__eyebrow">Private workspace</p>
-        <CardTitle className="text-2xl tracking-[-0.035em]">
-          {state === "unauthorized" ? "Account not authorized" : state === "expired" ? "Session expired" : "Sign in to continue"}
-        </CardTitle>
-        <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          {state === "unauthorized"
-            ? "That Google account cannot access this workspace. Choose the authorized account."
-            : state === "expired"
-              ? "Your session ended. Sign in again to return to your work."
-              : "Private Mauroner tools use one authorized Google account."}
-        </p>
-      </CardHeader>
-      <CardContent className="px-6 py-5">
-        <Button
-          className="h-11 w-full"
-          type="button"
-          disabled={submitting}
-          onClick={onSignIn}
-        >
-          <GoogleMark />
-          {submitting ? "Opening Google…" : state === "unauthorized" ? "Choose another Google account" : "Continue with Google"}
-        </Button>
-        <p className="mt-4 text-center font-mono text-xs uppercase tracking-[0.1em] text-muted-foreground">
-          Secure session · 7 days
-        </p>
-      </CardContent>
-    </Card>
+    <section className="grid w-full max-w-[22.5rem] gap-3.5 rounded-2xl border bg-card px-6 py-7 text-center" aria-labelledby="sign-in-title">
+      <img className="mx-auto size-10 rounded-xl" src={favicons.directory} alt="" width={40} height={40} />
+      <h1 id="sign-in-title" className="text-xl font-semibold tracking-[-0.01em]">
+        {state === "unauthorized" ? "This account has no access" : state === "expired" ? "Session expired" : "Sign in to Tools"}
+      </h1>
+      <p className="text-sm text-muted-foreground">
+        {state === "unauthorized"
+          ? "Only one Google account can use this workspace. Choose that account."
+          : state === "expired"
+            ? "Sign in again to return to your work."
+            : "Use the Google account that owns this workspace."}
+      </p>
+      <Button className="h-10 w-full" type="button" disabled={submitting} onClick={onSignIn}>
+        <GoogleMark />
+        {submitting ? "Opening Google…" : state === "unauthorized" ? "Use another Google account" : "Continue with Google"}
+      </Button>
+      <p className="text-xs text-muted-foreground">The session lasts 7 days on this device.</p>
+    </section>
   );
 }
 

@@ -92,35 +92,43 @@ const privateSnapshot: PrivateSnapshotDocument = {
 };
 
 describe("TanStack Start public pages", () => {
-  it("renders the Orbit product dashboard from typed product definitions", () => {
+  it("renders the dashboard tools in product order with their links", () => {
     const html = renderToStaticMarkup(
       <ToolsDirectory snapshot={snapshot} publicOrigin="https://tools.mauroner.net" />
     );
 
     expect(html).toContain('data-suite-shell="orbit"');
-    expect(html).toMatch(/<\/svg>Private<\/span>/);
-    expect(html).toMatch(/<\/svg>Not monitored<\/span>/);
-    expect(html).toContain('title="From the shared Tools health check"');
-    expect(html).toContain("1 of 4 health checks passing");
-    expect(html).toContain("Useful things,");
-    expect(html).toContain("xl:grid-cols-4");
-    expect(html).toContain("Publisher");
-    expect(html).toContain("Markdown Share");
-    expect(html).toContain("bg-violet-300");
-    expect(html).toContain("bg-lime-300");
-    expect(html).toContain("bg-cyan-300");
-    expect(html).toContain("bg-rose-300");
-    expect(html).toContain("bg-blue-300");
-    expect(html).toContain('href="/markdown"');
-    expect(html).toContain('href="/money"');
-    expect(html).toContain('href="/publisher"');
-    expect(html).toContain('href="/status"');
+    expect(html).toContain("3 checks need attention");
+    expect(html).toContain("Nothing needs you right now.");
+    expect(html).not.toContain("Useful things,");
+    for (const href of ["/publisher", "/money", "/feedback", "/status", "/documents"]) expect(html).toContain(`href="${href}"`);
     expect(html.indexOf("Publisher")).toBeLessThan(html.indexOf("Feedback"));
     expect(html.indexOf("Money")).toBeLessThan(html.indexOf("Feedback"));
-    expect(html.indexOf("Feedback")).toBeLessThan(html.indexOf("Status"));
+    expect(html.indexOf("Feedback")).toBeLessThan(html.indexOf(">Status<"));
     for (const product of ["publisher", "money", "status", "markdown-share", "network-console"]) {
       expect(html).toContain(`/assets/icons/${product}.png`);
     }
+  });
+
+  it("lists the work that needs the owner, without expiring files", () => {
+    const generatedAt = new Date(snapshot.generatedAt).getTime();
+    const html = renderToStaticMarkup(
+      <ToolsDirectory
+        snapshot={snapshot}
+        publicOrigin="https://tools.mauroner.net"
+        attention={{ moneyReview: 7, feedbackUnread: 1, servicesDown: [{ name: "Home Assistant", since: null }], documentsExpiring: [{ filename: "notes.md", expiresAt: generatedAt + 3_600_000 }] }}
+        facts={{ artifacts: 142, activeForms: 2 }}
+      />
+    ).replaceAll("&quot;", '"');
+
+    expect(html).toContain("7 rows need review before the totals are exact");
+    expect(html).toContain('href="/money?view=review"');
+    expect(html).toContain("1 unread response");
+    expect(html).toContain("Home Assistant is down");
+    expect(html).toContain("notes.md expires in 1 h");
+    expect(html).toContain("4 things need you");
+    expect(html).not.toMatch(/files? expire/);
+    expect(html).toMatch(/142<\/strong> artifacts/);
   });
 
   it("adds monitored non-standard products from the authenticated catalog", () => {
@@ -134,7 +142,7 @@ describe("TanStack Start public pages", () => {
     expect(html).toContain("Infrastructure");
     expect(html).not.toContain("Public console");
     expect(html).toContain("Publisher");
-    expect(html).toContain("0 of 5 health checks passing");
+    expect(html).toContain("5 checks need attention");
   });
 
   it("renders status semantics and the rolling availability window", () => {
@@ -147,7 +155,7 @@ describe("TanStack Start public pages", () => {
     expect(html).toContain('class="uptime-bar-scroll"');
     expect(html).toContain("private-status-link");
     expect(html).toContain('data-suite-accent="cyan"');
-    expect(html).toContain("30-minute checks");
+    expect(html).toContain("Checked every 30 minutes");
     expect(html).not.toContain("Five-minute checks");
     expect(html.match(/class="uptime-day /g)).toHaveLength(90);
   });

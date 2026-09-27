@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent, DragEvent } from "react";
 import { Link } from "@tanstack/react-router";
-import { Copy, ExternalLink, FolderOpen, RotateCcw, Upload, X } from "lucide-react";
+import { Check, Copy, ExternalLink, FolderOpen, RotateCcw, Upload, X } from "lucide-react";
 import { AppShell } from "../../src/components/app-shell.js";
 import { favicons } from "../../src/favicons.js";
 import { Alert } from "../../src/components/ui/alert.js";
@@ -10,7 +10,7 @@ import { Button } from "../../src/components/ui/button.js";
 import { Card } from "../../src/components/ui/card.js";
 import { Input } from "../../src/components/ui/input.js";
 import type { UploadSummary } from "../../src/protected-data.js";
-import { waitForPublisher } from "./publisher-request.js";
+import { fetchPublisherRead, waitForPublisher } from "./publisher-request.js";
 import {
   UploadCancelledError,
   friendlyUploadError,
@@ -18,7 +18,7 @@ import {
   shouldUseChunkedUpload,
   uploadChunkedFile
 } from "./chunked-upload.js";
-import { UploadLinkManager } from "./upload-link-manager.js";
+import { PageHeader } from "../../src/components/page-header.js";
 import { formatDateTime } from "../../src/lib/format-date.js";
 
 type ItemStatus = "queued" | "checking" | "uploading" | "processing" | "done" | "error" | "cancelled";
@@ -46,7 +46,8 @@ function uploadExternalFile(
   file: File,
   onProgress: (loaded: number, total: number, lengthComputable: boolean) => void,
   onProcessing: () => void,
-  registerXhr: (xhr: XMLHttpRequest | null) => void
+  registerXhr: (xhr: XMLHttpRequest | null) => void,
+  options: { persistentHtml: boolean; project: string }
 ): Promise<UploadSummary> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -78,11 +79,12 @@ function uploadExternalFile(
       registerXhr(null);
       reject(new Error("The upload timed out. Try again with a smaller file or better connection."));
     });
-    xhr.open("POST", "/api/external-uploads");
+    xhr.open("POST", options.persistentHtml ? "/api/browser-html-uploads" : "/api/external-uploads");
     xhr.setRequestHeader("Accept", "application/json");
     xhr.withCredentials = true;
     const form = new FormData();
     form.append("file", file);
+    if (options.persistentHtml && options.project.trim()) form.append("project", options.project.trim());
     xhr.send(form);
   });
 }
@@ -110,6 +112,9 @@ export function PublishPage() {
   const [results, setResults] = useState<UploadSummary[]>([]);
   const [items, setItems] = useState<UploadItem[]>([]);
   const [message, setMessage] = useState<{ text: string; tone: "success" | "error" }>();
+  const [fileExpiry, setFileExpiry] = useState<"1" | "3" | "7" | "30" | "permanent">("3");
+  const [htmlProject, setHtmlProject] = useState("");
+  const expiryWarning = useRef(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const activeXhr = useRef<XMLHttpRequest | null>(null);
   const abortController = useRef<AbortController | null>(null);
@@ -156,9 +161,11 @@ export function PublishPage() {
       const registerXhr = (xhr: XMLHttpRequest | null) => {
         activeXhr.current = xhr;
       };
-      const payload = shouldUseChunkedUpload(file.size)
+      const htmlPlan = /\.html?$/i.test(file.name);
+      const htmlFile = htmlPlan && file.type !== "text/html" ? new File([file], file.name, { type: "text/html" }) : file;
+      let payload = !htmlPlan && shouldUseChunkedUpload(file.size)
         ? await uploadChunkedFile(
-            file,
+            htmlFile,
             {
               onProgress: (loaded, total) => {
                 const percent = total > 0 ? Math.min(100, Math.round((loaded / total) * 100)) : 0;
@@ -175,7 +182,7 @@ export function PublishPage() {
             }
           )
         : await uploadExternalFile(
-            file,
+            htmlFile,
             (loaded, total, lengthComputable) => {
               const totalBytes = lengthComputable && total > 0 ? total : file.size;
               const percent = totalBytes > 0 ? Math.min(100, Math.round((loaded / totalBytes) * 100)) : 0;
@@ -187,9 +194,24 @@ export function PublishPage() {
               });
             },
             onProcessing,
-            registerXhr
+            registerXhr,
+            { persistentHtml: htmlPlan, project: htmlProject }
           );
-      updateItem(key, { status: "done", loaded: file.size, percent: 100, note: "Uploaded." });
+      let expiryApplied = true;
+      if (!htmlPlan && fileExpiry !== "3") {
+        try {
+          const expiresAt = fileExpiry === "permanent" ? null : new Date(Date.now() + Number(fileExpiry) * 86_400_000).toISOString();
+          const response = await fetch(`/api/external-uploads/${payload.id}`, { method: "PATCH", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ expiresAt }) });
+          if (!response.ok) throw new Error("The selected expiry could not be applied.");
+          const { expiresAt: _previous, ...withoutExpiry } = payload;
+          payload = expiresAt ? { ...withoutExpiry, expiresAt } : withoutExpiry;
+        } catch {
+          expiryWarning.current = true;
+          expiryApplied = false;
+          updateItem(key, { note: "Uploaded, but the selected expiry was not applied. Check Library." });
+        }
+      }
+      updateItem(key, { status: "done", loaded: file.size, percent: 100, ...(expiryApplied ? { note: "Uploaded." } : {}) });
       setResults((current) => [...current, payload]);
       return { outcome: "done" as const, payload };
     } catch (error) {
@@ -204,6 +226,7 @@ export function PublishPage() {
   }
 
   function summarizeAndFinish(succeeded: number, failed: number, cancelled: number, total: number) {
+    if (expiryWarning.current) { setMessage({ text: "Some files uploaded, but their selected expiry could not be applied. Check and correct them in Library.", tone: "error" }); expiryWarning.current = false; return; }
     if (failed === 0 && cancelled === 0) {
       setMessage({
         text: total === 1 ? "File is ready to share." : `${total} files are ready to share.`,
@@ -400,27 +423,21 @@ export function PublishPage() {
   return (
     <>
       <AppShell product="Publisher" accent="violet" icon={favicons.publisher} />
-      <main id="main" className="workspace-page workspace-page--narrow">
-        <section className="workspace-header" aria-labelledby="publish-title">
-          <div>
-            <p className="workspace-header__eyebrow">Artifact publisher</p>
-            <h1 id="publish-title">Share a new file</h1>
-            <p className="workspace-header__description">Upload once, then maintain it from the artifact library.</p>
-          </div>
-          <div className="workspace-header__actions"><Button nativeButton={false} variant="outline" size="sm" render={<Link to="/publisher/artifacts" preload="intent" />}>
+      <main id="main" className="tools-page">
+        <PageHeader title="Publish" facts="Drop a file to get an unlisted link. HTML plans stay until revoked; other files expire." actions={<Button nativeButton={false} variant="outline" size="sm" render={<Link to="/publisher/artifacts" preload="intent" />}>
             <FolderOpen /> Manage artifacts
-          </Button></div>
-        </section>
+          </Button>} />
 
         {message ? <Alert className="mb-4" variant={message.tone === "error" ? "destructive" : "default"}>{message.text}</Alert> : null}
 
-        <section className="grid gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(16rem,.6fr)]" aria-label="Upload workspace">
+        <section className="grid gap-3 lg:grid-cols-[minmax(0,1.6fr)_minmax(16rem,.7fr)]" aria-label="Upload workspace">
+          <div className="grid gap-3">
           <Card className={`text-center transition-colors ${dragging ? "border-foreground bg-secondary" : ""} ${hasItems ? "place-items-stretch p-6 text-left" : "grid min-h-72 place-items-center border border-dashed"}`} onDragEnter={(event) => { event.preventDefault(); if (!busy) setDragging(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setDragging(false)} onDrop={dropFile}>
             {!hasItems ? (
               <div className="max-w-md p-6">
                 <div className="mx-auto mb-4 grid size-11 place-items-center rounded-full border text-muted-foreground" aria-hidden="true"><Upload /></div>
                 <strong className="text-lg">Drop files here</strong>
-                <p className="mt-2 text-sm text-muted-foreground">File links expire after 3 days by default; the exact expiry is shown after upload. Anyone with the link can download the file.</p>
+                <p className="mt-2 text-sm text-muted-foreground">HTML plans stay until revoked. Other files use the expiry selected below. Anyone with the link can open it.</p>
                 <Input className="hidden" ref={fileInput} type="file" multiple onChange={chooseFile} aria-label="Choose files to upload" tabIndex={-1} />
                 <Button className="mt-5" type="button" size="sm" onClick={() => fileInput.current?.click()} disabled={busy}>
                   {busy ? "Working…" : "Choose files"}
@@ -506,15 +523,13 @@ export function PublishPage() {
                     </Button>
                   ) : null}
                 </div>
-                <p className="mt-3 text-xs text-muted-foreground">File links expire after 3 days by default; the exact expiry is shown after upload. Anyone with the link can download the file.</p>
+                <p className="mt-3 text-xs text-muted-foreground">The exact file expiry and capability URL appear after upload.</p>
               </div>
             )}
           </Card>
-          <aside className="rounded-xl border bg-card p-5" aria-label="Upload policy">
-            <h2 className="font-semibold">Upload policy</h2>
-            <p className="mt-2 text-sm text-muted-foreground">Generated URLs are public, unlisted capability links. Anyone with the URL can download the file until it expires or is revoked.</p>
-            <dl className="mt-5 grid gap-3 text-xs"><div><dt className="text-muted-foreground">Delivery</dt><dd className="mt-1 font-medium">Expires after 3 days by default</dd></div><div><dt className="text-muted-foreground">Access</dt><dd className="mt-1 font-medium">Unlisted URL</dd></div><div><dt className="text-muted-foreground">Maintenance</dt><dd className="mt-1 font-medium">Manage artifact library</dd></div></dl>
-          </aside>
+          <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-card px-4 py-3 text-xs"><span className="font-medium">File expiry</span><div className="flex flex-wrap gap-1" role="group" aria-label="File expiry">{([ ["1", "1 day"], ["3", "3 days"], ["7", "7 days"], ["30", "30 days"], ["permanent", "Permanent"] ] as const).map(([value, label]) => <button key={value} type="button" disabled={busy} aria-pressed={fileExpiry === value} className={`rounded-md border px-2 py-1 ${fileExpiry === value ? "border-primary bg-primary/10" : "text-muted-foreground hover:bg-accent"}`} onClick={() => setFileExpiry(value)}>{label}</button>)}</div><label className="flex items-center gap-2">HTML project <Input className="h-8 w-40" value={htmlProject} maxLength={120} onChange={(event) => setHtmlProject(event.target.value)} disabled={busy} placeholder="Optional" /></label></div>
+          </div>
+          <RecentArtifacts refreshKey={results.length} />
         </section>
 
         <UploadResultsList results={results} onCopyAll={() => void copyResultUrls(results)} onCopy={(result) => void copyResultUrls([result])} />
@@ -525,10 +540,23 @@ export function PublishPage() {
             onRetry={(key) => void retryKeys([key])}
           />
         ) : null}
-        <UploadLinkManager />
       </main>
     </>
   );
+}
+
+function RecentArtifacts({ refreshKey }: { refreshKey: number }) {
+  const [recent, setRecent] = useState<UploadSummary[]>([]);
+  const [copied, setCopied] = useState<string>();
+  const [copyError, setCopyError] = useState(false);
+  useEffect(() => {
+    let current = true;
+    void fetchPublisherRead("/api/external-uploads?limit=6&sort=newest", { credentials: "same-origin" })
+      .then(async (response) => response.ok ? response.json() as Promise<{ uploads: UploadSummary[] }> : { uploads: [] })
+      .then((payload) => { if (current) setRecent(payload.uploads); }, () => undefined);
+    return () => { current = false; };
+  }, [refreshKey]);
+  return <aside className="self-start overflow-hidden rounded-xl border bg-card" aria-labelledby="recent-artifacts-title"><div className="flex items-center justify-between border-b px-4 py-3"><h2 id="recent-artifacts-title" className="text-sm font-semibold">Recent</h2><Link className="text-xs text-muted-foreground hover:text-foreground" to="/publisher/artifacts" preload="intent">Library ›</Link></div>{recent.length ? <ul className="divide-y">{recent.map((upload) => <li key={upload.id} className="flex min-w-0 items-center gap-2 px-4 py-2.5"><span className="min-w-0 flex-1"><strong className="block truncate text-xs font-medium">{upload.filename}</strong><span className="block truncate text-xs text-muted-foreground">{upload.project ?? "Unassigned"} · {formatDateTime(upload.updatedAt)}</span></span><Badge variant={upload.expiresAt ? "outline" : "secondary"}>{upload.expiresAt ? "Temporary" : "Persistent"}</Badge><Button size="icon-sm" variant="ghost" aria-label={`Copy link for ${upload.filename}`} onClick={() => void navigator.clipboard.writeText(upload.url).then(() => { setCopied(upload.id); setCopyError(false); }, () => setCopyError(true))}>{copied === upload.id ? <Check /> : <Copy />}</Button></li>)}</ul> : <p className="px-4 py-5 text-xs text-muted-foreground">Published artifacts will appear here.</p>}{copyError ? <p className="border-t px-4 py-2 text-xs text-destructive" role="alert">Could not copy the link. Open Library to select it manually.</p> : null}</aside>;
 }
 
 export function UploadIssuesList({ issues, onRetryAll, onRetry }: { issues: UploadItem[]; onRetryAll: () => void; onRetry: (key: string) => void }) {
@@ -584,4 +612,3 @@ function formatBytes(bytes: number) {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
-

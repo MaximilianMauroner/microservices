@@ -144,6 +144,7 @@ export function isArtifactPath(pathname: string): boolean {
     "/publisher",
     "/api/uploads",
     "/api/external-uploads",
+    "/api/browser-html-uploads",
     "/api/upload-links",
     "/api/drop",
     "/drop",

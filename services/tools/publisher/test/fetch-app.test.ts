@@ -825,6 +825,22 @@ describe("native artifact fetch handler", () => {
     expect(storage.pages.size).toBe(0);
   });
 
+  it("keeps browser HTML plans persistent while rejecting non-HTML files on that route", async () => {
+    const storage = new MemoryUploadStorage();
+    const app = createFetchApp({ storage, uploadToken: "upload-token", browserPersistentUpload: true, publicBaseUrl: "https://tools.example.test" });
+    const headers = { Origin: "https://tools.example.test" };
+    const plan = await app(new Request("https://tools.example.test/api/browser-html-uploads", { method: "POST", headers, body: multipart("plan.html", "<h1>plan</h1>", "text/html", "microservices") }));
+    expect(plan.status).toBe(201);
+    expect(await plan.json()).toMatchObject({ kind: "html", project: "microservices" });
+    expect(storage.pages.size).toBe(1);
+    const file = await app(new Request("https://tools.example.test/api/browser-html-uploads", { method: "POST", headers, body: multipart("private.txt", "secret", "text/plain") }));
+    expect(file.status).toBe(400);
+    expect(await file.json()).toMatchObject({ error: "html_upload_required" });
+    expect(storage.files.size).toBe(0);
+    const crossOrigin = await app(new Request("https://tools.example.test/api/browser-html-uploads", { method: "POST", headers: { Origin: "https://other.example.test" }, body: multipart("plan.html", "<h1>plan</h1>", "text/html") }));
+    expect(crossOrigin.status).toBe(403);
+  });
+
   it("lets the authenticated browser replace, reassign, and revoke an HTML artifact", async () => {
     const storage = new MemoryUploadStorage();
     const app = createFetchApp({

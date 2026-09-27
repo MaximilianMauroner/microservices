@@ -1,10 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { CheckIcon, LaptopIcon, MoonIcon, SunIcon } from "lucide-react";
+import { LogOutIcon } from "lucide-react";
+import type { ReactNode } from "react";
 import { requireRouteSession } from "../auth-session.js";
 import { authClient } from "../lib/auth-client.js";
+import { formatDate } from "../lib/format-date.js";
 import { useTheme, type ThemePreference } from "../components/theme-provider.js";
+import { AppShell } from "../components/app-shell.js";
+import { PageHeader } from "../components/page-header.js";
+import { Segmented } from "../components/segmented.js";
 import { Avatar, AvatarFallback } from "../components/ui/avatar.js";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card.js";
+import { Button } from "../components/ui/button.js";
+import { useSidebar } from "../components/ui/sidebar.js";
 
 export const Route = createFileRoute("/settings")({
   beforeLoad: ({ location }) => requireRouteSession(location.href),
@@ -12,69 +18,57 @@ export const Route = createFileRoute("/settings")({
   component: SettingsPage
 });
 
-const choices = [
-  { value: "light", label: "Light", description: "A bright background and dark text.", icon: SunIcon },
-  { value: "dark", label: "Dark", description: "A low-light interface with high contrast.", icon: MoonIcon },
-  { value: "system", label: "System", description: "Follow this device's appearance setting.", icon: LaptopIcon }
-] as const;
+const THEMES = [["light", "Light"], ["dark", "Dark"], ["system", "System"]] as const;
+const SIDEBAR = [["open", "Open"], ["icons", "Icons only"]] as const;
 
 function SettingsPage() {
   const { data: session } = authClient.useSession();
   const { theme, resolvedTheme, setTheme } = useTheme();
+  const sidebar = useSidebar();
   const name = session?.user.name || "Account";
   const email = session?.user.email || "Signed in";
   const initials = name.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase();
 
+  async function signOut() {
+    await authClient.signOut();
+    window.location.assign("/");
+  }
+
   return (
-    <main id="main" className="mx-auto w-full max-w-3xl px-5 py-7 sm:px-8 sm:py-9">
-      <header className="mb-6 border-b pb-5">
-        <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Account details and appearance for this device.</p>
-      </header>
+    <>
+      <AppShell product="Settings" />
+      <main id="main" className="tools-page">
+        <PageHeader title="Settings" facts="Your account and how Tools looks on this device" />
+        <section className="max-w-3xl divide-y divide-border/60 rounded-xl bg-card ring-1 ring-[color:var(--surface-border)]" aria-label="Settings">
+          <SettingRow label="Account" detail="From Google">
+            <span className="flex min-w-0 items-center gap-3">
+              <Avatar className="size-10"><AvatarFallback>{initials || "A"}</AvatarFallback></Avatar>
+              <span className="min-w-0"><strong className="block truncate text-sm font-semibold">{name}</strong><span className="block truncate text-sm text-muted-foreground">{email}</span></span>
+            </span>
+          </SettingRow>
+          <SettingRow label="Appearance" detail="Saved on this device">
+            <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <Segmented label="Appearance" options={THEMES} value={theme} onValue={(value: ThemePreference) => setTheme(value)} />
+              {theme === "system" ? <span className="text-[0.8125rem] text-muted-foreground">System is {resolvedTheme} now</span> : null}
+            </span>
+          </SettingRow>
+          <SettingRow label="Sidebar" detail="Also Ctrl+B or ⌘B">
+            <Segmented label="Sidebar" options={SIDEBAR} value={sidebar.open ? "open" : "icons"} onValue={(value) => sidebar.setOpen(value === "open")} />
+          </SettingRow>
+          <SettingRow label="Session" detail={session?.session.expiresAt ? `Ends ${formatDate(session.session.expiresAt)}` : "Signed in"}>
+            <Button variant="destructive-subtle" size="sm" onClick={() => void signOut()}><LogOutIcon />Sign out</Button>
+          </SettingRow>
+        </section>
+      </main>
+    </>
+  );
+}
 
-      <div className="grid gap-5">
-        <Card size="sm">
-          <CardHeader>
-            <CardTitle>Profile</CardTitle>
-            <CardDescription>Your identity comes from your Google account and cannot be edited here.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-3 rounded-lg border bg-muted/35 p-3">
-              <Avatar size="lg" className="size-11"><AvatarFallback>{initials || "A"}</AvatarFallback></Avatar>
-              <div className="min-w-0">
-                <strong className="block truncate text-sm font-semibold">{name}</strong>
-                <span className="block truncate text-sm text-muted-foreground">{email}</span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card size="sm">
-          <CardHeader>
-            <CardTitle>Appearance</CardTitle>
-            <CardDescription>Choose a theme for this browser. System currently resolves to {resolvedTheme}.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-3 sm:grid-cols-3" role="radiogroup" aria-label="Appearance">
-              {choices.map(({ value, label, description, icon: Icon }) => (
-                <button
-                  key={value}
-                  type="button"
-                  role="radio"
-                  aria-checked={theme === value}
-                  onClick={() => setTheme(value as ThemePreference)}
-                  className="relative min-h-28 rounded-lg border bg-background p-3 text-left transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring aria-checked:border-primary aria-checked:bg-muted"
-                >
-                  <Icon className="mb-3 size-5 text-muted-foreground" />
-                  <strong className="block text-sm font-semibold">{label}</strong>
-                  <span className="mt-1 block text-xs leading-5 text-muted-foreground">{description}</span>
-                  {theme === value ? <span className="absolute right-3 top-3 grid size-5 place-items-center rounded-full bg-primary text-primary-foreground"><CheckIcon className="size-3.5" /></span> : null}
-                </button>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    </main>
+function SettingRow({ label, detail, children }: { label: string; detail: string; children: ReactNode }) {
+  return (
+    <div className="grid items-center gap-x-5 gap-y-2 px-4 py-3.5 sm:grid-cols-[11rem_minmax(0,1fr)]">
+      <div><strong className="block text-sm font-semibold">{label}</strong><span className="block text-[0.8125rem] text-muted-foreground">{detail}</span></div>
+      <div className="min-w-0">{children}</div>
+    </div>
   );
 }

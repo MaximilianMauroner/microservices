@@ -6,6 +6,9 @@ import { Button } from "../../src/components/ui/button.js";
 import { NativeSelect } from "../../src/components/ui/native-select.js";
 import { Card } from "../../src/components/ui/card.js";
 import { formatDateTime } from "../../src/lib/format-date.js";
+import { AppShell } from "../../src/components/app-shell.js";
+import { PageHeader } from "../../src/components/page-header.js";
+import { favicons } from "../../src/favicons.js";
 
 type UploadLinkSummary = {
   id: string;
@@ -24,6 +27,10 @@ const durations = [
   { label: "7 days", value: 7 * 24 * 60 * 60 * 1000 },
   { label: "30 days", value: 30 * 24 * 60 * 60 * 1000 }
 ] as const;
+
+export function ReceiveFilesPage() {
+  return <><AppShell product="Publisher" accent="violet" icon={favicons.publisher} /><main id="main" className="tools-page"><PageHeader title="Receive files" facts="People with an active link can send you files without signing in." /><UploadLinkManager /></main></>;
+}
 
 export function UploadLinkManager() {
   const [links, setLinks] = useState<UploadLinkSummary[]>([]);
@@ -124,47 +131,22 @@ export function UploadLinkManager() {
 
   const now = Date.now();
   return (
-    <section className="mt-6" aria-labelledby="upload-links-title">
-      <div className="mb-3 flex items-end justify-between gap-3">
-        <div><p className="workspace-header__eyebrow">Receive files</p>
-          <h2 id="upload-links-title" className="text-xl font-semibold">Guest upload links</h2>
-          <p className="mt-1 text-sm text-muted-foreground">Anyone with an active link can send any number of files without signing in.</p>
-        </div>
-        <Button type="button" variant="outline" size="sm" onClick={() => void loadLinks()} disabled={busy}><RotateCcw /> Refresh</Button>
+    <section aria-labelledby="upload-links-title">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h2 id="upload-links-title" className="text-sm font-semibold">Upload links</h2>
+        <div className="flex items-center gap-2"><NativeSelect className="w-32" aria-label="Link duration" value={durationMs} onChange={(event) => setDurationMs(Number(event.currentTarget.value))} disabled={busy}>{durations.map((duration) => <option key={duration.value} value={duration.value}>{duration.label}</option>)}</NativeSelect><Button type="button" size="sm" onClick={() => void createLink()} disabled={busy}><Plus /> Create link</Button><Button type="button" variant="outline" size="icon-sm" aria-label="Refresh links" onClick={() => void loadLinks()} disabled={busy}><RotateCcw /></Button></div>
       </div>
       {error ? <Alert className="mb-3" variant="destructive">{error}</Alert> : null}
-      <Card className="gap-4 p-5">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-          <label className="grid flex-1 gap-1 text-sm font-medium">Link duration
-            <NativeSelect className="w-full" value={durationMs} onChange={(event) => setDurationMs(Number(event.currentTarget.value))} disabled={busy}>
-              {durations.map((duration) => <option key={duration.value} value={duration.value}>{duration.label}</option>)}
-            </NativeSelect>
-          </label>
-          <Button type="button" variant="outline" size="sm" onClick={() => void createLink()} disabled={busy}><Plus /> Create upload link</Button>
-        </div>
-        {created ? <div ref={createdRef} className="rounded-lg border border-primary/30 bg-secondary p-4" aria-live="polite">
+        {created ? <Card ref={createdRef} className="mb-3 gap-3 border border-primary/30 bg-secondary p-4" aria-live="polite">
           <div className="flex items-center gap-2"><Badge>New link</Badge><span className="text-xs text-muted-foreground">Copy it now; the secret is not stored.</span></div>
           <p className="mt-3 break-all font-mono text-xs">{created.url}</p>
           <div className="mt-3 flex flex-wrap gap-2"><Button type="button" variant="outline" size="sm" onClick={() => void copyCreated()}><Copy /> Copy link</Button><Button nativeButton={false} variant="outline" size="sm" render={<a href={created.url} target="_blank" rel="noreferrer" />}><Link2 /> Open link</Button></div>
-        </div> : null}
-      </Card>
-      {links.length > 0 ? <div className="mt-3 grid gap-2" aria-label="Upload links">
+        </Card> : null}
+      {links.length > 0 ? <div className="overflow-x-auto rounded-xl border bg-card" aria-label="Upload links"><table className="w-full text-left text-sm"><thead className="border-b text-xs text-muted-foreground"><tr><th className="px-4 py-2">Link</th><th className="px-4 py-2">Status</th><th className="hidden px-4 py-2 text-right sm:table-cell">Files</th><th className="hidden px-4 py-2 sm:table-cell">Expires</th><th className="px-4 py-2 text-right"><span className="sr-only">Actions</span></th></tr></thead><tbody className="divide-y">
         {links.map((link) => {
           const active = !link.revokedAt && new Date(link.expiresAt).getTime() > now;
-          return <Card key={link.id} className="gap-0 py-0"><div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-w-0"><div className="flex items-center gap-2"><Link2 className="size-4" aria-hidden="true" /><Badge variant={active ? "positive" : "secondary"}>{link.revokedAt ? "Revoked" : active ? "Active" : "Expired"}</Badge></div><p className="mt-2 text-xs text-muted-foreground">{link.fileCount} {link.fileCount === 1 ? "file" : "files"} received · created {formatDateTime(link.createdAt)} · expires {formatDateTime(link.expiresAt)}</p></div>
-            <div className="flex shrink-0 flex-wrap gap-2">
-              {active && created?.id === link.id ? <><Button type="button" variant="outline" size="sm" onClick={() => void copyCreated()}><Copy /> Copy</Button><Button nativeButton={false} variant="outline" size="sm" render={<a href={created.url} target="_blank" rel="noreferrer" />}><Link2 /> Open</Button></> : null}
-              {active && created?.id !== link.id ? <Button type="button" variant="outline" size="sm" onClick={() => void createLink()} disabled={busy}><Plus /> New shareable link</Button> : null}
-              {link.fileCount > 0 ? <Button nativeButton={false} variant="outline" size="sm" render={<a href={`/api/upload-links/${link.id}/download`} />}><Download /> Download all</Button> : null}
-              {!link.revokedAt ? <Button type="button" variant="outline" size="sm" onClick={() => void revokeLink(link.id)} disabled={busy}><X /> Revoke</Button> : null}
-            </div>
-          </div></Card>;
-        })}
-        {nextCursor ? <div className="flex justify-center pt-1"><Button type="button" variant="outline" size="sm" onClick={() => void loadOlderLinks()} disabled={busy}>Load older links</Button></div> : null}
-        <p className="text-xs text-muted-foreground">For links created earlier, the secret URL cannot be recovered. Create a new shareable link using the selected duration, then revoke the old link if it is no longer needed.</p>
-      </div> : null}
+          return <tr key={link.id}><td className="px-4 py-2"><strong className="block text-xs font-medium">Created {formatDateTime(link.createdAt)}</strong><span className="block text-xs text-muted-foreground sm:hidden">{link.fileCount} files · expires {formatDateTime(link.expiresAt)}</span></td><td className="px-4 py-2"><Badge variant={active ? "positive" : "secondary"}>{link.revokedAt ? "Revoked" : active ? "Active" : "Expired"}</Badge></td><td className="hidden px-4 py-2 text-right tabular-nums sm:table-cell">{link.fileCount}</td><td className="hidden px-4 py-2 text-xs text-muted-foreground sm:table-cell">{formatDateTime(link.expiresAt)}</td><td className="px-4 py-2"><div className="flex justify-end gap-1">{active && created?.id === link.id ? <Button type="button" variant="ghost" size="icon-sm" aria-label="Copy upload link" onClick={() => void copyCreated()}><Copy /></Button> : null}{link.fileCount > 0 ? <Button nativeButton={false} variant="ghost" size="icon-sm" aria-label="Download received files" render={<a href={`/api/upload-links/${link.id}/download`} />}><Download /></Button> : null}{!link.revokedAt ? <Button type="button" variant="destructive-subtle" size="sm" onClick={() => void revokeLink(link.id)} disabled={busy}><X /> Revoke</Button> : null}</div></td></tr>;
+        })}</tbody></table>{nextCursor ? <div className="flex justify-center border-t p-3"><Button type="button" variant="outline" size="sm" onClick={() => void loadOlderLinks()} disabled={busy}>Load older links</Button></div> : null}<p className="border-t px-4 py-3 text-xs text-muted-foreground">Older link URLs cannot be shown again because their secrets are not stored.</p></div> : <p className="rounded-xl border bg-card p-5 text-sm text-muted-foreground">No upload links yet. Create one to receive files.</p>}
     </section>
   );
 }
-
