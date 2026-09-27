@@ -11,7 +11,7 @@ const documents = [
 describe("DocumentsPage", () => {
   it("renders the task-focused inventory with shadcn table semantics", () => {
     const html = renderToStaticMarkup(<DocumentsPage initial={{ actor: "operator@example.test", publicOrigin: "https://markdown.example.test", generatedAt: now, documents, truncated: false }} />);
-    expect(html).toContain("Manage active documents.");
+    expect(html).toContain("Manage active documents");
     expect(html).toContain('data-slot="table"');
     expect(html).toContain("recent.md");
     expect(html).toContain("New document");

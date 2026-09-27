@@ -1490,7 +1490,7 @@ function BatchImportPanel({
                               )}
                         </span>
                       </div>
-                      <p className="mt-1 text-[.68rem] text-muted-foreground">
+                      <p className="mt-1 text-xs text-muted-foreground">
                         {account.rowCount.toLocaleString("en-GB")} rows ·{" "}
                         {account.revertedCount} reverted ·{" "}
                         {reconciliationLabel(

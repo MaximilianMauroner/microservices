@@ -19,20 +19,6 @@ export function moneyViewTitle(view: MoneyTrackerView) {
   return TITLES[view];
 }
 
-/** Views from before the redesign, mapped to the view that now holds their content. */
-const LEGACY_VIEWS: Record<string, { view: MoneyTrackerView; tab?: MoneyReviewTab }> = {
-  "cash-flow": { view: "spending" },
-  categories: { view: "spending" },
-  insights: { view: "overview" },
-  predictions: { view: "plan" },
-  data: { view: "review" },
-  rules: { view: "review", tab: "rules" },
-};
-
-export function legacyMoneyView(view: unknown) {
-  return typeof view === "string" ? LEGACY_VIEWS[view] : undefined;
-}
-
 /** Rows that keep data out of the totals until someone reviews them. */
 export function moneyReviewCount(counts: { uncategorized: number; transfers: number } | undefined) {
   return counts ? counts.uncategorized + counts.transfers : 0;

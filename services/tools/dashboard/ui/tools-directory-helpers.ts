@@ -1,4 +1,5 @@
 import type { PublicMonitorStatus } from "@tools-platform/domain";
+import { formatDateTime } from "../../src/lib/format-date.js";
 
 export function resolveBrowserLink(href: string, publicOrigin: string) {
   const destination = new URL(href);
@@ -13,5 +14,5 @@ export function statusDetails(status: PublicMonitorStatus | undefined) {
 export function formatTimestamp(value: string) {
   const timestamp = new Date(value);
   if (Number.isNaN(timestamp.getTime())) return value;
-  return new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }).format(timestamp) + " UTC";
+  return formatDateTime(timestamp);
 }

@@ -98,10 +98,9 @@ describe("TanStack Start public pages", () => {
     );
 
     expect(html).toContain('data-suite-shell="orbit"');
-    expect(html).toContain('aria-label="Private"');
-    expect(html).toContain('aria-label="Not monitored"');
-    expect(html).toContain('aria-label="Tools service: not monitored"');
-    expect(html).toContain("Shared Tools check");
+    expect(html).toMatch(/<\/svg>Private<\/span>/);
+    expect(html).toMatch(/<\/svg>Not monitored<\/span>/);
+    expect(html).toContain('title="From the shared Tools health check"');
     expect(html).toContain("1 of 4 health checks passing");
     expect(html).toContain("Useful things,");
     expect(html).toContain("xl:grid-cols-4");
@@ -144,9 +143,8 @@ describe("TanStack Start public pages", () => {
     );
 
     expect(html).toContain("All monitored services operational");
-    expect(html).toContain('aria-label="Observed uptime: 100% across 1 checks; 1 recorded days and 89 no-data days."');
+    expect(html).toContain('aria-label="Observed uptime: 100% across 1 check; 1 recorded day and 89 no-data days."');
     expect(html).toContain('class="uptime-bar-scroll"');
-    expect(html).toContain("uptime-scroll-hint");
     expect(html).toContain("private-status-link");
     expect(html).toContain("Account actions are in the sidebar");
     expect(html).toContain('data-suite-accent="cyan"');

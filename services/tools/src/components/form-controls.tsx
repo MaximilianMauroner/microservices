@@ -6,6 +6,7 @@ import {
   SelectTrigger,
   SelectValue
 } from "./ui/select.js";
+import { cn } from "../lib/utils.js";
 
 export type SelectOption = {
   value: string;
@@ -51,8 +52,9 @@ export function AppSelect({
       onValueChange={(next) => onValueChange?.(next ?? "")}
       required={required}
       disabled={disabled}
+      items={options}
     >
-      <SelectTrigger aria-label={ariaLabel} className={className}>
+      <SelectTrigger aria-label={ariaLabel} className={cn("w-full", className)}>
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>
       <SelectContent>

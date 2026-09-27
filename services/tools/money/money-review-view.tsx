@@ -14,6 +14,7 @@ import { MoneyImportDrop, MoneyImportHistory } from "./money-ledger-views.js";
 import { MoneyRulesView } from "./money-rules-view.js";
 import { MONEY_REVIEW_TABS, type MoneyReviewTab } from "./money-tracker-navigation.js";
 import { EmptyState, formatDay, formatMinor, formatMonth, MoneyPanel } from "./money-ui.js";
+import { countLabel } from "../src/lib/count-label.js";
 
 const TAB_LABELS: Record<MoneyReviewTab, string> = { queue: "Queue", rules: "Rules", imports: "Imports" };
 const TREATMENTS: readonly (readonly [MoneyTransferDisposition, string])[] = [
@@ -222,7 +223,7 @@ function TransferQueue({ groups }: { groups: readonly MoneyTransferReviewGroup[]
   return (
     <MoneyPanel
       title={<QueueTitle title="Transfers" count={groups.length} />}
-      description={`${rows.toLocaleString("en-GB")} rows in ${groups.length} groups. Own transfers do not count as income or spending.`}
+      description={`${countLabel(rows, "row")} in ${countLabel(groups.length, "group")}. Own transfers do not count as income or spending.`}
       actions={<Link to="/money" search={{ view: "review", tab: "rules" }} className="money-inline-link">Make a rule</Link>}
     >
       {error ? <p className="px-4 pt-2 text-sm text-negative" role="alert">{error}</p> : null}

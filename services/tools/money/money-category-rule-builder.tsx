@@ -7,6 +7,7 @@ import type { MoneyCategoryRulePreview } from "./money-repository.js";
 import { Button } from "../src/components/ui/button.js";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../src/components/ui/card.js";
 import { Input } from "../src/components/ui/input.js";
+import { NativeSelect } from "../src/components/ui/native-select.js";
 
 type Field = "description" | "mcc" | "source_type";
 
@@ -45,22 +46,22 @@ export function MoneyCategoryRuleBuilder({ accounts, accountLabels }: { accounts
     <CardContent className="space-y-4 pt-4">
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="space-y-1 text-sm">Account
-          <select className="w-full rounded-md border border-input bg-background px-3 py-2" value={accountId} disabled={busy} onChange={(event) => { setAccountId(event.target.value); invalidate(); }}>
+          <NativeSelect className="w-full" value={accountId} disabled={busy} onChange={(event) => { setAccountId(event.target.value); invalidate(); }}>
             <option value="">Select account</option>{accounts.map((id) => <option key={id} value={id}>{accountLabels[id] ?? id}</option>)}
-          </select>
+          </NativeSelect>
         </label>
         <label className="space-y-1 text-sm">Match field
-          <select className="w-full rounded-md border border-input bg-background px-3 py-2" value={matchField} disabled={busy} onChange={(event) => { setMatchField(event.target.value as Field); invalidate(); }}>
+          <NativeSelect className="w-full" value={matchField} disabled={busy} onChange={(event) => { setMatchField(event.target.value as Field); invalidate(); }}>
             <option value="description">Exact description</option><option value="mcc">Merchant category code</option><option value="source_type">Source type</option>
-          </select>
+          </NativeSelect>
         </label>
         <label className="space-y-1 text-sm">Exact value
           <Input value={matchValue} maxLength={250} disabled={busy} onChange={(event) => { setMatchValue(event.target.value); invalidate(); }} placeholder={matchField === "mcc" ? "e.g. 5411" : "As shown in a transaction"} />
         </label>
         <label className="space-y-1 text-sm">Category
-          <select className="w-full rounded-md border border-input bg-background px-3 py-2" value={category} disabled={busy} onChange={(event) => { setCategory(event.target.value as MoneyCategory); invalidate(); }}>
+          <NativeSelect className="w-full" value={category} disabled={busy} onChange={(event) => { setCategory(event.target.value as MoneyCategory); invalidate(); }}>
             <option value="uncategorized">Select category</option>{MONEY_CATEGORIES.filter((item) => item !== "uncategorized").map((item) => <option key={item} value={item}>{item.replaceAll("_", " ")}</option>)}
-          </select>
+          </NativeSelect>
         </label>
       </div>
       <Button type="button" variant="outline" disabled={busy || !accountId || !matchValue.trim() || category === "uncategorized"} onClick={() => void submit("previewRule")}>Preview matches</Button>

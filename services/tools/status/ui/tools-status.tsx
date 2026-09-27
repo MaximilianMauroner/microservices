@@ -6,6 +6,7 @@ import type {
   PrivateSnapshotDocument
 } from "@tools-platform/domain";
 import { Link } from "@tanstack/react-router";
+import { ArrowUpRight, ChevronRight, LockKeyhole } from "lucide-react";
 import { AppShell } from "../../src/components/app-shell.js";
 import { favicons } from "../../src/favicons.js";
 import { LocalDate, LocalTimeRange, LocalTimestamp } from "../../src/components/local-time.js";
@@ -15,6 +16,7 @@ import { Card } from "../../src/components/ui/card.js";
 import { useIsMobile } from "../../src/components/ui/use-mobile.js";
 import { formatTimestamp, resolveBrowserLink } from "../../dashboard/ui/tools-directory-helpers.js";
 import { projectPrivateCatalog } from "../../dashboard/ui/private-catalog-projection.js";
+import { countLabel } from "../../src/lib/count-label.js";
 
 type OverallState = "operational" | "attention" | "outage" | "unknown";
 
@@ -53,7 +55,7 @@ function ToolsStatusView({ snapshot, publicOrigin, view, actor }: { snapshot: Pu
               Last updated <LocalTimestamp value={snapshot.generatedAt} fallback={formatTimestamp(snapshot.generatedAt)} />
             </p>
           </section>
-          <Card id="services" className="status-card" aria-labelledby="services-title">
+          <Card id="services" className="gap-0 py-0" aria-labelledby="services-title">
             <header className="status-card__header">
               <h2 id="services-title">Current status by service</h2>
               <Badge variant={overallBadgeVariant(overall)} className={`overall-badge overall-badge--${overall} h-auto`}>
@@ -81,13 +83,13 @@ function ToolsStatusView({ snapshot, publicOrigin, view, actor }: { snapshot: Pu
             <div className="private-status-identity"><Link to="/status" preload="intent">← All services</Link><span>Signed in as {actor}</span></div>
           ) : view === "public" ? (
             <section className="private-status-callout" aria-labelledby="private-status-title">
-              <div className="private-status-callout__icon" aria-hidden="true"><span className="suite-lock" /></div>
+              <div className="private-status-callout__icon" aria-hidden="true"><LockKeyhole className="size-4" /></div>
               <div>
                 <h2 id="private-status-title">Private service status</h2>
                 <p>Sign in with Google to view availability for internal services.</p>
               </div>
-              <Button variant="secondary" className="private-status-link" render={<Link to="/" preload="intent" />}>
-                Open Tools <span aria-hidden="true">›</span>
+              <Button variant="outline" className="private-status-link" render={<Link to="/" preload="intent" />}>
+                Open Tools <ChevronRight aria-hidden="true" />
               </Button>
             </section>
           ) : null}
@@ -116,7 +118,6 @@ function ServiceRow({ entry, status, generatedAt, publicOrigin }: {
   const details = <>
     <p className="service-description">{entry.description}</p>
     <UptimeBar status={status} generatedAt={generatedAt} summary={uptime} />
-    <p className="uptime-scroll-hint">Swipe horizontally to inspect daily checks.</p>
     <div className="uptime-legend" aria-hidden="true">
       <span><i className="uptime-key uptime-key--operational" />Operational</span>
       <span><i className="uptime-key uptime-key--attention" />Partial outage</span>
@@ -154,13 +155,13 @@ function ServiceLink({ href, label, restricted, publicOrigin }: { href: string; 
   const sameOrigin = resolvedHref !== href;
   return (
     <Button
-      variant="secondary"
-      className="service-link directory-action"
+      variant="outline"
+      className="service-link text-foreground"
       render={sameOrigin ? <Link to={resolvedHref} preload="intent" /> : <a href={resolvedHref} target="_blank" rel="noreferrer" />}
     >
       <span>{label}</span>
-      {restricted ? <span className="service-access">Access protected</span> : null}
-      <span aria-hidden="true">{sameOrigin ? "›" : "↗"}</span>
+      {restricted ? <span className="text-xs font-normal text-muted-foreground">· Access protected</span> : null}
+      {sameOrigin ? <ChevronRight aria-hidden="true" /> : <ArrowUpRight aria-hidden="true" />}
     </Button>
   );
 }
@@ -169,8 +170,8 @@ function UptimeBar({ status, generatedAt, summary }: { status: PublicMonitorStat
   const knownDays = new Map((status?.uptimeDays ?? []).map((day) => [day.day, day]));
   const days = rollingDays(generatedAt);
   const label = summary.percentage === null
-    ? `Observed uptime is not available. 0 recorded days and ${summary.noDataDays} no-data days.`
-    : `${summary.label} across ${summary.totalChecks} checks; ${summary.recordedDays} recorded days and ${summary.noDataDays} no-data days.`;
+    ? `Observed uptime is not available. 0 recorded days and ${countLabel(summary.noDataDays, "no-data day")}.`
+    : `${summary.label} across ${countLabel(summary.totalChecks, "check")}; ${countLabel(summary.recordedDays, "recorded day")} and ${countLabel(summary.noDataDays, "no-data day")}.`;
   return (
     <div className="uptime-bar-scroll" role="region" aria-label="90-day uptime history" tabIndex={0}>
       <div className="uptime-bar" role="group" aria-label={label}>
@@ -240,7 +241,7 @@ function StatusDetails({ status }: { status: PublicMonitorStatus | undefined }) 
 }
 
 function StatusMark({ state, large = false }: { state: OverallState; large?: boolean }) {
-  const symbol = state === "operational" ? "✓" : state === "outage" ? "!" : "·";
+  const symbol = state === "operational" ? "✓" : state === "outage" ? "!" : state === "attention" ? "?" : "·";
   const label = state === "operational" ? "Operational" : state === "outage" ? "Service interruption" : state === "attention" ? "Inconclusive" : "Limited visibility";
   return <span className={`status-mark status-mark--${state}${large ? " status-mark--large" : ""}`} role="img" aria-label={label}>{symbol}</span>;
 }
@@ -270,9 +271,9 @@ function overallSummary(state: OverallState, count: number) {
 }
 
 function overallBadgeVariant(state: OverallState) {
-  if (state === "operational") return "default" as const;
+  if (state === "operational") return "positive" as const;
   if (state === "outage") return "destructive" as const;
-  if (state === "attention") return "secondary" as const;
+  if (state === "attention") return "warning" as const;
   return "outline" as const;
 }
 
@@ -290,13 +291,13 @@ function uptimeSummary(status: PublicMonitorStatus | undefined, generatedAt: str
 
 function rollingDays(generatedAt: string) { const end = new Date(generatedAt); end.setUTCHours(0, 0, 0, 0); return Array.from({ length: 90 }, (_, index) => { const day = new Date(end); day.setUTCDate(day.getUTCDate() - (89 - index)); return day.toISOString().slice(0, 10); }); }
 function formatPercentage(successful: number, total: number) { const value = successful / total * 100; return value === 100 ? "100%" : `${value.toFixed(3).replace(/0+$/, "").replace(/\.$/, "")}%`; }
-function formatUptimeDate(day: string) { return new Intl.DateTimeFormat("en", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }).format(new Date(`${day}T00:00:00.000Z`)); }
+function formatUptimeDate(day: string) { return new Intl.DateTimeFormat("en-GB", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }).format(new Date(`${day}T00:00:00.000Z`)); }
 function downtimeRecordsForDay(day: string, records: PublicDowntimeRecord[], generatedAt: string) { return records.filter((record) => downtimeForDay(day, record, generatedAt) > 0); }
 function downtimeForDay(day: string, record: PublicDowntimeRecord, generatedAt: string) { const start = new Date(`${day}T00:00:00.000Z`).getTime(); return downtimeDurationInRange(record, new Date(generatedAt).getTime(), start, start + 86400000); }
 function downtimeDuration(record: PublicDowntimeRecord, generatedTime: number) { return downtimeDurationInRange(record, generatedTime, new Date(record.startedAt).getTime(), generatedTime); }
 function downtimeDurationInRange(record: PublicDowntimeRecord, generatedTime: number, rangeStart: number, rangeEnd: number) { const start = new Date(record.startedAt).getTime(); const end = record.resolvedAt ? new Date(record.resolvedAt).getTime() : generatedTime; return Math.max(0, Math.min(end, rangeEnd, generatedTime) - Math.max(start, rangeStart)); }
 function formatDuration(ms: number) { const seconds = Math.max(0, Math.round(ms / 1000)); if (seconds < 60) return `${seconds}s`; const minutes = Math.floor(seconds / 60); if (minutes < 60) return seconds % 60 ? `${minutes}m ${seconds % 60}s` : `${minutes} min`; return `${Math.floor(minutes / 60)}h${minutes % 60 ? ` ${minutes % 60}m` : ""}`; }
-function formatClock(value: Date) { return new Intl.DateTimeFormat("en", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: "UTC" }).format(value); }
-function formatShortDate(value: Date) { return new Intl.DateTimeFormat("en", { month: "short", day: "numeric", timeZone: "UTC" }).format(value); }
+function formatClock(value: Date) { return new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: "UTC" }).format(value); }
+function formatShortDate(value: Date) { return new Intl.DateTimeFormat("en-GB", { month: "short", day: "numeric", timeZone: "UTC" }).format(value); }
 function byOrderThenId<T extends { id: string; order: number }>(a: T, b: T) { return a.order - b.order || a.id.localeCompare(b.id); }
 function safeHttpUrl(value: string) { try { const url = new URL(value); return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : null; } catch { return null; } }

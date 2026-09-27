@@ -7,12 +7,14 @@ import { AppSelect } from "../../src/components/form-controls.js";
 import { Alert } from "../../src/components/ui/alert.js";
 import { Badge } from "../../src/components/ui/badge.js";
 import { Button } from "../../src/components/ui/button.js";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../src/components/ui/card.js";
+import { Card, CardDescription, CardHeader, CardTitle } from "../../src/components/ui/card.js";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "../../src/components/ui/empty.js";
 import { Input } from "../../src/components/ui/input.js";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../src/components/ui/table.js";
 import { useIsMobile } from "../../src/components/ui/use-mobile.js";
 import type { DocumentsPageData } from "../../src/protected-data.js";
+import { formatDateTime } from "../../src/lib/format-date.js";
+import { MetricCard } from "../../src/components/metric-card.js";
 
 type CheckpointFilter = "all" | "with" | "without";
 type ExpiryFilter = "all" | "24" | "72" | "168";
@@ -88,17 +90,17 @@ export function DocumentsPage({ initial }: { initial: DocumentsPageData }) {
       <header className="workspace-header">
         <div>
           <p className="workspace-header__eyebrow">Markdown Share</p>
-          <h1>Manage active documents.</h1>
+          <h1>Manage active documents</h1>
           <p className="workspace-header__description">Find expiring work, verify checkpoints, and open the document that needs attention.</p>
         </div>
         <div className="workspace-header__actions"><Button nativeButton={false} render={<a href={new URL("/markdown", initial.publicOrigin).toString()} target="_blank" rel="noreferrer" />}><PlusIcon />New document<ArrowUpRightIcon /></Button></div>
       </header>
 
       <section className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="Document overview">
-        <Metric label="Active documents" value={String(loadedDocuments.length)} detail={nextCursor ? "Loaded so far" : "Complete inventory"} />
-        <Metric label="Edited in 24 hours" value={String(editedRecently)} detail={nextCursor ? "Loaded documents only" : "Recent activity"} />
-        <Metric label="Checkpoint versions" value={String(checkpointVersions)} detail={nextCursor ? "Loaded documents only" : "Durable recovery points"} />
-        <Metric label="Next expiry" value={nextExpiry ? remaining(nextExpiry.expiresAt, initial.generatedAt) : "None"} detail={nextExpiry?.filename ?? "No active documents"} attention={Boolean(nextExpiry && nextExpiry.expiresAt - initial.generatedAt <= 86_400_000)} />
+        <MetricCard label="Active documents" value={String(loadedDocuments.length)} detail={nextCursor ? "Loaded so far" : "Complete inventory"} />
+        <MetricCard label="Edited in 24 hours" value={String(editedRecently)} detail={nextCursor ? "Loaded documents only" : "Recent activity"} />
+        <MetricCard label="Checkpoint versions" value={String(checkpointVersions)} detail={nextCursor ? "Loaded documents only" : "Durable recovery points"} />
+        <MetricCard label="Next expiry" value={nextExpiry ? remaining(nextExpiry.expiresAt, initial.generatedAt) : "None"} detail={nextExpiry?.filename ?? "No active documents"} attention={Boolean(nextExpiry && nextExpiry.expiresAt - initial.generatedAt <= 86_400_000)} />
       </section>
 
       {nextCursor ? <Alert className="mb-4">More documents are available. Search and filters apply to loaded documents.</Alert> : null}
@@ -119,9 +121,9 @@ export function DocumentsPage({ initial }: { initial: DocumentsPageData }) {
           <TableHeader><TableRow><TableHead>Document</TableHead><TableHead>Last activity</TableHead><TableHead>Checkpoints</TableHead><TableHead>Expires</TableHead><TableHead><span className="sr-only">Actions</span></TableHead></TableRow></TableHeader>
           <TableBody>{documents.map((document) => <TableRow key={document.token}>
             <TableCell className="min-w-56"><div className="font-medium">{document.filename}</div><div className="mt-1 text-xs text-muted-foreground">Created {relativePast(document.createdAt, initial.generatedAt)}</div></TableCell>
-            <TableCell><div>{relativePast(document.updatedAt, initial.generatedAt)}</div><div className="text-xs text-muted-foreground">{formatDate(document.updatedAt)}</div></TableCell>
+            <TableCell><div>{relativePast(document.updatedAt, initial.generatedAt)}</div><div className="text-xs text-muted-foreground">{formatDateTime(document.updatedAt)}</div></TableCell>
             <TableCell><Badge variant={document.checkpointCount ? "secondary" : "outline"}>{document.checkpointCount} {document.checkpointCount === 1 ? "version" : "versions"}</Badge></TableCell>
-            <TableCell><div className={document.expiresAt - initial.generatedAt <= 86_400_000 ? "text-destructive" : ""}>{remaining(document.expiresAt, initial.generatedAt)}</div><div className="text-xs text-muted-foreground">{formatDate(document.expiresAt)}</div></TableCell>
+            <TableCell><div className={document.expiresAt - initial.generatedAt <= 86_400_000 ? "text-warning" : ""}>{remaining(document.expiresAt, initial.generatedAt)}</div><div className="text-xs text-muted-foreground">{formatDateTime(document.expiresAt)}</div></TableCell>
             <TableCell><div className="flex justify-end gap-1"><Button type="button" variant="outline" size="sm" onClick={() => void copyLink(document)}>{copied === document.token ? <CheckIcon /> : <CopyIcon />}{copied === document.token ? "Copied" : "Copy"}</Button><Button nativeButton={false} variant="outline" size="sm" render={<a href={documentUrl(document, initial.publicOrigin)} target="_blank" rel="noreferrer" />}>Open<ArrowUpRightIcon /></Button></div></TableCell>
           </TableRow>)}</TableBody>
         </Table></div>}
@@ -136,7 +138,7 @@ export function MobileDocumentInventory({ documents, total, generatedAt, publicO
     {documents.map((document) => <article className="space-y-3 p-4" key={document.token} role="listitem">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0"><h2 className="truncate text-sm font-semibold">{document.filename}</h2><p className="mt-1 text-xs text-muted-foreground">Edited {relativePast(document.updatedAt, generatedAt)} · {document.checkpointCount} {document.checkpointCount === 1 ? "checkpoint" : "checkpoints"}</p></div>
-        <Badge variant={document.expiresAt - generatedAt <= 86_400_000 ? "destructive" : "outline"}>{remaining(document.expiresAt, generatedAt)} left</Badge>
+        <Badge variant={document.expiresAt - generatedAt <= 86_400_000 ? "warning" : "outline"}>{remaining(document.expiresAt, generatedAt)} left</Badge>
       </div>
       <div className="grid grid-cols-2 gap-2">
         <Button type="button" variant="outline" onClick={() => onCopy(document)}>{copied === document.token ? <CheckIcon /> : <CopyIcon />}{copied === document.token ? "Copied" : "Copy link"}</Button>
@@ -147,9 +149,6 @@ export function MobileDocumentInventory({ documents, total, generatedAt, publicO
   </div>;
 }
 
-function Metric({ label, value, detail, attention = false }: { label: string; value: string; detail: string; attention?: boolean }) {
-  return <Card className={attention ? "border-destructive/60" : ""}><CardContent><p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{label}</p><strong className={attention ? "mt-2 block text-2xl text-destructive" : "mt-2 block text-2xl"}>{value}</strong><p className="mt-1 truncate text-xs text-muted-foreground">{detail}</p></CardContent></Card>;
-}
 
 export function filterDocuments(documents: MarkdownAdminDocument[], now: number, filters: { query: string; checkpoints: CheckpointFilter; expiry: ExpiryFilter; sort: SortOrder }) {
   const query = filters.query.trim().toLocaleLowerCase();
@@ -160,4 +159,3 @@ export function filterDocuments(documents: MarkdownAdminDocument[], now: number,
 function documentUrl(document: MarkdownAdminDocument, publicOrigin: string) { return new URL(`/markdown/d/${encodeURIComponent(document.filename)}--${encodeURIComponent(document.token)}`, publicOrigin).toString(); }
 function relativePast(value: number, now: number) { const minutes = Math.floor(Math.max(0, now - value) / 60_000); if (minutes < 1) return "just now"; if (minutes < 60) return `${minutes}m ago`; const hours = Math.floor(minutes / 60); if (hours < 24) return `${hours}h ago`; return `${Math.floor(hours / 24)}d ago`; }
 function remaining(value: number, now: number) { const hours = Math.ceil(Math.max(0, value - now) / 3_600_000); if (hours < 24) return `${hours}h`; const days = Math.ceil(hours / 24); return `${days}d`; }
-function formatDate(value: number) { return new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)); }

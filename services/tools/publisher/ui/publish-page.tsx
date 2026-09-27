@@ -19,6 +19,7 @@ import {
   uploadChunkedFile
 } from "./chunked-upload.js";
 import { UploadLinkManager } from "./upload-link-manager.js";
+import { formatDateTime } from "../../src/lib/format-date.js";
 
 type ItemStatus = "queued" | "checking" | "uploading" | "processing" | "done" | "error" | "cancelled";
 
@@ -86,10 +87,10 @@ function uploadExternalFile(
   });
 }
 
-function statusBadgeVariant(status: ItemStatus): "default" | "secondary" | "destructive" | "outline" {
+function statusBadgeVariant(status: ItemStatus): "positive" | "secondary" | "destructive" | "outline" {
   if (status === "error") return "destructive";
-  if (status === "uploading" || status === "done") return "default";
-  if (status === "checking" || status === "processing") return "secondary";
+  if (status === "done") return "positive";
+  if (status === "uploading" || status === "checking" || status === "processing") return "secondary";
   return "outline";
 }
 
@@ -403,7 +404,7 @@ export function PublishPage() {
         <section className="workspace-header" aria-labelledby="publish-title">
           <div>
             <p className="workspace-header__eyebrow">Artifact publisher</p>
-            <h1 id="publish-title">Share a new file.</h1>
+            <h1 id="publish-title">Share a new file</h1>
             <p className="workspace-header__description">Upload once, then maintain it from the artifact library.</p>
           </div>
           <div className="workspace-header__actions"><Button nativeButton={false} variant="outline" size="sm" render={<Link to="/publisher/artifacts" preload="intent" />}>
@@ -568,7 +569,7 @@ export function UploadResultsList({ results, onCopyAll, onCopy }: { results: Upl
         {results.length > 1 ? <Button type="button" variant="outline" size="sm" onClick={onCopyAll}><Copy /> Copy all URLs</Button> : null}
       </div>
       <div className="grid gap-3">
-        {results.map((result) => <Card key={result.id} className="gap-0 py-0"><div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><Badge variant="default">Ready</Badge><h3 className="mt-3 truncate font-semibold">{result.filename}</h3><p className="mt-1 truncate font-mono text-xs text-muted-foreground">{result.url}</p><p className="mt-2 text-xs text-muted-foreground">{formatBytes(result.bytes)}{result.expiresAt ? ` · expires ${formatDate(result.expiresAt)}` : ""}</p></div><div className="flex shrink-0 gap-2"><Button type="button" variant="outline" size="sm" onClick={() => onCopy(result)}><Copy /> Copy URL</Button><Button nativeButton={false} size="sm" render={<a href={result.url} target="_blank" rel="noreferrer" />}><ExternalLink /> Open</Button></div></div></Card>)}
+        {results.map((result) => <Card key={result.id} className="gap-0 py-0"><div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><Badge variant="positive">Ready</Badge><h3 className="mt-3 truncate font-semibold">{result.filename}</h3><p className="mt-1 truncate font-mono text-xs text-muted-foreground">{result.url}</p><p className="mt-2 text-xs text-muted-foreground">{formatBytes(result.bytes)}{result.expiresAt ? ` · expires ${formatDateTime(result.expiresAt)}` : ""}</p></div><div className="flex shrink-0 gap-2"><Button type="button" variant="outline" size="sm" onClick={() => onCopy(result)}><Copy /> Copy URL</Button><Button nativeButton={false} variant="outline" size="sm" render={<a href={result.url} target="_blank" rel="noreferrer" />}><ExternalLink /> Open</Button></div></div></Card>)}
       </div>
     </section>
   );
@@ -584,6 +585,3 @@ function formatBytes(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }).format(new Date(value)) + " UTC";
-}

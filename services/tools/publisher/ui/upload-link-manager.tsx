@@ -3,7 +3,9 @@ import { Copy, Download, Link2, Plus, RotateCcw, X } from "lucide-react";
 import { Alert } from "../../src/components/ui/alert.js";
 import { Badge } from "../../src/components/ui/badge.js";
 import { Button } from "../../src/components/ui/button.js";
+import { NativeSelect } from "../../src/components/ui/native-select.js";
 import { Card } from "../../src/components/ui/card.js";
+import { formatDateTime } from "../../src/lib/format-date.js";
 
 type UploadLinkSummary = {
   id: string;
@@ -134,11 +136,11 @@ export function UploadLinkManager() {
       <Card className="gap-4 p-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
           <label className="grid flex-1 gap-1 text-sm font-medium">Link duration
-            <select className="h-9 rounded-md border bg-transparent px-3 text-sm" value={durationMs} onChange={(event) => setDurationMs(Number(event.currentTarget.value))} disabled={busy}>
+            <NativeSelect className="w-full" value={durationMs} onChange={(event) => setDurationMs(Number(event.currentTarget.value))} disabled={busy}>
               {durations.map((duration) => <option key={duration.value} value={duration.value}>{duration.label}</option>)}
-            </select>
+            </NativeSelect>
           </label>
-          <Button type="button" size="sm" onClick={() => void createLink()} disabled={busy}><Plus /> Create upload link</Button>
+          <Button type="button" variant="outline" size="sm" onClick={() => void createLink()} disabled={busy}><Plus /> Create upload link</Button>
         </div>
         {created ? <div ref={createdRef} className="rounded-lg border border-primary/30 bg-secondary p-4" aria-live="polite">
           <div className="flex items-center gap-2"><Badge>New link</Badge><span className="text-xs text-muted-foreground">Copy it now; the secret is not stored.</span></div>
@@ -150,7 +152,7 @@ export function UploadLinkManager() {
         {links.map((link) => {
           const active = !link.revokedAt && new Date(link.expiresAt).getTime() > now;
           return <Card key={link.id} className="gap-0 py-0"><div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-w-0"><div className="flex items-center gap-2"><Link2 className="size-4" aria-hidden="true" /><Badge variant={active ? "default" : "secondary"}>{link.revokedAt ? "Revoked" : active ? "Active" : "Expired"}</Badge></div><p className="mt-2 text-xs text-muted-foreground">{link.fileCount} {link.fileCount === 1 ? "file" : "files"} received · created {formatDate(link.createdAt)} · expires {formatDate(link.expiresAt)}</p></div>
+            <div className="min-w-0"><div className="flex items-center gap-2"><Link2 className="size-4" aria-hidden="true" /><Badge variant={active ? "positive" : "secondary"}>{link.revokedAt ? "Revoked" : active ? "Active" : "Expired"}</Badge></div><p className="mt-2 text-xs text-muted-foreground">{link.fileCount} {link.fileCount === 1 ? "file" : "files"} received · created {formatDateTime(link.createdAt)} · expires {formatDateTime(link.expiresAt)}</p></div>
             <div className="flex shrink-0 flex-wrap gap-2">
               {active && created?.id === link.id ? <><Button type="button" variant="outline" size="sm" onClick={() => void copyCreated()}><Copy /> Copy</Button><Button nativeButton={false} variant="outline" size="sm" render={<a href={created.url} target="_blank" rel="noreferrer" />}><Link2 /> Open</Button></> : null}
               {active && created?.id !== link.id ? <Button type="button" variant="outline" size="sm" onClick={() => void createLink()} disabled={busy}><Plus /> New shareable link</Button> : null}
@@ -166,6 +168,3 @@ export function UploadLinkManager() {
   );
 }
 
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }).format(new Date(value)) + " UTC";
-}
