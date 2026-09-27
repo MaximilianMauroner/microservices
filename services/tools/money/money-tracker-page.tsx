@@ -28,6 +28,7 @@ import { MoneyCheckInBridge } from "./money-checkin-card.js";
 import { BalanceForm } from "./money-balance-form.js";
 import { moneyCategoryLabel } from "./money-category-picker.js";
 import { projectMoneyTrajectory } from "./money-plan-domain.js";
+import { Segmented } from "../src/components/segmented.js";
 import {
   MoneyNav,
   moneyReviewCount,
@@ -54,7 +55,6 @@ import {
   PanelBody,
   PanelFooter,
   flowTooltip,
-  Segmented,
   SERIES,
   SparkLine,
   Stat,
