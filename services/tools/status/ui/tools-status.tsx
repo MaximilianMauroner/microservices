@@ -42,7 +42,7 @@ function ToolsStatusView({ snapshot, publicOrigin, view, actor }: { snapshot: Pu
 
   return (
     <>
-      <AppShell product="Status" accent="cyan" icon={favicons.status} showSignOut />
+      <AppShell product="Status" accent="cyan" icon={favicons.status} />
       <div className={`status-page status-page--${overall}`}>
         <main id="main" className="status-wrap status-main">
           <section className="status-hero" aria-labelledby="status-title">

@@ -85,7 +85,7 @@ export function DocumentsPage({ initial }: { initial: DocumentsPageData }) {
   }
 
   return <>
-    <AppShell product="Markdown Share" accent="rose" icon={favicons.markdownShare} showSignOut />
+    <AppShell product="Markdown Share" accent="rose" icon={favicons.markdownShare} />
     <main id="main" className="workspace-page">
       <header className="workspace-header">
         <div>

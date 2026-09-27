@@ -94,7 +94,7 @@ export function MoneyTrackerPage(
   const reviewCount = moneyReviewCount(props.reviewCounts);
   return (
     <>
-      <AppShell product="Money" accent="lime" icon={favicons.money} showSignOut />
+      <AppShell product="Money" accent="lime" icon={favicons.money} />
       <main id="main" className="money-page">
         <MoneyNav current={props.view} reviewCount={reviewCount} />
         <header className="money-heading">

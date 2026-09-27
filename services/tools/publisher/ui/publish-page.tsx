@@ -399,7 +399,7 @@ export function PublishPage() {
 
   return (
     <>
-      <AppShell product="Publisher" accent="violet" icon={favicons.publisher} showSignOut />
+      <AppShell product="Publisher" accent="violet" icon={favicons.publisher} />
       <main id="main" className="workspace-page workspace-page--narrow">
         <section className="workspace-header" aria-labelledby="publish-title">
           <div>

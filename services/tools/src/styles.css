@@ -345,6 +345,7 @@ html[data-theme="light"]:has([data-suite-accent]) {
   .workspace-header__description { max-width: 42rem; margin-top: .75rem; color: var(--muted-foreground); font-size: .875rem; line-height: 1.6; }
   .workspace-header__actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: end; gap: .5rem; }
   .app-page { padding-block: 2.5rem; }
+  .tools-page { width: min(1440px, calc(100% - 2.5rem)); margin-inline: auto; padding-block: 1.25rem 3rem; }
   .money-page { width: min(1440px, calc(100% - 2rem)); margin-inline: auto; padding-block: 1.25rem 3rem; }
   .money-page > * + * { margin-top: .75rem; }
   .money-stack { display: grid; gap: .75rem; }
@@ -552,7 +553,8 @@ html[data-theme="light"]:has([data-suite-accent]) {
     [data-slot="select-trigger"],
     [data-slot="tabs-trigger"] { min-height: 2.75rem; }
     [data-slot="button"][data-mobile-compact="true"] { min-height: 2rem; }
-    .workspace-page, .app-page, .status-wrap, .money-page { width: min(100% - 1.25rem, 100%); }
+    .workspace-page, .app-page, .status-wrap, .money-page, .tools-page { width: min(100% - 1.5rem, 100%); }
+    .tools-page { padding-block: 1rem 2.5rem; }
     .workspace-page, .status-main { padding-block: 1.5rem 3rem; }
     .app-page, .money-page { padding-block: 1.25rem 2.5rem; }
     .workspace-header { gap: 1rem; padding-bottom: 1.5rem; margin-bottom: 1.5rem; }

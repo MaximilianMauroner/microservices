@@ -214,6 +214,7 @@ export interface MoneyRepository {
   reimportAll(): Promise<MoneyReimportResult>;
   deleteImport(importId: string): Promise<MoneyImportDeletion | undefined>;
   readLedgerSnapshot(scope: MoneyLedgerScope): Promise<MoneyLedgerSnapshot>;
+  readReviewCounts(): Promise<MoneyReviewCounts>;
   readActivityPage(input: MoneyActivityPageInput): Promise<MoneyActivityPage>;
   setTransactionCategory(input: Readonly<{ transactionId: string; category: MoneyCategory; actor: string; createRule: boolean }>): Promise<Readonly<{ affectedCount: number }>>;
   previewCategoryRule(input: MoneyCategoryRuleInput): Promise<MoneyCategoryRulePreview>;
@@ -524,10 +525,7 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
             count(*) filter (where t.transfer_group_id is null and t.transfer_disposition is null)::text unresolved_count
           from (${effectiveTransactions(sql)}) t join tools.money_accounts a on a.id = t.account_id
           where t.flow_kind = 'transfer' group by a.provider, t.source_type order by a.provider, t.source_type` : emptyRows<TransferRuleOptionRow>(),
-        needs("reviewCounts") ? sql<ReviewCountRow[]>`select
-            count(*) filter (where category = 'uncategorized' and (flow_kind = 'spend' or (flow_kind = 'transfer' and transfer_group_id is null and transfer_disposition = 'spend')) and base_currency = 'EUR')::text uncategorized,
-            count(*) filter (where flow_kind = 'transfer' and transfer_group_id is null and transfer_disposition is null)::text transfers
-          from (${effectiveTransactions(sql)}) effective` : emptyRows<ReviewCountRow>(),
+        needs("reviewCounts") ? reviewCountRows(sql) : emptyRows<ReviewCountRow>(),
         needs("reviewQueue") ? readReviewQueue(sql) : { items: [], commonCategories: [] }
       ]);
       const spending = spendingAnalytics(monthly, categories, categoryMonths, merchantMonths, categoryActivity);
@@ -536,10 +534,13 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
         transferRuleOptions: transferRuleOptions.map((row) => ({ provider: row.provider, sourceType: row.source_type, count: integer(row.count), unresolvedCount: integer(row.unresolved_count) })), activity: activity.map(activityItem), transactionCount: Number(count[0]?.count ?? 0), revertedCount: Number(count[0]?.reverted_count ?? 0),
         transferReview: transferReview(transfers[0]), transferReviewGroups: transferReviewGroups(transferReviewItems),
         spending, investments: investmentAnalytics(events, investmentTotals[0], tradeMarkers, realizedEvents), planning: planningAnalytics(spending.months, transferReview(transfers[0])), ...balanceSnapshot(snapshotRows),
-        reviewCounts: { uncategorized: integer(reviewCounts[0]?.uncategorized ?? "0"), transfers: integer(reviewCounts[0]?.transfers ?? "0") }, reviewQueue
+        reviewCounts: reviewCountsFrom(reviewCounts), reviewQueue
       };
     },
 
+    async readReviewCounts() {
+      return reviewCountsFrom(await reviewCountRows(sql));
+    },
     async readActivityPage(input) {
       const pattern = `%${input.query.replaceAll("%", "\\%").replaceAll("_", "\\_")}%`;
       const accountName = sql`case when a.provider = 'portfolio_export' then case a.role when 'investment' then 'Trade Republic Investments' else 'Trade Republic Cash' end else a.display_name end`;
@@ -1267,3 +1268,14 @@ function normalizeDatabaseDecimal(value: string) { return value.replace(/(\.\d*?
 function day(value: string) { return Date.parse(`${value}T00:00:00Z`) / 86_400_000; }
 function chunks<Value>(values: readonly Value[], size: number): Value[][] { return Array.from({ length: Math.ceil(values.length / size) }, (_, index) => values.slice(index * size, (index + 1) * size)); }
 function emptyRows<Row>(): Promise<Row[]> { return Promise.resolve([]); }
+
+function reviewCountRows(sql: Sql) {
+  return sql<ReviewCountRow[]>`select
+      count(*) filter (where category = 'uncategorized' and (flow_kind = 'spend' or (flow_kind = 'transfer' and transfer_group_id is null and transfer_disposition = 'spend')) and base_currency = 'EUR')::text uncategorized,
+      count(*) filter (where flow_kind = 'transfer' and transfer_group_id is null and transfer_disposition is null)::text transfers
+    from (${effectiveTransactions(sql)}) effective`;
+}
+
+function reviewCountsFrom(rows: readonly ReviewCountRow[]): MoneyReviewCounts {
+  return { uncategorized: integer(rows[0]?.uncategorized ?? "0"), transfers: integer(rows[0]?.transfers ?? "0") };
+}
