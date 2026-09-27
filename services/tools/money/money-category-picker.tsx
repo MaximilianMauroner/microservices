@@ -18,6 +18,8 @@ import {
   Plane,
   ReceiptText,
   Repeat2,
+  Mountain,
+  Laptop,
   Scissors,
   ShoppingBag,
   ShoppingBasket,
@@ -58,8 +60,10 @@ const CATEGORY_META = {
   personal_care: { label: "Personal care", icon: Scissors, colors: "bg-pink-500/15 text-pink-700 dark:text-pink-300", searchTerms: "barber hairdresser haircut salon beauty spa nails cosmetics makeup skincare grooming massage tattoo piercing laundry dry cleaning" },
   travel: { label: "Travel", icon: Plane, colors: "bg-blue-500/15 text-blue-700 dark:text-blue-300", searchTerms: "flight airline hotel hostel resort holiday vacation booking airbnb luggage trip cruise visa tourism" },
   subscriptions: { label: "Subscriptions", icon: Repeat2, colors: "bg-violet-500/15 text-violet-700 dark:text-violet-300", searchTerms: "recurring membership software streaming plan monthly internet mobile phone cloud hosting newspaper magazine" },
+  software: { label: "Software", icon: Laptop, colors: "bg-blue-500/15 text-blue-700 dark:text-blue-300", searchTerms: "app ai artificial intelligence software saas cloud hosting developer tools license digital service" },
   education: { label: "Education", icon: GraduationCap, colors: "bg-indigo-500/15 text-indigo-700 dark:text-indigo-300", searchTerms: "school university course books tuition training learning childcare daycare exam certification" },
   entertainment: { label: "Entertainment", icon: Clapperboard, colors: "bg-fuchsia-500/15 text-fuchsia-700 dark:text-fuchsia-300", searchTerms: "cinema movie concert game gaming theatre music event sports museum festival ticket hobby" },
+  recreation: { label: "Recreation", icon: Mountain, colors: "bg-lime-500/15 text-lime-700 dark:text-lime-300", searchTerms: "outdoors hiking skiing cable car gondola lift leisure excursion activity" },
   gifts: { label: "Gifts", icon: Gift, colors: "bg-pink-500/15 text-pink-700 dark:text-pink-300", searchTerms: "present donation charity flowers birthday wedding" },
   taxes: { label: "Taxes", icon: Landmark, colors: "bg-red-500/15 text-red-700 dark:text-red-300", searchTerms: "tax vat government duty revenue" },
   fees: { label: "Fees", icon: ReceiptText, colors: "bg-amber-500/15 text-amber-700 dark:text-amber-300", searchTerms: "fee charge commission penalty service cost legal lawyer accountant accounting postage shipping professional" },
@@ -74,7 +78,7 @@ const CATEGORY_META = {
 
 const CATEGORY_GROUPS = [
   { label: "Living", categories: ["housing", "groceries", "dining", "transport", "shopping", "health", "personal_care"] },
-  { label: "Lifestyle", categories: ["travel", "subscriptions", "education", "entertainment", "gifts"] },
+  { label: "Lifestyle", categories: ["travel", "subscriptions", "software", "education", "entertainment", "recreation", "gifts"] },
   { label: "Money", categories: ["income", "transfer", "cash", "investments", "taxes", "fees", "adjustment"] },
   { label: "Other", categories: ["other", "uncategorized"] },
 ] as const satisfies readonly Readonly<{ label: string; categories: readonly MoneyCategory[] }>[];

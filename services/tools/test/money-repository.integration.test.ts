@@ -161,6 +161,10 @@ it.skipIf(!repository || !admin)("lists and removes account-scoped category rule
 
   const withRule = await repository!.readLedgerSnapshot("all");
   expect(withRule.categoryRules).toEqual([expect.objectContaining({ description: "Recurring merchant", category: "groceries" })]);
+  await repository!.reimportAll();
+  const afterReimport = (await repository!.readActivityPage({ query: "Recurring merchant", offset: 0, limit: 10 })).items;
+  expect(afterReimport.filter((row) => row.categoryOrigin === "manual")).toHaveLength(1);
+  expect(afterReimport.filter((row) => row.categoryOrigin === "rule")).toHaveLength(1);
   const deletion = await repository!.deleteCategoryRule(withRule.categoryRules[0]!.id);
   expect(deletion).toEqual({ affectedCount: 1 });
 
@@ -178,6 +182,8 @@ it.skipIf(!repository || !admin)("preserves a reviewed transfer when its possibl
   const [reviewed] = (await repository!.readActivityPage({ query: "Reviewed first", offset: 0, limit: 10 })).items;
   expect(reviewed).toBeDefined();
   await repository!.setTransferDisposition({ transactionId: reviewed!.id, disposition: "income" });
+  await repository!.reimportAll();
+  expect((await repository!.readActivityPage({ query: "Reviewed first", offset: 0, limit: 10 })).items[0]).toMatchObject({ transferDisposition: "income" });
 
   await commitCash(repository!, cash([
     "Transfer\tSavings\t2026-03-03 12:00:00\t2026-03-03 12:00:00\tLate counterpart\t-50\t0\tEUR\tCOMPLETED\t50",

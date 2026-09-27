@@ -250,6 +250,7 @@ export type ChartTooltip = Readonly<{ title: string; rows: readonly (TooltipRow 
 export const SERIES = {
   primary: "var(--money-series-1)",
   secondary: "var(--money-series-2)",
+  tertiary: "var(--money-series-3)",
   income: "var(--positive)",
   spending: "var(--negative)",
   net: "var(--foreground)",
@@ -351,19 +352,21 @@ function pathFor(points: readonly (readonly [number, number])[]) {
   return points.map(([x, y], index) => `${index ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`).join("");
 }
 
-/** One series over time with a tight axis, so month-to-month change stays visible. */
+/** One or more series over time on a shared euro axis. */
 export function LineTrendChart({
   points,
   label,
   height = 240,
   marker,
   tooltip,
+  additionalSeries = [],
 }: {
   points: readonly Readonly<{ label: string; value: number }>[];
   label: string;
   height?: number;
   marker?: Readonly<{ index: number; label: string }>;
   tooltip: (index: number) => ChartTooltip;
+  additionalSeries?: readonly Readonly<{ values: readonly number[]; color: string }>[];
 }) {
   const [ref, width] = useWidth(640);
   const left = 52;
@@ -371,7 +374,7 @@ export function LineTrendChart({
   const bottom = 24;
   const right = width - 10;
   const plotHeight = height - top - bottom;
-  const values = points.map((point) => point.value);
+  const values = [...points.map((point) => point.value), ...additionalSeries.flatMap((series) => series.values)];
   const ticks = niceTicks(Math.min(...values), Math.max(...values), 4);
   const y = linearScale(ticks, top, plotHeight);
   const x = (index: number) => left + (points.length < 2 ? (right - left) / 2 : (index / (points.length - 1)) * (right - left));
@@ -389,11 +392,17 @@ export function LineTrendChart({
                   <text x={x(marker.index) - 6} y={top + plotHeight - 6} textAnchor="end">{marker.label}</text>
                 </g>
               ) : null}
+              {additionalSeries.map((series, seriesIndex) => (
+                <path key={seriesIndex} className="money-series" style={{ stroke: series.color }} d={pathFor(series.values.map((value, index) => [x(index), y(value)]))} />
+              ))}
               <path className="money-series" data-series="1" d={pathFor(points.map((point, index) => [x(index), y(point.value)]))} />
               {last ? (
                 <>
                   <circle className="money-dot" data-series="1" cx={x(points.length - 1)} cy={y(last.value)} r={4} />
                   <text className="money-end-label" x={x(points.length - 1) - 8} y={y(last.value) - 10} textAnchor="end">{formatCompact(last.value)}</text>
+                  {additionalSeries.map((series, seriesIndex) => (
+                    <circle key={seriesIndex} className="money-dot" style={{ fill: series.color }} cx={x(points.length - 1)} cy={y(series.values.at(-1)!)} r={4} />
+                  ))}
                 </>
               ) : null}
               <g className="money-axis">
@@ -405,6 +414,9 @@ export function LineTrendChart({
                 <g className="money-hover">
                   <line x1={x(hover)} x2={x(hover)} y1={top} y2={top + plotHeight} />
                   <circle cx={x(hover)} cy={y(points[hover]!.value)} r={4} />
+                  {additionalSeries.map((series, seriesIndex) => (
+                    <circle key={seriesIndex} cx={x(hover)} cy={y(series.values[hover]!)} r={4} style={{ fill: series.color }} />
+                  ))}
                 </g>
               ) : null}
             </>

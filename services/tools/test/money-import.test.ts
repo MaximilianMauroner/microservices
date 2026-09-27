@@ -7,6 +7,7 @@ import {
   REVOLUT_CASH_FORMAT,
   REVOLUT_TRADING_FORMAT,
   categorizeDescription,
+  moneyCategorySuggestions,
   parseMoneyImport
 } from "../money/money-import-domain.js";
 import { MoneyImportService } from "../money/money-import-service.js";
@@ -32,6 +33,10 @@ describe("Revolut cash statement parser", () => {
       ["Apotheke Schwenk", undefined, "health"], ["Booking.com", undefined, "travel"], ["017480wp7806i11e", undefined, "travel"],
       ["OpenAI", undefined, "subscriptions"], ["JetBrains", undefined, "subscriptions"], ["Appest", undefined, "subscriptions"], ["Privateinte", undefined, "subscriptions"],
       ["Steam", undefined, "entertainment"], ["Amazon", undefined, "shopping"],
+      ["Amazon Marketplace", undefined, "shopping"], ["H&M", undefined, "shopping"], ["Apple", undefined, "shopping"], ["Apple Store", undefined, "shopping"],
+      ["Starbucks", undefined, "dining"], ["Burger King", undefined, "dining"], ["dm Drogerie", undefined, "health"],
+      ["GitHub", undefined, "software"], ["Disney+", undefined, "subscriptions"],
+      ["Apple Pay", undefined, "uncategorized"], ["Amazon Pay", undefined, "uncategorized"], ["Apple.com/bill", undefined, "uncategorized"],
       ["Studentenfoerderungsstiftung", undefined, "housing"], ["Suedtirol Pass", undefined, "transport"],
       ["Fahrschule Haslach", undefined, "education"], ["50min Diagnostik", undefined, "health"],
       ["Dell SAS", undefined, "shopping"], ["PayPal Europe", undefined, "other"], ["sonia.mauroner", undefined, "other"],
@@ -47,6 +52,16 @@ describe("Revolut cash statement parser", () => {
       ["Unknown person", undefined, "uncategorized"]
     ] as const;
     for (const [description, mcc, category] of cases) expect(categorizeDescription(description, mcc)).toBe(category);
+  });
+
+  it("suggests researched merchants for existing review rows without guessing personal payments", () => {
+    expect(moneyCategorySuggestions("Anthropic", [])).toEqual(["subscriptions"]);
+    expect(moneyCategorySuggestions("Strutturetr", [])).toEqual(["transport"]);
+    expect(moneyCategorySuggestions("Seis-Seiser Alm Bahn", [])).toEqual(["transport"]);
+    expect(moneyCategorySuggestions("Anthropic", ["software"])).toEqual(["software", "subscriptions"]);
+    expect(moneyCategorySuggestions("Unknown merchant", [], "5812")).toEqual(["dining"]);
+    expect(moneyCategorySuggestions("kranzl.thomas", [])).toEqual([]);
+    expect(moneyCategorySuggestions("P36e7f6fd3", [])).toEqual([]);
   });
 
   it("normalizes exact amounts, statuses, flow kinds, and Berlin timestamps", () => {

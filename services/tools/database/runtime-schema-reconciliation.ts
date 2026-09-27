@@ -10,7 +10,11 @@ export function moneyImportConstraintRepairs(constraints: readonly ConstraintRow
     category: !definitions.get("money_transactions_category_check")?.includes("'transfer'")
       || !definitions.get("money_transactions_category_check")?.includes("'adjustment'")
       || !definitions.get("money_transactions_category_check")?.includes("'personal_care'")
-      || !definitions.get("money_category_rules_category_check")?.includes("'personal_care'"),
+      || !definitions.get("money_category_rules_category_check")?.includes("'personal_care'")
+      || !definitions.get("money_transactions_category_check")?.includes("'software'")
+      || !definitions.get("money_transactions_category_check")?.includes("'recreation'")
+      || !definitions.get("money_category_rules_category_check")?.includes("'software'")
+      || !definitions.get("money_category_rules_category_check")?.includes("'recreation'"),
   };
 }
 
@@ -32,9 +36,9 @@ export async function reconcileRuntimeSchema(database: postgres.Sql) {
     }
     if (repairs.category) {
       await transaction`alter table tools.money_transactions drop constraint if exists money_transactions_category_check`;
-      await transaction`alter table tools.money_transactions add constraint money_transactions_category_check check (category in ('housing', 'groceries', 'dining', 'transport', 'shopping', 'health', 'personal_care', 'travel', 'subscriptions', 'education', 'entertainment', 'gifts', 'taxes', 'fees', 'cash', 'investments', 'income', 'transfer', 'adjustment', 'other', 'uncategorized'))`;
+      await transaction`alter table tools.money_transactions add constraint money_transactions_category_check check (category in ('housing', 'groceries', 'dining', 'transport', 'shopping', 'health', 'personal_care', 'travel', 'subscriptions', 'software', 'education', 'entertainment', 'recreation', 'gifts', 'taxes', 'fees', 'cash', 'investments', 'income', 'transfer', 'adjustment', 'other', 'uncategorized'))`;
       await transaction`alter table tools.money_category_rules drop constraint if exists money_category_rules_category_check`;
-      await transaction`alter table tools.money_category_rules add constraint money_category_rules_category_check check (category in ('housing', 'groceries', 'dining', 'transport', 'shopping', 'health', 'personal_care', 'travel', 'subscriptions', 'education', 'entertainment', 'gifts', 'taxes', 'fees', 'cash', 'investments', 'income', 'transfer', 'adjustment', 'other', 'uncategorized'))`;
+      await transaction`alter table tools.money_category_rules add constraint money_category_rules_category_check check (category in ('housing', 'groceries', 'dining', 'transport', 'shopping', 'health', 'personal_care', 'travel', 'subscriptions', 'software', 'education', 'entertainment', 'recreation', 'gifts', 'taxes', 'fees', 'cash', 'investments', 'income', 'transfer', 'adjustment', 'other', 'uncategorized'))`;
     }
   });
 }
