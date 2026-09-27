@@ -261,30 +261,40 @@ function Overview(props: MoneyTrackerPageData) {
       <div className="money-grid money-grid--main">
         <MoneyPanel
           title="Net worth"
-          description="End of each month. Hover for cash and portfolio."
+          description="Combined, market, and cash at the end of each month."
           actions={<Segmented label="Net worth range" value={period} onValue={setPeriod} options={[["6m", "6M"], ["1y", "1Y"], ["5y", "5Y"], ["all", "All"]]} />}
         >
           <PanelBody>
             {months.length ? (
-              <LineTrendChart
-                label={`Net worth from ${formatMonth(months[0]!.date)} to ${formatMonth(months.at(-1)!.date)}. The table view follows.`}
-                points={months.map((month) => ({ label: formatMonth(month.date, true), value: month.total }))}
-                marker={checkInIndex >= 0 ? { index: checkInIndex, label: "Check-in" } : undefined}
-                tooltip={(index) => {
-                  const month = months[index]!;
-                  const previous = months[index - 1];
-                  return {
-                    title: formatMonth(month.date),
-                    rows: [
-                      ["Net worth", formatEuro(month.total), SERIES.primary],
-                      ...(previous ? [["Change", formatEuro(month.total - previous.total, { signed: true })] as const] : []),
-                      "divider",
-                      ["Cash", formatEuro(month.money)],
-                      ["Portfolio", formatEuro(month.stocks)],
-                    ],
-                  };
-                }}
-              />
+              <>
+                <Legend>
+                  <LegendItem color={SERIES.primary} shape="line">Combined</LegendItem>
+                  <LegendItem color={SERIES.secondary} shape="line">Market</LegendItem>
+                  <LegendItem color={SERIES.tertiary} shape="line">Cash</LegendItem>
+                </Legend>
+                <LineTrendChart
+                  label={`Combined net worth, market, and cash from ${formatMonth(months[0]!.date)} to ${formatMonth(months.at(-1)!.date)}. The table view follows.`}
+                  points={months.map((month) => ({ label: formatMonth(month.date, true), value: month.total }))}
+                  additionalSeries={[
+                    { values: months.map((month) => month.stocks), color: SERIES.secondary },
+                    { values: months.map((month) => month.money), color: SERIES.tertiary },
+                  ]}
+                  marker={checkInIndex >= 0 ? { index: checkInIndex, label: "Check-in" } : undefined}
+                  tooltip={(index) => {
+                    const month = months[index]!;
+                    const previous = months[index - 1];
+                    return {
+                      title: formatMonth(month.date),
+                      rows: [
+                        ["Combined", formatEuro(month.total), SERIES.primary],
+                        ["Market", formatEuro(month.stocks), SERIES.secondary],
+                        ["Cash", formatEuro(month.money), SERIES.tertiary],
+                        ...(previous ? ["divider" as const, ["Change", formatEuro(month.total - previous.total, { signed: true })] as const] : []),
+                      ],
+                    };
+                  }}
+                />
+              </>
             ) : (
               <EmptyState title="No balance history">Import a statement with balances to see net worth over time.</EmptyState>
             )}
@@ -312,7 +322,7 @@ function Overview(props: MoneyTrackerPageData) {
           {months.length ? <TableTwin label="View net worth as a table">
             <table className="money-table">
               <thead>
-                <tr><th>Month</th><th className="num">Cash</th><th className="num">Portfolio</th><th className="num">Net worth</th></tr>
+                <tr><th>Month</th><th className="num">Cash</th><th className="num">Market</th><th className="num">Combined</th></tr>
               </thead>
               <tbody>
                 {[...months].reverse().map((month) => (
@@ -769,4 +779,3 @@ function cashCoverage(month: Month | undefined, cashAccounts: readonly string[])
     cashAccountCount: tracked.length,
   };
 }
-

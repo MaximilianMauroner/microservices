@@ -75,7 +75,12 @@ function Queue(props: MoneyTrackerPageData & { staleAccounts: readonly string[];
           <EmptyState title="Nothing to review">Every row has a category, every transfer has a treatment, and prices and balances are current.</EmptyState>
         </MoneyPanel>
       ) : null}
-      {props.reviewQueue.items.length ? <CategorizeQueue items={props.reviewQueue.items} common={props.reviewQueue.commonCategories} total={props.reviewCounts.uncategorized} /> : null}
+      {props.reviewCounts.sourceOtherRows ? (
+        <p className="px-1 text-xs text-muted-foreground">
+          {props.reviewCounts.sourceOtherRows.toLocaleString("en-GB")} spending and refund rows have the generic source category Other. <Link to="/money" search={{ view: "transactions", category: "other" }} className="money-inline-link">Review Other rows</Link>
+        </p>
+      ) : null}
+      {props.reviewQueue.items.length ? <CategorizeQueue items={props.reviewQueue.items} common={props.reviewQueue.commonCategories} total={props.reviewCounts.uncategorized} spendingRows={props.reviewCounts.spendingRows} /> : null}
       {props.transferReviewGroups.length ? <TransferQueue groups={props.transferReviewGroups} /> : null}
       {props.stalePrices.length || props.staleAccounts.length ? (
         <div className="money-grid money-grid--two">
@@ -97,10 +102,10 @@ function QueueTitle({ title, count }: { title: string; count: number }) {
 }
 
 /** The first suggestion is highlighted. Keys 1 to 3 pick for the first row. */
-function CategorizeQueue({ items, common, total }: { items: readonly MoneyReviewCategoryItem[]; common: readonly MoneyCategory[]; total: number }) {
+function CategorizeQueue({ items, common, total, spendingRows }: { items: readonly MoneyReviewCategoryItem[]; common: readonly MoneyCategory[]; total: number; spendingRows?: number }) {
   const router = useRouter();
   const [done, setDone] = useState<readonly Readonly<{ id: string; description: string; category: MoneyCategory; affected: number }>[]>([]);
-  const [always, setAlways] = useState<Record<string, boolean>>({});
+  const [scope, setScope] = useState<Record<string, "transaction" | "merchant">>({});
   const [saving, setSaving] = useState<string>();
   const [error, setError] = useState<string>();
   const open = items.filter((item) => !done.some((entry) => entry.id === item.id));
@@ -110,7 +115,7 @@ function CategorizeQueue({ items, common, total }: { items: readonly MoneyReview
     setSaving(item.id);
     setError(undefined);
     try {
-      const createRule = canRule(item) && (always[item.id] ?? item.similarCount > 0);
+      const createRule = canRule(item) && scope[item.id] === "merchant";
       const response = await fetch("/api/money/categories", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -141,11 +146,11 @@ function CategorizeQueue({ items, common, total }: { items: readonly MoneyReview
   return (
     <MoneyPanel title={<QueueTitle title="Categorize" count={Math.max(total - done.length, 0)} />} actions={<span className="hidden text-xs text-muted-foreground md:inline">Keys 1–3 pick a suggestion for the first row</span>}>
       {error ? <p className="px-4 pt-2 text-sm text-negative" role="alert">{error}</p> : null}
+      {spendingRows ? <p className="px-4 pt-2 text-xs text-muted-foreground">{Math.max(total - done.length, 0)} of {spendingRows.toLocaleString("en-GB")} spending and refund rows need a category ({((Math.max(total - done.length, 0) / spendingRows) * 100).toFixed(1)}%).</p> : null}
       <ul className="mt-2 divide-y border-t">
         {open.map((item) => {
           const options = picks(item);
           const rule = canRule(item);
-          const checked = always[item.id] ?? item.similarCount > 0;
           return (
             <li key={item.id} className="grid gap-2 px-4 py-3">
               <div className="flex items-baseline justify-between gap-3">
@@ -165,12 +170,19 @@ function CategorizeQueue({ items, common, total }: { items: readonly MoneyReview
                 <MoneyCategoryPicker compact value="uncategorized" disabled={saving !== undefined} ariaLabel={`Choose another category for ${item.description}`} onValue={(category) => void apply(item, category)} />
               </div>
               {rule ? (
-                <label className="flex w-fit items-center gap-2 text-xs text-muted-foreground">
-                  <input type="checkbox" className="size-4 accent-[var(--primary)]" checked={checked} onChange={(event) => setAlways((current) => ({ ...current, [item.id]: event.currentTarget.checked }))} />
-                  {item.similarCount
-                    ? `Also the ${item.similarCount} other ${item.similarCount === 1 ? "row" : "rows"} with this description in ${item.accountName}, and future imports`
-                    : `Always use this for this description in ${item.accountName}`}
-                </label>
+                <fieldset className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                  <legend className="sr-only">Apply category to {item.description}</legend>
+                  <label className="inline-flex items-center gap-1.5">
+                    <input type="radio" name={`category-scope-${item.id}`} value="transaction" className="size-4 accent-[var(--primary)]" checked={scope[item.id] !== "merchant"} onChange={() => setScope((current) => ({ ...current, [item.id]: "transaction" }))} />
+                    This transaction
+                  </label>
+                  <label className="inline-flex items-center gap-1.5">
+                    <input type="radio" name={`category-scope-${item.id}`} value="merchant" className="size-4 accent-[var(--primary)]" checked={scope[item.id] === "merchant"} onChange={() => setScope((current) => ({ ...current, [item.id]: "merchant" }))} />
+                    {item.similarCount
+                      ? `This merchant description in ${item.accountName}: ${item.similarCount} other ${item.similarCount === 1 ? "row" : "rows"} and future imports`
+                      : `This merchant description in ${item.accountName}, including future imports`}
+                  </label>
+                </fieldset>
               ) : null}
             </li>
           );

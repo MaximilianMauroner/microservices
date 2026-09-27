@@ -23,6 +23,8 @@ describe("money category picker search", () => {
     ["education", "daycare"],
     ["health", "veterinary"],
     ["subscriptions", "internet"],
+    ["software", "developer tools"],
+    ["recreation", "gondola"],
     ["fees", "accountant"],
     ["housing", "maintenance"],
   ] as const)("matches %s from the term %s", (category, term) => {

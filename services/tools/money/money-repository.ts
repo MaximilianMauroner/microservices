@@ -9,6 +9,7 @@ import {
   SPARKASSE_TRANSFER_TYPES,
   MoneyImportValidationError,
   inferMoneyCategory,
+  moneyCategorySuggestions,
   type MoneyBalanceSnapshotInput,
   type MoneyCategory,
   type MoneyImportFormat,
@@ -119,7 +120,7 @@ export type MoneyReviewQueue = Readonly<{
   /** The most used spending categories, offered when a row has no history. */
   commonCategories: readonly MoneyCategory[];
 }>;
-export type MoneyReviewCounts = Readonly<{ uncategorized: number; transfers: number }>;
+export type MoneyReviewCounts = Readonly<{ uncategorized: number; transfers: number; spendingRows?: number; sourceOtherRows?: number }>;
 export type MoneyLedgerSnapshot = MoneyTrackerSnapshot & Readonly<{
   imports: readonly MoneyImportSummary[]; activity: readonly MoneyActivityItem[]; transactionCount: number; revertedCount: number;
   currentMonthTransactionAccounts: readonly string[];
@@ -338,16 +339,12 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
             else 'Trade Republic Cash'
           end, updated_at = now()
           where provider = 'portfolio_export'`;
-        const linkedGroups = await tx<{ transfer_group_id: string }[]>`select distinct transfer_group_id
-          from tools.money_transactions where import_id is not null and transfer_group_id is not null`;
-        const groupIds = linkedGroups.map((row) => row.transfer_group_id);
-        if (groupIds.length) await tx`update tools.money_transactions set transfer_group_id = null, transfer_disposition = null
-          where transfer_group_id in ${tx(groupIds)}`;
-        await tx`update tools.money_transactions set transfer_disposition = null where import_id is not null and transfer_disposition is not null`;
+        // Existing transfer groups and dispositions may include manual review choices.
+        // Reapply defaults only to unresolved rows instead of erasing those choices.
         for (const category of MONEY_CATEGORIES) {
           const ids = rows.filter((row) => inferMoneyCategory(row.flow_kind, row.source_type, row.description, row.mcc ?? undefined) === category).map((row) => row.id);
           for (const batch of chunks(ids, 1_000)) if (batch.length) await tx`update tools.money_transactions
-            set category = ${category}, category_origin = 'source' where id in ${tx(batch)}`;
+            set category = ${category}, category_origin = 'source' where id in ${tx(batch)} and category_origin <> 'manual'`;
         }
         for (const batch of chunks(rows.map((row) => row.id), 1_000)) await applyCategoryRules(tx, batch);
         await linkUnambiguousTransfers(tx);
@@ -825,8 +822,8 @@ type TransferRuleOptionRow = { provider: string; source_type: string; count: str
 type TransferRulePreviewRow = TransferInferenceRow & { local_date: string; account_name: string; currency: string };
 type TransferRuleRow = { id: string; priority: number; provider: string | null; source_type: string | null; description_match: MoneyTransferRule["descriptionMatch"]; match_value: string | null; amount_sign: MoneyTransferRule["amountSign"]; disposition: MoneyTransferDisposition; note: string | null };
 type TransferPairRuleRow = { id: string; debit_provider: string; debit_source_type: string; debit_match_value: string; credit_provider: string; credit_source_type: string; note: string | null };
-type ReviewCountRow = { uncategorized: string; transfers: string };
-type ReviewQueueRow = ActivityRow & { similar_count: string; suggestions: MoneyCategory[] };
+type ReviewCountRow = { uncategorized: string; transfers: string; spending_rows: string; source_other_rows: string };
+type ReviewQueueRow = ActivityRow & { mcc: string | null; similar_count: string; suggestions: MoneyCategory[] };
 type TransferReviewRow = { linked_pairs: string; unlinked_count: string; unresolved_positive_count: string; unresolved_negative_count: string };
 type ReimportRow = { id: string; source_key: string; flow_kind: MoneyLedgerTransaction["flowKind"]; source_type: string; description: string; mcc: string | null };
 
@@ -852,11 +849,11 @@ function activityCategory(row: ActivityRow): MoneyCategory {
 async function readReviewQueue(sql: Sql): Promise<MoneyReviewQueue> {
   const [rows, common] = await Promise.all([
     sql<ReviewQueueRow[]>`with effective as materialized (${effectiveTransactions(sql)}), queue as (
-        select t.id, t.occurred_at, t.account_id::text account_id, a.display_name account_name, t.description, t.amount_minor, t.fee_minor, t.tax_minor,
+        select t.id, t.occurred_at, t.account_id::text account_id, a.display_name account_name, t.description, t.mcc, t.amount_minor, t.fee_minor, t.tax_minor,
           t.currency, t.status, t.source_type, t.flow_kind, t.category, t.category_origin, t.transfer_group_id, t.transfer_disposition, t.account_id account_uuid
         from effective t join tools.money_accounts a on a.id = t.account_id
         where t.category = 'uncategorized' and t.base_currency = 'EUR'
-          and (t.flow_kind = 'spend' or (t.flow_kind = 'transfer' and t.transfer_group_id is null and t.transfer_disposition = 'spend'))
+          and (t.flow_kind in ('spend', 'refund') or (t.flow_kind = 'transfer' and t.transfer_group_id is null and t.transfer_disposition in ('spend', 'refund')))
         order by t.occurred_at desc, t.source_row desc limit 40
       ) select queue.*,
         (select count(*) from effective other where other.account_id = queue.account_uuid and other.id <> queue.id
@@ -873,7 +870,7 @@ async function readReviewQueue(sql: Sql): Promise<MoneyReviewQueue> {
       group by category order by count(*) desc, category limit 6`
   ]);
   return {
-    items: rows.map((row) => ({ ...activityItem(row), similarCount: integer(row.similar_count), suggestions: row.suggestions })),
+    items: rows.map((row) => ({ ...activityItem(row), similarCount: integer(row.similar_count), suggestions: moneyCategorySuggestions(row.description, row.suggestions, row.mcc ?? undefined) })),
     commonCategories: common.map((row) => row.category)
   };
 }
@@ -1271,11 +1268,13 @@ function emptyRows<Row>(): Promise<Row[]> { return Promise.resolve([]); }
 
 function reviewCountRows(sql: Sql) {
   return sql<ReviewCountRow[]>`select
-      count(*) filter (where category = 'uncategorized' and (flow_kind = 'spend' or (flow_kind = 'transfer' and transfer_group_id is null and transfer_disposition = 'spend')) and base_currency = 'EUR')::text uncategorized,
+      count(*) filter (where category = 'uncategorized' and (flow_kind in ('spend', 'refund') or (flow_kind = 'transfer' and transfer_group_id is null and transfer_disposition in ('spend', 'refund'))) and base_currency = 'EUR')::text uncategorized,
+      count(*) filter (where (flow_kind in ('spend', 'refund') or (flow_kind = 'transfer' and transfer_group_id is null and transfer_disposition in ('spend', 'refund'))) and base_currency = 'EUR')::text spending_rows,
+      count(*) filter (where category = 'other' and category_origin = 'source' and flow_kind in ('spend', 'refund') and base_currency = 'EUR')::text source_other_rows,
       count(*) filter (where flow_kind = 'transfer' and transfer_group_id is null and transfer_disposition is null)::text transfers
     from (${effectiveTransactions(sql)}) effective`;
 }
 
 function reviewCountsFrom(rows: readonly ReviewCountRow[]): MoneyReviewCounts {
-  return { uncategorized: integer(rows[0]?.uncategorized ?? "0"), transfers: integer(rows[0]?.transfers ?? "0") };
+  return { uncategorized: integer(rows[0]?.uncategorized ?? "0"), transfers: integer(rows[0]?.transfers ?? "0"), spendingRows: integer(rows[0]?.spending_rows ?? "0"), sourceOtherRows: integer(rows[0]?.source_other_rows ?? "0") };
 }
