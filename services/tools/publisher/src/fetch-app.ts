@@ -69,6 +69,9 @@ const HTML_CONTENT_TYPE = "text/html; charset=utf-8";
 const DEFAULT_PUBLISHER_FAVICON_URL = "/assets/icons/publisher.png";
 const HTML_HEAD_BUFFER_LIMIT = 256 * 1024;
 const SINGLE_BYTE_RANGE_PATTERN = /^bytes=(?:\d+-\d*|-\d+)$/i;
+// File capabilities can be revoked, so keep shared edge freshness short. The
+// origin still checks expiry and revocation on every cache miss.
+const VIDEO_EDGE_CACHE_SECONDS = 60;
 const DEFAULT_UPLOAD_LIST_LIMIT = 25;
 const MAX_UPLOAD_LIST_LIMIT = 100;
 const MAX_UPLOAD_LIST_CURSOR_LENGTH = 2048;
@@ -808,14 +811,15 @@ async function readFileRoute(
       return new Response(null, { status: 404 });
     }
 
+    const contentType = normalizeMimeType(file.contentType);
     const headers = new Headers({
       "Accept-Ranges": "bytes",
       // Artifact pages run sandboxed, so they reach this file across origins.
       // The URL is already the capability, and no credentials travel with it.
       "Access-Control-Allow-Origin": "*",
-      "Cache-Control": "private, no-store",
+      "Cache-Control": fileCacheControl(contentType, file.expiresAt, getNow(options)),
       "Content-Disposition": attachmentDisposition(file.originalName),
-      "Content-Type": normalizeMimeType(file.contentType),
+      "Content-Type": contentType,
       "X-Content-Type-Options": "nosniff",
       "X-Robots-Tag": "noindex, nofollow"
     });
@@ -838,6 +842,17 @@ async function readFileRoute(
     }
     throw error;
   }
+}
+
+function fileCacheControl(contentType: string, expiresAt: Date | undefined, now: Date): string {
+  if (contentType !== "video/mp4") return "private, no-store";
+  const secondsUntilExpiry = expiresAt
+    ? Math.floor((expiresAt.getTime() - now.getTime() - 1000) / 1000)
+    : VIDEO_EDGE_CACHE_SECONDS;
+  const sharedSeconds = Math.min(VIDEO_EDGE_CACHE_SECONDS, secondsUntilExpiry);
+  if (sharedSeconds < 1) return "private, no-store";
+  // Browsers revalidate, while Railway's shared edge may reuse the response.
+  return `public, max-age=0, s-maxage=${sharedSeconds}, must-revalidate`;
 }
 
 async function listExternalUploads(

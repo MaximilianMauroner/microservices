@@ -165,6 +165,67 @@ describe("native artifact fetch handler", () => {
     expect(response.headers.get("content-type")).toBe("video/mp4");
   });
 
+  it("bounds shared video caching by file expiry while keeping other files private", async () => {
+    const now = new Date("2026-09-15T12:00:00.000Z");
+    const storage = new MemoryUploadStorage();
+    const videoId = "a".repeat(32);
+    const documentId = "b".repeat(32);
+    storage.files.set(videoId, {
+      body: Buffer.from("lecture"),
+      metadata: {
+        originalName: "lecture.mp4", contentType: "video/mp4", bytes: 7,
+        sha256: "c".repeat(64), expiresAt: new Date(now.getTime() + 5_000)
+      }
+    });
+    storage.files.set(documentId, {
+      body: Buffer.from("private"),
+      metadata: {
+        originalName: "private.pdf", contentType: "application/pdf", bytes: 7,
+        sha256: "d".repeat(64)
+      }
+    });
+    const app = createFetchApp({ storage, uploadToken: "upload-token", now: () => now });
+    const videoUrl = `https://tools.example.test/files/${videoId}/lecture.mp4`;
+
+    const video = await app(new Request(videoUrl));
+    expect(video.headers.get("cache-control")).toBe("public, max-age=0, s-maxage=4, must-revalidate");
+    expect((await app(new Request(videoUrl, { method: "HEAD" }))).headers.get("cache-control"))
+      .toBe("public, max-age=0, s-maxage=4, must-revalidate");
+    const document = await app(new Request(`https://tools.example.test/files/${documentId}/private.pdf`));
+    expect(document.headers.get("cache-control")).toBe("private, no-store");
+
+    now.setTime(now.getTime() + 4_000);
+    expect((await app(new Request(videoUrl))).headers.get("cache-control")).toBe("private, no-store");
+    now.setTime(now.getTime() + 1_000);
+    expect((await app(new Request(videoUrl))).status).toBe(404);
+  });
+
+  it("keeps byte-range video responses cacheable without changing range headers", async () => {
+    class RangeStorage extends MemoryUploadStorage {
+      override async getTemporaryFile(id: string, options?: GetTemporaryFileOptions) {
+        const file = await super.getTemporaryFile(id, options);
+        if (!file || !options?.range) return file;
+        return { ...file, body: Readable.from([Buffer.from("le")]), bytes: 2, contentRange: "bytes 0-1/7" };
+      }
+    }
+    const storage = new RangeStorage();
+    const id = "a".repeat(32);
+    storage.files.set(id, {
+      body: Buffer.from("lecture"),
+      metadata: { originalName: "lecture.mp4", contentType: "video/mp4", bytes: 7, sha256: "b".repeat(64) }
+    });
+    const app = createFetchApp({ storage, uploadToken: "upload-token" });
+
+    const response = await app(new Request(`https://tools.example.test/files/${id}/lecture.mp4`, {
+      headers: { Range: "bytes=0-1" }
+    }));
+    expect(response.status).toBe(206);
+    expect(response.headers.get("content-range")).toBe("bytes 0-1/7");
+    expect(response.headers.get("content-length")).toBe("2");
+    expect(response.headers.get("cache-control")).toBe("public, max-age=0, s-maxage=60, must-revalidate");
+    expect(await response.text()).toBe("le");
+  });
+
   it("creates an expiring guest upload link, accepts files, and revokes access", async () => {
     const storage = new MemoryUploadStorage();
     const uploadLinks = new MemoryUploadLinkRepository();
