@@ -206,6 +206,24 @@ stops new redirects immediately, although an already issued signed URL can
 remain usable for up to 10 seconds. Production CDN configuration leaves HTML
 caching disabled; the signed redirect itself is never shared-cacheable.
 
+The private S3-compatible bucket needs a CORS rule permitting `GET` and `HEAD`
+from any origin, with request headers including `Range` and exposed response
+headers including `Content-Range`. This preserves playback from sandboxed
+artifact pages, whose origin is opaque, while every object read still requires
+a valid short-lived signature. The production Tigris bucket has this rule.
+
+```json
+{
+  "CORSRules": [{
+    "AllowedOrigins": ["*"],
+    "AllowedMethods": ["GET", "HEAD"],
+    "AllowedHeaders": ["*"],
+    "ExposeHeaders": ["Accept-Ranges", "Content-Range", "Content-Length", "Content-Type", "ETag"],
+    "MaxAgeSeconds": 300
+  }]
+}
+```
+
 Errors use JSON with stable `error` and `message` fields. Notable statuses are
 `401 unauthorized`, `403 invalid_origin`, `404 upload_not_found`, `408
 upload_timeout`, `409
