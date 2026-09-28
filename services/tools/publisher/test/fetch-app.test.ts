@@ -227,6 +227,7 @@ describe("native artifact fetch handler", () => {
     }));
     expect(response.status).toBe(307);
     expect(response.headers.get("location")).toBe("https://storage.example.test/signed-video");
+    expect(storage.presignTemporaryFile).toHaveBeenCalledWith(id, 14_400);
     const ifRange = await app(new Request(url, {
       headers: { Range: "bytes=0-1", "If-Range": '"different"' }
     }));

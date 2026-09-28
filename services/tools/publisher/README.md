@@ -197,14 +197,17 @@ one standard byte range. Missing, revoked, and expired capability URLs return
 `404`. Malformed canonical or legacy percent encoding returns `404`.
 
 MP4 `GET` requests use a temporary signed object-storage URL after the
-canonical capability is checked. The redirect is `private, no-store` and valid
-for at most 10 seconds (less near file expiry). A client following the redirect
+canonical capability is checked. The redirect is `private, no-store`; its signed
+storage URL is valid for at most four hours (less near file expiry) so playback
+and later seeks can use the same URL. A client following the redirect
 receives full and byte-range video responses from storage instead of sending
 those bytes through the Tools service. `HEAD`, other file types, and requests
 with `If-Range` retain the original service response. Revoking a capability
-stops new redirects immediately, although an already issued signed URL can
-remain usable for up to 10 seconds. Production CDN configuration leaves HTML
-caching disabled; the signed redirect itself is never shared-cacheable.
+stops new redirects and deletes the object, invalidating previously signed
+URLs once storage processes the deletion. Shortening an existing file's expiry
+does not revoke a URL already issued for the earlier expiry. Production CDN
+configuration leaves HTML caching disabled; the signed redirect itself is
+never shared-cacheable.
 
 The private S3-compatible bucket needs a CORS rule permitting `GET` and `HEAD`
 from any origin, with request headers including `Range` and exposed response
