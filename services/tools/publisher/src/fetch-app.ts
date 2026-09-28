@@ -69,9 +69,9 @@ const HTML_CONTENT_TYPE = "text/html; charset=utf-8";
 const DEFAULT_PUBLISHER_FAVICON_URL = "/assets/icons/publisher.png";
 const HTML_HEAD_BUFFER_LIMIT = 256 * 1024;
 const SINGLE_BYTE_RANGE_PATTERN = /^bytes=(?:\d+-\d*|-\d+)$/i;
-// Signed object reads keep large videos off the application network path.
-// Short validity bounds access after a canonical capability is revoked.
-const DIRECT_VIDEO_URL_SECONDS = 10;
+// The media element keeps using the redirected URL for later seeks. Cover long
+// playback sessions while still capping a signature at the file's expiry.
+const DIRECT_VIDEO_URL_SECONDS = 4 * 60 * 60;
 const DEFAULT_UPLOAD_LIST_LIMIT = 25;
 const MAX_UPLOAD_LIST_LIMIT = 100;
 const MAX_UPLOAD_LIST_CURSOR_LENGTH = 2048;
