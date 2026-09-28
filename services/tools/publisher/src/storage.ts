@@ -11,6 +11,7 @@ import {
   PutObjectCommand,
   S3Client
 } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import {
   attachmentDisposition,
   originalNameMetadata,
@@ -149,6 +150,8 @@ export interface UploadStorage {
     id: string,
     options?: GetTemporaryFileOptions
   ): Promise<StoredTemporaryFile | null>;
+  /** Optional direct delivery for backends with short-lived signed reads. */
+  presignTemporaryFile?(id: string, expiresInSeconds: number): Promise<string | null>;
   listUploads(
     asOf: Date,
     options: ListUploadsOptions
@@ -369,6 +372,14 @@ export function createS3UploadStorage(config: S3UploadStorageConfig): UploadStor
 
         throw error;
       }
+    },
+
+    async presignTemporaryFile(id, expiresInSeconds) {
+      return getSignedUrl(
+        client,
+        new GetObjectCommand({ Bucket: config.bucket, Key: temporaryFileKey(id) }),
+        { expiresIn: expiresInSeconds }
+      );
     },
 
     async listUploads(asOf, options) {

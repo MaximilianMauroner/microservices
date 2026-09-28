@@ -131,6 +131,11 @@ export function createMetadataBackedUploadStorage(
         lastModified: row.updated_at
       };
     },
+    async presignTemporaryFile(id, expiresInSeconds) {
+      await reconcileArtifactOperations(bodies, sql);
+      if (!await find(sql, id, "file")) return null;
+      return bodies.presignTemporaryFile?.(id, expiresInSeconds) ?? null;
+    },
     async listUploads(asOf, options) {
       await reconcileArtifactOperations(bodies, sql, options);
       const rows = await sql<ArtifactRow[]>`

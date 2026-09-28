@@ -196,14 +196,15 @@ without changing the stored artifact. File downloads support `HEAD` and
 one standard byte range. Missing, revoked, and expired capability URLs return
 `404`. Malformed canonical or legacy percent encoding returns `404`.
 
-MP4 file responses permit shared edge caching for at most 60 seconds, with a
-one-second margin before the file's expiry. Browsers revalidate on each request.
-Other file types remain `private, no-store`. The canonical file URL is still a
-public unlisted capability: when Railway CDN caching is enabled, a cached MP4
-may remain available for up to 60 seconds after its owner revokes it. Avoid
-sharing MP4s through this route when immediate revocation is required. Production CDN
-configuration must leave HTML caching disabled so capability pages and private
-browser responses do not become shared cache entries.
+MP4 `GET` requests use a temporary signed object-storage URL after the
+canonical capability is checked. The redirect is `private, no-store` and valid
+for at most 10 seconds (less near file expiry). A client following the redirect
+receives full and byte-range video responses from storage instead of sending
+those bytes through the Tools service. `HEAD`, other file types, and requests
+with `If-Range` retain the original service response. Revoking a capability
+stops new redirects immediately, although an already issued signed URL can
+remain usable for up to 10 seconds. Production CDN configuration leaves HTML
+caching disabled; the signed redirect itself is never shared-cacheable.
 
 Errors use JSON with stable `error` and `message` fields. Notable statuses are
 `401 unauthorized`, `403 invalid_origin`, `404 upload_not_found`, `408

@@ -24,6 +24,21 @@ afterEach(() => {
 });
 
 describe("S3 upload storage", () => {
+  it("signs a short-lived direct file read without requesting the object", async () => {
+    const send = vi.spyOn(S3Client.prototype, "send");
+    const storage = createS3UploadStorage(storageConfig);
+
+    const signed = await storage.presignTemporaryFile?.("file-id", 10);
+    const url = new URL(signed ?? "");
+    expect(url.protocol).toBe("https:");
+    expect(url.hostname).toContain("storage.example");
+    expect(url.pathname).toContain("files/file-id");
+    expect(url.searchParams.get("X-Amz-Expires")).toBe("10");
+    expect(url.searchParams.has("X-Amz-Signature")).toBe(true);
+    expect(send).not.toHaveBeenCalled();
+    storage.close?.();
+  });
+
   it("does not enable optional AWS streaming checksums for S3-compatible storage", async () => {
     let requestChecksumCalculation: string | undefined;
     let putCommand: PutObjectCommand | undefined;
