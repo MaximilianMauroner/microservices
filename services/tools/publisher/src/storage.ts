@@ -151,7 +151,11 @@ export interface UploadStorage {
     options?: GetTemporaryFileOptions
   ): Promise<StoredTemporaryFile | null>;
   /** Optional direct delivery for backends with short-lived signed reads. */
-  presignTemporaryFile?(id: string, expiresInSeconds: number): Promise<string | null>;
+  presignTemporaryFile?(
+    id: string,
+    expiresInSeconds: number,
+    delivery?: { kind: "attachment"; filename: string }
+  ): Promise<string | null>;
   listUploads(
     asOf: Date,
     options: ListUploadsOptions
@@ -374,10 +378,18 @@ export function createS3UploadStorage(config: S3UploadStorageConfig): UploadStor
       }
     },
 
-    async presignTemporaryFile(id, expiresInSeconds) {
+    async presignTemporaryFile(id, expiresInSeconds, delivery) {
       return getSignedUrl(
         client,
-        new GetObjectCommand({ Bucket: config.bucket, Key: temporaryFileKey(id) }),
+        new GetObjectCommand({
+          Bucket: config.bucket,
+          Key: temporaryFileKey(id),
+          ...(delivery?.kind === "attachment" ? {
+            ResponseContentDisposition: attachmentDisposition(delivery.filename),
+            ResponseContentType: "application/octet-stream",
+            ResponseCacheControl: "private, no-store"
+          } : {})
+        }),
         { expiresIn: expiresInSeconds }
       );
     },

@@ -131,10 +131,10 @@ export function createMetadataBackedUploadStorage(
         lastModified: row.updated_at
       };
     },
-    async presignTemporaryFile(id, expiresInSeconds) {
+    async presignTemporaryFile(id, expiresInSeconds, delivery) {
       await reconcileArtifactOperations(bodies, sql);
       if (!await find(sql, id, "file")) return null;
-      return bodies.presignTemporaryFile?.(id, expiresInSeconds) ?? null;
+      return bodies.presignTemporaryFile?.(id, expiresInSeconds, delivery) ?? null;
     },
     async listUploads(asOf, options) {
       await reconcileArtifactOperations(bodies, sql, options);

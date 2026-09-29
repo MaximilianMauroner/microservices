@@ -72,6 +72,7 @@ const SINGLE_BYTE_RANGE_PATTERN = /^bytes=(?:\d+-\d*|-\d+)$/i;
 // The media element keeps using the redirected URL for later seeks. Cover long
 // playback sessions while still capping a signature at the file's expiry.
 const DIRECT_VIDEO_URL_SECONDS = 4 * 60 * 60;
+const DIRECT_ATTACHMENT_MIN_BYTES = 8 * 1024 * 1024;
 const DEFAULT_UPLOAD_LIST_LIMIT = 25;
 const MAX_UPLOAD_LIST_LIMIT = 100;
 const MAX_UPLOAD_LIST_CURSOR_LENGTH = 2048;
@@ -810,13 +811,23 @@ async function readFileRoute(
       return new Response(null, { status: 404 });
     }
     metadata.body.destroy();
-    if (normalizeMimeType(metadata.contentType) === "video/mp4") {
+    const video = normalizeMimeType(metadata.contentType) === "video/mp4";
+    if (video || metadata.bytes >= DIRECT_ATTACHMENT_MIN_BYTES) {
       const expiresInSeconds = metadata.expiresAt
         ? Math.min(DIRECT_VIDEO_URL_SECONDS,
             Math.floor((metadata.expiresAt.getTime() - getNow(options).getTime() - 1000) / 1000))
         : DIRECT_VIDEO_URL_SECONDS;
       if (expiresInSeconds >= 1) {
-        const signedUrl = await options.storage.presignTemporaryFile(id, expiresInSeconds);
+        let signedUrl: string | null = null;
+        try {
+          signedUrl = video
+            ? await options.storage.presignTemporaryFile(id, expiresInSeconds)
+            : await options.storage.presignTemporaryFile(
+                id, expiresInSeconds, { kind: "attachment", filename: metadata.originalName }
+              );
+        } catch {
+          // S3 signing is an optimization; the canonical file route can still stream.
+        }
         if (signedUrl) {
           return new Response(null, {
             status: 307,
