@@ -16,10 +16,10 @@ export default defineConfig({
     tanstackStart({ serverFns: { base: SERVER_FUNCTION_BASE_PATH } }),
     nitro({
       preset: "node-server",
-      // Rolldown can emit an invalid cross-chunk namespace export for the SSR
-      // renderer. Keeping the server bundle together prevents broken builds
-      // from passing the lightweight /health check.
-      inlineDynamicImports: true
+      // Preserve route and dependency chunks so public requests do not load
+      // every product's SSR code. Smoke-check rendered routes after upgrades:
+      // an older Rolldown version emitted invalid cross-chunk namespace exports.
+      inlineDynamicImports: false
     }),
     react(),
     babel({ presets: [reactCompilerPreset()] })
