@@ -39,6 +39,26 @@ describe("S3 upload storage", () => {
     storage.close?.();
   });
 
+  it("signs large attachments with a safe download filename, type, and cache policy", async () => {
+    const send = vi.spyOn(S3Client.prototype, "send");
+    const storage = createS3UploadStorage(storageConfig);
+
+    const signed = await storage.presignTemporaryFile?.("file-id", 3600, {
+      kind: "attachment", filename: 'folder/Quarterly “report”.pdf'
+    });
+    const url = new URL(signed ?? "");
+
+    expect(url.searchParams.get("X-Amz-Expires")).toBe("3600");
+    expect(url.searchParams.get("response-content-disposition")).toBe(
+      "attachment; filename=\"Quarterly _report_.pdf\"; filename*=UTF-8''Quarterly%20%E2%80%9Creport%E2%80%9D.pdf"
+    );
+    expect(url.searchParams.get("response-content-type")).toBe("application/octet-stream");
+    expect(url.searchParams.get("response-cache-control")).toBe("private, no-store");
+    expect(url.searchParams.has("X-Amz-Signature")).toBe(true);
+    expect(send).not.toHaveBeenCalled();
+    storage.close?.();
+  });
+
   it("does not enable optional AWS streaming checksums for S3-compatible storage", async () => {
     let requestChecksumCalculation: string | undefined;
     let putCommand: PutObjectCommand | undefined;

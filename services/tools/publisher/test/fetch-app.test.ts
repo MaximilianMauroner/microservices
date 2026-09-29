@@ -236,6 +236,87 @@ describe("native artifact fetch handler", () => {
     expect(storage.presignTemporaryFile).toHaveBeenCalledTimes(1);
   });
 
+  it("redirects only eligible large attachments after checking capability and expiry", async () => {
+    class SignedStorage extends MemoryUploadStorage {
+      readonly presignTemporaryFile = vi.fn(async () => "https://storage.example.test/signed-download");
+      readonly revoked = new Set<string>();
+      override async getTemporaryFile(id: string, options?: GetTemporaryFileOptions) {
+        if (this.revoked.has(id)) return null;
+        const stored = await super.getTemporaryFile(id, options);
+        return stored ? { ...stored, bytes: this.files.get(id)!.metadata.bytes } : null;
+      }
+    }
+    const now = new Date("2026-09-15T12:00:00.000Z");
+    const storage = new SignedStorage();
+    const largeId = "a".repeat(32);
+    const smallId = "b".repeat(32);
+    const expiredId = "c".repeat(32);
+    const bytes = Buffer.from("file");
+    const threshold = 8 * 1024 * 1024;
+    const metadata = {
+      originalName: "release.apk", contentType: "application/vnd.android.package-archive",
+      bytes: threshold, sha256: "d".repeat(64)
+    };
+    storage.files.set(largeId, { body: bytes, metadata: { ...metadata, expiresAt: new Date(now.getTime() + 3_602_000) } });
+    storage.files.set(smallId, {
+      body: bytes, metadata: { ...metadata, bytes: threshold - 1 }
+    });
+    storage.files.set(expiredId, { body: bytes, metadata: { ...metadata, expiresAt: new Date(now.getTime()) } });
+    const app = createFetchApp({ storage, uploadToken: "upload-token", now: () => now });
+    const url = `https://tools.example.test/files/${largeId}/release.apk`;
+
+    const redirected = await app(new Request(url));
+    expect(redirected.status).toBe(307);
+    expect(redirected.headers.get("location")).toBe("https://storage.example.test/signed-download");
+    expect(redirected.headers.get("cache-control")).toBe("private, no-store");
+    expect(redirected.headers.get("referrer-policy")).toBe("no-referrer");
+    expect(storage.presignTemporaryFile).toHaveBeenCalledWith(
+      largeId, 3601, { kind: "attachment", filename: "release.apk" }
+    );
+    const ranged = await app(new Request(url, { headers: { Range: "bytes=0-1023" } }));
+    expect(ranged.status).toBe(307);
+    expect(ranged.headers.get("location")).toBe("https://storage.example.test/signed-download");
+    expect((await app(new Request(url, { method: "HEAD" }))).status).toBe(200);
+    expect((await app(new Request(url, { headers: { Range: "bytes=0-1", "If-Range": '"different"' } }))).status).toBe(200);
+    expect((await app(new Request(`https://tools.example.test/files/${smallId}/small.txt`))).status).toBe(200);
+    expect((await app(new Request(`https://tools.example.test/files/${expiredId}/release.apk`))).status).toBe(404);
+    expect((await app(new Request(`https://tools.example.test/files/${"z".repeat(32)}/missing.bin`))).status).toBe(404);
+    storage.revoked.add(largeId);
+    expect((await app(new Request(url))).status).toBe(404);
+    storage.revoked.delete(largeId);
+    expect(storage.presignTemporaryFile).toHaveBeenCalledTimes(2);
+
+    now.setTime(now.getTime() + 3_601_000);
+    expect((await app(new Request(url))).status).toBe(200);
+    now.setTime(now.getTime() + 1_000);
+    expect((await app(new Request(url))).status).toBe(404);
+  });
+
+  it("streams an eligible attachment when signing fails or is unavailable", async () => {
+    class SignedStorage extends MemoryUploadStorage {
+      readonly presignTemporaryFile = vi.fn()
+        .mockRejectedValueOnce(new Error("signer unavailable"))
+        .mockResolvedValueOnce(null);
+    }
+    const storage = new SignedStorage();
+    const id = "a".repeat(32);
+    storage.files.set(id, {
+      body: Buffer.alloc(8 * 1024 * 1024),
+      metadata: { originalName: "report.pdf", contentType: "application/pdf", bytes: 8 * 1024 * 1024, sha256: "b".repeat(64) }
+    });
+    const app = createFetchApp({ storage, uploadToken: "upload-token" });
+    const url = `https://tools.example.test/files/${id}/report.pdf`;
+
+    for (const expectedCall of [1, 2]) {
+      const response = await app(new Request(url));
+      expect(response.status).toBe(200);
+      expect(response.headers.get("content-disposition")).toBe('attachment; filename="report.pdf"');
+      expect(response.headers.get("content-type")).toBe("application/pdf");
+      await response.body?.cancel();
+      expect(storage.presignTemporaryFile).toHaveBeenCalledTimes(expectedCall);
+    }
+  });
+
   it("creates an expiring guest upload link, accepts files, and revokes access", async () => {
     const storage = new MemoryUploadStorage();
     const uploadLinks = new MemoryUploadLinkRepository();
@@ -612,7 +693,7 @@ describe("native artifact fetch handler", () => {
       uploadLinks,
       uploadToken: "upload-token",
       publicBaseUrl: "https://tools.example.test",
-      guestUploadBodyTimeoutMs: 20,
+      guestUploadBodyTimeoutMs: 500,
       now: () => new Date("2026-09-15T12:00:00.000Z")
     });
     const endpoint = `https://tools.example.test/api/drop/${uploadLinks.token}/uploads/chunks`;
