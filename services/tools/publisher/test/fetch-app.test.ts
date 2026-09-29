@@ -239,7 +239,9 @@ describe("native artifact fetch handler", () => {
   it("redirects only eligible large attachments after checking capability and expiry", async () => {
     class SignedStorage extends MemoryUploadStorage {
       readonly presignTemporaryFile = vi.fn(async () => "https://storage.example.test/signed-download");
+      readonly revoked = new Set<string>();
       override async getTemporaryFile(id: string, options?: GetTemporaryFileOptions) {
+        if (this.revoked.has(id)) return null;
         const stored = await super.getTemporaryFile(id, options);
         return stored ? { ...stored, bytes: this.files.get(id)!.metadata.bytes } : null;
       }
@@ -271,12 +273,18 @@ describe("native artifact fetch handler", () => {
     expect(storage.presignTemporaryFile).toHaveBeenCalledWith(
       largeId, 3601, { kind: "attachment", filename: "release.apk" }
     );
+    const ranged = await app(new Request(url, { headers: { Range: "bytes=0-1023" } }));
+    expect(ranged.status).toBe(307);
+    expect(ranged.headers.get("location")).toBe("https://storage.example.test/signed-download");
     expect((await app(new Request(url, { method: "HEAD" }))).status).toBe(200);
     expect((await app(new Request(url, { headers: { Range: "bytes=0-1", "If-Range": '"different"' } }))).status).toBe(200);
     expect((await app(new Request(`https://tools.example.test/files/${smallId}/small.txt`))).status).toBe(200);
     expect((await app(new Request(`https://tools.example.test/files/${expiredId}/release.apk`))).status).toBe(404);
     expect((await app(new Request(`https://tools.example.test/files/${"z".repeat(32)}/missing.bin`))).status).toBe(404);
-    expect(storage.presignTemporaryFile).toHaveBeenCalledTimes(1);
+    storage.revoked.add(largeId);
+    expect((await app(new Request(url))).status).toBe(404);
+    storage.revoked.delete(largeId);
+    expect(storage.presignTemporaryFile).toHaveBeenCalledTimes(2);
 
     now.setTime(now.getTime() + 3_601_000);
     expect((await app(new Request(url))).status).toBe(200);
