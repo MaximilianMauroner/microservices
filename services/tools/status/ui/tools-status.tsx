@@ -60,7 +60,7 @@ function ToolsStatusView({ snapshot, publicOrigin, view, actor }: { snapshot: Pu
           {recentIncidents.length ? <ol className="divide-y">{recentIncidents.map(({ entry, record }) => <li key={`${entry.id}:${record.startedAt}`} className="grid grid-cols-[5rem_minmax(0,1fr)_auto] items-center gap-3 px-4 py-2.5 text-sm"><LocalDate value={record.startedAt} fallback={formatShortDate(new Date(record.startedAt))} /><span className="min-w-0"><strong className="block truncate font-medium">{entry.name}</strong><span className="block text-xs text-muted-foreground"><LocalTimeRange start={record.startedAt} end={record.resolvedAt} fallback={record.resolvedAt ? `${formatClock(new Date(record.startedAt))}–${formatClock(new Date(record.resolvedAt))} UTC` : `${formatClock(new Date(record.startedAt))}–ongoing UTC`} /></span></span><span className={`text-xs tabular-nums ${record.resolvedAt ? "text-muted-foreground" : "text-negative"}`}>{formatDuration(downtimeDuration(record, new Date(snapshot.generatedAt).getTime()))}</span></li>)}</ol> : <p className="px-4 py-5 text-sm text-muted-foreground">No recorded incidents in the last 30 days.</p>}
         </section>
       </div>
-      {view === "private" ? <div className="private-status-identity"><Link to="/status" preload="intent">← All services</Link><span>Signed in as {actor}</span></div> : view === "public" ? <section className="private-status-callout" aria-labelledby="private-status-title"><div className="private-status-callout__icon" aria-hidden="true"><LockKeyhole className="size-4" /></div><div><h2 id="private-status-title">Private service status</h2><p>Sign in with Google to view availability for internal services.</p></div><Button variant="outline" className="private-status-link" render={<Link to="/" preload="intent" />}>Open Tools <ChevronRight aria-hidden="true" /></Button></section> : null}
+      {view === "private" ? <div className="private-status-identity"><Link to="/status" preload="intent">← All services</Link><span>Signed in as {actor}</span></div> : view === "public" ? <section className="private-status-callout" aria-labelledby="private-status-title"><div className="private-status-callout__icon" aria-hidden="true"><LockKeyhole className="size-4" /></div><div><h2 id="private-status-title">Private service status</h2><p>Sign in with Google to view availability for internal services.</p></div><Button nativeButton={false} variant="outline" className="private-status-link" render={<Link to="/" preload="intent" />}>Open Tools <ChevronRight aria-hidden="true" /></Button></section> : null}
     </main>
   </>;
 }
@@ -80,6 +80,7 @@ function ServiceLink({ href, label, restricted, publicOrigin }: { href: string; 
   const sameOrigin = resolvedHref !== href;
   return (
     <Button
+      nativeButton={false}
       variant="outline"
       className="service-link text-foreground"
       render={sameOrigin ? <Link to={resolvedHref} preload="intent" /> : <a href={resolvedHref} target="_blank" rel="noreferrer" />}
