@@ -29,6 +29,6 @@ boundaries. AGENTS.md requires it for cross-boundary changes. Skill discovery
 through live Codex and Claude clients was not tested. Both clients use the
 project-local .agents/skills convention; discovery remains unverified.
 
-The owned Network Console session was stopped with SIGINT and logged a clean
-server close. Evidence remains. CI, independent review, merge, and user
+The owned Network Console session was stopped with SIGINT and logged the shutdown
+request; the later listener check confirmed the port closed. Evidence remains. CI, independent review, merge, and user
 acceptance are separate pending gates.
