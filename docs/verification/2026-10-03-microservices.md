@@ -12,9 +12,10 @@ Network Console at `127.0.0.1:43127`. No production database or credentials.
 | --- | --- | --- |
 | N1 HTTP health and listener discovery | Passed | /health returned ok; /api/ports reported the owned 43127 listener as loopback-only, with no remote target. GET / returned HTML. |
 | N1 browser dashboard and reload | Blocked | T3 environment-port navigation failed. Direct loopback retry returned net::ERR_CONNECTION_REFUSED. HTTP remained ready. Browser harness failure. |
-| A1, D1, S1, P1-P4, M1-M2, F1, W1-W2, C1, O1 | Blocked | Docker was absent, so the documented isolated Tools stack could not start. Local OAuth and local Convex were not established. Source review is not live verification. |
+| A1, D1, S1, P1-P6, M1-M2, F1-F3, W1-W2, C1, O1 | Blocked | Docker was absent, so the documented isolated Tools stack could not start. Local OAuth and local Convex were not established. Source review is not live verification. |
 
 Private evidence remains in ignored `.agents/artifacts/verification-20261003/`.
+Tool-output excerpts are retained as parent-tool-evidence.txt.
 The broader T3 inventory and deduplicated session evidence remain in the owning
 thread's scratch artifact directory. No confirmed product regression was found
 by the paths run. This does not establish correctness of blocked paths.
