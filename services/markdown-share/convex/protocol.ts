@@ -1,3 +1,4 @@
+import { sourceSizeError } from "../source-limits";
 import type { MutationCtx } from "./_generated/server";
 import { components } from "./_generated/api";
 import { ConvexError } from "convex/values";
@@ -202,7 +203,9 @@ export async function validateSubmittedSteps(
   // Steps such as AttrStep can apply successfully while changing the document
   // to a schema shape the Markdown client does not support. Re-validate the
   // complete result with the exact same canonical invariant as snapshots.
-  parseSnapshot(JSON.stringify(transform.doc.toJSON()));
+  const source = parseSnapshot(JSON.stringify(transform.doc.toJSON())).markdown;
+  const sizeError = sourceSizeError(source);
+  if (sizeError) throw new ConvexError({ code: "DOCUMENT_TOO_LARGE", message: sizeError });
 }
 
 export async function validateSubmittedSnapshot(

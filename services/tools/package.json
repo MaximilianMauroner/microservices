@@ -33,6 +33,7 @@
     "@tiptap/extension-document": "3.29.2",
     "@tiptap/extension-text": "3.29.2",
     "@tiptap/extensions": "3.29.2",
+    "@tiptap/pm": "3.29.2",
     "@tiptap/react": "3.29.2",
     "better-auth": "1.6.26",
     "class-variance-authority": "^0.7.1",

@@ -75,7 +75,7 @@ export function CollaborativeWorkspace({
   document: PublicDocument;
 }) {
   const identity = useMemo(getPresenceIdentity, []);
-  const { failure: syncFailure, onSyncError } = useSyncFailure();
+  const { failure: syncFailure, onSyncError, onSyncRecovered } = useSyncFailure();
   const setDisplayName = useMutation(api.presence.setDisplayName);
   const presence = usePresence(
     api.presence,
@@ -124,6 +124,7 @@ export function CollaborativeWorkspace({
       syncExtension={sync.extension}
       initialContent={sync.initialContent}
       syncFailure={syncFailure}
+      onSyncRecovered={onSyncRecovered}
     />
   );
 }
@@ -147,6 +148,7 @@ function EditorWorkspace({
   syncExtension,
   initialContent,
   syncFailure,
+  onSyncRecovered,
 }: {
   document: PublicDocument;
   anonymousName: string;
@@ -154,6 +156,7 @@ function EditorWorkspace({
   syncExtension: SyncExtension;
   initialContent: Content;
   syncFailure: SyncFailure | null;
+  onSyncRecovered: () => void;
 }) {
   const [copied, setCopied] = useState(false);
   const [pinBusy, setPinBusy] = useState(false);
@@ -168,6 +171,7 @@ function EditorWorkspace({
     initialContent,
     syncExtension,
     syncFailure,
+    onSyncRecovered,
   });
   const viewport = useWorkspaceViewport();
   const history = useDocumentHistory({
@@ -471,6 +475,7 @@ function EditorWorkspace({
         </div>
       </header>
 
+      {session.inputError ? <p className="sync-error-banner" role="alert">{session.inputError}</p> : null}
       {syncFailure ? (
         <div
           className={`sync-error-banner sync-error-${syncFailure.kind}`}

@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 
+import type { Editor } from "@tiptap/core";
+import { receiveTransaction, sendableSteps } from "prosemirror-collab";
 import { ConvexError } from "convex/values";
 import { getFunctionName, type FunctionReference } from "convex/server";
 import { act } from "react";
@@ -19,6 +21,7 @@ const publicDocument = {
   expiresAt: Date.now() + 60_000,
   pinned: false,
 };
+let liveEditor: Editor;
 let reportSyncError: ((error: Error) => void) | undefined;
 
 vi.mock("@convex-dev/presence/react", () => ({
@@ -49,6 +52,7 @@ vi.mock("@convex-dev/prosemirror-sync/tiptap", async () => {
   const extension = Extension.create({
     name: "test-sync",
     addProseMirrorPlugins() {
+      liveEditor = this.editor;
       return [collab({ version: 1 })];
     },
   });
@@ -142,6 +146,35 @@ describe("collaborative workspace", () => {
     });
     container.remove();
     vi.unstubAllGlobals();
+  });
+
+  it("clears a save error only after pending edits are acknowledged", async () => {
+    await act(async () => {
+      liveEditor.view.dispatch(liveEditor.state.tr.insertText("prompt ".repeat(20_000), 1));
+      reportSyncError?.(new Error("temporary failure"));
+    });
+    expect(container.querySelector(".save-status-error")?.textContent).toContain("Save failed");
+    await act(async () => { liveEditor.view.dispatch(liveEditor.state.tr.insertText("retry", 1)); });
+    expect(container.querySelector(".save-status-error")).not.toBeNull();
+    const pending = sendableSteps(liveEditor.state)!;
+    await act(async () => {
+      liveEditor.view.dispatch(receiveTransaction(liveEditor.state, pending.steps, pending.steps.map(() => pending.clientID)));
+    });
+    expect(container.querySelector("[role=alert]")).toBeNull();
+    expect(container.querySelector(".save-status")?.textContent).toContain("Saved");
+  });
+
+  it("rejects oversized edits without losing saved source and accepts a smaller paste", async () => {
+    await act(async () => { liveEditor.view.dispatch(liveEditor.state.tr.insertText("x".repeat(500_001), 1)); });
+    expect(liveEditor.state.doc.textContent).toBe("initial");
+    expect(sendableSteps(liveEditor.state)).toBeNull();
+    expect(container.querySelector("[role=alert]")?.textContent).toContain("500,000 characters");
+    await act(async () => { liveEditor.view.dispatch(liveEditor.state.tr.insertText("\\".repeat(300_000), 1)); });
+    expect(liveEditor.state.doc.textContent).toBe("initial");
+    expect(container.querySelector("[role=alert]")?.textContent).toContain("after encoding");
+    await act(async () => { liveEditor.view.dispatch(liveEditor.state.tr.insertText("short prompt", 1)); });
+    expect(liveEditor.state.doc.textContent).toContain("short prompt");
+    expect(container.querySelector("[role=alert]")).toBeNull();
   });
 
   it("keeps a retryable error visible without disabling editing", async () => {

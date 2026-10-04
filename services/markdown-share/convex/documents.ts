@@ -1,9 +1,9 @@
+import { sourceSizeError } from "../source-limits";
 import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import {
   FILENAME_PATTERN,
   MAX_FILENAME_LENGTH,
-  MAX_MARKDOWN_LENGTH,
 } from "./constants";
 import {
   createDocument,
@@ -33,10 +33,11 @@ function validateCreateInput(filename: string, markdown: string, format: "markdo
       message: "Use a short URL-safe filename matching the document format.",
     });
   }
-  if (markdown.length > MAX_MARKDOWN_LENGTH) {
+  const sizeError = sourceSizeError(markdown);
+  if (sizeError) {
     throw new ConvexError({
       code: "DOCUMENT_TOO_LARGE",
-      message: "Documents are limited to 500,000 characters.",
+      message: sizeError,
     });
   }
 }

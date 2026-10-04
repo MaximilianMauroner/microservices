@@ -803,3 +803,25 @@ describe("document formats", () => {
     expect((await test.query(api.documents.get, { token: LEGACY_TOKEN }))?.format).toBe("markdown");
   });
 });
+
+
+describe("large prompt saves", () => {
+  it("persists a large multiline prompt through steps, snapshots, and checkpoints", async () => {
+    const test = setup();
+    const document = await test.mutation(api.documents.create, { filename: "prompt.md", markdown: "" });
+    const prompt = "Instructions: preserve \"quotes\", paths \\ and Unicode café.\n".repeat(3000);
+    await expect(test.mutation(api.editor.submitSteps, { id: document.token, version: 1, clientId: "large-paste", steps: [insertStep("", prompt)] })).resolves.toEqual({ status: "synced" });
+    await test.mutation(api.editor.submitSnapshot, { id: document.token, version: 2, content: snapshot(prompt) });
+    const saved = await test.query(api.editor.getSnapshot, { id: document.token });
+    expect(saved.content).toBe(snapshot(prompt));
+    expect((await test.mutation(api.checkpoints.create, { token: document.token, createdBy: "prompt author" })).charCount).toBe(prompt.length);
+  });
+  it("rejects encoded source too large for storage before accepting it", async () => {
+    const test = setup();
+    const oversized = "\\".repeat(300_000);
+    await expect(test.mutation(api.documents.create, { filename: "huge.md", markdown: oversized })).rejects.toThrow("after encoding");
+    const document = await test.mutation(api.documents.create, { filename: "small.md", markdown: "" });
+    await expect(test.mutation(api.editor.submitSteps, { id: document.token, version: 1, clientId: "large-paste", steps: [insertStep("", oversized)] })).rejects.toThrow("after encoding");
+    expect(await test.query(api.editor.latestVersion, { id: document.token })).toBe(1);
+  });
+});

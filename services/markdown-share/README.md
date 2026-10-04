@@ -45,3 +45,13 @@ rollout, creation without `format` and stored rows without `format` mean Markdow
 Make the field required only after old clients are retired and retained rows are
 backfilled. The `markdown` API argument and checkpoint field remain wire/storage
 names for source to preserve active clients and stored checkpoints.
+
+## Source save limits
+
+The editor and backend share the 500,000-character limit and a 900,000-byte
+budget for encoded source. The byte budget leaves room below Convex's 1 MiB
+value limit for editor JSON and metadata. Quotes, backslashes, and Unicode can
+reach that budget before the character limit. Oversized local edits are rejected
+with a visible message and leave the previous source intact. Existing documents
+remain readable; edits must fit the save budget. Retryable save errors clear
+only after all pending edits are acknowledged at a newer collaboration version.
