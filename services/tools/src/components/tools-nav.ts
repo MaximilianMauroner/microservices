@@ -32,10 +32,10 @@ export const TOOLS_PRODUCTS: readonly ToolsProduct[] = [
     ]
   },
   {
-    id: "markdown", label: "Markdown Share", to: "/documents", icon: favicons.markdownShare, match: (path) => path === "/documents",
+    id: "markdown", label: "Document Share", to: "/documents", icon: favicons.markdownShare, match: (path) => path === "/documents",
     pages: [
       { label: "Documents", to: "/documents", match: exact("/documents") },
-      { label: "Editor", to: "/markdown", match: () => false, external: true }
+      { label: "Editor", to: "/share", match: () => false, external: true }
     ]
   },
   { id: "status", label: "Status", to: "/status", icon: favicons.status, match: (path) => path.startsWith("/status") }

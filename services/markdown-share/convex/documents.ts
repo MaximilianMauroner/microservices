@@ -15,26 +15,28 @@ import {
 const publicDocument = v.object({
   token: v.string(),
   filename: v.string(),
+  format: v.union(v.literal("markdown"), v.literal("latex")),
   createdAt: v.number(),
   updatedAt: v.number(),
   expiresAt: v.number(),
   pinned: v.boolean(),
 });
 
-function validateCreateInput(filename: string, markdown: string) {
+function validateCreateInput(filename: string, markdown: string, format: "markdown" | "latex") {
   if (
     filename.length > MAX_FILENAME_LENGTH ||
-    !FILENAME_PATTERN.test(filename)
+    !FILENAME_PATTERN.test(filename) ||
+    !filename.endsWith(format === "latex" ? ".tex" : ".md")
   ) {
     throw new ConvexError({
       code: "INVALID_FILENAME",
-      message: "Use a short URL-safe filename ending in .md.",
+      message: "Use a short URL-safe filename matching the document format.",
     });
   }
   if (markdown.length > MAX_MARKDOWN_LENGTH) {
     throw new ConvexError({
       code: "DOCUMENT_TOO_LARGE",
-      message: "Markdown documents are limited to 500,000 characters.",
+      message: "Documents are limited to 500,000 characters.",
     });
   }
 }
@@ -46,10 +48,12 @@ function toPublicDocument(document: {
   updatedAt: number;
   expiresAt: number;
   pinned?: boolean;
+  format?: "markdown" | "latex";
 }) {
   return {
     token: document.token,
     filename: document.filename,
+    format: document.format ?? "markdown",
     createdAt: document.createdAt,
     updatedAt: document.updatedAt,
     expiresAt: document.expiresAt,
@@ -60,14 +64,17 @@ function toPublicDocument(document: {
 export const create = mutation({
   args: {
     filename: v.string(),
+    format: v.optional(v.union(v.literal("markdown"), v.literal("latex"))),
     markdown: v.string(),
   },
   returns: publicDocument,
   handler: async (ctx, args) => {
-    validateCreateInput(args.filename, args.markdown);
+    const format = args.format ?? "markdown";
+    validateCreateInput(args.filename, args.markdown, format);
 
     const document = await createDocument(ctx, {
       filename: args.filename,
+      format,
       markdown: args.markdown,
     });
     return toPublicDocument(document);

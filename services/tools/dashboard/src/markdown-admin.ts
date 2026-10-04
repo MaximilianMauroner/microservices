@@ -1,10 +1,11 @@
 const MAX_DOCUMENTS = 200;
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{20,128}$/;
-const FILENAME_PATTERN = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?\.md$/;
+const FILENAME_PATTERN = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?\.(?:md|tex)$/;
 
 export interface MarkdownAdminDocument {
   token: string;
   filename: string;
+  format?: "markdown" | "latex";
   createdAt: number;
   updatedAt: number;
   expiresAt: number;
@@ -88,8 +89,11 @@ function decodeDocument(value: unknown): MarkdownAdminDocument {
   const record = object(value);
   const token = string(record.token);
   const filename = string(record.filename);
+  const format = record.format ?? "markdown";
   const checkpointCount = number(record.checkpointCount);
   if (
+    (format !== "markdown" && format !== "latex") ||
+    !filename.endsWith(format === "latex" ? ".tex" : ".md") ||
     !TOKEN_PATTERN.test(token) ||
     !FILENAME_PATTERN.test(filename) ||
     filename.length > 80 ||
@@ -101,6 +105,7 @@ function decodeDocument(value: unknown): MarkdownAdminDocument {
   return {
     token,
     filename,
+    format,
     createdAt: timestamp(record.createdAt),
     updatedAt: timestamp(record.updatedAt),
     expiresAt: timestamp(record.expiresAt),

@@ -13,6 +13,7 @@ const snapshot = {
     {
       token: "j57dzxnpat8g9sbksewde1dznh8bczet",
       filename: "notes.md",
+      format: "markdown",
       createdAt: 100,
       updatedAt: 900,
       expiresAt: 2_000,
@@ -22,6 +23,13 @@ const snapshot = {
 };
 
 describe("Markdown admin client", () => {
+  it("accepts LaTeX metadata and defaults legacy Markdown responses", () => {
+    const legacy = { ...snapshot.documents[0], format: undefined };
+    expect(decodeMarkdownAdminSnapshot({ ...snapshot, documents: [legacy] }).documents[0]?.format).toBe("markdown");
+    const latex = { ...legacy, filename: "paper.tex", format: "latex" };
+    expect(decodeMarkdownAdminSnapshot({ ...snapshot, documents: [latex] }).documents[0]?.format).toBe("latex");
+    expect(() => decodeMarkdownAdminSnapshot({ ...snapshot, documents: [{ ...latex, format: "markdown" }] })).toThrow(MarkdownAdminUnavailableError);
+  });
   it("sends the service token only in the authorization header", async () => {
     let request: Request | undefined;
     const client = createMarkdownAdminClient({

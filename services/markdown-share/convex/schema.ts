@@ -5,6 +5,7 @@ export default defineSchema({
   documents: defineTable({
     token: v.string(),
     filename: v.string(),
+    format: v.optional(v.union(v.literal("markdown"), v.literal("latex"))),
     createdAt: v.number(),
     updatedAt: v.number(),
     expiresAt: v.number(),

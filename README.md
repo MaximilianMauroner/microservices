@@ -62,7 +62,7 @@ Then open:
 
 - `http://localhost:3000` for Tools
 - `http://localhost:9001` for the MinIO console
-- `http://localhost:3000/markdown` for the integrated Markdown Share frontend
+- `http://localhost:3000/share` for the integrated Markdown and LaTeX source frontend
 - `http://localhost:8787` for the local Markdown administration mock
 
 Stop the stack with `pnpm run docker:down`. To also delete its local database

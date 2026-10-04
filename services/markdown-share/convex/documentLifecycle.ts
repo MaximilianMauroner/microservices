@@ -51,11 +51,11 @@ export async function requireLiveDocument(
 /** Creates the document aggregate and schedules its first retention transition. */
 export async function createDocument(
   ctx: MutationCtx,
-  args: { filename: string; markdown: string },
+  args: { filename: string; markdown: string; format: "markdown" | "latex" },
 ): Promise<
   Pick<
     Doc<"documents">,
-    "token" | "filename" | "createdAt" | "updatedAt" | "expiresAt"
+    "token" | "filename" | "format" | "createdAt" | "updatedAt" | "expiresAt"
   >
 > {
   const now = Date.now();
@@ -64,6 +64,7 @@ export async function createDocument(
   await ctx.db.insert("documents", {
     token,
     filename: args.filename,
+    format: args.format,
     createdAt: now,
     updatedAt: now,
     expiresAt,
@@ -85,6 +86,7 @@ export async function createDocument(
   return {
     token,
     filename: args.filename,
+    format: args.format,
     createdAt: now,
     updatedAt: now,
     expiresAt,

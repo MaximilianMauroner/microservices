@@ -329,6 +329,7 @@ describe("private admin inventory", () => {
         {
           token: newer.token,
           filename: "newer.md",
+          format: "markdown",
           createdAt: 20_000,
           updatedAt: 20_000,
           expiresAt: 20_000 + RETENTION_MS,
@@ -337,6 +338,7 @@ describe("private admin inventory", () => {
         {
           token: older.token,
           filename: "older.md",
+          format: "markdown",
           createdAt: 10_000,
           updatedAt: 10_000,
           expiresAt: 10_000 + RETENTION_MS,
@@ -772,5 +774,32 @@ describe("pin retention", () => {
       pinned: false,
       expiresAt: 490_000 + RETENTION_MS,
     });
+  });
+});
+
+
+describe("document formats", () => {
+  it("edits and checkpoints LaTeX using the canonical source protocol", async () => {
+    vi.useFakeTimers({ now: 1000 });
+    const test = setup();
+    const source = "\\documentclass{article}";
+    const document = await test.mutation(api.documents.create, { filename: "paper.tex", format: "latex", markdown: source });
+    expect(document.format).toBe("latex");
+    expect((await test.query(api.documents.get, { token: document.token }))?.format).toBe("latex");
+    await expect(test.mutation(api.documents.create, { filename: "paper.md", format: "latex", markdown: source })).rejects.toThrow();
+    await expect(test.mutation(api.documents.create, { filename: "paper.tex", markdown: source })).rejects.toThrow();
+    const older = await test.mutation(api.checkpoints.create, { token: document.token, createdBy: "LaTeX author" });
+    await test.mutation(api.editor.submitSteps, { id: document.token, version: 1, clientId: "latex-client", steps: [insertStep(source, "\nHello")] });
+    const newer = await test.mutation(api.checkpoints.create, { token: document.token, createdBy: "LaTeX author" });
+    const comparison = await test.query(api.checkpoints.compare, { token: document.token, olderId: older._id, newerId: newer._id });
+    expect(comparison.newer.markdown).toBe(source + "\nHello");
+    expect((await test.mutation(api.documents.setPinned, { token: document.token, pinned: true })).format).toBe("latex");
+    const inventory = await test.query(internal.admin.listActiveDocuments, { now: 1000, limit: 20 });
+    expect(inventory.documents[0]?.format).toBe("latex");
+  });
+  it("reads retained rows without format as Markdown", async () => {
+    const test = setup();
+    await test.run(async (ctx) => { await ctx.db.insert("documents", { token: LEGACY_TOKEN, filename: "old.md", createdAt: 1, updatedAt: 1, expiresAt: Date.now() + RETENTION_MS }); });
+    expect((await test.query(api.documents.get, { token: LEGACY_TOKEN }))?.format).toBe("markdown");
   });
 });

@@ -66,6 +66,7 @@ type PublicDocument = {
   updatedAt: number;
   expiresAt: number;
   pinned: boolean;
+  format?: "markdown" | "latex";
 };
 
 export function CollaborativeWorkspace({
@@ -245,6 +246,20 @@ function EditorWorkspace({
     window.setTimeout(() => setCopied(false), 1500);
   };
 
+  const downloadSource = () => {
+    const url = URL.createObjectURL(new Blob([session.markdown], { type: "text/plain;charset=utf-8" }));
+    const link = window.document.createElement("a");
+    link.href = url;
+    link.download = document.filename;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportDocument = () => {
+    if (document.format === "latex") downloadSource();
+    else void printDocument();
+  };
+
   const printDocument = async () => {
     await window.document.fonts.ready;
     window.print();
@@ -272,9 +287,9 @@ function EditorWorkspace({
       <header className="topbar">
         <div className="topbar-identity">
           <a className="tools-return tools-return-compact" href="/" aria-label="Back to Tools dashboard"><span aria-hidden="true">←</span><span className="tools-return-label">Tools</span></a>
-          <a className="wordmark" href="/markdown" aria-label="Markdown Share home">
+          <a className="wordmark" href="/share" aria-label="Document Share home">
             <img className="wordmark-icon" src={favicons.markdownShare} alt="" />
-            <span className="wordmark-name">Markdown Share</span>
+            <span className="wordmark-name">Document Share</span>
           </a>
           <div className="document-identity">
             <strong title={document.filename}>{document.filename}</strong>
@@ -338,9 +353,9 @@ function EditorWorkspace({
           <button
             className="button-primary direct-pdf"
             type="button"
-            onClick={() => void printDocument()}
+            onClick={exportDocument}
           >
-            Export PDF
+            {document.format === "latex" ? "Download .tex" : "Export PDF"}
           </button>
           <div className="topbar-overflow" ref={topbarMenuRef}>
             <button
@@ -364,8 +379,8 @@ function EditorWorkspace({
                 <button type="button" onClick={() => void copyLink()}>
                   {copied ? "Link copied" : "Copy link"}
                 </button>
-                <button type="button" onClick={() => void printDocument()}>
-                  Export PDF
+                <button type="button" onClick={exportDocument}>
+                  {document.format === "latex" ? "Download .tex" : "Export PDF"}
                 </button>
                 <button
                   type="button"
@@ -479,7 +494,7 @@ function EditorWorkspace({
               onClick={() => viewport.setMobilePane("source")}
               onKeyDown={viewport.handleMobileTabKeyDown}
             >
-              Markdown
+              {document.format === "latex" ? "LaTeX" : "Markdown"}
             </button>
             <button
               id="mobile-preview-tab"
@@ -502,7 +517,7 @@ function EditorWorkspace({
           id="source-panel"
           className={`panel source-panel mobile-${viewport.mobilePane === "source" ? "active" : "inactive"}`}
         >
-          <span className="pane-label" aria-hidden="true">Markdown</span>
+          <span className="pane-label" aria-hidden="true">{document.format === "latex" ? "LaTeX" : "Markdown"}</span>
           {history.renderControl("desktop")}
           <div
             className="editor-scroll"
@@ -545,11 +560,16 @@ function EditorWorkspace({
             ref={viewport.previewScrollRef}
             onScroll={() => viewport.handlePaneScroll("preview")}
           >
-            <ReactMarkdown
+            {document.format === "latex" ? (
+              <section aria-label="LaTeX preview status">
+                <h2>LaTeX source document</h2>
+                <p>PDF compilation is not available yet. Edit together and download the .tex source.</p>
+              </section>
+            ) : <ReactMarkdown
               remarkPlugins={[remarkGfm, remarkPreserveExtraBlankLines]}
             >
               {session.markdown}
-            </ReactMarkdown>
+            </ReactMarkdown>}
           </article>
         </section>
       </section>
@@ -583,7 +603,7 @@ function CenteredStatus({
         <img className="status-glyph" src={favicons.markdownShare} alt="" />
         <h1>{label}</h1>
         {detail ? <p>{detail}</p> : null}
-        <a href="/markdown">Create a new document</a>
+        <a href="/share">Create a new document</a>
       </div>
     </main>
   );

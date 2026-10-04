@@ -7,4 +7,4 @@ export const MAX_CHECKPOINT_AUTHOR_LENGTH = 48;
 
 export const LEGACY_TOKEN_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-export const FILENAME_PATTERN = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?\.md$/;
+export const FILENAME_PATTERN = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?\.(?:md|tex)$/;

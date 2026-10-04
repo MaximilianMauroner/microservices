@@ -90,6 +90,16 @@ describe("collaborative workspace", () => {
     });
   });
 
+  it("keeps LaTeX source editable and offers source download instead of Markdown PDF export", async () => {
+    await act(async () => {
+      root.render(<CollaborativeWorkspace document={{ ...publicDocument, filename: "paper.tex", format: "latex" }} />);
+    });
+    expect(container.querySelector("[contenteditable=true]")).not.toBeNull();
+    expect(container.querySelector("#preview-panel")?.textContent).toContain("PDF compilation is not available yet");
+    expect(container.querySelector(".direct-pdf")?.textContent).toBe("Download .tex");
+    expect(container.querySelector(".wordmark")?.getAttribute("href")).toBe("/share");
+  });
+
   it("switches between the source and preview panes", async () => {
     const sourcePanel = container.querySelector("#source-panel");
     const previewPanel = container.querySelector("#preview-panel");

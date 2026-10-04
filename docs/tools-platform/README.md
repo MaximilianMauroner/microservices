@@ -30,7 +30,7 @@ awake between runs.
 - Public pages and canonical artifact URLs do not require a browser session.
 - Expiring `/drop/:token` capabilities accept guest uploads until revoked or expired;
   their management routes require the browser session.
-- Markdown Share creation and capability document pages do not require a browser session.
+- Document Share creation (`/share`) and capability document pages do not require a browser session. Existing `/markdown` links remain public aliases.
 - Private browser routes use one Better Auth Google session.
 - Upload, agent, and heartbeat APIs retain dedicated bearer credentials.
 
