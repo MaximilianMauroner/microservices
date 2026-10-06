@@ -6,7 +6,8 @@ import { CollaborativeWorkspace } from "./collaborative-workspace";
 import {
   documentPath,
   formatExpiry,
-  initialMarkdown,
+  initialSource,
+  type DocumentFormat,
   normalizeFilename,
   parseDocumentRoute,
 } from "./lib";
@@ -35,7 +36,8 @@ export function App() {
 
 function LandingPage() {
   const createDocument = useMutation(api.documents.create);
-  const [name, setName] = useState("notes.md");
+  const [name, setName] = useState("notes");
+  const [format, setFormat] = useState<DocumentFormat>("markdown");
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [themeChoice, setThemeChoice] =
@@ -50,14 +52,15 @@ function LandingPage() {
 
   const handleCreate = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const filename = normalizeFilename(name);
+    const filename = normalizeFilename(name, format);
     setIsCreating(true);
     setError(null);
 
     try {
       const created = await createDocument({
         filename,
-        markdown: initialMarkdown(filename),
+        markdown: initialSource(filename, format),
+        format,
       });
       rememberRecentDocument({
         token: created.token,
@@ -65,7 +68,7 @@ function LandingPage() {
         expiresAt: created.expiresAt,
         lastOpenedAt: Date.now(),
       });
-      window.location.assign(documentPath(created.filename, created.token));
+      window.location.assign(documentPath(created.filename, created.token, "/share"));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Creation failed.");
       setIsCreating(false);
@@ -79,15 +82,24 @@ function LandingPage() {
         <img className="brand-mark" src={favicons.markdownShare} alt="" />
         <p className="eyebrow">A temporary shared page</p>
         <h1>
-          Write Markdown.<br />Share one quiet link.
+          Write Markdown or LaTeX.<br />Share one quiet link.
         </h1>
         <p className="landing-copy">
-          Edit together in real time, preview as you type, and export a clean
-          PDF. No account. Anyone with the document link can open it. Unpinned
+          Edit source together in real time. Markdown includes live preview and PDF export.
+          LaTeX source can be shared and downloaded; PDF compilation is not available yet. No account. Anyone with the document link can open it. Unpinned
           documents expire seven days after the last edit; pinned documents last 30 days.
         </p>
 
         <form className="create-form" onSubmit={handleCreate}>
+          <fieldset className="document-format">
+            <legend>Document format</legend>
+            {(["markdown", "latex"] as const).map((choice) => (
+              <label key={choice}>
+                <input type="radio" name="format" value={choice} checked={format === choice} onChange={() => setFormat(choice)} />
+                {choice === "latex" ? "LaTeX" : "Markdown"}
+              </label>
+            ))}
+          </fieldset>
           <label htmlFor="filename">Document name</label>
           <div className="filename-row">
             <input
@@ -104,7 +116,7 @@ function LandingPage() {
             </button>
           </div>
           <p id="filename-note" className="field-note">
-            We’ll make the name URL-safe and add .md.
+            We’ll make the name URL-safe and add {format === "latex" ? ".tex" : ".md"}.
           </p>
           {error ? <p className="form-error">{error}</p> : null}
         </form>
@@ -137,7 +149,7 @@ function LandingPage() {
             <ul>
               {recentDocuments.map((document) => (
                 <li key={document.token}>
-                  <a href={documentPath(document.filename, document.token)}>
+                  <a href={documentPath(document.filename, document.token, "/share")}>
                     <strong>{document.filename}</strong>
                     <span>Expires in {formatExpiry(document.expiresAt)}</span>
                   </a>
@@ -163,7 +175,7 @@ function LandingPage() {
         <div className="promise-row" aria-label="Product features">
           <span>Convex realtime</span>
           <span>7 days · pinned 30 days</span>
-          <span>PDF export</span>
+          <span>Markdown PDF export</span>
         </div>
       </section>
     </main>
@@ -183,7 +195,7 @@ function DocumentPage({ routeToken }: { routeToken: string }) {
     if (!document) {
       return;
     }
-    const canonicalPath = documentPath(document.filename, document.token);
+    const canonicalPath = documentPath(document.filename, document.token, "/share");
     if (window.location.pathname !== canonicalPath) {
       window.history.replaceState(null, "", canonicalPath);
     }

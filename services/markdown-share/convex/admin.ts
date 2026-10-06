@@ -7,6 +7,7 @@ const MAX_ADMIN_DOCUMENTS = 200;
 const adminDocument = v.object({
   token: v.string(),
   filename: v.string(),
+  format: v.union(v.literal("markdown"), v.literal("latex")),
   createdAt: v.number(),
   updatedAt: v.number(),
   expiresAt: v.number(),
@@ -51,6 +52,7 @@ export const listActiveDocuments = internalQuery({
         return {
           token: document.token,
           filename: document.filename,
+          format: document.format ?? "markdown",
           createdAt: document.createdAt,
           updatedAt: document.updatedAt,
           expiresAt: document.expiresAt,
