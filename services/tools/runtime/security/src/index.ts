@@ -165,7 +165,7 @@ export function isHeartbeatPath(pathname: string): boolean {
 }
 
 export function isMarkdownSharePath(pathname: string): boolean {
-  return pathname === "/markdown" || pathname === "/markdown/" || /^\/markdown\/d\/[^/]+\/?$/.test(pathname);
+  return /^\/(?:markdown|share)\/?$/.test(pathname) || /^\/(?:markdown|share)\/d\/[^/]+\/?$/.test(pathname);
 }
 
 export function isHashedBrowserAssetPath(pathname: string): boolean {

@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./source-limits": "./source-limits.ts",
     "./api": "./convex/_generated/api.js",
     "./data-model": {
       "types": "./convex/_generated/dataModel.d.ts"

@@ -20,11 +20,15 @@ describe("live document session", () => {
     });
   });
 
+  it("gives recovery guidance for a rejected oversized document", () => {
+    expect(classifySyncError(new ConvexError({ code: "DOCUMENT_TOO_LARGE", message: "oversized" })).message).toContain("Undo or shorten");
+  });
+
   it("uses safe retry guidance for all other errors", () => {
     expect(classifySyncError(new Error("private server detail"))).toEqual({
       kind: "retryable",
       message:
-        "Changes could not be synchronized. Your latest edits may not be saved; try editing again, reloading, or reopening this page.",
+        "Changes could not be synchronized. Your latest edits may not be saved. Keep this page open and copy your source before leaving. Try editing again to retry.",
     });
   });
 

@@ -25,6 +25,10 @@ describe("central platform route policy", () => {
     expect(classifyRoute("/api/browser-html-uploads", "POST")).toEqual({ kind: "human-session" });
     expect(classifyRoute("/api/upload-links/link-id/download", "GET")).toEqual({ kind: "human-session" });
     expect(classifyRoute("/api/drop/upload-capability/uploads", "GET")).toEqual({ kind: "human-session" });
+    expect(classifyRoute("/share", "GET")).toEqual({ kind: "public" });
+    expect(classifyRoute("/share/d/notes.tex--capability", "HEAD")).toEqual({ kind: "public" });
+    expect(classifyRoute("/share", "POST")).toEqual({ kind: "human-session" });
+    expect(classifyRoute("/share/private", "GET")).toEqual({ kind: "human-session" });
     expect(classifyRoute("/markdown", "GET")).toEqual({ kind: "public" });
     expect(classifyRoute("/markdown/d/notes.md--capability", "HEAD")).toEqual({ kind: "public" });
     expect(classifyRoute("/markdown", "POST")).toEqual({ kind: "human-session" });

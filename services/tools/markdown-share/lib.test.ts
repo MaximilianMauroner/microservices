@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   documentPath,
+  initialSource,
   formatExpiry,
   formatViewerCount,
   markdownSourceLines,
@@ -12,6 +13,11 @@ import {
 const TOKEN = "81f2a9dd-9ca3-4e4c-9d30-13d3f50dcf3b";
 
 describe("document links", () => {
+  it("creates LaTeX filenames and opens combined links", () => {
+    expect(normalizeFilename("Résumé.TEX", "latex")).toBe("resume.tex");
+    expect(parseDocumentRoute(documentPath("resume.tex", TOKEN, "/share"))).toEqual({ filename: "resume.tex", token: TOKEN });
+    expect(initialSource("resume.tex", "latex")).toContain("\\documentclass{article}");
+  });
   it("normalizes names into safe Markdown filenames", () => {
     expect(normalizeFilename("  Résumé / Notes.MD ")).toBe("resume-notes.md");
     expect(normalizeFilename("!!!")).toBe("untitled.md");

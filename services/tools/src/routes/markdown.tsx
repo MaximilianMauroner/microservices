@@ -7,7 +7,7 @@ export const Route = createFileRoute("/markdown")({
   ssr: false,
   head: () => ({
     meta: [
-      { title: "Markdown Share" },
+      { title: "Document Share" },
       { name: "description", content: "A seven-day collaborative Markdown workspace." },
       { name: "robots", content: "noindex, nofollow" },
       { name: "theme-color", content: "#f4f0e8", media: "(prefers-color-scheme: light)" },

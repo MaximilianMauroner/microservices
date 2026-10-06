@@ -2003,3 +2003,23 @@ button:disabled {
     border-top: 1px solid #d9d3c7;
   }
 }
+
+
+.document-format {
+  margin: 0 0 18px;
+  padding: 0;
+  border: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.document-format legend {
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+.create-form .document-format label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}

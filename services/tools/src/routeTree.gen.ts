@@ -20,6 +20,7 @@ import { Route as MarkdownRouteImport } from './routes/markdown'
 import { Route as MoneyRouteImport } from './routes/money'
 import { Route as PublisherRouteImport } from './routes/publisher'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as ShareRouteImport } from './routes/share'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as StatusRouteImport } from './routes/status'
 import { Route as ApiBrowserHtmlUploadsRouteImport } from './routes/api/browser-html-uploads'
@@ -38,6 +39,7 @@ import { Route as MarkdownIndexRouteImport } from './routes/markdown/index'
 import { Route as PublisherIndexRouteImport } from './routes/publisher/index'
 import { Route as PublisherArtifactsRouteImport } from './routes/publisher/artifacts'
 import { Route as PublisherReceiveRouteImport } from './routes/publisher/receive'
+import { Route as ShareIndexRouteImport } from './routes/share/index'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiDropSplatRouteImport } from './routes/api/drop/$'
 import { Route as ApiExternalUploadsSplatRouteImport } from './routes/api/external-uploads/$'
@@ -59,6 +61,7 @@ import { Route as FeedbackResponsesSubmissionIdRouteImport } from './routes/feed
 import { Route as FeedbackShareTokenRouteImport } from './routes/feedback/share/$token'
 import { Route as FilesIdSplatRouteImport } from './routes/files/$id/$'
 import { Route as MarkdownDSlugRouteImport } from './routes/markdown/d/$slug'
+import { Route as ShareDSlugRouteImport } from './routes/share/d/$slug'
 import { Route as ApiMoneyImportsImportIdRouteImport } from './routes/api/money/imports/$importId'
 import { Route as ApiMoneyImportsPreviewRouteImport } from './routes/api/money/imports/preview'
 import { Route as ApiMoneyImportsReimportRouteImport } from './routes/api/money/imports/reimport'
@@ -118,6 +121,11 @@ const PublisherRoute = PublisherRouteImport.update({
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ShareRoute = ShareRouteImport.update({
+  id: '/share',
+  path: '/share',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SignInRoute = SignInRouteImport.update({
@@ -209,6 +217,11 @@ const PublisherReceiveRoute = PublisherReceiveRouteImport.update({
   id: '/receive',
   path: '/receive',
   getParentRoute: () => PublisherRoute,
+} as any)
+const ShareIndexRoute = ShareIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ShareRoute,
 } as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
@@ -316,6 +329,11 @@ const MarkdownDSlugRoute = MarkdownDSlugRouteImport.update({
   path: '/d/$slug',
   getParentRoute: () => MarkdownRoute,
 } as any)
+const ShareDSlugRoute = ShareDSlugRouteImport.update({
+  id: '/d/$slug',
+  path: '/d/$slug',
+  getParentRoute: () => ShareRoute,
+} as any)
 const ApiMoneyImportsImportIdRoute = ApiMoneyImportsImportIdRouteImport.update({
   id: '/$importId',
   path: '/$importId',
@@ -356,6 +374,7 @@ export interface FileRoutesByFullPath {
   '/money': typeof MoneyRoute
   '/publisher': typeof PublisherRouteWithChildren
   '/settings': typeof SettingsRoute
+  '/share': typeof ShareRouteWithChildren
   '/sign-in': typeof SignInRoute
   '/status': typeof StatusRoute
   '/api/browser-html-uploads': typeof ApiBrowserHtmlUploadsRoute
@@ -374,6 +393,7 @@ export interface FileRoutesByFullPath {
   '/feedback/': typeof FeedbackIndexRoute
   '/markdown/': typeof MarkdownIndexRoute
   '/publisher/': typeof PublisherIndexRoute
+  '/share/': typeof ShareIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/drop/$': typeof ApiDropSplatRoute
   '/api/external-uploads/$': typeof ApiExternalUploadsSplatRoute
@@ -394,6 +414,7 @@ export interface FileRoutesByFullPath {
   '/feedback/share/$token': typeof FeedbackShareTokenRoute
   '/files/$id/$': typeof FilesIdSplatRoute
   '/markdown/d/$slug': typeof MarkdownDSlugRoute
+  '/share/d/$slug': typeof ShareDSlugRoute
   '/feedback/forms/': typeof FeedbackFormsIndexRoute
   '/api/money/imports/$importId': typeof ApiMoneyImportsImportIdRoute
   '/api/money/imports/preview': typeof ApiMoneyImportsPreviewRoute
@@ -428,6 +449,7 @@ export interface FileRoutesByTo {
   '/feedback': typeof FeedbackIndexRoute
   '/markdown': typeof MarkdownIndexRoute
   '/publisher': typeof PublisherIndexRoute
+  '/share': typeof ShareIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/drop/$': typeof ApiDropSplatRoute
   '/api/external-uploads/$': typeof ApiExternalUploadsSplatRoute
@@ -448,6 +470,7 @@ export interface FileRoutesByTo {
   '/feedback/share/$token': typeof FeedbackShareTokenRoute
   '/files/$id/$': typeof FilesIdSplatRoute
   '/markdown/d/$slug': typeof MarkdownDSlugRoute
+  '/share/d/$slug': typeof ShareDSlugRoute
   '/feedback/forms': typeof FeedbackFormsIndexRoute
   '/api/money/imports/$importId': typeof ApiMoneyImportsImportIdRoute
   '/api/money/imports/preview': typeof ApiMoneyImportsPreviewRoute
@@ -468,6 +491,7 @@ export interface FileRoutesById {
   '/money': typeof MoneyRoute
   '/publisher': typeof PublisherRouteWithChildren
   '/settings': typeof SettingsRoute
+  '/share': typeof ShareRouteWithChildren
   '/sign-in': typeof SignInRoute
   '/status': typeof StatusRoute
   '/api/browser-html-uploads': typeof ApiBrowserHtmlUploadsRoute
@@ -486,6 +510,7 @@ export interface FileRoutesById {
   '/feedback/': typeof FeedbackIndexRoute
   '/markdown/': typeof MarkdownIndexRoute
   '/publisher/': typeof PublisherIndexRoute
+  '/share/': typeof ShareIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/drop/$': typeof ApiDropSplatRoute
   '/api/external-uploads/$': typeof ApiExternalUploadsSplatRoute
@@ -506,6 +531,7 @@ export interface FileRoutesById {
   '/feedback/share/$token': typeof FeedbackShareTokenRoute
   '/files/$id/$': typeof FilesIdSplatRoute
   '/markdown/d/$slug': typeof MarkdownDSlugRoute
+  '/share/d/$slug': typeof ShareDSlugRoute
   '/feedback/forms/': typeof FeedbackFormsIndexRoute
   '/api/money/imports/$importId': typeof ApiMoneyImportsImportIdRoute
   '/api/money/imports/preview': typeof ApiMoneyImportsPreviewRoute
@@ -527,6 +553,7 @@ export interface FileRouteTypes {
     | '/money'
     | '/publisher'
     | '/settings'
+    | '/share'
     | '/sign-in'
     | '/status'
     | '/api/browser-html-uploads'
@@ -545,6 +572,7 @@ export interface FileRouteTypes {
     | '/feedback/'
     | '/markdown/'
     | '/publisher/'
+    | '/share/'
     | '/api/auth/$'
     | '/api/drop/$'
     | '/api/external-uploads/$'
@@ -565,6 +593,7 @@ export interface FileRouteTypes {
     | '/feedback/share/$token'
     | '/files/$id/$'
     | '/markdown/d/$slug'
+    | '/share/d/$slug'
     | '/feedback/forms/'
     | '/api/money/imports/$importId'
     | '/api/money/imports/preview'
@@ -599,6 +628,7 @@ export interface FileRouteTypes {
     | '/feedback'
     | '/markdown'
     | '/publisher'
+    | '/share'
     | '/api/auth/$'
     | '/api/drop/$'
     | '/api/external-uploads/$'
@@ -619,6 +649,7 @@ export interface FileRouteTypes {
     | '/feedback/share/$token'
     | '/files/$id/$'
     | '/markdown/d/$slug'
+    | '/share/d/$slug'
     | '/feedback/forms'
     | '/api/money/imports/$importId'
     | '/api/money/imports/preview'
@@ -638,6 +669,7 @@ export interface FileRouteTypes {
     | '/money'
     | '/publisher'
     | '/settings'
+    | '/share'
     | '/sign-in'
     | '/status'
     | '/api/browser-html-uploads'
@@ -656,6 +688,7 @@ export interface FileRouteTypes {
     | '/feedback/'
     | '/markdown/'
     | '/publisher/'
+    | '/share/'
     | '/api/auth/$'
     | '/api/drop/$'
     | '/api/external-uploads/$'
@@ -676,6 +709,7 @@ export interface FileRouteTypes {
     | '/feedback/share/$token'
     | '/files/$id/$'
     | '/markdown/d/$slug'
+    | '/share/d/$slug'
     | '/feedback/forms/'
     | '/api/money/imports/$importId'
     | '/api/money/imports/preview'
@@ -696,6 +730,7 @@ export interface RootRouteChildren {
   MoneyRoute: typeof MoneyRoute
   PublisherRoute: typeof PublisherRouteWithChildren
   SettingsRoute: typeof SettingsRoute
+  ShareRoute: typeof ShareRouteWithChildren
   SignInRoute: typeof SignInRoute
   StatusRoute: typeof StatusRoute
   ApiBrowserHtmlUploadsRoute: typeof ApiBrowserHtmlUploadsRoute
@@ -799,6 +834,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/share': {
+      id: '/share'
+      path: '/share'
+      fullPath: '/share'
+      preLoaderRoute: typeof ShareRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/sign-in': {
@@ -926,6 +968,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/publisher/receive'
       preLoaderRoute: typeof PublisherReceiveRouteImport
       parentRoute: typeof PublisherRoute
+    }
+    '/share/': {
+      id: '/share/'
+      path: '/'
+      fullPath: '/share/'
+      preLoaderRoute: typeof ShareIndexRouteImport
+      parentRoute: typeof ShareRoute
     }
     '/api/auth/$': {
       id: '/api/auth/$'
@@ -1074,6 +1123,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MarkdownDSlugRouteImport
       parentRoute: typeof MarkdownRoute
     }
+    '/share/d/$slug': {
+      id: '/share/d/$slug'
+      path: '/d/$slug'
+      fullPath: '/share/d/$slug'
+      preLoaderRoute: typeof ShareDSlugRouteImport
+      parentRoute: typeof ShareRoute
+    }
     '/api/money/imports/$importId': {
       id: '/api/money/imports/$importId'
       path: '/$importId'
@@ -1177,6 +1233,18 @@ const PublisherRouteWithChildren = PublisherRoute._addFileChildren(
   PublisherRouteChildren,
 )
 
+interface ShareRouteChildren {
+  ShareIndexRoute: typeof ShareIndexRoute
+  ShareDSlugRoute: typeof ShareDSlugRoute
+}
+
+const ShareRouteChildren: ShareRouteChildren = {
+  ShareIndexRoute: ShareIndexRoute,
+  ShareDSlugRoute: ShareDSlugRoute,
+}
+
+const ShareRouteWithChildren = ShareRoute._addFileChildren(ShareRouteChildren)
+
 interface ApiExternalUploadsRouteChildren {
   ApiExternalUploadsSplatRoute: typeof ApiExternalUploadsSplatRoute
 }
@@ -1251,6 +1319,7 @@ const rootRouteChildren: RootRouteChildren = {
   MoneyRoute: MoneyRoute,
   PublisherRoute: PublisherRouteWithChildren,
   SettingsRoute: SettingsRoute,
+  ShareRoute: ShareRouteWithChildren,
   SignInRoute: SignInRoute,
   StatusRoute: StatusRoute,
   ApiBrowserHtmlUploadsRoute: ApiBrowserHtmlUploadsRoute,

@@ -17,8 +17,8 @@ describe("DocumentsPage", () => {
     expect(html).toContain("New document");
     expect(html).toContain('aria-label="Select all visible documents"');
     expect(html).toContain("Expires within 24 h");
-    expect(html).toContain('href="https://markdown.example.test/markdown"');
-    expect(html).toContain('href="https://markdown.example.test/markdown/d/recent.md--aaaaaaaaaaaaaaaaaaaaaaaa"');
+    expect(html).toContain('href="https://markdown.example.test/share"');
+    expect(html).toContain('href="https://markdown.example.test/share/d/recent.md--aaaaaaaaaaaaaaaaaaaaaaaa"');
     expect(html).toContain('data-suite-accent="rose"');
   });
 
@@ -40,4 +40,12 @@ describe("DocumentsPage", () => {
     expect(filterDocuments(documents, now, { query: "recent", checkpoints: "with", expiry: "24", sort: "expiry-asc" }).map(({ filename }) => filename)).toEqual(["recent.md"]);
     expect(filterDocuments(documents, now, { query: "", checkpoints: "without", expiry: "all", sort: "name-asc" }).map(({ filename }) => filename)).toEqual(["older.md"]);
   });
+});
+
+
+it("filters both formats while retaining legacy Markdown records", () => {
+  const latex = { ...documents[0]!, token: "c".repeat(24), filename: "paper.tex", format: "latex" as const };
+  const filters = { query: "", checkpoints: "all" as const, expiry: "all" as const, sort: "name-asc" as const };
+  expect(filterDocuments([...documents, latex], now, { ...filters, format: "latex" })).toEqual([latex]);
+  expect(filterDocuments([...documents, latex], now, { ...filters, format: "markdown" })).toHaveLength(2);
 });

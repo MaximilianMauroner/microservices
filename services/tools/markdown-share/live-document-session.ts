@@ -1,11 +1,13 @@
-import type { AnyExtension, Content } from "@tiptap/core";
+import { Extension, type AnyExtension, type Content } from "@tiptap/core";
 import CodeBlock from "@tiptap/extension-code-block";
 import Document from "@tiptap/extension-document";
 import Text from "@tiptap/extension-text";
 import { UndoRedo } from "@tiptap/extensions/undo-redo";
 import { useEditor } from "@tiptap/react";
-import { sendableSteps } from "prosemirror-collab";
-import { useCallback, useEffect, useState } from "react";
+import { Plugin } from "@tiptap/pm/state";
+import { sourceSizeError } from "@tools-platform/markdown-share/source-limits";
+import { getVersion, sendableSteps } from "prosemirror-collab";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { markdownFromJson } from "./lib.js";
 
 type SyncFailureKind = "document-unavailable" | "retryable";
@@ -37,10 +39,17 @@ export function classifySyncError(error: Error): SyncFailure {
     };
   }
 
+  if (structuredErrorCode(error) === "DOCUMENT_TOO_LARGE") {
+    return {
+      kind: "retryable",
+      message: "The document exceeds the save size limit. Undo or shorten your latest edit. Copy your source before leaving this page.",
+    };
+  }
+
   return {
     kind: "retryable",
     message:
-      "Changes could not be synchronized. Your latest edits may not be saved; try editing again, reloading, or reopening this page.",
+      "Changes could not be synchronized. Your latest edits may not be saved. Keep this page open and copy your source before leaving. Try editing again to retry.",
   };
 }
 
@@ -75,7 +84,10 @@ export function useSyncFailure() {
     );
   }, []);
 
-  return { failure, onSyncError };
+  const onSyncRecovered = useCallback(() => {
+    setFailure((current) => current?.kind === "document-unavailable" ? current : null);
+  }, []);
+  return { failure, onSyncError, onSyncRecovered };
 }
 
 /** Owns editor content, save state, and permissions for one live document. */
@@ -83,14 +95,18 @@ export function useLiveDocumentEditor({
   initialContent,
   syncExtension,
   syncFailure,
+  onSyncRecovered,
 }: {
   initialContent: Content;
   syncExtension: AnyExtension;
   syncFailure: SyncFailure | null;
+  onSyncRecovered: () => void;
 }) {
   const [markdown, setMarkdown] = useState(() =>
     markdownFromJson(initialContent),
   );
+  const [inputError, setInputError] = useState<string | null>(null);
+  const acknowledgedVersion = useRef<number | null>(null);
   const [saveStatus, setSaveStatus] = useState<EditorSaveStatus>("saved");
   const documentUnavailable = syncFailure?.kind === "document-unavailable";
   const editor = useEditor({
@@ -102,13 +118,27 @@ export function useLiveDocumentEditor({
         exitOnTripleEnter: false,
       }),
       UndoRedo,
+      Extension.create({
+        name: "source-size-limit",
+        addProseMirrorPlugins() {
+          return [new Plugin({
+            filterTransaction(transaction) {
+              if (!transaction.docChanged || transaction.getMeta("rebased") !== undefined) return true;
+              const source = transaction.doc.textBetween(0, transaction.doc.content.size, "\n");
+              const error = sourceSizeError(source);
+              setInputError(error ? `Edit not applied. ${error}` : null);
+              return error === null;
+            },
+          })];
+        },
+      }),
       syncExtension,
     ],
     content: initialContent,
     immediatelyRender: true,
     editorProps: {
       attributes: {
-        "aria-label": "Markdown source",
+        "aria-label": "Document source",
         autocapitalize: "off",
         autocomplete: "off",
         spellcheck: "false",
@@ -124,8 +154,14 @@ export function useLiveDocumentEditor({
       setMarkdown(
         editor.state.doc.textBetween(0, editor.state.doc.content.size, "\n"),
       );
+      const version = getVersion(editor.state);
+      const hasPendingSteps = sendableSteps(editor.state) !== null;
+      if (acknowledgedVersion.current !== null && version > acknowledgedVersion.current && !hasPendingSteps) {
+        onSyncRecovered();
+      }
+      acknowledgedVersion.current = version;
       setSaveStatus(
-        editorSaveStatus(sendableSteps(editor.state) !== null, syncFailure),
+        editorSaveStatus(hasPendingSteps, syncFailure),
       );
     };
     editor.on("transaction", updateSession);
@@ -133,7 +169,7 @@ export function useLiveDocumentEditor({
     return () => {
       editor.off("transaction", updateSession);
     };
-  }, [editor, syncFailure]);
+  }, [editor, syncFailure, onSyncRecovered]);
 
   useEffect(() => {
     editor?.setEditable(!documentUnavailable);
@@ -141,6 +177,7 @@ export function useLiveDocumentEditor({
 
   return {
     editor,
+    inputError,
     markdown,
     saveStatus,
     saveLabel: editorSaveLabel(saveStatus),

@@ -1,4 +1,4 @@
-/** Public Markdown Share routes live under one narrow Tools prefix. */
+/** Public document routes accept the combined prefix and existing Markdown links. */
 export const TOKEN_PATTERN =
   /^(?:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|[a-z0-9]{20,64})$/;
 
@@ -7,8 +7,10 @@ export type DocumentRoute = {
   token: string;
 };
 
-export function normalizeFilename(input: string): string {
-  const withoutExtension = input.trim().replace(/\.md$/i, "");
+export type DocumentFormat = "markdown" | "latex";
+
+export function normalizeFilename(input: string, format: DocumentFormat = "markdown"): string {
+  const withoutExtension = input.trim().replace(/\.(md|tex)$/i, "");
   const slug = withoutExtension
     .normalize("NFKD")
     .replace(/[\u0300-\u036f]/g, "")
@@ -18,16 +20,16 @@ export function normalizeFilename(input: string): string {
     .slice(0, 72)
     .replace(/-+$/g, "");
 
-  return `${slug || "untitled"}.md`;
+  return `${slug || "untitled"}.${format === "latex" ? "tex" : "md"}`;
 }
 
-export function documentPath(filename: string, token: string): string {
-  return `/markdown/d/${encodeURIComponent(filename)}--${token}`;
+export function documentPath(filename: string, token: string, prefix: "/markdown" | "/share" = "/markdown"): string {
+  return `${prefix}/d/${encodeURIComponent(filename)}--${token}`;
 }
 
 export function parseDocumentRoute(pathname: string): DocumentRoute | null {
   const match = pathname.match(
-    /^\/markdown\/d\/([^/]+)--([a-z0-9-]+)\/?$/i,
+    /^\/(?:markdown|share)\/d\/([^/]+)--([a-z0-9-]+)\/?$/i,
   );
   if (!match?.[1] || !match[2]) {
     return null;
@@ -45,8 +47,15 @@ export function parseDocumentRoute(pathname: string): DocumentRoute | null {
   }
 }
 
+export function initialSource(filename: string, format: DocumentFormat): string {
+  if (format === "latex") {
+    return "\\documentclass{article}\n\\begin{document}\nStart writing together.\n\\end{document}\n";
+  }
+  return initialMarkdown(filename);
+}
+
 export function initialMarkdown(filename: string): string {
-  const title = filename.replace(/\.md$/i, "").replace(/[-_]+/g, " ");
+  const title = filename.replace(/\.(md|tex)$/i, "").replace(/[-_]+/g, " ");
   return `# ${title}\n\nStart writing together. Your document disappears seven days after the latest edit.`;
 }
 

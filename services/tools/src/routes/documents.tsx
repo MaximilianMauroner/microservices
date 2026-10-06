@@ -10,7 +10,7 @@ export const Route = createFileRoute("/documents")({
   head: () => ({
     meta: [
       { title: "Documents — Mauroner Tools" },
-      { name: "description", content: "Protected Markdown Share document inventory." },
+      { name: "description", content: "Protected Document Share document inventory." },
       { name: "robots", content: "noindex, nofollow" }
     ],
     links: [faviconLink(favicons.markdownShare)]

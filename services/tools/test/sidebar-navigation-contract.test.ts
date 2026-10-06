@@ -3,9 +3,9 @@ import { describe, expect, it } from "vitest";
 import { TOOLS_PRODUCTS, currentProduct } from "../src/components/tools-nav.js";
 
 describe("private Tools navigation", () => {
-  it("opens the Markdown Share editor with document navigation because it is a separate app", async () => {
+  it("opens the Document Share editor with document navigation because it is a separate app", async () => {
     const markdown = TOOLS_PRODUCTS.find((product) => product.id === "markdown");
-    expect(markdown?.pages?.find((page) => page.to === "/markdown")?.external).toBe(true);
+    expect(markdown?.pages?.find((page) => page.to === "/share")?.external).toBe(true);
     const sidebar = await readFile(new URL("../src/components/tools-sidebar.tsx", import.meta.url), "utf8");
     expect(sidebar).toContain("page.external ? <a href={page.to}");
   });

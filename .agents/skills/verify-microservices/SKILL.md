@@ -6,8 +6,9 @@ description: Verify Network Console, the Tools products, and Markdown Share thro
 # Verify Microservices
 
 Use [features.md](features.md) to choose journeys and record gaps. This is a draft:
-Network Console HTTP was exercised at `9601243`; the Tools and Convex setup
-and browser journeys still need live verification.
+Network Console HTTP was exercised at `9601243`; other journeys require their
+own live evidence. Use [document-share.md](document-share.md) for the combined
+Markdown/LaTeX journeys, isolated Convex setup, and current execution limits.
 
 Read repository `AGENTS.md`, each service README, and
 `docs/tools-platform/runtime-boundaries.md`. Record the commit, worktree, Node
@@ -77,7 +78,10 @@ once before classifying procedure drift, harness failure, or regression.
 Stop only the terminal sessions and Compose project created by this run.
 Use `docker compose -p <owned-project> ... down` without deleting shared
 volumes. Record owned volumes for a later explicitly authorized cleanup.
-Remove only test records created by the run through product controls.
+Remove only test records created by the run through product controls. For
+Document Share, stop the separately owned disposable backend and dispose of
+its owned data directory as recorded before creation; no document deletion UI
+is available. Preserve the redacted evidence directory.
 Retain evidence after cleanup and confirm owned listeners have closed.
 
 Report passed, failed, blocked, and unrun journeys separately. Include the

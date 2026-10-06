@@ -12,7 +12,7 @@ The platform service is the single production compute and browser-authentication
 | `/sign-in` and `/api/auth/*` | Public authentication flow |
 | `/`, `/status`, `/money`, `/feedback`, `/publisher`, `/api/upload-links`, `/manage/*`, `/tools/private/*`, and their browser APIs | Better Auth Google session |
 | `/feedback/f/:token` `GET`/`HEAD`/`POST` | Public unlisted capability URL |
-| `/markdown` and `/markdown/d/:capability` `GET`/`HEAD` | Public creation and unlisted capability pages |
+| `/share`, `/share/d/:capability`, `/markdown` and `/markdown/d/:capability` `GET`/`HEAD` | Public creation and unlisted capability pages |
 | `/api/uploads*` and `/api/heartbeat/tower` | Existing native bearer token |
 
 TanStack document requests and protected server functions resolve the same
@@ -64,3 +64,13 @@ pnpm run typecheck
 pnpm run test
 pnpm run start
 ```
+
+## Document Share
+
+`/share` creates Markdown or LaTeX documents in one collaborative editor.
+`/documents` lists both formats behind the existing browser session boundary.
+Markdown retains live preview and browser PDF printing. LaTeX currently shares
+and downloads `.tex` source; compiler hosting and engine selection remain open.
+Existing `/markdown` capability routes continue to resolve the same documents.
+Browser recent-document and display-setting keys remain unchanged to preserve
+saved links and preferences.
