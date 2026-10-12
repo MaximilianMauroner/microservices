@@ -6,12 +6,14 @@ import {
   MONEY_BALANCE_SNAPSHOT_FORMAT,
   PORTFOLIO_TRANSACTION_FORMAT,
   REVOLUT_CASH_FORMAT,
+  REVOLUT_SAVINGS_FORMAT,
   REVOLUT_TRADING_FORMAT,
   SPARKASSE_CASH_FORMAT,
   type MoneyCategory,
   type MoneyTransferDisposition
 } from "./money-enums.js";
-import { parseSparkasseWorkbook, SparkasseWorkbookError } from "./sparkasse-xlsx.js";
+import { parseSparkasseStatement, SparkasseStatementError } from "./sparkasse-statement.js";
+import { parseMoneyWorkbook, MoneyWorkbookError } from "./money-xlsx.js";
 
 export {
   MONEY_CATEGORIES,
@@ -19,6 +21,7 @@ export {
   MONEY_BALANCE_SNAPSHOT_FORMAT,
   PORTFOLIO_TRANSACTION_FORMAT,
   REVOLUT_CASH_FORMAT,
+  REVOLUT_SAVINGS_FORMAT,
   REVOLUT_TRADING_FORMAT,
   SPARKASSE_CASH_FORMAT,
   type MoneyCategory,
@@ -42,6 +45,7 @@ const CASH_HEADERS = ["Type", "Product", "Started Date", "Completed Date", "Desc
 const TRADING_HEADERS = ["Date", "Ticker", "Type", "Quantity", "Price per share", "Total Amount", "Currency", "FX Rate"] as const;
 const PORTFOLIO_HEADERS = ["datetime", "date", "account_type", "category", "type", "asset_class", "name", "symbol", "shares", "price", "amount", "fee", "tax", "currency", "original_amount", "original_currency", "fx_rate", "description", "transaction_id", "counterparty_name", "counterparty_iban", "payment_reference", "mcc_code"] as const;
 const BALANCE_HEADERS = ["Date", "Account", "Value", "Role", "Currency"] as const;
+const SAVINGS_HEADERS = ["Date", "Description", "Gross Interest Rate Earned", "Money in", "Money out", "Balance"] as const;
 
 const CASH_TYPES = new Set(["Transfer", "Card Payment", "Topup", "Exchange", "Card Refund", "ATM", "CARD_CREDIT", "Interest"]);
 const TRADING_TYPES = new Set(["DIVIDEND", "CUSTODY FEE", "CASH TOP-UP", "BUY - MARKET", "CASH WITHDRAWAL", "SELL - MARKET", "STOCK SPLIT", "DIVIDEND TAX (CORRECTION)", "CUSTODY FEE REVERSAL", "TRANSFER FROM REVOLUT TRADING LTD TO REVOLUT SECURITIES EUROPE UAB", "TRANSFER FROM REVOLUT BANK UAB TO REVOLUT SECURITIES EUROPE UAB"]);
@@ -53,7 +57,7 @@ const SPARKASSE_INCOME_TYPES = new Set(["BEZUEGE", "AUSGANGSBELEG"]);
 const SPARKASSE_TRANSFER_TYPE_SET = new Set<string>(SPARKASSE_TRANSFER_TYPES);
 const SPARKASSE_TRANSACTION_TYPES = new Set([...SPARKASSE_FEE_TYPES, ...SPARKASSE_TAX_TYPES, ...SPARKASSE_SPEND_TYPES, ...SPARKASSE_INCOME_TYPES, ...SPARKASSE_TRANSFER_TYPES]);
 
-export type MoneyImportFormat = typeof REVOLUT_CASH_FORMAT | typeof REVOLUT_TRADING_FORMAT | typeof PORTFOLIO_TRANSACTION_FORMAT | typeof MONEY_BALANCE_SNAPSHOT_FORMAT | typeof SPARKASSE_CASH_FORMAT;
+export type MoneyImportFormat = typeof REVOLUT_CASH_FORMAT | typeof REVOLUT_SAVINGS_FORMAT | typeof REVOLUT_TRADING_FORMAT | typeof PORTFOLIO_TRANSACTION_FORMAT | typeof MONEY_BALANCE_SNAPSHOT_FORMAT | typeof SPARKASSE_CASH_FORMAT;
 export type MoneyProvider = "revolut" | "portfolio_export" | "manual" | "sparkasse";
 export type MoneyAccountRole = "cash" | "investment";
 export type MoneyTransactionStatus = "completed" | "reverted";
@@ -155,30 +159,57 @@ export function parseMoneyImport(bytes: Uint8Array): ParsedMoneyImport {
   if (bytes.byteLength === 0) throw invalid("empty_file", "The selected file is empty.");
   if (bytes.byteLength > MONEY_IMPORT_MAX_BYTES) throw invalid("file_too_large", "Money imports must be 10 MB or smaller.");
   const digest = createHash("sha256").update(bytes).digest("hex");
-  if (isZip(bytes)) {
-    try {
-      return parseSparkasse(bytes, digest);
-    } catch (error) {
-      if (error instanceof SparkasseWorkbookError) throw invalid("invalid_sparkasse_workbook", error.message);
+  const workbook = isZip(bytes);
+  const parsed = statementRows(bytes, workbook);
+  if (parsed[2]?.[0] === "Auszug") {
+    try { return parseSparkasse(parsed, digest); }
+    catch (error) {
+      if (error instanceof SparkasseStatementError || error instanceof MoneyWorkbookError) throw invalid("invalid_sparkasse_statement", error.message);
+      throw error;
+    }
+  }
+  const [headers, ...dataRows] = parsed.filter((row) => row.some((value) => value.trim()));
+  if (!headers) throw invalid("empty_statement", "The statement contains no rows.");
+  if (!dataRows.length) throw invalid("empty_statement", "The statement contains no transactions.");
+  if (dataRows.length > MONEY_IMPORT_MAX_ROWS) throw invalid("too_many_rows", `Money imports may contain at most ${MONEY_IMPORT_MAX_ROWS.toLocaleString("en-GB")} rows.`);
+  const normalizedRows = workbook ? normalizeWorkbookDates(headers, dataRows) : dataRows;
+  if (sameStrings(headers, CASH_HEADERS)) return parseCash(normalizedRows, digest);
+  if (sameStrings(headers, SAVINGS_HEADERS)) return parseSavings(normalizedRows, digest);
+  if (sameStrings(headers, TRADING_HEADERS)) return parseTrading(normalizedRows, digest);
+  if (sameStrings(headers, PORTFOLIO_HEADERS)) return parsePortfolio(normalizedRows, digest);
+  if (sameStrings(headers, BALANCE_HEADERS)) return parseBalances(normalizedRows, digest);
+  throw invalid("unsupported_format", "This file does not match a supported money export format.");
+}
+
+function statementRows(bytes: Uint8Array, workbook: boolean) {
+  if (workbook) {
+    try { return parseMoneyWorkbook(bytes); }
+    catch (error) {
+      if (error instanceof MoneyWorkbookError) throw invalid("invalid_workbook", error.message);
       throw error;
     }
   }
   const source = decode(bytes);
-  const firstLine = source.replace(/^\uFEFF/, "").split(/\r?\n/, 1)[0] ?? "";
-  const parsed = firstLine.includes("\t") ? rows(source, "\t") : rows(source, ",");
-  const [headers, ...dataRows] = parsed;
-  if (!headers) throw invalid("empty_statement", "The statement contains no rows.");
-  if (!dataRows.length) throw invalid("empty_statement", "The statement contains no transactions.");
-  if (dataRows.length > MONEY_IMPORT_MAX_ROWS) throw invalid("too_many_rows", `Money imports may contain at most ${MONEY_IMPORT_MAX_ROWS.toLocaleString("en-GB")} rows.`);
-  if (sameStrings(headers, CASH_HEADERS)) return parseCash(dataRows, digest);
-  if (sameStrings(headers, TRADING_HEADERS)) return parseTrading(dataRows, digest);
-  if (sameStrings(headers, PORTFOLIO_HEADERS)) return parsePortfolio(dataRows, digest);
-  if (sameStrings(headers, BALANCE_HEADERS)) return parseBalances(dataRows, digest);
-  throw invalid("unsupported_format", "This file does not match a supported money export format.");
+  const firstLine = source.replace(/^\uFEFF/, "").split(/\r?\n/).find((line) => line.trim()) ?? "";
+  const delimiter = firstLine.includes("\t") ? "\t" : firstLine.includes(";") ? ";" : ",";
+  const parsed = rows(source, delimiter);
+  while (parsed.length && parsed.at(-1)!.every((value) => !value.trim())) parsed.pop();
+  return parsed;
 }
 
-function parseSparkasse(bytes: Uint8Array, digest: string): ParsedMoneyImport {
-  const workbook = parseSparkasseWorkbook(bytes);
+function normalizeWorkbookDates(headers: readonly string[], dataRows: string[][]) {
+  const trading = sameStrings(headers, TRADING_HEADERS);
+  return dataRows.map((row) => row.map((value, index) => {
+    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.000Z$/.test(value)) return value;
+    const header = headers[index];
+    if (header === "Started Date" || header === "Completed Date") return value.replace("T", " ").slice(0, 19);
+    if (header === "date" || (header === "Date" && !trading)) return value.slice(0, 10);
+    return value;
+  }));
+}
+
+function parseSparkasse(rows: string[][], digest: string): ParsedMoneyImport {
+  const workbook = parseSparkasseStatement(rows);
   if (workbook.transactions.length > MONEY_IMPORT_MAX_ROWS) throw invalid("too_many_rows", `Money imports may contain at most ${MONEY_IMPORT_MAX_ROWS.toLocaleString("en-GB")} rows.`);
   const iban = workbook.iban.replace(/\s+/g, "").toUpperCase();
   if (!/^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/.test(iban)) throw invalid("invalid_account", "The Sparkasse workbook contains an invalid IBAN.");
@@ -228,6 +259,55 @@ function parseCash(dataRows: string[][], digest: string): ParsedMoneyImport {
   const accounts = accountPreviews(transactions);
   return result(REVOLUT_CASH_FORMAT, digest, transactions, [], buildBalanceSnapshots(transactions), accounts,
     accounts.some((account) => account.reconciliationMismatchCount) ? ["One or more running balances do not reconcile. Review the account summary before importing."] : []);
+}
+
+function parseSavings(dataRows: string[][], digest: string): ParsedMoneyImport {
+  const transactions = dataRows.map((row, index) => savingsRow(row, index + 2));
+  const accounts = accountPreviews(transactions);
+  return result(REVOLUT_SAVINGS_FORMAT, digest, transactions, [], buildBalanceSnapshots(transactions, true), accounts,
+    accounts.some((account) => account.reconciliationMismatchCount) ? ["One or more running balances do not reconcile. Review the account summary before importing."] : []);
+}
+
+function savingsRow(row: string[], sourceRow: number): MoneyLedgerTransaction {
+  assertColumns(row, SAVINGS_HEADERS.length, sourceRow);
+  const [rawDate, rawDescription, rate, moneyIn, moneyOut, balance] = row;
+  const localDate = savingsDate(rawDate, sourceRow);
+  const description = sanitizeDescription(rawDescription ?? "");
+  const match = /^(Deposit to|Withdrawal from|Net Interest Paid to) '([^']+)'(?: for .+)?$/.exec(description);
+  if (!match) throw invalid("unsupported_transaction_type", `Row ${sourceRow} contains an unsupported savings transaction description.`);
+  const product = match[2]!;
+  assertIndexedIdentity(product, sourceRow, "Product");
+  const interest = match[1] === "Net Interest Paid to";
+  const withdrawal = match[1] === "Withdrawal from";
+  if ((moneyIn !== "" && moneyOut !== "") || (moneyIn === "" && moneyOut === "") || (withdrawal ? moneyOut === "" : moneyIn === "")) throw invalid("invalid_amount", `Row ${sourceRow} must have money in or money out matching its savings transaction.`);
+  if (rate && !/^(?:\d+(?:\.\d+)?%|\d+(?:\.\d+)?)$/.test(rate)) throw invalid("invalid_interest_rate", `Row ${sourceRow} has an invalid Gross Interest Rate Earned.`);
+  const amountMinor = savingsAmount(withdrawal ? moneyOut : moneyIn, sourceRow, withdrawal ? "Money out" : "Money in") * (withdrawal ? -1 : 1);
+  const balanceAfterMinor = savingsAmount(balance, sourceRow, "Balance");
+  const accountExternalRef = `revolut:cash:${product.toLocaleLowerCase("en-GB")}:EUR`;
+  const occurredAt = `${localDate}T12:00:00.000Z`;
+  const sourceType = interest ? "Interest" : withdrawal ? "Withdrawal" : "Deposit";
+  const flowKind = interest ? "investment_income" : "transfer";
+  return {
+    sourceKey: fingerprint([REVOLUT_SAVINGS_FORMAT, accountExternalRef, localDate, description, String(amountMinor), String(balanceAfterMinor)]),
+    sourceRow, provider: "revolut", accountRole: "cash", accountExternalRef, accountName: `Revolut ${product}`,
+    occurredAt, completedAt: occurredAt, localDate, description, amountMinor, feeMinor: 0, taxMinor: 0,
+    baseAmountMinor: amountMinor, baseFeeMinor: 0, baseTaxMinor: 0, baseCurrency: "EUR", balanceAfterMinor,
+    currency: "EUR", status: "completed", sourceType, flowKind, category: inferMoneyCategory(flowKind, sourceType, description)
+  };
+}
+
+function savingsDate(value: string | undefined, sourceRow: number) {
+  const match = /^(\d{1,2}) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sept?|Oct|Nov|Dec) (\d{4})$/.exec(value ?? "");
+  if (!match) return normalizedDate(value, sourceRow);
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return normalizedDate(`${match[3]}-${String(months.indexOf(match[2]!.slice(0, 3)) + 1).padStart(2, "0")}-${match[1]!.padStart(2, "0")}`, sourceRow);
+}
+
+function savingsAmount(value: string | undefined, sourceRow: number, field: string) {
+  const normalized = (value ?? "").replace(/^â\u0082¬/, "€");
+  const match = /^(?:€|EUR\s+)((?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?)$/.exec(normalized);
+  if (!match) throw invalid("invalid_amount", `Row ${sourceRow} has an invalid EUR ${field}.`);
+  return parseMinorUnits(match[1]!.replaceAll(",", ""), sourceRow, field);
 }
 
 function cashRow(row: string[], sourceRow: number): MoneyLedgerTransaction {
@@ -517,7 +597,7 @@ export function moneyCategorySuggestions(description: string, earlier: readonly 
 }
 
 function decode(bytes: Uint8Array) { try { return new TextDecoder("utf-8", { fatal: true }).decode(bytes); } catch { throw invalid("invalid_encoding", "Money imports must use UTF-8 encoding."); } }
-function rows(source: string, delimiter: string) { try { return parse(source, { bom: true, delimiter, quote: '"', relax_column_count: false, skip_empty_lines: true }) as string[][]; } catch { throw invalid("invalid_delimited_file", "The statement could not be parsed as a supported delimited export."); } }
+function rows(source: string, delimiter: string) { try { return parse(source, { bom: true, delimiter, quote: '"', relax_column_count: true, skip_empty_lines: false }) as string[][]; } catch { throw invalid("invalid_delimited_file", "The statement could not be parsed as a supported delimited export."); } }
 function assertColumns(row: string[], count: number, sourceRow: number) { if (row.length !== count) throw invalid("invalid_row", `Row ${sourceRow} does not contain ${count} columns.`); }
 function assertCurrency(value: string | undefined, sourceRow: number): asserts value is string { if (!value || !/^[A-Z]{3}$/.test(value)) throw invalid("invalid_currency", `Row ${sourceRow} has an invalid currency.`); }
 function assertEuro(value: string, sourceRow: number) { if (value !== "EUR") throw invalid("unsupported_currency", `Row ${sourceRow} uses ${value}. This import currently supports EUR only.`); }

@@ -1,8 +1,22 @@
 import { describe, expect, it } from "vitest";
 import { strToU8, zipSync } from "fflate";
 import { parseMoneyImport, SPARKASSE_CASH_FORMAT } from "../money/money-import-domain.js";
+import { parseMoneyWorkbook } from "../money/money-xlsx.js";
+import { moneyWorkbookFixture } from "./money-workbook-fixture.js";
 
 describe("Sparkasse XLSX parser", () => {
+  it("imports the movement report consistently from CSV, TSV, and Excel", () => {
+    const original = workbook();
+    const expected = parseMoneyImport(original);
+    const rows = parseMoneyWorkbook(original);
+    const delimited = (delimiter: string) => Buffer.from(rows.map((row) => row.map((value) => `"${value.replaceAll('"', '""')}"`).join(delimiter)).join("\r\n"));
+    for (const bytes of [delimited(","), delimited("\t"), delimited(";"), moneyWorkbookFixture(rows, { sharedStrings: true })]) {
+      const parsed = parseMoneyImport(bytes);
+      expect(parsed.transactions).toEqual(expected.transactions);
+      expect(parsed.balanceSnapshots).toEqual(expected.balanceSnapshots);
+    }
+  });
+
   it("normalizes movements, costs, private account data, and reconstructed balances", () => {
     const parsed = parseMoneyImport(workbook());
 
@@ -28,6 +42,15 @@ describe("Sparkasse XLSX parser", () => {
   it("fails closed when the Sparkasse layout changes or balances do not reconcile", () => {
     expect(() => parseMoneyImport(workbook({ header: "Dettagli" }))).toThrow("layout is not supported");
     expect(() => parseMoneyImport(workbook({ closingBalance: "128" }))).toThrow("do not reconcile");
+  });
+
+  it("reports invalid delimited booking dates as import validation errors", () => {
+    const rows = parseMoneyWorkbook(workbook());
+    for (const date of ["2026-13-01", "2026-02-30", "0"]) {
+      rows[16]![0] = date;
+      const source = Buffer.from(rows.map((row) => row.map((value) => `"${value.replaceAll('"', '""')}"`).join(",")).join("\r\n"));
+      expect(() => parseMoneyImport(source)).toThrow(expect.objectContaining({ code: "invalid_sparkasse_statement" }));
+    }
   });
 
   it("rejects formulas in imported cells", () => {

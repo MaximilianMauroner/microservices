@@ -6,7 +6,8 @@ export function moneyImportConstraintRepairs(constraints: readonly ConstraintRow
   const definitions = new Map(constraints.map((constraint) => [constraint.name, constraint.definition]));
   return {
     provider: !definitions.get("money_accounts_provider_check")?.includes("'sparkasse'"),
-    format: !definitions.get("money_imports_format_check")?.includes("'sparkasse_cash_statement_v1'"),
+    format: !definitions.get("money_imports_format_check")?.includes("'sparkasse_cash_statement_v1'")
+      || !definitions.get("money_imports_format_check")?.includes("'revolut_savings_statement_v1'"),
     category: !definitions.get("money_transactions_category_check")?.includes("'transfer'")
       || !definitions.get("money_transactions_category_check")?.includes("'adjustment'")
       || !definitions.get("money_transactions_category_check")?.includes("'personal_care'")
@@ -32,7 +33,7 @@ export async function reconcileRuntimeSchema(database: postgres.Sql) {
     }
     if (repairs.format) {
       await transaction`alter table tools.money_imports drop constraint if exists money_imports_format_check`;
-      await transaction`alter table tools.money_imports add constraint money_imports_format_check check (format in ('revolut_cash_statement_v1', 'revolut_trading_statement_v1', 'portfolio_transaction_export_v1', 'money_balance_snapshot_v1', 'sparkasse_cash_statement_v1'))`;
+      await transaction`alter table tools.money_imports add constraint money_imports_format_check check (format in ('revolut_cash_statement_v1', 'revolut_savings_statement_v1', 'revolut_trading_statement_v1', 'portfolio_transaction_export_v1', 'money_balance_snapshot_v1', 'sparkasse_cash_statement_v1'))`;
     }
     if (repairs.category) {
       await transaction`alter table tools.money_transactions drop constraint if exists money_transactions_category_check`;

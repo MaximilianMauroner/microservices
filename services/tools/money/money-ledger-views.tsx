@@ -27,6 +27,7 @@ import type { MoneyImportPreview } from "./money-import-domain.js";
 import {
   MONEY_CATEGORIES,
   REVOLUT_CASH_FORMAT,
+  REVOLUT_SAVINGS_FORMAT,
   SPARKASSE_CASH_FORMAT,
   type MoneyCategory,
 } from "./money-enums.js";
@@ -432,7 +433,7 @@ export function MoneyImportDrop({ lastImport }: { lastImport?: string }) {
         <div className="min-w-56 flex-1 text-sm">
           <p className="font-medium">{files.length ? `${files.length} file${files.length === 1 ? "" : "s"} selected` : dragging ? "Drop files to preview" : "Drop statements here"}</p>
           <p className="text-muted-foreground">
-            {files.length ? formatBytes(files.reduce((total, item) => total + item.file.size, 0)) : `Sparkasse XLSX, Revolut cash or trading TSV, portfolio CSV, balance CSV, up to 10 MB each.${lastImport ? ` Last import ${lastImport}.` : ""}`}
+            {files.length ? formatBytes(files.reduce((total, item) => total + item.file.size, 0)) : `CSV, TSV, or Excel for Revolut cash, savings and trading, Sparkasse, portfolio, and balances. Up to 10 MB each.${lastImport ? ` Last import ${lastImport}.` : ""}`}
           </p>
         </div>
         <Button type="button" variant="outline" disabled={busy !== undefined} onClick={pick}>
@@ -1700,6 +1701,7 @@ function reconciliationLabel(
   mismatchCount: number,
 ) {
   return preview.format !== REVOLUT_CASH_FORMAT &&
+    preview.format !== REVOLUT_SAVINGS_FORMAT &&
     preview.format !== SPARKASSE_CASH_FORMAT
     ? "no running balance to reconcile"
     : mismatchCount

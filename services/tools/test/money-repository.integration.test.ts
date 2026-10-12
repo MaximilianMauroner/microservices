@@ -5,6 +5,8 @@ import { parseMoneyImport } from "../money/money-import-domain.js";
 import { cashMovesSince } from "../money/money-checkin-domain.js";
 import { createPostgresMoneyRepository, type MoneyRepository } from "../money/money-repository.js";
 import { moneyTrackerTrendStats } from "../money/money-tracker-domain.js";
+import { MoneyImportService } from "../money/money-import-service.js";
+import { moneyWorkbookFixture } from "./money-workbook-fixture.js";
 
 // Opt in only with a disposable database after applying the guarded tools schema:
 // TEST_DATABASE_URL=... MONEY_TEST_DATABASE_CONFIRM=money-repository-test pnpm test:money-postgres
@@ -41,6 +43,30 @@ beforeEach(async () => {
 afterAll(async () => {
   await repository?.close();
   await admin?.end();
+});
+
+it.skipIf(!repository || !admin)("commits savings CSV and Excel into one account without duplicate transactions", async () => {
+  const headers = ["Date", "Description", "Gross Interest Rate Earned", "Money in", "Money out", "Balance"];
+  const rows = [
+    ["8 Aug 2026", "Deposit to 'Instant Access Savings'", "", "€10.00", "", "€10.00"],
+    ["9 Aug 2026", "Net Interest Paid to 'Instant Access Savings' for 9 Aug 2026", "2.00%", "€0.01", "", "€10.01"]
+  ];
+  const csv = Buffer.from([headers, ...rows].map((row) => row.join(",")).join("\r\n"));
+  const excel = moneyWorkbookFixture([headers,
+    [{ date: 46242 }, rows[0]![1]!, "", "â_x0082_¬10.00", "", "â_x0082_¬10.00"],
+    [{ date: 46243 }, rows[1]![1]!, 0.02, "â_x0082_¬0.01", "", "â_x0082_¬10.01"]
+  ], { sharedStrings: true });
+  const service = new MoneyImportService(repository!);
+  const preview = await service.preview("savings.csv", csv);
+  expect((await service.commit({ filename: "savings.csv", bytes: csv, expectedDigest: preview.digest, actor: "integration@example.test" })).insertedCount).toBe(2);
+  const excelPreview = await service.preview("savings.xlsx", excel);
+  expect(excelPreview.duplicateCount).toBe(2);
+  expect(await service.commit({ filename: "savings.xlsx", bytes: excel, expectedDigest: excelPreview.digest, actor: "integration@example.test" })).toMatchObject({ insertedCount: 0, duplicateCount: 2 });
+  const snapshot = await repository!.readLedgerSnapshot("all");
+  expect(snapshot.transactionCount).toBe(2);
+  expect(snapshot.accounts).toHaveLength(1);
+  expect(snapshot.activity.find(({ sourceType }) => sourceType === "Interest")).toMatchObject({ amountMinor: 1, category: "income", flowKind: "investment_income" });
+  expect((await repository!.readCashSince("2026-08-08")).snapshots.at(-1)?.valueMinor).toBe(1001);
 });
 
 it.skipIf(!repository || !admin)("executes import replay, transfer review, analytics, and stable duplicate-label snapshots", async () => {
