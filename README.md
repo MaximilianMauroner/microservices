@@ -45,27 +45,47 @@ product ownership.
 
 ## Local stack
 
-Start the production-shaped local stack, which includes PostgreSQL, MinIO, a
-Markdown administration mock, database setup, seed work, and Tools:
-
-```bash
-pnpm run docker:up
-```
+The production-shaped local stack includes PostgreSQL, MinIO, a Markdown
+administration mock, database setup, seed work, and Tools. Check that ports
+3000, 5432, 9000, 9001, and 8787 are free before starting it.
 
 The Markdown Share browser needs a Convex deployment. Run `pnpm run
 start:markdown-share` in another terminal. Convex uses the selected development
 deployment and writes its URL to `services/markdown-share/.env.local`. If that
-URL is not `http://localhost:3210`, set `VITE_CONVEX_URL` to it before `pnpm run
-docker:up`. Docker passes this URL to both the browser build and the Tools
+URL is not `http://localhost:3210`, export `VITE_CONVEX_URL` with that URL before
+the Compose command below. Docker passes it to both the browser build and the Tools
 runtime. The administration mock stays on port 8787 and does not implement the
 Convex browser protocol.
 
 Tools requires `FEEDBACK_ENCRYPTION_KEY`, a base64url-encoded 32-byte key.
-Generate an owned local key with the command in
-[Feedback setup](services/tools/feedback/README.md), retain it for the lifetime
-of the local test responses, and pass it to the Tools container through a local
-Compose override. The checked-in Compose environment omits this required key;
-setting it only in the host shell does not pass it to the container.
+The checked-in Compose environment omits it. From the repository root, create
+a private directory outside the checkout and pass the key through an explicit
+override. This gives the stack its own Compose project and volumes:
+
+```bash
+set -eu
+umask 077
+LOCAL_STACK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/microservices-local.XXXXXX")
+LOCAL_STACK_PROJECT=$(basename "$LOCAL_STACK_DIR" | tr '[:upper:].' '[:lower:]-')
+node -e 'console.log("FEEDBACK_ENCRYPTION_KEY=" + require("node:crypto").randomBytes(32).toString("base64url"))' > "$LOCAL_STACK_DIR/.env"
+cat > "$LOCAL_STACK_DIR/compose.override.yaml" <<'YAML'
+services:
+  platform:
+    environment:
+      FEEDBACK_ENCRYPTION_KEY: ${FEEDBACK_ENCRYPTION_KEY:?Set the owned local feedback key}
+YAML
+env -u FEEDBACK_ENCRYPTION_KEY docker compose -p "$LOCAL_STACK_PROJECT" --env-file "$LOCAL_STACK_DIR/.env" \
+  -f compose.yaml -f "$LOCAL_STACK_DIR/compose.override.yaml" config --quiet
+env -u FEEDBACK_ENCRYPTION_KEY docker compose -p "$LOCAL_STACK_PROJECT" --env-file "$LOCAL_STACK_DIR/.env" \
+  -f compose.yaml -f "$LOCAL_STACK_DIR/compose.override.yaml" up --build
+```
+
+Keep the directory path, project name, and key for the lifetime of the test
+responses. Reuse them when restarting the same stack. Do not put the generated
+key in a checkout file or print the resolved configuration to logs. `env -u`
+prevents an inherited shell key from overriding this project's private file. A new key
+cannot decrypt responses in an existing volume. See
+[Feedback setup](services/tools/feedback/README.md) for the encryption contract.
 
 Then open:
 
@@ -74,8 +94,17 @@ Then open:
 - `http://localhost:3000/share` for the integrated Markdown and LaTeX source frontend
 - `http://localhost:8787` for the local Markdown administration mock
 
-Stop the stack with `pnpm run docker:down`. To also delete its local database
-and object-storage volumes, run `pnpm run docker:reset`.
+Stop this project from the same shell, or restore the saved directory path and
+project name first:
+
+```bash
+env -u FEEDBACK_ENCRYPTION_KEY docker compose -p "$LOCAL_STACK_PROJECT" --env-file "$LOCAL_STACK_DIR/.env" \
+  -f compose.yaml -f "$LOCAL_STACK_DIR/compose.override.yaml" down
+```
+
+This retains its database and object-storage volumes. Volume deletion requires
+separate authorization. The `docker:up`/`docker:down` scripts use the default
+project; they do not reuse this explicit environment and override.
 
 The stack uses non-production OAuth placeholders so public routes and
 infrastructure can start. Supply a local Google OAuth client to test private

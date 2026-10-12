@@ -38,11 +38,14 @@ published port to unused loopback ports. Set the platform's `PUBLIC_ORIGIN`
 and seed browser origin to the chosen Tools origin. Confirm with
 `docker compose ... config` before launch. Do not use an existing database,
 bucket, service, or volume. Record the exact project, overrides, and resolved
-configuration with secrets removed. Generate an owned local
-`FEEDBACK_ENCRYPTION_KEY` with the command in `services/tools/feedback/README.md`
-and inject it into the platform environment before launch. Compose omits this
-required key; configuration rejects startup without it. Keep it only in the
-owned private environment file and retain it until test response cleanup ends.
+configuration with secrets removed. Use the exact private environment and key
+override in the root README's Local stack section, then add the run's port and
+origin override to the same explicit Compose invocation. The README example
+uses the fixed ports and does not provide the required audit remapping. Compose
+omits `FEEDBACK_ENCRYPTION_KEY`; configuration rejects startup without it.
+Keep the key only in the owned private environment file outside the checkout
+and retain it until test response cleanup ends. Use `config --quiet` for the
+unredacted setup; never save a resolved key to evidence.
 
 Compose also uses `ARTIFACT_S3_ENDPOINT=http://minio:9000`. Signed redirects
 use that endpoint, which a host browser cannot resolve. P2 is blocked until
