@@ -44,6 +44,19 @@ describe("Sparkasse XLSX parser", () => {
     expect(() => parseMoneyImport(workbook({ closingBalance: "128" }))).toThrow("do not reconcile");
   });
 
+  it("stops at the balance footer and excludes report metadata from movements", () => {
+    const rows = parseMoneyWorkbook(workbook());
+    rows.push([], ["Anfangssaldo", "2024-08-01T02:00:00.000Z", "", "100"],
+      ["Endsaldo", "2024-08-31T02:00:00.000Z", "", "127.5"],
+      ["Verfügbarkeit", "", "127.5"], [], ["Erstellungsdatum Dokument: 17-08-2024 10:22"],
+      ["Der Inhalt dieses Dokumentes hat keinen legalen Wert."]);
+    const parsed = parseMoneyImport(moneyWorkbookFixture(rows));
+    expect(parsed.transactions).toEqual(parseMoneyImport(workbook()).transactions);
+    expect(parsed.accounts[0]?.endingBalanceMinor).toBe(12750);
+    rows[rows.findIndex((row) => row[0] === "Endsaldo")]![0] = "Unknown footer";
+    expect(() => parseMoneyImport(moneyWorkbookFixture(rows))).toThrow("layout is not supported");
+  });
+
   it("reports invalid delimited booking dates as import validation errors", () => {
     const rows = parseMoneyWorkbook(workbook());
     for (const date of ["2026-13-01", "2026-02-30", "0"]) {

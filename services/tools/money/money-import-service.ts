@@ -21,7 +21,7 @@ export class MoneyImportService {
     const safeFilename = validateFilename(filename);
     const parsed = parseMoneyImport(bytes);
     const uniqueSourceKeys = [...new Set(parsed.transactions.map((transaction) => transaction.sourceKey))];
-    const existing = await this.repository.existingSourceKeys(uniqueSourceKeys);
+    const existing = await this.repository.existingSourceKeys(parsed.transactions);
     return {
       format: parsed.format,
       digest: parsed.digest,

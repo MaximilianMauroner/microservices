@@ -1,7 +1,8 @@
 import postgres from "postgres";
+import { createHash } from "node:crypto";
 import { afterAll, beforeEach, expect, it } from "vitest";
 import { DISPOSABLE_DATABASE_SENTINEL, withVerifiedDisposableDatabase } from "../database/postgres-push-guard.js";
-import { parseMoneyImport } from "../money/money-import-domain.js";
+import { parseMoneyImport, REVOLUT_CASH_FORMAT } from "../money/money-import-domain.js";
 import { cashMovesSince } from "../money/money-checkin-domain.js";
 import { createPostgresMoneyRepository, type MoneyRepository } from "../money/money-repository.js";
 import { moneyTrackerTrendStats } from "../money/money-tracker-domain.js";
@@ -67,6 +68,55 @@ it.skipIf(!repository || !admin)("commits savings CSV and Excel into one account
   expect(snapshot.accounts).toHaveLength(1);
   expect(snapshot.activity.find(({ sourceType }) => sourceType === "Interest")).toMatchObject({ amountMinor: 1, category: "income", flowKind: "investment_income" });
   expect((await repository!.readCashSince("2026-08-08")).snapshots.at(-1)?.valueMinor).toBe(1001);
+});
+
+it.skipIf(!repository || !admin)("recognizes raw-cell keys from older cash imports in previews and commits", async () => {
+  const headers = ["Type", "Product", "Started Date", "Completed Date", "Description", "Amount", "Fee", "Currency", "State", "Balance"];
+  const row = ["Interest", "Deposit", "2026-08-09 5:08:51", "2026-08-09 5:08:51", "Interest paid", "0.010", "0.00", "EUR", "COMPLETED", "10.01"];
+  const csv = Buffer.from([headers, row].map((cells) => cells.join(",")).join("\r\n"));
+  const date = { date: 46243 + (5 * 3600 + 8 * 60 + 51) / 86400 };
+  const excel = moneyWorkbookFixture([headers, ["Interest", "Deposit", date, date, "Interest paid", 0.01, 0, "EUR", "COMPLETED", 10.01]]);
+  const service = new MoneyImportService(repository!);
+  const preview = await service.preview("old.csv", csv);
+  await service.commit({ filename: "old.csv", bytes: csv, expectedDigest: preview.digest, actor: "integration@example.test" });
+  const oldKey = createHash("sha256").update(JSON.stringify([REVOLUT_CASH_FORMAT, ...row])).digest("hex");
+  await admin!`update tools.money_transactions set source_key = ${oldKey}`;
+  const excelPreview = await service.preview("new.xlsx", excel);
+  expect(excelPreview.duplicateCount).toBe(1);
+  const duplicate = await service.commit({ filename: "new.xlsx", bytes: excel, expectedDigest: excelPreview.digest, actor: "integration@example.test" });
+  expect(duplicate).toMatchObject({ insertedCount: 0, duplicateCount: 1 });
+  expect((await repository!.readLedgerSnapshot("all")).transactionCount).toBe(1);
+  await service.deleteImport(duplicate.id);
+  expect((await repository!.readLedgerSnapshot("all")).months.at(-1)?.total).toBe(10.01);
+});
+
+it.skipIf(!repository || !admin).each([false, true])("counts overlapping cash and savings once in either import order (cash first: %s)", async (cashFirst) => {
+  const savings = Buffer.from([
+    "Date,Description,Gross Interest Rate Earned,Money in,Money out,Balance",
+    "8 Aug 2026,Deposit to 'Instant Access Savings',,€10.00,,€10.00",
+    "9 Aug 2026,Net Interest Paid to 'Instant Access Savings' for 9 Aug 2026,2.00%,€0.01,,€10.01",
+    "9 Aug 2026,Deposit to 'Instant Access Savings',,€5.00,,€15.01"
+  ].join("\r\n"));
+  const cashBytes = cash([
+    "Transfer\tDeposit\t2026-08-08 12:00:00\t2026-08-08 12:00:00\tDeposit to Instant Access Savings\t10\t0\tEUR\tCOMPLETED\t10",
+    "Interest\tDeposit\t2026-08-09 5:08:51\t2026-08-09 5:08:51\tInterest paid\t0.02\t0.01\tEUR\tCOMPLETED\t10.01"
+  ]);
+  const service = new MoneyImportService(repository!);
+  let cashImportId = "";
+  for (const bytes of cashFirst ? [cashBytes, savings] : [savings, cashBytes]) {
+    const preview = await service.preview("statement.csv", bytes);
+    const receipt = await service.commit({ filename: "statement.csv", bytes, expectedDigest: preview.digest, actor: "integration@example.test" });
+    if (bytes === cashBytes) cashImportId = receipt.id;
+  }
+  const snapshot = await repository!.readLedgerSnapshot("all");
+  expect(snapshot.accounts).toHaveLength(1);
+  expect(snapshot.transactionCount).toBe(3);
+  expect(snapshot.months.at(-1)?.total).toBe(15.01);
+  expect(snapshot.activity.find(({ sourceType }) => sourceType === "Interest")).toMatchObject({ amountMinor: 2, feeMinor: 1 });
+  await service.deleteImport(cashImportId);
+  const afterDeletion = await repository!.readLedgerSnapshot("all");
+  expect(afterDeletion.transactionCount).toBe(3);
+  expect(afterDeletion.activity.find(({ sourceType }) => sourceType === "Interest")).toMatchObject({ amountMinor: 1, feeMinor: 0 });
 });
 
 it.skipIf(!repository || !admin)("executes import replay, transfer review, analytics, and stable duplicate-label snapshots", async () => {

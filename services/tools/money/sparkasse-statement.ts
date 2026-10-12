@@ -33,6 +33,10 @@ export function parseSparkasseStatement(rows: readonly string[][]) {
   const transactions: SparkasseStatementTransaction[] = [];
   for (let sourceRow = 17; sourceRow <= rows.length; sourceRow += 1) {
     if (!rows[sourceRow - 1]?.some((value) => value.trim())) continue;
+    if (rows[sourceRow - 1]?.[0] === "Anfangssaldo") {
+      assertText(rows, sourceRow + 1, 0, "Endsaldo");
+      break;
+    }
     transactions.push({
       sourceRow,
       bookingDate: statementDate(requiredCell(rows, sourceRow, 0), sourceRow, "Buchungsdatum"),

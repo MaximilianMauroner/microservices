@@ -50,6 +50,17 @@ describe("statement file formats", () => {
     expect(parsed.transactions[0]?.localDate).toBe("2026-08-09");
   });
 
+  it("deduplicates cash exports with numeric Excel dates and different decimal formatting", () => {
+    const headers = layouts[0]!.headers;
+    const row = ["Interest", "Deposit", "2026-08-09 5:08:51", "2026-08-09 5:08:51", "Interest paid", "0.010", "0.00", "EUR", "COMPLETED", "10.01"];
+    const date = { date: 46243 + (5 * 3600 + 8 * 60 + 51) / 86400 };
+    const csv = parseMoneyImport(delimited([headers, row], ","));
+    const excel = parseMoneyImport(moneyWorkbookFixture([headers, ["Interest", "Deposit", date, date, "Interest paid", 0.01, 0, "EUR", "COMPLETED", 10.01]]));
+    expect(excel.transactions).toEqual(csv.transactions);
+    expect(excel.balanceSnapshots).toEqual(csv.balanceSnapshots);
+    expect(csv.accounts[0]).toMatchObject({ externalRef: "revolut:cash:deposit:EUR", name: "Revolut Instant Access Savings" });
+  });
+
   it("rejects workbook formulas, impossible Excel dates, and unknown statement layouts", () => {
     expect(() => parseMoneyImport(moneyWorkbookFixture([layouts[4]!.headers, ["2026-08-09", "Cash", { formula: "200+220", value: 420 }, "cash", "EUR"]]))).toThrow("Formula cells are not supported");
     expect(() => parseMoneyImport(moneyWorkbookFixture([layouts[4]!.headers, [{ date: 60 }, "Cash", 420, "cash", "EUR"]]))).toThrow("invalid Excel date");
@@ -75,7 +86,7 @@ describe("Revolut savings statements", () => {
       { amountMinor: -2000, flowKind: "transfer", category: "transfer" },
       { amountMinor: 0, flowKind: "investment_income", category: "income" }
     ]);
-    expect(parsed.accounts).toEqual([expect.objectContaining({ name: "Revolut Instant Access Savings", endingBalanceMinor: 25887, reconciliationMismatchCount: 0 })]);
+    expect(parsed.accounts).toEqual([expect.objectContaining({ externalRef: "revolut:cash:deposit:EUR", name: "Revolut Instant Access Savings", endingBalanceMinor: 25887, reconciliationMismatchCount: 0 })]);
     expect(parsed.balanceSnapshots[0]).toMatchObject({ date: "2026-08-08", valueMinor: 27886 });
     expect(parsed.warnings).toEqual([]);
   });

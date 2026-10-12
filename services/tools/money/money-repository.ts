@@ -9,6 +9,9 @@ import {
   SPARKASSE_TRANSFER_TYPES,
   MoneyImportValidationError,
   inferMoneyCategory,
+  revolutCashSourceKey,
+  REVOLUT_CASH_FORMAT,
+  REVOLUT_SAVINGS_FORMAT,
   moneyCategorySuggestions,
   type MoneyBalanceSnapshotInput,
   type MoneyCategory,
@@ -184,7 +187,7 @@ const RELATED_INSERT_CHUNK_SIZE = 5_000;
 // A reverted source row cancels one matching completed row. Ranking prevents a
 // single revert from hiding multiple otherwise-identical legitimate payments.
 export function effectiveTransactions(sql: Sql | TransactionSql) {
-  return sql`select candidate.* from (
+  return sql`with unreverted as (select candidate.* from (
     select ledger.*, row_number() over (
       partition by ledger.account_id, ledger.occurred_at, ledger.source_type,
         ledger.description, ledger.amount_minor, ledger.currency, ledger.status
@@ -206,11 +209,23 @@ export function effectiveTransactions(sql: Sql | TransactionSql) {
       and undone.source_type = candidate.source_type and undone.description = candidate.description
       and undone.amount_minor = candidate.amount_minor and undone.currency = candidate.currency
       and undone.undo_rank = candidate.undo_rank
+  ))
+  select candidate.* from unreverted candidate
+  where not exists (
+    select 1 from tools.money_imports savings_import
+    join unreverted cash on cash.account_id = candidate.account_id
+      and cash.local_date = candidate.local_date and cash.currency = candidate.currency
+      and cash.balance_after_minor = candidate.balance_after_minor
+      and cash.amount_minor - cash.fee_minor - cash.tax_minor = candidate.amount_minor - candidate.fee_minor - candidate.tax_minor
+      and cash.source_type = case when candidate.source_type = 'Interest' then 'Interest' else 'Transfer' end
+    join tools.money_imports cash_import on cash_import.id = cash.import_id
+    where savings_import.id = candidate.import_id and savings_import.format = ${REVOLUT_SAVINGS_FORMAT}
+      and cash_import.format = ${REVOLUT_CASH_FORMAT}
   )`;
 }
 
 export interface MoneyRepository {
-  existingSourceKeys(sourceKeys: readonly string[]): Promise<ReadonlySet<string>>;
+  existingSourceKeys(transactions: readonly MoneyLedgerTransaction[]): Promise<ReadonlySet<string>>;
   commitImport(input: MoneyImportCommitInput): Promise<MoneyImportReceipt>;
   reimportAll(): Promise<MoneyReimportResult>;
   deleteImport(importId: string): Promise<MoneyImportDeletion | undefined>;
@@ -244,14 +259,8 @@ export function createPostgresMoneyRepository(databaseUrl: string, options: { re
 
 export function postgresMoneyRepository(sql: Sql): MoneyRepository {
   return {
-    async existingSourceKeys(sourceKeys) {
-      const existing = new Set<string>();
-      for (const keys of chunks(sourceKeys, 1_000)) {
-        if (!keys.length) continue;
-        const rows = await sql<{ source_key: string }[]>`select source_key from tools.money_transactions where source_key in ${sql(keys)}`;
-        for (const row of rows) existing.add(row.source_key);
-      }
-      return existing;
+    existingSourceKeys(transactions) {
+      return existingTransactionSourceKeys(sql, transactions);
     },
 
     commitImport(input) {
@@ -287,9 +296,10 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
           for (const account of saved) accountIds.set(account.external_ref, account.id);
         }
 
+        const existingKeys = await existingTransactionSourceKeys(tx, input.transactions);
         const transactionIds = new Map<string, string>();
         let insertedCount = 0;
-        for (const batch of chunks(input.transactions, TRANSACTION_INSERT_CHUNK_SIZE)) {
+        for (const batch of chunks(input.transactions.filter((item) => !existingKeys.has(item.sourceKey)), TRANSACTION_INSERT_CHUNK_SIZE)) {
           const values = batch.map((item) => ({
             id: randomUUID(), account_id: requiredAccountId(accountIds, item.accountExternalRef), import_id: importId,
             source_key: item.sourceKey, source_row: item.sourceRow, occurred_at: item.occurredAt, completed_at: item.completedAt ?? null,
@@ -316,7 +326,9 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
         for (const batch of chunks(input.balanceSnapshots, RELATED_INSERT_CHUNK_SIZE)) {
           const values = batch.map((item) => ({ account_id: requiredAccountId(accountIds, item.accountExternalRef), snapshot_date: item.date,
             observed_at: item.observedAt, value_minor: item.valueMinor, currency: item.currency, origin: "import", import_id: importId }));
-          if (values.length) await tx`insert into tools.money_balance_snapshots ${tx(values)} on conflict (account_id, snapshot_date, origin) do update set observed_at = excluded.observed_at, value_minor = excluded.value_minor, currency = excluded.currency, import_id = excluded.import_id where excluded.observed_at >= tools.money_balance_snapshots.observed_at`;
+          if (values.length) await tx`insert into tools.money_balance_snapshots ${tx(values)} on conflict (account_id, snapshot_date, origin) do update set observed_at = excluded.observed_at, value_minor = excluded.value_minor, currency = excluded.currency, import_id = excluded.import_id
+            where excluded.observed_at > tools.money_balance_snapshots.observed_at
+              or (excluded.observed_at = tools.money_balance_snapshots.observed_at and excluded.value_minor <> tools.money_balance_snapshots.value_minor)`;
         }
         await refreshInferredTransactions(tx, input.transactions.filter((transaction) => !transactionIds.has(transaction.sourceKey)));
         await applyCategoryRules(tx, [...transactionIds.values()]);
@@ -403,7 +415,9 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
         needs("activity") ? sql<ActivityRow[]>`select t.id, t.occurred_at, t.account_id::text account_id, a.display_name account_name, t.description, t.amount_minor, t.fee_minor, t.tax_minor, t.currency, t.status, t.source_type, t.flow_kind, t.category, t.category_origin, t.transfer_group_id, t.transfer_disposition
           from (${effectiveTransactions(sql)}) t join tools.money_accounts a on a.id = t.account_id
           order by t.occurred_at desc, t.source_row desc limit 50` : emptyRows<ActivityRow>(),
-        needs("counts") ? sql<{ count: string; reverted_count: string }[]>`select count(*)::text count, count(*) filter (where status = 'reverted')::text reverted_count from tools.money_transactions` : emptyRows<{ count: string; reverted_count: string }>(),
+        needs("counts") ? sql<{ count: string; reverted_count: string }[]>`select
+          (select count(*)::text from (${effectiveTransactions(sql)}) effective) count,
+          (select count(*)::text from tools.money_transactions where status = 'reverted') reverted_count` : emptyRows<{ count: string; reverted_count: string }>(),
         needs("transferSummary") ? sql<TransferReviewRow[]>`select count(distinct transfer_group_id)::text linked_pairs,
           count(*) filter (where transfer_group_id is null)::text unlinked_count,
           count(*) filter (where transfer_group_id is null and transfer_disposition is null and amount_minor > 0)::text unresolved_positive_count,
@@ -1256,6 +1270,39 @@ function collectMutuallyUnique(rows: readonly TransferRow[], used: Set<string>, 
     used.add(row.id); used.add(other.id);
     pairs.push([row.id, other.id]);
   }
+}
+
+async function existingTransactionSourceKeys(sql: Sql | TransactionSql, transactions: readonly MoneyLedgerTransaction[]) {
+  const sourceKeys = new Set(transactions.map((item) => item.sourceKey));
+  const existing = new Set<string>();
+  for (const keys of chunks([...sourceKeys], 1_000)) {
+    const rows = await sql<{ source_key: string }[]>`select source_key from tools.money_transactions where source_key in ${sql(keys)}`;
+    for (const row of rows) existing.add(row.source_key);
+  }
+  const cash = transactions.filter((item) => item.provider === "revolut" && item.accountRole === "cash"
+    && !existing.has(item.sourceKey) && item.sourceKey === revolutCashSourceKey(item));
+  if (!cash.length) return existing;
+
+  // Older imports hashed the file's raw cells. Match their parsed values until those rows are removed.
+  const dates = cash.map((item) => item.localDate).sort();
+  const rows = await sql<{
+    external_ref: string; source_type: string; occurred_at: Date; completed_at: Date | null; description: string;
+    amount_minor: string; fee_minor: string; currency: string; status: MoneyLedgerTransaction["status"]; balance_after_minor: string | null;
+  }[]>`select a.external_ref, t.source_type, t.occurred_at, t.completed_at, t.description,
+      t.amount_minor::text, t.fee_minor::text, t.currency, t.status, t.balance_after_minor::text
+    from tools.money_transactions t join tools.money_accounts a on a.id = t.account_id
+    join tools.money_imports i on i.id = t.import_id
+    where a.provider = 'revolut' and a.role = 'cash' and i.format = ${REVOLUT_CASH_FORMAT}
+      and t.local_date between ${dates[0]!} and ${dates.at(-1)!}`;
+  for (const row of rows) {
+    const key = revolutCashSourceKey({ accountExternalRef: row.external_ref, sourceType: row.source_type,
+      occurredAt: row.occurred_at.toISOString(), ...(row.completed_at ? { completedAt: row.completed_at.toISOString() } : {}),
+      description: row.description, amountMinor: integer(row.amount_minor), feeMinor: integer(row.fee_minor),
+      currency: row.currency, status: row.status,
+      ...(row.balance_after_minor === null ? {} : { balanceAfterMinor: integer(row.balance_after_minor) }) });
+    if (sourceKeys.has(key)) existing.add(key);
+  }
+  return existing;
 }
 
 function uniqueAccounts(transactions: readonly MoneyLedgerTransaction[]) { return [...new Map(transactions.map((item) => [item.accountExternalRef, { externalRef: item.accountExternalRef, name: item.accountName, currency: item.accountRole === "investment" ? "EUR" : item.currency, provider: item.provider, role: item.accountRole }])).values()]; }
