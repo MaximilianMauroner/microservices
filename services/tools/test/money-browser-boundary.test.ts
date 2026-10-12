@@ -8,7 +8,8 @@ const clientRoots = [
 ];
 const serverOnlyModules = new Set([
   fileURLToPath(new URL("../money/money-import-domain.ts", import.meta.url)),
-  fileURLToPath(new URL("../money/sparkasse-xlsx.ts", import.meta.url))
+  fileURLToPath(new URL("../money/money-xlsx.ts", import.meta.url)),
+  fileURLToPath(new URL("../money/sparkasse-statement.ts", import.meta.url))
 ]);
 
 describe("money browser boundary", () => {

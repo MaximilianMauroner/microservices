@@ -23,4 +23,10 @@ describe("Tools PostgreSQL schema push guard", () => {
   it("retains runtime constraint reconciliation", () => {
     expect(moneyImportConstraintRepairs([])).toEqual({ provider: true, format: true, category: true });
   });
+
+  it("updates an existing import constraint for savings statements", () => {
+    const before = [{ name: "money_imports_format_check", definition: "CHECK (format IN ('sparkasse_cash_statement_v1'))" }];
+    expect(moneyImportConstraintRepairs(before).format).toBe(true);
+    expect(moneyImportConstraintRepairs([{ ...before[0]!, definition: "CHECK (format IN ('sparkasse_cash_statement_v1', 'revolut_savings_statement_v1'))" }]).format).toBe(false);
+  });
 });

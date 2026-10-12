@@ -6,6 +6,7 @@ export const MONEY_TRANSFER_DISPOSITIONS = ["internal_transfer", "income", "spen
 export type MoneyTransferDisposition = typeof MONEY_TRANSFER_DISPOSITIONS[number];
 
 export const REVOLUT_CASH_FORMAT = "revolut_cash_statement_v1" as const;
+export const REVOLUT_SAVINGS_FORMAT = "revolut_savings_statement_v1" as const;
 export const REVOLUT_TRADING_FORMAT = "revolut_trading_statement_v1" as const;
 export const PORTFOLIO_TRANSACTION_FORMAT = "portfolio_transaction_export_v1" as const;
 export const MONEY_BALANCE_SNAPSHOT_FORMAT = "money_balance_snapshot_v1" as const;
