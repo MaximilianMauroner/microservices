@@ -283,12 +283,13 @@ function savingsRow(row: string[], sourceRow: number): MoneyLedgerTransaction {
   if (rate && !/^(?:\d+(?:\.\d+)?%|\d+(?:\.\d+)?)$/.test(rate)) throw invalid("invalid_interest_rate", `Row ${sourceRow} has an invalid Gross Interest Rate Earned.`);
   const amountMinor = savingsAmount(withdrawal ? moneyOut : moneyIn, sourceRow, withdrawal ? "Money out" : "Money in") * (withdrawal ? -1 : 1);
   const balanceAfterMinor = savingsAmount(balance, sourceRow, "Balance");
-  const accountExternalRef = `revolut:cash:${product.toLocaleLowerCase("en-GB")}:EUR`;
+  const sourceAccountRef = `revolut:cash:${product.toLocaleLowerCase("en-GB")}:EUR`;
+  const accountExternalRef = product === "Instant Access Savings" ? "revolut:cash:deposit:EUR" : sourceAccountRef;
   const occurredAt = `${localDate}T12:00:00.000Z`;
   const sourceType = interest ? "Interest" : withdrawal ? "Withdrawal" : "Deposit";
   const flowKind = interest ? "investment_income" : "transfer";
   return {
-    sourceKey: fingerprint([REVOLUT_SAVINGS_FORMAT, accountExternalRef, localDate, description, String(amountMinor), String(balanceAfterMinor)]),
+    sourceKey: fingerprint([REVOLUT_SAVINGS_FORMAT, sourceAccountRef, localDate, description, String(amountMinor), String(balanceAfterMinor)]),
     sourceRow, provider: "revolut", accountRole: "cash", accountExternalRef, accountName: `Revolut ${product}`,
     occurredAt, completedAt: occurredAt, localDate, description, amountMinor, feeMinor: 0, taxMinor: 0,
     baseAmountMinor: amountMinor, baseFeeMinor: 0, baseTaxMinor: 0, baseCurrency: "EUR", balanceAfterMinor,
@@ -326,17 +327,26 @@ function cashRow(row: string[], sourceRow: number): MoneyLedgerTransaction {
   const balanceAfterMinor = balance ? parseMinorUnits(balance, sourceRow, "Balance") : undefined;
   const description = sanitizeDescription(rawDescription ?? "");
   const flowKind = cashFlow(type, amountMinor, description);
-  return {
-    sourceKey: fingerprint([REVOLUT_CASH_FORMAT, ...row]), sourceRow, provider: "revolut", accountRole: "cash",
+  const transaction = {
+    sourceRow, provider: "revolut", accountRole: "cash",
     accountExternalRef: `revolut:cash:${product.trim().toLocaleLowerCase("en-GB")}:${currency}`,
-    accountName: `Revolut ${product.trim()}${currency === "EUR" ? "" : ` · ${currency}`}`,
+    accountName: product.trim() === "Deposit" ? "Revolut Instant Access Savings" : `Revolut ${product.trim()}${currency === "EUR" ? "" : ` · ${currency}`}`,
     occurredAt: occurredAt.toISOString(), ...(completedAt ? { completedAt: completedAt.toISOString() } : {}),
     localDate: (completed || started)!.slice(0, 10), description, amountMinor, feeMinor, taxMinor: 0,
     ...(currency === "EUR" ? { baseAmountMinor: amountMinor, baseFeeMinor: feeMinor, baseTaxMinor: 0, baseCurrency: "EUR" as const } : {}),
     ...(balanceAfterMinor === undefined ? {} : { balanceAfterMinor }), currency: currency!,
     status: state === "COMPLETED" ? "completed" : "reverted", sourceType: type,
     flowKind, category: inferMoneyCategory(flowKind, type, description)
-  };
+  } satisfies Omit<MoneyLedgerTransaction, "sourceKey">;
+  return { ...transaction, sourceKey: revolutCashSourceKey(transaction) };
+}
+
+/** Uses parsed values so CSV and Excel formatting cannot create another transaction. */
+export function revolutCashSourceKey(transaction: Pick<MoneyLedgerTransaction, "accountExternalRef" | "sourceType" | "occurredAt" | "completedAt" | "description" | "amountMinor" | "feeMinor" | "currency" | "status" | "balanceAfterMinor">) {
+  return fingerprint([REVOLUT_CASH_FORMAT, transaction.accountExternalRef, transaction.sourceType,
+    transaction.occurredAt, transaction.completedAt ?? "", transaction.description,
+    String(transaction.amountMinor), String(transaction.feeMinor), transaction.currency, transaction.status,
+    transaction.balanceAfterMinor === undefined ? "" : String(transaction.balanceAfterMinor)]);
 }
 
 function parseTrading(dataRows: string[][], digest: string): ParsedMoneyImport {

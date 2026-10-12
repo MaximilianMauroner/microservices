@@ -8,7 +8,8 @@ import {
   REVOLUT_TRADING_FORMAT,
   categorizeDescription,
   moneyCategorySuggestions,
-  parseMoneyImport
+  parseMoneyImport,
+  type MoneyLedgerTransaction
 } from "../money/money-import-domain.js";
 import { MoneyImportService } from "../money/money-import-service.js";
 import { deleteMoneyCategoryRule, deleteMoneyImport, previewMoneyImport, reimportAllMoneyImports, updateMoneyCategory, updateMoneyTransfer } from "../money/money-route-handlers.js";
@@ -526,8 +527,8 @@ class MemoryMoneyRepository implements MoneyRepository {
   lastActivityInput?: MoneyActivityPageInput;
   lastTransferRule?: MoneyTransferRuleInput;
 
-  async existingSourceKeys(sourceKeys: readonly string[]) {
-    return new Set(sourceKeys.filter((key) => this.sourceKeys.has(key)));
+  async existingSourceKeys(transactions: readonly MoneyLedgerTransaction[]) {
+    return new Set(transactions.map((item) => item.sourceKey).filter((key) => this.sourceKeys.has(key)));
   }
 
   async commitImport(_input: MoneyImportCommitInput): Promise<MoneyImportReceipt> {
