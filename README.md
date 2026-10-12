@@ -39,7 +39,9 @@ pnpm run start:markdown-share # Convex backend development
 pnpm run start:network-console
 ```
 
-Status scheduling runs inside Tools and is not a standalone deployment.
+Status probes run in the dedicated bounded cron process defined in
+`services/tools/status/railway.json`. Other Tools scheduled work retains its
+product ownership.
 
 ## Local stack
 
@@ -57,6 +59,13 @@ URL is not `http://localhost:3210`, set `VITE_CONVEX_URL` to it before `pnpm run
 docker:up`. Docker passes this URL to both the browser build and the Tools
 runtime. The administration mock stays on port 8787 and does not implement the
 Convex browser protocol.
+
+Tools requires `FEEDBACK_ENCRYPTION_KEY`, a base64url-encoded 32-byte key.
+Generate an owned local key with the command in
+[Feedback setup](services/tools/feedback/README.md), retain it for the lifetime
+of the local test responses, and pass it to the Tools container through a local
+Compose override. The checked-in Compose environment omits this required key;
+setting it only in the host shell does not pass it to the container.
 
 Then open:
 

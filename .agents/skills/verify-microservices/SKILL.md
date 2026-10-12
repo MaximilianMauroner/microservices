@@ -5,10 +5,8 @@ description: Verify Network Console, the Tools products, and Markdown Share thro
 
 # Verify Microservices
 
-Use [features.md](features.md) to choose journeys and record gaps. This is a draft:
-Network Console HTTP was exercised at `9601243`; other journeys require their
-own live evidence. Use [document-share.md](document-share.md) for the combined
-Markdown/LaTeX journeys, isolated Convex setup, and current execution limits.
+Use [the feature index](features/README.md) to select journeys and record gaps.
+Use each extension for its feature-specific setup, actions, and cleanup.
 
 Read repository `AGENTS.md`, each service README, and
 `docs/tools-platform/runtime-boundaries.md`. Record the commit, worktree, Node
@@ -31,7 +29,7 @@ BIND_HOST=127.0.0.1 PORT=43127 pnpm --dir services/network-console start
 ```
 
 Record the terminal session handle. Require `GET /health` to return
-`{"ok":true}` before N1. Do not start or change the installed system service.
+`{"ok":true}` before the Network Console journey. Do not start or change the installed system service.
 
 For Tools, inspect `compose.yaml` and all existing listeners first. Its
 checked-in stack publishes fixed host ports 3000, 5432, 9000, 9001, and 8787.
@@ -57,7 +55,7 @@ Require both `/live` and `/health`
 to succeed; Compose's health check only checks `/live`.
 
 The sample OAuth values cannot verify login. Use a local OAuth client and the
-allowed test subject for A1 and private pages. Do not copy production secrets.
+allowed test subject for private pages. Do not copy production secrets.
 Markdown needs a separately owned local Convex backend and its actual URL as
 `VITE_CONVEX_URL`. The port-8787 administration mock does not implement
 the browser protocol. If these prerequisites are missing, mark the dependent
@@ -65,7 +63,7 @@ journeys blocked rather than using mocked authentication or server functions.
 The exact remapped Tools setup remains unverified. Markdown administration
 only lists documents. Use a separately owned disposable local backend whose
 process and data directory can be disposed of after the run. If this cleanup
-path cannot be established, do not create documents and mark M1/M2 blocked.
+path cannot be established, do not create documents and mark the dependent journeys blocked.
 
 ## Execution and cleanup
 

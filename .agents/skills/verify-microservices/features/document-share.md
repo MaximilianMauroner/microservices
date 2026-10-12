@@ -1,8 +1,7 @@
 # Combined Document Share verification
 
-Status: draft procedure, browser execution blocked on 2026-10-06 as recorded
-below. Source and unit-test evidence do not establish browser acceptance. This
-procedure covers PR #51; it does not expand verification to other products.
+This extension covers combined Markdown and LaTeX sharing. Source and unit-test
+evidence do not establish browser acceptance.
 
 ## Setup
 
@@ -143,65 +142,16 @@ creation; keep redacted evidence. Do not delete shared database/bucket volumes.
 Remove owned browser downloads and recent-document entries after evidence is
 retained. Sign out any owned authenticated session and restore its preferences.
 
-## Execution record
+## Prior evidence
 
-PR #51 was checked on 2026-10-06 at head `2787add`, base `4aa0154`. The rebase
-retained the prior code changes without a relevant behavior change. Evidence
-and full commands are in
-[the run report](../../../docs/verification/2026-10-06-document-share.md).
+The [dated 2026-10-06 report](../../../../docs/verification/2026-10-06-document-share.md)
+records protocol checks and browser/setup blockers. Reuse it only when the
+source, setup, and expected results still match.
 
-The owned backend used an ignored copy under
-`.agents/artifacts/pr51-20261006/backend/`: `convex/`, `package.json`,
-`source-limits.ts`, and `tsconfig.json`, with installed `node_modules` linked
-from the service. Its owned `convex.json` disabled AI files only. From that copy:
+## Journey map
 
-```sh
-flock /tmp/microservices-intensive.lock env CONVEX_AGENT_MODE=anonymous \
-  pnpm exec convex dev --local-cloud-port 43151 --local-site-port 43152 \
-  --typecheck disable --codegen disable --tail-logs disable
-```
-
-The local administration token was set with `convex env set`, using an owned
-dummy value shared with the test Tools process. It is not recorded here. Tools
-ran Vite in read-only mode on `127.0.0.1:43153`, with `PUBLIC_ORIGIN` and
-`VITE_CONVEX_URL` set to `http://localhost:43150`. Database and object-storage
-targets were unused local endpoints `127.0.0.1:55432` and `127.0.0.1:59000`.
-This was public-document preparation, not a complete healthy Tools stack.
-
-An owned HTTP/WebSocket proxy on `127.0.0.1:43150` forwarded only Convex public
-`/api/query`, `/api/mutation`, `/api/action`, and `/api/*/sync` protocol requests
-to port 43151. It sent other requests, including authentication and protected
-server functions, to Tools on port 43153. No TLS or authentication check was
-disabled, and no production or shared service was changed.
-
-- Local readiness: `/share` and `/live` returned HTTP 200. `/health` returned
-  HTTP 503 because the database and object storage were not provisioned.
-- Protocol preparation: real local create for both formats, submitted edits
-  and persistent snapshots, two checkpoints and comparison, a WebSocket query,
-  and protected backend administration format metadata passed. These are
-  protocol checks, not browser-journey passes.
-- Browser access: T3's environment-port route for port 43150 failed navigation
-  and stayed on `about:blank`. Direct `http://localhost:43150/share` from the
-  remote Mac preview browser returned `net::ERR_CONNECTION_REFUSED`. Browser
-  M1 and M3 are blocked before live creation, editing, downloads, clipboard
-  rejection/recovery, or two-session collaboration can be accepted.
-- Anonymous access: host HTTP `/documents` redirected to
-  `/sign-in?returnTo=%2Fdocuments&reason=session_required` with HTTP 302 for
-  `Accept: text/html`, and returned HTTP 401 for a JSON request. Backend
-  `/admin/documents` without its token returned HTTP 401. These checks passed
-  the HTTP denial boundary; they do not prove the sign-in browser flow.
-- Private inventory: M2's signed-in path remains blocked. No authorized local
-  OAuth client/subject or fully provisioned Tools dependencies were supplied.
-  Retention and offline batches above the save budget remain unrun.
-- Cleanup passed: owned Vite and proxy processes stopped with TERM; the owned
-  Convex process stopped with Ctrl-C. Listener checks confirmed ports
-  43150-43153 closed and the shared heavy-work lock released. Only the run's
-  `backend/.convex` data/config and `backend/.env.local` were removed. Scripts
-  and sanitized `protocol-result.json` remain in the ignored evidence directory.
-
-The access dependency is the T3 preview environment owner: provide working
-forwarding to the owned loopback service, or a supported browser attached to
-that environment. The authenticated dependency is Max/local-environment setup:
-provide authorized local OAuth and disposable Tools dependencies. Then rerun
-the blocked public browser and private inventory actions. Deployment and user
-acceptance are unverified.
+| ID | Public actions and observable result | Source and existing checks | Prerequisites and reset |
+| --- | --- | --- | --- |
+| M1 | At /share create Markdown and LaTeX documents; verify .md/.tex filenames, acknowledged source edits, reload persistence, second-session synchronization, presence, two checkpoints and comparison. Verify /markdown capability aliases, Markdown preview/PDF control, and exact LaTeX source download. Use the detailed journeys above. | services/markdown-share/README.md; markdown-share/App.tsx; markdown-share/collaborative-workspace.tsx; markdown-share/document-history.tsx; backend and workspace tests | Owned local Convex, browser-reachable origin, two independent sessions and download access. Establish disposable backend cleanup before creation. History supports comparison, not restoration. |
+| M2 | Anonymous /documents and its inventory API deny access. After local sign-in, verify Documents title, filenames, format badges/filters, expiry, checkpoints, and capability links for both formats. Check invalid capability denial and bounded retention separately. Use the detailed journeys above. | src/routes/documents.tsx; src/routes/api/ops/$.ts; dashboard/ui/documents-page.tsx; test/documents-page.test.tsx; services/markdown-share/convex | Local Convex administration token, isolated Tools dependencies, authorized local OAuth. Retention is blocked without a supported bounded clock; never wait seven days or alter production time. |
+| M3 | Paste bounded multiline source with escapes and Unicode in each real editor. Confirm acknowledgement and reload. Reject source above the character or encoded-byte budget without replacing saved content; a smaller paste then saves. Use the detailed journeys above. | services/markdown-share/source-limits.ts; markdown-share/live-document-session.ts; markdown-share/collaborative-workspace.test.tsx; convex/markdownShare.test.ts | M1 setup and synthetic clipboard payloads. Record payload sizes and each result. Offline multi-step batches beyond the budget need separate evidence. |
