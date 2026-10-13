@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const clientRoots = [
+  new URL("../money/money-activity-view.tsx", import.meta.url),
   new URL("../money/money-ledger-views.tsx", import.meta.url),
   new URL("../money/money-tracker-page.tsx", import.meta.url)
 ];
@@ -39,6 +40,22 @@ describe("money browser boundary", () => {
       export { shared } from "./barrel.js";
       void import("./dynamic.js");
     `)).toEqual(["./side-effect.js", "./static.js", "./barrel.js", "./dynamic.js"]);
+  });
+
+  it("keeps investment chart code out of the transaction view", () => {
+    const visited = new Set<string>();
+    const pending = [fileURLToPath(new URL("../money/money-activity-view.tsx", import.meta.url))];
+    while (pending.length) {
+      const filename = pending.pop()!;
+      if (visited.has(filename)) continue;
+      visited.add(filename);
+      for (const specifier of runtimeImports(readFileSync(filename, "utf8"))) {
+        expect(specifier, `${filename} pulls in investment charts`).not.toBe("recharts");
+        if (!specifier.startsWith(".")) continue;
+        const dependency = resolveSourceModule(filename, specifier);
+        if (dependency) pending.push(dependency);
+      }
+    }
   });
 });
 

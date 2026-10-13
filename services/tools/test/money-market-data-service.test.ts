@@ -2,8 +2,40 @@ import { describe, expect, it, vi } from "vitest";
 import { MoneyMarketDataService } from "../money/money-market-data-service.js";
 import { MoneyMarketProviderError } from "../money/money-market-data-provider.js";
 import type { MoneyMarketDataRepository } from "../money/money-market-data-repository.js";
+import { moneyFinancialHistory } from "../money/money-tracker-domain.js";
 
 describe("money market-data service", () => {
+  it("keeps monthly balances and check-in moves equal when daily chart data is omitted", async () => {
+    const repository = fakeRepository();
+    const events = [investmentEvent("2026-01-01", "buy", "2", -20_000)];
+    repository.readValuationInputs = vi.fn().mockResolvedValue({ events, prices: [{ canonicalKey: "listing:XNAS:AAPL", providerKey: "AAPL", close: "130", priceDate: "2026-02-28", currency: "EUR" }] });
+    repository.readHistoryInputs = vi.fn().mockResolvedValue({
+      events,
+      prices: ["2026-01-01", "2026-01-15", "2026-01-31", "2026-02-01", "2026-02-28"].map((date, index) => ({ canonicalKey: "listing:XNAS:AAPL", date, close: String(100 + index * 10), currency: "EUR" })),
+      usdRates: [], inflationIndices: [],
+    });
+    const service = new MoneyMarketDataService(repository);
+    const daily = await service.snapshot({ since: "2026-01-15" });
+    const monthly = await service.snapshot({ since: "2026-01-15", history: "monthly" });
+    expect(monthly.history.map((point) => point.date)).toEqual(["2026-01-01", "2026-01-31", "2026-02-01", "2026-02-28"]);
+    expect(monthly.positions).toEqual(daily.positions);
+    expect(monthly.totals).toEqual(daily.totals);
+    expect(monthly.movesSince).toEqual(daily.movesSince);
+    const cash = [{ date: "2026-01-01", cashValue: 200, observedCashAccountCount: 1, cashAccountCount: 1 }, { date: "2026-02-01", cashValue: 300, observedCashAccountCount: 1, cashAccountCount: 1 }];
+    expect(moneyFinancialHistory(cash, monthly.history)).toEqual(moneyFinancialHistory(cash, daily.history));
+    const noHistory = await service.snapshot({ since: "2026-01-15", history: "none" });
+    expect(noHistory.history).toEqual([]);
+    expect(noHistory.movesSince).toEqual(daily.movesSince);
+  });
+
+  it("does not read historical prices for a view that only needs current positions", async () => {
+    const repository = fakeRepository();
+    const service = new MoneyMarketDataService(repository);
+    expect((await service.snapshot({ history: "none" })).history).toEqual([]);
+    expect(repository.readHistoryInputs).not.toHaveBeenCalled();
+    expect(repository.readValuationInputs).toHaveBeenCalledOnce();
+  });
+
   it("values remaining FIFO lots in EUR and exposes stale data", async () => {
     const repository = fakeRepository();
     repository.readValuationInputs = vi.fn().mockResolvedValue({
