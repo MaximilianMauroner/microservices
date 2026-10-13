@@ -16,4 +16,3 @@ describe("stored byte verification", () => {
     expect(await verifyStoredBytes(Readable.from([]), { ...description, totalBytes: 0 }, [{ number: 1, bytes: 0, etag: "empty", sha256: digest(Buffer.alloc(0)) }], new AbortController().signal)).toBe(digest(Buffer.alloc(0)));
   });
 });
-
