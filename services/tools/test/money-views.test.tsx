@@ -6,6 +6,7 @@ import { MoneyTrackerPage } from "../money/money-tracker-page.js";
 import { MoneySpendingView } from "../money/money-spending-view.js";
 import { MoneyReviewView } from "../money/money-review-view.js";
 import { moneyReviewCounts } from "../money/money-tracker-navigation.js";
+import { FlowChart, MonthBars, SparkBars } from "../money/money-ui.js";
 
 /** Currency amounts use a no-break space before the euro sign. */
 const renderToStaticMarkup = (element: ReactElement) => renderMarkup(element).replaceAll("\u00a0", " ");
@@ -47,7 +48,7 @@ function pageData(overrides: Partial<MoneyTrackerPageData> = {}): MoneyTrackerPa
 const spending: MoneyTrackerPageData["spending"] = {
   months: [
     { month: "2026-06", observed: true, spendMinor: 200_000, refundsMinor: 0, incomeMinor: 400_000, feesMinor: 500, taxesMinor: 0, netCashFlowMinor: 199_500 },
-    { month: "2026-07", observed: true, spendMinor: 300_000, refundsMinor: 5_000, incomeMinor: 400_000, feesMinor: 0, taxesMinor: 0, netCashFlowMinor: 105_000 },
+    { month: "2026-07", observed: true, spendMinor: 295_000, refundsMinor: 5_000, incomeMinor: 400_000, feesMinor: 0, taxesMinor: 0, netCashFlowMinor: 105_000 },
   ],
   categories: [],
   categoryMonths: [
@@ -112,7 +113,10 @@ describe("Money redesign views", () => {
   it("filters Spending categories and shows the selected category detail", () => {
     const html = renderToStaticMarkup(<MoneySpendingView spending={spending} transferReview={{ linkedPairs: 0, unlinkedCount: 1, unresolvedPositiveCount: 0, unresolvedNegativeCount: 3 }} reviewCounts={{ uncategorized: 1, transfers: 3 }} initialCategory="groceries" />);
     expect(html).toContain("Jun 2026 – Jul 2026 · 2 complete months");
-    expect(html).toContain("5.000 €");
+    expect(html).toContain("4.950 €");
+    expect(html).toContain("8.000 €");
+    expect(html).not.toContain("8.050 €");
+    expect(html).toContain("Refunds deducted");
     expect(html).toContain("+3.045 €");
     expect(html).toContain("Review 1 rows");
     expect(html).toContain("3 transfers still need a treatment.");
@@ -121,6 +125,41 @@ describe("Money redesign views", () => {
     expect(html).toContain("View monthly cash flow as a table");
     expect(html).toMatch(/Largest merchants[\s\S]*BILLA[\s\S]*SPAR/);
     expect(html).toContain("fromMonth=2026-06&amp;toMonth=2026-07");
+  });
+
+  it("shows a category refund received after its purchase month as negative spending", () => {
+    const html = renderToStaticMarkup(<MoneySpendingView spending={{
+      ...spending,
+      months: [{ month: "2026-07", observed: true, spendMinor: -5_000, refundsMinor: 5_000, incomeMinor: 0, feesMinor: 0, taxesMinor: 0, netCashFlowMinor: 5_000 }],
+      categoryMonths: [{ month: "2026-07", category: "travel", amountMinor: -5_000, count: 1 }],
+      merchantMonths: [{ month: "2026-07", category: "travel", description: "Rail ticket", amountMinor: -5_000, count: 1 }],
+    }} transferReview={{ linkedPairs: 0, unlinkedCount: 0, unresolvedPositiveCount: 0, unresolvedNegativeCount: 0 }} reviewCounts={{ uncategorized: 0, transfers: 0 }} initialCategory="travel" />);
+    expect(html).toMatch(/Spent[\s\S]*−50 €/);
+    expect(html).toMatch(/Income[\s\S]*0 €/);
+    expect(html).toMatch(/Travel[\s\S]*−50 €/);
+    expect(html).toContain("Refunds lower spending");
+    expect(html).toMatch(/Rail ticket[\s\S]*−50 €/);
+  });
+
+  it("keeps refund bars and negative income inside their chart bounds", () => {
+    const tooltip = () => ({ title: "Refund month", rows: [] });
+    const charts = [
+      renderToStaticMarkup(<FlowChart months={[{ label: "Jul", income: -10, spending: -50, net: 40 }]} label="Refund cash flow" tooltip={tooltip} />),
+      renderToStaticMarkup(<MonthBars values={[-50, 20]} labels={["Jul", "Aug"]} label="Net category spending" average={-15} tooltip={tooltip} />),
+      renderToStaticMarkup(<SparkBars values={[-50, 20]} />),
+    ];
+    for (const chart of charts) {
+      const height = Number(chart.match(/<svg[^>]*height="([\d.]+)"/)?.[1]);
+      const bars = [...chart.matchAll(/<rect[^>]* y="([\d.-]+)"[^>]* height="([\d.-]+)"/g)];
+      expect(bars.length).toBeGreaterThan(0);
+      for (const bar of bars) {
+        const top = Number(bar[1]);
+        const size = Number(bar[2]);
+        expect(top).toBeGreaterThanOrEqual(0);
+        expect(size).toBeGreaterThan(1);
+        expect(top + size).toBeLessThanOrEqual(height);
+      }
+    }
   });
 
   it("puts categories, transfers, prices, and balances in one Review queue", () => {

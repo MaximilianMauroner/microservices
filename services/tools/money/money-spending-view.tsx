@@ -59,7 +59,7 @@ export function MoneySpendingView({
       const values = monthKeys.map((key) => series.get(key) ?? 0);
       const total = values.reduce((sum, value) => sum + value, 0);
       return { category, values, total, average: total / Math.max(monthKeys.length, 1), value: selectedMonth ? series.get(selectedMonth) ?? 0 : total };
-    }).filter((row) => row.value > 0 || !selectedMonth).sort((left, right) => right.value - left.value);
+    }).filter((row) => row.value !== 0 || !selectedMonth).sort((left, right) => right.value - left.value);
   })();
 
   const shown = categories.filter((row) => row.category !== "uncategorized");
@@ -67,7 +67,7 @@ export function MoneySpendingView({
   const categoryTotal = categories.reduce((sum, row) => sum + row.value, 0);
   const largest = Math.max(...shown.map((row) => row.value), 1);
   const totals = months.reduce(
-    (sum, item) => ({ spend: sum.spend + item.spendMinor, income: sum.income + item.incomeMinor + item.refundsMinor, net: sum.net + item.netCashFlowMinor }),
+    (sum, item) => ({ spend: sum.spend + item.spendMinor, income: sum.income + item.incomeMinor, net: sum.net + item.netCashFlowMinor }),
     { spend: 0, income: 0, net: 0 },
   );
   const uncategorized = categories.find((row) => row.category === "uncategorized")?.value ?? 0;
@@ -103,7 +103,7 @@ export function MoneySpendingView({
         {month ? (
           <>
             <Stat label="Spent" value={formatMinor(month.spendMinor)} detail={`Average ${formatMinor(totals.spend / Math.max(months.length, 1))}`} />
-            <Stat label="Income" value={formatMinor(month.incomeMinor + month.refundsMinor)} detail={`Incl. ${formatMinor(month.refundsMinor)} refunds`} />
+            <Stat label="Income" value={formatMinor(month.incomeMinor)} />
             <Stat label="Net flow" value={formatMinor(month.netCashFlowMinor, { signed: true })} tone={month.netCashFlowMinor} detail={month.incomeMinor ? `${formatRatio(month.netCashFlowMinor / month.incomeMinor)} saved` : "No income"} />
           </>
         ) : (
@@ -124,7 +124,7 @@ export function MoneySpendingView({
         title="Monthly cash flow"
         description={
           <>
-            Select a month to filter the categories. Transfers between your accounts are left out.
+            Select a month to filter the categories. Refunds lower spending. Transfers between your accounts are left out.
             {transferReview.unresolvedNegativeCount + transferReview.unresolvedPositiveCount ? (
               <> <Link to="/money" search={{ view: "review" }} className="text-warning hover:underline">{(transferReview.unresolvedNegativeCount + transferReview.unresolvedPositiveCount).toLocaleString("en-GB")} transfers still need a treatment.</Link></>
             ) : null}
@@ -141,7 +141,7 @@ export function MoneySpendingView({
         <PanelBody>
           <FlowChart
             label={`Monthly income and spending with net flow, ${span}. Select a month to filter the categories.`}
-            months={months.map((item) => ({ label: formatMonth(item.month).slice(0, 3), income: (item.incomeMinor + item.refundsMinor) / 100, spending: (item.spendMinor + item.feesMinor + item.taxesMinor) / 100, net: item.netCashFlowMinor / 100 }))}
+            months={months.map((item) => ({ label: formatMonth(item.month).slice(0, 3), income: item.incomeMinor / 100, spending: (item.spendMinor + item.feesMinor + item.taxesMinor) / 100, net: item.netCashFlowMinor / 100 }))}
             selected={selectedIndex}
             onSelect={(index) => setSelectedMonth((current) => (current === monthKeys[index] ? undefined : monthKeys[index]))}
             tooltip={(index) => ({ ...flowTooltip(months[index]!), hint: selectedMonth === monthKeys[index] ? "Select again to show all months" : "Select to filter the categories" })}
@@ -150,7 +150,7 @@ export function MoneySpendingView({
         <TableTwin label="View monthly cash flow as a table">
           <table className="money-table">
             <thead>
-              <tr><th>Month</th><th className="num">Income</th><th className="num">Refunds</th><th className="num">Spending</th><th className="num">Fees and taxes</th><th className="num">Net flow</th></tr>
+              <tr><th>Month</th><th className="num">Income</th><th className="num">Refunds deducted</th><th className="num">Net spending</th><th className="num">Fees and taxes</th><th className="num">Net flow</th></tr>
             </thead>
             <tbody>
               {[...months].reverse().map((item) => (
@@ -169,7 +169,7 @@ export function MoneySpendingView({
       </MoneyPanel>
 
       <div className="money-grid money-grid--split">
-        <MoneyPanel title="Categories" description={month ? `${formatMonth(month.month)} against each category's average` : "Share of spending and the shape of each month"}>
+        <MoneyPanel title="Categories" description={month ? `${formatMonth(month.month)} against each category's average` : "Spending after refunds and the shape of each month"}>
           <div className="mt-2 overflow-x-auto">
             {shown.length ? (
               <table className="money-table" aria-label="Spending categories">
@@ -241,7 +241,7 @@ function CategoryDetail({
     totals.set(row.description, { amount: total.amount + row.amountMinor, count: total.count + row.count });
     return totals;
   }, new Map<string, { amount: number; count: number }>())].sort((left, right) => right[1].amount - left[1].amount).slice(0, 6);
-  const topMerchant = merchants[0]?.[1].amount ?? 1;
+  const topMerchant = Math.max(...merchants.map(([, value]) => Math.abs(value.amount)), 1);
   const recent = spending.categoryActivity.filter((row) => row.category === category && period.has(row.occurredAt.slice(0, 7))).slice(0, 5);
   const total = selectedMonth ? values[labels.indexOf(selectedMonth)] ?? 0 : values.reduce((sum, value) => sum + value, 0);
   return (
@@ -288,7 +288,7 @@ function CategoryDetail({
                 <div key={row.id} className="flex items-center justify-between gap-3 py-1.5 text-sm">
                   <span className="min-w-0 truncate" title={row.description}>{row.description || row.sourceType}</span>
                   <span className="shrink-0 text-muted-foreground">{formatDay(row.occurredAt)}</span>
-                  <span className="w-20 shrink-0 text-right tabular-nums">{formatMinor(Math.abs(row.amountMinor), { precise: true })}</span>
+                  <span className="w-20 shrink-0 text-right tabular-nums">{formatMinor(row.amountMinor, { precise: true, signed: true })}</span>
                 </div>
               ))}
             </div>

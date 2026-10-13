@@ -179,13 +179,16 @@ export function SparkBars({ values, highlight, partialLast = false }: { values: 
   const height = 22;
   const gap = 2;
   const barWidth = values.length ? (width - gap * (values.length - 1)) / values.length : 0;
+  const minimum = Math.min(...values, 0);
   const maximum = Math.max(...values, 1);
+  const zero = (maximum / (maximum - minimum)) * height;
   return (
     <svg className="money-spark" width={width} height={height} aria-hidden="true">
       {values.map((value, index) => {
-        const barHeight = Math.max(1, (value / maximum) * height);
+        const barHeight = Math.max(1, (Math.abs(value) / (maximum - minimum)) * height);
         const state = index === highlight ? "on" : partialLast && index === values.length - 1 ? "partial" : "off";
-        return <rect key={index} data-state={state} x={index * (barWidth + gap)} y={height - barHeight} width={barWidth} height={barHeight} rx={1.5} />;
+        const barTop = Math.max(0, Math.min(height - barHeight, value < 0 ? zero : zero - barHeight));
+        return <rect key={index} data-state={state} x={index * (barWidth + gap)} y={barTop} width={barWidth} height={barHeight} rx={1.5} />;
       })}
     </svg>
   );
@@ -429,7 +432,7 @@ export function LineTrendChart({
 
 export type FlowMonth = Readonly<{ label: string; income: number; spending: number; net: number; partial?: boolean }>;
 
-/** Income above zero, spending below, net as a dot. One axis in euro. */
+/** Signed income and net spending on one euro axis, with net flow as a dot. */
 export function FlowChart({
   months,
   label,
@@ -451,7 +454,8 @@ export function FlowChart({
   const bottom = 24;
   const right = width - 6;
   const plotHeight = height - top - bottom;
-  const ticks = niceTicks(-Math.max(...months.map((month) => month.spending), 1), Math.max(...months.map((month) => month.income), 1), 4);
+  const amounts = months.flatMap((month) => [month.income, -month.spending, month.net]);
+  const ticks = niceTicks(Math.min(...amounts, 0), Math.max(...amounts, 1), 4);
   const y = linearScale(ticks, top, plotHeight);
   const slot = (right - left) / Math.max(months.length, 1);
   const barWidth = Math.min(24, slot * 0.56);
@@ -465,8 +469,8 @@ export function FlowChart({
             {hover !== undefined ? <rect className="money-band" x={x(hover) - slot / 2} y={top} width={slot} height={plotHeight} rx={4} /> : null}
             {months.map((month, index) => (
               <g key={month.label} data-state={month.partial ? "partial" : selected !== undefined && selected !== index ? "dim" : "on"}>
-                <rect className="money-flow-income" x={x(index) - barWidth / 2} y={y(month.income)} width={barWidth} height={Math.max(1, y(0) - y(month.income) - 1)} rx={4} />
-                <rect className="money-flow-spending" x={x(index) - barWidth / 2} y={y(0) + 1} width={barWidth} height={Math.max(1, y(-month.spending) - y(0) - 1)} rx={4} />
+                <rect className="money-flow-income" x={x(index) - barWidth / 2} y={Math.min(y(0), y(month.income))} width={barWidth} height={Math.max(1, Math.abs(y(0) - y(month.income)) - 1)} rx={4} />
+                <rect className="money-flow-spending" x={x(index) - barWidth / 2} y={Math.min(y(0), y(-month.spending))} width={barWidth} height={Math.max(1, Math.abs(y(-month.spending) - y(0)) - 1)} rx={4} />
                 <circle className="money-flow-net" cx={x(index)} cy={y(month.net)} r={3.5} />
               </g>
             ))}
@@ -508,7 +512,7 @@ export function MonthBars({
   const bottom = 22;
   const right = width - 4;
   const plotHeight = height - top - bottom;
-  const ticks = niceTicks(0, Math.max(...values, average, 1), 2);
+  const ticks = niceTicks(Math.min(...values, average, 0), Math.max(...values, average, 1), 2);
   const y = linearScale(ticks, top, plotHeight);
   const slot = (right - left) / Math.max(values.length, 1);
   const barWidth = Math.min(20, slot * 0.62);
@@ -521,7 +525,7 @@ export function MonthBars({
             <YAxis ticks={ticks} y={y} left={left} right={right} />
             {hover !== undefined ? <rect className="money-band" x={x(hover) - slot / 2} y={top} width={slot} height={plotHeight} rx={4} /> : null}
             {values.map((value, index) => (
-              <rect key={index} className="money-month-bar" data-state={index === highlight ? "on" : "off"} x={x(index) - barWidth / 2} y={y(value)} width={barWidth} height={Math.max(1, y(0) - y(value))} rx={4} />
+              <rect key={index} className="money-month-bar" data-state={index === highlight ? "on" : "off"} x={x(index) - barWidth / 2} y={Math.min(y(0), y(value))} width={barWidth} height={Math.max(1, Math.abs(y(0) - y(value)))} rx={4} />
             ))}
             <line className="money-average" x1={left} x2={right} y1={y(average)} y2={y(average)} />
             <text className="money-end-label" x={right} y={y(average) - 5} textAnchor="end">avg {formatCompact(average)}</text>
@@ -590,8 +594,8 @@ export function flowTooltip(month: MoneySpendingAnalytics["months"][number]): Ch
     title: formatMonth(month.month),
     rows: [
       ["Income", formatMinor(month.incomeMinor), SERIES.income],
-      ["Refunds", formatMinor(month.refundsMinor)],
-      ["Spending", formatMinor(-month.spendMinor), SERIES.spending],
+      ["Refunds deducted", formatMinor(month.refundsMinor)],
+      ["Net spending", formatMinor(-month.spendMinor), SERIES.spending],
       ["Fees and taxes", formatMinor(-(month.feesMinor + month.taxesMinor))],
       "divider",
       ["Net flow", formatMinor(month.netCashFlowMinor, { signed: true }), SERIES.net],
