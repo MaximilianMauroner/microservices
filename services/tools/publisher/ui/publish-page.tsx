@@ -11,13 +11,8 @@ import { Card } from "../../src/components/ui/card.js";
 import { Input } from "../../src/components/ui/input.js";
 import type { UploadSummary } from "../../src/protected-data.js";
 import { fetchPublisherRead, waitForPublisher } from "./publisher-request.js";
-import {
-  UploadCancelledError,
-  friendlyUploadError,
-  parseErrorPayload,
-  shouldUseChunkedUpload,
-  uploadChunkedFile
-} from "./chunked-upload.js";
+import { UploadCancelledError } from "./upload-errors.js";
+import { uploadDirectFile } from "./direct-upload.js";
 import { PageHeader } from "../../src/components/page-header.js";
 import { formatDateTime } from "../../src/lib/format-date.js";
 
@@ -40,53 +35,6 @@ function isAbortError(error: unknown, signal?: AbortSignal | null) {
     (error instanceof DOMException && error.name === "AbortError") ||
     (error instanceof Error && error.name === "AbortError")
   );
-}
-
-function uploadExternalFile(
-  file: File,
-  onProgress: (loaded: number, total: number, lengthComputable: boolean) => void,
-  onProcessing: () => void,
-  registerXhr: (xhr: XMLHttpRequest | null) => void,
-  options: { persistentHtml: boolean; project: string }
-): Promise<UploadSummary> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    registerXhr(xhr);
-    xhr.upload.addEventListener("progress", (event) => {
-      onProgress(event.loaded, event.total, event.lengthComputable);
-    });
-    xhr.upload.addEventListener("load", () => {
-      onProcessing();
-    });
-    xhr.addEventListener("load", () => {
-      registerXhr(null);
-      const payload = parseErrorPayload(xhr.responseText) as (UploadSummary & { message?: string }) | undefined;
-      if (xhr.status >= 200 && xhr.status < 300 && payload && "url" in payload && typeof payload.url === "string") {
-        resolve(payload as UploadSummary);
-        return;
-      }
-      reject(new Error(friendlyUploadError(xhr.status, payload?.message)));
-    });
-    xhr.addEventListener("error", () => {
-      registerXhr(null);
-      reject(new Error("The connection was interrupted. Check your network, then retry."));
-    });
-    xhr.addEventListener("abort", () => {
-      registerXhr(null);
-      reject(new UploadCancelledError());
-    });
-    xhr.addEventListener("timeout", () => {
-      registerXhr(null);
-      reject(new Error("The upload timed out. Try again with a smaller file or better connection."));
-    });
-    xhr.open("POST", options.persistentHtml ? "/api/browser-html-uploads" : "/api/external-uploads");
-    xhr.setRequestHeader("Accept", "application/json");
-    xhr.withCredentials = true;
-    const form = new FormData();
-    form.append("file", file);
-    if (options.persistentHtml && options.project.trim()) form.append("project", options.project.trim());
-    xhr.send(form);
-  });
 }
 
 function statusBadgeVariant(status: ItemStatus): "positive" | "secondary" | "destructive" | "outline" {
@@ -162,41 +110,18 @@ export function PublishPage() {
         activeXhr.current = xhr;
       };
       const htmlPlan = /\.html?$/i.test(file.name);
-      const htmlFile = htmlPlan && file.type !== "text/html" ? new File([file], file.name, { type: "text/html" }) : file;
-      let payload = !htmlPlan && shouldUseChunkedUpload(file.size)
-        ? await uploadChunkedFile(
-            htmlFile,
-            {
-              onProgress: (loaded, total) => {
-                const percent = total > 0 ? Math.min(100, Math.round((loaded / total) * 100)) : 0;
-                updateItem(key, {
-                  status: "uploading",
-                  loaded,
-                  percent,
-                  note: `Sending ${formatBytes(loaded)} of ${formatBytes(total)} in small requests`
-                });
-              },
-              onProcessing,
-              registerXhr,
-              isCancelled: () => cancelRequested.current
-            }
-          )
-        : await uploadExternalFile(
-            htmlFile,
-            (loaded, total, lengthComputable) => {
-              const totalBytes = lengthComputable && total > 0 ? total : file.size;
-              const percent = totalBytes > 0 ? Math.min(100, Math.round((loaded / totalBytes) * 100)) : 0;
-              updateItem(key, {
-                status: "uploading",
-                loaded: Math.min(loaded, Math.max(totalBytes, file.size)),
-                percent,
-                note: `Sending ${formatBytes(Math.min(loaded, Math.max(totalBytes, file.size)))} of ${formatBytes(file.size)}`
-              });
-            },
-            onProcessing,
-            registerXhr,
-            { persistentHtml: htmlPlan, project: htmlProject }
-          );
+      const htmlFile = htmlPlan && file.type !== "text/html" ? new File([file], file.name, { type: "text/html", lastModified: file.lastModified }) : file;
+      let payload = await uploadDirectFile(htmlFile, {
+        onProgress: (loaded, total) => {
+          const percent = total > 0 ? Math.min(100, Math.round((loaded / total) * 100)) : 0;
+          updateItem(key, { status: "uploading", loaded, percent,
+            note: `Sending ${formatBytes(loaded)} of ${formatBytes(total)}` });
+        },
+        onProcessing,
+        registerXhr,
+        isCancelled: () => cancelRequested.current,
+        signal
+      }, { kind: htmlPlan ? "html" : "file", ...(htmlPlan && htmlProject.trim() ? { project: htmlProject } : {}) });
       let expiryApplied = true;
       if (!htmlPlan && fileExpiry !== "3") {
         try {

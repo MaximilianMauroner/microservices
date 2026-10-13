@@ -42,7 +42,23 @@ are `MAX_UPLOAD_BYTES`, `MAX_HTML_UPLOAD_BYTES`, `MAX_CONCURRENT_UPLOADS`,
 `TEMPORARY_FILE_RETENTION_MS`, `TEMPORARY_FILE_CLEANUP_INTERVAL_MS`, and
 `S3_FORCE_PATH_STYLE`. Numeric values must be positive base-10 integers.
 
-## Native upload API
+## Direct transfers
+
+The React console and guest page send every new file directly to private storage
+through durable multipart sessions. Tools authorizes short-lived URLs, verifies
+actual stored bytes, and commits canonical metadata in PostgreSQL. Interrupted
+uploads can resume after web sleep or restart without local chunk files.
+
+Native agents can use `pnpm upload:direct <file> [request-id]` with
+`PUBLIC_BASE_URL` and `UPLOAD_TOKEN`, or `/api/uploads/sessions`. Browser session
+routes use `/api/external-uploads/sessions`; guest routes use
+`/api/drop/:token/uploads/sessions`. No bucket credential is sent to a client.
+
+See [direct transfers](../../../docs/tools-platform/direct-transfers.md) for the
+protocol, integrity validation, limits, recovery, retained caller compatibility,
+CORS configuration, and unapplied production rollout steps.
+
+## Native compatibility API
 
 The endpoint accepts exactly one file field named `file` and an optional
 `project` field for persistent HTML plans:
@@ -89,7 +105,7 @@ curl -fsS -X PATCH "$PUBLIC_BASE_URL/api/uploads/$UPLOAD_ID" \
   --data '{"expiresAt":"2026-10-01T12:00:00.000Z"}'
 ```
 
-Large native file uploads use the same chunk protocol as the browser under
+Legacy native file uploads retain the chunk protocol under
 `/api/uploads/chunks`. Every request retains the native bearer credential:
 
 ```http
@@ -135,7 +151,7 @@ upload token.
 The same page can create a guest upload link for 1 hour, 1 day, 3 days, 7 days,
 or 30 days. Link management stays session-protected. The guest page and its
 upload requests are public capability routes; multiple selected files are sent
-sequentially, and files above 80 MB use token-scoped 20 MB chunks. Guest pages
+sequentially through durable direct sessions. Guest pages
 cannot list prior uploads. Received files use
 at least the link lifetime for retention and appear in the authenticated
 library. The owner can stream every still-retained file received through one
@@ -143,33 +159,10 @@ link as a ZIP64 archive, including after revoking that link.
 The private upload-link history loads 20 newest-first rows at a time through an
 opaque keyset cursor, with older rows available on demand.
 
-Files larger than 80 MB are split by the browser into 20 MB chunk requests
-and reassembled by the server, because public edge proxies cap a single
-request body well below the application limit (Cloudflare allows 100 MB on
-Free/Pro plans):
-
-```http
-POST /api/external-uploads/chunks
-Content-Type: application/json
-
-{"filename":"backup.bin","contentType":"application/octet-stream","totalBytes":262144000,"totalChunks":13,"chunkBytes":20971520}
-```
-
-```http
-PUT /api/external-uploads/chunks/:sessionId/:index
-Content-Type: application/octet-stream
-
-<raw chunk bytes>
-```
-
-```http
-POST /api/external-uploads/chunks/:sessionId/complete
-```
-
-A complete call with missing chunks returns `409 incomplete_upload` with a
-`missing` index list so the client can resume them. `DELETE
-/api/external-uploads/chunks/:sessionId` abandons a session. Sessions expire
-after two hours. Chunked uploads always create temporary files.
+The current browser uses direct sessions for small and large files. Legacy
+browser multipart/chunk routes remain for already loaded bundles during rollout;
+the native chunk protocol remains for observed external callers. Those paths
+retain local staging and their existing two-hour session limit.
 
 `GET /api/external-uploads` accepts `kind=all|html|file`, a normalized
 case-insensitive filename `q`, `expiry=all|24h|7d|persistent`, and
@@ -196,15 +189,15 @@ without changing the stored artifact. File downloads support `HEAD` and
 one standard byte range. Missing, revoked, and expired capability URLs return
 `404`. Malformed canonical or legacy percent encoding returns `404`.
 
-MP4 `GET` requests and temporary file `GET` requests of at least 8 MiB use a
+Non-conditional file `GET` requests of every size use a
 temporary signed object-storage URL after the canonical capability is checked.
 Large non-video files are signed with attachment disposition, a binary content
 type, and private no-store caching. The redirect is `private, no-store`; its signed
 storage URL is valid for at most four hours (less near file expiry) so playback
 and later seeks can use the same URL. A client following the redirect
 receives full and byte-range responses from storage instead of sending
-those bytes through the Tools service. `HEAD`, small non-video files, and requests
-with `If-Range` retain the original service response. If signing fails, the
+those bytes through the Tools service. `HEAD`, conditional requests, and requests
+with `If-Range` retain the canonical service response. If signing fails, the
 original service response is used. Revoking a capability
 stops new redirects and deletes the object, invalidating previously signed
 URLs once storage processes the deletion. Shortening an existing file's expiry
@@ -241,4 +234,5 @@ range_not_satisfiable`, and `503 upload_capacity_reached`.
 Cleanup checks each expiring file at startup and at the configured
 interval without overlapping sweeps. A failure on one object does not stop
 later cleanup work. Files with no expiry remain until revoked. Production
-cleanup runs inside the always-awake unified platform service.
+cleanup runs at startup and on the existing hourly schedule. It also aborts expired
+or abandoned direct multipart sessions; active sessions survive web sleep.

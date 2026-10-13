@@ -6,6 +6,19 @@ import {
 } from "../src/index.js";
 
 describe("central platform route policy", () => {
+  it("keeps direct transfer owners on their existing authentication boundaries", () => {
+    const session = "123e4567-e89b-42d3-a456-426614174000";
+    expect(classifyRoute("/api/uploads/sessions", "POST")).toEqual({ kind: "machine", service: "uploads" });
+    expect(classifyRoute(`/api/uploads/sessions/${session}/parts`, "POST")).toEqual({ kind: "machine", service: "uploads" });
+    expect(classifyRoute(`/api/external-uploads/sessions/${session}`, "GET")).toEqual({ kind: "human-session" });
+    expect(classifyRoute("/api/external-uploads/sessions", "POST")).toEqual({ kind: "human-session" });
+    expect(classifyRoute(`/api/drop/capability/uploads/sessions/${session}`, "GET")).toEqual({ kind: "public" });
+    expect(classifyRoute(`/api/drop/capability/uploads/sessions/${session}/parts`, "POST")).toEqual({ kind: "public" });
+    expect(classifyRoute(`/api/drop/capability/uploads/sessions/${session}/complete`, "POST")).toEqual({ kind: "public" });
+    expect(classifyRoute(`/api/drop/capability/uploads/sessions/${session}`, "PUT")).toEqual({ kind: "human-session" });
+    expect(classifyRoute(`/api/drop/capability/uploads/sessions/${session}/unexpected`, "GET")).toEqual({ kind: "human-session" });
+  });
+
   it("keeps public reads, human sessions, and machine APIs distinct", () => {
     expect(classifyRoute("/", "GET")).toEqual({ kind: "human-session" });
     expect(classifyRoute("/sign-in", "GET")).toEqual({ kind: "public" });

@@ -14,6 +14,8 @@ import {
   type UploadStorage
 } from "./storage.js";
 import { createS3UploadStorage, summarizeUploads } from "./storage.js";
+import { createDirectUploads } from "./direct-uploads.js";
+import { createMultipartStorage } from "./multipart-storage.js";
 
 type ArtifactRow = {
   id: string;
@@ -27,6 +29,7 @@ type ArtifactRow = {
   updated_at: Date;
   expires_at: Date | null;
   upload_link_id: string | null;
+  sha256: string | null;
 };
 
 type PendingOperation = {
@@ -34,7 +37,7 @@ type PendingOperation = {
   artifact_id: string;
   owner_id: string;
   operation_kind: "put_html" | "put_file" | "delete";
-  payload: UpsertArtifact | null;
+  payload: UpsertArtifact | string | null;
 };
 
 const OPERATION_LEASE_MS = 6 * 60 * 60 * 1000;
@@ -46,7 +49,15 @@ export function createPostgresUploadStorage(
 ): UploadStorage {
   const bodies = createS3UploadStorage(s3Config);
   const sql = postgres(databaseUrl, { max: 5, idle_timeout: 120 });
-  return createMetadataBackedUploadStorage(bodies, sql);
+  const storage = createMetadataBackedUploadStorage(bodies, sql);
+  // Separate bounded lock connections keep long verification reads from
+  // starving the durable writes that must happen before S3 completion.
+  const locks = postgres(databaseUrl, { max: 2, idle_timeout: 120 });
+  storage.directUploads = createDirectUploads(sql, createMultipartStorage(s3Config), locks);
+  const endpoint = new URL(s3Config.endpoint);
+  storage.uploadOrigins = [endpoint.origin, ...(s3Config.forcePathStyle ? [] :
+    [`${endpoint.protocol}//${s3Config.bucket}.${endpoint.host}`])];
+  return storage;
 }
 
 export function createMetadataBackedUploadStorage(
@@ -56,15 +67,17 @@ export function createMetadataBackedUploadStorage(
   return {
     async putHtml(id, filePath, metadata, options) {
       await reconcileArtifactOperations(bodies, sql, options);
+      const current = await find(sql, id, "html");
+      const objectKey = current?.object_key ?? htmlKey(id);
       const now = new Date();
       const intended: UpsertArtifact = {
         id, kind: "html", filename: metadata.originalName,
         contentType: "text/html; charset=utf-8", bytes: metadata.bytes,
-        objectKey: htmlKey(id), project: metadata.project, sha256: metadata.sha256, now
+        objectKey, project: metadata.project, sha256: metadata.sha256, now
       };
       await runDurableMutation({
         prepare: () => prepare(sql, id, "put_html", intended),
-        mutate: () => bodies.putHtml(id, filePath, metadata, options),
+        mutate: () => bodies.putHtml(id, filePath, metadata, { ...options, objectKey }),
         reconcile: (operation) => reconcileOperation(bodies, sql, { operation_id: operation.operationId, owner_id: operation.ownerId, artifact_id: id, operation_kind: "put_html", payload: intended }, options),
         finalize: async (operation) => { await finalizePut(sql, operation, intended); }
       });
@@ -73,10 +86,10 @@ export function createMetadataBackedUploadStorage(
       await reconcileArtifactOperations(bodies, sql, options);
       const row = await find(sql, id, "html");
       if (!row) return null;
-      const object = await bodies.getHtml(id, options);
+      const object = await bodies.getHtml(id, { ...options, objectKey: row.object_key });
       if (!object) return null;
       const { project: _legacyProject, ...body } = object;
-      return { ...body, bytes: Number(row.bytes), lastModified: row.updated_at, ...(row.project ? { project: row.project } : {}) };
+      return { ...body, bytes: Number(row.bytes), sha256: row.sha256 ?? body.sha256, lastModified: row.updated_at, ...(row.project ? { project: row.project } : {}) };
     },
     async putTemporaryFile(id, filePath, metadata, options) {
       await reconcileArtifactOperations(bodies, sql, options);
@@ -111,7 +124,7 @@ export function createMetadataBackedUploadStorage(
       if (!row) return null;
       let object: StoredTemporaryFile | null;
       try {
-        object = await bodies.getTemporaryFile(id, options);
+        object = await bodies.getTemporaryFile(id, { ...options, objectKey: row.object_key });
       } catch (error) {
         if (error instanceof RangeNotSatisfiableError) {
           throw new RangeNotSatisfiableError(error.totalBytes, row.expires_at ?? undefined);
@@ -128,13 +141,15 @@ export function createMetadataBackedUploadStorage(
         contentType: row.content_type,
         originalName: row.filename,
         ...(row.expires_at ? { expiresAt: row.expires_at } : {}),
-        lastModified: row.updated_at
+        lastModified: row.updated_at,
+        sha256: row.sha256 ?? body.sha256
       };
     },
     async presignTemporaryFile(id, expiresInSeconds, delivery) {
       await reconcileArtifactOperations(bodies, sql);
-      if (!await find(sql, id, "file")) return null;
-      return bodies.presignTemporaryFile?.(id, expiresInSeconds, delivery) ?? null;
+      const row = await find(sql, id, "file");
+      if (!row) return null;
+      return bodies.presignTemporaryFile?.(id, expiresInSeconds, delivery, { objectKey: row.object_key }) ?? null;
     },
     async listUploads(asOf, options) {
       await reconcileArtifactOperations(bodies, sql, options);
@@ -155,7 +170,9 @@ export function createMetadataBackedUploadStorage(
     },
     async updateFileExpiry(id, expiresAt, options) {
       await reconcileArtifactOperations(bodies, sql, options);
-      const bodyUpdated = await bodies.updateFileExpiry(id, expiresAt, options);
+      const row = await find(sql, id, "file");
+      if (!row) return false;
+      const bodyUpdated = await bodies.updateFileExpiry(id, expiresAt, { ...options, objectKey: row.object_key });
       if (!bodyUpdated) return false;
       const rows = await sql<{ id: string }[]>`
         update artifacts.objects set expires_at = ${expiresAt}, updated_at = now()
@@ -176,6 +193,7 @@ export function createMetadataBackedUploadStorage(
       await finalizeDelete(sql, operation, id);
     },
     async deleteExpiredTemporaryFiles(expiresAtOrBefore, options) {
+      await this.directUploads?.cleanup(options?.signal);
       const rows = await sql<{ id: string }[]>`
         select id from artifacts.objects
         where kind = 'file' and revoked_at is null and expires_at <= ${expiresAtOrBefore}
@@ -188,6 +206,7 @@ export function createMetadataBackedUploadStorage(
       return deleted;
     },
     async close() {
+      await this.directUploads?.close();
       await bodies.close?.();
       await sql.end();
     }
@@ -217,7 +236,7 @@ async function prepare(sql: Sql, artifactId: string, kind: PendingOperation["ope
   const operationId = crypto.randomUUID();
   const ownerId = crypto.randomUUID();
   await sql`insert into artifacts.operations (operation_id, artifact_id, owner_id, lease_until, operation_kind, payload)
-    values (${operationId}, ${artifactId}, ${ownerId}, now() + ${OPERATION_LEASE_MS} * interval '1 millisecond', ${kind}, ${payload ? JSON.stringify(payload) : null}::jsonb)`;
+    values (${operationId}, ${artifactId}, ${ownerId}, now() + ${OPERATION_LEASE_MS} * interval '1 millisecond', ${kind}, ${payload ? sql.json(payload) : null})`;
   return { operationId, ownerId };
 }
 
@@ -275,8 +294,8 @@ async function reconcileOperation(bodies: UploadStorage, sql: Sql, operation: Pe
   if (!operation.payload) throw new Error(`Artifact operation ${operation.operation_id} has no payload`);
   const payload = hydratePayload(operation.payload);
   const stored = operation.operation_kind === "put_html"
-    ? await bodies.getHtml(operation.artifact_id, { ...options, headOnly: true })
-    : await bodies.getTemporaryFile(operation.artifact_id, { ...options, headOnly: true });
+    ? await bodies.getHtml(operation.artifact_id, { ...options, headOnly: true, objectKey: payload.objectKey })
+    : await bodies.getTemporaryFile(operation.artifact_id, { ...options, headOnly: true, objectKey: payload.objectKey });
   if (stored?.sha256 === payload.sha256) {
     const operationOwner = owner(operation);
     const finalized = await finalizePut(sql, operationOwner, payload);
@@ -300,27 +319,44 @@ export function assertOperationOwnership(owned: boolean, operationId: string) {
   if (!owned) throw new Error(`Artifact operation ${operationId} is no longer owned by this writer`);
 }
 
-function hydratePayload(payload: UpsertArtifact): UpsertArtifact {
-  return { ...payload, now: new Date(payload.now), ...(payload.expiresAt ? { expiresAt: new Date(payload.expiresAt) } : {}) };
+function hydratePayload(payload: UpsertArtifact | string): UpsertArtifact {
+  // Earlier writers encoded JSON twice. Retain reads for their pending recovery
+  // records until those operations have been reconciled; new writes use sql.json.
+  const value: unknown = typeof payload === "string" ? JSON.parse(payload) : payload;
+  if (!value || typeof value !== "object" || !("id" in value) || typeof value.id !== "string"
+    || !("kind" in value) || (value.kind !== "html" && value.kind !== "file")
+    || !("filename" in value) || typeof value.filename !== "string"
+    || !("contentType" in value) || typeof value.contentType !== "string"
+    || !("bytes" in value) || typeof value.bytes !== "number"
+    || !("objectKey" in value) || typeof value.objectKey !== "string"
+    || !("sha256" in value) || typeof value.sha256 !== "string"
+    || !("now" in value) || (typeof value.now !== "string" && !(value.now instanceof Date))) {
+    throw new Error("Invalid artifact recovery payload");
+  }
+  return { id: value.id, kind: value.kind, filename: value.filename, contentType: value.contentType,
+    bytes: value.bytes, objectKey: value.objectKey, sha256: value.sha256, now: new Date(value.now),
+    ...("project" in value && typeof value.project === "string" ? { project: value.project } : {}),
+    ...("uploadLinkId" in value && typeof value.uploadLinkId === "string" ? { uploadLinkId: value.uploadLinkId } : {}),
+    ...("expiresAt" in value && (typeof value.expiresAt === "string" || value.expiresAt instanceof Date) ? { expiresAt: new Date(value.expiresAt) } : {}) };
 }
 
 async function upsert(sql: Sql | TransactionSql, value: UpsertArtifact) {
   await sql`
     insert into artifacts.objects
-      (id, kind, filename, content_type, bytes, object_key, project, created_at, updated_at, expires_at, upload_link_id)
+      (id, kind, filename, content_type, bytes, object_key, project, created_at, updated_at, expires_at, upload_link_id, sha256)
     values (${value.id}, ${value.kind}, ${value.filename}, ${value.contentType}, ${value.bytes},
-      ${value.objectKey}, ${value.project ?? null}, ${value.now}, ${value.now}, ${value.expiresAt ?? null}, ${value.uploadLinkId ?? null})
+      ${value.objectKey}, ${value.project ?? null}, ${value.now}, ${value.now}, ${value.expiresAt ?? null}, ${value.uploadLinkId ?? null}, ${value.sha256})
     on conflict (id) do update set
       kind = excluded.kind, filename = excluded.filename, content_type = excluded.content_type,
       bytes = excluded.bytes, object_key = excluded.object_key, project = excluded.project,
       updated_at = excluded.updated_at, expires_at = excluded.expires_at,
-      upload_link_id = excluded.upload_link_id, revoked_at = null`;
+      upload_link_id = excluded.upload_link_id, sha256 = excluded.sha256, revoked_at = null`;
 }
 
 async function find(sql: Sql, id: string, kind: "html" | "file") {
   const [row] = await sql<ArtifactRow[]>`
     select id, kind, filename, content_type, bytes::text, object_key, project,
-           created_at, updated_at, expires_at
+           created_at, updated_at, expires_at, sha256
     from artifacts.objects where id = ${id} and kind = ${kind} and revoked_at is null
   `;
   return row;
