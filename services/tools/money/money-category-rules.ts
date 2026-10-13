@@ -1,5 +1,6 @@
 import { moneyDisplayDescription } from "./money-description.js";
-import type { MoneyCategory } from "./money-enums.js";
+import type { MoneyCategory, MoneyTransferDisposition } from "./money-enums.js";
+import type { MoneyFlowKind } from "./money-import-domain.js";
 import { MONEY_TEXT_MATCHES, moneyTextMatcher, type MoneyTextMatch } from "./money-text-match.js";
 
 export const MONEY_CATEGORY_RULE_FIELDS = ["description", "mcc", "source_type"] as const;
@@ -39,4 +40,10 @@ export function categoryRuleMatcher<Rule extends MoneyCategoryRuleDefinition>(ru
     };
     return compiled.find(({ rule, test }) => (rule.accountId === undefined || rule.accountId === subject.accountId) && test(text[rule.matchField]))?.rule;
   };
+}
+
+/** Rules decide spending and refunds, including unlinked transfers reviewed as spending or refunds. Other rows take the category their flow implies. */
+export function isRuleCategorized(row: Readonly<{ flowKind: MoneyFlowKind; transferGroupId?: string | null; transferDisposition?: MoneyTransferDisposition | null }>) {
+  if (row.flowKind === "spend" || row.flowKind === "refund") return true;
+  return row.flowKind === "transfer" && !row.transferGroupId && (row.transferDisposition === "spend" || row.transferDisposition === "refund");
 }

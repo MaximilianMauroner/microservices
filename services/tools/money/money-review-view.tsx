@@ -10,6 +10,7 @@ import { Badge } from "../src/components/ui/badge.js";
 import { Button } from "../src/components/ui/button.js";
 import { BalanceForm } from "./money-balance-form.js";
 import { MoneyCategoryPicker, moneyCategoryLabel } from "./money-category-picker.js";
+import { isRuleCategorized } from "./money-category-rules.js";
 import { MoneyImportDrop, MoneyImportHistory } from "./money-ledger-views.js";
 import { MoneyRulesView } from "./money-rules-view.js";
 import { MONEY_REVIEW_TABS, type MoneyReviewTab } from "./money-tracker-navigation.js";
@@ -110,12 +111,11 @@ function CategorizeQueue({ items, common, total, spendingRows }: { items: readon
   const [error, setError] = useState<string>();
   const open = items.filter((item) => !done.some((entry) => entry.id === item.id));
   const picks = (item: MoneyReviewCategoryItem) => [...new Set([...item.suggestions, ...common])].slice(0, 3);
-  const canRule = (item: MoneyReviewCategoryItem) => item.flowKind === "spend" || item.flowKind === "refund";
   const apply = async (item: MoneyReviewCategoryItem, category: MoneyCategory) => {
     setSaving(item.id);
     setError(undefined);
     try {
-      const createRule = canRule(item) && scope[item.id] === "merchant";
+      const createRule = isRuleCategorized(item) && scope[item.id] === "merchant";
       const response = await fetch("/api/money/categories", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -150,7 +150,7 @@ function CategorizeQueue({ items, common, total, spendingRows }: { items: readon
       <ul className="mt-2 divide-y border-t">
         {open.map((item) => {
           const options = picks(item);
-          const rule = canRule(item);
+          const rule = isRuleCategorized(item);
           return (
             <li key={item.id} className="grid gap-2 px-4 py-3">
               <div className="flex items-baseline justify-between gap-3">
