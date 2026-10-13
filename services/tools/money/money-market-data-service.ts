@@ -222,9 +222,13 @@ function historyPoints(inputs: Awaited<ReturnType<MoneyMarketDataRepository["rea
   let target7PercentMinor: number | undefined;
   let previousCostBasisMinor: number | undefined;
   let previousDate: string | undefined;
+  let openPositions: ReturnType<typeof fifoInvestmentLots>["openPositions"] = [];
 
   return dates.flatMap((date) => {
+    const eventCount = eventIndex;
     while (eventIndex < events.length && events[eventIndex]!.localDate <= date) activeEvents.push(events[eventIndex++]!);
+    // Lots change only on days with events; most price days reuse the previous result.
+    if (eventIndex !== eventCount) openPositions = fifoInvestmentLots(activeEvents.map(lotEvent)).openPositions;
     while (priceIndex < prices.length && prices[priceIndex]!.date <= date) {
       const price = prices[priceIndex++]!;
       latestPrices.set(price.canonicalKey, price);
@@ -233,7 +237,6 @@ function historyPoints(inputs: Awaited<ReturnType<MoneyMarketDataRepository["rea
     while (inflationIndex < inflationIndices.length && inflationIndices[inflationIndex]!.date <= date) {
       latestInflation = Number(inflationIndices[inflationIndex++]!.value);
     }
-    const openPositions = fifoInvestmentLots(activeEvents.map(lotEvent)).openPositions;
     if (!openPositions.length) {
       previousCostBasisMinor = 0;
       previousDate = date;
