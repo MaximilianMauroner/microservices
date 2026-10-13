@@ -79,9 +79,9 @@ describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", () => {
       ...(body ? { "Content-Type": "application/json" } : {}) }, ...(body ? { body } : {}) }));
   }
 
-  async function initialize(bytes: number, options: { base?: string; filename?: string; kind?: "html" | "file"; contentType?: string; project?: string } = {}) {
+  async function initialize(bytes: number, options: { base?: string; requestId?: string; filename?: string; kind?: "html" | "file"; contentType?: string; project?: string } = {}) {
     const base = options.base ?? "/api/uploads/sessions";
-    const id = crypto.randomUUID();
+    const id = options.requestId ?? crypto.randomUUID();
     const response = await request(base, "POST", { requestId: id, filename: options.filename ?? "fixture.bin",
       contentType: options.contentType ?? "application/octet-stream", totalBytes: bytes, kind: options.kind ?? "file", ...(options.project ? { project: options.project } : {}) });
     if (response.status !== 201) console.info("initialization failure", await response.clone().json());
@@ -237,6 +237,42 @@ describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", () => {
     expect((await pending).status).toBe(201);
     pause.mockRestore();
     expect((await request(two.path + "/complete")).status).toBe(201);
+  });
+
+  it("serializes UUID case variants while completion verifies stored bytes", async () => {
+    const session = await initialize(4, { requestId: crypto.randomUUID().replace(/^./, "a") });
+    await put(session, 1, Buffer.from("test"));
+    const uppercasePath = session.path.replace(session.sessionId, session.sessionId.toUpperCase());
+    const original = bucket.verify.bind(bucket);
+    const entered = deferred();
+    const release = deferred();
+    const pause = vi.spyOn(bucket, "verify").mockImplementationOnce(async (...args) => {
+      entered.resolve(); await release.promise; return original(...args);
+    });
+    const pending = request(session.path + "/complete");
+    await entered.promise;
+    const before = await sql`select state, parts, manifest, upload_id from artifacts.upload_sessions where session_id = ${session.sessionId}::uuid`;
+    try {
+      const operations = [
+        () => request(uppercasePath + "/parts", "POST", { number: 1, sha256: digest(Buffer.from("test")) }),
+        () => request(uppercasePath + "/complete"),
+        () => request(uppercasePath, "DELETE"),
+        () => request("/api/uploads/sessions", "POST", { requestId: session.sessionId.toUpperCase(),
+          filename: "fixture.bin", contentType: "application/octet-stream", totalBytes: 4, kind: "file" })
+      ];
+      for (const operation of operations) {
+        const response = await operation();
+        expect(response.status).toBe(409);
+        expect(await response.json()).toMatchObject({ error: "upload_busy" });
+      }
+      expect(await sql`select state, parts, manifest, upload_id from artifacts.upload_sessions where session_id = ${session.sessionId}::uuid`).toEqual(before);
+      expect((await sql`select id from artifacts.objects where id = (select artifact_id from artifacts.upload_sessions where session_id = ${session.sessionId}::uuid)`).length).toBe(0);
+    } finally {
+      release.resolve();
+      expect((await pending).status).toBe(201);
+      pause.mockRestore();
+    }
+    expect((await request(uppercasePath + "/complete")).status).toBe(201);
   });
 
   it("recovers and aborts multipart initialization with a lost upload ID", async () => {
