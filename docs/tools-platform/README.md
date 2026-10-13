@@ -21,6 +21,7 @@ awake between runs.
 
 - [runtime-boundaries.md](./runtime-boundaries.md): service and product ownership.
 - [access-incident.md](./access-incident.md): authentication containment and recovery.
+- [direct-transfers.md](./direct-transfers.md): durable direct uploads, signed downloads, and reviewed rollout.
 - [bucket-recovery.md](./bucket-recovery.md): PostgreSQL and object-storage recovery.
 - [predeploy-interruption.md](./predeploy-interruption.md): failed schema push handling and the October 5 database interruption.
 

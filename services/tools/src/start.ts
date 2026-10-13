@@ -60,9 +60,7 @@ const platformRequestMiddleware = createMiddleware().server(
         documentContentSecurityPolicy(
           nonce,
           process.env.NODE_ENV === "development",
-          markdownShare
-            ? markdownShareClientConfig.connectOrigins
-            : [],
+          [...runtime.artifactUploadOrigins, ...(markdownShare ? markdownShareClientConfig.connectOrigins : [])],
           markdownShare
         )
       );
