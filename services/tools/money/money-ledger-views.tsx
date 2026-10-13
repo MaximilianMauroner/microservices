@@ -566,8 +566,7 @@ export function MoneyInvestmentsView({
           </PanelBody>
           {history.length ? (
             <>
-              <details className="money-twin">
-                <summary>Growth against inflation and the 7% target</summary>
+              <TableTwin label="Growth against inflation and the 7% target">
                 <div className="px-4 pb-4">
                   <p className="mb-2 text-xs text-muted-foreground">Index 100 is the remaining cost basis.</p>
                   <Legend>
@@ -579,7 +578,7 @@ export function MoneyInvestmentsView({
                     <PortfolioBenchmarkChart data={chartHistory} />
                   </ChartContainer>
                 </div>
-              </details>
+              </TableTwin>
               <PortfolioHistoryDisclosure history={history} />
             </>
           ) : null}
@@ -1072,10 +1071,7 @@ function InvestmentActivityHistory({
     );
   return (
     <>
-      <details className="money-twin">
-        <summary>
-          Realized gains · {realized.totals.saleCount.toLocaleString("en-GB")} matched sale{realized.totals.saleCount === 1 ? "" : "s"} · {formatMinor(realized.totals.gainMinor, { signed: true })}
-        </summary>
+      <TableTwin label={`Realized gains · ${realized.totals.saleCount.toLocaleString("en-GB")} matched sale${realized.totals.saleCount === 1 ? "" : "s"} · ${formatMinor(realized.totals.gainMinor, { signed: true })}`}>
         {realized.totals.unmatchedSaleCount ? (
           <p className="px-4 pb-2 text-sm text-warning" role="note">
             {realized.totals.unmatchedSaleCount.toLocaleString("en-GB")} sale{realized.totals.unmatchedSaleCount === 1 ? "" : "s"} could not be matched to an earlier purchase. Their proceeds are left out.
@@ -1114,11 +1110,8 @@ function InvestmentActivityHistory({
             <EmptyState title="No realized gains yet">They appear after a sale is matched to earlier purchases.</EmptyState>
           )}
         </div>
-      </details>
-      <details className="money-twin">
-        <summary>
-          Trade totals by asset · {positions.length.toLocaleString("en-GB")} assets · {formatMinor(totals.feesMinor + totals.taxesMinor)} fees and taxes
-        </summary>
+      </TableTwin>
+      <TableTwin label={`Trade totals by asset · ${positions.length.toLocaleString("en-GB")} assets · ${formatMinor(totals.feesMinor + totals.taxesMinor)} fees and taxes`}>
         <div className="overflow-x-auto">
           {positions.length ? (
             <table className="money-table" aria-label="Trade-derived investment quantities table">
@@ -1152,7 +1145,7 @@ function InvestmentActivityHistory({
             <EmptyState title="No investment events">Import a trading statement or portfolio CSV.</EmptyState>
           )}
         </div>
-      </details>
+      </TableTwin>
     </>
   );
 }

@@ -92,7 +92,8 @@ describe("Money redesign views", () => {
     expect(html).toMatch(/Combined<\/span>.*Market<\/span>.*Cash<\/span>/s);
     expect(html).toContain("Combined net worth, market, and cash from");
     expect(html.match(/class="money-series"/g)).toHaveLength(3);
-    expect(html).toMatch(/<th class="num">Cash<\/th><th class="num">Market<\/th><th class="num">Combined<\/th>/);
+    expect(html).toContain("View net worth as a table");
+    expect(html).not.toContain('<th class="num">Combined</th>');
   });
 
   it("marks old balances in Accounts and offers the update in the row", () => {
@@ -102,7 +103,7 @@ describe("Money redesign views", () => {
     expect(html).toMatch(/Tagesgeld[\s\S]*text-warning[^>]*>Jan 26/);
     expect(html.match(/>Update</g)).toHaveLength(2);
     expect(html).toContain("Monthly snapshots (2)");
-    expect(html).toContain("1 carried");
+    expect(html).not.toContain("1 carried");
   });
 
   it("explains why Plan needs more history", () => {
@@ -116,7 +117,7 @@ describe("Money redesign views", () => {
     expect(html).toContain("4.950 €");
     expect(html).toContain("8.000 €");
     expect(html).not.toContain("8.050 €");
-    expect(html).toContain("Refunds deducted");
+    expect(html).toContain("Refunds lower spending");
     expect(html).toContain("+3.045 €");
     expect(html).toContain("Review 1 rows");
     expect(html).toContain("3 transfers still need a treatment.");

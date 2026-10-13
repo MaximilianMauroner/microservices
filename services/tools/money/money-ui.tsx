@@ -117,11 +117,12 @@ export function Stat({ label, value, detail, tone }: { label: string; value: Rea
 
 /** The table view of a chart, closed by default. */
 export function TableTwin({ label, children }: { label: string; children: ReactNode }) {
+  const [opened, setOpened] = useState(false);
   return (
-    <details className="money-twin">
+    <details className="money-twin" onToggle={(event) => { if (event.currentTarget.open) setOpened(true); }}>
       <summary>{label}</summary>
       <div className="overflow-x-auto" tabIndex={0} role="region" aria-label={label}>
-        {children}
+        {opened ? children : null}
       </div>
     </details>
   );
