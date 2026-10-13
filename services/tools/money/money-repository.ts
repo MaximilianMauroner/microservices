@@ -189,30 +189,13 @@ const ACCOUNT_INSERT_CHUNK_SIZE = 1_000;
 const TRANSACTION_INSERT_CHUNK_SIZE = 2_000;
 const RELATED_INSERT_CHUNK_SIZE = 5_000;
 
-// A reverted source row cancels one matching completed row. Ranking prevents a
-// single revert from hiding multiple otherwise-identical legitimate payments.
+// A reverted Revolut row is a released authorization: it has no balance and never
+// moved money. A later charge with the same start time is a separate completed row,
+// so reverted rows are only left out and never cancel a completed row.
 // A Revolut savings export row is hidden when the cash export has the same movement.
-// Both checks build small id sets, so callers' filters still reach the table scan.
+// The check builds a small id set, so callers' filters still reach the table scan.
 export function effectiveTransactions(sql: Sql | TransactionSql) {
-  return sql`with reverted as (
-    select account_id, occurred_at, source_type, description, amount_minor, currency, count(*) reverted_count
-    from tools.money_transactions where status = 'reverted'
-    group by account_id, occurred_at, source_type, description, amount_minor, currency
-  ), undone as (
-    select ranked.id from (
-      select ledger.id, reverted.reverted_count, row_number() over (
-        partition by ledger.account_id, ledger.occurred_at, ledger.source_type,
-          ledger.description, ledger.amount_minor, ledger.currency
-        order by ledger.source_row, ledger.source_key, ledger.id
-      ) undo_rank
-      from tools.money_transactions ledger
-      join reverted on reverted.account_id = ledger.account_id and reverted.occurred_at = ledger.occurred_at
-        and reverted.source_type = ledger.source_type and reverted.description = ledger.description
-        and reverted.amount_minor = ledger.amount_minor and reverted.currency = ledger.currency
-      where ledger.status = 'completed'
-    ) ranked
-    where ranked.undo_rank <= ranked.reverted_count
-  ), savings_duplicates as (
+  return sql`with savings_duplicates as (
     select savings.id from tools.money_transactions savings
     join tools.money_imports savings_import on savings_import.id = savings.import_id and savings_import.format = ${REVOLUT_SAVINGS_FORMAT}
     join tools.money_transactions cash on cash.account_id = savings.account_id
@@ -222,11 +205,9 @@ export function effectiveTransactions(sql: Sql | TransactionSql) {
       and cash.source_type = case when savings.source_type = 'Interest' then 'Interest' else 'Transfer' end
     join tools.money_imports cash_import on cash_import.id = cash.import_id and cash_import.format = ${REVOLUT_CASH_FORMAT}
     where savings.status = 'completed' and cash.status = 'completed'
-      and savings.id not in (select id from undone) and cash.id not in (select id from undone)
   )
   select ledger.* from tools.money_transactions ledger
   where ledger.status = 'completed'
-    and ledger.id not in (select id from undone)
     and ledger.id not in (select id from savings_duplicates)`;
 }
 
