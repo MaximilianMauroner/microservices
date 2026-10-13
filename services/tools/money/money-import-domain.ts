@@ -526,10 +526,6 @@ export function inferMoneyCategory(flowKind: MoneyFlowKind): MoneyCategory {
   if (flowKind === "trade") return "investments";
   return "uncategorized";
 }
-/** Category rules decide only spending and refunds. */
-export function isRuleCategorized(flowKind: MoneyFlowKind) {
-  return flowKind === "spend" || flowKind === "refund";
-}
 function tradingFlow(type: string): MoneyFlowKind { return type.includes("BUY") || type.includes("SELL") || type === "STOCK SPLIT" || type.startsWith("POSITION TRANSFER") ? "trade" : type === "DIVIDEND" ? "investment_income" : type.includes("FEE") ? "fee" : type.includes("TAX") ? "tax" : "transfer"; }
 function tradingEventKind(type: string): MoneyInvestmentEventKind { return type.includes("BUY") ? "buy" : type.includes("SELL") ? "sell" : type === "DIVIDEND" ? "dividend" : type.includes("FEE") ? "fee" : type.includes("TAX") ? "tax" : type === "STOCK SPLIT" ? "split" : type.startsWith("POSITION TRANSFER") ? "position_transfer" : "cash_transfer"; }
 function tradingSignedAmount(type: string, total: number) { return type.includes("BUY") ? -Math.abs(total) : type.includes("SELL") ? Math.abs(total) : total; }

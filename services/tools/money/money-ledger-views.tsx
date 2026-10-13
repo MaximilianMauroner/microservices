@@ -44,6 +44,7 @@ import {
   type MoneySort,
 } from "./money-data-table.js";
 import { MoneyCategoryPicker, moneyCategoryLabel } from "./money-category-picker.js";
+import { isRuleCategorized } from "./money-category-rules.js";
 import {
   DivergingBar,
   EmptyState,
@@ -184,7 +185,7 @@ export function MoneyActivityView({
       const changed = new Set(items.map((item) => item.id));
       setRows((current) => current.map((row) => (changed.has(row.id) ? { ...row, category: next, categoryOrigin: "manual" } : row)));
       const single = items.length === 1 ? items[0]! : undefined;
-      setRuleOffer(!createRule && single && (single.flowKind === "spend" || single.flowKind === "refund") ? { item: single, category: next } : undefined);
+      setRuleOffer(!createRule && single && isRuleCategorized(single) ? { item: single, category: next } : undefined);
       setNotice(createRule ? `Rule saved. ${affected.toLocaleString("en-GB")} row${affected === 1 ? "" : "s"} now use ${moneyCategoryLabel(next)}.` : items.length > 1 ? `${items.length} rows now use ${moneyCategoryLabel(next)}.` : undefined);
       setSelectedRows(new Set());
       await router.invalidate();

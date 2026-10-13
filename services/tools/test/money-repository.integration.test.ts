@@ -139,7 +139,8 @@ it.skipIf(!repository || !admin)("executes import replay, transfer review, analy
   await repository!.commitImport({ ...input, digest: parsedExternal.digest, filename: "external.tsv", bytes: external.byteLength,
     rowCount: parsedExternal.rowCount, transactions: parsedExternal.transactions, balanceSnapshots: parsedExternal.balanceSnapshots });
   const review = await repository!.readActivityPage({ query: "", reviewOnly: true, offset: 0, limit: 10 });
-  expect(review.items).toHaveLength(0);
+  // The transfer reviewed as spending waits for a category like other spending.
+  expect(review.items.map((item) => [item.description, item.category])).toEqual([["External payment", "uncategorized"]]);
 
   const beforeTargetedBalance = await repository!.readLedgerSnapshot("all");
   const currentAccount = beforeTargetedBalance.accounts.find((id) => beforeTargetedBalance.accountLabels[id]?.startsWith("Revolut Current"));
@@ -613,6 +614,29 @@ it.skipIf(!repository || !admin)("queues uncategorized spending with suggestions
 
   const review = await repository!.readActivityPage({ query: "", reviewOnly: true, offset: 0, limit: 10 });
   expect(review.items.map((item) => item.description).sort()).toEqual(["Kiosk 12", "Stall 7", "Stall 7"]);
+});
+
+it.skipIf(!repository || !admin)("categorizes transfers reviewed as spending and follows later review changes", async () => {
+  await commitCash(repository!, cash([
+    "Transfer\tCurrent\t2026-07-05 12:00:00\t2026-07-05 12:00:00\tTo Landlord\t-500\t0\tEUR\tCOMPLETED\t500",
+    "Transfer\tCurrent\t2026-08-05 12:00:00\t2026-08-05 12:00:00\tTo Landlord\t-500\t0\tEUR\tCOMPLETED\t0"
+  ]), "transfer-spending.tsv");
+  const stored = async () => admin!<{ category: string; category_origin: string }[]>`select category, category_origin
+    from tools.money_transactions where description = 'To Landlord' order by local_date`;
+  const { reviewQueue } = await repository!.readLedgerSnapshot("review");
+  expect(reviewQueue.items.filter((item) => item.description === "To Landlord").map((item) => item.similarCount)).toEqual([1, 1]);
+
+  const rent = { matchField: "description", matchOperator: "equals", matchValue: "to landlord", category: "housing" } as const;
+  expect(await repository!.previewCategoryRule(rent)).toMatchObject({ matchCount: 2, changeCount: 2 });
+  await repository!.saveCategoryRule({ ...rent, actor: "integration@example.test", expectedMatchCount: 2 });
+  expect(await stored()).toEqual([{ category: "housing", category_origin: "rule" }, { category: "housing", category_origin: "rule" }]);
+
+  // An own-account transfer is not spending, so it leaves the rule and returns when reviewed as spending again.
+  const [first] = (await repository!.readActivityPage({ query: "To Landlord", sort: "date", direction: "asc", offset: 0, limit: 10 })).items;
+  await repository!.setTransferDisposition({ transactionId: first!.id, disposition: "internal_transfer" });
+  expect(await stored()).toEqual([{ category: "transfer", category_origin: "source" }, { category: "housing", category_origin: "rule" }]);
+  await repository!.setTransferDisposition({ transactionId: first!.id, disposition: "spend" });
+  expect((await stored())[0]).toEqual({ category: "housing", category_origin: "rule" });
 });
 
 function cash(rows: string[]) {
