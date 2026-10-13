@@ -17,6 +17,11 @@ export function createPostgresCheckerStore(config: CheckerConfig): CheckerStore 
   const sql = postgres(config.databaseUrl, { max: 4 });
   const snapshots = createS3CheckerStore(config.bucket);
   return {
+    async lastHeartbeatSeenAt(monitorId) {
+      const [row] = await sql<{ last_seen_at: Date }[]>`
+        select last_seen_at from tools.heartbeats where monitor_id = ${monitorId}`;
+      return row?.last_seen_at ?? null;
+    },
     async readCatalog() {
       const catalog = decodeCatalogDocument(catalogSource);
       const definitions = loadMonitorDefinitions();

@@ -14,10 +14,27 @@ bodies and derived status snapshots.
 Markdown Share keeps its canonical state, realtime editing, presence, checkpoints,
 retention, and cleanup in Convex. Tools serves its public capability-link frontend.
 
-The web process closes idle PostgreSQL connections after two minutes. Keep that
-timeout below Railway's ten-minute inactivity window. Hourly artifact cleanup
-and daily market-data work may wake the service, but neither should keep it
-awake between runs.
+The web process closes idle PostgreSQL connections after two minutes. Liveness
+requests avoid runtime allocation; application requests initialize the runtime,
+and session requests initialize auth. The status page refreshes only when visible.
+The checker keeps its 30-minute route and heartbeat detection cadence.
+
+Artifact cleanup and daily market-data synchronization run through
+`pnpm --dir services/tools run maintenance`. This bounded process has no HTTP
+listener and exits after current due work. `railway.maintenance.json` is an
+unapplied hourly cron proposal at minute 15. PostgreSQL schedule slots prevent
+repeated completed work; expired leases recover interruption, and known failed
+slots can retry. Missed slots coalesce to current cleanup and provider backfill.
+The process deadline plus shutdown grace is shorter than the lease.
+
+Deploying a new maintenance service needs Max's approval. Keep the web scheduler
+active until the new job has terminal-success evidence, then deploy this web
+change and confirm no web maintenance activity. Rollback starts by restoring the
+previous web revision and stopping the proposed maintenance schedule; preserve
+completed schedule rows and all data. These changes do not prove a monthly saving.
+After direct transfers, measure effective web and database sleep and metered duty
+before accepting this cost bundle. Railway applies sleep settings only when a
+container is created, so settings readback alone is not acceptance.
 
 - [runtime-boundaries.md](./runtime-boundaries.md): service and product ownership.
 - [access-incident.md](./access-incident.md): authentication containment and recovery.

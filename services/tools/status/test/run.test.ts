@@ -10,6 +10,25 @@ import {
 } from "./helpers.js";
 
 describe("checker run", () => {
+  it("checks fresh, missing and stale canonical heartbeats without waking the web server", async () => {
+    const store = new MemoryStore();
+    store.catalog.value.entries = store.catalog.value.entries.filter(({ id }) => id === "public-a");
+    let lastSeen: Date | null = new Date(NOW);
+    const productionStore = Object.assign(store, { lastHeartbeatSeenAt: async () => lastSeen });
+    const fetcher = vi.fn<typeof fetch>();
+    const run = (time: number) => runChecker({ store: productionStore, config: configFixture, logger, fetcher,
+      monitorDefinitions: [{ id: "public-a", kind: "heartbeat", scope: "public", checkUrl: "https://public-a.example", staleAfterMs: 40 * 60_000 }],
+      now: () => new Date(NOW.getTime() + time) });
+    await run(0);
+    expect(store.state?.value.monitors["public-a"].latestObservation?.success).toBe(true);
+    await run(60 * 60_000);
+    expect(store.state?.value.monitors["public-a"].latestObservation?.success).toBe(false);
+    lastSeen = null;
+    await run(90 * 60_000);
+    expect(store.state?.value.monitors["public-a"].status).toBe("down");
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
   it("passes typed expected status and timeout behavior to production probes", async () => {
     const store = new MemoryStore();
     store.catalog.value.entries = store.catalog.value.entries.filter(({ id }) => id === "public-a");
