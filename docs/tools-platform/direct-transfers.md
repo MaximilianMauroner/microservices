@@ -11,8 +11,10 @@ under `transfers/<artifact-id>`. Canonical `/artifacts/:id` and
 Use `/api/uploads/sessions` with the native upload bearer credential,
 `/api/external-uploads/sessions` with the browser session, or
 `/api/drop/:token/uploads/sessions` with an active guest capability. Browser and
-guest control requests retain the same-origin check. Native credentials never
-travel to storage. Guest sessions are also bound to the upload-link ID.
+guest mutations require the same-origin check. Status GETs allow the normal
+absent Origin header and reject an explicit conflicting Origin. Browser reads
+still require the browser session; guest sessions are bound to the upload-link
+ID. Native credentials never travel to storage.
 
 1. POST JSON with a UUID `requestId`, `filename`, `contentType`, and
    `totalBytes`. `kind` defaults to `file`; authorized browser/native clients
@@ -51,6 +53,9 @@ The client prints its request ID before transferring bytes. Retain it to resume
 after an agent process interruption. The browser keeps this ID in sessionStorage;
 reselect the same file in the same tab to resume. Signed URLs are kept in memory.
 All current size limits still apply. Empty files use one empty part.
+Cancel aborts pending browser control and part requests and abandons the pending
+session. A completion that committed before cancellation remains published;
+session cancellation does not revoke an already published artifact.
 
 ## Integrity and recovery
 
@@ -182,7 +187,7 @@ including replacements of HTML created through a direct session.
    generated DDL and recovery procedure before approving deployment; no local
    command here targets production. Retain the added table/column on rollback.
 3. Max approves deployment separately. A main merge may deploy automatically;
-   this PR stays draft and must not merge under the current authorization.
+   this PR must not merge under the current authorization.
    Before release, prove multipart signing with Content-Length, completion,
    exact-origin PUT preflight, opaque-origin range playback, and deletion in
    an approved non-production Railway bucket. Local S3 evidence does not prove

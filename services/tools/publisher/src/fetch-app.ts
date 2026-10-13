@@ -178,7 +178,7 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
       if (direct || directDrop) {
         const audience = directDrop ? "drop" : direct?.[1] === "uploads" ? "native" : "browser";
         if (audience === "native") requireBearer(request, uploadToken);
-        else requireSameOrigin(request, url, options.publicBaseUrl);
+        else if (request.method !== "GET" || request.headers.has("origin")) requireSameOrigin(request, url, options.publicBaseUrl);
         if (audience === "browser" && !options.externalUpload) return externalUploadUnavailable();
         const link = directDrop ? await (request.method === "DELETE"
           ? options.uploadLinks?.find(directDrop[1]!)
@@ -839,7 +839,10 @@ async function readFileRoute(
     metadata.body.destroy();
     const headers = new Headers({ "Cache-Control": "private, no-store", "Access-Control-Allow-Origin": "*" });
     applyRepresentationHeaders(headers, metadata.bytes, metadata.sha256, metadata.lastModified);
-    if (preconditionFailed(request, headers)) return new Response(null, { status: 412, headers });
+    if (preconditionFailed(request, headers)) {
+      headers.set("Content-Length", "0");
+      return new Response(null, { status: 412, headers });
+    }
     if (isNotModified(request, headers)) return new Response(null, { status: 304, headers });
   }
   if (request.method === "GET" && !ifRange && !conditional && options.storage.presignTemporaryFile) {

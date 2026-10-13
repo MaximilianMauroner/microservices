@@ -110,7 +110,7 @@ export function PublishPage() {
         activeXhr.current = xhr;
       };
       const htmlPlan = /\.html?$/i.test(file.name);
-      const htmlFile = htmlPlan && file.type !== "text/html" ? new File([file], file.name, { type: "text/html" }) : file;
+      const htmlFile = htmlPlan && file.type !== "text/html" ? new File([file], file.name, { type: "text/html", lastModified: file.lastModified }) : file;
       let payload = await uploadDirectFile(htmlFile, {
         onProgress: (loaded, total) => {
           const percent = total > 0 ? Math.min(100, Math.round((loaded / total) * 100)) : 0;
@@ -119,7 +119,8 @@ export function PublishPage() {
         },
         onProcessing,
         registerXhr,
-        isCancelled: () => cancelRequested.current
+        isCancelled: () => cancelRequested.current,
+        signal
       }, { kind: htmlPlan ? "html" : "file", ...(htmlPlan && htmlProject.trim() ? { project: htmlProject } : {}) });
       let expiryApplied = true;
       if (!htmlPlan && fileExpiry !== "3") {

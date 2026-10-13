@@ -56,7 +56,7 @@ export function createDirectUploads(sql: Sql, bucket: ReturnType<typeof createMu
 
   async function locked<T>(id: string, work: (tx: TransactionSql) => Promise<T>): Promise<T> {
     const result = await locks.begin(async tx => {
-      const [row] = await tx<{ locked: boolean }[]>`select pg_try_advisory_xact_lock(hashtextextended(${'publisher:session:' + id}, 0)) locked`;
+      const [row] = await tx<{ locked: boolean }[]>`select pg_try_advisory_xact_lock(hashtextextended('publisher:session:' || ${id}::uuid::text, 0)) locked`;
       if (!row?.locked) throw new DirectUploadError(409, "upload_busy", "The upload is processing another request. Retry shortly.");
       return { value: await work(tx) };
     });

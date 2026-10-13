@@ -1,9 +1,12 @@
 import { readFile } from "node:fs/promises";
+import { createServer } from "node:http";
+import { once } from "node:events";
 import { Readable } from "node:stream";
 import { describe, expect, it, vi } from "vitest";
 import { strFromU8, unzipSync } from "fflate";
 import { ActivityTracker } from "../src/activity-tracker.js";
 import { createFetchApp } from "../src/fetch-app.js";
+import type { DirectUploads } from "../src/direct-uploads.js";
 import type { CreatedUploadLink, UploadLink, UploadLinkListOptions, UploadLinkRepository } from "../src/upload-links.js";
 import type {
   GetStoredObjectOptions,
@@ -20,6 +23,7 @@ import type {
 } from "../src/storage.js";
 
 class MemoryUploadStorage implements UploadStorage {
+  directUploads?: DirectUploads;
   readonly pages = new Map<string, { body: Buffer; metadata: PutHtmlMetadata }>();
   readonly files = new Map<string, { body: Buffer; metadata: Omit<PutTemporaryFileMetadata, "expiresAt"> & { expiresAt?: Date } }>();
 
@@ -117,6 +121,41 @@ function multipart(filename: string, content: string, type: string, project?: st
 }
 
 describe("native artifact fetch handler", () => {
+  it.each(["browser", "drop"] as const)("permits an Origin-less %s status GET while preserving mutation and explicit Origin guards", async (audience) => {
+    const storage = new MemoryUploadStorage();
+    const uploadLinks = new MemoryUploadLinkRepository();
+    const now = new Date("2026-10-13T12:00:00Z");
+    await uploadLinks.create(new Date(now.getTime() + 60_000));
+    const sessionId = "123e4567-e89b-42d3-a456-426614174002";
+    const status = vi.fn<DirectUploads["status"]>(async () => ({ sessionId, partBytes: 20 * 1024 * 1024,
+      totalParts: 1, expiresAt: "2026-10-13T14:00:00Z", state: "uploading", uploaded: [1] }));
+    storage.directUploads = { status, create: vi.fn<DirectUploads["create"]>(), sign: vi.fn<DirectUploads["sign"]>(),
+      complete: vi.fn<DirectUploads["complete"]>(), abort: vi.fn<DirectUploads["abort"]>(),
+      cleanup: vi.fn<DirectUploads["cleanup"]>(), close: vi.fn<DirectUploads["close"]>() };
+    const app = createFetchApp({ storage, uploadLinks, uploadToken: "upload-token", externalUpload: true,
+      publicBaseUrl: "https://tools.example.test", now: () => now });
+    const base = audience === "browser" ? "/api/external-uploads/sessions" : `/api/drop/${uploadLinks.token}/uploads/sessions`;
+    const url = "https://tools.example.test" + base + "/" + sessionId;
+    const response = await app(new Request(url));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ sessionId, uploaded: [1] });
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(status).toHaveBeenCalledWith(sessionId, { audience, ...(audience === "drop" ? { uploadLinkId: uploadLinks.id } : {}) }, expect.any(AbortSignal));
+    expect((await app(new Request(url, { headers: { Origin: "https://other.example.test" } }))).status).toBe(403);
+    expect(status).toHaveBeenCalledTimes(1);
+    for (const [method, path] of [["POST", base], ["POST", base + "/" + sessionId + "/parts"], ["POST", base + "/" + sessionId + "/complete"], ["DELETE", base + "/" + sessionId]]) {
+      const denied = await app(new Request("https://tools.example.test" + path, { method }));
+      expect(denied.status).toBe(403);
+      expect(await denied.json()).toMatchObject({ error: "invalid_origin" });
+    }
+    if (audience === "drop") {
+      await uploadLinks.revoke(uploadLinks.id, now);
+      expect((await app(new Request(url))).status).toBe(404);
+      expect(status).toHaveBeenCalledTimes(1);
+    }
+    expect((await app(new Request("https://tools.example.test/api/uploads/sessions/" + sessionId))).status).toBe(401);
+  });
+
   it("returns an exact inventory summary when the first page requests it", async () => {
     const storage = new MemoryUploadStorage();
     storage.listUploads = vi.fn(async (_asOf, options) => ({
@@ -234,6 +273,36 @@ describe("native artifact fetch handler", () => {
     expect(ifRange.status).toBe(200);
     expect(ifRange.headers.get("cache-control")).toBe("private, no-store");
     expect(storage.presignTemporaryFile).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets an HTTP client finish reading an empty failed-precondition response", async () => {
+    const storage = new MemoryUploadStorage();
+    const id = "a".repeat(32);
+    storage.files.set(id, { body: Buffer.from("lecture"),
+      metadata: { originalName: "lecture.mp4", contentType: "video/mp4", bytes: 7, sha256: "b".repeat(64) } });
+    const app = createFetchApp({ storage, uploadToken: "upload-token" });
+    let origin = "";
+    const server = createServer(async (incoming, outgoing) => {
+      try {
+        const response = await app(new Request(origin + incoming.url, { headers: { "If-Match": incoming.headers["if-match"] ?? "" } }));
+        outgoing.writeHead(response.status, Object.fromEntries(response.headers));
+        outgoing.end(await response.text());
+      } catch (error) { outgoing.destroy(error instanceof Error ? error : new Error("Fixture request failed")); }
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("Expected an isolated loopback listener");
+    origin = `http://127.0.0.1:${address.port}`;
+    try {
+      const response = await fetch(`${origin}/files/${id}/lecture.mp4`, { headers: { "If-Match": '"wrong"' }, signal: AbortSignal.timeout(1000) });
+      expect(response.status).toBe(412);
+      expect(response.headers.get("content-length")).toBe("0");
+      expect(await response.text()).toBe("");
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    }
   });
 
   it("redirects attachments of every size after checking capability and expiry", async () => {

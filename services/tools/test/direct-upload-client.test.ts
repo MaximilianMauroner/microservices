@@ -89,9 +89,69 @@ describe("durable browser upload client", () => {
     expect(saved.size).toBe(0);
   });
 
+  it.each(["parts", "complete"] as const)("aborts a pending %s request and ignores a late successful response after cancellation", async (action) => {
+    const original = globalThis.fetch;
+    const entered = deferred();
+    const release = deferred();
+    let pendingSignal: AbortSignal | null | undefined;
+    let calls = 0;
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
+      const response = await original(url, init);
+      if (url.endsWith("/" + action)) {
+        calls += 1;
+        pendingSignal = init.signal;
+        entered.resolve();
+        await release.promise;
+      }
+      return response;
+    }));
+    const controller = new AbortController();
+    const pending = uploadDirectFile(new File(["abcdef"], "fixture.bin"), { ...callbacks, signal: controller.signal });
+    const rejected = expect(pending).rejects.toThrow("cancelled");
+    await entered.promise;
+    const putsBeforeCancel = TransferXhr.puts.length;
+    controller.abort();
+    expect(pendingSignal?.aborted).toBe(true);
+    release.resolve();
+    await rejected;
+    expect(calls).toBe(1);
+    expect(TransferXhr.puts).toHaveLength(putsBeforeCancel);
+    expect(requests.filter(request => request.method === "DELETE")).toHaveLength(1);
+    expect(saved.size).toBe(0);
+  });
+
+  it("stops control retries when the caller aborts an in-flight fetch", async () => {
+    const original = globalThis.fetch;
+    const entered = deferred();
+    let calls = 0;
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
+      if (!url.endsWith("/parts")) return original(url, init);
+      calls += 1;
+      return new Promise<Response>((_resolve, reject) => {
+        init.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+        entered.resolve();
+      });
+    }));
+    const controller = new AbortController();
+    const pending = uploadDirectFile(new File(["abcdef"], "fixture.bin"), { ...callbacks, signal: controller.signal });
+    const rejected = expect(pending).rejects.toThrow("cancelled");
+    await entered.promise;
+    controller.abort();
+    await rejected;
+    expect(calls).toBe(1);
+    expect(TransferXhr.puts).toHaveLength(0);
+    expect(saved.size).toBe(0);
+  });
+
   it("keeps actionable session and size errors", () => {
     expect(friendlyUploadError(401)).toContain("Sign in again");
     expect(friendlyUploadError(413)).toContain("size limit");
     expect(friendlyUploadError(503)).toContain("Wait a moment");
   });
 });
+
+function deferred() {
+  let resolve = () => {};
+  const promise = new Promise<void>(done => { resolve = done; });
+  return { promise, resolve };
+}
