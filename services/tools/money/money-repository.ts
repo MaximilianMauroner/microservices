@@ -191,42 +191,43 @@ const RELATED_INSERT_CHUNK_SIZE = 5_000;
 
 // A reverted source row cancels one matching completed row. Ranking prevents a
 // single revert from hiding multiple otherwise-identical legitimate payments.
+// A Revolut savings export row is hidden when the cash export has the same movement.
+// Both checks build small id sets, so callers' filters still reach the table scan.
 export function effectiveTransactions(sql: Sql | TransactionSql) {
-  return sql`with unreverted as (select candidate.* from (
-    select ledger.*, row_number() over (
-      partition by ledger.account_id, ledger.occurred_at, ledger.source_type,
-        ledger.description, ledger.amount_minor, ledger.currency, ledger.status
-      order by ledger.source_row, ledger.source_key, ledger.id
-    ) undo_rank
-    from tools.money_transactions ledger
-    where ledger.status in ('completed', 'reverted')
-  ) candidate
-  where candidate.status = 'completed' and not exists (
-    select 1 from (
-      select reverted.*, row_number() over (
-        partition by reverted.account_id, reverted.occurred_at, reverted.source_type,
-          reverted.description, reverted.amount_minor, reverted.currency, reverted.status
-        order by reverted.source_row, reverted.source_key, reverted.id
+  return sql`with reverted as (
+    select account_id, occurred_at, source_type, description, amount_minor, currency, count(*) reverted_count
+    from tools.money_transactions where status = 'reverted'
+    group by account_id, occurred_at, source_type, description, amount_minor, currency
+  ), undone as (
+    select ranked.id from (
+      select ledger.id, reverted.reverted_count, row_number() over (
+        partition by ledger.account_id, ledger.occurred_at, ledger.source_type,
+          ledger.description, ledger.amount_minor, ledger.currency
+        order by ledger.source_row, ledger.source_key, ledger.id
       ) undo_rank
-      from tools.money_transactions reverted where reverted.status = 'reverted'
-    ) undone
-    where undone.account_id = candidate.account_id and undone.occurred_at = candidate.occurred_at
-      and undone.source_type = candidate.source_type and undone.description = candidate.description
-      and undone.amount_minor = candidate.amount_minor and undone.currency = candidate.currency
-      and undone.undo_rank = candidate.undo_rank
-  ))
-  select candidate.* from unreverted candidate
-  where not exists (
-    select 1 from tools.money_imports savings_import
-    join unreverted cash on cash.account_id = candidate.account_id
-      and cash.local_date = candidate.local_date and cash.currency = candidate.currency
-      and cash.balance_after_minor = candidate.balance_after_minor
-      and cash.amount_minor - cash.fee_minor - cash.tax_minor = candidate.amount_minor - candidate.fee_minor - candidate.tax_minor
-      and cash.source_type = case when candidate.source_type = 'Interest' then 'Interest' else 'Transfer' end
-    join tools.money_imports cash_import on cash_import.id = cash.import_id
-    where savings_import.id = candidate.import_id and savings_import.format = ${REVOLUT_SAVINGS_FORMAT}
-      and cash_import.format = ${REVOLUT_CASH_FORMAT}
-  )`;
+      from tools.money_transactions ledger
+      join reverted on reverted.account_id = ledger.account_id and reverted.occurred_at = ledger.occurred_at
+        and reverted.source_type = ledger.source_type and reverted.description = ledger.description
+        and reverted.amount_minor = ledger.amount_minor and reverted.currency = ledger.currency
+      where ledger.status = 'completed'
+    ) ranked
+    where ranked.undo_rank <= ranked.reverted_count
+  ), savings_duplicates as (
+    select savings.id from tools.money_transactions savings
+    join tools.money_imports savings_import on savings_import.id = savings.import_id and savings_import.format = ${REVOLUT_SAVINGS_FORMAT}
+    join tools.money_transactions cash on cash.account_id = savings.account_id
+      and cash.local_date = savings.local_date and cash.currency = savings.currency
+      and cash.balance_after_minor = savings.balance_after_minor
+      and cash.amount_minor - cash.fee_minor - cash.tax_minor = savings.amount_minor - savings.fee_minor - savings.tax_minor
+      and cash.source_type = case when savings.source_type = 'Interest' then 'Interest' else 'Transfer' end
+    join tools.money_imports cash_import on cash_import.id = cash.import_id and cash_import.format = ${REVOLUT_CASH_FORMAT}
+    where savings.status = 'completed' and cash.status = 'completed'
+      and savings.id not in (select id from undone) and cash.id not in (select id from undone)
+  )
+  select ledger.* from tools.money_transactions ledger
+  where ledger.status = 'completed'
+    and ledger.id not in (select id from undone)
+    and ledger.id not in (select id from savings_duplicates)`;
 }
 
 export interface MoneyRepository {

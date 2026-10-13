@@ -66,7 +66,8 @@ export interface MoneyMarketDataRepository {
 }
 
 export function createPostgresMoneyMarketDataRepository(databaseUrl: string, options: { readOnly?: boolean } = {}) {
-  return postgresMoneyMarketDataRepository(postgres(databaseUrl, { max: 3, idle_timeout: 120, connection: options.readOnly ? { default_transaction_read_only: true } : undefined }));
+  // Valuation reads join the effective-row query; JIT compilation of it costs about half a second, running it takes milliseconds.
+  return postgresMoneyMarketDataRepository(postgres(databaseUrl, { max: 3, idle_timeout: 120, connection: { jit: "off", ...(options.readOnly ? { default_transaction_read_only: true } : {}) } }));
 }
 
 export function postgresMoneyMarketDataRepository(sql: Sql): MoneyMarketDataRepository {
