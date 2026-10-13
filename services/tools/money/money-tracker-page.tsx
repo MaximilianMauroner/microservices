@@ -85,6 +85,8 @@ export function MoneyTrackerPage(
   props: MoneyTrackerPageData & {
     view: MoneyTrackerView;
     tab?: MoneyReviewTab;
+    /** Description text that starts a new category rule. */
+    rule?: string;
     category?: MoneyCategory;
     review?: boolean;
     fromMonth?: string;

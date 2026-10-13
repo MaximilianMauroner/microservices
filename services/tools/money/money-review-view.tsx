@@ -27,7 +27,7 @@ const TREATMENTS: readonly (readonly [MoneyTransferDisposition, string])[] = [
 const VISIBLE_GROUPS = 8;
 
 /** One place for the work that keeps rows out of the totals, plus the rules and imports behind it. */
-export function MoneyReviewView(props: MoneyTrackerPageData & { tab: MoneyReviewTab }) {
+export function MoneyReviewView(props: MoneyTrackerPageData & { tab: MoneyReviewTab; rule?: string }) {
   const staleAccounts = staleCashAccounts(props);
   const stalePrices = props.marketData.positions.filter((position) => position.state !== "fresh");
   const counts: Record<MoneyReviewTab, number> = {
@@ -52,7 +52,7 @@ export function MoneyReviewView(props: MoneyTrackerPageData & { tab: MoneyReview
         ))}
       </nav>
       {props.tab === "rules" ? (
-        <MoneyRulesView {...props} />
+        <MoneyRulesView {...props} rulePrefill={props.rule} />
       ) : props.tab === "imports" ? (
         <>
           <MoneyImportDrop lastImport={props.imports[0] ? formatDay(props.imports[0].committedAt) : undefined} />
@@ -75,9 +75,9 @@ function Queue(props: MoneyTrackerPageData & { staleAccounts: readonly string[];
           <EmptyState title="Nothing to review">Every row has a category, every transfer has a treatment, and prices and balances are current.</EmptyState>
         </MoneyPanel>
       ) : null}
-      {props.reviewCounts.sourceOtherRows ? (
+      {props.reviewCounts.otherRows ? (
         <p className="px-1 text-xs text-muted-foreground">
-          {props.reviewCounts.sourceOtherRows.toLocaleString("en-GB")} spending and refund rows have the generic source category Other. <Link to="/money" search={{ view: "transactions", category: "other" }} className="money-inline-link">Review Other rows</Link>
+          {countLabel(props.reviewCounts.otherRows, "spending or refund row", "spending and refund rows")} got the broad category Other from a rule. <Link to="/money" search={{ view: "transactions", category: "other" }} className="money-inline-link">Review Other rows</Link>
         </p>
       ) : null}
       {props.reviewQueue.items.length ? <CategorizeQueue items={props.reviewQueue.items} common={props.reviewQueue.commonCategories} total={props.reviewCounts.uncategorized} spendingRows={props.reviewCounts.spendingRows} /> : null}
@@ -182,6 +182,7 @@ function CategorizeQueue({ items, common, total, spendingRows }: { items: readon
                       ? `This merchant description in ${item.accountName}: ${item.similarCount} other ${item.similarCount === 1 ? "row" : "rows"} and future imports`
                       : `This merchant description in ${item.accountName}, including future imports`}
                   </label>
+                  <Link to="/money" search={{ view: "review", tab: "rules", rule: item.description }} className="money-inline-link">Write a rule</Link>
                 </fieldset>
               ) : null}
             </li>

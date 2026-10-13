@@ -101,7 +101,8 @@ export function MoneyCategoryPicker({
   suggestions = [],
   ariaLabel,
 }: Readonly<{
-  value: MoneyCategory;
+  /** Missing until someone chooses. Compact chips also treat "uncategorized" as missing. */
+  value: MoneyCategory | undefined;
   onValue: (value: MoneyCategory) => void;
   disabled?: boolean;
   mobile?: boolean;
@@ -112,8 +113,8 @@ export function MoneyCategoryPicker({
   ariaLabel?: string;
 }>) {
   const [open, setOpen] = useState(false);
-  const selected = CATEGORY_META[value];
-  const missing = value === "uncategorized";
+  const selected = value === undefined ? undefined : CATEGORY_META[value];
+  const missing = value === undefined || value === "uncategorized";
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -124,7 +125,7 @@ export function MoneyCategoryPicker({
               type="button"
               className={`inline-flex h-7 max-w-full items-center gap-1.5 rounded-md border px-2 text-[.8125rem] transition-colors disabled:opacity-50 ${missing ? "border-dashed border-warning/70 text-warning hover:bg-warning/10" : "border-transparent bg-muted hover:border-control-border-hover"}`}
               disabled={disabled}
-              aria-label={ariaLabel ?? `Category: ${selected.label}`}
+              aria-label={ariaLabel ?? (selected ? `Category: ${selected.label}` : "Choose category")}
             />
           ) : (
             <Button
@@ -133,12 +134,12 @@ export function MoneyCategoryPicker({
               size={mobile ? "default" : "sm"}
               className={`${mobile ? "h-11 w-full" : "min-w-40"} justify-between rounded-md font-normal`}
               disabled={disabled}
-              aria-label={ariaLabel ?? `Category: ${selected.label}`}
+              aria-label={ariaLabel ?? (selected ? `Category: ${selected.label}` : "Choose category")}
             />
           )
         }
       >
-        {compact && missing ? <span>Choose category</span> : <CategoryValue category={value} />}
+        {value === undefined || (compact && missing) ? <span className={compact ? undefined : "text-muted-foreground"}>Choose category</span> : <CategoryValue category={value} />}
         <ChevronDown className={compact ? "size-3.5 opacity-60" : "ml-auto text-muted-foreground"} />
       </PopoverTrigger>
       <PopoverContent align="start" className="w-[min(24rem,calc(100vw-2rem))] gap-0 p-0">
