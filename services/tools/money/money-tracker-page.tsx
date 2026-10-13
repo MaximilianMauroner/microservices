@@ -366,7 +366,7 @@ function Overview(props: MoneyTrackerPageData) {
               <FlowChart
                 height={180}
                 label="Income and spending for the last six complete months, with net flow"
-                months={flow.slice(-6).map((month) => ({ label: formatMonth(month.month).slice(0, 3), income: (month.incomeMinor + month.refundsMinor) / 100, spending: (month.spendMinor + month.feesMinor + month.taxesMinor) / 100, net: month.netCashFlowMinor / 100 }))}
+                months={flow.slice(-6).map((month) => ({ label: formatMonth(month.month).slice(0, 3), income: month.incomeMinor / 100, spending: (month.spendMinor + month.feesMinor + month.taxesMinor) / 100, net: month.netCashFlowMinor / 100 }))}
                 tooltip={(index) => flowTooltip(flow.slice(-6)[index]!)}
               />
             ) : (

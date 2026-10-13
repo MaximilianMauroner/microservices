@@ -172,6 +172,8 @@ it.skipIf(!repository || !admin)("reads check-in days and explains cash changes 
     "Card Payment\tCurrent\t2026-09-05 12:00:00\t2026-09-05 12:00:00\tGrocer\t-30\t0\tEUR\tCOMPLETED\t160",
     "Transfer\tCurrent\t2026-09-10 12:00:00\t2026-09-10 12:00:00\tExternal payment\t-20\t0\tEUR\tCOMPLETED\t140"
   ]), "check-in.tsv");
+  const [employer] = (await repository!.readActivityPage({ query: "Payment from Employer", offset: 0, limit: 10 })).items;
+  await repository!.setTransferDisposition({ transactionId: employer!.id, disposition: "income" });
 
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Berlin" }).format(new Date());
   expect(await repository!.readCheckInDays()).toEqual([today]);
@@ -186,6 +188,50 @@ it.skipIf(!repository || !admin)("reads check-in days and explains cash changes 
   expect(spending.reduce((sum, row) => sum + row.amountMinor, 0)).toBe(6_000);
   expect(spending.filter((row) => row.date > "2026-08-24").reduce((sum, row) => sum + row.amountMinor, 0)).toBe(5_000);
   expect(spending).toContainEqual(expect.objectContaining({ date: "2026-09-05", merchant: "Grocer", amountMinor: 3_000 }));
+});
+
+it.skipIf(!repository || !admin)("nets card refunds and shared repayments into category spending without changing cash flow", async () => {
+  await commitCash(repository!, cash([
+    "Card Payment\tCurrent\t2026-06-01 12:00:00\t2026-06-01 12:00:00\tSpotify\t-100\t1\tEUR\tCOMPLETED\t899",
+    "Card Refund\tCurrent\t2026-06-02 12:00:00\t2026-06-02 12:00:00\tSpotify\t30\t0\tEUR\tCOMPLETED\t929",
+    "Transfer\tCurrent\t2026-06-03 12:00:00\t2026-06-03 12:00:00\tShared plan\t20\t0\tEUR\tCOMPLETED\t949",
+    "Transfer\tCurrent\t2026-06-04 12:00:00\t2026-06-04 12:00:00\tRefund correction\t-5\t0\tEUR\tCOMPLETED\t944",
+    "Topup\tCurrent\t2026-06-05 12:00:00\t2026-06-05 12:00:00\tEmployer\t200\t0\tEUR\tCOMPLETED\t1144",
+    "Card Refund\tCurrent\t2026-06-06 12:00:00\t2026-06-06 12:00:00\tReturned ticket\t40\t0\tEUR\tCOMPLETED\t1184",
+    "Transfer\tCurrent\t2026-06-07 12:00:00\t2026-06-07 12:00:00\tOwn move\t-7\t0\tEUR\tCOMPLETED\t1177",
+    "Transfer\tSavings\t2026-06-07 12:00:00\t2026-06-07 12:00:00\tOwn move\t7\t0\tEUR\tCOMPLETED\t7",
+    "Card Refund\tCurrent\t2026-06-08 12:00:00\t\tSpotify\t500\t0\tEUR\tREVERTED\t",
+  ]), "net-refunds.tsv");
+  const { items } = await repository!.readActivityPage({ query: "", offset: 0, limit: 20 });
+  for (const item of items) {
+    if (item.description === "Employer" || item.description === "Refund correction") {
+      await repository!.setTransferDisposition({ transactionId: item.id, disposition: item.description === "Employer" ? "income" : "refund" });
+    }
+    if (["Spotify", "Shared plan", "Refund correction", "Returned ticket"].includes(item.description)) {
+      await repository!.setTransactionCategory({ transactionId: item.id, category: item.description === "Returned ticket" ? "travel" : "subscriptions", actor: "integration@example.test", createRule: false });
+    }
+  }
+
+  const { spending, transferReview } = await repository!.readLedgerSnapshot("all");
+  expect(transferReview.linkedPairs).toBe(1);
+  expect(spending.months).toEqual([expect.objectContaining({ month: "2026-06", spendMinor: 1_500, refundsMinor: 8_500, incomeMinor: 20_000, feesMinor: 100, netCashFlowMinor: 18_400 })]);
+  expect(spending.categories).toEqual([
+    { category: "subscriptions", amountMinor: 5_500, count: 4 },
+    { category: "travel", amountMinor: -4_000, count: 1 },
+  ]);
+  expect(spending.categoryMonths).toEqual(spending.categories.map((row) => ({ month: "2026-06", ...row })));
+  expect(spending.merchantMonths).toContainEqual({ month: "2026-06", category: "subscriptions", description: "Spotify", amountMinor: 7_000, count: 2 });
+  expect(spending.merchantMonths.reduce((sum, row) => sum + row.amountMinor, 0)).toBe(1_500);
+  expect(spending.categoryActivity).toHaveLength(5);
+  expect(spending.categoryActivity).toContainEqual(expect.objectContaining({ description: "Shared plan", transferDisposition: "refund", amountMinor: 2_000 }));
+
+  const since = await repository!.readSpendingSince("2026-05-31");
+  expect(since.reduce((sum, row) => sum + row.amountMinor, 0)).toBe(1_500);
+  expect(since).toContainEqual({ date: "2026-06-06", category: "travel", merchant: "Returned ticket", amountMinor: -4_000 });
+  const cashSince = await repository!.readCashSince("2026-05-31");
+  expect(cashSince.flows.reduce((sum, row) => sum + row.incomeMinor, 0)).toBe(20_000);
+  expect(cashSince.flows.reduce((sum, row) => sum + row.spendingMinor, 0)).toBe(-1_600);
+  expect(cashSince.items).toContainEqual(expect.objectContaining({ label: "Returned ticket", kind: "spending", amountMinor: 4_000 }));
 });
 
 it.skipIf(!repository || !admin)("classifies transfers with stored rules that change without a deploy", async () => {
@@ -589,7 +635,7 @@ it.skipIf(!repository || !admin)("preserves signed transfer corrections in month
   const review = await repository!.readActivityPage({ query: "correction", offset: 0, limit: 10 });
   for (const row of review.items) await repository!.setTransferDisposition({ transactionId: row.id, disposition: row.description.startsWith("Spend") ? "spend" : row.description.startsWith("Income") ? "income" : "refund" });
   const month = (await repository!.readLedgerSnapshot("all")).spending.months.find((item) => item.month === "2026-06");
-  expect(month).toMatchObject({ spendMinor: -1_000, incomeMinor: -500, refundsMinor: -200, netCashFlowMinor: 300 });
+  expect(month).toMatchObject({ spendMinor: -800, incomeMinor: -500, refundsMinor: -200, netCashFlowMinor: 300 });
 });
 
 it.skipIf(!repository || !admin)("queues uncategorized spending with suggestions from earlier rows with the same description", async () => {
