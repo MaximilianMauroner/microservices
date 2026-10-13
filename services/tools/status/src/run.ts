@@ -344,6 +344,21 @@ async function observeEntry(
   }
   const observationId = stableId("observation", runId, entry.id);
   const definition = dependencies.monitorDefinitions?.find(({ id }) => id === entry.id);
+  if (definition?.kind === "heartbeat" && dependencies.store.lastHeartbeatSeenAt) {
+    const checkedAt = now();
+    const lastSeen = await dependencies.store.lastHeartbeatSeenAt(entry.id);
+    const age = lastSeen ? checkedAt.getTime() - lastSeen.getTime() : Infinity;
+    const success = age >= 0 && age <= definition.staleAfterMs;
+    return {
+      id: observationId,
+      runId,
+      checkedAt: checkedAt.toISOString(),
+      success,
+      statusCode: null,
+      latencyMs: 0,
+      errorCode: success ? null : "timeout"
+    };
+  }
   if (monitor.scope === "tailscale") {
     return {
       id: observationId,

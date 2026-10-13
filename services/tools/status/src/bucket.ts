@@ -28,6 +28,8 @@ export interface Versioned<Value> {
 }
 
 export interface CheckerStore {
+  /** Canonical heartbeat reads avoid waking the web server. S3-only local fixtures omit this. */
+  lastHeartbeatSeenAt?(monitorId: string): Promise<Date | null>;
   readCatalog(signal?: AbortSignal): Promise<Versioned<CatalogDocument>>;
   readState(signal?: AbortSignal): Promise<Versioned<CheckerStateDocument> | null>;
   readHistory(

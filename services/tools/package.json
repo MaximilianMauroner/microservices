@@ -11,6 +11,7 @@
     "feedback:encrypt-existing": "tsx feedback/encrypt-existing.ts",
     "dev": "vite dev",
     "start": "node .output/server/index.mjs",
+    "maintenance": "tsx src/maintenance-cli.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:money-postgres": "vitest run test/money-repository.integration.test.ts"

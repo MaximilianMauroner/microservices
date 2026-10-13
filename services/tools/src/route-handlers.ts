@@ -1,4 +1,4 @@
-import { InvalidHeartbeatTokenError, UnknownHeartbeatMonitorError } from "@tools-platform/tools-checker";
+import { InvalidHeartbeatTokenError, UnknownHeartbeatMonitorError } from "../status/src/heartbeats.js";
 import type { PlatformRequestContext } from "./start.js";
 import { favicons } from "./favicons.js";
 import {
