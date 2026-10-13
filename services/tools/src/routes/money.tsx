@@ -6,6 +6,7 @@ import { getMoneyTrackerPageData } from "../protected-data.js";
 import { faviconLink, favicons } from "../favicons.js";
 import { requireRouteSession } from "../auth-session.js";
 import { MONEY_CATEGORIES, type MoneyCategory } from "../../money/money-enums.js";
+import { preloadMoneyView } from "../../money/money-view-loading.js";
 
 type MoneySearch = { view?: Exclude<MoneyTrackerView, "overview">; tab?: MoneyReviewTab; rule?: string; category?: MoneyCategory; review?: boolean; fromMonth?: string; toMonth?: string; since?: string };
 
@@ -25,10 +26,15 @@ export const Route = createFileRoute("/money")({
     };
   },
   loaderDeps: ({ search }) => ({ view: (search.view ?? "overview") as MoneyTrackerView, since: search.since }),
-  loader: ({ deps }) => getMoneyTrackerPageData({ data: deps }),
+  loader: async ({ deps }) => {
+    const [data] = await Promise.all([getMoneyTrackerPageData({ data: deps }), preloadMoneyView(deps.view)]);
+    return data;
+  },
+  staleTime: 30_000,
+  preloadStaleTime: 30_000,
   pendingComponent: MoneyTrackerPendingRoute,
-  pendingMs: 0,
-  pendingMinMs: 250,
+  pendingMs: 150,
+  pendingMinMs: 0,
   head: () => ({
     meta: [{ title: "Money dashboard | Mauroner Tools" }, { name: "robots", content: "noindex, nofollow" }],
     links: [faviconLink(favicons.money)]

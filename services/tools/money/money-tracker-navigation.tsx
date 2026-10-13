@@ -43,7 +43,7 @@ export function MoneyNav({ current, reviewCount }: { current: MoneyTrackerView; 
           key={view}
           to="/money"
           search={{ view: view === "overview" ? undefined : view }}
-          preload="intent"
+          preload="render"
           activeOptions={{ exact: true, includeSearch: true }}
           aria-current={view === current ? "page" : undefined}
           className="money-nav__item"

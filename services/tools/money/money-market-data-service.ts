@@ -79,11 +79,11 @@ export class MoneyMarketDataService {
     return this.currentSync;
   }
 
-  async snapshot(options: Readonly<{ since?: string }> = {}): Promise<MoneyMarketSnapshot> {
+  async snapshot(options: Readonly<{ since?: string; history?: "daily" | "monthly" | "none" }> = {}): Promise<MoneyMarketSnapshot> {
     const now = this.now();
     const [inputs, historyInputs] = await Promise.all([
       this.repository.readValuationInputs(),
-      this.repository.readHistoryInputs()
+      options.history === "none" && !options.since ? undefined : this.repository.readHistoryInputs()
     ]);
     const analytics = fifoInvestmentLots(inputs.events.map(lotEvent));
     const prices = new Map(inputs.prices.map((price) => [price.canonicalKey, price]));
@@ -131,17 +131,20 @@ export class MoneyMarketDataService {
     }).sort((left, right) => (right.marketValueMinor ?? -1) - (left.marketValueMinor ?? -1) || left.name.localeCompare(right.name));
 
     const valued = positions.filter((position): position is MoneyMarketPosition & { marketValueMinor: number; unrealizedGainMinor: number } => position.marketValueMinor !== undefined && position.unrealizedGainMinor !== undefined);
+    const history = options.history === "none" || !historyInputs ? [] : historyPoints(historyInputs);
     return {
       asOf: now.toISOString(),
       positions,
-      history: historyPoints(historyInputs),
+      // Cash snapshots use the first of the month. Keep both month boundaries
+      // so joins retain that day's valuation and the latest prior trading day.
+      history: options.history === "monthly" ? history.filter((point, index) => point.date.slice(0, 7) !== history[index - 1]?.date.slice(0, 7) || point.date.slice(0, 7) !== history[index + 1]?.date.slice(0, 7)) : history,
       totals: {
         costBasisMinor: positions.reduce((sum, position) => sum + position.costBasisMinor, 0),
         knownMarketValueMinor: valued.reduce((sum, position) => sum + position.marketValueMinor, 0),
         knownUnrealizedGainMinor: valued.reduce((sum, position) => sum + position.unrealizedGainMinor, 0),
         complete: positions.every((position) => position.state !== "unpriced")
       },
-      ...(options.since ? { movesSince: positionMovesSince({ baseline: options.since, ...historyInputs, current: positions }) } : {})
+      ...(options.since && historyInputs ? { movesSince: positionMovesSince({ baseline: options.since, ...historyInputs, current: positions }) } : {})
     };
   }
 
@@ -222,9 +225,13 @@ function historyPoints(inputs: Awaited<ReturnType<MoneyMarketDataRepository["rea
   let target7PercentMinor: number | undefined;
   let previousCostBasisMinor: number | undefined;
   let previousDate: string | undefined;
+  let openPositions: ReturnType<typeof fifoInvestmentLots>["openPositions"] = [];
 
   return dates.flatMap((date) => {
+    const eventCount = eventIndex;
     while (eventIndex < events.length && events[eventIndex]!.localDate <= date) activeEvents.push(events[eventIndex++]!);
+    // Lots change only on days with events; most price days reuse the previous result.
+    if (eventIndex !== eventCount) openPositions = fifoInvestmentLots(activeEvents.map(lotEvent)).openPositions;
     while (priceIndex < prices.length && prices[priceIndex]!.date <= date) {
       const price = prices[priceIndex++]!;
       latestPrices.set(price.canonicalKey, price);
@@ -233,7 +240,6 @@ function historyPoints(inputs: Awaited<ReturnType<MoneyMarketDataRepository["rea
     while (inflationIndex < inflationIndices.length && inflationIndices[inflationIndex]!.date <= date) {
       latestInflation = Number(inflationIndices[inflationIndex++]!.value);
     }
-    const openPositions = fifoInvestmentLots(activeEvents.map(lotEvent)).openPositions;
     if (!openPositions.length) {
       previousCostBasisMinor = 0;
       previousDate = date;

@@ -23,6 +23,7 @@ import {
 } from "../src/components/ui/sheet.js";
 import type { MoneyCategory } from "./money-enums.js";
 import type { MoneyActivityPage } from "./money-repository.js";
+import { loadMoneySpendingView, loadMoneyActivityView, loadMoneyInvestmentsView, loadMoneyReviewView } from "./money-view-loading.js";
 import { groupMonth, type GroupedMonth, type Month } from "./money-history.js";
 import { MoneyCheckInBridge } from "./money-checkin-card.js";
 import { BalanceForm } from "./money-balance-form.js";
@@ -66,10 +67,10 @@ import {
 export type { MoneyTrackerView } from "./money-tracker-navigation.js";
 type Period = "6m" | "1y" | "5y" | "all";
 
-const MoneySpendingView = lazy(async () => ({ default: (await import("./money-spending-view.js")).MoneySpendingView }));
-const MoneyActivityView = lazy(async () => ({ default: (await import("./money-ledger-views.js")).MoneyActivityView }));
-const MoneyInvestmentsView = lazy(async () => ({ default: (await import("./money-ledger-views.js")).MoneyInvestmentsView }));
-const MoneyReviewView = lazy(async () => ({ default: (await import("./money-review-view.js")).MoneyReviewView }));
+const MoneySpendingView = lazy(async () => ({ default: (await loadMoneySpendingView()).MoneySpendingView }));
+const MoneyActivityView = lazy(async () => ({ default: (await loadMoneyActivityView()).MoneyActivityView }));
+const MoneyInvestmentsView = lazy(async () => ({ default: (await loadMoneyInvestmentsView()).MoneyInvestmentsView }));
+const MoneyReviewView = lazy(async () => ({ default: (await loadMoneyReviewView()).MoneyReviewView }));
 
 const SUBTITLES: Record<MoneyTrackerView, string> = {
   overview: "Net worth, what changed, and where it is going",
@@ -366,7 +367,7 @@ function Overview(props: MoneyTrackerPageData) {
               <FlowChart
                 height={180}
                 label="Income and spending for the last six complete months, with net flow"
-                months={flow.slice(-6).map((month) => ({ label: formatMonth(month.month).slice(0, 3), income: (month.incomeMinor + month.refundsMinor) / 100, spending: (month.spendMinor + month.feesMinor + month.taxesMinor) / 100, net: month.netCashFlowMinor / 100 }))}
+                months={flow.slice(-6).map((month) => ({ label: formatMonth(month.month).slice(0, 3), income: month.incomeMinor / 100, spending: (month.spendMinor + month.feesMinor + month.taxesMinor) / 100, net: month.netCashFlowMinor / 100 }))}
                 tooltip={(index) => flowTooltip(flow.slice(-6)[index]!)}
               />
             ) : (
