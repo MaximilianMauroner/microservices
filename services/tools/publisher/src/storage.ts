@@ -12,6 +12,7 @@ import {
   S3Client
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import type { DirectUploads } from "./direct-uploads.js";
 import {
   attachmentDisposition,
   originalNameMetadata,
@@ -27,6 +28,7 @@ const LIST_METADATA_CONCURRENCY = 8;
 
 export type StorageOperationOptions = {
   signal?: AbortSignal;
+  objectKey?: string;
 };
 
 export type UploadListCursor = {
@@ -133,6 +135,8 @@ export type StoredUploadSummary = {
 };
 
 export interface UploadStorage {
+  directUploads?: DirectUploads;
+  uploadOrigins?: readonly string[];
   putHtml(
     id: string,
     filePath: string,
@@ -154,7 +158,8 @@ export interface UploadStorage {
   presignTemporaryFile?(
     id: string,
     expiresInSeconds: number,
-    delivery?: { kind: "attachment"; filename: string }
+    delivery?: { kind: "attachment"; filename: string },
+    options?: StorageOperationOptions
   ): Promise<string | null>;
   listUploads(
     asOf: Date,
@@ -232,7 +237,7 @@ export function createS3UploadStorage(config: S3UploadStorageConfig): UploadStor
         await client.send(
           new PutObjectCommand({
             Bucket: config.bucket,
-            Key: htmlKey(id),
+            Key: options?.objectKey ?? htmlKey(id),
             Body: createReadStream(filePath, { signal: options?.signal }),
             CacheControl: "private, no-cache",
             ContentLength: metadata.bytes,
@@ -261,7 +266,7 @@ export function createS3UploadStorage(config: S3UploadStorageConfig): UploadStor
           const result = await client.send(
             new HeadObjectCommand({
               Bucket: config.bucket,
-              Key: htmlKey(id)
+              Key: options?.objectKey ?? htmlKey(id)
             }),
             requestOptions(options)
           );
@@ -280,7 +285,7 @@ export function createS3UploadStorage(config: S3UploadStorageConfig): UploadStor
         const result = await client.send(
           new GetObjectCommand({
             Bucket: config.bucket,
-            Key: htmlKey(id)
+            Key: options?.objectKey ?? htmlKey(id)
           }),
           requestOptions(options)
         );
@@ -340,7 +345,7 @@ export function createS3UploadStorage(config: S3UploadStorageConfig): UploadStor
         const result = await client.send(
           new GetObjectCommand({
             Bucket: config.bucket,
-            Key: temporaryFileKey(id),
+            Key: options?.objectKey ?? temporaryFileKey(id),
             Range: options?.range
           }),
           requestOptions(options)
@@ -378,12 +383,12 @@ export function createS3UploadStorage(config: S3UploadStorageConfig): UploadStor
       }
     },
 
-    async presignTemporaryFile(id, expiresInSeconds, delivery) {
+    async presignTemporaryFile(id, expiresInSeconds, delivery, options) {
       return getSignedUrl(
         client,
         new GetObjectCommand({
           Bucket: config.bucket,
-          Key: temporaryFileKey(id),
+          Key: options?.objectKey ?? temporaryFileKey(id),
           ...(delivery?.kind === "attachment" ? {
             ResponseContentDisposition: attachmentDisposition(delivery.filename),
             ResponseContentType: "application/octet-stream",
@@ -493,7 +498,7 @@ export function createS3UploadStorage(config: S3UploadStorageConfig): UploadStor
     },
 
     async updateFileExpiry(id, expiresAt, options) {
-      const key = temporaryFileKey(id);
+      const key = options?.objectKey ?? temporaryFileKey(id);
       try {
         const current = await client.send(
           new HeadObjectCommand({ Bucket: config.bucket, Key: key }),
@@ -528,7 +533,7 @@ export function createS3UploadStorage(config: S3UploadStorageConfig): UploadStor
     async deleteUpload(id, options) {
       const errors: unknown[] = [];
 
-      for (const key of [temporaryFileKey(id), htmlKey(id)]) {
+      for (const key of [temporaryFileKey(id), htmlKey(id), `transfers/${id}`]) {
         try {
           await client.send(
             new DeleteObjectCommand({
@@ -913,7 +918,7 @@ async function headTemporaryFile(
     const result = await client.send(
       new HeadObjectCommand({
         Bucket: bucket,
-        Key: temporaryFileKey(id)
+        Key: options?.objectKey ?? temporaryFileKey(id)
       }),
       requestOptions(options)
     );

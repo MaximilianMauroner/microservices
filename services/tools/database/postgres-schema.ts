@@ -388,6 +388,7 @@ export const objects = artifactsSchema.table("objects", {
   expiresAt: timestamp("expires_at", { withTimezone: true }),
   revokedAt: timestamp("revoked_at", { withTimezone: true }),
   uploadLinkId: uuid("upload_link_id"),
+  sha256: text("sha256"),
 }, (table) => [
   check("objects_kind_check", sql`${table.kind} in ('html', 'file')`),
   check("objects_bytes_check", sql`${table.bytes} >= 0`),
@@ -418,4 +419,24 @@ export const uploadLinks = artifactsSchema.table("upload_links", {
   check("upload_links_expiry_check", sql`${table.expiresAt} > ${table.createdAt}`),
   index("upload_links_active_idx").on(table.expiresAt, table.revokedAt),
   index("upload_links_history_idx").on(table.createdAt.desc(), table.id.desc()),
+]);
+
+export const uploadSessions = artifactsSchema.table("upload_sessions", {
+  sessionId: uuid("session_id").primaryKey(),
+  artifactId: text("artifact_id").notNull().unique(),
+  audience: text("audience").notNull(),
+  uploadLinkId: uuid("upload_link_id"),
+  description: jsonb("description").notNull(),
+  uploadId: text("upload_id"),
+  state: text("state").notNull(),
+  parts: jsonb("parts").notNull().default(sql`'[]'::jsonb`),
+  manifest: jsonb("manifest"),
+  sha256: text("sha256"),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  cleanedAt: timestamp("cleaned_at", { withTimezone: true }),
+}, (table) => [
+  check("upload_sessions_audience_check", sql`${table.audience} in ('browser', 'native', 'drop')`),
+  check("upload_sessions_state_check", sql`${table.state} in ('creating', 'uploading', 'completing', 'completed', 'aborted', 'failed')`),
+  index("upload_sessions_cleanup_idx").on(table.expiresAt).where(sql`${table.cleanedAt} is null`),
 ]);

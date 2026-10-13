@@ -14,6 +14,8 @@ import {
   renderExternalUploadPage
 } from "./external-upload-page.js";
 import { renderDropUploadPage } from "./drop-upload-page.js";
+import { handleDirectUpload } from "./direct-upload-request.js";
+import { DirectUploadError } from "./multipart-storage.js";
 import {
   MAX_UPLOAD_LINK_DURATION_MS,
   MIN_UPLOAD_LINK_DURATION_MS,
@@ -72,7 +74,6 @@ const SINGLE_BYTE_RANGE_PATTERN = /^bytes=(?:\d+-\d*|-\d+)$/i;
 // The media element keeps using the redirected URL for later seeks. Cover long
 // playback sessions while still capping a signature at the file's expiry.
 const DIRECT_VIDEO_URL_SECONDS = 4 * 60 * 60;
-const DIRECT_ATTACHMENT_MIN_BYTES = 8 * 1024 * 1024;
 const DEFAULT_UPLOAD_LIST_LIMIT = 25;
 const MAX_UPLOAD_LIST_LIMIT = 100;
 const MAX_UPLOAD_LIST_CURSOR_LENGTH = 2048;
@@ -166,11 +167,37 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
     MAX_PENDING_DROP_CHUNK_INITS
   );
   const dropChunkWriteGate = createUploadGate(MAX_CONCURRENT_DROP_CHUNK_WRITES);
+  const directRequestGate = createUploadGate(16);
   const uploadToken = requireUploadToken(options.uploadToken);
 
   return async function artifactFetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     try {
+      const direct = /^\/api\/(uploads|external-uploads)\/sessions(?:\/(.*))?$/.exec(url.pathname);
+      const directDrop = /^\/api\/drop\/([^/]+)\/uploads\/sessions(?:\/(.*))?$/.exec(url.pathname);
+      if (direct || directDrop) {
+        const audience = directDrop ? "drop" : direct?.[1] === "uploads" ? "native" : "browser";
+        if (audience === "native") requireBearer(request, uploadToken);
+        else if (request.method !== "GET" || request.headers.has("origin")) requireSameOrigin(request, url, options.publicBaseUrl);
+        if (audience === "browser" && !options.externalUpload) return externalUploadUnavailable();
+        const link = directDrop ? await (request.method === "DELETE"
+          ? options.uploadLinks?.find(directDrop[1]!)
+          : options.uploadLinks?.findActive(directDrop[1]!, getNow(options))) : undefined;
+        if (directDrop && !link) return dropLinkUnavailable();
+        const uploads = options.storage.directUploads;
+        if (!uploads) throw new DirectUploadError(503, "direct_upload_unavailable", "Direct uploads are not available.");
+        const release = directRequestGate.tryAcquire();
+        if (!release) throw new DirectUploadError(503, "upload_capacity_reached", "Too many upload requests are pending. Retry shortly.");
+        try {
+          return await activityTracker.track(handleDirectUpload(request, directDrop?.[2] ?? direct?.[2] ?? "",
+            uploads, { audience, ...(link ? { uploadLinkId: link.id } : {}) }, {
+              maxBytes: maxUploadBytes, maxHtmlBytes: maxHtmlUploadBytes, maxConcurrent: maxConcurrentUploads,
+              retentionMs: temporaryFileRetentionMs, baseUrl: getPublicBaseUrl(request, options.publicBaseUrl),
+              allowHtml: audience === "native" || (audience === "browser" && Boolean(options.browserPersistentUpload)),
+              ...(link ? { link } : {})
+            }));
+        } finally { release(); }
+      }
       const dropToken = matchDropPage(url.pathname);
       if ((request.method === "GET" || request.method === "HEAD") && dropToken) {
         const link = await options.uploadLinks?.findActive(dropToken, getNow(options));
@@ -183,7 +210,7 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
             publisherFaviconUrl
           ),
           { headers: { "Cache-Control": "private, no-store", "Content-Type": "text/html; charset=utf-8" } }
-        ), nonce);
+        ), nonce, options.storage.uploadOrigins);
       }
 
       if (request.method === "GET" && url.pathname === "/api/upload-links") {
@@ -801,7 +828,24 @@ async function readFileRoute(
     }
   }
 
-  if (request.method === "GET" && !ifRange && options.storage.presignTemporaryFile) {
+  const conditional = ["if-none-match", "if-modified-since", "if-match", "if-unmodified-since"]
+    .some(name => request.headers.has(name));
+  if (conditional) {
+    const metadata = await options.storage.getTemporaryFile(id, { headOnly: true, signal: request.signal });
+    if (!metadata || isExpired(metadata.expiresAt, getNow(options))) {
+      metadata?.body.destroy();
+      return new Response(null, { status: 404 });
+    }
+    metadata.body.destroy();
+    const headers = new Headers({ "Cache-Control": "private, no-store", "Access-Control-Allow-Origin": "*" });
+    applyRepresentationHeaders(headers, metadata.bytes, metadata.sha256, metadata.lastModified);
+    if (preconditionFailed(request, headers)) {
+      headers.set("Content-Length", "0");
+      return new Response(null, { status: 412, headers });
+    }
+    if (isNotModified(request, headers)) return new Response(null, { status: 304, headers });
+  }
+  if (request.method === "GET" && !ifRange && !conditional && options.storage.presignTemporaryFile) {
     const metadata = await options.storage.getTemporaryFile(id, {
       headOnly: true,
       signal: request.signal
@@ -812,34 +856,32 @@ async function readFileRoute(
     }
     metadata.body.destroy();
     const video = normalizeMimeType(metadata.contentType) === "video/mp4";
-    if (video || metadata.bytes >= DIRECT_ATTACHMENT_MIN_BYTES) {
-      const expiresInSeconds = metadata.expiresAt
-        ? Math.min(DIRECT_VIDEO_URL_SECONDS,
-            Math.floor((metadata.expiresAt.getTime() - getNow(options).getTime() - 1000) / 1000))
-        : DIRECT_VIDEO_URL_SECONDS;
-      if (expiresInSeconds >= 1) {
-        let signedUrl: string | null = null;
-        try {
-          signedUrl = video
-            ? await options.storage.presignTemporaryFile(id, expiresInSeconds)
-            : await options.storage.presignTemporaryFile(
-                id, expiresInSeconds, { kind: "attachment", filename: metadata.originalName }
-              );
-        } catch {
-          // S3 signing is an optimization; the canonical file route can still stream.
-        }
-        if (signedUrl) {
-          return new Response(null, {
-            status: 307,
-            headers: {
-              "Access-Control-Allow-Origin": "*",
-              "Cache-Control": "private, no-store",
-              "Location": signedUrl,
-              "Referrer-Policy": "no-referrer",
-              "X-Robots-Tag": "noindex, nofollow"
-            }
-          });
-        }
+    const expiresInSeconds = metadata.expiresAt
+      ? Math.min(DIRECT_VIDEO_URL_SECONDS,
+          Math.floor((metadata.expiresAt.getTime() - getNow(options).getTime() - 1000) / 1000))
+      : DIRECT_VIDEO_URL_SECONDS;
+    if (expiresInSeconds >= 1) {
+      let signedUrl: string | null = null;
+      try {
+        signedUrl = video
+          ? await options.storage.presignTemporaryFile(id, expiresInSeconds)
+          : await options.storage.presignTemporaryFile(
+              id, expiresInSeconds, { kind: "attachment", filename: metadata.originalName }
+            );
+      } catch {
+        // S3 signing is an optimization; the canonical file route can still stream.
+      }
+      if (signedUrl) {
+        return new Response(null, {
+          status: 307,
+          headers: {
+            "Access-Control-Allow-Origin": "*",
+            "Cache-Control": "private, no-store",
+            "Location": signedUrl,
+            "Referrer-Policy": "no-referrer",
+            "X-Robots-Tag": "noindex, nofollow"
+          }
+        });
       }
     }
   }
@@ -2237,10 +2279,10 @@ function withExternalUploadHeaders(response: Response) {
   });
 }
 
-function withDropUploadHeaders(response: Response, nonce?: string) {
+function withDropUploadHeaders(response: Response, nonce?: string, uploadOrigins: readonly string[] = []) {
   const headers = new Headers(response.headers);
   const inline = nonce ? `'nonce-${nonce}'` : "'none'";
-  headers.set("Content-Security-Policy", `default-src 'none'; connect-src 'self'; img-src 'self'; script-src ${inline}; style-src ${inline}; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`);
+  headers.set("Content-Security-Policy", `default-src 'none'; connect-src 'self' ${uploadOrigins.join(" ")}; img-src 'self'; script-src ${inline}; style-src ${inline}; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`);
   headers.set("Cross-Origin-Opener-Policy", "same-origin");
   headers.set("Referrer-Policy", "no-referrer");
   headers.set("X-Content-Type-Options", "nosniff");
@@ -2494,8 +2536,9 @@ function applyRepresentationHeaders(
 function isNotModified(request: Request, headers: Headers) {
   const etag = headers.get("ETag");
   const ifNoneMatch = request.headers.get("if-none-match");
-  if (etag && ifNoneMatch) {
-    return ifNoneMatch.split(",").some((candidate) => candidate.trim() === etag);
+  if (ifNoneMatch) {
+    return ifNoneMatch.split(",").some(candidate => candidate.trim() === "*" ||
+      Boolean(etag && candidate.trim().replace(/^W\//, "") === etag));
   }
   const lastModified = headers.get("Last-Modified");
   const ifModifiedSince = request.headers.get("if-modified-since");
@@ -2504,6 +2547,14 @@ function isNotModified(request: Request, headers: Headers) {
       ifModifiedSince &&
       Date.parse(lastModified) <= Date.parse(ifModifiedSince)
   );
+}
+
+function preconditionFailed(request: Request, headers: Headers) {
+  const ifMatch = request.headers.get("if-match");
+  if (ifMatch) return !ifMatch.split(",").some(candidate => candidate.trim() === "*" || candidate.trim() === headers.get("etag"));
+  const unmodified = request.headers.get("if-unmodified-since");
+  const modified = headers.get("last-modified");
+  return Boolean(unmodified && modified && Date.parse(modified) > Date.parse(unmodified));
 }
 
 function requestedRange(request: Request) {
@@ -2606,6 +2657,10 @@ export class HtmlPayloadTooLargeError extends Error {
 }
 
 function artifactErrorResponse(error: unknown) {
+  if (error instanceof DirectUploadError) {
+    return jsonResponse({ error: error.code, message: error.message }, error.status,
+      { "Cache-Control": "private, no-store", ...(error.status === 503 || error.status === 429 ? { "Retry-After": "1" } : {}) });
+  }
   if (error instanceof ArtifactRequestError) {
     return jsonResponse({ error: error.code, message: error.message }, error.status, error.headers);
   }
