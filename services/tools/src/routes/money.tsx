@@ -7,7 +7,7 @@ import { faviconLink, favicons } from "../favicons.js";
 import { requireRouteSession } from "../auth-session.js";
 import { MONEY_CATEGORIES, type MoneyCategory } from "../../money/money-enums.js";
 
-type MoneySearch = { view?: Exclude<MoneyTrackerView, "overview">; tab?: MoneyReviewTab; category?: MoneyCategory; review?: boolean; fromMonth?: string; toMonth?: string; since?: string };
+type MoneySearch = { view?: Exclude<MoneyTrackerView, "overview">; tab?: MoneyReviewTab; rule?: string; category?: MoneyCategory; review?: boolean; fromMonth?: string; toMonth?: string; since?: string };
 
 export const Route = createFileRoute("/money")({
   beforeLoad: ({ location }) => requireRouteSession(location.href),
@@ -16,6 +16,7 @@ export const Route = createFileRoute("/money")({
     return {
       view: view === "overview" ? undefined : view,
       tab: MONEY_REVIEW_TABS.find((tab) => tab === search.tab),
+      rule: typeof search.rule === "string" && search.rule.trim() ? search.rule.slice(0, 250) : undefined,
       category: typeof search.category === "string" && MONEY_CATEGORIES.includes(search.category as MoneyCategory) ? search.category as MoneyCategory : undefined,
       review: search.review === true || search.review === "true" ? true : undefined,
       fromMonth: typeof search.fromMonth === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(search.fromMonth) ? search.fromMonth : undefined,
@@ -37,7 +38,7 @@ export const Route = createFileRoute("/money")({
 
 function MoneyTrackerRoute() {
   const search = Route.useSearch();
-  return <MoneyTrackerPage {...Route.useLoaderData()} view={search.view ?? "overview"} tab={search.tab ?? "queue"} category={search.category} review={search.review} fromMonth={search.fromMonth} toMonth={search.toMonth} />;
+  return <MoneyTrackerPage {...Route.useLoaderData()} view={search.view ?? "overview"} tab={search.tab ?? "queue"} rule={search.rule} category={search.category} review={search.review} fromMonth={search.fromMonth} toMonth={search.toMonth} />;
 }
 
 function MoneyTrackerPendingRoute() {

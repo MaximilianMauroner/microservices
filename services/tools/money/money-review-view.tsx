@@ -10,6 +10,7 @@ import { Badge } from "../src/components/ui/badge.js";
 import { Button } from "../src/components/ui/button.js";
 import { BalanceForm } from "./money-balance-form.js";
 import { MoneyCategoryPicker, moneyCategoryLabel } from "./money-category-picker.js";
+import { isRuleCategorized } from "./money-category-rules.js";
 import { MoneyImportDrop, MoneyImportHistory } from "./money-ledger-views.js";
 import { MoneyRulesView } from "./money-rules-view.js";
 import { MONEY_REVIEW_TABS, type MoneyReviewTab } from "./money-tracker-navigation.js";
@@ -27,7 +28,7 @@ const TREATMENTS: readonly (readonly [MoneyTransferDisposition, string])[] = [
 const VISIBLE_GROUPS = 8;
 
 /** One place for the work that keeps rows out of the totals, plus the rules and imports behind it. */
-export function MoneyReviewView(props: MoneyTrackerPageData & { tab: MoneyReviewTab }) {
+export function MoneyReviewView(props: MoneyTrackerPageData & { tab: MoneyReviewTab; rule?: string }) {
   const staleAccounts = staleCashAccounts(props);
   const stalePrices = props.marketData.positions.filter((position) => position.state !== "fresh");
   const counts: Record<MoneyReviewTab, number> = {
@@ -52,7 +53,7 @@ export function MoneyReviewView(props: MoneyTrackerPageData & { tab: MoneyReview
         ))}
       </nav>
       {props.tab === "rules" ? (
-        <MoneyRulesView {...props} />
+        <MoneyRulesView {...props} rulePrefill={props.rule} />
       ) : props.tab === "imports" ? (
         <>
           <MoneyImportDrop lastImport={props.imports[0] ? formatDay(props.imports[0].committedAt) : undefined} />
@@ -75,9 +76,9 @@ function Queue(props: MoneyTrackerPageData & { staleAccounts: readonly string[];
           <EmptyState title="Nothing to review">Every row has a category, every transfer has a treatment, and prices and balances are current.</EmptyState>
         </MoneyPanel>
       ) : null}
-      {props.reviewCounts.sourceOtherRows ? (
+      {props.reviewCounts.otherRows ? (
         <p className="px-1 text-xs text-muted-foreground">
-          {props.reviewCounts.sourceOtherRows.toLocaleString("en-GB")} spending and refund rows have the generic source category Other. <Link to="/money" search={{ view: "transactions", category: "other" }} className="money-inline-link">Review Other rows</Link>
+          {countLabel(props.reviewCounts.otherRows, "spending or refund row", "spending and refund rows")} got the broad category Other from a rule. <Link to="/money" search={{ view: "transactions", category: "other" }} className="money-inline-link">Review Other rows</Link>
         </p>
       ) : null}
       {props.reviewQueue.items.length ? <CategorizeQueue items={props.reviewQueue.items} common={props.reviewQueue.commonCategories} total={props.reviewCounts.uncategorized} spendingRows={props.reviewCounts.spendingRows} /> : null}
@@ -110,12 +111,11 @@ function CategorizeQueue({ items, common, total, spendingRows }: { items: readon
   const [error, setError] = useState<string>();
   const open = items.filter((item) => !done.some((entry) => entry.id === item.id));
   const picks = (item: MoneyReviewCategoryItem) => [...new Set([...item.suggestions, ...common])].slice(0, 3);
-  const canRule = (item: MoneyReviewCategoryItem) => item.flowKind === "spend" || item.flowKind === "refund";
   const apply = async (item: MoneyReviewCategoryItem, category: MoneyCategory) => {
     setSaving(item.id);
     setError(undefined);
     try {
-      const createRule = canRule(item) && scope[item.id] === "merchant";
+      const createRule = isRuleCategorized(item) && scope[item.id] === "merchant";
       const response = await fetch("/api/money/categories", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -150,7 +150,7 @@ function CategorizeQueue({ items, common, total, spendingRows }: { items: readon
       <ul className="mt-2 divide-y border-t">
         {open.map((item) => {
           const options = picks(item);
-          const rule = canRule(item);
+          const rule = isRuleCategorized(item);
           return (
             <li key={item.id} className="grid gap-2 px-4 py-3">
               <div className="flex items-baseline justify-between gap-3">
@@ -182,6 +182,7 @@ function CategorizeQueue({ items, common, total, spendingRows }: { items: readon
                       ? `This merchant description in ${item.accountName}: ${item.similarCount} other ${item.similarCount === 1 ? "row" : "rows"} and future imports`
                       : `This merchant description in ${item.accountName}, including future imports`}
                   </label>
+                  <Link to="/money" search={{ view: "review", tab: "rules", rule: item.description }} className="money-inline-link">Write a rule</Link>
                 </fieldset>
               ) : null}
             </li>

@@ -139,7 +139,8 @@ it.skipIf(!repository || !admin)("executes import replay, transfer review, analy
   await repository!.commitImport({ ...input, digest: parsedExternal.digest, filename: "external.tsv", bytes: external.byteLength,
     rowCount: parsedExternal.rowCount, transactions: parsedExternal.transactions, balanceSnapshots: parsedExternal.balanceSnapshots });
   const review = await repository!.readActivityPage({ query: "", reviewOnly: true, offset: 0, limit: 10 });
-  expect(review.items).toHaveLength(0);
+  // The transfer reviewed as spending waits for a category like other spending.
+  expect(review.items.map((item) => [item.description, item.category])).toEqual([["External payment", "uncategorized"]]);
 
   const beforeTargetedBalance = await repository!.readLedgerSnapshot("all");
   const currentAccount = beforeTargetedBalance.accounts.find((id) => beforeTargetedBalance.accountLabels[id]?.startsWith("Revolut Current"));
@@ -236,7 +237,7 @@ it.skipIf(!repository || !admin)("lists and removes account-scoped category rule
   await repository!.setTransactionCategory({ transactionId: rows[0]!.id, category: "groceries", actor: "integration@example.test", createRule: true });
 
   const withRule = await repository!.readLedgerSnapshot("all");
-  expect(withRule.categoryRules).toEqual([expect.objectContaining({ description: "Recurring merchant", category: "groceries" })]);
+  expect(withRule.categoryRules).toEqual([expect.objectContaining({ accountName: expect.stringMatching(/^Revolut Current/), matchField: "description", matchOperator: "equals", matchValue: "recurring merchant", category: "groceries", rowCount: 1 })]);
   await repository!.reimportAll();
   const afterReimport = (await repository!.readActivityPage({ query: "Recurring merchant", offset: 0, limit: 10 })).items;
   expect(afterReimport.filter((row) => row.categoryOrigin === "manual")).toHaveLength(1);
@@ -249,6 +250,53 @@ it.skipIf(!repository || !admin)("lists and removes account-scoped category rule
   const updatedRows = (await repository!.readActivityPage({ query: "Recurring merchant", offset: 0, limit: 10 })).items;
   expect(updatedRows.filter((row) => row.categoryOrigin === "manual")).toHaveLength(1);
   expect(updatedRows.filter((row) => row.categoryOrigin === "source")).toEqual([expect.objectContaining({ category: "uncategorized" })]);
+});
+
+it.skipIf(!repository || !admin)("applies ordered category rules to every account and to later imports", async () => {
+  await commitCash(repository!, cash([
+    "Card Payment\tCurrent\t2026-04-02 12:00:00\t2026-04-02 12:00:00\tCorner Market 12\t-10\t0\tEUR\tCOMPLETED\t90",
+    "Card Payment\tCurrent\t2026-04-03 12:00:00\t2026-04-03 12:00:00\tMarket Pay 4\t-5\t0\tEUR\tCOMPLETED\t85",
+    "Card Payment\tCurrent\t2026-04-04 12:00:00\t2026-04-04 12:00:00\tSupermarket Hall\t-3\t0\tEUR\tCOMPLETED\t82",
+    "Card Payment\tCurrent\t2026-04-05 12:00:00\t2026-04-05 12:00:00\tCorner Market 13\t-7\t0\tEUR\tCOMPLETED\t75"
+  ]), "rules.tsv");
+  const row = async (description: string) => (await repository!.readActivityPage({ query: description, offset: 0, limit: 10 })).items.find((item) => item.description === description)!;
+  await repository!.setTransactionCategory({ transactionId: (await row("Corner Market 13")).id, category: "gifts", actor: "integration@example.test", createRule: false });
+
+  const market = { matchField: "description", matchOperator: "word", matchValue: "market", category: "shopping" } as const;
+  const preview = await repository!.previewCategoryRule(market);
+  expect(preview).toMatchObject({ matchCount: 3, changeCount: 2, manualCount: 1 });
+  expect(preview.examples.map((example) => [example.description, example.nextCategory])).toEqual([["Market Pay 4", "shopping"], ["Corner Market 12", "shopping"], ["Corner Market 13", "gifts"]]);
+  await expect(repository!.saveCategoryRule({ ...market, actor: "integration@example.test", expectedMatchCount: 2 })).rejects.toThrow("Preview the rule again");
+  expect(await repository!.saveCategoryRule({ ...market, actor: "integration@example.test", expectedMatchCount: 3 })).toMatchObject({ affectedCount: 2 });
+
+  // A later rule goes first. "Uncategorized" keeps its rows in review and stops the rules below it.
+  const pay = { matchField: "description", matchOperator: "contains", matchValue: "market pay", category: "uncategorized" } as const;
+  expect(await repository!.previewCategoryRule(pay)).toMatchObject({ matchCount: 1, changeCount: 1 });
+  await repository!.saveCategoryRule({ ...pay, actor: "integration@example.test", expectedMatchCount: 1 });
+  expect(await row("Market Pay 4")).toMatchObject({ category: "uncategorized", categoryOrigin: "rule" });
+  expect(await row("Supermarket Hall")).toMatchObject({ category: "uncategorized", categoryOrigin: "source" });
+  expect(await row("Corner Market 13")).toMatchObject({ category: "gifts", categoryOrigin: "manual" });
+
+  let { categoryRules } = await repository!.readLedgerSnapshot("review");
+  expect(categoryRules.map((rule) => [rule.matchValue, rule.category, rule.rowCount])).toEqual([["market pay", "uncategorized", 1], ["market", "shopping", 1]]);
+
+  await commitCash(repository!, cash(["Card Payment\tCurrent\t2026-04-06 12:00:00\t2026-04-06 12:00:00\tCORNER MARKET 14\t-4\t0\tEUR\tCOMPLETED\t71"]), "later.tsv");
+  expect(await row("CORNER MARKET 14")).toMatchObject({ category: "shopping", categoryOrigin: "rule" });
+
+  // Editing a rule moves it to the top; rows it no longer matches fall back to the next rule or to review.
+  const edited = { ruleId: categoryRules[1]!.id, matchField: "description", matchOperator: "starts_with", matchValue: "corner market 12", category: "groceries" } as const;
+  const editPreview = await repository!.previewCategoryRule(edited);
+  expect(editPreview).toMatchObject({ matchCount: 1, changeCount: 2 });
+  expect(editPreview.examples.find((example) => !example.matches)).toMatchObject({ description: "CORNER MARKET 14", nextCategory: "uncategorized" });
+  expect(await repository!.saveCategoryRule({ ...edited, actor: "integration@example.test", expectedMatchCount: 1 })).toEqual({ ruleId: edited.ruleId, affectedCount: 2 });
+  ({ categoryRules } = await repository!.readLedgerSnapshot("review"));
+  expect(categoryRules.map((rule) => rule.matchValue)).toEqual(["corner market 12", "market pay"]);
+
+  expect(await repository!.deleteCategoryRule(edited.ruleId)).toEqual({ affectedCount: 1 });
+  expect(await row("Corner Market 12")).toMatchObject({ category: "uncategorized", categoryOrigin: "source" });
+  await repository!.reimportAll();
+  expect(await row("Market Pay 4")).toMatchObject({ category: "uncategorized", categoryOrigin: "rule" });
+  expect(await row("Corner Market 13")).toMatchObject({ category: "gifts", categoryOrigin: "manual" });
 });
 
 it.skipIf(!repository || !admin)("preserves a reviewed transfer when its possible counterpart arrives later", async () => {
@@ -566,6 +614,29 @@ it.skipIf(!repository || !admin)("queues uncategorized spending with suggestions
 
   const review = await repository!.readActivityPage({ query: "", reviewOnly: true, offset: 0, limit: 10 });
   expect(review.items.map((item) => item.description).sort()).toEqual(["Kiosk 12", "Stall 7", "Stall 7"]);
+});
+
+it.skipIf(!repository || !admin)("categorizes transfers reviewed as spending and follows later review changes", async () => {
+  await commitCash(repository!, cash([
+    "Transfer\tCurrent\t2026-07-05 12:00:00\t2026-07-05 12:00:00\tTo Landlord\t-500\t0\tEUR\tCOMPLETED\t500",
+    "Transfer\tCurrent\t2026-08-05 12:00:00\t2026-08-05 12:00:00\tTo Landlord\t-500\t0\tEUR\tCOMPLETED\t0"
+  ]), "transfer-spending.tsv");
+  const stored = async () => admin!<{ category: string; category_origin: string }[]>`select category, category_origin
+    from tools.money_transactions where description = 'To Landlord' order by local_date`;
+  const { reviewQueue } = await repository!.readLedgerSnapshot("review");
+  expect(reviewQueue.items.filter((item) => item.description === "To Landlord").map((item) => item.similarCount)).toEqual([1, 1]);
+
+  const rent = { matchField: "description", matchOperator: "equals", matchValue: "to landlord", category: "housing" } as const;
+  expect(await repository!.previewCategoryRule(rent)).toMatchObject({ matchCount: 2, changeCount: 2 });
+  await repository!.saveCategoryRule({ ...rent, actor: "integration@example.test", expectedMatchCount: 2 });
+  expect(await stored()).toEqual([{ category: "housing", category_origin: "rule" }, { category: "housing", category_origin: "rule" }]);
+
+  // An own-account transfer is not spending, so it leaves the rule and returns when reviewed as spending again.
+  const [first] = (await repository!.readActivityPage({ query: "To Landlord", sort: "date", direction: "asc", offset: 0, limit: 10 })).items;
+  await repository!.setTransferDisposition({ transactionId: first!.id, disposition: "internal_transfer" });
+  expect(await stored()).toEqual([{ category: "transfer", category_origin: "source" }, { category: "housing", category_origin: "rule" }]);
+  await repository!.setTransferDisposition({ transactionId: first!.id, disposition: "spend" });
+  expect((await stored())[0]).toEqual({ category: "housing", category_origin: "rule" });
 });
 
 function cash(rows: string[]) {

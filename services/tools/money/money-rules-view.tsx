@@ -11,7 +11,8 @@ import {
   type MoneyTransferRuleMatch,
   type MoneyTransferRuleSign,
 } from "./money-transfer-inference.js";
-import { MoneyCategoryRuleBuilder } from "./money-category-rule-builder.js";
+import { MoneyCategoryRulesPanel } from "./money-category-rules-panel.js";
+import { ruleErrorMessage, ruleRequest } from "./money-rule-request.js";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -63,63 +64,18 @@ export function MoneyRulesView({
   transferPairRules,
   transferRuleOptions,
   transferReview,
-}: RulesViewProps) {
+  rulePrefill,
+}: RulesViewProps & { rulePrefill?: string }) {
   const cashAccounts = accounts.filter((account) => accountRoles[account] === "cash");
   const unresolved = transferReview.unresolvedPositiveCount + transferReview.unresolvedNegativeCount;
   return (
     <>
-      <section className="grid items-start gap-3 xl:grid-cols-2" aria-label="Category rules">
-        <MoneyCategoryRuleBuilder accounts={cashAccounts} accountLabels={accountLabels} />
-        <CategoryRulesCard rules={categoryRules} />
-      </section>
+      <MoneyCategoryRulesPanel rules={categoryRules} accounts={cashAccounts} accountLabels={accountLabels} prefill={rulePrefill} />
       <section className="grid items-start gap-3 xl:grid-cols-2" aria-label="Transfer rules">
         <TransferRuleBuilder options={transferRuleOptions} unresolved={unresolved} />
         <TransferRulesCard rules={transferRules} pairRules={transferPairRules} />
       </section>
     </>
-  );
-}
-
-function CategoryRulesCard({ rules }: { rules: MoneyTrackerPageData["categoryRules"] }) {
-  const router = useRouter();
-  const [deleting, setDeleting] = useState<string>();
-  const [error, setError] = useState<string>();
-  const remove = async (ruleId: string) => {
-    setDeleting(ruleId);
-    setError(undefined);
-    try {
-      await ruleRequest("/api/money/categories", { ruleId }, "DELETE");
-      await router.invalidate();
-    } catch (caught) {
-      setError(errorMessage(caught));
-    } finally {
-      setDeleting(undefined);
-    }
-  };
-  return (
-    <Card>
-      <CardHeader className="border-b">
-        <CardTitle>Category rules</CardTitle>
-        <CardDescription>Exact matches scoped to one account. Manual categories always win.</CardDescription>
-      </CardHeader>
-      {error ? <p className="px-4 pt-3 text-xs text-negative" role="alert">{error}</p> : null}
-      <CardContent className="max-h-[28rem] divide-y overflow-y-auto p-0">
-        {rules.map((rule) => (
-          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-2.5" key={rule.id}>
-            <div className="min-w-0">
-              <p className="truncate text-sm font-medium" title={rule.description}>{rule.description}</p>
-              <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                {rule.accountName} · {formatLabel(rule.category)}
-              </p>
-            </div>
-            <Button type="button" size="sm" variant="outline" disabled={deleting === rule.id} onClick={() => void remove(rule.id)}>
-              {deleting === rule.id ? "Removing…" : "Remove"}
-            </Button>
-          </div>
-        ))}
-        {!rules.length ? <EmptyRules title="No category rules" description="Create one with the form, or when you change a transaction category." /> : null}
-      </CardContent>
-    </Card>
   );
 }
 
@@ -159,7 +115,7 @@ function TransferRuleBuilder({ options, unresolved }: { options: MoneyTrackerPag
       setSuccess(`Rule saved. ${result.affectedCount} unresolved ${result.affectedCount === 1 ? "row was" : "rows were"} classified.`);
       await router.invalidate();
     } catch (caught) {
-      setError(errorMessage(caught));
+      setError(ruleErrorMessage(caught));
     } finally {
       setBusy(false);
     }
@@ -263,10 +219,10 @@ function TransferRulesCard({ rules, pairRules }: { rules: MoneyTrackerPageData["
     setDeleting(ruleId);
     setError(undefined);
     try {
-      await ruleRequest("/api/money/transfer-rules", { ruleId }, "DELETE");
+      await ruleRequest("/api/money/transfer-rules", { ruleId }, { method: "DELETE" });
       await router.invalidate();
     } catch (caught) {
-      setError(errorMessage(caught));
+      setError(ruleErrorMessage(caught));
     } finally {
       setDeleting(undefined);
     }
@@ -354,17 +310,4 @@ function formatLabel(value: string) {
 
 function formatAmount(valueMinor: number, currency: string) {
   return new Intl.NumberFormat("de-DE", { style: "currency", currency }).format(valueMinor / 100);
-}
-
-async function ruleRequest<Result = { ok: true }>(url: string, value: Record<string, unknown>, method = "POST"): Promise<Result> {
-  const response = await fetch(url, { method, body: JSON.stringify(value), headers: { "Content-Type": "application/json" } });
-  const body = (await response.json()) as { message?: unknown } | Result;
-  if (!response.ok) {
-    throw new Error(typeof (body as { message?: unknown }).message === "string" ? (body as { message: string }).message : `Rule request failed with status ${response.status}.`);
-  }
-  return body as Result;
-}
-
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : "The rule request failed.";
 }

@@ -244,7 +244,7 @@ function parseSparkasse(rows: string[][], digest: string): ParsedMoneyImport {
       localDate: row.bookingDate, description, amountMinor, feeMinor, taxMinor, baseAmountMinor: amountMinor,
       baseFeeMinor: feeMinor, baseTaxMinor: taxMinor, baseCurrency: "EUR", balanceAfterMinor, currency: "EUR",
       status: "completed", sourceType, flowKind,
-      category: inferMoneyCategory(flowKind, sourceType, description)
+      category: inferMoneyCategory(flowKind)
     };
   });
   if (balanceAfterMinor !== closingBalanceMinor) {
@@ -293,7 +293,7 @@ function savingsRow(row: string[], sourceRow: number): MoneyLedgerTransaction {
     sourceRow, provider: "revolut", accountRole: "cash", accountExternalRef, accountName: `Revolut ${product}`,
     occurredAt, completedAt: occurredAt, localDate, description, amountMinor, feeMinor: 0, taxMinor: 0,
     baseAmountMinor: amountMinor, baseFeeMinor: 0, baseTaxMinor: 0, baseCurrency: "EUR", balanceAfterMinor,
-    currency: "EUR", status: "completed", sourceType, flowKind, category: inferMoneyCategory(flowKind, sourceType, description)
+    currency: "EUR", status: "completed", sourceType, flowKind, category: inferMoneyCategory(flowKind)
   };
 }
 
@@ -336,7 +336,7 @@ function cashRow(row: string[], sourceRow: number): MoneyLedgerTransaction {
     ...(currency === "EUR" ? { baseAmountMinor: amountMinor, baseFeeMinor: feeMinor, baseTaxMinor: 0, baseCurrency: "EUR" as const } : {}),
     ...(balanceAfterMinor === undefined ? {} : { balanceAfterMinor }), currency: currency!,
     status: state === "COMPLETED" ? "completed" : "reverted", sourceType: type,
-    flowKind, category: inferMoneyCategory(flowKind, type, description)
+    flowKind, category: inferMoneyCategory(flowKind)
   } satisfies Omit<MoneyLedgerTransaction, "sourceKey">;
   return { ...transaction, sourceKey: revolutCashSourceKey(transaction) };
 }
@@ -418,7 +418,7 @@ function parsePortfolio(dataRows: string[][], digest: string): ParsedMoneyImport
       accountExternalRef: `portfolio:${accountType.toLocaleLowerCase("en-GB")}:${role}`,
       accountName: `Trade Republic ${role === "investment" ? "Investments" : "Cash"}`, occurredAt: occurredAt.toISOString(), completedAt: occurredAt.toISOString(),
       localDate: date!, description, amountMinor, feeMinor, taxMinor, baseAmountMinor: amountMinor, baseFeeMinor: feeMinor, baseTaxMinor: taxMinor, baseCurrency: "EUR", currency: currency!, status: "completed", sourceType: type,
-      ...(mcc?.trim() ? { mcc: mcc.trim() } : {}), flowKind, category: sourceCategory === "TRADING" || sourceCategory === "DELIVERY" ? "investments" : flowKind === "transfer" ? "transfer" : type === "CARD_TRANSACTION" ? categorizeDescription(description, mcc) : type === "INTEREST_PAYMENT" ? "income" : flowKind === "tax" ? "taxes" : flowKind === "balance_adjustment" ? "adjustment" : "uncategorized"
+      ...(mcc?.trim() ? { mcc: mcc.trim() } : {}), flowKind, category: sourceCategory === "TRADING" || sourceCategory === "DELIVERY" ? "investments" : flowKind === "transfer" ? "transfer" : type === "INTEREST_PAYMENT" ? "income" : flowKind === "tax" ? "taxes" : flowKind === "balance_adjustment" ? "adjustment" : "uncategorized"
     });
     const eventKind = portfolioEventKind(type, sourceCategory);
     if (eventKind) investmentEvents.push({
@@ -516,15 +516,15 @@ function cashFlow(type: string, amount: number, description: string): MoneyFlowK
   if (type === "Interest") return "investment_income";
   return "transfer";
 }
-export function inferMoneyCategory(flowKind: MoneyFlowKind, sourceType: string, description: string, mcc?: string): MoneyCategory {
+/** The category a flow kind implies. Spending and refunds start uncategorized; category rules decide them. */
+export function inferMoneyCategory(flowKind: MoneyFlowKind): MoneyCategory {
   if (flowKind === "transfer") return "transfer";
   if (flowKind === "balance_adjustment") return "adjustment";
   if (flowKind === "investment_income" || flowKind === "income") return "income";
   if (flowKind === "fee") return "fees";
   if (flowKind === "tax") return "taxes";
   if (flowKind === "trade") return "investments";
-  if (sourceType === "ATM") return "cash";
-  return categorizeDescription(description, mcc);
+  return "uncategorized";
 }
 function tradingFlow(type: string): MoneyFlowKind { return type.includes("BUY") || type.includes("SELL") || type === "STOCK SPLIT" || type.startsWith("POSITION TRANSFER") ? "trade" : type === "DIVIDEND" ? "investment_income" : type.includes("FEE") ? "fee" : type.includes("TAX") ? "tax" : "transfer"; }
 function tradingEventKind(type: string): MoneyInvestmentEventKind { return type.includes("BUY") ? "buy" : type.includes("SELL") ? "sell" : type === "DIVIDEND" ? "dividend" : type.includes("FEE") ? "fee" : type.includes("TAX") ? "tax" : type === "STOCK SPLIT" ? "split" : type.startsWith("POSITION TRANSFER") ? "position_transfer" : "cash_transfer"; }
@@ -555,55 +555,6 @@ function sparkasseBeneficiaryMatchesHolder(description: string, accountHolder: s
 
 function normalizedIdentityTokens(value: string) {
   return value.toLocaleLowerCase("en-GB").normalize("NFKD").replace(/\p{Diacritic}/gu, "").match(/[a-z0-9]+/g) ?? [];
-}
-
-const MCC_CATEGORY_RULES: readonly Readonly<{ category: MoneyCategory; pattern: RegExp }>[] = [
-  { category: "groceries", pattern: /^(5411|5422|5441|5451|5462|5499)$/ },
-  { category: "dining", pattern: /^581[1-4]$/ },
-  { category: "transport", pattern: /^(4111|4121|4131|4784|4789|5541|5542|7523)$/ },
-  { category: "shopping", pattern: /^(5310|5311|5331|5399|5611|5621|5631|5641|5651|5655|5661|5681|5691|5697|5698|5699|5712|5713|5714|5719|5722|5732|5734|5941|5942|5943|5944|5945|5946|5947|5948|5949|5999)$/ },
-  { category: "health", pattern: /^(5912|5975|5976|8011|8021|8031|8041|8042|8043|8049|8050|8062|8071|8099)$/ },
-  { category: "travel", pattern: /^(4411|4722|7011)$/ },
-  { category: "education", pattern: /^(8211|8220|8241|8244|8249|8299)$/ },
-  { category: "entertainment", pattern: /^(7832|7911|7922|7929|7932|7933|7991|7992|7993|7994|7996|7997|7998|7999)$/ }
-];
-
-const DESCRIPTION_CATEGORY_RULES: readonly Readonly<{ category: MoneyCategory; pattern: RegExp }>[] = [
-  { category: "housing", pattern: /\b(rent|landlord|mortgage|utility|utilities|electricity|gas bill|studentenf(?:o|oe)rderungsstiftung)\b/ },
-  { category: "groceries", pattern: /\b(billa|spar|hofer|aldi|lidl|rewe|edeka|despar|mpreis|supermarket|grocer(?:y|ies)|denn'?s|biomarkt|hello ?fresh|huel|koncoop|naturalia|agrocenter|sudtiroler milch|fruits?|misa tea)\b|s.*dtiroler milch|l.*derach|winestore|denn.s|^basic$/ },
-  { category: "dining", pattern: /\b(lieferando|foodora|deliveroo|delivery hero|just eat|takeaway|restaurant|cafe|coffee|pizza|backwerk|mcdonald'?s|burger king|starbucks|pret a manger|costa coffee|kfc|confiserie|autogrill|swing kitchen|bistrot|bakerei|konditorei|kebab|imbiss|pizzeria|biteclub|bao bar|veggiezz|frozen yogurt|litalissimo|humus|old wild west|serways|brot und spiele|juice factory|le crobag|speckstandl|nihonbashi|tramuntana|giannotti et fil|balthasar kaffee|bar edelweiss|stadtkebab|landhausbar|coca-cola|gourmet)\b|l'autentico|b.*ckerei|caf.|str.*ck|b.*renwirt|^chez angele?$/ },
-  { category: "transport", pattern: /\b(oebb|obb|enio|westbahn|wiener linien|wienerlinien|klimaticket|trenitalia|salzburg verkehr|flixbus|eurolanes|uber|taxi|train|rail|parking|parkhaus|parkplatz|parcheggio|garage|wipark|autostrade?|brennero|bolzano sud|tiermobilit|suedtirol pass|altoadige p ass|esso|petrol|fuel|kvw service|bus(?:s+|$))\b|a.bb|^tier$|^wien$|^strutturetr$|^seis-seiser alm bahn$/ },
-  { category: "health", pattern: /\b(apotheke|pharmacy|pharmac|farmacia|doctor|dentist|hospital|fitinn|drogerie|dm drogerie|rossmann|bipa|dermopraxis|diagnostik)\b/ },
-  { category: "personal_care", pattern: /\b(barber|hairdresser|haircut|salon|salone|coiffeur|beauty|spa|nails?|cosmetics?|skincare|grooming|massage)\b/ },
-  { category: "travel", pattern: /\b(booking\.com|hotel|airline|flight|ferry|camping|holafly|sardinia vera)\b|^017480wp7806i11e$/ },
-  { category: "subscriptions", pattern: /\b(netflix|spotify|audible|youtube|deezer|libro\.fm|t3 chat|openai|chatgpt|claude|google(?: cloud| chrome)?|microsoft|jetbrains|paddle|replicate|iliad|tim|vodafone|hot telekom|1mobile|purevpn|privateinte|server dedicato|hetzner|railway|convex|cloudflare|virtualsolu|aruba\.it|amazon prime|evernote|readwise|bitwarden|akiflow|appest|obsidian|cursor|reclaim|groq|unraid|filebot|rize subscription)\b|^anthropic$|netflixinte|disney\+/ },
-  { category: "software", pattern: /\b(adobe(?: creative cloud| acrobat)?|github|figma\.com|notion\.so)\b/ },
-  { category: "education", pattern: /\b(tu wien|technische universitaet wien|fahrschule|frontendmasters|knowt)\b/ },
-  { category: "entertainment", pattern: /\b(steam|riot games|hrk game|playstation|g2a|kinguin|chrono(?: gg)?|electronic arts|eneba|mmoga|twitch|znipe|ticketmaster|wien ticket|p3 comix|billardcafe|der klub|wiener eistraum|cineplexx|google play|itunes|itch\.io|abavent|addicted to rock|sport arena wien|musical)\b|steamgames|hrkdistribu|^khm sk/ },
-  { category: "shopping", pattern: /^apple$|\b(amazon(?! pay)|amz(?!\s*pay)|apple\.com(?!\/bill)|apple store|apple retail|ikea|dbrand|zalando|zara|muller|printbox|paperlike|massdrop|redbubble|thomann|media ?markt|mediaworld|media world|linus tech tips|nike|etsy|uniqlo|brookssport|puma|urban outfitters|samsung|rhinoshield|sportler|nencini sport|beyerdynamic|darn tough|calida|cyberport|e-tec\.at|xxxlutz|action|thalia|athesia|unifi|seven technology|legami|kurzgesagt|h&m|obi|ceramics|flaconi|dell sas|athleticgre|hutstuebele|heogmbh|spri\.ng|ctdi|blitzhandel24|surteesstudios|az delivery|paga in 3 rate|salewa|fellhof|bout\. maximilian|pierre)\b|flaconi|sixpol|m.*ller|ebay/ },
-  { category: "gifts", pattern: /\b(wikimedia|blumen|thaler)\b|^rili'?$/ },
-  { category: "taxes", pattern: /\b(pagopa)\b/ },
-  { category: "fees", pattern: /\b(hannafinanz|poste italiane|post fa|post 1153|packlink|servizio spid)\b|fedex/ },
-  { category: "cash", pattern: /\b(ricarica yap)\b|^yap$/ },
-  { category: "investments", pattern: /\btrade republic\b/ },
-  { category: "other", pattern: /\bpay\s*pal\b|\bpaypal\b|^pp\*|^sonia\.mauroner$/ }
-];
-
-/** Auditable defaults inferred from source MCCs and recurring merchant names. User rules take precedence in the repository. */
-export function categorizeDescription(description: string, mcc?: string): MoneyCategory {
-  const normalizedMcc = mcc?.trim();
-  const mccMatch = normalizedMcc && MCC_CATEGORY_RULES.find((rule) => rule.pattern.test(normalizedMcc));
-  if (mccMatch) return mccMatch.category;
-  const value = description.toLocaleLowerCase("en-GB").normalize("NFKD").replace(/\p{Diacritic}/gu, "");
-  const descriptionMatch = DESCRIPTION_CATEGORY_RULES.find((rule) => rule.pattern.test(value));
-  if (descriptionMatch) return descriptionMatch.category;
-  return "uncategorized";
-}
-
-/** Keep earlier user choices first, then offer a known merchant mapping for old uncategorized rows. */
-export function moneyCategorySuggestions(description: string, earlier: readonly MoneyCategory[], mcc?: string): MoneyCategory[] {
-  const inferred = categorizeDescription(description, mcc);
-  return [...new Set([...earlier, ...(inferred === "uncategorized" || inferred === "other" ? [] : [inferred])])].slice(0, 3);
 }
 
 function decode(bytes: Uint8Array) { try { return new TextDecoder("utf-8", { fatal: true }).decode(bytes); } catch { throw invalid("invalid_encoding", "Money imports must use UTF-8 encoding."); } }

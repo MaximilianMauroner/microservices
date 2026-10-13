@@ -126,7 +126,7 @@ describe("Money redesign views", () => {
   it("puts categories, transfers, prices, and balances in one Review queue", () => {
     const item = { id: "t-1", occurredAt: "2026-09-24T10:00:00.000Z", accountName: "Revolut", description: "SQ *MARKT STAND", amountMinor: -2_340, feeMinor: 0, taxMinor: 0, currency: "EUR", status: "completed" as const, sourceType: "Card Payment", flowKind: "spend" as const, category: "uncategorized" as const, categoryOrigin: "source" as const, needsTransferReview: false };
     const html = renderToStaticMarkup(<MoneyReviewView {...pageData({
-      reviewCounts: { uncategorized: 41, transfers: 2, spendingRows: 2_000, sourceOtherRows: 37 },
+      reviewCounts: { uncategorized: 41, transfers: 2, spendingRows: 2_000, otherRows: 37 },
       reviewQueue: { items: [{ ...item, similarCount: 3, suggestions: ["groceries"] }], commonCategories: ["groceries", "dining", "shopping"] },
       transferReviewGroups: [{ representativeId: "g-1", accountName: "Sparkasse", description: "Revolut card funding", sourceType: "Transfer", direction: "outflow", currency: "EUR", count: 2, totalMinor: -50_000, items: [{ ...item, id: "g-1", description: "Revolut card funding", flowKind: "transfer", category: "transfer", amountMinor: -25_000, needsTransferReview: true }, { ...item, id: "g-2", description: "Revolut card funding", flowKind: "transfer", category: "transfer", amountMinor: -25_000, needsTransferReview: true }] }],
       marketData: { ...pageData().marketData, positions: [{ canonicalKey: "asml", name: "ASML", assetClass: "equity", quantity: "1", costBasisMinor: 70_000, state: "stale", priceDate: "2026-09-13" }] },
@@ -136,7 +136,8 @@ describe("Money redesign views", () => {
     expect(html).toContain("This transaction");
     expect(html).toContain("This merchant description in Revolut: 3 other rows and future imports");
     expect(html).toContain("41 of 2,000 spending and refund rows need a category (2.1%)");
-    expect(html).toContain("37 spending and refund rows have the generic source category Other");
+    expect(html).toContain("37 spending and refund rows got the broad category Other from a rule");
+    expect(html).toContain("Write a rule");
     expect(html).toContain("Showing the newest 1 of 41.");
     expect(html).toContain("Apply to 2 rows");
     expect(html).toMatch(/Own transfer[\s\S]*Spending[\s\S]*Income[\s\S]*Refund[\s\S]*Leave out/);

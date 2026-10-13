@@ -6,8 +6,6 @@ import {
   PORTFOLIO_TRANSACTION_FORMAT,
   REVOLUT_CASH_FORMAT,
   REVOLUT_TRADING_FORMAT,
-  categorizeDescription,
-  moneyCategorySuggestions,
   parseMoneyImport,
   type MoneyLedgerTransaction
 } from "../money/money-import-domain.js";
@@ -26,45 +24,6 @@ import type { PlatformRouteInput } from "../src/route-handlers.js";
 const header = "Type\tProduct\tStarted Date\tCompleted Date\tDescription\tAmount\tFee\tCurrency\tState\tBalance";
 
 describe("Revolut cash statement parser", () => {
-  it("infers common merchant and MCC categories from the supplied export families", () => {
-    const cases = [
-      ["BILLA", undefined, "groceries"], ["SÃ¼dtiroler Milch", undefined, "groceries"],
-      ["Lieferando", undefined, "dining"], ["CafÃ© Jelinek", undefined, "dining"],
-      ["ÃBB", undefined, "transport"], ["ENIO", undefined, "transport"],
-      ["Apotheke Schwenk", undefined, "health"], ["Booking.com", undefined, "travel"], ["017480wp7806i11e", undefined, "travel"],
-      ["OpenAI", undefined, "subscriptions"], ["JetBrains", undefined, "subscriptions"], ["Appest", undefined, "subscriptions"], ["Privateinte", undefined, "subscriptions"],
-      ["Steam", undefined, "entertainment"], ["Amazon", undefined, "shopping"],
-      ["Amazon Marketplace", undefined, "shopping"], ["H&M", undefined, "shopping"], ["Apple", undefined, "shopping"], ["Apple Store", undefined, "shopping"],
-      ["Starbucks", undefined, "dining"], ["Burger King", undefined, "dining"], ["dm Drogerie", undefined, "health"],
-      ["GitHub", undefined, "software"], ["Disney+", undefined, "subscriptions"],
-      ["Apple Pay", undefined, "uncategorized"], ["Amazon Pay", undefined, "uncategorized"], ["Apple.com/bill", undefined, "uncategorized"],
-      ["Studentenfoerderungsstiftung", undefined, "housing"], ["Suedtirol Pass", undefined, "transport"],
-      ["Fahrschule Haslach", undefined, "education"], ["50min Diagnostik", undefined, "health"],
-      ["Dell SAS", undefined, "shopping"], ["PayPal Europe", undefined, "other"], ["sonia.mauroner", undefined, "other"],
-      ["LÃ¤derach", undefined, "groceries"], ["Mne 95012851winestore", undefined, "groceries"],
-      ["910 Denn.s Bio Wien", undefined, "groceries"], ["l'autentico1190", undefined, "dining"],
-      ["Salone Gran Chik", undefined, "personal_care"], ["City Barber", undefined, "personal_care"], ["Mne 95011892sixpol Ele", undefined, "shopping"],
-      ["Fedexexpres", undefined, "fees"],
-      ["Landhausbar Renovas", undefined, "dining"], ["Coca-Cola", undefined, "dining"],
-      ["Kvw Service Bozen", undefined, "transport"], ["Salewa Bivac", undefined, "shopping"],
-      ["Der Fellhof", undefined, "shopping"], ["Servizio Spid", undefined, "fees"],
-      ["Bout. Maximilian", undefined, "shopping"], ["Pierre", undefined, "shopping"], ["Rili'", undefined, "gifts"], ["Thaler", undefined, "gifts"],
-      ["Payment", "5411", "groceries"], ["Payment", "5732", "shopping"],
-      ["Unknown person", undefined, "uncategorized"]
-    ] as const;
-    for (const [description, mcc, category] of cases) expect(categorizeDescription(description, mcc)).toBe(category);
-  });
-
-  it("suggests researched merchants for existing review rows without guessing personal payments", () => {
-    expect(moneyCategorySuggestions("Anthropic", [])).toEqual(["subscriptions"]);
-    expect(moneyCategorySuggestions("Strutturetr", [])).toEqual(["transport"]);
-    expect(moneyCategorySuggestions("Seis-Seiser Alm Bahn", [])).toEqual(["transport"]);
-    expect(moneyCategorySuggestions("Anthropic", ["software"])).toEqual(["software", "subscriptions"]);
-    expect(moneyCategorySuggestions("Unknown merchant", [], "5812")).toEqual(["dining"]);
-    expect(moneyCategorySuggestions("kranzl.thomas", [])).toEqual([]);
-    expect(moneyCategorySuggestions("P36e7f6fd3", [])).toEqual([]);
-  });
-
   it("normalizes exact amounts, statuses, flow kinds, and Berlin timestamps", () => {
     const parsed = statement([
       "Transfer\tCurrent\t2026-08-09 5:08:51\t2026-08-09 5:08:51\tFrom own account\t20\t0\tEUR\tCOMPLETED\t20",
@@ -89,7 +48,7 @@ describe("Revolut cash statement parser", () => {
       feeMinor: 10,
       balanceAfterMinor: 1_640,
       flowKind: "spend",
-      category: "dining"
+      category: "uncategorized"
     });
     expect(parsed.transactions[2]).toMatchObject({ status: "reverted" });
     expect(parsed.accounts).toEqual([expect.objectContaining({
@@ -102,15 +61,12 @@ describe("Revolut cash statement parser", () => {
     })]);
   });
 
-  it("repairs double-encoded merchant descriptions before storing and categorizing them", () => {
+  it("repairs double-encoded merchant descriptions before storing them", () => {
     const parsed = statement([
       "Card Payment\tCurrent\t2026-08-09 7:10:00\t2026-08-09 7:11:00\tÃBB\t-3.5\t0\tEUR\tCOMPLETED\t16.5",
       "Card Payment\tCurrent\t2026-08-09 8:10:00\t2026-08-09 8:11:00\tWaag CafÃ©\t-5\t0\tEUR\tCOMPLETED\t11.5",
     ]);
-    expect(parsed.transactions.map(({ description, category }) => ({ description, category }))).toEqual([
-      { description: "ÖBB", category: "transport" },
-      { description: "Waag Café", category: "dining" },
-    ]);
+    expect(parsed.transactions.map(({ description }) => description)).toEqual(["ÖBB", "Waag Café"]);
   });
 
   it("treats legal-entity migrations as balance adjustments", () => {
@@ -211,7 +167,7 @@ describe("investment export parsers", () => {
     const parsed = parseMoneyImport(Buffer.from(`${headers}\r\n${row}\r\n`));
 
     expect(parsed.format).toBe(PORTFOLIO_TRANSACTION_FORMAT);
-    expect(parsed.transactions[0]).toMatchObject({ accountName: "Trade Republic Cash", description: "Payment to [account]", amountMinor: -350, category: "dining", mcc: "5812" });
+    expect(parsed.transactions[0]).toMatchObject({ accountName: "Trade Republic Cash", description: "Payment to [account]", amountMinor: -350, category: "uncategorized", mcc: "5812" });
     expect(JSON.stringify(parsed)).not.toContain("private reference");
     expect(JSON.stringify(parsed)).not.toContain("DE00AAAAAAAAAAAAAAAAAA");
   });
@@ -329,18 +285,21 @@ describe("money import service", () => {
     expect(() => service.setTransferDisposition({ transactionId: "00000000-0000-4000-8000-000000000000", disposition: "uncategorized" })).toThrow("valid transfer disposition");
   });
 
-  it("normalizes an exact category rule and requires a matching preview", async () => {
+  it("normalizes category rules and requires a current preview to save", async () => {
     const repository = new MemoryMoneyRepository();
     const preview = vi.spyOn(repository, "previewCategoryRule");
-    const create = vi.spyOn(repository, "createCategoryRule");
+    const save = vi.spyOn(repository, "saveCategoryRule");
     const service = new MoneyImportService(repository);
-    const rule = { accountId: "00000000-0000-4000-8000-000000000000", matchField: "description", matchValue: "  Café Shop  ", category: "dining" };
+    const rule = { matchField: "description", matchOperator: "word", matchValue: "  Café   Shop  ", category: "dining" };
     await service.previewCategoryRule(rule);
-    expect(preview).toHaveBeenCalledWith({ ...rule, matchValue: "café shop" });
-    expect(() => service.createCategoryRule({ ...rule, actor: "operator@example.test", expectedMatchCount: 0 })).toThrow("Preview the rule");
-    await service.createCategoryRule({ ...rule, actor: "operator@example.test", expectedMatchCount: 2 });
-    expect(create).toHaveBeenCalledWith({ ...rule, matchValue: "café shop", actor: "operator@example.test", expectedMatchCount: 2 });
-    expect(() => service.previewCategoryRule({ ...rule, matchField: "mcc", matchValue: "text" })).toThrow("valid exact match");
+    expect(preview).toHaveBeenCalledWith({ ...rule, matchValue: "cafe shop" });
+    expect(() => service.saveCategoryRule({ ...rule, actor: "operator@example.test", expectedMatchCount: -1 })).toThrow("Preview the rule");
+    const scoped = { ...rule, ruleId: "00000000-0000-4000-8000-000000000001", accountId: "00000000-0000-4000-8000-000000000000", category: "uncategorized" };
+    await service.saveCategoryRule({ ...scoped, actor: "operator@example.test", expectedMatchCount: 0 });
+    expect(save).toHaveBeenCalledWith({ ...scoped, matchValue: "cafe shop", actor: "operator@example.test", expectedMatchCount: 0 });
+    expect(() => service.previewCategoryRule({ ...rule, matchField: "mcc", matchOperator: "equals", matchValue: "text" })).toThrow("3 or 4 digits");
+    expect(() => service.previewCategoryRule({ ...rule, matchField: "source_type" })).toThrow("only match exactly");
+    expect(() => service.previewCategoryRule({ ...rule, accountId: "not-an-account" })).toThrow("valid account");
   });
 
   it("validates import deletion identifiers and reports missing imports", async () => {
@@ -478,7 +437,7 @@ describe("money schema and Option A route contract", () => {
       expect(config).toContain(`\"${table}\"`);
     }
     expect(schema).toContain('accountId: uuid("account_id").notNull().references(() => moneyAccounts.id)');
-    expect(schema).toContain("table.accountId, table.matchField, table.matchValue");
+    expect(schema).toContain("table.accountId, table.matchField, table.matchOperator, table.matchValue).nullsNotDistinct()");
     expect(schema).toContain('transferDisposition: text("transfer_disposition")');
     expect(schema).toContain("'manual', 'sparkasse'");
     const repository = readFileSync(new URL("../money/money-repository.ts", import.meta.url), "utf8");
@@ -557,7 +516,7 @@ class MemoryMoneyRepository implements MoneyRepository {
 
   async setTransactionCategory() { return { affectedCount: 1 }; }
   async previewCategoryRule() { return { matchCount: 0, changeCount: 0, manualCount: 0, examples: [] }; }
-  async createCategoryRule() { return { affectedCount: 0 }; }
+  async saveCategoryRule() { return { ruleId: "00000000-0000-4000-8000-000000000001", affectedCount: 0 }; }
   async deleteCategoryRule() { return undefined; }
   async previewTransferRule(input: MoneyTransferRuleInput) { this.lastTransferRule = input; return { matchCount: 0, examples: [] }; }
   async createTransferRule() { return { affectedCount: 0 }; }
