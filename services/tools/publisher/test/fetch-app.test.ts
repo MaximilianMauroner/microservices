@@ -198,7 +198,7 @@ describe("native artifact fetch handler", () => {
     expect((await app(new Request(videoUrl, { method: "HEAD" }))).status).toBe(200);
     expect(storage.presignTemporaryFile).toHaveBeenCalledTimes(1);
     const document = await app(new Request(`https://tools.example.test/files/${documentId}/private.pdf`));
-    expect(document.status).toBe(200);
+    expect(document.status).toBe(307);
     expect(document.headers.get("cache-control")).toBe("private, no-store");
 
     now.setTime(now.getTime() + 4_000);
@@ -236,7 +236,7 @@ describe("native artifact fetch handler", () => {
     expect(storage.presignTemporaryFile).toHaveBeenCalledTimes(1);
   });
 
-  it("redirects only eligible large attachments after checking capability and expiry", async () => {
+  it("redirects attachments of every size after checking capability and expiry", async () => {
     class SignedStorage extends MemoryUploadStorage {
       readonly presignTemporaryFile = vi.fn(async () => "https://storage.example.test/signed-download");
       readonly revoked = new Set<string>();
@@ -278,13 +278,13 @@ describe("native artifact fetch handler", () => {
     expect(ranged.headers.get("location")).toBe("https://storage.example.test/signed-download");
     expect((await app(new Request(url, { method: "HEAD" }))).status).toBe(200);
     expect((await app(new Request(url, { headers: { Range: "bytes=0-1", "If-Range": '"different"' } }))).status).toBe(200);
-    expect((await app(new Request(`https://tools.example.test/files/${smallId}/small.txt`))).status).toBe(200);
+    expect((await app(new Request(`https://tools.example.test/files/${smallId}/small.txt`))).status).toBe(307);
     expect((await app(new Request(`https://tools.example.test/files/${expiredId}/release.apk`))).status).toBe(404);
     expect((await app(new Request(`https://tools.example.test/files/${"z".repeat(32)}/missing.bin`))).status).toBe(404);
     storage.revoked.add(largeId);
     expect((await app(new Request(url))).status).toBe(404);
     storage.revoked.delete(largeId);
-    expect(storage.presignTemporaryFile).toHaveBeenCalledTimes(2);
+    expect(storage.presignTemporaryFile).toHaveBeenCalledTimes(3);
 
     now.setTime(now.getTime() + 3_601_000);
     expect((await app(new Request(url))).status).toBe(200);
@@ -358,16 +358,10 @@ describe("native artifact fetch handler", () => {
     expect(page).toContain("button.disabled=uploading||files.length===0");
     expect(page).toContain("drop.addEventListener('drop',e=>{if(uploading)return;");
     expect(page).toContain("if(uploading||!files.length)return");
-    expect(page).toContain("/chunks");
-    expect(page).toContain("20*1024*1024");
-    expect(page).toContain("Retry-After");
-    expect(page).toContain("for(;;)");
-    expect(page).toContain("uploadSmallFile");
-    expect(page).toContain("if(response.status!==503)return readResponse(response)");
-    expect(page).toContain("initializeUpload");
-    expect(page).toContain("upload_initialization_busy");
-    expect(page).toContain("putChunk");
-    expect(page).toContain("waiting for upload capacity");
+    expect(page).toContain("/sessions");
+    expect(page).toContain("crypto.subtle.digest('SHA-256'");
+    expect(page).toContain("credentials:'omit'");
+
 
     const uploadResponse = await app(new Request(`https://tools.example.test/api/drop/${uploadLinks.token}/uploads`, {
       method: "POST",

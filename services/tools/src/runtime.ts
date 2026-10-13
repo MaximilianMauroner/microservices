@@ -32,6 +32,7 @@ import {
 
 export type PlatformRuntime = {
   publicOrigin: string;
+  artifactUploadOrigins: readonly string[];
   readOnly: boolean;
   auth: PlatformAuth;
   resolvePrincipal: PrincipalResolver;
@@ -196,6 +197,7 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
 
     return {
       publicOrigin: config.publicOrigin,
+      artifactUploadOrigins: artifactStorage.uploadOrigins ?? [],
       readOnly: config.readOnly,
       auth,
       resolvePrincipal,

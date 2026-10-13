@@ -639,7 +639,7 @@ describe("S3 upload storage", () => {
     const storage = createS3UploadStorage(storageConfig);
 
     await expect(storage.deleteUpload("upload-id")).rejects.toBeInstanceOf(AggregateError);
-    expect(attemptedKeys).toEqual(["files/upload-id", "pages/upload-id.html"]);
+    expect(attemptedKeys).toEqual(["files/upload-id", "pages/upload-id.html", "transfers/upload-id"]);
     storage.close?.();
   });
 
