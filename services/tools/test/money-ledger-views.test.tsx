@@ -111,8 +111,8 @@ describe("Money investments", () => {
   it("folds FIFO realized gains below the current positions", () => {
     const html = renderToStaticMarkup(<MoneyInvestmentsView marketData={emptyMarketData} investments={{ ...noInvestments, totals: { ...noInvestments.totals, eventCount: 3, boughtMinor: 20_000, soldMinor: 30_000 }, realized: { positions: [{ symbol: "ABC", soldQuantity: "1", saleCount: 1, proceedsMinor: 30_000, costBasisMinor: 20_000, gainMinor: 10_000 }], totals: { saleCount: 1, proceedsMinor: 30_000, costBasisMinor: 20_000, gainMinor: 10_000, unmatchedSaleCount: 0 } } }} />);
     expect(html).toMatch(/<details class="money-twin"><summary>Realized gains · 1 matched sale · \+100 €/);
-    expect(html).toContain("FIFO basis");
-    expect(html).toContain("+50.0%");
+    expect(html).not.toContain("FIFO basis");
+    expect(html).not.toContain("+50.0%");
     expect(html).toContain("No open positions");
     expect(html).toContain("No valuation history yet");
   });

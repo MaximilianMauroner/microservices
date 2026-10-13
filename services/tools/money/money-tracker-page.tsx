@@ -1,6 +1,6 @@
 "use client";
 
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { Link, useRouter } from "@tanstack/react-router";
 import { Upload } from "lucide-react";
 import type { MoneyTrackerPageData } from "../src/protected-data.js";
@@ -23,7 +23,7 @@ import {
 } from "../src/components/ui/sheet.js";
 import type { MoneyCategory } from "./money-enums.js";
 import type { MoneyActivityPage } from "./money-repository.js";
-import { loadMoneySpendingView, loadMoneyActivityView, loadMoneyInvestmentsView, loadMoneyReviewView } from "./money-view-loading.js";
+import { MoneySpendingView, MoneyActivityView, MoneyInvestmentsView, MoneyReviewView } from "./money-view-loading.js";
 import { groupMonth, type GroupedMonth, type Month } from "./money-history.js";
 import { MoneyCheckInBridge } from "./money-checkin-card.js";
 import { BalanceForm } from "./money-balance-form.js";
@@ -66,11 +66,6 @@ import {
 
 export type { MoneyTrackerView } from "./money-tracker-navigation.js";
 type Period = "6m" | "1y" | "5y" | "all";
-
-const MoneySpendingView = lazy(async () => ({ default: (await loadMoneySpendingView()).MoneySpendingView }));
-const MoneyActivityView = lazy(async () => ({ default: (await loadMoneyActivityView()).MoneyActivityView }));
-const MoneyInvestmentsView = lazy(async () => ({ default: (await loadMoneyInvestmentsView()).MoneyInvestmentsView }));
-const MoneyReviewView = lazy(async () => ({ default: (await loadMoneyReviewView()).MoneyReviewView }));
 
 const SUBTITLES: Record<MoneyTrackerView, string> = {
   overview: "Net worth, what changed, and where it is going",
