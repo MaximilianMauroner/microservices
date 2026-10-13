@@ -79,11 +79,11 @@ export class MoneyMarketDataService {
     return this.currentSync;
   }
 
-  async snapshot(options: Readonly<{ since?: string }> = {}): Promise<MoneyMarketSnapshot> {
+  async snapshot(options: Readonly<{ since?: string; history?: "daily" | "monthly" | "none" }> = {}): Promise<MoneyMarketSnapshot> {
     const now = this.now();
     const [inputs, historyInputs] = await Promise.all([
       this.repository.readValuationInputs(),
-      this.repository.readHistoryInputs()
+      options.history === "none" && !options.since ? undefined : this.repository.readHistoryInputs()
     ]);
     const analytics = fifoInvestmentLots(inputs.events.map(lotEvent));
     const prices = new Map(inputs.prices.map((price) => [price.canonicalKey, price]));
@@ -131,17 +131,20 @@ export class MoneyMarketDataService {
     }).sort((left, right) => (right.marketValueMinor ?? -1) - (left.marketValueMinor ?? -1) || left.name.localeCompare(right.name));
 
     const valued = positions.filter((position): position is MoneyMarketPosition & { marketValueMinor: number; unrealizedGainMinor: number } => position.marketValueMinor !== undefined && position.unrealizedGainMinor !== undefined);
+    const history = options.history === "none" || !historyInputs ? [] : historyPoints(historyInputs);
     return {
       asOf: now.toISOString(),
       positions,
-      history: historyPoints(historyInputs),
+      // Cash snapshots use the first of the month. Keep both month boundaries
+      // so joins retain that day's valuation and the latest prior trading day.
+      history: options.history === "monthly" ? history.filter((point, index) => point.date.slice(0, 7) !== history[index - 1]?.date.slice(0, 7) || point.date.slice(0, 7) !== history[index + 1]?.date.slice(0, 7)) : history,
       totals: {
         costBasisMinor: positions.reduce((sum, position) => sum + position.costBasisMinor, 0),
         knownMarketValueMinor: valued.reduce((sum, position) => sum + position.marketValueMinor, 0),
         knownUnrealizedGainMinor: valued.reduce((sum, position) => sum + position.unrealizedGainMinor, 0),
         complete: positions.every((position) => position.state !== "unpriced")
       },
-      ...(options.since ? { movesSince: positionMovesSince({ baseline: options.since, ...historyInputs, current: positions }) } : {})
+      ...(options.since && historyInputs ? { movesSince: positionMovesSince({ baseline: options.since, ...historyInputs, current: positions }) } : {})
     };
   }
 

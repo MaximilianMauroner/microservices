@@ -67,7 +67,7 @@ export const getMoneyTrackerPageData = createServerFn({ method: "GET" })
     const overviewBaseline = data.view === "overview" ? baseline : undefined;
     const [ledger, { movesSince, ...marketData }, cash, spending] = await Promise.all([
       moneyImports.readLedgerSnapshot(data.view),
-      needsMarketData ? moneyMarketData.snapshot({ since: baseline }) : Promise.resolve(emptyMarketSnapshot()),
+      needsMarketData ? moneyMarketData.snapshot({ since: baseline, history: data.view === "investments" ? "daily" : data.view === "review" ? "none" : "monthly" }) : Promise.resolve(emptyMarketSnapshot()),
       overviewBaseline ? moneyImports.readCashMovesSince(overviewBaseline) : undefined,
       overviewBaseline ? moneyImports.readSpendingSince(overviewBaseline, previousCheckIn(days, overviewBaseline)) : undefined
     ]);

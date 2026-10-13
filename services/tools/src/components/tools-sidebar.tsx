@@ -99,7 +99,7 @@ export function ToolsSidebar() {
                           <SidebarMenuSubItem key={view}>
                             <SidebarMenuSubButton
                               isActive={view === "overview" ? !search.view || search.view === "overview" : search.view === view}
-                              render={<Link to="/money" search={{ view: view === "overview" ? undefined : view }} preload="intent" />}
+                              render={<Link to="/money" search={{ view: view === "overview" ? undefined : view }} preload="viewport" />}
                             >
                               <span>{moneyViewTitle(view)}</span>
                               {view === "review" && moneyRouteReview && moneyReviewCount(moneyRouteReview) ? <MoneyReviewBadge count={moneyReviewCount(moneyRouteReview)} /> : null}

@@ -1,7 +1,8 @@
 import type { ReactElement } from "react";
 import { renderToStaticMarkup as renderMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { MoneyActivityView, MoneyImportHistory, MoneyInvestmentsView, portfolioChartPoints, portfolioMovingAverage } from "../money/money-ledger-views.js";
+import { MoneyImportHistory, MoneyInvestmentsView, portfolioChartPoints, portfolioMovingAverage } from "../money/money-ledger-views.js";
+import { MoneyActivityView } from "../money/money-activity-view.js";
 import { MoneyRulesView } from "../money/money-rules-view.js";
 import { groupMonth } from "../money/money-history.js";
 
