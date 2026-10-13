@@ -25,4 +25,3 @@ export function friendlyUploadError(status: number, serverMessage?: string) {
   if (status > 0) return `Upload failed (HTTP ${status}).`;
   return "The connection was interrupted. Check your network, then retry.";
 }
-
