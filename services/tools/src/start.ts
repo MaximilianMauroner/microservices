@@ -1,7 +1,8 @@
 import { createCsrfMiddleware, createMiddleware, createStart } from "@tanstack/react-start";
 import { classifyRoute, isMarkdownSharePath, type PlatformPrincipal } from "@tools-platform/security";
 import { authenticatePlatformRequest } from "./app.js";
-import { getPlatformRuntime, type PlatformRuntime } from "./runtime.js";
+import type { PlatformRuntime } from "./runtime.js";
+import { getPlatformRuntime } from "./runtime-access.js";
 import { PLATFORM_UI_BUILD } from "./build-identity.js";
 import { documentContentSecurityPolicy } from "./content-security-policy.js";
 import { markdownShareClientConfig } from "./markdown-share-config.server.js";
@@ -15,6 +16,11 @@ export type PlatformRequestContext = {
 
 const platformRequestMiddleware = createMiddleware().server(
   async ({ request, handlerType, next }) => {
+    if (new URL(request.url).pathname === "/live" && (request.method === "GET" || request.method === "HEAD")) {
+      return new Response(request.method === "HEAD" ? null : JSON.stringify({ ok: true }), {
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-store" }
+      });
+    }
     const runtime = await getPlatformRuntime();
     if (
       runtime.readOnly &&

@@ -34,9 +34,16 @@ function ToolsStatusRoute() {
 
   useEffect(() => {
     const interval = window.setInterval(() => {
-      void router.invalidate();
+      if (document.visibilityState === "visible") void router.invalidate();
     }, 60_000);
-    return () => window.clearInterval(interval);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void router.invalidate();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [router]);
 
   return <ToolsStatus snapshot={data.snapshot} publicOrigin={data.publicOrigin} />;

@@ -56,8 +56,9 @@ export function postgresScheduledTaskLeaseRepository(
           lease_until = excluded.lease_until,
           completed_at = null,
           result = null
-        where tools.scheduled_task_runs.completed_at is null
-          and tools.scheduled_task_runs.lease_until <= now()
+        where (tools.scheduled_task_runs.completed_at is null
+          and tools.scheduled_task_runs.lease_until <= now())
+          or tools.scheduled_task_runs.result->>'outcome' = 'failed'
         returning task_id
       `;
       return claimed.length === 1;
@@ -65,7 +66,7 @@ export function postgresScheduledTaskLeaseRepository(
     async complete(input) {
       await sql`
         update tools.scheduled_task_runs
-        set completed_at = now(), result = ${JSON.stringify(input.result)}::jsonb
+        set completed_at = now(), result = ${sql.json(input.result)}
         where task_id = ${input.taskId}
           and slot = ${input.slot}
           and owner_id = ${input.ownerId}
