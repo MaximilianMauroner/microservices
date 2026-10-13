@@ -174,15 +174,21 @@ describe("Money rules and imports", () => {
       accounts={["cash", "broker"]}
       accountLabels={{ cash: "Cash account", broker: "Broker account" }}
       accountRoles={{ cash: "cash", broker: "investment" }}
-      categoryRules={[{ id: "rule-1", accountName: "Cash", description: "Net Interest Paid to 'Instant Access Savings", category: "income", updatedAt: "2026-08-09T05:08:51.000Z" }]}
+      categoryRules={[
+        { id: "rule-1", matchField: "description", matchOperator: "word", matchValue: "flix bus", category: "transport", rowCount: 12, updatedAt: "2026-08-09T05:08:51.000Z" },
+        { id: "rule-2", accountId: "cash", accountName: "Cash account", matchField: "mcc", matchOperator: "equals", matchValue: "5411", category: "uncategorized", rowCount: 0, updatedAt: "2026-08-09T05:08:51.000Z" }
+      ]}
       transferRules={[{ id: "transfer-rule-1", priority: 700, provider: "revolut", sourceType: "Topup", descriptionMatch: "starts_with", matchValue: "top-up by *", amountSign: "any", disposition: "internal_transfer", note: "Own card top-ups" }]}
       transferPairRules={[{ id: "pair-rule-1", debitProvider: "sparkasse", debitSourceType: "BEZAHLUNG EU LAENDER", debitMatchValue: "wallet", creditProvider: "revolut", creditSourceType: "Topup" }]}
       transferRuleOptions={[{ provider: "revolut", sourceType: "Topup", count: 12, unresolvedCount: 2 }]}
       transferReview={{ linkedPairs: 4, unlinkedCount: 2, unresolvedPositiveCount: 1, unresolvedNegativeCount: 1 }}
     />);
 
-    expect(html).toContain("Create a category rule");
-    expect(html).toContain("Net Interest Paid to &#x27;Instant Access Savings");
+    expect(html).toContain("New rule");
+    expect(html).toContain("Description contains the word</span> <span class=\"font-medium\">flix bus");
+    expect(html).toContain("Merchant code is</span> <span class=\"font-medium\">5411");
+    expect(html).toContain("Only in Cash account");
+    expect(html).toContain("2 rules");
     expect(html).toContain("Create a transfer rule");
     expect(html).toContain("Own card top-ups");
     expect(html).toContain("Own-account transfer");

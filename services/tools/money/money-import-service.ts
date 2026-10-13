@@ -11,7 +11,9 @@ import {
 } from "./money-import-domain.js";
 import type { MoneyCategoryRuleInput, MoneyImportReceipt, MoneyLedgerScope, MoneyLedgerSnapshot, MoneyRepository, MoneyTransferRuleInput } from "./money-repository.js";
 import { MONEY_TRANSFER_RULE_MATCHES, MONEY_TRANSFER_RULE_SIGNS, type MoneyTransferRuleMatch, type MoneyTransferRuleSign } from "./money-transfer-inference.js";
+import { MONEY_CATEGORY_RULE_FIELDS, MONEY_CATEGORY_RULE_OPERATORS, normalizeCategoryRuleText, type MoneyCategoryRuleField, type MoneyCategoryRuleOperator } from "./money-category-rules.js";
 
+type CategoryRuleFields = Readonly<{ ruleId?: string; accountId?: string; matchField: string; matchOperator: string; matchValue: string; category: string }>;
 type TransferRuleFields = Readonly<{ provider?: string; sourceType?: string; descriptionMatch: string; matchValue?: string; amountSign: string; disposition: string; note?: string }>;
 
 export class MoneyImportService {
@@ -127,15 +129,15 @@ export class MoneyImportService {
     return this.repository.setTransactionCategory({ ...input, category: input.category as MoneyCategory });
   }
 
-  previewCategoryRule(input: Readonly<{ accountId: string; matchField: string; matchValue: string; category: string }>) {
+  previewCategoryRule(input: CategoryRuleFields) {
     return this.repository.previewCategoryRule(validateCategoryRule(input));
   }
 
-  createCategoryRule(input: Readonly<{ accountId: string; matchField: string; matchValue: string; category: string; actor: string; expectedMatchCount: number }>) {
-    if (!Number.isSafeInteger(input.expectedMatchCount) || input.expectedMatchCount < 1 || input.expectedMatchCount > 100_000) {
-      throw new MoneyImportValidationError("invalid_rule_preview", "Preview the rule before applying it.");
+  saveCategoryRule(input: CategoryRuleFields & Readonly<{ actor: string; expectedMatchCount: number }>) {
+    if (!Number.isSafeInteger(input.expectedMatchCount) || input.expectedMatchCount < 0 || input.expectedMatchCount > 100_000) {
+      throw new MoneyImportValidationError("invalid_rule_preview", "Preview the rule before saving it.");
     }
-    return this.repository.createCategoryRule({ ...validateCategoryRule(input), actor: input.actor, expectedMatchCount: input.expectedMatchCount });
+    return this.repository.saveCategoryRule({ ...validateCategoryRule(input), actor: input.actor, expectedMatchCount: input.expectedMatchCount });
   }
 
   async deleteCategoryRule(ruleId: string) {
@@ -206,20 +208,33 @@ export class MoneyImportService {
   }
 }
 
-function validateCategoryRule(input: Readonly<{ accountId: string; matchField: string; matchValue: string; category: string }>): MoneyCategoryRuleInput {
-  assertUuid(input.accountId, "invalid_account", "Select a valid account.");
-  if (input.matchField !== "description" && input.matchField !== "mcc" && input.matchField !== "source_type") {
+function validateCategoryRule(input: CategoryRuleFields): MoneyCategoryRuleInput & Readonly<{ ruleId?: string }> {
+  if (input.ruleId) assertUuid(input.ruleId, "invalid_category_rule", "The category-rule identifier is invalid.");
+  if (input.accountId) assertUuid(input.accountId, "invalid_account", "Select a valid account.");
+  if (!MONEY_CATEGORY_RULE_FIELDS.includes(input.matchField as MoneyCategoryRuleField)) {
     throw new MoneyImportValidationError("invalid_rule_field", "Select a supported rule field.");
   }
-  if (!MONEY_CATEGORIES.includes(input.category as MoneyCategory) || input.category === "uncategorized") {
-    throw new MoneyImportValidationError("invalid_category", "Select a spending category.");
+  const matchField = input.matchField as MoneyCategoryRuleField;
+  if (!MONEY_CATEGORY_RULE_OPERATORS.includes(input.matchOperator as MoneyCategoryRuleOperator)
+    || (matchField !== "description" && input.matchOperator !== "equals")) {
+    throw new MoneyImportValidationError("invalid_rule_operator", "Merchant codes and source types only match exactly.");
   }
-  const matchValue = input.matchValue.trim().toLocaleLowerCase("en-GB");
+  if (!MONEY_CATEGORIES.includes(input.category as MoneyCategory)) {
+    throw new MoneyImportValidationError("invalid_category", "Select a category.");
+  }
+  const matchValue = normalizeCategoryRuleText(input.matchValue);
   if (!matchValue || matchValue.length > 250 || /[\u0000-\u001f\u007f]/.test(matchValue)
-    || (input.matchField === "mcc" && !/^\d{3,4}$/.test(matchValue))) {
-    throw new MoneyImportValidationError("invalid_rule_value", "Enter a valid exact match value up to 250 characters.");
+    || (matchField === "mcc" && !/^\d{3,4}$/.test(matchValue))) {
+    throw new MoneyImportValidationError("invalid_rule_value", matchField === "mcc" ? "Enter a merchant category code with 3 or 4 digits." : "Enter match text up to 250 characters.");
   }
-  return { accountId: input.accountId, matchField: input.matchField, matchValue, category: input.category as MoneyCategory };
+  return {
+    ...(input.ruleId ? { ruleId: input.ruleId } : {}),
+    ...(input.accountId ? { accountId: input.accountId } : {}),
+    matchField,
+    matchOperator: input.matchOperator as MoneyCategoryRuleOperator,
+    matchValue,
+    category: input.category as MoneyCategory
+  };
 }
 
 function assertTransactionId(value: string) {

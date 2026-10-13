@@ -12,6 +12,7 @@ import {
   primaryKey,
   text,
   timestamp,
+  unique,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
@@ -241,6 +242,8 @@ export const moneyTransactions = toolsSchema.table("money_transactions", {
   flowKind: text("flow_kind").notNull(),
   category: text("category").notNull(),
   categoryOrigin: text("category_origin").notNull(),
+  /** The rule that set the category when the origin is "rule". */
+  categoryRuleId: uuid("category_rule_id").references(() => moneyCategoryRules.id, { onDelete: "set null" }),
   transferGroupId: uuid("transfer_group_id"),
   transferDisposition: text("transfer_disposition"),
 }, (table) => [
@@ -257,6 +260,7 @@ export const moneyTransactions = toolsSchema.table("money_transactions", {
   index("money_transactions_flow_date_idx").on(table.flowKind, table.localDate),
   index("money_transactions_category_date_idx").on(table.category, table.localDate),
   index("money_transactions_transfer_group_idx").on(table.transferGroupId),
+  index("money_transactions_category_rule_idx").on(table.categoryRuleId),
 ]);
 
 export const moneyInvestmentEvents = toolsSchema.table("money_investment_events", {
@@ -278,11 +282,13 @@ export const moneyInvestmentEvents = toolsSchema.table("money_investment_events"
   index("money_investment_events_instrument_idx").on(table.instrumentId),
 ]);
 
+/** Ordered category rules for spending and refunds; the highest-priority match wins. A null account means every account. */
 export const moneyCategoryRules = toolsSchema.table("money_category_rules", {
   id: uuid("id").primaryKey(),
-  accountId: uuid("account_id").notNull().references(() => moneyAccounts.id),
+  accountId: uuid("account_id").references(() => moneyAccounts.id),
   priority: integer("priority").notNull(),
   matchField: text("match_field").notNull(),
+  matchOperator: text("match_operator").notNull().default("equals"),
   matchValue: text("match_value").notNull(),
   category: text("category").notNull(),
   active: boolean("active").notNull().default(true),
@@ -291,8 +297,9 @@ export const moneyCategoryRules = toolsSchema.table("money_category_rules", {
   createdBy: text("created_by").notNull(),
 }, (table) => [
   check("money_category_rules_field_check", sql`${table.matchField} in ('description', 'mcc', 'source_type')`),
+  check("money_category_rules_operator_check", sql`${table.matchOperator} in ('equals', 'starts_with', 'contains', 'word') and (${table.matchField} = 'description' or ${table.matchOperator} = 'equals')`),
   check("money_category_rules_category_check", sql`${table.category} in ('housing', 'groceries', 'dining', 'transport', 'shopping', 'health', 'personal_care', 'travel', 'subscriptions', 'software', 'education', 'entertainment', 'recreation', 'gifts', 'taxes', 'fees', 'cash', 'investments', 'income', 'transfer', 'adjustment', 'other', 'uncategorized')`),
-  uniqueIndex("money_category_rules_unique_idx").on(table.accountId, table.matchField, table.matchValue),
+  unique("money_category_rules_condition_unique").on(table.accountId, table.matchField, table.matchOperator, table.matchValue).nullsNotDistinct(),
   index("money_category_rules_priority_idx").on(table.priority),
 ]);
 

@@ -1,6 +1,7 @@
 import type { MoneyTransferDisposition } from "./money-enums.js";
+import { MONEY_TEXT_MATCHES, moneyTextMatcher } from "./money-text-match.js";
 
-export const MONEY_TRANSFER_RULE_MATCHES = ["any", "equals", "starts_with", "contains", "word"] as const;
+export const MONEY_TRANSFER_RULE_MATCHES = ["any", ...MONEY_TEXT_MATCHES] as const;
 export type MoneyTransferRuleMatch = typeof MONEY_TRANSFER_RULE_MATCHES[number];
 export const MONEY_TRANSFER_RULE_SIGNS = ["any", "positive", "negative"] as const;
 export type MoneyTransferRuleSign = typeof MONEY_TRANSFER_RULE_SIGNS[number];
@@ -110,19 +111,11 @@ function pairDebitMatches(rule: MoneyTransferPairRule, row: Pick<MoneyTransferIn
 
 function descriptionMatches(match: MoneyTransferRuleMatch, value: string | undefined, description: string) {
   if (match === "any") return true;
-  if (value === undefined) return false;
-  if (match === "equals") return description === value;
-  if (match === "starts_with") return description.startsWith(value);
-  if (match === "contains") return description.includes(value);
-  return new RegExp(`(?:^|[^\\p{L}\\p{N}])${escapeRegExp(value)}(?:$|[^\\p{L}\\p{N}])`, "u").test(description);
+  return value !== undefined && moneyTextMatcher(match, value)(description);
 }
 
 function normalizedDescription(description: string) {
   return description.trim().toLocaleLowerCase("en-GB");
-}
-
-function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /** Sparkasse card statements record the purchase date as "vom DD/MM/YY". */
