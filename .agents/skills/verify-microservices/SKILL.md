@@ -5,10 +5,8 @@ description: Verify Network Console, the Tools products, and Markdown Share thro
 
 # Verify Microservices
 
-Use [features.md](features.md) to choose journeys and record gaps. This is a draft:
-Network Console HTTP was exercised at `9601243`; other journeys require their
-own live evidence. Use [document-share.md](document-share.md) for the combined
-Markdown/LaTeX journeys, isolated Convex setup, and current execution limits.
+Use [the feature index](features/README.md) to select journeys and record gaps.
+Use each extension for its feature-specific setup, actions, and cleanup.
 
 Read repository `AGENTS.md`, each service README, and
 `docs/tools-platform/runtime-boundaries.md`. Record the commit, worktree, Node
@@ -31,7 +29,7 @@ BIND_HOST=127.0.0.1 PORT=43127 pnpm --dir services/network-console start
 ```
 
 Record the terminal session handle. Require `GET /health` to return
-`{"ok":true}` before N1. Do not start or change the installed system service.
+`{"ok":true}` before the Network Console journey. Do not start or change the installed system service.
 
 For Tools, inspect `compose.yaml` and all existing listeners first. Its
 checked-in stack publishes fixed host ports 3000, 5432, 9000, 9001, and 8787.
@@ -40,24 +38,23 @@ published port to unused loopback ports. Set the platform's `PUBLIC_ORIGIN`
 and seed browser origin to the chosen Tools origin. Confirm with
 `docker compose ... config` before launch. Do not use an existing database,
 bucket, service, or volume. Record the exact project, overrides, and resolved
-configuration with secrets removed. Generate an owned local
-`FEEDBACK_ENCRYPTION_KEY` with the command in `services/tools/feedback/README.md`
-and inject it into the platform environment before launch. Compose omits this
-required key; configuration rejects startup without it. Keep it only in the
-owned private environment file and retain it until test response cleanup ends.
+configuration with secrets removed. Use the exact private environment and key
+override in the root README's Local stack section, then add the run's port and
+origin override to the same explicit Compose invocation. The README example
+uses the fixed ports and does not provide the required audit remapping. Compose
+omits `FEEDBACK_ENCRYPTION_KEY`; configuration rejects startup without it.
+Keep the key only in the owned private environment file outside the checkout
+and retain it until test response cleanup ends. Use `config --quiet` for the
+unredacted setup; never save a resolved key to evidence.
 
-Compose also uses `ARTIFACT_S3_ENDPOINT=http://minio:9000`. Signed redirects
-use that endpoint, which a host browser cannot resolve. P2 is blocked until
-the owned storage endpoint is reachable by both Tools and the browser and its
-CORS configuration permits the test origin and range playback. Record the
-actual endpoint and CORS check without credentials. Do not rewrite a signed
-URL hostname after signing. This storage setup has not been exercised.
+Before Publisher journeys, apply the feature's
+[storage prerequisites](features/publisher.md#storage-prerequisites).
 
 Require both `/live` and `/health`
 to succeed; Compose's health check only checks `/live`.
 
 The sample OAuth values cannot verify login. Use a local OAuth client and the
-allowed test subject for A1 and private pages. Do not copy production secrets.
+allowed test subject for private pages. Do not copy production secrets.
 Markdown needs a separately owned local Convex backend and its actual URL as
 `VITE_CONVEX_URL`. The port-8787 administration mock does not implement
 the browser protocol. If these prerequisites are missing, mark the dependent
@@ -65,7 +62,7 @@ journeys blocked rather than using mocked authentication or server functions.
 The exact remapped Tools setup remains unverified. Markdown administration
 only lists documents. Use a separately owned disposable local backend whose
 process and data directory can be disposed of after the run. If this cleanup
-path cannot be established, do not create documents and mark M1/M2 blocked.
+path cannot be established, do not create documents and mark the dependent journeys blocked.
 
 ## Execution and cleanup
 
