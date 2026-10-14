@@ -47,12 +47,8 @@ Keep the key only in the owned private environment file outside the checkout
 and retain it until test response cleanup ends. Use `config --quiet` for the
 unredacted setup; never save a resolved key to evidence.
 
-Compose also uses `ARTIFACT_S3_ENDPOINT=http://minio:9000`. Signed redirects
-use that endpoint, which a host browser cannot resolve. P2 is blocked until
-the owned storage endpoint is reachable by both Tools and the browser and its
-CORS configuration permits the test origin and range playback. Record the
-actual endpoint and CORS check without credentials. Do not rewrite a signed
-URL hostname after signing. This storage setup has not been exercised.
+Before Publisher journeys, apply the feature's
+[storage prerequisites](features/publisher.md#storage-prerequisites).
 
 Require both `/live` and `/health`
 to succeed; Compose's health check only checks `/live`.
