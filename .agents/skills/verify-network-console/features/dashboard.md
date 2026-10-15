@@ -26,6 +26,6 @@ Preconditions:
 
 ## Gotchas
 
-The Mac can lack `ss`, so process details can be absent. Do not invent listeners
-or replace the scanner to make the page look full. Host and network details stay
+If `ss` is unavailable on the host, process details can be absent.
+Do not invent listeners or replace the scanner to make the page look full. Host and network details stay
 in private evidence. Do not follow production or unrelated service links.
