@@ -34,6 +34,6 @@
     "typecheck:tools-domain": "pnpm --dir services/tools/runtime/domain run typecheck",
     "typecheck:status": "pnpm --dir services/tools/status run typecheck",
     "typecheck:dashboard": "pnpm --dir services/tools/dashboard run typecheck",
-    "verify": "pnpm run typecheck && pnpm run test"
+    "verify": "node --experimental-strip-types services/tools/test/runtime/run.ts"
   }
 }
