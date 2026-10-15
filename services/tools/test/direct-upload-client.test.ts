@@ -79,6 +79,64 @@ describe("durable browser upload client", () => {
     expect(completions[0]?.url).toBe(completions[1]?.url);
   });
 
+  it("replaces the selected HTML page through storage without sending cookies", async () => {
+    const original = globalThis.fetch;
+    const replacement = { ...result, kind: "html", filename: "revised.html", contentType: "text/html",
+      url: `https://tools.example/artifacts/${result.id}` };
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
+      const response = await original(url, init);
+      if (url.endsWith("/sessions")) return Response.json({ ...await response.json(), replaceId: result.id });
+      if (url.endsWith("/complete")) return Response.json(replacement, { status: 200 });
+      return response;
+    }));
+    expect(await uploadDirectFile(new File(["abcdef"], "revised.html", { type: "text/html" }), callbacks,
+      { kind: "html", replaceId: result.id })).toEqual(replacement);
+    expect(requests[0]?.body).toMatchObject({ kind: "html", replaceId: result.id });
+    expect(TransferXhr.puts).toHaveLength(2);
+    expect(TransferXhr.puts.every(put => !put.credentials)).toBe(true);
+  });
+
+  it.each([undefined, "b".repeat(32)])("rejects a replacement acknowledgement of %s before sending bytes", async (replaceId) => {
+    const original = globalThis.fetch;
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
+      const response = await original(url, init);
+      return url.endsWith("/sessions") ? Response.json({ ...await response.json(), replaceId }) : response;
+    }));
+    await expect(uploadDirectFile(new File(["abcdef"], "revised.html"), callbacks,
+      { kind: "html", replaceId: result.id })).rejects.toThrow("does not support");
+    expect(TransferXhr.puts).toHaveLength(0);
+    expect(requests).toHaveLength(1);
+  });
+
+  it("rejects a completion for a different HTML page and retains recovery identity", async () => {
+    const original = globalThis.fetch;
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
+      const response = await original(url, init);
+      if (url.endsWith("/sessions")) return Response.json({ ...await response.json(), replaceId: result.id });
+      if (url.endsWith("/complete")) return Response.json({ ...result, id: "b".repeat(32) });
+      return response;
+    }));
+    await expect(uploadDirectFile(new File(["abcdef"], "revised.html"), callbacks,
+      { kind: "html", replaceId: result.id })).rejects.toThrow("did not replace");
+    expect(saved.size).toBe(1);
+    expect(requests.some(request => request.method === "DELETE")).toBe(false);
+  });
+
+  it("keeps the same request UUID when an expired replacement is retried", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      requests.push({ url: _url, method: init.method!, body });
+      return Response.json({ error: "upload_not_found" }, { status: 404 });
+    }));
+    const file = new File(["abcdef"], "revised.html", { lastModified: 123 });
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      await expect(uploadDirectFile(file, callbacks, { kind: "html", replaceId: result.id })).rejects.toThrow();
+    }
+    expect(requests).toHaveLength(2);
+    expect(requests[0]?.body?.requestId).toBe(requests[1]?.body?.requestId);
+    expect(TransferXhr.puts).toHaveLength(0);
+  });
+
   it("abandons the durable session after an explicit cancellation", async () => {
     let cancelled = false;
     const pending = uploadDirectFile(new File(["abcdef"], "fixture.bin"), {

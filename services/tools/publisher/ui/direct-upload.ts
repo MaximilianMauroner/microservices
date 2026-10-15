@@ -159,7 +159,8 @@ function readSession(value: unknown): Session {
     || value.totalParts < 1 || value.totalParts > 250 || typeof value.state !== "string" || !Array.isArray(value.uploaded)
     || !value.uploaded.every(number => typeof number === "number")) throw new Error("Invalid upload session response.");
   return { sessionId: value.sessionId, partBytes: value.partBytes, totalParts: value.totalParts,
-    state: value.state, uploaded: value.uploaded };
+    state: value.state, uploaded: value.uploaded,
+    ...(typeof value.replaceId === "string" ? { replaceId: value.replaceId } : {}) };
 }
 function isUploadSummary(value: unknown): value is UploadSummary {
   return isRecord(value) && typeof value.id === "string" && typeof value.url === "string"
