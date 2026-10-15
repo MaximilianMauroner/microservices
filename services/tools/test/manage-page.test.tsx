@@ -78,6 +78,18 @@ describe("Manage artifact library", () => {
     expect(html).toContain("available until revoked");
   });
 
+  it("offers separate PDF viewing and explicit download links", () => {
+    const url = `https://tools.example.test/files/${"b".repeat(32)}/report.pdf`;
+    const html = renderToStaticMarkup(<ManagePage initial={{ uploads: [{
+      ...initial.uploads[1]!, filename: "report.pdf", contentType: "application/pdf", url,
+      downloadUrl: `${url}?download=1`
+    }] }} />);
+
+    expect(html).toContain(`href="${url}"`);
+    expect(html).toContain(`href="${url}?download=1"`);
+    expect(html).toContain("Download</a>");
+  });
+
   it("keeps filters responsive and offers an explicit search of older artifacts", async () => {
     const source = await readFile(new URL("../publisher/ui/manage-page.tsx", import.meta.url), "utf8");
     const completeLibrary = source.slice(source.indexOf("async function loadCompleteLibrary"), source.indexOf("async function replaceSelected"));

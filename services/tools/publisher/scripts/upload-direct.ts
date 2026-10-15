@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
-import { open } from "node:fs/promises";
+import { open, stat } from "node:fs/promises";
+import type { BigIntStats } from "node:fs";
 import path from "node:path";
 
 const [filePath, resumeId] = process.argv.slice(2);
@@ -13,7 +14,10 @@ const requestId = resumeId ?? crypto.randomUUID();
 console.error(`Upload request ID: ${requestId}`);
 const file = await open(filePath, "r");
 try {
-  const { size } = await file.stat();
+  const source = await file.stat({ bigint: true });
+  const size = Number(source.size);
+  const sourceSha256 = await hashSource();
+  await checkSource(source);
   const filename = path.basename(filePath);
   const html = /\.html?$/i.test(filename);
   const contentType = html ? "text/html" : /\.mp4$/i.test(filename) ? "video/mp4" : "application/octet-stream";
@@ -46,8 +50,29 @@ try {
       }
     }
   }
-  console.log(JSON.stringify(await control(`${sessionBase}/complete`)));
+  if (await hashSource() !== sourceSha256) throw new Error("The file changed during upload.");
+  await checkSource(source);
+  const completed = await control(`${sessionBase}/complete`);
+  if (!record(completed) || completed.bytes !== size || completed.sha256 !== sourceSha256) {
+    throw new Error("The published file does not match the source. Retain the request ID for recovery.");
+  }
+  console.log(JSON.stringify(completed));
 } finally { await file.close(); }
+
+async function hashSource() {
+  const hash = crypto.createHash("sha256");
+  for await (const bytes of file.createReadStream({ start: 0, autoClose: false })) hash.update(bytes);
+  return hash.digest("hex");
+}
+
+async function checkSource(expected: BigIntStats) {
+  for (const actual of [await file.stat({ bigint: true }), await stat(filePath!, { bigint: true })]) {
+    if (actual.dev !== expected.dev || actual.ino !== expected.ino || actual.size !== expected.size
+      || actual.mtimeNs !== expected.mtimeNs || actual.ctimeNs !== expected.ctimeNs) {
+      throw new Error("The file changed during upload.");
+    }
+  }
+}
 
 async function control(url: string, body?: unknown): Promise<unknown> {
   for (let attempt = 0; attempt < 4; attempt += 1) {

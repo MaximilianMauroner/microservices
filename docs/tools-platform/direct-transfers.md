@@ -2,8 +2,9 @@
 
 Publisher authorizes uploads in Tools. Clients send file parts to the private
 Railway bucket with five-minute signed URLs. PostgreSQL owns upload sessions,
-part digests, completion manifests, and published metadata. Bucket bodies live
-under `transfers/<artifact-id>`. Canonical `/artifacts/:id` and
+part digests, completion manifests, and published metadata. Create bodies live under
+`transfers/<artifact-id>`. Each HTML replacement has an immutable
+`transfers/<target-id>/<staging-id>` body. Canonical `/artifacts/:id` and
 `/files/:id/:filename` URLs stay unchanged.
 
 ## Upload protocol
@@ -18,7 +19,7 @@ ID. Native credentials never travel to storage.
 
 1. POST JSON with a UUID `requestId`, `filename`, `contentType`, and
    `totalBytes`. `kind` defaults to `file`; authorized browser/native clients
-   can create persistent `html` and pass `project`. The response contains
+   can create persistent `html` and pass `project`. An HTML replacement also supplies `replaceId`. Initialization echoes the target before the client sends any part. The response contains
    `sessionId`, `partBytes`, `totalParts`, `uploaded`, `state`, and `expiresAt`.
    Repeat initialization with the same request ID and file description to
    recover a lost response or resume. File sessions expire after two hours.
@@ -35,7 +36,7 @@ ID. Native credentials never travel to storage.
    persists the manifest, completes multipart storage, and streams the stored
    bytes through bounded SHA-256 validation. It checks every part digest and
    total length, then atomically inserts canonical metadata and marks the
-   session completed. Repeated completion returns the same ID and result.
+   session completed. An HTML replacement changes the canonical pointer only if its expected version is still current. That publication boundary prevents a stale writer from replacing a newer version. Repeated completion returns the saved result.
    Missing parts return 409; incorrect size or content returns 422 and cannot
    be published. Retry transient failure with the same session.
 5. DELETE `/:sessionId` to abandon pending work. Aborting also invalidates its
@@ -91,23 +92,28 @@ Successful files stay available under their existing artifact retention rules.
 Publisher's existing startup/hourly cleanup removes abandoned, expired,
 invalid, and revoked-link multipart work in bounded batches. Completed session
 receipts are retained for at least one day after session expiry, then pruned in
-batches. Cleanup does not delete published bodies when a receipt expires.
+batches. Replacement receipts and UUID bindings remain for recovery. Cleanup does not
+delete published bodies when a create receipt expires.
 No separate keep-awake timer is added.
 
 Restore PostgreSQL metadata and sessions together with the bucket. The legacy
 pages/files backfill deliberately excludes `transfers/`; it must never adopt an
 unverified object. This makes a successful byte verification and canonical
 commit the only publication boundary. Artifact deletion removes the direct
-body as well as legacy keys. HTML replacement preserves its current object key
-and stable capability URL.
+body as well as legacy keys. HTML replacement changes the canonical object pointer and
+preserves its stable capability URL. Its full before and after receipt retains the old
+body key, metadata, and digest. Stale operations cannot overwrite a later version or
+clear a revocation tombstone.
 
 ## Downloads and remaining body transfers
 
 All non-conditional file GET requests now redirect after capability and expiry
 checks, including small attachments. Storage handles normal ranges. MP4 keeps
 its existing four-hour maximum signature for playback and later seeks; other
-attachments retain the same maximum and use signed attachment disposition,
-binary content type, and private no-store caching. Expiry shortens signatures.
+attachments retain the same maximum. PDFs use inline disposition and application/pdf,
+including historical binary-classified .pdf filenames. ?download=1 forces attachment.
+Other files keep attachment disposition and a binary content type. Signed reads use
+private no-store caching. Expiry shortens signatures.
 Revocation deletes the object and denies later canonical requests. Shortening
 an expiry does not invalidate a signature already issued for the earlier expiry.
 
@@ -131,8 +137,9 @@ The native multipart `/api/uploads` and chunk `/api/uploads/chunks` handlers in
 237 successful native chunk PUTs carrying 4.95 GB. Those clients are outside
 this repository and must be switched to sessions or `upload:direct` separately.
 Their legacy uploads still incur application-to-bucket egress and have their
-existing local-staging restart limit. Native HTML replacement remains on its
-existing multipart route.
+existing local-staging restart limit. Current Fleet HTML creation and replacement use
+sessions. The legacy multipart replacement route remains until all installed callers are
+accounted for.
 
 Browser multipart/chunk endpoints and their local staging also remain for
 already loaded browser bundles during rollout. The current React console and
@@ -143,8 +150,9 @@ active legacy contract.
 Remove browser upload compatibility after the new build is deployed, old
 bundles have aged out, and route observations confirm no calls. Remove native
 creation/chunk compatibility only after external caller owners confirm migration
-and route observations confirm no calls. Keep native HTML replacement until its
-active caller has an equivalent update path. No removal is authorized here.
+and route observations confirm no calls. Keep the legacy replacement writer until every
+declared device and harness has verified the direct client and offline or unknown
+callers are accounted for. No removal is authorized here.
 
 The artifact recovery reader in `publisher/src/postgres-storage.ts` also accepts
 JSON strings written by the old double-encoding path. New recovery records use
@@ -152,49 +160,25 @@ native JSONB objects. Remove that decoder after pre-existing pending operations
 have been reconciled. It is needed to preserve interrupted legacy replacements,
 including replacements of HTML created through a direct session.
 
-## Reviewed rollout steps, not applied
+## Release constraints
 
-1. Max approves the private artifact bucket CORS update. Keep existing wildcard
-   GET/HEAD playback support and add an exact-origin PUT rule first. Do not make
-   the bucket public, expand CDN caching, or change credentials. Review the
-   current rule set before applying this proposed addition:
+The schema addition keeps existing rows and historical readers. Replacement
+sessions add nullable `target_id`, `expected_object_key`, and `receipt` fields,
+a target constraint, and a partial target index. Keep these fields on rollback
+because they bind retries and retain recovery evidence.
 
-   ```json
-   {
-     "CORSRules": [
-       {
-         "AllowedOrigins": ["https://tools.mauroner.net"],
-         "AllowedMethods": ["GET", "HEAD", "PUT"],
-         "AllowedHeaders": ["*"],
-         "ExposeHeaders": ["Accept-Ranges", "Content-Range", "Content-Length", "Content-Type", "ETag"],
-         "MaxAgeSeconds": 300
-       },
-       {
-         "AllowedOrigins": ["*"],
-         "AllowedMethods": ["GET", "HEAD"],
-         "AllowedHeaders": ["*"],
-         "ExposeHeaders": ["Accept-Ranges", "Content-Range", "Content-Length", "Content-Type", "ETag"],
-         "MaxAgeSeconds": 300
-       }
-     ]
-   }
-   ```
+A database restore and a backend deployment do not roll back external clients.
+Recover metadata together with its referenced bodies. Keep newer commits and
+all retained versions when recovering from an older backup.
 
-2. Max approves the additive PostgreSQL schema change in
-   `services/tools/database/postgres-schema.ts`: nullable `objects.sha256`, plus
-   `artifacts.upload_sessions`, its constraints, and indexes. The existing
-   guarded Railway predeploy schema push includes the new table. Review the
-   generated DDL and recovery procedure before approving deployment; no local
-   command here targets production. Retain the added table/column on rollback.
-3. Max approves deployment separately. A main merge may deploy automatically;
-   this PR must not merge under the current authorization.
-   Before release, prove multipart signing with Content-Length, completion,
-   exact-origin PUT preflight, opaque-origin range playback, and deletion in
-   an approved non-production Railway bucket. Local S3 evidence does not prove
-   Tigris-specific behavior. Do not rewrite hosts after signing.
-4. External native caller owners switch their clients. Measure service egress
-   over a comparable billing cycle after adoption. Existing signed-video and
-   >=8 MiB attachment savings are already deployed and are not new savings.
+Max can abstain from uploads for a short server-first release. Keep the legacy
+writers until every device and harness has verified the direct uploader and
+unknown callers are accounted for. An offline target does not prove cutover.
+Production bucket behavior and CORS require separate approved verification.
+Local S3 evidence does not establish the production provider's behavior.
+
+The concrete release procedure and per-target state belong in
+`.agents/artifacts/`, with the paired backup and isolated recovery evidence.
 
 ## Isolated verification
 
