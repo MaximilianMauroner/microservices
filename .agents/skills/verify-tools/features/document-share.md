@@ -1,9 +1,30 @@
 # Combined Document Share verification
 
+Drive the real user paths and verify the saved result.
+
+## Sub-features
+
+- M1. At /share create Markdown and LaTeX documents; verify .md/.tex filenames, acknowledged source edits, reload persistence, second-session synchronization, presence, two checkpoints and comparison. Verify /markdown capability aliases, Markdown preview/PDF control, and exact LaTeX source download. Use the detailed journeys above.
+- M2. Anonymous /documents and its inventory API deny access. After local sign-in, verify Documents title, filenames, format badges/filters, expiry, checkpoints, and capability links for both formats. Check invalid capability denial and bounded retention separately. Use the detailed journeys above.
+- M3. Paste bounded multiline source with escapes and Unicode in each real editor. Confirm acknowledgement and reload. Reject source above the character or encoded-byte budget without replacing saved content; a smaller paste then saves. Use the detailed journeys above.
+
+## How to get to it (user POV)
+
+Open `/share` on the owned Tools origin. Publisher also has the native Fleet
+upload CLI and canonical `/artifacts/` and `/files/` links.
+
+## Driving it with T3 preview and the native CLI
+
+Preconditions:
+
+- The Tools doctor passes for this run's state directory.
+- Private pages require an authorized local OAuth client and subject.
+- Use the actions, expected results, and additional prerequisites below.
+
 This extension covers combined Markdown and LaTeX sharing. Source and unit-test
 evidence do not establish browser acceptance.
 
-## Setup
+### Setup
 
 Read `services/tools/README.md`, `services/markdown-share/README.md`, and the
 shared skill setup. Record the exact head/base, Node/pnpm versions, selected
@@ -32,7 +53,7 @@ administration token, and an authorized local Google OAuth client/subject.
 Sample OAuth placeholders cannot establish a session. If unavailable, perform
 anonymous denial checks and record authenticated inventory as blocked.
 
-## M1: creation, editing, collaboration, history, export
+### M1: creation, editing, collaboration, history, export
 
 Run each format serially with a unique synthetic name and keep the capability
 URLs private. Use snapshot locators to interact with the real loaded page.
@@ -75,7 +96,7 @@ URLs private. Use snapshot locators to interact with the real loaded page.
    preview/status, and controls. Compare with valid prior/base evidence for
    unrelated layout, copy, and animation. Record console and network failures.
 
-## M3: source budget and recovery
+### M3: source budget and recovery
 
 Use only synthetic payloads in the real editor. Record character count and
 `TextEncoder().encode(JSON.stringify(JSON.stringify(source))).byteLength` for
@@ -103,7 +124,7 @@ edit can accumulate protocol steps beyond the source budget. Verify such a batch
 only with a supported owned connection-control harness and exact step evidence;
 otherwise record it unrun. Do not change network, TLS, or shared proxy settings.
 
-## M2: private inventory and retention
+### M2: private inventory and retention
 
 1. In an anonymous session, open `/documents`. Expect sign-in rather than the
    inventory. An anonymous `GET /api/ops/documents` must return
@@ -142,16 +163,21 @@ creation; keep redacted evidence. Do not delete shared database/bucket volumes.
 Remove owned browser downloads and recent-document entries after evidence is
 retained. Sign out any owned authenticated session and restore its preferences.
 
-## Prior evidence
+### Prior evidence
 
 The [dated 2026-10-06 report](../../../../docs/verification/2026-10-06-document-share.md)
 records protocol checks and browser/setup blockers. Reuse it only when the
 source, setup, and expected results still match.
 
-## Journey map
+### Journey map
 
 | ID | Public actions and observable result | Source and existing checks | Prerequisites and reset |
 | --- | --- | --- | --- |
 | M1 | At /share create Markdown and LaTeX documents; verify .md/.tex filenames, acknowledged source edits, reload persistence, second-session synchronization, presence, two checkpoints and comparison. Verify /markdown capability aliases, Markdown preview/PDF control, and exact LaTeX source download. Use the detailed journeys above. | services/markdown-share/README.md; markdown-share/App.tsx; markdown-share/collaborative-workspace.tsx; markdown-share/document-history.tsx; backend and workspace tests | Owned local Convex, browser-reachable origin, two independent sessions and download access. Establish disposable backend cleanup before creation. History supports comparison, not restoration. |
 | M2 | Anonymous /documents and its inventory API deny access. After local sign-in, verify Documents title, filenames, format badges/filters, expiry, checkpoints, and capability links for both formats. Check invalid capability denial and bounded retention separately. Use the detailed journeys above. | src/routes/documents.tsx; src/routes/api/ops/$.ts; dashboard/ui/documents-page.tsx; test/documents-page.test.tsx; services/markdown-share/convex | Local Convex administration token, isolated Tools dependencies, authorized local OAuth. Retention is blocked without a supported bounded clock; never wait seven days or alter production time. |
 | M3 | Paste bounded multiline source with escapes and Unicode in each real editor. Confirm acknowledgement and reload. Reject source above the character or encoded-byte budget without replacing saved content; a smaller paste then saves. Use the detailed journeys above. | services/markdown-share/source-limits.ts; markdown-share/live-document-session.ts; markdown-share/collaborative-workspace.test.tsx; convex/markdownShare.test.ts | M1 setup and synthetic clipboard payloads. Record payload sizes and each result. Offline multi-step batches beyond the budget need separate evidence. |
+
+## Gotchas
+
+Unavailable prerequisites mean blocked. A different entry point does not prove
+an unrun path. Keep captures after cleanup. Use no production endpoint.

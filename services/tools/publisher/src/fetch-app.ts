@@ -24,7 +24,9 @@ import {
   type UploadLinkRepository
 } from "./upload-links.js";
 import {
-  attachmentDisposition,
+  contentDisposition,
+  fileDelivery,
+  artifactUrls,
   MAX_FILE_NAME_BYTES,
   MAX_PROJECT_NAME_BYTES,
   normalizeMimeType,
@@ -855,7 +857,7 @@ async function readFileRoute(
       return new Response(null, { status: 404 });
     }
     metadata.body.destroy();
-    const video = normalizeMimeType(metadata.contentType) === "video/mp4";
+    const delivery = fileDelivery(metadata, new URL(request.url).searchParams.get("download") === "1");
     const expiresInSeconds = metadata.expiresAt
       ? Math.min(DIRECT_VIDEO_URL_SECONDS,
           Math.floor((metadata.expiresAt.getTime() - getNow(options).getTime() - 1000) / 1000))
@@ -863,10 +865,10 @@ async function readFileRoute(
     if (expiresInSeconds >= 1) {
       let signedUrl: string | null = null;
       try {
-        signedUrl = video
+        signedUrl = !delivery
           ? await options.storage.presignTemporaryFile(id, expiresInSeconds)
           : await options.storage.presignTemporaryFile(
-              id, expiresInSeconds, { kind: "attachment", filename: metadata.originalName }
+              id, expiresInSeconds, delivery
             );
       } catch {
         // S3 signing is an optimization; the canonical file route can still stream.
@@ -897,14 +899,15 @@ async function readFileRoute(
       return new Response(null, { status: 404 });
     }
 
+    const delivery = fileDelivery(file, new URL(request.url).searchParams.get("download") === "1");
     const headers = new Headers({
       "Accept-Ranges": "bytes",
       // Artifact pages run sandboxed, so they reach this file across origins.
       // The URL is already the capability, and no credentials travel with it.
       "Access-Control-Allow-Origin": "*",
       "Cache-Control": "private, no-store",
-      "Content-Disposition": attachmentDisposition(file.originalName),
-      "Content-Type": normalizeMimeType(file.contentType),
+      "Content-Disposition": contentDisposition(file.originalName, delivery?.kind ?? "attachment"),
+      "Content-Type": delivery?.kind === "inline" ? "application/pdf" : normalizeMimeType(file.contentType),
       "X-Content-Type-Options": "nosniff",
       "X-Robots-Tag": "noindex, nofollow"
     });
@@ -947,10 +950,7 @@ async function listExternalUploads(
         kind: upload.kind,
         filename: upload.originalName,
         contentType: upload.contentType,
-        url:
-          upload.kind === "html"
-            ? `${baseUrl}/artifacts/${upload.id}`
-            : `${baseUrl}/files/${upload.id}/${encodeURIComponent(upload.originalName)}`,
+        ...artifactUrls(baseUrl, { ...upload, filename: upload.originalName }),
         bytes: upload.bytes,
         updatedAt: upload.updatedAt.toISOString(),
         ...(upload.project ? { project: upload.project } : {}),
@@ -1046,6 +1046,7 @@ async function upload(
         const baseUrl = getPublicBaseUrl(request, options.publicBaseUrl);
         let project = staged.project;
         let updateEtag: string | undefined;
+        let expectedObjectKey: string | undefined;
         if (mode.kind === "update") {
           const existing = await options.storage.getHtml(id, {
             headOnly: true,
@@ -1062,6 +1063,7 @@ async function upload(
           project ??= existing.project;
           if (!existing.etag) throw new Error(`Stored HTML ${id} is missing an ETag`);
           updateEtag = existing.etag;
+          expectedObjectKey = existing.version;
         }
 
         const sha256 = await sha256File(staged.filePath, request.signal);
@@ -1078,7 +1080,7 @@ async function upload(
                 sha256,
                 ...(project ? { project } : {})
               },
-              { ifMatch: updateEtag, signal: request.signal }
+              { ifMatch: updateEtag, expectedObjectKey, signal: request.signal }
             );
           } catch (error) {
             if (error instanceof HtmlUpdateConflictError) {
@@ -1098,7 +1100,7 @@ async function upload(
               kind: "html",
               filename: originalName,
               contentType: HTML_CONTENT_TYPE,
-              url: `${baseUrl}/artifacts/${id}`,
+              ...artifactUrls(baseUrl, { id, kind: "html", filename: originalName }),
               bytes: staged.bytes,
               sha256,
               ...(project ? { project } : {})
@@ -1139,7 +1141,7 @@ async function upload(
             kind: "file",
             filename: originalName,
             contentType: uploadType.contentType,
-            url: `${baseUrl}/files/${id}/${encodeURIComponent(originalName)}`,
+            ...artifactUrls(baseUrl, { id, kind: "file", filename: originalName }),
             bytes: staged.bytes,
             expiresAt: expiresAt.toISOString(),
             sha256
@@ -1722,7 +1724,7 @@ async function completeChunkedUpload(
             kind: "file",
             filename: originalName,
             contentType: manifest.contentType,
-            url: `${baseUrl}/files/${id}/${encodeURIComponent(originalName)}`,
+            ...artifactUrls(baseUrl, { id, kind: "file", filename: originalName }),
             bytes: manifest.totalBytes,
             expiresAt: expiresAt.toISOString(),
             sha256
@@ -2408,7 +2410,7 @@ function downloadUploadLinkFiles(
   return new Response(output.readable, {
     headers: {
       "Cache-Control": "private, no-store",
-      "Content-Disposition": attachmentDisposition(`uploads-${linkId.slice(0, 8)}.zip`),
+      "Content-Disposition": contentDisposition(`uploads-${linkId.slice(0, 8)}.zip`),
       "Content-Type": "application/zip",
       "X-Content-Type-Options": "nosniff"
     }

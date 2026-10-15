@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import postgres, { type Sql } from "postgres";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { HeadObjectCommand, ListMultipartUploadsCommand, PutBucketCorsCommand, S3Client, UploadPartCommand } from "@aws-sdk/client-s3";
+import { GetObjectCommand, HeadObjectCommand, ListMultipartUploadsCommand, PutBucketCorsCommand, S3Client, UploadPartCommand } from "@aws-sdk/client-s3";
 import { createFetchApp } from "../src/fetch-app.js";
 import { createDirectUploads, DIRECT_PART_BYTES } from "../src/direct-uploads.js";
 import { createMultipartStorage } from "../src/multipart-storage.js";
@@ -79,11 +79,12 @@ describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", () => {
       ...(body ? { "Content-Type": "application/json" } : {}) }, ...(body ? { body } : {}) }));
   }
 
-  async function initialize(bytes: number, options: { base?: string; requestId?: string; filename?: string; kind?: "html" | "file"; contentType?: string; project?: string } = {}) {
+  async function initialize(bytes: number, options: { base?: string; requestId?: string; filename?: string; kind?: "html" | "file"; contentType?: string; project?: string; replaceId?: string } = {}) {
     const base = options.base ?? "/api/uploads/sessions";
     const id = options.requestId ?? crypto.randomUUID();
     const response = await request(base, "POST", { requestId: id, filename: options.filename ?? "fixture.bin",
-      contentType: options.contentType ?? "application/octet-stream", totalBytes: bytes, kind: options.kind ?? "file", ...(options.project ? { project: options.project } : {}) });
+      contentType: options.contentType ?? "application/octet-stream", totalBytes: bytes, kind: options.kind ?? "file",
+      ...(options.project ? { project: options.project } : {}), ...(options.replaceId ? { replaceId: options.replaceId } : {}) });
     if (response.status !== 201) console.info("initialization failure", await response.clone().json());
     expect(response.status).toBe(201);
     const session = await response.json() as { sessionId: string; partBytes: number; totalParts: number };
@@ -102,6 +103,192 @@ describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", () => {
     bucketUploadBytes += bytes.length;
     return url;
   }
+
+  async function html(body: string, replaceId?: string, project?: string) {
+    const bytes = Buffer.from(body);
+    const session = await initialize(bytes.length, { kind: "html", filename: "plan.html", contentType: "text/html", replaceId, project });
+    await put(session, 1, bytes);
+    return session;
+  }
+
+  async function raw(key: string) {
+    const result = await client.send(new GetObjectCommand({ Bucket: config.bucket, Key: key }));
+    return result.Body!.transformToString();
+  }
+
+  it("stages replacements without changing identity or prior bytes and keeps exact receipts after restart and expiry", async () => {
+    const created = await html("<h1>original</h1>", undefined, "original-project");
+    const original = await (await request(created.path + "/complete")).json() as { id: string; url: string };
+    const [before] = await sql`select * from artifacts.objects where id = ${original.id}`;
+    const replacement = await html("<h1>replacement</h1>", original.id);
+    expect(await raw(before!.object_key)).toBe("<h1>original</h1>");
+    expect(await (await app(new Request(original.url))).text()).toContain("<h1>original</h1>");
+    await storage.updateHtmlProject(original.id, "edited-during-upload");
+    const response = await request(replacement.path + "/complete");
+    expect(response.status).toBe(201);
+    const result = await response.json();
+    expect(result).toMatchObject({ id: original.id, url: original.url, project: "edited-during-upload",
+      bytes: Buffer.byteLength("<h1>replacement</h1>"), sha256: digest(Buffer.from("<h1>replacement</h1>")) });
+    const [after] = await sql`select * from artifacts.objects where id = ${original.id}`;
+    expect(after!.created_at).toEqual(before!.created_at);
+    expect(after!.object_key).not.toBe(before!.object_key);
+    expect(await raw(after!.object_key)).toBe("<h1>replacement</h1>");
+    expect(await raw(before!.object_key)).toBe("<h1>original</h1>");
+    const newer = await html("<h1>newer</h1>", original.id);
+    expect((await request(newer.path + "/complete")).status).toBe(201);
+    expect(await (await request(replacement.path + "/complete")).json()).toEqual(result);
+    await sql`update artifacts.upload_sessions set expires_at = now() - interval '3 days' where session_id = ${replacement.sessionId}::uuid`;
+    await storage.directUploads!.cleanup();
+    await storage.close?.();
+    sql = postgres(databaseUrl!, { max: 3, idle_timeout: 1 });
+    attach();
+    expect(await (await request(replacement.path + "/complete")).json()).toEqual(result);
+    const [receipt] = await sql`select receipt from artifacts.upload_sessions where session_id = ${replacement.sessionId}::uuid`;
+    expect(receipt!.receipt).toMatchObject({ format: 1, before: { object_key: before!.object_key,
+      project: "edited-during-upload", created_at: before!.created_at.toISOString() },
+      after: { object_key: after!.object_key, sha256: result.sha256 } });
+  });
+
+  it("rejects a stale replacement and never rebinds its UUID after cleanup", async () => {
+    const created = await html("old");
+    const { id } = await (await request(created.path + "/complete")).json() as { id: string };
+    const winner = await html("winner", id);
+    const stale = await html("stale", id);
+    expect((await request(winner.path + "/complete")).status).toBe(201);
+    const conflict = await request(stale.path + "/complete");
+    expect(conflict.status).toBe(409);
+    expect(await conflict.json()).toMatchObject({ error: "replace_conflict" });
+    await sql`update artifacts.upload_sessions set expires_at = now() - interval '3 days' where session_id = ${stale.sessionId}::uuid`;
+    await storage.directUploads!.cleanup();
+    expect((await request(stale.path + "/complete")).status).toBe(404);
+    const rebind = await request("/api/uploads/sessions", "POST", { requestId: stale.sessionId,
+      kind: "html", filename: "plan.html", contentType: "text/html", totalBytes: 5, replaceId: id });
+    expect(rebind.status).toBe(404);
+    const [current] = await sql`select object_key from artifacts.objects where id = ${id}`;
+    expect(await raw(current!.object_key)).toBe("winner");
+  });
+
+  it("serves retained PDF MIME and binary-classified PDFs inline with an explicit signed download", async () => {
+    for (const contentType of ["application/pdf", "application/octet-stream"]) {
+      const bytes = Buffer.from("%PDF-1.4\nowned PDF fixture\n%%EOF\n");
+      const session = await initialize(bytes.length, { filename: "résumé.pdf", contentType });
+      await put(session, 1, bytes);
+      const result = await (await request(session.path + "/complete")).json() as { id: string; url: string; downloadUrl: string };
+      expect(result.downloadUrl).toBe(result.url + "?download=1");
+      const redirect = await app(new Request(result.url));
+      expect(redirect.status).toBe(307);
+      const viewed = await fetch(redirect.headers.get("location")!);
+      expect(viewed.headers.get("content-type")).toBe("application/pdf");
+      expect(viewed.headers.get("content-disposition")).toMatch(/^inline;/);
+      expect(Buffer.from(await viewed.arrayBuffer())).toEqual(bytes);
+      const head = await app(new Request(result.url, { method: "HEAD" }));
+      expect(head.headers.get("content-type")).toBe("application/pdf");
+      expect(head.headers.get("content-disposition")).toMatch(/^inline;/);
+      const ranged = await fetch(redirect.headers.get("location")!, { headers: { Range: "bytes=0-7" } });
+      expect(ranged.status).toBe(206);
+      expect(Buffer.from(await ranged.arrayBuffer())).toEqual(bytes.subarray(0, 8));
+      const conditional = await app(new Request(result.url, { headers: { "If-None-Match": head.headers.get("etag")! } }));
+      expect(conditional.status).toBe(304);
+      const download = await app(new Request(result.downloadUrl));
+      const downloaded = await fetch(download.headers.get("location")!);
+      expect(downloaded.headers.get("content-disposition")).toMatch(/^attachment;/);
+      expect(Buffer.from(await downloaded.arrayBuffer())).toEqual(bytes);
+      await storage.deleteUpload(result.id);
+      expect((await app(new Request(result.url))).status).toBe(404);
+      expect((await fetch(redirect.headers.get("location")!)).status).toBe(404);
+    }
+  });
+
+  it("keeps legacy writers, stale journal recovery, and project edits on the same conditional commit", async () => {
+    const form = new FormData();
+    form.append("file", new Blob(["legacy original"], { type: "text/html" }), "legacy.html");
+    form.append("project", "original-project");
+    const original = await (await app(new Request(origin + "/api/uploads", { method: "POST",
+      headers: { Authorization: "Bearer transfer-local-token" }, body: form }))).json() as { id: string; url: string };
+    const [before] = await sql`select * from artifacts.objects where id = ${original.id}`;
+    const direct = await html("stale direct replacement", original.id);
+    const update = new FormData();
+    update.append("file", new Blob(["legacy winner"], { type: "text/html" }), "updated.html");
+    expect((await app(new Request(`${origin}/api/uploads/${original.id}`, { method: "PUT",
+      headers: { Authorization: "Bearer transfer-local-token" }, body: update }))).status).toBe(200);
+    expect((await request(direct.path + "/complete")).status).toBe(409);
+    expect(await raw(before!.object_key)).toBe("legacy original");
+    const [current] = await sql`select * from artifacts.objects where id = ${original.id}`;
+    expect(await raw(current!.object_key)).toBe("legacy winner");
+    const payload = { id: original.id, kind: "html", filename: "legacy.html", contentType: "text/html; charset=utf-8",
+      bytes: 15, objectKey: before!.object_key, project: "stale-project", sha256: digest(Buffer.from("legacy original")), now: before!.updated_at };
+    const operationId = crypto.randomUUID();
+    await sql`insert into artifacts.operations (operation_id, artifact_id, owner_id, lease_until, operation_kind, payload)
+      values (${operationId}::uuid, ${original.id}, 'stale-fixture', now() - interval '1 second', 'put_html', ${sql.json(JSON.stringify(payload))})`;
+    const recovered = await storage.getHtml(original.id, { headOnly: true });
+    recovered?.body.destroy();
+    expect(recovered?.sha256).toBe(digest(Buffer.from("legacy winner")));
+    expect(recovered?.project).toBe("original-project");
+    expect((await sql`select operation_id from artifacts.operations where operation_id = ${operationId}::uuid`).length).toBe(0);
+    const projectOperation = crypto.randomUUID();
+    await sql`insert into artifacts.operations (operation_id, artifact_id, owner_id, lease_until, operation_kind, payload)
+      values (${projectOperation}::uuid, ${original.id}, 'project-fixture', now() + interval '1 hour', 'put_html',
+        ${sql.json({ ...payload, objectKey: current!.object_key, sha256: current!.sha256, bytes: 13, now: current!.updated_at })})`;
+    await storage.updateHtmlProject(original.id, "new-project");
+    await sql`update artifacts.operations set lease_until = now() - interval '1 second' where operation_id = ${projectOperation}::uuid`;
+    const project = await storage.getHtml(original.id, { headOnly: true });
+    project?.body.destroy();
+    expect(project?.project).toBe("new-project");
+    await storage.deleteUpload(original.id);
+    await sql`insert into artifacts.operations (operation_id, artifact_id, owner_id, lease_until, operation_kind, payload)
+      values (${crypto.randomUUID()}::uuid, ${original.id}, 'revoked-fixture', now() - interval '1 second', 'put_html', ${sql.json(payload)})`;
+    expect(await storage.getHtml(original.id)).toBeNull();
+    expect((await sql`select id from artifacts.objects where id = ${original.id} and revoked_at is null`).length).toBe(0);
+    await expect(raw(before!.object_key)).rejects.toThrow();
+    await expect(raw(current!.object_key)).rejects.toThrow();
+  });
+
+  it("recovers interrupted replacement completion while keeping the old body until its conditional commit", async () => {
+    const created = await html("before interruption");
+    const { id } = await (await request(created.path + "/complete")).json() as { id: string };
+    const [before] = await sql`select * from artifacts.objects where id = ${id}`;
+    const replacement = await html("after interruption", id);
+    const complete = bucket.complete.bind(bucket);
+    const lost = vi.spyOn(bucket, "complete").mockImplementationOnce(async (...args) => {
+      await complete(...args);
+      throw new Error("replacement completion response lost");
+    });
+    expect((await request(replacement.path + "/complete")).status).toBe(500);
+    lost.mockRestore();
+    expect(await raw(before!.object_key)).toBe("before interruption");
+    await sql.unsafe(`create function public.reject_replacement_commit() returns trigger language plpgsql as $$ begin raise exception 'replacement database interruption'; end $$`);
+    await sql.unsafe(`create trigger reject_replacement_commit before update on artifacts.objects for each row execute function public.reject_replacement_commit()`);
+    try { expect((await request(replacement.path + "/complete")).status).toBe(500); }
+    finally { await sql.unsafe("drop trigger reject_replacement_commit on artifacts.objects"); await sql.unsafe("drop function public.reject_replacement_commit()"); }
+    const [unchanged] = await sql`select object_key from artifacts.objects where id = ${id}`;
+    expect(unchanged!.object_key).toBe(before!.object_key);
+    await storage.close?.();
+    sql = postgres(databaseUrl!, { max: 3, idle_timeout: 1 });
+    attach();
+    const result = await (await request(replacement.path + "/complete")).json();
+    expect(result).toMatchObject({ id, sha256: digest(Buffer.from("after interruption")) });
+    expect(await (await request(replacement.path + "/complete")).json()).toEqual(result);
+    expect(await raw(before!.object_key)).toBe("before interruption");
+  });
+
+  it("prevents replacement resurrection when revocation wins during stored-byte verification", async () => {
+    const created = await html("revocation original");
+    const { id } = await (await request(created.path + "/complete")).json() as { id: string };
+    const replacement = await html("must never publish", id);
+    const verify = bucket.verify.bind(bucket);
+    const revoke = vi.spyOn(bucket, "verify").mockImplementationOnce(async (...args) => {
+      const hash = await verify(...args);
+      await storage.deleteUpload(id);
+      return hash;
+    });
+    expect((await request(replacement.path + "/complete")).status).toBe(404);
+    revoke.mockRestore();
+    await storage.directUploads!.cleanup();
+    expect(await storage.getHtml(id)).toBeNull();
+    expect((await request(replacement.path + "/complete")).status).toBe(404);
+    const multipart = await client.send(new ListMultipartUploadsCommand({ Bucket: config.bucket, Prefix: `transfers/${id}/` }));
+    expect(multipart.Uploads ?? []).toEqual([]);
+  });
 
   it("resumes 85 MiB after a web restart, then completes exactly once without application body uploads", async () => {
     const beforeApplication = applicationUploadBytes;
@@ -323,7 +510,7 @@ describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", () => {
     expect(replaced.status).toBe(200);
     expect(await replaced.json()).toMatchObject({ id: result.id, url: result.url, project: "transfer-check" });
     await sql.unsafe(`create function public.reject_html_commit() returns trigger language plpgsql as $$ begin raise exception 'isolated replacement interruption'; end $$`);
-    await sql.unsafe(`create trigger reject_html_commit before insert on artifacts.objects for each row execute function public.reject_html_commit()`);
+    await sql.unsafe(`create trigger reject_html_commit before update on artifacts.objects for each row execute function public.reject_html_commit()`);
     const recoveredHtml = "<p>recovered after restart</p>";
     const interrupted = new FormData(); interrupted.append("file", new Blob([recoveredHtml], { type: "text/html" }), "fixture.html");
     try {
@@ -378,7 +565,7 @@ describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", () => {
     const crossOrigin = await app(new Request(origin + "/api/external-uploads/sessions", { method: "POST", headers: { Origin: "https://untrusted.example" } }));
     expect(crossOrigin.status).toBe(403);
     // The completed body prefix is excluded from the legacy pages/files scan.
-    const [row] = await sql<{ object_key: string }[]>`select object_key from artifacts.objects where object_key like 'transfers/%' limit 1`;
+    const [row] = await sql<{ object_key: string }[]>`select object_key from artifacts.objects where revoked_at is null and object_key like 'transfers/%' limit 1`;
     expect(row?.object_key).toMatch(/^transfers\//);
     expect(await client.send(new HeadObjectCommand({ Bucket: config.bucket, Key: row!.object_key }))).toHaveProperty("ContentLength");
   });

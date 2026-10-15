@@ -1,0 +1,7 @@
+ts	phase	decision	why	evidence	result
+2026-10-15T20:00:00Z	frame	Use current main in clean isolated checkouts	Preserve unrelated work and avoid stale source	brief.md	grounded
+2026-10-15T21:40:33.292481+00:00	verification	Stop Docker use and replace the project verification workflow	Max explicitly directed no Docker and new verification skills	brief.md	open
+2026-10-15T21:40:33.292556+00:00	audit	Correct the first row timestamp	The first row used a fixed timestamp rather than the actual command time	brief.md	First row time is approximate; subsequent rows use the clock
+2026-10-15T22:11:33.273342+00:00	implementation	Use immutable version keys and one conditional HTML pointer commit	Design comparison found shared legacy writers and stale recovery must obey the same commit rule	services/tools/publisher/src/html-versions.ts	17 real-resource tests passed
+2026-10-15T22:11:33.273672+00:00	verification	Use Node 22 for full Tools checks	Node 26 exposes an existing jsdom localStorage failure; no unrelated test source was changed	tools-node22.log	429 tests passed; 30 skipped
+2026-10-15T22:11:33.273674+00:00	handoff	Transfer unfinished implementation to a Coding VM thread	Max requested the handoff before sleep	handoff.md	in progress

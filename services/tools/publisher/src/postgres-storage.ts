@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import postgres, { type Sql, type TransactionSql } from "postgres";
 import {
   htmlKey,
+  HtmlUpdateConflictError,
   RangeNotSatisfiableError,
   temporaryFileKey,
   type ListUploadsOptions,
@@ -16,6 +17,8 @@ import {
 import { createS3UploadStorage, summarizeUploads } from "./storage.js";
 import { createDirectUploads } from "./direct-uploads.js";
 import { createMultipartStorage } from "./multipart-storage.js";
+import { DirectUploadError } from "./multipart-storage.js";
+import { commitHtmlVersion, replacementKey, type HtmlVersionReceipt } from "./html-versions.js";
 
 type ArtifactRow = {
   id: string;
@@ -68,16 +71,28 @@ export function createMetadataBackedUploadStorage(
     async putHtml(id, filePath, metadata, options) {
       await reconcileArtifactOperations(bodies, sql, options);
       const current = await find(sql, id, "html");
-      const objectKey = current?.object_key ?? htmlKey(id);
+      if (options?.expectedObjectKey && current?.object_key !== options.expectedObjectKey) throw new HtmlUpdateConflictError();
+      if (options?.ifMatch) {
+        if (!current) throw new HtmlUpdateConflictError();
+        const previous = await bodies.getHtml(id, { ...options, headOnly: true, objectKey: current.object_key });
+        previous?.body.destroy();
+        if (previous?.etag !== options.ifMatch) throw new HtmlUpdateConflictError();
+      }
+      const stagingId = current ? crypto.randomBytes(24).toString("base64url") : undefined;
+      const objectKey = stagingId ? replacementKey(id, stagingId) : htmlKey(id);
       const now = new Date();
       const intended: UpsertArtifact = {
         id, kind: "html", filename: metadata.originalName,
         contentType: "text/html; charset=utf-8", bytes: metadata.bytes,
-        objectKey, project: metadata.project, sha256: metadata.sha256, now
+        objectKey, project: metadata.project, sha256: metadata.sha256, now,
+        ...(current && stagingId ? { expectedObjectKey: current.object_key, stagingId } : {})
       };
       await runDurableMutation({
         prepare: () => prepare(sql, id, "put_html", intended),
-        mutate: () => bodies.putHtml(id, filePath, metadata, { ...options, objectKey }),
+        mutate: async () => {
+          await bodies.putHtml(id, filePath, metadata, { ...options, ifMatch: undefined, objectKey });
+          if (!(await matchesStoredBody(bodies, intended, options))) throw new Error("Stored HTML does not match the staged upload");
+        },
         reconcile: (operation) => reconcileOperation(bodies, sql, { operation_id: operation.operationId, owner_id: operation.ownerId, artifact_id: id, operation_kind: "put_html", payload: intended }, options),
         finalize: async (operation) => { await finalizePut(sql, operation, intended); }
       });
@@ -89,7 +104,7 @@ export function createMetadataBackedUploadStorage(
       const object = await bodies.getHtml(id, { ...options, objectKey: row.object_key });
       if (!object) return null;
       const { project: _legacyProject, ...body } = object;
-      return { ...body, bytes: Number(row.bytes), sha256: row.sha256 ?? body.sha256, lastModified: row.updated_at, ...(row.project ? { project: row.project } : {}) };
+      return { ...body, version: row.object_key, bytes: Number(row.bytes), sha256: row.sha256 ?? body.sha256, lastModified: row.updated_at, ...(row.project ? { project: row.project } : {}) };
     },
     async putTemporaryFile(id, filePath, metadata, options) {
       await reconcileArtifactOperations(bodies, sql, options);
@@ -184,8 +199,9 @@ export function createMetadataBackedUploadStorage(
     async deleteUpload(id, options) {
       await reconcileArtifactOperations(bodies, sql, options);
       const operation = await prepare(sql, id, "delete", null);
+      await sql`update artifacts.objects set revoked_at = coalesce(revoked_at, now()) where id = ${id}`;
       try {
-        await bodies.deleteUpload(id, options);
+        await deleteArtifactBodies(bodies, sql, id, options);
       } catch (error) {
         // Keep the durable intent: a later read/list/cleanup retries the idempotent delete.
         throw error;
@@ -216,6 +232,7 @@ export function createMetadataBackedUploadStorage(
 type UpsertArtifact = {
   id: string; kind: "html" | "file"; filename: string; contentType: string;
   bytes: number; objectKey: string; project?: string; expiresAt?: Date; uploadLinkId?: string; sha256: string; now: Date;
+  expectedObjectKey?: string; stagingId?: string;
 };
 
 export async function runDurableMutation(options: {
@@ -241,20 +258,37 @@ async function prepare(sql: Sql, artifactId: string, kind: PendingOperation["ope
 }
 
 async function finalizePut(sql: Sql, operation: OperationOwner, value: UpsertArtifact) {
-  return await sql.begin(async (tx) => {
+  try { return await sql.begin(async (tx) => {
     await requireOwnership(tx, operation);
     const finalized = value.uploadLinkId
       ? await lockActiveUploadLink(tx, value.uploadLinkId)
       : true;
     if (finalized) {
-      await upsert(tx, value);
+      if (value.kind === "html" && value.expectedObjectKey && value.stagingId) {
+        const receipt = await commitHtmlVersion(tx, value.id, value.expectedObjectKey, {
+          objectKey: value.objectKey, filename: value.filename, bytes: value.bytes,
+          sha256: value.sha256, project: value.project
+        }, operation.operationId);
+        const description = { kind: "html", filename: value.filename, contentType: value.contentType,
+          totalBytes: value.bytes, partBytes: 20 * 1024 * 1024, ...(value.project ? { project: value.project } : {}) };
+        await tx`insert into artifacts.upload_sessions
+          (session_id, artifact_id, target_id, expected_object_key, audience, description, state, sha256, receipt, expires_at)
+          values (${operation.operationId}::uuid, ${value.stagingId}, ${value.id}, ${value.expectedObjectKey},
+            'native', ${tx.json(description)}, 'completed', ${value.sha256}, ${tx.json(receipt)}, now())`;
+      } else await upsert(tx, value);
       await tx`delete from artifacts.operations where operation_id = ${operation.operationId} and owner_id = ${operation.ownerId}`;
     } else {
       await tx`update artifacts.operations set operation_kind = 'delete', payload = null
         where operation_id = ${operation.operationId} and owner_id = ${operation.ownerId}`;
     }
     return finalized;
-  });
+  }); } catch (error) {
+    if (error instanceof DirectUploadError && ["replace_conflict", "upload_not_found"].includes(error.code)) {
+      await sql`delete from artifacts.operations where operation_id = ${operation.operationId} and owner_id = ${operation.ownerId}`;
+      throw new HtmlUpdateConflictError();
+    }
+    throw error;
+  }
 }
 
 async function lockActiveUploadLink(sql: TransactionSql, uploadLinkId: string) {
@@ -268,7 +302,7 @@ async function lockActiveUploadLink(sql: TransactionSql, uploadLinkId: string) {
 async function finalizeDelete(sql: Sql, operation: OperationOwner, id: string) {
   await sql.begin(async (tx) => {
     await requireOwnership(tx, operation);
-    await tx`delete from artifacts.objects where id = ${id}`;
+    await tx`update artifacts.objects set revoked_at = coalesce(revoked_at, now()) where id = ${id}`;
     await tx`delete from artifacts.operations where operation_id = ${operation.operationId} and owner_id = ${operation.ownerId}`;
   });
 }
@@ -287,16 +321,25 @@ export async function reconcileArtifactOperations(bodies: UploadStorage, sql: Sq
 
 async function reconcileOperation(bodies: UploadStorage, sql: Sql, operation: PendingOperation, options?: { signal?: AbortSignal }) {
   if (operation.operation_kind === "delete") {
-    await bodies.deleteUpload(operation.artifact_id, options);
+    await sql`update artifacts.objects set revoked_at = coalesce(revoked_at, now()) where id = ${operation.artifact_id}`;
+    await deleteArtifactBodies(bodies, sql, operation.artifact_id, options);
     await finalizeDelete(sql, owner(operation), operation.artifact_id);
     return;
   }
   if (!operation.payload) throw new Error(`Artifact operation ${operation.operation_id} has no payload`);
   const payload = hydratePayload(operation.payload);
-  const stored = operation.operation_kind === "put_html"
-    ? await bodies.getHtml(operation.artifact_id, { ...options, headOnly: true, objectKey: payload.objectKey })
-    : await bodies.getTemporaryFile(operation.artifact_id, { ...options, headOnly: true, objectKey: payload.objectKey });
-  if (stored?.sha256 === payload.sha256) {
+  if (!payload.expectedObjectKey) {
+    const [current] = await sql<{ object_key: string; revoked_at: Date | null; updated_at: Date }[]>`
+      select object_key, revoked_at, updated_at from artifacts.objects where id = ${payload.id}`;
+    if (current && (current.revoked_at || current.object_key !== payload.objectKey || current.updated_at > payload.now)) {
+      await sql`delete from artifacts.operations where operation_id = ${operation.operation_id} and owner_id = ${operation.owner_id}`;
+      return;
+    }
+    if (!current && ![htmlKey(payload.id), temporaryFileKey(payload.id)].includes(payload.objectKey)) {
+      throw new Error("Legacy artifact operation needs an explicit recovery decision");
+    }
+  }
+  if (await matchesStoredBody(bodies, payload, options)) {
     const operationOwner = owner(operation);
     const finalized = await finalizePut(sql, operationOwner, payload);
     if (!finalized) {
@@ -305,6 +348,38 @@ async function reconcileOperation(bodies: UploadStorage, sql: Sql, operation: Pe
     }
   }
   else await sql`delete from artifacts.operations where operation_id = ${operation.operation_id} and owner_id = ${operation.owner_id}`;
+}
+
+async function deleteArtifactBodies(bodies: UploadStorage, sql: Sql, id: string, options?: { signal?: AbortSignal }) {
+  const rows = await sql<{ object_key: string }[]>`select object_key from artifacts.objects where id = ${id}`;
+  const versions = await sql<{ receipt: HtmlVersionReceipt | null }[]>`select receipt from artifacts.upload_sessions where target_id = ${id}`;
+  const keys = new Set(rows.map(row => row.object_key));
+  for (const { receipt } of versions) {
+    if (!receipt) continue;
+    if (receipt.format !== 1 || receipt.before.id !== id || receipt.after.id !== id) throw new Error("Invalid HTML version receipt");
+    keys.add(receipt.before.object_key);
+    keys.add(receipt.after.object_key);
+  }
+  for (const objectKey of keys) await bodies.deleteUpload(id, { ...options, objectKey });
+  await bodies.deleteUpload(id, options);
+}
+
+async function matchesStoredBody(bodies: UploadStorage, value: UpsertArtifact, options?: { signal?: AbortSignal }) {
+  const stored = value.kind === "html"
+    ? await bodies.getHtml(value.id, { signal: options?.signal, objectKey: value.objectKey })
+    : await bodies.getTemporaryFile(value.id, { signal: options?.signal, objectKey: value.objectKey });
+  if (!stored) return false;
+  const hash = crypto.createHash("sha256");
+  let bytes = 0;
+  try {
+    for await (const chunk of stored.body) {
+      options?.signal?.throwIfAborted();
+      bytes += chunk.length;
+      if (bytes > value.bytes) return false;
+      hash.update(chunk);
+    }
+    return bytes === value.bytes && hash.digest("hex") === value.sha256;
+  } finally { stored.body.destroy(); }
 }
 
 function owner(operation: PendingOperation): OperationOwner { return { operationId: operation.operation_id, ownerId: operation.owner_id }; }
@@ -330,11 +405,14 @@ function hydratePayload(payload: UpsertArtifact | string): UpsertArtifact {
     || !("bytes" in value) || typeof value.bytes !== "number"
     || !("objectKey" in value) || typeof value.objectKey !== "string"
     || !("sha256" in value) || typeof value.sha256 !== "string"
-    || !("now" in value) || (typeof value.now !== "string" && !(value.now instanceof Date))) {
+    || !("now" in value) || (typeof value.now !== "string" && !(value.now instanceof Date))
+    || ("expectedObjectKey" in value && (typeof value.expectedObjectKey !== "string" || !("stagingId" in value) || typeof value.stagingId !== "string"))) {
     throw new Error("Invalid artifact recovery payload");
   }
   return { id: value.id, kind: value.kind, filename: value.filename, contentType: value.contentType,
     bytes: value.bytes, objectKey: value.objectKey, sha256: value.sha256, now: new Date(value.now),
+    ...("expectedObjectKey" in value && typeof value.expectedObjectKey === "string" && "stagingId" in value && typeof value.stagingId === "string"
+      ? { expectedObjectKey: value.expectedObjectKey, stagingId: value.stagingId } : {}),
     ...("project" in value && typeof value.project === "string" ? { project: value.project } : {}),
     ...("uploadLinkId" in value && typeof value.uploadLinkId === "string" ? { uploadLinkId: value.uploadLinkId } : {}),
     ...("expiresAt" in value && (typeof value.expiresAt === "string" || value.expiresAt instanceof Date) ? { expiresAt: new Date(value.expiresAt) } : {}) };
@@ -350,7 +428,9 @@ async function upsert(sql: Sql | TransactionSql, value: UpsertArtifact) {
       kind = excluded.kind, filename = excluded.filename, content_type = excluded.content_type,
       bytes = excluded.bytes, object_key = excluded.object_key, project = excluded.project,
       updated_at = excluded.updated_at, expires_at = excluded.expires_at,
-      upload_link_id = excluded.upload_link_id, sha256 = excluded.sha256, revoked_at = null`;
+      upload_link_id = excluded.upload_link_id, sha256 = excluded.sha256
+    where artifacts.objects.revoked_at is null and artifacts.objects.object_key = excluded.object_key
+      and artifacts.objects.updated_at <= excluded.updated_at`;
 }
 
 async function find(sql: Sql, id: string, kind: "html" | "file") {

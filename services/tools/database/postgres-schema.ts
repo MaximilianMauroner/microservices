@@ -424,6 +424,9 @@ export const uploadLinks = artifactsSchema.table("upload_links", {
 export const uploadSessions = artifactsSchema.table("upload_sessions", {
   sessionId: uuid("session_id").primaryKey(),
   artifactId: text("artifact_id").notNull().unique(),
+  targetId: text("target_id"),
+  expectedObjectKey: text("expected_object_key"),
+  receipt: jsonb("receipt"),
   audience: text("audience").notNull(),
   uploadLinkId: uuid("upload_link_id"),
   description: jsonb("description").notNull(),
@@ -438,5 +441,8 @@ export const uploadSessions = artifactsSchema.table("upload_sessions", {
 }, (table) => [
   check("upload_sessions_audience_check", sql`${table.audience} in ('browser', 'native', 'drop')`),
   check("upload_sessions_state_check", sql`${table.state} in ('creating', 'uploading', 'completing', 'completed', 'aborted', 'failed')`),
+  check("upload_sessions_target_check", sql`(${table.targetId} is null and ${table.expectedObjectKey} is null) or
+    (${table.targetId} is not null and ${table.expectedObjectKey} is not null and ${table.targetId} <> ${table.artifactId})`),
+  index("upload_sessions_target_idx").on(table.targetId).where(sql`${table.targetId} is not null`),
   index("upload_sessions_cleanup_idx").on(table.expiresAt).where(sql`${table.cleanedAt} is null`),
 ]);

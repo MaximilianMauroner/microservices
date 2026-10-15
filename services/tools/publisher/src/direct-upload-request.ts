@@ -1,6 +1,6 @@
-import { DIRECT_PART_BYTES, type DirectUploadOwner, type DirectUploads } from "./direct-uploads.js";
+import { DIRECT_PART_BYTES, type DirectUploadOwner, type DirectUploads, type DirectUploadIntent } from "./direct-uploads.js";
 import { DirectUploadError, type DirectUploadDescription } from "./multipart-storage.js";
-import { normalizeMimeType, normalizeProjectName, safeFileName } from "./file-metadata.js";
+import { artifactUrls, normalizeMimeType, normalizeProjectName, safeFileName } from "./file-metadata.js";
 import type { UploadLink } from "./upload-links.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -25,6 +25,12 @@ export async function handleDirectUpload(request: Request, remainder: string, up
     }
     const project = typeof input.project === "string" ? normalizeProjectName(input.project) : undefined;
     if (input.project !== undefined && (kind !== "html" || !project)) throw invalid("Project name is invalid.");
+    let intent: DirectUploadIntent = { kind: "create" };
+    if (input.replaceId !== undefined) {
+      if (kind !== "html" || owner.audience === "drop" || typeof input.replaceId !== "string"
+        || !/^[A-Za-z0-9_-]{32}$/.test(input.replaceId)) throw invalid("Replacement requires an existing HTML ID.");
+      intent = { kind: "replace", targetId: input.replaceId };
+    }
     const description: DirectUploadDescription = {
       kind, filename: safeFileName(input.filename, "download"),
       contentType: kind === "html" ? "text/html; charset=utf-8" : contentType,
@@ -35,7 +41,7 @@ export async function handleDirectUpload(request: Request, remainder: string, up
     };
     await uploads.cleanup(controlSignal);
     return json(await uploads.create(input.requestId, owner, description,
-      Math.max(16, options.maxConcurrent * 4), controlSignal), 201);
+      Math.max(16, options.maxConcurrent * 4), controlSignal, intent), 201);
   }
   const [id, action, extra] = remainder.split("/");
   if (!id || !UUID.test(id) || extra !== undefined) throw new DirectUploadError(404, "not_found", "Upload route was not found.");
@@ -53,8 +59,7 @@ export async function handleDirectUpload(request: Request, remainder: string, up
     const completed = await uploads.complete(id, owner, options.maxConcurrent, request.signal);
     const { totalBytes, fileExpiresAt, partBytes: _partBytes, retentionMs: _retentionMs, ...metadata } = completed;
     return json({ ...metadata, bytes: totalBytes,
-      url: completed.kind === "html" ? `${options.baseUrl}/artifacts/${completed.id}` :
-        `${options.baseUrl}/files/${completed.id}/${encodeURIComponent(completed.filename)}`,
+      ...artifactUrls(options.baseUrl, completed),
       ...(fileExpiresAt ? { expiresAt: fileExpiresAt } : {}) }, 201);
   }
   throw new DirectUploadError(404, "not_found", "Upload route was not found.");
