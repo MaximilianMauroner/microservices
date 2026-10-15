@@ -12,7 +12,10 @@ Read `AGENTS.md`, `services/network-console/README.md`, and
 
 From the repository root, check active processes, Git status, and port 43127.
 Use Node >=22.12 and pnpm 11.16.0. Install dependencies with
-`pnpm install --frozen-lockfile`. Start an owned terminal session:
+`pnpm install --frozen-lockfile`. On Coding VM, run installation and checks
+through `heavy-check --repo <shared-primary-worktree> -- <command>`.
+Use the same primary worktree for the lock across all delegates.
+Start an owned terminal session:
 
 ```sh
 BIND_HOST=127.0.0.1 PORT=43127 pnpm --dir services/network-console start
