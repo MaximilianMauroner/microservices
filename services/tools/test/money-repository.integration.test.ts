@@ -1,35 +1,43 @@
 import postgres from "postgres";
 import { createHash } from "node:crypto";
-import { afterAll, beforeEach, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
 import { DISPOSABLE_DATABASE_SENTINEL, withVerifiedDisposableDatabase } from "../database/postgres-push-guard.js";
 import { parseMoneyImport, REVOLUT_CASH_FORMAT } from "../money/money-import-domain.js";
 import { cashMovesSince } from "../money/money-checkin-domain.js";
 import { createPostgresMoneyRepository, type MoneyRepository } from "../money/money-repository.js";
 import { moneyTrackerTrendStats } from "../money/money-tracker-domain.js";
 import { MoneyImportService } from "../money/money-import-service.js";
+import { requireLoopbackPostgres } from "./runtime/postgres.js";
 import { moneyWorkbookFixture } from "./money-workbook-fixture.js";
 
-// Opt in only with a disposable database after applying the guarded tools schema:
-// TEST_DATABASE_URL=... MONEY_TEST_DATABASE_CONFIRM=money-repository-test pnpm test:money-postgres
-const databaseUrl = process.env.TEST_DATABASE_URL;
-const confirmed = process.env.MONEY_TEST_DATABASE_CONFIRM === "money-repository-test";
-const repository = databaseUrl && confirmed ? createPostgresMoneyRepository(databaseUrl) : undefined;
-const admin = databaseUrl && confirmed ? postgres(databaseUrl, { max: 1 }) : undefined;
+let repository: MoneyRepository | undefined;
+let admin: ReturnType<typeof postgres> | undefined;
+
+beforeAll(() => {
+  const url = process.env.TEST_DATABASE_URL;
+  if (!url || process.env.MONEY_TEST_DATABASE_CONFIRM !== "money-repository-test") {
+    throw new Error("BLOCKED money-postgres. An owned disposable fixture is required. Run pnpm run verify from the repository root.");
+  }
+  requireLoopbackPostgres(url);
+  repository = createPostgresMoneyRepository(url);
+  admin = postgres(url, { max: 1 });
+});
 
 beforeEach(async () => {
-  if (!admin) return;
+  const database = admin;
+  if (!database) throw new Error("Money PostgreSQL fixture was not initialized.");
   await withVerifiedDisposableDatabase({
-    readRelationKind: async () => (await admin<{ kind: string }[]>`
+    readRelationKind: async () => (await database<{ kind: string }[]>`
       select c.relkind::text kind from pg_class c join pg_namespace n on n.oid = c.relnamespace
       where n.nspname = 'public' and c.relname = ${DISPOSABLE_DATABASE_SENTINEL.relation}`)[0]?.kind,
-    readValue: async () => (await admin<{ value: string }[]>`
+    readValue: async () => (await database<{ value: string }[]>`
       select sentinel_value value from public.tools_runtime_test_sentinel
       where sentinel_key = ${DISPOSABLE_DATABASE_SENTINEL.key}`)[0]?.value,
   }, async () => {
-    await admin`truncate tools.money_balance_snapshots, tools.money_category_rules, tools.money_transfer_rules, tools.money_transfer_pair_rules, tools.money_investment_events, tools.money_transactions, tools.money_imports, tools.money_accounts cascade`;
+    await database`truncate tools.money_balance_snapshots, tools.money_category_rules, tools.money_transfer_rules, tools.money_transfer_pair_rules, tools.money_investment_events, tools.money_transactions, tools.money_imports, tools.money_accounts cascade`;
     // Transfer rules are data. These fixtures stand in for the owner's stored rules.
     const rule = (priority: number, disposition: string, sourceType: string | null, match = "any", value: string | null = null, sign = "any") =>
-      admin`insert into tools.money_transfer_rules (id, priority, provider, source_type, description_match, match_value, amount_sign, disposition, created_at, updated_at, created_by)
+      database`insert into tools.money_transfer_rules (id, priority, provider, source_type, description_match, match_value, amount_sign, disposition, created_at, updated_at, created_by)
         values (gen_random_uuid(), ${priority}, ${sourceType === "Exchange" ? null : "revolut"}, ${sourceType}, ${match}, ${value}, ${sign}, ${disposition}, now(), now(), 'fixture')`;
     await rule(900, "excluded", "Exchange");
     await rule(800, "internal_transfer", "Card Payment", "equals", "hype");
@@ -46,7 +54,7 @@ afterAll(async () => {
   await admin?.end();
 });
 
-it.skipIf(!repository || !admin)("commits savings CSV and Excel into one account without duplicate transactions", async () => {
+it("commits savings CSV and Excel into one account without duplicate transactions", async () => {
   const headers = ["Date", "Description", "Gross Interest Rate Earned", "Money in", "Money out", "Balance"];
   const rows = [
     ["8 Aug 2026", "Deposit to 'Instant Access Savings'", "", "€10.00", "", "€10.00"],
@@ -70,7 +78,7 @@ it.skipIf(!repository || !admin)("commits savings CSV and Excel into one account
   expect((await repository!.readCashSince("2026-08-08")).snapshots.at(-1)?.valueMinor).toBe(1001);
 });
 
-it.skipIf(!repository || !admin)("recognizes raw-cell keys from older cash imports in previews and commits", async () => {
+it("recognizes raw-cell keys from older cash imports in previews and commits", async () => {
   const headers = ["Type", "Product", "Started Date", "Completed Date", "Description", "Amount", "Fee", "Currency", "State", "Balance"];
   const row = ["Interest", "Deposit", "2026-08-09 5:08:51", "2026-08-09 5:08:51", "Interest paid", "0.010", "0.00", "EUR", "COMPLETED", "10.01"];
   const csv = Buffer.from([headers, row].map((cells) => cells.join(",")).join("\r\n"));
@@ -90,7 +98,7 @@ it.skipIf(!repository || !admin)("recognizes raw-cell keys from older cash impor
   expect((await repository!.readLedgerSnapshot("all")).months.at(-1)?.total).toBe(10.01);
 });
 
-it.skipIf(!repository || !admin).each([false, true])("counts overlapping cash and savings once in either import order (cash first: %s)", async (cashFirst) => {
+it.each([false, true])("counts overlapping cash and savings once in either import order (cash first: %s)", async (cashFirst) => {
   const savings = Buffer.from([
     "Date,Description,Gross Interest Rate Earned,Money in,Money out,Balance",
     "8 Aug 2026,Deposit to 'Instant Access Savings',,€10.00,,€10.00",
@@ -119,7 +127,7 @@ it.skipIf(!repository || !admin).each([false, true])("counts overlapping cash an
   expect(afterDeletion.activity.find(({ sourceType }) => sourceType === "Interest")).toMatchObject({ amountMinor: 1, feeMinor: 0 });
 });
 
-it.skipIf(!repository || !admin)("executes import replay, transfer review, analytics, and stable duplicate-label snapshots", async () => {
+it("executes import replay, transfer review, analytics, and stable duplicate-label snapshots", async () => {
   const internal = cash([
     "Transfer\tCurrent\t2026-01-02 12:00:00\t2026-01-02 12:00:00\tOwn transfer\t-10\t0\tEUR\tCOMPLETED\t90",
     "Transfer\tSavings\t2026-01-02 12:00:00\t2026-01-02 12:00:00\tOwn transfer\t10\t0\tEUR\tCOMPLETED\t10"
@@ -165,7 +173,7 @@ it.skipIf(!repository || !admin)("executes import replay, transfer review, analy
   expect(snapshot.months.at(-1)?.observedAccounts).toEqual(expect.arrayContaining(duplicateAccounts));
 });
 
-it.skipIf(!repository || !admin)("reads check-in days and explains cash changes since a check-in", async () => {
+it("reads check-in days and explains cash changes since a check-in", async () => {
   await commitCash(repository!, cash([
     "Card Payment\tCurrent\t2026-08-10 12:00:00\t2026-08-10 12:00:00\tBakery\t-10\t0\tEUR\tCOMPLETED\t90",
     "Topup\tCurrent\t2026-08-20 12:00:00\t2026-08-20 12:00:00\tPayment from Employer\t100\t0\tEUR\tCOMPLETED\t190",
@@ -190,7 +198,7 @@ it.skipIf(!repository || !admin)("reads check-in days and explains cash changes 
   expect(spending).toContainEqual(expect.objectContaining({ date: "2026-09-05", merchant: "Grocer", amountMinor: 3_000 }));
 });
 
-it.skipIf(!repository || !admin)("nets card refunds and shared repayments into category spending without changing cash flow", async () => {
+it("nets card refunds and shared repayments into category spending without changing cash flow", async () => {
   await commitCash(repository!, cash([
     "Card Payment\tCurrent\t2026-06-01 12:00:00\t2026-06-01 12:00:00\tSpotify\t-100\t1\tEUR\tCOMPLETED\t899",
     "Card Refund\tCurrent\t2026-06-02 12:00:00\t2026-06-02 12:00:00\tSpotify\t30\t0\tEUR\tCOMPLETED\t929",
@@ -234,7 +242,7 @@ it.skipIf(!repository || !admin)("nets card refunds and shared repayments into c
   expect(cashSince.items).toContainEqual(expect.objectContaining({ label: "Returned ticket", kind: "spending", amountMinor: 4_000 }));
 });
 
-it.skipIf(!repository || !admin)("classifies transfers with stored rules that change without a deploy", async () => {
+it("classifies transfers with stored rules that change without a deploy", async () => {
   await commitCash(repository!, cash([
     "Transfer\tCurrent\t2026-05-02 12:00:00\t2026-05-02 12:00:00\tTo My Savings\t-50\t0\tEUR\tCOMPLETED\t50"
   ]), "stored-rule.tsv");
@@ -248,7 +256,7 @@ it.skipIf(!repository || !admin)("classifies transfers with stored rules that ch
   expect((await repository!.readLedgerSnapshot("review")).transferRules).toContainEqual(expect.objectContaining({ matchValue: "to my savings", note: "Own savings account" }));
 });
 
-it.skipIf(!repository || !admin)("creates a transfer rule that classifies only unresolved rows and keeps them after removal", async () => {
+it("creates a transfer rule that classifies only unresolved rows and keeps them after removal", async () => {
   await admin!`delete from tools.money_transfer_rules where source_type = 'Transfer'`;
   await commitCash(repository!, cash([
     "Transfer\tCurrent\t2026-05-04 12:00:00\t2026-05-04 12:00:00\tTo Broker Deposit\t-30\t0\tEUR\tCOMPLETED\t70",
@@ -274,7 +282,7 @@ it.skipIf(!repository || !admin)("creates a transfer rule that classifies only u
   expect(await disposition("To Broker Deposit")).toBe("excluded");
 });
 
-it.skipIf(!repository || !admin)("lists and removes account-scoped category rules without losing the direct edit", async () => {
+it("lists and removes account-scoped category rules without losing the direct edit", async () => {
   await commitCash(repository!, cash([
     "Card Payment\tCurrent\t2026-04-02 12:00:00\t2026-04-02 12:00:00\tRecurring merchant\t-10\t0\tEUR\tCOMPLETED\t90",
     "Card Payment\tCurrent\t2026-04-03 12:00:00\t2026-04-03 12:00:00\tRecurring merchant\t-15\t0\tEUR\tCOMPLETED\t75"
@@ -298,7 +306,7 @@ it.skipIf(!repository || !admin)("lists and removes account-scoped category rule
   expect(updatedRows.filter((row) => row.categoryOrigin === "source")).toEqual([expect.objectContaining({ category: "uncategorized" })]);
 });
 
-it.skipIf(!repository || !admin)("applies ordered category rules to every account and to later imports", async () => {
+it("applies ordered category rules to every account and to later imports", async () => {
   await commitCash(repository!, cash([
     "Card Payment\tCurrent\t2026-04-02 12:00:00\t2026-04-02 12:00:00\tCorner Market 12\t-10\t0\tEUR\tCOMPLETED\t90",
     "Card Payment\tCurrent\t2026-04-03 12:00:00\t2026-04-03 12:00:00\tMarket Pay 4\t-5\t0\tEUR\tCOMPLETED\t85",
@@ -345,7 +353,7 @@ it.skipIf(!repository || !admin)("applies ordered category rules to every accoun
   expect(await row("Corner Market 13")).toMatchObject({ category: "gifts", categoryOrigin: "manual" });
 });
 
-it.skipIf(!repository || !admin)("preserves a reviewed transfer when its possible counterpart arrives later", async () => {
+it("preserves a reviewed transfer when its possible counterpart arrives later", async () => {
   await commitCash(repository!, cash([
     "Transfer\tCurrent\t2026-03-02 12:00:00\t2026-03-02 12:00:00\tReviewed first\t50\t0\tEUR\tCOMPLETED\t150",
   ]), "reviewed-first.tsv");
@@ -364,7 +372,7 @@ it.skipIf(!repository || !admin)("preserves a reviewed transfer when its possibl
   expect(rows.find((row) => row.description === "Late counterpart")).toMatchObject({ transferDisposition: "spend", needsTransferReview: false });
 });
 
-it.skipIf(!repository || !admin)("refreshes inferred flows and transfer links when an import is replayed", async () => {
+it("refreshes inferred flows and transfer links when an import is replayed", async () => {
   const source = cash([
     "Card Payment\tCurrent\t2026-03-02 12:00:00\t2026-03-02 12:00:00\tHYPE\t-25\t0\tEUR\tCOMPLETED\t75",
     "Transfer\tSavings\t2026-03-02 12:00:00\t2026-03-02 12:00:00\tHYPE recharge\t25\t0\tEUR\tCOMPLETED\t25"
@@ -384,7 +392,7 @@ it.skipIf(!repository || !admin)("refreshes inferred flows and transfer links wh
   expect(new Set(rows.map((row) => row.transferGroupId)).size).toBe(1);
 });
 
-it.skipIf(!repository || !admin)("prefers exact transfer identity when repeated amounts make the date window ambiguous", async () => {
+it("prefers exact transfer identity when repeated amounts make the date window ambiguous", async () => {
   await commitCash(repository!, cash([
     "Transfer\tCurrent\t2026-03-04 12:00:00\t2026-03-04 12:00:00\tPocket A\t-10\t0\tEUR\tCOMPLETED\t90",
     "Transfer\tSavings\t2026-03-04 12:00:00\t2026-03-04 12:00:00\tPocket A\t10\t0\tEUR\tCOMPLETED\t10",
@@ -398,7 +406,7 @@ it.skipIf(!repository || !admin)("prefers exact transfer identity when repeated 
   expect(new Set(rows.map((row) => row.transferGroupId)).size).toBe(2);
 });
 
-it.skipIf(!repository || !admin)("re-imports all normalized documents and rebuilds derived review state", async () => {
+it("re-imports all normalized documents and rebuilds derived review state", async () => {
   await commitCash(repository!, cash([
     "Transfer\tCurrent\t2026-03-05 12:00:00\t2026-03-05 12:00:00\tPocket rebuild\t-10\t0\tEUR\tCOMPLETED\t90",
     "Transfer\tSavings\t2026-03-05 12:00:00\t2026-03-05 12:00:00\tPocket rebuild\t10\t0\tEUR\tCOMPLETED\t10"
@@ -413,7 +421,7 @@ it.skipIf(!repository || !admin)("re-imports all normalized documents and rebuil
   expect(new Set(rows.map((row) => row.transferGroupId)).size).toBe(1);
 });
 
-it.skipIf(!repository || !admin)("links top-ups and excludes one-sided currency exchanges from transfer review", async () => {
+it("links top-ups and excludes one-sided currency exchanges from transfer review", async () => {
   await commitCash(repository!, cash([
     "Topup\tCurrent\t2026-03-06 12:00:00\t2026-03-06 12:00:00\tExternal top-up\t25\t0\tEUR\tCOMPLETED\t125",
     "Transfer\tSavings\t2026-03-07 12:00:00\t2026-03-07 12:00:00\tFunding source\t-25\t0\tEUR\tCOMPLETED\t75",
@@ -428,7 +436,7 @@ it.skipIf(!repository || !admin)("links top-ups and excludes one-sided currency 
   expect(rows.find((row) => row.description === "Exchanged to USD")).toMatchObject({ category: "transfer", transferDisposition: "excluded", needsTransferReview: false });
 });
 
-it.skipIf(!repository || !admin)("deletes an import cascade and repairs a cross-import transfer link", async () => {
+it("deletes an import cascade and repairs a cross-import transfer link", async () => {
   const removed = await commitCash(repository!, cash([
     "Transfer\tCurrent\t2026-03-02 12:00:00\t2026-03-02 12:00:00\tMove to savings\t-50\t0\tEUR\tCOMPLETED\t50",
   ]), "outflow.tsv");
@@ -453,7 +461,7 @@ it.skipIf(!repository || !admin)("deletes an import cascade and repairs a cross-
   await expect(repository!.deleteImport(removed.id)).resolves.toBeUndefined();
 });
 
-it.skipIf(!repository || !admin)("deletes investment events while preserving rows owned by another import", async () => {
+it("deletes investment events while preserving rows owned by another import", async () => {
   const shared = "Card Payment\tCurrent\t2026-04-01 12:00:00\t2026-04-01 12:00:00\tShared row\t-5\t0\tEUR\tCOMPLETED\t95";
   const original = await commitCash(repository!, cash([shared]), "original.tsv");
   const later = await commitCash(repository!, cash([
@@ -480,7 +488,7 @@ it.skipIf(!repository || !admin)("deletes investment events while preserving row
   expect((await repository!.readLedgerSnapshot("all")).investments.totals.eventCount).toBe(0);
 });
 
-it.skipIf(!repository || !admin)("keeps review authoritative when a counterpart import races it", async () => {
+it("keeps review authoritative when a counterpart import races it", async () => {
   await commitCash(repository!, cash([
     "Transfer\tCurrent\t2026-04-02 12:00:00\t2026-04-02 12:00:00\tRacing review\t75\t0\tEUR\tCOMPLETED\t175",
   ]), "racing-review.tsv");
@@ -497,7 +505,7 @@ it.skipIf(!repository || !admin)("keeps review authoritative when a counterpart 
   expect(rows.every((row) => row.transferGroupId === undefined)).toBe(true);
 });
 
-it.skipIf(!repository || !admin)("allows a user to correct an automatic transfer match", async () => {
+it("allows a user to correct an automatic transfer match", async () => {
   await commitCash(repository!, cash([
     "Transfer\tCurrent\t2026-05-02 12:00:00\t2026-05-02 12:00:00\tFalse match inflow\t90\t0\tEUR\tCOMPLETED\t190",
     "Transfer\tSavings\t2026-05-03 12:00:00\t2026-05-03 12:00:00\tFalse match outflow\t-90\t0\tEUR\tCOMPLETED\t10",
@@ -512,7 +520,7 @@ it.skipIf(!repository || !admin)("allows a user to correct an automatic transfer
   expect(corrected.find((row) => row.id !== inflow.id)).toMatchObject({ needsTransferReview: true });
 });
 
-it.skipIf(!repository || !admin)("starts planning history only when a classified cash-flow contributor exists", async () => {
+it("starts planning history only when a classified cash-flow contributor exists", async () => {
   const [period] = await admin!<{ month_key: string; day_1: string; day_2: string; day_3: string; day_4: string }[]>`with period as (
     select (date_trunc('month', current_date) - interval '1 month')::date month_start
   ) select to_char(month_start, 'YYYY-MM') as month_key, month_start::text day_1,
@@ -544,7 +552,7 @@ it.skipIf(!repository || !admin)("starts planning history only when a classified
   expect(withCashFlow.planning).toMatchObject({ ready: false, observedMonthCount: 1 });
 });
 
-it.skipIf(!repository || !admin)("normalizes investment positions while retaining symbol-less costs in totals", async () => {
+it("normalizes investment positions while retaining symbol-less costs in totals", async () => {
   const headers = "datetime,date,account_type,category,type,asset_class,name,symbol,shares,price,amount,fee,tax,currency,original_amount,original_currency,fx_rate,description,transaction_id,counterparty_name,counterparty_iban,payment_reference,mcc_code";
   const rows = [
     "2026-06-01T12:00:00.000Z,2026-06-01,DEFAULT,TRADING,BUY,FUND,Old Fund,vwce,1,100,-100,,,EUR,,,,Buy,meta-1,,,,",
@@ -560,7 +568,7 @@ it.skipIf(!repository || !admin)("normalizes investment positions while retainin
   expect(investments.totals).toMatchObject({ eventCount: 3, boughtMinor: 30_000, feesMinor: 300 });
 });
 
-it.skipIf(!repository || !admin)("derives Trade Republic cash snapshots from its unified ledger", async () => {
+it("derives Trade Republic cash snapshots from its unified ledger", async () => {
   const headers = "datetime,date,account_type,category,type,asset_class,name,symbol,shares,price,amount,fee,tax,currency,original_amount,original_currency,fx_rate,description,transaction_id,counterparty_name,counterparty_iban,payment_reference,mcc_code";
   const rows = [
     "2026-01-05T12:00:00.000Z,2026-01-05,DEFAULT,CASH,CUSTOMER_INBOUND,,,,,,1000,,,EUR,,,,Funding,tr-cash-1,,,,",
@@ -579,7 +587,7 @@ it.skipIf(!repository || !admin)("derives Trade Republic cash snapshots from its
   expect(moves).toEqual([expect.objectContaining({ accountId: account, baselineMinor: 100_000, currentMinor: 79_900, changeMinor: -20_100, tradesMinor: -20_000, spendingMinor: -100, otherMinor: 0 })]);
 });
 
-it.skipIf(!repository || !admin)("reports reverted rows beyond the initial activity page", async () => {
+it("reports reverted rows beyond the initial activity page", async () => {
   const rows = Array.from({ length: 501 }, (_, index) => {
     const day = String(index % 28 + 1).padStart(2, "0");
     const hour = String(Math.floor(index / 28) % 24).padStart(2, "0");
@@ -592,7 +600,7 @@ it.skipIf(!repository || !admin)("reports reverted rows beyond the initial activ
   expect(snapshot.revertedCount).toBe(1);
 });
 
-it.skipIf(!repository || !admin)("keeps a later charge that shares its start with a reverted authorization", async () => {
+it("keeps a later charge that shares its start with a reverted authorization", async () => {
   await commitCash(repository!, cash([
     "Card Payment\tCurrent\t2026-06-12 12:00:00\t\tLate charge\t-5\t0\tEUR\tREVERTED\t",
     "Card Payment\tCurrent\t2026-06-12 12:00:00\t2026-06-20 12:00:00\tLate charge\t-5\t0\tEUR\tCOMPLETED\t95"
@@ -605,7 +613,7 @@ it.skipIf(!repository || !admin)("keeps a later charge that shares its start wit
   expect(snapshot.spending.months.find((month) => month.month === "2026-06")).toMatchObject({ spendMinor: 500, netCashFlowMinor: -500 });
 });
 
-it.skipIf(!repository || !admin)("does not link a transfer to a reverted row", async () => {
+it("does not link a transfer to a reverted row", async () => {
   await commitCash(repository!, cash([
     "Transfer\tCurrent\t2026-06-15 12:00:00\t\tReverted funding\t50\t0\tEUR\tREVERTED\t",
     "Transfer\tSavings\t2026-06-15 12:00:00\t2026-06-15 12:00:00\tLegitimate opposite\t-50\t0\tEUR\tCOMPLETED\t50"
@@ -617,7 +625,7 @@ it.skipIf(!repository || !admin)("does not link a transfer to a reverted row", a
   expect((await repository!.readActivityPage({ query: "Legitimate opposite", offset: 0, limit: 10 })).items[0]).toMatchObject({ transferDisposition: "spend", needsTransferReview: false });
 });
 
-it.skipIf(!repository || !admin)("materializes carried balance months for monthly trend intervals", async () => {
+it("materializes carried balance months for monthly trend intervals", async () => {
   await repository!.addManualBalance({ accountName: "Calendar", date: "2026-01-31", valueMinor: 10_000, currency: "EUR" });
   await repository!.addManualBalance({ accountName: "Calendar", date: "2026-03-31", valueMinor: 12_100, currency: "EUR" });
   const snapshot = await repository!.readLedgerSnapshot("all");
@@ -626,7 +634,7 @@ it.skipIf(!repository || !admin)("materializes carried balance months for monthl
   expect(moneyTrackerTrendStats(points).geometricAverageMonthlyPercent).toBeCloseTo(10);
 });
 
-it.skipIf(!repository || !admin)("preserves signed transfer corrections in monthly net cash flow", async () => {
+it("preserves signed transfer corrections in monthly net cash flow", async () => {
   await commitCash(repository!, cash([
     "Transfer\tCurrent\t2026-06-10 12:00:00\t2026-06-10 12:00:00\tSpend correction\t10\t0\tEUR\tCOMPLETED\t10",
     "Transfer\tCurrent\t2026-06-11 12:00:00\t2026-06-11 12:00:00\tIncome correction\t-5\t0\tEUR\tCOMPLETED\t5",
@@ -638,7 +646,7 @@ it.skipIf(!repository || !admin)("preserves signed transfer corrections in month
   expect(month).toMatchObject({ spendMinor: -800, incomeMinor: -500, refundsMinor: -200, netCashFlowMinor: 300 });
 });
 
-it.skipIf(!repository || !admin)("queues uncategorized spending with suggestions from earlier rows with the same description", async () => {
+it("queues uncategorized spending with suggestions from earlier rows with the same description", async () => {
   await commitCash(repository!, cash([
     "Card Payment\tCurrent\t2026-07-01 12:00:00\t2026-07-01 12:00:00\tStall 7\t-10\t0\tEUR\tCOMPLETED\t90",
     "Card Payment\tCurrent\t2026-07-02 12:00:00\t2026-07-02 12:00:00\tStall 7\t-12\t0\tEUR\tCOMPLETED\t78",
@@ -660,7 +668,7 @@ it.skipIf(!repository || !admin)("queues uncategorized spending with suggestions
   expect(review.items.map((item) => item.description).sort()).toEqual(["Kiosk 12", "Stall 7", "Stall 7"]);
 });
 
-it.skipIf(!repository || !admin)("categorizes transfers reviewed as spending and follows later review changes", async () => {
+it("categorizes transfers reviewed as spending and follows later review changes", async () => {
   await commitCash(repository!, cash([
     "Transfer\tCurrent\t2026-07-05 12:00:00\t2026-07-05 12:00:00\tTo Landlord\t-500\t0\tEUR\tCOMPLETED\t500",
     "Transfer\tCurrent\t2026-08-05 12:00:00\t2026-08-05 12:00:00\tTo Landlord\t-500\t0\tEUR\tCOMPLETED\t0"
