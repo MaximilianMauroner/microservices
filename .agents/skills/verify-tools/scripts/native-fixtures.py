@@ -117,7 +117,7 @@ def start(args):
         execute([str(pg / "initdb"), "-D", str(state / "database"), "-U", "transfer_test",
                  "--auth-local=trust", "--auth-host=trust", "--encoding=UTF8", "--locale=C"], env)
         execute([str(pg / "pg_ctl"), "-D", str(state / "database"), "-l", str(state / "postgres.log"),
-                 "-o", f"-h 127.0.0.1 -p {args.database_port} -k {state}", "-w", "start"], env)
+                 "-o", f"-h 127.0.0.1 -p {args.database_port} -c unix_socket_directories=''", "-w", "start"], env)
         execute([str(pg / "createdb"), "-h", "127.0.0.1", "-p", str(args.database_port),
                  "-U", "transfer_test", "tools_runtime_test"], env)
         execute([str(pg / "psql"), database_url, "-v", "ON_ERROR_STOP=1", "-c",
@@ -145,7 +145,7 @@ def stop(state):
     pid_path = state / "storage.pid"
     if pid_path.exists():
         pid = int(pid_path.read_text())
-        result = subprocess.run(["ps", "-p", str(pid), "-o", "stat=", "-o", "command="], capture_output=True, text=True)
+        result = subprocess.run(["ps", "-ww", "-p", str(pid), "-o", "stat=", "-o", "command="], capture_output=True, text=True)
         if result.returncode == 0 and not result.stdout.strip().startswith("Z"):
             if str(state / "bodies") not in result.stdout or metadata["s3"] not in result.stdout:
                 raise RuntimeError("Storage PID no longer belongs to this verifier")
@@ -181,8 +181,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("start", "doctor", "run", "stop"))
     parser.add_argument("--state", required=True, type=Path)
-    parser.add_argument("--pg-bin", type=Path)
-    parser.add_argument("--s3-bin", type=Path)
+    parser.add_argument("--pg-bin", type=Path, help="PostgreSQL executable directory, e.g. pg_config --bindir")
+    parser.add_argument("--s3-bin", type=Path, help="Path to the native RustFS 1.0.1 executable")
     parser.add_argument("--database-port", type=int, default=45432)
     parser.add_argument("--storage-port", type=int, default=49000)
     parser.add_argument("--app-port", type=int, default=43171)

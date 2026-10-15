@@ -15,22 +15,41 @@ Use Node >=22.12 and pnpm 11.16.0 through Corepack. Check active threads,
 Git status, free disk, and listeners before setup. Install with
 `pnpm install --frozen-lockfile`. Run from the repository root.
 
-The native fixture helper needs PostgreSQL 16 executables and a native RustFS
-binary. On this Mac, PostgreSQL is under `/opt/homebrew/opt/postgresql@16/bin`.
-RustFS 1.0.1 provides `rustfs-macos-aarch64-v1.0.1.zip` and `SHA256SUMS` at
-`https://github.com/rustfs/rustfs/releases/tag/1.0.1`. Check the archive against
-that checksum before use. Other hosts must supply their native binaries.
-Do not start a Homebrew service or reuse its default cluster.
+The native fixture helper needs PostgreSQL 16 executables and native RustFS
+1.0.1. Locate PostgreSQL with `pg_config --bindir`. On Debian or Ubuntu,
+versioned binaries are usually under `/usr/lib/postgresql/16/bin`. Check the
+selected binaries with `postgres --version` and `initdb --version`.
+Use a normal user account. Do not start a system database service or reuse its
+cluster.
+
+If RustFS is not installed, get the archive for the host OS and architecture
+from the [RustFS 1.0.1 release](https://github.com/rustfs/rustfs/releases/tag/1.0.1).
+Verify it against that release's `SHA256SUMS` before extraction.
+Set `TOOLS_VERIFY_S3_BIN` to the absolute path of the extracted executable.
+The helper supports RustFS, not an arbitrary S3 server.
 
 Create a private state directory outside the checkout. Use unused loopback
 ports. This command creates a fresh cluster, the disposable database sentinel,
 the typed schemas, private buckets, and local seed snapshots:
 
 ```sh
+: "${TOOLS_VERIFY_S3_BIN:?Set the absolute path to the verified native RustFS executable}"
+TOOLS_VERIFY_PG_BIN=$(pg_config --bindir)
 TOOLS_VERIFY_STATE=$(mktemp -d /tmp/tools-verify.XXXXXX)
-python3 .agents/skills/verify-tools/scripts/native-fixtures.py start   --state "$TOOLS_VERIFY_STATE"   --pg-bin /opt/homebrew/opt/postgresql@16/bin   --s3-bin /tmp/direct-upload-native-deps-20261015/rustfs
-python3 .agents/skills/verify-tools/scripts/native-fixtures.py run   --state "$TOOLS_VERIFY_STATE" -- pnpm --dir services/tools run dev   --host 127.0.0.1 --port 43171 --strictPort
+python3 .agents/skills/verify-tools/scripts/native-fixtures.py start \
+  --state "$TOOLS_VERIFY_STATE" \
+  --pg-bin "$TOOLS_VERIFY_PG_BIN" --s3-bin "$TOOLS_VERIFY_S3_BIN"
+python3 .agents/skills/verify-tools/scripts/native-fixtures.py run \
+  --state "$TOOLS_VERIFY_STATE" -- pnpm --dir services/tools run dev \
+  --host 127.0.0.1 --port 43171 --strictPort
 ```
+
+On Coding VM, run dependency installation, fixture setup, builds, and tests
+through `heavy-check --repo <shared-primary-worktree> -- <command>`.
+Use the same primary worktree for the lock across all delegates.
+The fixture defaults are database port 45432, storage port 49000, and app port
+43171. Storage also reserves port 49001. If you select another app port with
+`--app-port`, use that port in the web command and browser URL.
 
 Retain the state path and the web terminal handle. Require `/live` and `/health`
 to return 200 before uploads. Require a real native upload and canonical read
@@ -43,7 +62,8 @@ prerequisite. Do not replace session authentication with a test cookie.
 Run the following read-only check before a drive and after any unexpected result:
 
 ```sh
-python3 .agents/skills/verify-tools/scripts/native-fixtures.py doctor   --state "$TOOLS_VERIFY_STATE"
+python3 .agents/skills/verify-tools/scripts/native-fixtures.py doctor \
+  --state "$TOOLS_VERIFY_STATE"
 ```
 
 It checks owned native processes, the database sentinel, storage health, and
@@ -75,7 +95,8 @@ CI, review, merge, release, and Max's acceptance separately.
 Stop only the web terminal started by this run. Then run:
 
 ```sh
-python3 .agents/skills/verify-tools/scripts/native-fixtures.py stop   --state "$TOOLS_VERIFY_STATE"
+python3 .agents/skills/verify-tools/scripts/native-fixtures.py stop \
+  --state "$TOOLS_VERIFY_STATE"
 ```
 
 This stops only the native fixture processes identified by that state directory.
