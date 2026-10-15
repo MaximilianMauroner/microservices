@@ -361,7 +361,7 @@ describe("native artifact fetch handler", () => {
     expect((await app(new Request(url))).status).toBe(404);
   });
 
-  it("streams an eligible attachment when signing fails or is unavailable", async () => {
+  it("streams an inline PDF when signing fails or is unavailable", async () => {
     class SignedStorage extends MemoryUploadStorage {
       readonly presignTemporaryFile = vi.fn()
         .mockRejectedValueOnce(new Error("signer unavailable"))
@@ -379,7 +379,7 @@ describe("native artifact fetch handler", () => {
     for (const expectedCall of [1, 2]) {
       const response = await app(new Request(url));
       expect(response.status).toBe(200);
-      expect(response.headers.get("content-disposition")).toBe('attachment; filename="report.pdf"');
+      expect(response.headers.get("content-disposition")).toBe('inline; filename="report.pdf"');
       expect(response.headers.get("content-type")).toBe("application/pdf");
       await response.body?.cancel();
       expect(storage.presignTemporaryFile).toHaveBeenCalledTimes(expectedCall);

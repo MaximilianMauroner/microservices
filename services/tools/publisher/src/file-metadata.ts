@@ -21,15 +21,30 @@ export function safeFileName(originalName: string, fallback: string) {
   return bounded;
 }
 
-export function attachmentDisposition(originalName: string) {
+export function contentDisposition(originalName: string, kind: "attachment" | "inline" = "attachment") {
   const safeName = safeFileName(originalName, "download.bin");
   const fallbackName = safeName.replace(/[^\x20-\x7E]/g, "_").replace(/["\\]/g, "_");
 
   if (/^[\x20-\x7E]+$/.test(safeName)) {
-    return `attachment; filename="${fallbackName}"`;
+    return `${kind}; filename="${fallbackName}"`;
   }
 
-  return `attachment; filename="${fallbackName}"; filename*=UTF-8''${encodeRfc5987(safeName)}`;
+  return `${kind}; filename="${fallbackName}"; filename*=UTF-8''${encodeRfc5987(safeName)}`;
+}
+
+export type FileDelivery = { kind: "inline" | "attachment"; filename: string };
+
+export function fileDelivery(file: { originalName: string; contentType: string }, download: boolean): FileDelivery | undefined {
+  const type = normalizeMimeType(file.contentType);
+  if (!download && type === "video/mp4") return undefined;
+  const pdf = type === "application/pdf" || (type === "application/octet-stream" && /\.pdf$/i.test(file.originalName));
+  return { kind: !download && pdf ? "inline" : "attachment", filename: file.originalName };
+}
+
+export function artifactUrls(baseUrl: string, artifact: { id: string; kind: "html" | "file"; filename: string }) {
+  const url = artifact.kind === "html" ? `${baseUrl}/artifacts/${artifact.id}`
+    : `${baseUrl}/files/${artifact.id}/${encodeURIComponent(artifact.filename)}`;
+  return { url, ...(artifact.kind === "file" ? { downloadUrl: `${url}?download=1` } : {}) };
 }
 
 export function originalNameMetadata(originalName: string) {

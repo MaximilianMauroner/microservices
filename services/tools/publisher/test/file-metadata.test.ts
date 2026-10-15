@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  attachmentDisposition,
+  contentDisposition,
   normalizeMimeType,
   normalizeProjectName,
   originalNameMetadata,
@@ -28,8 +28,8 @@ describe("file metadata", () => {
   });
 
   it("adds an RFC 5987 filename for Unicode downloads without changing ASCII headers", () => {
-    expect(attachmentDisposition("report.pdf")).toBe('attachment; filename="report.pdf"');
-    expect(attachmentDisposition("résumé.pdf")).toBe(
+    expect(contentDisposition("report.pdf")).toBe('attachment; filename="report.pdf"');
+    expect(contentDisposition("résumé.pdf")).toBe(
       'attachment; filename="r_sum_.pdf"; filename*=UTF-8\'\'r%C3%A9sum%C3%A9.pdf'
     );
   });

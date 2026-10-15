@@ -1,8 +1,32 @@
 # Publisher
 
+Drive the real user paths and verify the saved result.
+
+## Sub-features
+
+- P1. Publish a small HTML artifact and an attachment through the browser. Open its canonical capability URL without a session; verify content and bytes. List it in Library, update it, then delete it and verify access is removed.
+- P2. Publish a large video attachment. Open it through the canonical URL, play and seek, and inspect the signed-storage redirect and range response. Verify missing and expired capabilities fail. Preserve expected playback beyond a short URL lifetime.
+- P3. In Receive files, create a guest upload link; open it in a clean session, upload a file, and see it in Library. Revoke the link; another upload must fail. Also check configured expiry and limits.
+- P4. Upload a multipart file with the local machine bearer token through /api/uploads and retrieve the returned canonical URL. Split another native file into multiple chunks, send them through /api/uploads/chunks, complete the session, and verify the canonical file bytes. Missing and incorrect tokens must fail for each native operation.
+- P5. In Library, filter by filename, expiry, and project, change each sort, and load older pages. Compare summary counts and results against the owned artifact inventory. Set an exact future expiry, make a file permanent, reload, then revoke it and verify denial.
+- P6. Create enough guest links for two history pages, upload multiple files through one link, inspect history, and download its ZIP. Check names and bytes match the owned uploads. Revoke the link and check later uploads fail.
+
+## How to get to it (user POV)
+
+Open `/publisher` on the owned Tools origin. Publisher also has the native Fleet
+upload CLI and canonical `/artifacts/` and `/files/` links.
+
+## Driving it with T3 preview and the native CLI
+
+Preconditions:
+
+- The Tools doctor passes for this run's state directory.
+- Private pages require an authorized local OAuth client and subject.
+- Use the actions, expected results, and additional prerequisites below.
+
 ## Storage prerequisites
 
-Compose uses `ARTIFACT_S3_ENDPOINT=http://minio:9000`. Signed uploads and file
+The native fixture setup uses `ARTIFACT_S3_ENDPOINT=http://minio:9000`. Signed uploads and file
 redirects use that endpoint, which a host browser cannot resolve.
 
 Before P1, P2, P3, P6, or creating P5 fixtures through the browser, require an
@@ -29,3 +53,8 @@ Mark P4 blocked if its required storage endpoint is unreachable.
 | P4 | Upload a multipart file with the local machine bearer token through /api/uploads and retrieve the returned canonical URL. Split another native file into multiple chunks, send them through /api/uploads/chunks, complete the session, and verify the canonical file bytes. Missing and incorrect tokens must fail for each native operation. | publisher/README.md; src/routes/api/uploads.ts; src/routes/api/uploads/$.ts; publisher/test/chunked-upload.test.ts | Local token only. Use README request contracts, record returned IDs, delete artifacts. |
 | P5 | In Library, filter by filename, expiry, and project, change each sort, and load older pages. Compare summary counts and results against the owned artifact inventory. Set an exact future expiry, make a file permanent, reload, then revoke it and verify denial. | publisher/README.md; src/routes/publisher/artifacts.tsx; publisher tests | Create enough owned files for two pages and varied expiry/project states. Delete all owned artifacts. |
 | P6 | Create enough guest links for two history pages, upload multiple files through one link, inspect history, and download its ZIP. Check names and bytes match the owned uploads. Revoke the link and check later uploads fail. | publisher/README.md; src/routes/publisher/receive.tsx; publisher tests | Owned links, uploads, and browser downloads. Revoke links and delete uploads and local ZIP. |
+
+## Gotchas
+
+Unavailable prerequisites mean blocked. A different entry point does not prove
+an unrun path. Keep captures after cleanup. Use no production endpoint.

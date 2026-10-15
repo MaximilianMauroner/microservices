@@ -1,7 +1,7 @@
 import type { UploadSummary } from "../../src/protected-data.js";
 import { friendlyUploadError, UploadCancelledError } from "./upload-errors.js";
 
-type Session = { sessionId: string; partBytes: number; totalParts: number; state: string; uploaded: number[] };
+type Session = { sessionId: string; partBytes: number; totalParts: number; state: string; uploaded: number[]; replaceId?: string };
 export type DirectUploadCallbacks = {
   onProgress: (loaded: number, total: number) => void;
   onProcessing: () => void;
@@ -9,13 +9,13 @@ export type DirectUploadCallbacks = {
   isCancelled: () => boolean;
   signal?: AbortSignal;
 };
-type Options = { base?: string; kind?: "html" | "file"; project?: string };
+type Options = { base?: string; kind?: "html" | "file"; project?: string; replaceId?: string };
 
 /** Keep only a request ID in this tab. Reselecting the same file can resume;
  * storage is inspected again and each digest is checked against actual bytes. */
 export async function uploadDirectFile(file: File, callbacks: DirectUploadCallbacks, options: Options = {}): Promise<UploadSummary> {
   const base = options.base ?? "/api/external-uploads/sessions";
-  const fingerprint = JSON.stringify([base, file.name, file.size, file.lastModified, options.kind ?? "file", options.project ?? ""]);
+  const fingerprint = JSON.stringify([base, file.name, file.size, file.lastModified, options.kind ?? "file", options.project ?? "", options.replaceId ?? ""]);
   const savedKey = "publisher.direct-upload:" + fingerprint;
   let requestId = readSavedId(savedKey) ?? crypto.randomUUID();
   saveId(savedKey, requestId);
@@ -48,16 +48,18 @@ export async function uploadDirectFile(file: File, callbacks: DirectUploadCallba
   };
   const initialize = () => control(base, { requestId, filename: file.name,
     contentType: file.type || "application/octet-stream", totalBytes: file.size,
-    kind: options.kind ?? "file", ...(options.project?.trim() ? { project: options.project.trim() } : {}) });
+    kind: options.kind ?? "file", ...(options.project?.trim() ? { project: options.project.trim() } : {}),
+    ...(options.replaceId ? { replaceId: options.replaceId } : {}) });
   let session: Session;
   try {
     try { session = readSession(await initialize()); }
     catch (error) {
-      if (!(error instanceof UploadControlError && error.status === 404)) throw error;
+      if (options.replaceId || !(error instanceof UploadControlError && error.status === 404)) throw error;
       requestId = crypto.randomUUID();
       saveId(savedKey, requestId);
       session = readSession(await initialize());
     }
+    if (options.replaceId && session.replaceId !== options.replaceId) throw new Error("The server does not support this HTML replacement.");
     const sessionBase = `${base}/${session.sessionId}`;
     if (session.state === "uploading") {
       for (let number = 1; number <= session.totalParts; number += 1) {
@@ -94,6 +96,7 @@ export async function uploadDirectFile(file: File, callbacks: DirectUploadCallba
     const completed = await control(`${sessionBase}/complete`);
     checkCancelled();
     if (!isUploadSummary(completed)) throw new Error("Invalid upload completion response.");
+    if (options.replaceId && completed.id !== options.replaceId) throw new Error("The server did not replace the selected HTML page.");
     removeSavedId(savedKey);
     return completed;
   } catch (error) {

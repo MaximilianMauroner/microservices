@@ -6,7 +6,7 @@ import {
   ListPartsCommand, S3Client, UploadPartCommand
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { attachmentDisposition, originalNameMetadata, projectMetadata } from "./file-metadata.js";
+import { contentDisposition, originalNameMetadata, projectMetadata } from "./file-metadata.js";
 import type { S3UploadStorageConfig } from "./storage.js";
 
 export type DirectUploadDescription = {
@@ -48,7 +48,7 @@ export function createMultipartStorage(config: S3UploadStorageConfig) {
       const result = await client.send(new CreateMultipartUploadCommand({
         ...address(key), ContentType: description.contentType,
         CacheControl: description.kind === "html" ? "private, no-cache" : "private, no-store",
-        ...(description.kind === "file" ? { ContentDisposition: attachmentDisposition(description.filename) } : {}),
+        ...(description.kind === "file" ? { ContentDisposition: contentDisposition(description.filename) } : {}),
         Metadata: { ...originalNameMetadata(description.filename), ...projectMetadata(description.project),
           ...(description.fileExpiresAt ? { "expires-at": description.fileExpiresAt } : {}) }
       }), { abortSignal: signal });
