@@ -3,6 +3,8 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { setTimeout } from "node:timers/promises";
 import { promisify } from "node:util";
 import postgres from "postgres";
+import { waitForPostgres } from "../../database/postgres-readiness.ts";
+import { VerificationBlocked, isMissingExecutable } from "./receipt.ts";
 import { DISPOSABLE_DATABASE_SENTINEL, verifyDisposableDatabase } from "../../database/postgres-push-guard.ts";
 
 const execute = promisify(execFile);
@@ -14,9 +16,9 @@ export function rejectInheritedDataEndpoints(environment: NodeJS.ProcessEnv) {
     || ["PGHOST", "PGHOSTADDR", "PGPORT", "PGDATABASE", "PGSERVICE", "PGSERVICEFILE", "DOCKER_HOST", "DOCKER_CONTEXT"].includes(name)
   ));
   if (environment.NODE_ENV === "production" || environment.TOOLS_ENVIRONMENT === "production") {
-    throw new Error("BLOCKED production-environment. Verification requires a local test environment.");
+    throw new VerificationBlocked("BLOCKED production-environment. Verification requires a local test environment.");
   }
-  if (names.length) throw new Error(`BLOCKED inherited-data-endpoints. Unset ${names.sort().join(", ")} before verification.`);
+  if (names.length) throw new VerificationBlocked(`BLOCKED inherited-data-endpoints. Unset ${names.sort().join(", ")} before verification.`);
 }
 
 export function requireLoopbackPostgres(url: string) {
@@ -24,7 +26,7 @@ export function requireLoopbackPostgres(url: string) {
   if (!["postgres:", "postgresql:"].includes(parsed.protocol)
     || !["127.0.0.1", "localhost", "[::1]"].includes(parsed.hostname)
     || !parsed.port || parsed.pathname.length < 2 || parsed.search || parsed.hash) {
-    throw new Error("BLOCKED postgres-fixture. A loopback PostgreSQL URL with an explicit port and database is required.");
+    throw new VerificationBlocked("BLOCKED postgres-fixture. A loopback PostgreSQL URL with an explicit port and database is required.");
   }
   return url;
 }
@@ -40,16 +42,27 @@ async function verifyFixtureSentinel(database: ReturnType<typeof postgres>) {
   });
 }
 
-async function docker(args: string[], environment: NodeJS.ProcessEnv = process.env) {
-  return execute("docker", ["--host", dockerHost, ...args], { env: environment, timeout: 120_000, maxBuffer: 1024 * 1024 });
+async function docker(args: string[], environment: NodeJS.ProcessEnv, signal?: AbortSignal) {
+  return execute("docker", ["--host", dockerHost, ...args], { env: environment, signal, timeout: 120_000, maxBuffer: 1024 * 1024 });
 }
 
-export async function createOwnedPostgres(environment: NodeJS.ProcessEnv) {
+function redactedCause(error: unknown, password?: string) {
+  const output = error as Error & { code?: string; stderr?: string };
+  const text = `${output.code ?? ""} ${output.message ?? String(error)} ${output.stderr ?? ""}`;
+  return password ? text.replaceAll(password, "[redacted]") : text;
+}
+
+export async function createOwnedPostgres(environment: NodeJS.ProcessEnv, signal?: AbortSignal) {
   rejectInheritedDataEndpoints(environment);
   try {
-    await docker(["info", "--format", "{{.ServerVersion}}"]);
-  } catch {
-    throw new Error("BLOCKED postgres-fixture. Docker must be installed and its local daemon must be available.");
+    await docker(["info", "--format", "{{.ServerVersion}}"], environment, signal);
+  } catch (error) {
+    signal?.throwIfAborted();
+    const cause = redactedCause(error);
+    if (isMissingExecutable(error) || /Cannot connect to the Docker daemon|permission denied|Is the docker daemon running|error during connect/i.test(cause)) {
+      throw new VerificationBlocked(`BLOCKED postgres-fixture. Docker must be installed and its local daemon must be available. ${cause}`);
+    }
+    throw new Error(`Docker prerequisite check failed. ${cause}`);
   }
   const name = `tools-runtime-${randomUUID()}`;
   const password = randomBytes(32).toString("hex");
@@ -60,43 +73,38 @@ export async function createOwnedPostgres(environment: NodeJS.ProcessEnv) {
       "--publish", "127.0.0.1::5432", "--tmpfs", "/var/lib/postgresql/data:rw",
       "--env", "POSTGRES_USER=tools_runtime", "--env", "POSTGRES_DB=tools_runtime",
       "--env", "POSTGRES_PASSWORD", "postgres:16-alpine",
-    ], { ...environment, POSTGRES_PASSWORD: password });
-    const deadline = Date.now() + 60_000;
-    while (true) {
-      try {
-        await docker(["exec", name, "pg_isready", "--username=tools_runtime", "--dbname=tools_runtime"]);
-        break;
-      } catch {
-        if (Date.now() >= deadline) throw new Error("PostgreSQL did not become ready.");
-        await setTimeout(500);
-      }
-    }
-    const { stdout } = await docker(["port", name, "5432/tcp"]);
+    ], { ...environment, POSTGRES_PASSWORD: password }, signal);
+    const { stdout } = await docker(["port", name, "5432/tcp"], environment, signal);
     const port = /^127\.0\.0\.1:(\d+)\s*$/.exec(stdout)?.[1];
     if (!port) throw new Error("Docker did not publish an owned loopback PostgreSQL port.");
     const url = requireLoopbackPostgres(`postgres://tools_runtime:${password}@127.0.0.1:${port}/tools_runtime`);
     database = postgres(url, { max: 1, connect_timeout: 5 });
+    const admin = database;
+    await waitForPostgres(async () => {
+      signal?.throwIfAborted();
+      await admin`select 1`;
+    }, undefined, (milliseconds) => setTimeout(milliseconds, undefined, { signal }));
+    signal?.throwIfAborted();
     await database`create table public.tools_runtime_test_sentinel (sentinel_key text primary key, sentinel_value text not null)`;
     await database`insert into public.tools_runtime_test_sentinel values (${DISPOSABLE_DATABASE_SENTINEL.key}, ${DISPOSABLE_DATABASE_SENTINEL.value})`;
     await verifyFixtureSentinel(database);
-    const admin = database;
     return {
       name,
       url,
       async close() {
         try {
-          const { stdout: label } = await docker(["inspect", "--format", '{{ index .Config.Labels "tools.runtime.fixture" }}', name]);
+          const { stdout: label } = await docker(["inspect", "--format", '{{ index .Config.Labels "tools.runtime.fixture" }}', name], environment);
           if (label.trim() !== name) throw new Error("PostgreSQL fixture ownership does not match.");
           await verifyFixtureSentinel(admin);
-          await docker(["stop", "--time", "10", name]);
-          await docker(["rm", name]);
+          await docker(["stop", "--time", "10", name], environment);
+          await docker(["rm", name], environment);
         } finally {
           await admin.end({ timeout: 1 });
         }
       },
     };
-  } catch {
+  } catch (error) {
     await database?.end({ timeout: 1 });
-    throw new Error(`BLOCKED postgres-fixture. Setup failed for ${name}. Inspect this owned container. No unverified cleanup was attempted.`);
+    throw new Error(`PostgreSQL fixture setup failed for ${name}. Inspect this owned container. No unverified cleanup was attempted. ${redactedCause(error, password)}`);
   }
 }

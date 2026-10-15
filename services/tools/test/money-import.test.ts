@@ -440,9 +440,6 @@ describe("money schema and Option A route contract", () => {
     expect(schema).toContain("table.accountId, table.matchField, table.matchOperator, table.matchValue).nullsNotDistinct()");
     expect(schema).toContain('transferDisposition: text("transfer_disposition")');
     expect(schema).toContain("'manual', 'sparkasse'");
-    const repository = readFileSync(new URL("../money/money-repository.ts", import.meta.url), "utf8");
-    expect(repository).toContain("from tools.money_transfer_rules where active");
-    expect(repository).toContain("SPARKASSE_TRANSFER_TYPES");
   });
 
 

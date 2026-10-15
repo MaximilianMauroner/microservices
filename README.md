@@ -31,6 +31,29 @@ pnpm run test
 pnpm run verify
 ```
 
+`pnpm run verify` also requires Docker and a local daemon at
+`/var/run/docker.sock`, with permission to pull `postgres:16-alpine` and create
+containers. Remote daemons, rootless sockets, and alternate Docker contexts
+are unsupported. Missing prerequisites report BLOCKED and exit nonzero.
+
+Use a local test shell with no inherited database or storage destinations.
+Unset nonempty variables ending in `DATABASE_URL`, `POSTGRES_URL`,
+`S3_ENDPOINT`, or `S3_BUCKET`. Also unset `PGHOST`, `PGHOSTADDR`, `PGPORT`,
+`PGDATABASE`, `PGSERVICE`, `PGSERVICEFILE`, `DOCKER_HOST`, and `DOCKER_CONTEXT`.
+Do not use `NODE_ENV=production` or `TOOLS_ENVIRONMENT=production`.
+
+To run only the required Money PostgreSQL contracts with the same owned
+fixture, schema preparation, and receipt checks, run:
+
+```bash
+pnpm --dir services/tools run test:money-postgres
+```
+
+Both commands create their own loopback PostgreSQL container. They reject
+inherited database URLs and write receipts under `.agents/artifacts/verify/`.
+Cleanup requires the matching container label and database sentinel. If setup
+or cleanup cannot verify the sentinel, the error names the retained container.
+
 Run an independently deployed service:
 
 ```bash

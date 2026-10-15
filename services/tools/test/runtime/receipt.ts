@@ -1,3 +1,11 @@
+export class VerificationBlocked extends Error {}
+
+export function isMissingExecutable(error: unknown) {
+  return error instanceof Error
+    && "code" in error && error.code === "ENOENT"
+    && "syscall" in error && typeof error.syscall === "string" && error.syscall.startsWith("spawn ");
+}
+
 export type CaseResult = Readonly<{
   identity: string;
   result: "passed" | "failed" | "skipped" | "pending";

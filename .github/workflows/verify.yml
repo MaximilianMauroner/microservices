@@ -24,5 +24,6 @@ jobs:
         if: always()
         with:
           name: verification-receipts
-          path: .agents/artifacts/r1/runtime-*/
+          path: .agents/artifacts/verify/runtime-*/
+          include-hidden-files: true
           if-no-files-found: warn
