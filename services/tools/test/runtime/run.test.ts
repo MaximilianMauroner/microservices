@@ -1,6 +1,6 @@
 import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { executeLogged, runVerification } from "./run.ts";
 import { VerificationBlocked } from "./receipt.ts";
@@ -20,7 +20,7 @@ let directory: string;
 let receiptDirectories: string[];
 beforeEach(async () => {
   receiptDirectories = [];
-  directory = await mkdtemp(fileURLToPath(new URL("../../../../.agents/artifacts/runtime-command-", import.meta.url)));
+  directory = await mkdtemp(join(tmpdir(), "runtime-command-"));
 });
 afterEach(async () => {
   vi.unstubAllEnvs();

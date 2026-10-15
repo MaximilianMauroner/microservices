@@ -1,12 +1,12 @@
 import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
 import { createOwnedPostgres } from "./postgres.ts";
 
 it("retries the published TCP connection while socket-only readiness would pass", async () => {
-  const directory = await mkdtemp(fileURLToPath(new URL("../../../../.agents/artifacts/runtime-tcp-", import.meta.url)));
+  const directory = await mkdtemp(join(tmpdir(), "runtime-tcp-"));
   const controller = new AbortController();
   let attempts = 0;
   const server = createServer((socket) => {

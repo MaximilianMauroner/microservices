@@ -1,6 +1,6 @@
 import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DISPOSABLE_DATABASE_SENTINEL } from "../../database/postgres-push-guard.ts";
 import { createOwnedPostgres } from "./postgres.ts";
@@ -13,7 +13,7 @@ let directory: string;
 let trace: string;
 let environment: NodeJS.ProcessEnv;
 beforeEach(async () => {
-  directory = await mkdtemp(fileURLToPath(new URL("../../../../.agents/artifacts/runtime-postgres-", import.meta.url)));
+  directory = await mkdtemp(join(tmpdir(), "runtime-postgres-"));
   trace = join(directory, "docker.jsonl");
   const executable = join(directory, "docker");
   await writeFile(executable, `#!${process.execPath}
