@@ -198,6 +198,103 @@ describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", () => {
     }
   });
 
+  it.each([
+    { interrupted: false, revoked: false },
+    { interrupted: true, revoked: false },
+    { interrupted: true, revoked: true }
+  ])("retains stale legacy staging ownership and continues recovery with %j", async ({ interrupted, revoked }) => {
+    const created = await html("retained original", undefined, "original-project");
+    const { id } = await (await request(created.path + "/complete")).json() as { id: string };
+    const healthy = await html("unrelated healthy page");
+    const other = await (await request(healthy.path + "/complete")).json() as { id: string; url: string };
+    const [before] = await sql`select * from artifacts.objects where id = ${id}`;
+    const winner = await html("canonical winner", id);
+    const get = bodies.getHtml.bind(bodies);
+    let reads = 0;
+    let stagedKey: string | undefined;
+    const race = vi.spyOn(bodies, "getHtml").mockImplementation(async (artifactId, options) => {
+      if (artifactId === id && !options?.headOnly && options?.objectKey?.startsWith(`transfers/${id}/`)) {
+        stagedKey = options.objectKey;
+        if (interrupted) throw new Error("Interrupted stale legacy verification");
+      }
+      const stored = await get(artifactId, options);
+      if (artifactId === id && options?.headOnly && ++reads === 2) {
+        expect((await request(winner.path + "/complete")).status).toBe(201);
+        if (revoked) await sql`update artifacts.objects set revoked_at = now() where id = ${id}`;
+      }
+      return stored;
+    });
+    const nextOperation = crypto.randomUUID();
+    const nextArtifact = crypto.randomBytes(24).toString("base64url");
+    try {
+      try {
+        const response = await legacyReplace(id, "unpublished stale bytes");
+        expect(response.status).toBe(interrupted ? 500 : 409);
+        if (!interrupted) expect(await response.json()).toMatchObject({ error: "upload_conflict" });
+      } finally { race.mockRestore(); }
+      expect(stagedKey).toBeDefined();
+      const stagingId = stagedKey!.split("/").at(-1)!;
+      const [current] = await sql`select * from artifacts.objects where id = ${id}`;
+      expect(current!.object_key).not.toBe(before!.object_key);
+      expect(current!.project).toBe("original-project");
+      expect(current!.created_at).toEqual(before!.created_at);
+      expect(await raw(before!.object_key)).toBe("retained original");
+      expect(await raw(current!.object_key)).toBe("canonical winner");
+      expect(await raw(stagedKey!)).toBe("unpublished stale bytes");
+      const [operation] = await sql`select operation_id from artifacts.operations where artifact_id = ${id}`;
+      expect(Boolean(operation)).toBe(interrupted);
+      await sql`update artifacts.operations set lease_until = now() - interval '1 second', created_at = now() - interval '2 minutes'
+        where artifact_id = ${id}`;
+      await sql`insert into artifacts.operations (operation_id, artifact_id, owner_id, lease_until, operation_kind, created_at)
+        values (${nextOperation}::uuid, ${nextArtifact}, 'following-stale-fixture', now() - interval '1 second', 'delete', now() - interval '1 minute')`;
+      const response = await app(new Request(other.url));
+      expect(response.status).toBe(200);
+      expect(await response.text()).toContain("unrelated healthy page");
+      expect(await sql`select operation_id from artifacts.operations where artifact_id = ${id} or operation_id = ${nextOperation}::uuid`).toHaveLength(0);
+      const [retained] = await sql`select * from artifacts.upload_sessions where artifact_id = ${stagingId}`;
+      expect(retained).toMatchObject({ target_id: id, expected_object_key: before!.object_key,
+        state: "failed", sha256: digest(Buffer.from("unpublished stale bytes")), cleaned_at: null, receipt: null,
+        description: { kind: "html", filename: "legacy.html", totalBytes: Buffer.byteLength("unpublished stale bytes") } });
+      if (operation) expect(retained!.session_id).toBe(operation.operation_id);
+      expect(await sql`select * from artifacts.objects where id = ${id}`).toEqual([current]);
+      const remove = bucket.remove.bind(bucket);
+      const blocked = vi.spyOn(bucket, "remove").mockImplementation(async (key, signal) => {
+        if (key === stagedKey) throw new Error("Staged cleanup interrupted");
+        return remove(key, signal);
+      });
+      const log = vi.spyOn(console, "error").mockImplementation(() => {});
+      try { await storage.directUploads!.cleanup(); }
+      finally { blocked.mockRestore(); log.mockRestore(); }
+      expect(await raw(stagedKey!)).toBe("unpublished stale bytes");
+      const [pending] = await sql`select * from artifacts.upload_sessions where session_id = ${retained!.session_id}::uuid`;
+      expect(pending).toMatchObject({ artifact_id: stagingId, target_id: id, state: "aborted", cleaned_at: null });
+      await storage.close?.();
+      sql = postgres(databaseUrl!, { max: 3, idle_timeout: 1 });
+      attach();
+      const restarted = await app(new Request(other.url));
+      expect(restarted.status).toBe(200);
+      expect(await restarted.text()).toContain("unrelated healthy page");
+      await storage.directUploads!.cleanup();
+      await expect(raw(stagedKey!)).rejects.toMatchObject({ $metadata: { httpStatusCode: 404 } });
+      expect(await raw(before!.object_key)).toBe("retained original");
+      expect(await raw(current!.object_key)).toBe("canonical winner");
+      expect(await sql`select * from artifacts.objects where id = ${id}`).toEqual([current]);
+      const [cleaned] = await sql`select cleaned_at from artifacts.upload_sessions where session_id = ${retained!.session_id}::uuid`;
+      expect(cleaned?.cleaned_at).toBeInstanceOf(Date);
+      await sql`update artifacts.upload_sessions set expires_at = now() - interval '3 days' where session_id = ${retained!.session_id}::uuid`;
+      await storage.directUploads!.cleanup();
+      expect((await request("/api/uploads/sessions", "POST", { requestId: retained!.session_id, kind: "html",
+        filename: "plan.html", contentType: "text/html", totalBytes: 5, replaceId: id })).status).toBe(404);
+      const [reserved] = await sql`select artifact_id, target_id from artifacts.upload_sessions where session_id = ${retained!.session_id}::uuid`;
+      expect(reserved).toEqual({ artifact_id: stagingId, target_id: id });
+    } finally {
+      race.mockRestore();
+      await sql`delete from artifacts.operations where artifact_id = ${id} or operation_id = ${nextOperation}::uuid`;
+      await storage.deleteUpload(id);
+      await storage.deleteUpload(other.id);
+    }
+  });
+
   it("cleans pending uploads before more than twenty cleaned replacements and retries late bodies", async () => {
     const created = await html("cleanup target");
     const { id } = await (await request(created.path + "/complete")).json() as { id: string };
