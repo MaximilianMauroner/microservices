@@ -243,7 +243,8 @@ async function bucketBodies(client, bucket, inventory, directory) {
     try {
       metadata = objectMetadata(result);
       equal({ bytes: result.ContentLength, etag: result.ETag, modified: result.LastModified?.toISOString() },
-        { bytes: item.bytes, etag: item.etag, modified: item.modified }, 'The object changed after its inventory');
+        { bytes: item.bytes, etag: item.etag, modified: new Date(Math.floor(Date.parse(item.modified) / 1000) * 1000).toISOString() },
+        'The object changed after its inventory');
       hash = await hashStream(result.Body, directory && path.join(directory, file));
     } finally { result.Body.destroy(); }
     assert.equal(hash.bytes, item.bytes, 'Incomplete object read');
