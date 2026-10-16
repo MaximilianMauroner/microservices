@@ -4,6 +4,7 @@ import { spawn } from 'node:child_process';
 import { createReadStream, createWriteStream, readFileSync } from 'node:fs';
 import { lstat, mkdir, readFile, readdir, realpath, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { hostname } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import { Transform } from 'node:stream';
@@ -61,6 +62,7 @@ export function configuration(env, restore = false, productionSource = false) {
   let databaseCaPath;
   let databaseCa;
   let onSourceHost = false;
+  let sourceInstance;
   if (productionSource) {
     assert(new URL(endpoint).protocol === 'https:', 'Production S3 reads require HTTPS');
     sourceScope = Object.fromEntries(['PROJECT_ID', 'ENVIRONMENT_ID', 'SERVICE_ID', 'BUCKET_RESOURCE_ID'].map(name => {
@@ -76,14 +78,16 @@ export function configuration(env, restore = false, productionSource = false) {
     databaseCaPath = path.resolve(required(env, 'RELEASE_DATABASE_SSL_ROOT_CERT'));
     databaseCa = readFileSync(databaseCaPath, 'utf8');
     assert(databaseCa.includes('-----BEGIN CERTIFICATE-----'), 'Use a PEM certificate authority file');
-    onSourceHost = ['PROJECT_ID', 'ENVIRONMENT_ID', 'SERVICE_ID'].every(name => env['RAILWAY_' + name] === sourceScope[name]);
+    onSourceHost = ['PROJECT_ID', 'ENVIRONMENT_ID', 'SERVICE_ID'].every(name => env['RAILWAY_' + name] === sourceScope[name])
+      && Boolean(env.RAILWAY_DEPLOYMENT_ID && env.RAILWAY_REPLICA_ID);
+    sourceInstance = { hostname: hostname(), deploymentId: env.RAILWAY_DEPLOYMENT_ID, replicaId: env.RAILWAY_REPLICA_ID };
   }
   const owner = restore ? required(env, prefix + 'OWNER') : undefined;
   if (restore) {
     assert(/^[a-z0-9]{16,40}$/.test(owner), 'Restore owner must be 16 to 40 lowercase letters or digits');
     assert.equal(bucket, `tools-release-restore-${owner}`, 'Restore bucket name must contain its owner');
   }
-  return { databaseUrl, endpoint, bucket, owner, productionSource, sourceScope, forcePathStyle, databaseSslMode, databaseCaPath, databaseCa, onSourceHost,
+  return { databaseUrl, endpoint, bucket, owner, productionSource, sourceScope, forcePathStyle, databaseSslMode, databaseCaPath, databaseCa, onSourceHost, sourceInstance,
     region: required(env, prefix + 'S3_REGION'),
     credentials: { accessKeyId: required(env, prefix + 'S3_ACCESS_KEY_ID'),
       secretAccessKey: required(env, prefix + 'S3_SECRET_ACCESS_KEY') } };
@@ -318,7 +322,7 @@ export async function preflight(config, directories) {
     const state = await sql.begin('isolation level repeatable read read only', databaseState);
     const status = pending(state);
     await bucketInventory(client, config.bucket);
-    const report = { format: 1, releaseReady: !legacy.length && !status.operations && !status.activeSessions,
+    const report = { format: 1, ...(config.sourceInstance ? { sourceInstance: config.sourceInstance } : {}), releaseReady: !legacy.length && !status.operations && !status.activeSessions,
       legacy, ...status };
     return report;
   } finally { await sql.end(); client.destroy(); }
@@ -355,6 +359,7 @@ export async function backup(config, directories, directory) {
       equal(await bucketInventory(client, config.bucket), before, 'The bucket changed during verification');
       references(database, objects);
       return { format: 1, source: sourceIdentity(config),
+        ...(config.sourceInstance ? { sourceInstance: config.sourceInstance } : {}),
         consistency: { requiresQuiescentSource: true, bucketObservation: "two-full-reads", atomicBucketSnapshot: false },
         databaseSha256, bucketBeforeSha256, bucketAfterSha256, dump: dumpHash, objects, status: pending(database),
         snapshot, startWal, startedAt, temporaryDirectories: directories, legacy: legacyBefore };
