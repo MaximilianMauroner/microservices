@@ -37,7 +37,8 @@ Opus and Sol reviewed the application and Fleet changes. Accepted correctness
 findings were repaired. Reviews and dispositions remain in `review-*.md` and
 `decisions.tsv`. Fresh Opus and Sol reviews found no correctness issue in the
 backup repair.
-The independent decision-trail audit is `trail-audit-final/report.md`.
+The independent decision-trail audits are `trail-audit-final/report.md` and
+`trail-audit-r7.md`. `audit-disposition-r7.md` records the final dispositions.
 
 No repository CI workflow exists, and both PR check rollups were empty at the
 recorded readback. Local checks do not represent hosted CI.
@@ -74,10 +75,15 @@ need a new tab. No automatic request rebinding occurs.
 
 The continuation owner completed the helper proof, independent reviews, and
 fixture retention. All 3,883 regular files in the independent verifier's stopped
-archive also matched. Its owned ports are closed. Final publication and the
-decision-trail audit must finish before handoff.
+archive also matched. Its owned ports are closed. Both reviewed draft descriptions and heads were published and read back.
+T3 lists both PRs as open drafts. The final decision-trail audit completed with
+no new correctness blocker. Its dispositions are published with the evidence.
 Max owns later production approval of `release.md` and the paired Fleet
 procedure. That action has one backend trigger, then scoped file-upload
 distribution from the MacBook Air. Production instance inventory, chunk drain,
 matching pg_dump, verified CA, paired backup, and isolated recovery remain
 preconditions of that approved action. No production data command ran locally.
+
+Raw execution logs and the retained reproduction patch keep their original
+whitespace. The broad artifact whitespace check reports that recorded output.
+Application source and operator-document whitespace checks passed.
