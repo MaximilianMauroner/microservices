@@ -94,7 +94,9 @@ export function createMetadataBackedUploadStorage(
           if (!(await matchesStoredBody(bodies, intended, options))) throw new Error("Stored HTML does not match the staged upload");
         },
         reconcile: (operation) => reconcileOperation(bodies, sql, { operation_id: operation.operationId, owner_id: operation.ownerId, artifact_id: id, operation_kind: "put_html", payload: intended }, options),
-        finalize: async (operation) => { await finalizePut(sql, operation, intended); }
+        finalize: async (operation) => {
+          if (await finalizePut(sql, operation, intended) === "replace_conflict") throw new HtmlUpdateConflictError();
+        }
       });
     },
     async getHtml(id, options) {
@@ -123,7 +125,7 @@ export function createMetadataBackedUploadStorage(
         reconcile: (operation) => reconcileOperation(bodies, sql, { operation_id: operation.operationId, owner_id: operation.ownerId, artifact_id: id, operation_kind: "put_file", payload: intended }, options),
         finalize: async (operation) => {
           finalizationOperation = operation;
-          finalized = await finalizePut(sql, operation, intended);
+          finalized = await finalizePut(sql, operation, intended) === "committed";
         }
       });
       if (!finalized) {
@@ -257,23 +259,24 @@ async function prepare(sql: Sql, artifactId: string, kind: PendingOperation["ope
   return { operationId, ownerId };
 }
 
-async function finalizePut(sql: Sql, operation: OperationOwner, value: UpsertArtifact) {
+async function finalizePut(sql: Sql, operation: OperationOwner, value: UpsertArtifact): Promise<"committed" | "inactive_link" | "replace_conflict"> {
+  const { expectedObjectKey, stagingId } = value;
+  const description = { kind: value.kind, filename: value.filename, contentType: value.contentType,
+    totalBytes: value.bytes, partBytes: DIRECT_PART_BYTES, ...(value.project ? { project: value.project } : {}) };
   try { return await sql.begin(async (tx) => {
     await requireOwnership(tx, operation);
     const finalized = value.uploadLinkId
       ? await lockActiveUploadLink(tx, value.uploadLinkId)
       : true;
     if (finalized) {
-      if (value.kind === "html" && value.expectedObjectKey && value.stagingId) {
-        const receipt = await commitHtmlVersion(tx, value.id, value.expectedObjectKey, {
+      if (value.kind === "html" && expectedObjectKey && stagingId) {
+        const receipt = await commitHtmlVersion(tx, value.id, expectedObjectKey, {
           objectKey: value.objectKey, filename: value.filename, bytes: value.bytes,
           sha256: value.sha256, project: value.project
         }, operation.operationId);
-        const description = { kind: "html", filename: value.filename, contentType: value.contentType,
-          totalBytes: value.bytes, partBytes: DIRECT_PART_BYTES, ...(value.project ? { project: value.project } : {}) };
         await tx`insert into artifacts.upload_sessions
           (session_id, artifact_id, target_id, expected_object_key, audience, description, state, sha256, receipt, expires_at)
-          values (${operation.operationId}::uuid, ${value.stagingId}, ${value.id}, ${value.expectedObjectKey},
+          values (${operation.operationId}::uuid, ${stagingId}, ${value.id}, ${expectedObjectKey},
             'native', ${tx.json(description)}, 'completed', ${value.sha256}, ${tx.json(receipt)}, now())`;
       } else await upsert(tx, value);
       await tx`delete from artifacts.operations where operation_id = ${operation.operationId} and owner_id = ${operation.ownerId}`;
@@ -281,11 +284,19 @@ async function finalizePut(sql: Sql, operation: OperationOwner, value: UpsertArt
       await tx`update artifacts.operations set operation_kind = 'delete', payload = null
         where operation_id = ${operation.operationId} and owner_id = ${operation.ownerId}`;
     }
-    return finalized;
+    return finalized ? "committed" : "inactive_link";
   }); } catch (error) {
-    if (error instanceof DirectUploadError && ["replace_conflict", "upload_not_found"].includes(error.code)) {
-      await sql`delete from artifacts.operations where operation_id = ${operation.operationId} and owner_id = ${operation.ownerId}`;
-      throw new HtmlUpdateConflictError();
+    if (value.kind === "html" && expectedObjectKey && stagingId
+      && error instanceof DirectUploadError && ["replace_conflict", "upload_not_found"].includes(error.code)) {
+      await sql.begin(async (tx) => {
+        await requireOwnership(tx, operation);
+        await tx`insert into artifacts.upload_sessions
+          (session_id, artifact_id, target_id, expected_object_key, audience, description, state, sha256, expires_at)
+          values (${operation.operationId}::uuid, ${stagingId}, ${value.id}, ${expectedObjectKey},
+            'native', ${tx.json(description)}, 'failed', ${value.sha256}, now())`;
+        await tx`delete from artifacts.operations where operation_id = ${operation.operationId} and owner_id = ${operation.ownerId}`;
+      });
+      return "replace_conflict";
     }
     throw error;
   }
@@ -343,8 +354,8 @@ async function reconcileOperation(bodies: UploadStorage, sql: Sql, operation: Pe
   }
   if (await matchesStoredBody(bodies, payload, options)) {
     const operationOwner = owner(operation);
-    const finalized = await finalizePut(sql, operationOwner, payload);
-    if (!finalized) {
+    const outcome = await finalizePut(sql, operationOwner, payload);
+    if (outcome === "inactive_link") {
       await bodies.deleteUpload(operation.artifact_id, options);
       await finalizeDelete(sql, operationOwner, operation.artifact_id);
     }
