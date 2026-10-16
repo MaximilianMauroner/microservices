@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { uploadDirectFile } from "./direct-upload.js";
 import type { RefObject } from "react";
 import { Link } from "@tanstack/react-router";
 import {
@@ -224,15 +225,9 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
     setMessage(undefined);
     try {
       await waitForPublisher();
-      const form = new FormData();
-      if (selected.project) form.set("project", selected.project);
-      form.set("file", file);
-      const response = await fetch(`/api/external-uploads/${selected.id}`, {
-        method: "PUT",
-        credentials: "same-origin",
-        body: form
-      });
-      const updated = await readPayload<UploadSummary>(response, "Artifact could not be replaced.");
+      const updated = await uploadDirectFile(file, {
+        onProgress: () => {}, onProcessing: () => {}, registerXhr: () => {}, isCancelled: () => false
+      }, { kind: "html", replaceId: selected.id });
       setUploads((current) => current.map((upload) => upload.id === updated.id ? updated : upload));
       setSelectedId(updated.id);
       setMessage({ text: `${updated.filename} replaced the artifact without changing its URL.`, tone: "success" });
@@ -435,7 +430,7 @@ function ArtifactInspector({ upload, busy, knownProjects, replaceInput, onReplac
   return <Card key={upload.id} className="gap-0 py-0 lg:sticky lg:top-[4.5rem]">
     <div className="border-b p-4"><LifecycleBadge upload={upload} /><h2 className="mt-3 break-words font-semibold">{upload.filename}</h2><p className="mt-1 text-xs text-muted-foreground">{formatBytes(upload.bytes)} · updated {formatDateTime(upload.updatedAt)}</p></div>
     <dl className="grid gap-0"><InspectorDetail label="Capability URL" value={upload.url} mono /><InspectorDetail label="Content type" value={upload.contentType} /><InspectorDetail label="Identifier" value={upload.id} mono /></dl>
-    <div className="grid grid-cols-2 gap-2 border-t p-3"><Input ref={replaceInput} className="hidden" type="file" accept=".html,.htm,text/html,application/xhtml+xml" onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) void onReplace(file); }} aria-label="Choose replacement HTML file" tabIndex={-1} /><Button type="button" variant="outline" size="sm" disabled={!canUpdate || busy} onClick={() => replaceInput.current?.click()}><Upload /> Replace file</Button><Button nativeButton={false} variant="outline" size="sm" render={<a href={upload.url} target="_blank" rel="noreferrer" />}><ExternalLink /> Open</Button><Button type="button" variant="outline" size="sm" onClick={() => void onCopy()}><Copy /> Copy URL</Button></div>
+    <div className="grid grid-cols-2 gap-2 border-t p-3"><Input ref={replaceInput} className="hidden" type="file" accept=".html,.htm,text/html,application/xhtml+xml" onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) void onReplace(file); }} aria-label="Choose replacement HTML file" tabIndex={-1} /><Button type="button" variant="outline" size="sm" disabled={!canUpdate || busy} onClick={() => replaceInput.current?.click()}><Upload /> Replace file</Button><Button nativeButton={false} variant="outline" size="sm" render={<a href={upload.url} target="_blank" rel="noreferrer" />}><ExternalLink /> Open</Button>{upload.downloadUrl ? <Button nativeButton={false} variant="outline" size="sm" render={<a href={upload.downloadUrl} />}><Download /> Download</Button> : null}<Button type="button" variant="outline" size="sm" onClick={() => void onCopy()}><Copy /> Copy URL</Button></div>
     {canUpdate ? <div className="border-t p-3"><label className="text-xs font-medium" htmlFor="artifact-project">Project</label><div className="mt-2 flex gap-2"><Input id="artifact-project" list="artifact-projects" value={project} onChange={(event) => setProject(event.currentTarget.value)} placeholder="Project name" /><datalist id="artifact-projects">{knownProjects.filter((value) => value !== UNASSIGNED_PROJECT).map((value) => <option key={value} value={value} />)}</datalist><Button type="button" variant="outline" size="sm" disabled={!projectChanged || busy} onClick={() => void onChangeProject(project.trim())}><Folder /> Save</Button></div></div> : <FileExpiryControl upload={upload} busy={busy} onChange={onChangeExpiry} />}
     <div className="border-t border-destructive/30 p-3"><h3 className="text-xs font-semibold text-destructive">Revoke artifact</h3><p className="mt-1 text-xs text-muted-foreground">The capability URL will stop working immediately.</p><AlertDialog><AlertDialogTrigger className="mt-3" render={<Button type="button" variant="destructive-outline" size="sm" disabled={busy} />}><Trash2 /> Revoke…</AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Revoke {upload.filename}?</AlertDialogTitle><AlertDialogDescription>This permanently removes the stored artifact. Anyone using its capability URL will receive a not-found response.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={() => void onRevoke()}>Revoke artifact</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></div>
   </Card>;

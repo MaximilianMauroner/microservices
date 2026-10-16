@@ -1,219 +1,47 @@
 # Direct artifact transfers
 
-Publisher authorizes uploads in Tools. Clients send file parts to the private
-Railway bucket with five-minute signed URLs. PostgreSQL owns upload sessions,
-part digests, completion manifests, and published metadata. Bucket bodies live
-under `transfers/<artifact-id>`. Canonical `/artifacts/:id` and
-`/files/:id/:filename` URLs stay unchanged.
+File bytes must travel from the client to private object storage. Tools owns
+permission checks and publication. This keeps large upload bodies outside the
+application request while preserving one canonical authority for access.
 
-## Upload protocol
+PostgreSQL owns canonical metadata and recovery state. Object storage owns
+bodies. A body in storage alone is not a published artifact. Publication requires
+verification of the stored size and digest, then a database commit.
 
-Use `/api/uploads/sessions` with the native upload bearer credential,
-`/api/external-uploads/sessions` with the browser session, or
-`/api/drop/:token/uploads/sessions` with an active guest capability. Browser and
-guest mutations require the same-origin check. Status GETs allow the normal
-absent Origin header and reject an explicit conflicting Origin. Browser reads
-still require the browser session; guest sessions are bound to the upload-link
-ID. Native credentials never travel to storage.
+## Keep replacement bodies immutable
 
-1. POST JSON with a UUID `requestId`, `filename`, `contentType`, and
-   `totalBytes`. `kind` defaults to `file`; authorized browser/native clients
-   can create persistent `html` and pass `project`. The response contains
-   `sessionId`, `partBytes`, `totalParts`, `uploaded`, `state`, and `expiresAt`.
-   Repeat initialization with the same request ID and file description to
-   recover a lost response or resume. File sessions expire after two hours.
-2. For each one-based part, calculate its SHA-256 over at most 20 MiB. POST
-   `{ "number": 1, "sha256": "<64 lowercase hex characters>" }` to
-   `/:sessionId/parts`. PUT that Blob/buffer to the returned signed URL. Its
-   signature includes the expected Content-Length. Do not send cookies, the
-   native token, or storage credentials to this URL.
-3. GET `/:sessionId` or repeat initialization to inspect accepted parts after
-   interruption. Before skipping a stored part, request its URL with the local
-   digest again; the saved digest must match. A successful PUT whose response
-   was lost can be safely sent again with the same part number and bytes.
-4. POST `/:sessionId/complete`. Tools reads storage's part sizes and ETags,
-   persists the manifest, completes multipart storage, and streams the stored
-   bytes through bounded SHA-256 validation. It checks every part digest and
-   total length, then atomically inserts canonical metadata and marks the
-   session completed. Repeated completion returns the same ID and result.
-   Missing parts return 409; incorrect size or content returns 422 and cannot
-   be published. Retry transient failure with the same session.
-5. DELETE `/:sessionId` to abandon pending work. Aborting also invalidates its
-   multipart URLs. Aborting a completed session does not revoke a published
-   artifact; use the existing artifact lifecycle API for that.
+An HTML replacement must preserve the capability ID and URL. It must also keep
+the previous body and the metadata needed for recovery. A separate staging body
+lets verification fail or stop without damaging the current version.
 
-The native client is available from this checkout:
+The canonical pointer changes only if the expected current version still
+matches. A stale writer cannot replace a newer version or undo revocation.
+Repeated and interrupted operations keep their identity. Recovery must not turn
+missing canonical state into permission to recreate a deleted artifact.
 
-```sh
-PUBLIC_BASE_URL=https://tools.mauroner.net UPLOAD_TOKEN=<native-token> \
-  pnpm --dir services/tools/publisher upload:direct /path/to/file [request-id]
-```
+## Keep authentication boundaries separate
 
-The client prints its request ID before transferring bytes. Retain it to resume
-after an agent process interruption. The browser keeps this ID in sessionStorage;
-reselect the same file in the same tab to resume. Signed URLs are kept in memory.
-All current size limits still apply. Empty files use one empty part.
-Cancel aborts pending browser control and part requests and abandons the pending
-session. A completion that committed before cancellation remains published;
-session cancellation does not revoke an already published artifact.
+Native upload credentials, browser sessions, and guest upload capabilities have
+different owners. Each boundary authorizes its own operations. Storage receives
+only short-lived capabilities for the allowed body transfer. Clients never
+receive bucket credentials.
 
-## Integrity and recovery
+Protected HTML remains a webpage with its sandbox policy. A PDF can open inline
+and still has an explicit download action. File limits, retention, expiry, and
+revocation continue to apply at canonical access.
 
-[Railway's supported API](https://docs.railway.com/storage-buckets#s3-compatibility)
-includes multipart uploads, but its public documentation does not specify a
-complete contract for multipart SHA-256 checksum fields. A multipart ETag is
-not a whole-file SHA-256, and user metadata does not prove stored content.
+## Preserve recovery across release
 
-The implementation uses standard Create/ListParts/UploadPart/Complete/Abort
-operations and verifies actual stored bytes. Provider-validated part checksums
-could remove the verification read if that complete contract is later proven.
-The current read costs bucket egress, which Railway makes free. It uses bounded
-stream buffers and no local file assembly or application-to-bucket body upload.
-Hashing still uses CPU, and a retry after interrupted verification repeats the
-read. Production transfer speed and savings remain unmeasured.
+A database backup must stay paired with all referenced bodies and retained
+versions. Restore into isolated targets to prove recovery. Do not replace valid
+newer database state with an older backup. Keep post-backup commits and bodies.
 
-A durable reservation precedes S3 creation. Cleanup finds unknown multipart
-IDs by that reservation's unique key, including a lost creation response.
-A durable manifest precedes S3 completion. After a lost completion response or
-failed database commit, a retry checks the completed object, verifies its
-bytes, and performs the canonical commit once. PostgreSQL advisory locks
-serialize session writers and bound concurrent completion across web processes;
-locks release on process exit. Separate small connection pools keep durable
-writes available during verification. Verification has a 15-minute deadline.
+A backend deployment does not distribute or roll back external clients.
+Keep legacy writers while actual callers, offline devices, and local chunk
+sessions remain unresolved. Keep historical readers for retained recovery data.
+A quiet upload window is sufficient for the owner to coordinate a small release.
+No separate global pause service is required.
 
-Limits include 250 parts, 16 pending control requests per web process, at least
-16 active sessions globally (four per configured concurrent upload above that),
-and three pending sessions per guest link. Signatures end no later than session
-expiry. Guest link expiry and revocation are checked again using the current
-database clock before the commit. A revoked link cannot publish pending work.
-Successful files stay available under their existing artifact retention rules.
-
-Publisher's existing startup/hourly cleanup removes abandoned, expired,
-invalid, and revoked-link multipart work in bounded batches. Completed session
-receipts are retained for at least one day after session expiry, then pruned in
-batches. Cleanup does not delete published bodies when a receipt expires.
-No separate keep-awake timer is added.
-
-Restore PostgreSQL metadata and sessions together with the bucket. The legacy
-pages/files backfill deliberately excludes `transfers/`; it must never adopt an
-unverified object. This makes a successful byte verification and canonical
-commit the only publication boundary. Artifact deletion removes the direct
-body as well as legacy keys. HTML replacement preserves its current object key
-and stable capability URL.
-
-## Downloads and remaining body transfers
-
-All non-conditional file GET requests now redirect after capability and expiry
-checks, including small attachments. Storage handles normal ranges. MP4 keeps
-its existing four-hour maximum signature for playback and later seeks; other
-attachments retain the same maximum and use signed attachment disposition,
-binary content type, and private no-store caching. Expiry shortens signatures.
-Revocation deletes the object and denies later canonical requests. Shortening
-an expiry does not invalidate a signature already issued for the earlier expiry.
-
-HEAD retains the canonical metadata response and sends no body. If-Range and
-conditional requests retain Tools handling because the canonical SHA-256 and
-modification date differ from storage validators. Signing failure and the final
-second before expiry retain the streaming fallback. HTML remains streamed with
-its sandbox CSP, favicon injection, and private cache policy. No shared caching
-of private responses is added.
-
-Other binary paths were traced: guest-link ZIP downloads still stream a newly
-generated archive; no repeated ZIP traffic appears in the retained audit sample,
-so no archive cache was added. Feedback CSV is generated from PostgreSQL.
-Document Share source downloads are browser Blobs. Fixed icons/assets are
-already local static responses. None requires a new storage transfer path.
-
-## Active compatibility
-
-The native multipart `/api/uploads` and chunk `/api/uploads/chunks` handlers in
-`publisher/src/fetch-app.ts` remain for external clients. The audit demonstrates
-237 successful native chunk PUTs carrying 4.95 GB. Those clients are outside
-this repository and must be switched to sessions or `upload:direct` separately.
-Their legacy uploads still incur application-to-bucket egress and have their
-existing local-staging restart limit. Native HTML replacement remains on its
-existing multipart route.
-
-Browser multipart/chunk endpoints and their local staging also remain for
-already loaded browser bundles during rollout. The current React console and
-guest page use sessions for every new file. The old React chunk transport and
-its protocol-only tests were removed. Retained server chunk tests cover the
-active legacy contract.
-
-Remove browser upload compatibility after the new build is deployed, old
-bundles have aged out, and route observations confirm no calls. Remove native
-creation/chunk compatibility only after external caller owners confirm migration
-and route observations confirm no calls. Keep native HTML replacement until its
-active caller has an equivalent update path. No removal is authorized here.
-
-The artifact recovery reader in `publisher/src/postgres-storage.ts` also accepts
-JSON strings written by the old double-encoding path. New recovery records use
-native JSONB objects. Remove that decoder after pre-existing pending operations
-have been reconciled. It is needed to preserve interrupted legacy replacements,
-including replacements of HTML created through a direct session.
-
-## Reviewed rollout steps, not applied
-
-1. Max approves the private artifact bucket CORS update. Keep existing wildcard
-   GET/HEAD playback support and add an exact-origin PUT rule first. Do not make
-   the bucket public, expand CDN caching, or change credentials. Review the
-   current rule set before applying this proposed addition:
-
-   ```json
-   {
-     "CORSRules": [
-       {
-         "AllowedOrigins": ["https://tools.mauroner.net"],
-         "AllowedMethods": ["GET", "HEAD", "PUT"],
-         "AllowedHeaders": ["*"],
-         "ExposeHeaders": ["Accept-Ranges", "Content-Range", "Content-Length", "Content-Type", "ETag"],
-         "MaxAgeSeconds": 300
-       },
-       {
-         "AllowedOrigins": ["*"],
-         "AllowedMethods": ["GET", "HEAD"],
-         "AllowedHeaders": ["*"],
-         "ExposeHeaders": ["Accept-Ranges", "Content-Range", "Content-Length", "Content-Type", "ETag"],
-         "MaxAgeSeconds": 300
-       }
-     ]
-   }
-   ```
-
-2. Max approves the additive PostgreSQL schema change in
-   `services/tools/database/postgres-schema.ts`: nullable `objects.sha256`, plus
-   `artifacts.upload_sessions`, its constraints, and indexes. The existing
-   guarded Railway predeploy schema push includes the new table. Review the
-   generated DDL and recovery procedure before approving deployment; no local
-   command here targets production. Retain the added table/column on rollback.
-3. Max approves deployment separately. A main merge may deploy automatically;
-   this PR must not merge under the current authorization.
-   Before release, prove multipart signing with Content-Length, completion,
-   exact-origin PUT preflight, opaque-origin range playback, and deletion in
-   an approved non-production Railway bucket. Local S3 evidence does not prove
-   Tigris-specific behavior. Do not rewrite hosts after signing.
-4. External native caller owners switch their clients. Measure service egress
-   over a comparable billing cycle after adoption. Existing signed-video and
-   >=8 MiB attachment savings are already deployed and are not new savings.
-
-## Isolated verification
-
-Run the normal Publisher and Tools checks first. Run the real-resource suite
-only with separately owned loopback PostgreSQL and S3, a bucket named
-`tools-transfer-test`, the guarded schema-push disposable database sentinel,
-and local fixture credentials. Its CORS test uses `http://127.0.0.1:43171`.
-
-```sh
-PUBLISHER_TRANSFER_TEST_DATABASE_URL=postgres://transfer_test@127.0.0.1:45432/tools_runtime_test \
-PUBLISHER_TRANSFER_TEST_S3_ENDPOINT=http://127.0.0.1:49000 \
-  pnpm --dir services/tools/publisher exec vitest run \
-    test/direct-uploads.integration.test.ts --maxWorkers=1 --fileParallelism=false
-```
-
-This suite checks large direct transfers, interruption/resume, repeat completion,
-lost storage responses, database commit failure, owners, expiry, revocation,
-wrong size/content, cleanup, concurrency, protected HTML replacement, ranges,
-HEAD, conditional reads, CORS, and private bucket access. Browser transport tests
-check resume, safe completion retry, cancellation, and credential isolation.
-Use the product verification skill for actual browser and playback evidence.
-Keep reports and captures under ignored `.agents/artifacts/`.
+The [Publisher transfer reference](../../services/tools/publisher/direct-transfers.md)
+holds the current protocol, commands, limits, and verification setup. Concrete
+release steps, caller registers, and run evidence belong in `.agents/artifacts/`.

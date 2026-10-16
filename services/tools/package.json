@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
+    "@noble/hashes": "2.3.0",
     "@convex-dev/presence": "0.4.0",
     "@convex-dev/prosemirror-sync": "0.2.5",
     "@shadcn/react": "^0.3.0",
