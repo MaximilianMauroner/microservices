@@ -1,6 +1,0 @@
-heavy-check: waiting for repository lock (/home/codex/.t3/worktrees/microservices/fix-direct-uploads-tools-and-fleet-vm-20261016)
-heavy-check: running with timeout 20m (/home/codex/.t3/worktrees/microservices/fix-direct-uploads-tools-and-fleet-vm-20261016)
-waiting for server to shut down.... done
-server stopped
-Owned fixtures stopped. Data and evidence retained.
-{"preStopArchive": {"path": "/home/codex/.local/share/direct-upload-vm-20261016/primary-retained/45cc29de-1403-4f39-a0d8-be67370c05f7-pre-stop.tar", "bytes": 298096640, "sha256": "ab59b88c9d15e96bf7fe7eb4b897d38a4b57da0dcbb91e13f27f63da08d32fa8"}, "stoppedArchive": {"path": "/home/codex/.local/share/direct-upload-vm-20261016/primary-retained/45cc29de-1403-4f39-a0d8-be67370c05f7-stopped.tar", "bytes": 298209280, "sha256": "050fd65eb099487b42593dcc2678ff3400d7a0ec0a81f89144919403cfca435c", "verifiedRegularFiles": 3043}, "closedOwnedPorts": [43171, 43173, 45432, 49000, 49001], "sourceStateRetained": true, "secretsAndBodies": "private durable archives only"}

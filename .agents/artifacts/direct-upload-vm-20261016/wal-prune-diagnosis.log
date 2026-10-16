@@ -1,2 +1,0 @@
-rmgr: Heap2       len (rec/tot):     57/    57, tx:          0, lsn: 0/01F09938, prev 0/01F09910, desc: PRUNE snapshotConflictHorizon: 4912, nredirected: 0, ndead: 1, nunused: 0, redirected: [], dead: [11], unused: [], blkref #0: rel 1663/16384/16749 blk 7
-rmgr: Heap2       len (rec/tot):     57/    57, tx:          0, lsn: 0/01F09978, prev 0/01F09938, desc: PRUNE snapshotConflictHorizon: 4913, nredirected: 0, ndead: 1, nunused: 0, redirected: [], dead: [3], unused: [], blkref #0: rel 1663/16384/16749 blk 9
