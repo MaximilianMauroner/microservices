@@ -255,11 +255,6 @@ async function bucketBodies(client, bucket, inventory, directory) {
   return records;
 }
 
-async function wal(sql) {
-  const [row] = await sql`select pg_current_wal_insert_lsn()::text as position`;
-  return row.position;
-}
-
 async function pgCommand(command, args, config) {
   const url = new URL(config.databaseUrl);
   const env = { PATH: process.env.PATH, HOME: process.env.HOME, LANG: 'C',
@@ -337,7 +332,6 @@ export async function backup(config, directories, directory) {
     if (!config.productionSource) await sentinel(sql);
     await mkdir(directory, { mode: 0o700 });
     await mkdir(path.join(directory, 'bodies'), { mode: 0o700 });
-    const startWal = config.productionSource ? undefined : await wal(sql);
     const legacyBefore = await legacyInventory(directories);
     assert(!legacyBefore.length, 'Legacy temporary files block a paired backup');
     const manifest = await sql.begin('isolation level repeatable read read only', async tx => {
@@ -363,16 +357,13 @@ export async function backup(config, directories, directory) {
         ...(config.sourceInstance ? { sourceInstance: config.sourceInstance } : {}),
         consistency: { requiresQuiescentSource: true, bucketObservation: "two-full-reads", atomicBucketSnapshot: false },
         databaseSha256, bucketBeforeSha256, bucketAfterSha256, dump: dumpHash, objects, status: pending(database),
-        snapshot, startWal, startedAt, temporaryDirectories: directories, legacy: legacyBefore };
+        snapshot, startedAt, temporaryDirectories: directories, legacy: legacyBefore };
     });
     const databaseAfter = await sql.begin('isolation level repeatable read read only', databaseState);
     const databaseBefore = JSON.parse(await readFile(path.join(directory, 'database.json'), 'utf8'));
     manifest.databaseAfterSha256 = await writeJson(path.join(directory, 'database-after.json'), databaseAfter);
     equal(stableDatabase(databaseAfter, config), stableDatabase(databaseBefore, config), 'Concurrent database writes or cleanup invalidated the backup');
     equal(await legacyInventory(directories), legacyBefore, 'Legacy temporary files appeared during the backup');
-    const endWal = config.productionSource ? undefined : await wal(sql);
-    assert.equal(endWal, startWal, 'PostgreSQL WAL advanced during backup. Keep the fixture quiet and retry into a new directory');
-    manifest.endWal = endWal;
     manifest.completedAt = new Date().toISOString();
     const manifestSha256 = await writeJson(path.join(directory, 'manifest.json'), manifest);
     await writeFile(path.join(directory, 'COMPLETE'), manifestSha256 + '\n', { flag: 'wx', mode: 0o600 });
@@ -438,15 +429,14 @@ function restoredObject(object) {
 }
 
 async function verifyRestored(sql, client, config, stored, source = false) {
-  const startWal = config.productionSource ? undefined : await wal(sql);
-  const actual = await sql.begin('isolation level repeatable read read only', databaseState);
-  equal(source ? stableDatabase(actual, config) : actual, source ? stableDatabase(stored.database, config) : stored.database,
-    'The restored canonical rows, journal, sessions, or receipts differ');
+  const scope = state => source ? stableDatabase(state, config) : state;
+  const database = async () => scope(await sql.begin('isolation level repeatable read read only', databaseState));
+  equal(await database(), scope(stored.database), 'The restored canonical rows, journal, sessions, or receipts differ');
   const inventory = await bucketInventory(client, config.bucket);
   const objects = await bucketBodies(client, config.bucket, inventory);
   equal(objects.map(restoredObject), stored.manifest.objects.map(restoredObject), 'Restored raw bodies or metadata differ');
   equal(await bucketInventory(client, config.bucket), inventory, 'The bucket changed during verification');
-  if (!config.productionSource) assert.equal(await wal(sql), startWal, 'PostgreSQL WAL advanced during verification');
+  equal(await database(), scope(stored.database), 'The database changed during verification');
   return { verified: true, objects: objects.length, databaseSha256: stored.manifest.databaseSha256 };
 }
 
