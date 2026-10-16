@@ -54,6 +54,10 @@ test('production source access is explicit, scoped and cannot restore', async t 
   assert.equal(config.forcePathStyle, false);
   assert.equal(config.databaseSslMode, 'verify-full');
   assert.equal(config.onSourceHost, false);
+  const onRailway = { ...production, ...Object.fromEntries(['PROJECT_ID', 'ENVIRONMENT_ID', 'SERVICE_ID']
+    .map(name => ['RAILWAY_' + name, production['RELEASE_SOURCE_' + name]])) };
+  assert.equal(configuration(onRailway, false, true).onSourceHost, false);
+  assert.equal(configuration({ ...onRailway, RAILWAY_DEPLOYMENT_ID: 'owned-deployment', RAILWAY_REPLICA_ID: 'owned-replica' }, false, true).onSourceHost, true);
   assert.throws(() => configuration({ ...production, RELEASE_DATABASE_URL: production.RELEASE_DATABASE_URL.replace('verify-full', 'require') }, false, true));
   assert.throws(() => configuration(production, true, true));
   assert.throws(() => configuration({ ...production, RELEASE_SOURCE_PROJECT_ID: '' }, false, true));
