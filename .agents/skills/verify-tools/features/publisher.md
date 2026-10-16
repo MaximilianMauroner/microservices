@@ -38,7 +38,7 @@ exposes `ETag`, and permits GET and HEAD from opaque artifact origins.
 Before browser uploads or playback, check real preflight, signed reads, ranges,
 and exposed response headers. A successful CORS setup command alone does not
 prove browser access. See the
-[direct-transfer CORS contract](../../../../docs/tools-platform/direct-transfers.md#reviewed-rollout-steps-not-applied).
+[direct-transfer CORS contract](../../../../services/tools/publisher/direct-transfers.md#release-constraints).
 Record the endpoint and results without credentials or signed URLs.
 Native HTTP clients need storage reachability but do not need browser CORS.
 

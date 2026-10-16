@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { createReadStream, createWriteStream } from 'node:fs';
+import { createReadStream, createWriteStream, readFileSync } from 'node:fs';
 import { lstat, mkdir, readFile, readdir, realpath, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -39,26 +39,52 @@ function required(env, name) {
   return env[name];
 }
 
-export function configuration(env, restore = false) {
+export function configuration(env, restore = false, productionSource = false) {
+  assert(!restore || !productionSource, 'Production is never a restore target');
   const prefix = restore ? 'RELEASE_RESTORE_' : 'RELEASE_';
   const databaseUrl = required(env, prefix + 'DATABASE_URL');
   const endpoint = required(env, prefix + 'S3_ENDPOINT');
   for (const [value, protocols] of [[databaseUrl, ['postgres:', 'postgresql:']], [endpoint, ['http:', 'https:']]]) {
     const url = new URL(value);
-    assert(protocols.includes(url.protocol) && ['127.0.0.1', '[::1]'].includes(url.hostname),
+    assert(protocols.includes(url.protocol) && (productionSource || ['127.0.0.1', '[::1]'].includes(url.hostname)),
       'Release fixtures require literal loopback addresses');
-    assert(!url.search && !url.hash, 'Connection URL options are forbidden');
+    assert(!url.hash && (!url.search || productionSource && value === databaseUrl
+      && [...url.searchParams.keys()].every(key => key === 'sslmode')), 'Connection URL options are forbidden');
     if (value === endpoint) assert(!url.username && !url.password && url.pathname === '/', 'Use a bare S3 endpoint');
     else assert(/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(decodeURIComponent(url.pathname.slice(1))), 'Use a plain owned database name');
   }
   const bucket = required(env, prefix + 'S3_BUCKET');
-  assert(/^tools-(transfer-test|release-[a-z0-9-]+)$/.test(bucket), 'Use an owned Tools fixture bucket');
+  assert(productionSource || /^tools-(transfer-test|release-[a-z0-9-]+)$/.test(bucket), 'Use an owned Tools fixture bucket');
+  let sourceScope;
+  let forcePathStyle = true;
+  let databaseSslMode = 'disable';
+  let databaseCaPath;
+  let databaseCa;
+  let onSourceHost = false;
+  if (productionSource) {
+    assert(new URL(endpoint).protocol === 'https:', 'Production S3 reads require HTTPS');
+    sourceScope = Object.fromEntries(['PROJECT_ID', 'ENVIRONMENT_ID', 'SERVICE_ID', 'BUCKET_RESOURCE_ID'].map(name => {
+      const value = required(env, 'RELEASE_SOURCE_' + name);
+      assert(/^[0-9a-f-]{36}$/.test(value), 'Production source resource IDs are required');
+      return [name, value];
+    }));
+    const style = required(env, 'RELEASE_S3_FORCE_PATH_STYLE');
+    assert(['true', 'false'].includes(style), 'Copy the configured S3 addressing style');
+    forcePathStyle = style === 'true';
+    databaseSslMode = new URL(databaseUrl).searchParams.get('sslmode') || 'verify-full';
+    assert.equal(databaseSslMode, 'verify-full', 'Production database reads require verified TLS');
+    databaseCaPath = path.resolve(required(env, 'RELEASE_DATABASE_SSL_ROOT_CERT'));
+    databaseCa = readFileSync(databaseCaPath, 'utf8');
+    assert(databaseCa.includes('-----BEGIN CERTIFICATE-----'), 'Use a PEM certificate authority file');
+    onSourceHost = ['PROJECT_ID', 'ENVIRONMENT_ID', 'SERVICE_ID'].every(name => env['RAILWAY_' + name] === sourceScope[name]);
+  }
   const owner = restore ? required(env, prefix + 'OWNER') : undefined;
   if (restore) {
     assert(/^[a-z0-9]{16,40}$/.test(owner), 'Restore owner must be 16 to 40 lowercase letters or digits');
     assert.equal(bucket, `tools-release-restore-${owner}`, 'Restore bucket name must contain its owner');
   }
-  return { databaseUrl, endpoint, bucket, owner, region: required(env, prefix + 'S3_REGION'),
+  return { databaseUrl, endpoint, bucket, owner, productionSource, sourceScope, forcePathStyle, databaseSslMode, databaseCaPath, databaseCa, onSourceHost,
+    region: required(env, prefix + 'S3_REGION'),
     credentials: { accessKeyId: required(env, prefix + 'S3_ACCESS_KEY_ID'),
       secretAccessKey: required(env, prefix + 'S3_SECRET_ACCESS_KEY') } };
 }
@@ -66,9 +92,10 @@ export function configuration(env, restore = false) {
 function connections(config, readOnly = true) {
   return {
     sql: postgres(config.databaseUrl, { max: 1, connect_timeout: 10, idle_timeout: 5,
+      ...(config.productionSource ? { ssl: { ca: config.databaseCa, rejectUnauthorized: true } } : {}),
       connection: { timezone: 'UTC', application_name: 'tools-release-proof',
         default_transaction_read_only: readOnly ? 'on' : 'off', statement_timeout: 120000 } }),
-    client: new S3Client({ endpoint: config.endpoint, region: config.region, forcePathStyle: true,
+    client: new S3Client({ endpoint: config.endpoint, region: config.region, forcePathStyle: config.forcePathStyle,
       credentials: config.credentials, maxAttempts: 1, requestChecksumCalculation: 'WHEN_REQUIRED' })
   };
 }
@@ -101,8 +128,14 @@ async function databaseState(sql) {
 }
 
 function pending(state) {
+  const canonicalIds = new Set(state['artifacts.objects'].map(raw => JSON.parse(raw).id));
+  const retainedRecoveryEvidence = state['artifacts.operations'].map(raw => JSON.parse(raw)).filter(row => {
+    const payload = typeof row.payload === 'string' ? JSON.parse(row.payload) : row.payload;
+    return payload && !payload.expectedObjectKey && !canonicalIds.has(row.artifact_id)
+      && !['pages/' + row.artifact_id + '.html', 'files/' + row.artifact_id].includes(payload.objectKey);
+  }).length;
   const sessions = state['artifacts.upload_sessions'].map(row => JSON.parse(row));
-  return { operations: state['artifacts.operations'].length,
+  return { operations: state['artifacts.operations'].length, retainedRecoveryEvidence,
     activeSessions: sessions.filter(row => ['creating', 'uploading', 'completing'].includes(row.state)).length };
 }
 
@@ -227,7 +260,8 @@ async function pgCommand(command, args, config) {
   const env = { PATH: process.env.PATH, HOME: process.env.HOME, LANG: 'C',
     PGHOST: url.hostname === '[::1]' ? '::1' : url.hostname, PGPORT: url.port || '5432',
     PGDATABASE: decodeURIComponent(url.pathname.slice(1)), PGUSER: decodeURIComponent(url.username),
-    PGPASSWORD: decodeURIComponent(url.password), PGPASSFILE: '/dev/null', PGSSLMODE: 'disable', PGCONNECT_TIMEOUT: '10',
+    PGPASSWORD: decodeURIComponent(url.password), PGPASSFILE: '/dev/null', PGSSLMODE: config.databaseSslMode,
+    ...(config.databaseCaPath ? { PGSSLROOTCERT: config.databaseCaPath } : {}), PGCONNECT_TIMEOUT: '10',
     PGOPTIONS: '-c timezone=UTC -c statement_timeout=120000' };
   await new Promise((resolve, reject) => {
     const child = spawn(command, args, { env, stdio: ['ignore', 'ignore', 'pipe'] });
@@ -255,10 +289,31 @@ function references(state, objects) {
   }
 }
 
+function sourceIdentity(config) {
+  const database = new URL(config.databaseUrl);
+  return { endpoint: config.endpoint, bucket: config.bucket,
+    database: decodeURIComponent(database.pathname.slice(1)), databaseHost: database.hostname,
+    databasePort: database.port || '5432', ...(config.sourceScope ? { scope: config.sourceScope } : {}) };
+}
+
+export function requireSourceIdentity(config, source) {
+  equal(sourceIdentity(config), source, 'Source verification must use the original database, bucket, and resource scope');
+}
+
+function requireSourceHost(config) {
+  assert(!config.productionSource || config.onSourceHost,
+    'Production legacy inventory must run inside the exact Railway project, environment, and service');
+}
+
+function stableDatabase(state, config) {
+  return config.productionSource ? Object.fromEntries(Object.entries(state).filter(([name]) => name.startsWith('artifacts.'))) : state;
+}
+
 export async function preflight(config, directories) {
+  requireSourceHost(config);
   const { sql, client } = connections(config);
   try {
-    await sentinel(sql);
+    if (!config.productionSource) await sentinel(sql);
     const legacy = await legacyInventory(directories);
     const state = await sql.begin('isolation level repeatable read read only', databaseState);
     const status = pending(state);
@@ -270,13 +325,14 @@ export async function preflight(config, directories) {
 }
 
 export async function backup(config, directories, directory) {
+  requireSourceHost(config);
   const startedAt = new Date().toISOString();
   const { sql, client } = connections(config);
   try {
-    await sentinel(sql);
+    if (!config.productionSource) await sentinel(sql);
     await mkdir(directory, { mode: 0o700 });
     await mkdir(path.join(directory, 'bodies'), { mode: 0o700 });
-    const startWal = await wal(sql);
+    const startWal = config.productionSource ? undefined : await wal(sql);
     const legacyBefore = await legacyInventory(directories);
     assert(!legacyBefore.length, 'Legacy temporary files block a paired backup');
     const manifest = await sql.begin('isolation level repeatable read read only', async tx => {
@@ -298,17 +354,17 @@ export async function backup(config, directories, directory) {
       equal(checked, objects, 'Bucket body bytes, metadata, or tags changed during the backup');
       equal(await bucketInventory(client, config.bucket), before, 'The bucket changed during verification');
       references(database, objects);
-      return { format: 1, source: { endpoint: config.endpoint, bucket: config.bucket,
-        database: decodeURIComponent(new URL(config.databaseUrl).pathname.slice(1)) },
+      return { format: 1, source: sourceIdentity(config),
+        consistency: { requiresQuiescentSource: true, bucketObservation: "two-full-reads", atomicBucketSnapshot: false },
         databaseSha256, bucketBeforeSha256, bucketAfterSha256, dump: dumpHash, objects, status: pending(database),
         snapshot, startWal, startedAt, temporaryDirectories: directories, legacy: legacyBefore };
     });
     const databaseAfter = await sql.begin('isolation level repeatable read read only', databaseState);
     const databaseBefore = JSON.parse(await readFile(path.join(directory, 'database.json'), 'utf8'));
     manifest.databaseAfterSha256 = await writeJson(path.join(directory, 'database-after.json'), databaseAfter);
-    equal(databaseAfter, databaseBefore, 'Concurrent database writes or cleanup invalidated the backup');
+    equal(stableDatabase(databaseAfter, config), stableDatabase(databaseBefore, config), 'Concurrent database writes or cleanup invalidated the backup');
     equal(await legacyInventory(directories), legacyBefore, 'Legacy temporary files appeared during the backup');
-    const endWal = await wal(sql);
+    const endWal = config.productionSource ? undefined : await wal(sql);
     assert.equal(endWal, startWal, 'PostgreSQL WAL advanced during backup. Keep the fixture quiet and retry into a new directory');
     manifest.endWal = endWal;
     manifest.completedAt = new Date().toISOString();
@@ -375,19 +431,21 @@ function restoredObject(object) {
   return { key: object.key, bytes: object.bytes, sha256: object.sha256, metadata: object.metadata, tags: object.tags };
 }
 
-async function verifyRestored(sql, client, config, stored) {
-  const startWal = await wal(sql);
-  equal(await sql.begin('isolation level repeatable read read only', databaseState), stored.database,
+async function verifyRestored(sql, client, config, stored, source = false) {
+  const startWal = config.productionSource ? undefined : await wal(sql);
+  const actual = await sql.begin('isolation level repeatable read read only', databaseState);
+  equal(source ? stableDatabase(actual, config) : actual, source ? stableDatabase(stored.database, config) : stored.database,
     'The restored canonical rows, journal, sessions, or receipts differ');
   const inventory = await bucketInventory(client, config.bucket);
   const objects = await bucketBodies(client, config.bucket, inventory);
   equal(objects.map(restoredObject), stored.manifest.objects.map(restoredObject), 'Restored raw bodies or metadata differ');
   equal(await bucketInventory(client, config.bucket), inventory, 'The bucket changed during verification');
-  assert.equal(await wal(sql), startWal, 'PostgreSQL WAL advanced during verification');
+  if (!config.productionSource) assert.equal(await wal(sql), startWal, 'PostgreSQL WAL advanced during verification');
   return { verified: true, objects: objects.length, databaseSha256: stored.manifest.databaseSha256 };
 }
 
 export async function restore(config, directory) {
+  assert(!config.productionSource, 'Production is never a restore target');
   const stored = await loadBackup(directory);
   const { sql, client } = connections(config, false);
   try {
@@ -414,12 +472,13 @@ export async function restore(config, directory) {
   } finally { await sql.end(); client.destroy(); }
 }
 
-export async function verify(config, directory) {
+export async function verify(config, directory, { source = false } = {}) {
   const stored = await loadBackup(directory);
+  if (source) requireSourceIdentity(config, stored.manifest.source);
   const { sql, client } = connections(config);
   try {
-    await sentinel(sql);
-    return await verifyRestored(sql, client, config, stored);
+    if (!config.productionSource) await sentinel(sql);
+    return await verifyRestored(sql, client, config, stored, source);
   } finally { await sql.end(); client.destroy(); }
 }
 
@@ -427,7 +486,7 @@ async function main() {
   process.umask(0o077);
   const { values, positionals } = parseArgs({ allowPositionals: true,
     options: { tmpdir: { type: 'string', multiple: true }, directory: { type: 'string' },
-      source: { type: 'boolean' }, help: { type: 'boolean' } } });
+      source: { type: 'boolean' }, 'production-source': { type: 'boolean' }, help: { type: 'boolean' } } });
   const [command] = positionals;
   if (values.help) {
     console.log('release-paired-backup.mjs preflight --tmpdir PATH [--tmpdir PATH]\n'
@@ -435,16 +494,20 @@ async function main() {
       + 'release-paired-backup.mjs restore --directory BACKUP_PATH\n'
       + 'release-paired-backup.mjs verify [--source] --directory BACKUP_PATH\n'
       + 'Source uses RELEASE_* environment variables. Restore and verify use RELEASE_RESTORE_*.\n'
+      + '--production-source permits explicitly scoped read-only production preflight, backup, or verify --source.\n'
       + 'See .agents/artifacts/direct-upload-release-proof-vm-20261016/interface.md.');
     return;
   }
   assert(positionals.length === 1 && ['preflight', 'backup', 'restore', 'verify'].includes(command), 'Select a release command or --help');
   assert(!values.source || command === 'verify', '--source is valid only for read-only verification');
+  assert(!values['production-source'] || ['preflight', 'backup'].includes(command) || command === 'verify' && values.source,
+    '--production-source is valid only for read-only source operations');
   if (command !== 'preflight') assert(values.directory, 'Pass --directory');
-  const config = configuration(process.env, command === 'restore' || command === 'verify' && !values.source);
+  const config = configuration(process.env, command === 'restore' || command === 'verify' && !values.source,
+    values['production-source'] ?? false);
   const actions = { preflight: () => preflight(config, values.tmpdir ?? []),
     backup: () => backup(config, values.tmpdir ?? [], path.resolve(values.directory)),
-    restore: () => restore(config, path.resolve(values.directory)), verify: () => verify(config, path.resolve(values.directory)) };
+    restore: () => restore(config, path.resolve(values.directory)), verify: () => verify(config, path.resolve(values.directory), { source: values.source ?? false }) };
   const report = await actions[command]();
   console.log(json(report).trim());
   if (command === 'preflight' && !report.releaseReady) process.exitCode = 2;

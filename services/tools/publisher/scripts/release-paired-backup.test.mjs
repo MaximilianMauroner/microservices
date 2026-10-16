@@ -5,7 +5,8 @@ import { mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
-import { configuration, legacyInventory, restore } from './release-paired-backup.mjs';
+import { rootCertificates } from 'node:tls';
+import { configuration, legacyInventory, preflight, requireSourceIdentity, restore } from './release-paired-backup.mjs';
 
 const script = fileURLToPath(new URL('./release-paired-backup.mjs', import.meta.url));
 const artifactRoot = fileURLToPath(new URL('../../../../.agents/artifacts/direct-upload-release-proof-vm-20261016/', import.meta.url));
@@ -38,6 +39,26 @@ test('restore requires a matching explicit owner in its bucket name', () => {
   assert.throws(() => configuration(restoreEnv, true));
   restoreEnv.RELEASE_RESTORE_S3_BUCKET = 'tools-release-restore-a123456789abcdef';
   assert.equal(configuration(restoreEnv, true).owner, 'a123456789abcdef');
+});
+
+test('production source access is explicit, scoped and cannot restore', async t => {
+  const certificate = path.join(await fixture(t), 'root.pem');
+  await writeFile(certificate, rootCertificates[0]);
+  const production = { ...env, RELEASE_DATABASE_URL: 'postgres://fixture@db.example.test/tools?sslmode=verify-full',
+    RELEASE_S3_ENDPOINT: 'https://storage.example.test', RELEASE_S3_BUCKET: 'owned-production-bucket',
+    RELEASE_S3_FORCE_PATH_STYLE: 'false', RELEASE_DATABASE_SSL_ROOT_CERT: certificate, ...Object.fromEntries(
+      ['PROJECT_ID', 'ENVIRONMENT_ID', 'SERVICE_ID', 'BUCKET_RESOURCE_ID'].map(name => ['RELEASE_SOURCE_' + name, '12345678-1234-1234-1234-123456789abc'])) };
+  assert.throws(() => configuration(production));
+  const config = configuration(production, false, true);
+  assert.equal(config.productionSource, true);
+  assert.equal(config.forcePathStyle, false);
+  assert.equal(config.databaseSslMode, 'verify-full');
+  assert.equal(config.onSourceHost, false);
+  assert.throws(() => configuration({ ...production, RELEASE_DATABASE_URL: production.RELEASE_DATABASE_URL.replace('verify-full', 'require') }, false, true));
+  assert.throws(() => configuration(production, true, true));
+  assert.throws(() => configuration({ ...production, RELEASE_SOURCE_PROJECT_ID: '' }, false, true));
+  assert.throws(() => configuration({ ...production, RELEASE_DATABASE_URL: production.RELEASE_DATABASE_URL + '&host=other' }, false, true));
+  assert.throws(() => configuration({ ...production, RELEASE_S3_ENDPOINT: 'http://storage.example.test' }, false, true));
 });
 
 test('expired chunks, staged files, unknown paths, and malformed manifests all remain blockers', async t => {
@@ -112,4 +133,23 @@ test('the callable CLI documents commands and rejects unknown flags', () => {
   const invalid = spawnSync(process.execPath, [script, 'restore', '--clean'], { encoding: 'utf8', env: { PATH: process.env.PATH } });
   assert.equal(invalid.status, 1);
   assert.match(invalid.stderr, /Unknown option/);
+});
+
+
+test('source verification rejects a matching clone under another connection or scope', () => {
+  const config = configuration(env);
+  const source = { endpoint: config.endpoint, bucket: config.bucket, database: 'tools_runtime_test',
+    databaseHost: '127.0.0.1', databasePort: '5432' };
+  requireSourceIdentity(config, source);
+  for (const change of [{ bucket: 'tools-release-other' }, { endpoint: 'http://127.0.0.1:49010' },
+    { databaseUrl: 'postgres://fixture@127.0.0.1:5433/tools_runtime_test' },
+    { databaseUrl: 'postgres://fixture@127.0.0.1:5432/other_database' },
+    { sourceScope: { PROJECT_ID: 'different' } }]) {
+    assert.throws(() => requireSourceIdentity({ ...config, ...change }, source), /original database/);
+  }
+});
+
+
+test('production legacy drain refuses a different execution host before connecting', async () => {
+  await assert.rejects(() => preflight({ productionSource: true, onSourceHost: false }, []), /inside the exact Railway/);
 });

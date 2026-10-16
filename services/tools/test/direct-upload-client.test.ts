@@ -139,6 +139,24 @@ describe("durable browser upload client", () => {
     expect(TransferXhr.puts).toHaveLength(0);
   });
 
+  it.each(["source_changed", "wrong_response_digest"])("retains recovery identity after %s", async failure => {
+    const original = globalThis.fetch;
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
+      const response = await original(url, init);
+      if (url.endsWith("/sessions")) return Response.json({ ...await response.json(), replaceId: result.id, state: "completing" });
+      if (url.endsWith("/complete")) return failure === "source_changed"
+        ? Response.json({ error: "source_changed", message: "The source file does not match the stored upload." }, { status: 409 })
+        : Response.json({ ...result, sha256: "0".repeat(64) });
+      return response;
+    }));
+    await expect(uploadDirectFile(new File(["abcdef"], "revised.html"), callbacks,
+      { kind: "html", replaceId: result.id })).rejects.toThrow(/source|selected file/);
+    expect(requests.find(request => request.url.endsWith("/complete"))?.body).toEqual({ sha256: result.sha256 });
+    expect(TransferXhr.puts).toHaveLength(0);
+    expect(saved.size).toBe(1);
+    expect(requests.some(request => request.method === "DELETE")).toBe(false);
+  });
+
   it("abandons the durable session after an explicit cancellation", async () => {
     let cancelled = false;
     const pending = uploadDirectFile(new File(["abcdef"], "fixture.bin"), {
