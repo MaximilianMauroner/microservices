@@ -11,7 +11,7 @@ function uploads(): DirectUploads {
   return { create: vi.fn(), status: vi.fn(), sign: vi.fn(), abort: vi.fn(), cleanup: vi.fn(), close: vi.fn(),
     complete: vi.fn<DirectUploads["complete"]>().mockResolvedValue({ id: "a".repeat(32),
       kind: "html", filename: "plan.html", contentType: "text/html", totalBytes: 4, partBytes: 20 * 1024 * 1024,
-      sha256: "a".repeat(64) }) };
+      sha256: "a".repeat(64), updatedAt: new Date("2026-10-16T12:00:00.000Z") }) };
 }
 
 describe("direct completion request", () => {
@@ -21,6 +21,13 @@ describe("direct completion request", () => {
     await expect(handleDirectUpload(request, `${sessionId}/complete`, direct, owner, options))
       .rejects.toMatchObject({ status: 400, code: "invalid_upload" });
     expect(direct.complete).not.toHaveBeenCalled();
+  });
+
+  it("serializes the saved update time as an ISO instant", async () => {
+    const response = await handleDirectUpload(new Request(options.baseUrl, { method: "POST" }),
+      `${sessionId}/complete`, uploads(), owner, options);
+    expect(response.status).toBe(201);
+    expect(await response.json()).toMatchObject({ updatedAt: "2026-10-16T12:00:00.000Z" });
   });
 
   it("passes the expected digest to publication", async () => {

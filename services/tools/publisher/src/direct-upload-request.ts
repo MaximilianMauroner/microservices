@@ -61,8 +61,8 @@ export async function handleDirectUpload(request: Request, remainder: string, up
       throw invalid("Expected SHA-256 must contain 64 lowercase hexadecimal characters.");
     }
     const completed = await uploads.complete(id, owner, options.maxConcurrent, request.signal, input.sha256);
-    const { totalBytes, fileExpiresAt, partBytes: _partBytes, retentionMs: _retentionMs, ...metadata } = completed;
-    return json({ ...metadata, bytes: totalBytes,
+    const { totalBytes, fileExpiresAt, updatedAt, partBytes: _partBytes, retentionMs: _retentionMs, ...metadata } = completed;
+    return json({ ...metadata, bytes: totalBytes, updatedAt: updatedAt.toISOString(),
       ...artifactUrls(options.baseUrl, completed),
       ...(fileExpiresAt ? { expiresAt: fileExpiresAt } : {}) }, 201);
   }
