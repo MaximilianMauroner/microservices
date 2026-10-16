@@ -340,9 +340,9 @@ async function reconcileOperation(bodies: UploadStorage, sql: Sql, operation: Pe
   if (!operation.payload) throw new Error(`Artifact operation ${operation.operation_id} has no payload`);
   const payload = hydratePayload(operation.payload);
   if (!payload.expectedObjectKey) {
-    const [current] = await sql<{ object_key: string; revoked_at: Date | null; updated_at: Date }[]>`
-      select object_key, revoked_at, updated_at from artifacts.objects where id = ${payload.id}`;
-    if (current && (current.revoked_at || current.object_key !== payload.objectKey || current.updated_at > payload.now)) {
+    const [current] = await sql<{ object_key: string; revoked_at: Date | null }[]>`
+      select object_key, revoked_at from artifacts.objects where id = ${payload.id}`;
+    if (current && (current.revoked_at || current.object_key !== payload.objectKey)) {
       await sql`delete from artifacts.operations where operation_id = ${operation.operation_id} and owner_id = ${operation.owner_id}`;
       return;
     }
@@ -438,12 +438,17 @@ async function upsert(sql: Sql | TransactionSql, value: UpsertArtifact) {
     values (${value.id}, ${value.kind}, ${value.filename}, ${value.contentType}, ${value.bytes},
       ${value.objectKey}, ${value.project ?? null}, ${value.now}, ${value.now}, ${value.expiresAt ?? null}, ${value.uploadLinkId ?? null}, ${value.sha256})
     on conflict (id) do update set
-      kind = excluded.kind, filename = excluded.filename, content_type = excluded.content_type,
-      bytes = excluded.bytes, object_key = excluded.object_key, project = excluded.project,
-      updated_at = excluded.updated_at, expires_at = excluded.expires_at,
-      upload_link_id = excluded.upload_link_id, sha256 = excluded.sha256
+      filename = excluded.filename, content_type = excluded.content_type,
+      bytes = excluded.bytes, sha256 = excluded.sha256,
+      project = case when artifacts.objects.updated_at >= excluded.updated_at
+        then artifacts.objects.project else excluded.project end,
+      expires_at = case when artifacts.objects.updated_at >= excluded.updated_at
+        then artifacts.objects.expires_at else excluded.expires_at end,
+      updated_at = greatest(artifacts.objects.updated_at, excluded.updated_at)
     where artifacts.objects.revoked_at is null and artifacts.objects.object_key = excluded.object_key
-      and artifacts.objects.updated_at <= excluded.updated_at`;
+      and artifacts.objects.kind = excluded.kind
+      and (artifacts.objects.updated_at <= excluded.updated_at
+        or (artifacts.objects.bytes, artifacts.objects.sha256) is distinct from (excluded.bytes, excluded.sha256))`;
 }
 
 async function find(sql: Sql, id: string, kind: "html" | "file") {

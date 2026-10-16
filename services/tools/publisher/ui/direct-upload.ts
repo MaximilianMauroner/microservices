@@ -187,6 +187,8 @@ function readSession(value: unknown): Session {
 function isUploadSummary(value: unknown): value is UploadSummary & { sha256: string } {
   return isRecord(value) && typeof value.id === "string" && typeof value.url === "string"
     && typeof value.filename === "string" && typeof value.bytes === "number"
+    && typeof value.updatedAt === "string" && Number.isFinite(Date.parse(value.updatedAt))
+    && new Date(value.updatedAt).toISOString() === value.updatedAt
     && (value.kind === "html" || value.kind === "file") && typeof value.contentType === "string" && typeof value.sha256 === "string";
 }
 function readSavedId(key: string) { try { return sessionStorage.getItem(key) ?? undefined; } catch { return undefined; } }
