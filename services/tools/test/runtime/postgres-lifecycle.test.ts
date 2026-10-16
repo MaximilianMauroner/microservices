@@ -43,7 +43,7 @@ async function commands() {
 }
 
 function database() {
-  const query = vi.fn(async (strings: TemplateStringsArray) => {
+  const query = vi.fn(async (strings: TemplateStringsArray): Promise<Record<string, string>[]> => {
     if (strings.join("").includes("relkind")) return [{ kind: "r" }];
     if (strings.join("").includes("select sentinel_value")) return [{ value: DISPOSABLE_DATABASE_SENTINEL.value }];
     return [];
