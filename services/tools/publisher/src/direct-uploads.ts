@@ -29,7 +29,7 @@ type Session = {
   expires_at: Date;
 };
 
-export type DirectUploadResult = DirectUploadDescription & { id: string; sha256: string };
+export type DirectUploadResult = DirectUploadDescription & { id: string; sha256: string; updatedAt: Date };
 export type DirectUploadIntent = { kind: "create" } | { kind: "replace"; targetId: string };
 export type DirectUploadSession = { sessionId: string; partBytes: number; totalParts: number;
   expiresAt: string; state: Session["state"]; uploaded: number[]; replaceId?: string };
@@ -161,15 +161,16 @@ export function createDirectUploads(sql: Sql, bucket: ReturnType<typeof createMu
         const session = await load(id, owner);
         await active(session);
         if (session.state === "completed") {
-          const [object] = await tx`select id from artifacts.objects where id = ${canonicalId(session)}
+          const [object] = await tx<{ created_at: Date }[]>`select created_at from artifacts.objects where id = ${canonicalId(session)}
             and revoked_at is null and (expires_at is null or expires_at > now())`;
-          if (!object || !session.sha256) throw unavailable();
+          if (!object || !session.sha256 || (session.target_id && !session.receipt)) throw unavailable();
           if (expectedSha256 !== undefined && session.sha256 !== expectedSha256) {
             throw new DirectUploadError(409, "source_changed", "The source file does not match the stored upload.");
           }
           return { ...session.description,
             ...(session.receipt?.after.project ? { project: session.receipt.after.project } : {}),
-            id: canonicalId(session), sha256: session.sha256 };
+            id: canonicalId(session), sha256: session.sha256,
+            updatedAt: session.target_id ? new Date(session.receipt!.after.updated_at) : object.created_at };
         }
         await completionSlot(tx, maxConcurrent);
         const deadline = AbortSignal.any([signal, AbortSignal.timeout(COMPLETION_TIMEOUT_MS)]);
@@ -201,20 +202,26 @@ export function createDirectUploads(sql: Sql, bucket: ReturnType<typeof createMu
               Date.parse(session.description.fileExpiresAt ?? "")
             )).toISOString() } : {}) };
           let receipt: HtmlVersionReceipt | null = null;
+          let updatedAt: Date;
           if (session.target_id && session.expected_object_key) {
             receipt = await commitHtmlVersion(tx, session.target_id, session.expected_object_key, {
               objectKey: key(session), filename: description.filename, bytes: description.totalBytes,
               sha256, project: description.project
             });
+            updatedAt = new Date(receipt.after.updated_at);
             description = { ...description, ...(receipt.after.project ? { project: receipt.after.project } : {}) };
-          } else await tx`insert into artifacts.objects
-            (id, kind, filename, content_type, bytes, object_key, project, created_at, updated_at, expires_at, upload_link_id, sha256)
-            values (${session.artifact_id}, ${description.kind}, ${description.filename}, ${description.contentType},
-              ${description.totalBytes}, ${key(session)}, ${description.project ?? null}, now(), now(),
-              ${description.fileExpiresAt ?? null}, ${session.upload_link_id}::uuid, ${sha256})`;
+          } else {
+            const [created] = await tx<{ updated_at: Date }[]>`insert into artifacts.objects
+              (id, kind, filename, content_type, bytes, object_key, project, created_at, updated_at, expires_at, upload_link_id, sha256)
+              values (${session.artifact_id}, ${description.kind}, ${description.filename}, ${description.contentType},
+                ${description.totalBytes}, ${key(session)}, ${description.project ?? null}, now(), now(),
+                ${description.fileExpiresAt ?? null}, ${session.upload_link_id}::uuid, ${sha256})
+              returning updated_at`;
+            updatedAt = created!.updated_at;
+          }
           await tx`update artifacts.upload_sessions set state = 'completed', sha256 = ${sha256}, receipt = ${receipt ? tx.json(receipt) : null},
             description = ${tx.json(session.target_id ? session.description : description)} where session_id = ${id}::uuid`;
-          return { ...description, id: canonicalId(session), sha256 };
+          return { ...description, id: canonicalId(session), sha256, updatedAt };
         } catch (error) {
           if (error instanceof DirectUploadError && ([404, 422].includes(error.status) || error.code === "replace_conflict")) {
             await sql`update artifacts.upload_sessions set state = 'failed' where session_id = ${id}::uuid`;

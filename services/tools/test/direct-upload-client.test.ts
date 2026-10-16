@@ -1,4 +1,9 @@
 import crypto from "node:crypto";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { handleDirectUpload } from "../publisher/src/direct-upload-request.js";
+import type { DirectUploads } from "../publisher/src/direct-uploads.js";
+import { ManagePage } from "../publisher/ui/manage-page.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { uploadDirectFile, type DirectUploadCallbacks } from "../publisher/ui/direct-upload.js";
 import { friendlyUploadError } from "../publisher/ui/upload-errors.js";
@@ -29,7 +34,7 @@ describe("durable browser upload client", () => {
   let requestId: string;
   let completionResponsesLost: number;
   const result = { id: "a".repeat(32), filename: "fixture.bin", bytes: 6, kind: "file", contentType: "application/octet-stream", url: "https://tools.example/files/fixture",
-    sha256: crypto.createHash("sha256").update("abcdef").digest("hex") };
+    sha256: crypto.createHash("sha256").update("abcdef").digest("hex"), updatedAt: "2026-10-16T12:00:00.000Z" };
 
   beforeEach(() => {
     saved.clear(); requests.length = 0; TransferXhr.puts = []; TransferXhr.fail = false;
@@ -69,6 +74,53 @@ describe("durable browser upload client", () => {
     expect(requests.filter(request => request.url.endsWith("/parts")).at(-2)?.body).toMatchObject({
       number: 1, sha256: crypto.createHash("sha256").update("abcd").digest("hex") });
     expect(saved.size).toBe(0);
+  });
+
+  it.each([false, true])("renders the saved HTTP completion time in the Library for replacement %s", async replace => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-16T14:00:00.000Z"));
+    const direct: DirectUploads = {
+      create: vi.fn(), status: vi.fn(), sign: vi.fn(), abort: vi.fn(), cleanup: vi.fn(), close: vi.fn(),
+      complete: vi.fn<DirectUploads["complete"]>().mockResolvedValue({
+        id: result.id, kind: "html", filename: "revised.html", contentType: "text/html",
+        totalBytes: 6, partBytes: 4, sha256: result.sha256, updatedAt: new Date(result.updatedAt)
+      })
+    };
+    const original = globalThis.fetch;
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
+      if (url.endsWith("/complete")) return handleDirectUpload(new Request("https://tools.example" + url, init),
+        url.split("/sessions/")[1]!, direct, { audience: "browser" }, {
+          maxBytes: 100, maxHtmlBytes: 100, maxConcurrent: 1, retentionMs: 60_000,
+          baseUrl: "https://tools.example", allowHtml: true
+        });
+      const response = await original(url, init);
+      return replace && url.endsWith("/sessions")
+        ? Response.json({ ...await response.json(), replaceId: result.id }) : response;
+    }));
+    const completed = await uploadDirectFile(new File(["abcdef"], "revised.html", { type: "text/html" }),
+      callbacks, { kind: "html", ...(replace ? { replaceId: result.id } : {}) });
+    expect(completed.updatedAt).toBe(result.updatedAt);
+    const html = renderToStaticMarkup(createElement(ManagePage, { initial: { uploads: [completed] } }));
+    expect(html).toContain("revised.html");
+    expect(html).toContain("2h ago");
+    expect(html).toContain("16 Oct 2026, 14:00 CEST");
+  });
+
+  it.each([undefined, null, 42, "", "not a date", "2026-02-30T12:00:00.000Z",
+    "2026-10-16", "2026-10-16T12:00:00+02:00"])("rejects completion time %j and retains its retry ID", async updatedAt => {
+    const original = globalThis.fetch;
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
+      const response = await original(url, init);
+      return url.endsWith("/complete") ? Response.json({ ...result, updatedAt }) : response;
+    }));
+    const file = new File(["abcdef"], "fixture.bin", { lastModified: 123 });
+    await expect(uploadDirectFile(file, callbacks)).rejects.toThrow("Invalid upload completion response.");
+    const previous = requestId;
+    expect([...saved.values()]).toEqual([previous]);
+    expect(requests.some(request => request.method === "DELETE")).toBe(false);
+    vi.stubGlobal("fetch", original);
+    expect(await uploadDirectFile(file, callbacks)).toMatchObject(result);
+    expect(requestId).toBe(previous);
   });
 
   it("retries a completion whose response was lost with the same session", async () => {

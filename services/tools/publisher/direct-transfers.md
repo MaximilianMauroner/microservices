@@ -169,8 +169,34 @@ including replacements of HTML created through a direct session.
 
 The schema addition keeps existing rows and historical readers. Replacement
 sessions add nullable `target_id`, `expected_object_key`, and `receipt` fields,
-a target constraint, and a partial target index. Keep these fields on rollback
-because they bind retries and retain recovery evidence.
+a target constraint, and a partial target index. Keep these declarations and
+stored values because they bind retries and retain recovery evidence.
+
+An exact pre-PR image is unsafe once replacement data exists. Its schema
+omits these additions. Its normal noninteractive predeploy can exit 2 when
+Drizzle proposes their removal. Do not force the push, drop the fields, or
+bypass the schema guard.
+
+A compatibility build must keep the current Publisher storage and transfer
+subsystem together. This includes its schema declaration, immutable-key
+writers, receipt-aware delete and cleanup, and recovery. Older writers can
+overwrite retained version bodies. Older delete and cleanup code can lose
+bodies or receipts. If this subsystem is faulty, fix forward.
+
+Before an approved deployment, keep uploads quiet and run these read-only
+checks. Both counts must be zero:
+
+```sql
+select count(*) from artifacts.operations;
+select count(*) from artifacts.upload_sessions
+where target_id is not null and state in ('creating', 'uploading', 'completing');
+```
+
+If either count is nonzero, wait for recovery or session expiry and cleanup.
+Check again before the deployment. Prove the compatibility build against an
+isolated database with populated replacement fields and retained receipts.
+Its normal guarded predeploy, retained completion replay, reads, and cleanup
+must pass before Max approves the deployment.
 
 A database restore and a backend deployment do not roll back external clients.
 Recover metadata together with its referenced bodies. Keep newer commits and
