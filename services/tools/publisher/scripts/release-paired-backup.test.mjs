@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { rootCertificates } from 'node:tls';
-import { configuration, legacyInventory, preflight, requireSourceIdentity, restore } from './release-paired-backup.mjs';
+import { configuration, legacyInventory, preflight, references, requireSourceIdentity, restore } from './release-paired-backup.mjs';
 
 const script = fileURLToPath(new URL('./release-paired-backup.mjs', import.meta.url));
 const artifactRoot = fileURLToPath(new URL('../../../../.agents/artifacts/direct-upload-release-proof-vm-20261016/', import.meta.url));
@@ -20,6 +20,73 @@ async function fixture(t) {
   t.after(() => rm(directory, { recursive: true }));
   return directory;
 }
+
+function retainedReplacement() {
+  const id = 'a'.repeat(32);
+  const objects = ['A', 'B', 'C'].map(version => ({ key: `versions/${version}`,
+    bytes: Buffer.byteLength(`body ${version}`), sha256: createHash('sha256').update(`body ${version}`).digest('hex') }));
+  const [before, after, current] = objects.map(body => ({ id, object_key: body.key,
+    bytes: String(body.bytes), sha256: body.sha256, revoked_at: null }));
+  const state = { 'artifacts.objects': [JSON.stringify({ ...current, bytes: Number(current.bytes) })],
+    'artifacts.upload_sessions': [JSON.stringify({ target_id: id, receipt: { format: 1, before, after } })],
+    'artifacts.operations': [] };
+  return { state, objects };
+}
+
+test('retained replacement snapshots accept string byte counts after the canonical body advances', () => {
+  const { state, objects } = retainedReplacement();
+  assert.doesNotThrow(() => references(state, objects));
+});
+
+for (const side of ['before', 'after']) {
+  for (const failure of ['missing', 'size', 'digest']) {
+    test(`retained replacement ${side} body rejects ${failure} with a newer canonical body`, () => {
+      const { state, objects } = retainedReplacement();
+      const session = JSON.parse(state['artifacts.upload_sessions'][0]);
+      const body = objects.find(object => object.key === session.receipt[side].object_key);
+      if (failure === 'missing') objects.splice(objects.indexOf(body), 1);
+      if (failure === 'size') body.bytes += 1;
+      if (failure === 'digest') body.sha256 = '0'.repeat(64);
+      assert.throws(() => references(state, objects), /retained replacement body/);
+    });
+  }
+}
+
+for (const invalid of ['format', 'before', 'after']) {
+  test(`retained replacement receipts reject an invalid ${invalid}`, () => {
+    const { state, objects } = retainedReplacement();
+    const session = JSON.parse(state['artifacts.upload_sessions'][0]);
+    if (invalid === 'format') session.receipt.format = 2;
+    else session.receipt[invalid].id = 'b'.repeat(32);
+    state['artifacts.upload_sessions'][0] = JSON.stringify(session);
+    assert.throws(() => references(state, objects), /Invalid retained replacement receipt/);
+  });
+}
+
+test('a retained old body with a null digest still requires its recorded size', () => {
+  const { state, objects } = retainedReplacement();
+  const session = JSON.parse(state['artifacts.upload_sessions'][0]);
+  session.receipt.before.sha256 = null;
+  state['artifacts.upload_sessions'][0] = JSON.stringify(session);
+  assert.doesNotThrow(() => references(state, objects));
+  objects[0].bytes += 1;
+  assert.throws(() => references(state, objects), /retained replacement body/);
+});
+
+test('revoked replacement targets do not require deleted canonical or retained bodies', () => {
+  const { state } = retainedReplacement();
+  const current = JSON.parse(state['artifacts.objects'][0]);
+  current.revoked_at = '2026-10-16T12:00:00.000Z';
+  state['artifacts.objects'][0] = JSON.stringify(current);
+  assert.doesNotThrow(() => references(state, []));
+});
+
+test('a pending journal can precede its body write when the live base is present', () => {
+  const { state, objects } = retainedReplacement();
+  state['artifacts.operations'].push(JSON.stringify({ artifact_id: 'a'.repeat(32),
+    payload: { expectedObjectKey: 'versions/C', objectKey: 'versions/pending' } }));
+  assert.doesNotThrow(() => references(state, objects));
+});
 
 test('configuration rejects remote endpoints and URL options before connecting', () => {
   assert.equal(configuration(env).bucket, 'tools-transfer-test');
@@ -134,6 +201,7 @@ test('the callable CLI documents commands and rejects unknown flags', () => {
   const help = spawnSync(process.execPath, [script, '--help'], { encoding: 'utf8', env: { PATH: process.env.PATH } });
   assert.equal(help.status, 0, help.stderr);
   for (const command of ['preflight', 'backup', 'restore', 'verify']) assert(help.stdout.includes(command));
+  assert(help.stdout.includes('services/tools/publisher/direct-transfers.md'));
   const invalid = spawnSync(process.execPath, [script, 'restore', '--clean'], { encoding: 'utf8', env: { PATH: process.env.PATH } });
   assert.equal(invalid.status, 1);
   assert.match(invalid.stderr, /Unknown option/);
