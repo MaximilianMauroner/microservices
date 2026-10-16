@@ -53,6 +53,8 @@ action and stop if it changed. The redacted evidence is `railway-trigger.json`.
    database, bucket name, endpoint, and addressing style with this resource
    scope. Capture all Tools and artifacts rows and every bucket body and writable
    metadata field. Require `COMPLETE`, matching manifests, and raw hashes.
+   Keep the exact HTTP-date guard. The actual provider's listing and GET dates
+   must satisfy it. Stop on a mismatch. Do not add unverified rounding tolerance.
 3. Transfer the private backup to the controller without exposing credentials.
    Restore that backup into fresh owned loopback PostgreSQL and S3 targets.
    Require the disposable sentinel, owner token, empty target checks, complete
