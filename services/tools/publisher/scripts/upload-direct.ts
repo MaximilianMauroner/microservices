@@ -3,6 +3,8 @@ import { open, stat } from "node:fs/promises";
 import type { BigIntStats } from "node:fs";
 import path from "node:path";
 
+class ApiError extends Error {}
+
 const [filePath, resumeId] = process.argv.slice(2);
 if (!filePath) throw new Error("Usage: pnpm upload:direct <file> [request-id]");
 const origin = process.env.PUBLIC_BASE_URL;
@@ -95,5 +97,4 @@ async function control(url: string, body?: unknown): Promise<unknown> {
   }
   throw new Error("Upload control request failed.");
 }
-class ApiError extends Error {}
 function record(value: unknown): value is Record<string, unknown> { return !!value && typeof value === "object" && !Array.isArray(value); }
