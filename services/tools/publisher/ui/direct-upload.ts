@@ -55,7 +55,7 @@ export async function uploadDirectFile(file: File, callbacks: DirectUploadCallba
   try {
     try { session = readSession(await initialize()); }
     catch (error) {
-      if (options.replaceId || !(error instanceof UploadControlError && error.status === 404)) throw error;
+      if (!(error instanceof UploadControlError && error.status === 404)) throw error;
       requestId = crypto.randomUUID();
       saveId(savedKey, requestId);
       session = readSession(await initialize());
