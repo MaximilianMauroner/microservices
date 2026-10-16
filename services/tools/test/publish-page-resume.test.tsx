@@ -52,7 +52,8 @@ it.each(["retry", "reselect"] as const)("resumes an empty-MIME HTML file through
     if (url.endsWith("/complete")) {
       completions += 1;
       return Response.json({ id: "a".repeat(32), kind: "html", filename: "fixture.htm", contentType: "text/html",
-        bytes: 6, url: "https://tools.example.test/artifacts/fixture", updatedAt: "2026-10-13T12:00:00Z" }, { status: 201 });
+        bytes: 6, sha256: crypto.createHash("sha256").update("abcdef").digest("hex"),
+        url: "https://tools.example.test/artifacts/fixture", updatedAt: "2026-10-13T12:00:00Z" }, { status: 201 });
     }
     const body: { requestId: string; number?: number; kind?: string; contentType?: string } = JSON.parse(String(init.body));
     if (url.endsWith("/parts")) {
