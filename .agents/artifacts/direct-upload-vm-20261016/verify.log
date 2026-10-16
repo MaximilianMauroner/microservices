@@ -1,0 +1,9 @@
+heavy-check: waiting for repository lock (/home/codex/.t3/worktrees/microservices/fix-direct-uploads-tools-and-fleet-vm-20261016)
+heavy-check: running with timeout 40m (/home/codex/.t3/worktrees/microservices/fix-direct-uploads-tools-and-fleet-vm-20261016)
+$ pnpm run typecheck && pnpm run test
+$ pnpm run typecheck:publisher && pnpm run typecheck:markdown-share && pnpm run typecheck:network-console && pnpm run typecheck:tools-security && pnpm run typecheck:tools && pnpm run typecheck:tools-domain && pnpm run typecheck:status && pnpm run typecheck:dashboard
+$ pnpm --dir services/tools/publisher run typecheck
+[ELIFECYCLE] Command failed.
+[ELIFECYCLE] Command failed.
+[ELIFECYCLE] Command failed.
+Terminated

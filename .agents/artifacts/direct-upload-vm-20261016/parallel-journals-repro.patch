@@ -1,0 +1,53 @@
+diff --git a/services/tools/publisher/test/direct-uploads.integration.test.ts b/services/tools/publisher/test/direct-uploads.integration.test.ts
+index 545695c..f216907 100644
+--- a/services/tools/publisher/test/direct-uploads.integration.test.ts
++++ b/services/tools/publisher/test/direct-uploads.integration.test.ts
+@@ -295,6 +295,48 @@ describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", () => {
+     }
+   });
+ 
++  it("recovers two immutable legacy journals for one page without mutual blocking", async () => {
++    const created = await html("original before parallel journals");
++    const { id } = await (await request(created.path + "/complete")).json() as { id: string };
++    const healthy = await html("unrelated parallel recovery page");
++    const other = await (await request(healthy.path + "/complete")).json() as { id: string; url: string };
++    const [before] = await sql`select * from artifacts.objects where id = ${id}`;
++    const pending = [];
++    for (const [index, body] of ["first staged journal", "second staged journal"].entries()) {
++      const stagingId = crypto.randomBytes(24).toString("base64url");
++      const objectKey = `transfers/${id}/${stagingId}`;
++      const operationId = crypto.randomUUID();
++      const payload = { id, kind: "html", filename: "parallel.html", contentType: "text/html; charset=utf-8",
++        bytes: Buffer.byteLength(body), objectKey, stagingId, expectedObjectKey: before!.object_key,
++        sha256: digest(Buffer.from(body)), now: new Date().toISOString() };
++      await client.send(new PutObjectCommand({ Bucket: config.bucket, Key: objectKey, Body: body, ContentType: "text/html" }));
++      await sql`insert into artifacts.operations(operation_id, artifact_id, owner_id, lease_until, operation_kind, payload, created_at)
++        values (${operationId}::uuid, ${id}, 'parallel-recovery-fixture', now() - interval '1 second', 'put_html',
++          ${sql.json(payload)}, now() - ${(2 - index) * 60} * interval '1 second')`;
++      pending.push({ operationId, objectKey, stagingId, body });
++    }
++    try {
++      const response = await app(new Request(other.url));
++      expect(response.status).toBe(200);
++      expect(await response.text()).toContain("unrelated parallel recovery page");
++      expect(await sql`select operation_id from artifacts.operations where artifact_id = ${id}`).toHaveLength(0);
++      const [current] = await sql`select * from artifacts.objects where id = ${id}`;
++      expect(current!.object_key).toBe(pending[0]!.objectKey);
++      expect(await raw(current!.object_key)).toBe(pending[0]!.body);
++      expect(await raw(before!.object_key)).toBe("original before parallel journals");
++      const records = await sql`select session_id, state, expected_object_key from artifacts.upload_sessions where target_id = ${id} order by state`;
++      expect(records).toEqual(expect.arrayContaining([
++        expect.objectContaining({ session_id: pending[0]!.operationId, state: "completed", expected_object_key: before!.object_key }),
++        expect.objectContaining({ session_id: pending[1]!.operationId, state: "failed", expected_object_key: before!.object_key })
++      ]));
++      expect(await raw(pending[1]!.objectKey)).toBe(pending[1]!.body);
++    } finally {
++      await sql`delete from artifacts.operations where artifact_id = ${id}`;
++      await storage.deleteUpload(id);
++      await storage.deleteUpload(other.id);
++    }
++  });
++
+   it("cleans pending uploads before more than twenty cleaned replacements and retries late bodies", async () => {
+     const created = await html("cleanup target");
+     const { id } = await (await request(created.path + "/complete")).json() as { id: string };

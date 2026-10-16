@@ -1,0 +1,14 @@
+{
+  "pdfViewerEnabled": true,
+  "browser": "153.0.8010.12",
+  "pdf": {
+    "inlineViewer": "passed",
+    "explicitCapabilityDownload": "passed"
+  },
+  "binaryPdf": {
+    "inlineViewer": "passed",
+    "explicitCapabilityDownload": "passed"
+  },
+  "libraryDownloadControl": "blocked without authorized local OAuth",
+  "htmlReplaceControl": "blocked without authorized local OAuth"
+}

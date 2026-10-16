@@ -1,0 +1,79 @@
+! Corepack is about to download https://registry.npmjs.org/pnpm/-/pnpm-11.16.0.tgz
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.10 [39m[90m/home/codex/.t3/worktrees/microservices/direct-upload-final-artifact-20261016/services/tools/publisher[39m
+
+ [32m✓[39m test/direct-uploads.integration.test.ts[2m > [22misolated Postgres and S3 direct transfers[2m > [22mpreserves a project edited during legacy verification through /api/uploads[33m 682[2mms[22m[39m
+[90mstderr[2m | test/direct-uploads.integration.test.ts[2m > [22m[2misolated Postgres and S3 direct transfers[2m > [22m[2mrecovers a new-format legacy journal without undoing a later project edit
+[22m[39m{"event":"artifact.request_failed","errorType":"Error"}
+
+ [32m✓[39m test/direct-uploads.integration.test.ts[2m > [22misolated Postgres and S3 direct transfers[2m > [22mpreserves a project edited during legacy verification through /api/external-uploads[32m 147[2mms[22m[39m
+ [32m✓[39m test/direct-uploads.integration.test.ts[2m > [22misolated Postgres and S3 direct transfers[2m > [22mrecovers a new-format legacy journal without undoing a later project edit[32m 119[2mms[22m[39m
+ [32m✓[39m test/direct-uploads.integration.test.ts[2m > [22misolated Postgres and S3 direct transfers[2m > [22mretains stale legacy staging ownership and continues recovery with {"interrupted":false,"revoked":false}[33m 327[2mms[22m[39m
+[90mstderr[2m | test/direct-uploads.integration.test.ts[2m > [22m[2misolated Postgres and S3 direct transfers[2m > [22m[2mretains stale legacy staging ownership and continues recovery with {"interrupted":true,"revoked":false}
+[22m[39m{"event":"artifact.request_failed","errorType":"Error"}
+
+ [32m✓[39m test/direct-uploads.integration.test.ts[2m > [22misolated Postgres and S3 direct transfers[2m > [22mretains stale legacy staging ownership and continues recovery with {"interrupted":true,"revoked":false}[33m 315[2mms[22m[39m
+[90mstderr[2m | test/direct-uploads.integration.test.ts[2m > [22m[2misolated Postgres and S3 direct transfers[2m > [22m[2mretains stale legacy staging ownership and continues recovery with {"interrupted":true,"revoked":true}
+[22m[39m{"event":"artifact.request_failed","errorType":"Error"}
+
+ [32m✓[39m test/direct-uploads.integration.test.ts[2m > [22misolated Postgres and S3 direct transfers[2m > [22mretains stale legacy staging ownership and continues recovery with {"interrupted":true,"revoked":true}[33m 309[2mms[22m[39m
+ [32m✓[39m test/direct-uploads.integration.test.ts[2m > [22misolated Postgres and S3 direct transfers[2m > [22mcleans pending uploads before more than twenty cleaned replacements and retries late bodies[33m 435[2mms[22m[39m
+[90mstderr[2m | test/direct-uploads.integration.test.ts[2m > [22m[2misolated Postgres and S3 direct transfers[2m > [22m[2mkeeps ambiguous legacy recovery evidence while unrelated reads and later recovery continue
+[22m[39m{"event":"publisher.artifact_recovery_needed","operationId":"cfa7a339-a4b9-4f19-8099-0eaa3caf159e","artifactId":"LaQpHG0Rv3OEum9oatyD4zgt1Eq3I7IW","reason":"legacy_base_missing"}
+
+[90mstderr[2m | test/direct-uploads.integration.test.ts[2m > [22m[2misolated Postgres and S3 direct transfers[2m > [22m[2mkeeps ambiguous legacy recovery evidence while unrelated reads and later recovery continue
+[22m[39m{"event":"publisher.artifact_recovery_needed","operationId":"cfa7a339-a4b9-4f19-8099-0eaa3caf159e","artifactId":"LaQpHG0Rv3OEum9oatyD4zgt1Eq3I7IW","reason":"legacy_base_missing"}
+
+ [32m✓[39m test/direct-uploads.integration.test.ts[2m > [22misolated Postgres and S3 direct transfers[2m > [22mkeeps ambiguous legacy recovery evidence while unrelated reads and later recovery continue[32m 156[2mms[22m[39m
+ [32m✓[39m test/direct-uploads.integration.test.ts[2m > [22misolated Postgres and S3 direct transfers[2m > [22mstages replacements without changing identity or prior bytes and keeps exact receipts after restart and expiry[32m 174[2mms[22m[39m
+ [32m✓[39m test/direct-uploads.integration.test.ts[2m > [22misolated Postgres and S3 direct transfers[2m > [22mrejects a stale replacement and never rebinds its UUID after cleanup[32m 168[2mms[22m[39m
+ [32m✓[39m test/direct-uploads.integration.test.ts[2m > [22misolated Postgres and S3 direct transfers[2m > [22mserves retained PDF MIME and binary-classified PDFs inline with an explicit signed download[33m 309[2mms[22m[39m
+ [32m✓[39m test/direct-uploads.integration.test.ts[2m > [22misolated Postgres and S3 direct transfers[2m > [22mkeeps legacy writers, stale journal recovery, and project edits on the same conditional commit[32m 145[2mms[22m[39m
+[90mstderr[2m | test/direct-uploads.integration.test.ts[2m > [22m[2misolated Postgres and S3 direct transfers[2m > [22m[2mrecovers interrupted replacement completion while keeping the old body until its conditional commit
+[22m[39m{"event":"artifact.request_failed","errorType":"Error"}
+
+[90mstderr[2m | test/direct-uploads.integration.test.ts[2m > [22m[2misolated Postgres and S3 direct transfers[2m > [22m[2mrecovers interrupted replacement completion while keeping the old body until its conditional commit
+[22m[39m{"event":"artifact.request_failed","errorType":"PostgresError","errorCode":"P0001"}
+
+ [32m✓[39m test/direct-uploads.integration.test.ts[2m > [22misolated Postgres and S3 direct transfers[2m > [22mrecovers interrupted replacement completion while keeping the old body until its conditional commit[32m 163[2mms[22m[39m
+ [32m✓[39m test/direct-uploads.integration.test.ts[2m > [22misolated Postgres and S3 direct transfers[2m > [22mprevents replacement resurrection when revocation wins during stored-byte verification[32m 164[2mms[22m[39m
+[90mstderr[2m | test/direct-uploads.integration.test.ts[2m > [22m[2misolated Postgres and S3 direct transfers[2m > [22m[2mrejects a changed source before committing a recovered replacement and preserves original-source retries
+[22m[39m{"event":"artifact.request_failed","errorType":"PostgresError","errorCode":"P0001"}
+
+ [32m✓[39m test/direct-uploads.integration.test.ts[2m > [22misolated Postgres and S3 direct transfers[2m > [22mrejects a changed source before committing a recovered replacement and preserves original-source retries[32m 185[2mms[22m[39m
+[90mstdout[2m | test/direct-uploads.integration.test.ts[2m > [22m[2misolated Postgres and S3 direct transfers[2m > [22m[2mresumes 85 MiB after a web restart, then completes exactly once without application body uploads
+[22m[39m{"evidence":"direct-large-transfer","payloadBytes":89128977,"applicationControlBytes":594,"applicationFileBodyBytes":0,"bucketUploadBytes":89128977,"restartRecovered":true,"repeatedCompletion":true}
+
+ [32m✓[39m test/direct-uploads.integration.test.ts[2m > [22misolated Postgres and S3 direct transfers[2m > [22mresumes 85 MiB after a web restart, then completes exactly once without application body uploads[33m 5240[2mms[22m[39m
+[90mstderr[2m | test/direct-uploads.integration.test.ts[2m > [22m[2misolated Postgres and S3 direct transfers[2m > [22m[2mrecovers a lost S3 completion response and a failed canonical metadata commit
+[22m[39m{"event":"artifact.request_failed","errorType":"Error"}
+
+[90mstderr[2m | test/direct-uploads.integration.test.ts[2m > [22m[2misolated Postgres and S3 direct transfers[2m > [22m[2mrecovers a lost S3 completion response and a failed canonical metadata commit
+[22m[39m{"event":"artifact.request_failed","errorType":"PostgresError","errorCode":"P0001"}
+
+ [32m✓[39m test/direct-uploads.integration.test.ts[2m > [22misolated Postgres and S3 direct transfers[2m > [22mrecovers a lost S3 completion response and a failed canonical metadata commit[32m 117[2mms[22m[39m
+ [32m✓[39m test/direct-uploads.integration.test.ts[2m > [22misolated Postgres and S3 direct transfers[2m > [22mrejects missing parts, wrong audience, expired, and aborted sessions[32m 137[2mms[22m[39m
+ [32m✓[39m test/direct-uploads.integration.test.ts[2m > [22misolated Postgres and S3 direct transfers[2m > [22mchecks bucket bytes rather than client size, hashes, metadata, or ETags[32m 173[2mms[22m[39m
+ [32m✓[39m test/direct-uploads.integration.test.ts[2m > [22misolated Postgres and S3 direct transfers[2m > [22misolates guest owners and revocation, including a revoke during verification[32m 90[2mms[22m[39m
+ [32m✓[39m test/direct-uploads.integration.test.ts[2m > [22misolated Postgres and S3 direct transfers[2m > [22mbounds completion concurrency and freezes parts until publication[32m 119[2mms[22m[39m
+[90mstderr[2m | test/direct-uploads.integration.test.ts[2m > [22m[2misolated Postgres and S3 direct transfers[2m > [22m[2mrecovers and aborts multipart initialization with a lost upload ID
+[22m[39m{"event":"artifact.request_failed","errorType":"Error"}
+
+ [32m✓[39m test/direct-uploads.integration.test.ts[2m > [22misolated Postgres and S3 direct transfers[2m > [22mserializes UUID case variants while completion verifies stored bytes[32m 72[2mms[22m[39m
+ [32m✓[39m test/direct-uploads.integration.test.ts[2m > [22misolated Postgres and S3 direct transfers[2m > [22mrecovers and aborts multipart initialization with a lost upload ID[32m 55[2mms[22m[39m
+[90mstderr[2m | test/direct-uploads.integration.test.ts[2m > [22m[2misolated Postgres and S3 direct transfers[2m > [22m[2mcontinues cleanup after one storage failure and retains its retry record
+[22m[39m{"event":"publisher.upload_cleanup_failed","errorType":"Error"}
+
+[90mstderr[2m | test/direct-uploads.integration.test.ts[2m > [22m[2misolated Postgres and S3 direct transfers[2m > [22m[2mpreserves protected HTML, stable replacement URLs, ranges, HEAD, and conditional reads
+[22m[39m{"event":"artifact.request_failed","errorType":"PostgresError","errorCode":"P0001"}
+
+ [32m✓[39m test/direct-uploads.integration.test.ts[2m > [22misolated Postgres and S3 direct transfers[2m > [22mcontinues cleanup after one storage failure and retains its retry record[32m 111[2mms[22m[39m
+ [32m✓[39m test/direct-uploads.integration.test.ts[2m > [22misolated Postgres and S3 direct transfers[2m > [22mpreserves protected HTML, stable replacement URLs, ranges, HEAD, and conditional reads[32m 217[2mms[22m[39m
+ [32m✓[39m test/direct-uploads.integration.test.ts[2m > [22misolated Postgres and S3 direct transfers[2m > [22mpermits browser upload CORS only for the selected Tools origin and keeps the bucket private[32m 7[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m26 passed[39m[22m[90m (26)[39m
+[2m   Start at [22m 07:33:20
+[2m   Duration [22m 12.02s[2m (transform 322ms, setup 0ms, import 599ms, tests 11.24s, environment 0ms)[22m
+
+JSON report written to /home/codex/.t3/worktrees/microservices/direct-upload-final-artifact-20261016/.agents/artifacts/final-native-verifier/integration.json

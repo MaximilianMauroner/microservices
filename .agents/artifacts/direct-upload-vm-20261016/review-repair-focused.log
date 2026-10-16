@@ -1,0 +1,81 @@
+heavy-check: waiting for repository lock (/home/codex/.t3/worktrees/microservices/fix-direct-uploads-tools-and-fleet-vm-20261016)
+heavy-check: running with timeout 20m (/home/codex/.t3/worktrees/microservices/fix-direct-uploads-tools-and-fleet-vm-20261016)
+TAP version 13
+# Subtest: configuration rejects remote endpoints and URL options before connecting
+ok 1 - configuration rejects remote endpoints and URL options before connecting
+  ---
+  duration_ms: 3.506383
+  type: 'test'
+  ...
+# Subtest: restore requires a matching explicit owner in its bucket name
+ok 2 - restore requires a matching explicit owner in its bucket name
+  ---
+  duration_ms: 1.066313
+  type: 'test'
+  ...
+# Subtest: production source access is explicit, scoped and cannot restore
+ok 3 - production source access is explicit, scoped and cannot restore
+  ---
+  duration_ms: 60.339081
+  type: 'test'
+  ...
+# Subtest: expired chunks, staged files, unknown paths, and malformed manifests all remain blockers
+ok 4 - expired chunks, staged files, unknown paths, and malformed manifests all remain blockers
+  ---
+  duration_ms: 64.589553
+  type: 'test'
+  ...
+# Subtest: missing temporary roots fail closed and unrelated files do not block
+ok 5 - missing temporary roots fail closed and unrelated files do not block
+  ---
+  duration_ms: 8.319808
+  type: 'test'
+  ...
+# Subtest: a corrupt backup is rejected before any target connection or write
+ok 6 - a corrupt backup is rejected before any target connection or write
+  ---
+  duration_ms: 7.810259
+  type: 'test'
+  ...
+# Subtest: restore rejects altered body bytes before connecting to the target
+ok 7 - restore rejects altered body bytes before connecting to the target
+  ---
+  duration_ms: 16.470613
+  type: 'test'
+  ...
+# Subtest: the callable CLI documents commands and rejects unknown flags
+ok 8 - the callable CLI documents commands and rejects unknown flags
+  ---
+  duration_ms: 422.003293
+  type: 'test'
+  ...
+# Subtest: source verification rejects a matching clone under another connection or scope
+ok 9 - source verification rejects a matching clone under another connection or scope
+  ---
+  duration_ms: 1.404545
+  type: 'test'
+  ...
+# Subtest: production legacy drain refuses a different execution host before connecting
+ok 10 - production legacy drain refuses a different execution host before connecting
+  ---
+  duration_ms: 0.427998
+  type: 'test'
+  ...
+1..10
+# tests 10
+# suites 0
+# pass 10
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 951.522248
+
+ RUN  v4.1.10 /home/codex/.t3/worktrees/microservices/fix-direct-uploads-tools-and-fleet-vm-20261016/services/tools
+
+
+ Test Files  2 passed (2)
+      Tests  23 passed (23)
+   Start at  06:08:10
+   Duration  5.23s (transform 764ms, setup 119ms, import 3.52s, tests 1.25s, environment 0ms)
+

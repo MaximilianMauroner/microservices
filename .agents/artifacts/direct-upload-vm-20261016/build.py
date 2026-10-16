@@ -7,9 +7,9 @@ ROOT = Path(__file__).resolve().parents[3]
 
 
 def source_hash():
-    names = subprocess.check_output(["git", "ls-files", "-z", "services/tools", "package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml"], cwd=ROOT).split(b"\0")
+    names = subprocess.check_output(["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z", "services/tools", "package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml"], cwd=ROOT).split(b"\0")
     value = hashlib.sha256()
-    for name in sorted(name for name in names if name):
+    for name in sorted(set(name for name in names if name)):
         value.update(name + b"\0")
         value.update((ROOT / name.decode()).read_bytes())
     return value.hexdigest()

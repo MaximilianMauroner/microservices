@@ -1,0 +1,8 @@
+{
+  "exactFailedRequestResumedAcrossAppRestart": "passed",
+  "priorState": "uploading",
+  "finalState": "completed",
+  "sameSessionUuid": true,
+  "rawStoredDigest": "passed",
+  "localSourceRetained": true
+}

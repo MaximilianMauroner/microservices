@@ -1,0 +1,60 @@
+heavy-check: waiting for repository lock (/home/codex/.t3/worktrees/microservices/fix-direct-uploads-tools-and-fleet-vm-20261016)
+heavy-check: running with timeout 20m (/home/codex/.t3/worktrees/microservices/fix-direct-uploads-tools-and-fleet-vm-20261016)
+
+ RUN  v4.1.10 /home/codex/.t3/worktrees/microservices/fix-direct-uploads-tools-and-fleet-vm-20261016/services/tools/publisher
+
+ ❯ test/direct-uploads.integration.test.ts (27 tests | 1 failed | 26 skipped) 1553ms
+     ↓ preserves a project edited during legacy verification through /api/uploads
+     ↓ preserves a project edited during legacy verification through /api/external-uploads
+     ↓ recovers a new-format legacy journal without undoing a later project edit
+     ↓ retains stale legacy staging ownership and continues recovery with {"interrupted":false,"revoked":false}
+     ↓ retains stale legacy staging ownership and continues recovery with {"interrupted":true,"revoked":false}
+     ↓ retains stale legacy staging ownership and continues recovery with {"interrupted":true,"revoked":true}
+     × recovers two immutable legacy journals for one page without mutual blocking 763ms
+     ↓ cleans pending uploads before more than twenty cleaned replacements and retries late bodies
+     ↓ keeps ambiguous legacy recovery evidence while unrelated reads and later recovery continue
+     ↓ stages replacements without changing identity or prior bytes and keeps exact receipts after restart and expiry
+     ↓ rejects a stale replacement and never rebinds its UUID after cleanup
+     ↓ serves retained PDF MIME and binary-classified PDFs inline with an explicit signed download
+     ↓ keeps legacy writers, stale journal recovery, and project edits on the same conditional commit
+     ↓ recovers interrupted replacement completion while keeping the old body until its conditional commit
+     ↓ prevents replacement resurrection when revocation wins during stored-byte verification
+     ↓ rejects a changed source before committing a recovered replacement and preserves original-source retries
+     ↓ resumes 85 MiB after a web restart, then completes exactly once without application body uploads
+     ↓ recovers a lost S3 completion response and a failed canonical metadata commit
+     ↓ rejects missing parts, wrong audience, expired, and aborted sessions
+     ↓ checks bucket bytes rather than client size, hashes, metadata, or ETags
+     ↓ isolates guest owners and revocation, including a revoke during verification
+     ↓ bounds completion concurrency and freezes parts until publication
+     ↓ serializes UUID case variants while completion verifies stored bytes
+     ↓ recovers and aborts multipart initialization with a lost upload ID
+     ↓ continues cleanup after one storage failure and retains its retry record
+     ↓ preserves protected HTML, stable replacement URLs, ranges, HEAD, and conditional reads
+     ↓ permits browser upload CORS only for the selected Tools origin and keeps the bucket private
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/direct-uploads.integration.test.ts > isolated Postgres and S3 direct transfers > recovers two immutable legacy journals for one page without mutual blocking
+PostgresError: duplicate key value violates unique constraint "artifact_operations_artifact_idx"
+ ❯ ErrorResponse ../../../node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/connection.js:815:30
+ ❯ handle ../../../node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/connection.js:489:6
+ ❯ Socket.data ../../../node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/connection.js:324:9
+ ❯ cachedError ../../../node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/query.js:170:23
+ ❯ new Query ../../../node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/query.js:36:24
+ ❯ sql ../../../node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/index.js:112:11
+ ❯ test/direct-uploads.integration.test.ts:313:16
+    311|         sha256: digest(Buffer.from(body)), now: new Date().toISOString…
+    312|       await client.send(new PutObjectCommand({ Bucket: config.bucket, …
+    313|       await sql`insert into artifacts.operations(operation_id, artifac…
+       |                ^
+    314|         values (${operationId}::uuid, ${id}, 'parallel-recovery-fixtur…
+    315|           ${sql.json(payload)}, now() - ${(2 - index) * 60} * interval…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 26 skipped (27)
+   Start at  06:48:59
+   Duration  3.80s (transform 707ms, setup 0ms, import 1.93s, tests 1.55s, environment 0ms)
+
