@@ -28,7 +28,8 @@ describe("durable browser upload client", () => {
   let uploaded: number[];
   let requestId: string;
   let completionResponsesLost: number;
-  const result = { id: "a".repeat(32), filename: "fixture.bin", bytes: 6, kind: "file", contentType: "application/octet-stream", url: "https://tools.example/files/fixture" };
+  const result = { id: "a".repeat(32), filename: "fixture.bin", bytes: 6, kind: "file", contentType: "application/octet-stream", url: "https://tools.example/files/fixture",
+    sha256: crypto.createHash("sha256").update("abcdef").digest("hex") };
 
   beforeEach(() => {
     saved.clear(); requests.length = 0; TransferXhr.puts = []; TransferXhr.fail = false;
@@ -92,6 +93,7 @@ describe("durable browser upload client", () => {
     expect(await uploadDirectFile(new File(["abcdef"], "revised.html", { type: "text/html" }), callbacks,
       { kind: "html", replaceId: result.id })).toEqual(replacement);
     expect(requests[0]?.body).toMatchObject({ kind: "html", replaceId: result.id });
+    expect(requests.find(request => request.url.endsWith("/complete"))?.body).toEqual({ sha256: result.sha256 });
     expect(TransferXhr.puts).toHaveLength(2);
     expect(TransferXhr.puts.every(put => !put.credentials)).toBe(true);
   });

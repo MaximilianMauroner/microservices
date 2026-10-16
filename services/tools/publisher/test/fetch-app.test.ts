@@ -28,7 +28,9 @@ class MemoryUploadStorage implements UploadStorage {
   readonly files = new Map<string, { body: Buffer; metadata: Omit<PutTemporaryFileMetadata, "expiresAt"> & { expiresAt?: Date } }>();
 
   async putHtml(id: string, filePath: string, metadata: PutHtmlMetadata, _options?: PutHtmlOptions) {
-    this.pages.set(id, { body: await readFile(filePath), metadata });
+    const body = await readFile(filePath);
+    const project = metadata.project ?? this.pages.get(id)?.metadata.project;
+    this.pages.set(id, { body, metadata: { ...metadata, ...(project ? { project } : {}) } });
   }
 
   async getHtml(id: string, options?: GetStoredObjectOptions): Promise<StoredHtml | null> {
@@ -1054,6 +1056,29 @@ describe("native artifact fetch handler", () => {
     expect(storage.files.size).toBe(0);
     const crossOrigin = await app(new Request("https://tools.example.test/api/browser-html-uploads", { method: "POST", headers: { Origin: "https://other.example.test" }, body: multipart("plan.html", "<h1>plan</h1>", "text/html") }));
     expect(crossOrigin.status).toBe(403);
+  });
+
+  it("returns the saved project when a legacy replacement overlaps a project edit", async () => {
+    const storage = new MemoryUploadStorage();
+    const app = createFetchApp({ storage, uploadToken: "upload-token", publicBaseUrl: "https://tools.example.test" });
+    const created = await app(new Request("https://tools.example.test/api/uploads", {
+      method: "POST", headers: { Authorization: "Bearer upload-token" },
+      body: multipart("first.html", "<h1>first</h1>", "text/html", "first-project")
+    }));
+    const { id } = await created.json() as { id: string };
+    const put = storage.putHtml.bind(storage);
+    vi.spyOn(storage, "putHtml").mockImplementationOnce(async (...args) => {
+      await storage.updateHtmlProject(id, "newer-project");
+      return put(...args);
+    });
+    const response = await app(new Request(`https://tools.example.test/api/uploads/${id}`, {
+      method: "PUT", headers: { Authorization: "Bearer upload-token" },
+      body: multipart("replacement.html", "<h1>replacement</h1>", "text/html")
+    }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ id, project: "newer-project" });
+    expect(storage.pages.get(id)?.metadata.project).toBe("newer-project");
+    expect(storage.pages.get(id)?.body.toString()).toBe("<h1>replacement</h1>");
   });
 
   it("lets the authenticated browser replace, reassign, and revoke an HTML artifact", async () => {

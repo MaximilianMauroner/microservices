@@ -156,7 +156,7 @@ export function createDirectUploads(sql: Sql, bucket: ReturnType<typeof createMu
       });
     },
 
-    async complete(id: string, owner: DirectUploadOwner, maxConcurrent: number, signal: AbortSignal): Promise<DirectUploadResult> {
+    async complete(id: string, owner: DirectUploadOwner, maxConcurrent: number, signal: AbortSignal, expectedSha256?: string): Promise<DirectUploadResult> {
       return locked(id, async tx => {
         const session = await load(id, owner);
         await active(session);
@@ -164,6 +164,9 @@ export function createDirectUploads(sql: Sql, bucket: ReturnType<typeof createMu
           const [object] = await tx`select id from artifacts.objects where id = ${canonicalId(session)}
             and revoked_at is null and (expires_at is null or expires_at > now())`;
           if (!object || !session.sha256) throw unavailable();
+          if (expectedSha256 !== undefined && session.sha256 !== expectedSha256) {
+            throw new DirectUploadError(409, "source_changed", "The source file does not match the stored upload.");
+          }
           return { ...session.description,
             ...(session.receipt?.after.project ? { project: session.receipt.after.project } : {}),
             id: canonicalId(session), sha256: session.sha256 };
@@ -183,6 +186,9 @@ export function createDirectUploads(sql: Sql, bucket: ReturnType<typeof createMu
           }
           const sha256 = await bucket.verify(key(session), session.description, session.manifest, deadline);
           deadline.throwIfAborted();
+          if (expectedSha256 !== undefined && sha256 !== expectedSha256) {
+            throw new DirectUploadError(409, "source_changed", "The source file does not match the stored upload.");
+          }
           await active(session, tx);
           if (session.upload_link_id) {
             const links = await tx`select id from artifacts.upload_links where id = ${session.upload_link_id}::uuid
@@ -238,7 +244,7 @@ export function createDirectUploads(sql: Sql, bucket: ReturnType<typeof createMu
           and (s.expires_at <= now() or s.state in ('aborted', 'failed')
           or (s.target_id is not null and (o.id is null or o.revoked_at is not null))
           or (s.upload_link_id is not null and (l.revoked_at is not null or l.expires_at <= now())))
-        order by s.expires_at limit 20`;
+        order by s.cleaned_at is not null, s.expires_at limit 20`;
       for (const candidate of sessions) {
         try {
           await locked(candidate.session_id, async () => {

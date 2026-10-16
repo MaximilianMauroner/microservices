@@ -15,7 +15,7 @@ import {
   type UploadStorage
 } from "./storage.js";
 import { createS3UploadStorage, summarizeUploads } from "./storage.js";
-import { createDirectUploads } from "./direct-uploads.js";
+import { createDirectUploads, DIRECT_PART_BYTES } from "./direct-uploads.js";
 import { createMultipartStorage } from "./multipart-storage.js";
 import { DirectUploadError } from "./multipart-storage.js";
 import { commitHtmlVersion, replacementKey, type HtmlVersionReceipt } from "./html-versions.js";
@@ -270,7 +270,7 @@ async function finalizePut(sql: Sql, operation: OperationOwner, value: UpsertArt
           sha256: value.sha256, project: value.project
         }, operation.operationId);
         const description = { kind: "html", filename: value.filename, contentType: value.contentType,
-          totalBytes: value.bytes, partBytes: 20 * 1024 * 1024, ...(value.project ? { project: value.project } : {}) };
+          totalBytes: value.bytes, partBytes: DIRECT_PART_BYTES, ...(value.project ? { project: value.project } : {}) };
         await tx`insert into artifacts.upload_sessions
           (session_id, artifact_id, target_id, expected_object_key, audience, description, state, sha256, receipt, expires_at)
           values (${operation.operationId}::uuid, ${value.stagingId}, ${value.id}, ${value.expectedObjectKey},
@@ -336,7 +336,9 @@ async function reconcileOperation(bodies: UploadStorage, sql: Sql, operation: Pe
       return;
     }
     if (!current && ![htmlKey(payload.id), temporaryFileKey(payload.id)].includes(payload.objectKey)) {
-      throw new Error("Legacy artifact operation needs an explicit recovery decision");
+      console.error(JSON.stringify({ event: "publisher.artifact_recovery_needed",
+        operationId: operation.operation_id, artifactId: operation.artifact_id, reason: "legacy_base_missing" }));
+      return;
     }
   }
   if (await matchesStoredBody(bodies, payload, options)) {

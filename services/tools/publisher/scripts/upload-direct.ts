@@ -52,7 +52,7 @@ try {
   }
   if (await hashSource() !== sourceSha256) throw new Error("The file changed during upload.");
   await checkSource(source);
-  const completed = await control(`${sessionBase}/complete`);
+  const completed = await control(`${sessionBase}/complete`, { sha256: sourceSha256 });
   if (!record(completed) || completed.bytes !== size || completed.sha256 !== sourceSha256) {
     throw new Error("The published file does not match the source. Retain the request ID for recovery.");
   }

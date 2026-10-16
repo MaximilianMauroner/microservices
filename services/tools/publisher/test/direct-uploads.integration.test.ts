@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import postgres, { type Sql } from "postgres";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { GetObjectCommand, HeadObjectCommand, ListMultipartUploadsCommand, PutBucketCorsCommand, S3Client, UploadPartCommand } from "@aws-sdk/client-s3";
+import { GetObjectCommand, HeadObjectCommand, ListMultipartUploadsCommand, PutBucketCorsCommand, PutObjectCommand, S3Client, UploadPartCommand } from "@aws-sdk/client-s3";
 import { createFetchApp } from "../src/fetch-app.js";
 import { createDirectUploads, DIRECT_PART_BYTES } from "../src/direct-uploads.js";
 import { createMultipartStorage } from "../src/multipart-storage.js";
@@ -20,6 +20,7 @@ const digest = (bytes: Uint8Array) => crypto.createHash("sha256").update(bytes).
 describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", () => {
   let sql: Sql;
   let storage: UploadStorage;
+  let bodies: UploadStorage;
   let bucket: ReturnType<typeof createMultipartStorage>;
   let links: ReturnType<typeof createPostgresUploadLinkRepository>;
   let client: S3Client;
@@ -29,7 +30,8 @@ describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", () => {
   let bucketUploadBytes = 0;
 
   function attach() {
-    storage = createMetadataBackedUploadStorage(createS3UploadStorage(config), sql);
+    bodies = createS3UploadStorage(config);
+    storage = createMetadataBackedUploadStorage(bodies, sql);
     bucket = createMultipartStorage(config);
     storage.directUploads = createDirectUploads(sql, bucket, postgres(databaseUrl!, { max: 2, idle_timeout: 1 }));
     storage.uploadOrigins = [config.endpoint];
@@ -115,6 +117,164 @@ describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", () => {
     const result = await client.send(new GetObjectCommand({ Bucket: config.bucket, Key: key }));
     return result.Body!.transformToString();
   }
+
+  async function legacyReplace(id: string, body: string, base = "/api/uploads", project?: string) {
+    const form = new FormData();
+    form.append("file", new Blob([body], { type: "text/html" }), "legacy.html");
+    if (project) form.append("project", project);
+    return app(new Request(`${origin}${base}/${id}`, { method: "PUT",
+      headers: { Authorization: "Bearer transfer-local-token", Origin: origin }, body: form }));
+  }
+
+  it.each(["/api/uploads", "/api/external-uploads"])("preserves a project edited during legacy verification through %s", async base => {
+    const created = await html("before legacy verification", undefined, "original-project");
+    const { id } = await (await request(created.path + "/complete")).json() as { id: string };
+    const get = bodies.getHtml.bind(bodies);
+    const entered = deferred();
+    const release = deferred();
+    const verify = vi.spyOn(bodies, "getHtml").mockImplementation(async (artifactId, options) => {
+      const stored = await get(artifactId, options);
+      if (artifactId === id && !options?.headOnly && options?.objectKey?.startsWith(`transfers/${id}/`)) {
+        entered.resolve();
+        await release.promise;
+      }
+      return stored;
+    });
+    const pending = legacyReplace(id, "after legacy verification", base);
+    try {
+      await entered.promise;
+      expect(await storage.updateHtmlProject(id, "edited-during-verification")).toBe(true);
+    } finally { release.resolve(); }
+    try {
+      const response = await pending;
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({ id, project: "edited-during-verification" });
+      const stored = await storage.getHtml(id, { headOnly: true });
+      stored?.body.destroy();
+      expect(stored?.project).toBe("edited-during-verification");
+      expect(stored?.sha256).toBe(digest(Buffer.from("after legacy verification")));
+      const explicit = await legacyReplace(id, "explicit project replacement", base, "explicit-project");
+      expect(explicit.status).toBe(200);
+      expect(await explicit.json()).toMatchObject({ id, project: "explicit-project" });
+      const [current] = await sql`select project from artifacts.objects where id = ${id}`;
+      expect(current?.project).toBe("explicit-project");
+    } finally {
+      verify.mockRestore();
+      await storage.deleteUpload(id);
+    }
+  });
+
+  it("recovers a new-format legacy journal without undoing a later project edit", async () => {
+    const created = await html("before journal recovery", undefined, "original-project");
+    const { id } = await (await request(created.path + "/complete")).json() as { id: string };
+    const [before] = await sql`select object_key from artifacts.objects where id = ${id}`;
+    const get = bodies.getHtml.bind(bodies);
+    const interrupted = vi.spyOn(bodies, "getHtml").mockImplementation(async (artifactId, options) => {
+      if (artifactId === id && !options?.headOnly) throw new Error("Interrupted legacy verification");
+      return get(artifactId, options);
+    });
+    try {
+      expect((await legacyReplace(id, "recovered legacy replacement")).status).toBe(500);
+    } finally { interrupted.mockRestore(); }
+    try {
+      const [operation] = await sql<{ operation_id: string; payload: { objectKey: string; expectedObjectKey: string } }[]>`
+        select operation_id, payload from artifacts.operations where artifact_id = ${id}`;
+      expect(operation?.payload.expectedObjectKey).toBe(before!.object_key);
+      expect(await raw(operation!.payload.objectKey)).toBe("recovered legacy replacement");
+      expect(await storage.updateHtmlProject(id, "edited-after-interruption")).toBe(true);
+      await sql`update artifacts.operations set lease_until = now() - interval '1 second'
+        where operation_id = ${operation!.operation_id}::uuid`;
+      const recovered = await storage.getHtml(id, { headOnly: true });
+      recovered?.body.destroy();
+      expect(recovered?.project).toBe("edited-after-interruption");
+      expect(recovered?.sha256).toBe(digest(Buffer.from("recovered legacy replacement")));
+      const [receipt] = await sql`select receipt from artifacts.upload_sessions where session_id = ${operation!.operation_id}::uuid`;
+      expect(receipt?.receipt.after.project).toBe("edited-after-interruption");
+      expect(await sql`select operation_id from artifacts.operations where artifact_id = ${id}`).toHaveLength(0);
+      expect(await raw(before!.object_key)).toBe("before journal recovery");
+    } finally {
+      await sql`delete from artifacts.operations where artifact_id = ${id}`;
+      await storage.deleteUpload(id);
+    }
+  });
+
+  it("cleans pending uploads before more than twenty cleaned replacements and retries late bodies", async () => {
+    const created = await html("cleanup target");
+    const { id } = await (await request(created.path + "/complete")).json() as { id: string };
+    const pending = await html("pending cleanup", id);
+    const cleaned = Array.from({ length: 21 }, () => ({ sessionId: crypto.randomUUID(), artifactId: crypto.randomBytes(24).toString("base64url") }));
+    try {
+      const [target] = await sql`select object_key from artifacts.objects where id = ${id}`;
+      for (const row of cleaned) {
+        await sql`insert into artifacts.upload_sessions
+          (session_id, artifact_id, target_id, expected_object_key, audience, description, state, expires_at, cleaned_at)
+          values (${row.sessionId}::uuid, ${row.artifactId}, ${id}, ${target!.object_key}, 'native',
+            ${sql.json({ kind: "html", filename: "plan.html", contentType: "text/html", totalBytes: 4, partBytes: DIRECT_PART_BYTES })},
+            'aborted', now() - interval '1 hour', now())`;
+      }
+      await sql`update artifacts.upload_sessions set expires_at = now() - interval '1 second' where session_id = ${pending.sessionId}::uuid`;
+      const [row] = await sql`select artifact_id from artifacts.upload_sessions where session_id = ${pending.sessionId}::uuid`;
+      const pendingKey = `transfers/${id}/${row!.artifact_id}`;
+      expect((await client.send(new ListMultipartUploadsCommand({ Bucket: config.bucket, Prefix: pendingKey }))).Uploads).toHaveLength(1);
+      await storage.directUploads!.cleanup();
+      expect((await client.send(new ListMultipartUploadsCommand({ Bucket: config.bucket, Prefix: pendingKey }))).Uploads ?? []).toHaveLength(0);
+      const [finished] = await sql`select cleaned_at from artifacts.upload_sessions where session_id = ${pending.sessionId}::uuid`;
+      expect(finished?.cleaned_at).toBeInstanceOf(Date);
+      await sql`update artifacts.upload_sessions set expires_at = now() - interval '23 hours' where session_id = ${pending.sessionId}::uuid`;
+      await client.send(new PutObjectCommand({ Bucket: config.bucket, Key: pendingKey, Body: "late S3 completion" }));
+      await storage.directUploads!.cleanup();
+      await expect(raw(pendingKey)).rejects.toThrow();
+      await sql`update artifacts.upload_sessions set expires_at = now() - interval '3 days' where target_id = ${id}`;
+      await storage.directUploads!.cleanup();
+      expect(await sql`select session_id from artifacts.upload_sessions where target_id = ${id}`).toHaveLength(22);
+      expect((await request("/api/uploads/sessions", "POST", { requestId: cleaned[0]!.sessionId,
+        kind: "html", filename: "plan.html", contentType: "text/html", totalBytes: 4, replaceId: id })).status).toBe(404);
+    } finally {
+      await sql`update artifacts.upload_sessions set expires_at = now() - interval '3 days' where target_id = ${id}`;
+      await storage.deleteUpload(id);
+    }
+  });
+
+  it("keeps ambiguous legacy recovery evidence while unrelated reads and later recovery continue", async () => {
+    const created = await html("ambiguous retained body");
+    const result = await (await request(created.path + "/complete")).json() as { id: string; url: string };
+    const healthy = await html("unrelated live body");
+    const other = await (await request(healthy.path + "/complete")).json() as { id: string; url: string };
+    const [row] = await sql`select * from artifacts.objects where id = ${result.id}`;
+    const operationId = crypto.randomUUID();
+    const nextOperation = crypto.randomUUID();
+    const nextArtifact = crypto.randomBytes(24).toString("base64url");
+    const payload = JSON.stringify({ id: result.id, kind: "html", filename: row!.filename, contentType: row!.content_type,
+      bytes: Number(row!.bytes), objectKey: row!.object_key, sha256: row!.sha256, now: row!.updated_at });
+    await sql`delete from artifacts.objects where id = ${result.id}`;
+    await sql`insert into artifacts.operations (operation_id, artifact_id, owner_id, lease_until, operation_kind, payload, created_at)
+      values (${operationId}::uuid, ${result.id}, 'ambiguous-fixture', now() - interval '1 second', 'put_html', ${sql.json(payload)}, now() - interval '2 minutes'),
+        (${nextOperation}::uuid, ${nextArtifact}, 'following-fixture', now() - interval '1 second', 'delete', null, now() - interval '1 minute')`;
+    const log = vi.spyOn(console, "error");
+    try {
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        await sql`update artifacts.operations set lease_until = now() - interval '1 second' where operation_id = ${operationId}::uuid`;
+        const response = await app(new Request(other.url));
+        expect(response.status).toBe(200);
+        expect(await response.text()).toContain("unrelated live body");
+      }
+      expect(await storage.getHtml(result.id)).toBeNull();
+      expect((await app(new Request(result.url))).status).toBe(404);
+      expect(await sql`select id from artifacts.objects where id = ${result.id}`).toHaveLength(0);
+      const [retained] = await sql`select payload, lease_until > now() leased from artifacts.operations where operation_id = ${operationId}::uuid`;
+      expect(retained?.payload).toBe(payload);
+      expect(retained?.leased).toBe(true);
+      expect(await raw(row!.object_key)).toBe("ambiguous retained body");
+      expect(await sql`select operation_id from artifacts.operations where operation_id = ${nextOperation}::uuid`).toHaveLength(0);
+      expect(log.mock.calls.map(([value]) => JSON.parse(value))).toContainEqual({ event: "publisher.artifact_recovery_needed",
+        operationId, artifactId: result.id, reason: "legacy_base_missing" });
+    } finally {
+      log.mockRestore();
+      await sql`delete from artifacts.operations where operation_id in (${operationId}::uuid, ${nextOperation}::uuid)`;
+      await storage.deleteUpload(result.id);
+      await storage.deleteUpload(other.id);
+    }
+  });
 
   it("stages replacements without changing identity or prior bytes and keeps exact receipts after restart and expiry", async () => {
     const created = await html("<h1>original</h1>", undefined, "original-project");
@@ -288,6 +448,53 @@ describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", () => {
     expect((await request(replacement.path + "/complete")).status).toBe(404);
     const multipart = await client.send(new ListMultipartUploadsCommand({ Bucket: config.bucket, Prefix: `transfers/${id}/` }));
     expect(multipart.Uploads ?? []).toEqual([]);
+  });
+
+  it("rejects a changed source before committing a recovered replacement and preserves original-source retries", async () => {
+    const created = await html("canonical before recovery");
+    const { id } = await (await request(created.path + "/complete")).json() as { id: string };
+    const [before] = await sql`select * from artifacts.objects where id = ${id}`;
+    const original = "<h1>old staged</h1>";
+    const changed = "<h1>new staged</h1>";
+    const expected = digest(Buffer.from(original));
+    const wrong = digest(Buffer.from(changed));
+    const replacement = await html(original, id);
+    await sql.unsafe(`create function public.reject_expected_hash_commit() returns trigger language plpgsql as $$ begin raise exception 'expected hash database interruption'; end $$`);
+    await sql.unsafe(`create trigger reject_expected_hash_commit before update on artifacts.objects for each row when (old.id = '${id}') execute function public.reject_expected_hash_commit()`);
+    try {
+      expect((await request(replacement.path + "/complete", "POST", { sha256: expected })).status).toBe(500);
+    } finally {
+      await sql.unsafe("drop trigger reject_expected_hash_commit on artifacts.objects");
+      await sql.unsafe("drop function public.reject_expected_hash_commit()");
+    }
+    try {
+      const [interrupted] = await sql`select state, manifest, parts, upload_id, sha256, receipt from artifacts.upload_sessions
+        where session_id = ${replacement.sessionId}::uuid`;
+      expect(interrupted?.state).toBe("completing");
+      expect(interrupted?.manifest).toHaveLength(1);
+      const mismatch = await request(replacement.path + "/complete", "POST", { sha256: wrong });
+      expect(mismatch.status).toBe(409);
+      expect(await mismatch.json()).toMatchObject({ error: "source_changed" });
+      expect(await sql`select * from artifacts.objects where id = ${id}`).toEqual([before]);
+      expect(await sql`select state, manifest, parts, upload_id, sha256, receipt from artifacts.upload_sessions
+        where session_id = ${replacement.sessionId}::uuid`).toEqual([interrupted]);
+      const [session] = await sql`select artifact_id from artifacts.upload_sessions where session_id = ${replacement.sessionId}::uuid`;
+      expect(await raw(`transfers/${id}/${session!.artifact_id}`)).toBe(original);
+      expect(await raw(before!.object_key)).toBe("canonical before recovery");
+      const completed = await request(replacement.path + "/complete", "POST", { sha256: expected });
+      expect(completed.status).toBe(201);
+      const result = await completed.json();
+      expect(result).toMatchObject({ id, sha256: expected });
+      expect(await (await request(replacement.path + "/complete", "POST", { sha256: expected })).json()).toEqual(result);
+      expect(await (await request(replacement.path + "/complete")).json()).toEqual(result);
+      const published = await sql`select * from artifacts.objects where id = ${id}`;
+      const completedSession = await sql`select * from artifacts.upload_sessions where session_id = ${replacement.sessionId}::uuid`;
+      const staleSource = await request(replacement.path + "/complete", "POST", { sha256: wrong });
+      expect(staleSource.status).toBe(409);
+      expect(await staleSource.json()).toMatchObject({ error: "source_changed" });
+      expect(await sql`select * from artifacts.objects where id = ${id}`).toEqual(published);
+      expect(await sql`select * from artifacts.upload_sessions where session_id = ${replacement.sessionId}::uuid`).toEqual(completedSession);
+    } finally { await storage.deleteUpload(id); }
   });
 
   it("resumes 85 MiB after a web restart, then completes exactly once without application body uploads", async () => {
