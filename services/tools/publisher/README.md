@@ -57,7 +57,7 @@ stored size and SHA-256, then conditionally changes the canonical pointer. The I
 creation time, and omitted project stay unchanged. Prior bytes and full replacement
 receipts remain available for recovery. No bucket credential is sent to a client.
 
-See [direct transfers](../../../docs/tools-platform/direct-transfers.md) for the
+See [direct transfers](./direct-transfers.md) for the
 protocol, integrity validation, limits, recovery, retained caller compatibility,
 CORS configuration, and unapplied production rollout steps.
 
