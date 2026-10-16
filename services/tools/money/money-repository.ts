@@ -657,7 +657,7 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
     async setTransferDisposition(input) {
       await sql.begin(async (tx) => {
         await lockCategoryRules(tx);
-        await updateTransferDisposition(tx, input);
+        await recordManualTransferDisposition(tx, input);
         await applyCategoryRules(tx);
       });
     },
@@ -1156,10 +1156,6 @@ async function refreshInferredTransactions(tx: postgres.TransactionSql, transact
   }
 }
 
-/**
- * Classifies transfers again under the current rules. Only results the rules wrote are cleared. A manual choice, or a
- * result whose origin is unknown, keeps its row and every row in its group. A pair that links again keeps its group ID.
- */
 async function relinkAutomaticTransfers(tx: postgres.TransactionSql) {
   const cleared = await tx<{ id: string; group_id: string | null }[]>`with automatic_groups as (
       select transfer_group_id from tools.money_transactions where transfer_group_id is not null
@@ -1277,8 +1273,7 @@ async function readTransferRules(sql: Sql | TransactionSql) {
   };
 }
 
-/** Records a manual disposition. internal_transfer on a linked pair confirms the whole pair; any other disposition splits it. */
-async function updateTransferDisposition(tx: TransactionSql, input: Readonly<{ transactionId: string; disposition: MoneyTransferDisposition }>) {
+async function recordManualTransferDisposition(tx: TransactionSql, input: Readonly<{ transactionId: string; disposition: MoneyTransferDisposition }>) {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const [snapshot] = await tx<{ transfer_group_id: string | null }[]>`select transfer_group_id from tools.money_transactions
       where id = ${input.transactionId} and status = 'completed' and flow_kind = 'transfer'`;

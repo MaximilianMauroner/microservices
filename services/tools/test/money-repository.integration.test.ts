@@ -413,10 +413,8 @@ it("re-imports all normalized documents and rebuilds derived review state", asyn
     "Transfer\tSavings\t2026-03-05 12:00:00\t2026-03-05 12:00:00\tPocket rebuild\t10\t0\tEUR\tCOMPLETED\t10",
     "Transfer\tCurrent\t2026-03-20 12:00:00\t2026-03-20 12:00:00\tKept review\t25\t0\tEUR\tCOMPLETED\t115"
   ]), "rebuild.tsv");
-  // Reimport rebuilds this stale state on an automatic pair.
   await admin!`update tools.money_transactions set category = 'subscriptions', category_origin = 'manual', transfer_group_id = null, transfer_disposition = 'excluded'
     where description = 'Pocket rebuild'`;
-  // Reimport keeps these manual choices although a stored rule contradicts them.
   const [kept] = (await repository!.readActivityPage({ query: "Kept review", offset: 0, limit: 10 })).items;
   await repository!.setTransferDisposition({ transactionId: kept!.id, disposition: "spend" });
   await repository!.setTransactionCategory({ transactionId: kept!.id, category: "gifts", actor: "integration@example.test", createRule: false });
@@ -728,7 +726,6 @@ it("keeps transfer results of unknown origin through a reimport", async () => {
     "Transfer\tSavings\t2026-08-10 12:00:00\t2026-08-10 12:00:00\tLegacy mixed\t15\t0\tEUR\tCOMPLETED\t55",
     "Transfer\tCurrent\t2026-08-20 12:00:00\t2026-08-20 12:00:00\tLegacy single\t-20\t0\tEUR\tCOMPLETED\t25"
   ]), "legacy.tsv");
-  // Rows classified before origins were stored keep a null origin. One pair has only one such row.
   await admin!`update tools.money_transactions set transfer_origin = null
     where description in ('Legacy pair', 'Legacy single') or (description = 'Legacy mixed' and amount_minor > 0)`;
   await storeTransferRule(700, "starts_with", "legacy", "income");
@@ -759,7 +756,6 @@ it.each([false, true])("keeps a confirmed pair that a reimport would no longer l
   expect(other).toMatchObject({ groupId: null, disposition: "refund", origin: "automatic" });
   if (confirmed) await repository!.setTransferDisposition({ transactionId: await transactionId("Confirm out"), disposition: "internal_transfer" });
 
-  // With the later inflow, the outflow has two possible counterparts, so linking again cannot pair it.
   await repository!.reimportAll();
   const confirmedPair = { groupId: linkedIn!.groupId, disposition: "internal_transfer", origin: "manual" };
   expect(await transferState("Confirm")).toEqual([
@@ -890,7 +886,7 @@ it.each(["review", "reimport"] as const)("keeps a manual review that serializes 
   const id = await transactionId("Ordered review");
   const review = () => repository!.setTransferDisposition({ transactionId: id, disposition: "excluded" });
   const reimport = () => repository!.reimportAll();
-  await inRuleLockOrder(first === "review" ? [review, reimport] : [reimport, review]);
+  await inCategoryRuleLockOrder(first === "review" ? [review, reimport] : [reimport, review]);
   expect(await transferState("Ordered review")).toEqual([{ description: "Ordered review", amount: -2_000, groupId: null, disposition: "excluded", origin: "manual" }]);
 });
 
@@ -922,8 +918,7 @@ function transferState(descriptionPrefix: string) {
     from tools.money_transactions where description like ${`${descriptionPrefix}%`} order by description collate "C", amount_minor`;
 }
 
-/** Every Money writer first locks the category rules, so writers that queue behind a held lock run in queue order. */
-async function inRuleLockOrder(operations: readonly (() => Promise<unknown>)[]) {
+async function inCategoryRuleLockOrder(operations: readonly (() => Promise<unknown>)[]) {
   const started: Promise<unknown>[] = [];
   await admin!.begin(async (tx) => {
     await tx`lock table tools.money_category_rules in share row exclusive mode`;

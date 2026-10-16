@@ -246,8 +246,7 @@ export const moneyTransactions = toolsSchema.table("money_transactions", {
   categoryRuleId: uuid("category_rule_id").references(() => moneyCategoryRules.id, { onDelete: "set null" }),
   transferGroupId: uuid("transfer_group_id"),
   transferDisposition: text("transfer_disposition"),
-  /** "automatic" when the transfer rules set the group and disposition, "manual" when a review did. Null when no rule or review set them, or when they were set before origins were stored. */
-  transferOrigin: text("transfer_origin"),
+  transferOrigin: text("transfer_origin").$type<"automatic" | "manual">(),
 }, (table) => [
   check("money_transactions_source_row_check", sql`${table.sourceRow} > 1`),
   check("money_transactions_currency_check", sql`${table.currency} ~ '^[A-Z]{3}$'`),
