@@ -278,14 +278,27 @@ async function writeJson(file, value) {
   return digest(raw);
 }
 
-function references(state, objects) {
+export function references(state, objects) {
   const bodies = new Map(objects.map(object => [object.key, object]));
+  const liveIds = new Set();
   for (const raw of state['artifacts.objects']) {
     const row = JSON.parse(raw);
     if (row.revoked_at) continue;
+    liveIds.add(row.id);
     const body = bodies.get(row.object_key);
     assert(body && body.bytes === row.bytes && (!row.sha256 || body.sha256 === row.sha256),
       'A canonical object body is missing or has the wrong digest');
+  }
+  for (const raw of state['artifacts.upload_sessions']) {
+    const { target_id, receipt } = JSON.parse(raw);
+    if (!receipt || !liveIds.has(target_id)) continue;
+    assert(receipt.format === 1 && receipt.before?.id === target_id && receipt.after?.id === target_id,
+      'Invalid retained replacement receipt');
+    for (const snapshot of [receipt.before, receipt.after]) {
+      const body = bodies.get(snapshot.object_key);
+      assert(body && body.bytes === Number(snapshot.bytes) && (snapshot.sha256 === null || body.sha256 === snapshot.sha256),
+        'A retained replacement body is missing or has the wrong size or digest');
+    }
   }
 }
 
@@ -491,7 +504,7 @@ async function main() {
       + 'release-paired-backup.mjs verify [--source] --directory BACKUP_PATH\n'
       + 'Source uses RELEASE_* environment variables. Restore and verify use RELEASE_RESTORE_*.\n'
       + '--production-source permits explicitly scoped read-only production preflight, backup, or verify --source.\n'
-      + 'See .agents/artifacts/direct-upload-release-proof-vm-20261016/interface.md.');
+      + 'See services/tools/publisher/direct-transfers.md.');
     return;
   }
   assert(positionals.length === 1 && ['preflight', 'backup', 'restore', 'verify'].includes(command), 'Select a release command or --help');

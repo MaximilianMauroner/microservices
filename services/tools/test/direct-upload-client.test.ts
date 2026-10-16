@@ -176,19 +176,31 @@ describe("durable browser upload client", () => {
     expect(requests.some(request => request.method === "DELETE")).toBe(false);
   });
 
-  it("keeps the same request UUID when an expired replacement is retried", async () => {
-    vi.stubGlobal("fetch", vi.fn(async (_url: string, init: RequestInit) => {
-      const body = JSON.parse(String(init.body));
-      requests.push({ url: _url, method: init.method!, body });
-      return Response.json({ error: "upload_not_found" }, { status: 404 });
+  it("starts a fresh session when an expired replacement is retried", async () => {
+    const original = globalThis.fetch;
+    const replacement = { ...result, kind: "html", filename: "revised.html", contentType: "text/html",
+      url: `https://tools.example/artifacts/${result.id}` };
+    let initializations = 0;
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
+      const response = await original(url, init);
+      if (url.endsWith("/sessions")) {
+        expect(TransferXhr.puts).toHaveLength(0);
+        if (initializations++ === 0) return Response.json({ error: "upload_not_found" }, { status: 404 });
+        return Response.json({ ...await response.json(), replaceId: result.id });
+      }
+      return url.endsWith("/complete") ? Response.json(replacement) : response;
     }));
     const file = new File(["abcdef"], "revised.html", { lastModified: 123 });
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      await expect(uploadDirectFile(file, callbacks, { kind: "html", replaceId: result.id })).rejects.toThrow();
-    }
-    expect(requests).toHaveLength(2);
-    expect(requests[0]?.body?.requestId).toBe(requests[1]?.body?.requestId);
-    expect(TransferXhr.puts).toHaveLength(0);
+    expect(await uploadDirectFile(file, callbacks, { kind: "html", replaceId: result.id })).toEqual(replacement);
+    const sessions = requests.filter(request => request.url.endsWith("/sessions"));
+    expect(sessions).toHaveLength(2);
+    expect(sessions[0]?.body?.requestId).not.toBe(sessions[1]?.body?.requestId);
+    expect(sessions.map(request => request.body?.replaceId)).toEqual([result.id, result.id]);
+    expect(requests.find(request => request.url.endsWith("/complete"))).toMatchObject({
+      url: `/api/external-uploads/sessions/${sessions[1]?.body?.requestId}/complete`, body: { sha256: result.sha256 }
+    });
+    expect(TransferXhr.puts).toHaveLength(2);
+    expect(saved.size).toBe(0);
   });
 
   it.each(["source_changed", "wrong_response_digest"])("retains recovery identity after %s", async failure => {
