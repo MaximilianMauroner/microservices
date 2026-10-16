@@ -1,6 +1,0 @@
-heavy-check: waiting for repository lock (/home/codex/.t3/worktrees/microservices/fix-direct-uploads-tools-and-fleet-vm-20261016)
-heavy-check: running with timeout 20m (/home/codex/.t3/worktrees/microservices/fix-direct-uploads-tools-and-fleet-vm-20261016)
-$ tsc -p tsconfig.json --noEmit
-$ tsc -p tsconfig.json --noEmit
-publisher/ui/direct-upload.ts(102,43): error TS2339: Property 'sha256' does not exist on type 'UploadSummary'.
-[ELIFECYCLE] Command failed with exit code 1.
