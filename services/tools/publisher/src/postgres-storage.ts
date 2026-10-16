@@ -446,9 +446,7 @@ async function upsert(sql: Sql | TransactionSql, value: UpsertArtifact) {
         then artifacts.objects.expires_at else excluded.expires_at end,
       updated_at = greatest(artifacts.objects.updated_at, excluded.updated_at)
     where artifacts.objects.revoked_at is null and artifacts.objects.object_key = excluded.object_key
-      and artifacts.objects.kind = excluded.kind
-      and (artifacts.objects.updated_at <= excluded.updated_at
-        or (artifacts.objects.bytes, artifacts.objects.sha256) is distinct from (excluded.bytes, excluded.sha256))`;
+      and artifacts.objects.kind = excluded.kind`;
 }
 
 async function find(sql: Sql, id: string, kind: "html" | "file") {

@@ -170,7 +170,7 @@ export function createDirectUploads(sql: Sql, bucket: ReturnType<typeof createMu
           return { ...session.description,
             ...(session.receipt?.after.project ? { project: session.receipt.after.project } : {}),
             id: canonicalId(session), sha256: session.sha256,
-            updatedAt: session.target_id ? new Date(session.receipt!.after.updated_at) : object.created_at };
+            updatedAt: session.receipt ? new Date(session.receipt.after.updated_at) : object.created_at };
         }
         await completionSlot(tx, maxConcurrent);
         const deadline = AbortSignal.any([signal, AbortSignal.timeout(COMPLETION_TIMEOUT_MS)]);

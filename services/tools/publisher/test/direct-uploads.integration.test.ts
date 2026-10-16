@@ -477,7 +477,7 @@ describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", () => {
     expect(await raw(before!.object_key)).toBe("legacy original");
     const [current] = await sql`select * from artifacts.objects where id = ${original.id}`;
     expect(await raw(current!.object_key)).toBe("legacy winner");
-    const payload = { id: original.id, kind: "html", filename: "legacy.html", contentType: "application/xhtml+xml",
+    const payload = { id: original.id, kind: "html", filename: "legacy.html", contentType: "text/html; charset=utf-8",
       bytes: 15, objectKey: before!.object_key, project: "stale-project", sha256: digest(Buffer.from("legacy original")), now: before!.updated_at };
     const operationId = crypto.randomUUID();
     await sql`insert into artifacts.operations (operation_id, artifact_id, owner_id, lease_until, operation_kind, payload)
@@ -492,12 +492,14 @@ describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", () => {
       values (${projectOperation}::uuid, ${original.id}, 'project-fixture', now() + interval '1 hour', 'put_html',
         ${sql.json({ ...payload, objectKey: current!.object_key, sha256: current!.sha256, bytes: 13, now: current!.updated_at })})`;
     await storage.updateHtmlProject(original.id, "new-project");
+    const [edited] = await sql`select * from artifacts.objects where id = ${original.id}`;
     await sql`update artifacts.operations set lease_until = now() - interval '1 second' where operation_id = ${projectOperation}::uuid`;
     const project = await storage.getHtml(original.id, { headOnly: true });
     project?.body.destroy();
     expect(project?.project).toBe("new-project");
-    const [unchanged] = await sql`select filename, content_type from artifacts.objects where id = ${original.id}`;
-    expect(unchanged).toEqual({ filename: current!.filename, content_type: current!.content_type });
+    const [reconciled] = await sql`select filename, content_type, project, updated_at from artifacts.objects where id = ${original.id}`;
+    expect(reconciled).toEqual({ filename: payload.filename, content_type: "text/html; charset=utf-8",
+      project: "new-project", updated_at: edited!.updated_at });
     await storage.deleteUpload(original.id);
     await sql`insert into artifacts.operations (operation_id, artifact_id, owner_id, lease_until, operation_kind, payload)
       values (${crypto.randomUUID()}::uuid, ${original.id}, 'revoked-fixture', now() - interval '1 second', 'put_html', ${sql.json(payload)})`;
