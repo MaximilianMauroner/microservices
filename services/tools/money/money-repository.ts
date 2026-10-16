@@ -230,7 +230,7 @@ export interface MoneyRepository {
   previewTransferRule(input: MoneyTransferRuleInput): Promise<MoneyTransferRulePreview>;
   /** Stores the rule first in match order and applies the rule set to unresolved transfers only. */
   createTransferRule(input: MoneyTransferRuleInput & Readonly<{ actor: string; expectedMatchCount: number }>): Promise<Readonly<{ affectedCount: number }>>;
-  /** Removes the rule. Transfers it already classified keep their disposition. */
+  /** Removes the rule. Transfers it already classified keep their disposition until the next reimport. */
   deleteTransferRule(ruleId: string): Promise<boolean>;
   setTransferDisposition(input: Readonly<{ transactionId: string; disposition: MoneyTransferDisposition }>): Promise<void>;
   setTransferDispositions(input: Readonly<{ transactionIds: readonly string[]; disposition: MoneyTransferDisposition }>): Promise<Readonly<{ affectedCount: number }>>;
@@ -303,7 +303,7 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
             base_amount_minor: item.baseAmountMinor ?? null, base_fee_minor: item.baseFeeMinor ?? null,
             base_tax_minor: item.baseTaxMinor ?? null, base_currency: item.baseCurrency ?? null,
             source_type: item.sourceType, mcc: item.mcc ?? null, flow_kind: item.flowKind, category: item.category,
-            category_origin: "source", transfer_group_id: null, transfer_disposition: null
+            category_origin: "source", transfer_group_id: null, transfer_disposition: null, transfer_origin: null
           }));
           const inserted = await tx<{ id: string; source_key: string }[]>`insert into tools.money_transactions ${tx(values)} on conflict (source_key) do nothing returning id, source_key`;
           for (const row of inserted) transactionIds.set(row.source_key, row.id);
@@ -346,9 +346,7 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
             else 'Trade Republic Cash'
           end, updated_at = now()
           where provider = 'portfolio_export'`;
-        // Existing transfer groups and dispositions may include manual review choices.
-        // Reapply defaults only to unresolved rows instead of erasing those choices.
-        await linkUnambiguousTransfers(tx);
+        await relinkAutomaticTransfers(tx);
         await applyCategoryRules(tx);
         const [linked] = await tx<{ linked_pair_count: string }[]>`select count(distinct transfer_group_id)::text linked_pair_count
           from tools.money_transactions where transfer_group_id is not null`;
@@ -366,7 +364,7 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
           from tools.money_transactions where import_id = ${importId} and transfer_group_id is not null`;
         const groupIds = linkedGroups.map((row) => row.transfer_group_id);
         if (groupIds.length) {
-          await tx`update tools.money_transactions set transfer_group_id = null, transfer_disposition = null
+          await tx`update tools.money_transactions set transfer_group_id = null, transfer_disposition = null, transfer_origin = null
             where transfer_group_id in ${tx(groupIds)}`;
         }
 
@@ -667,7 +665,7 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
     setTransferDispositions(input) {
       return sql.begin(async (tx) => {
         await lockCategoryRules(tx);
-        const updated = await tx<{ id: string }[]>`update tools.money_transactions set transfer_disposition = ${input.disposition}
+        const updated = await tx<{ id: string }[]>`update tools.money_transactions set transfer_disposition = ${input.disposition}, transfer_origin = 'manual'
           where id in ${tx(input.transactionIds)} and status = 'completed' and flow_kind = 'transfer'
             and transfer_group_id is null and transfer_disposition is null returning id`;
         await applyCategoryRules(tx);
@@ -1158,8 +1156,37 @@ async function refreshInferredTransactions(tx: postgres.TransactionSql, transact
   }
 }
 
+/**
+ * Classifies transfers again under the current rules. Only results the rules wrote are cleared. A manual choice, or a
+ * result whose origin is unknown, keeps its row and every row in its group. A pair that links again keeps its group ID.
+ */
+async function relinkAutomaticTransfers(tx: postgres.TransactionSql) {
+  const cleared = await tx<{ id: string; group_id: string | null }[]>`with automatic_groups as (
+      select transfer_group_id from tools.money_transactions where transfer_group_id is not null
+      group by transfer_group_id having bool_and(transfer_origin is not distinct from 'automatic')
+    ), targets as (
+      select id, transfer_group_id from tools.money_transactions
+      where (transfer_group_id is null and transfer_origin = 'automatic')
+        or transfer_group_id in (select transfer_group_id from automatic_groups)
+    )
+    update tools.money_transactions t set transfer_group_id = null, transfer_disposition = null, transfer_origin = null
+    from targets where t.id = targets.id
+    returning t.id, targets.transfer_group_id::text group_id`;
+  await linkUnambiguousTransfers(tx);
+  const members = new Map<string, string[]>();
+  for (const row of cleared) if (row.group_id) members.set(row.group_id, [...(members.get(row.group_id) ?? []), row.id]);
+  const pairs = [...members].filter(([, ids]) => ids.length === 2);
+  if (!pairs.length) return;
+  await tx`update tools.money_transactions t set transfer_group_id = previous.group_id
+    from unnest(${tx.array(pairs.map(([groupId]) => groupId))}::uuid[], ${tx.array(pairs.map(([, ids]) => ids[0]!))}::uuid[],
+      ${tx.array(pairs.map(([, ids]) => ids[1]!))}::uuid[]) as previous(group_id, left_id, right_id)
+    join tools.money_transactions left_row on left_row.id = previous.left_id
+    join tools.money_transactions right_row on right_row.id = previous.right_id
+    where left_row.transfer_group_id = right_row.transfer_group_id and t.transfer_group_id = left_row.transfer_group_id`;
+}
+
 async function linkUnambiguousTransfers(tx: postgres.TransactionSql) {
-  await tx`update tools.money_transactions set transfer_disposition = 'excluded'
+  await tx`update tools.money_transactions set transfer_disposition = 'excluded', transfer_origin = 'automatic'
     where status = 'completed' and flow_kind = 'transfer' and source_type = 'Exchange'
       and transfer_group_id is null and transfer_disposition is null`;
   const { rules, pairRules } = await readTransferRules(tx);
@@ -1202,7 +1229,7 @@ async function linkUnambiguousTransfers(tx: postgres.TransactionSql) {
       const ids = batch.map((assignment) => assignment.id);
       const groupIds = batch.map((assignment) => assignment.groupId);
       await tx`update tools.money_transactions t set transfer_group_id = assignments.group_id,
-        transfer_disposition = 'internal_transfer'
+        transfer_disposition = 'internal_transfer', transfer_origin = 'automatic'
         from unnest(${tx.array(ids)}::uuid[], ${tx.array(groupIds)}::uuid[]) as assignments(id, group_id)
         where t.id = assignments.id and t.transfer_group_id is null and t.transfer_disposition is null`;
     }
@@ -1250,7 +1277,7 @@ async function readTransferRules(sql: Sql | TransactionSql) {
   };
 }
 
-/** Sets one transfer's disposition. A disposition other than internal_transfer splits a linked pair. */
+/** Records a manual disposition. internal_transfer on a linked pair confirms the whole pair; any other disposition splits it. */
 async function updateTransferDisposition(tx: TransactionSql, input: Readonly<{ transactionId: string; disposition: MoneyTransferDisposition }>) {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const [snapshot] = await tx<{ transfer_group_id: string | null }[]>`select transfer_group_id from tools.money_transactions
@@ -1260,13 +1287,17 @@ async function updateTransferDisposition(tx: TransactionSql, input: Readonly<{ t
       const locked = await tx<{ id: string }[]>`select id from tools.money_transactions
         where transfer_group_id = ${snapshot.transfer_group_id} order by id for update`;
       if (!locked.some((row) => row.id === input.transactionId)) continue;
-      if (input.disposition === "internal_transfer") return;
+      if (input.disposition === "internal_transfer") {
+        await tx`update tools.money_transactions set transfer_origin = 'manual' where transfer_group_id = ${snapshot.transfer_group_id}`;
+        return;
+      }
       await tx`update tools.money_transactions set transfer_group_id = null,
-        transfer_disposition = case when id = ${input.transactionId} then ${input.disposition} else null end
+        transfer_disposition = case when id = ${input.transactionId} then ${input.disposition} else null end,
+        transfer_origin = case when id = ${input.transactionId} then 'manual' else null end
         where transfer_group_id = ${snapshot.transfer_group_id}`;
       return;
     }
-    const updated = await tx<{ id: string }[]>`update tools.money_transactions set transfer_disposition = ${input.disposition}
+    const updated = await tx<{ id: string }[]>`update tools.money_transactions set transfer_disposition = ${input.disposition}, transfer_origin = 'manual'
       where id = ${input.transactionId} and status = 'completed' and flow_kind = 'transfer'
         and transfer_group_id is null returning id`;
     if (updated[0]) return;
@@ -1310,7 +1341,7 @@ async function inferUnlinkedTransferDispositions(tx: postgres.TransactionSql, ru
   }
   for (const [disposition, ids] of dispositions) {
     for (const batch of chunks(ids, RELATED_INSERT_CHUNK_SIZE)) {
-      await tx`update tools.money_transactions set transfer_disposition = ${disposition}
+      await tx`update tools.money_transactions set transfer_disposition = ${disposition}, transfer_origin = 'automatic'
         where id in ${tx(batch)} and transfer_group_id is null and transfer_disposition is null`;
     }
   }
