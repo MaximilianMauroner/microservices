@@ -3,8 +3,7 @@
 Artifact Publisher stores self-contained HTML plans and shared downloads in
 a private S3-compatible bucket. Production routes are mounted by
 `services/tools`; unguessable delivery URLs are public, unlisted read
-capabilities, while upload/list/revoke surfaces use the Publisher Cloudflare
-Access audience or native bearer authentication.
+capabilities, while management routes use the Tools browser session or native bearer authentication.
 
 - Canonical HTML URLs are `/artifacts/:id`.
 - Canonical file URLs are `/files/:id/:filename`.
@@ -13,9 +12,9 @@ Access audience or native bearer authentication.
 - Other files expire after three days by default. The artifact console can set
   an exact future expiry or keep a file until it is revoked.
 - `/api/uploads*` requires the native upload bearer token and intentionally
-  does not require browser Access.
+  does not require a browser session.
 - `/publisher` and `/api/external-uploads` are available only through the unified
-  platform's browser Access adapter.
+  platform's browser session boundary.
 - `/api/upload-links` creates and revokes time-limited guest upload capabilities.
 - `/drop/:token` lets a guest upload any number of temporary files without a
   browser session. PostgreSQL stores only the token hash; the secret URL is
@@ -44,7 +43,7 @@ are `MAX_UPLOAD_BYTES`, `MAX_HTML_UPLOAD_BYTES`, `MAX_CONCURRENT_UPLOADS`,
 
 ## Direct transfers
 
-The React console and guest page send every new file directly to private storage
+The Fleet uploader, React console, and guest page send new file bytes directly to private storage
 through durable multipart sessions. Tools authorizes short-lived URLs, verifies
 actual stored bytes, and commits canonical metadata in PostgreSQL. Interrupted
 uploads can resume after web sleep or restart without local chunk files.
@@ -52,9 +51,13 @@ uploads can resume after web sleep or restart without local chunk files.
 Native agents can use `pnpm upload:direct <file> [request-id]` with
 `PUBLIC_BASE_URL` and `UPLOAD_TOKEN`, or `/api/uploads/sessions`. Browser session
 routes use `/api/external-uploads/sessions`; guest routes use
-`/api/drop/:token/uploads/sessions`. No bucket credential is sent to a client.
+`/api/drop/:token/uploads/sessions`. HTML replacements use the same direct protocol with
+a replacement target. Each replacement stages a new immutable body. Tools verifies its
+stored size and SHA-256, then conditionally changes the canonical pointer. The ID, URL,
+creation time, and omitted project stay unchanged. Prior bytes and full replacement
+receipts remain available for recovery. No bucket credential is sent to a client.
 
-See [direct transfers](../../../docs/tools-platform/direct-transfers.md) for the
+See [direct transfers](./direct-transfers.md) for the
 protocol, integrity validation, limits, recovery, retained caller compatibility,
 CORS configuration, and unapplied production rollout steps.
 
@@ -120,7 +123,8 @@ Send each raw chunk with `PUT /api/uploads/chunks/:sessionId/:index`, then call
 `POST /api/uploads/chunks/:sessionId/complete`. Use `DELETE
 /api/uploads/chunks/:sessionId` to abandon a session. The bearer token is
 required for all four operations. Chunked native uploads create temporary
-files; HTML replacement continues to use the multipart endpoint.
+files; Legacy clients can still replace HTML through the multipart endpoint. Current
+Fleet and browser replacements use direct sessions.
 
 The authenticated browser console changes a file's expiry through the
 same-origin lifecycle route. An ISO timestamp must be in the future. `null`
@@ -191,8 +195,11 @@ one standard byte range. Missing, revoked, and expired capability URLs return
 
 Non-conditional file `GET` requests of every size use a
 temporary signed object-storage URL after the canonical capability is checked.
-Large non-video files are signed with attachment disposition, a binary content
-type, and private no-store caching. The redirect is `private, no-store`; its signed
+PDFs use inline disposition and application/pdf so the browser can display them. This
+also applies to retained files with a .pdf filename and binary metadata. The explicit
+Download control adds ?download=1 and requests attachment disposition. Other non-video
+files use attachment disposition and a binary content type. All signed reads use private
+no-store caching. The redirect is `private, no-store`; its signed
 storage URL is valid for at most four hours (less near file expiry) so playback
 and later seeks can use the same URL. A client following the redirect
 receives full and byte-range responses from storage instead of sending
@@ -226,7 +233,8 @@ a valid short-lived signature. The production Tigris bucket has this rule.
 Errors use JSON with stable `error` and `message` fields. Notable statuses are
 `401 unauthorized`, `403 invalid_origin`, `404 upload_not_found`, `408
 upload_timeout`, `409
-upload_conflict`, `409 incomplete_upload`, `413 payload_too_large`, `415 unsupported_media_type`, `416
+upload_conflict`, `409 incomplete_upload`, `413 payload_too_large`, `415
+unsupported_media_type`, `416
 range_not_satisfiable`, and `503 upload_capacity_reached`.
 
 ## Cleanup

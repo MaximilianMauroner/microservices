@@ -1,7 +1,8 @@
 import type { UploadSummary } from "../../src/protected-data.js";
+import { sha256 } from "@noble/hashes/sha2.js";
 import { friendlyUploadError, UploadCancelledError } from "./upload-errors.js";
 
-type Session = { sessionId: string; partBytes: number; totalParts: number; state: string; uploaded: number[] };
+type Session = { sessionId: string; partBytes: number; totalParts: number; state: string; uploaded: number[]; replaceId?: string };
 export type DirectUploadCallbacks = {
   onProgress: (loaded: number, total: number) => void;
   onProcessing: () => void;
@@ -9,13 +10,13 @@ export type DirectUploadCallbacks = {
   isCancelled: () => boolean;
   signal?: AbortSignal;
 };
-type Options = { base?: string; kind?: "html" | "file"; project?: string };
+type Options = { base?: string; kind?: "html" | "file"; project?: string; replaceId?: string };
 
 /** Keep only a request ID in this tab. Reselecting the same file can resume;
  * storage is inspected again and each digest is checked against actual bytes. */
 export async function uploadDirectFile(file: File, callbacks: DirectUploadCallbacks, options: Options = {}): Promise<UploadSummary> {
   const base = options.base ?? "/api/external-uploads/sessions";
-  const fingerprint = JSON.stringify([base, file.name, file.size, file.lastModified, options.kind ?? "file", options.project ?? ""]);
+  const fingerprint = JSON.stringify([base, file.name, file.size, file.lastModified, options.kind ?? "file", options.project ?? "", options.replaceId ?? ""]);
   const savedKey = "publisher.direct-upload:" + fingerprint;
   let requestId = readSavedId(savedKey) ?? crypto.randomUUID();
   saveId(savedKey, requestId);
@@ -48,7 +49,8 @@ export async function uploadDirectFile(file: File, callbacks: DirectUploadCallba
   };
   const initialize = () => control(base, { requestId, filename: file.name,
     contentType: file.type || "application/octet-stream", totalBytes: file.size,
-    kind: options.kind ?? "file", ...(options.project?.trim() ? { project: options.project.trim() } : {}) });
+    kind: options.kind ?? "file", ...(options.project?.trim() ? { project: options.project.trim() } : {}),
+    ...(options.replaceId ? { replaceId: options.replaceId } : {}) });
   let session: Session;
   try {
     try { session = readSession(await initialize()); }
@@ -58,6 +60,7 @@ export async function uploadDirectFile(file: File, callbacks: DirectUploadCallba
       saveId(savedKey, requestId);
       session = readSession(await initialize());
     }
+    if (options.replaceId && session.replaceId !== options.replaceId) throw new Error("The server does not support this HTML replacement.");
     const sessionBase = `${base}/${session.sessionId}`;
     if (session.state === "uploading") {
       for (let number = 1; number <= session.totalParts; number += 1) {
@@ -91,9 +94,14 @@ export async function uploadDirectFile(file: File, callbacks: DirectUploadCallba
     }
     checkCancelled();
     callbacks.onProcessing();
-    const completed = await control(`${sessionBase}/complete`);
+    const expectedSha256 = await hashFile(file, checkCancelled);
+    const completed = await control(`${sessionBase}/complete`, { sha256: expectedSha256 });
     checkCancelled();
     if (!isUploadSummary(completed)) throw new Error("Invalid upload completion response.");
+    if (options.replaceId && completed.id !== options.replaceId) throw new Error("The server did not replace the selected HTML page.");
+    if (completed.sha256 !== expectedSha256 || completed.bytes !== file.size) {
+      throw new Error("The published file does not match the selected file. Keep the original source to resume.");
+    }
     removeSavedId(savedKey);
     return completed;
   } catch (error) {
@@ -105,6 +113,23 @@ export async function uploadDirectFile(file: File, callbacks: DirectUploadCallba
     // Leave the durable session available after interruption. Retry uses the
     // same request ID and skips parts the bucket has already accepted.
     throw error;
+  }
+}
+
+async function hashFile(file: File, checkCancelled: () => void) {
+  const hash = sha256.create();
+  const reader = file.stream().getReader();
+  try {
+    for (;;) {
+      checkCancelled();
+      const { value, done } = await reader.read();
+      if (done) break;
+      hash.update(value);
+    }
+    return Array.from(hash.digest(), byte => byte.toString(16).padStart(2, "0")).join("");
+  } finally {
+    await reader.cancel();
+    reader.releaseLock();
   }
 }
 
@@ -156,12 +181,15 @@ function readSession(value: unknown): Session {
     || value.totalParts < 1 || value.totalParts > 250 || typeof value.state !== "string" || !Array.isArray(value.uploaded)
     || !value.uploaded.every(number => typeof number === "number")) throw new Error("Invalid upload session response.");
   return { sessionId: value.sessionId, partBytes: value.partBytes, totalParts: value.totalParts,
-    state: value.state, uploaded: value.uploaded };
+    state: value.state, uploaded: value.uploaded,
+    ...(typeof value.replaceId === "string" ? { replaceId: value.replaceId } : {}) };
 }
-function isUploadSummary(value: unknown): value is UploadSummary {
+function isUploadSummary(value: unknown): value is UploadSummary & { sha256: string } {
   return isRecord(value) && typeof value.id === "string" && typeof value.url === "string"
     && typeof value.filename === "string" && typeof value.bytes === "number"
-    && (value.kind === "html" || value.kind === "file") && typeof value.contentType === "string";
+    && typeof value.updatedAt === "string" && Number.isFinite(Date.parse(value.updatedAt))
+    && new Date(value.updatedAt).toISOString() === value.updatedAt
+    && (value.kind === "html" || value.kind === "file") && typeof value.contentType === "string" && typeof value.sha256 === "string";
 }
 function readSavedId(key: string) { try { return sessionStorage.getItem(key) ?? undefined; } catch { return undefined; } }
 function saveId(key: string, id: string) { try { sessionStorage.setItem(key, id); } catch { /* This upload still survives web restarts. */ } }

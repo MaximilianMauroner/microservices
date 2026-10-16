@@ -15,6 +15,7 @@ export type UploadSummary = {
   filename: string;
   contentType: string;
   url: string;
+  downloadUrl?: string;
   bytes: number;
   updatedAt: string;
   expiresAt?: string;

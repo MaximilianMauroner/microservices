@@ -3,18 +3,21 @@ import { Readable } from "node:stream";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import {
   CopyObjectCommand,
+  AbortMultipartUploadCommand,
   DeleteObjectCommand,
   GetObjectCommand,
   type GetObjectCommandOutput,
   HeadObjectCommand,
   ListObjectsV2Command,
+  ListMultipartUploadsCommand,
   PutObjectCommand,
   S3Client
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import type { DirectUploads } from "./direct-uploads.js";
 import {
-  attachmentDisposition,
+  contentDisposition,
+  type FileDelivery,
   originalNameMetadata,
   projectMetadata,
   readOriginalNameMetadata,
@@ -70,6 +73,7 @@ export type StoredUploadInventorySummary = {
 
 export type PutHtmlOptions = StorageOperationOptions & {
   ifMatch?: string;
+  expectedObjectKey?: string;
 };
 
 export type GetStoredObjectOptions = StorageOperationOptions & {
@@ -87,6 +91,7 @@ export type StoredHtml = {
   sha256?: string;
   lastModified?: Date;
   project?: string;
+  version?: string;
 };
 
 export type StoredTemporaryFile = {
@@ -158,7 +163,7 @@ export interface UploadStorage {
   presignTemporaryFile?(
     id: string,
     expiresInSeconds: number,
-    delivery?: { kind: "attachment"; filename: string },
+    delivery?: FileDelivery,
     options?: StorageOperationOptions
   ): Promise<string | null>;
   listUploads(
@@ -315,7 +320,7 @@ export function createS3UploadStorage(config: S3UploadStorageConfig): UploadStor
           Key: temporaryFileKey(id),
           Body: createReadStream(filePath, { signal: options?.signal }),
           CacheControl: "private, no-store",
-          ContentDisposition: attachmentDisposition(metadata.originalName),
+          ContentDisposition: contentDisposition(metadata.originalName),
           ContentLength: metadata.bytes,
           ContentType: metadata.contentType,
           Expires: metadata.expiresAt,
@@ -389,9 +394,9 @@ export function createS3UploadStorage(config: S3UploadStorageConfig): UploadStor
         new GetObjectCommand({
           Bucket: config.bucket,
           Key: options?.objectKey ?? temporaryFileKey(id),
-          ...(delivery?.kind === "attachment" ? {
-            ResponseContentDisposition: attachmentDisposition(delivery.filename),
-            ResponseContentType: "application/octet-stream",
+          ...(delivery ? {
+            ResponseContentDisposition: contentDisposition(delivery.filename, delivery.kind),
+            ResponseContentType: delivery.kind === "inline" ? "application/pdf" : "application/octet-stream",
             ResponseCacheControl: "private, no-store"
           } : {})
         }),
@@ -532,8 +537,31 @@ export function createS3UploadStorage(config: S3UploadStorageConfig): UploadStor
 
     async deleteUpload(id, options) {
       const errors: unknown[] = [];
-
-      for (const key of [temporaryFileKey(id), htmlKey(id), `transfers/${id}`]) {
+      const keys = options?.objectKey ? [options.objectKey] : [temporaryFileKey(id), htmlKey(id), `transfers/${id}`];
+      if (!options?.objectKey) try {
+        const prefix = `transfers/${id}/`;
+        let marker: string | undefined;
+        let uploadMarker: string | undefined;
+        do {
+          const uploads = await client.send(new ListMultipartUploadsCommand({ Bucket: config.bucket,
+            Prefix: prefix, KeyMarker: marker, UploadIdMarker: uploadMarker }), requestOptions(options));
+          for (const upload of uploads.Uploads ?? []) {
+            if (upload.Key?.startsWith(prefix) && upload.UploadId) await client.send(new AbortMultipartUploadCommand({
+              Bucket: config.bucket, Key: upload.Key, UploadId: upload.UploadId
+            }), requestOptions(options));
+          }
+          marker = uploads.IsTruncated ? uploads.NextKeyMarker : undefined;
+          uploadMarker = uploads.IsTruncated ? uploads.NextUploadIdMarker : undefined;
+        } while (marker);
+        let continuation: string | undefined;
+        do {
+          const objects = await client.send(new ListObjectsV2Command({ Bucket: config.bucket,
+            Prefix: prefix, ContinuationToken: continuation }), requestOptions(options));
+          for (const object of objects.Contents ?? []) if (object.Key?.startsWith(prefix)) keys.push(object.Key);
+          continuation = objects.IsTruncated ? objects.NextContinuationToken : undefined;
+        } while (continuation);
+      } catch (error) { errors.push(error); }
+      for (const key of keys) {
         try {
           await client.send(
             new DeleteObjectCommand({
