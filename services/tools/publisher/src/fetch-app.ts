@@ -1060,7 +1060,6 @@ async function upload(
             );
           }
           existing.body.destroy();
-          project ??= existing.project;
           if (!existing.etag) throw new Error(`Stored HTML ${id} is missing an ETag`);
           updateEtag = existing.etag;
           expectedObjectKey = existing.version;
@@ -1078,7 +1077,7 @@ async function upload(
                 bytes: staged.bytes,
                 originalName,
                 sha256,
-                ...(project ? { project } : {})
+                ...(staged.project ? { project: staged.project } : {})
               },
               { ifMatch: updateEtag, expectedObjectKey, signal: request.signal }
             );
@@ -1093,6 +1092,11 @@ async function upload(
             throw error;
           }
           throwIfAborted(request.signal);
+          if (mode.kind === "update") {
+            const committed = await options.storage.getHtml(id, { headOnly: true, signal: request.signal });
+            committed?.body.destroy();
+            project = committed?.project;
+          }
           responseSent = true;
           return jsonResponse(
             {

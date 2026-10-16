@@ -56,7 +56,11 @@ export async function handleDirectUpload(request: Request, remainder: string, up
     return json(await uploads.sign(id, owner, input.number, input.sha256, controlSignal));
   }
   if (request.method === "POST" && action === "complete") {
-    const completed = await uploads.complete(id, owner, options.maxConcurrent, request.signal);
+    const input = await readJson(request, controlSignal, true);
+    if (input.sha256 !== undefined && (typeof input.sha256 !== "string" || !/^[a-f0-9]{64}$/.test(input.sha256))) {
+      throw invalid("Expected SHA-256 must contain 64 lowercase hexadecimal characters.");
+    }
+    const completed = await uploads.complete(id, owner, options.maxConcurrent, request.signal, input.sha256);
     const { totalBytes, fileExpiresAt, partBytes: _partBytes, retentionMs: _retentionMs, ...metadata } = completed;
     return json({ ...metadata, bytes: totalBytes,
       ...artifactUrls(options.baseUrl, completed),
@@ -71,9 +75,9 @@ function json(value: unknown, status = 200) {
     "Content-Type": "application/json; charset=utf-8", "Cache-Control": "private, no-store" } });
 }
 
-async function readJson(request: Request, signal: AbortSignal): Promise<Record<string, unknown>> {
-  if (request.headers.get("content-type")?.split(";", 1)[0] !== "application/json") throw invalid("Expected application/json.");
+async function readJson(request: Request, signal: AbortSignal, allowEmpty = false): Promise<Record<string, unknown>> {
   const reader = request.body?.getReader();
+  if (!reader && allowEmpty) return {};
   if (!reader) throw invalid("Upload description is missing.");
   const chunks: Uint8Array[] = [];
   let bytes = 0;
@@ -88,6 +92,8 @@ async function readJson(request: Request, signal: AbortSignal): Promise<Record<s
       if (bytes > 4096) throw invalid("Upload description is too large.");
       chunks.push(value);
     }
+    if (bytes === 0 && allowEmpty) return {};
+    if (request.headers.get("content-type")?.split(";", 1)[0] !== "application/json") throw invalid("Expected application/json.");
     const value: unknown = JSON.parse(Buffer.concat(chunks).toString("utf8"));
     if (!value || typeof value !== "object" || Array.isArray(value)) throw invalid("Expected a JSON object.");
     return value as Record<string, unknown>;
