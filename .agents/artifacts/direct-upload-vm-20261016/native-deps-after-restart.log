@@ -1,0 +1,4 @@
+heavy-check: waiting for repository lock (/home/codex/.t3/worktrees/microservices/fix-direct-uploads-tools-and-fleet-vm-20261016)
+heavy-check: running with timeout 20m (/home/codex/.t3/worktrees/microservices/fix-direct-uploads-tools-and-fleet-vm-20261016)
+RustFS official release SHA256 verified 9742e183cb0dfb0d48fa909797af572fe47b7f827569036baa4156e0d3958ee5
+Node official release SHA256 verified df450af89261115ef9f9e3830c3eeb2cc9213b63c720b1af623cb5dcbe2e02de

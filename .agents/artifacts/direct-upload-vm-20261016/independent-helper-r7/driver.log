@@ -1,0 +1,27 @@
+heavy-check: waiting for repository lock (/home/codex/.t3/worktrees/microservices/fix-direct-uploads-tools-and-fleet-vm-20261016)
+heavy-check: running with timeout 20m (/home/codex/.t3/worktrees/microservices/fix-direct-uploads-tools-and-fleet-vm-20261016)
+build-before {"files": 0, "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}
+provenance {"sourceFingerprint": "81172b361df7e14a09818ef9352270e3ac203aec2ce1dcf60aa9cacf72100fac", "checksums": {"services/tools/publisher/scripts/release-paired-backup.mjs": "1483cebb4cbd0271c79dfb9f385fc0e2d20217e81f5df3d6bcdc55be943059b3", "services/tools/publisher/scripts/release-paired-backup.test.mjs": "417a0f550fe10cfebd01a523a068fd0cba2d2b761507eef7de1acf0f644c36d3"}, "revision": "ea91be1aee876b483d06153fabf848f178374af1", "node": "v22.23.3"}
+boundaries {"exit": 0, "log": "/home/codex/.t3/worktrees/microservices/direct-upload-final-artifact-20261016/.agents/artifacts/helper-logical-r7/boundaries.log"}
+postgres-start {"exit": 0, "log": "/home/codex/.t3/worktrees/microservices/direct-upload-final-artifact-20261016/.agents/artifacts/helper-logical-r7/postgres-start.log"}
+storage-pid 221791
+setup-and-precision {"exit": 0, "log": "/home/codex/.t3/worktrees/microservices/direct-upload-final-artifact-20261016/.agents/artifacts/helper-logical-r7/setup-and-precision.log"}
+preflight {"exit": 0, "log": "/home/codex/.t3/worktrees/microservices/direct-upload-final-artifact-20261016/.agents/artifacts/helper-logical-r7/preflight.log"}
+quiet-source {"appNotStarted": true, "sourceWritesAfterIndependentSnapshot": false, "otherWritersAuthorized": false, "tmpdir": "/dev/shm/direct-upload-final-verifier-20261016/tmp"}
+paired-backup {"exit": 0, "log": "/home/codex/.t3/worktrees/microservices/direct-upload-final-artifact-20261016/.agents/artifacts/helper-logical-r7/paired-backup.log"}
+restore {"exit": 0, "log": "/home/codex/.t3/worktrees/microservices/direct-upload-final-artifact-20261016/.agents/artifacts/helper-logical-r7/restore.log"}
+verify-target {"exit": 0, "log": "/home/codex/.t3/worktrees/microservices/direct-upload-final-artifact-20261016/.agents/artifacts/helper-logical-r7/verify-target.log"}
+verify-target-repeat {"exit": 0, "log": "/home/codex/.t3/worktrees/microservices/direct-upload-final-artifact-20261016/.agents/artifacts/helper-logical-r7/verify-target-repeat.log"}
+verify-source {"exit": 0, "log": "/home/codex/.t3/worktrees/microservices/direct-upload-final-artifact-20261016/.agents/artifacts/helper-logical-r7/verify-source.log"}
+independent-compare {"exit": 0, "log": "/home/codex/.t3/worktrees/microservices/direct-upload-final-artifact-20261016/.agents/artifacts/helper-logical-r7/independent-compare.log"}
+source-unchanged true
+execution-verdict "pass"
+source-final-dump {"exit": 0, "log": "/home/codex/.t3/worktrees/microservices/direct-upload-final-artifact-20261016/.agents/artifacts/helper-logical-r7/source-final-dump.log"}
+target-final-dump {"exit": 0, "log": "/home/codex/.t3/worktrees/microservices/direct-upload-final-artifact-20261016/.agents/artifacts/helper-logical-r7/target-final-dump.log"}
+pre-stop-archive {"path": "/home/codex/.local/share/direct-upload-vm-20261016/final-native-verifier/helper-logical-r7-pre-stop-fixture.tar", "bytes": 144844800, "sha256": "8f1cb324b5455f0e8a407f940a0a4d83060c3bbffdb4853ca8ef6f949158e715", "regularFilesVerified": 0}
+fixture-stop {"exit": 0, "log": "/home/codex/.t3/worktrees/microservices/direct-upload-final-artifact-20261016/.agents/artifacts/helper-logical-r7/fixture-stop.log"}
+stopped-archive {"path": "/home/codex/.local/share/direct-upload-vm-20261016/final-native-verifier/helper-logical-r7-stopped-fixture.tar", "bytes": 145039360, "sha256": "6cd0106ee3c3e9420a4e3f3debb09a54e8dcf8db759491c8217b15a8d514757d", "regularFilesVerified": 3883}
+ownedPortsClosed true
+finalSourceFingerprint "81172b361df7e14a09818ef9352270e3ac203aec2ce1dcf60aa9cacf72100fac"
+build-after {"files": 0, "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}
+finalChecksums {"services/tools/publisher/scripts/release-paired-backup.mjs": "1483cebb4cbd0271c79dfb9f385fc0e2d20217e81f5df3d6bcdc55be943059b3", "services/tools/publisher/scripts/release-paired-backup.test.mjs": "417a0f550fe10cfebd01a523a068fd0cba2d2b761507eef7de1acf0f644c36d3"}

@@ -39,7 +39,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                                       "hasFixtureBody": b"DIRECT-UPLOAD-VM-BODY" in body}) + "\n")
             fault = json.loads(control.read_text()) if control.exists() else {}
             action = "init" if self.path == "/api/uploads/sessions" else "complete" if self.path.endswith("/complete") else "parts" if self.path.endswith("/parts") else None
-            selected = fault.get("action") == action
+            selected = action is not None and fault.get("action") == action
             if selected:
                 control.write_text("{}")
         if selected and fault.get("mode") == "hold":

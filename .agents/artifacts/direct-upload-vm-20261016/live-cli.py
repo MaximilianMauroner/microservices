@@ -10,6 +10,7 @@ import subprocess
 import time
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
+from urllib.parse import urlsplit
 import uuid
 from build import source_hash
 
@@ -23,7 +24,8 @@ root = Path(__file__).resolve().parents[3]
 assert json.loads((state / "owner.json").read_text())["root"] == str(root)
 env = {**os.environ, **json.loads((state / "environment.json").read_text())}
 assert env["PUBLIC_BASE_URL"] == "http://127.0.0.1:43171"
-assert env["ARTIFACT_S3_ENDPOINT"] == "http://127.0.0.1:49000"
+assert urlsplit(env["ARTIFACT_S3_ENDPOINT"]).hostname == "127.0.0.1"
+assert env["ARTIFACT_S3_BUCKET"] == "tools-transfer-test"
 fixture_state = state
 state = fixture_state / ("cli-run-" + str(uuid.uuid4()))
 state.mkdir(mode=0o700)
@@ -155,7 +157,8 @@ proxy = subprocess.Popen(["python3", str(Path(__file__).with_name("observe.py"))
 owned.append(proxy)
 app = launch_app()
 assert urlopen("http://127.0.0.1:43171/health", timeout=30).status == 200
-assert "/sign-in" in urlopen("http://127.0.0.1:43171/publisher", timeout=30).url
+assert "/sign-in" in urlopen(Request("http://127.0.0.1:43171/publisher",
+                                    headers={"Accept": "text/html"}), timeout=30).url
 for token in (None, "wrong-local-token"):
     headers = {"Content-Type": "application/json", "Origin": "http://127.0.0.1:43171"}
     if token:

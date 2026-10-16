@@ -1,0 +1,40 @@
+{
+  "verdict": "pass",
+  "integration": {
+    "passed": 26,
+    "failed": 0,
+    "skipped": 0
+  },
+  "backupBoundaries": {
+    "passed": 10,
+    "failed": 0,
+    "skipped": 0
+  },
+  "sourceUnchanged": true,
+  "sourceFingerprint": "a430b837c6aef31e966eaf708c4f4b1f25a6a2cb4cbd1e456044689779cb17d7",
+  "buildTreeSha256": "bbf8c426e66478fffeee9b3c50f2e848dc24a432b40aa586fbca434198b1cc1a",
+  "buildEntrySha256": "ecbd1a3f76402ff73357848523d3c2bc0cbc7cab930ba669ceb4a00895937893",
+  "archiveRegularFilesVerified": 2426,
+  "archives": {
+    "/home/codex/.local/share/direct-upload-vm-20261016/final-native-verifier/http-local-pre-stop-fixture.tar": {
+      "bytes": 95692800,
+      "sha256": "4f54271cda5f67e936e08c79930cfad0684d9a680fc41f2edc062462d1bf3961"
+    },
+    "/home/codex/.local/share/direct-upload-vm-20261016/final-native-verifier/http-local-stopped-fixture.tar": {
+      "bytes": 95825920,
+      "sha256": "d85591f56142eda52c963e06d2fb03db315d30ea5b6816a2086341ec307b54cc"
+    }
+  },
+  "ownedPids": {
+    "app.pid": {
+      "pid": 156215,
+      "active": false
+    },
+    "storage.pid": {
+      "pid": 156122,
+      "active": false
+    }
+  },
+  "ownedPortsClosed": true,
+  "gitStatus": ""
+}

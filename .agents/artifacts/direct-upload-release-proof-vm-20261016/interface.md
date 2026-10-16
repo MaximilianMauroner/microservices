@@ -5,10 +5,28 @@ It uses the installed Publisher `postgres` and AWS S3 SDK packages.
 It also needs matching `pg_dump` and `pg_restore` binaries on `PATH`.
 Use Node.js 22.12 or newer.
 
-All network targets must use literal `127.0.0.1` or `::1` addresses.
-Connection URL options are forbidden.
-Every database must have the disposable fixture sentinel.
-This implementation has no production mode.
+Local source and every restore target require literal `127.0.0.1` or `::1` addresses.
+Local databases require the disposable fixture sentinel.
+Restore can never target production.
+
+`--production-source` permits read-only preflight, backup, and `verify --source`.
+This mode requires HTTPS storage, a TLS database connection, an explicit S3
+addressing style, and all four `RELEASE_SOURCE_*` resource identifiers.
+The identifiers record the approved scope. They do not discover or authenticate
+the resource mapping. The release owner must compare that mapping with Railway.
+No production source command ran in this task.
+
+The required scope variables are `RELEASE_SOURCE_PROJECT_ID`,
+`RELEASE_SOURCE_ENVIRONMENT_ID`, `RELEASE_SOURCE_SERVICE_ID`, and
+`RELEASE_SOURCE_BUCKET_RESOURCE_ID`. Set `RELEASE_S3_FORCE_PATH_STYLE` explicitly.
+The database URL accepts only an optional `sslmode=verify-full` query.
+Set `RELEASE_DATABASE_SSL_ROOT_CERT` to the approved PEM certificate authority
+file. postgres.js and pg_dump use that same file and verify the hostname.
+Production preflight and backup must run inside the matching Railway project,
+environment, and service. Their `RAILWAY_*_ID` values must match the scope.
+A VM or Mac temporary directory cannot prove the production legacy drain.
+The release owner must enumerate every live instance and run the inventory on
+each instance. The process environment confirms a service, not all its replicas.
 
 ## Set the source fixture variables
 
@@ -82,7 +100,7 @@ The backup contains these files.
 - `database-after.json` holds the final database inventory.
 - `bucket-before.json` and `bucket-after.json` hold exact object listing fields.
 - `bodies/<key-sha256>.bin` holds every raw bucket body, including retained versions, tombstone bodies, and unreferenced objects.
-- `manifest.json` holds source identities, snapshot identity, WAL positions, raw SHA-256 values, writable object metadata, tags, and source ETags and modification times.
+- `manifest.json` holds source identities, snapshot identity, raw SHA-256 values, writable object metadata, tags, and source ETags and modification times.
 - `COMPLETE` holds the SHA-256 of `manifest.json` and appears only after all checks pass.
 
 Rows are PostgreSQL JSON text strings inside the inventory.
@@ -96,11 +114,25 @@ The exporter holds one read-only repeatable-read transaction open.
 The exporter compares full database inventories before and after the copy.
 It reads and hashes every bucket body twice and compares exact metadata and tags.
 It also compares bucket listings before and after both reads.
-An advanced PostgreSQL WAL position rejects the backup, even if row contents
-return to their first values.
-This conservative guard can also reject unrelated writes in the same cluster,
-autovacuum, or checkpoint activity.
-Retry into a new directory after the fixture is quiet.
+A quiet source is a precondition. Max must abstain from uploads, and other
+bucket writers and cleanup must not run during this short backup window.
+The bucket does not provide an atomic snapshot. A bucket-only write after its
+last observation, or a tag change after that object's second read, can escape
+these checks. The manifest records this limit. `COMPLETE` proves the captured
+copy passed its checks under that precondition. It is not a write barrier.
+
+Local fixture comparisons cover all Tools and artifacts rows. Production
+source stability checks cover artifacts rows because heartbeats and scheduled
+work can validly change Tools tables. The full dump still shares one exported
+PostgreSQL snapshot. Isolated restore compares every saved table, before and
+after storage verification.
+
+Physical WAL positions are not logical content checks. Read-only scans can
+prune heap pages and advance WAL without a product write. The helper uses full
+logical comparisons instead. A change that returns to identical content before
+the final read can escape those comparisons. A quiet source remains required.
+The database dump and its row inventory share the same exported snapshot.
+New manifests omit WAL positions. Older manifests remain readable.
 
 Legacy temporary files, active direct sessions, and active S3 multipart uploads
 prevent backup completion.
@@ -183,7 +215,9 @@ Successful verification changes the fixture state markers to `verified`.
 
 Run the isolated verification again, then compare the original newer source
 against the second backup.
-Both commands are read-only.
+Both commands are read-only. Source verification also requires the original
+database host, port, name, bucket endpoint, bucket name, and production scope.
+A matching recovery clone cannot prove that the source survived.
 
 ```bash
 pnpm_config_verify_deps_before_run=false heavy-check --repo /home/codex/.t3/worktrees/microservices/fix-direct-uploads-tools-and-fleet-vm-20261016 -- node services/tools/publisher/scripts/release-paired-backup.mjs verify --directory "$RELEASE_BACKUP_PATH"
@@ -218,12 +252,15 @@ Implementation stays in one helper so its snapshot and restore invariants have
 one owner.
 The parent owns independent review and native fixture integration.
 
-## Implementation checks
+## Initial implementation checks
+
+This section records the first implementation delegate result.
+The Parent continuation section below gives the later verification result.
 
 Node syntax checks passed for both release scripts.
 The real CLI `--help` command passed.
 The staged whitespace check passed.
-Seven boundary tests cover unsafe configuration, ownership, legacy files,
+Eight boundary tests cover explicit production read scope, unsafe configuration, ownership, legacy files,
 malformed directories, corrupt backup data, and the callable CLI.
 Both attempts were blocked before execution.
 The shared `heavy-check` lock remained busy for 600 seconds, then 120 seconds.
@@ -239,3 +276,23 @@ by this implementation delegate.
 No fixture process was started.
 The parent owns those checks and the independent review.
 CI, merge, deployment, and Max's acceptance have not run for this tool.
+
+## Parent continuation
+
+The final ten boundary tests passed without skips in
+`../direct-upload-vm-20261016/backup-boundaries-final.log`.
+The earlier queue failures remain historical worker evidence.
+The native proof is `../direct-upload-vm-20261016/paired-proof.mjs`.
+Its `paired-proof-result.json` passed. The real chunk session drained across an
+app process restart. The older snapshot restored to fresh targets, while the
+newer original source retained all 30 bodies. Exact metadata, tags, historical
+journals, receipts, target refusal, and concurrent writer rejection passed.
+The physical-WAL false rejection and its logical-comparison repair are recorded
+in `../logical-backup-guard-r7/decision.md`. Earlier failed restores remain
+failed attempts. They were retained and were not reused as fresh targets.
+
+Production execution prerequisites are an approved source binding, the exact
+reviewed helper and its Node dependencies, matching pg_dump, and an approved CA
+file inside the source instance. These were not installed or exercised on
+Railway. Missing tools block the later approved action. No guessed runtime path
+or substituted local temporary directory is accepted.

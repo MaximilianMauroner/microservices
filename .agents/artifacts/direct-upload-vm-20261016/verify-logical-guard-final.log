@@ -1,0 +1,361 @@
+heavy-check: waiting for repository lock (/home/codex/.t3/worktrees/microservices/fix-direct-uploads-tools-and-fleet-vm-20261016)
+heavy-check: running with timeout 20m (/home/codex/.t3/worktrees/microservices/fix-direct-uploads-tools-and-fleet-vm-20261016)
+$ pnpm run typecheck && pnpm run test
+$ pnpm run typecheck:publisher && pnpm run typecheck:markdown-share && pnpm run typecheck:network-console && pnpm run typecheck:tools-security && pnpm run typecheck:tools && pnpm run typecheck:tools-domain && pnpm run typecheck:status && pnpm run typecheck:dashboard
+$ pnpm --dir services/tools/publisher run typecheck
+$ tsc -p tsconfig.json --noEmit
+$ pnpm --dir services/markdown-share run typecheck
+$ tsc --noEmit -p tsconfig.json
+$ pnpm --dir services/network-console run typecheck
+$ tsc -p tsconfig.json --noEmit
+$ pnpm --dir services/tools/runtime/security run typecheck
+$ tsc -p tsconfig.json --noEmit
+$ pnpm --dir services/tools run typecheck
+$ tsc -p tsconfig.json --noEmit
+$ pnpm --dir services/tools/runtime/domain run typecheck
+$ tsc -p tsconfig.json --noEmit
+$ pnpm --dir services/tools/status run typecheck
+$ tsc -p tsconfig.json --noEmit
+$ pnpm --dir services/tools/dashboard run typecheck
+$ tsc -p tsconfig.json --noEmit
+$ pnpm run test:publisher && pnpm run test:markdown-share && pnpm run test:network-console && pnpm run test:tools-security && pnpm run test:tools && pnpm run test:tools-domain && pnpm run test:status && pnpm run test:dashboard
+$ pnpm --dir services/tools/publisher run test
+$ vitest run
+
+ RUN  v4.1.10 /home/codex/.t3/worktrees/microservices/fix-direct-uploads-tools-and-fleet-vm-20261016/services/tools/publisher
+
+ ✓ test/fetch-app.test.ts (38 tests) 1307ms
+     ✓ parses guest chunk plans before entering the shared allocation gate  1033ms
+ ✓ test/chunked-upload.test.ts (18 tests) 662ms
+ ✓ test/upload-links.test.ts (4 tests) 233ms
+ ✓ test/storage.test.ts (17 tests) 84ms
+ ✓ test/direct-upload-request.test.ts (15 tests) 45ms
+ ✓ test/postgres-storage.test.ts (12 tests) 30ms
+ ✓ test/stored-byte-validation.test.ts (1 test) 10ms
+ ✓ test/file-metadata.test.ts (5 tests) 6ms
+ ✓ test/config.test.ts (4 tests) 7ms
+ ✓ test/activity-tracker.test.ts (4 tests) 8ms
+ ↓ test/direct-uploads.integration.test.ts (26 tests | 26 skipped)
+
+ Test Files  10 passed | 1 skipped (11)
+      Tests  118 passed | 26 skipped (144)
+   Start at  08:47:49
+   Duration  6.90s (transform 633ms, setup 0ms, import 2.60s, tests 2.39s, environment 2ms)
+
+$ pnpm --dir services/markdown-share run test
+$ vitest run convex/markdownShare.test.ts
+
+ RUN  v4.1.10 /home/codex/.t3/worktrees/microservices/fix-direct-uploads-tools-and-fleet-vm-20261016/services/markdown-share
+
+ ✓ convex/markdownShare.test.ts (25 tests) 637ms
+
+ Test Files  1 passed (1)
+      Tests  25 passed (25)
+   Start at  08:47:57
+   Duration  1.17s (transform 416ms, setup 0ms, import 326ms, tests 637ms, environment 0ms)
+
+$ pnpm --dir services/network-console run test
+$ vitest run
+
+ RUN  v4.1.10 /home/codex/.t3/worktrees/microservices/fix-direct-uploads-tools-and-fleet-vm-20261016/services/network-console
+
+ ✓ test/local-network.test.ts (7 tests) 58ms
+
+ Test Files  1 passed (1)
+      Tests  7 passed (7)
+   Start at  08:48:00
+   Duration  402ms (transform 90ms, setup 0ms, import 190ms, tests 58ms, environment 0ms)
+
+$ pnpm --dir services/tools/runtime/security run test
+$ vitest run
+
+ RUN  v4.1.10 /home/codex/.t3/worktrees/microservices/fix-direct-uploads-tools-and-fleet-vm-20261016/services/tools/runtime/security
+
+ ✓ test/policy.test.ts (4 tests) 28ms
+
+ Test Files  1 passed (1)
+      Tests  4 passed (4)
+   Start at  08:48:02
+   Duration  267ms (transform 51ms, setup 0ms, import 69ms, tests 28ms, environment 0ms)
+
+$ pnpm --dir services/tools run test
+$ vitest run
+
+ RUN  v4.1.10 /home/codex/.t3/worktrees/microservices/fix-direct-uploads-tools-and-fleet-vm-20261016/services/tools
+
+ ✓ test/start.test.ts (7 tests) 1870ms
+ ✓ markdown-share/collaborative-workspace.test.tsx (7 tests) 1156ms
+     ✓ clears a save error only after pending edits are acknowledged  872ms
+ ✓ test/direct-upload-client.test.ts (14 tests) 1104ms
+     ✓ retries a completion whose response was lost with the same session  1009ms
+ECONNRESET
+read ECONNRESET
+ ✓ test/schema-push-failure.test.ts (6 tests) 450ms
+ ✓ test/publish-page-resume.test.tsx (2 tests) 422ms
+stderr | test/money-activity-interaction.test.tsx > uses the loaded ledger on mount and applies a dropdown filter without a debounce
+Warning: useRouter must be used inside a <RouterProvider> component!
+Warning: useRouter must be used inside a <RouterProvider> component!
+
+stderr | test/money-activity-interaction.test.tsx > uses the loaded ledger on mount and applies a dropdown filter without a debounce
+Warning: useRouter must be used inside a <RouterProvider> component!
+Warning: useRouter must be used inside a <RouterProvider> component!
+
+stderr | test/money-activity-interaction.test.tsx > uses the loaded ledger on mount and applies a dropdown filter without a debounce
+Warning: useRouter must be used inside a <RouterProvider> component!
+Warning: useRouter must be used inside a <RouterProvider> component!
+
+stderr | test/money-activity-interaction.test.tsx > uses the loaded ledger on mount and applies a dropdown filter without a debounce
+Warning: useRouter must be used inside a <RouterProvider> component!
+Warning: useRouter must be used inside a <RouterProvider> component!
+
+ ✓ test/money-activity-interaction.test.tsx (1 test) 202ms
+stderr | test/money-disclosure.test.tsx > shows a preloaded transaction view on its first render without a suspense fallback
+Warning: useRouter must be used inside a <RouterProvider> component!
+
+stderr | test/money-disclosure.test.tsx > shows the original FIFO totals and return when the realized-gain disclosure opens
+Warning: useRouter must be used inside a <RouterProvider> component!
+
+ ✓ test/money-disclosure.test.tsx (3 tests) 155ms
+stderr | test/money-ledger-views.test.tsx > Money transactions > edits categories in the row and sends transfers to review
+Warning: useRouter must be used inside a <RouterProvider> component!
+
+stderr | test/money-ledger-views.test.tsx > Money transactions > distinguishes an empty search result from an empty ledger
+Warning: useRouter must be used inside a <RouterProvider> component!
+Warning: useRouter must be used inside a <RouterProvider> component!
+Warning: useRouter must be used inside a <RouterProvider> component!
+
+stderr | test/money-ledger-views.test.tsx > Money transactions > opens with URL filters applied
+Warning: useRouter must be used inside a <RouterProvider> component!
+
+stderr | test/money-ledger-views.test.tsx > Money investments > folds FIFO realized gains below the current positions
+Warning: useRouter must be used inside a <RouterProvider> component!
+
+stderr | test/money-ledger-views.test.tsx > Money investments > shows weight, gain, and old prices for positions
+Warning: useRouter must be used inside a <RouterProvider> component!
+
+stderr | test/money-ledger-views.test.tsx > Money rules and imports > lists automatic category and transfer rules
+Warning: useRouter must be used inside a <RouterProvider> component!
+Warning: useRouter must be used inside a <RouterProvider> component!
+Warning: useRouter must be used inside a <RouterProvider> component!
+Warning: useRouter must be used inside a <RouterProvider> component!
+Warning: useRouter must be used inside a <RouterProvider> component!
+
+stderr | test/money-ledger-views.test.tsx > Money rules and imports > lists every import with its own delete action
+Warning: useRouter must be used inside a <RouterProvider> component!
+
+ ✓ test/money-ledger-views.test.tsx (10 tests) 137ms
+ ✓ test/manage-page.test.tsx (9 tests) 164ms
+ ✓ test/money-import.test.ts (38 tests) 92ms
+stderr | test/money-views.test.tsx > Money redesign views > opens Overview with net worth, the parts, and one review line
+React does not recognize the `activeOptions` prop on a DOM element. If you intentionally want it to appear in the DOM as a custom attribute, spell it as lowercase `activeoptions` instead. If you accidentally passed it from a parent component, remove it from the DOM element.
+
+stderr | test/money-views.test.tsx > Money redesign views > marks old balances in Accounts and offers the update in the row
+Warning: useRouter must be used inside a <RouterProvider> component!
+
+stderr | test/money-views.test.tsx > Money redesign views > filters Spending categories and shows the selected category detail
+Warning: useRouter must be used inside a <RouterProvider> component!
+
+stderr | test/money-views.test.tsx > Money redesign views > shows a category refund received after its purchase month as negative spending
+Warning: useRouter must be used inside a <RouterProvider> component!
+
+stderr | test/money-views.test.tsx > Money redesign views > puts categories, transfers, prices, and balances in one Review queue
+Warning: useRouter must be used inside a <RouterProvider> component!
+Warning: useRouter must be used inside a <RouterProvider> component!
+Warning: useRouter must be used inside a <RouterProvider> component!
+Warning: useRouter must be used inside a <RouterProvider> component!
+Warning: useRouter must be used inside a <RouterProvider> component!
+
+ ✓ test/money-views.test.tsx (9 tests) 101ms
+ ✓ test/money-statement-formats.test.ts (15 tests) 113ms
+stderr | markdown-share/document-history.test.tsx > document history > builds line-numbered checkpoint diff rows
+The current testing environment is not configured to support act(...)
+
+stderr | markdown-share/document-history.test.tsx > document history > keeps checkpoint creation disabled when the session is unavailable
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+
+stderr | markdown-share/document-history.test.tsx > document history > keeps checkpoint creation disabled when the session is unavailable
+The current testing environment is not configured to support act(...)
+
+stderr | markdown-share/document-history.test.tsx > document history > owns comparison defaults and renders the selected diff
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+
+stderr | markdown-share/document-history.test.tsx > document history > owns comparison defaults and renders the selected diff
+The current testing environment is not configured to support act(...)
+
+ ✓ markdown-share/document-history.test.tsx (3 tests) 109ms
+Not implemented: Window's scrollTo() method
+Not implemented: Window's scrollTo() method
+Not implemented: Window's scrollTo() method
+ ✓ test/money-navigation.test.ts (2 tests) 83ms
+stderr | test/public-pages.test.tsx > TanStack Start public pages > renders the dashboard tools in product order with their links
+Warning: useRouter must be used inside a <RouterProvider> component!
+
+stderr | test/public-pages.test.tsx > TanStack Start public pages > lists the work that needs the owner, without expiring files
+Warning: useRouter must be used inside a <RouterProvider> component!
+
+stderr | test/public-pages.test.tsx > TanStack Start public pages > adds monitored non-standard products from the authenticated catalog
+Warning: useRouter must be used inside a <RouterProvider> component!
+
+ ✓ test/public-pages.test.tsx (6 tests) 84ms
+ ✓ test/status-links.test.tsx (1 test) 111ms
+ ✓ test/sparkasse-import.test.ts (9 tests) 87ms
+ ✓ test/documents-page.test.tsx (5 tests) 89ms
+ ✓ test/money-market-data.test.ts (7 tests) 59ms
+ ✓ test/feedback-public-handler.test.ts (11 tests) 42ms
+ ✓ test/publisher-request.test.ts (3 tests) 27ms
+stderr | markdown-share/workspace-viewport.test.tsx > workspace viewport > maps pane heights through a bounded scroll progress
+The current testing environment is not configured to support act(...)
+
+stderr | markdown-share/workspace-viewport.test.tsx > workspace viewport > keeps source and preview at the same proportional position
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+
+stderr | markdown-share/workspace-viewport.test.tsx > workspace viewport > keeps source and preview at the same proportional position
+The current testing environment is not configured to support act(...)
+
+stderr | markdown-share/workspace-viewport.test.tsx > workspace viewport > removes browser state and scheduled frames when unmounted
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+
+stderr | markdown-share/workspace-viewport.test.tsx > workspace viewport > removes browser state and scheduled frames when unmounted
+The current testing environment is not configured to support act(...)
+
+ ✓ markdown-share/workspace-viewport.test.tsx (3 tests) 46ms
+ ✓ test/response-retry.test.ts (5 tests) 29ms
+ ✓ test/feedback-public-page.test.tsx (9 tests) 40ms
+ ✓ test/dashboard-attention.test.ts (1 test) 24ms
+ ✓ test/server-data.test.ts (3 tests) 33ms
+ ✓ test/feedback-question-editor.test.tsx (6 tests) 44ms
+ ✓ test/publish-page.test.tsx (3 tests) 35ms
+stderr | test/feedback-inbox.test.tsx > Feedback A3 views > shows a cross-form reader with filters and private response content
+Warning: useRouter must be used inside a <RouterProvider> component!
+
+stderr | test/feedback-inbox.test.tsx > Feedback A3 views > shows forms as a compact selectable table
+Warning: useRouter must be used inside a <RouterProvider> component!
+Warning: useRouter must be used inside a <RouterProvider> component!
+
+ ✓ test/feedback-inbox.test.tsx (2 tests) 31ms
+ ✓ test/app.test.ts (5 tests) 30ms
+stderr | test/money-checkin-card.test.tsx > money check-in bridge > opens the market row with the largest position moves first, six at most
+Warning: useRouter must be used inside a <RouterProvider> component!
+
+stderr | test/money-checkin-card.test.tsx > money check-in bridge > shows an unexplained remainder as its own row
+Warning: useRouter must be used inside a <RouterProvider> component!
+
+ ✓ test/money-checkin-card.test.tsx (2 tests) 28ms
+ ✓ test/auth-ui.test.tsx (3 tests) 32ms
+ ✓ test/route-ownership.test.ts (9 tests) 24ms
+ ✓ test/runtime-schema-migration.test.ts (1 test) 9ms
+ ✓ test/artifact-request.test.ts (2 tests) 19ms
+ ✓ test/product-accent.test.tsx (4 tests) 20ms
+ ✓ test/money-market-data-service.test.ts (5 tests) 24ms
+ ✓ markdown-share/markdown.test.tsx (3 tests) 26ms
+ ✓ test/money-investment-domain.test.ts (10 tests) 21ms
+ ✓ test/money-checkin-domain.test.ts (5 tests) 17ms
+ ✓ test/money-tracker.test.ts (5 tests) 16ms
+ ✓ test/money-predictions.test.ts (7 tests) 18ms
+ ✓ test/scheduler.test.ts (6 tests) 18ms
+ ✓ test/money-browser-boundary.test.ts (3 tests) 15ms
+ ✓ test/repository-boundaries.test.ts (3 tests) 15ms
+ ✓ markdown-share/theme-contract.test.ts (9 tests) 17ms
+ ✓ test/money-transfer-inference.test.ts (8 tests) 15ms
+ ✓ test/server-config.test.ts (3 tests) 9ms
+ ✓ test/feedback-schema-exchange.test.ts (6 tests) 9ms
+ ✓ test/money-category-rules.test.ts (5 tests) 12ms
+ ✓ test/feedback-encryption.test.ts (4 tests) 17ms
+ ✓ markdown-share/display-settings.test.ts (3 tests) 5ms
+ ✓ test/feedback-domain.test.ts (8 tests) 13ms
+ ✓ test/feedback-clipboard.test.ts (2 tests) 8ms
+ ✓ markdown-share/theme.test.ts (5 tests) 7ms
+ ✓ markdown-share/live-document-session.test.ts (5 tests) 5ms
+ ✓ markdown-share/lib.test.ts (9 tests) 7ms
+ ✓ test/money-repository-scope.test.ts (5 tests) 7ms
+ ✓ test/money-postgres-gate.test.ts (5 tests) 7ms
+ ✓ test/workspace-layout.test.ts (20 tests) 9ms
+ ✓ test/money-description.test.ts (4 tests) 7ms
+ ✓ test/heartbeats.test.ts (3 tests) 8ms
+ ✓ test/publisher-runtime-shutdown.test.ts (2 tests) 9ms
+ ✓ test/auth.test.ts (9 tests) 7ms
+ ✓ test/feedback-ui-contract.test.ts (2 tests) 6ms
+ ✓ test/feedback-repository-encryption.test.ts (1 test) 7ms
+ ✓ test/money-category-picker.test.ts (18 tests) 7ms
+ ✓ test/postgres-push.test.ts (4 tests) 7ms
+ ✓ test/config.test.ts (6 tests) 6ms
+ ✓ markdown-share/client-config.test.ts (6 tests) 6ms
+ ✓ test/serverless-postgres.test.ts (1 test) 6ms
+ ✓ test/sidebar-navigation-contract.test.ts (2 tests) 6ms
+ ✓ test/allocation-treemap.test.ts (3 tests) 5ms
+ ✓ markdown-share/recent-documents.test.ts (3 tests) 7ms
+ ✓ test/feedback-export.test.ts (1 test) 5ms
+ ✓ test/range-selection.test.ts (2 tests) 6ms
+ ↓ test/money-repository.integration.test.ts (30 tests | 30 skipped)
+
+ Test Files  76 passed | 1 skipped (77)
+      Tests  437 passed | 30 skipped (467)
+   Start at  08:48:05
+   Duration  48.02s (transform 3.16s, setup 1.60s, import 18.26s, tests 7.52s, environment 9.07s)
+
+$ pnpm --dir services/tools/runtime/domain run test
+$ vitest run
+
+ RUN  v4.1.10 /home/codex/.t3/worktrees/microservices/fix-direct-uploads-tools-and-fleet-vm-20261016/services/tools/runtime/domain
+
+ ✓ test/url.test.ts (33 tests) 19ms
+ ✓ test/schema.test.ts (11 tests) 20ms
+ ✓ test/projection.test.ts (5 tests) 17ms
+ ✓ test/transitions.test.ts (4 tests) 7ms
+ ✓ test/keys.test.ts (3 tests) 5ms
+
+ Test Files  5 passed (5)
+      Tests  56 passed (56)
+   Start at  08:48:54
+   Duration  1.04s (transform 145ms, setup 0ms, import 274ms, tests 68ms, environment 1ms)
+
+$ pnpm --dir services/tools/status run test
+$ vitest run
+
+ RUN  v4.1.10 /home/codex/.t3/worktrees/microservices/fix-direct-uploads-tools-and-fleet-vm-20261016/services/tools/status
+
+ ✓ test/process.test.ts (6 tests) 776ms
+     ✓ force-exits a spawned CLI after deadline cleanup despite an active handle  693ms
+ ✓ test/run.test.ts (6 tests) 56ms
+ ✓ test/probe.test.ts (4 tests) 37ms
+ ✓ test/notifications.test.ts (4 tests) 34ms
+ ✓ test/retention.test.ts (6 tests) 42ms
+ ✓ test/postgres-store.test.ts (3 tests) 4ms
+ ✓ test/config.test.ts (2 tests) 6ms
+ ✓ test/definitions.test.ts (2 tests) 10ms
+
+ Test Files  8 passed (8)
+      Tests  33 passed (33)
+   Start at  08:48:57
+   Duration  3.18s (transform 303ms, setup 0ms, import 943ms, tests 965ms, environment 1ms)
+
+$ pnpm --dir services/tools/dashboard run test
+$ vitest run
+
+ RUN  v4.1.10 /home/codex/.t3/worktrees/microservices/fix-direct-uploads-tools-and-fleet-vm-20261016/services/tools/dashboard
+
+ ✓ test/app.test.ts (17 tests) 107ms
+ ✓ test/ops-client.test.ts (12 tests) 204ms
+ ✓ test/markdown-admin.test.ts (5 tests) 52ms
+ ✓ test/ui-renderers.test.ts (17 tests) 58ms
+ ✓ test/storage.test.ts (13 tests) 44ms
+ ✓ test/seed.test.ts (1 test) 31ms
+ ✓ test/ui-assets.test.ts (7 tests) 20ms
+ ✓ test/config.test.ts (2 tests) 9ms
+
+ Test Files  8 passed (8)
+      Tests  74 passed (74)
+   Start at  08:49:01
+   Duration  2.63s (transform 374ms, setup 0ms, import 820ms, tests 525ms, environment 1ms)
+
+{"command": "pnpm run verify", "exitCode": 0, "revision": "816f8309ab29f5c7c3ddc8a893d70bf6caa98309", "sourceSha256Before": "81172b361df7e14a09818ef9352270e3ac203aec2ce1dcf60aa9cacf72100fac", "sourceSha256After": "81172b361df7e14a09818ef9352270e3ac203aec2ce1dcf60aa9cacf72100fac", "sourceFrozen": true, "node": "v22.23.3", "maxVitestWorkers": "1", "resourceSkipsAreNotPasses": true}

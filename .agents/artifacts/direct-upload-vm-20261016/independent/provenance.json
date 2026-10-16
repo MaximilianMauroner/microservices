@@ -1,0 +1,26 @@
+{
+  "revision": "64c4cb58b5c67c1186e3de3edb9ac59624ba05d1",
+  "sourceFingerprint": "a430b837c6aef31e966eaf708c4f4b1f25a6a2cb4cbd1e456044689779cb17d7",
+  "cpuAffinity": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5
+  ],
+  "nodeVersion": "v22.23.3",
+  "buildProof": {
+    "sourceSha256": "a430b837c6aef31e966eaf708c4f4b1f25a6a2cb4cbd1e456044689779cb17d7",
+    "revision": "64c4cb58b5c67c1186e3de3edb9ac59624ba05d1",
+    "dirtyDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "entrySha256": "ecbd1a3f76402ff73357848523d3c2bc0cbc7cab930ba669ceb4a00895937893",
+  "fleetRevision": "e1c6179725b3fb8055730c4c195313e1adad7047",
+  "sourceChecksums": {
+    "/home/codex/.t3/worktrees/microservices/direct-upload-final-artifact-20261016/services/tools/publisher/scripts/upload-direct.ts": "22e7a26b83b0866655e4e1774ccde15d3ee475f42452e5c554f1d9d6b6b18904",
+    "/home/codex/.t3/worktrees/microservices/direct-upload-final-artifact-20261016/services/tools/publisher/test/direct-uploads.integration.test.ts": "a1d98680d5377a19dcc7a8459fd245fe3cfc633755e36c6f0e8b85ea030e261e",
+    "/home/codex/.t3/worktrees/microservices/direct-upload-final-artifact-20261016/services/tools/publisher/scripts/release-paired-backup.test.mjs": "417a0f550fe10cfebd01a523a068fd0cba2d2b761507eef7de1acf0f644c36d3",
+    "/home/codex/.t3/worktrees/fleet/direct-html-uploads-vm-20261016/skills/file-upload/scripts/upload.py": "f5566e1e192eacf4dc47231f43b367d9bbaaa682102250abe8d2b57dbb1b7dee"
+  }
+}

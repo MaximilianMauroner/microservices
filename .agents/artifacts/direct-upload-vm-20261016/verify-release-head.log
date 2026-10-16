@@ -1,0 +1,123 @@
+heavy-check: waiting for repository lock (/home/codex/.t3/worktrees/microservices/fix-direct-uploads-tools-and-fleet-vm-20261016)
+heavy-check: running with timeout 40m (/home/codex/.t3/worktrees/microservices/fix-direct-uploads-tools-and-fleet-vm-20261016)
+$ pnpm run typecheck && pnpm run test
+$ pnpm run typecheck:publisher && pnpm run typecheck:markdown-share && pnpm run typecheck:network-console && pnpm run typecheck:tools-security && pnpm run typecheck:tools && pnpm run typecheck:tools-domain && pnpm run typecheck:status && pnpm run typecheck:dashboard
+$ pnpm --dir services/tools/publisher run typecheck
+$ tsc -p tsconfig.json --noEmit
+$ pnpm --dir services/markdown-share run typecheck
+$ tsc --noEmit -p tsconfig.json
+$ pnpm --dir services/network-console run typecheck
+$ tsc -p tsconfig.json --noEmit
+$ pnpm --dir services/tools/runtime/security run typecheck
+$ tsc -p tsconfig.json --noEmit
+$ pnpm --dir services/tools run typecheck
+$ tsc -p tsconfig.json --noEmit
+$ pnpm --dir services/tools/runtime/domain run typecheck
+$ tsc -p tsconfig.json --noEmit
+$ pnpm --dir services/tools/status run typecheck
+$ tsc -p tsconfig.json --noEmit
+$ pnpm --dir services/tools/dashboard run typecheck
+$ tsc -p tsconfig.json --noEmit
+$ pnpm run test:publisher && pnpm run test:markdown-share && pnpm run test:network-console && pnpm run test:tools-security && pnpm run test:tools && pnpm run test:tools-domain && pnpm run test:status && pnpm run test:dashboard
+$ pnpm --dir services/tools/publisher run test
+$ vitest run
+
+ RUN  v4.1.10 /home/codex/.t3/worktrees/microservices/fix-direct-uploads-tools-and-fleet-vm-20261016/services/tools/publisher
+
+
+ Test Files  10 passed | 1 skipped (11)
+      Tests  118 passed | 26 skipped (144)
+   Start at  07:04:31
+   Duration  7.88s (transform 898ms, setup 0ms, import 3.63s, tests 2.14s, environment 1ms)
+
+$ pnpm --dir services/markdown-share run test
+$ vitest run convex/markdownShare.test.ts
+
+ RUN  v4.1.10 /home/codex/.t3/worktrees/microservices/fix-direct-uploads-tools-and-fleet-vm-20261016/services/markdown-share
+
+
+ Test Files  1 passed (1)
+      Tests  25 passed (25)
+   Start at  07:04:40
+   Duration  1.42s (transform 479ms, setup 0ms, import 431ms, tests 753ms, environment 0ms)
+
+$ pnpm --dir services/network-console run test
+$ vitest run
+
+ RUN  v4.1.10 /home/codex/.t3/worktrees/microservices/fix-direct-uploads-tools-and-fleet-vm-20261016/services/network-console
+
+
+ Test Files  1 passed (1)
+      Tests  7 passed (7)
+   Start at  07:04:44
+   Duration  750ms (transform 207ms, setup 0ms, import 369ms, tests 157ms, environment 0ms)
+
+$ pnpm --dir services/tools/runtime/security run test
+$ vitest run
+
+ RUN  v4.1.10 /home/codex/.t3/worktrees/microservices/fix-direct-uploads-tools-and-fleet-vm-20261016/services/tools/runtime/security
+
+
+ Test Files  1 passed (1)
+      Tests  4 passed (4)
+   Start at  07:04:47
+   Duration  456ms (transform 107ms, setup 0ms, import 127ms, tests 65ms, environment 0ms)
+
+$ pnpm --dir services/tools run test
+$ vitest run
+
+ RUN  v4.1.10 /home/codex/.t3/worktrees/microservices/fix-direct-uploads-tools-and-fleet-vm-20261016/services/tools
+
+ ❯ test/publish-page-resume.test.tsx (2 tests | 2 failed) 514ms
+   × resumes an empty-MIME HTML file through the page after retry 306ms
+   × resumes an empty-MIME HTML file through the page after reselect 207ms
+ECONNRESET
+read ECONNRESET
+Not implemented: Window's scrollTo() method
+Not implemented: Window's scrollTo() method
+Not implemented: Window's scrollTo() method
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/publish-page-resume.test.tsx > resumes an empty-MIME HTML file through the page after retry
+AssertionError: expected 'Skip to contentPublisherPublishDrop a…' to contain 'File is ready to share'
+
+Expected: "File is ready to share"
+Received: "Skip to contentPublisherPublishDrop a file to get an unlisted link. HTML plans stay until revoked; other files expire. Manage artifacts1 failed. See details below.Upload finished with issues1 of 1 files finished · 6 B of 6 B · 100%fixture.htmFailed6 B · Failed.100%6 B of 6 BInvalid upload completion response.Choose files Retry failed (1)DismissThe exact file expiry and capability URL appear after upload.File expiry1 day3 days7 days30 daysPermanentHTML project RecentLibrary ›Published artifacts will appear here.Uploads needing attention (1)Failedfixture.htm6 B · 100% · 6 B sentInvalid upload completion response. Retry"
+
+ ❯ test/publish-page-resume.test.tsx:100:30
+     98|     expect(puts.map(part => part.number)).toEqual([2]);
+     99|     expect(await puts[0]!.bytes.text()).toBe("ef");
+    100|     expect(host.textContent).toContain("File is ready to share");
+       |                              ^
+    101|     expect(saved.size).toBe(0);
+    102|   } finally {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  test/publish-page-resume.test.tsx > resumes an empty-MIME HTML file through the page after reselect
+AssertionError: expected 'Skip to contentPublisherPublishDrop a…' to contain 'File is ready to share'
+
+Expected: "File is ready to share"
+Received: "Skip to contentPublisherPublishDrop a file to get an unlisted link. HTML plans stay until revoked; other files expire. Manage artifactsUpload failed. See details below.Upload finished with issues1 of 1 files finished · 6 B of 6 B · 100%fixture.htmFailed6 B · Failed.100%6 B of 6 BInvalid upload completion response.Choose files Retry failed (1)DismissThe exact file expiry and capability URL appear after upload.File expiry1 day3 days7 days30 daysPermanentHTML project RecentLibrary ›Published artifacts will appear here.Uploads needing attention (1)Failedfixture.htm6 B · 100% · 6 B sentInvalid upload completion response. Retry"
+
+ ❯ test/publish-page-resume.test.tsx:100:30
+     98|     expect(puts.map(part => part.number)).toEqual([2]);
+     99|     expect(await puts[0]!.bytes.text()).toBe("ef");
+    100|     expect(host.textContent).toContain("File is ready to share");
+       |                              ^
+    101|     expect(saved.size).toBe(0);
+    102|   } finally {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed | 75 passed | 1 skipped (77)
+      Tests  2 failed | 435 passed | 30 skipped (467)
+   Start at  07:04:51
+   Duration  64.23s (transform 5.02s, setup 2.04s, import 27.10s, tests 9.59s, environment 10.78s)
+
+[ELIFECYCLE] Test failed. See above for more details.
+[ELIFECYCLE] Command failed with exit code 1.
+[ELIFECYCLE] Test failed. See above for more details.
+[ELIFECYCLE] Command failed with exit code 1.

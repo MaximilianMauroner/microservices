@@ -1,0 +1,50 @@
+heavy-check: waiting for repository lock (/home/codex/.t3/worktrees/microservices/fix-direct-uploads-tools-and-fleet-vm-20261016)
+heavy-check: running with timeout 20m (/home/codex/.t3/worktrees/microservices/fix-direct-uploads-tools-and-fleet-vm-20261016)
+{
+  "verdict": "PASS",
+  "driverExit": 0,
+  "buildProof": {
+    "sourceSha256": "a430b837c6aef31e966eaf708c4f4b1f25a6a2cb4cbd1e456044689779cb17d7",
+    "revision": "64c4cb58b5c67c1186e3de3edb9ac59624ba05d1",
+    "dirtyDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "buildTreeMatchesPriorManifest": true,
+  "buildTreeSha256": "bbf8c426e66478fffeee9b3c50f2e848dc24a432b40aa586fbca434198b1cc1a",
+  "buildFilesVerified": 327,
+  "buildEntrySha256": "ecbd1a3f76402ff73357848523d3c2bc0cbc7cab930ba669ceb4a00895937893",
+  "ownedPids": {
+    "postgres": {
+      "pid": 221783,
+      "active": false
+    },
+    "storage": {
+      "pid": 221791,
+      "active": false
+    }
+  },
+  "ownedPortsClosed": true,
+  "postmasterPidFileAbsent": true,
+  "earlierR6ArchivesHashUnchanged": {
+    "helper-http-date-r6-pre-stop-fixture.tar": "11b33ccc2ae4d02b19f5ff5c86b672ace6a875e78bbdb0293e1bd94ed69b59b9",
+    "helper-http-date-r6-stopped-fixture.tar": "1cf5fd09ee784ee541108a9d5779f1a775745691e113acfe601fc3cdc5713ea1",
+    "helper-http-date-r6-retry-pre-stop-fixture.tar": "a6813a9cd769b58a952bea449fb42518d47b0d135565af332e13ffeec70199a2",
+    "helper-http-date-r6-retry-stopped-fixture.tar": "e41e9896fa5a5f9543f3a23feeb3a03e05e6e1d0e6463b9f02497ddffcabd40d"
+  },
+  "earlierArchivesRetained": [
+    "helper-http-date-r6-pre-stop-fixture.tar",
+    "helper-http-date-r6-retry-pre-stop-fixture.tar",
+    "helper-http-date-r6-retry-stopped-fixture.tar",
+    "helper-http-date-r6-stopped-fixture.tar",
+    "http-local-pre-stop-fixture.tar",
+    "http-local-stopped-fixture.tar",
+    "http-retry-pre-stop-fixture.tar",
+    "http-retry-stopped-fixture.tar",
+    "pre-stop-fixture.tar",
+    "stopped-fixture.tar"
+  ],
+  "tablesCompared": 28,
+  "rowsCompared": 179,
+  "objectsCompared": 5,
+  "trackedSourceChanges": "",
+  "diffCheckExit": 0
+}

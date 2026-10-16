@@ -1,0 +1,9 @@
+{
+  "revision": "816f8309ab29f5c7c3ddc8a893d70bf6caa98309",
+  "sourceSha256After": "81172b361df7e14a09818ef9352270e3ac203aec2ce1dcf60aa9cacf72100fac",
+  "sourceDiffAfter": "",
+  "driverSha256": "eda8b64628755a7d37f1617a7c3cda34bb4b83645884f61caa9b43d2b86bcbf7",
+  "result": "passed",
+  "log": "paired-logical-guard.log",
+  "note": "The paired command followed the recorded guard commit and clean source check. Runtime code and helper source stayed unchanged."
+}

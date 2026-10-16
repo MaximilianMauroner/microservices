@@ -1,0 +1,114 @@
+heavy-check: waiting for repository lock (/home/codex/.t3/worktrees/microservices/fix-direct-uploads-tools-and-fleet-vm-20261016)
+heavy-check: running with timeout 40m (/home/codex/.t3/worktrees/microservices/fix-direct-uploads-tools-and-fleet-vm-20261016)
+$ pnpm run typecheck && pnpm run test
+$ pnpm run typecheck:publisher && pnpm run typecheck:markdown-share && pnpm run typecheck:network-console && pnpm run typecheck:tools-security && pnpm run typecheck:tools && pnpm run typecheck:tools-domain && pnpm run typecheck:status && pnpm run typecheck:dashboard
+$ pnpm --dir services/tools/publisher run typecheck
+$ tsc -p tsconfig.json --noEmit
+$ pnpm --dir services/markdown-share run typecheck
+$ tsc --noEmit -p tsconfig.json
+$ pnpm --dir services/network-console run typecheck
+$ tsc -p tsconfig.json --noEmit
+$ pnpm --dir services/tools/runtime/security run typecheck
+$ tsc -p tsconfig.json --noEmit
+$ pnpm --dir services/tools run typecheck
+$ tsc -p tsconfig.json --noEmit
+$ pnpm --dir services/tools/runtime/domain run typecheck
+$ tsc -p tsconfig.json --noEmit
+$ pnpm --dir services/tools/status run typecheck
+$ tsc -p tsconfig.json --noEmit
+$ pnpm --dir services/tools/dashboard run typecheck
+$ tsc -p tsconfig.json --noEmit
+$ pnpm run test:publisher && pnpm run test:markdown-share && pnpm run test:network-console && pnpm run test:tools-security && pnpm run test:tools && pnpm run test:tools-domain && pnpm run test:status && pnpm run test:dashboard
+$ pnpm --dir services/tools/publisher run test
+$ vitest run
+
+ RUN  v4.1.10 /home/codex/.t3/worktrees/microservices/fix-direct-uploads-tools-and-fleet-vm-20261016/services/tools/publisher
+
+
+ Test Files  10 passed | 1 skipped (11)
+      Tests  118 passed | 26 skipped (144)
+   Start at  07:26:55
+   Duration  6.67s (transform 586ms, setup 0ms, import 2.36s, tests 2.10s, environment 1ms)
+
+$ pnpm --dir services/markdown-share run test
+$ vitest run convex/markdownShare.test.ts
+
+ RUN  v4.1.10 /home/codex/.t3/worktrees/microservices/fix-direct-uploads-tools-and-fleet-vm-20261016/services/markdown-share
+
+
+ Test Files  1 passed (1)
+      Tests  25 passed (25)
+   Start at  07:27:04
+   Duration  1.12s (transform 377ms, setup 0ms, import 347ms, tests 607ms, environment 0ms)
+
+$ pnpm --dir services/network-console run test
+$ vitest run
+
+ RUN  v4.1.10 /home/codex/.t3/worktrees/microservices/fix-direct-uploads-tools-and-fleet-vm-20261016/services/network-console
+
+
+ Test Files  1 passed (1)
+      Tests  7 passed (7)
+   Start at  07:27:06
+   Duration  742ms (transform 138ms, setup 0ms, import 374ms, tests 149ms, environment 0ms)
+
+$ pnpm --dir services/tools/runtime/security run test
+$ vitest run
+
+ RUN  v4.1.10 /home/codex/.t3/worktrees/microservices/fix-direct-uploads-tools-and-fleet-vm-20261016/services/tools/runtime/security
+
+
+ Test Files  1 passed (1)
+      Tests  4 passed (4)
+   Start at  07:27:09
+   Duration  293ms (transform 48ms, setup 0ms, import 66ms, tests 51ms, environment 0ms)
+
+$ pnpm --dir services/tools run test
+$ vitest run
+
+ RUN  v4.1.10 /home/codex/.t3/worktrees/microservices/fix-direct-uploads-tools-and-fleet-vm-20261016/services/tools
+
+ECONNRESET
+read ECONNRESET
+Not implemented: Window's scrollTo() method
+Not implemented: Window's scrollTo() method
+Not implemented: Window's scrollTo() method
+
+ Test Files  76 passed | 1 skipped (77)
+      Tests  437 passed | 30 skipped (467)
+   Start at  07:27:11
+   Duration  49.90s (transform 3.06s, setup 1.49s, import 20.22s, tests 7.48s, environment 8.10s)
+
+$ pnpm --dir services/tools/runtime/domain run test
+$ vitest run
+
+ RUN  v4.1.10 /home/codex/.t3/worktrees/microservices/fix-direct-uploads-tools-and-fleet-vm-20261016/services/tools/runtime/domain
+
+
+ Test Files  5 passed (5)
+      Tests  56 passed (56)
+   Start at  07:28:03
+   Duration  1.17s (transform 140ms, setup 0ms, import 270ms, tests 62ms, environment 1ms)
+
+$ pnpm --dir services/tools/status run test
+$ vitest run
+
+ RUN  v4.1.10 /home/codex/.t3/worktrees/microservices/fix-direct-uploads-tools-and-fleet-vm-20261016/services/tools/status
+
+
+ Test Files  8 passed (8)
+      Tests  33 passed (33)
+   Start at  07:28:05
+   Duration  3.12s (transform 235ms, setup 0ms, import 876ms, tests 912ms, environment 1ms)
+
+$ pnpm --dir services/tools/dashboard run test
+$ vitest run
+
+ RUN  v4.1.10 /home/codex/.t3/worktrees/microservices/fix-direct-uploads-tools-and-fleet-vm-20261016/services/tools/dashboard
+
+
+ Test Files  8 passed (8)
+      Tests  74 passed (74)
+   Start at  07:28:10
+   Duration  2.47s (transform 332ms, setup 0ms, import 776ms, tests 422ms, environment 1ms)
+

@@ -1,0 +1,340 @@
+heavy-check: waiting for repository lock (/home/codex/.t3/worktrees/microservices/fix-direct-uploads-tools-and-fleet-vm-20261016)
+heavy-check: running with timeout 20m (/home/codex/.t3/worktrees/microservices/fix-direct-uploads-tools-and-fleet-vm-20261016)
+
+ RUN  v4.1.10 /home/codex/.t3/worktrees/microservices/fix-direct-uploads-tools-and-fleet-vm-20261016/services/tools/publisher
+
+stderr | test/direct-uploads.integration.test.ts > isolated Postgres and S3 direct transfers > recovers a lost S3 completion response and a failed canonical metadata commit
+{"event":"artifact.request_failed","errorType":"Error"}
+
+stderr | test/direct-uploads.integration.test.ts > isolated Postgres and S3 direct transfers > recovers a lost S3 completion response and a failed canonical metadata commit
+{"event":"artifact.request_failed","errorType":"PostgresError","errorCode":"P0001"}
+
+stderr | test/direct-uploads.integration.test.ts > isolated Postgres and S3 direct transfers > checks bucket bytes rather than client size, hashes, metadata, or ETags
+{"event":"artifact.request_failed","errorType":"TimeoutError"}
+
+stdout | test/direct-uploads.integration.test.ts > isolated Postgres and S3 direct transfers > checks bucket bytes rather than client size, hashes, metadata, or ETags
+initialization failure { error: 'internal_server_error', message: 'The request failed.' }
+
+stderr | test/direct-uploads.integration.test.ts > isolated Postgres and S3 direct transfers > isolates guest owners and revocation, including a revoke during verification
+{"event":"artifact.request_failed","errorType":"Error","errorCode":"CONNECT_TIMEOUT"}
+
+stdout | test/direct-uploads.integration.test.ts > isolated Postgres and S3 direct transfers > isolates guest owners and revocation, including a revoke during verification
+initialization failure { error: 'internal_server_error', message: 'The request failed.' }
+
+stderr | test/direct-uploads.integration.test.ts > isolated Postgres and S3 direct transfers > bounds completion concurrency and freezes parts until publication
+{"event":"artifact.request_failed","errorType":"InternalError"}
+
+stderr | test/direct-uploads.integration.test.ts > isolated Postgres and S3 direct transfers > bounds completion concurrency and freezes parts until publication
+{"event":"artifact.request_failed","errorType":"TimeoutError"}
+
+stdout | test/direct-uploads.integration.test.ts > isolated Postgres and S3 direct transfers > bounds completion concurrency and freezes parts until publication
+initialization failure { error: 'internal_server_error', message: 'The request failed.' }
+
+stderr | test/direct-uploads.integration.test.ts > isolated Postgres and S3 direct transfers > serializes UUID case variants while completion verifies stored bytes
+{"event":"publisher.upload_cleanup_failed","errorType":"SlowDownRead"}
+
+stderr | test/direct-uploads.integration.test.ts > isolated Postgres and S3 direct transfers > serializes UUID case variants while completion verifies stored bytes
+{"event":"publisher.upload_cleanup_failed","errorType":"SlowDownRead"}
+
+stderr | test/direct-uploads.integration.test.ts > isolated Postgres and S3 direct transfers > serializes UUID case variants while completion verifies stored bytes
+{"event":"publisher.upload_cleanup_failed","errorType":"SlowDownRead"}
+
+stderr | test/direct-uploads.integration.test.ts > isolated Postgres and S3 direct transfers > serializes UUID case variants while completion verifies stored bytes
+{"event":"artifact.request_failed","errorType":"SlowDownRead"}
+
+stdout | test/direct-uploads.integration.test.ts > isolated Postgres and S3 direct transfers > serializes UUID case variants while completion verifies stored bytes
+initialization failure { error: 'internal_server_error', message: 'The request failed.' }
+
+stderr | test/direct-uploads.integration.test.ts > isolated Postgres and S3 direct transfers > recovers and aborts multipart initialization with a lost upload ID
+{"event":"publisher.upload_cleanup_failed","errorType":"SlowDownRead"}
+
+stderr | test/direct-uploads.integration.test.ts > isolated Postgres and S3 direct transfers > recovers and aborts multipart initialization with a lost upload ID
+{"event":"publisher.upload_cleanup_failed","errorType":"SlowDownRead"}
+
+stderr | test/direct-uploads.integration.test.ts > isolated Postgres and S3 direct transfers > recovers and aborts multipart initialization with a lost upload ID
+{"event":"artifact.request_failed","errorType":"TimeoutError"}
+
+stderr | test/direct-uploads.integration.test.ts > isolated Postgres and S3 direct transfers > continues cleanup after one storage failure and retains its retry record
+{"event":"publisher.upload_cleanup_failed","errorType":"SlowDownRead"}
+
+stderr | test/direct-uploads.integration.test.ts > isolated Postgres and S3 direct transfers > continues cleanup after one storage failure and retains its retry record
+{"event":"publisher.upload_cleanup_failed","errorType":"SlowDownRead"}
+
+stderr | test/direct-uploads.integration.test.ts > isolated Postgres and S3 direct transfers > continues cleanup after one storage failure and retains its retry record
+{"event":"publisher.upload_cleanup_failed","errorType":"SlowDownRead"}
+
+stderr | test/direct-uploads.integration.test.ts > isolated Postgres and S3 direct transfers > continues cleanup after one storage failure and retains its retry record
+{"event":"artifact.request_failed","errorType":"SlowDownRead"}
+
+stdout | test/direct-uploads.integration.test.ts > isolated Postgres and S3 direct transfers > continues cleanup after one storage failure and retains its retry record
+initialization failure { error: 'internal_server_error', message: 'The request failed.' }
+
+stderr | test/direct-uploads.integration.test.ts > isolated Postgres and S3 direct transfers > preserves protected HTML, stable replacement URLs, ranges, HEAD, and conditional reads
+{"event":"publisher.upload_cleanup_failed","errorType":"SlowDownRead"}
+
+stderr | test/direct-uploads.integration.test.ts > isolated Postgres and S3 direct transfers > preserves protected HTML, stable replacement URLs, ranges, HEAD, and conditional reads
+{"event":"artifact.request_failed","errorType":"AbortError"}
+
+stdout | test/direct-uploads.integration.test.ts > isolated Postgres and S3 direct transfers > preserves protected HTML, stable replacement URLs, ranges, HEAD, and conditional reads
+initialization failure { error: 'internal_server_error', message: 'The request failed.' }
+
+ ❯ test/direct-uploads.integration.test.ts (17 tests | 13 failed) 672759ms
+     ✓ stages replacements without changing identity or prior bytes and keeps exact receipts after restart and expiry  5041ms
+     ✓ rejects a stale replacement and never rebinds its UUID after cleanup  21221ms
+     × serves retained PDF MIME and binary-classified PDFs inline with an explicit signed download 58432ms
+     × keeps legacy writers, stale journal recovery, and project edits on the same conditional commit 60005ms
+     × recovers interrupted replacement completion while keeping the old body until its conditional commit 60004ms
+     × prevents replacement resurrection when revocation wins during stored-byte verification 60006ms
+     × resumes 85 MiB after a web restart, then completes exactly once without application body uploads 77977ms
+     ✓ recovers a lost S3 completion response and a failed canonical metadata commit  17182ms
+     × rejects missing parts, wrong audience, expired, and aborted sessions 60002ms
+     × checks bucket bytes rather than client size, hashes, metadata, or ETags 35697ms
+     × isolates guest owners and revocation, including a revoke during verification 56852ms
+     × bounds completion concurrency and freezes parts until publication 33357ms
+     × serializes UUID case variants while completion verifies stored bytes 7655ms
+     × recovers and aborts multipart initialization with a lost upload ID 38454ms
+     × continues cleanup after one storage failure and retains its retry record 15211ms
+     × preserves protected HTML, stable replacement URLs, ranges, HEAD, and conditional reads 30009ms
+     ✓ permits browser upload CORS only for the selected Tools origin and keeps the bucket private  11373ms
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/direct-uploads.integration.test.ts > isolated Postgres and S3 direct transfers
+Error: Hook timed out in 10000ms.
+If this is a long-running hook, pass a timeout value as the last argument or configure it globally with "hookTimeout".
+ ❯ test/direct-uploads.integration.test.ts:62:3
+     60|   });
+     61|
+     62|   afterAll(async () => {
+       |   ^
+     63|     vi.restoreAllMocks();
+     64|     for (const session of sessions) {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/14]⎯
+
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 13 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/direct-uploads.integration.test.ts > isolated Postgres and S3 direct transfers > serves retained PDF MIME and binary-classified PDFs inline with an explicit signed download
+AssertionError: expected 503 to be 200 // Object.is equality
+
+- Expected
++ Received
+
+- 200
++ 503
+
+ ❯ put test/direct-uploads.integration.test.ts:102:29
+    100|     expect(new URL(url).searchParams.get("X-Amz-SignedHeaders")).toCon…
+    101|     const uploaded = await fetch(url, { method: "PUT", body: new Uint8…
+    102|     expect(uploaded.status).toBe(200);
+       |                             ^
+    103|     bucketUploadBytes += bytes.length;
+    104|     return url;
+ ❯ test/direct-uploads.integration.test.ts:175:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/14]⎯
+
+ FAIL  test/direct-uploads.integration.test.ts > isolated Postgres and S3 direct transfers > keeps legacy writers, stale journal recovery, and project edits on the same conditional commit
+Error: Test timed out in 60000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ test/direct-uploads.integration.test.ts:202:3
+    200|   });
+    201|
+    202|   it("keeps legacy writers, stale journal recovery, and project edits …
+       |   ^
+    203|     const form = new FormData();
+    204|     form.append("file", new Blob(["legacy original"], { type: "text/ht…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/14]⎯
+
+ FAIL  test/direct-uploads.integration.test.ts > isolated Postgres and S3 direct transfers > recovers interrupted replacement completion while keeping the old body until its conditional commit
+Error: Test timed out in 60000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ test/direct-uploads.integration.test.ts:246:3
+    244|   });
+    245|
+    246|   it("recovers interrupted replacement completion while keeping the ol…
+       |   ^
+    247|     const created = await html("before interruption");
+    248|     const { id } = await (await request(created.path + "/complete")).j…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/14]⎯
+
+ FAIL  test/direct-uploads.integration.test.ts > isolated Postgres and S3 direct transfers > prevents replacement resurrection when revocation wins during stored-byte verification
+Error: Test timed out in 60000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ test/direct-uploads.integration.test.ts:274:3
+    272|   });
+    273|
+    274|   it("prevents replacement resurrection when revocation wins during st…
+       |   ^
+    275|     const created = await html("revocation original");
+    276|     const { id } = await (await request(created.path + "/complete")).j…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/14]⎯
+
+ FAIL  test/direct-uploads.integration.test.ts > isolated Postgres and S3 direct transfers > resumes 85 MiB after a web restart, then completes exactly once without application body uploads
+Error: Test timed out in 60000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ test/direct-uploads.integration.test.ts:293:3
+    291|   });
+    292|
+    293|   it("resumes 85 MiB after a web restart, then completes exactly once …
+       |   ^
+    294|     const beforeApplication = applicationUploadBytes;
+    295|     const beforeBucket = bucketUploadBytes;
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/14]⎯
+
+ FAIL  test/direct-uploads.integration.test.ts > isolated Postgres and S3 direct transfers > rejects missing parts, wrong audience, expired, and aborted sessions
+Error: Test timed out in 60000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ test/direct-uploads.integration.test.ts:353:3
+    351|   });
+    352|
+    353|   it("rejects missing parts, wrong audience, expired, and aborted sess…
+       |   ^
+    354|     const session = await initialize(10);
+    355|     expect((await request(session.path + "/complete")).status).toBe(40…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/14]⎯
+
+ FAIL  test/direct-uploads.integration.test.ts > isolated Postgres and S3 direct transfers > checks bucket bytes rather than client size, hashes, metadata, or ETags
+AssertionError: expected 500 to be 201 // Object.is equality
+
+- Expected
++ Received
+
+- 201
++ 500
+
+ ❯ initialize test/direct-uploads.integration.test.ts:89:29
+     87|       ...(options.project ? { project: options.project } : {}), ...(op…
+     88|     if (response.status !== 201) console.info("initialization failure"…
+     89|     expect(response.status).toBe(201);
+       |                             ^
+     90|     const session = await response.json() as { sessionId: string; part…
+     91|     sessions.push({ id, base });
+ ❯ test/direct-uploads.integration.test.ts:371:23
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/14]⎯
+
+ FAIL  test/direct-uploads.integration.test.ts > isolated Postgres and S3 direct transfers > isolates guest owners and revocation, including a revoke during verification
+AssertionError: expected 500 to be 201 // Object.is equality
+
+- Expected
++ Received
+
+- 201
++ 500
+
+ ❯ initialize test/direct-uploads.integration.test.ts:89:29
+     87|       ...(options.project ? { project: options.project } : {}), ...(op…
+     88|     if (response.status !== 201) console.info("initialization failure"…
+     89|     expect(response.status).toBe(201);
+       |                             ^
+     90|     const session = await response.json() as { sessionId: string; part…
+     91|     sessions.push({ id, base });
+ ❯ test/direct-uploads.integration.test.ts:390:21
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/14]⎯
+
+ FAIL  test/direct-uploads.integration.test.ts > isolated Postgres and S3 direct transfers > bounds completion concurrency and freezes parts until publication
+AssertionError: expected 500 to be 201 // Object.is equality
+
+- Expected
++ Received
+
+- 201
++ 500
+
+ ❯ initialize test/direct-uploads.integration.test.ts:89:29
+     87|       ...(options.project ? { project: options.project } : {}), ...(op…
+     88|     if (response.status !== 201) console.info("initialization failure"…
+     89|     expect(response.status).toBe(201);
+       |                             ^
+     90|     const session = await response.json() as { sessionId: string; part…
+     91|     sessions.push({ id, base });
+ ❯ test/direct-uploads.integration.test.ts:407:17
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/14]⎯
+
+ FAIL  test/direct-uploads.integration.test.ts > isolated Postgres and S3 direct transfers > serializes UUID case variants while completion verifies stored bytes
+AssertionError: expected 500 to be 201 // Object.is equality
+
+- Expected
++ Received
+
+- 201
++ 500
+
+ ❯ initialize test/direct-uploads.integration.test.ts:89:29
+     87|       ...(options.project ? { project: options.project } : {}), ...(op…
+     88|     if (response.status !== 201) console.info("initialization failure"…
+     89|     expect(response.status).toBe(201);
+       |                             ^
+     90|     const session = await response.json() as { sessionId: string; part…
+     91|     sessions.push({ id, base });
+ ❯ test/direct-uploads.integration.test.ts:430:21
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/14]⎯
+
+ FAIL  test/direct-uploads.integration.test.ts > isolated Postgres and S3 direct transfers > recovers and aborts multipart initialization with a lost upload ID
+TypeError: Cannot read properties of undefined (reading 'artifact_id')
+ ❯ test/direct-uploads.integration.test.ts:474:38
+    472|     create.mockRestore();
+    473|     const [row] = await sql<{ artifact_id: string }[]>`select artifact…
+    474|     const prefix = `transfers/${row!.artifact_id}`;
+       |                                      ^
+    475|     expect((await client.send(new ListMultipartUploadsCommand({ Bucket…
+    476|     await sql`update artifacts.upload_sessions set expires_at = now() …
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/14]⎯
+
+ FAIL  test/direct-uploads.integration.test.ts > isolated Postgres and S3 direct transfers > continues cleanup after one storage failure and retains its retry record
+AssertionError: expected 500 to be 201 // Object.is equality
+
+- Expected
++ Received
+
+- 201
++ 500
+
+ ❯ initialize test/direct-uploads.integration.test.ts:89:29
+     87|       ...(options.project ? { project: options.project } : {}), ...(op…
+     88|     if (response.status !== 201) console.info("initialization failure"…
+     89|     expect(response.status).toBe(201);
+       |                             ^
+     90|     const session = await response.json() as { sessionId: string; part…
+     91|     sessions.push({ id, base });
+ ❯ test/direct-uploads.integration.test.ts:482:19
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[13/14]⎯
+
+ FAIL  test/direct-uploads.integration.test.ts > isolated Postgres and S3 direct transfers > preserves protected HTML, stable replacement URLs, ranges, HEAD, and conditional reads
+AssertionError: expected 500 to be 201 // Object.is equality
+
+- Expected
++ Received
+
+- 201
++ 500
+
+ ❯ initialize test/direct-uploads.integration.test.ts:89:29
+     87|       ...(options.project ? { project: options.project } : {}), ...(op…
+     88|     if (response.status !== 201) console.info("initialization failure"…
+     89|     expect(response.status).toBe(201);
+       |                             ^
+     90|     const session = await response.json() as { sessionId: string; part…
+     91|     sessions.push({ id, base });
+ ❯ test/direct-uploads.integration.test.ts:499:21
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[14/14]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  13 failed | 4 passed (17)
+   Start at  23:07:44
+   Duration  673.74s (transform 329ms, setup 0ms, import 544ms, tests 672.76s, environment 0ms)
+
