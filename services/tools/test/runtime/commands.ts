@@ -52,6 +52,7 @@ async function executeOwned(owner: Owner, spec: CommandSpec, scope: AbortSignal)
   const lifetimeMs = owner.lifetimeMs ?? spec.deadlineMs + owner.graceMs + 5_000;
   const anchor = spawn(process.execPath, [anchorPath, String(lifetimeMs), String(owner.graceMs)], {
     detached: true, stdio: ["ignore", "pipe", "pipe", "ipc"],
+    env: { ...process.env, NODE_OPTIONS: "" },
   });
   const output: Buffer[] = [];
   anchor.stdout!.on("data", (chunk: Buffer) => output.push(chunk));
