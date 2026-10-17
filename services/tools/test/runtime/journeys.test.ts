@@ -35,9 +35,11 @@ describe("built Tools journeys", () => {
   });
 
   it("anonymous-upload-link-post", async () => {
-    for (const headers of [{}, { Authorization: `Bearer ${uploadToken}` }]) {
+    for (const token of [undefined, uploadToken]) {
+      const headers = new Headers({ Origin: origin });
+      if (token) headers.set("Authorization", `Bearer ${token}`);
       const response = await request("/api/upload-links?durationMs=86400000", {
-        method: "POST", headers: { Origin: origin, ...headers },
+        method: "POST", headers,
       });
       expect(response.status).toBe(401);
       expect(await response.json()).toEqual({ error: "authentication_required" });
@@ -47,8 +49,10 @@ describe("built Tools journeys", () => {
 
   it("machine-token-boundary", async () => {
     for (const token of [undefined, "invalid-journey-token", uploadToken]) {
+      const headers = new Headers({ "Content-Type": "application/json" });
+      if (token) headers.set("Authorization", `Bearer ${token}`);
       const response = await request("/api/uploads/sessions", {
-        method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        method: "POST", headers,
         body: "{}",
       });
       expect(response.status).toBe(token === uploadToken ? 400 : 401);
