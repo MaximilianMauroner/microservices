@@ -1,4 +1,5 @@
-import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { createServer } from "node:net";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
@@ -53,6 +54,7 @@ async function fixture() {
   };
   const execute: CommandExecutor = { async execute(spec) {
     calls.push(spec);
+    await writeFile(spec.log, "fixture command log\n");
     const supplied = await response(spec);
     if (supplied) return supplied;
     let stdout = "";
@@ -95,7 +97,55 @@ async function fixture() {
   return { directory, options, calls, base, respond(handler: typeof response) { response = handler; } };
 }
 
+async function retainedFiles(directory: string) {
+  const entries = await Promise.all((await readdir(directory)).map(async (name) => [name, await readFile(join(directory, name), "utf8")]));
+  return Object.fromEntries(entries);
+}
+
+async function expectLocked(setup: Awaited<ReturnType<typeof fixture>>) {
+  expect(await readFile(join(setup.options.directory, "active.lock"), "utf8")).toBe(String(process.pid));
+  const files = await retainedFiles(setup.options.directory);
+  const count = setup.calls.length;
+  const next = await withLocalStack(setup.options, async () => { throw new Error("must not run"); });
+  expect(next).toMatchObject({ kind: "blocked", reason: expect.stringContaining("locked") });
+  expect(setup.calls).toHaveLength(count);
+  expect(await retainedFiles(setup.options.directory)).toEqual(files);
+}
+
 describe("owned local stack", () => {
+  it("allows storage browser requests only from the owned Tools origin", async () => {
+    const setup = await fixture();
+    const result = await withLocalStack(setup.options, async ({ manifest }) => {
+      const override = await readFile(join(setup.options.directory, "compose.override.yaml"), "utf8");
+      expect(override).toContain(`MINIO_API_CORS_ALLOW_ORIGIN: ${JSON.stringify(manifest.origins.tools)}`);
+      expect(override).not.toContain('MINIO_API_CORS_ALLOW_ORIGIN: "*"');
+    });
+    expect(result).toMatchObject({ kind: "completed", cleanup: "stopped" });
+  });
+
+  it("settles cancelled work before stopping fixtures when the host ends", async () => {
+    const setup = await fixture();
+    let finishHost: (() => void) | undefined;
+    let settled = false;
+    setup.respond(async (spec) => {
+      if (spec.args[0]?.endsWith("index.mjs")) {
+        await new Promise<void>((resolve) => { finishHost = resolve; });
+        return failed(spec);
+      }
+      if (spec.args.includes("down")) expect(settled).toBe(true);
+      return undefined;
+    });
+    const result = await withLocalStack(setup.options, async ({ signal }) => {
+      const cancelled = new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+      finishHost!();
+      await cancelled;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      settled = true;
+    });
+    expect(result).toMatchObject({ kind: "failed", cleanup: "stopped" });
+    expect(settled).toBe(true);
+  });
+
   it("uses the actual config parser and every remapped loopback port, then stops only its project without volume deletion", async () => {
     const setup = await fixture();
     const result = await withLocalStack(setup.options, async ({ manifest, environment }) => {
@@ -130,7 +180,7 @@ describe("owned local stack", () => {
     expect(JSON.parse(await readFile(join(setup.options.directory, "manifest.json"), "utf8"))).toEqual(result.manifest);
   });
 
-  it("retains the same feedback key, project, and volume names across restart", async () => {
+  it("retains the same origins, bindings, feedback key, project, and volume names across restart", async () => {
     const setup = await fixture();
     const keys: string[] = [];
     let encrypted: unknown;
@@ -146,9 +196,63 @@ describe("owned local stack", () => {
     expect(keys[0]).toBe(keys[1]);
     expect(second.manifest?.project).toBe(first.manifest?.project);
     expect(second.manifest?.volumes).toEqual(first.manifest?.volumes);
+    expect(second.manifest?.origins).toEqual(first.manifest?.origins);
+    expect(second.manifest?.bindings).toEqual(first.manifest?.bindings);
     const secondDirectory = { ...setup.options, directory: join(setup.directory, "another-private-run") };
     const other = await withLocalStack(secondDirectory, async () => {});
     expect(other.manifest?.project).not.toBe(first.manifest?.project);
+  });
+
+  it("refuses an occupied retained port before any command or recovery file overwrite", async () => {
+    const setup = await fixture();
+    const first = await withLocalStack(setup.options, async () => {});
+    expect(first.kind).toBe("completed");
+    const binding = first.manifest!.bindings.find((item) => item.service === "platform")!;
+    const server = createServer();
+    await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(binding.port, "127.0.0.1", resolve); });
+    try {
+      const files = await retainedFiles(setup.options.directory);
+      const count = setup.calls.length;
+      const result = await withLocalStack(setup.options, async () => { throw new Error("must not run"); });
+      expect(result).toMatchObject({ kind: "blocked", cleanup: "not-needed", reason: expect.stringContaining(`127.0.0.1:${binding.port}`) });
+      expect(setup.calls).toHaveLength(count);
+      expect(await retainedFiles(setup.options.directory)).toEqual(files);
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+    const restarted = await withLocalStack(setup.options, async () => {});
+    expect(restarted.kind).toBe("completed");
+    expect(restarted.manifest?.bindings).toEqual(first.manifest?.bindings);
+  });
+
+  it("recovers an older identity's bindings from its retained manifest without rotating its key or project", async () => {
+    const setup = await fixture();
+    const first = await withLocalStack(setup.options, async () => {});
+    expect(first.kind).toBe("completed");
+    const path = join(setup.options.directory, "identity.json");
+    const identity = JSON.parse(await readFile(path, "utf8"));
+    const { bindings: _bindings, ...original } = identity;
+    await writeFile(path, JSON.stringify(original));
+    const second = await withLocalStack(setup.options, async () => {});
+    expect(second.kind).toBe("completed");
+    expect(second.manifest?.origins).toEqual(first.manifest?.origins);
+    expect(second.manifest?.bindings).toEqual(first.manifest?.bindings);
+    expect(JSON.parse(await readFile(path, "utf8"))).toEqual(identity);
+  });
+
+  it("refuses retained configuration without a recoverable port identity instead of selecting new ports", async () => {
+    const setup = await fixture();
+    await withLocalStack(setup.options, async () => {});
+    const path = join(setup.options.directory, "identity.json");
+    const { bindings: _bindings, ...identity } = JSON.parse(await readFile(path, "utf8"));
+    await writeFile(path, JSON.stringify(identity));
+    await rm(join(setup.options.directory, "manifest.json"));
+    const files = await retainedFiles(setup.options.directory);
+    const count = setup.calls.length;
+    const result = await withLocalStack(setup.options, async () => { throw new Error("must not run"); });
+    expect(result).toMatchObject({ kind: "blocked", reason: expect.stringContaining("no port identity") });
+    expect(setup.calls).toHaveLength(count);
+    expect(await retainedFiles(setup.options.directory)).toEqual(files);
   });
 
   it("replays the missing-key rejection in the actual parser", () => {
@@ -216,6 +320,7 @@ describe("owned local stack", () => {
     const result = await withLocalStack({ ...setup.options, signal: controller.signal }, async () => { controller.abort(); });
     expect(result).toMatchObject({ kind: "failed", cleanup: "retained" });
     expect(await readFile(join(setup.options.directory, "identity.json"), "utf8")).toContain("feedbackKey");
+    await expectLocked(setup);
   });
 
   it("redacts generated credentials from command logs and never passes them in arguments", async () => {
@@ -249,6 +354,21 @@ describe("owned local stack", () => {
     const result = await withLocalStack(setup.options, async () => {});
     expect(result).toMatchObject({ kind: "failed", cleanup: "retained" });
     expect(setup.calls.filter((spec) => spec.args.includes("down"))).toHaveLength(1);
+    await expectLocked(setup);
+  });
+
+  it.each(["outcome", "throw"])("retains the lock after uncertain command ownership before Compose starts through %s", async (failure) => {
+    const setup = await fixture();
+    setup.respond(async (spec) => {
+      if (!spec.args.includes("version")) return;
+      if (failure === "throw") throw new Error("executor failed without a release result");
+      return { kind: "failed", termination: { kind: "owner", reason: "scope-closed" }, exit: { kind: "unavailable", reason: "test" },
+        ownership: "uncertain", escalation: "kill", log: { kind: "written", path: spec.log }, reasons: [] };
+    });
+    const result = await withLocalStack(setup.options, async () => { throw new Error("must not run"); });
+    expect(result).toMatchObject({ kind: "failed", cleanup: "retained" });
+    expect(setup.calls.some((spec) => spec.args.includes("up") || spec.args.includes("down"))).toBe(false);
+    await expectLocked(setup);
   });
 
   it("rejects a container-only signing endpoint through the executable config check", async () => {

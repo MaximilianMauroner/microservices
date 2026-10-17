@@ -192,6 +192,7 @@ export async function runVerification(mode: VerificationMode, paths?: Readonly<{
               case "identity-contracts": {
                 if (!fixture) throw new Error("No verified PostgreSQL fixture.");
                 const databaseUrl = fixture.url;
+                let identityResult: StepResult = { kind: "pending" };
                 const privateDirectory = await mkdtemp(join(tmpdir(), "tools-identity-"));
                 const local = await withLocalStack({
                   directory: privateDirectory, commands: { work: commands, cleanup: cleanupCommands },
@@ -199,22 +200,24 @@ export async function runVerification(mode: VerificationMode, paths?: Readonly<{
                 }, async (stack) => {
                   identityFixture = stack.manifest;
                   if (stack.manifest.prerequisites.storageHttp.kind !== "passed") {
-                    cell.result = { kind: "blocked", reasons: [stack.manifest.prerequisites.storageHttp.reason], evidence: [join(privateDirectory, "manifest.json")] };
+                    identityResult = { kind: "blocked", reasons: [stack.manifest.prerequisites.storageHttp.reason], evidence: [join(privateDirectory, "manifest.json")] };
                     return;
                   }
                   const env = {
                     ...process.env, TEST_DATABASE_URL: databaseUrl, MONEY_TEST_DATABASE_CONFIRM: "money-repository-test",
                     PUBLISHER_TRANSFER_TEST_DATABASE_URL: databaseUrl,
                     PUBLISHER_TRANSFER_TEST_S3_ENDPOINT: stack.environment.ARTIFACT_S3_ENDPOINT,
+                    PUBLISHER_TRANSFER_TEST_ORIGIN: stack.manifest.origins.tools,
                     PUBLISHER_TRANSFER_TEST_S3_ACCESS_KEY_ID: stack.environment.ARTIFACT_S3_ACCESS_KEY_ID,
                     PUBLISHER_TRANSFER_TEST_S3_SECRET_ACCESS_KEY: stack.environment.ARTIFACT_S3_SECRET_ACCESS_KEY,
                   };
-                  const result = await childReport("run", commands, directory, env, work.signal, redact, "identity");
+                  const result = await childReport("run", commands, directory, env, stack.signal, redact, "identity");
                   identityContracts = requiredCaseReceipt(identityRequired, result.report?.observed ?? [], result.errors);
-                  cell.result = commandResult(result.outcome);
-                  if (result.outcome.kind === "succeeded" && identityContracts.result !== "passed") cell.result = { kind: "failed", reasons: identityContracts.evidence, evidence: [join(directory, "identity-run-report.json")] };
+                  identityResult = commandResult(result.outcome);
+                  if (result.outcome.kind === "succeeded" && identityContracts.result !== "passed") identityResult = { kind: "failed", reasons: identityContracts.evidence, evidence: [join(directory, "identity-run-report.json")] };
                 });
                 identityFixture ??= local.manifest;
+                cell.result = identityResult;
                 if (local.kind !== "completed" || local.cleanup !== "stopped") {
                   cell.result = { kind: local.kind === "blocked" ? "blocked" : "failed", reasons: [local.reason ?? "Local identity fixture did not complete cleanup."], evidence: [privateDirectory] };
                 }
