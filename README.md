@@ -90,7 +90,10 @@ for recovery.
 Volume deletion requires separate authorization.
 
 The manifest reports acceptance limits separately. Signed multipart PUT,
-preflight, and ETag exposure checks run over HTTP. Publisher browser journeys
+preflight, and ETag exposure checks run over HTTP. MinIO allows the owned Tools
+origin and the `null` origin used by sandboxed artifact downloads. Its global
+CORS setting applies to all methods. This fixture cannot prove separate upload
+and download origin policies for a production provider. Publisher browser journeys
 remain blocked until a real browser confirms signed PUT and readable ETag.
 Private browser acceptance requires a real local Google OAuth client and allowed
 subject. The local placeholders do not prove login. Document Share requires a

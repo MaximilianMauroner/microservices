@@ -26,7 +26,7 @@ const platform = {
   ARTIFACT_S3_ACCESS_KEY_ID: "local-minio", ARTIFACT_S3_SECRET_ACCESS_KEY: "local-minio-password", ARTIFACT_S3_FORCE_PATH_STYLE: "true",
 };
 
-function failed(spec: CommandSpec): CommandOutcome {
+function failed(spec: CommandSpec): Extract<CommandOutcome, { kind: "failed" | "blocked" }> {
   return { kind: "failed", termination: { kind: "natural" }, exit: { kind: "exited", code: 1 }, escalation: "none",
     ownership: "released", log: { kind: "written", path: spec.log }, reasons: ["test failure"] };
 }
@@ -113,14 +113,40 @@ async function expectLocked(setup: Awaited<ReturnType<typeof fixture>>) {
 }
 
 describe("owned local stack", () => {
-  it("allows storage browser requests only from the owned Tools origin", async () => {
+  it("allows the owned Tools and sandbox download origins without a wildcard", async () => {
     const setup = await fixture();
     const result = await withLocalStack(setup.options, async ({ manifest }) => {
       const override = await readFile(join(setup.options.directory, "compose.override.yaml"), "utf8");
-      expect(override).toContain(`MINIO_API_CORS_ALLOW_ORIGIN: ${JSON.stringify(manifest.origins.tools)}`);
+      expect(override).toContain(`MINIO_API_CORS_ALLOW_ORIGIN: ${JSON.stringify(`${manifest.origins.tools},null`)}`);
       expect(override).not.toContain('MINIO_API_CORS_ALLOW_ORIGIN: "*"');
     });
     expect(result).toMatchObject({ kind: "completed", cleanup: "stopped" });
+  });
+
+  it.each(["health", "storage"])("retains the lock when the cancelled %s probe cannot prove release", async (phase) => {
+    const setup = await fixture();
+    let finishHost: (() => void) | undefined;
+    let settled = false;
+    setup.respond(async (spec) => {
+      if (spec.args[0]?.endsWith("index.mjs")) {
+        await new Promise<void>((resolve) => { finishHost = resolve; });
+        return failed(spec);
+      }
+      if (spec.args.at(-1) === phase) {
+        const cancelled = new Promise<void>((resolve) => spec.signal!.addEventListener("abort", () => resolve(), { once: true }));
+        finishHost!();
+        await cancelled;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        settled = true;
+        return { ...failed(spec), ownership: "uncertain" };
+      }
+      if (spec.args.includes("down")) expect(settled).toBe(true);
+      return undefined;
+    });
+    const result = await withLocalStack(setup.options, async () => { throw new Error("must not run"); });
+    expect(result).toMatchObject({ kind: "failed", cleanup: "retained" });
+    expect(settled).toBe(true);
+    await expectLocked(setup);
   });
 
   it("settles cancelled work before stopping fixtures when the host ends", async () => {
