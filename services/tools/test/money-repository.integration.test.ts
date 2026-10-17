@@ -10,7 +10,6 @@ import { MoneyImportService } from "../money/money-import-service.js";
 import { requireLoopbackPostgres } from "./runtime/postgres.ts";
 import { moneyWorkbookFixture } from "./money-workbook-fixture.js";
 
-// The required runner owns fixture creation, schema setup, and case reporting.
 const databaseUrl = process.env.TEST_DATABASE_URL ? requireLoopbackPostgres(process.env.TEST_DATABASE_URL) : undefined;
 const confirmed = process.env.MONEY_TEST_DATABASE_CONFIRM === "money-repository-test";
 const repository = databaseUrl && confirmed ? createPostgresMoneyRepository(databaseUrl) : undefined;
@@ -88,6 +87,55 @@ it.skipIf(!repository || !admin)("recognizes raw-cell keys from older cash impor
   expect((await repository!.readLedgerSnapshot("all")).transactionCount).toBe(1);
   await service.deleteImport(duplicate.id);
   expect((await repository!.readLedgerSnapshot("all")).months.at(-1)?.total).toBe(10.01);
+});
+
+it.skipIf(!repository || !admin).each([
+  { first: "CSV", legacy: false },
+  { first: "Excel", legacy: false },
+  { first: "CSV", legacy: true }
+])("keeps manual categories and transfer review after equivalent exports ($first first, legacy keys: $legacy)", async ({ first, legacy }) => {
+  const headers = ["Type", "Product", "Started Date", "Completed Date", "Description", "Amount", "Fee", "Currency", "State", "Balance"];
+  const rows = [
+    ["Card Payment", "Current", "2026-08-09 5:08:51", "2026-08-09 5:08:51", "Reviewed market", "-12.340", "0.00", "EUR", "COMPLETED", "87.660"],
+    ["Transfer", "Current", "2026-08-10 5:08:51", "2026-08-10 5:08:51", "Reviewed transfer", "-5.000", "0.00", "EUR", "COMPLETED", "82.660"]
+  ];
+  const csv = Buffer.from([headers, ...rows].map((row) => row.join(",")).join("\r\n"));
+  const time = (5 * 3600 + 8 * 60 + 51) / 86400;
+  const excel = moneyWorkbookFixture([headers,
+    ["Card Payment", "Current", { date: 46243 + time }, { date: 46243 + time }, "Reviewed market", -12.34, 0, "EUR", "COMPLETED", 87.66],
+    ["Transfer", "Current", { date: 46244 + time }, { date: 46244 + time }, "Reviewed transfer", -5, 0, "EUR", "COMPLETED", 82.66]
+  ]);
+  const [original, equivalent] = first === "CSV" ? [csv, excel] : [excel, csv];
+  const originalFilename = first === "CSV" ? "original.csv" : "original.xlsx";
+  const equivalentFilename = first === "CSV" ? "equivalent.xlsx" : "equivalent.csv";
+  const service = new MoneyImportService(repository!);
+  const preview = await service.preview(originalFilename, original);
+  expect(await service.commit({ filename: originalFilename, bytes: original, expectedDigest: preview.digest, actor: "integration@example.test" })).toMatchObject({ insertedCount: 2, duplicateCount: 0, replay: false });
+  const activity = await repository!.readActivityPage({ query: "Reviewed", offset: 0, limit: 10 });
+  const market = activity.items.find((item) => item.description === "Reviewed market")!;
+  const transfer = activity.items.find((item) => item.description === "Reviewed transfer")!;
+  expect(transfer.transferDisposition).toBe("spend");
+  await repository!.setTransactionCategory({ transactionId: market.id, category: "groceries", actor: "integration@example.test", createRule: false });
+  await repository!.setTransferDisposition({ transactionId: transfer.id, disposition: "internal_transfer" });
+  if (legacy) {
+    for (const row of rows) {
+      const oldKey = createHash("sha256").update(JSON.stringify([REVOLUT_CASH_FORMAT, ...row])).digest("hex");
+      await admin!`update tools.money_transactions set source_key = ${oldKey} where description = ${row[4]!}`;
+    }
+  }
+  const stored = await admin!`select id, source_key from tools.money_transactions order by id`;
+  const reviewed = await repository!.readActivityPage({ query: "Reviewed", offset: 0, limit: 10 });
+  expect(reviewed.items).toContainEqual(expect.objectContaining({ id: market.id, category: "groceries", categoryOrigin: "manual" }));
+  expect(reviewed.items).toContainEqual(expect.objectContaining({ id: transfer.id, transferDisposition: "internal_transfer", needsTransferReview: false }));
+
+  const equivalentPreview = await service.preview(equivalentFilename, equivalent);
+  expect(equivalentPreview.duplicateCount).toBe(2);
+  expect(await repository!.readActivityPage({ query: "Reviewed", offset: 0, limit: 10 })).toEqual(reviewed);
+  const receipt = await service.commit({ filename: equivalentFilename, bytes: equivalent, expectedDigest: equivalentPreview.digest, actor: "integration@example.test" });
+  expect(receipt).toMatchObject({ insertedCount: 0, duplicateCount: 2, replay: false });
+  expect(await repository!.readActivityPage({ query: "Reviewed", offset: 0, limit: 10 })).toEqual(reviewed);
+  expect(await admin!`select id, source_key from tools.money_transactions order by id`).toEqual(stored);
+  expect((await repository!.readLedgerSnapshot("all")).transactionCount).toBe(2);
 });
 
 it.skipIf(!repository || !admin).each([false, true])("counts overlapping cash and savings once in either import order (cash first: %s)", async (cashFirst) => {
