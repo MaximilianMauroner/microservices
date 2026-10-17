@@ -14,11 +14,13 @@ import {
   UploadLinkInactiveError,
   type UploadStorage
 } from "./storage.js";
-import { createS3UploadStorage, summarizeUploads } from "./storage.js";
+import { createS3UploadStorage, summarizeUploads, matchesUploadProject } from "./storage.js";
 import { createDirectUploads, DIRECT_PART_BYTES } from "./direct-uploads.js";
 import { createMultipartStorage } from "./multipart-storage.js";
 import { DirectUploadError } from "./multipart-storage.js";
 import { commitHtmlVersion, replacementKey, type HtmlVersionReceipt } from "./html-versions.js";
+
+import { classifyUpload, DEFAULT_UPLOAD_LIST_CRITERIA, serializeUploadListCriteria, type UploadListSort } from "./upload-list.js";
 
 type ArtifactRow = {
   id: string;
@@ -472,12 +474,16 @@ export function pageArtifactMetadata(
   asOf: Date,
   options: ListUploadsOptions
 ): StoredUploadPage {
-  const active = uploads.filter((item) => !item.expiresAt || item.expiresAt > asOf);
-  const query = options.q?.trim().normalize("NFKC").toLowerCase() ?? "";
-  const expiry = options.expiry ?? "all";
-  const sort = options.sort ?? "newest";
+  const criteria = options.criteria ?? DEFAULT_UPLOAD_LIST_CRITERIA;
+  const active = uploads.filter((item) => !item.expiresAt || item.expiresAt > asOf)
+    .map((item) => ({ ...item, category: classifyUpload(item.contentType, item.originalName) }));
+  const query = criteria.q.trim().normalize("NFKC").toLowerCase();
+  const expiry = criteria.expiry;
+  const sort = criteria.sort;
   const ordered = active
-    .filter((item) => !options.kind || item.kind === options.kind)
+    .filter((item) => criteria.kind === "all" || item.kind === criteria.kind)
+    .filter((item) => matchesUploadProject(item.project, criteria.project))
+    .filter((item) => criteria.category === "all" || item.category === criteria.category)
     .filter((item) => !query || item.originalName.normalize("NFKC").toLowerCase().includes(query))
     .filter((item) => expiry === "all" || expiry === "persistent" ? expiry === "all" || !item.expiresAt : Boolean(item.expiresAt && item.expiresAt <= new Date(asOf.getTime() + (expiry === "24h" ? 86_400_000 : 604_800_000))))
     .sort(comparator(sort));
@@ -489,14 +495,15 @@ export function pageArtifactMetadata(
     uploads: visible.map(({ key: _key, ...item }) => item),
     ...(options.includeSummary ? { summary: summarizeUploads(active, asOf) } : {}),
     ...(last && selected.length > options.limit ? { nextCursor: {
-      version: 1, criteria: options.criteria ?? "legacy:newest", updatedAt: last.updatedAt,
-      key: last.key, originalName: last.originalName, ...(last.expiresAt ? { expiresAt: last.expiresAt } : {})
+      version: 1, criteria: serializeUploadListCriteria(criteria), updatedAt: last.updatedAt,
+      key: last.key, originalName: last.originalName, bytes: last.bytes, ...(last.expiresAt ? { expiresAt: last.expiresAt } : {})
     } } : {})
   };
 }
 
-function comparator(sort: NonNullable<ListUploadsOptions["sort"]>) {
+function comparator(sort: UploadListSort) {
   return (a: StoredUploadSummary & { key: string }, b: StoredUploadSummary & { key: string }) => {
+    if (sort === "size") return b.bytes - a.bytes || a.key.localeCompare(b.key);
     if (sort === "filename") return a.originalName.localeCompare(b.originalName) || a.key.localeCompare(b.key);
     if (sort === "expiry") return (a.expiresAt?.getTime() ?? Infinity) - (b.expiresAt?.getTime() ?? Infinity) || a.key.localeCompare(b.key);
     const delta = a.updatedAt.getTime() - b.updatedAt.getTime();
@@ -506,6 +513,6 @@ function comparator(sort: NonNullable<ListUploadsOptions["sort"]>) {
 
 function cursorSummary(cursor: UploadListCursor): StoredUploadSummary & { key: string } {
   return { id: "", kind: "html", originalName: cursor.originalName ?? cursor.key,
-    contentType: "", bytes: 0, updatedAt: cursor.updatedAt, key: cursor.key,
+    contentType: "", bytes: cursor.bytes ?? 0, updatedAt: cursor.updatedAt, key: cursor.key,
     ...(cursor.expiresAt ? { expiresAt: cursor.expiresAt } : {}) };
 }

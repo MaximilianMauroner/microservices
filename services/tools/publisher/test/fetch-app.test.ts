@@ -1,3 +1,4 @@
+import { pageArtifactMetadata } from "../src/postgres-storage.js";
 import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { once } from "node:events";
@@ -158,6 +159,76 @@ describe("native artifact fetch handler", () => {
     expect((await app(new Request("https://tools.example.test/api/uploads/sessions/" + sessionId))).status).toBe(401);
   });
 
+  it("filters metadata before paging and binds size cursors to every criterion", async () => {
+    const storage = new MemoryUploadStorage();
+    const now = new Date("2026-10-17T12:00:00.000Z");
+    const rows = [
+      { id: "a".repeat(32), bytes: 30, project: "work", originalName: "report-a.pdf" },
+      { id: "b".repeat(32), bytes: 30, project: "work", originalName: "report-b.pdf" },
+      { id: "c".repeat(32), bytes: 50, project: "work", originalName: "report-c.pdf" },
+      { id: "d".repeat(32), bytes: 90, project: "other", originalName: "report-d.pdf" },
+      { id: "e".repeat(32), bytes: 80, originalName: "report-e.pdf" }
+    ].map((row) => ({ ...row, key: `transfers/${row.id}`, kind: "file" as const,
+      contentType: "application/octet-stream", updatedAt: now, expiresAt: new Date(now.getTime() + 3600000) }));
+    const excluded = [
+      { ...rows[0]!, id: "f".repeat(32), key: `transfers/${"f".repeat(32)}`, bytes: 100, originalName: "budget.pdf" },
+      { ...rows[0]!, id: "g".repeat(32), key: `transfers/${"g".repeat(32)}`, bytes: 100, contentType: "image/png" },
+      { ...rows[0]!, id: "h".repeat(32), key: `transfers/${"h".repeat(32)}`, bytes: 100, expiresAt: new Date(now.getTime() + 8 * 86400000) },
+      { ...rows[0]!, id: "i".repeat(32), key: `transfers/${"i".repeat(32)}`, bytes: 100, kind: "html" as const, contentType: "text/html" }
+    ];
+    storage.listUploads = vi.fn(async (asOf, options) => pageArtifactMetadata([...rows, ...excluded].reverse(), asOf, options));
+    const app = createFetchApp({ storage, externalUpload: true, uploadToken: "upload-token", now: () => now });
+    const criteria = new URLSearchParams({ limit: "1", q: " REPORT ", kind: "file", project: "named", projectName: "work", category: "pdf", expiry: "24h", sort: "size" });
+    const list = async (params: URLSearchParams) => app(new Request(`https://tools.example.test/api/external-uploads?${params}`));
+    const firstResponse = await list(criteria);
+    expect(firstResponse.status).toBe(200);
+    const first = await firstResponse.json() as { uploads: Array<{ id: string; category: string; bytes: number }>; nextCursor: string };
+    expect(first.uploads).toMatchObject([{ id: rows[2]!.id, category: "pdf", bytes: 50 }]);
+    expect(JSON.parse(Buffer.from(first.nextCursor, "base64url").toString()).bytes).toBe(50);
+    const secondCriteria = new URLSearchParams(criteria);
+    secondCriteria.set("cursor", first.nextCursor);
+    secondCriteria.set("q", "report");
+    const secondResponse = await list(secondCriteria);
+    expect(secondResponse.status).toBe(200);
+    const second = await secondResponse.json() as typeof first;
+    expect(second.uploads.map((row) => row.id)).toEqual([rows[0]!.id]);
+    secondCriteria.set("cursor", second.nextCursor);
+    const third = await (await list(secondCriteria)).json() as typeof first;
+    expect(third.uploads.map((row) => row.id)).toEqual([rows[1]!.id]);
+    expect(third.nextCursor).toBeUndefined();
+    for (const [field, value] of Object.entries({ q: "other", kind: "html", projectName: "other", project: "unassigned", category: "other", expiry: "7d", sort: "newest" })) {
+      const changed = new URLSearchParams(criteria);
+      changed.set("cursor", first.nextCursor);
+      changed.set(field, value);
+      if (field === "project") changed.delete("projectName");
+      expect((await list(changed)).status).toBe(400);
+    }
+    const plans = new URLSearchParams({ project: "named", projectName: "work", kind: "html" });
+    expect((await (await list(plans)).json()).uploads.map((row: { id: string }) => row.id)).toEqual([excluded[3]!.id]);
+    const unassigned = new URLSearchParams({ project: "unassigned", sort: "size" });
+    expect((await (await list(unassigned)).json()).uploads.map((row: { id: string }) => row.id)).toEqual([rows[4]!.id]);
+    for (const key of [`transfers/${rows[0]!.id}/${"z".repeat(32)}`, `pages/${rows[0]!.id}.html`, `files/${rows[0]!.id}`]) {
+      const anchor = JSON.parse(Buffer.from(first.nextCursor, "base64url").toString());
+      const params = new URLSearchParams(criteria);
+      params.set("cursor", Buffer.from(JSON.stringify({ ...anchor, key })).toString("base64url"));
+      expect((await list(params)).status).toBe(200);
+    }
+    for (const patch of [{ bytes: undefined }, { bytes: -1 }, { bytes: "30" }, { key: "transfers/invalid" }]) {
+      const anchor = JSON.parse(Buffer.from(first.nextCursor, "base64url").toString());
+      const params = new URLSearchParams(criteria);
+      params.set("cursor", Buffer.from(JSON.stringify({ ...anchor, ...patch })).toString("base64url"));
+      expect((await list(params)).status).toBe(400);
+    }
+  });
+
+  it.each(["category=unknown", "sort=unknown", "category=pdf&category=html", "project=named", "project=all&projectName=work", "project=unknown"])("rejects invalid list criteria %s", async (query) => {
+    const storage = new MemoryUploadStorage();
+    storage.listUploads = vi.fn();
+    const app = createFetchApp({ storage, externalUpload: true, uploadToken: "upload-token" });
+    expect((await app(new Request(`https://tools.example.test/api/external-uploads?${query}`))).status).toBe(400);
+    expect(storage.listUploads).not.toHaveBeenCalled();
+  });
+
   it("returns an exact inventory summary when the first page requests it", async () => {
     const storage = new MemoryUploadStorage();
     storage.listUploads = vi.fn(async (_asOf, options) => ({
@@ -165,6 +236,7 @@ describe("native artifact fetch handler", () => {
       ...(options.includeSummary ? {
         summary: {
           total: 142,
+          activeBytes: 8192,
           permanent: 92,
           temporary: 50,
           expiringSoon: 8,
@@ -182,7 +254,7 @@ describe("native artifact fetch handler", () => {
     const response = await app(new Request("https://tools.example.test/api/external-uploads?limit=100&includeSummary=true"));
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ summary: { total: 142, permanent: 92 } });
+    expect(await response.json()).toMatchObject({ summary: { total: 142, permanent: 92, activeBytes: 8192 } });
     expect(storage.listUploads).toHaveBeenCalledWith(expect.any(Date), expect.objectContaining({ limit: 100, includeSummary: true }));
   });
 
