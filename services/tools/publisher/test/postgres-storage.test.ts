@@ -26,6 +26,15 @@ describe("Postgres artifact metadata paging", () => {
     expect(page.uploads.map(({ id }) => id)).toEqual(["b"]);
   });
 
+  it("searches project names and capability IDs", () => {
+    const byProject = pageArtifactMetadata(uploads, now, { limit: 10,
+      criteria: { ...DEFAULT_UPLOAD_LIST_CRITERIA, q: "MICROSERVICES" } });
+    const byId = pageArtifactMetadata([{ ...uploads[0]!, id: "capability-token-123" }], now, { limit: 10,
+      criteria: { ...DEFAULT_UPLOAD_LIST_CRITERIA, q: "TOKEN-123" } });
+    expect(byProject.uploads.map(({ id }) => id)).toEqual(["a"]);
+    expect(byId.uploads.map(({ id }) => id)).toEqual(["capability-token-123"]);
+  });
+
   it("preserves stable cursor ordering", () => {
     const first = pageArtifactMetadata(uploads, now, { limit: 1, criteria: DEFAULT_UPLOAD_LIST_CRITERIA });
     expect(first.uploads[0]?.id).toBe("a");
@@ -73,7 +82,9 @@ describe("Postgres artifact metadata paging", () => {
     ["application/zip", "backup.bin", "archives"],
     ["application/vnd.openxmlformats-officedocument.wordprocessingml.document", "notes.bin", "documents"],
     ["text/plain", "notes.bin", "documents"],
-    ["application/json", "report.pdf", "other"],
+    ["application/json", "report.pdf", "pdf"],
+    ["application/x-zip-compressed", "backup.zip", "archives"],
+    ["application/x-unrecognized", "backup.rar", "archives"],
     ["application/octet-stream", "PLAN.HTML", "html"],
     ["application/octet-stream", "REPORT.PDF", "pdf"],
     ["", "photo.JPG", "images"],

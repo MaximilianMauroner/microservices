@@ -452,7 +452,7 @@ export function createS3UploadStorage(config: S3UploadStorageConfig): UploadStor
       const normalizedQuery = criteria.q.trim().normalize("NFKC").toLowerCase();
       const filtered = summaries
         .filter((upload) => criteria.kind === "all" || upload.kind === criteria.kind)
-        .filter((upload) => !normalizedQuery || upload.originalName.normalize("NFKC").toLowerCase().includes(normalizedQuery))
+        .filter((upload) => !normalizedQuery || `${upload.originalName} ${upload.id} ${upload.project ?? ""}`.normalize("NFKC").toLowerCase().includes(normalizedQuery))
         .filter((upload) => matchesUploadProject(upload.project, criteria.project))
         .filter((upload) => criteria.category === "all" || upload.category === criteria.category)
         .filter((upload) => matchesExpiry(upload, criteria.expiry, asOf))

@@ -27,7 +27,10 @@ describe("direct completion request", () => {
     const response = await handleDirectUpload(new Request(options.baseUrl, { method: "POST" }),
       `${sessionId}/complete`, uploads(), owner, options);
     expect(response.status).toBe(201);
-    expect(await response.json()).toMatchObject({ updatedAt: "2026-10-16T12:00:00.000Z" });
+    expect(await response.json()).toMatchObject({
+      category: "html",
+      updatedAt: "2026-10-16T12:00:00.000Z"
+    });
   });
 
   it("passes the expected digest to publication", async () => {

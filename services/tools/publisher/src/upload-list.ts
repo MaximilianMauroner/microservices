@@ -4,7 +4,7 @@ export const UPLOAD_CATEGORIES = [
   { id: "images", label: "Images", mime: /^image\//, extensions: /\.(png|jpe?g|gif|webp|svg|avif|heic|bmp|tiff?|ico)$/i },
   { id: "video", label: "Video", mime: /^video\//, extensions: /\.(mp4|webm|mov|m4v|avi|mkv|mpeg|mpg)$/i },
   { id: "audio", label: "Audio", mime: /^audio\//, extensions: /\.(mp3|wav|ogg|m4a|aac|flac|opus|aiff)$/i },
-  { id: "archives", label: "Archives", mime: /^application\/(zip|gzip|x-gzip|x-tar|x-7z-compressed|x-rar-compressed|vnd\.rar|x-bzip2|x-xz)$/, extensions: /\.(zip|gz|tgz|tar|7z|rar|bz2|xz)$/i },
+  { id: "archives", label: "Archives", mime: /^application\/(zip|x-zip-compressed|gzip|x-gzip|x-tar|x-7z-compressed|x-rar|x-rar-compressed|vnd\.rar|x-bzip2|x-xz)$/, extensions: /\.(zip|gz|tgz|tar|7z|rar|bz2|xz)$/i },
   { id: "documents", label: "Documents", mime: /^(text\/|application\/(msword|rtf|vnd\.(ms-|openxmlformats-officedocument\.|oasis\.opendocument\.)))/, extensions: /\.(txt|md|csv|rtf|docx?|xlsx?|pptx?|odt|ods|odp|tex)$/i },
   { id: "other", label: "Other", mime: /$^/, extensions: /$^/ }
 ] as const;
@@ -45,8 +45,13 @@ export function uploadListPath(criteria: UploadListCriteria, cursor?: string): s
   return `/api/external-uploads?${search}`;
 }
 
+export function isUploadCategory(value: unknown): value is UploadCategory {
+  return UPLOAD_CATEGORIES.some(({ id }) => id === value);
+}
+
 export function classifyUpload(contentType: string, filename: string): UploadCategory {
-  const mime = contentType.split(";", 1)[0]!.trim().toLowerCase();
+  const mime = contentType.split(";", 1)[0].trim().toLowerCase();
   const generic = !mime || mime === "application/octet-stream" || mime === "binary/octet-stream";
-  return UPLOAD_CATEGORIES.find((category) => generic ? category.extensions.test(filename) : category.mime.test(mime))?.id ?? "other";
+  const mimeCategory = generic ? undefined : UPLOAD_CATEGORIES.find((category) => category.mime.test(mime));
+  return mimeCategory?.id ?? UPLOAD_CATEGORIES.find((category) => category.extensions.test(filename))?.id ?? "other";
 }

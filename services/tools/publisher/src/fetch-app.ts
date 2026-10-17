@@ -45,7 +45,7 @@ import {
   type UploadStorage
 } from "./storage.js";
 
-import { UPLOAD_CATEGORIES, serializeUploadListCriteria, type UploadListCriteria } from "./upload-list.js";
+import { isUploadCategory, serializeUploadListCriteria, type UploadListCriteria } from "./upload-list.js";
 
 export const MAX_SINGLE_PUT_UPLOAD_BYTES = 5_000_000_000;
 export const DEFAULT_MAX_UPLOAD_BYTES = MAX_SINGLE_PUT_UPLOAD_BYTES;
@@ -2800,18 +2800,19 @@ function parseUploadListOptions(search: URLSearchParams): Omit<ListUploadsOption
   const rawProject = singleQuery(search, "project") ?? "all";
   const rawProjectName = singleQuery(search, "projectName");
   const projectName = rawProjectName === undefined ? undefined : normalizeProjectName(rawProjectName);
-  if (!["all", "unassigned", "named"].includes(rawProject) ||
-      (rawProject === "named" ? !projectName : rawProjectName !== undefined)) {
+  let project: UploadListCriteria["project"];
+  if (rawProject === "named" && projectName) project = { mode: "named", name: projectName };
+  else if (rawProject === "unassigned" && rawProjectName === undefined) project = { mode: "unassigned" };
+  else if (rawProject === "all" && rawProjectName === undefined) project = { mode: "all" };
+  else {
     throw new ArtifactRequestError(400, "invalid_pagination", "project must be all, unassigned, or named with a projectName.");
   }
   const category = singleQuery(search, "category") ?? "all";
-  if (category !== "all" && !UPLOAD_CATEGORIES.some((entry) => entry.id === category)) {
+  if (category !== "all" && !isUploadCategory(category)) {
     throw new ArtifactRequestError(400, "invalid_pagination", "category is invalid.");
   }
   const criteria: UploadListCriteria = {
-    q, kind, expiry, sort,
-    project: rawProject === "named" ? { mode: "named", name: projectName! } : { mode: rawProject as "all" | "unassigned" },
-    category: category as UploadListCriteria["category"]
+    q, kind, expiry, sort, project, category
   };
   const cursor = rawCursor === undefined ? undefined : decodeUploadListCursor(rawCursor, criteria,
     q === "" && expiry === "all" && sort === "newest" && rawProject === "all" && category === "all");
@@ -2868,7 +2869,7 @@ function decodeUploadListCursor(value: string, criteria: UploadListCriteria, leg
       updatedAt,
       key: candidate.key,
       originalName: candidate.originalName,
-      ...(candidate.bytes !== undefined ? { bytes: candidate.bytes as number } : {}),
+      ...(candidate.bytes !== undefined ? { bytes: candidate.bytes } : {}),
       ...(expiresAt ? { expiresAt } : {})
     };
   } catch {

@@ -484,7 +484,7 @@ export function pageArtifactMetadata(
     .filter((item) => criteria.kind === "all" || item.kind === criteria.kind)
     .filter((item) => matchesUploadProject(item.project, criteria.project))
     .filter((item) => criteria.category === "all" || item.category === criteria.category)
-    .filter((item) => !query || item.originalName.normalize("NFKC").toLowerCase().includes(query))
+    .filter((item) => !query || `${item.originalName} ${item.id} ${item.project ?? ""}`.normalize("NFKC").toLowerCase().includes(query))
     .filter((item) => expiry === "all" || expiry === "persistent" ? expiry === "all" || !item.expiresAt : Boolean(item.expiresAt && item.expiresAt <= new Date(asOf.getTime() + (expiry === "24h" ? 86_400_000 : 604_800_000))))
     .sort(comparator(sort));
   const after = options.cursor ? ordered.filter((item) => comparator(sort)(item, cursorSummary(options.cursor!)) > 0) : ordered;
