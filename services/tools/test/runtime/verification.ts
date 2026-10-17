@@ -7,12 +7,12 @@ import { fileURLToPath } from "node:url";
 import { withOwnedCommands, type CommandExecutor, type CommandOutcome, type CommandSpec } from "./commands.ts";
 import { createOwnedPostgres, rejectInheritedDataEndpoints } from "./postgres.ts";
 import { withLocalStack, type LocalStackManifest } from "./local-stack.ts";
-import { decodeReport, redactDatabase, requiredCaseReceipt, VerificationBlocked, type ChildReport } from "./receipt.ts";
+import { decodeReport, redactDatabase, requiredCaseReceipt, VerificationBlocked, type ChildReport, journeyReceipts, requiredJourneyCases, type CheckReceipt } from "./receipt.ts";
 import type { StopSignal } from "./command-types.ts";
 
 export type VerificationMode = "workspace" | "money-postgres";
 type Requirement =
-  | Readonly<{ kind: "prerequisites" | "discover" | "fixture" | "schema" | "contracts" | "identity-discover" | "identity-contracts" | "cleanup" }>
+  | Readonly<{ kind: "prerequisites" | "discover" | "fixture" | "schema" | "contracts" | "identity-discover" | "identity-contracts" | "journey-discover" | "journey-contracts" | "cleanup" }>
   | Readonly<{ kind: "workspace-command"; command: "typecheck" | "test" | "build" }>;
 type StepResult =
   | Readonly<{ kind: "pending" }>
@@ -29,6 +29,7 @@ type RunRecord = Readonly<{
   required: readonly string[];
   contracts: ReturnType<typeof requiredCaseReceipt> | undefined;
   identity: Readonly<{ required: readonly string[]; contracts?: ReturnType<typeof requiredCaseReceipt>; fixture?: LocalStackManifest }>;
+  journeys: readonly CheckReceipt[];
   interruption: Interruption;
   decision: Decision;
 }>;
@@ -41,7 +42,7 @@ const interruptedExit = { SIGINT: 130, SIGTERM: 143 } as const;
 function planFor(mode: VerificationMode): Cell[] {
   const workspace: Requirement[] = mode === "workspace"
     ? (["typecheck", "test", "build"] as const).map((command) => ({ kind: "workspace-command", command })) : [];
-  const identity: Requirement[] = mode === "workspace" ? [{ kind: "identity-discover" }, { kind: "identity-contracts" }] : [];
+  const identity: Requirement[] = mode === "workspace" ? [{ kind: "identity-discover" }, { kind: "journey-discover" }, { kind: "identity-contracts" }, { kind: "journey-contracts" }] : [];
   const requirements: Requirement[] = [{ kind: "prerequisites" }, { kind: "discover" }, { kind: "fixture" }, ...workspace, { kind: "schema" }, { kind: "contracts" }, ...identity, { kind: "cleanup" }];
   return requirements.map((requirement) => ({ requirement, result: { kind: "pending" } }));
 }
@@ -71,8 +72,8 @@ function decide(cells: readonly Cell[], interruption: Interruption): Decision {
   return { kind: cells.some((cell) => cell.result.kind === "blocked") ? "blocked" : "failed", reasons };
 }
 
-async function childReport<Phase extends ChildReport["phase"]>(phase: Phase, commands: CommandExecutor, directory: string, env: NodeJS.ProcessEnv, signal: AbortSignal, redact: (text: string) => string, suite: "postgres" | "identity" = "postgres") {
-  const name = suite === "identity" ? `identity-${phase}` : phase;
+async function childReport<Phase extends ChildReport["phase"]>(phase: Phase, commands: CommandExecutor, directory: string, env: NodeJS.ProcessEnv, signal: AbortSignal, redact: (text: string) => string, suite: "postgres" | "identity" | "journeys" = "postgres") {
+  const name = suite === "postgres" ? phase : `${suite}-${phase}`;
   const path = join(directory, `${name}-report.json`);
   const outcome = await commands.execute({
     command: process.execPath, args: ["--experimental-strip-types", vitestChild, phase, path, suite],
@@ -108,8 +109,10 @@ export async function runVerification(mode: VerificationMode, paths?: Readonly<{
   let required: readonly string[] = [];
   let contracts: ReturnType<typeof requiredCaseReceipt> | undefined;
   let identityRequired: readonly string[] = [];
+  let journeyRequired: readonly string[] = [];
   let identityContracts: ReturnType<typeof requiredCaseReceipt> | undefined;
   let identityFixture: LocalStackManifest | undefined;
+  let journeys: readonly CheckReceipt[] | undefined;
   let fixture: Extract<Awaited<ReturnType<typeof createOwnedPostgres>>, { kind: "ready" }>["fixture"] | undefined;
   let fixtureState = "none";
   let failure: { stage: string; reason: string } | undefined;
@@ -144,19 +147,27 @@ export async function runVerification(mode: VerificationMode, paths?: Readonly<{
                 break;
               }
               case "discover":
-              case "identity-discover": {
-                const suite = requirement.kind === "identity-discover" ? "identity" : "postgres";
+              case "identity-discover":
+              case "journey-discover": {
+                const suite = requirement.kind === "journey-discover" ? "journeys" : requirement.kind === "identity-discover" ? "identity" : "postgres";
                 const discovery = await childReport("discover", commands, directory, process.env, work.signal, redact, suite);
                 cell.result = commandResult(discovery.outcome);
                 if (discovery.outcome.kind !== "succeeded") break;
                 const found = discovery.report?.required ?? [];
                 if (discovery.errors.length || !found.length || found.some((identity) => !identity.trim()) || new Set(found).size !== found.length) {
-                  cell.result = { kind: "failed", reasons: ["Required discovery is empty, duplicated, or invalid.", ...discovery.errors], evidence: [join(directory, suite === "identity" ? "identity-discover-report.json" : "discover-report.json")] };
+                  cell.result = { kind: "failed", reasons: ["Required discovery is empty, duplicated, or invalid.", ...discovery.errors], evidence: [join(directory, suite === "postgres" ? "discover-report.json" : `${suite}-discover-report.json`)] };
                   break;
                 }
-                if (suite === "identity") identityRequired = found;
+                if (suite === "journeys") {
+                  journeyRequired = found;
+                  const missing = requiredJourneyCases.filter((identity) => !found.includes(identity));
+                  if (missing.length) {
+                    cell.result = { kind: "failed", reasons: missing.map((identity) => `Required journey was not discovered: ${identity}`), evidence: [join(directory, "journeys-discover-report.json")] };
+                    break;
+                  }
+                } else if (suite === "identity") identityRequired = found;
                 else required = found;
-                await writeFile(join(directory, suite === "identity" ? "identity-required.json" : "required.json"), JSON.stringify(found, null, 2), { mode: 0o600 });
+                await writeFile(join(directory, suite === "postgres" ? "required.json" : `${suite}-required.json`), JSON.stringify(found, null, 2), { mode: 0o600 });
                 break;
               }
               case "fixture": {
@@ -187,6 +198,44 @@ export async function runVerification(mode: VerificationMode, paths?: Readonly<{
                 contracts = requiredCaseReceipt(required, result.report?.observed ?? [], result.errors);
                 cell.result = commandResult(result.outcome);
                 if (result.outcome.kind === "succeeded" && contracts.result !== "passed") cell.result = { kind: "failed", reasons: contracts.evidence, evidence: [join(directory, "run-report.json")] };
+                break;
+              }
+              case "journey-contracts": {
+                const privateDirectory = await mkdtemp(join(tmpdir(), "tools-journeys-"));
+                const local = await withLocalStack({
+                  directory: privateDirectory, commands: { work: commands, cleanup: cleanupCommands },
+                  environment: process.env, signal: work.signal, lifetimeMs: 300_000,
+                }, async (stack) => {
+                  const env = {
+                    PATH: process.env.PATH, HOME: process.env.HOME,
+                    TOOLS_JOURNEY_ORIGIN: stack.manifest.origins.tools,
+                    TOOLS_JOURNEY_FIXTURE: stack.manifest.project,
+                    TOOLS_JOURNEY_UPLOAD_TOKEN: stack.environment.UPLOAD_TOKEN,
+                  };
+                  const result = await childReport("run", commands, directory, env, stack.signal, redact, "journeys");
+                  const observed = result.report?.observed ?? [];
+                  const reportPath = join(directory, "journeys-run-report.json");
+                  journeys = journeyReceipts(revision, stack.manifest.project, observed)
+                    .map((receipt) => ({ ...receipt, evidence: [...receipt.evidence, reportPath] }));
+                  const receipt = requiredCaseReceipt(journeyRequired, observed, result.errors);
+                  cell.result = commandResult(result.outcome);
+                  const completeBlocked = !result.errors.length && observed.length === journeyRequired.length
+                    && new Set(observed.map((test) => test.identity)).size === journeyRequired.length
+                    && journeyRequired.every((identity) => observed.some((test) => test.identity === identity))
+                    && observed.some((test) => test.result === "blocked")
+                    && observed.every((test) => test.result === "passed" || test.result === "blocked");
+                  if (completeBlocked && result.outcome.kind === "failed" && result.outcome.termination.kind === "natural"
+                    && result.outcome.exit.kind === "exited" && result.outcome.exit.code === 1
+                    && result.outcome.ownership === "released" && result.outcome.log.kind === "written") {
+                    cell.result = { kind: "blocked", reasons: receipt.evidence, evidence: [reportPath] };
+                  } else if (result.outcome.kind === "succeeded" && receipt.result !== "passed") {
+                    cell.result = { kind: "failed", reasons: receipt.evidence, evidence: [reportPath] };
+                  }
+                });
+                if (!journeys) journeys = journeyReceipts(revision, local.manifest?.project ?? "unavailable");
+                if (local.kind !== "completed" || local.cleanup !== "stopped") {
+                  cell.result = { kind: local.kind === "blocked" ? "blocked" : "failed", reasons: [local.reason ?? "Journey fixture did not complete cleanup."], evidence: [privateDirectory] };
+                }
                 break;
               }
               case "identity-contracts": {
@@ -249,6 +298,7 @@ export async function runVerification(mode: VerificationMode, paths?: Readonly<{
     mode, revision, fixture: fixtureState,
     cells: cells.map((cell) => ({ requirement: cell.requirement, result: cell.result })),
     required, contracts, identity: { required: identityRequired, contracts: identityContracts, fixture: identityFixture },
+    journeys: journeys ?? (mode === "workspace" ? journeyReceipts(revision, "unavailable") : []),
     interruption, decision: decide(cells, interruption),
   });
   const path = join(directory, "receipts.json");
