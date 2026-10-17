@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import postgres, { type Sql } from "postgres";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { CreateBucketCommand, GetObjectCommand, HeadObjectCommand, ListMultipartUploadsCommand, PutBucketCorsCommand, PutObjectCommand, S3Client, UploadPartCommand } from "@aws-sdk/client-s3";
+import { CreateBucketCommand, GetObjectCommand, HeadObjectCommand, ListMultipartUploadsCommand, PutObjectCommand, S3Client, UploadPartCommand } from "@aws-sdk/client-s3";
 import { createFetchApp } from "../src/fetch-app.js";
 import { createDirectUploads, DIRECT_PART_BYTES } from "../src/direct-uploads.js";
 import { createMultipartStorage } from "../src/multipart-storage.js";
@@ -12,7 +12,7 @@ import { createPostgresUploadLinkRepository } from "../src/upload-links.js";
 const databaseUrl = process.env.PUBLISHER_TRANSFER_TEST_DATABASE_URL;
 const endpoint = process.env.PUBLISHER_TRANSFER_TEST_S3_ENDPOINT;
 const enabled = Boolean(databaseUrl && endpoint);
-const origin = "http://127.0.0.1:43171";
+const origin = process.env.PUBLISHER_TRANSFER_TEST_ORIGIN ?? "http://127.0.0.1:43171";
 const config = { bucket: "tools-transfer-test", endpoint: endpoint ?? "http://127.0.0.1:49000",
   region: "us-east-1", accessKeyId: process.env.PUBLISHER_TRANSFER_TEST_S3_ACCESS_KEY_ID ?? "transfer-local",
   secretAccessKey: process.env.PUBLISHER_TRANSFER_TEST_S3_SECRET_ACCESS_KEY ?? "transfer-local-secret", forcePathStyle: true };
@@ -60,10 +60,6 @@ describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", () => {
     } catch (error) {
       if (!(error instanceof Error) || !["BucketAlreadyOwnedByYou", "BucketAlreadyExists"].includes(error.name)) throw error;
     }
-    await client.send(new PutBucketCorsCommand({ Bucket: config.bucket, CORSConfiguration: { CORSRules: [
-      { AllowedOrigins: [origin], AllowedMethods: ["GET", "HEAD", "PUT"], AllowedHeaders: ["*"], ExposeHeaders: ["Content-Range", "Content-Length", "ETag"], MaxAgeSeconds: 300 },
-      { AllowedOrigins: ["*"], AllowedMethods: ["GET", "HEAD"], AllowedHeaders: ["*"], ExposeHeaders: ["Content-Range", "Content-Length", "ETag"] }
-    ] } }));
     attach();
   });
 
