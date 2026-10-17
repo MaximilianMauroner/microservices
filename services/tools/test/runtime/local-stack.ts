@@ -11,13 +11,14 @@ type Environment = Readonly<Record<string, string | undefined>>;
 type ComposePort = { target: number; published?: string; host_ip?: string; protocol?: string };
 type ComposeService = { environment?: Record<string, string>; ports?: ComposePort[]; container_name?: string };
 type ComposeConfig = { services: Record<string, ComposeService>; volumes?: Record<string, { name?: string; external?: boolean }> };
-type Identity = { version: 1; project: string; feedbackKey: string };
+type Binding = Readonly<{ service: string; target: number; port: number }>;
+type Identity = { version: 1; project: string; feedbackKey: string; bindings?: readonly Binding[] };
 export type LocalPrerequisite = Readonly<{ kind: "passed" | "blocked"; reason: string }>;
 export type LocalStackManifest = Readonly<{
   project: string;
   directory: string;
   origins: Readonly<{ tools: string; storage: string; storageConsole: string; markdownAdmin: string }>;
-  bindings: readonly Readonly<{ service: string; target: number; port: number }>[];
+  bindings: readonly Binding[];
   volumes: readonly string[];
   prerequisites: Readonly<Record<"config" | "storageHttp" | "publisherBrowser" | "privateOAuth" | "markdownBrowser" | "statusPublication", LocalPrerequisite>>;
 }>;
@@ -75,14 +76,37 @@ async function identity(directory: string): Promise<Identity> {
     || !/^[A-Za-z0-9_-]{43}$/.test(value.feedbackKey) || Buffer.from(value.feedbackKey, "base64url").length !== 32) {
     throw new SetupError("blocked", "The run identity is invalid. Retain its key and volumes for recovery.");
   }
+  if (value.bindings === undefined) {
+    const files = await readdir(directory);
+    if (files.includes("manifest.json")) {
+      const retained = JSON.parse(await readFile(join(directory, "manifest.json"), "utf8")) as LocalStackManifest;
+      if (retained.project !== value.project || !retained.bindings) throw new SetupError("blocked", "The retained manifest does not match the run identity. Retain the directory for recovery.");
+      value.bindings = retained.bindings;
+    } else if (files.includes("compose.override.yaml")) {
+      throw new SetupError("blocked", "The retained configuration has no port identity. Retain the directory for recovery instead of selecting new ports.");
+    }
+  }
+  if (value.bindings !== undefined && (!Array.isArray(value.bindings) || !value.bindings.length
+    || value.bindings.some((binding) => !binding || typeof binding.service !== "string" || !binding.service
+      || !Number.isInteger(binding.target) || binding.target < 1 || binding.target > 65_535
+      || !Number.isInteger(binding.port) || binding.port < 1 || binding.port > 65_535)
+    || new Set(value.bindings.map((binding) => binding.port)).size !== value.bindings.length
+    || new Set(value.bindings.map((binding) => JSON.stringify([binding.service, binding.target]))).size !== value.bindings.length)) {
+    throw new SetupError("blocked", "The retained port identity is invalid. Retain the directory for recovery.");
+  }
   await chmod(path, 0o600);
   return value;
 }
 
-async function unusedPort(used: Set<number>) {
+async function unusedPort(used: Set<number>, retainedPort = 0) {
   for (;;) {
     const server = createServer();
-    await new Promise<void>((accept, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", accept); });
+    try {
+      await new Promise<void>((accept, reject) => { server.once("error", reject); server.listen(retainedPort, "127.0.0.1", accept); });
+    } catch (error) {
+      if (retainedPort) throw new SetupError("blocked", `Retained binding 127.0.0.1:${retainedPort} is unavailable. Stop its owner before restarting. The binding will not change.`);
+      throw error;
+    }
     const address = server.address();
     const port = typeof address === "object" && address ? address.port : 0;
     await new Promise<void>((accept, reject) => server.close((error) => error ? reject(error) : accept()));
@@ -152,6 +176,8 @@ export async function withLocalStack(
   let manifest: LocalStackManifest | undefined;
   let down: (() => Promise<void>) | undefined;
   let host: Promise<CommandOutcome> | undefined;
+  let operation: Promise<void> | undefined;
+  let probe: Promise<string> | undefined;
   let ownershipUncertain = false;
   let result: LocalStackResult = { kind: "failed", reason: "Local setup did not finish.", cleanup: "not-needed" };
   const stop = new AbortController();
@@ -174,6 +200,7 @@ export async function withLocalStack(
     await lock.writeFile(String(process.pid));
     const owner = await identity(directory);
     sensitive = [owner.feedbackKey];
+    for (const binding of owner.bindings ?? []) await unusedPort(new Set(), binding.port);
     const commandEnv: Record<string, string | undefined> = {
       PATH: options.environment.PATH, HOME: options.environment.HOME,
       TMPDIR: options.environment.TMPDIR, NODE_ENV: "development",
@@ -182,10 +209,13 @@ export async function withLocalStack(
     await writeFile(envFile, "VITE_CONVEX_URL=http://127.0.0.1:3210\n", { mode: 0o600 });
     let sequence = 0;
     async function command(executor: CommandExecutor, command: string, args: readonly string[], step: string, deadlineMs: number, env: Environment = commandEnv, commandSignal?: AbortSignal, cwd = root) {
-      const outcome = await executor.execute({
-        command, args, cwd, env, deadlineMs, signal: commandSignal,
-        log: join(directory!, `${++sequence}-${step}.log`), redact,
-      });
+      let outcome: CommandOutcome;
+      try {
+        outcome = await executor.execute({
+          command, args, cwd, env, deadlineMs, signal: commandSignal,
+          log: join(directory!, `${++sequence}-${step}.log`), redact,
+        });
+      } catch (error) { ownershipUncertain = true; throw error; }
       if (outcome.kind !== "succeeded") {
         if (outcome.kind !== "not-started" && outcome.ownership === "uncertain") ownershipUncertain = true;
         throw new SetupError(step === "compose-version" || outcome.kind === "blocked" ? "blocked" : "failed",
@@ -204,21 +234,27 @@ export async function withLocalStack(
     }
     const base = decodeCompose(await compose(options.commands.work, ["config", "--format", "json"], "base-config", 10_000, signal));
     const used = new Set<number>();
-    const bindings: { service: string; target: number; port: number }[] = [];
+    const bindings: Binding[] = [];
     const override = ["services:"];
     for (const [name, service] of Object.entries(base.services)) {
       override.push(`  ${JSON.stringify(name)}:`, "    ports: !override");
       if (!service.ports?.length) override[override.length - 1] += " []";
       for (const item of service.ports ?? []) {
         if (!Number.isInteger(item.target) || item.protocol && item.protocol !== "tcp") throw new SetupError("blocked", "Local setup supports TCP published ports only.");
-        const port = await unusedPort(used);
+        const retained = owner.bindings?.find((binding) => binding.service === name && binding.target === item.target);
+        if (owner.bindings && !retained) throw new SetupError("blocked", "Compose published ports differ from the retained identity. Retain the directory for recovery.");
+        const port = retained?.port ?? await unusedPort(used);
         bindings.push({ service: name, target: item.target, port });
         override.push(`      - ${JSON.stringify({ target: item.target, published: String(port), host_ip: "127.0.0.1", protocol: "tcp" })}`);
       }
-      if (name === "minio") override.push("    environment:", '      MINIO_API_CORS_ALLOW_ORIGIN: "*"');
     }
+    if (owner.bindings && owner.bindings.length !== bindings.length) throw new SetupError("blocked", "Compose published ports differ from the retained identity. Retain the directory for recovery.");
     const settings = hostSettings(base, bindings, owner.feedbackKey);
+    const minio = override.indexOf('  "minio":');
+    override.splice(minio + 1, 0, "    environment:", `      MINIO_API_CORS_ALLOW_ORIGIN: ${JSON.stringify(`${settings.PUBLIC_ORIGIN},null`)}`);
     sensitive = secrets(settings);
+    await writeFile(join(directory, "identity.next.json"), JSON.stringify({ ...owner, bindings }), { mode: 0o600 });
+    await rename(join(directory, "identity.next.json"), join(directory, "identity.json"));
     const overridePath = join(directory, "compose.override.yaml");
     const seed = override.indexOf('  "minio-seed":');
     override.splice(seed + 2, 0, "    environment:", `      LOCAL_PLATFORM_BROWSER_ORIGIN: ${JSON.stringify(settings.PUBLIC_ORIGIN)}`);
@@ -263,27 +299,34 @@ export async function withLocalStack(
     for (const service of ["postgres-migrate", "minio-seed"]) await compose(options.commands.work, ["run", "--build", "--no-deps", "--rm", service], service, 600_000, signal);
     await command(options.commands.work, "pnpm", ["--dir", "services/tools", "run", "build"], "build", 600_000, hostEnv, signal);
     const expiresAt = Date.now() + options.lifetimeMs;
-    host = options.commands.work.execute({
-      command: process.execPath, args: [join(root, "services/tools/.output/server/index.mjs")], cwd: root,
-      env: hostEnv, deadlineMs: options.lifetimeMs, signal, redact, log: join(directory, "host.log"),
-    });
+    try {
+      host = options.commands.work.execute({
+        command: process.execPath, args: [join(root, "services/tools/.output/server/index.mjs")], cwd: root,
+        env: hostEnv, deadlineMs: options.lifetimeMs, signal, redact, log: join(directory, "host.log"),
+      });
+    } catch (error) { ownershipUncertain = true; throw error; }
     const exited = host.then(() => { throw new SetupError("failed", "The owned Tools host process ended before the local operation completed."); });
     void exited.catch(() => {});
-    if (await Promise.race([check("health", 75_000), exited]) !== "health\n") throw new SetupError("failed", "The owned Tools host did not confirm both health routes.");
-    const storage = await Promise.race([check("storage", 60_000), exited]);
+    probe = check("health", 75_000);
+    if (await Promise.race([probe, exited]) !== "health\n") throw new SetupError("failed", "The owned Tools host did not confirm both health routes.");
+    probe = check("storage", 60_000);
+    const storage = await Promise.race([probe, exited]);
     if (storage === "storage-http\n") manifest = { ...manifest, prerequisites: { ...manifest.prerequisites,
       storageHttp: { kind: "passed", reason: "Signed multipart PUT, exact-origin preflight, and ETag exposure headers passed over HTTP. Browser acceptance remains blocked." } } };
     else if (storage === "storage-blocked\n") manifest = { ...manifest, prerequisites: { ...manifest.prerequisites,
       storageHttp: blocked("The signed PUT, preflight, or exposed ETag prerequisite did not pass. Publisher journeys remain blocked.") } };
     else throw new SetupError("failed", "Storage prerequisite check returned an invalid result.");
     await publish();
-    await Promise.race([use({ manifest, environment: settings, signal, expiresAt }), exited]);
+    operation = use({ manifest, environment: settings, signal, expiresAt });
+    await Promise.race([operation, exited]);
     result = { kind: "completed", manifest, cleanup: "not-needed" };
   } catch (error) {
     result = { kind: error instanceof SetupError ? error.kind : error instanceof VerificationBlocked ? "blocked" : "failed", manifest,
       reason: error instanceof SetupError || error instanceof VerificationBlocked ? redact(error.message) : "Local setup failed. Check the owned private logs and run directory.", cleanup: "not-needed" };
   } finally {
     stop.abort();
+    if (probe) await probe.catch(() => {});
+    if (operation) await operation.catch(() => {});
     if (host) {
       try {
         const outcome = await host;
@@ -293,15 +336,14 @@ export async function withLocalStack(
     if (down) {
       try {
         await down();
-        result = ownershipUncertain
-          ? { ...result, kind: "failed", cleanup: "retained", reason: "A command could not prove process release. Compose stopped, but owned process cleanup remains uncertain." }
-          : { ...result, cleanup: "stopped" };
+        result = { ...result, cleanup: "stopped" };
       }
       catch { result = { ...result, kind: "failed", cleanup: "retained", reason: "Owned Compose cleanup did not pass. Retain the run directory and use its exact project and override for recovery." }; }
     }
+    if (ownershipUncertain) result = { ...result, kind: "failed", cleanup: "retained", reason: "A command could not prove process release. Retain active.lock and the run directory until process and Compose cleanup are confirmed." };
     if (lock) {
       await lock.close();
-      await rm(join(directory!, "active.lock"));
+      if (result.cleanup !== "retained") await rm(join(directory!, "active.lock"));
     }
   }
   return result;
