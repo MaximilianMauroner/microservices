@@ -991,7 +991,7 @@ describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", () => {
     expect((await request(file.path + "/complete")).status).toBe(404);
   });
 
-  it("permits browser upload CORS only for the selected Tools origin and keeps the bucket private", async () => {
+  it("permits the Tools origin, denies unrelated upload origins, and keeps the bucket private", async () => {
     const allowed = await fetch(`${config.endpoint}/${config.bucket}/transfers/cors-check`, { method: "OPTIONS",
       headers: { Origin: origin, "Access-Control-Request-Method": "PUT", "Access-Control-Request-Headers": "content-type" } });
     expect(allowed.ok).toBe(true); expect(allowed.headers.get("access-control-allow-origin")).toBe(origin);

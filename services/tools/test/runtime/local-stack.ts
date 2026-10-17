@@ -177,6 +177,7 @@ export async function withLocalStack(
   let down: (() => Promise<void>) | undefined;
   let host: Promise<CommandOutcome> | undefined;
   let operation: Promise<void> | undefined;
+  let probe: Promise<string> | undefined;
   let ownershipUncertain = false;
   let result: LocalStackResult = { kind: "failed", reason: "Local setup did not finish.", cleanup: "not-needed" };
   const stop = new AbortController();
@@ -250,7 +251,7 @@ export async function withLocalStack(
     if (owner.bindings && owner.bindings.length !== bindings.length) throw new SetupError("blocked", "Compose published ports differ from the retained identity. Retain the directory for recovery.");
     const settings = hostSettings(base, bindings, owner.feedbackKey);
     const minio = override.indexOf('  "minio":');
-    override.splice(minio + 1, 0, "    environment:", `      MINIO_API_CORS_ALLOW_ORIGIN: ${JSON.stringify(settings.PUBLIC_ORIGIN)}`);
+    override.splice(minio + 1, 0, "    environment:", `      MINIO_API_CORS_ALLOW_ORIGIN: ${JSON.stringify(`${settings.PUBLIC_ORIGIN},null`)}`);
     sensitive = secrets(settings);
     await writeFile(join(directory, "identity.next.json"), JSON.stringify({ ...owner, bindings }), { mode: 0o600 });
     await rename(join(directory, "identity.next.json"), join(directory, "identity.json"));
@@ -306,8 +307,10 @@ export async function withLocalStack(
     } catch (error) { ownershipUncertain = true; throw error; }
     const exited = host.then(() => { throw new SetupError("failed", "The owned Tools host process ended before the local operation completed."); });
     void exited.catch(() => {});
-    if (await Promise.race([check("health", 75_000), exited]) !== "health\n") throw new SetupError("failed", "The owned Tools host did not confirm both health routes.");
-    const storage = await Promise.race([check("storage", 60_000), exited]);
+    probe = check("health", 75_000);
+    if (await Promise.race([probe, exited]) !== "health\n") throw new SetupError("failed", "The owned Tools host did not confirm both health routes.");
+    probe = check("storage", 60_000);
+    const storage = await Promise.race([probe, exited]);
     if (storage === "storage-http\n") manifest = { ...manifest, prerequisites: { ...manifest.prerequisites,
       storageHttp: { kind: "passed", reason: "Signed multipart PUT, exact-origin preflight, and ETag exposure headers passed over HTTP. Browser acceptance remains blocked." } } };
     else if (storage === "storage-blocked\n") manifest = { ...manifest, prerequisites: { ...manifest.prerequisites,
@@ -322,6 +325,7 @@ export async function withLocalStack(
       reason: error instanceof SetupError || error instanceof VerificationBlocked ? redact(error.message) : "Local setup failed. Check the owned private logs and run directory.", cleanup: "not-needed" };
   } finally {
     stop.abort();
+    if (probe) await probe.catch(() => {});
     if (operation) await operation.catch(() => {});
     if (host) {
       try {
