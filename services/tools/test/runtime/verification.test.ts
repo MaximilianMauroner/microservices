@@ -44,15 +44,16 @@ export async function createOwnedPostgres() {
     await pending;
     return {kind:'completed',cleanup:process.env.FIXTURE_LOCAL_CLEANUP_FAIL?'retained':'stopped'};
   }`);
-  await writeFile(join(target, "vitest-child.ts"), `import {writeFileSync} from 'node:fs';
+  await writeFile(join(target, "vitest-child.ts"), `import {readFileSync,writeFileSync} from 'node:fs';
 import {requiredJourneyCases,mountedStatusCase} from './receipt.ts';
 const phase=process.argv[2];
 if(process.argv[4]==='journeys') {
-  const required=process.env.FIXTURE_JOURNEY_MISSING ? requiredJourneyCases.filter(identity=>identity!==mountedStatusCase) : requiredJourneyCases;
+  const controls=JSON.parse(readFileSync(new URL('../../../../fixture-controls.json',import.meta.url),'utf8'));
+  const required=controls.FIXTURE_JOURNEY_MISSING ? requiredJourneyCases.filter(identity=>identity!==mountedStatusCase) : requiredJourneyCases;
   writeFileSync(process.argv[3],JSON.stringify(phase==='discover'
     ? {phase,required,errors:[]}
-    : {phase,observed:required.map(identity=>({identity,result:process.env.FIXTURE_JOURNEY_SKIP?'skipped':process.env.FIXTURE_JOURNEY_BLOCKED?'blocked':'passed',evidence:[]})),errors:[]}));
-  process.exit(phase==='run' && process.env.FIXTURE_JOURNEY_BLOCKED?1:0);
+    : {phase,observed:required.map(identity=>({identity,result:controls.FIXTURE_JOURNEY_SKIP?'skipped':controls.FIXTURE_JOURNEY_BLOCKED?'blocked':'passed',evidence:[]})),errors:[]}));
+  process.exit(phase==='run' && controls.FIXTURE_JOURNEY_BLOCKED?1:0);
 }
 const identity=process.argv[4]==='identity';
 if(identity && phase==='run' && process.env.FIXTURE_LOCAL_HOST_FAIL) await new Promise(resolve=>setTimeout(resolve,3000));
@@ -102,6 +103,7 @@ async function waitFile(path: string) {
 }
 
 async function run(environment: NodeJS.ProcessEnv = {}, observe?: (send: (signal: NodeJS.Signals) => void) => Promise<void>) {
+  await writeFile(join(directory, "fixture-controls.json"), JSON.stringify(environment));
   const child = spawn(process.execPath, ["--import", join(directory, "hook.mjs"), "--experimental-strip-types", join(directory, "services/tools/test/runtime/entry.ts")], {
     env: { PATH: `${join(directory, "bin")}:${process.env.PATH}`, HOME: process.env.HOME, FIXTURE_DIRECTORY: directory, FIXTURE_TRACE: join(directory, "trace"), ...environment },
     stdio: ["ignore", "pipe", "pipe"],
