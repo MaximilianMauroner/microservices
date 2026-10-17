@@ -12,6 +12,7 @@
     "docker:up": "docker compose up --build",
     "docker:down": "docker compose down",
     "docker:reset": "docker compose down -v",
+    "local:stack": "node --experimental-strip-types services/tools/test/runtime/local-stack-cli.ts",
     "start:network-console": "pnpm --dir services/network-console run start",
     "start:markdown-share": "pnpm --dir services/markdown-share run convex:dev",
     "start:tools": "pnpm --dir services/tools run start",
