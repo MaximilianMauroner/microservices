@@ -33,7 +33,7 @@ describe("durable browser upload client", () => {
   let uploaded: number[];
   let requestId: string;
   let completionResponsesLost: number;
-  const result = { id: "a".repeat(32), filename: "fixture.bin", bytes: 6, kind: "file", contentType: "application/octet-stream", url: "https://tools.example/files/fixture",
+  const result = { id: "a".repeat(32), filename: "fixture.bin", bytes: 6, kind: "file", contentType: "application/octet-stream", category: "other", url: "https://tools.example/files/fixture",
     sha256: crypto.createHash("sha256").update("abcdef").digest("hex"), updatedAt: "2026-10-16T12:00:00.000Z" };
 
   beforeEach(() => {

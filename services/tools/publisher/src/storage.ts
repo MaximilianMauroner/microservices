@@ -24,6 +24,18 @@ import {
   readProjectMetadata
 } from "./file-metadata.js";
 
+import {
+  classifyUpload,
+  DEFAULT_UPLOAD_LIST_CRITERIA,
+  serializeUploadListCriteria,
+  type UploadCategory,
+  type UploadListCriteria,
+  type UploadListSort,
+  type UploadExpiryFilter
+} from "./upload-list.js";
+
+export type { UploadListCriteria, UploadListSort, UploadExpiryFilter } from "./upload-list.js";
+
 const TEMPORARY_FILE_PREFIX = "files/";
 const HTML_PREFIX = "pages/";
 const PAGE_ID_PATTERN = /^[A-Za-z0-9_-]{32}$/;
@@ -40,31 +52,26 @@ export type UploadListCursor = {
   updatedAt: Date;
   key: string;
   originalName?: string;
+  bytes?: number;
   expiresAt?: Date;
 };
-
-export type UploadListSort = "newest" | "oldest" | "filename" | "expiry";
-export type UploadExpiryFilter = "all" | "24h" | "7d" | "persistent";
 
 export type ListUploadsOptions = StorageOperationOptions & {
   limit: number;
   includeSummary?: boolean;
-  kind?: StoredUploadSummary["kind"];
-  q?: string;
-  expiry?: UploadExpiryFilter;
-  sort?: UploadListSort;
-  criteria?: string;
+  criteria?: UploadListCriteria;
   cursor?: UploadListCursor;
 };
 
 export type StoredUploadPage = {
-  uploads: StoredUploadSummary[];
+  uploads: Array<StoredUploadSummary & { category: UploadCategory }>;
   nextCursor?: UploadListCursor;
   summary?: StoredUploadInventorySummary;
 };
 
 export type StoredUploadInventorySummary = {
   total: number;
+  activeBytes: number;
   permanent: number;
   temporary: number;
   expiringSoon: number;
@@ -405,10 +412,11 @@ export function createS3UploadStorage(config: S3UploadStorageConfig): UploadStor
     },
 
     async listUploads(asOf, options) {
+      const criteria = options.criteria ?? DEFAULT_UPLOAD_LIST_CRITERIA;
       const prefixes =
-        !options.includeSummary && options.kind === "html"
+        !options.includeSummary && criteria.kind === "html"
           ? ([[HTML_PREFIX, "html"]] as const)
-          : !options.includeSummary && options.kind === "file"
+          : !options.includeSummary && criteria.kind === "file"
             ? ([[TEMPORARY_FILE_PREFIX, "file"]] as const)
             : ([
                 [HTML_PREFIX, "html"],
@@ -422,7 +430,7 @@ export function createS3UploadStorage(config: S3UploadStorageConfig): UploadStor
         )
       )
         .flat();
-      const sort = options.sort ?? "newest";
+      const sort = criteria.sort;
       if (!requiresFullMetadataScan(options)) {
         return listUploadsFast(
           client,
@@ -438,14 +446,16 @@ export function createS3UploadStorage(config: S3UploadStorageConfig): UploadStor
         LIST_METADATA_CONCURRENCY,
         async (candidate) => {
           const summary = await headUploadSummary(client, config.bucket, candidate, asOf, options);
-          return summary ? { ...summary, key: candidate.key } : null;
+          return summary ? { ...summary, category: classifyUpload(summary.contentType, summary.originalName), key: candidate.key } : null;
         }
       )).filter((summary): summary is ListedUploadSummary => summary !== null);
-      const normalizedQuery = options.q?.trim().normalize("NFKC").toLowerCase() ?? "";
+      const normalizedQuery = criteria.q.trim().normalize("NFKC").toLowerCase();
       const filtered = summaries
-        .filter((upload) => !options.kind || upload.kind === options.kind)
-        .filter((upload) => !normalizedQuery || upload.originalName.normalize("NFKC").toLowerCase().includes(normalizedQuery))
-        .filter((upload) => matchesExpiry(upload, options.expiry ?? "all", asOf))
+        .filter((upload) => criteria.kind === "all" || upload.kind === criteria.kind)
+        .filter((upload) => !normalizedQuery || `${upload.originalName} ${upload.id} ${upload.project ?? ""}`.normalize("NFKC").toLowerCase().includes(normalizedQuery))
+        .filter((upload) => matchesUploadProject(upload.project, criteria.project))
+        .filter((upload) => criteria.category === "all" || upload.category === criteria.category)
+        .filter((upload) => matchesExpiry(upload, criteria.expiry, asOf))
         .sort(uploadComparator(sort));
       const listCursor = options.cursor;
       const afterCursor = listCursor
@@ -461,10 +471,11 @@ export function createS3UploadStorage(config: S3UploadStorageConfig): UploadStor
           ? {
               nextCursor: {
                 version: 1,
-                criteria: options.criteria ?? "legacy:newest",
+                criteria: serializeUploadListCriteria(options.criteria ?? DEFAULT_UPLOAD_LIST_CRITERIA),
                 updatedAt: last.updatedAt,
                 key: last.key,
                 originalName: last.originalName,
+                bytes: last.bytes,
                 ...(last.expiresAt ? { expiresAt: last.expiresAt } : {})
               }
             }
@@ -645,15 +656,17 @@ type UploadCandidate = {
   updatedAt: Date;
 };
 
-type ListedUploadSummary = StoredUploadSummary & { key: string };
+type ListedUploadSummary = StoredUploadSummary & { key: string; category: UploadCategory };
+
+export function matchesUploadProject(project: string | undefined, filter: UploadListCriteria["project"]): boolean {
+  return filter.mode === "all" || (filter.mode === "unassigned" ? !project : project === filter.name);
+}
 
 function requiresFullMetadataScan(options: ListUploadsOptions): boolean {
-  const sort = options.sort ?? "newest";
-  return Boolean(options.includeSummary) ||
-    Boolean(options.q) ||
-    (options.expiry ?? "all") !== "all" ||
-    sort === "filename" ||
-    sort === "expiry";
+  const criteria = options.criteria ?? DEFAULT_UPLOAD_LIST_CRITERIA;
+  return Boolean(options.includeSummary) || Boolean(criteria.q) || criteria.expiry !== "all" ||
+    criteria.project.mode !== "all" || criteria.category !== "all" ||
+    criteria.sort === "filename" || criteria.sort === "expiry" || criteria.sort === "size";
 }
 
 export function summarizeUploads(
@@ -668,6 +681,7 @@ export function summarizeUploads(
   }
   return {
     total: active.length,
+    activeBytes: active.reduce((total, upload) => total + upload.bytes, 0),
     permanent: active.filter((upload) => !upload.expiresAt).length,
     temporary: active.filter((upload) => Boolean(upload.expiresAt)).length,
     expiringSoon: active.filter((upload) => upload.expiresAt && upload.expiresAt <= new Date(asOf.getTime() + 86_400_000)).length,
@@ -696,7 +710,7 @@ async function listUploadsFast(
       async (candidate) => {
         const summary = await headUploadSummary(client, bucket, candidate, asOf, options);
         return summary
-          ? { ...summary, updatedAt: candidate.updatedAt, key: candidate.key }
+          ? { ...summary, category: classifyUpload(summary.contentType, summary.originalName), updatedAt: candidate.updatedAt, key: candidate.key }
           : null;
       }
     );
@@ -711,10 +725,11 @@ async function listUploadsFast(
       ? {
           nextCursor: {
             version: 1,
-            criteria: options.criteria ?? "legacy:newest",
+            criteria: serializeUploadListCriteria(options.criteria ?? DEFAULT_UPLOAD_LIST_CRITERIA),
             updatedAt: last.updatedAt,
             key: last.key,
             originalName: last.originalName,
+            bytes: last.bytes,
             ...(last.expiresAt ? { expiresAt: last.expiresAt } : {})
           }
         }
@@ -785,6 +800,7 @@ async function listUploadCandidates(
 
 function uploadComparator(sort: UploadListSort) {
   return (left: ListedUploadSummary, right: ListedUploadSummary): number => {
+    if (sort === "size") return right.bytes - left.bytes || left.key.localeCompare(right.key);
     if (sort === "oldest") {
       return left.updatedAt.getTime() - right.updatedAt.getTime() || left.key.localeCompare(right.key);
     }
@@ -804,7 +820,8 @@ function cursorUpload(cursor: UploadListCursor): ListedUploadSummary {
     key: cursor.key,
     kind: cursor.key.startsWith(HTML_PREFIX) ? "html" : "file",
     originalName: cursor.originalName ?? cursor.key,
-    bytes: 0,
+    bytes: cursor.bytes ?? 0,
+    category: "other",
     contentType: "application/octet-stream",
     updatedAt: cursor.updatedAt,
     ...(cursor.expiresAt ? { expiresAt: cursor.expiresAt } : {})
@@ -813,7 +830,7 @@ function cursorUpload(cursor: UploadListCursor): ListedUploadSummary {
 
 function matchesExpiry(upload: ListedUploadSummary, filter: UploadExpiryFilter, asOf: Date): boolean {
   if (filter === "all") return true;
-  if (filter === "persistent") return upload.kind === "html";
+  if (filter === "persistent") return !upload.expiresAt;
   if (!upload.expiresAt) return false;
   const windowMs = filter === "24h" ? 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000;
   return upload.expiresAt.getTime() <= asOf.getTime() + windowMs;
