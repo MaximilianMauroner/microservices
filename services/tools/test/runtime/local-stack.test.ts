@@ -125,16 +125,17 @@ describe("owned local stack", () => {
 
   it.each(["health", "storage"])("retains the lock when the cancelled %s probe cannot prove release", async (phase) => {
     const setup = await fixture();
-    let finishHost: (() => void) | undefined;
+    let finishHost!: () => void;
+    const hostEnd = new Promise<void>((resolve) => { finishHost = resolve; });
     let settled = false;
     setup.respond(async (spec) => {
       if (spec.args[0]?.endsWith("index.mjs")) {
-        await new Promise<void>((resolve) => { finishHost = resolve; });
+        await hostEnd;
         return failed(spec);
       }
       if (spec.args.at(-1) === phase) {
         const cancelled = new Promise<void>((resolve) => spec.signal!.addEventListener("abort", () => resolve(), { once: true }));
-        finishHost!();
+        finishHost();
         await cancelled;
         await new Promise((resolve) => setTimeout(resolve, 10));
         settled = true;
@@ -151,11 +152,12 @@ describe("owned local stack", () => {
 
   it("settles cancelled work before stopping fixtures when the host ends", async () => {
     const setup = await fixture();
-    let finishHost: (() => void) | undefined;
+    let finishHost!: () => void;
+    const hostEnd = new Promise<void>((resolve) => { finishHost = resolve; });
     let settled = false;
     setup.respond(async (spec) => {
       if (spec.args[0]?.endsWith("index.mjs")) {
-        await new Promise<void>((resolve) => { finishHost = resolve; });
+        await hostEnd;
         return failed(spec);
       }
       if (spec.args.includes("down")) expect(settled).toBe(true);
@@ -163,7 +165,7 @@ describe("owned local stack", () => {
     });
     const result = await withLocalStack(setup.options, async ({ signal }) => {
       const cancelled = new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
-      finishHost!();
+      finishHost();
       await cancelled;
       await new Promise((resolve) => setTimeout(resolve, 10));
       settled = true;
