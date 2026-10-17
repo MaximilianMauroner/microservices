@@ -1,4 +1,6 @@
-export class VerificationBlocked extends Error {}
+export class VerificationBlocked extends Error {
+  override name = "VerificationBlocked";
+}
 
 export function redactDatabase(text: string, url: string | undefined) {
   if (!url) return text;
@@ -10,7 +12,7 @@ export function redactDatabase(text: string, url: string | undefined) {
 
 export type CaseResult = Readonly<{
   identity: string;
-  result: "passed" | "failed" | "skipped" | "pending";
+  result: "passed" | "failed" | "blocked" | "skipped" | "pending";
   evidence: readonly string[];
 }>;
 
@@ -29,7 +31,7 @@ function matches(value: unknown, shape: Shape) {
 const isStrings = (value: unknown) => Array.isArray(value) && value.every((item) => typeof item === "string");
 const caseResult: Shape = {
   identity: (value) => typeof value === "string",
-  result: (value) => value === "passed" || value === "failed" || value === "skipped" || value === "pending",
+  result: (value) => value === "passed" || value === "failed" || value === "blocked" || value === "skipped" || value === "pending",
   evidence: isStrings,
 };
 const reportShapes: Readonly<Record<ChildReport["phase"], Shape>> = {
@@ -74,4 +76,40 @@ export function requiredCaseReceipt(
     skipped: observed.filter(({ result }) => result === "skipped").map(({ identity }) => identity),
     evidence,
   };
+}
+
+export const journeyScenarios = [
+  "anonymous-private-document",
+  "anonymous-upload-link-post",
+  "machine-token-boundary",
+  "public-capability-denial",
+  "private-google-oauth-upload-link",
+  "authenticated-cross-origin-denial",
+  "historical-pre-middleware-upload-link",
+  "heartbeat-publication",
+] as const;
+export const mountedStatusCase = "test/status-links.test.tsx > Status navigation links > renders internal, external and Open Tools links without native-button errors";
+export const requiredJourneyCases = [
+  ...journeyScenarios.map((scenario) => `test/runtime/journeys.test.ts > built Tools journeys > ${scenario}`),
+  mountedStatusCase,
+];
+export type CheckReceipt = Readonly<{
+  suite: string;
+  scenario: string;
+  revision: string;
+  fixture: string;
+  result: "passed" | "failed" | "blocked";
+  evidence: readonly string[];
+}>;
+
+export function journeyReceipts(revision: string, fixture: string, observed?: readonly CaseResult[], runErrors: readonly string[] = []): CheckReceipt[] {
+  return requiredJourneyCases.map((identity) => {
+    const test = observed?.find((test) => test.identity === identity);
+    const result = runErrors.length ? "failed" : test?.result === "passed" || test?.result === "blocked" ? test.result : observed ? "failed" : "blocked";
+    return {
+      suite: identity === mountedStatusCase ? "mounted-status" : "built-tools",
+      scenario: identity.split(" > ").at(-1)!, revision, fixture, result,
+      evidence: [identity, ...(test ? test.evidence : [observed ? "Required case is missing." : "Journey execution has not run."]), ...runErrors],
+    };
+  });
 }
