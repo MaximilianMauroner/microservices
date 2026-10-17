@@ -7,11 +7,11 @@ import { cashMovesSince } from "../money/money-checkin-domain.js";
 import { createPostgresMoneyRepository, type MoneyRepository } from "../money/money-repository.js";
 import { moneyTrackerTrendStats } from "../money/money-tracker-domain.js";
 import { MoneyImportService } from "../money/money-import-service.js";
+import { requireLoopbackPostgres } from "./runtime/postgres.ts";
 import { moneyWorkbookFixture } from "./money-workbook-fixture.js";
 
-// Opt in only with a disposable database after applying the guarded tools schema:
-// TEST_DATABASE_URL=... MONEY_TEST_DATABASE_CONFIRM=money-repository-test pnpm test:money-postgres
-const databaseUrl = process.env.TEST_DATABASE_URL;
+// The required runner owns fixture creation, schema setup, and case reporting.
+const databaseUrl = process.env.TEST_DATABASE_URL ? requireLoopbackPostgres(process.env.TEST_DATABASE_URL) : undefined;
 const confirmed = process.env.MONEY_TEST_DATABASE_CONFIRM === "money-repository-test";
 const repository = databaseUrl && confirmed ? createPostgresMoneyRepository(databaseUrl) : undefined;
 const admin = databaseUrl && confirmed ? postgres(databaseUrl, { max: 1 }) : undefined;
