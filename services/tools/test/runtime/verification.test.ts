@@ -52,8 +52,8 @@ if(process.argv[4]==='journeys') {
   const required=controls.FIXTURE_JOURNEY_MISSING ? requiredJourneyCases.filter(identity=>identity!==mountedStatusCase) : requiredJourneyCases;
   writeFileSync(process.argv[3],JSON.stringify(phase==='discover'
     ? {phase,required,errors:[]}
-    : {phase,observed:required.map(identity=>({identity,result:controls.FIXTURE_JOURNEY_SKIP?'skipped':controls.FIXTURE_JOURNEY_BLOCKED?'blocked':'passed',evidence:[]})),errors:[]}));
-  process.exit(phase==='run' && controls.FIXTURE_JOURNEY_BLOCKED?1:0);
+    : {phase,observed:required.map(identity=>({identity,result:controls.FIXTURE_JOURNEY_SKIP?'skipped':controls.FIXTURE_JOURNEY_BLOCKED?'blocked':'passed',evidence:[]})),errors:controls.FIXTURE_JOURNEY_HOOK_FAIL?['mounted Status afterAll failed']:[]}));
+  process.exit(phase==='run' && (controls.FIXTURE_JOURNEY_BLOCKED || controls.FIXTURE_JOURNEY_HOOK_FAIL)?1:0);
 }
 const identity=process.argv[4]==='identity';
 if(identity && phase==='run' && process.env.FIXTURE_LOCAL_HOST_FAIL) await new Promise(resolve=>setTimeout(resolve,3000));
@@ -166,7 +166,7 @@ describe("terminal verification CLI", () => {
     expect(result.record.cells.filter((cell: { requirement: { kind: string } }) => cell.requirement.kind.startsWith("identity-")).map((cell: { result: { kind: string } }) => cell.result.kind)).toEqual(["passed", "passed"]);
   });
 
-  it.each(["FIXTURE_JOURNEY_MISSING", "FIXTURE_JOURNEY_SKIP", "FIXTURE_JOURNEY_BLOCKED"])("cannot pass workspace verification with %s", async (name) => {
+  it.each(["FIXTURE_JOURNEY_MISSING", "FIXTURE_JOURNEY_SKIP", "FIXTURE_JOURNEY_BLOCKED", "FIXTURE_JOURNEY_HOOK_FAIL"])("cannot pass workspace verification with %s", async (name) => {
     const result = await run({ FIXTURE_MODE: "workspace", [name]: "1" });
     expect(result.code).toBe(1);
     expect(result.record.decision.kind).toBe(name === "FIXTURE_JOURNEY_BLOCKED" ? "blocked" : "failed");

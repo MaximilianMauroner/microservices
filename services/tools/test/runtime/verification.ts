@@ -215,8 +215,6 @@ export async function runVerification(mode: VerificationMode, paths?: Readonly<{
                   const result = await childReport("run", commands, directory, env, stack.signal, redact, "journeys");
                   const observed = result.report?.observed ?? [];
                   const reportPath = join(directory, "journeys-run-report.json");
-                  journeys = journeyReceipts(revision, stack.manifest.project, observed)
-                    .map((receipt) => ({ ...receipt, evidence: [...receipt.evidence, reportPath] }));
                   const receipt = requiredCaseReceipt(journeyRequired, observed, result.errors);
                   cell.result = commandResult(result.outcome);
                   const completeBlocked = !result.errors.length && observed.length === journeyRequired.length
@@ -224,9 +222,14 @@ export async function runVerification(mode: VerificationMode, paths?: Readonly<{
                     && journeyRequired.every((identity) => observed.some((test) => test.identity === identity))
                     && observed.some((test) => test.result === "blocked")
                     && observed.every((test) => test.result === "passed" || test.result === "blocked");
-                  if (completeBlocked && result.outcome.kind === "failed" && result.outcome.termination.kind === "natural"
+                  const blockedRun = completeBlocked && result.outcome.kind === "failed" && result.outcome.termination.kind === "natural"
                     && result.outcome.exit.kind === "exited" && result.outcome.exit.code === 1
-                    && result.outcome.ownership === "released" && result.outcome.log.kind === "written") {
+                    && result.outcome.ownership === "released" && result.outcome.log.kind === "written";
+                  const runErrors = [...result.errors];
+                  if (result.outcome.kind !== "succeeded" && !blockedRun) runErrors.push("The journey command did not complete a valid case report.");
+                  journeys = journeyReceipts(revision, stack.manifest.project, observed, runErrors)
+                    .map((receipt) => ({ ...receipt, evidence: [...receipt.evidence, reportPath] }));
+                  if (blockedRun) {
                     cell.result = { kind: "blocked", reasons: receipt.evidence, evidence: [reportPath] };
                   } else if (result.outcome.kind === "succeeded" && receipt.result !== "passed") {
                     cell.result = { kind: "failed", reasons: receipt.evidence, evidence: [reportPath] };
