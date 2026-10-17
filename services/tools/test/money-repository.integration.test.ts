@@ -10,7 +10,6 @@ import { MoneyImportService } from "../money/money-import-service.js";
 import { requireLoopbackPostgres } from "./runtime/postgres.ts";
 import { moneyWorkbookFixture } from "./money-workbook-fixture.js";
 
-// The required runner owns fixture creation, schema setup, and case reporting.
 const databaseUrl = process.env.TEST_DATABASE_URL ? requireLoopbackPostgres(process.env.TEST_DATABASE_URL) : undefined;
 const confirmed = process.env.MONEY_TEST_DATABASE_CONFIRM === "money-repository-test";
 const repository = databaseUrl && confirmed ? createPostgresMoneyRepository(databaseUrl) : undefined;
