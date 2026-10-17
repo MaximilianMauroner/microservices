@@ -45,6 +45,8 @@ import {
   type UploadStorage
 } from "./storage.js";
 
+import { UPLOAD_CATEGORIES, serializeUploadListCriteria, type UploadListCriteria } from "./upload-list.js";
+
 export const MAX_SINGLE_PUT_UPLOAD_BYTES = 5_000_000_000;
 export const DEFAULT_MAX_UPLOAD_BYTES = MAX_SINGLE_PUT_UPLOAD_BYTES;
 export const DEFAULT_MAX_HTML_UPLOAD_BYTES = 25_000_000;
@@ -81,7 +83,7 @@ const MAX_UPLOAD_LIST_LIMIT = 100;
 const MAX_UPLOAD_LIST_CURSOR_LENGTH = 2048;
 const UPLOAD_LINK_PAGE_SIZE = 20;
 const UPLOAD_KEY_PATTERN =
-  /^(?:pages\/[A-Za-z0-9_-]{32}\.html|files\/[A-Za-z0-9_-]{32})$/;
+  /^(?:pages\/[A-Za-z0-9_-]{32}\.html|files\/[A-Za-z0-9_-]{32}|transfers\/[A-Za-z0-9_-]{32}(?:\/[A-Za-z0-9_-]{32})?)$/;
 const FAVICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
   <rect width="32" height="32" rx="7" fill="#f3f1e9"/>
   <path d="M16 6.5 24 11v10l-8 4.5L8 21V11l8-4.5Z" fill="none" stroke="#087451" stroke-width="3" stroke-linejoin="round"/>
@@ -950,6 +952,7 @@ async function listExternalUploads(
         kind: upload.kind,
         filename: upload.originalName,
         contentType: upload.contentType,
+        category: upload.category,
         ...artifactUrls(baseUrl, { ...upload, filename: upload.originalName }),
         bytes: upload.bytes,
         updatedAt: upload.updatedAt.toISOString(),
@@ -961,7 +964,7 @@ async function listExternalUploads(
         ? {
             nextCursor: encodeUploadListCursor(
               page.nextCursor,
-              pagination.criteria ?? "legacy:newest",
+              serializeUploadListCriteria(pagination.criteria),
               page.uploads.at(-1)?.originalName ?? page.nextCursor.key
             )
           }
@@ -2721,6 +2724,7 @@ function encodeUploadListCursor(
       updatedAt: cursor.updatedAt.toISOString(),
       key: cursor.key,
       originalName,
+      ...(cursor.bytes !== undefined ? { bytes: cursor.bytes } : {}),
       ...(cursor.expiresAt ? { expiresAt: cursor.expiresAt.toISOString() } : {})
     }),
     "utf8"
@@ -2758,7 +2762,7 @@ function parseUploadLinkCursor(value: string | undefined) {
   }
 }
 
-function parseUploadListOptions(search: URLSearchParams): Omit<ListUploadsOptions, "signal"> {
+function parseUploadListOptions(search: URLSearchParams): Omit<ListUploadsOptions, "signal"> & { criteria: UploadListCriteria } {
   const rawLimit = singleQuery(search, "limit");
   const rawKind = singleQuery(search, "kind");
   const rawCursor = singleQuery(search, "cursor");
@@ -2785,16 +2789,32 @@ function parseUploadListOptions(search: URLSearchParams): Omit<ListUploadsOption
       : (() => { throw new ArtifactRequestError(400, "invalid_pagination", "expiry must be all, 24h, 7d, or persistent."); })();
   const sort: UploadListSort = rawSort === undefined
     ? "newest"
-    : rawSort === "newest" || rawSort === "oldest" || rawSort === "filename" || rawSort === "expiry"
+    : rawSort === "newest" || rawSort === "oldest" || rawSort === "filename" || rawSort === "expiry" || rawSort === "size"
       ? rawSort
-      : (() => { throw new ArtifactRequestError(400, "invalid_pagination", "sort must be newest, oldest, filename, or expiry."); })();
+      : (() => { throw new ArtifactRequestError(400, "invalid_pagination", "sort must be newest, oldest, filename, expiry, or size."); })();
   const kind = rawKind === undefined || rawKind === "all"
-    ? undefined
+    ? "all"
     : rawKind === "html" || rawKind === "file"
       ? rawKind
       : (() => { throw new ArtifactRequestError(400, "invalid_pagination", "kind must be all, html, or file."); })();
-  const criteria = JSON.stringify({ q, kind: kind ?? "all", expiry, sort });
-  const cursor = rawCursor === undefined ? undefined : decodeUploadListCursor(rawCursor, criteria, q === "" && expiry === "all" && sort === "newest");
+  const rawProject = singleQuery(search, "project") ?? "all";
+  const rawProjectName = singleQuery(search, "projectName");
+  const projectName = rawProjectName === undefined ? undefined : normalizeProjectName(rawProjectName);
+  if (!["all", "unassigned", "named"].includes(rawProject) ||
+      (rawProject === "named" ? !projectName : rawProjectName !== undefined)) {
+    throw new ArtifactRequestError(400, "invalid_pagination", "project must be all, unassigned, or named with a projectName.");
+  }
+  const category = singleQuery(search, "category") ?? "all";
+  if (category !== "all" && !UPLOAD_CATEGORIES.some((entry) => entry.id === category)) {
+    throw new ArtifactRequestError(400, "invalid_pagination", "category is invalid.");
+  }
+  const criteria: UploadListCriteria = {
+    q, kind, expiry, sort,
+    project: rawProject === "named" ? { mode: "named", name: projectName! } : { mode: rawProject as "all" | "unassigned" },
+    category: category as UploadListCriteria["category"]
+  };
+  const cursor = rawCursor === undefined ? undefined : decodeUploadListCursor(rawCursor, criteria,
+    q === "" && expiry === "all" && sort === "newest" && rawProject === "all" && category === "all");
   if (rawIncludeSummary !== undefined && rawIncludeSummary !== "true") {
     throw new ArtifactRequestError(400, "invalid_pagination", "includeSummary must be true when provided.");
   }
@@ -2802,10 +2822,6 @@ function parseUploadListOptions(search: URLSearchParams): Omit<ListUploadsOption
     limit,
     ...(rawIncludeSummary === "true" ? { includeSummary: true } : {}),
     criteria,
-    ...(kind ? { kind } : {}),
-    ...(q ? { q } : {}),
-    expiry,
-    sort,
     ...(cursor ? { cursor } : {})
   };
 }
@@ -2818,7 +2834,7 @@ function singleQuery(search: URLSearchParams, name: string) {
   return values[0];
 }
 
-function decodeUploadListCursor(value: string, criteria: string, legacyCompatible: boolean): UploadListCursor {
+function decodeUploadListCursor(value: string, criteria: UploadListCriteria, legacyCompatible: boolean): UploadListCursor {
   if (!value || value.length > MAX_UPLOAD_LIST_CURSOR_LENGTH) {
     throw new ArtifactRequestError(400, "invalid_pagination", "cursor is invalid.");
   }
@@ -2837,7 +2853,9 @@ function decodeUploadListCursor(value: string, criteria: string, legacyCompatibl
       if (!legacyCompatible || candidate.criteria !== undefined || candidate.originalName !== undefined || candidate.expiresAt !== undefined) throw new Error("invalid cursor");
       return { updatedAt, key: candidate.key };
     }
-    if (candidate.version !== 1 || candidate.criteria !== criteria || typeof candidate.originalName !== "string") throw new Error("invalid cursor");
+    if (candidate.version !== 1 || candidate.criteria !== serializeUploadListCriteria(criteria) || typeof candidate.originalName !== "string") throw new Error("invalid cursor");
+    if (candidate.bytes !== undefined && (typeof candidate.bytes !== "number" || !Number.isSafeInteger(candidate.bytes) || candidate.bytes < 0)) throw new Error("invalid cursor");
+    if (criteria.sort === "size" && candidate.bytes === undefined) throw new Error("invalid cursor");
     let expiresAt: Date | undefined;
     if (candidate.expiresAt !== undefined) {
       if (typeof candidate.expiresAt !== "string") throw new Error("invalid cursor");
@@ -2850,6 +2868,7 @@ function decodeUploadListCursor(value: string, criteria: string, legacyCompatibl
       updatedAt,
       key: candidate.key,
       originalName: candidate.originalName,
+      ...(candidate.bytes !== undefined ? { bytes: candidate.bytes as number } : {}),
       ...(expiresAt ? { expiresAt } : {})
     };
   } catch {
