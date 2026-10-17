@@ -13,6 +13,7 @@ beforeEach(async () => {
   const target = join(directory, "services/tools/test/runtime");
   await mkdir(target, { recursive: true });
   await mkdir(join(directory, "bin"));
+  await writeFile(join(directory, "bin/package.json"), '{"type":"commonjs"}');
   for (const file of ["verification.ts", "commands.ts", "command-types.ts", "command-anchor.cjs", "receipt.ts"]) await copyFile(join(runtime, file), join(target, file));
   await writeFile(join(directory, "package.json"), '{"type":"module"}');
   await writeFile(join(target, "entry.ts"), `import { runVerification } from './verification.ts';
@@ -43,11 +44,12 @@ if(process.argv[3]===process.env.FIXTURE_FAIL_COMMAND) process.exit(2);
 `);
     await chmod(path, 0o700);
   }
-  await writeFile(join(directory, "hook.mjs"), `import {registerHooks} from 'node:module';
-registerHooks({resolve(specifier,context,next){
+  await writeFile(join(directory, "hook.mjs"), `import {register} from 'node:module';
+register(new URL('./loader.mjs',import.meta.url),import.meta.url);`);
+  await writeFile(join(directory, "loader.mjs"), `export async function resolve(specifier,context,next){
   if(specifier==='node:fs/promises' && context.parentURL?.endsWith('/verification.ts')) return {url:new URL('./barrier.mjs',import.meta.url).href,shortCircuit:true};
   return next(specifier,context);
-}});`);
+}`);
   await writeFile(join(directory, "barrier.mjs"), `export * from 'node:fs/promises';
 import {writeFile as actual} from 'node:fs/promises';
 import {existsSync,writeFileSync} from 'node:fs';
@@ -116,12 +118,16 @@ describe("terminal verification CLI", () => {
     const result = await run(environment);
     expect(result.code).toBe(1);
     expect(result.record.decision.kind).toBe("failed");
+    const stage = environment.FIXTURE_EMPTY ? "discover" : "contracts";
+    expect(result.record.cells.find((cell: { requirement: { kind: string } }) => cell.requirement.kind === stage).result.kind).toBe("failed");
   });
 
   it.each(["FIXTURE_SETUP_THROW", "FIXTURE_CLEANUP_THROW"])("publishes a failed record after %s", async (name) => {
     const result = await run({ [name]: "1" });
     expect(result.code).toBe(1);
     expect(result.record.decision.kind).toBe("failed");
+    const stage = name === "FIXTURE_SETUP_THROW" ? "fixture" : "cleanup";
+    expect(result.record.cells.find((cell: { requirement: { kind: string } }) => cell.requirement.kind === stage).result.reasons.join(" ")).toContain("rejected");
     expect(JSON.stringify(result.record)).not.toContain("private-password");
   });
 
