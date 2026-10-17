@@ -176,6 +176,7 @@ export async function withLocalStack(
   let manifest: LocalStackManifest | undefined;
   let down: (() => Promise<void>) | undefined;
   let host: Promise<CommandOutcome> | undefined;
+  let operation: Promise<void> | undefined;
   let ownershipUncertain = false;
   let result: LocalStackResult = { kind: "failed", reason: "Local setup did not finish.", cleanup: "not-needed" };
   const stop = new AbortController();
@@ -245,10 +246,11 @@ export async function withLocalStack(
         bindings.push({ service: name, target: item.target, port });
         override.push(`      - ${JSON.stringify({ target: item.target, published: String(port), host_ip: "127.0.0.1", protocol: "tcp" })}`);
       }
-      if (name === "minio") override.push("    environment:", '      MINIO_API_CORS_ALLOW_ORIGIN: "*"');
     }
     if (owner.bindings && owner.bindings.length !== bindings.length) throw new SetupError("blocked", "Compose published ports differ from the retained identity. Retain the directory for recovery.");
     const settings = hostSettings(base, bindings, owner.feedbackKey);
+    const minio = override.indexOf('  "minio":');
+    override.splice(minio + 1, 0, "    environment:", `      MINIO_API_CORS_ALLOW_ORIGIN: ${JSON.stringify(settings.PUBLIC_ORIGIN)}`);
     sensitive = secrets(settings);
     await writeFile(join(directory, "identity.next.json"), JSON.stringify({ ...owner, bindings }), { mode: 0o600 });
     await rename(join(directory, "identity.next.json"), join(directory, "identity.json"));
@@ -312,13 +314,15 @@ export async function withLocalStack(
       storageHttp: blocked("The signed PUT, preflight, or exposed ETag prerequisite did not pass. Publisher journeys remain blocked.") } };
     else throw new SetupError("failed", "Storage prerequisite check returned an invalid result.");
     await publish();
-    await Promise.race([use({ manifest, environment: settings, signal, expiresAt }), exited]);
+    operation = use({ manifest, environment: settings, signal, expiresAt });
+    await Promise.race([operation, exited]);
     result = { kind: "completed", manifest, cleanup: "not-needed" };
   } catch (error) {
     result = { kind: error instanceof SetupError ? error.kind : error instanceof VerificationBlocked ? "blocked" : "failed", manifest,
       reason: error instanceof SetupError || error instanceof VerificationBlocked ? redact(error.message) : "Local setup failed. Check the owned private logs and run directory.", cleanup: "not-needed" };
   } finally {
     stop.abort();
+    if (operation) await operation.catch(() => {});
     if (host) {
       try {
         const outcome = await host;

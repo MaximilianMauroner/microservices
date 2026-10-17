@@ -113,6 +113,39 @@ async function expectLocked(setup: Awaited<ReturnType<typeof fixture>>) {
 }
 
 describe("owned local stack", () => {
+  it("allows storage browser requests only from the owned Tools origin", async () => {
+    const setup = await fixture();
+    const result = await withLocalStack(setup.options, async ({ manifest }) => {
+      const override = await readFile(join(setup.options.directory, "compose.override.yaml"), "utf8");
+      expect(override).toContain(`MINIO_API_CORS_ALLOW_ORIGIN: ${JSON.stringify(manifest.origins.tools)}`);
+      expect(override).not.toContain('MINIO_API_CORS_ALLOW_ORIGIN: "*"');
+    });
+    expect(result).toMatchObject({ kind: "completed", cleanup: "stopped" });
+  });
+
+  it("settles cancelled work before stopping fixtures when the host ends", async () => {
+    const setup = await fixture();
+    let finishHost: (() => void) | undefined;
+    let settled = false;
+    setup.respond(async (spec) => {
+      if (spec.args[0]?.endsWith("index.mjs")) {
+        await new Promise<void>((resolve) => { finishHost = resolve; });
+        return failed(spec);
+      }
+      if (spec.args.includes("down")) expect(settled).toBe(true);
+      return undefined;
+    });
+    const result = await withLocalStack(setup.options, async ({ signal }) => {
+      const cancelled = new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+      finishHost!();
+      await cancelled;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      settled = true;
+    });
+    expect(result).toMatchObject({ kind: "failed", cleanup: "stopped" });
+    expect(settled).toBe(true);
+  });
+
   it("uses the actual config parser and every remapped loopback port, then stops only its project without volume deletion", async () => {
     const setup = await fixture();
     const result = await withLocalStack(setup.options, async ({ manifest, environment }) => {
