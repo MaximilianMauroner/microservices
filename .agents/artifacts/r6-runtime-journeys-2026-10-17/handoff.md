@@ -61,11 +61,11 @@ The synthetic child reports in `verification.test.ts` test runner rejection and 
 
 Run these commands serially through the parent's heavy-check queue. These are requested checks, not executed results.
 
-1. Run `heavy-check --repo . -- pnpm --dir services/tools exec vitest run test/app.test.ts test/start.test.ts test/route-ownership.test.ts test/status-links.test.tsx test/runtime/receipt.test.ts test/runtime/verification.test.ts test/runtime/vitest-child.test.ts`.
-2. Run `heavy-check --repo . -- pnpm --dir services/tools run typecheck`.
-3. Run journey discovery with `heavy-check --repo . -- node --experimental-strip-types services/tools/test/runtime/vitest-child.ts discover /absolute/private/r6-discover.json journeys`. Confirm the mounted Status identity matches the registry exactly. Discovery must not run the beforeAll stack prerequisite.
-4. After R2 and R3 propagation, run `heavy-check --repo . -- pnpm run verify`. Use only owned local data. The current accepted result cannot be PASS because the browser and historical acceptance cases deliberately block. Inspect `journeys-required.json`, `journeys-run-report.json`, and `receipts.json`. A setup failure can stop before journey execution. It must remain nonzero.
-5. Run `heavy-check --repo . -- node --experimental-strip-types services/tools/test/runtime/run.ts workspace --default-monitor-targets`. Confirm nonzero refusal and no checker start.
+1. Run `heavy-check -- pnpm --dir services/tools exec vitest run test/app.test.ts test/start.test.ts test/route-ownership.test.ts test/status-links.test.tsx test/runtime/receipt.test.ts test/runtime/verification.test.ts test/runtime/vitest-child.test.ts`.
+2. Run `heavy-check -- pnpm --dir services/tools run typecheck`.
+3. Run journey discovery with `heavy-check -- node --experimental-strip-types services/tools/test/runtime/vitest-child.ts discover /absolute/private/r6-discover.json journeys`. Confirm the mounted Status identity matches the registry exactly. Discovery must not run the beforeAll stack prerequisite.
+4. After R2 and R3 propagation, run `heavy-check -- pnpm run verify`. Use only owned local data. The current accepted result cannot be PASS because the browser and historical acceptance cases deliberately block. Inspect `journeys-required.json`, `journeys-run-report.json`, and `receipts.json`. A setup failure can stop before journey execution. It must remain nonzero.
+5. Run `heavy-check -- node --experimental-strip-types services/tools/test/runtime/run.ts workspace --default-monitor-targets`. Confirm nonzero refusal and no checker start.
 6. Inspect owned process release and retained data after each actual stack run. Do not delete retained volumes.
 
 ## Remaining work and owners

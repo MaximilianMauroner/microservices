@@ -2,7 +2,7 @@ from pathlib import Path
 import subprocess
 
 base = subprocess.check_output(
-    ["git", "show", "HEAD~1:services/tools/money/money-repository.ts"], text=True
+    ["git", "show", "fix/agent-mistakes-r3-identities:services/tools/money/money-repository.ts"], text=True
 )
 current = Path("services/tools/money/money-repository.ts").read_text()
 ledger = Path("services/tools/money/money-ledger-sql.ts").read_text()
@@ -20,7 +20,7 @@ assert section(base, '        needs("monthlyCashFlow")', '        needs("categor
     current, '        needs("monthlyCashFlow")', '        needs("categoryTotals")'
 )
 market_base = subprocess.check_output(
-    ["git", "show", "HEAD~1:services/tools/money/money-market-data-repository.ts"], text=True
+    ["git", "show", "fix/agent-mistakes-r3-identities:services/tools/money/money-market-data-repository.ts"], text=True
 )
 market = Path("services/tools/money/money-market-data-repository.ts").read_text()
 assert market == market_base.replace('from "./money-repository.js"', 'from "./money-ledger-sql.js"')
