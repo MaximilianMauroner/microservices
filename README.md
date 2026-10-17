@@ -54,7 +54,9 @@ pnpm run local:stack /absolute/private/tools-local-run
 
 Choose a private run directory outside the checkout. The command creates a
 feedback encryption key there and retains it for restart. Reuse the same
-directory to reuse its Compose project, database, object storage, and key.
+directory to reuse its Compose project, database, object storage, key, and port
+bindings. If a retained port is occupied, the command stops before it changes
+the configuration or command logs. Stop that port's owner before you restart.
 Do not delete the key while you retain encrypted Feedback responses.
 
 The command resolves root `compose.yaml`, then creates a private port override.
@@ -82,7 +84,9 @@ Press Ctrl+C to stop the owned host process and run Compose `down` for this
 project. Cleanup retains its key and volumes. The `docker:up` and `docker:down`
 scripts address the default project and do not manage this stack. If a command
 crashes and leaves `active.lock`, check that its recorded process and stack are
-stopped before you remove that lock. Retain the run directory for recovery.
+stopped before you remove that lock. The command also retains the lock when
+process release is uncertain or Compose cleanup fails. Retain the run directory
+for recovery.
 Volume deletion requires separate authorization.
 
 The manifest reports acceptance limits separately. Signed multipart PUT,
