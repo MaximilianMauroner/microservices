@@ -31,13 +31,21 @@ export async function createOwnedPostgres() {
 }`);
   await writeFile(join(target, "local-stack.ts"), `export async function withLocalStack(options,use) {
     if(process.env.FIXTURE_LOCAL_BLOCKED) return {kind:'blocked',reason:'local fixture unavailable',cleanup:'not-needed'};
-    await use({manifest:{project:'identity-project',prerequisites:{storageHttp:{kind:'passed',reason:'fixture'}}},
-      environment:{ARTIFACT_S3_ENDPOINT:'http://127.0.0.1:9',ARTIFACT_S3_ACCESS_KEY_ID:'local',ARTIFACT_S3_SECRET_ACCESS_KEY:'local'},
+    await use({manifest:{project:'identity-project',origins:{tools:'http://127.0.0.1:9'},prerequisites:{storageHttp:{kind:'passed',reason:'fixture'}}},
+      environment:{UPLOAD_TOKEN:'local-upload-token',ARTIFACT_S3_ENDPOINT:'http://127.0.0.1:9',ARTIFACT_S3_ACCESS_KEY_ID:'local',ARTIFACT_S3_SECRET_ACCESS_KEY:'local'},
       signal:options.signal});
     return {kind:'completed',cleanup:process.env.FIXTURE_LOCAL_CLEANUP_FAIL?'retained':'stopped'};
   }`);
   await writeFile(join(target, "vitest-child.ts"), `import {writeFileSync} from 'node:fs';
+import {requiredJourneyCases,mountedStatusCase} from './receipt.ts';
 const phase=process.argv[2];
+if(process.argv[4]==='journeys') {
+  const required=process.env.FIXTURE_JOURNEY_MISSING ? requiredJourneyCases.filter(identity=>identity!==mountedStatusCase) : requiredJourneyCases;
+  writeFileSync(process.argv[3],JSON.stringify(phase==='discover'
+    ? {phase,required,errors:[]}
+    : {phase,observed:required.map(identity=>({identity,result:process.env.FIXTURE_JOURNEY_SKIP?'skipped':process.env.FIXTURE_JOURNEY_BLOCKED?'blocked':'passed',evidence:[]})),errors:[]}));
+  process.exit(phase==='run' && process.env.FIXTURE_JOURNEY_BLOCKED?1:0);
+}
 const identity=process.argv[4]==='identity';
 writeFileSync(process.argv[3]!,JSON.stringify(phase==='discover'
   ? {phase,required:process.env.FIXTURE_EMPTY || identity && process.env.FIXTURE_IDENTITY_EMPTY?[]:['required case'],errors:[]}
@@ -139,11 +147,19 @@ describe("terminal verification CLI", () => {
     expect(JSON.stringify(result.record)).not.toContain("private-password");
   });
 
-  it("requires the identity suite and its owned local fixture before workspace success", async () => {
+  it("requires identity, built Tools, and mounted Status receipts before workspace success", async () => {
     const result = await run({ FIXTURE_MODE: "workspace" });
     expect(result.code).toBe(0);
+    expect(result.record.journeys.some((receipt: { suite: string; result: string }) => receipt.suite === "mounted-status" && receipt.result === "passed")).toBe(true);
     expect(result.record.identity).toMatchObject({ required: ["required case"], contracts: { executed: ["required case"], skipped: [] } });
     expect(result.record.cells.filter((cell: { requirement: { kind: string } }) => cell.requirement.kind.startsWith("identity-")).map((cell: { result: { kind: string } }) => cell.result.kind)).toEqual(["passed", "passed"]);
+  });
+
+  it.each(["FIXTURE_JOURNEY_MISSING", "FIXTURE_JOURNEY_SKIP", "FIXTURE_JOURNEY_BLOCKED"])("cannot pass workspace verification with %s", async (name) => {
+    const result = await run({ FIXTURE_MODE: "workspace", [name]: "1" });
+    expect(result.code).toBe(1);
+    expect(result.record.decision.kind).toBe(name === "FIXTURE_JOURNEY_BLOCKED" ? "blocked" : "failed");
+    expect(result.record.journeys.some((receipt: { result: string }) => receipt.result !== "passed")).toBe(true);
   });
 
   it.each(["FIXTURE_IDENTITY_EMPTY", "FIXTURE_IDENTITY_SKIP", "FIXTURE_LOCAL_BLOCKED", "FIXTURE_LOCAL_CLEANUP_FAIL"])("does not pass workspace verification with %s", async (name) => {

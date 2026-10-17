@@ -8,7 +8,7 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    exclude: [...configDefaults.exclude, "test/money-repository.integration.test.ts", "test/money-ledger-contributions.integration.test.ts"],
+    exclude: [...configDefaults.exclude, "test/runtime/journeys.test.ts", "test/money-repository.integration.test.ts", "test/money-ledger-contributions.integration.test.ts"],
     include: ["test/**/*.test.{ts,tsx}", "markdown-share/**/*.test.{ts,tsx}"],
     setupFiles: ["./test/router-link-mock.tsx"]
   }

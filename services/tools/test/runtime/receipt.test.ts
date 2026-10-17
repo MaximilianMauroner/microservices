@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decodeReport, redactDatabase, requiredCaseReceipt, type CaseResult } from "./receipt.ts";
+import { decodeReport, redactDatabase, requiredCaseReceipt, type CaseResult, journeyReceipts, requiredJourneyCases, mountedStatusCase } from "./receipt.ts";
 
 const required = ["money > first", "money > second"];
 const passed: CaseResult[] = required.map((identity) => ({ identity, result: "passed", evidence: [] }));
@@ -76,5 +76,30 @@ describe("fixture credential redaction", () => {
 
   it("leaves text unchanged when no fixture exists", () => {
     expect(redactDatabase("postgres://user:value@host/db", undefined)).toBe("postgres://user:value@host/db");
+  });
+});
+
+describe("required runtime journey receipts", () => {
+  const observations: CaseResult[] = requiredJourneyCases.map((identity) => ({ identity, result: "passed", evidence: [] }));
+
+  it("rejects a missing mounted Status regression even when every built HTTP check passes", () => {
+    const observed = observations.filter((test) => test.identity !== mountedStatusCase);
+    expect(requiredCaseReceipt(requiredJourneyCases, observed, []).result).toBe("failed");
+    expect(journeyReceipts("revision", "fixture", observed).find((receipt) => receipt.suite === "mounted-status"))
+      .toMatchObject({ result: "failed", evidence: expect.arrayContaining(["Required case is missing."]) });
+  });
+
+  it("keeps blocked OAuth acceptance non-passing and names its revision and fixture", () => {
+    const observed = observations.map((test) => test.identity.includes("private-google-oauth-upload-link")
+      ? { ...test, result: "blocked" as const, evidence: ["Real local Google OAuth is absent."] } : test);
+    expect(requiredCaseReceipt(requiredJourneyCases, observed, []).result).toBe("failed");
+    expect(journeyReceipts("revision", "fixture", observed).find((receipt) => receipt.scenario === "private-google-oauth-upload-link"))
+      .toEqual({ suite: "built-tools", scenario: "private-google-oauth-upload-link", revision: "revision", fixture: "fixture",
+        result: "blocked", evidence: [observed.find((test) => test.result === "blocked")!.identity, "Real local Google OAuth is absent."] });
+  });
+
+  it("never reports unrun journeys as passed", () => {
+    expect(journeyReceipts("revision", "unavailable").every((receipt) => receipt.result === "blocked")).toBe(true);
+    expect(requiredCaseReceipt(requiredJourneyCases, [], []).result).toBe("failed");
   });
 });
