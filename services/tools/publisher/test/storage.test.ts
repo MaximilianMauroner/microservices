@@ -1,3 +1,4 @@
+import { DEFAULT_UPLOAD_LIST_CRITERIA, serializeUploadListCriteria } from "../src/upload-list.js";
 import { Readable } from "node:stream";
 import {
   CopyObjectCommand,
@@ -413,16 +414,18 @@ describe("S3 upload storage", () => {
           originalName: "notes.txt",
           bytes: 45,
           contentType: "text/plain",
+          category: "documents",
           updatedAt: new Date("2026-07-23T10:00:00.000Z"),
           expiresAt: new Date("2026-07-26T10:00:00.000Z")
         }
       ],
       nextCursor: {
         version: 1,
-        criteria: "legacy:newest",
+        criteria: serializeUploadListCriteria(DEFAULT_UPLOAD_LIST_CRITERIA),
         updatedAt: new Date("2026-07-23T10:00:00.000Z"),
         key: `files/${fileId}`,
         originalName: "notes.txt",
+        bytes: 45,
         expiresAt: new Date("2026-07-26T10:00:00.000Z")
       }
     });
@@ -440,15 +443,16 @@ describe("S3 upload storage", () => {
           originalName: "agent-browser-plan-123.html",
           bytes: 120,
           contentType: "text/html; charset=utf-8",
+          category: "html",
           updatedAt: new Date("2026-07-22T10:00:00.000Z"),
           project: "microservices"
         }
       ]
     });
-    await expect(storage.listUploads(new Date("2026-07-23T12:00:00.000Z"), { limit: 1, q: " NOTES " })).resolves.toMatchObject({ uploads: [{ originalName: "notes.txt" }] });
-    await expect(storage.listUploads(new Date("2026-07-23T12:00:00.000Z"), { limit: 1, expiry: "persistent" })).resolves.toMatchObject({ uploads: [{ kind: "html" }] });
-    await expect(storage.listUploads(new Date("2026-07-23T12:00:00.000Z"), { limit: 10, sort: "oldest" })).resolves.toMatchObject({ uploads: [{ kind: "html" }, { kind: "file" }] });
-    await expect(storage.listUploads(new Date("2026-07-23T12:00:00.000Z"), { limit: 10, sort: "expiry" })).resolves.toMatchObject({ uploads: [{ kind: "file" }, { kind: "html" }] });
+    await expect(storage.listUploads(new Date("2026-07-23T12:00:00.000Z"), { limit: 1, criteria: { ...DEFAULT_UPLOAD_LIST_CRITERIA, q: " NOTES " } })).resolves.toMatchObject({ uploads: [{ originalName: "notes.txt" }] });
+    await expect(storage.listUploads(new Date("2026-07-23T12:00:00.000Z"), { limit: 1, criteria: { ...DEFAULT_UPLOAD_LIST_CRITERIA, expiry: "persistent" } })).resolves.toMatchObject({ uploads: [{ kind: "html" }] });
+    await expect(storage.listUploads(new Date("2026-07-23T12:00:00.000Z"), { limit: 10, criteria: { ...DEFAULT_UPLOAD_LIST_CRITERIA, sort: "oldest" } })).resolves.toMatchObject({ uploads: [{ kind: "html" }, { kind: "file" }] });
+    await expect(storage.listUploads(new Date("2026-07-23T12:00:00.000Z"), { limit: 10, criteria: { ...DEFAULT_UPLOAD_LIST_CRITERIA, sort: "expiry" } })).resolves.toMatchObject({ uploads: [{ kind: "file" }, { kind: "html" }] });
     storage.close?.();
   });
 
@@ -489,13 +493,13 @@ describe("S3 upload storage", () => {
     expect(headCalls).toBeLessThanOrEqual(8);
 
     headCalls = 0;
-    const oldest = await storage.listUploads(asOf, { limit: 1, sort: "oldest" });
+    const oldest = await storage.listUploads(asOf, { limit: 1, criteria: { ...DEFAULT_UPLOAD_LIST_CRITERIA, sort: "oldest" } });
     expect(oldest.uploads[0]?.id).toBe(String(0).padStart(32, "0"));
     expect(oldest.nextCursor).toBeDefined();
     expect(headCalls).toBeLessThanOrEqual(8);
 
     headCalls = 0;
-    await storage.listUploads(asOf, { limit: 1, q: "plan" });
+    await storage.listUploads(asOf, { limit: 1, criteria: { ...DEFAULT_UPLOAD_LIST_CRITERIA, q: "plan" } });
     expect(headCalls).toBe(40);
     storage.close?.();
   });
@@ -552,7 +556,7 @@ describe("S3 upload storage", () => {
     expect(newestThird.uploads[0]?.id).toBe("c".repeat(32));
     expect(newestThird.nextCursor).toBeUndefined();
 
-    const oldestFirst = await storage.listUploads(asOf, { limit: 1, sort: "oldest" });
+    const oldestFirst = await storage.listUploads(asOf, { limit: 1, criteria: { ...DEFAULT_UPLOAD_LIST_CRITERIA, sort: "oldest" } });
     expect(oldestFirst.uploads).toMatchObject([{
       id: "c".repeat(32),
       updatedAt: new Date("2026-07-23T01:00:00.000Z")
@@ -561,14 +565,14 @@ describe("S3 upload storage", () => {
     if (!oldestFirst.nextCursor) throw new Error("Expected oldest continuation cursor");
     const oldestSecond = await storage.listUploads(asOf, {
       limit: 1,
-      sort: "oldest",
+      criteria: { ...DEFAULT_UPLOAD_LIST_CRITERIA, sort: "oldest" },
       cursor: oldestFirst.nextCursor
     });
     expect(oldestSecond.uploads[0]?.id).toBe("b".repeat(32));
     if (!oldestSecond.nextCursor) throw new Error("Expected second oldest continuation cursor");
     const oldestThird = await storage.listUploads(asOf, {
       limit: 1,
-      sort: "oldest",
+      criteria: { ...DEFAULT_UPLOAD_LIST_CRITERIA, sort: "oldest" },
       cursor: oldestSecond.nextCursor
     });
     expect(oldestThird.uploads[0]?.id).toBe("a".repeat(32));
