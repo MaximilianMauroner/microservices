@@ -212,6 +212,7 @@ describe("native artifact fetch handler", () => {
     }
     const now = new Date("2026-09-15T12:00:00.000Z");
     const storage = new SignedStorage();
+    const read = vi.spyOn(storage, "getTemporaryFile");
     const videoId = "a".repeat(32);
     const documentId = "b".repeat(32);
     storage.files.set(videoId, {
@@ -236,6 +237,7 @@ describe("native artifact fetch handler", () => {
     expect(video.headers.get("location")).toBe("https://storage.example.test/signed-video");
     expect(video.headers.get("cache-control")).toBe("private, no-store");
     expect(storage.presignTemporaryFile).toHaveBeenCalledWith(videoId, 4);
+    expect(read.mock.calls.every(([, options]) => options?.headOnly)).toBe(true);
     expect((await app(new Request(videoUrl, { method: "HEAD" }))).status).toBe(200);
     expect(storage.presignTemporaryFile).toHaveBeenCalledTimes(1);
     const document = await app(new Request(`https://tools.example.test/files/${documentId}/private.pdf`));
@@ -277,8 +279,62 @@ describe("native artifact fetch handler", () => {
     expect(storage.presignTemporaryFile).toHaveBeenCalledTimes(1);
   });
 
+  it.each(["files", "f"])("retains HEAD and 304 representation headers through /%s without opening a stored body", async (prefix) => {
+    const storage = new MemoryUploadStorage();
+    const read = vi.spyOn(storage, "getTemporaryFile");
+    const id = "a".repeat(32);
+    storage.files.set(id, {
+      body: Buffer.from("lecture"),
+      metadata: { originalName: "lecture.mp4", contentType: "video/mp4", bytes: 7, sha256: "b".repeat(64) }
+    });
+    const app = createFetchApp({ storage, uploadToken: "upload-token" });
+    const url = `https://tools.example.test/${prefix}/${id}/lecture.mp4`;
+    const etag = `"sha256-${"b".repeat(64)}"`;
+    const head = await app(new Request(url, { method: "HEAD" }));
+    const notModified = await app(new Request(url, { headers: { "If-None-Match": etag } }));
+
+    expect(head.status).toBe(200);
+    expect(notModified.status).toBe(304);
+    for (const response of [head, notModified]) {
+      expect(response.headers.get("content-length")).toBe("7");
+      expect(response.headers.get("etag")).toBe(etag);
+      expect(response.headers.get("last-modified")).toBe("Thu, 01 Jan 2026 00:00:00 GMT");
+      expect(response.headers.get("access-control-allow-origin")).toBe("*");
+      expect(await response.text()).toBe("");
+    }
+    expect(read.mock.calls.every(([, options]) => options?.headOnly)).toBe(true);
+
+    const full = await app(new Request(url));
+    expect(full.status).toBe(200);
+    expect(await full.text()).toBe("lecture");
+    expect(read.mock.calls.some(([, options]) => !options?.headOnly)).toBe(true);
+  });
+
+  it("rejects an expired file before opening its stored body when signing is unavailable", async () => {
+    const storage = new MemoryUploadStorage();
+    const read = vi.spyOn(storage, "getTemporaryFile");
+    const id = "a".repeat(32);
+    const now = new Date("2026-09-15T12:00:00.000Z");
+    storage.files.set(id, {
+      body: Buffer.from("lecture"),
+      metadata: {
+        originalName: "lecture.mp4", contentType: "video/mp4", bytes: 7,
+        sha256: "b".repeat(64), expiresAt: now
+      }
+    });
+    const app = createFetchApp({ storage, uploadToken: "upload-token", now: () => now });
+
+    const response = await app(new Request(`https://tools.example.test/files/${id}/lecture.mp4`));
+
+    expect(response.status).toBe(404);
+    expect(await response.text()).toBe("");
+    expect(read).toHaveBeenCalled();
+    expect(read.mock.calls.every(([, options]) => options?.headOnly)).toBe(true);
+  });
+
   it("lets an HTTP client finish reading an empty failed-precondition response", async () => {
     const storage = new MemoryUploadStorage();
+    const read = vi.spyOn(storage, "getTemporaryFile");
     const id = "a".repeat(32);
     storage.files.set(id, { body: Buffer.from("lecture"),
       metadata: { originalName: "lecture.mp4", contentType: "video/mp4", bytes: 7, sha256: "b".repeat(64) } });
@@ -301,6 +357,7 @@ describe("native artifact fetch handler", () => {
       expect(response.status).toBe(412);
       expect(response.headers.get("content-length")).toBe("0");
       expect(await response.text()).toBe("");
+      expect(read.mock.calls.every(([, options]) => options?.headOnly)).toBe(true);
     } finally {
       server.closeAllConnections();
       await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
