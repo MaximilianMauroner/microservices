@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import postgres, { type Sql } from "postgres";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { GetObjectCommand, HeadObjectCommand, ListMultipartUploadsCommand, PutBucketCorsCommand, PutObjectCommand, S3Client, UploadPartCommand } from "@aws-sdk/client-s3";
+import { CreateBucketCommand, GetObjectCommand, HeadObjectCommand, ListMultipartUploadsCommand, PutObjectCommand, S3Client, UploadPartCommand } from "@aws-sdk/client-s3";
 import { createFetchApp } from "../src/fetch-app.js";
 import { createDirectUploads, DIRECT_PART_BYTES } from "../src/direct-uploads.js";
 import { createMultipartStorage } from "../src/multipart-storage.js";
@@ -12,9 +12,10 @@ import { createPostgresUploadLinkRepository } from "../src/upload-links.js";
 const databaseUrl = process.env.PUBLISHER_TRANSFER_TEST_DATABASE_URL;
 const endpoint = process.env.PUBLISHER_TRANSFER_TEST_S3_ENDPOINT;
 const enabled = Boolean(databaseUrl && endpoint);
-const origin = "http://127.0.0.1:43171";
+const origin = process.env.PUBLISHER_TRANSFER_TEST_ORIGIN ?? "http://127.0.0.1:43171";
 const config = { bucket: "tools-transfer-test", endpoint: endpoint ?? "http://127.0.0.1:49000",
-  region: "us-east-1", accessKeyId: "transfer-local", secretAccessKey: "transfer-local-secret", forcePathStyle: true };
+  region: "us-east-1", accessKeyId: process.env.PUBLISHER_TRANSFER_TEST_S3_ACCESS_KEY_ID ?? "transfer-local",
+  secretAccessKey: process.env.PUBLISHER_TRANSFER_TEST_S3_SECRET_ACCESS_KEY ?? "transfer-local-secret", forcePathStyle: true };
 const digest = (bytes: Uint8Array) => crypto.createHash("sha256").update(bytes).digest("hex");
 
 describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", () => {
@@ -54,10 +55,11 @@ describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", () => {
     links = createPostgresUploadLinkRepository(databaseUrl!);
     client = new S3Client({ endpoint: config.endpoint, region: config.region, forcePathStyle: true,
       credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }, requestChecksumCalculation: "WHEN_REQUIRED" });
-    await client.send(new PutBucketCorsCommand({ Bucket: config.bucket, CORSConfiguration: { CORSRules: [
-      { AllowedOrigins: [origin], AllowedMethods: ["GET", "HEAD", "PUT"], AllowedHeaders: ["*"], ExposeHeaders: ["Content-Range", "Content-Length", "ETag"], MaxAgeSeconds: 300 },
-      { AllowedOrigins: ["*"], AllowedMethods: ["GET", "HEAD"], AllowedHeaders: ["*"], ExposeHeaders: ["Content-Range", "Content-Length", "ETag"] }
-    ] } }));
+    try {
+      await client.send(new CreateBucketCommand({ Bucket: config.bucket }));
+    } catch (error) {
+      if (!(error instanceof Error) || !["BucketAlreadyOwnedByYou", "BucketAlreadyExists"].includes(error.name)) throw error;
+    }
     attach();
   });
 
@@ -989,7 +991,7 @@ describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", () => {
     expect((await request(file.path + "/complete")).status).toBe(404);
   });
 
-  it("permits browser upload CORS only for the selected Tools origin and keeps the bucket private", async () => {
+  it("permits the Tools origin, denies unrelated upload origins, and keeps the bucket private", async () => {
     const allowed = await fetch(`${config.endpoint}/${config.bucket}/transfers/cors-check`, { method: "OPTIONS",
       headers: { Origin: origin, "Access-Control-Request-Method": "PUT", "Access-Control-Request-Headers": "content-type" } });
     expect(allowed.ok).toBe(true); expect(allowed.headers.get("access-control-allow-origin")).toBe(origin);
