@@ -102,14 +102,14 @@ export type CheckReceipt = Readonly<{
   evidence: readonly string[];
 }>;
 
-export function journeyReceipts(revision: string, fixture: string, observed?: readonly CaseResult[]): CheckReceipt[] {
+export function journeyReceipts(revision: string, fixture: string, observed?: readonly CaseResult[], runErrors: readonly string[] = []): CheckReceipt[] {
   return requiredJourneyCases.map((identity) => {
     const test = observed?.find((test) => test.identity === identity);
-    const result = test?.result === "passed" || test?.result === "blocked" ? test.result : observed ? "failed" : "blocked";
+    const result = runErrors.length ? "failed" : test?.result === "passed" || test?.result === "blocked" ? test.result : observed ? "failed" : "blocked";
     return {
       suite: identity === mountedStatusCase ? "mounted-status" : "built-tools",
       scenario: identity.split(" > ").at(-1)!, revision, fixture, result,
-      evidence: [identity, ...(test ? test.evidence : [observed ? "Required case is missing." : "Journey execution has not run."])],
+      evidence: [identity, ...(test ? test.evidence : [observed ? "Required case is missing." : "Journey execution has not run."]), ...runErrors],
     };
   });
 }

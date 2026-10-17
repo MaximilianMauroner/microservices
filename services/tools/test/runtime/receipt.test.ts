@@ -98,6 +98,13 @@ describe("required runtime journey receipts", () => {
         result: "blocked", evidence: [observed.find((test) => test.result === "blocked")!.identity, "Real local Google OAuth is absent."] });
   });
 
+  it("does not issue named acceptance passes when the suite reports a hook error", () => {
+    const errors = ["test/status-links.test.tsx: afterAll failed"];
+    const receipts = journeyReceipts("revision", "fixture", observations, errors);
+    expect(receipts.every((receipt) => receipt.result === "failed")).toBe(true);
+    expect(receipts.find((receipt) => receipt.suite === "mounted-status")?.evidence).toContain(errors[0]);
+  });
+
   it("never reports unrun journeys as passed", () => {
     expect(journeyReceipts("revision", "unavailable").every((receipt) => receipt.result === "blocked")).toBe(true);
     expect(requiredCaseReceipt(requiredJourneyCases, [], []).result).toBe("failed");
