@@ -366,8 +366,8 @@ function ReimportDialogContent({
         <AlertDialogHeader>
           <AlertDialogTitle>Rebuilding imported data</AlertDialogTitle>
           <AlertDialogDescription role="status">
-            Rebuilding categories and transfer links. Keep this window open
-            until the result appears.
+            Rebuilding automatic categories and transfer links. Manual choices
+            stay. Keep this window open until the result appears.
           </AlertDialogDescription>
         </AlertDialogHeader>
       </AlertDialogContent>
@@ -407,11 +407,11 @@ function ReimportDialogContent({
       <AlertDialogHeader>
         <AlertDialogTitle>Rebuild imported data?</AlertDialogTitle>
         <AlertDialogDescription>
-          This reapplies import inference to every stored transaction. Original
-          upload files are not retained, so this does not reparse documents.
-          Manual transaction categories and transfer review choices will be
-          reset, then active category rules will be reapplied. Manual balance
-          entries will stay.
+          This recalculates automatic transfer results and reapplies active
+          category rules to stored transactions. Manual categories, transfer
+          review choices, and manual balance entries stay. Transfer decisions
+          with an unknown origin also stay. Original upload files are not
+          retained, so this does not reparse documents.
         </AlertDialogDescription>
       </AlertDialogHeader>
       <AlertDialogFooter>
