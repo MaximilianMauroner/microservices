@@ -121,7 +121,7 @@ it("agrees across category, merchant, and check-in spending with signed refunds 
 
 it("keeps monthly coverage distinct from all-time and current-month spending", async () => {
   const [period] = await admin<{ day: string }[]>`
-    select to_char(current_date, 'YYYY-MM-DD') day`;
+    select to_char(current_date, 'YYYY-MM-DD') as day`;
   await commit(cash([
     "Card Payment\tCurrent\t2025-01-02 12:00:00\t2025-01-02 12:00:00\tOld purchase\t-1\t0\tEUR\tCOMPLETED\t99",
     "Transfer\tCurrent\t2025-03-02 12:00:00\t2025-03-02 12:00:00\tFee only\t0\t2\tEUR\tCOMPLETED\t97",
