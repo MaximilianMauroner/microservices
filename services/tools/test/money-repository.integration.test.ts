@@ -1,5 +1,6 @@
 import postgres from "postgres";
 import { createHash } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 import { afterAll, beforeEach, expect, it } from "vitest";
 import { DISPOSABLE_DATABASE_SENTINEL, withVerifiedDisposableDatabase } from "../database/postgres-push-guard.js";
 import { parseMoneyImport, REVOLUT_CASH_FORMAT } from "../money/money-import-domain.js";
@@ -7,11 +8,10 @@ import { cashMovesSince } from "../money/money-checkin-domain.js";
 import { createPostgresMoneyRepository, type MoneyRepository } from "../money/money-repository.js";
 import { moneyTrackerTrendStats } from "../money/money-tracker-domain.js";
 import { MoneyImportService } from "../money/money-import-service.js";
+import { requireLoopbackPostgres } from "./runtime/postgres.ts";
 import { moneyWorkbookFixture } from "./money-workbook-fixture.js";
 
-// Opt in only with a disposable database after applying the guarded tools schema:
-// TEST_DATABASE_URL=... MONEY_TEST_DATABASE_CONFIRM=money-repository-test pnpm test:money-postgres
-const databaseUrl = process.env.TEST_DATABASE_URL;
+const databaseUrl = process.env.TEST_DATABASE_URL ? requireLoopbackPostgres(process.env.TEST_DATABASE_URL) : undefined;
 const confirmed = process.env.MONEY_TEST_DATABASE_CONFIRM === "money-repository-test";
 const repository = databaseUrl && confirmed ? createPostgresMoneyRepository(databaseUrl) : undefined;
 const admin = databaseUrl && confirmed ? postgres(databaseUrl, { max: 1 }) : undefined;
@@ -398,19 +398,56 @@ it.skipIf(!repository || !admin)("prefers exact transfer identity when repeated 
   expect(new Set(rows.map((row) => row.transferGroupId)).size).toBe(2);
 });
 
-it.skipIf(!repository || !admin)("re-imports all normalized documents and rebuilds derived review state", async () => {
+it.skipIf(!repository || !admin)("re-imports all normalized documents and rebuilds automatic review state", async () => {
   await commitCash(repository!, cash([
-    "Transfer\tCurrent\t2026-03-05 12:00:00\t2026-03-05 12:00:00\tPocket rebuild\t-10\t0\tEUR\tCOMPLETED\t90",
+    "Transfer\tCurrent\t2026-03-05 12:00:00\t2026-03-05 12:00:00\tPocket rebuild\t-10\t0\tEUR\tCOMPLETED\t90"
+  ]), "rebuild-out.tsv");
+  await commitCash(repository!, cash([
     "Transfer\tSavings\t2026-03-05 12:00:00\t2026-03-05 12:00:00\tPocket rebuild\t10\t0\tEUR\tCOMPLETED\t10"
-  ]), "rebuild.tsv");
-  await admin!`update tools.money_transactions set category = 'subscriptions', category_origin = 'manual', transfer_group_id = null, transfer_disposition = 'excluded'
-    where description = 'Pocket rebuild'`;
+  ]), "rebuild-in.tsv");
+  expect(await transferState("Pocket rebuild")).toEqual([
+    { description: "Pocket rebuild", amount: -1_000, groupId: null, disposition: "spend", origin: "automatic" },
+    { description: "Pocket rebuild", amount: 1_000, groupId: null, disposition: "refund", origin: "automatic" }
+  ]);
+  const identities = () => admin!`select id, source_key, import_id from tools.money_transactions order by id`;
+  const before = await identities();
+  const counts = { importCount: 2, transactionCount: 2, linkedPairCount: 1 };
+  await expect(repository!.reimportAll()).resolves.toEqual(counts);
+  const linked = await transferState("Pocket rebuild");
+  expect(linked).toEqual([
+    { description: "Pocket rebuild", amount: -1_000, groupId: expect.any(String), disposition: "internal_transfer", origin: "automatic" },
+    { description: "Pocket rebuild", amount: 1_000, groupId: linked[0]!.groupId, disposition: "internal_transfer", origin: "automatic" }
+  ]);
+  await expect(repository!.reimportAll()).resolves.toEqual(counts);
+  expect(await transferState("Pocket rebuild")).toEqual(linked);
+  expect(await identities()).toEqual(before);
+});
 
-  await expect(repository!.reimportAll()).resolves.toEqual({ importCount: 1, transactionCount: 2, linkedPairCount: 1 });
-  const rows = (await repository!.readActivityPage({ query: "Pocket rebuild", offset: 0, limit: 10 })).items;
-  expect(rows).toHaveLength(2);
-  expect(rows.every((row) => row.category === "transfer" && row.categoryOrigin === "source" && row.transferDisposition === "internal_transfer")).toBe(true);
-  expect(new Set(rows.map((row) => row.transferGroupId)).size).toBe(1);
+it.skipIf(!repository || !admin)("preserves manual categories and same-valued transfer reviews through a rebuild", async () => {
+  await commitCash(repository!, cash([
+    "Transfer\tCurrent\t2026-03-05 12:00:00\t2026-03-05 12:00:00\tKept pair\t-10\t0\tEUR\tCOMPLETED\t90",
+    "Transfer\tSavings\t2026-03-05 12:00:00\t2026-03-05 12:00:00\tKept pair\t10\t0\tEUR\tCOMPLETED\t10",
+    "Transfer\tCurrent\t2026-03-20 12:00:00\t2026-03-20 12:00:00\tKept review\t25\t0\tEUR\tCOMPLETED\t115"
+  ]), "kept.tsv");
+  const reviewedId = await transactionId("Kept review");
+  expect(await transferState("Kept review")).toEqual([
+    { description: "Kept review", amount: 2_500, groupId: null, disposition: "refund", origin: "automatic" }
+  ]);
+  await repository!.setTransferDisposition({ transactionId: reviewedId, disposition: "refund" });
+  await repository!.setTransactionCategory({ transactionId: reviewedId, category: "gifts", actor: "integration@example.test", createRule: false });
+  const [pairOut, pairIn] = await admin!<{ id: string }[]>`select id::text id from tools.money_transactions where description = 'Kept pair' order by amount_minor`;
+  await repository!.setTransactionCategory({ transactionId: pairOut!.id, category: "subscriptions", actor: "integration@example.test", createRule: false });
+  await repository!.setTransactionCategory({ transactionId: pairIn!.id, category: "transfer", actor: "integration@example.test", createRule: false });
+  await storeTransferRule(700, "equals", "kept review", "excluded");
+  const stored = () => admin!`select id, category, category_origin, category_rule_id, transfer_group_id, transfer_disposition, transfer_origin
+    from tools.money_transactions order by id`;
+  const before = await stored();
+  expect(before.filter((row) => row.category_origin === "manual").map((row) => row.category).sort()).toEqual(["gifts", "subscriptions", "transfer"]);
+  const counts = { importCount: 1, transactionCount: 3, linkedPairCount: 1 };
+  await expect(repository!.reimportAll()).resolves.toEqual(counts);
+  expect(await stored()).toEqual(before);
+  await expect(repository!.reimportAll()).resolves.toEqual(counts);
+  expect(await stored()).toEqual(before);
 });
 
 it.skipIf(!repository || !admin)("links top-ups and excludes one-sided currency exchanges from transfer review", async () => {
@@ -683,6 +720,227 @@ it.skipIf(!repository || !admin)("categorizes transfers reviewed as spending and
   expect((await stored())[0]).toEqual({ category: "housing", category_origin: "rule" });
 });
 
+it.skipIf(!repository || !admin)("records transfer results that the rules write as automatic", async () => {
+  await commitCash(repository!, cash([
+    "Transfer\tCurrent\t2026-07-01 12:00:00\t2026-07-01 12:00:00\tOrigin pair\t-12\t0\tEUR\tCOMPLETED\t88",
+    "Transfer\tSavings\t2026-07-01 12:00:00\t2026-07-01 12:00:00\tOrigin pair\t12\t0\tEUR\tCOMPLETED\t12",
+    "Transfer\tCurrent\t2026-07-10 12:00:00\t2026-07-10 12:00:00\tOrigin rule\t-30\t0\tEUR\tCOMPLETED\t58",
+    "Transfer\tCurrent\t2026-07-11 12:00:00\t2026-07-11 12:00:00\tOrigin zero\t0\t0\tEUR\tCOMPLETED\t58",
+    "Exchange\tCurrent\t2026-07-12 12:00:00\t2026-07-12 12:00:00\tOrigin exchange\t-8\t0\tEUR\tCOMPLETED\t50"
+  ]), "origins.tsv");
+  const state = await transferState("Origin");
+  expect(state).toEqual([
+    { description: "Origin exchange", amount: -800, groupId: null, disposition: "excluded", origin: "automatic" },
+    { description: "Origin pair", amount: -1_200, groupId: expect.any(String), disposition: "internal_transfer", origin: "automatic" },
+    { description: "Origin pair", amount: 1_200, groupId: state[1]?.groupId, disposition: "internal_transfer", origin: "automatic" },
+    { description: "Origin rule", amount: -3_000, groupId: null, disposition: "spend", origin: "automatic" },
+    { description: "Origin zero", amount: 0, groupId: null, disposition: "excluded", origin: "automatic" }
+  ]);
+});
+
+it.skipIf(!repository || !admin).each([null, "manual"] as const)("keeps legacy decisions and mixed groups through a reimport (%s member)", async (origin) => {
+  await commitCash(repository!, cash([
+    "Transfer\tCurrent\t2026-08-01 12:00:00\t2026-08-01 12:00:00\tLegacy pair\t-40\t0\tEUR\tCOMPLETED\t60",
+    "Transfer\tSavings\t2026-08-01 12:00:00\t2026-08-01 12:00:00\tLegacy pair\t40\t0\tEUR\tCOMPLETED\t40",
+    "Transfer\tCurrent\t2026-08-10 12:00:00\t2026-08-10 12:00:00\tLegacy mixed\t-15\t0\tEUR\tCOMPLETED\t45",
+    "Transfer\tSavings\t2026-08-10 12:00:00\t2026-08-10 12:00:00\tLegacy mixed\t15\t0\tEUR\tCOMPLETED\t55",
+    "Transfer\tCurrent\t2026-08-20 12:00:00\t2026-08-20 12:00:00\tLegacy single\t-20\t0\tEUR\tCOMPLETED\t25"
+  ]), "legacy.tsv");
+  await admin!`update tools.money_transactions set transfer_origin = null
+    where description in ('Legacy pair', 'Legacy single')`;
+  await admin!`update tools.money_transactions set transfer_origin = ${origin} where description = 'Legacy mixed' and amount_minor > 0`;
+  await storeTransferRule(700, "starts_with", "legacy", "income");
+  const before = await transferState("Legacy");
+  expect(before.map(({ groupId, ...row }) => ({ ...row, grouped: groupId !== null }))).toEqual([
+    { description: "Legacy mixed", amount: -1_500, disposition: "internal_transfer", origin: "automatic", grouped: true },
+    { description: "Legacy mixed", amount: 1_500, disposition: "internal_transfer", origin, grouped: true },
+    { description: "Legacy pair", amount: -4_000, disposition: "internal_transfer", origin: null, grouped: true },
+    { description: "Legacy pair", amount: 4_000, disposition: "internal_transfer", origin: null, grouped: true },
+    { description: "Legacy single", amount: -2_000, disposition: "spend", origin: null, grouped: false }
+  ]);
+
+  await repository!.reimportAll();
+  expect(await transferState("Legacy")).toEqual(before);
+  await repository!.reimportAll();
+  expect(await transferState("Legacy")).toEqual(before);
+});
+
+it.skipIf(!repository || !admin).each([false, true])("keeps a confirmed pair that a reimport would no longer link (confirmed: %s)", async (confirmed) => {
+  await commitCash(repository!, cash([
+    "Transfer\tCurrent\t2026-09-01 12:00:00\t2026-09-01 12:00:00\tConfirm in\t90\t0\tEUR\tCOMPLETED\t190",
+    "Transfer\tSavings\t2026-09-02 12:00:00\t2026-09-02 12:00:00\tConfirm out\t-90\t0\tEUR\tCOMPLETED\t10"
+  ]), "confirm.tsv");
+  await commitCash(repository!, cash([
+    "Transfer\tCurrent\t2026-09-03 12:00:00\t2026-09-03 12:00:00\tConfirm other in\t90\t0\tEUR\tCOMPLETED\t280"
+  ]), "confirm-other.tsv");
+  const [linkedIn, other, linkedOut] = await transferState("Confirm");
+  expect(linkedIn).toMatchObject({ groupId: expect.any(String), disposition: "internal_transfer", origin: "automatic" });
+  expect(linkedOut).toMatchObject({ groupId: linkedIn!.groupId, disposition: "internal_transfer", origin: "automatic" });
+  expect(other).toMatchObject({ groupId: null, disposition: "refund", origin: "automatic" });
+  if (confirmed) await repository!.setTransferDisposition({ transactionId: await transactionId("Confirm out"), disposition: "internal_transfer" });
+
+  await repository!.reimportAll();
+  const confirmedPair = { groupId: linkedIn!.groupId, disposition: "internal_transfer", origin: "manual" };
+  expect(await transferState("Confirm")).toEqual([
+    { description: "Confirm in", amount: 9_000, ...(confirmed ? confirmedPair : { groupId: null, disposition: "refund", origin: "automatic" }) },
+    { description: "Confirm other in", amount: 9_000, groupId: null, disposition: "refund", origin: "automatic" },
+    { description: "Confirm out", amount: -9_000, ...(confirmed ? confirmedPair : { groupId: null, disposition: "spend", origin: "automatic" }) }
+  ]);
+});
+
+it.skipIf(!repository || !admin)("records a split as manual, resets its counterpart, and keeps the split through a reimport", async () => {
+  await commitCash(repository!, cash([
+    "Transfer\tCurrent\t2026-10-01 12:00:00\t2026-10-01 12:00:00\tSplit inflow\t60\t0\tEUR\tCOMPLETED\t160",
+    "Transfer\tSavings\t2026-10-02 12:00:00\t2026-10-02 12:00:00\tSplit outflow\t-60\t0\tEUR\tCOMPLETED\t40"
+  ]), "split.tsv");
+  const [inflow, outflow] = await transferState("Split");
+  expect(inflow).toMatchObject({ groupId: expect.any(String), disposition: "internal_transfer", origin: "automatic" });
+  expect(outflow).toMatchObject({ groupId: inflow!.groupId, disposition: "internal_transfer", origin: "automatic" });
+
+  await repository!.setTransferDisposition({ transactionId: await transactionId("Split inflow"), disposition: "refund" });
+  const split = { description: "Split inflow", amount: 6_000, groupId: null, disposition: "refund", origin: "manual" };
+  expect(await transferState("Split")).toEqual([split, { description: "Split outflow", amount: -6_000, groupId: null, disposition: null, origin: null }]);
+  await repository!.reimportAll();
+  expect(await transferState("Split")).toEqual([split, { description: "Split outflow", amount: -6_000, groupId: null, disposition: "spend", origin: "automatic" }]);
+});
+
+it.skipIf(!repository || !admin)("clears a confirmed pair when an import deletion removes one of its rows", async () => {
+  await admin!`delete from tools.money_transfer_rules where source_type = 'Transfer'`;
+  const removed = await commitCash(repository!, cash([
+    "Transfer\tCurrent\t2026-11-01 12:00:00\t2026-11-01 12:00:00\tMove out\t-50\t0\tEUR\tCOMPLETED\t50"
+  ]), "move-out.tsv");
+  await commitCash(repository!, cash([
+    "Transfer\tSavings\t2026-11-02 12:00:00\t2026-11-02 12:00:00\tMove in\t50\t0\tEUR\tCOMPLETED\t50"
+  ]), "move-in.tsv");
+  await repository!.setTransferDisposition({ transactionId: await transactionId("Move in"), disposition: "internal_transfer" });
+  const [moveIn, moveOut] = await transferState("Move");
+  expect(moveIn).toMatchObject({ groupId: expect.any(String), disposition: "internal_transfer", origin: "manual" });
+  expect(moveOut).toMatchObject({ groupId: moveIn!.groupId, disposition: "internal_transfer", origin: "manual" });
+
+  await repository!.deleteImport(removed.id);
+  expect(await transferState("Move")).toEqual([{ description: "Move in", amount: 5_000, groupId: null, disposition: null, origin: null }]);
+  await storeTransferRule(700, "equals", "move in", "income");
+  await repository!.reimportAll();
+  expect(await transferState("Move")).toEqual([{ description: "Move in", amount: 5_000, groupId: null, disposition: "income", origin: "automatic" }]);
+});
+
+it.skipIf(!repository || !admin)("records bulk transfer review as manual and keeps it through a reimport", async () => {
+  await admin!`delete from tools.money_transfer_rules where source_type = 'Transfer'`;
+  await storeTransferRule(700, "equals", "bulk three", "spend");
+  await commitCash(repository!, cash([
+    "Transfer\tCurrent\t2026-12-01 12:00:00\t2026-12-01 12:00:00\tBulk one\t-6\t0\tEUR\tCOMPLETED\t94",
+    "Transfer\tCurrent\t2026-12-02 12:00:00\t2026-12-02 12:00:00\tBulk two\t-7\t0\tEUR\tCOMPLETED\t87",
+    "Transfer\tCurrent\t2026-12-03 12:00:00\t2026-12-03 12:00:00\tBulk three\t-8\t0\tEUR\tCOMPLETED\t79"
+  ]), "bulk.tsv");
+  const transactionIds = [await transactionId("Bulk one"), await transactionId("Bulk two"), await transactionId("Bulk three")];
+  expect(await repository!.setTransferDispositions({ transactionIds, disposition: "excluded" })).toEqual({ affectedCount: 2 });
+  const one = { description: "Bulk one", amount: -600, groupId: null, disposition: "excluded", origin: "manual" };
+  const two = { description: "Bulk two", amount: -700, groupId: null, disposition: "excluded", origin: "manual" };
+  expect(await transferState("Bulk")).toEqual([one, { description: "Bulk three", amount: -800, groupId: null, disposition: "spend", origin: "automatic" }, two]);
+
+  await storeTransferRule(800, "starts_with", "bulk", "income");
+  await repository!.reimportAll();
+  expect(await transferState("Bulk")).toEqual([one, { description: "Bulk three", amount: -800, groupId: null, disposition: "income", origin: "automatic" }, two]);
+});
+
+it.skipIf(!repository || !admin)("keeps a removed rule's results through imports and replays until a reimport", async () => {
+  await admin!`delete from tools.money_transfer_rules where source_type = 'Transfer'`;
+  const broker = cash(["Transfer\tCurrent\t2027-01-04 12:00:00\t2027-01-04 12:00:00\tTo Broker Account\t-30\t0\tEUR\tCOMPLETED\t70"]);
+  await commitCash(repository!, broker, "broker.tsv");
+  const rule = { provider: "revolut", sourceType: "Transfer", descriptionMatch: "starts_with", matchValue: "to broker", amountSign: "negative", disposition: "excluded", note: "Broker deposits" } as const;
+  expect(await repository!.previewTransferRule(rule)).toMatchObject({ matchCount: 1 });
+  expect(await repository!.createTransferRule({ ...rule, actor: "integration@example.test", expectedMatchCount: 1 })).toEqual({ affectedCount: 1 });
+  const [stored] = (await repository!.readLedgerSnapshot("review")).transferRules;
+  expect(stored).toMatchObject({ note: "Broker deposits" });
+  const excluded = { description: "To Broker Account", amount: -3_000, groupId: null, disposition: "excluded", origin: "automatic" };
+
+  const preview = await repository!.previewTransferRule(rule);
+  expect(preview.matchCount).toBe(0);
+  await repository!.reimportAll();
+  expect(await transferState("To Broker")).toEqual([excluded]);
+  expect(await repository!.previewTransferRule(rule)).toEqual(preview);
+
+  expect(await repository!.deleteTransferRule(stored!.id)).toBe(true);
+  await commitCash(repository!, cash(["Transfer\tCurrent\t2027-01-05 12:00:00\t2027-01-05 12:00:00\tTo Broker Later\t-10\t0\tEUR\tCOMPLETED\t60"]), "broker-later.tsv");
+  expect((await commitCash(repository!, broker, "broker.tsv")).replay).toBe(true);
+  const later = { description: "To Broker Later", amount: -1_000, groupId: null, disposition: null, origin: null };
+  expect(await transferState("To Broker")).toEqual([excluded, later]);
+  expect(await repository!.previewTransferRule(rule)).toMatchObject({ matchCount: 1 });
+
+  await repository!.reimportAll();
+  expect(await transferState("To Broker")).toEqual([{ ...excluded, disposition: null, origin: null }, later]);
+  expect(await repository!.previewTransferRule(rule)).toMatchObject({ matchCount: 2 });
+  await expect(repository!.createTransferRule({ ...rule, actor: "integration@example.test", expectedMatchCount: 1 })).rejects.toThrow("Preview the rule again");
+  expect(await repository!.createTransferRule({ ...rule, actor: "integration@example.test", expectedMatchCount: 2 })).toEqual({ affectedCount: 2 });
+});
+
+it.skipIf(!repository || !admin)("leaves stored state unchanged when reimports repeat under unchanged rules", async () => {
+  await commitCash(repository!, cash([
+    "Transfer\tCurrent\t2027-02-01 12:00:00\t2027-02-01 12:00:00\tRepeat pair\t-70\t0\tEUR\tCOMPLETED\t30",
+    "Transfer\tSavings\t2027-02-01 12:00:00\t2027-02-01 12:00:00\tRepeat pair\t70\t0\tEUR\tCOMPLETED\t70",
+    "Transfer\tCurrent\t2027-02-10 12:00:00\t2027-02-10 12:00:00\tRepeat rule\t-15\t0\tEUR\tCOMPLETED\t15",
+    "Transfer\tCurrent\t2027-02-11 12:00:00\t2027-02-11 12:00:00\tRepeat manual\t20\t0\tEUR\tCOMPLETED\t35",
+    "Card Payment\tCurrent\t2027-02-12 12:00:00\t2027-02-12 12:00:00\tRepeat shop\t-5\t0\tEUR\tCOMPLETED\t30",
+    "Card Payment\tCurrent\t2027-02-13 12:00:00\t2027-02-13 12:00:00\tRepeat shop\t-4\t0\tEUR\tCOMPLETED\t26"
+  ]), "repeat.tsv");
+  await repository!.setTransferDisposition({ transactionId: await transactionId("Repeat manual"), disposition: "income" });
+  await repository!.setTransactionCategory({ transactionId: await transactionId("Repeat shop"), category: "groceries", actor: "integration@example.test", createRule: true });
+  const stored = () => admin!`select id, transfer_group_id::text transfer_group_id, transfer_disposition, transfer_origin, category, category_origin, category_rule_id::text category_rule_id
+    from tools.money_transactions order by id`;
+  const before = await stored();
+  const [pairOut, pairIn] = await transferState("Repeat pair");
+  expect(pairOut).toMatchObject({ groupId: expect.any(String), origin: "automatic" });
+  expect(pairIn).toMatchObject({ groupId: pairOut!.groupId, origin: "automatic" });
+  expect(await transferState("Repeat manual")).toEqual([{ description: "Repeat manual", amount: 2_000, groupId: null, disposition: "income", origin: "manual" }]);
+  expect(before.map((row) => row.category_origin).sort()).toEqual(["manual", "rule", "source", "source", "source", "source"]);
+
+  await repository!.reimportAll();
+  const first = await stored();
+  await repository!.reimportAll();
+  expect(await stored()).toEqual(first);
+  expect(first).toEqual(before);
+});
+
+it.skipIf(!repository || !admin).each(["review", "reimport"] as const)("keeps a manual review that serializes with a reimport (%s first)", async (first) => {
+  await commitCash(repository!, cash([
+    "Transfer\tCurrent\t2027-03-01 12:00:00\t2027-03-01 12:00:00\tOrdered review\t-20\t0\tEUR\tCOMPLETED\t80"
+  ]), "ordered.tsv");
+  await storeTransferRule(700, "equals", "ordered review", "internal_transfer");
+  const id = await transactionId("Ordered review");
+  const review = () => repository!.setTransferDisposition({ transactionId: id, disposition: "excluded" });
+  const reimport = () => repository!.reimportAll();
+  await inCategoryRuleLockOrder(first === "review" ? [review, reimport] : [reimport, review]);
+  expect(await transferState("Ordered review")).toEqual([{ description: "Ordered review", amount: -2_000, groupId: null, disposition: "excluded", origin: "manual" }]);
+});
+
+it.skipIf(!repository || !admin).each(["delete", "reimport"] as const)("serializes transfer rule deletion with a reimport (%s first)", async (first) => {
+  await admin!`delete from tools.money_transfer_rules where source_type = 'Transfer'`;
+  await commitCash(repository!, cash([
+    "Transfer\tCurrent\t2027-04-01 12:00:00\t2027-04-01 12:00:00\tOrdered broker\t-30\t0\tEUR\tCOMPLETED\t70"
+  ]), "ordered-broker.tsv");
+  const rule = { provider: "revolut", sourceType: "Transfer", descriptionMatch: "equals", matchValue: "ordered broker", amountSign: "negative", disposition: "excluded" } as const;
+  expect(await repository!.createTransferRule({ ...rule, actor: "integration@example.test", expectedMatchCount: 1 })).toEqual({ affectedCount: 1 });
+  const [stored] = (await repository!.readLedgerSnapshot("review")).transferRules;
+  expect(stored).toMatchObject({ matchValue: "ordered broker", disposition: "excluded" });
+  const excluded = { description: "Ordered broker", amount: -3_000, groupId: null, disposition: "excluded", origin: "automatic" };
+  expect(await transferState("Ordered broker")).toEqual([excluded]);
+
+  const remove = async () => expect(await repository!.deleteTransferRule(stored!.id)).toBe(true);
+  const reimport = async () => expect(await repository!.reimportAll()).toEqual({ importCount: 1, transactionCount: 1, linkedPairCount: 0 });
+  await inCategoryRuleLockOrder(first === "delete" ? [remove, reimport] : [reimport, remove]);
+
+  const unresolved = { ...excluded, disposition: null, origin: null };
+  expect(await transferState("Ordered broker")).toEqual([first === "delete" ? unresolved : excluded]);
+  const snapshot = await repository!.readLedgerSnapshot("review");
+  expect(snapshot.transferRules).not.toContainEqual(expect.objectContaining({ id: stored!.id }));
+  expect(snapshot.transferReview).toMatchObject({ unresolvedPositiveCount: 0, unresolvedNegativeCount: first === "delete" ? 1 : 0 });
+  expect(await repository!.previewTransferRule(rule)).toMatchObject({ matchCount: first === "delete" ? 1 : 0 });
+
+  await reimport();
+  expect(await transferState("Ordered broker")).toEqual([unresolved]);
+  expect(await repository!.readReviewCounts()).toMatchObject({ transfers: 1 });
+});
+
 function cash(rows: string[]) {
   return Buffer.from(["Type\tProduct\tStarted Date\tCompleted Date\tDescription\tAmount\tFee\tCurrency\tState\tBalance", ...rows].join("\r\n"));
 }
@@ -692,4 +950,45 @@ async function commitCash(target: MoneyRepository, source: Buffer, filename: str
   return target.commitImport({ digest: parsed.digest, format: parsed.format, filename, bytes: source.byteLength,
     rowCount: parsed.rowCount, actor: "integration@example.test", transactions: parsed.transactions,
     investmentEvents: parsed.investmentEvents, balanceSnapshots: parsed.balanceSnapshots, warnings: parsed.warnings });
+}
+
+function storeTransferRule(priority: number, match: string, value: string, disposition: string) {
+  return admin!`insert into tools.money_transfer_rules (id, priority, provider, source_type, description_match, match_value, amount_sign, disposition, created_at, updated_at, created_by)
+    values (gen_random_uuid(), ${priority}, 'revolut', 'Transfer', ${match}, ${value}, 'any', ${disposition}, now(), now(), 'fixture')`;
+}
+
+async function transactionId(description: string) {
+  const [row] = await admin!<{ id: string }[]>`select id::text id from tools.money_transactions where description = ${description} order by local_date, id limit 1`;
+  if (!row) throw new Error(`No transaction is described as ${description}.`);
+  return row.id;
+}
+
+function transferState(descriptionPrefix: string) {
+  return admin!<{ description: string; amount: number; groupId: string | null; disposition: string | null; origin: string | null }[]>`select description,
+      amount_minor::int amount, transfer_group_id::text "groupId", transfer_disposition disposition, transfer_origin origin
+    from tools.money_transactions where description like ${`${descriptionPrefix}%`} order by description collate "C", amount_minor`;
+}
+
+async function inCategoryRuleLockOrder(operations: readonly (() => Promise<unknown>)[]) {
+  const started: Promise<unknown>[] = [];
+  const failures: unknown[] = [];
+  try {
+    await admin!.begin(async (tx) => {
+      await tx`lock table tools.money_category_rules in share row exclusive mode`;
+      const queued = async () => (await tx<{ count: number }[]>`select count(*)::int count from pg_locks
+        where locktype = 'relation' and relation = 'tools.money_category_rules'::regclass and not granted
+          and database = (select oid from pg_database where datname = current_database())`)[0]!.count;
+      for (const operation of operations) {
+        started.push(operation().catch((error: unknown) => { failures.push(error); }));
+        for (let attempt = 0; await queued() < started.length; attempt += 1) {
+          if (failures.length > 0) throw failures[0];
+          if (attempt === 500) throw new Error("A Money writer did not queue on the category rule lock.");
+          await delay(10);
+        }
+      }
+    });
+  } finally {
+    await Promise.all(started);
+  }
+  if (failures.length > 0) throw failures[0];
 }

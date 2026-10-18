@@ -36,6 +36,6 @@
     "typecheck:status": "pnpm --dir services/tools/status run typecheck",
     "typecheck:dashboard": "pnpm --dir services/tools/dashboard run typecheck",
     "validate": "node scripts/validate-tracked-files.mjs",
-    "verify": "pnpm run validate && pnpm run typecheck && pnpm run test"
+    "verify": "pnpm run validate && node --experimental-strip-types services/tools/test/runtime/run.ts workspace"
   }
 }
