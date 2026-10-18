@@ -971,18 +971,24 @@ function transferState(descriptionPrefix: string) {
 
 async function inCategoryRuleLockOrder(operations: readonly (() => Promise<unknown>)[]) {
   const started: Promise<unknown>[] = [];
-  await admin!.begin(async (tx) => {
-    await tx`lock table tools.money_category_rules in share row exclusive mode`;
-    const queued = async () => (await tx<{ count: number }[]>`select count(*)::int count from pg_locks
-      where locktype = 'relation' and relation = 'tools.money_category_rules'::regclass and not granted
-        and database = (select oid from pg_database where datname = current_database())`)[0]!.count;
-    for (const operation of operations) {
-      started.push(operation());
-      for (let attempt = 0; await queued() < started.length; attempt += 1) {
-        if (attempt === 500) throw new Error("A Money writer did not queue on the category rule lock.");
-        await delay(10);
+  const failures: unknown[] = [];
+  try {
+    await admin!.begin(async (tx) => {
+      await tx`lock table tools.money_category_rules in share row exclusive mode`;
+      const queued = async () => (await tx<{ count: number }[]>`select count(*)::int count from pg_locks
+        where locktype = 'relation' and relation = 'tools.money_category_rules'::regclass and not granted
+          and database = (select oid from pg_database where datname = current_database())`)[0]!.count;
+      for (const operation of operations) {
+        started.push(operation().catch((error: unknown) => { failures.push(error); }));
+        for (let attempt = 0; await queued() < started.length; attempt += 1) {
+          if (failures.length > 0) throw failures[0];
+          if (attempt === 500) throw new Error("A Money writer did not queue on the category rule lock.");
+          await delay(10);
+        }
       }
-    }
-  });
-  await Promise.all(started);
+    });
+  } finally {
+    await Promise.all(started);
+  }
+  if (failures.length > 0) throw failures[0];
 }
