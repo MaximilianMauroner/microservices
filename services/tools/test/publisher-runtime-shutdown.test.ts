@@ -16,8 +16,10 @@ describe("Publisher runtime shutdown", () => {
     const source = await readFile(new URL("../src/runtime.ts", import.meta.url), "utf8");
     const stop = source.slice(source.indexOf("const stop = async () =>"), source.indexOf("event: \"platform.runtime_ready\""));
 
-    expect(stop.indexOf("activityTracker.waitForIdle()"))
-      .toBeLessThan(stop.indexOf("Object.values(services).map((service) => service.close())"));
+    const drain = stop.indexOf("activityTracker.waitForIdle()");
+    const close = stop.indexOf("Object.values(services).map((service) => service.close())");
+    expect(drain).toBeGreaterThanOrEqual(0);
+    expect(close).toBeGreaterThan(drain);
     expect(stop.match(/await Promise\.all\(/g)).toHaveLength(2);
   });
 });
