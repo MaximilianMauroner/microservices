@@ -12,6 +12,7 @@ export default defineConfig({
     allowOnly: false,
     passWithNoTests: false,
     retry: 0,
+    testTimeout: 15_000,
     testNamePattern: "",
   },
 });
