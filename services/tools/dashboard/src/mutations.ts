@@ -24,19 +24,6 @@ export function addGroup(
   return { ...catalog, groups: [...catalog.groups, group] };
 }
 
-export function replaceGroup(
-  catalog: CatalogDocument,
-  id: string,
-  group: CatalogGroup
-): CatalogDocument {
-  if (group.id !== id) throw new MutationError("Group ID cannot change");
-  requireGroup(catalog, id);
-  return {
-    ...catalog,
-    groups: catalog.groups.map((current) => (current.id === id ? group : current))
-  };
-}
-
 export function deleteGroup(
   catalog: CatalogDocument,
   id: string
@@ -60,20 +47,6 @@ export function addEntry(
   }
   requireGroup(catalog, entry.groupId);
   return { ...catalog, entries: [...catalog.entries, entry] };
-}
-
-export function replaceEntry(
-  catalog: CatalogDocument,
-  id: string,
-  entry: CatalogEntry
-): CatalogDocument {
-  if (entry.id !== id) throw new MutationError("Entry ID cannot change");
-  requireEntry(catalog, id);
-  requireGroup(catalog, entry.groupId);
-  return {
-    ...catalog,
-    entries: catalog.entries.map((current) => (current.id === id ? entry : current))
-  };
 }
 
 export function deleteEntry(
