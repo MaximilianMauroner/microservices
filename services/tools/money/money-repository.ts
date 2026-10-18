@@ -649,9 +649,12 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
       });
     },
 
-    async deleteTransferRule(ruleId) {
-      const deleted = await sql`delete from tools.money_transfer_rules where id = ${ruleId} returning id`;
-      return deleted.length === 1;
+    deleteTransferRule(ruleId) {
+      return sql.begin(async (tx) => {
+        await lockCategoryRules(tx);
+        const deleted = await tx`delete from tools.money_transfer_rules where id = ${ruleId} returning id`;
+        return deleted.length === 1;
+      });
     },
 
     async setTransferDisposition(input) {
