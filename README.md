@@ -67,6 +67,10 @@ the same loopback endpoint as the browser. The command never changes a signed
 URL after signing. Do not export database or storage endpoints into this command.
 It rejects inherited data endpoints.
 
+MinIO builds from a pinned upstream source revision because its community
+container images are no longer published. Docker supplies the Go compiler.
+Compose builds one service at a time and caches the source build for reuse.
+
 After both `/live` and `/health` succeed, the command prints a redacted JSON
 manifest with the Tools, storage, storage console, and administration origins.
 The private run directory contains `manifest.json`, the generated override,
