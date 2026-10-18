@@ -16,7 +16,9 @@ services:
       retries: 30
 
   minio:
-    image: minio/minio:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.minio.local
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
       MINIO_ROOT_USER: local-minio
