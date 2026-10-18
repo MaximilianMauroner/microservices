@@ -914,6 +914,34 @@ it.skipIf(!repository || !admin).each(["review", "reimport"] as const)("keeps a 
   expect(await transferState("Ordered review")).toEqual([{ description: "Ordered review", amount: -2_000, groupId: null, disposition: "excluded", origin: "manual" }]);
 });
 
+it.skipIf(!repository || !admin).each(["delete", "reimport"] as const)("serializes transfer rule deletion with a reimport (%s first)", async (first) => {
+  await admin!`delete from tools.money_transfer_rules where source_type = 'Transfer'`;
+  await commitCash(repository!, cash([
+    "Transfer\tCurrent\t2027-04-01 12:00:00\t2027-04-01 12:00:00\tOrdered broker\t-30\t0\tEUR\tCOMPLETED\t70"
+  ]), "ordered-broker.tsv");
+  const rule = { provider: "revolut", sourceType: "Transfer", descriptionMatch: "equals", matchValue: "ordered broker", amountSign: "negative", disposition: "excluded" } as const;
+  expect(await repository!.createTransferRule({ ...rule, actor: "integration@example.test", expectedMatchCount: 1 })).toEqual({ affectedCount: 1 });
+  const [stored] = (await repository!.readLedgerSnapshot("review")).transferRules;
+  expect(stored).toMatchObject({ matchValue: "ordered broker", disposition: "excluded" });
+  const excluded = { description: "Ordered broker", amount: -3_000, groupId: null, disposition: "excluded", origin: "automatic" };
+  expect(await transferState("Ordered broker")).toEqual([excluded]);
+
+  const remove = async () => expect(await repository!.deleteTransferRule(stored!.id)).toBe(true);
+  const reimport = async () => expect(await repository!.reimportAll()).toEqual({ importCount: 1, transactionCount: 1, linkedPairCount: 0 });
+  await inCategoryRuleLockOrder(first === "delete" ? [remove, reimport] : [reimport, remove]);
+
+  const unresolved = { ...excluded, disposition: null, origin: null };
+  expect(await transferState("Ordered broker")).toEqual([first === "delete" ? unresolved : excluded]);
+  const snapshot = await repository!.readLedgerSnapshot("review");
+  expect(snapshot.transferRules).not.toContainEqual(expect.objectContaining({ id: stored!.id }));
+  expect(snapshot.transferReview).toMatchObject({ unresolvedPositiveCount: 0, unresolvedNegativeCount: first === "delete" ? 1 : 0 });
+  expect(await repository!.previewTransferRule(rule)).toMatchObject({ matchCount: first === "delete" ? 1 : 0 });
+
+  await reimport();
+  expect(await transferState("Ordered broker")).toEqual([unresolved]);
+  expect(await repository!.readReviewCounts()).toMatchObject({ transfers: 1 });
+});
+
 function cash(rows: string[]) {
   return Buffer.from(["Type\tProduct\tStarted Date\tCompleted Date\tDescription\tAmount\tFee\tCurrency\tState\tBalance", ...rows].join("\r\n"));
 }
