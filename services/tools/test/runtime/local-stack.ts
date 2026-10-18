@@ -223,7 +223,7 @@ export async function withLocalStack(
       }
       return outcome.stdout;
     }
-    const composeArgs = ["--host", dockerHost, "compose", "--project-name", owner.project, "--env-file", envFile, "-f", join(root, "compose.yaml")];
+    const composeArgs = ["--host", dockerHost, "compose", "--parallel", "1", "--project-name", owner.project, "--env-file", envFile, "-f", join(root, "compose.yaml")];
     const compose = (executor: CommandExecutor, args: string[], step: string, deadlineMs: number, commandSignal?: AbortSignal) =>
       command(executor, "docker", [...composeArgs, ...args], step, deadlineMs, commandEnv, commandSignal);
     const version = (await compose(options.commands.work, ["version", "--short"], "compose-version", 10_000, signal)).trim().replace(/^v/, "");
