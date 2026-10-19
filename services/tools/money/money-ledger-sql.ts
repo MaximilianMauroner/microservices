@@ -36,8 +36,6 @@ export function ledgerContributions(sql: Sql | TransactionSql) {
       when effective_flow not in ('spend', 'refund') then 0
       when effective_flow = 'refund' or flow_kind = 'transfer' then -base_amount_minor
       else abs(base_amount_minor)
-    end category_spend_minor,
-    case when effective_flow in ('income', 'investment_income') then base_amount_minor else 0 end income_minor,
-    base_fee_minor fees_minor, base_tax_minor taxes_minor
+    end category_spend_minor
     from classified`;
 }
