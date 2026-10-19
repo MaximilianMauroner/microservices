@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -121,6 +121,16 @@ describe("owned local stack", () => {
       expect(override).not.toContain('MINIO_API_CORS_ALLOW_ORIGIN: "*"');
     });
     expect(result).toMatchObject({ kind: "completed", cleanup: "stopped" });
+  });
+
+  it("runs the host from a private copy of the build so a later checkout build cannot remove its files", async () => {
+    const setup = await fixture();
+    expect((await withLocalStack(setup.options, async () => {})).kind).toBe("completed");
+    const build = setup.calls.findIndex((spec) => spec.args.at(-1) === "build");
+    const copy = setup.calls.findIndex((spec) => spec.command === "cp");
+    expect(copy).toBeGreaterThan(build);
+    expect(setup.calls[copy]!.args).toEqual(["-R", join(await realpath(setup.options.repository!), "services/tools/.output"), join(await realpath(setup.options.directory), "output")]);
+    expect(setup.calls.find((spec) => spec.args[0]?.endsWith("index.mjs"))!.args[0]).toBe(join(setup.calls[copy]!.args[2]!, "server/index.mjs"));
   });
 
   it.each(["health", "storage"])("retains the lock when the cancelled %s probe cannot prove release", async (phase) => {

@@ -298,10 +298,13 @@ export async function withLocalStack(
     await compose(options.commands.work, ["up", "--detach", "--build", "--wait", "--wait-timeout", "90", ...dependencies], "dependencies", 600_000, signal);
     for (const service of ["postgres-migrate", "minio-seed"]) await compose(options.commands.work, ["run", "--build", "--no-deps", "--rm", service], service, 600_000, signal);
     await command(options.commands.work, "pnpm", ["--dir", "services/tools", "run", "build"], "build", 600_000, hostEnv, signal);
+    const output = join(directory, "output");
+    await rm(output, { recursive: true, force: true });
+    await command(options.commands.work, "cp", ["-R", join(root, "services/tools/.output"), output], "copy-build", 60_000, commandEnv, signal);
     const expiresAt = Date.now() + options.lifetimeMs;
     try {
       host = options.commands.work.execute({
-        command: process.execPath, args: [join(root, "services/tools/.output/server/index.mjs")], cwd: root,
+        command: process.execPath, args: [join(output, "server/index.mjs")], cwd: root,
         env: hostEnv, deadlineMs: options.lifetimeMs, signal, redact, log: join(directory, "host.log"),
       });
     } catch (error) { ownershipUncertain = true; throw error; }
