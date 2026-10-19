@@ -152,6 +152,40 @@ it.each(["success", "failure"] as const)("refreshes the current criteria after a
   }
 });
 
+it("refreshes the current criteria after a revoke that outlasts a filter change", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const requests: Array<{ url: URL; method: string; finish: (data: ManagePageData | Response) => void }> = [];
+  vi.stubGlobal("fetch", vi.fn((path: string, init: RequestInit = {}) => path === "/health/publisher" ?
+    Promise.resolve(Response.json({ ok: true })) : new Promise<Response>((resolve) => {
+    requests.push({ url: new URL(path, "https://tools.example.test"), method: init.method ?? "GET",
+      finish: (data) => resolve(data instanceof Response ? data : Response.json(data)) });
+  })));
+  const oldProject = { ...upload, id: "b".repeat(32), filename: "old-project.txt" };
+  const work = { ...upload, id: "c".repeat(32), filename: "work.txt", project: "work" };
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const button = (text: string) => [...document.body.querySelectorAll<HTMLButtonElement>("button")].find((node) => node.textContent?.trim() === text)!;
+  try {
+    await act(async () => root.render(<ManagePage initial={{ ...initial, uploads: [upload, oldProject] }} />));
+    await act(async () => button("Revoke…").click());
+    await act(async () => button("Revoke artifact").click());
+    expect(requests.map(({ method }) => method)).toEqual(["DELETE"]);
+    const project = host.querySelector<HTMLSelectElement>('select[aria-label="Project"]')!;
+    await act(async () => { project.value = "work"; project.dispatchEvent(new Event("change", { bubbles: true })); });
+    await act(async () => requests[1]!.finish({ uploads: [work] }));
+    await act(async () => requests[0]!.finish(new Response(null, { status: 204 })));
+    expect(Object.fromEntries(requests[2]!.url.searchParams)).toMatchObject({ project: "named", projectName: "work", includeSummary: "true" });
+    await act(async () => requests[2]!.finish({ uploads: [work] }));
+    expect(host.textContent).toContain("work.txt");
+    expect(host.textContent).not.toContain("old-project.txt");
+    expect(host.textContent).toContain("loaded.txt was revoked");
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});
+
 it("shows each mobile row size and the total active storage", async () => {
   viewport.mobile = true;
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);

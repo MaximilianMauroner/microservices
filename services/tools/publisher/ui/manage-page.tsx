@@ -153,8 +153,7 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
     } finally {
       setUploads((current) => current.filter((upload) => !revoked.includes(upload.id)));
       setSelectedIds(new Set());
-      setSelectedId((current) => revoked.includes(current ?? "") ? uploads.find((upload) => !revoked.includes(upload.id))?.id : current);
-      if (revoked.length) { try { await refreshSummary(); } catch { /* Keep the successful revocations visible. */ } }
+      if (revoked.length) await refresh();
       setBusy(false);
     }
   }
@@ -198,18 +197,6 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
   async function loadOlder() {
     if (!nextCursor || busy || loadedCriteria.current !== criteriaKey) return;
     await readInventory(nextCursor);
-  }
-
-  async function refreshSummary() {
-    const response = await fetchPublisherRead(
-      "/api/external-uploads?limit=1&sort=newest&includeSummary=true",
-      { credentials: "same-origin" }
-    );
-    const payload = await readPayload<ManagePageData>(
-      response,
-      "Artifact summary could not be refreshed."
-    );
-    if (payload.summary) setSummary(payload.summary);
   }
 
   function selectProject(value: string) { setProjectFilter(value); }
@@ -306,11 +293,10 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
         credentials: "same-origin"
       });
       if (!response.ok) await readPayload(response, "Artifact could not be revoked.");
-      const remaining = uploads.filter((upload) => upload.id !== selected.id);
-      setUploads(remaining);
-      setSelectedId(remaining[0]?.id);
-      await refreshSummary();
-      setMessage({ text: `${selected.filename} was revoked. Its capability URL no longer works.`, tone: "success" });
+      setUploads((current) => current.filter((upload) => upload.id !== selected.id));
+      if (await refresh()) {
+        setMessage({ text: `${selected.filename} was revoked. Its capability URL no longer works.`, tone: "success" });
+      }
     } catch (error) {
       setMessage({ text: errorMessage(error), tone: "error" });
     } finally {
@@ -346,7 +332,7 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
         <section className="mb-3 flex flex-wrap items-center gap-2" aria-label="Artifact filters">
           <label className="relative block w-full lg:max-w-md">
             <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-            <Input className="pl-9" value={query} onChange={(event) => { setQuery(event.currentTarget.value); }} placeholder="Search names, IDs, or projects" aria-label="Search artifacts" />
+            <Input className="pl-9" value={query} maxLength={200} onChange={(event) => { setQuery(event.currentTarget.value); }} placeholder="Search names, IDs, or projects" aria-label="Search artifacts" />
           </label>
           <div className="flex flex-wrap items-center gap-1.5">
             {([ ["all", "All"], ["html", "Plans"], ["file", "Files"] ] as const).map(([value, label]) => <button key={value} type="button" aria-pressed={kind === value} className={`rounded-full border px-3 py-1.5 text-xs ${kind === value ? "border-primary bg-primary/10 text-foreground" : "text-muted-foreground hover:bg-accent"}`} onClick={() => setKind(value)}>{label}{value === "all" ? <span className="ml-1 tabular-nums">{summary.total}</span> : null}</button>)}
