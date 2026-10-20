@@ -29,8 +29,10 @@ export async function createOwnedPostgres() {
     return {kind:'cleaned',name:'owned-fixture'};
   }}};
 }`);
-  await writeFile(join(target, "local-stack.ts"), `export async function withLocalStack(options,use) {
-    if(process.env.FIXTURE_LOCAL_BLOCKED) return {kind:'blocked',reason:'local fixture unavailable',cleanup:'not-needed'};
+  await writeFile(join(target, "local-stack.ts"), `import {appendFileSync} from 'node:fs';
+  export async function withVerificationStack(options,use) {
+    const directory=process.env.FIXTURE_DIRECTORY;
+    if(process.env.FIXTURE_LOCAL_BLOCKED) return {kind:'blocked',reason:'local fixture unavailable',cleanup:'retained',directory};
     const controller = new AbortController();
     const pending = use({manifest:{project:'identity-project',origins:{tools:'http://127.0.0.1:9'},prerequisites:{storageHttp:{kind:'passed',reason:'fixture'}}},
       environment:{ARTIFACT_S3_ENDPOINT:'http://127.0.0.1:9',ARTIFACT_S3_ACCESS_KEY_ID:'local',ARTIFACT_S3_SECRET_ACCESS_KEY:'local'},
@@ -38,11 +40,15 @@ export async function createOwnedPostgres() {
     if(process.env.FIXTURE_LOCAL_HOST_FAIL) {
       await new Promise(resolve=>setTimeout(resolve,150));
       controller.abort();
-      await pending;
-      return {kind:'failed',reason:'owned host failed',cleanup:'stopped'};
+      await pending.catch(()=>{});
+      return {kind:'failed',reason:'owned host failed',cleanup:'retained',directory};
     }
-    await pending;
-    return {kind:'completed',cleanup:process.env.FIXTURE_LOCAL_CLEANUP_FAIL?'retained':'stopped'};
+    try { await pending; } catch {
+      appendFileSync(process.env.FIXTURE_TRACE!, 'identity-retained\\n');
+      return {kind:'failed',reason:'identity contracts failed',cleanup:'retained',directory};
+    }
+    if(!process.env.FIXTURE_LOCAL_CLEANUP_FAIL) appendFileSync(process.env.FIXTURE_TRACE!, 'identity-disposed\\n');
+    return {kind:'completed',cleanup:process.env.FIXTURE_LOCAL_CLEANUP_FAIL?'retained':'disposed',directory};
   }`);
   await writeFile(join(target, "vitest-child.ts"), `import {writeFileSync} from 'node:fs';
 const phase=process.argv[2];
@@ -153,6 +159,7 @@ describe("terminal verification CLI", () => {
     expect(result.code).toBe(0);
     expect(result.record.identity).toMatchObject({ required: ["required case"], contracts: { executed: ["required case"], skipped: [] } });
     expect(result.record.cells.filter((cell: { requirement: { kind: string } }) => cell.requirement.kind.startsWith("identity-")).map((cell: { result: { kind: string } }) => cell.result.kind)).toEqual(["passed", "passed"]);
+    expect(result.trace).toContain("identity-disposed");
   });
 
   it.each(["FIXTURE_IDENTITY_EMPTY", "FIXTURE_IDENTITY_SKIP", "FIXTURE_LOCAL_BLOCKED", "FIXTURE_LOCAL_CLEANUP_FAIL"])("does not pass workspace verification with %s", async (name) => {
@@ -160,6 +167,10 @@ describe("terminal verification CLI", () => {
     expect(result.code).toBe(1);
     expect(result.record.decision.kind).not.toBe("passed");
     expect(result.record.cells.filter((cell: { requirement: { kind: string } }) => cell.requirement.kind.startsWith("identity-")).some((cell: { result: { kind: string } }) => cell.result.kind !== "passed")).toBe(true);
+    if (name === "FIXTURE_IDENTITY_SKIP") {
+      expect(result.trace).toContain("identity-retained");
+      expect(result.trace).not.toContain("identity-disposed");
+    }
   });
 
   it("cancels identity contracts when their owned host fails and keeps the fixture failure", async () => {
