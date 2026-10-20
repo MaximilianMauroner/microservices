@@ -346,7 +346,10 @@ export async function withLocalStack(
     if (ownershipUncertain) result = { ...result, kind: "failed", cleanup: "retained", reason: "A command could not prove process release. Retain active.lock and the run directory until process and Compose cleanup are confirmed." };
     if (lock) {
       await lock.close();
-      if (result.cleanup !== "retained") await rm(join(directory!, "active.lock"));
+      if (result.cleanup !== "retained") {
+        await rm(join(directory!, "output"), { recursive: true, force: true });
+        await rm(join(directory!, "active.lock"));
+      }
     }
   }
   return result;
