@@ -142,12 +142,6 @@ creation; keep redacted evidence. Do not delete shared database/bucket volumes.
 Remove owned browser downloads and recent-document entries after evidence is
 retained. Sign out any owned authenticated session and restore its preferences.
 
-## Prior evidence
-
-The [dated 2026-10-06 report](../../../../docs/verification/2026-10-06-document-share.md)
-records protocol checks and browser/setup blockers. Reuse it only when the
-source, setup, and expected results still match.
-
 ## Journey map
 
 | ID | Public actions and observable result | Source and existing checks | Prerequisites and reset |
