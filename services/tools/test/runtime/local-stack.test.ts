@@ -125,12 +125,17 @@ describe("owned local stack", () => {
 
   it("runs the host from a private copy of the build so a later checkout build cannot remove its files", async () => {
     const setup = await fixture();
-    expect((await withLocalStack(setup.options, async () => {})).kind).toBe("completed");
+    setup.respond(async (spec) => { if (spec.command === "cp") await mkdir(join(spec.args[2]!, "server"), { recursive: true }); return undefined; });
+    let copied = false;
+    const result = await withLocalStack(setup.options, async () => { copied = (await stat(join(setup.options.directory, "output/server"))).isDirectory(); });
+    expect(result).toMatchObject({ kind: "completed", cleanup: "stopped" });
+    expect(copied).toBe(true);
     const build = setup.calls.findIndex((spec) => spec.args.at(-1) === "build");
     const copy = setup.calls.findIndex((spec) => spec.command === "cp");
     expect(copy).toBeGreaterThan(build);
     expect(setup.calls[copy]!.args).toEqual(["-R", join(await realpath(setup.options.repository!), "services/tools/.output"), join(await realpath(setup.options.directory), "output")]);
     expect(setup.calls.find((spec) => spec.args[0]?.endsWith("index.mjs"))!.args[0]).toBe(join(setup.calls[copy]!.args[2]!, "server/index.mjs"));
+    await expect(stat(join(setup.options.directory, "output"))).rejects.toThrow();
   });
 
   it.each(["health", "storage"])("retains the lock when the cancelled %s probe cannot prove release", async (phase) => {
