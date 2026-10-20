@@ -63,9 +63,10 @@ The command resolves root `compose.yaml`, then creates a private port override.
 Every published port uses an unused `127.0.0.1` port. PostgreSQL, MinIO, and the
 Markdown administration mock run in Compose. Database setup and seed work use
 the same project. Tools builds and runs on the host, so signed storage URLs use
-the same loopback endpoint as the browser. The command never changes a signed
-URL after signing. Do not export database or storage endpoints into this command.
-It rejects inherited data endpoints.
+the same loopback endpoint as the browser. The host runs from a private copy of
+the build, so a later build in the checkout cannot replace its files. The
+command never changes a signed URL after signing. Do not export database or
+storage endpoints into this command. It rejects inherited data endpoints.
 
 MinIO builds from a pinned upstream source revision because its community
 container images are no longer published. Docker supplies the Go compiler.
