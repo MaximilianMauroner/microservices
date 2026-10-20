@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import postgres, { type Sql, type TransactionSql } from "postgres";
+import { effectiveTransactions, ledgerContributions } from "./money-ledger-sql.js";
 import type { MoneyTrackerSnapshot } from "./money-tracker.js";
 import { fifoRealizedGains, type MoneyRealizedGainAnalytics } from "./money-investment-domain.js";
 import { moneyDisplayDescription, moneyMerchantName, moneyTransferReviewDescription } from "./money-description.js";
@@ -11,7 +12,6 @@ import {
   inferMoneyCategory,
   revolutCashSourceKey,
   REVOLUT_CASH_FORMAT,
-  REVOLUT_SAVINGS_FORMAT,
   type MoneyBalanceSnapshotInput,
   type MoneyCategory,
   type MoneyImportFormat,
@@ -189,28 +189,6 @@ export function moneyLedgerQueriesFor(scope: MoneyLedgerScope): readonly MoneyLe
 const ACCOUNT_INSERT_CHUNK_SIZE = 1_000;
 const TRANSACTION_INSERT_CHUNK_SIZE = 2_000;
 const RELATED_INSERT_CHUNK_SIZE = 5_000;
-
-// A reverted Revolut row is a released authorization: it has no balance and never
-// moved money. A later charge with the same start time is a separate completed row,
-// so reverted rows are only left out and never cancel a completed row.
-// A Revolut savings export row is hidden when the cash export has the same movement.
-// The check builds a small id set, so callers' filters still reach the table scan.
-export function effectiveTransactions(sql: Sql | TransactionSql) {
-  return sql`with savings_duplicates as (
-    select savings.id from tools.money_transactions savings
-    join tools.money_imports savings_import on savings_import.id = savings.import_id and savings_import.format = ${REVOLUT_SAVINGS_FORMAT}
-    join tools.money_transactions cash on cash.account_id = savings.account_id
-      and cash.local_date = savings.local_date and cash.currency = savings.currency
-      and cash.balance_after_minor = savings.balance_after_minor
-      and cash.amount_minor - cash.fee_minor - cash.tax_minor = savings.amount_minor - savings.fee_minor - savings.tax_minor
-      and cash.source_type = case when savings.source_type = 'Interest' then 'Interest' else 'Transfer' end
-    join tools.money_imports cash_import on cash_import.id = cash.import_id and cash_import.format = ${REVOLUT_CASH_FORMAT}
-    where savings.status = 'completed' and cash.status = 'completed'
-  )
-  select ledger.* from tools.money_transactions ledger
-  where ledger.status = 'completed'
-    and ledger.id not in (select id from savings_duplicates)`;
-}
 
 export interface MoneyRepository {
   existingSourceKeys(transactions: readonly MoneyLedgerTransaction[]): Promise<ReadonlySet<string>>;
@@ -458,36 +436,22 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
           coalesce(monthly_contributors.income_minor, 0)::text income_minor,
           coalesce(monthly_contributors.fees_minor, 0)::text fees_minor, coalesce(monthly_contributors.taxes_minor, 0)::text taxes_minor
           from calendar left join monthly_contributors using (month_start) left join coverage using (month_start) order by calendar.month_start` : emptyRows<MonthlyRow>(),
-        needs("categoryTotals") ? sql<CategoryRow[]>`with classified as (
-          select category, base_amount_minor, flow_kind, case
-            when flow_kind = 'transfer' and transfer_group_id is not null then 'internal_transfer'
-            when flow_kind = 'transfer' then coalesce(transfer_disposition, 'unreviewed') else flow_kind end effective_flow
-          from (${effectiveTransactions(sql)}) effective where base_currency = 'EUR'
-        ) select category, coalesce(sum(case when effective_flow = 'refund' or flow_kind = 'transfer' then -base_amount_minor else abs(base_amount_minor) end), 0)::text amount_minor,
-          count(*)::text count from classified where effective_flow in ('spend', 'refund') group by category
-          order by sum(case when effective_flow = 'refund' or flow_kind = 'transfer' then -base_amount_minor else abs(base_amount_minor) end) desc` : emptyRows<CategoryRow>(),
-        needs("categoryMonths") ? sql<CategoryMonthRow[]>`with classified as (
-          select local_date, category, base_amount_minor, flow_kind, case
-            when flow_kind = 'transfer' and transfer_group_id is not null then 'internal_transfer'
-            when flow_kind = 'transfer' then coalesce(transfer_disposition, 'unreviewed') else flow_kind end effective_flow
-          from (${effectiveTransactions(sql)}) effective
-          where base_currency = 'EUR' and local_date < date_trunc('month', current_date)
-        ) select to_char(date_trunc('month', local_date), 'YYYY-MM') as month, category,
-          sum(case when effective_flow = 'refund' or flow_kind = 'transfer' then -base_amount_minor else abs(base_amount_minor) end)::text amount_minor,
-          count(*)::text count from classified where effective_flow in ('spend', 'refund')
+        needs("categoryTotals") ? sql<CategoryRow[]>`select category, coalesce(sum(category_spend_minor), 0)::text amount_minor,
+          count(*)::text count from (${ledgerContributions(sql)}) contributions
+          where base_currency = 'EUR' and effective_flow in ('spend', 'refund') group by category
+          order by sum(category_spend_minor) desc` : emptyRows<CategoryRow>(),
+        needs("categoryMonths") ? sql<CategoryMonthRow[]>`select to_char(date_trunc('month', local_date), 'YYYY-MM') as month, category,
+          sum(category_spend_minor)::text amount_minor, count(*)::text count
+          from (${ledgerContributions(sql)}) contributions
+          where base_currency = 'EUR' and local_date < date_trunc('month', current_date) and effective_flow in ('spend', 'refund')
           group by date_trunc('month', local_date), category order by date_trunc('month', local_date), category` : emptyRows<CategoryMonthRow>(),
-        needs("merchantMonths") ? sql<MerchantMonthRow[]>`with classified as (
-          select local_date, category, description, source_type, base_amount_minor, flow_kind, case
-            when flow_kind = 'transfer' and transfer_group_id is not null then 'internal_transfer'
-            when flow_kind = 'transfer' then coalesce(transfer_disposition, 'unreviewed') else flow_kind end effective_flow
-          from (${effectiveTransactions(sql)}) effective
-          where base_currency = 'EUR' and local_date < date_trunc('month', current_date)
-        ) select to_char(date_trunc('month', local_date), 'YYYY-MM') as month, category, source_type,
+        needs("merchantMonths") ? sql<MerchantMonthRow[]>`select to_char(date_trunc('month', local_date), 'YYYY-MM') as month, category, source_type,
           coalesce(nullif(trim(description), ''), 'Unknown merchant') description,
-          sum(case when effective_flow = 'refund' or flow_kind = 'transfer' then -base_amount_minor else abs(base_amount_minor) end)::text amount_minor,
-          count(*)::text count from classified where effective_flow in ('spend', 'refund')
+          sum(category_spend_minor)::text amount_minor, count(*)::text count
+          from (${ledgerContributions(sql)}) contributions
+          where base_currency = 'EUR' and local_date < date_trunc('month', current_date) and effective_flow in ('spend', 'refund')
           group by date_trunc('month', local_date), category, source_type, coalesce(nullif(trim(description), ''), 'Unknown merchant')
-          order by date_trunc('month', local_date), category, sum(case when effective_flow = 'refund' or flow_kind = 'transfer' then -base_amount_minor else abs(base_amount_minor) end) desc` : emptyRows<MerchantMonthRow>(),
+          order by date_trunc('month', local_date), category, sum(category_spend_minor) desc` : emptyRows<MerchantMonthRow>(),
         needs("categoryActivity") ? sql<ActivityRow[]>`select id, occurred_at, account_name, description, amount_minor, fee_minor, tax_minor, currency, status, source_type, flow_kind, category, category_origin, transfer_group_id, transfer_disposition from (
           select t.id, t.occurred_at, a.display_name account_name, t.description, t.amount_minor, t.fee_minor, t.tax_minor, t.currency, t.status, t.source_type, t.flow_kind, t.category, t.category_origin, t.transfer_group_id, t.transfer_disposition,
             row_number() over (partition by t.category order by t.occurred_at desc, t.source_row desc) category_rank
@@ -750,14 +714,10 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
     },
 
     async readSpendingSince(from) {
-      const rows = await sql<SpendingRow[]>`with classified as (
-          select local_date, category, description, source_type, base_amount_minor, flow_kind, case
-            when flow_kind = 'transfer' and transfer_group_id is not null then 'internal_transfer'
-            when flow_kind = 'transfer' then coalesce(transfer_disposition, 'unreviewed') else flow_kind end effective_flow
-          from (${effectiveTransactions(sql)}) effective where base_currency = 'EUR' and local_date > ${from}
-        ) select local_date::text local_date, category, description, source_type,
-          sum(case when effective_flow = 'refund' or flow_kind = 'transfer' then -base_amount_minor else abs(base_amount_minor) end)::text amount_minor
-        from classified where effective_flow in ('spend', 'refund')
+      const rows = await sql<SpendingRow[]>`select local_date::text local_date, category, description, source_type,
+          sum(category_spend_minor)::text amount_minor
+        from (${ledgerContributions(sql)}) contributions
+        where base_currency = 'EUR' and local_date > ${from} and effective_flow in ('spend', 'refund')
         group by local_date, category, description, source_type`;
       return rows.map((row) => ({
         date: row.local_date,
