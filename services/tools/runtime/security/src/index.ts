@@ -47,9 +47,7 @@ const PUBLIC_PATHS = new Set([
   "/sign-in",
   "/favicon.ico",
   "/favicon.svg",
-  "/assets/markdown-admin.js",
   "/assets/local-time.js",
-  "/assets/ops.js",
   "/assets/tools.css",
   "/assets/icons/publisher.png",
   "/assets/icons/status.png",
@@ -67,13 +65,6 @@ const PUBLIC_PATHS = new Set([
 export function classifyRoute(pathname: string, method: string): RouteAccess {
   const normalizedMethod = method.toUpperCase();
   if (PUBLIC_PATHS.has(pathname)) {
-    if (
-      (pathname === "/assets/markdown-admin.js" || pathname === "/assets/ops.js") &&
-      normalizedMethod !== "GET" &&
-      normalizedMethod !== "HEAD"
-    ) {
-      return { kind: "human-session" };
-    }
     return { kind: "public" };
   }
 
@@ -109,8 +100,8 @@ export function classifyRoute(pathname: string, method: string): RouteAccess {
   }
 
   if (
-    /^\/api\/drop\/[^/]+\/uploads(?:\/chunks(?:\/[A-Za-z0-9_-]{32}(?:\/(?:\d+|complete))?)?)?$/.test(pathname) &&
-    ["POST", "PUT", "DELETE"].includes(normalizedMethod)
+    /^\/api\/drop\/[^/]+\/uploads$/.test(pathname) &&
+    normalizedMethod === "POST"
   ) {
     return { kind: "public" };
   }
@@ -151,7 +142,6 @@ export function isArtifactPath(pathname: string): boolean {
     "/publisher",
     "/api/uploads",
     "/api/external-uploads",
-    "/api/browser-html-uploads",
     "/api/upload-links",
     "/api/drop",
     "/drop",

@@ -146,18 +146,16 @@ existing local-staging restart limit. Current Fleet HTML creation and replacemen
 sessions. The legacy multipart replacement route remains until all installed callers are
 accounted for.
 
-Browser multipart/chunk endpoints and their local staging also remain for
-already loaded browser bundles during rollout. The current React console and
-guest page use sessions for every new file. The old React chunk transport and
-its protocol-only tests were removed. Retained server chunk tests cover the
-active legacy contract.
+Browser multipart and chunk endpoints are removed. The current React console
+and guest page use sessions for every new file. The old browser page and its
+JavaScript uploader are removed. `POST /api/drop/:token/uploads` remains
+available for guest multipart uploads. The native chunk tests cover the retained
+bearer-token API.
 
-Remove browser upload compatibility after the new build is deployed, old
-bundles have aged out, and route observations confirm no calls. Remove native
-creation/chunk compatibility only after external caller owners confirm migration
-and route observations confirm no calls. Keep the legacy replacement writer until every
-declared device and harness has verified the direct client and offline or unknown
-callers are accounted for. No removal is authorized here.
+Remove native creation and chunk compatibility only after external caller owners
+confirm migration and route observations confirm no calls. Keep the native
+replacement writer until every declared device and harness has verified the
+direct client and offline or unknown callers are accounted for.
 
 The artifact recovery reader in `publisher/src/postgres-storage.ts` also accepts
 JSON strings written by the old double-encoding path. New recovery records use
