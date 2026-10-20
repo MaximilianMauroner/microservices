@@ -163,10 +163,10 @@ link as a ZIP64 archive, including after revoking that link.
 The private upload-link history loads 20 newest-first rows at a time through an
 opaque keyset cursor, with older rows available on demand.
 
-The current browser uses direct sessions for small and large files. Legacy
-browser multipart/chunk routes remain for already loaded bundles during rollout;
-the native chunk protocol remains for observed external callers. Those paths
-retain local staging and their existing two-hour session limit.
+The current browser and guest page use direct sessions for all file sizes.
+Browser multipart and chunk routes are removed. The native chunk protocol
+retains local staging and its two-hour session limit. The guest multipart
+`POST /api/drop/:token/uploads` route remains available.
 
 `GET /api/external-uploads` accepts `kind=all|html|file`, a normalized
 case-insensitive filename `q`, `expiry=all|24h|7d|persistent`, and
@@ -183,9 +183,6 @@ Recent-upload destinations on the current browser origin use an internal
 chevron and open in the current tab. Cross-origin destinations use an external
 arrow, open in a new tab with `rel=noreferrer`, and include an accessible
 new-tab announcement.
-Unversioned `/publish|uploads/app.css|app.js` aliases are private `no-store`;
-only versioned `/publish|uploads/assets/:version/app.css|app.js` responses use
-private one-year immutable caching.
 
 HTML is streamed from the private bucket with sandbox, no-referrer, no-sniff,
 and no-index headers. Delivery adds the Publisher favicon to HTML responses
