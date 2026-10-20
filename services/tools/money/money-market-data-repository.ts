@@ -3,7 +3,7 @@ import postgres, { type Sql } from "postgres";
 import type { MoneyInvestmentEventKind } from "./money-import-domain.js";
 import type { MoneyDailyPriceBar, MoneyFxRate, MoneyInflationIndex } from "./money-market-data-domain.js";
 import type { MoneyMarketInstrumentDefinition } from "./money-market-data-catalog.js";
-import { effectiveTransactions } from "./money-repository.js";
+import { effectiveTransactions } from "./money-ledger-sql.js";
 
 export type MoneyMarketSyncTarget = Readonly<{
   seriesId: string;
