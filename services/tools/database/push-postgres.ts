@@ -10,10 +10,10 @@ import { reconcileRuntimeSchema } from "./runtime-schema-reconciliation.js";
 import { runSchemaPush } from "./run-schema-push.js";
 
 const mode = process.argv[2];
-if (mode !== "production" && mode !== "development" && mode !== "test") throw new Error("Schema push mode must be production, development, or test.");
+if (mode !== "production" && mode !== "preview" && mode !== "development" && mode !== "test") throw new Error("Schema push mode must be production, preview, development, or test.");
 const url = resolvePushDatabase(process.env, mode satisfies PushMode);
 
-if (mode === "production") {
+if (mode === "production" || mode === "preview") {
   await waitForPostgres(() => checkPostgres(url), undefined, undefined, ({ attempt, delayMs }) => {
     console.warn(JSON.stringify({ event: "postgres.readiness.retry", attempt, delayMs }));
   });
