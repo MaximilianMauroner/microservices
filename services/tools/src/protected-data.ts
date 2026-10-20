@@ -1,3 +1,4 @@
+import { DEFAULT_UPLOAD_LIST_CRITERIA, uploadListPath, type UploadCategory } from "../publisher/src/upload-list.js";
 import { createServerFn } from "@tanstack/react-start";
 import type {
   PrivateSnapshotDocument
@@ -14,6 +15,7 @@ export type UploadSummary = {
   kind: "html" | "file";
   filename: string;
   contentType: string;
+  category: UploadCategory;
   url: string;
   downloadUrl?: string;
   bytes: number;
@@ -30,6 +32,7 @@ export type UploadPageData = {
 
 export type UploadInventorySummary = {
   total: number;
+  activeBytes: number;
   permanent: number;
   temporary: number;
   expiringSoon: number;
@@ -108,7 +111,7 @@ export const getPrivateStatusPageData = createServerFn({ method: "GET" })
 export const getManagePageData = createServerFn({ method: "GET" })
   .middleware([requirePlatformSession])
   .handler(async (): Promise<ManagePageData> => {
-    const pathname = "/api/external-uploads?limit=100&sort=newest&includeSummary=true";
+    const pathname = uploadListPath(DEFAULT_UPLOAD_LIST_CRITERIA);
     const { context } = internalPlatformRequest(pathname);
     const response = await readPlatformResponse(
       context.runtime.services.publisher.handle,
