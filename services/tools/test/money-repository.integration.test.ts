@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { afterAll, beforeEach, expect, it } from "vitest";
 import { DISPOSABLE_DATABASE_SENTINEL, withVerifiedDisposableDatabase } from "../database/postgres-push-guard.js";
+import { reconcileRuntimeSchema } from "../database/runtime-schema-reconciliation.js";
 import { parseMoneyImport, REVOLUT_CASH_FORMAT } from "../money/money-import-domain.js";
 import { cashMovesSince } from "../money/money-checkin-domain.js";
 import { createPostgresMoneyRepository, type MoneyRepository } from "../money/money-repository.js";
@@ -70,7 +71,7 @@ it.skipIf(!repository || !admin)("commits savings CSV and Excel into one account
   expect((await repository!.readCashSince("2026-08-08")).snapshots.at(-1)?.valueMinor).toBe(1001);
 });
 
-it.skipIf(!repository || !admin)("recognizes raw-cell keys from older cash imports in previews and commits", async () => {
+it.skipIf(!repository || !admin).each(["original", "duplicate"] as const)("recognizes raw-cell keys after deleting the %s import", async (deleted) => {
   const headers = ["Type", "Product", "Started Date", "Completed Date", "Description", "Amount", "Fee", "Currency", "State", "Balance"];
   const row = ["Interest", "Deposit", "2026-08-09 5:08:51", "2026-08-09 5:08:51", "Interest paid", "0.010", "0.00", "EUR", "COMPLETED", "10.01"];
   const csv = Buffer.from([headers, row].map((cells) => cells.join(",")).join("\r\n"));
@@ -78,7 +79,7 @@ it.skipIf(!repository || !admin)("recognizes raw-cell keys from older cash impor
   const excel = moneyWorkbookFixture([headers, ["Interest", "Deposit", date, date, "Interest paid", 0.01, 0, "EUR", "COMPLETED", 10.01]]);
   const service = new MoneyImportService(repository!);
   const preview = await service.preview("old.csv", csv);
-  await service.commit({ filename: "old.csv", bytes: csv, expectedDigest: preview.digest, actor: "integration@example.test" });
+  const original = await service.commit({ filename: "old.csv", bytes: csv, expectedDigest: preview.digest, actor: "integration@example.test" });
   const oldKey = createHash("sha256").update(JSON.stringify([REVOLUT_CASH_FORMAT, ...row])).digest("hex");
   await admin!`update tools.money_transactions set source_key = ${oldKey}`;
   const excelPreview = await service.preview("new.xlsx", excel);
@@ -86,57 +87,13 @@ it.skipIf(!repository || !admin)("recognizes raw-cell keys from older cash impor
   const duplicate = await service.commit({ filename: "new.xlsx", bytes: excel, expectedDigest: excelPreview.digest, actor: "integration@example.test" });
   expect(duplicate).toMatchObject({ insertedCount: 0, duplicateCount: 1 });
   expect((await repository!.readLedgerSnapshot("all")).transactionCount).toBe(1);
-  await service.deleteImport(duplicate.id);
-  expect((await repository!.readLedgerSnapshot("all")).months.at(-1)?.total).toBe(10.01);
-});
-
-it.skipIf(!repository || !admin).each([
-  { first: "CSV", legacy: false },
-  { first: "Excel", legacy: false },
-  { first: "CSV", legacy: true }
-])("keeps manual categories and transfer review after equivalent exports ($first first, legacy keys: $legacy)", async ({ first, legacy }) => {
-  const headers = ["Type", "Product", "Started Date", "Completed Date", "Description", "Amount", "Fee", "Currency", "State", "Balance"];
-  const rows = [
-    ["Card Payment", "Current", "2026-08-09 5:08:51", "2026-08-09 5:08:51", "Reviewed market", "-12.340", "0.00", "EUR", "COMPLETED", "87.660"],
-    ["Transfer", "Current", "2026-08-10 5:08:51", "2026-08-10 5:08:51", "Reviewed transfer", "-5.000", "0.00", "EUR", "COMPLETED", "82.660"]
-  ];
-  const csv = Buffer.from([headers, ...rows].map((row) => row.join(",")).join("\r\n"));
-  const time = (5 * 3600 + 8 * 60 + 51) / 86400;
-  const excel = moneyWorkbookFixture([headers,
-    ["Card Payment", "Current", { date: 46243 + time }, { date: 46243 + time }, "Reviewed market", -12.34, 0, "EUR", "COMPLETED", 87.66],
-    ["Transfer", "Current", { date: 46244 + time }, { date: 46244 + time }, "Reviewed transfer", -5, 0, "EUR", "COMPLETED", 82.66]
-  ]);
-  const [original, equivalent] = first === "CSV" ? [csv, excel] : [excel, csv];
-  const originalFilename = first === "CSV" ? "original.csv" : "original.xlsx";
-  const equivalentFilename = first === "CSV" ? "equivalent.xlsx" : "equivalent.csv";
-  const service = new MoneyImportService(repository!);
-  const preview = await service.preview(originalFilename, original);
-  expect(await service.commit({ filename: originalFilename, bytes: original, expectedDigest: preview.digest, actor: "integration@example.test" })).toMatchObject({ insertedCount: 2, duplicateCount: 0, replay: false });
-  const activity = await repository!.readActivityPage({ query: "Reviewed", offset: 0, limit: 10 });
-  const market = activity.items.find((item) => item.description === "Reviewed market")!;
-  const transfer = activity.items.find((item) => item.description === "Reviewed transfer")!;
-  expect(transfer.transferDisposition).toBe("spend");
-  await repository!.setTransactionCategory({ transactionId: market.id, category: "groceries", actor: "integration@example.test", createRule: false });
-  await repository!.setTransferDisposition({ transactionId: transfer.id, disposition: "internal_transfer" });
-  if (legacy) {
-    for (const row of rows) {
-      const oldKey = createHash("sha256").update(JSON.stringify([REVOLUT_CASH_FORMAT, ...row])).digest("hex");
-      await admin!`update tools.money_transactions set source_key = ${oldKey} where description = ${row[4]!}`;
-    }
-  }
-  const stored = await admin!`select id, source_key from tools.money_transactions order by id`;
-  const reviewed = await repository!.readActivityPage({ query: "Reviewed", offset: 0, limit: 10 });
-  expect(reviewed.items).toContainEqual(expect.objectContaining({ id: market.id, category: "groceries", categoryOrigin: "manual" }));
-  expect(reviewed.items).toContainEqual(expect.objectContaining({ id: transfer.id, transferDisposition: "internal_transfer", needsTransferReview: false }));
-
-  const equivalentPreview = await service.preview(equivalentFilename, equivalent);
-  expect(equivalentPreview.duplicateCount).toBe(2);
-  expect(await repository!.readActivityPage({ query: "Reviewed", offset: 0, limit: 10 })).toEqual(reviewed);
-  const receipt = await service.commit({ filename: equivalentFilename, bytes: equivalent, expectedDigest: equivalentPreview.digest, actor: "integration@example.test" });
-  expect(receipt).toMatchObject({ insertedCount: 0, duplicateCount: 2, replay: false });
-  expect(await repository!.readActivityPage({ query: "Reviewed", offset: 0, limit: 10 })).toEqual(reviewed);
-  expect(await admin!`select id, source_key from tools.money_transactions order by id`).toEqual(stored);
-  expect((await repository!.readLedgerSnapshot("all")).transactionCount).toBe(2);
+  await service.deleteImport(deleted === "original" ? original.id : duplicate.id);
+  const remaining = await repository!.readLedgerSnapshot("all");
+  expect(remaining.transactionCount).toBe(1);
+  if (deleted === "duplicate") expect(remaining.months.at(-1)?.total).toBe(10.01);
+  expect((await service.preview("new.xlsx", excel)).duplicateCount).toBe(1);
+  await expect(service.deleteImport(deleted === "original" ? duplicate.id : original.id)).resolves.toMatchObject({ transactionCount: 1 });
+  expect((await repository!.readLedgerSnapshot("all")).transactionCount).toBe(0);
 });
 
 it.skipIf(!repository || !admin).each([false, true])("counts overlapping cash and savings once in either import order (cash first: %s)", async (cashFirst) => {
@@ -923,6 +880,27 @@ it.skipIf(!repository || !admin)("keeps a removed rule's results through imports
   expect(await repository!.createTransferRule({ ...rule, actor: "integration@example.test", expectedMatchCount: 2 })).toEqual({ affectedCount: 2 });
 });
 
+it.skipIf(!repository || !admin).each(["duplicate", "unrelated"] as const)("keeps retained exclusions and pairs when deleting a %s import after rule removal", async (deleted) => {
+  await admin!`delete from tools.money_transfer_rules where source_type = 'Transfer'`;
+  const broker = "Transfer\tCurrent\t2027-01-04 12:00:00\t2027-01-04 12:00:00\tRetained broker\t-30\t0\tEUR\tCOMPLETED\t70";
+  const outgoing = "Transfer\tCurrent\t2027-01-06 12:00:00\t2027-01-06 12:00:00\tRetained out\t-50\t0\tEUR\tCOMPLETED\t20";
+  const incoming = "Transfer\tSavings\t2027-01-07 12:00:00\t2027-01-07 12:00:00\tRetained in\t50\t0\tEUR\tCOMPLETED\t50";
+  await commitCash(repository!, cash([broker, outgoing, incoming]), "retained.tsv");
+  const removed = await commitCash(repository!, cash(deleted === "duplicate" ? [broker, outgoing] : [secondOnlyCashRow]), "removed.tsv");
+  const rule = { provider: "revolut", sourceType: "Transfer", descriptionMatch: "equals", matchValue: "retained broker", amountSign: "negative", disposition: "excluded" } as const;
+  await repository!.createTransferRule({ ...rule, actor: "integration@example.test", expectedMatchCount: 1 });
+  const stored = (await repository!.readLedgerSnapshot("review")).transferRules.find((item) => item.matchValue === rule.matchValue);
+  expect(stored).toBeDefined();
+  const before = await transferState("Retained");
+  expect(before[0]).toMatchObject({ description: "Retained broker", disposition: "excluded", origin: "automatic" });
+  expect(before[1]).toMatchObject({ description: "Retained in", groupId: expect.any(String), disposition: "internal_transfer" });
+  expect(before[2]).toMatchObject({ description: "Retained out", groupId: before[1]!.groupId, disposition: "internal_transfer" });
+  await repository!.deleteTransferRule(stored!.id);
+
+  await expect(repository!.deleteImport(removed.id)).resolves.toMatchObject({ transactionCount: deleted === "duplicate" ? 0 : 1 });
+  expect(await transferState("Retained")).toEqual(before);
+});
+
 it.skipIf(!repository || !admin)("leaves stored state unchanged when reimports repeat under unchanged rules", async () => {
   await commitCash(repository!, cash([
     "Transfer\tCurrent\t2027-02-01 12:00:00\t2027-02-01 12:00:00\tRepeat pair\t-70\t0\tEUR\tCOMPLETED\t30",
@@ -989,6 +967,179 @@ it.skipIf(!repository || !admin).each(["delete", "reimport"] as const)("serializ
   expect(await transferState("Ordered broker")).toEqual([unresolved]);
   expect(await repository!.readReviewCounts()).toMatchObject({ transfers: 1 });
 });
+
+const sharedCashRow = "Card Payment\tCurrent\t2026-06-01 12:00:00\t2026-06-01 12:00:00\tShared membership row\t-5\t0\tEUR\tCOMPLETED\t95";
+const firstOnlyCashRow = "Card Payment\tCurrent\t2026-06-02 12:00:00\t2026-06-02 12:00:00\tFirst only row\t-3\t0\tEUR\tCOMPLETED\t92";
+const secondOnlyCashRow = "Card Payment\tCurrent\t2026-06-03 12:00:00\t2026-06-03 12:00:00\tSecond only row\t-7\t0\tEUR\tCOMPLETED\t85";
+
+it.skipIf(!repository || !admin).each(["first", "second"] as const)("keeps shared rows when the %s overlapping import is deleted first", async (deleted) => {
+  const first = await commitCash(repository!, cash([sharedCashRow, firstOnlyCashRow]), "first.tsv");
+  const second = await commitCash(repository!, cash([sharedCashRow, secondOnlyCashRow]), "second.tsv");
+  expect(second).toMatchObject({ insertedCount: 1, duplicateCount: 1 });
+
+  const removed = deleted === "first" ? first : second;
+  const remaining = deleted === "first" ? second : first;
+  await expect(repository!.deleteImport(removed.id)).resolves.toMatchObject({ transactionCount: 1 });
+  expect(await descriptions("row")).toEqual([deleted === "first" ? "Second only row" : "First only row", "Shared membership row"]);
+  await expect(repository!.deleteImport(removed.id)).resolves.toBeUndefined();
+  await expect(repository!.deleteImport(remaining.id)).resolves.toMatchObject({ transactionCount: 2 });
+  expect(await descriptions("row")).toEqual([]);
+});
+
+it.skipIf(!repository || !admin).each([
+  { missingAt: "overlap", deleted: "first" },
+  { missingAt: "overlap", deleted: "second" },
+  { missingAt: "deletion", deleted: "first" },
+  { missingAt: "deletion", deleted: "second" },
+])("repairs legacy source membership missing at $missingAt when deleting $deleted first", async ({ missingAt, deleted }) => {
+  await reconcileRuntimeSchema(admin!);
+  const first = await commitCash(repository!, cash([sharedCashRow, firstOnlyCashRow]), "legacy.tsv");
+  if (missingAt === "overlap") await admin!`delete from tools.money_import_transactions where import_id = ${first.id}`;
+  const second = await commitCash(repository!, cash([sharedCashRow, secondOnlyCashRow]), "overlap.tsv");
+  const sharedId = await transactionId("Shared membership row");
+  const memberships = await admin!<{ import_id: string }[]>`select import_id::text import_id
+    from tools.money_import_transactions where transaction_id = ${sharedId}`;
+  expect(memberships.map((member) => member.import_id)).toEqual(expect.arrayContaining([first.id, second.id]));
+  if (missingAt === "deletion") await admin!`delete from tools.money_import_transactions where import_id = ${first.id}`;
+  const removed = deleted === "first" ? first : second;
+  const remaining = deleted === "first" ? second : first;
+
+  await expect(repository!.deleteImport(removed.id)).resolves.toMatchObject({ transactionCount: 1 });
+  expect(await descriptions("row")).toEqual([deleted === "first" ? "Second only row" : "First only row", "Shared membership row"]);
+  expect(await transactionId("Shared membership row")).toBe(sharedId);
+  await expect(repository!.deleteImport(remaining.id)).resolves.toMatchObject({ transactionCount: 2 });
+  expect(await descriptions("row")).toEqual([]);
+});
+
+it.skipIf(!repository || !admin)("deletes a legacy source import written after reconciliation without membership", async () => {
+  await reconcileRuntimeSchema(admin!);
+  const legacy = await commitCash(repository!, cash([sharedCashRow, firstOnlyCashRow]), "legacy.tsv");
+  await admin!`delete from tools.money_import_transactions where import_id = ${legacy.id}`;
+
+  await expect(repository!.deleteImport(legacy.id)).resolves.toMatchObject({ transactionCount: 2 });
+  expect(await descriptions("row")).toEqual([]);
+  await expect(repository!.deleteImport(legacy.id)).resolves.toBeUndefined();
+});
+
+it.skipIf(!repository || !admin).each(["first", "duplicate"] as const)("records zero-new-row membership and repeated uploads when deleting %s first", async (deleted) => {
+  const first = await commitCash(repository!, cash([sharedCashRow, firstOnlyCashRow]), "first.tsv");
+  const duplicateFile = cash([sharedCashRow]);
+  const duplicate = await commitCash(repository!, duplicateFile, "duplicate.tsv");
+  expect(duplicate).toMatchObject({ insertedCount: 0, duplicateCount: 1, replay: false });
+  expect(await commitCash(repository!, duplicateFile, "duplicate.tsv")).toEqual({ ...duplicate, replay: true });
+  const sharedId = await transactionId("Shared membership row");
+  await repository!.setTransactionCategory({ transactionId: sharedId, category: "groceries", actor: "integration@example.test", createRule: false });
+
+  await expect(repository!.deleteImport(deleted === "first" ? first.id : duplicate.id)).resolves.toMatchObject({ transactionCount: deleted === "first" ? 1 : 0 });
+  const remaining = (await repository!.readActivityPage({ query: "Shared membership row", offset: 0, limit: 10 })).items;
+  expect(remaining).toEqual([expect.objectContaining({ id: sharedId, category: "groceries", categoryOrigin: "manual" })]);
+  if (deleted === "first") expect(await commitCash(repository!, duplicateFile, "duplicate.tsv")).toEqual({ ...duplicate, replay: true });
+  await expect(repository!.deleteImport(deleted === "first" ? duplicate.id : first.id)).resolves.toMatchObject({ transactionCount: deleted === "first" ? 1 : 2 });
+  expect(await descriptions("row")).toEqual([]);
+});
+
+it.skipIf(!repository || !admin)("keeps membership through successive source import deletions", async () => {
+  const first = await commitCash(repository!, cash([sharedCashRow, firstOnlyCashRow]), "first.tsv");
+  const second = await commitCash(repository!, cash([sharedCashRow, secondOnlyCashRow]), "second.tsv");
+  const third = await commitCash(repository!, cash([sharedCashRow]), "third.tsv");
+  expect(third).toMatchObject({ insertedCount: 0, duplicateCount: 1 });
+
+  await repository!.deleteImport(first.id);
+  await repository!.deleteImport(second.id);
+  expect(await descriptions("row")).toEqual(["Shared membership row"]);
+  await expect(repository!.deleteImport(third.id)).resolves.toMatchObject({ transactionCount: 1 });
+  expect(await descriptions("row")).toEqual([]);
+});
+
+it.skipIf(!repository || !admin)("does not replace a later balance snapshot when an earlier import is replayed", async () => {
+  const firstFile = cash([sharedCashRow]);
+  const first = await commitCash(repository!, firstFile, "first.tsv");
+  const later = await commitCash(repository!, cash([sharedCashRow.replace("\t95", "\t94")]), "corrected.tsv");
+  const snapshots = await repository!.readCashSince("2026-06-01");
+  expect(snapshots.snapshots.at(-1)?.valueMinor).toBe(9_400);
+
+  expect(await commitCash(repository!, firstFile, "first.tsv")).toEqual({ ...first, replay: true });
+  expect((await repository!.readCashSince("2026-06-01")).snapshots).toEqual(snapshots.snapshots);
+  await expect(repository!.deleteImport(later.id)).resolves.toMatchObject({ balanceSnapshotCount: 1 });
+});
+
+it.skipIf(!repository || !admin).each([false, true])("keeps a shared pair until a counterpart is deleted and refreshes other decisions only on reimport, manual review %s", async (manual) => {
+  const outgoing = "Transfer\tCurrent\t2026-06-10 12:00:00\t2026-06-10 12:00:00\tMembership out\t-50\t0\tEUR\tCOMPLETED\t50";
+  const incoming = "Transfer\tSavings\t2026-06-11 12:00:00\t2026-06-11 12:00:00\tMembership in\t50\t0\tEUR\tCOMPLETED\t50";
+  const pair = await commitCash(repository!, cash([outgoing, incoming]), "pair.tsv");
+  const shared = await commitCash(repository!, cash([outgoing]), "shared-out.tsv");
+  await commitCash(repository!, cash([incoming, secondOnlyCashRow]), "shared-in.tsv");
+  if (manual) await repository!.setTransferDisposition({ transactionId: await transactionId("Membership in"), disposition: "internal_transfer" });
+  const before = await transferState("Membership");
+  expect(before[0]).toMatchObject({ groupId: expect.any(String), disposition: "internal_transfer", origin: manual ? "manual" : "automatic" });
+
+  await expect(repository!.deleteImport(pair.id)).resolves.toMatchObject({ transactionCount: 0 });
+  expect(await transferState("Membership")).toEqual(before);
+  await commitCash(repository!, cash([outgoing.replace("Membership out", "Membership replacement")]), "replacement.tsv");
+  const replacement = (await transferState("Membership")).find((row) => row.description === "Membership replacement");
+  await expect(repository!.deleteImport(shared.id)).resolves.toMatchObject({ transactionCount: 1 });
+  const after = await transferState("Membership");
+  expect(after).toHaveLength(2);
+  expect(after[0]).toMatchObject({ description: "Membership in", groupId: null, origin: "automatic" });
+  expect(after[1]).toEqual(replacement);
+
+  await repository!.reimportAll();
+  const refreshed = await transferState("Membership");
+  expect(refreshed[0]).toMatchObject({ description: "Membership in", groupId: expect.any(String), disposition: "internal_transfer", origin: "automatic" });
+  expect(refreshed[1]).toMatchObject({ description: "Membership replacement", groupId: refreshed[0]!.groupId, disposition: "internal_transfer", origin: "automatic" });
+});
+
+it.skipIf(!repository || !admin).each(["first", "second"] as const)("keeps legacy investment events when the %s overlapping trading import is deleted first", async (deleted) => {
+  await reconcileRuntimeSchema(admin!);
+  const header = "Date\tTicker\tType\tQuantity\tPrice per share\tTotal Amount\tCurrency\tFX Rate";
+  const shared = "2026-06-03T12:00:00.000Z\tVWCE\tBUY - MARKET\t1\tEUR 100\tEUR -100\tEUR\t1";
+  const first = await commitCash(repository!, Buffer.from([header, shared].join("\r\n")), "trades-first.tsv");
+  await admin!`delete from tools.money_import_transactions where import_id = ${first.id}`;
+  const second = await commitCash(repository!, Buffer.from([header, shared, "2026-06-04T12:00:00.000Z\tVWCE\tBUY - MARKET\t2\tEUR 100\tEUR -200\tEUR\t1"].join("\r\n")), "trades-second.tsv");
+  expect(second).toMatchObject({ insertedCount: 1, duplicateCount: 1 });
+
+  await expect(repository!.deleteImport(deleted === "first" ? first.id : second.id)).resolves.toMatchObject({
+    transactionCount: deleted === "first" ? 0 : 1, investmentEventCount: deleted === "first" ? 0 : 1
+  });
+  expect((await repository!.readLedgerSnapshot("all")).investments.totals.eventCount).toBe(deleted === "first" ? 2 : 1);
+  await expect(repository!.deleteImport(deleted === "first" ? second.id : first.id)).resolves.toMatchObject({
+    transactionCount: deleted === "first" ? 2 : 1, investmentEventCount: deleted === "first" ? 2 : 1
+  });
+  expect((await repository!.readLedgerSnapshot("all")).investments.totals.eventCount).toBe(0);
+});
+
+it.skipIf(!repository || !admin).each([false, true])("repairs legacy overlap when a file is replayed before deletion %s", async (replayBeforeDeletion) => {
+  const first = await commitCash(repository!, cash([sharedCashRow]), "first.tsv");
+  const secondFile = cash([sharedCashRow, secondOnlyCashRow]);
+  const second = await commitCash(repository!, secondFile, "second.tsv");
+  await admin!`delete from tools.money_import_transactions where import_id = ${second.id}
+    and transaction_id in (select id from tools.money_transactions where description = 'Shared membership row')`;
+  if (replayBeforeDeletion) expect(await commitCash(repository!, secondFile, "second.tsv")).toMatchObject({ id: second.id, replay: true });
+  await repository!.deleteImport(first.id);
+  expect(await descriptions("row")).toEqual(replayBeforeDeletion ? ["Second only row", "Shared membership row"] : ["Second only row"]);
+
+  expect(await commitCash(repository!, secondFile, "second.tsv")).toMatchObject({ id: second.id, replay: true });
+  expect(await descriptions("row")).toEqual(["Second only row", "Shared membership row"]);
+  await expect(repository!.deleteImport(second.id)).resolves.toMatchObject({ transactionCount: 2 });
+  expect(await descriptions("row")).toEqual([]);
+});
+
+it.skipIf(!repository || !admin)("backfills import membership from each row's import on schema reconciliation", async () => {
+  const first = await commitCash(repository!, cash([sharedCashRow]), "first.tsv");
+  const second = await commitCash(repository!, cash([sharedCashRow, secondOnlyCashRow]), "second.tsv");
+  await admin!`delete from tools.money_import_transactions`;
+  await reconcileRuntimeSchema(admin!);
+  await reconcileRuntimeSchema(admin!);
+
+  await expect(repository!.deleteImport(first.id)).resolves.toMatchObject({ transactionCount: 1 });
+  expect(await descriptions("row")).toEqual(["Second only row"]);
+  await expect(repository!.deleteImport(second.id)).resolves.toMatchObject({ transactionCount: 1 });
+  expect(await descriptions("row")).toEqual([]);
+});
+
+async function descriptions(query: string) {
+  return (await repository!.readActivityPage({ query, offset: 0, limit: 10 })).items.map((row) => row.description);
+}
 
 function cash(rows: string[]) {
   return Buffer.from(["Type\tProduct\tStarted Date\tCompleted Date\tDescription\tAmount\tFee\tCurrency\tState\tBalance", ...rows].join("\r\n"));

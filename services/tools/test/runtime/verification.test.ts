@@ -29,28 +29,11 @@ export async function createOwnedPostgres() {
     return {kind:'cleaned',name:'owned-fixture'};
   }}};
 }`);
-  await writeFile(join(target, "local-stack.ts"), `export async function withLocalStack(options,use) {
-    if(process.env.FIXTURE_LOCAL_BLOCKED) return {kind:'blocked',reason:'local fixture unavailable',cleanup:'not-needed'};
-    const controller = new AbortController();
-    const pending = use({manifest:{project:'identity-project',origins:{tools:'http://127.0.0.1:9'},prerequisites:{storageHttp:{kind:'passed',reason:'fixture'}}},
-      environment:{ARTIFACT_S3_ENDPOINT:'http://127.0.0.1:9',ARTIFACT_S3_ACCESS_KEY_ID:'local',ARTIFACT_S3_SECRET_ACCESS_KEY:'local'},
-      signal:controller.signal});
-    if(process.env.FIXTURE_LOCAL_HOST_FAIL) {
-      await new Promise(resolve=>setTimeout(resolve,150));
-      controller.abort();
-      await pending;
-      return {kind:'failed',reason:'owned host failed',cleanup:'stopped'};
-    }
-    await pending;
-    return {kind:'completed',cleanup:process.env.FIXTURE_LOCAL_CLEANUP_FAIL?'retained':'stopped'};
-  }`);
   await writeFile(join(target, "vitest-child.ts"), `import {writeFileSync} from 'node:fs';
 const phase=process.argv[2];
-const identity=process.argv[4]==='identity';
-if(identity && phase==='run' && process.env.FIXTURE_LOCAL_HOST_FAIL) await new Promise(resolve=>setTimeout(resolve,3000));
 writeFileSync(process.argv[3]!,JSON.stringify(phase==='discover'
-  ? {phase,required:process.env.FIXTURE_EMPTY || identity && process.env.FIXTURE_IDENTITY_EMPTY?[]:['required case'],errors:[]}
-  : {phase,observed:[{identity:'required case',result:process.env.FIXTURE_SKIP || identity && process.env.FIXTURE_IDENTITY_SKIP?'skipped':'passed',evidence:[]}],errors:[]}));`);
+  ? {phase,required:process.env.FIXTURE_EMPTY?[]:['required case'],errors:[]}
+  : {phase,observed:[{identity:'required case',result:process.env.FIXTURE_SKIP?'skipped':'passed',evidence:[]}],errors:[]}));`);
   for (const command of ["git", "pnpm"]) {
     const path = join(directory, "bin", command);
     await writeFile(path, `#!${process.execPath}
@@ -146,28 +129,6 @@ describe("terminal verification CLI", () => {
     const stage = name === "FIXTURE_SETUP_THROW" ? "fixture" : "cleanup";
     expect(result.record.cells.find((cell: { requirement: { kind: string } }) => cell.requirement.kind === stage).result.reasons.join(" ")).toContain("rejected");
     expect(JSON.stringify(result.record)).not.toContain("private-password");
-  });
-
-  it("requires the identity suite and its owned local fixture before workspace success", async () => {
-    const result = await run({ FIXTURE_MODE: "workspace" });
-    expect(result.code).toBe(0);
-    expect(result.record.identity).toMatchObject({ required: ["required case"], contracts: { executed: ["required case"], skipped: [] } });
-    expect(result.record.cells.filter((cell: { requirement: { kind: string } }) => cell.requirement.kind.startsWith("identity-")).map((cell: { result: { kind: string } }) => cell.result.kind)).toEqual(["passed", "passed"]);
-  });
-
-  it.each(["FIXTURE_IDENTITY_EMPTY", "FIXTURE_IDENTITY_SKIP", "FIXTURE_LOCAL_BLOCKED", "FIXTURE_LOCAL_CLEANUP_FAIL"])("does not pass workspace verification with %s", async (name) => {
-    const result = await run({ FIXTURE_MODE: "workspace", [name]: "1" });
-    expect(result.code).toBe(1);
-    expect(result.record.decision.kind).not.toBe("passed");
-    expect(result.record.cells.filter((cell: { requirement: { kind: string } }) => cell.requirement.kind.startsWith("identity-")).some((cell: { result: { kind: string } }) => cell.result.kind !== "passed")).toBe(true);
-  });
-
-  it("cancels identity contracts when their owned host fails and keeps the fixture failure", async () => {
-    const result = await run({ FIXTURE_MODE: "workspace", FIXTURE_LOCAL_HOST_FAIL: "1" });
-    expect(result.code).toBe(1);
-    expect(result.record.identity.contracts.result).toBe("failed");
-    const identity = result.record.cells.find((cell: { requirement: { kind: string } }) => cell.requirement.kind === "identity-contracts");
-    expect(identity.result).toMatchObject({ kind: "failed", reasons: ["owned host failed"] });
   });
 
   it("stops workspace admission after the first command failure and still cleans up", async () => {

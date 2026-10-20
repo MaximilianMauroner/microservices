@@ -9,32 +9,43 @@ export const DISPOSABLE_DATABASE_SENTINEL = {
   value: "tools-runtime-disposable-test-database",
 } as const;
 
-export type PushMode = "production" | "development" | "test";
+const pushModes = {
+  production: { variable: "DATABASE_URL", confirmation: "TOOLS_SCHEMA_PUSH_CONFIRM", value: "tools-platform-production", label: "Production" },
+  preview: { variable: "DATABASE_URL", confirmation: "TOOLS_PREVIEW_SCHEMA_PUSH_CONFIRM", value: "tools-platform-preview", label: "Preview" },
+  development: { variable: "DATABASE_URL", confirmation: "TOOLS_DEVELOPMENT_SCHEMA_PUSH_CONFIRM", value: "tools-platform-development", label: "Development" },
+  test: { variable: "TEST_DATABASE_URL", confirmation: "TOOLS_TEST_DATABASE_CONFIRM", value: "tools-platform-test", label: "Disposable test" },
+} as const;
+
+export type PushMode = keyof typeof pushModes;
 type Environment = Record<string, string | undefined>;
 type PushHandoff = { directory: string; path: string; nonce: string; mode: PushMode };
 type SentinelLookups = { readRelationKind: () => Promise<string | undefined>; readValue: () => Promise<string | undefined> };
 
 export function resolvePushDatabase(environment: Environment, mode: PushMode) {
-  const variable = mode === "test" ? "TEST_DATABASE_URL" : "DATABASE_URL";
-  const confirmationVariable = mode === "production"
-    ? "TOOLS_SCHEMA_PUSH_CONFIRM"
-    : mode === "development"
-      ? "TOOLS_DEVELOPMENT_SCHEMA_PUSH_CONFIRM"
-      : "TOOLS_TEST_DATABASE_CONFIRM";
-  const confirmationValue = mode === "production"
-    ? "tools-platform-production"
-    : mode === "development"
-      ? "tools-platform-development"
-      : "tools-platform-test";
+  const { variable, confirmation, value, label } = pushModes[mode];
   const url = environment[variable]?.trim();
   if (!url) throw new Error(`${variable} is required for the ${mode} PostgreSQL schema push.`);
-  if (environment[confirmationVariable] !== confirmationValue) {
-    const label = mode === "production" ? "Production" : mode === "development" ? "Development" : "Disposable test";
-    throw new Error(`${label} schema push requires ${confirmationVariable}=${confirmationValue}.`);
+  if (environment[confirmation] !== value) {
+    throw new Error(`${label} schema push requires ${confirmation}=${value}.`);
   }
   const parsed = new URL(url);
   if (!["postgres:", "postgresql:"].includes(parsed.protocol) || !parsed.hostname || parsed.pathname === "/") {
     throw new Error(`${variable} must be a valid PostgreSQL URL.`);
+  }
+  const railwayEnvironment = environment.RAILWAY_ENVIRONMENT_NAME?.trim();
+  if (mode === "production" && railwayEnvironment !== "production") {
+    throw new Error("Production schema push requires RAILWAY_ENVIRONMENT_NAME=production.");
+  }
+  if (mode === "preview") {
+    if (!railwayEnvironment || railwayEnvironment === "production") {
+      throw new Error("Preview schema push requires a non-production Railway environment.");
+    }
+    if (!/^[a-z0-9-]+(?:\.[a-z0-9-]+)*\.railway\.internal$/i.test(parsed.hostname)) {
+      throw new Error("Preview schema push requires a database on the private Railway network.");
+    }
+    if (environment.TOOLS_ENVIRONMENT === "production") {
+      throw new Error("Preview schema push is unavailable when TOOLS_ENVIRONMENT=production.");
+    }
   }
   if (mode === "development") verifyDevelopmentEnvironment(environment, parsed.hostname);
   return url;
@@ -74,7 +85,7 @@ export function consumePushHandoff(environment: Environment) {
   const path = environment.TOOLS_SCHEMA_PUSH_HANDOFF?.trim();
   const nonce = environment.TOOLS_SCHEMA_PUSH_NONCE?.trim();
   const mode = environment.TOOLS_SCHEMA_PUSH_MODE;
-  if (!path || !nonce || (mode !== "production" && mode !== "development" && mode !== "test")) {
+  if (!path || !nonce || (mode !== "production" && mode !== "preview" && mode !== "development" && mode !== "test")) {
     throw new Error("PostgreSQL schema push must run through the guarded db:push-postgres command.");
   }
   const metadata = lstatSync(path);

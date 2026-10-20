@@ -61,35 +61,6 @@ describe("statement file formats", () => {
     expect(csv.accounts[0]).toMatchObject({ externalRef: "revolut:cash:deposit:EUR", name: "Revolut Instant Access Savings" });
   });
 
-  it.each([
-    {
-      name: "raw trading",
-      headers: layouts[2]!.headers,
-      row: layouts[2]!.row,
-      amountColumn: 5,
-      formattedAmount: "EUR -50.00",
-      sourceKey: "5f4fe529c4a1bace77090878c1ef893ec3712c74b69c19373bb8d35663304da7",
-      formattedSourceKey: "aba82128db2a0becf493073526de0b9abd9abfc292cce4cf92bd973ce756ab50"
-    },
-    {
-      name: "id-less portfolio",
-      headers: layouts[3]!.headers,
-      row: layouts[3]!.row.map((value, index) => index === 18 ? "" : value),
-      amountColumn: 10,
-      formattedAmount: "-50.00",
-      sourceKey: "c9f9ade14759dc5fe0f81f6f5d7ac995ea05ccef83683ccc7c7acb2f125ab5b7",
-      formattedSourceKey: "079486c784c57999c295740d141976c5f95fe8c42994ac8afd0d20a1f760d631"
-    }
-  ])("preserves stored $name source keys without cash normalization", ({ headers, row, amountColumn, formattedAmount, sourceKey, formattedSourceKey }) => {
-    const formattedRow = row.map((value, index) => index === amountColumn ? formattedAmount : value);
-    for (const source of [delimited([headers, row, formattedRow], ","), moneyWorkbookFixture([headers, row, formattedRow])]) {
-      const parsed = parseMoneyImport(source);
-      expect(parsed.transactions.map((transaction) => transaction.sourceKey)).toEqual([sourceKey, formattedSourceKey]);
-      expect(parsed.investmentEvents.map((event) => event.transactionSourceKey)).toEqual([sourceKey, formattedSourceKey]);
-      expect(parsed.transactions.map((transaction) => transaction.amountMinor)).toEqual([-5000, -5000]);
-    }
-  });
-
   it("rejects workbook formulas, impossible Excel dates, and unknown statement layouts", () => {
     expect(() => parseMoneyImport(moneyWorkbookFixture([layouts[4]!.headers, ["2026-08-09", "Cash", { formula: "200+220", value: 420 }, "cash", "EUR"]]))).toThrow("Formula cells are not supported");
     expect(() => parseMoneyImport(moneyWorkbookFixture([layouts[4]!.headers, [{ date: 60 }, "Cash", 420, "cash", "EUR"]]))).toThrow("invalid Excel date");

@@ -45,75 +45,70 @@ product ownership.
 
 ## Local stack
 
-Start an owned local stack from the repository root. Install dependencies first.
-Use Docker with Compose 2.24.4 or newer and the local Unix socket.
+The production-shaped local stack includes PostgreSQL, MinIO, a Markdown
+administration mock, database setup, seed work, and Tools. Check that ports
+3000, 5432, 9000, 9001, and 8787 are free before starting it.
+
+The Markdown Share browser needs a Convex deployment. Run `pnpm run
+start:markdown-share` in another terminal. Convex uses the selected development
+deployment and writes its URL to `services/markdown-share/.env.local`. If that
+URL is not `http://localhost:3210`, export `VITE_CONVEX_URL` with that URL before
+the Compose command below. Docker passes it to both the browser build and the Tools
+runtime. The administration mock stays on port 8787 and does not implement the
+Convex browser protocol.
+
+Tools requires `FEEDBACK_ENCRYPTION_KEY`, a base64url-encoded 32-byte key.
+The checked-in Compose environment omits it. From the repository root, create
+a private directory outside the checkout and pass the key through an explicit
+override. This gives the stack its own Compose project and volumes:
 
 ```bash
-pnpm run local:stack /absolute/private/tools-local-run
+set -eu
+umask 077
+LOCAL_STACK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/microservices-local.XXXXXX")
+LOCAL_STACK_PROJECT=$(basename "$LOCAL_STACK_DIR" | tr '[:upper:].' '[:lower:]-')
+node -e 'console.log("FEEDBACK_ENCRYPTION_KEY=" + require("node:crypto").randomBytes(32).toString("base64url"))' > "$LOCAL_STACK_DIR/.env"
+cat > "$LOCAL_STACK_DIR/compose.override.yaml" <<'YAML'
+services:
+  platform:
+    environment:
+      FEEDBACK_ENCRYPTION_KEY: ${FEEDBACK_ENCRYPTION_KEY:?Set the owned local feedback key}
+YAML
+env -u FEEDBACK_ENCRYPTION_KEY docker compose -p "$LOCAL_STACK_PROJECT" --env-file "$LOCAL_STACK_DIR/.env" \
+  -f compose.yaml -f "$LOCAL_STACK_DIR/compose.override.yaml" config --quiet
+env -u FEEDBACK_ENCRYPTION_KEY docker compose -p "$LOCAL_STACK_PROJECT" --env-file "$LOCAL_STACK_DIR/.env" \
+  -f compose.yaml -f "$LOCAL_STACK_DIR/compose.override.yaml" up --build
 ```
 
-Choose a private run directory outside the checkout. The command creates a
-feedback encryption key there and retains it for restart. Reuse the same
-directory to reuse its Compose project, database, object storage, key, and port
-bindings. If a retained port is occupied, the command stops before it changes
-the configuration or command logs. Stop that port's owner before you restart.
-Do not delete the key while you retain encrypted Feedback responses.
+Keep the directory path, project name, and key for the lifetime of the test
+responses. Reuse them when restarting the same stack. Do not put the generated
+key in a checkout file or print the resolved configuration to logs. `env -u`
+prevents an inherited shell key from overriding this project's private file. A new key
+cannot decrypt responses in an existing volume. See
+[Feedback setup](services/tools/feedback/README.md) for the encryption contract.
 
-The command resolves root `compose.yaml`, then creates a private port override.
-Every published port uses an unused `127.0.0.1` port. PostgreSQL, MinIO, and the
-Markdown administration mock run in Compose. Database setup and seed work use
-the same project. Tools builds and runs on the host, so signed storage URLs use
-the same loopback endpoint as the browser. The host runs from a private copy of
-the build, so a later build in the checkout cannot replace its files. The
-command never changes a signed URL after signing. Do not export database or
-storage endpoints into this command. It rejects inherited data endpoints.
+Then open:
 
-MinIO builds from a pinned upstream source revision because its community
-container images are no longer published. Docker supplies the Go compiler.
-Compose builds one service at a time and caches the source build for reuse.
+- `http://localhost:3000` for Tools
+- `http://localhost:9001` for the MinIO console
+- `http://localhost:3000/share` for the integrated Markdown and LaTeX source frontend
+- `http://localhost:8787` for the local Markdown administration mock
 
-After both `/live` and `/health` succeed, the command prints a redacted JSON
-manifest with the Tools, storage, storage console, and administration origins.
-The private run directory contains `manifest.json`, the generated override,
-command logs, and the private host environment. Keep the private environment
-and `identity.json` out of source control and shared evidence.
-
-The command stops after 30 minutes. To use another bounded lifetime, supply
-seconds as the second argument, up to 3600.
+Stop this project from the same shell, or restore the saved directory path and
+project name first:
 
 ```bash
-pnpm run local:stack /absolute/private/tools-local-run 3600
+env -u FEEDBACK_ENCRYPTION_KEY docker compose -p "$LOCAL_STACK_PROJECT" --env-file "$LOCAL_STACK_DIR/.env" \
+  -f compose.yaml -f "$LOCAL_STACK_DIR/compose.override.yaml" down
 ```
 
-Press Ctrl+C to stop the owned host process and run Compose `down` for this
-project. Cleanup retains its key and volumes. The `docker:up` and `docker:down`
-scripts address the default project and do not manage this stack. If a command
-crashes and leaves `active.lock`, check that its recorded process and stack are
-stopped before you remove that lock. The command also retains the lock when
-process release is uncertain or Compose cleanup fails. Retain the run directory
-for recovery.
-Volume deletion requires separate authorization.
+This retains its database and object-storage volumes. Volume deletion requires
+separate authorization. The `docker:up`/`docker:down` scripts use the default
+project; they do not reuse this explicit environment and override.
 
-The manifest reports acceptance limits separately. Signed multipart PUT,
-preflight, and ETag exposure checks run over HTTP. MinIO allows the owned Tools
-origin and the `null` origin used by sandboxed artifact downloads. Its global
-CORS setting applies to all methods. This fixture cannot prove separate upload
-and download origin policies for a production provider. Publisher browser journeys
-remain blocked until a real browser confirms signed PUT and readable ETag.
-Private browser acceptance requires a real local Google OAuth client and allowed
-subject. The local placeholders do not prove login. Document Share requires a
-separately owned disposable local Convex backend. The administration mock does
-not implement the Convex browser protocol. Status heartbeat-to-publication
-remains blocked until a bounded local checker has explicit local monitors,
-the canonical fixture pause state, and notifications disabled. The setup does
-not start a checker or default monitors.
-
-The runtime helper `withLocalStack` in
-`services/tools/test/runtime/local-stack.ts` exposes the same setup for future
-journeys. Its caller supplies R1 owned command executors, an explicit private run
-directory, and a bounded host lifetime. Its callback receives the manifest,
-private environment, and cancellation signal. Cleanup runs when the callback
-ends or the host process stops.
+The stack uses non-production OAuth placeholders so public routes and
+infrastructure can start. Supply a local Google OAuth client to test private
+browser routes.
 
 ## Railway
 

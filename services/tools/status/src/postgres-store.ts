@@ -8,14 +8,13 @@ import {
 } from "@tools-platform/domain";
 import catalogSource from "../../dashboard/config/initial-catalog.json" with { type: "json" };
 import { products } from "../../dashboard/products.js";
-import { CheckerConflictError, createS3CheckerStore, type CheckerStore } from "./bucket.js";
+import { CheckerConflictError, createSnapshotStore, type CheckerStore } from "./bucket.js";
 import type { CheckerConfig } from "./config.js";
 import { assertMonitorIdentities, loadMonitorDefinitions } from "./definitions.js";
 
-/** Keeps runtime state in Postgres; S3 remains only the catalog/snapshot transport. */
 export function createPostgresCheckerStore(config: CheckerConfig): CheckerStore {
   const sql = postgres(config.databaseUrl, { max: 4 });
-  const snapshots = createS3CheckerStore(config.bucket);
+  const snapshots = createSnapshotStore(config.bucket);
   return {
     async readCatalog() {
       const catalog = decodeCatalogDocument(catalogSource);

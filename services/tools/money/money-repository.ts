@@ -229,34 +229,22 @@ export function createPostgresMoneyRepository(databaseUrl: string, options: { re
 
 export function postgresMoneyRepository(sql: Sql): MoneyRepository {
   return {
-    existingSourceKeys(transactions) {
-      return existingTransactionSourceKeys(sql, transactions);
+    async existingSourceKeys(transactions) {
+      return new Set((await existingTransactionIds(sql, transactions)).keys());
     },
 
     commitImport(input) {
       return sql.begin(async (tx) => {
         await lockCategoryRules(tx);
-        const [existing] = await tx<ImportRow[]>`select id, digest, format, filename, bytes, source_row_count, inserted_row_count, duplicate_row_count, committed_at, created_by from tools.money_imports where digest = ${input.digest}`;
-        if (existing) {
-          await refreshInferredTransactions(tx, input.transactions);
-          await linkUnambiguousTransfers(tx);
-          await applyCategoryRules(tx);
-          return receipt(existing, true);
-        }
-        const importId = randomUUID();
         const committedAt = new Date();
         const created = await tx<{ id: string }[]>`
           insert into tools.money_imports (id, digest, format, filename, bytes, source_row_count, inserted_row_count, duplicate_row_count, warnings, committed_at, created_by)
-          values (${importId}, ${input.digest}, ${input.format}, ${input.filename}, ${input.bytes}, 0, 0, 0, ${tx.json([...input.warnings])}, ${committedAt}, ${input.actor})
+          values (${randomUUID()}, ${input.digest}, ${input.format}, ${input.filename}, ${input.bytes}, 0, 0, 0, ${tx.json([...input.warnings])}, ${committedAt}, ${input.actor})
           on conflict (digest) do nothing returning id`;
-        if (!created[0]) {
-          const [raced] = await tx<ImportRow[]>`select id, digest, format, filename, bytes, source_row_count, inserted_row_count, duplicate_row_count, committed_at, created_by from tools.money_imports where digest = ${input.digest}`;
-          if (!raced) throw new Error("Money import replay could not be read.");
-          await refreshInferredTransactions(tx, input.transactions);
-          await linkUnambiguousTransfers(tx);
-          await applyCategoryRules(tx);
-          return receipt(raced, true);
-        }
+        const replay = !created[0];
+        const [moneyImport] = await tx<ImportRow[]>`select id, digest, format, filename, bytes, source_row_count, inserted_row_count, duplicate_row_count, committed_at, created_by from tools.money_imports where digest = ${input.digest}`;
+        if (!moneyImport) throw new Error("Money import replay could not be read.");
+        const importId = moneyImport.id;
 
         const accountIds = new Map<string, string>();
         for (const batch of chunks(uniqueAccounts(input.transactions), ACCOUNT_INSERT_CHUNK_SIZE)) {
@@ -269,7 +257,7 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
           for (const account of saved) accountIds.set(account.external_ref, account.id);
         }
 
-        const existingKeys = await existingTransactionSourceKeys(tx, input.transactions);
+        const existingKeys = await existingTransactionIds(tx, input.transactions);
         const transactionIds = new Map<string, string>();
         let insertedCount = 0;
         for (const batch of chunks(input.transactions.filter((item) => !existingKeys.has(item.sourceKey)), TRANSACTION_INSERT_CHUNK_SIZE)) {
@@ -296,16 +284,24 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
         });
         for (const batch of chunks(eventValues, RELATED_INSERT_CHUNK_SIZE)) if (batch.length) await tx`insert into tools.money_investment_events ${tx(batch)} on conflict (transaction_id) do nothing`;
 
-        for (const batch of chunks(input.balanceSnapshots, RELATED_INSERT_CHUNK_SIZE)) {
+        for (const batch of chunks(replay ? [] : input.balanceSnapshots, RELATED_INSERT_CHUNK_SIZE)) {
           const values = batch.map((item) => ({ account_id: requiredAccountId(accountIds, item.accountExternalRef), snapshot_date: item.date,
             observed_at: item.observedAt, value_minor: item.valueMinor, currency: item.currency, origin: "import", import_id: importId }));
           if (values.length) await tx`insert into tools.money_balance_snapshots ${tx(values)} on conflict (account_id, snapshot_date, origin) do update set observed_at = excluded.observed_at, value_minor = excluded.value_minor, currency = excluded.currency, import_id = excluded.import_id
             where excluded.observed_at > tools.money_balance_snapshots.observed_at
               or (excluded.observed_at = tools.money_balance_snapshots.observed_at and excluded.value_minor <> tools.money_balance_snapshots.value_minor)`;
         }
+        const memberIds = [...new Set([...existingKeys.values(), ...transactionIds.values()])];
+        for (const batch of chunks(memberIds, RELATED_INSERT_CHUNK_SIZE)) {
+          if (batch.length) await tx`insert into tools.money_import_transactions (import_id, transaction_id)
+            select import_id, id from tools.money_transactions where id in ${tx(batch)}
+            union select ${importId}::uuid, id from tools.money_transactions where id in ${tx(batch)}
+            on conflict do nothing`;
+        }
         await refreshInferredTransactions(tx, input.transactions.filter((transaction) => !transactionIds.has(transaction.sourceKey)));
         await linkUnambiguousTransfers(tx);
         await applyCategoryRules(tx);
+        if (replay) return receipt(moneyImport, true);
         const duplicateCount = input.rowCount - insertedCount;
         const [saved] = await tx<ImportRow[]>`
           update tools.money_imports set source_row_count = ${input.rowCount}, inserted_row_count = ${insertedCount}, duplicate_row_count = ${duplicateCount}
@@ -338,20 +334,29 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
         const [moneyImport] = await tx<{ id: string }[]>`select id from tools.money_imports where id = ${importId} for update`;
         if (!moneyImport) return undefined;
 
-        const linkedGroups = await tx<{ transfer_group_id: string }[]>`select distinct transfer_group_id
-          from tools.money_transactions where import_id = ${importId} and transfer_group_id is not null`;
-        const groupIds = linkedGroups.map((row) => row.transfer_group_id);
-        if (groupIds.length) {
-          await tx`update tools.money_transactions set transfer_group_id = null, transfer_disposition = null, transfer_origin = null
-            where transfer_group_id in ${tx(groupIds)}`;
-        }
+        await tx`insert into tools.money_import_transactions (import_id, transaction_id)
+          select import_id, id from tools.money_transactions
+          where import_id = ${importId} or id in (
+            select transaction_id from tools.money_import_transactions where import_id = ${importId})
+          on conflict do nothing`;
+        const onlyHere = tx`select member.transaction_id from tools.money_import_transactions member
+          where member.import_id = ${importId} and not exists (select 1 from tools.money_import_transactions other
+            where other.transaction_id = member.transaction_id and other.import_id <> ${importId})`;
+        await tx`update tools.money_transactions set transfer_group_id = null, transfer_disposition = null, transfer_origin = null
+          where transfer_group_id in (select transfer_group_id from tools.money_transactions where id in (${onlyHere}) and transfer_group_id is not null)`;
 
         const deletedEvents = await tx<{ id: string }[]>`delete from tools.money_investment_events
-          where transaction_id in (select id from tools.money_transactions where import_id = ${importId}) returning id`;
+          where transaction_id in (${onlyHere}) returning id`;
         const deletedSnapshots = await tx<{ account_id: string }[]>`delete from tools.money_balance_snapshots
           where import_id = ${importId} returning account_id`;
         const deletedTransactions = await tx<{ id: string }[]>`delete from tools.money_transactions
-          where import_id = ${importId} returning id`;
+          where id in (${onlyHere}) returning id`;
+        await tx`update tools.money_transactions kept set import_id = (
+            select member.import_id from tools.money_import_transactions member
+            join tools.money_imports remaining on remaining.id = member.import_id
+            where member.transaction_id = kept.id and member.import_id <> ${importId}
+            order by remaining.committed_at, remaining.id limit 1)
+          where kept.import_id = ${importId}`;
         await tx`delete from tools.money_imports where id = ${importId}`;
         await linkUnambiguousTransfers(tx);
         await applyCategoryRules(tx);
@@ -1339,12 +1344,12 @@ function collectMutuallyUnique(rows: readonly TransferRow[], used: Set<string>, 
   }
 }
 
-async function existingTransactionSourceKeys(sql: Sql | TransactionSql, transactions: readonly MoneyLedgerTransaction[]) {
+async function existingTransactionIds(sql: Sql | TransactionSql, transactions: readonly MoneyLedgerTransaction[]) {
   const sourceKeys = new Set(transactions.map((item) => item.sourceKey));
-  const existing = new Set<string>();
+  const existing = new Map<string, string>();
   for (const keys of chunks([...sourceKeys], 1_000)) {
-    const rows = await sql<{ source_key: string }[]>`select source_key from tools.money_transactions where source_key in ${sql(keys)}`;
-    for (const row of rows) existing.add(row.source_key);
+    const rows = await sql<{ id: string; source_key: string }[]>`select id, source_key from tools.money_transactions where source_key in ${sql(keys)}`;
+    for (const row of rows) existing.set(row.source_key, row.id);
   }
   const cash = transactions.filter((item) => item.provider === "revolut" && item.accountRole === "cash"
     && !existing.has(item.sourceKey) && item.sourceKey === revolutCashSourceKey(item));
@@ -1353,9 +1358,9 @@ async function existingTransactionSourceKeys(sql: Sql | TransactionSql, transact
   // Older imports hashed the file's raw cells. Match their parsed values until those rows are removed.
   const dates = cash.map((item) => item.localDate).sort();
   const rows = await sql<{
-    external_ref: string; source_type: string; occurred_at: Date; completed_at: Date | null; description: string;
+    id: string; external_ref: string; source_type: string; occurred_at: Date; completed_at: Date | null; description: string;
     amount_minor: string; fee_minor: string; currency: string; status: MoneyLedgerTransaction["status"]; balance_after_minor: string | null;
-  }[]>`select a.external_ref, t.source_type, t.occurred_at, t.completed_at, t.description,
+  }[]>`select t.id, a.external_ref, t.source_type, t.occurred_at, t.completed_at, t.description,
       t.amount_minor::text, t.fee_minor::text, t.currency, t.status, t.balance_after_minor::text
     from tools.money_transactions t join tools.money_accounts a on a.id = t.account_id
     join tools.money_imports i on i.id = t.import_id
@@ -1367,7 +1372,7 @@ async function existingTransactionSourceKeys(sql: Sql | TransactionSql, transact
       description: row.description, amountMinor: integer(row.amount_minor), feeMinor: integer(row.fee_minor),
       currency: row.currency, status: row.status,
       ...(row.balance_after_minor === null ? {} : { balanceAfterMinor: integer(row.balance_after_minor) }) });
-    if (sourceKeys.has(key)) existing.add(key);
+    if (sourceKeys.has(key)) existing.set(key, row.id);
   }
   return existing;
 }
