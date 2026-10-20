@@ -8,7 +8,6 @@ export {
 } from "./fetch-app.js";
 export { ActivityTracker } from "./activity-tracker.js";
 export { loadConfig } from "./config.js";
-export { createS3UploadStorage } from "./storage.js";
 export { createPostgresUploadStorage } from "./postgres-storage.js";
 export {
   createPostgresUploadLinkRepository,

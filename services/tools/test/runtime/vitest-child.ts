@@ -4,9 +4,9 @@ import { fileURLToPath } from "node:url";
 import { createVitest, type TestCase, type TestModule, type Vitest } from "vitest/node";
 import { redactDatabase, type CaseResult, type ChildReport } from "./receipt.ts";
 
-const [phase, reportPath, suite = "postgres", ...extra] = process.argv.slice(2);
-if ((phase !== "discover" && phase !== "run") || !reportPath || !["postgres", "identity"].includes(suite) || extra.length) {
-  throw new Error("Usage: vitest-child.ts <discover|run> <report-path> [postgres|identity]");
+const [phase, reportPath, ...extra] = process.argv.slice(2);
+if ((phase !== "discover" && phase !== "run") || !reportPath || extra.length) {
+  throw new Error("Usage: vitest-child.ts <discover|run> <report-path>");
 }
 const toolsRoot = fileURLToPath(new URL("../../", import.meta.url));
 
@@ -36,7 +36,7 @@ let vitest: Vitest | undefined;
 try {
   vitest = await createVitest("test", {
     root: toolsRoot,
-    config: join(toolsRoot, suite === "identity" ? "vitest.identity.config.ts" : "vitest.postgres.config.ts"),
+    config: join(toolsRoot, "vitest.postgres.config.ts"),
     watch: false,
     reporters: phase === "discover" ? [] : ["default", {
       onTestRunEnd(modules, unhandledErrors, reason) {
