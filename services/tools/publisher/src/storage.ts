@@ -25,21 +25,14 @@ import {
 } from "./file-metadata.js";
 
 import {
-  classifyUpload,
-  DEFAULT_UPLOAD_LIST_CRITERIA,
-  serializeUploadListCriteria,
   type UploadCategory,
-  type UploadListCriteria,
-  type UploadListSort,
-  type UploadExpiryFilter
+  type UploadListCriteria
 } from "./upload-list.js";
 
 export type { UploadListCriteria, UploadListSort, UploadExpiryFilter } from "./upload-list.js";
 
 const TEMPORARY_FILE_PREFIX = "files/";
 const HTML_PREFIX = "pages/";
-const PAGE_ID_PATTERN = /^[A-Za-z0-9_-]{32}$/;
-const LIST_METADATA_CONCURRENCY = 8;
 
 export type StorageOperationOptions = {
   signal?: AbortSignal;
@@ -228,7 +221,11 @@ export class FileUpdateConflictError extends Error {
   }
 }
 
-export function createS3UploadStorage(config: S3UploadStorageConfig): UploadStorage {
+export type UploadBodyStorage = Omit<UploadStorage,
+  "directUploads" | "uploadOrigins" | "listUploads" | "updateHtmlProject" | "deleteExpiredTemporaryFiles"
+>;
+
+export function createS3BodyStorage(config: S3UploadStorageConfig): UploadBodyStorage {
   const client = new S3Client({
     endpoint: config.endpoint,
     region: config.region,
@@ -411,108 +408,6 @@ export function createS3UploadStorage(config: S3UploadStorageConfig): UploadStor
       );
     },
 
-    async listUploads(asOf, options) {
-      const criteria = options.criteria ?? DEFAULT_UPLOAD_LIST_CRITERIA;
-      const prefixes =
-        !options.includeSummary && criteria.kind === "html"
-          ? ([[HTML_PREFIX, "html"]] as const)
-          : !options.includeSummary && criteria.kind === "file"
-            ? ([[TEMPORARY_FILE_PREFIX, "file"]] as const)
-            : ([
-                [HTML_PREFIX, "html"],
-                [TEMPORARY_FILE_PREFIX, "file"]
-              ] as const);
-      const candidates = (
-        await Promise.all(
-          prefixes.map(([prefix, kind]) =>
-            listUploadCandidates(client, config.bucket, prefix, kind, options)
-          )
-        )
-      )
-        .flat();
-      const sort = criteria.sort;
-      if (!requiresFullMetadataScan(options)) {
-        return listUploadsFast(
-          client,
-          config.bucket,
-          candidates,
-          asOf,
-          options,
-          sort === "oldest" ? "oldest" : "newest"
-        );
-      }
-      const summaries = (await mapWithConcurrency(
-        candidates,
-        LIST_METADATA_CONCURRENCY,
-        async (candidate) => {
-          const summary = await headUploadSummary(client, config.bucket, candidate, asOf, options);
-          return summary ? { ...summary, category: classifyUpload(summary.contentType, summary.originalName), key: candidate.key } : null;
-        }
-      )).filter((summary): summary is ListedUploadSummary => summary !== null);
-      const normalizedQuery = criteria.q.trim().normalize("NFKC").toLowerCase();
-      const filtered = summaries
-        .filter((upload) => criteria.kind === "all" || upload.kind === criteria.kind)
-        .filter((upload) => !normalizedQuery || `${upload.originalName} ${upload.id} ${upload.project ?? ""}`.normalize("NFKC").toLowerCase().includes(normalizedQuery))
-        .filter((upload) => matchesUploadProject(upload.project, criteria.project))
-        .filter((upload) => criteria.category === "all" || upload.category === criteria.category)
-        .filter((upload) => matchesExpiry(upload, criteria.expiry, asOf))
-        .sort(uploadComparator(sort));
-      const listCursor = options.cursor;
-      const afterCursor = listCursor
-        ? filtered.filter((upload) => uploadComparator(sort)(upload, cursorUpload(listCursor)) > 0)
-        : filtered;
-      const page = afterCursor.slice(0, options.limit + 1);
-      const uploads = page.slice(0, options.limit);
-      const last = uploads.at(-1);
-      return {
-        uploads: uploads.map(({ key: _key, ...upload }) => upload),
-        ...(options.includeSummary ? { summary: summarizeUploads(summaries, asOf) } : {}),
-        ...(last && page.length > options.limit
-          ? {
-              nextCursor: {
-                version: 1,
-                criteria: serializeUploadListCriteria(options.criteria ?? DEFAULT_UPLOAD_LIST_CRITERIA),
-                updatedAt: last.updatedAt,
-                key: last.key,
-                originalName: last.originalName,
-                bytes: last.bytes,
-                ...(last.expiresAt ? { expiresAt: last.expiresAt } : {})
-              }
-            }
-          : {})
-      };
-    },
-
-    async updateHtmlProject(id, project, options) {
-      const key = htmlKey(id);
-      try {
-        const current = await client.send(
-          new HeadObjectCommand({ Bucket: config.bucket, Key: key }),
-          requestOptions(options)
-        );
-        const metadata = { ...(current.Metadata ?? {}) };
-        delete metadata["project-base64"];
-        await client.send(
-          new CopyObjectCommand({
-            Bucket: config.bucket,
-            Key: key,
-            CopySource: `${config.bucket}/${key}`,
-            CopySourceIfMatch: current.ETag,
-            MetadataDirective: "REPLACE",
-            Metadata: { ...metadata, ...projectMetadata(project) },
-            CacheControl: current.CacheControl,
-            ContentType: current.ContentType
-          }),
-          requestOptions(options)
-        );
-        return true;
-      } catch (error) {
-        if (isNotFoundError(error)) return false;
-        if (isConditionalWriteConflictError(error)) throw new HtmlUpdateConflictError();
-        throw error;
-      }
-    },
-
     async updateFileExpiry(id, expiresAt, options) {
       const key = options?.objectKey ?? temporaryFileKey(id);
       try {
@@ -591,50 +486,6 @@ export function createS3UploadStorage(config: S3UploadStorageConfig): UploadStor
       }
     },
 
-    async deleteExpiredTemporaryFiles(expiresAtOrBefore, options) {
-      let deleted = 0;
-      let continuationToken: string | undefined;
-
-      do {
-        const result = await client.send(
-          new ListObjectsV2Command({
-            Bucket: config.bucket,
-            Prefix: TEMPORARY_FILE_PREFIX,
-            ContinuationToken: continuationToken
-          }),
-          requestOptions(options)
-        );
-
-        for (const object of result.Contents ?? []) {
-          if (!object.Key) {
-            continue;
-          }
-
-          try {
-            const expiresAt = await getObjectExpiry(client, config.bucket, object.Key, options);
-            if (!expiresAt || expiresAt > expiresAtOrBefore) {
-              continue;
-            }
-
-            await client.send(
-              new DeleteObjectCommand({
-                Bucket: config.bucket,
-                Key: object.Key
-              }),
-              requestOptions(options)
-            );
-            deleted += 1;
-          } catch (error) {
-            console.error(`failed to clean up temporary upload ${object.Key}`, error);
-          }
-        }
-
-        continuationToken = result.NextContinuationToken;
-      } while (continuationToken);
-
-      return deleted;
-    },
-
     close() {
       client.destroy();
     }
@@ -649,24 +500,8 @@ export function temporaryFileKey(id: string) {
   return `${TEMPORARY_FILE_PREFIX}${id}`;
 }
 
-type UploadCandidate = {
-  id: string;
-  kind: StoredUploadSummary["kind"];
-  key: string;
-  updatedAt: Date;
-};
-
-type ListedUploadSummary = StoredUploadSummary & { key: string; category: UploadCategory };
-
 export function matchesUploadProject(project: string | undefined, filter: UploadListCriteria["project"]): boolean {
   return filter.mode === "all" || (filter.mode === "unassigned" ? !project : project === filter.name);
-}
-
-function requiresFullMetadataScan(options: ListUploadsOptions): boolean {
-  const criteria = options.criteria ?? DEFAULT_UPLOAD_LIST_CRITERIA;
-  return Boolean(options.includeSummary) || Boolean(criteria.q) || criteria.expiry !== "all" ||
-    criteria.project.mode !== "all" || criteria.category !== "all" ||
-    criteria.sort === "filename" || criteria.sort === "expiry" || criteria.sort === "size";
 }
 
 export function summarizeUploads(
@@ -687,270 +522,6 @@ export function summarizeUploads(
     expiringSoon: active.filter((upload) => upload.expiresAt && upload.expiresAt <= new Date(asOf.getTime() + 86_400_000)).length,
     projects: [...projectCounts].map(([project, count]) => ({ project, count }))
   };
-}
-
-async function listUploadsFast(
-  client: S3Client,
-  bucket: string,
-  candidates: UploadCandidate[],
-  asOf: Date,
-  options: ListUploadsOptions,
-  sort: "newest" | "oldest"
-): Promise<StoredUploadPage> {
-  const ordered = [...candidates]
-    .sort((left, right) => compareCandidates(left, right, sort))
-    .filter((candidate) => !options.cursor || candidateAfterCursor(candidate, options.cursor, sort));
-  const uploads: ListedUploadSummary[] = [];
-  let processed = 0;
-  while (processed < ordered.length && uploads.length <= options.limit) {
-    const chunk = ordered.slice(processed, processed + LIST_METADATA_CONCURRENCY);
-    const summaries = await mapWithConcurrency(
-      chunk,
-      LIST_METADATA_CONCURRENCY,
-      async (candidate) => {
-        const summary = await headUploadSummary(client, bucket, candidate, asOf, options);
-        return summary
-          ? { ...summary, category: classifyUpload(summary.contentType, summary.originalName), updatedAt: candidate.updatedAt, key: candidate.key }
-          : null;
-      }
-    );
-    processed += chunk.length;
-    uploads.push(...summaries.filter((summary): summary is ListedUploadSummary => summary !== null));
-  }
-  const page = uploads.slice(0, options.limit);
-  const last = page.at(-1);
-  return {
-    uploads: page.map(({ key: _key, ...upload }) => upload),
-    ...(last && uploads.length > options.limit
-      ? {
-          nextCursor: {
-            version: 1,
-            criteria: serializeUploadListCriteria(options.criteria ?? DEFAULT_UPLOAD_LIST_CRITERIA),
-            updatedAt: last.updatedAt,
-            key: last.key,
-            originalName: last.originalName,
-            bytes: last.bytes,
-            ...(last.expiresAt ? { expiresAt: last.expiresAt } : {})
-          }
-        }
-      : {})
-  };
-}
-
-function compareCandidates(
-  left: UploadCandidate,
-  right: UploadCandidate,
-  sort: "newest" | "oldest"
-): number {
-  const time = left.updatedAt.getTime() - right.updatedAt.getTime();
-  return (sort === "oldest" ? time : -time) || left.key.localeCompare(right.key);
-}
-
-function candidateAfterCursor(
-  candidate: UploadCandidate,
-  cursor: UploadListCursor,
-  sort: "newest" | "oldest"
-): boolean {
-  const time = candidate.updatedAt.getTime() - cursor.updatedAt.getTime();
-  return sort === "oldest"
-    ? time > 0 || (time === 0 && candidate.key > cursor.key)
-    : time < 0 || (time === 0 && candidate.key > cursor.key);
-}
-
-async function listUploadCandidates(
-  client: S3Client,
-  bucket: string,
-  prefix: string,
-  kind: StoredUploadSummary["kind"],
-  options?: StorageOperationOptions
-) {
-  const candidates: UploadCandidate[] = [];
-  let continuationToken: string | undefined;
-
-  do {
-    const result = await client.send(
-      new ListObjectsV2Command({
-        Bucket: bucket,
-        Prefix: prefix,
-        ContinuationToken: continuationToken
-      }),
-      requestOptions(options)
-    );
-
-    for (const object of result.Contents ?? []) {
-      if (!object.Key || !object.LastModified) {
-        continue;
-      }
-      const id = uploadIdFromKey(object.Key, kind);
-      if (!id) {
-        continue;
-      }
-      candidates.push({
-        id,
-        key: object.Key,
-        kind,
-        updatedAt: object.LastModified
-      });
-    }
-    continuationToken = result.NextContinuationToken;
-  } while (continuationToken);
-
-  return candidates;
-}
-
-function uploadComparator(sort: UploadListSort) {
-  return (left: ListedUploadSummary, right: ListedUploadSummary): number => {
-    if (sort === "size") return right.bytes - left.bytes || left.key.localeCompare(right.key);
-    if (sort === "oldest") {
-      return left.updatedAt.getTime() - right.updatedAt.getTime() || left.key.localeCompare(right.key);
-    }
-    if (sort === "filename") {
-      return left.originalName.localeCompare(right.originalName, undefined, { sensitivity: "base" }) || left.key.localeCompare(right.key);
-    }
-    if (sort === "expiry") {
-      return (left.expiresAt?.getTime() ?? Number.POSITIVE_INFINITY) - (right.expiresAt?.getTime() ?? Number.POSITIVE_INFINITY) || left.key.localeCompare(right.key);
-    }
-    return right.updatedAt.getTime() - left.updatedAt.getTime() || left.key.localeCompare(right.key);
-  };
-}
-
-function cursorUpload(cursor: UploadListCursor): ListedUploadSummary {
-  return {
-    id: "cursor",
-    key: cursor.key,
-    kind: cursor.key.startsWith(HTML_PREFIX) ? "html" : "file",
-    originalName: cursor.originalName ?? cursor.key,
-    bytes: cursor.bytes ?? 0,
-    category: "other",
-    contentType: "application/octet-stream",
-    updatedAt: cursor.updatedAt,
-    ...(cursor.expiresAt ? { expiresAt: cursor.expiresAt } : {})
-  };
-}
-
-function matchesExpiry(upload: ListedUploadSummary, filter: UploadExpiryFilter, asOf: Date): boolean {
-  if (filter === "all") return true;
-  if (filter === "persistent") return !upload.expiresAt;
-  if (!upload.expiresAt) return false;
-  const windowMs = filter === "24h" ? 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000;
-  return upload.expiresAt.getTime() <= asOf.getTime() + windowMs;
-}
-
-async function headUploadSummary(
-  client: S3Client,
-  bucket: string,
-  candidate: UploadCandidate,
-  asOf: Date,
-  options?: StorageOperationOptions
-): Promise<StoredUploadSummary | null> {
-  try {
-    const result = await client.send(
-      new HeadObjectCommand({
-        Bucket: bucket,
-        Key: candidate.key
-      }),
-      requestOptions(options)
-    );
-    const metadata = result.Metadata ?? {};
-    const updatedAt = result.LastModified ?? candidate.updatedAt;
-
-    if (candidate.kind === "html") {
-      const project = readProjectMetadata(metadata);
-      return {
-        id: candidate.id,
-        kind: "html",
-        originalName: readOriginalNameMetadata(
-          metadata,
-          `${candidate.id}.html`
-        ),
-        bytes: result.ContentLength ?? 0,
-        contentType: result.ContentType ?? "text/html; charset=utf-8",
-        updatedAt,
-        ...(project ? { project } : {})
-      };
-    }
-
-    const expiresAt =
-      parseMetadataDate(metadata["expires-at"]) ?? result.Expires;
-    if (expiresAt && expiresAt <= asOf) {
-      return null;
-    }
-    return {
-      id: candidate.id,
-      kind: "file",
-      originalName: readOriginalNameMetadata(metadata, `${candidate.id}.bin`),
-      bytes: result.ContentLength ?? 0,
-      contentType: result.ContentType ?? "application/octet-stream",
-      updatedAt,
-      ...(expiresAt ? { expiresAt } : {})
-    };
-  } catch (error) {
-    if (isNotFoundError(error)) {
-      return null;
-    }
-    throw error;
-  }
-}
-
-function uploadIdFromKey(
-  key: string,
-  kind: StoredUploadSummary["kind"]
-) {
-  const value =
-    kind === "html"
-      ? key.startsWith(HTML_PREFIX) && key.endsWith(".html")
-        ? key.slice(HTML_PREFIX.length, -".html".length)
-        : ""
-      : key.startsWith(TEMPORARY_FILE_PREFIX)
-        ? key.slice(TEMPORARY_FILE_PREFIX.length)
-        : "";
-  return PAGE_ID_PATTERN.test(value) ? value : null;
-}
-
-async function mapWithConcurrency<T, Result>(
-  values: T[],
-  concurrency: number,
-  mapper: (value: T) => Promise<Result>
-) {
-  const results = new Array<Result>(values.length);
-  let nextIndex = 0;
-  const workers = Array.from(
-    { length: Math.min(concurrency, values.length) },
-    async () => {
-      while (nextIndex < values.length) {
-        const index = nextIndex;
-        nextIndex += 1;
-        results[index] = await mapper(values[index]);
-      }
-    }
-  );
-  await Promise.all(workers);
-  return results;
-}
-
-async function getObjectExpiry(
-  client: S3Client,
-  bucket: string,
-  key: string,
-  options?: StorageOperationOptions
-) {
-  try {
-    const result = await client.send(
-      new HeadObjectCommand({
-        Bucket: bucket,
-        Key: key
-      }),
-      requestOptions(options)
-    );
-
-    return parseMetadataDate(result.Metadata?.["expires-at"]) ?? result.Expires ?? null;
-  } catch (error) {
-    if (isNotFoundError(error)) {
-      return null;
-    }
-
-    throw error;
-  }
 }
 
 async function headTemporaryFile(

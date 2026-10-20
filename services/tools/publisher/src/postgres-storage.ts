@@ -12,9 +12,10 @@ import {
   type StoredTemporaryFile,
   type UploadListCursor,
   UploadLinkInactiveError,
+  type UploadBodyStorage,
   type UploadStorage
 } from "./storage.js";
-import { createS3UploadStorage, summarizeUploads, matchesUploadProject } from "./storage.js";
+import { createS3BodyStorage, summarizeUploads, matchesUploadProject } from "./storage.js";
 import { createDirectUploads, DIRECT_PART_BYTES } from "./direct-uploads.js";
 import { createMultipartStorage } from "./multipart-storage.js";
 import { DirectUploadError } from "./multipart-storage.js";
@@ -52,7 +53,7 @@ export function createPostgresUploadStorage(
   s3Config: S3UploadStorageConfig,
   databaseUrl: string
 ): UploadStorage {
-  const bodies = createS3UploadStorage(s3Config);
+  const bodies = createS3BodyStorage(s3Config);
   const sql = postgres(databaseUrl, { max: 5, idle_timeout: 120 });
   const storage = createMetadataBackedUploadStorage(bodies, sql);
   // Separate bounded lock connections keep long verification reads from
@@ -66,7 +67,7 @@ export function createPostgresUploadStorage(
 }
 
 export function createMetadataBackedUploadStorage(
-  bodies: UploadStorage,
+  bodies: UploadBodyStorage,
   sql: Sql
 ): UploadStorage {
   return {
@@ -320,7 +321,7 @@ async function finalizeDelete(sql: Sql, operation: OperationOwner, id: string) {
   });
 }
 
-export async function reconcileArtifactOperations(bodies: UploadStorage, sql: Sql, options?: { signal?: AbortSignal }) {
+export async function reconcileArtifactOperations(bodies: UploadBodyStorage, sql: Sql, options?: { signal?: AbortSignal }) {
   const expired = await sql<{ operation_id: string }[]>`select operation_id from artifacts.operations where lease_until <= now() order by created_at`;
   for (const { operation_id } of expired) {
     const ownerId = crypto.randomUUID();
@@ -332,7 +333,7 @@ export async function reconcileArtifactOperations(bodies: UploadStorage, sql: Sq
   }
 }
 
-async function reconcileOperation(bodies: UploadStorage, sql: Sql, operation: PendingOperation, options?: { signal?: AbortSignal }) {
+async function reconcileOperation(bodies: UploadBodyStorage, sql: Sql, operation: PendingOperation, options?: { signal?: AbortSignal }) {
   if (operation.operation_kind === "delete") {
     await sql`update artifacts.objects set revoked_at = coalesce(revoked_at, now()) where id = ${operation.artifact_id}`;
     await deleteArtifactBodies(bodies, sql, operation.artifact_id, options);
@@ -365,7 +366,7 @@ async function reconcileOperation(bodies: UploadStorage, sql: Sql, operation: Pe
   else await sql`delete from artifacts.operations where operation_id = ${operation.operation_id} and owner_id = ${operation.owner_id}`;
 }
 
-async function deleteArtifactBodies(bodies: UploadStorage, sql: Sql, id: string, options?: { signal?: AbortSignal }) {
+async function deleteArtifactBodies(bodies: UploadBodyStorage, sql: Sql, id: string, options?: { signal?: AbortSignal }) {
   const rows = await sql<{ object_key: string }[]>`select object_key from artifacts.objects where id = ${id}`;
   const versions = await sql<{ receipt: HtmlVersionReceipt | null }[]>`select receipt from artifacts.upload_sessions where target_id = ${id}`;
   const keys = new Set(rows.map(row => row.object_key));
@@ -379,7 +380,7 @@ async function deleteArtifactBodies(bodies: UploadStorage, sql: Sql, id: string,
   await bodies.deleteUpload(id, options);
 }
 
-async function matchesStoredBody(bodies: UploadStorage, value: UpsertArtifact, options?: { signal?: AbortSignal }) {
+async function matchesStoredBody(bodies: UploadBodyStorage, value: UpsertArtifact, options?: { signal?: AbortSignal }) {
   const stored = value.kind === "html"
     ? await bodies.getHtml(value.id, { signal: options?.signal, objectKey: value.objectKey })
     : await bodies.getTemporaryFile(value.id, { signal: options?.signal, objectKey: value.objectKey });
