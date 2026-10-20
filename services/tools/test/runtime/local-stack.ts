@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { chmod, mkdir, open, readFile, readdir, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, open, readFile, readdir, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
+import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { CommandExecutor, CommandOutcome } from "./commands.ts";
@@ -9,7 +10,7 @@ import { VerificationBlocked } from "./receipt.ts";
 
 type Environment = Readonly<Record<string, string | undefined>>;
 type ComposePort = { target: number; published?: string; host_ip?: string; protocol?: string };
-type ComposeService = { environment?: Record<string, string>; ports?: ComposePort[]; container_name?: string };
+type ComposeService = { environment?: Record<string, string>; ports?: ComposePort[]; container_name?: string; image?: string; build?: { tags?: string[] } };
 type ComposeConfig = { services: Record<string, ComposeService>; volumes?: Record<string, { name?: string; external?: boolean }> };
 type Binding = Readonly<{ service: string; target: number; port: number }>;
 type Identity = { version: 1; project: string; feedbackKey: string; bindings?: readonly Binding[] };
@@ -164,12 +165,25 @@ export type LocalStackResult = Readonly<{
   kind: "completed" | "blocked" | "failed";
   manifest?: LocalStackManifest;
   reason?: string;
-  cleanup: "not-needed" | "stopped" | "retained";
+  cleanup: "not-needed" | "stopped" | "disposed" | "retained";
 }>;
 
-export async function withLocalStack(
+type LocalStackUse = (stack: Readonly<{ manifest: LocalStackManifest; environment: Environment; signal: AbortSignal; expiresAt: number }>) => Promise<void>;
+
+export function withLocalStack(options: LocalStackOptions, use: LocalStackUse): Promise<LocalStackResult> {
+  return runLocalStack(options, use, "persistent");
+}
+
+export async function withVerificationStack(options: Omit<LocalStackOptions, "directory">, use: LocalStackUse) {
+  const directory = await mkdtemp(join(tmpdir(), "tools-identity-"));
+  const result = await runLocalStack({ ...options, directory }, use, "verification");
+  return { ...result, directory };
+}
+
+async function runLocalStack(
   options: LocalStackOptions,
-  use: (stack: Readonly<{ manifest: LocalStackManifest; environment: Environment; signal: AbortSignal; expiresAt: number }>) => Promise<void>,
+  use: LocalStackUse,
+  lifetime: "persistent" | "verification",
 ): Promise<LocalStackResult> {
   let directory: string | undefined;
   let lock: Awaited<ReturnType<typeof open>> | undefined;
@@ -207,6 +221,8 @@ export async function withLocalStack(
     };
     const envFile = join(directory, "compose.env");
     await writeFile(envFile, "VITE_CONVEX_URL=http://127.0.0.1:3210\n", { mode: 0o600 });
+    const composePath = join(directory, "compose.yaml");
+    await writeFile(composePath, await readFile(join(root, "compose.yaml")), { mode: 0o600 });
     let sequence = 0;
     async function command(executor: CommandExecutor, command: string, args: readonly string[], step: string, deadlineMs: number, env: Environment = commandEnv, commandSignal?: AbortSignal, cwd = root) {
       let outcome: CommandOutcome;
@@ -223,7 +239,7 @@ export async function withLocalStack(
       }
       return outcome.stdout;
     }
-    const composeArgs = ["--host", dockerHost, "compose", "--parallel", "1", "--project-name", owner.project, "--env-file", envFile, "-f", join(root, "compose.yaml")];
+    const composeArgs = ["--host", dockerHost, "compose", "--parallel", "1", "--project-name", owner.project, "--project-directory", root, "--env-file", envFile, "-f", composePath];
     const compose = (executor: CommandExecutor, args: string[], step: string, deadlineMs: number, commandSignal?: AbortSignal) =>
       command(executor, "docker", [...composeArgs, ...args], step, deadlineMs, commandEnv, commandSignal);
     const version = (await compose(options.commands.work, ["version", "--short"], "compose-version", 10_000, signal)).trim().replace(/^v/, "");
@@ -262,6 +278,10 @@ export async function withLocalStack(
     await writeFile(overridePath, content, { mode: 0o600 });
     composeArgs.push("-f", overridePath);
     const resolved = decodeCompose(await compose(options.commands.work, ["config", "--format", "json"], "resolved-config", 10_000, signal));
+    if (lifetime === "verification" && Object.values(resolved.services).some((service) => service.build
+      ? service.image !== undefined || Boolean(service.build.tags?.length) : !service.image?.split("/").at(-1)?.includes(":"))) {
+      throw new SetupError("blocked", "Verification requires project-generated build tags and explicitly tagged dependency images.");
+    }
     const volumes = Object.values(resolved.volumes ?? {}).map((volume) => volume.name ?? "");
     if (volumes.some((name) => !name.startsWith(`${owner.project}_`))) throw new SetupError("blocked", "Compose volumes are not owned by this project.");
     const resolvedPorts = Object.entries(resolved.services).flatMap(([service, value]) => (value.ports ?? []).map((port) => ({ service, ...port })));
@@ -294,7 +314,23 @@ export async function withLocalStack(
       await rename(join(directory!, "manifest.next.json"), join(directory!, "manifest.json"));
     };
     await publish();
-    down = async () => { await compose(options.commands.cleanup, ["down", "--timeout", "10"], "down", 60_000); };
+    down = async () => {
+      await compose(options.commands.cleanup, ["down", "--timeout", "10"], "down", 60_000);
+      if (lifetime === "verification" && result.kind === "completed" && !options.signal?.aborted && !ownershipUncertain
+        && manifest?.prerequisites.storageHttp.kind === "passed") {
+        const containers = await command(options.commands.cleanup, "docker", ["--host", dockerHost, "ps", "--all", "--quiet",
+          "--filter", `label=com.docker.compose.project=${owner.project}`], "confirm-stopped", 10_000);
+        if (containers.trim()) throw new Error("Owned project containers remain after shutdown.");
+        if (options.signal?.aborted) return;
+        await compose(options.commands.cleanup, ["down", "--timeout", "10", "--volumes", "--rmi", "local"], "dispose", 60_000);
+        const remainingVolumes = await command(options.commands.cleanup, "docker", ["--host", dockerHost, "volume", "ls", "--quiet",
+          "--filter", `name=${owner.project}_`], "confirm-volumes-removed", 10_000);
+        const remainingImages = await command(options.commands.cleanup, "docker", ["--host", dockerHost, "image", "ls", "--quiet",
+          "--filter", `reference=${owner.project}-*`], "confirm-images-removed", 10_000);
+        if (remainingVolumes.trim() || remainingImages.trim()) throw new Error("Owned project volumes or image tags remain after disposal.");
+        result = { ...result, cleanup: "disposed" };
+      }
+    };
     await compose(options.commands.work, ["up", "--detach", "--build", "--wait", "--wait-timeout", "90", ...dependencies], "dependencies", 600_000, signal);
     for (const service of ["postgres-migrate", "minio-seed"]) await compose(options.commands.work, ["run", "--build", "--no-deps", "--rm", service], service, 600_000, signal);
     await command(options.commands.work, "pnpm", ["--dir", "services/tools", "run", "build"], "build", 600_000, hostEnv, signal);
@@ -339,14 +375,25 @@ export async function withLocalStack(
     if (down) {
       try {
         await down();
-        result = { ...result, cleanup: "stopped" };
+        if (result.cleanup !== "disposed") result = { ...result, cleanup: "stopped" };
       }
       catch { result = { ...result, kind: "failed", cleanup: "retained", reason: "Owned Compose cleanup did not pass. Retain the run directory and use its exact project and override for recovery." }; }
     }
     if (ownershipUncertain) result = { ...result, kind: "failed", cleanup: "retained", reason: "A command could not prove process release. Retain active.lock and the run directory until process and Compose cleanup are confirmed." };
+    if (lock) await lock.close();
+    if (lifetime === "verification" && options.signal?.aborted && result.cleanup === "disposed") {
+      result = { ...result, kind: "failed", cleanup: "retained",
+        reason: "Verification was cancelled during disposal. Project resources may already be removed. Retain the private run directory for inspection." };
+    }
+    if (lifetime === "verification" && result.cleanup !== "disposed") {
+      result = { ...result, kind: result.kind === "completed" ? "failed" : result.kind, cleanup: "retained",
+        reason: result.reason ?? "Verification did not pass. Retain its project resources and private run directory for recovery." };
+    }
     if (lock) {
-      await lock.close();
-      if (result.cleanup !== "retained") {
+      if (result.cleanup === "disposed") {
+        try { await rm(directory!, { recursive: true }); }
+        catch { result = { ...result, kind: "failed", cleanup: "retained", reason: "Project disposal passed, but private directory removal did not pass. Retain the remaining files for inspection." }; }
+      } else if (result.cleanup !== "retained") {
         await rm(join(directory!, "output"), { recursive: true, force: true });
         await rm(join(directory!, "active.lock"));
       }
