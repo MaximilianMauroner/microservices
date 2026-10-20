@@ -53,10 +53,6 @@
   /* Neutral fill for text fields, so the accent tint on borders never reads as a validation state. */
   --field: #101010;
   --field-hover: #161616;
-  --treemap-stocks: #171126;
-  --treemap-stocks-border: #b9a1ff;
-  --treemap-cash: #0b2221;
-  --treemap-cash-border: #63e6a5;
   --radius: 0.75rem;
 }
 
@@ -333,8 +329,6 @@ html[data-theme="light"]:has([data-suite-accent]) {
 
 @layer components {
   [data-suite-shell][data-suite-accent] { border-color: var(--surface-border); }
-  .allocation-tile--stocks { border-color: var(--treemap-stocks-border); background: var(--treemap-stocks); }
-  .allocation-tile--cash { border-color: var(--treemap-cash-border); background: var(--treemap-cash); }
   .workspace-page, .app-page, .status-wrap { width: min(1180px, calc(100% - 2rem)); margin-inline: auto; }
   .workspace-page { width: min(1320px, calc(100% - 2rem)); padding-block: 2.5rem 5rem; }
   .workspace-page--wide { width: min(1520px, calc(100% - 2rem)); }

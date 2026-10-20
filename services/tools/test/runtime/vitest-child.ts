@@ -2,11 +2,11 @@ import { rename, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createVitest, type TestCase, type TestModule, type Vitest } from "vitest/node";
-import { redactDatabase, type CaseResult, type ChildReport } from "./receipt.ts";
+import { redactFixture, type CaseResult, type ChildReport } from "./receipt.ts";
 
 const [phase, reportPath, suite = "postgres", ...extra] = process.argv.slice(2);
-if ((phase !== "discover" && phase !== "run") || !reportPath || !["postgres", "identity"].includes(suite) || extra.length) {
-  throw new Error("Usage: vitest-child.ts <discover|run> <report-path> [postgres|identity]");
+if ((phase !== "discover" && phase !== "run") || !reportPath || !["postgres", "identity", "journeys"].includes(suite) || extra.length) {
+  throw new Error("Usage: vitest-child.ts <discover|run> <report-path> [postgres|identity|journeys]");
 }
 const toolsRoot = fileURLToPath(new URL("../../", import.meta.url));
 
@@ -16,6 +16,18 @@ function message(error: unknown) {
 
 function identity(test: TestCase) {
   return `${relative(toolsRoot, test.module.moduleId)} > ${test.fullName}`;
+}
+
+function caseResult(test: TestCase): CaseResult {
+  const result = test.result();
+  const errors = result.errors ?? [];
+  const blocked = result.state === "failed" && errors.length > 0
+    && errors.every((error) => error.name === "VerificationBlocked");
+  return {
+    identity: identity(test),
+    result: blocked ? "blocked" : result.state,
+    evidence: errors.map((error) => error.message),
+  };
 }
 
 function moduleErrors(modules: readonly TestModule[]) {
@@ -36,16 +48,12 @@ let vitest: Vitest | undefined;
 try {
   vitest = await createVitest("test", {
     root: toolsRoot,
-    config: join(toolsRoot, suite === "identity" ? "vitest.identity.config.ts" : "vitest.postgres.config.ts"),
+    config: join(toolsRoot, suite === "journeys" ? "vitest.journeys.config.ts" : suite === "identity" ? "vitest.identity.config.ts" : "vitest.postgres.config.ts"),
     watch: false,
     reporters: phase === "discover" ? [] : ["default", {
       onTestRunEnd(modules, unhandledErrors, reason) {
         runEnds += 1;
-        observed = modules.flatMap((module) => [...module.children.allTests()].map((test) => ({
-          identity: identity(test),
-          result: test.result().state,
-          evidence: test.result().errors?.map((error) => error.message) ?? [],
-        })));
+        observed = modules.flatMap((module) => [...module.children.allTests()].map(caseResult));
         errors.push(...unhandledErrors.map((error) => error.message), ...moduleErrors(modules));
         if (reason !== "passed") errors.push(`Vitest ended ${reason}.`);
       },
@@ -70,7 +78,7 @@ try {
 }
 
 const report: ChildReport = phase === "discover" ? { phase, required, errors } : { phase, observed, errors };
-const redacted = JSON.stringify(report, (_key, value: unknown) => typeof value === "string" ? redactDatabase(value, process.env.TEST_DATABASE_URL) : value, 2);
-await writeFile(`${reportPath}.tmp`, redacted);
+const redacted = JSON.stringify(report, (_key, value: unknown) => typeof value === "string" ? redactFixture(value, process.env) : value, 2);
+await writeFile(`${reportPath}.tmp`, redacted, { mode: 0o600 });
 await rename(`${reportPath}.tmp`, reportPath);
 if (errors.length || observed.some((test) => test.result !== "passed")) process.exitCode = 1;

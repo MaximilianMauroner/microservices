@@ -1,5 +1,3 @@
-export type MoneyTrackerAccountCategory = "money" | "stocks";
-
 export type MoneyFinancialPosition = Readonly<{
   asOf: string;
   cash: Readonly<{
@@ -121,11 +119,6 @@ export type MoneyTrackerTrendStats = Readonly<{
     previousYear?: Readonly<{ date: string; money: number; stocks: number }>;
   }>;
 }>;
-
-/** Classifies accounts using the naming contract chosen for the money tracker UI. */
-export function moneyTrackerAccountCategory(account: string): MoneyTrackerAccountCategory {
-  return /stocks?$/i.test(account.trim()) ? "stocks" : "money";
-}
 
 /** Calculates trends from tracked snapshots without treating balance changes as investment returns. */
 export function moneyTrackerTrendStats(

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decodeReport, redactDatabase, requiredCaseReceipt, type CaseResult } from "./receipt.ts";
+import { decodeReport, redactDatabase, redactFixture, manualAcceptance, requiredCaseReceipt, type CaseResult, journeyReceipts, requiredJourneyCases, mountedStatusCase } from "./receipt.ts";
 
 const required = ["money > first", "money > second"];
 const passed: CaseResult[] = required.map((identity) => ({ identity, result: "passed", evidence: [] }));
@@ -74,7 +74,73 @@ describe("fixture credential redaction", () => {
     expect(redacted).toBe("connect [owned-postgres] failed; password [redacted]; expected 'postgres://tools_runtime:[redacted]' to be 'other'");
   });
 
+  it("redacts every fixture credential including encoded database passwords and signed URL fields", () => {
+    const environment = {
+      DATABASE_URL: "postgres://user:encoded%2Fpassword@127.0.0.1:9/postgres",
+      TOOLS_S3_ACCESS_KEY_ID: "storage-access", TOOLS_S3_SECRET_ACCESS_KEY: "storage-secret",
+      TOWER_HEARTBEAT_TOKEN: "heartbeat-secret", TOOLS_JOURNEY_UPLOAD_TOKEN: "upload-secret",
+      FEEDBACK_ENCRYPTION_KEY: "feedback-key", GOOGLE_CLIENT_SECRET: "oauth-secret", BETTER_AUTH_SECRET: "session-secret",
+    };
+    const text = [...Object.values(environment), "encoded/password", "encoded%2Fpassword", "http://127.0.0.1/file?X-Amz-Signature=signed-secret"].join(" ");
+    const redacted = redactFixture(text, environment);
+    for (const secret of [...Object.values(environment), "encoded/password", "encoded%2Fpassword", "signed-secret"]) {
+      expect(redacted).not.toContain(secret);
+    }
+  });
+
   it("leaves text unchanged when no fixture exists", () => {
     expect(redactDatabase("postgres://user:value@host/db", undefined)).toBe("postgres://user:value@host/db");
+  });
+});
+
+describe("required runtime journey receipts", () => {
+  const observations: CaseResult[] = requiredJourneyCases.map((identity) => ({ identity, result: "passed", evidence: [] }));
+
+  it("rejects a missing mounted Status regression even when every built HTTP check passes", () => {
+    const observed = observations.filter((test) => test.identity !== mountedStatusCase);
+    expect(requiredCaseReceipt(requiredJourneyCases, observed, []).result).toBe("failed");
+    expect(journeyReceipts("revision", "fixture", observed).find((receipt) => receipt.suite === "mounted-status"))
+      .toMatchObject({ result: "failed", evidence: expect.arrayContaining(["Required case is missing."]) });
+  });
+
+  it("keeps all three manual gates blocked and revision-bound when every automated case passes", () => {
+    expect(requiredCaseReceipt(requiredJourneyCases, observations, []).result).toBe("passed");
+    expect(journeyReceipts("revision", "fixture", observations).every((receipt) => receipt.result === "passed")).toBe(true);
+    const manual = manualAcceptance("reviewed-revision");
+    expect(manual).toMatchObject({ kind: "blocked", owner: "Max", revision: "reviewed-revision" });
+    expect(manual.gates.map(({ scenario }) => scenario)).toEqual([
+      "private-google-oauth-upload-link", "authenticated-cross-origin-denial", "historical-pre-middleware-upload-link",
+    ]);
+    for (const gate of manual.gates) {
+      expect(gate).toMatchObject({ kind: "manual", owner: "Max", revision: "reviewed-revision", result: "blocked" });
+      expect(gate.requirements.length).toBeGreaterThan(0);
+      expect(gate.evidence.join(" ")).toContain("Unrun");
+      expect(requiredJourneyCases.some((identity) => identity.endsWith(gate.scenario))).toBe(false);
+    }
+  });
+
+  it.each(["blocked", "pending", "skipped", "failed"] as const)("never accepts an automated %s case", (result) => {
+    const observed = observations.map((test, index) => index === 0 ? { ...test, result } : test);
+    expect(requiredCaseReceipt(requiredJourneyCases, observed, []).result).toBe("failed");
+    expect(journeyReceipts("revision", "fixture", observed).every((receipt) => receipt.result === "failed")).toBe(true);
+  });
+
+  it("cannot import a manual acceptance through an automated report", () => {
+    const observed = [...observations, { identity: "test/runtime/journeys.test.ts > built Tools journeys > private-google-oauth-upload-link", result: "passed" as const, evidence: ["claimed acceptance"] }];
+    expect(requiredCaseReceipt(requiredJourneyCases, observed, []).result).toBe("failed");
+    expect(journeyReceipts("revision", "fixture", observed).every((receipt) => receipt.result === "failed")).toBe(true);
+    expect(manualAcceptance("revision").kind).toBe("blocked");
+  });
+
+  it("does not issue named acceptance passes when the suite reports a hook error", () => {
+    const errors = ["test/status-links.test.tsx: afterAll failed"];
+    const receipts = journeyReceipts("revision", "fixture", observations, errors);
+    expect(receipts.every((receipt) => receipt.result === "failed")).toBe(true);
+    expect(receipts.find((receipt) => receipt.suite === "mounted-status")?.evidence).toContain(errors[0]);
+  });
+
+  it("never reports unrun journeys as passed", () => {
+    expect(journeyReceipts("revision", "unavailable").every((receipt) => receipt.result === "blocked")).toBe(true);
+    expect(requiredCaseReceipt(requiredJourneyCases, [], []).result).toBe("failed");
   });
 });

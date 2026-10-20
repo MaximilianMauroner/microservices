@@ -30,28 +30,53 @@ export async function createOwnedPostgres() {
   }}};
 }`);
   await writeFile(join(target, "local-stack.ts"), `import {appendFileSync} from 'node:fs';
+  let calls = 0;
   export async function withVerificationStack(options,use) {
+    const journey=++calls===2;
+    const name=journey?'journey':'identity';
     const directory=process.env.FIXTURE_DIRECTORY;
     if(process.env.FIXTURE_LOCAL_BLOCKED) return {kind:'blocked',reason:'local fixture unavailable',cleanup:'retained',directory};
     const controller = new AbortController();
-    const pending = use({manifest:{project:'identity-project',origins:{tools:'http://127.0.0.1:9'},prerequisites:{storageHttp:{kind:'passed',reason:'fixture'}}},
-      environment:{ARTIFACT_S3_ENDPOINT:'http://127.0.0.1:9',ARTIFACT_S3_ACCESS_KEY_ID:'local',ARTIFACT_S3_SECRET_ACCESS_KEY:'local'},
+    const pending = use({manifest:{project:name+'-project',origins:{tools:'http://127.0.0.1:9'},prerequisites:{storageHttp:{kind:'passed',reason:'fixture'}}},
+      environment:{UPLOAD_TOKEN:'local-upload-token',TOWER_HEARTBEAT_TOKEN:'local-heartbeat-token',DATABASE_URL:'postgres://local:local-password@127.0.0.1:9/postgres',
+        ARTIFACT_S3_ENDPOINT:'http://127.0.0.1:9',ARTIFACT_S3_ACCESS_KEY_ID:'storage-access',ARTIFACT_S3_SECRET_ACCESS_KEY:'storage-secret'},
       signal:controller.signal});
-    if(process.env.FIXTURE_LOCAL_HOST_FAIL) {
+    if(process.env.FIXTURE_LOCAL_HOST_FAIL || journey && process.env.FIXTURE_JOURNEY_HOST_FAIL) {
       await new Promise(resolve=>setTimeout(resolve,150));
       controller.abort();
       await pending.catch(()=>{});
+      appendFileSync(process.env.FIXTURE_TRACE!, name+'-retained\\n');
       return {kind:'failed',reason:'owned host failed',cleanup:'retained',directory};
     }
     try { await pending; } catch {
-      appendFileSync(process.env.FIXTURE_TRACE!, 'identity-retained\\n');
-      return {kind:'failed',reason:'identity contracts failed',cleanup:'retained',directory};
+      appendFileSync(process.env.FIXTURE_TRACE!, name+'-retained\\n');
+      return {kind:'failed',reason:name+' contracts failed',cleanup:'retained',directory};
     }
-    if(!process.env.FIXTURE_LOCAL_CLEANUP_FAIL) appendFileSync(process.env.FIXTURE_TRACE!, 'identity-disposed\\n');
-    return {kind:'completed',cleanup:process.env.FIXTURE_LOCAL_CLEANUP_FAIL?'retained':'disposed',directory};
+    const retained=process.env.FIXTURE_LOCAL_CLEANUP_FAIL || journey && process.env.FIXTURE_JOURNEY_CLEANUP_FAIL;
+    const stopped=journey && process.env.FIXTURE_JOURNEY_CLEANUP_STOPPED;
+    if(!retained && !stopped) appendFileSync(process.env.FIXTURE_TRACE!, name+'-disposed\\n');
+    return {kind:'completed',cleanup:retained?'retained':stopped?'stopped':'disposed',directory};
   }`);
-  await writeFile(join(target, "vitest-child.ts"), `import {writeFileSync} from 'node:fs';
+  await writeFile(join(target, "vitest-child.ts"), `import {readFileSync,writeFileSync} from 'node:fs';
+import {requiredJourneyCases,mountedStatusCase} from './receipt.ts';
 const phase=process.argv[2];
+if(process.argv[4]==='journeys') {
+  const controls=JSON.parse(readFileSync(new URL('../../../../fixture-controls.json',import.meta.url),'utf8'));
+  const required=controls.FIXTURE_JOURNEY_MISSING ? requiredJourneyCases.filter(identity=>identity!==mountedStatusCase)
+    : controls.FIXTURE_JOURNEY_UNKNOWN ? [...requiredJourneyCases,'unknown case']
+    : controls.FIXTURE_JOURNEY_DUPLICATE ? [...requiredJourneyCases,requiredJourneyCases[0]] : requiredJourneyCases;
+  if(phase==='run' && controls.FIXTURE_JOURNEY_HOST_FAIL) await new Promise(resolve=>setTimeout(resolve,3000));
+  if(phase==='run' && controls.FIXTURE_JOURNEY_NO_REPORT) process.exit(0);
+  const observed=required.map(identity=>({identity,result:controls.FIXTURE_JOURNEY_SKIP?'skipped':controls.FIXTURE_JOURNEY_PENDING?'pending':controls.FIXTURE_JOURNEY_BLOCKED?'blocked':'passed',
+    evidence:controls.FIXTURE_JOURNEY_LEAK ? ['local-upload-token local-heartbeat-token storage-access storage-secret local-password'] : []}));
+  if(phase==='run' && controls.FIXTURE_JOURNEY_LEAK) console.log('local-upload-token local-heartbeat-token storage-access storage-secret local-password');
+  if(controls.FIXTURE_JOURNEY_REPORT_DUPLICATE) observed.push(observed[0]);
+  if(controls.FIXTURE_JOURNEY_REPORT_UNKNOWN) observed.push({identity:'unknown reported case',result:'passed',evidence:[]});
+  writeFileSync(process.argv[3],JSON.stringify(phase==='discover'
+    ? {phase,required,errors:[]}
+    : {phase,observed,errors:controls.FIXTURE_JOURNEY_HOOK_FAIL?['mounted Status afterAll failed']:[]}));
+  process.exit(phase==='run' && (controls.FIXTURE_JOURNEY_BLOCKED || controls.FIXTURE_JOURNEY_HOOK_FAIL || controls.FIXTURE_JOURNEY_EXIT_FAIL)?1:0);
+}
 const identity=process.argv[4]==='identity';
 if(identity && phase==='run' && process.env.FIXTURE_LOCAL_HOST_FAIL) await new Promise(resolve=>setTimeout(resolve,3000));
 writeFileSync(process.argv[3]!,JSON.stringify(phase==='discover'
@@ -100,6 +125,7 @@ async function waitFile(path: string) {
 }
 
 async function run(environment: NodeJS.ProcessEnv = {}, observe?: (send: (signal: NodeJS.Signals) => void) => Promise<void>) {
+  await writeFile(join(directory, "fixture-controls.json"), JSON.stringify(environment));
   const child = spawn(process.execPath, ["--import", join(directory, "hook.mjs"), "--experimental-strip-types", join(directory, "services/tools/test/runtime/entry.ts")], {
     env: { PATH: `${join(directory, "bin")}:${process.env.PATH}`, HOME: process.env.HOME, FIXTURE_DIRECTORY: directory, FIXTURE_TRACE: join(directory, "trace"), ...environment },
     stdio: ["ignore", "pipe", "pipe"],
@@ -119,7 +145,10 @@ async function run(environment: NodeJS.ProcessEnv = {}, observe?: (send: (signal
     const runs = (await readdir(directory)).filter((name) => name.startsWith("runtime-"));
     const path = runs.length ? join(directory, runs[0]!, "receipts.json") : "";
     const text = await readFile(path, "utf8").catch(() => undefined);
-    return { code, stdout, stderr, record: text ? JSON.parse(text) : undefined, trace: await readFile(join(directory, "trace"), "utf8").catch(() => "") };
+    const evidence = runs.length ? (await Promise.all((await readdir(join(directory, runs[0]!)))
+      .filter((name) => name.endsWith(".log") || name.endsWith(".json"))
+      .map((name) => readFile(join(directory, runs[0]!, name), "utf8")))).join("\n") : "";
+    return { code, stdout, stderr, evidence, record: text ? JSON.parse(text) : undefined, trace: await readFile(join(directory, "trace"), "utf8").catch(() => "") };
   } finally {
     clearTimeout(bound);
     if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
@@ -131,7 +160,7 @@ describe("terminal verification CLI", () => {
   it("publishes one complete plan and succeeds only when every required case runs", async () => {
     const result = await run();
     expect(result.code).toBe(0);
-    expect(result.record.decision).toEqual({ kind: "passed" });
+    expect(result.record.automatedDecision).toEqual({ kind: "passed" });
     expect(result.record.cells.map((cell: { requirement: { kind: string } }) => cell.requirement.kind)).toEqual(["prerequisites", "discover", "fixture", "schema", "contracts", "cleanup"]);
     expect(result.record.contracts).toMatchObject({ required: ["required case"], executed: ["required case"], skipped: [] });
     expect(result.trace.match(/cleanup/g)).toHaveLength(1);
@@ -140,7 +169,7 @@ describe("terminal verification CLI", () => {
   it.each([{ FIXTURE_EMPTY: "1" }, { FIXTURE_SKIP: "1" }])("fails on an empty or skipped required case set %j", async (environment) => {
     const result = await run(environment);
     expect(result.code).toBe(1);
-    expect(result.record.decision.kind).toBe("failed");
+    expect(result.record.automatedDecision.kind).toBe("failed");
     const stage = environment.FIXTURE_EMPTY ? "discover" : "contracts";
     expect(result.record.cells.find((cell: { requirement: { kind: string } }) => cell.requirement.kind === stage).result.kind).toBe("failed");
   });
@@ -148,29 +177,56 @@ describe("terminal verification CLI", () => {
   it.each(["FIXTURE_SETUP_THROW", "FIXTURE_CLEANUP_THROW"])("publishes a failed record after %s", async (name) => {
     const result = await run({ [name]: "1" });
     expect(result.code).toBe(1);
-    expect(result.record.decision.kind).toBe("failed");
+    expect(result.record.automatedDecision.kind).toBe("failed");
     const stage = name === "FIXTURE_SETUP_THROW" ? "fixture" : "cleanup";
     expect(result.record.cells.find((cell: { requirement: { kind: string } }) => cell.requirement.kind === stage).result.reasons.join(" ")).toContain("rejected");
     expect(JSON.stringify(result.record)).not.toContain("private-password");
   });
 
-  it("requires the identity suite and its owned local fixture before workspace success", async () => {
+  it("requires identity, built Tools, and mounted Status receipts before workspace success", async () => {
     const result = await run({ FIXTURE_MODE: "workspace" });
     expect(result.code).toBe(0);
+    expect(result.record.journeys.some((receipt: { suite: string; result: string }) => receipt.suite === "mounted-status" && receipt.result === "passed")).toBe(true);
     expect(result.record.identity).toMatchObject({ required: ["required case"], contracts: { executed: ["required case"], skipped: [] } });
     expect(result.record.cells.filter((cell: { requirement: { kind: string } }) => cell.requirement.kind.startsWith("identity-")).map((cell: { result: { kind: string } }) => cell.result.kind)).toEqual(["passed", "passed"]);
     expect(result.trace).toContain("identity-disposed");
+    expect(result.trace).toContain("journey-disposed");
+    expect(result.record).not.toHaveProperty("decision");
+    expect(result.record.manualAcceptance).toMatchObject({ kind: "blocked", owner: "Max", revision: "fixture-revision" });
+    expect(result.record.manualAcceptance.gates).toHaveLength(3);
+    expect(result.record.manualAcceptance.gates.every((gate: { result: string; revision: string }) => gate.result === "blocked" && gate.revision === "fixture-revision")).toBe(true);
+    expect(JSON.parse(result.stdout.trim()).manualAcceptance.kind).toBe("blocked");
+  });
+
+  it.each(["FIXTURE_JOURNEY_MISSING", "FIXTURE_JOURNEY_UNKNOWN", "FIXTURE_JOURNEY_DUPLICATE", "FIXTURE_JOURNEY_SKIP", "FIXTURE_JOURNEY_PENDING", "FIXTURE_JOURNEY_BLOCKED", "FIXTURE_JOURNEY_HOOK_FAIL", "FIXTURE_JOURNEY_EXIT_FAIL", "FIXTURE_JOURNEY_NO_REPORT", "FIXTURE_JOURNEY_REPORT_DUPLICATE", "FIXTURE_JOURNEY_REPORT_UNKNOWN"])("cannot pass workspace verification with %s", async (name) => {
+    const result = await run({ FIXTURE_MODE: "workspace", [name]: "1" });
+    expect(result.code).toBe(1);
+    expect(result.record.automatedDecision.kind).toBe("failed");
+    if (!["FIXTURE_JOURNEY_MISSING", "FIXTURE_JOURNEY_UNKNOWN", "FIXTURE_JOURNEY_DUPLICATE"].includes(name)) {
+      expect(result.trace).toContain("journey-retained");
+      expect(result.trace).not.toContain("journey-disposed");
+    }
+    expect(result.record.journeys.some((receipt: { result: string }) => receipt.result !== "passed")).toBe(true);
   });
 
   it.each(["FIXTURE_IDENTITY_EMPTY", "FIXTURE_IDENTITY_SKIP", "FIXTURE_LOCAL_BLOCKED", "FIXTURE_LOCAL_CLEANUP_FAIL"])("does not pass workspace verification with %s", async (name) => {
     const result = await run({ FIXTURE_MODE: "workspace", [name]: "1" });
     expect(result.code).toBe(1);
-    expect(result.record.decision.kind).not.toBe("passed");
+    expect(result.record.automatedDecision.kind).not.toBe("passed");
     expect(result.record.cells.filter((cell: { requirement: { kind: string } }) => cell.requirement.kind.startsWith("identity-")).some((cell: { result: { kind: string } }) => cell.result.kind !== "passed")).toBe(true);
     if (name === "FIXTURE_IDENTITY_SKIP") {
       expect(result.trace).toContain("identity-retained");
       expect(result.trace).not.toContain("identity-disposed");
     }
+  });
+
+  it.each(["FIXTURE_JOURNEY_CLEANUP_FAIL", "FIXTURE_JOURNEY_CLEANUP_STOPPED"])("fails the journey cell when disposal is incomplete through %s", async (name) => {
+    const result = await run({ FIXTURE_MODE: "workspace", [name]: "1" });
+    expect(result.code).toBe(1);
+    expect(result.record.automatedDecision.kind).toBe("failed");
+    expect(result.record.cells.filter((cell: { requirement: { kind: string } }) => cell.requirement.kind.startsWith("identity-")).map((cell: { result: { kind: string } }) => cell.result.kind)).toEqual(["passed", "passed"]);
+    const journey = result.record.cells.find((cell: { requirement: { kind: string } }) => cell.requirement.kind === "journey-contracts");
+    expect(journey.result).toMatchObject({ kind: "failed", reasons: ["Journey fixture did not complete cleanup."] });
   });
 
   it("cancels identity contracts when their owned host fails and keeps the fixture failure", async () => {
@@ -179,6 +235,27 @@ describe("terminal verification CLI", () => {
     expect(result.record.identity.contracts.result).toBe("failed");
     const identity = result.record.cells.find((cell: { requirement: { kind: string } }) => cell.requirement.kind === "identity-contracts");
     expect(identity.result).toMatchObject({ kind: "failed", reasons: ["owned host failed"] });
+  });
+
+  it("cancels and settles journey work before a failed host can dispose its fixture", async () => {
+    const result = await run({ FIXTURE_MODE: "workspace", FIXTURE_JOURNEY_HOST_FAIL: "1" });
+    expect(result.code).toBe(1);
+    const journey = result.record.cells.find((cell: { requirement: { kind: string } }) => cell.requirement.kind === "journey-contracts");
+    expect(journey.result).toMatchObject({ kind: "failed", reasons: ["owned host failed"] });
+    expect(result.trace).toContain("identity-disposed");
+    expect(result.trace).toContain("journey-retained");
+    expect(result.trace).not.toContain("journey-disposed");
+  });
+
+  it("removes all fixture secrets from command logs and final receipts", async () => {
+    const result = await run({ FIXTURE_MODE: "workspace", FIXTURE_JOURNEY_LEAK: "1" });
+    expect(result.code).toBe(0);
+    const receipts = JSON.stringify(result.record);
+    for (const secret of ["local-upload-token", "local-heartbeat-token", "storage-access", "storage-secret", "local-password"]) {
+      expect(receipts).not.toContain(secret);
+      expect(result.stdout).not.toContain(secret);
+      expect(result.evidence).not.toContain(secret);
+    }
   });
 
   it("stops workspace admission after the first command failure and still cleans up", async () => {
@@ -198,7 +275,7 @@ describe("terminal verification CLI", () => {
     });
     expect(result.code).toBe(signal === "SIGINT" ? 130 : 143);
     expect(result.record.interruption).toEqual({ kind: "received", first: signal });
-    expect(result.record.decision).toEqual({ kind: "interrupted", first: signal });
+    expect(result.record.automatedDecision).toEqual({ kind: "interrupted", first: signal });
   });
 
   it("keeps the first signal when more signals arrive during publication", async () => {

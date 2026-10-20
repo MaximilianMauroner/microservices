@@ -17,7 +17,7 @@
     "build": "tsc -p tsconfig.build.json",
     "db:backfill": "tsx ../database/002_backfill_artifact_metadata.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run",
+    "test": "vitest run && node --test scripts/release-paired-backup.test.mjs",
     "test:watch": "vitest"
   },
   "dependencies": {
