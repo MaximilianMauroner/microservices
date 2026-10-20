@@ -1,6 +1,5 @@
 import type {
   MonitorStatus,
-  PrivateSnapshotDocument,
   PublicCatalogEntry,
   PublicDowntimeRecord,
   PublicMonitorStatus,
@@ -77,33 +76,6 @@ export function renderStatusPage(
   snapshot: PublicSnapshotDocument,
   publicOrigin = "https://tools.mauroner.net"
 ): string {
-  return renderStatusView(snapshot, publicOrigin, {
-    serviceTitle: "Current status by service",
-    privateView: false
-  });
-}
-
-export function renderPrivateStatusPage(
-  snapshot: PrivateSnapshotDocument,
-  actor: string,
-  publicOrigin = "https://tools.mauroner.net"
-): string {
-  return renderStatusView(privateStatusSnapshot(snapshot), publicOrigin, {
-    serviceTitle: "Private services",
-    privateView: true,
-    actor
-  });
-}
-
-function renderStatusView(
-  snapshot: PublicSnapshotDocument,
-  publicOrigin: string,
-  options: {
-    serviceTitle: string;
-    privateView: boolean;
-    actor?: string;
-  }
-): string {
   const entries = [...snapshot.entries].sort(byOrderThenId);
   const overall = overallState(entries, snapshot.statuses);
   const unmeasuredCount = entries.filter((entry) => snapshot.statuses[entry.id]?.status !== "up" && snapshot.statuses[entry.id]?.status !== "down" && snapshot.statuses[entry.id]?.status !== "checking").length;
@@ -118,12 +90,11 @@ function renderStatusView(
       </section>
       <section id="services" class="status-card" aria-labelledby="services-title">
         <header class="status-card__header">
-          <h2 id="services-title">${escapeHtml(options.serviceTitle)}</h2>
+          <h2 id="services-title">Current status by service</h2>
           <span class="overall-badge overall-badge--${overall}">${statusMark(overall, false)}${summary.badge}</span>
         </header>
         ${entries.length === 0 ? emptyState() : `<ul class="service-list" role="list">${entries.map((entry) => renderEntry(entry, snapshot.statuses[entry.id], snapshot.generatedAt, publicOrigin)).join("")}</ul>`}
       </section>
-      ${options.privateView ? privateStatusIdentity(options.actor) : privateStatusCallout()}
     </main>
     <footer class="status-footer">
       <div class="status-wrap"><span class="footer-mark" aria-hidden="true">M</span><span>Managed by Mauroner</span><span aria-hidden="true">·</span><span>30-minute checks</span></div>
@@ -131,98 +102,12 @@ function renderStatusView(
   </div>`;
 
   return pageShell({
-    title: `${options.privateView ? "Private status" : "Status"} — Mauroner Tools`,
-    description: options.privateView
-      ? "Current availability of private Mauroner tools and services."
-      : "Current availability of Mauroner tools and services.",
+    title: "Status — Mauroner Tools",
+    description: "Current availability of Mauroner tools and services.",
     body,
     active: "status",
-    ...(options.privateView
-      ? { privatePage: true }
-      : { canonicalUrl: new URL("/status", publicOrigin).toString() })
+    canonicalUrl: new URL("/status", publicOrigin).toString()
   });
-}
-
-function privateStatusCallout(): string {
-  return `<section class="private-status-callout" aria-labelledby="private-status-title">
-    <div class="private-status-callout__icon" aria-hidden="true"><span class="suite-lock"></span></div>
-    <div>
-      <h2 id="private-status-title">Private service status</h2>
-      <p>Sign in with Google to view availability for internal services.</p>
-    </div>
-    <a class="private-status-link" href="/manage/status">View private status <span aria-hidden="true">›</span></a>
-  </section>`;
-}
-
-function privateStatusIdentity(actor: string | undefined): string {
-  return `<div class="private-status-identity">
-    <a href="/status">← Public status</a>
-    ${actor ? `<span>Signed in as ${escapeHtml(actor)}</span>` : ""}
-  </div>`;
-}
-
-function privateStatusSnapshot(
-  snapshot: PrivateSnapshotDocument
-): PublicSnapshotDocument {
-  const groupVisibility = new Map(
-    snapshot.catalog.groups.map((group) => [group.id, group.visibility])
-  );
-  const entries = snapshot.catalog.entries
-    .filter(
-      (entry) =>
-        entry.lifecycle === "active" &&
-        !(
-          entry.visibility === "public" &&
-          groupVisibility.get(entry.groupId) === "public"
-        )
-    )
-    .map((entry) => ({
-      id: entry.id,
-      groupId: entry.groupId,
-      name: entry.name,
-      description: entry.description,
-      order: entry.order,
-      links: entry.links.map(({ id, label, url, access }) => ({
-        id,
-        label,
-        url,
-        access: access === "private" ? "restricted" as const : access
-      }))
-    }));
-  const entryIds = new Set(entries.map(({ id }) => id));
-  const statuses: Record<string, PublicMonitorStatus> = {};
-
-  for (const entry of snapshot.catalog.entries) {
-    if (!entryIds.has(entry.id) || !entry.monitor?.enabled) continue;
-    const monitor = snapshot.state.monitors[entry.id];
-    statuses[entry.id] = {
-      monitorId: entry.id,
-      status: monitor?.status ?? (entry.monitor.paused ? "paused" : "checking"),
-      checkedAt: monitor?.latestObservation?.checkedAt ?? null,
-      latencyMs: monitor?.latestObservation?.latencyMs ?? null,
-      statusCode: monitor?.latestObservation?.statusCode ?? null,
-      uptimeDays: monitor?.uptimeDays ?? [],
-      downtimeRecords: snapshot.state.incidents
-        .filter(({ monitorId }) => monitorId === entry.id)
-        .map(({ startedAt, resolvedAt }) => ({ startedAt, resolvedAt }))
-    };
-  }
-
-  return {
-    schemaVersion: snapshot.schemaVersion,
-    generatedAt: snapshot.generatedAt,
-    catalogRevision: snapshot.catalogRevision,
-    groups: snapshot.catalog.groups
-      .filter((group) => entries.some((entry) => entry.groupId === group.id))
-      .map(({ id, name, description, order }) => ({
-        id,
-        name,
-        ...(description === undefined ? {} : { description }),
-        order
-      })),
-    entries,
-    statuses
-  };
 }
 
 function renderToolCard(

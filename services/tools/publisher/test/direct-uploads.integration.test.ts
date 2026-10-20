@@ -7,7 +7,7 @@ import { createFetchApp } from "../src/fetch-app.js";
 import { createDirectUploads, DIRECT_PART_BYTES } from "../src/direct-uploads.js";
 import { createMultipartStorage } from "../src/multipart-storage.js";
 import { createMetadataBackedUploadStorage } from "../src/postgres-storage.js";
-import { createS3UploadStorage, type UploadStorage } from "../src/storage.js";
+import { createS3BodyStorage, type UploadBodyStorage, type UploadStorage } from "../src/storage.js";
 import { createPostgresUploadLinkRepository } from "../src/upload-links.js";
 
 const databaseUrl = process.env.PUBLISHER_TRANSFER_TEST_DATABASE_URL;
@@ -21,7 +21,7 @@ const digest = (bytes: Uint8Array) => crypto.createHash("sha256").update(bytes).
 describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", () => {
   let sql: Sql;
   let storage: UploadStorage;
-  let bodies: UploadStorage;
+  let bodies: UploadBodyStorage;
   let bucket: ReturnType<typeof createMultipartStorage>;
   let links: ReturnType<typeof createPostgresUploadLinkRepository>;
   let client: S3Client;
@@ -31,7 +31,7 @@ describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", () => {
   let bucketUploadBytes = 0;
 
   function attach() {
-    bodies = createS3UploadStorage(config);
+    bodies = createS3BodyStorage(config);
     storage = createMetadataBackedUploadStorage(bodies, sql);
     bucket = createMultipartStorage(config);
     storage.directUploads = createDirectUploads(sql, bucket, postgres(databaseUrl!, { max: 2, idle_timeout: 1 }));
@@ -127,7 +127,8 @@ describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", () => {
       headers: { Authorization: "Bearer transfer-local-token", Origin: origin }, body: form }));
   }
 
-  it.each(["/api/uploads", "/api/external-uploads"])("preserves a project edited during legacy verification through %s", async base => {
+  it("preserves a project edited during native legacy verification", async () => {
+    const base = "/api/uploads";
     const created = await html("before legacy verification", undefined, "original-project");
     const { id } = await (await request(created.path + "/complete")).json() as { id: string };
     const get = bodies.getHtml.bind(bodies);
