@@ -27,6 +27,9 @@ export function heartbeatFixture(environment: Readonly<Record<string, string | u
   assert(["postgres:", "postgresql:"].includes(database.protocol) && database.hostname === "127.0.0.1"
     && database.port && database.pathname === "/postgres" && !database.search && !database.hash,
   "The heartbeat fixture requires the owned loopback PostgreSQL database.");
+  database.searchParams.set("connect_timeout", "5");
+  database.searchParams.set("statement_timeout", "5000");
+  database.searchParams.set("lock_timeout", "5000");
   assert(!environment.DISCORD_WEBHOOK_URL, "The heartbeat fixture refuses notification webhooks.");
   assert.equal(environment.TOOLS_S3_FORCE_PATH_STYLE, "true", "The heartbeat fixture requires owned path-style storage.");
   const token = required(environment, "TOWER_HEARTBEAT_TOKEN");
@@ -56,7 +59,7 @@ export function heartbeatFixture(environment: Readonly<Record<string, string | u
     productMonitorIds: ["tower", "local-control"],
   };
   const config: CheckerConfig = {
-    environment: project, databaseUrl,
+    environment: project, databaseUrl: database.href,
     bucket: {
       name: required(environment, "TOOLS_S3_BUCKET"), endpoint: endpoint.origin,
       region: required(environment, "TOOLS_S3_REGION"), accessKeyId: required(environment, "TOOLS_S3_ACCESS_KEY_ID"),

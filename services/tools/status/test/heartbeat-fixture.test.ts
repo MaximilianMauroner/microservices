@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import postgres from "postgres";
 import { validatedMonitorUrl } from "@tools-platform/domain";
 import { fixtureFetcher, heartbeatFixture } from "./heartbeat-fixture.js";
 import { probeTarget } from "../src/probe.js";
@@ -13,6 +14,15 @@ const environment = {
 };
 
 describe("owned heartbeat fixture", () => {
+  it("bounds fixture database connections and statements through supported driver settings", async () => {
+    const { config } = heartbeatFixture(environment);
+    const sql = postgres(config.databaseUrl, { max: 4 });
+    try {
+      expect(sql.options.connect_timeout).toBe(5);
+      expect(sql.options.connection).toMatchObject({ statement_timeout: "5000", lock_timeout: "5000" });
+    } finally { await sql.end({ timeout: 5 }); }
+  });
+
   it.each([
     { DATABASE_URL: "postgres://user:pw@external.example/postgres" },
     { TOOLS_JOURNEY_ORIGIN: "https://external.example" },
