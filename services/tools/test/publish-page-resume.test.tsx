@@ -51,7 +51,7 @@ it.each(["retry", "reselect"] as const)("resumes an empty-MIME HTML file through
     if (url.startsWith("/api/external-uploads?")) return Response.json({ uploads: [] });
     if (url.endsWith("/complete")) {
       completions += 1;
-      return Response.json({ id: "a".repeat(32), kind: "html", filename: "fixture.htm", contentType: "text/html",
+      return Response.json({ id: "a".repeat(32), kind: "html", filename: "fixture.htm", contentType: "text/html", category: "html",
         bytes: 6, sha256: crypto.createHash("sha256").update("abcdef").digest("hex"),
         url: "https://tools.example.test/artifacts/fixture", updatedAt: "2026-10-13T12:00:00.000Z" }, { status: 201 });
     }
