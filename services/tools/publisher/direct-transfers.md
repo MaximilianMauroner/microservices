@@ -215,10 +215,17 @@ The concrete release procedure and per-target state belong in
 
 Run the normal Publisher and Tools checks first. `pnpm run verify` runs the
 real-resource suite with an owned PostgreSQL fixture and the S3 storage of an
-owned local stack. To run it alone, use separately owned loopback PostgreSQL and
-S3 and local fixture credentials. The database must hold the disposable
-database sentinel table `tools_runtime_test_sentinel` and the current schema.
-The suite creates the `tools-transfer-test` bucket if it is missing.
+owned local stack. To run it alone, use separately owned PostgreSQL and S3 on
+`127.0.0.1` and local fixture credentials. The suite creates the
+`tools-transfer-test` bucket if it is missing.
+
+The schema push and the suite run only on a database that holds the disposable
+database sentinel. Create it in the new empty database before the push:
+
+```sql
+create table public.tools_runtime_test_sentinel (sentinel_key text primary key, sentinel_value text not null);
+insert into public.tools_runtime_test_sentinel values ('database-purpose', 'tools-runtime-disposable-test-database');
+```
 
 The suite does not set bucket CORS, because the pinned MinIO build does not
 support it. The S3 server must allow PUT preflight from the test origin, deny it
