@@ -517,14 +517,6 @@ describe("native artifact fetch handler", () => {
     uploadLinks.files = [{ id: uploaded.id, filename: uploaded.filename, bytes: uploaded.bytes }];
     expect(storage.files.size).toBe(1);
 
-    const chunkInit = await app(new Request(`https://tools.example.test/api/drop/${uploadLinks.token}/uploads/chunks`, {
-      method: "POST",
-      headers: { Origin: "https://tools.example.test", "Content-Type": "application/json" },
-      body: JSON.stringify({ filename: "partial.bin", contentType: "application/octet-stream", totalBytes: 2_097_152, totalChunks: 2, chunkBytes: 1_048_576 })
-    }));
-    expect(chunkInit.status).toBe(201);
-    const { sessionId: partialSessionId } = await chunkInit.json() as { sessionId: string };
-
     const downloadResponse = await app(new Request(`https://tools.example.test/api/upload-links/${uploadLinks.id}/download`));
     expect(downloadResponse.status).toBe(200);
     expect(downloadResponse.headers.get("content-type")).toBe("application/zip");
@@ -538,9 +530,6 @@ describe("native artifact fetch handler", () => {
       headers: { Origin: "https://tools.example.test" }
     }));
     expect(revokeResponse.status).toBe(204);
-    expect((await app(new Request(`https://tools.example.test/api/drop/${uploadLinks.token}/uploads/chunks/${partialSessionId}`, {
-      method: "DELETE", headers: { Origin: "https://tools.example.test" }
-    }))).status).toBe(204);
     expect((await app(new Request(`https://tools.example.test/drop/${uploadLinks.token}`))).status).toBe(404);
     const downloadAfterRevoke = await app(new Request(`https://tools.example.test/api/upload-links/${uploadLinks.id}/download`));
     expect(downloadAfterRevoke.status).toBe(200);
@@ -819,67 +808,6 @@ describe("native artifact fetch handler", () => {
     expect(retry.status).toBe(201);
   });
 
-  it("parses guest chunk plans before entering the shared allocation gate", async () => {
-    const uploadLinks = new MemoryUploadLinkRepository();
-    await uploadLinks.create(new Date("2026-09-16T12:00:00.000Z"));
-    const stalledBody = new ReadableStream<Uint8Array>({
-      start(controller) { controller.enqueue(new TextEncoder().encode("{")); }
-    });
-    const app = createFetchApp({
-      storage: new MemoryUploadStorage(),
-      uploadLinks,
-      uploadToken: "upload-token",
-      publicBaseUrl: "https://tools.example.test",
-      guestUploadBodyTimeoutMs: 500,
-      now: () => new Date("2026-09-15T12:00:00.000Z")
-    });
-    const endpoint = `https://tools.example.test/api/drop/${uploadLinks.token}/uploads/chunks`;
-    const stalled = app(new Request(endpoint, {
-      method: "POST",
-      headers: { Origin: "https://tools.example.test", "Content-Type": "application/json" },
-      body: stalledBody,
-      duplex: "half"
-    } as RequestInit));
-    const valid = await app(new Request(endpoint, {
-      method: "POST",
-      headers: { Origin: "https://tools.example.test", "Content-Type": "application/json" },
-      body: JSON.stringify({
-        filename: "valid.bin",
-        contentType: "application/octet-stream",
-        totalBytes: 2_097_152,
-        totalChunks: 2,
-        chunkBytes: 1_048_576
-      })
-    }));
-
-    expect(valid.status).toBe(201);
-    const { sessionId } = await valid.json() as { sessionId: string };
-    const timedOut = await stalled;
-    expect(timedOut.status).toBe(408);
-    expect(await timedOut.json()).toMatchObject({ error: "upload_timeout" });
-    const stalledChunkBody = new ReadableStream<Uint8Array>({
-      start(controller) { controller.enqueue(new Uint8Array([1])); }
-    });
-    const stalledChunk = await app(new Request(`${endpoint}/${sessionId}/0`, {
-      method: "PUT",
-      headers: { Origin: "https://tools.example.test", "Content-Type": "application/octet-stream" },
-      body: stalledChunkBody,
-      duplex: "half"
-    } as RequestInit));
-    expect(stalledChunk.status).toBe(408);
-    expect(await stalledChunk.json()).toMatchObject({ error: "upload_timeout" });
-    const retriedChunk = await app(new Request(`${endpoint}/${sessionId}/0`, {
-      method: "PUT",
-      headers: { Origin: "https://tools.example.test", "Content-Type": "application/octet-stream" },
-      body: Buffer.alloc(1_048_576, 1)
-    }));
-    expect(retriedChunk.status).toBe(200);
-    const cancelled = await app(new Request(`${endpoint}/${sessionId}`, {
-      method: "DELETE",
-      headers: { Origin: "https://tools.example.test" }
-    }));
-    expect(cancelled.status).toBe(204);
-  });
 
   it("deduplicates case-insensitive filenames in bulk-download archives", async () => {
     const storage = new MemoryUploadStorage();
@@ -1114,20 +1042,28 @@ describe("native artifact fetch handler", () => {
     expect(storage.pages.size).toBe(0);
   });
 
-  it("keeps browser HTML plans persistent while rejecting non-HTML files on that route", async () => {
+
+  it.each([
+    ["POST", "/api/browser-html-uploads"],
+    ["POST", "/api/external-uploads"],
+    ["PUT", `/api/external-uploads/${"a".repeat(32)}`],
+    ["POST", "/api/external-uploads/chunks"],
+    ["PUT", `/api/external-uploads/chunks/${"a".repeat(32)}/0`],
+    ["POST", `/api/drop/${"u".repeat(43)}/uploads/chunks`],
+    ["PUT", `/api/drop/${"u".repeat(43)}/uploads/chunks/${"a".repeat(32)}/0`],
+    ["DELETE", `/api/drop/${"u".repeat(43)}/uploads/chunks/${"a".repeat(32)}`],
+    ["GET", "/publish"],
+    ["GET", "/publish/app.js"]
+  ])("rejects the retired %s %s upload route", async (method, pathname) => {
     const storage = new MemoryUploadStorage();
-    const app = createFetchApp({ storage, uploadToken: "upload-token", browserPersistentUpload: true, publicBaseUrl: "https://tools.example.test" });
-    const headers = { Origin: "https://tools.example.test" };
-    const plan = await app(new Request("https://tools.example.test/api/browser-html-uploads", { method: "POST", headers, body: multipart("plan.html", "<h1>plan</h1>", "text/html", "microservices") }));
-    expect(plan.status).toBe(201);
-    expect(await plan.json()).toMatchObject({ kind: "html", project: "microservices" });
-    expect(storage.pages.size).toBe(1);
-    const file = await app(new Request("https://tools.example.test/api/browser-html-uploads", { method: "POST", headers, body: multipart("private.txt", "secret", "text/plain") }));
-    expect(file.status).toBe(400);
-    expect(await file.json()).toMatchObject({ error: "html_upload_required" });
+    const app = createFetchApp({ storage, uploadToken: "upload-token", externalUpload: true,
+      browserPersistentUpload: true, publicBaseUrl: "https://tools.example.test" });
+    const response = await app(new Request(`https://tools.example.test${pathname}`, {
+      method, headers: { Origin: "https://tools.example.test" }
+    }));
+    expect(response.status).toBe(404);
+    expect(storage.pages.size).toBe(0);
     expect(storage.files.size).toBe(0);
-    const crossOrigin = await app(new Request("https://tools.example.test/api/browser-html-uploads", { method: "POST", headers: { Origin: "https://other.example.test" }, body: multipart("plan.html", "<h1>plan</h1>", "text/html") }));
-    expect(crossOrigin.status).toBe(403);
   });
 
   it("returns the saved project when a legacy replacement overlaps a project edit", async () => {
@@ -1153,7 +1089,7 @@ describe("native artifact fetch handler", () => {
     expect(storage.pages.get(id)?.body.toString()).toBe("<h1>replacement</h1>");
   });
 
-  it("lets the authenticated browser replace, reassign, and revoke an HTML artifact", async () => {
+  it("lets the authenticated browser reassign and revoke an HTML artifact", async () => {
     const storage = new MemoryUploadStorage();
     const app = createFetchApp({
       storage,
@@ -1169,22 +1105,6 @@ describe("native artifact fetch handler", () => {
       })
     );
     const created = await createdResponse.json() as { id: string; url: string };
-
-    const replacedResponse = await app(
-      new Request(`https://tools.example.test/api/external-uploads/${created.id}`, {
-        method: "PUT",
-        headers: { Origin: "https://tools.example.test" },
-        body: multipart("replacement.html", "<h1>replacement</h1>", "text/html")
-      })
-    );
-    expect(replacedResponse.status).toBe(200);
-    expect(await replacedResponse.json()).toMatchObject({
-      id: created.id,
-      filename: "replacement.html",
-      project: "microservices",
-      url: created.url
-    });
-    expect(storage.pages.get(created.id)?.body.toString()).toBe("<h1>replacement</h1>");
 
     const projectResponse = await app(
       new Request(`https://tools.example.test/api/external-uploads/${created.id}`, {
@@ -1221,9 +1141,9 @@ describe("native artifact fetch handler", () => {
       now: () => now
     });
     const createdResponse = await app(
-      new Request("https://tools.example.test/api/external-uploads", {
+      new Request("https://tools.example.test/api/uploads", {
         method: "POST",
-        headers: { Origin: "https://tools.example.test" },
+        headers: { Authorization: "Bearer upload-token" },
         body: multipart("report.pdf", "report", "application/pdf")
       })
     );
@@ -1346,17 +1266,20 @@ describe("native artifact fetch handler", () => {
       externalUpload: true,
       publicBaseUrl: "https://tools.example.test"
     });
-    const form = new FormData();
-    form.append("file", new File(["private"], "private.txt", { type: "text/plain" }));
+    storage.files.set("a".repeat(32), {
+      body: Buffer.from("private"),
+      metadata: { bytes: 7, originalName: "private.txt", contentType: "text/plain",
+        expiresAt: new Date("2027-01-01T00:00:00.000Z"), sha256: "a".repeat(64) }
+    });
 
     const response = await app(
-      new Request("http://tools.example.test/api/external-uploads", {
-        method: "POST",
-        headers: { Origin: "https://tools.example.test" },
-        body: form
+      new Request(`http://tools.example.test/api/external-uploads/${"a".repeat(32)}`, {
+        method: "PATCH",
+        headers: { Origin: "https://tools.example.test", "Content-Type": "application/json" },
+        body: JSON.stringify({ expiresAt: null })
       })
     );
 
-    expect(response.status).toBe(201);
+    expect(response.status).toBe(200);
   });
 });

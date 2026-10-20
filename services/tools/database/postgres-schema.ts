@@ -265,6 +265,14 @@ export const moneyTransactions = toolsSchema.table("money_transactions", {
   index("money_transactions_category_rule_idx").on(table.categoryRuleId),
 ]);
 
+export const moneyImportTransactions = toolsSchema.table("money_import_transactions", {
+  importId: uuid("import_id").notNull().references(() => moneyImports.id, { onDelete: "cascade" }),
+  transactionId: uuid("transaction_id").notNull().references(() => moneyTransactions.id, { onDelete: "cascade" }),
+}, (table) => [
+  primaryKey({ columns: [table.importId, table.transactionId] }),
+  index("money_import_transactions_transaction_idx").on(table.transactionId),
+]);
+
 export const moneyInvestmentEvents = toolsSchema.table("money_investment_events", {
   id: uuid("id").primaryKey(),
   transactionId: uuid("transaction_id").notNull().references(() => moneyTransactions.id).unique(),
