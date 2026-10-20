@@ -23,7 +23,6 @@ import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ShareRouteImport } from './routes/share'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as StatusRouteImport } from './routes/status'
-import { Route as ApiBrowserHtmlUploadsRouteImport } from './routes/api/browser-html-uploads'
 import { Route as ApiExternalUploadsRouteImport } from './routes/api/external-uploads'
 import { Route as ApiUploadLinksRouteImport } from './routes/api/upload-links'
 import { Route as ApiUploadsRouteImport } from './routes/api/uploads'
@@ -136,11 +135,6 @@ const SignInRoute = SignInRouteImport.update({
 const StatusRoute = StatusRouteImport.update({
   id: '/status',
   path: '/status',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiBrowserHtmlUploadsRoute = ApiBrowserHtmlUploadsRouteImport.update({
-  id: '/api/browser-html-uploads',
-  path: '/api/browser-html-uploads',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiExternalUploadsRoute = ApiExternalUploadsRouteImport.update({
@@ -377,7 +371,6 @@ export interface FileRoutesByFullPath {
   '/share': typeof ShareRouteWithChildren
   '/sign-in': typeof SignInRoute
   '/status': typeof StatusRoute
-  '/api/browser-html-uploads': typeof ApiBrowserHtmlUploadsRoute
   '/api/external-uploads': typeof ApiExternalUploadsRouteWithChildren
   '/api/upload-links': typeof ApiUploadLinksRouteWithChildren
   '/api/uploads': typeof ApiUploadsRouteWithChildren
@@ -433,7 +426,6 @@ export interface FileRoutesByTo {
   '/settings': typeof SettingsRoute
   '/sign-in': typeof SignInRoute
   '/status': typeof StatusRoute
-  '/api/browser-html-uploads': typeof ApiBrowserHtmlUploadsRoute
   '/api/external-uploads': typeof ApiExternalUploadsRouteWithChildren
   '/api/upload-links': typeof ApiUploadLinksRouteWithChildren
   '/api/uploads': typeof ApiUploadsRouteWithChildren
@@ -494,7 +486,6 @@ export interface FileRoutesById {
   '/share': typeof ShareRouteWithChildren
   '/sign-in': typeof SignInRoute
   '/status': typeof StatusRoute
-  '/api/browser-html-uploads': typeof ApiBrowserHtmlUploadsRoute
   '/api/external-uploads': typeof ApiExternalUploadsRouteWithChildren
   '/api/upload-links': typeof ApiUploadLinksRouteWithChildren
   '/api/uploads': typeof ApiUploadsRouteWithChildren
@@ -556,7 +547,6 @@ export interface FileRouteTypes {
     | '/share'
     | '/sign-in'
     | '/status'
-    | '/api/browser-html-uploads'
     | '/api/external-uploads'
     | '/api/upload-links'
     | '/api/uploads'
@@ -612,7 +602,6 @@ export interface FileRouteTypes {
     | '/settings'
     | '/sign-in'
     | '/status'
-    | '/api/browser-html-uploads'
     | '/api/external-uploads'
     | '/api/upload-links'
     | '/api/uploads'
@@ -672,7 +661,6 @@ export interface FileRouteTypes {
     | '/share'
     | '/sign-in'
     | '/status'
-    | '/api/browser-html-uploads'
     | '/api/external-uploads'
     | '/api/upload-links'
     | '/api/uploads'
@@ -733,7 +721,6 @@ export interface RootRouteChildren {
   ShareRoute: typeof ShareRouteWithChildren
   SignInRoute: typeof SignInRoute
   StatusRoute: typeof StatusRoute
-  ApiBrowserHtmlUploadsRoute: typeof ApiBrowserHtmlUploadsRoute
   ApiExternalUploadsRoute: typeof ApiExternalUploadsRouteWithChildren
   ApiUploadLinksRoute: typeof ApiUploadLinksRouteWithChildren
   ApiUploadsRoute: typeof ApiUploadsRouteWithChildren
@@ -855,13 +842,6 @@ declare module '@tanstack/react-router' {
       path: '/status'
       fullPath: '/status'
       preLoaderRoute: typeof StatusRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/browser-html-uploads': {
-      id: '/api/browser-html-uploads'
-      path: '/api/browser-html-uploads'
-      fullPath: '/api/browser-html-uploads'
-      preLoaderRoute: typeof ApiBrowserHtmlUploadsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/external-uploads': {
@@ -1322,7 +1302,6 @@ const rootRouteChildren: RootRouteChildren = {
   ShareRoute: ShareRouteWithChildren,
   SignInRoute: SignInRoute,
   StatusRoute: StatusRoute,
-  ApiBrowserHtmlUploadsRoute: ApiBrowserHtmlUploadsRoute,
   ApiExternalUploadsRoute: ApiExternalUploadsRouteWithChildren,
   ApiUploadLinksRoute: ApiUploadLinksRouteWithChildren,
   ApiUploadsRoute: ApiUploadsRouteWithChildren,

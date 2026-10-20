@@ -1,37 +1,15 @@
 import {
   GetObjectCommand,
-  ListObjectsV2Command,
-  PutObjectCommand,
   S3Client
 } from "@aws-sdk/client-s3";
 import { gunzipSync } from "node:zlib";
 
 export interface BucketObject {
   body: unknown;
-  etag: string;
-}
-
-export interface ConditionalWrite {
-  ifMatch?: string;
-  ifNoneMatch?: "*";
 }
 
 export interface JsonBucket {
   get(key: string): Promise<BucketObject | null>;
-  put(key: string, body: unknown, condition?: ConditionalWrite): Promise<string>;
-  list(
-    prefix: string,
-    cursor: string | undefined,
-    limit: number
-  ): Promise<{ keys: string[]; nextCursor?: string }>;
-  listAfter(prefix: string, after: string | undefined, limit: number): Promise<string[]>;
-}
-
-export class BucketConflictError extends Error {
-  constructor() {
-    super("Object changed since it was read");
-    this.name = "BucketConflictError";
-  }
 }
 
 export class BucketReadError extends Error {
@@ -70,85 +48,15 @@ export function createS3JsonBucket(config: {
           result.ContentEncoding === "gzip" ? gunzipSync(bytes) : bytes;
         const text = new TextDecoder().decode(decoded);
         return {
-          body: JSON.parse(text),
-          etag: normalizeEtag(result.ETag)
+          body: JSON.parse(text)
         };
       } catch (error) {
         if (isMissing(error)) return null;
         if (error instanceof BucketReadError) throw error;
         throw new BucketReadError("Unable to read bucket object");
       }
-    },
-    async put(key, body, condition = {}) {
-      try {
-        const result = await client.send(
-          new PutObjectCommand({
-            Bucket: config.name,
-            Key: key,
-            Body: JSON.stringify(body),
-            ContentType: "application/json",
-            ...(condition.ifMatch ? { IfMatch: quoteEtag(condition.ifMatch) } : {}),
-            ...(condition.ifNoneMatch
-              ? { IfNoneMatch: condition.ifNoneMatch }
-              : {})
-          })
-        );
-        return normalizeEtag(result.ETag);
-      } catch (error) {
-        if (isConflict(error)) throw new BucketConflictError();
-        throw new Error("Unable to write bucket object");
-      }
-    },
-    async list(prefix, cursor, limit) {
-      try {
-        const result = await client.send(
-          new ListObjectsV2Command({
-            Bucket: config.name,
-            Prefix: prefix,
-            ContinuationToken: cursor,
-            MaxKeys: limit
-          })
-        );
-        const keys = (result.Contents ?? [])
-          .map(({ Key }) => Key)
-          .filter((key): key is string => key !== undefined);
-        return {
-          keys,
-          ...(result.NextContinuationToken
-            ? { nextCursor: result.NextContinuationToken }
-            : {})
-        };
-      } catch {
-        throw new BucketReadError("Unable to list bucket objects");
-      }
-    },
-    async listAfter(prefix, after, limit) {
-      try {
-        const result = await client.send(
-          new ListObjectsV2Command({
-            Bucket: config.name,
-            Prefix: prefix,
-            ...(after === undefined ? {} : { StartAfter: after }),
-            MaxKeys: limit
-          })
-        );
-        return (result.Contents ?? [])
-          .map(({ Key }) => Key)
-          .filter((key): key is string => key !== undefined);
-      } catch {
-        throw new BucketReadError("Unable to list bucket objects");
-      }
     }
   };
-}
-
-function normalizeEtag(etag: string | undefined): string {
-  if (!etag) throw new BucketReadError("Bucket response omitted ETag");
-  return etag.replace(/^"|"$/g, "");
-}
-
-function quoteEtag(etag: string): string {
-  return `"${etag.replace(/^"|"$/g, "")}"`;
 }
 
 function errorName(error: unknown): string | undefined {
@@ -160,10 +68,4 @@ function errorName(error: unknown): string | undefined {
 
 function isMissing(error: unknown): boolean {
   return ["NoSuchKey", "NotFound"].includes(errorName(error) ?? "");
-}
-
-function isConflict(error: unknown): boolean {
-  return ["PreconditionFailed", "ConditionalRequestConflict"].includes(
-    errorName(error) ?? ""
-  );
 }

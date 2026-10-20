@@ -39,8 +39,9 @@ services:
     restart: "no"
     environment:
       DATABASE_URL: postgres://local:local@postgres:5432/postgres
-      TOOLS_SCHEMA_PUSH_CONFIRM: tools-platform-production
-    command: ["pnpm", "--dir", "services/tools", "run", "db:push-postgres"]
+      TOOLS_ENVIRONMENT: development
+      TOOLS_DEVELOPMENT_SCHEMA_PUSH_CONFIRM: tools-platform-development
+    command: ["pnpm", "--dir", "services/tools", "run", "db:push-postgres:development"]
 
   minio-seed:
     build:

@@ -5,7 +5,6 @@ import {
   type HistoryPartitionDocument
 } from "@tools-platform/domain";
 import { describe, expect, it, vi } from "vitest";
-import { assertCheckerOwnedKey } from "../src/bucket.js";
 import { runChecker } from "../src/run.js";
 import {
   MemoryStore,
@@ -58,20 +57,6 @@ describe("history retention and ownership", () => {
     });
     expect(store.history.get(old.day)?.value.observations).toEqual([]);
     expect(store.history.get(old.day)?.value.incidents).toEqual(old.incidents);
-  });
-
-  it("allows checker-owned keys and rejects catalog writes", () => {
-    expect(() => assertCheckerOwnedKey("state/current.json")).not.toThrow();
-    expect(() => assertCheckerOwnedKey("snapshots/public.json")).not.toThrow();
-    expect(() =>
-      assertCheckerOwnedKey("history/2026-07-27.json.gz")
-    ).not.toThrow();
-    expect(() => assertCheckerOwnedKey("catalog/current.json")).toThrow(
-      /cannot write/
-    );
-    expect(() => assertCheckerOwnedKey("audit/2026/07/x.json")).toThrow(
-      /cannot write/
-    );
   });
 
   it("keeps a cross-midnight incident canonical in its opening-day partition", async () => {
