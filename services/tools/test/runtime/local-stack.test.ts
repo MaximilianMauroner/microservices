@@ -8,6 +8,7 @@ import { createFeedbackEncryption, parseFeedbackEncryptionKey } from "../../feed
 import type { CommandExecutor, CommandOutcome, CommandSpec } from "./commands.ts";
 import { withOwnedCommands } from "./commands.ts";
 import { withLocalStack, withVerificationStack, type LocalStackOptions } from "./local-stack.ts";
+import { redactFixture } from "./receipt.ts";
 
 const artifactRoot = fileURLToPath(new URL("../../../../.agents/artifacts/r2-local-stack-2026-10-17/", import.meta.url));
 const directories: string[] = [];
@@ -44,15 +45,36 @@ async function fixture() {
     volumes: Record<string, { name?: string; external?: boolean }>;
   } = {
     services: {
-      postgres: { image: "postgres:16-alpine", ports: [{ target: 5432, published: "5432" }] },
+      postgres: { image: "postgres:16-alpine", environment: { POSTGRES_PASSWORD: "local" }, ports: [{ target: 5432, published: "5432" }] },
       minio: { build: {}, ports: [{ target: 9000, published: "9000" }, { target: 9001, published: "9001" }] },
       "markdown-mock": { build: {}, ports: [{ target: 8787, published: "8787" }] },
-      "postgres-migrate": { build: {} }, "minio-seed": { build: {} },
+      "postgres-migrate": { build: {}, environment: { DATABASE_URL: platform.DATABASE_URL } }, "minio-seed": { build: {} },
       platform: { build: {}, environment: platform, ports: [{ target: 3000, published: "3000" }] },
     },
     volumes: { "postgres-data": {}, "minio-data": {} },
   };
   await writeFile(join(root, "compose.yaml"), JSON.stringify(base));
+  async function composeConfig(spec: CommandSpec) {
+    const config = JSON.parse(await readFile(spec.args[spec.args.indexOf("-f") + 1]!, "utf8")) as typeof base;
+    if (spec.args.filter((arg) => arg === "-f").length === 2) {
+      const override = await readFile(spec.args[spec.args.lastIndexOf("-f") + 1]!, "utf8");
+      let service = "";
+      for (const line of override.split("\n")) {
+        if (/^  "/.test(line)) {
+          service = JSON.parse(line.trim().slice(0, -1)) as string;
+          config.services[service]!.ports = [];
+        }
+        if (/^      - \{/.test(line)) {
+          config.services[service]!.ports!.push(JSON.parse(line.trim().slice(2)));
+        }
+        const setting = /^      ([A-Z][A-Z0-9_]*): (.+)$/.exec(line);
+        if (setting) config.services[service]!.environment = { ...config.services[service]!.environment, [setting[1]!]: JSON.parse(setting[2]!) };
+      }
+      const project = spec.args[spec.args.indexOf("--project-name") + 1]!;
+      config.volumes = Object.fromEntries(Object.entries(config.volumes).map(([name, volume]) => [name, { ...volume, name: volume.name ?? `${project}_${name}` }]));
+    }
+    return config;
+  }
   const execute: CommandExecutor = { async execute(spec) {
     calls.push(spec);
     await writeFile(spec.log, "fixture command log\n");
@@ -60,23 +82,7 @@ async function fixture() {
     if (supplied) return supplied;
     let stdout = "";
     if (spec.args.includes("config") && spec.command === "docker") {
-      const config = JSON.parse(await readFile(spec.args[spec.args.indexOf("-f") + 1]!, "utf8")) as typeof base;
-      if (spec.args.filter((arg) => arg === "-f").length === 2) {
-        const override = await readFile(spec.args[spec.args.lastIndexOf("-f") + 1]!, "utf8");
-        let service = "";
-        for (const line of override.split("\n")) {
-          if (/^  "/.test(line)) {
-            service = JSON.parse(line.trim().slice(0, -1)) as string;
-            config.services[service]!.ports = [];
-          }
-          if (/^      - \{/.test(line)) {
-            config.services[service]!.ports!.push(JSON.parse(line.trim().slice(2)));
-          }
-        }
-        const project = spec.args[spec.args.indexOf("--project-name") + 1]!;
-        config.volumes = Object.fromEntries(Object.entries(config.volumes).map(([name, volume]) => [name, { ...volume, name: volume.name ?? `${project}_${name}` }]));
-      }
-      stdout = JSON.stringify(config);
+      stdout = JSON.stringify(await composeConfig(spec));
     } else if (spec.args.includes("version")) stdout = "2.24.4\n";
     else if (spec.args.at(-1) === "config") {
       loadPlatformConfig(spec.env);
@@ -90,12 +96,13 @@ async function fixture() {
       });
       return failed(spec);
     }
+    await writeFile(spec.log, spec.redact?.(stdout) ?? stdout);
     return { kind: "succeeded", stdout, log: spec.log };
   } };
   const options: LocalStackOptions = { directory: join(directory, "private"), repository: root,
     environment: { PATH: process.env.PATH, FEEDBACK_ENCRYPTION_KEY: "ignored-shell-key", GOOGLE_CLIENT_SECRET: "ignored-shell-oauth" },
     commands: { work: execute, cleanup: execute }, lifetimeMs: 30_000 };
-  return { directory, options, calls, base, respond(handler: typeof response) { response = handler; } };
+  return { directory, options, calls, base, composeConfig, respond(handler: typeof response) { response = handler; } };
 }
 
 async function retainedFiles(directory: string) {
@@ -114,6 +121,81 @@ async function expectLocked(setup: Awaited<ReturnType<typeof fixture>>) {
 }
 
 describe("owned local stack", () => {
+  it("preserves verification receipt identities while redacting emitted fixture credentials", async () => {
+    const setup = await fixture();
+    let expected: unknown;
+    let receipt = "";
+    let password = "";
+    const result = await withVerificationStack(setup.options, async ({ manifest, environment }) => {
+      directories.push(manifest.directory);
+      password = new URL(environment.DATABASE_URL!).password;
+      const identity = { project: manifest.project, volumes: manifest.volumes, fixture: manifest.project,
+        evidence: ["http://localhost", "local-control", "local fixture ready"] };
+      receipt = redactFixture(JSON.stringify({ ...identity, credentials: {
+        bare: password, url: environment.DATABASE_URL,
+        truncated: `postgres://local:${password.slice(0, 12)}…`,
+        upload: environment.UPLOAD_TOKEN, feedback: environment.FEEDBACK_ENCRYPTION_KEY,
+      } }), environment);
+      expected = { ...identity, credentials: { bare: "[redacted]", url: "[redacted]",
+        truncated: "postgres://local:[redacted]", upload: "[redacted]", feedback: "[redacted]" } };
+    });
+    expect(result).toMatchObject({ kind: "completed", cleanup: "disposed" });
+    expect(JSON.parse(receipt)).toEqual(expected);
+    expect(receipt).not.toContain(password);
+  });
+
+  it.each(["disposed", "retained"])("shares one private verification password across server and clients when %s", async (cleanup) => {
+    const setup = await fixture();
+    let password = "";
+    let configurations: Awaited<ReturnType<typeof setup.composeConfig>>[] = [];
+    let resolvedLog = "";
+    let credentialOutput: CommandOutcome | undefined;
+    let credentialLog = "";
+    let recovery: { path: string; content: string; mode: number }[] = [];
+    const result = await withVerificationStack(setup.options, async ({ manifest, environment }) => {
+      directories.push(manifest.directory);
+      password = new URL(environment.DATABASE_URL!).password;
+      const commands = setup.calls.filter((spec) => spec.command === "docker"
+        && (spec.log.endsWith("-resolved-config.log") || spec.args.includes("up") || spec.args.includes("run")));
+      configurations = await Promise.all(commands.map(setup.composeConfig));
+      resolvedLog = await readFile(commands[0]!.log, "utf8");
+      const log = join(manifest.directory, "bare-password.log");
+      credentialOutput = await withOwnedCommands({ graceMs: 1_000 }, (executor) => executor.execute({
+        command: process.execPath, args: ["-e", "process.stdout.write(process.env.POSTGRES_PASSWORD)"],
+        cwd: setup.options.repository!, env: { POSTGRES_PASSWORD: password }, deadlineMs: 10_000,
+        log, redact: commands[0]!.redact,
+      }));
+      credentialLog = await readFile(log, "utf8");
+      recovery = await Promise.all(["host-environment.json", "compose.override.yaml"].map(async (name) => {
+        const path = join(manifest.directory, name);
+        return { path, content: await readFile(path, "utf8"), mode: (await stat(path)).mode & 0o777 };
+      }));
+      if (cleanup === "retained") throw new Error("retain verification credentials for recovery");
+    });
+    expect(result).toMatchObject({ kind: cleanup === "disposed" ? "completed" : "failed", cleanup });
+    expect(password).toMatch(/^[a-f0-9]{64}$/);
+    expect(configurations).toHaveLength(4);
+    for (const config of configurations) {
+      expect(config.services.postgres!.environment!.POSTGRES_PASSWORD).toBe(password);
+      for (const name of ["postgres-migrate", "platform"]) {
+        expect(config.services[name]!.environment!.DATABASE_URL).toBe(`postgres://local:${password}@postgres:5432/postgres`);
+      }
+    }
+    expect(resolvedLog).toContain("[redacted]");
+    expect(resolvedLog).not.toContain(password);
+    expect(credentialOutput).toMatchObject({ kind: "succeeded", stdout: "[redacted]" });
+    expect(credentialLog).toBe("[redacted]");
+    for (const spec of setup.calls) {
+      expect(spec.args.join(" ")).not.toContain(password);
+      expect(spec.redact?.(`password ${password}`)).toBe("password [redacted]");
+    }
+    for (const file of recovery) {
+      expect(file.mode).toBe(0o600);
+      expect(file.content).toContain(password);
+      if (cleanup === "retained") expect(await readFile(file.path, "utf8")).toBe(file.content);
+    }
+  });
+
   it.each(["persistent", "verification"])("keeps %s Compose resources fixed when the checkout changes after validation and before disposal", async (lifetime) => {
     const setup = await fixture();
     setup.base.services.minio!.build = { context: ".", args: { RAW: "${VITE_CONVEX_URL:-http://localhost:3210}", LITERAL: "$$UNCHANGED" } };
@@ -389,14 +471,21 @@ describe("owned local stack", () => {
     const keys: string[] = [];
     let encrypted: unknown;
     const first = await withLocalStack(setup.options, async ({ environment }) => {
+      expect(new URL(environment.DATABASE_URL!).password).toBe("local");
       keys.push(environment.FEEDBACK_ENCRYPTION_KEY!);
       encrypted = createFeedbackEncryption(parseFeedbackEncryptionKey(environment.FEEDBACK_ENCRYPTION_KEY)).encrypt({ answer: "retained" }, "submission-1", "answers");
     });
     const second = await withLocalStack(setup.options, async ({ environment }) => {
+      expect(new URL(environment.DATABASE_URL!).password).toBe("local");
       keys.push(environment.FEEDBACK_ENCRYPTION_KEY!);
       expect(createFeedbackEncryption(parseFeedbackEncryptionKey(environment.FEEDBACK_ENCRYPTION_KEY)).decrypt(encrypted, "submission-1", "answers")).toEqual({ answer: "retained" });
     });
     expect(second.kind).toBe("completed");
+    for (const spec of setup.calls.filter((spec) => spec.command === "docker" && (spec.args.includes("up") || spec.args.includes("run")))) {
+      const config = await setup.composeConfig(spec);
+      expect(config.services.postgres!.environment!.POSTGRES_PASSWORD).toBe("local");
+      for (const name of ["postgres-migrate", "platform"]) expect(config.services[name]!.environment!.DATABASE_URL).toBe(platform.DATABASE_URL);
+    }
     expect(keys[0]).toBe(keys[1]);
     expect(second.manifest?.project).toBe(first.manifest?.project);
     expect(second.manifest?.volumes).toEqual(first.manifest?.volumes);

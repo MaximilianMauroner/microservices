@@ -3,30 +3,45 @@ import {
   decodeCatalogDocument,
   decodeCheckerStateDocument,
   decodeHistoryPartitionDocument,
+  validatedMonitorUrl,
+  type CatalogDocument,
   type CheckerStateDocument,
   type HistoryPartitionDocument
 } from "@tools-platform/domain";
-import catalogSource from "../../dashboard/config/initial-catalog.json" with { type: "json" };
-import { products } from "../../dashboard/products.js";
 import { CheckerConflictError, createSnapshotStore, type CheckerStore } from "./bucket.js";
 import type { CheckerConfig } from "./config.js";
-import { assertMonitorIdentities, loadMonitorDefinitions } from "./definitions.js";
+import { assertMonitorIdentities, loadMonitorDefinitions, type MonitorDefinition } from "./definitions.js";
 
-export function createPostgresCheckerStore(config: CheckerConfig): CheckerStore {
+export interface CheckerCatalogSource {
+  catalog: CatalogDocument;
+  definitions: readonly MonitorDefinition[];
+  productMonitorIds: readonly string[];
+}
+
+export async function createPostgresCheckerStore(config: CheckerConfig, source?: CheckerCatalogSource): Promise<CheckerStore> {
+  if (!source) {
+    const [{ default: catalog }, { products }] = await Promise.all([
+      import("../../dashboard/config/initial-catalog.json", { with: { type: "json" } }),
+      import("../../dashboard/products.js"),
+    ]);
+    source = {
+      catalog: decodeCatalogDocument(catalog), definitions: loadMonitorDefinitions(),
+      productMonitorIds: products.flatMap(({ monitorId }) => monitorId ? [monitorId] : []),
+    };
+  }
+  const catalog = decodeCatalogDocument(source.catalog);
+  const definitions = source.definitions;
+  assertMonitorIdentities(catalog.entries.map(({ id }) => id), source.productMonitorIds, definitions);
+  for (const definition of definitions) {
+    validatedMonitorUrl(definition.kind === "http" ? definition.url : definition.checkUrl);
+  }
+  const byId = new Map(definitions.map((definition) => [definition.id, definition]));
   const sql = postgres(config.databaseUrl, { max: 4 });
   const snapshots = createSnapshotStore(config.bucket);
   return {
     async readCatalog() {
-      const catalog = decodeCatalogDocument(catalogSource);
-      const definitions = loadMonitorDefinitions();
-      assertMonitorIdentities(
-        catalog.entries.map(({ id }) => id),
-        products.flatMap(({ monitorId }) => monitorId ? [monitorId] : []),
-        definitions
-      );
       const overrides = await sql<{ monitor_id: string; paused: boolean }[]>`select monitor_id, paused from tools.monitor_overrides`;
       const paused = new Map(overrides.map((row) => [row.monitor_id, row.paused]));
-      const byId = new Map(definitions.map((definition) => [definition.id, definition]));
       return {
         etag: catalog.revision,
         value: {
@@ -73,8 +88,8 @@ export function createPostgresCheckerStore(config: CheckerConfig): CheckerStore 
     writePublicSnapshot: (value, signal) => snapshots.writePublicSnapshot(value, signal),
     writePrivateSnapshot: (value, signal) => snapshots.writePrivateSnapshot(value, signal),
     async close() {
-      await snapshots.close();
-      await sql.end();
+      try { await snapshots.close(); }
+      finally { await sql.end(); }
     }
   };
 }

@@ -136,7 +136,7 @@ function loopbackOrigin(value: string | undefined, name: string) {
   return url.origin;
 }
 
-function hostSettings(base: ComposeConfig, bindings: LocalStackManifest["bindings"], key: string): Environment {
+function hostSettings(base: ComposeConfig, bindings: LocalStackManifest["bindings"], key: string, databasePassword = "local"): Environment {
   const port = (service: string, target: number) => {
     const value = bindings.find((binding) => binding.service === service && binding.target === target)?.port;
     if (!value) throw new SetupError("blocked", `Compose must publish ${service} port ${target}.`);
@@ -147,7 +147,7 @@ function hostSettings(base: ComposeConfig, bindings: LocalStackManifest["binding
     NODE_ENV: "development", HOST: "127.0.0.1", NITRO_HOST: "127.0.0.1",
     PORT: String(port("platform", 3000)),
     PUBLIC_ORIGIN: `http://127.0.0.1:${port("platform", 3000)}`,
-    DATABASE_URL: `postgres://local:local@127.0.0.1:${port("postgres", 5432)}/postgres`,
+    DATABASE_URL: `postgres://local:${databasePassword}@127.0.0.1:${port("postgres", 5432)}/postgres`,
     TOOLS_S3_ENDPOINT: `http://127.0.0.1:${port("minio", 9000)}`,
     ARTIFACT_S3_ENDPOINT: `http://127.0.0.1:${port("minio", 9000)}`,
     MARKDOWN_SHARE_ADMIN_ENDPOINT: `http://127.0.0.1:${port("markdown-mock", 8787)}/admin/documents`,
@@ -214,6 +214,8 @@ async function runLocalStack(
     await lock.writeFile(String(process.pid));
     const owner = await identity(directory);
     sensitive = [owner.feedbackKey];
+    const databasePassword = lifetime === "verification" ? randomBytes(32).toString("hex") : undefined;
+    if (databasePassword) sensitive.push(databasePassword);
     for (const binding of owner.bindings ?? []) await unusedPort(new Set(), binding.port);
     const commandEnv: Record<string, string | undefined> = {
       PATH: options.environment.PATH, HOME: options.environment.HOME,
@@ -265,10 +267,22 @@ async function runLocalStack(
       }
     }
     if (owner.bindings && owner.bindings.length !== bindings.length) throw new SetupError("blocked", "Compose published ports differ from the retained identity. Retain the directory for recovery.");
-    const settings = hostSettings(base, bindings, owner.feedbackKey);
+    const settings = hostSettings(base, bindings, owner.feedbackKey, databasePassword);
+    if (databasePassword) {
+      const databaseUrl = `postgres://local:${databasePassword}@postgres:5432/postgres`;
+      const databaseEnvironment = {
+        postgres: { POSTGRES_PASSWORD: databasePassword },
+        "postgres-migrate": { DATABASE_URL: databaseUrl },
+        platform: { DATABASE_URL: databaseUrl },
+      };
+      for (const [service, environment] of Object.entries(databaseEnvironment)) {
+        override.splice(override.indexOf(`  ${JSON.stringify(service)}:`) + 1, 0, "    environment:",
+          ...Object.entries(environment).map(([name, value]) => `      ${name}: ${JSON.stringify(value)}`));
+      }
+    }
     const minio = override.indexOf('  "minio":');
     override.splice(minio + 1, 0, "    environment:", `      MINIO_API_CORS_ALLOW_ORIGIN: ${JSON.stringify(`${settings.PUBLIC_ORIGIN},null`)}`);
-    sensitive = secrets(settings);
+    sensitive = secrets({ ...settings, POSTGRES_PASSWORD: databasePassword });
     await writeFile(join(directory, "identity.next.json"), JSON.stringify({ ...owner, bindings }), { mode: 0o600 });
     await rename(join(directory, "identity.next.json"), join(directory, "identity.json"));
     const overridePath = join(directory, "compose.override.yaml");
