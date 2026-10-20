@@ -18,7 +18,7 @@ beforeAll(async () => {
   await writeFile(join(scratch, "vitest.postgres.config.ts"), `export default { test: { include: ["test/cases.control.ts", "test/broken.control.ts"], maxWorkers: 1, fileParallelism: false, retry: 0 } };\n`);
   await writeFile(join(scratch, "test/cases.control.ts"), `import { afterAll, describe, expect, it } from "vitest";
 it("passes", () => {});
-it("fails", () => { expect(process.env.TEST_DATABASE_URL).toBe("another database"); });
+it("fails", () => { expect([process.env.TEST_DATABASE_URL, process.env.TOWER_HEARTBEAT_TOKEN, process.env.TOOLS_S3_SECRET_ACCESS_KEY].join(" ")).toBe("another database"); });
 it.skip("skips", () => {});
 it.todo("todo");
 describe("group", () => {
@@ -57,10 +57,12 @@ describe("Vitest child entry", () => {
     const { status, text } = await runChild("run", {}, "journeys");
     const report = decodeReport(text, "run");
     expect(status).toBe(1);
-    expect(report).toEqual({ phase: "run", observed: [{
+    expect(report).toMatchObject({ phase: "run", observed: [{
       identity: "test/blocked.control.ts > real OAuth prerequisite", result: "blocked",
       evidence: ["Real local Google OAuth is absent."],
-    }], errors: [] });
+    }] });
+    expect(report.errors).toContain("Module test/blocked.control.ts ended failed.");
+    expect(report.errors).toContain("Vitest ended failed.");
   }, 60_000);
 
   it("discovers skipped and todo cases and reports a module that cannot be imported", async () => {
@@ -73,7 +75,7 @@ describe("Vitest child entry", () => {
 
   it("keeps each actual outcome and every run error and redacts the database before publishing", async () => {
     const databaseUrl = "postgres://probe:pw-secret-probe@127.0.0.1:9/probe";
-    const { status, text } = await runChild("run", { TEST_DATABASE_URL: databaseUrl });
+    const { status, text } = await runChild("run", { TEST_DATABASE_URL: databaseUrl, TOWER_HEARTBEAT_TOKEN: "private-heartbeat", TOOLS_S3_SECRET_ACCESS_KEY: "private-storage" });
     const report = decodeReport(text, "run");
     expect(status).toBe(1);
     expect(report.observed.map(({ identity, result }) => [identity, result])).toEqual([
@@ -91,5 +93,7 @@ describe("Vitest child entry", () => {
       "test/cases.control.ts: suite-afterAll-probe",
     ]));
     expect(text).not.toContain("pw-secret-probe");
+    expect(text).not.toContain("private-heartbeat");
+    expect(text).not.toContain("private-storage");
   }, 60_000);
 });

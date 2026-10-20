@@ -2,7 +2,7 @@ import { rename, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createVitest, type TestCase, type TestModule, type Vitest } from "vitest/node";
-import { redactDatabase, type CaseResult, type ChildReport } from "./receipt.ts";
+import { redactFixture, type CaseResult, type ChildReport } from "./receipt.ts";
 
 const [phase, reportPath, suite = "postgres", ...extra] = process.argv.slice(2);
 if ((phase !== "discover" && phase !== "run") || !reportPath || !["postgres", "identity", "journeys"].includes(suite) || extra.length) {
@@ -35,11 +35,7 @@ function moduleErrors(modules: readonly TestModule[]) {
     const name = relative(toolsRoot, module.moduleId);
     const state = module.state();
     const errors = [module, ...module.children.allSuites()].flatMap((suite) => suite.errors().map((error) => `${name}: ${error.message}`));
-    const cases = [...module.children.allTests()].map(caseResult);
-    const blockedOnly = suite === "journeys" && phase === "run"
-      && cases.some((test) => test.result === "blocked")
-      && cases.every((test) => test.result === "passed" || test.result === "blocked");
-    const settled = phase === "discover" ? state !== "failed" : state === "passed" || blockedOnly;
+    const settled = phase === "discover" ? state !== "failed" : state === "passed";
     return settled ? errors : [`Module ${name} ended ${state}.`, ...errors];
   });
 }
@@ -59,8 +55,7 @@ try {
         runEnds += 1;
         observed = modules.flatMap((module) => [...module.children.allTests()].map(caseResult));
         errors.push(...unhandledErrors.map((error) => error.message), ...moduleErrors(modules));
-        if (reason !== "passed" && !(suite === "journeys" && observed.some((test) => test.result === "blocked")
-          && observed.every((test) => test.result === "passed" || test.result === "blocked"))) errors.push(`Vitest ended ${reason}.`);
+        if (reason !== "passed") errors.push(`Vitest ended ${reason}.`);
       },
     }],
   });
@@ -83,7 +78,7 @@ try {
 }
 
 const report: ChildReport = phase === "discover" ? { phase, required, errors } : { phase, observed, errors };
-const redacted = JSON.stringify(report, (_key, value: unknown) => typeof value === "string" ? redactDatabase(value, process.env.TEST_DATABASE_URL) : value, 2);
-await writeFile(`${reportPath}.tmp`, redacted);
+const redacted = JSON.stringify(report, (_key, value: unknown) => typeof value === "string" ? redactFixture(value, process.env) : value, 2);
+await writeFile(`${reportPath}.tmp`, redacted, { mode: 0o600 });
 await rename(`${reportPath}.tmp`, reportPath);
 if (errors.length || observed.some((test) => test.result !== "passed")) process.exitCode = 1;

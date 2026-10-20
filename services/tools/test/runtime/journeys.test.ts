@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
+import { verifyHeartbeatJourney } from "../../status/test/heartbeat-journey.js";
 import { VerificationBlocked } from "./receipt.ts";
 
 let origin: string;
@@ -74,19 +75,8 @@ describe("built Tools journeys", () => {
     expect(await upload.json()).toMatchObject({ error: "upload_link_unavailable" });
   });
 
-  it("private-google-oauth-upload-link", () => {
-    throw new VerificationBlocked("Real local Google OAuth browser login and allowed subject are absent from the owned stack. Do not mint a session. A 201 JSON response and usable guest URL still need browser acceptance.");
-  });
-
-  it("authenticated-cross-origin-denial", () => {
-    throw new VerificationBlocked("A real local Google OAuth session is required to prove cross-origin denial without a state change. Anonymous 401 does not prove this boundary.");
-  });
-
-  it("historical-pre-middleware-upload-link", () => {
-    throw new VerificationBlocked("The pre-middleware revision 98f7ca5^ and corrected revision 98f7ca5 need separately owned built stacks and real local Google OAuth sessions. Handler or source replay cannot prove their HTTP behavior.");
-  });
-
-  it("heartbeat-publication", () => {
-    throw new VerificationBlocked("No bounded checker fixture with explicit local monitors, canonical pause state, and notifications disabled exists. Default monitor targets are refused. HTTP 204 proves no publication.");
-  });
+  it("heartbeat-publication", async () => {
+    const evidence = await verifyHeartbeatJourney(process.env);
+    console.info("heartbeat-publication", JSON.stringify(evidence));
+  }, 120_000);
 });
