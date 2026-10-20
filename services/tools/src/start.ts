@@ -1,4 +1,5 @@
 import { createCsrfMiddleware, createMiddleware, createStart } from "@tanstack/react-start";
+import { getResponse, setResponseHeader } from "@tanstack/react-start/server";
 import { classifyRoute, isMarkdownSharePath, type PlatformPrincipal } from "@tools-platform/security";
 import { authenticatePlatformRequest } from "./app.js";
 import { getPlatformRuntime, type PlatformRuntime } from "./runtime.js";
@@ -15,6 +16,10 @@ export type PlatformRequestContext = {
 
 const platformRequestMiddleware = createMiddleware().server(
   async ({ request, handlerType, next }) => {
+    if (handlerType === "serverFn") {
+      setResponseHeader("Cache-Control", "private, no-store");
+      getResponse().errHeaders.set("Cache-Control", "private, no-store");
+    }
     const runtime = await getPlatformRuntime();
     if (
       runtime.readOnly &&
@@ -68,7 +73,7 @@ const platformRequestMiddleware = createMiddleware().server(
     if (headers.get("Content-Type")?.startsWith("text/html")) {
       headers.set("X-Platform-UI-Build", PLATFORM_UI_BUILD);
     }
-    if (classifyRoute(pathname, request.method).kind === "human-session") {
+    if (handlerType === "serverFn" || classifyRoute(pathname, request.method).kind === "human-session") {
       headers.set("Cache-Control", "private, no-store");
     }
     if (pathname.startsWith("/feedback/f/") || pathname.startsWith("/feedback/share/") || pathname === "/feedback/confirmation") {
@@ -98,6 +103,10 @@ const platformRequestMiddleware = createMiddleware().server(
 const csrfMiddleware = createCsrfMiddleware({
   filter: ({ handlerType }) => handlerType === "serverFn",
   origin: (origin) => origin === process.env.PUBLIC_ORIGIN,
+  failureResponse: new Response("Forbidden", {
+    status: 403,
+    headers: { "Cache-Control": "private, no-store" }
+  }),
   // TanStack invokes loaders through an internal server-function request during SSR.
   // Those requests have no browser Origin headers; cross-origin browser requests do.
   allowRequestsWithoutOriginCheck: true
