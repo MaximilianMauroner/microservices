@@ -213,12 +213,37 @@ The concrete release procedure and per-target state belong in
 
 ## Isolated verification
 
-Run the normal Publisher and Tools checks first. Run the real-resource suite
-only with separately owned loopback PostgreSQL and S3, a bucket named
-`tools-transfer-test`, the guarded schema-push disposable database sentinel,
-and local fixture credentials. Its CORS test uses `http://127.0.0.1:43171`.
+Run the normal Publisher and Tools checks first. `pnpm run verify` runs the
+real-resource suite with an owned PostgreSQL fixture and the S3 storage of an
+owned local stack. To run it alone, use separately owned PostgreSQL and S3 on
+`127.0.0.1` and local fixture credentials. Use PostgreSQL 15 or later. Use a
+role that owns the database for the sentinel SQL, schema push, and suite. The
+suite creates the `tools-transfer-test` bucket if it is missing.
+
+The schema push and the suite run only on a database that holds the disposable
+database sentinel. Create it in the new empty database before the push:
+
+```sql
+create table public.tools_runtime_test_sentinel (sentinel_key text primary key, sentinel_value text not null);
+insert into public.tools_runtime_test_sentinel values ('database-purpose', 'tools-runtime-disposable-test-database');
+```
+
+The suite does not set bucket CORS, because the pinned MinIO build does not
+support it. The S3 server must allow PUT preflight from the test origin, deny it
+from unrelated origins, and allow reads from the `null` origin. For MinIO, start
+the server with `MINIO_ROOT_USER=transfer-local`,
+`MINIO_ROOT_PASSWORD=transfer-local-secret`, and
+`MINIO_API_CORS_ALLOW_ORIGIN=http://127.0.0.1:43171,null`. This global CORS
+setting applies to all methods of both origins. The test origin is
+`http://127.0.0.1:43171` and the credentials are `transfer-local` and
+`transfer-local-secret`. `PUBLISHER_TRANSFER_TEST_ORIGIN`,
+`PUBLISHER_TRANSFER_TEST_S3_ACCESS_KEY_ID`, and
+`PUBLISHER_TRANSFER_TEST_S3_SECRET_ACCESS_KEY` override them.
 
 ```sh
+TEST_DATABASE_URL=postgres://transfer_test@127.0.0.1:45432/tools_runtime_test \
+TOOLS_TEST_DATABASE_CONFIRM=tools-platform-test \
+  pnpm --dir services/tools run db:push-postgres:test
 PUBLISHER_TRANSFER_TEST_DATABASE_URL=postgres://transfer_test@127.0.0.1:45432/tools_runtime_test \
 PUBLISHER_TRANSFER_TEST_S3_ENDPOINT=http://127.0.0.1:49000 \
   pnpm --dir services/tools/publisher exec vitest run \
