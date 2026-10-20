@@ -5,7 +5,7 @@ export default defineConfig({
   ...config,
   test: {
     ...config.test,
-    include: ["test/money-repository.integration.test.ts"],
+    include: ["test/money-repository.integration.test.ts", "test/money-ledger-contributions.integration.test.ts"],
     exclude: [],
     maxWorkers: 1,
     fileParallelism: false,
