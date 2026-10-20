@@ -214,21 +214,26 @@ The concrete release procedure and per-target state belong in
 ## Isolated verification
 
 Run the normal Publisher and Tools checks first. `pnpm run verify` runs the
-real-resource suite against an owned local stack. To run it alone, use
-separately owned loopback PostgreSQL and S3, the guarded schema-push disposable
-database sentinel, and local fixture credentials. The suite creates the
-`tools-transfer-test` bucket if it is missing.
+real-resource suite with an owned PostgreSQL fixture and the S3 storage of an
+owned local stack. To run it alone, use separately owned loopback PostgreSQL and
+S3 and local fixture credentials. The database must hold the disposable
+database sentinel table `tools_runtime_test_sentinel` and the current schema.
+The suite creates the `tools-transfer-test` bucket if it is missing.
 
 The suite does not set bucket CORS, because the pinned MinIO build does not
-support it. The S3 server must allow PUT preflight only from the test origin
-and allow reads from the `null` origin. For MinIO, start the server with
-`MINIO_API_CORS_ALLOW_ORIGIN=http://127.0.0.1:43171,null`. The test origin is
+support it. The S3 server must allow PUT preflight from the test origin, deny it
+from unrelated origins, and allow reads from the `null` origin. For MinIO, start
+the server with `MINIO_API_CORS_ALLOW_ORIGIN=http://127.0.0.1:43171,null`. This
+global setting applies to all methods of both origins. The test origin is
 `http://127.0.0.1:43171` and the credentials are `transfer-local` and
 `transfer-local-secret`. `PUBLISHER_TRANSFER_TEST_ORIGIN`,
 `PUBLISHER_TRANSFER_TEST_S3_ACCESS_KEY_ID`, and
 `PUBLISHER_TRANSFER_TEST_S3_SECRET_ACCESS_KEY` override them.
 
 ```sh
+TEST_DATABASE_URL=postgres://transfer_test@127.0.0.1:45432/tools_runtime_test \
+TOOLS_TEST_DATABASE_CONFIRM=tools-platform-test \
+  pnpm --dir services/tools run db:push-postgres:test
 PUBLISHER_TRANSFER_TEST_DATABASE_URL=postgres://transfer_test@127.0.0.1:45432/tools_runtime_test \
 PUBLISHER_TRANSFER_TEST_S3_ENDPOINT=http://127.0.0.1:49000 \
   pnpm --dir services/tools/publisher exec vitest run \
