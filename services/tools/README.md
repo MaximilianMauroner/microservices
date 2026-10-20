@@ -74,3 +74,21 @@ and downloads `.tex` source; compiler hosting and engine selection remain open.
 Existing `/markdown` capability routes continue to resolve the same documents.
 Browser recent-document and display-setting keys remain unchanged to preserve
 saved links and preferences.
+
+## Runtime verification
+
+The root `pnpm run verify` command reports `automatedDecision` and
+`manualAcceptance` separately. Exit code zero requires every implemented test,
+receipt publication, and owned fixture disposal to pass. It does not accept the
+manual browser gates.
+
+The built Tools journeys include a real heartbeat POST and a bounded Status
+checker pass against owned PostgreSQL and object storage. The checker uses only
+Tower and a paused local control. It refuses external targets and notifications.
+The mounted Status link regression remains a required automated case.
+
+Three manual gates remain blocked and owned by Max. They cover the authenticated
+upload link, authenticated cross-origin denial, and the historical middleware
+comparison. Each gate requires real Google OAuth sessions and evidence bound to
+the reviewed revision and owned fixture. These gates block merge until Max
+accepts the evidence. The runner cannot import or grant manual acceptance.
