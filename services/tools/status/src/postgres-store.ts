@@ -36,10 +36,7 @@ export async function createPostgresCheckerStore(config: CheckerConfig, source?:
     validatedMonitorUrl(definition.kind === "http" ? definition.url : definition.checkUrl);
   }
   const byId = new Map(definitions.map((definition) => [definition.id, definition]));
-  const sql = postgres(config.databaseUrl, {
-    max: 4, connect_timeout: 5,
-    connection: { statement_timeout: 5_000, lock_timeout: 5_000 },
-  });
+  const sql = postgres(config.databaseUrl, { max: 4 });
   const snapshots = createSnapshotStore(config.bucket);
   return {
     async readCatalog() {
@@ -92,7 +89,7 @@ export async function createPostgresCheckerStore(config: CheckerConfig, source?:
     writePrivateSnapshot: (value, signal) => snapshots.writePrivateSnapshot(value, signal),
     async close() {
       try { await snapshots.close(); }
-      finally { await sql.end({ timeout: 5 }); }
+      finally { await sql.end(); }
     }
   };
 }

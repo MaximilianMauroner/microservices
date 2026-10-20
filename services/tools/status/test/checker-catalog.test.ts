@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type postgres from "postgres";
 import { createPostgresCheckerStore } from "../src/postgres-store.js";
 import * as definitions from "../src/definitions.js";
 import { catalogFixture, configFixture } from "./helpers.js";
@@ -6,7 +7,7 @@ import type { CheckerCatalogSource } from "../src/postgres-store.js";
 
 const resources = vi.hoisted(() => {
   const sql = Object.assign(vi.fn(), { end: vi.fn().mockResolvedValue(undefined) });
-  return { sql, postgres: vi.fn(() => sql), snapshots: vi.fn(() => ({ close: vi.fn() })) };
+  return { sql, postgres: vi.fn((_url: string, _options: postgres.Options<{}>) => sql), snapshots: vi.fn(() => ({ close: vi.fn() })) };
 });
 vi.mock("postgres", () => ({ default: resources.postgres }));
 vi.mock("../src/bucket.js", async (original) => ({ ...await original<typeof import("../src/bucket.js")>(), createSnapshotStore: resources.snapshots }));
@@ -27,6 +28,24 @@ beforeEach(() => {
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); });
 
 describe("checker catalog source", () => {
+  it.each([false, true])("retains default database behavior with an explicit catalog source %s", async (explicit) => {
+    vi.stubEnv("PUBLIC_ORIGIN", "https://tools.example");
+    const { default: actualPostgres } = await vi.importActual<{ default: typeof postgres }>("postgres");
+    const store = await createPostgresCheckerStore(configFixture, explicit ? sourceFixture() : undefined);
+    const sql = actualPostgres(...resources.postgres.mock.calls[0]);
+    const defaults = actualPostgres(configFixture.databaseUrl, { max: 4 });
+    try {
+      expect(sql.options.max).toBe(4);
+      expect(sql.options.connect_timeout).toBe(defaults.options.connect_timeout);
+      expect(sql.options.connection).toEqual(defaults.options.connection);
+    } finally {
+      await store.close();
+      await sql.end();
+      await defaults.end();
+    }
+    expect(resources.sql.end).toHaveBeenCalledExactlyOnceWith();
+  });
+
   it("uses only an explicit source and reads canonical pause overrides on each read", async () => {
     vi.stubEnv("PUBLIC_ORIGIN", "invalid default origin");
     const defaults = vi.spyOn(definitions, "loadMonitorDefinitions");
