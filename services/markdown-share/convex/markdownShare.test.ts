@@ -8,12 +8,20 @@ import { MAX_MARKDOWN_LENGTH, PINNED_RETENTION_MS, RETENTION_MS } from "./consta
 
 const modules = import.meta.glob(["./**/*.ts", "!./**/*.test.ts"]);
 const LEGACY_TOKEN = "81f2a9dd-9ca3-4e4c-9d30-13d3f50dcf3b";
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 function setup() {
   const test = convexTest(schema, modules);
   prosemirrorTest.register(test);
   presenceTest.register(test);
   return test;
+}
+
+async function pendingExpiryJobs(test: ReturnType<typeof setup>) {
+  const jobs = await test.run(async (ctx) =>
+    await ctx.db.system.query("_scheduled_functions").collect(),
+  );
+  return jobs.filter((job) => job.name === "cleanup:expire" && job.state.kind === "pending");
 }
 
 function snapshot(markdown: string): string {
@@ -85,10 +93,7 @@ describe("capability lifecycle", () => {
     ).toEqual([]);
 
     vi.setSystemTime(created.expiresAt);
-    await test.mutation(internal.cleanup.expire, {
-      token: created.token,
-      expectedExpiresAt: created.expiresAt,
-    });
+    await test.mutation(internal.cleanup.expire, { token: created.token });
     expect(
       await test.run(async (ctx) => {
         return await ctx.db.query("capabilityClaims").collect();
@@ -288,10 +293,7 @@ describe("checkpoint history", () => {
     });
 
     vi.setSystemTime(created.expiresAt);
-    await test.mutation(internal.cleanup.expire, {
-      token: created.token,
-      expectedExpiresAt: created.expiresAt,
-    });
+    await test.mutation(internal.cleanup.expire, { token: created.token });
 
     const remaining = await test.run(async (ctx) => ({
       checkpoints: await ctx.db.query("checkpoints").collect(),
@@ -431,10 +433,7 @@ describe("editor protocol and retention", () => {
       test.query(api.checkpoints.list, { token: created.token }),
     ).resolves.toHaveLength(2);
 
-    await test.mutation(internal.cleanup.expire, {
-      token: created.token,
-      expectedExpiresAt: created.expiresAt,
-    });
+    await test.mutation(internal.cleanup.expire, { token: created.token });
 
     await expect(
       test.query(api.documents.get, { token: created.token }),
@@ -460,7 +459,7 @@ describe("editor protocol and retention", () => {
     ).rejects.toThrow("expired");
   });
 
-  it("extends expiry and reschedules once at the previous deadline", async () => {
+  it("extends expiry and keeps one scheduled transition", async () => {
     vi.useFakeTimers({ now: 10_000 });
     const test = setup();
     const markdown = "hello";
@@ -539,10 +538,7 @@ describe("editor protocol and retention", () => {
     ).toMatchObject([{ userId: "per-tab-id", name: "Amber Fox 12" }]);
 
     vi.setSystemTime(created.expiresAt + 1);
-    await test.mutation(internal.cleanup.expire, {
-      token: created.token,
-      expectedExpiresAt: created.expiresAt,
-    });
+    await test.mutation(internal.cleanup.expire, { token: created.token });
     await expect(
       test.mutation(api.editor.submitSteps, {
         id: created.token,
@@ -741,39 +737,184 @@ describe("pin retention", () => {
     });
   });
 
-  it("returns to 7 days when unpinned", async () => {
+  it("keeps the remaining time when unpinned long after the last edit", async () => {
     vi.useFakeTimers({ now: 400_000 });
+    const test = setup();
+    const created = await test.mutation(api.documents.create, {
+      filename: "unpin.md",
+      markdown: "hello",
+    });
+    await test.mutation(api.checkpoints.create, {
+      token: created.token,
+      createdBy: "Amber Fox 12",
+    });
+    const pinned = await test.mutation(api.documents.setPinned, {
+      token: created.token,
+      pinned: true,
+    });
+
+    vi.advanceTimersByTime(10 * DAY_MS);
+    await test.finishInProgressScheduledFunctions();
+    const unpinned = await test.mutation(api.documents.setPinned, {
+      token: created.token,
+      pinned: false,
+    });
+    expect(unpinned).toMatchObject({
+      pinned: false,
+      expiresAt: pinned.expiresAt,
+    });
+
+    vi.advanceTimersByTime(1);
+    await test.finishInProgressScheduledFunctions();
+    await expect(
+      test.query(api.documents.get, { token: created.token }),
+    ).resolves.toMatchObject({ pinned: false, expiresAt: pinned.expiresAt });
+    expect(await pendingExpiryJobs(test)).toMatchObject([
+      { scheduledTime: pinned.expiresAt, args: [{ token: created.token }] },
+    ]);
+
+    vi.advanceTimersByTime(pinned.expiresAt - Date.now());
+    await test.finishInProgressScheduledFunctions();
+    await expect(
+      test.query(api.documents.get, { token: created.token }),
+    ).resolves.toBeNull();
+    expect(
+      await test.run(async (ctx) => ({
+        checkpoints: await ctx.db.query("checkpoints").collect(),
+        contents: await ctx.db.query("checkpointContents").collect(),
+      })),
+    ).toEqual({ checkpoints: [], contents: [] });
+    expect(await pendingExpiryJobs(test)).toEqual([]);
+  });
+
+  it("keeps one expiry job across repeated pin toggles", async () => {
+    vi.useFakeTimers({ now: 500_000 });
+    const test = setup();
+    const created = await test.mutation(api.documents.create, {
+      filename: "toggle.md",
+      markdown: "hello",
+    });
+
+    for (let toggle = 0; toggle < 10; toggle += 1) {
+      await test.mutation(api.documents.setPinned, {
+        token: created.token,
+        pinned: toggle % 2 === 0,
+      });
+    }
+
+    expect(await pendingExpiryJobs(test)).toMatchObject([
+      { name: "cleanup:expire", args: [{ token: created.token }] },
+    ]);
+  });
+
+  it("does not create new expiry chains when old untracked jobs run", async () => {
+    vi.useFakeTimers({ now: 550_000 });
+    const test = setup();
+    const created = await test.mutation(api.documents.create, {
+      filename: "old-jobs.md",
+      markdown: "hello",
+    });
+    await test.run(async (ctx) => {
+      const document = await ctx.db.query("documents").unique();
+      await ctx.db.patch("documents", document!._id, { cleanupJobId: undefined });
+      await ctx.scheduler.runAt(created.expiresAt, internal.cleanup.expire, {
+        token: created.token,
+        expectedExpiresAt: created.expiresAt,
+      });
+    });
+    const pinned = await test.mutation(api.documents.setPinned, {
+      token: created.token,
+      pinned: true,
+    });
+
+    vi.advanceTimersByTime(10 * DAY_MS);
+    await test.finishInProgressScheduledFunctions();
+    const unpinned = await test.mutation(api.documents.setPinned, {
+      token: created.token,
+      pinned: false,
+    });
+    expect(unpinned.expiresAt).toBe(pinned.expiresAt);
+    expect(await pendingExpiryJobs(test)).toMatchObject([
+      { scheduledTime: pinned.expiresAt, args: [{ token: created.token }] },
+    ]);
+
+    vi.advanceTimersByTime(pinned.expiresAt - Date.now());
+    await test.finishInProgressScheduledFunctions();
+    await expect(
+      test.query(api.documents.get, { token: created.token }),
+    ).resolves.toBeNull();
+    expect(await pendingExpiryJobs(test)).toEqual([]);
+  });
+
+  it.each(["canceled", "finished"])("replaces a %s cleanup job reference", async (state) => {
+    vi.useFakeTimers({ now: 575_000 });
+    const test = setup();
+    const created = await test.mutation(api.documents.create, {
+      filename: "stale-job.md",
+      markdown: "hello",
+    });
+    await test.run(async (ctx) => {
+      const document = await ctx.db.query("documents").unique();
+      await ctx.scheduler.cancel(document!.cleanupJobId!);
+      const cleanupJobId = await ctx.scheduler.runAfter(1, internal.cleanup.expire, {
+        token: "missing-document",
+      });
+      if (state === "canceled") await ctx.scheduler.cancel(cleanupJobId);
+      await ctx.db.patch("documents", document!._id, { cleanupJobId });
+    });
+    vi.advanceTimersByTime(1);
+    await test.finishInProgressScheduledFunctions();
+    const pinned = await test.mutation(api.documents.setPinned, {
+      token: created.token,
+      pinned: true,
+    });
+    expect(await pendingExpiryJobs(test)).toMatchObject([
+      { scheduledTime: pinned.expiresAt, args: [{ token: created.token }] },
+    ]);
+    vi.advanceTimersByTime(pinned.expiresAt - Date.now());
+    await test.finishInProgressScheduledFunctions();
+    await expect(
+      test.query(api.documents.get, { token: created.token }),
+    ).resolves.toBeNull();
+  });
+
+  it("re-anchors expiry to seven days on the first edit after unpin", async () => {
+    vi.useFakeTimers({ now: 600_000 });
     const test = setup();
     const markdown = "hello";
     const created = await test.mutation(api.documents.create, {
-      filename: "unpin.md",
+      filename: "unpin-edit.md",
       markdown,
     });
     await test.mutation(api.documents.setPinned, {
       token: created.token,
       pinned: true,
     });
+    await test.mutation(api.documents.setPinned, {
+      token: created.token,
+      pinned: false,
+    });
 
-    vi.advanceTimersByTime(90_000);
+    vi.advanceTimersByTime(DAY_MS);
     await test.mutation(api.editor.submitSteps, {
       id: created.token,
       version: 1,
       clientId: "unpin-client",
       steps: [insertStep(markdown, "!")],
     });
-
-    const unpinned = await test.mutation(api.documents.setPinned, {
-      token: created.token,
-      pinned: false,
-    });
-    expect(unpinned.pinned).toBe(false);
-    expect(unpinned.expiresAt).toBe(490_000 + RETENTION_MS);
+    const editedExpiresAt = 600_000 + DAY_MS + RETENTION_MS;
     await expect(
       test.query(api.documents.get, { token: created.token }),
-    ).resolves.toMatchObject({
-      pinned: false,
-      expiresAt: 490_000 + RETENTION_MS,
-    });
+    ).resolves.toMatchObject({ pinned: false, expiresAt: editedExpiresAt });
+    expect(await pendingExpiryJobs(test)).toMatchObject([
+      { scheduledTime: editedExpiresAt, args: [{ token: created.token }] },
+    ]);
+
+    vi.advanceTimersByTime(RETENTION_MS);
+    await test.finishInProgressScheduledFunctions();
+    await expect(
+      test.query(api.documents.get, { token: created.token }),
+    ).resolves.toBeNull();
   });
 });
 

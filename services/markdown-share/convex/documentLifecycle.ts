@@ -61,7 +61,7 @@ export async function createDocument(
   const now = Date.now();
   const token = await createServerCapability(ctx, now);
   const expiresAt = now + RETENTION_MS;
-  await ctx.db.insert("documents", {
+  const documentId = await ctx.db.insert("documents", {
     token,
     filename: args.filename,
     format: args.format,
@@ -81,7 +81,7 @@ export async function createDocument(
       },
     ],
   });
-  await ctx.scheduler.runAt(expiresAt, internal.cleanup.expire, { token });
+  await scheduleDocumentExpiry(ctx, { _id: documentId, token, expiresAt });
 
   return {
     token,
@@ -99,30 +99,62 @@ export async function renewDocumentRetention(
   document: Doc<"documents">,
 ): Promise<void> {
   const now = Date.now();
+  const expiresAt = now + retentionFor(document.pinned);
   await ctx.db.patch("documents", document._id, {
     updatedAt: now,
-    expiresAt: now + retentionFor(document.pinned),
+    expiresAt,
   });
+  await scheduleDocumentExpiry(ctx, { ...document, expiresAt });
 }
 
-/** Toggles the 30-day pin and re-anchors expiry to the last edit. */
 export async function setDocumentPinned(
   ctx: MutationCtx,
   document: Doc<"documents">,
   pinned: boolean,
 ): Promise<Doc<"documents">> {
-  const expiresAt = document.updatedAt + retentionFor(pinned);
+  const expiresAt = pinned
+    ? document.updatedAt + PINNED_RETENTION_MS
+    : document.expiresAt;
   await ctx.db.patch("documents", document._id, { pinned, expiresAt });
-  await ctx.scheduler.runAt(expiresAt, internal.cleanup.expire, {
-    token: document.token,
-  });
-  return { ...document, pinned, expiresAt };
+  const cleanupJobId = await scheduleDocumentExpiry(ctx, { ...document, expiresAt });
+  return { ...document, pinned, expiresAt, cleanupJobId };
+}
+
+async function scheduleDocumentExpiry(
+  ctx: MutationCtx,
+  document: Pick<Doc<"documents">, "_id" | "token" | "expiresAt" | "cleanupJobId">,
+) {
+  const job = document.cleanupJobId
+    ? await ctx.db.system.get(document.cleanupJobId)
+    : null;
+  if (job?.state.kind === "pending") {
+    if (job.scheduledTime === document.expiresAt) {
+      return job._id;
+    }
+    // A scheduled mutation can still read its own state as pending.
+    if (job.scheduledTime > Date.now()) {
+      await ctx.scheduler.cancel(job._id);
+    }
+  }
+  const cleanupJobId = await ctx.scheduler.runAt(
+    document.expiresAt,
+    internal.cleanup.expire,
+    { token: document.token },
+  );
+  await ctx.db.patch("documents", document._id, { cleanupJobId });
+  return cleanupJobId;
 }
 
 async function deleteDocumentCascade(
   ctx: MutationCtx,
   document: Doc<"documents">,
 ): Promise<void> {
+  if (document.cleanupJobId) {
+    const job = await ctx.db.system.get(document.cleanupJobId);
+    if (job?.state.kind === "pending" && job.scheduledTime > Date.now()) {
+      await ctx.scheduler.cancel(job._id);
+    }
+  }
   if (LEGACY_TOKEN_PATTERN.test(document.token)) {
     await ensureCapabilityClaim(ctx, document.token, document.createdAt);
   }
@@ -155,9 +187,7 @@ export async function expireDocument(
     return;
   }
   if (document.expiresAt > Date.now()) {
-    await ctx.scheduler.runAt(document.expiresAt, internal.cleanup.expire, {
-      token: document.token,
-    });
+    await scheduleDocumentExpiry(ctx, document);
     return;
   }
   await deleteDocumentCascade(ctx, document);

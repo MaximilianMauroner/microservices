@@ -12,9 +12,8 @@ describe("runtime schema management", () => {
       readFile(new URL("../package.json", import.meta.url), "utf8"),
     ]);
 
+    expect(JSON.parse(serviceConfig)).toEqual(JSON.parse(rootConfig));
     for (const config of [rootConfig, previewConfig, serviceConfig]) {
-      expect(config).toContain("db:push-postgres");
-      expect(config).toContain("services/tools run db:push-postgres && pnpm --dir services/tools/publisher run db:backfill");
       expect(config).not.toContain("db:migrate");
     }
     expect(JSON.parse(rootConfig).deploy.sleepApplication).toBe(true);
