@@ -42,7 +42,8 @@ export async function createOwnedPostgres() {
       return {kind:'failed',reason:'owned host failed',cleanup:'stopped'};
     }
     await pending;
-    return {kind:'completed',cleanup:process.env.FIXTURE_LOCAL_CLEANUP_FAIL?'retained':'stopped'};
+    const journey=options.directory.includes('tools-journeys-');
+    return {kind:'completed',cleanup:process.env.FIXTURE_LOCAL_CLEANUP_FAIL || journey && process.env.FIXTURE_JOURNEY_CLEANUP_FAIL?'retained':'stopped'};
   }`);
   await writeFile(join(target, "vitest-child.ts"), `import {readFileSync,writeFileSync} from 'node:fs';
 import {requiredJourneyCases,mountedStatusCase} from './receipt.ts';
@@ -178,6 +179,15 @@ describe("terminal verification CLI", () => {
     expect(result.code).toBe(1);
     expect(result.record.decision.kind).not.toBe("passed");
     expect(result.record.cells.filter((cell: { requirement: { kind: string } }) => cell.requirement.kind.startsWith("identity-")).some((cell: { result: { kind: string } }) => cell.result.kind !== "passed")).toBe(true);
+  });
+
+  it("fails the journey cell when the journey stack retains its Compose project", async () => {
+    const result = await run({ FIXTURE_MODE: "workspace", FIXTURE_JOURNEY_CLEANUP_FAIL: "1" });
+    expect(result.code).toBe(1);
+    expect(result.record.decision.kind).toBe("failed");
+    expect(result.record.cells.filter((cell: { requirement: { kind: string } }) => cell.requirement.kind.startsWith("identity-")).map((cell: { result: { kind: string } }) => cell.result.kind)).toEqual(["passed", "passed"]);
+    const journey = result.record.cells.find((cell: { requirement: { kind: string } }) => cell.requirement.kind === "journey-contracts");
+    expect(journey.result).toMatchObject({ kind: "failed", reasons: ["Journey fixture did not complete cleanup."] });
   });
 
   it("cancels identity contracts when their owned host fails and keeps the fixture failure", async () => {
