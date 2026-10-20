@@ -67,13 +67,44 @@ describe("authentication return paths", () => {
   });
 
   it.each([
+    ["/a/../money?view=all#balance", "/money?view=all#balance"],
+    ["/%2e/money", "/money"],
+    ["/manage//status", "/manage//status"],
+    ["/money?returnTo=//evil.com#//evil.com", "/money?returnTo=//evil.com#//evil.com"]
+  ])("preserves the internal destination for %s", (value, expected) => {
+    expect(safeReturnPath(value)).toBe(expected);
+    const returnTo = new URL(signInLocation(value, "session_required"), "https://tools.example")
+      .searchParams.get("returnTo");
+    expect(returnTo).toBe(expected);
+  });
+
+  it.each([
     "https://evil.example/private",
     "//evil.example/private",
     "/sign-in?returnTo=/manage",
     "/api/auth/callback/google",
+    "/.//evil.com",
+    "/a/..//evil.com",
+    "/%2e//evil.com",
     "not-a-path",
     undefined
   ])("rejects unsafe or recursive return path %s", (value) => {
     expect(safeReturnPath(value)).toBe("/");
+  });
+
+  it.each([
+    "/.//evil.example",
+    "/a/..//evil.example",
+    "/%2e//evil.example",
+    "/\\evil.example",
+    "/%5Cevil.example"
+  ])("keeps the redirect for %s on the app origin", (value) => {
+    const origin = "https://tools.example";
+    const returnTo = new URL(signInLocation(value, "session_required"), origin)
+      .searchParams.get("returnTo");
+
+    expect(returnTo).not.toBeNull();
+    expect(new URL(safeReturnPath(value), origin).origin).toBe(origin);
+    expect(new URL(returnTo ?? "", origin).origin).toBe(origin);
   });
 });

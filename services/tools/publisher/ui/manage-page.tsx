@@ -1,3 +1,4 @@
+import { DEFAULT_UPLOAD_LIST_CRITERIA, UPLOAD_CATEGORIES, isUploadCategory, serializeUploadListCriteria, uploadListPath, type UploadListCriteria } from "../src/upload-list.js";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { uploadDirectFile } from "./direct-upload.js";
 import type { RefObject } from "react";
@@ -52,9 +53,9 @@ import { formatDateTime } from "../../src/lib/format-date.js";
 import { PageHeader } from "../../src/components/page-header.js";
 import { toggleVisibleAll, toggleVisibleRange } from "../../src/lib/range-selection.js";
 
-type KindFilter = "all" | UploadSummary["kind"];
-type ExpiryFilter = "all" | "24h" | "7d" | "persistent";
-type SortOrder = "newest" | "oldest" | "filename" | "expiry";
+type KindFilter = UploadListCriteria["kind"];
+type ExpiryFilter = UploadListCriteria["expiry"];
+type SortOrder = UploadListCriteria["sort"];
 type ProjectUsageGroup = {
   label: string;
   projects: Array<[string, number]>;
@@ -74,6 +75,8 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
   const [selectionAnchor, setSelectionAnchor] = useState<string>();
   const [projectFilter, setProjectFilter] = useState(ALL_PROJECTS);
   const [query, setQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [category, setCategory] = useState<UploadListCriteria["category"]>("all");
   const [kind, setKind] = useState<KindFilter>("all");
   const [expiry, setExpiry] = useState<ExpiryFilter>("all");
   const [sort, setSort] = useState<SortOrder>("newest");
@@ -81,18 +84,39 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
   const [message, setMessage] = useState<{ text: string; tone: "success" | "error" }>();
   const [mobileInspectorOpen, setMobileInspectorOpen] = useState(false);
   const replaceInput = useRef<HTMLInputElement>(null);
-  const loadingAllRef = useRef(false);
-  const [loadingAll, setLoadingAll] = useState(false);
+  const criteria = useMemo<UploadListCriteria>(() => ({
+    q: searchQuery.trim().normalize("NFKC").toLowerCase(), kind, expiry, category, sort,
+    project: projectFilter === ALL_PROJECTS ? { mode: "all" } : projectFilter === UNASSIGNED_PROJECT
+      ? { mode: "unassigned" } : { mode: "named", name: projectFilter }
+  }), [searchQuery, kind, expiry, category, sort, projectFilter]);
+  const criteriaKey = serializeUploadListCriteria(criteria);
+  const criteriaRef = useRef(criteria);
+  criteriaRef.current = criteria;
+  const criteriaKeyRef = useRef(criteriaKey);
+  criteriaKeyRef.current = criteriaKey;
+  const loadedCriteria = useRef(serializeUploadListCriteria(DEFAULT_UPLOAD_LIST_CRITERIA));
+  const readController = useRef<AbortController | undefined>(undefined);
+  const firstCriteriaEffect = useRef(true);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setSearchQuery(query), 250);
+    return () => clearTimeout(timer);
+  }, [query]);
+  useEffect(() => {
+    if (firstCriteriaEffect.current) { firstCriteriaEffect.current = false; return; }
+    setUploads([]);
+    setNextCursor(undefined);
+    void refresh();
+    return () => readController.current?.abort();
+  }, [criteriaKey]);
+  useEffect(() => () => readController.current?.abort(), []);
 
   const projects = useMemo(() => summary.projects
     .map(({ project, count }) => [project ?? UNASSIGNED_PROJECT, count] as [string, number])
     .sort(([left], [right]) => left === UNASSIGNED_PROJECT ? 1 : right === UNASSIGNED_PROJECT ? -1 : left.localeCompare(right)), [summary]);
-  const visibleUploads = useMemo(
-    () => filterAndSortUploads(uploads, { projectFilter, query, kind, expiry, sort }),
-    [expiry, kind, projectFilter, query, sort, uploads]
-  );
+  const visibleUploads = uploads;
   const selected = visibleUploads.find((upload) => upload.id === selectedId);
-  useEffect(() => { setSelectedIds(new Set()); setSelectionAnchor(undefined); }, [projectFilter, query, kind, expiry, sort]);
+  useEffect(() => { setSelectedIds(new Set()); setSelectionAnchor(undefined); }, [criteriaKey]);
   useEffect(() => {
     function onDelete(event: KeyboardEvent) {
       const target = event.target;
@@ -129,92 +153,50 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
     } finally {
       setUploads((current) => current.filter((upload) => !revoked.includes(upload.id)));
       setSelectedIds(new Set());
-      setSelectedId((current) => revoked.includes(current ?? "") ? uploads.find((upload) => !revoked.includes(upload.id))?.id : current);
-      if (revoked.length) { try { await refreshSummary(); } catch { /* Keep the successful revocations visible. */ } }
+      if (revoked.length) await refresh();
       setBusy(false);
+    }
+  }
+
+  async function readInventory(cursor?: string, announce = false) {
+    readController.current?.abort();
+    const controller = new AbortController();
+    readController.current = controller;
+    const requestCriteria = criteriaRef.current;
+    const requestKey = serializeUploadListCriteria(requestCriteria);
+    setBusy(true);
+    try {
+      const response = await fetchPublisherRead(uploadListPath(requestCriteria, cursor), {
+        credentials: "same-origin", signal: controller.signal
+      });
+      const payload = await readPayload<ManagePageData>(response, "Artifact inventory could not be loaded.");
+      if (controller.signal.aborted || criteriaKeyRef.current !== requestKey) return;
+      loadedCriteria.current = requestKey;
+      setUploads((current) => cursor ? [...current, ...payload.uploads] : payload.uploads);
+      setNextCursor(payload.nextCursor);
+      if (payload.summary) setSummary(payload.summary);
+      if (!cursor) {
+        const visibleIds = new Set(payload.uploads.map((upload) => upload.id));
+        setSelectedId((current) => current && visibleIds.has(current) ? current : payload.uploads[0]?.id);
+        setSelectedIds((current) => new Set([...current].filter((id) => visibleIds.has(id))));
+        setSelectionAnchor((current) => current && visibleIds.has(current) ? current : undefined);
+      }
+      if (announce) setMessage({ text: "Artifact inventory refreshed.", tone: "success" });
+      return true;
+    } catch (error) {
+      if (!controller.signal.aborted && criteriaKeyRef.current === requestKey) setMessage({ text: errorMessage(error), tone: "error" });
+    } finally {
+      if (readController.current === controller) setBusy(false);
     }
   }
 
   async function refresh(options: { announce?: boolean } = {}) {
-    setBusy(true);
-    try {
-      const response = await fetchPublisherRead("/api/external-uploads?limit=100&sort=newest&includeSummary=true", {
-        credentials: "same-origin"
-      });
-      const payload = await readPayload<ManagePageData>(response, "Artifact inventory could not be refreshed.");
-      const refreshed = [...payload.uploads];
-      setUploads(refreshed);
-      setNextCursor(payload.nextCursor);
-      if (payload.summary) setSummary(payload.summary);
-      setSelectedId((current) => refreshed.some((upload) => upload.id === current)
-        ? current
-        : refreshed[0]?.id);
-      if (options.announce) setMessage({ text: "Artifact inventory refreshed.", tone: "success" });
-    } catch (error) {
-      setMessage({ text: errorMessage(error), tone: "error" });
-    } finally {
-      setBusy(false);
-    }
+    return readInventory(undefined, options.announce);
   }
 
   async function loadOlder() {
-    if (!nextCursor) return;
-    setBusy(true);
-    try {
-      const response = await fetchPublisherRead(`/api/external-uploads?limit=100&sort=newest&cursor=${encodeURIComponent(nextCursor)}`, {
-        credentials: "same-origin"
-      });
-      const payload = await readPayload<ManagePageData>(response, "Older artifacts could not be loaded.");
-      setUploads((current) => [...current, ...payload.uploads]);
-      setNextCursor(payload.nextCursor);
-    } catch (error) {
-      setMessage({ text: errorMessage(error), tone: "error" });
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function refreshSummary() {
-    const response = await fetchPublisherRead(
-      "/api/external-uploads?limit=1&sort=newest&includeSummary=true",
-      { credentials: "same-origin" }
-    );
-    const payload = await readPayload<ManagePageData>(
-      response,
-      "Artifact summary could not be refreshed."
-    );
-    if (payload.summary) setSummary(payload.summary);
-  }
-
-  async function loadCompleteLibrary() {
-    if (!nextCursor || loadingAllRef.current) return;
-    loadingAllRef.current = true;
-    setLoadingAll(true);
-    setBusy(true);
-    try {
-      let cursor: string | undefined = nextCursor;
-      const remaining: UploadSummary[] = [];
-      while (cursor) {
-        const response = await fetchPublisherRead(
-          `/api/external-uploads?limit=100&sort=newest&cursor=${encodeURIComponent(cursor)}`,
-          { credentials: "same-origin" }
-        );
-        const payload = await readPayload<ManagePageData>(
-          response,
-          "Project artifacts could not be loaded."
-        );
-        remaining.push(...payload.uploads);
-        cursor = payload.nextCursor;
-      }
-      setUploads((current) => [...current, ...remaining]);
-      setNextCursor(undefined);
-    } catch (error) {
-      setMessage({ text: errorMessage(error), tone: "error" });
-    } finally {
-      loadingAllRef.current = false;
-      setLoadingAll(false);
-      setBusy(false);
-    }
+    if (!nextCursor || busy || loadedCriteria.current !== criteriaKey) return;
+    await readInventory(nextCursor);
   }
 
   function selectProject(value: string) { setProjectFilter(value); }
@@ -228,9 +210,9 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
       const updated = await uploadDirectFile(file, {
         onProgress: () => {}, onProcessing: () => {}, registerXhr: () => {}, isCancelled: () => false
       }, { kind: "html", replaceId: selected.id });
-      setUploads((current) => current.map((upload) => upload.id === updated.id ? updated : upload));
-      setSelectedId(updated.id);
-      setMessage({ text: `${updated.filename} replaced the artifact without changing its URL.`, tone: "success" });
+      if (await refresh()) {
+        setMessage({ text: `${updated.filename} replaced the artifact without changing its URL.`, tone: "success" });
+      }
     } catch (error) {
       setMessage({ text: errorMessage(error), tone: "error" });
     } finally {
@@ -255,8 +237,9 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
       setUploads((current) => current.map((upload) => upload.id === selected.id
         ? { ...upload, project }
         : upload));
-      await refreshSummary();
-      setMessage({ text: `Moved ${selected.filename} to ${project}.`, tone: "success" });
+      if (await refresh()) {
+        setMessage({ text: `Moved ${selected.filename} to ${project}.`, tone: "success" });
+      }
     } catch (error) {
       setMessage({ text: errorMessage(error), tone: "error" });
     } finally {
@@ -282,13 +265,14 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
         const { expiresAt: _oldExpiry, ...withoutExpiry } = upload;
         return updated.expiresAt ? { ...withoutExpiry, expiresAt: updated.expiresAt } : withoutExpiry;
       }));
-      await refreshSummary();
-      setMessage({
-        text: updated.expiresAt
-          ? `${selected.filename} now expires ${formatDateTime(updated.expiresAt)}.`
-          : `${selected.filename} is now permanent and remains available until revoked.`,
-        tone: "success"
-      });
+      if (await refresh()) {
+        setMessage({
+          text: updated.expiresAt
+            ? `${selected.filename} now expires ${formatDateTime(updated.expiresAt)}.`
+            : `${selected.filename} is now permanent and remains available until revoked.`,
+          tone: "success"
+        });
+      }
       return true;
     } catch (error) {
       setMessage({ text: errorMessage(error), tone: "error" });
@@ -309,11 +293,10 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
         credentials: "same-origin"
       });
       if (!response.ok) await readPayload(response, "Artifact could not be revoked.");
-      const remaining = uploads.filter((upload) => upload.id !== selected.id);
-      setUploads(remaining);
-      setSelectedId(remaining[0]?.id);
-      await refreshSummary();
-      setMessage({ text: `${selected.filename} was revoked. Its capability URL no longer works.`, tone: "success" });
+      setUploads((current) => current.filter((upload) => upload.id !== selected.id));
+      if (await refresh()) {
+        setMessage({ text: `${selected.filename} was revoked. Its capability URL no longer works.`, tone: "success" });
+      }
     } catch (error) {
       setMessage({ text: errorMessage(error), tone: "error" });
     } finally {
@@ -335,7 +318,7 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
     <>
       <AppShell product="Publisher" accent="violet" icon={favicons.publisher} />
       <main id="main" className="tools-page">
-        <PageHeader title="Library" facts={`${summary.total} artifacts in ${summary.projects.length} projects`} actions={<>
+        <PageHeader title="Library" facts={`${summary.total} artifacts in ${summary.projects.length} projects · ${formatBytes(summary.activeBytes)} active storage`} actions={<>
             <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void refresh({ announce: true })}>
               <RefreshCw /> Refresh
             </Button>
@@ -349,21 +332,22 @@ export function ManagePage({ initial }: { initial: ManagePageData }) {
         <section className="mb-3 flex flex-wrap items-center gap-2" aria-label="Artifact filters">
           <label className="relative block w-full lg:max-w-md">
             <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-            <Input className="pl-9" value={query} onChange={(event) => { setQuery(event.currentTarget.value); }} placeholder="Search artifacts, URLs, or projects" aria-label="Search artifacts" />
+            <Input className="pl-9" value={query} maxLength={200} onChange={(event) => { setQuery(event.currentTarget.value); }} placeholder="Search names, IDs, or projects" aria-label="Search artifacts" />
           </label>
           <div className="flex flex-wrap items-center gap-1.5">
-            {([ ["all", "All", summary.total], ["html", "Plans", uploads.filter((upload) => upload.kind === "html").length], ["file", "Files", uploads.filter((upload) => upload.kind === "file").length] ] as const).map(([value, label, count]) => <button key={value} type="button" aria-pressed={kind === value} className={`rounded-full border px-3 py-1.5 text-xs ${kind === value ? "border-primary bg-primary/10 text-foreground" : "text-muted-foreground hover:bg-accent"}`} onClick={() => setKind(value)}>{label} <span className="tabular-nums">{count}{nextCursor && value !== "all" ? "+" : ""}</span></button>)}
+            {([ ["all", "All"], ["html", "Plans"], ["file", "Files"] ] as const).map(([value, label]) => <button key={value} type="button" aria-pressed={kind === value} className={`rounded-full border px-3 py-1.5 text-xs ${kind === value ? "border-primary bg-primary/10 text-foreground" : "text-muted-foreground hover:bg-accent"}`} onClick={() => setKind(value)}>{label}{value === "all" ? <span className="ml-1 tabular-nums">{summary.total}</span> : null}</button>)}
             {([ ["24h", "Expiring soon", summary.expiringSoon], ["7d", "Next 7 days", null], ["persistent", "Permanent", summary.permanent] ] as const).map(([value, label, count]) => <button key={value} type="button" aria-pressed={expiry === value} className={`rounded-full border px-3 py-1.5 text-xs ${expiry === value ? "border-primary bg-primary/10 text-foreground" : "text-muted-foreground hover:bg-accent"}`} onClick={() => setExpiry(expiry === value ? "all" : value)}>{label}{count === null ? "" : ` ${count}`}</button>)}
           </div>
           <div className="flex flex-wrap gap-2 lg:ml-auto">
             <NativeSelect aria-label="Project" className="w-44" value={projectFilter} onChange={(event) => selectProject(event.currentTarget.value)}><option value={ALL_PROJECTS}>All projects</option>{projects.find(([value]) => value === UNASSIGNED_PROJECT) ? <option value={UNASSIGNED_PROJECT}>Unassigned ({projects.find(([value]) => value === UNASSIGNED_PROJECT)?.[1]})</option> : null}{groupProjectsByUsage(projects).map((group) => <optgroup key={group.label} label={group.label}>{group.projects.map(([value, count]) => <option key={value} value={value}>{value} ({count})</option>)}</optgroup>)}</NativeSelect>
-            <AppSelect value={sort} onValueChange={(value) => { setSort(value as SortOrder); }} aria-label="Sort artifacts" className="w-40" options={[{ value: "newest", label: "Newest" }, { value: "oldest", label: "Oldest" }, { value: "filename", label: "Filename" }, { value: "expiry", label: "Expiry" }]} />
+            <NativeSelect aria-label="File category" className="w-36" value={category} onChange={(event) => { const value = event.currentTarget.value; if (value === "all" || isUploadCategory(value)) setCategory(value); }}><option value="all">All categories</option>{UPLOAD_CATEGORIES.map(({ id, label }) => <option key={id} value={id}>{label}</option>)}</NativeSelect>
+            <AppSelect value={sort} onValueChange={(value) => { setSort(value as SortOrder); }} aria-label="Sort artifacts" className="w-40" options={[{ value: "newest", label: "Newest" }, { value: "oldest", label: "Oldest" }, { value: "filename", label: "Filename" }, { value: "expiry", label: "Expiry" }, { value: "size", label: "Largest first" }]} />
           </div>
         </section>
 
         {selectedIds.size ? <div className="mb-2 flex flex-wrap items-center gap-2 rounded-lg border bg-card px-3 py-2 text-sm"><strong>{selectedIds.size} selected</strong><Button size="sm" variant="destructive-subtle" disabled={busy} onClick={() => setBulkConfirmOpen(true)}><Trash2 />Revoke selected…</Button><Button size="sm" variant="ghost" onClick={() => setSelectedIds(new Set())}>Clear</Button></div> : null}
         <section className="grid items-start gap-3 lg:grid-cols-[minmax(0,1fr)_20rem]" aria-label="Artifact library">
-          <ArtifactTable uploads={visibleUploads} loaded={uploads.length} total={summary.total} selectedId={selectedId} selectedIds={selectedIds} onToggle={toggleSelection} onToggleAll={() => setSelectedIds((current) => toggleVisibleAll(current, visibleUploads.map((upload) => upload.id)))} onSelect={(id) => { setSelectedId(id); setMobileInspectorOpen(true); }} onCopy={copyUrl} hasMore={Boolean(nextCursor)} busy={busy} loadingAll={loadingAll} onLoadMore={loadOlder} onSearchRemaining={loadCompleteLibrary} />
+          <ArtifactTable uploads={visibleUploads} loaded={uploads.length} total={summary.total} filtered={criteriaKey !== serializeUploadListCriteria(DEFAULT_UPLOAD_LIST_CRITERIA)} selectedId={selectedId} selectedIds={selectedIds} onToggle={toggleSelection} onToggleAll={() => setSelectedIds((current) => toggleVisibleAll(current, visibleUploads.map((upload) => upload.id)))} onSelect={(id) => { setSelectedId(id); setMobileInspectorOpen(true); }} onCopy={copyUrl} hasMore={Boolean(nextCursor)} busy={busy} onLoadMore={loadOlder} />
           {!isMobile ? <ArtifactInspector
             key={selected?.id ?? "none"}
             upload={selected}
@@ -403,7 +387,7 @@ export function groupProjectsByUsage(projects: Array<[string, number]>): Project
     .filter((group) => group.projects.length > 0);
 }
 
-function ArtifactTable({ uploads, loaded, total, selectedId, selectedIds, onToggle, onToggleAll, onSelect, onCopy, hasMore, busy, loadingAll, onLoadMore, onSearchRemaining }: { uploads: UploadSummary[]; loaded: number; total: number; selectedId?: string; selectedIds: Set<string>; onToggle: (id: string, shiftKey: boolean, additive?: boolean) => void; onToggleAll: () => void; onSelect: (id: string) => void; onCopy: (upload: UploadSummary) => Promise<void>; hasMore: boolean; busy: boolean; loadingAll: boolean; onLoadMore: () => Promise<void>; onSearchRemaining: () => Promise<void> }) {
+function ArtifactTable({ uploads, loaded, total, filtered, selectedId, selectedIds, onToggle, onToggleAll, onSelect, onCopy, hasMore, busy, onLoadMore }: { uploads: UploadSummary[]; loaded: number; total: number; filtered: boolean; selectedId?: string; selectedIds: Set<string>; onToggle: (id: string, shiftKey: boolean, additive?: boolean) => void; onToggleAll: () => void; onSelect: (id: string) => void; onCopy: (upload: UploadSummary) => Promise<void>; hasMore: boolean; busy: boolean; onLoadMore: () => Promise<void>; }) {
   const isMobile = useIsMobile();
   const [mobileLimit, setMobileLimit] = useState(50);
   const shown = isMobile ? uploads.slice(0, mobileLimit) : uploads;
@@ -414,10 +398,9 @@ function ArtifactTable({ uploads, loaded, total, selectedId, selectedIds, onTogg
     onClick={(event) => { event.stopPropagation(); onToggle(upload.id, event.shiftKey); }}
   />;
   return <Card className="gap-0 overflow-hidden py-0">
-    <div className="flex items-center justify-between border-b px-4 py-3"><h2 className="font-semibold">Artifacts</h2><span className="text-xs text-muted-foreground">{uploads.length === loaded ? `${loaded} of ${total} loaded` : `${uploads.length} shown · ${loaded} of ${total} loaded`}</span></div>
-    {loadingAll ? <p className="border-b px-4 py-2 text-xs text-muted-foreground" role="status">Loading the full library so search and filters include older artifacts…</p> : null}
-    {uploads.length === 0 ? <div className="grid min-h-72 place-items-center p-8 text-center"><div><h3 className="font-semibold">{loadingAll ? "Searching the full library…" : hasMore ? "No matches in loaded artifacts" : "No artifacts match"}</h3><p className="mt-1 text-sm text-muted-foreground">{loadingAll ? "Older artifacts are still loading." : hasMore ? "Older artifacts have not been searched yet." : "Try another search, project, or lifecycle filter."}</p></div></div> : isMobile ? <div className="divide-y" role="list" aria-label="Artifacts">{shown.map((upload) => <article key={upload.id} role="listitem" className="flex items-center gap-2 px-3">{selectionBox(upload)}<button className={`grid min-h-16 min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 py-2 text-left transition-colors hover:bg-muted${selectedId === upload.id ? " bg-secondary" : ""}`} type="button" aria-current={selectedId === upload.id ? "true" : undefined} onClick={(event) => event.shiftKey || event.ctrlKey || event.metaKey ? onToggle(upload.id, event.shiftKey) : onSelect(upload.id)}><span className="grid size-9 shrink-0 place-items-center rounded-md border text-muted-foreground">{upload.kind === "html" ? <FileText /> : <Download />}</span><span className="min-w-0"><strong className="block truncate text-sm">{upload.filename}</strong><small className="mt-1 block truncate text-xs text-muted-foreground">{upload.project ?? "Unassigned"} · {formatRelativeDate(upload.updatedAt)}</small></span><LifecycleBadge upload={upload} /></button></article>)}{shown.length < uploads.length ? <div className="p-3 text-center"><Button type="button" variant="outline" onClick={() => setMobileLimit((current) => current + 50)}>Show 50 more</Button></div> : null}</div> : <div className="overflow-x-auto"><Table className="a3-select-table"><TableHeader><TableRow><TableHead className="w-10"><input type="checkbox" className="size-4 accent-primary" aria-label="Select all visible artifacts" checked={allSelected} readOnly onClick={() => onToggleAll()} /></TableHead><TableHead>Artifact</TableHead><TableHead>Project</TableHead><TableHead>Lifecycle</TableHead><TableHead>Updated</TableHead><TableHead><span className="sr-only">Actions</span></TableHead></TableRow></TableHeader><TableBody>{uploads.map((upload) => <TableRow key={upload.id} data-state={selectedId === upload.id ? "selected" : undefined} className={`cursor-pointer${selectedId === upload.id ? " shadow-[inset_2px_0_var(--primary)]" : ""}`} onClick={(event) => event.shiftKey || event.ctrlKey || event.metaKey ? onToggle(upload.id, event.shiftKey) : onSelect(upload.id)}><TableCell>{selectionBox(upload)}</TableCell><TableCell className="w-full max-w-0"><button className="flex w-full min-w-0 items-center gap-3 text-left" type="button" onClick={(event) => { event.stopPropagation(); if (event.shiftKey || event.ctrlKey || event.metaKey) onToggle(upload.id, event.shiftKey); else onSelect(upload.id); }}><span className="grid size-8 shrink-0 place-items-center rounded-md border text-muted-foreground">{upload.kind === "html" ? <FileText /> : <Download />}</span><span className="min-w-0"><strong className="block truncate text-sm">{upload.filename}</strong><small className="block truncate font-mono text-xs text-muted-foreground">{shortUrl(upload.url)}</small></span></button></TableCell><TableCell className="max-w-36 truncate text-xs text-muted-foreground">{upload.project ?? "Unassigned"}</TableCell><TableCell><LifecycleBadge upload={upload} /></TableCell><TableCell className="text-xs text-muted-foreground">{formatRelativeDate(upload.updatedAt)}</TableCell><TableCell><div className="flex gap-1"><Button size="icon-sm" variant="ghost" aria-label={`Copy link for ${upload.filename}`} onClick={(event) => { event.stopPropagation(); void onCopy(upload); }}><Copy /></Button><Button nativeButton={false} size="icon-sm" variant="ghost" aria-label={`Open ${upload.filename}`} render={<a href={upload.url} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()} />}><ExternalLink /></Button></div></TableCell></TableRow>)}</TableBody></Table></div>}
-    {hasMore ? <div className="flex flex-wrap justify-center gap-2 border-t p-3"><Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void onLoadMore()}>Load older artifacts</Button><Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void onSearchRemaining()}>Search remaining artifacts</Button></div> : null}
+    <div className="flex items-center justify-between border-b px-4 py-3"><h2 className="font-semibold">Artifacts</h2><span className="text-xs text-muted-foreground">{filtered ? `${loaded} ${hasMore ? "matches loaded" : "matches"}` : `${loaded} of ${total} loaded`}</span></div>
+    {uploads.length === 0 ? <div className="grid min-h-72 place-items-center p-8 text-center"><div><h3 className="font-semibold">{busy ? "Loading artifacts…" : "No artifacts match"}</h3><p className="mt-1 text-sm text-muted-foreground">{busy ? "Please wait." : "Try another search, project, or lifecycle filter."}</p></div></div> : isMobile ? <div className="divide-y" role="list" aria-label="Artifacts">{shown.map((upload) => <article key={upload.id} role="listitem" className="flex items-center gap-2 px-3">{selectionBox(upload)}<button className={`grid min-h-16 min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 py-2 text-left transition-colors hover:bg-muted${selectedId === upload.id ? " bg-secondary" : ""}`} type="button" aria-current={selectedId === upload.id ? "true" : undefined} onClick={(event) => event.shiftKey || event.ctrlKey || event.metaKey ? onToggle(upload.id, event.shiftKey) : onSelect(upload.id)}><span className="grid size-9 shrink-0 place-items-center rounded-md border text-muted-foreground">{upload.kind === "html" ? <FileText /> : <Download />}</span><span className="min-w-0"><strong className="block truncate text-sm">{upload.filename}</strong><small className="mt-1 block truncate text-xs text-muted-foreground">{upload.project ?? "Unassigned"} · {formatBytes(upload.bytes)} · {formatRelativeDate(upload.updatedAt)}</small></span><LifecycleBadge upload={upload} /></button></article>)}{shown.length < uploads.length ? <div className="p-3 text-center"><Button type="button" variant="outline" onClick={() => setMobileLimit((current) => current + 50)}>Show 50 more</Button></div> : null}</div> : <div className="overflow-x-auto"><Table className="a3-select-table"><TableHeader><TableRow><TableHead className="w-10"><input type="checkbox" className="size-4 accent-primary" aria-label="Select all visible artifacts" checked={allSelected} readOnly onClick={() => onToggleAll()} /></TableHead><TableHead>Artifact</TableHead><TableHead>Project</TableHead><TableHead>Lifecycle</TableHead><TableHead>Size</TableHead><TableHead>Updated</TableHead><TableHead><span className="sr-only">Actions</span></TableHead></TableRow></TableHeader><TableBody>{uploads.map((upload) => <TableRow key={upload.id} data-state={selectedId === upload.id ? "selected" : undefined} className={`cursor-pointer${selectedId === upload.id ? " shadow-[inset_2px_0_var(--primary)]" : ""}`} onClick={(event) => event.shiftKey || event.ctrlKey || event.metaKey ? onToggle(upload.id, event.shiftKey) : onSelect(upload.id)}><TableCell>{selectionBox(upload)}</TableCell><TableCell className="w-full max-w-0"><button className="flex w-full min-w-0 items-center gap-3 text-left" type="button" onClick={(event) => { event.stopPropagation(); if (event.shiftKey || event.ctrlKey || event.metaKey) onToggle(upload.id, event.shiftKey); else onSelect(upload.id); }}><span className="grid size-8 shrink-0 place-items-center rounded-md border text-muted-foreground">{upload.kind === "html" ? <FileText /> : <Download />}</span><span className="min-w-0"><strong className="block truncate text-sm">{upload.filename}</strong><small className="block truncate font-mono text-xs text-muted-foreground">{shortUrl(upload.url)}</small></span></button></TableCell><TableCell className="max-w-36 truncate text-xs text-muted-foreground">{upload.project ?? "Unassigned"}</TableCell><TableCell><LifecycleBadge upload={upload} /></TableCell><TableCell className="whitespace-nowrap text-xs tabular-nums text-muted-foreground">{formatBytes(upload.bytes)}</TableCell><TableCell className="text-xs text-muted-foreground">{formatRelativeDate(upload.updatedAt)}</TableCell><TableCell><div className="flex gap-1"><Button size="icon-sm" variant="ghost" aria-label={`Copy link for ${upload.filename}`} onClick={(event) => { event.stopPropagation(); void onCopy(upload); }}><Copy /></Button><Button nativeButton={false} size="icon-sm" variant="ghost" aria-label={`Open ${upload.filename}`} render={<a href={upload.url} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()} />}><ExternalLink /></Button></div></TableCell></TableRow>)}</TableBody></Table></div>}
+    {hasMore ? <div className="flex flex-wrap justify-center gap-2 border-t p-3"><Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void onLoadMore()}>Load more artifacts</Button></div> : null}
   </Card>;
 }
 
@@ -498,6 +481,7 @@ function projectCounts(uploads: UploadSummary[]): Array<[string, number]> {
 function summarizeLoaded(uploads: UploadSummary[]): UploadInventorySummary {
   return {
     total: uploads.length,
+    activeBytes: uploads.reduce((total, upload) => total + upload.bytes, 0),
     permanent: uploads.filter((upload) => !upload.expiresAt).length,
     temporary: uploads.filter((upload) => Boolean(upload.expiresAt)).length,
     expiringSoon: uploads.filter((upload) => expiresWithin(upload, 24 * 60 * 60 * 1000)).length,
@@ -506,30 +490,6 @@ function summarizeLoaded(uploads: UploadSummary[]): UploadInventorySummary {
       count
     }))
   };
-}
-
-function filterAndSortUploads(uploads: UploadSummary[], filters: { projectFilter: string; query: string; kind: KindFilter; expiry: ExpiryFilter; sort: SortOrder }) {
-  const now = Date.now();
-  const query = filters.query.trim().toLocaleLowerCase();
-  return uploads.filter((upload) => {
-    const project = upload.project ?? UNASSIGNED_PROJECT;
-    if (filters.projectFilter !== ALL_PROJECTS && project !== filters.projectFilter) return false;
-    if (filters.kind !== "all" && upload.kind !== filters.kind) return false;
-    if (query && !`${upload.filename} ${upload.url} ${upload.project ?? ""}`.toLocaleLowerCase().includes(query)) return false;
-    if (filters.expiry === "persistent" && upload.expiresAt) return false;
-    if (filters.expiry === "24h" && (!upload.expiresAt || new Date(upload.expiresAt).getTime() > now + 24 * 60 * 60 * 1000)) return false;
-    if (filters.expiry === "7d" && (!upload.expiresAt || new Date(upload.expiresAt).getTime() > now + 7 * 24 * 60 * 60 * 1000)) return false;
-    return true;
-  }).sort((left, right) => {
-    if (filters.sort === "filename") return left.filename.localeCompare(right.filename);
-    if (filters.sort === "expiry") return expiryTime(left) - expiryTime(right) || left.filename.localeCompare(right.filename);
-    const time = new Date(left.updatedAt).getTime() - new Date(right.updatedAt).getTime();
-    return filters.sort === "oldest" ? time : -time;
-  });
-}
-
-function expiryTime(upload: UploadSummary) {
-  return upload.expiresAt ? new Date(upload.expiresAt).getTime() : Number.MAX_SAFE_INTEGER;
 }
 
 function expiresWithin(upload: UploadSummary, windowMs: number) {
@@ -554,9 +514,9 @@ function shortUrl(value: string) {
 }
 
 function formatBytes(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  const unit = bytes > 0 ? Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1) : 0;
+  return `${unit === 0 ? bytes : (bytes / 1024 ** unit).toFixed(1)} ${units[unit]}`;
 }
 
 

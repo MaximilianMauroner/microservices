@@ -6,7 +6,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { withOwnedCommands, type CommandExecutor, type CommandOutcome, type CommandSpec } from "./commands.ts";
 import { createOwnedPostgres, rejectInheritedDataEndpoints } from "./postgres.ts";
-import { withLocalStack, type LocalStackManifest } from "./local-stack.ts";
+import { withLocalStack, withVerificationStack, type LocalStackManifest } from "./local-stack.ts";
 import { decodeReport, redactDatabase, requiredCaseReceipt, VerificationBlocked, type ChildReport, journeyReceipts, requiredJourneyCases, type CheckReceipt } from "./receipt.ts";
 import type { StopSignal } from "./command-types.ts";
 
@@ -245,15 +245,13 @@ export async function runVerification(mode: VerificationMode, paths?: Readonly<{
                 if (!fixture) throw new Error("No verified PostgreSQL fixture.");
                 const databaseUrl = fixture.url;
                 let identityResult: StepResult = { kind: "pending" };
-                const privateDirectory = await mkdtemp(join(tmpdir(), "tools-identity-"));
-                const local = await withLocalStack({
-                  directory: privateDirectory, commands: { work: commands, cleanup: cleanupCommands },
+                const local = await withVerificationStack({
+                  commands: { work: commands, cleanup: cleanupCommands },
                   environment: process.env, signal: work.signal, lifetimeMs: 900_000,
                 }, async (stack) => {
                   identityFixture = stack.manifest;
                   if (stack.manifest.prerequisites.storageHttp.kind !== "passed") {
-                    identityResult = { kind: "blocked", reasons: [stack.manifest.prerequisites.storageHttp.reason], evidence: [join(privateDirectory, "manifest.json")] };
-                    return;
+                    throw new VerificationBlocked(stack.manifest.prerequisites.storageHttp.reason);
                   }
                   const env = {
                     ...process.env, TEST_DATABASE_URL: databaseUrl, MONEY_TEST_DATABASE_CONFIRM: "money-repository-test",
@@ -267,11 +265,12 @@ export async function runVerification(mode: VerificationMode, paths?: Readonly<{
                   identityContracts = requiredCaseReceipt(identityRequired, result.report?.observed ?? [], result.errors);
                   identityResult = commandResult(result.outcome);
                   if (result.outcome.kind === "succeeded" && identityContracts.result !== "passed") identityResult = { kind: "failed", reasons: identityContracts.evidence, evidence: [join(directory, "identity-run-report.json")] };
+                  if (identityResult.kind !== "passed") throw new Error("Required identity contracts did not pass.");
                 });
                 identityFixture ??= local.manifest;
                 cell.result = identityResult;
-                if (local.kind !== "completed" || local.cleanup !== "stopped") {
-                  cell.result = { kind: local.kind === "blocked" ? "blocked" : "failed", reasons: [local.reason ?? "Local identity fixture did not complete cleanup."], evidence: [privateDirectory] };
+                if (local.kind !== "completed" || local.cleanup !== "disposed") {
+                  cell.result = { kind: local.kind === "blocked" ? "blocked" : "failed", reasons: [local.reason ?? "Local identity fixture did not complete cleanup."], evidence: [local.directory] };
                 }
                 break;
               }

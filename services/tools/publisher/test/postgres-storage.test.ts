@@ -1,3 +1,4 @@
+import { DEFAULT_UPLOAD_LIST_CRITERIA, serializeUploadListCriteria } from "../src/upload-list.js";
 import { describe, expect, it } from "vitest";
 import { readFile } from "node:fs/promises";
 import { Readable } from "node:stream";
@@ -21,15 +22,24 @@ describe("Postgres artifact metadata paging", () => {
     expect(artifactId("pages/notes.html", "pages/")).toBeUndefined();
   });
   it("filters authoritative metadata without inspecting S3", () => {
-    const page = pageArtifactMetadata(uploads, now, { limit: 10, kind: "file", q: "BUILD", expiry: "24h", sort: "filename" });
+    const page = pageArtifactMetadata(uploads, now, { limit: 10, criteria: { ...DEFAULT_UPLOAD_LIST_CRITERIA, kind: "file", q: "BUILD", expiry: "24h", sort: "filename" } });
     expect(page.uploads.map(({ id }) => id)).toEqual(["b"]);
   });
 
+  it("searches project names and capability IDs", () => {
+    const byProject = pageArtifactMetadata(uploads, now, { limit: 10,
+      criteria: { ...DEFAULT_UPLOAD_LIST_CRITERIA, q: "MICROSERVICES" } });
+    const byId = pageArtifactMetadata([{ ...uploads[0]!, id: "capability-token-123" }], now, { limit: 10,
+      criteria: { ...DEFAULT_UPLOAD_LIST_CRITERIA, q: "TOKEN-123" } });
+    expect(byProject.uploads.map(({ id }) => id)).toEqual(["a"]);
+    expect(byId.uploads.map(({ id }) => id)).toEqual(["capability-token-123"]);
+  });
+
   it("preserves stable cursor ordering", () => {
-    const first = pageArtifactMetadata(uploads, now, { limit: 1, sort: "newest", criteria: "newest" });
+    const first = pageArtifactMetadata(uploads, now, { limit: 1, criteria: DEFAULT_UPLOAD_LIST_CRITERIA });
     expect(first.uploads[0]?.id).toBe("a");
-    expect(first.nextCursor).toMatchObject({ key: "pages/a.html", criteria: "newest" });
-    const second = pageArtifactMetadata(uploads, now, { limit: 1, sort: "newest", criteria: "newest", cursor: first.nextCursor });
+    expect(first.nextCursor).toMatchObject({ key: "pages/a.html", criteria: serializeUploadListCriteria(DEFAULT_UPLOAD_LIST_CRITERIA) });
+    const second = pageArtifactMetadata(uploads, now, { limit: 1, criteria: DEFAULT_UPLOAD_LIST_CRITERIA, cursor: first.nextCursor });
     expect(second.uploads[0]?.id).toBe("b");
   });
 
@@ -38,6 +48,7 @@ describe("Postgres artifact metadata paging", () => {
     expect(page.uploads).toHaveLength(1);
     expect(page.summary).toEqual({
       total: 4,
+      activeBytes: 148,
       permanent: 2,
       temporary: 2,
       expiringSoon: 1,
@@ -49,8 +60,45 @@ describe("Postgres artifact metadata paging", () => {
   });
 
   it("keeps permanent artifacts separate from expiring files", () => {
-    const page = pageArtifactMetadata(uploads, now, { limit: 10, expiry: "persistent" });
+    const page = pageArtifactMetadata(uploads, now, { limit: 10, criteria: { ...DEFAULT_UPLOAD_LIST_CRITERIA, expiry: "persistent" } });
     expect(page.uploads.map(({ id }) => id)).toEqual(["a", "d"]);
+  });
+
+  it("sums active canonical bytes before filters and pagination", () => {
+    const expired = { ...uploads[1]!, id: "expired", bytes: 1000, expiresAt: now };
+    const page = pageArtifactMetadata([...uploads, expired], now, { limit: 1, includeSummary: true,
+      criteria: { ...DEFAULT_UPLOAD_LIST_CRITERIA, project: { mode: "unassigned" }, category: "archives" } });
+    expect(page.uploads.map((item) => item.id)).toEqual(["b"]);
+    expect(page.summary).toMatchObject({ total: 4, activeBytes: 148 });
+  });
+
+  it.each([
+    ["text/html; charset=utf-8", "plan.bin", "html"],
+    ["application/xhtml+xml", "plan.bin", "html"],
+    ["application/pdf", "report.bin", "pdf"],
+    ["image/png", "photo.bin", "images"],
+    ["video/mp4", "movie.bin", "video"],
+    ["audio/mpeg", "song.bin", "audio"],
+    ["application/zip", "backup.bin", "archives"],
+    ["application/vnd.openxmlformats-officedocument.wordprocessingml.document", "notes.bin", "documents"],
+    ["text/plain", "notes.bin", "documents"],
+    ["application/json", "report.pdf", "pdf"],
+    ["application/x-zip-compressed", "backup.zip", "archives"],
+    ["application/x-unrecognized", "backup.rar", "archives"],
+    ["application/octet-stream", "PLAN.HTML", "html"],
+    ["application/octet-stream", "REPORT.PDF", "pdf"],
+    ["", "photo.JPG", "images"],
+    ["binary/octet-stream", "movie.MOV", "video"],
+    ["application/octet-stream", "song.mp3", "audio"],
+    ["application/octet-stream", "backup.tar.gz", "archives"],
+    ["application/octet-stream", "notes.docx", "documents"],
+    ["application/octet-stream", "unknown.bin", "other"]
+  ] as const)("classifies %s with filename %s as %s", (contentType, originalName, category) => {
+    const row = { ...uploads[0]!, contentType, originalName, bytes: 0 };
+    const page = pageArtifactMetadata([row], now, { limit: 1, includeSummary: true,
+      criteria: { ...DEFAULT_UPLOAD_LIST_CRITERIA, category } });
+    expect(page.uploads).toMatchObject([{ originalName, category, bytes: 0 }]);
+    expect(page.summary?.activeBytes).toBe(0);
   });
 
   it("retains the durable operation when metadata finalization fails", async () => {

@@ -1,4 +1,5 @@
 import type { UploadSummary } from "../../src/protected-data.js";
+import { isUploadCategory } from "../src/upload-list.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { friendlyUploadError, UploadCancelledError } from "./upload-errors.js";
 
@@ -189,7 +190,8 @@ function isUploadSummary(value: unknown): value is UploadSummary & { sha256: str
     && typeof value.filename === "string" && typeof value.bytes === "number"
     && typeof value.updatedAt === "string" && Number.isFinite(Date.parse(value.updatedAt))
     && new Date(value.updatedAt).toISOString() === value.updatedAt
-    && (value.kind === "html" || value.kind === "file") && typeof value.contentType === "string" && typeof value.sha256 === "string";
+    && (value.kind === "html" || value.kind === "file") && typeof value.contentType === "string"
+    && isUploadCategory(value.category) && typeof value.sha256 === "string";
 }
 function readSavedId(key: string) { try { return sessionStorage.getItem(key) ?? undefined; } catch { return undefined; } }
 function saveId(key: string, id: string) { try { sessionStorage.setItem(key, id); } catch { /* This upload still survives web restarts. */ } }
