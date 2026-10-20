@@ -1,3 +1,4 @@
+import { DEFAULT_UPLOAD_LIST_CRITERIA } from "../src/upload-list.js";
 import crypto from "node:crypto";
 import postgres, { type Sql } from "postgres";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -546,7 +547,7 @@ describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", () => {
         updated_at: edited!.updated_at, created_at: before!.created_at,
         object_key: before!.object_key, kind: before!.kind, upload_link_id: before!.upload_link_id });
       expect(await sql`select operation_id from artifacts.operations where artifact_id = ${id}`).toHaveLength(0);
-      const inventory = await storage.listUploads(new Date(), { kind: "html", limit: 100 });
+      const inventory = await storage.listUploads(new Date(), { limit: 100, criteria: { ...DEFAULT_UPLOAD_LIST_CRITERIA, kind: "html" } });
       expect(inventory.uploads.find(row => row.id === id)).toMatchObject({
         originalName: payload.filename, contentType: payload.contentType, bytes: body.length, updatedAt: edited!.updated_at
       });
