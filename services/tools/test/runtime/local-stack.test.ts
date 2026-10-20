@@ -1,13 +1,13 @@
-import { mkdtemp, mkdir, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { loadPlatformConfig } from "../../src/config.ts";
 import { createFeedbackEncryption, parseFeedbackEncryptionKey } from "../../feedback/encryption.ts";
 import type { CommandExecutor, CommandOutcome, CommandSpec } from "./commands.ts";
 import { withOwnedCommands } from "./commands.ts";
-import { withLocalStack, type LocalStackOptions } from "./local-stack.ts";
+import { withLocalStack, withVerificationStack, type LocalStackOptions } from "./local-stack.ts";
 
 const artifactRoot = fileURLToPath(new URL("../../../../.agents/artifacts/r2-local-stack-2026-10-17/", import.meta.url));
 const directories: string[] = [];
@@ -40,18 +40,19 @@ async function fixture() {
   const calls: CommandSpec[] = [];
   let response: (spec: CommandSpec) => Promise<CommandOutcome | undefined> = async () => undefined;
   const base: {
-    services: Record<string, { ports?: { target: number; published: string; host_ip?: string; protocol?: string }[]; environment?: Record<string, string> }>;
-    volumes: Record<string, { name?: string }>;
+    services: Record<string, { ports?: { target: number; published: string; host_ip?: string; protocol?: string }[]; environment?: Record<string, string>; build?: { context?: string; args?: Record<string, string>; tags?: string[] }; image?: string }>;
+    volumes: Record<string, { name?: string; external?: boolean }>;
   } = {
     services: {
-      postgres: { ports: [{ target: 5432, published: "5432" }] },
-      minio: { ports: [{ target: 9000, published: "9000" }, { target: 9001, published: "9001" }] },
-      "markdown-mock": { ports: [{ target: 8787, published: "8787" }] },
-      "postgres-migrate": {}, "minio-seed": {},
-      platform: { environment: platform, ports: [{ target: 3000, published: "3000" }] },
+      postgres: { image: "postgres:16-alpine", ports: [{ target: 5432, published: "5432" }] },
+      minio: { build: {}, ports: [{ target: 9000, published: "9000" }, { target: 9001, published: "9001" }] },
+      "markdown-mock": { build: {}, ports: [{ target: 8787, published: "8787" }] },
+      "postgres-migrate": { build: {} }, "minio-seed": { build: {} },
+      platform: { build: {}, environment: platform, ports: [{ target: 3000, published: "3000" }] },
     },
     volumes: { "postgres-data": {}, "minio-data": {} },
   };
+  await writeFile(join(root, "compose.yaml"), JSON.stringify(base));
   const execute: CommandExecutor = { async execute(spec) {
     calls.push(spec);
     await writeFile(spec.log, "fixture command log\n");
@@ -59,7 +60,7 @@ async function fixture() {
     if (supplied) return supplied;
     let stdout = "";
     if (spec.args.includes("config") && spec.command === "docker") {
-      const config = structuredClone(base);
+      const config = JSON.parse(await readFile(spec.args[spec.args.indexOf("-f") + 1]!, "utf8")) as typeof base;
       if (spec.args.filter((arg) => arg === "-f").length === 2) {
         const override = await readFile(spec.args[spec.args.lastIndexOf("-f") + 1]!, "utf8");
         let service = "";
@@ -73,7 +74,7 @@ async function fixture() {
           }
         }
         const project = spec.args[spec.args.indexOf("--project-name") + 1]!;
-        config.volumes = Object.fromEntries(Object.keys(base.volumes).map((name) => [name, { name: `${project}_${name}` }]));
+        config.volumes = Object.fromEntries(Object.entries(config.volumes).map(([name, volume]) => [name, { ...volume, name: volume.name ?? `${project}_${name}` }]));
       }
       stdout = JSON.stringify(config);
     } else if (spec.args.includes("version")) stdout = "2.24.4\n";
@@ -113,6 +114,166 @@ async function expectLocked(setup: Awaited<ReturnType<typeof fixture>>) {
 }
 
 describe("owned local stack", () => {
+  it.each(["persistent", "verification"])("keeps %s Compose resources fixed when the checkout changes after validation and before disposal", async (lifetime) => {
+    const setup = await fixture();
+    setup.base.services.minio!.build = { context: ".", args: { RAW: "${VITE_CONVEX_URL:-http://localhost:3210}", LITERAL: "$$UNCHANGED" } };
+    const source = join(setup.options.repository!, "compose.yaml");
+    const original = JSON.stringify(setup.base, null, 2) + "\n";
+    await writeFile(source, original);
+    const selected: { volumes: string[]; images: string[] }[] = [];
+    const mutations: string[] = [];
+    const mutate = async (stage: string) => {
+      const changed = structuredClone(setup.base);
+      changed.volumes["postgres-data"]!.name = `another-stack-${stage}-data`;
+      changed.services.minio!.image = `another-stack-${stage}-minio:local`;
+      await writeFile(source, JSON.stringify(changed));
+      mutations.push(stage);
+    };
+    setup.respond(async (spec) => {
+      if (spec.log.endsWith("-config.log") && spec.command !== "docker") await mutate("after-validation");
+      if (spec.args.includes("ps")) await mutate("before-disposal");
+      if (spec.command !== "docker" || !spec.args.includes("compose")) return undefined;
+      const path = spec.args[spec.args.indexOf("-f") + 1]!;
+      const raw = await readFile(path, "utf8");
+      const config = JSON.parse(raw) as typeof setup.base;
+      const project = spec.args[spec.args.indexOf("--project-name") + 1]!;
+      const projectDirectory = spec.args[spec.args.indexOf("--project-directory") + 1]!;
+      expect(dirname(path)).toBe(dirname(spec.log));
+      expect((await stat(path)).mode & 0o777).toBe(0o600);
+      expect(raw).toBe(original);
+      expect(resolve(projectDirectory, config.services.minio!.build!.context!)).toBe(setup.options.repository);
+      expect(await readFile(spec.args[spec.args.indexOf("--env-file") + 1]!, "utf8")).toBe("VITE_CONVEX_URL=http://127.0.0.1:3210\n");
+      expect(spec.env?.VITE_CONVEX_URL).toBeUndefined();
+      if (spec.args.includes("up") || spec.args.includes("run") || spec.args.includes("down")) selected.push({
+        volumes: Object.entries(config.volumes).map(([name, volume]) => volume.name ?? `${project}_${name}`),
+        images: Object.entries(config.services).filter(([, service]) => service.build).map(([name, service]) => service.image ?? `${project}-${name}`),
+      });
+      return undefined;
+    });
+    const use = async ({ manifest }: Parameters<Parameters<typeof withLocalStack>[1]>[0]) => {
+      if (lifetime === "verification") directories.push(manifest.directory);
+      expect(mutations).toEqual(["after-validation"]);
+      expect(manifest.volumes).toEqual([`${manifest.project}_postgres-data`, `${manifest.project}_minio-data`]);
+      await mutate("before-stop");
+    };
+    const result = lifetime === "verification"
+      ? await withVerificationStack(setup.options, use)
+      : await withLocalStack(setup.options, use);
+    expect(result).toMatchObject({ kind: "completed", cleanup: lifetime === "verification" ? "disposed" : "stopped" });
+    expect(mutations).toEqual(lifetime === "verification" ? ["after-validation", "before-stop", "before-disposal"] : ["after-validation", "before-stop"]);
+    expect(selected).toHaveLength(lifetime === "verification" ? 5 : 4);
+    for (const resources of selected) {
+      expect(resources.volumes).toEqual(result.manifest!.volumes);
+      expect(resources.images).toEqual(["minio", "markdown-mock", "postgres-migrate", "minio-seed", "platform"].map((name) => `${result.manifest!.project}-${name}`));
+    }
+    expect(await readFile(source, "utf8")).toContain("another-stack-");
+  });
+
+  it("disposes only a fresh verification project after the host and normal stop release it", async () => {
+    const setup = await fixture();
+    const persistent = await withLocalStack(setup.options, async () => {});
+    const retained = await retainedFiles(setup.options.directory);
+    setup.calls.length = 0;
+    let hostReleased = false;
+    setup.respond(async (spec) => {
+      if (spec.args[0]?.endsWith("index.mjs")) {
+        await new Promise<void>((resolve) => spec.signal!.addEventListener("abort", () => resolve(), { once: true }));
+        hostReleased = true;
+        return failed(spec);
+      }
+      if (spec.args.includes("down")) expect(hostReleased).toBe(true);
+      return undefined;
+    });
+    const result = await withVerificationStack(setup.options, async ({ manifest }) => {
+      directories.push(manifest.directory);
+      expect(manifest.project).not.toBe(persistent.manifest!.project);
+    });
+    expect(result).toMatchObject({ kind: "completed", cleanup: "disposed" });
+    await expect(stat(result.directory)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await retainedFiles(setup.options.directory)).toEqual(retained);
+    const docker = setup.calls.filter((spec) => spec.command === "docker");
+    const stops = docker.filter((spec) => spec.args.includes("down"));
+    expect(stops.map((spec) => spec.args.slice(spec.args.indexOf("down")))).toEqual([
+      ["down", "--timeout", "10"], ["down", "--timeout", "10", "--volumes", "--rmi", "local"],
+    ]);
+    expect(stops.every((spec) => spec.signal === undefined)).toBe(true);
+    expect(docker.every((spec) => spec.args[1] === "unix:///var/run/docker.sock")).toBe(true);
+    expect(docker.filter((spec) => spec.args.includes("compose"))
+      .every((spec) => spec.args[spec.args.indexOf("--project-name") + 1] === result.manifest!.project)).toBe(true);
+    expect(docker.filter((spec) => !spec.args.includes("compose"))
+      .every((spec) => spec.args.at(-1)?.includes(result.manifest!.project))).toBe(true);
+    expect(stops.every((spec) => spec.args[spec.args.lastIndexOf("-f") + 1] === join(result.directory, "compose.override.yaml"))).toBe(true);
+  });
+
+  it.each(["callback", "storage", "cancel", "cancel-before-disposal", "cancel-during-disposal", "host-ownership", "down", "dispose",
+    "containers-remain", "volumes-remain", "images-remain", "inspection-fails"])("preserves verification recovery files after %s failure", async (failure) => {
+    const setup = await fixture();
+    const controller = new AbortController();
+    setup.respond(async (spec) => {
+      if (failure === "storage" && spec.args.at(-1) === "storage") return { kind: "succeeded", stdout: "storage-blocked\n", log: spec.log };
+      if (failure === "cancel-before-disposal" && spec.args.includes("ps")) controller.abort();
+      if (failure === "cancel-during-disposal" && spec.args.includes("--volumes")) controller.abort();
+      if (failure === "containers-remain" && spec.args.includes("ps")
+        || failure === "volumes-remain" && spec.args.includes("volume")
+        || failure === "images-remain" && spec.args.includes("image")) return { kind: "succeeded", stdout: "remaining-resource\n", log: spec.log };
+      if (failure === "inspection-fails" && spec.args.includes("image")) return failed(spec);
+      if (failure === "host-ownership" && spec.args[0]?.endsWith("index.mjs")) {
+        await new Promise<void>((resolve) => spec.signal!.addEventListener("abort", () => resolve(), { once: true }));
+        return { ...failed(spec), ownership: "uncertain" };
+      }
+      if (failure === "down" && spec.args.includes("down") || failure === "dispose" && spec.args.includes("--volumes")) return failed(spec);
+      return undefined;
+    });
+    const result = await withVerificationStack({ ...setup.options, signal: controller.signal }, async ({ manifest }) => {
+      directories.push(manifest.directory);
+      if (failure === "callback") throw new Error("identity assertion failed");
+      if (failure === "cancel") controller.abort();
+    });
+    expect(result).toMatchObject({ kind: "failed", cleanup: "retained" });
+    expect(await readFile(join(result.directory, "identity.json"), "utf8")).toContain("feedbackKey");
+    expect(await readFile(join(result.directory, "active.lock"), "utf8")).toBe(String(process.pid));
+    expect(JSON.parse(await readFile(join(result.directory, "manifest.json"), "utf8")).project).toBe(result.manifest!.project);
+    expect(setup.calls.filter((spec) => spec.args.includes("--volumes"))).toHaveLength(
+      ["dispose", "cancel-during-disposal", "volumes-remain", "images-remain", "inspection-fails"].includes(failure) ? 1 : 0);
+  });
+
+  it("reports a failed directory removal and retains recovery files after resource disposal", async () => {
+    const setup = await fixture();
+    setup.respond(async (spec) => {
+      if (spec.args.includes("image") && spec.args.includes("ls")) await chmod(dirname(spec.log), 0o500);
+      return undefined;
+    });
+    let directory: string | undefined;
+    try {
+      const result = await withVerificationStack(setup.options, async ({ manifest }) => {
+        directory = manifest.directory;
+        directories.push(directory);
+      });
+      expect(result).toMatchObject({ kind: "failed", cleanup: "retained", reason: expect.stringContaining("directory removal") });
+      expect(await readFile(join(result.directory, "active.lock"), "utf8")).toBe(String(process.pid));
+      expect(await readFile(join(result.directory, "identity.json"), "utf8")).toContain("feedbackKey");
+    } finally {
+      if (directory) await chmod(directory, 0o700);
+    }
+  });
+
+  it.each(["custom-build-tag", "extra-build-tag", "untagged-dependency", "external-volume", "foreign-volume"])("rejects %s before it starts a verification project", async (failure) => {
+    const setup = await fixture();
+    if (failure === "custom-build-tag") setup.base.services.minio!.image = "someone-elses-minio:local";
+    if (failure === "extra-build-tag") setup.base.services.minio!.build = { tags: ["someone-elses-minio:local"] };
+    if (failure === "untagged-dependency") setup.base.services.postgres!.image = "postgres";
+    if (failure === "external-volume") setup.base.volumes["postgres-data"]!.external = true;
+    await writeFile(join(setup.options.repository!, "compose.yaml"), JSON.stringify(setup.base));
+    if (failure === "foreign-volume") setup.respond(async (spec) => {
+      if (spec.log.endsWith("resolved-config.log")) return { kind: "succeeded", stdout: JSON.stringify({ ...setup.base, volumes: { data: { name: "someone-elses-data" } } }), log: spec.log };
+      return undefined;
+    });
+    const result = await withVerificationStack(setup.options, async () => { throw new Error("must not run"); });
+    directories.push(result.directory);
+    expect(result).toMatchObject({ kind: "blocked", cleanup: "retained" });
+    expect(setup.calls.some((spec) => spec.args.includes("up") || spec.args.includes("down"))).toBe(false);
+  });
+
   it("allows the owned Tools and sandbox download origins without a wildcard", async () => {
     const setup = await fixture();
     const result = await withLocalStack(setup.options, async ({ manifest }) => {

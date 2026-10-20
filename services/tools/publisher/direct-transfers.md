@@ -146,18 +146,16 @@ existing local-staging restart limit. Current Fleet HTML creation and replacemen
 sessions. The legacy multipart replacement route remains until all installed callers are
 accounted for.
 
-Browser multipart/chunk endpoints and their local staging also remain for
-already loaded browser bundles during rollout. The current React console and
-guest page use sessions for every new file. The old React chunk transport and
-its protocol-only tests were removed. Retained server chunk tests cover the
-active legacy contract.
+Browser multipart and chunk endpoints are removed. The current React console
+and guest page use sessions for every new file. The old browser page and its
+JavaScript uploader are removed. `POST /api/drop/:token/uploads` remains
+available for guest multipart uploads. The native chunk tests cover the retained
+bearer-token API.
 
-Remove browser upload compatibility after the new build is deployed, old
-bundles have aged out, and route observations confirm no calls. Remove native
-creation/chunk compatibility only after external caller owners confirm migration
-and route observations confirm no calls. Keep the legacy replacement writer until every
-declared device and harness has verified the direct client and offline or unknown
-callers are accounted for. No removal is authorized here.
+Remove native creation and chunk compatibility only after external caller owners
+confirm migration and route observations confirm no calls. Keep the native
+replacement writer until every declared device and harness has verified the
+direct client and offline or unknown callers are accounted for.
 
 The artifact recovery reader in `publisher/src/postgres-storage.ts` also accepts
 JSON strings written by the old double-encoding path. New recovery records use
@@ -213,12 +211,37 @@ The concrete release procedure and per-target state belong in
 
 ## Isolated verification
 
-Run the normal Publisher and Tools checks first. Run the real-resource suite
-only with separately owned loopback PostgreSQL and S3, a bucket named
-`tools-transfer-test`, the guarded schema-push disposable database sentinel,
-and local fixture credentials. Its CORS test uses `http://127.0.0.1:43171`.
+Run the normal Publisher and Tools checks first. `pnpm run verify` runs the
+real-resource suite with an owned PostgreSQL fixture and the S3 storage of an
+owned local stack. To run it alone, use separately owned PostgreSQL and S3 on
+`127.0.0.1` and local fixture credentials. Use PostgreSQL 15 or later. Use a
+role that owns the database for the sentinel SQL, schema push, and suite. The
+suite creates the `tools-transfer-test` bucket if it is missing.
+
+The schema push and the suite run only on a database that holds the disposable
+database sentinel. Create it in the new empty database before the push:
+
+```sql
+create table public.tools_runtime_test_sentinel (sentinel_key text primary key, sentinel_value text not null);
+insert into public.tools_runtime_test_sentinel values ('database-purpose', 'tools-runtime-disposable-test-database');
+```
+
+The suite does not set bucket CORS, because the pinned MinIO build does not
+support it. The S3 server must allow PUT preflight from the test origin, deny it
+from unrelated origins, and allow reads from the `null` origin. For MinIO, start
+the server with `MINIO_ROOT_USER=transfer-local`,
+`MINIO_ROOT_PASSWORD=transfer-local-secret`, and
+`MINIO_API_CORS_ALLOW_ORIGIN=http://127.0.0.1:43171,null`. This global CORS
+setting applies to all methods of both origins. The test origin is
+`http://127.0.0.1:43171` and the credentials are `transfer-local` and
+`transfer-local-secret`. `PUBLISHER_TRANSFER_TEST_ORIGIN`,
+`PUBLISHER_TRANSFER_TEST_S3_ACCESS_KEY_ID`, and
+`PUBLISHER_TRANSFER_TEST_S3_SECRET_ACCESS_KEY` override them.
 
 ```sh
+TEST_DATABASE_URL=postgres://transfer_test@127.0.0.1:45432/tools_runtime_test \
+TOOLS_TEST_DATABASE_CONFIRM=tools-platform-test \
+  pnpm --dir services/tools run db:push-postgres:test
 PUBLISHER_TRANSFER_TEST_DATABASE_URL=postgres://transfer_test@127.0.0.1:45432/tools_runtime_test \
 PUBLISHER_TRANSFER_TEST_S3_ENDPOINT=http://127.0.0.1:49000 \
   pnpm --dir services/tools/publisher exec vitest run \

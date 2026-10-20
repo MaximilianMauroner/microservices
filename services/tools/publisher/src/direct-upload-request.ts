@@ -1,6 +1,7 @@
 import { DIRECT_PART_BYTES, type DirectUploadOwner, type DirectUploads, type DirectUploadIntent } from "./direct-uploads.js";
 import { DirectUploadError, type DirectUploadDescription } from "./multipart-storage.js";
 import { artifactUrls, normalizeMimeType, normalizeProjectName, safeFileName } from "./file-metadata.js";
+import { classifyUpload } from "./upload-list.js";
 import type { UploadLink } from "./upload-links.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -62,7 +63,9 @@ export async function handleDirectUpload(request: Request, remainder: string, up
     }
     const completed = await uploads.complete(id, owner, options.maxConcurrent, request.signal, input.sha256);
     const { totalBytes, fileExpiresAt, updatedAt, partBytes: _partBytes, retentionMs: _retentionMs, ...metadata } = completed;
-    return json({ ...metadata, bytes: totalBytes, updatedAt: updatedAt.toISOString(),
+    return json({ ...metadata,
+      category: classifyUpload(metadata.contentType, metadata.filename), bytes: totalBytes,
+      updatedAt: updatedAt.toISOString(),
       ...artifactUrls(options.baseUrl, completed),
       ...(fileExpiresAt ? { expiresAt: fileExpiresAt } : {}) }, 201);
   }

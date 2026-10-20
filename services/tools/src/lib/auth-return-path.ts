@@ -6,7 +6,9 @@ export function safeReturnPath(value: unknown): string {
   }
   try {
     const url = new URL(value, "https://return-path.invalid");
-    if (url.origin !== "https://return-path.invalid") return "/";
+    if (url.origin !== "https://return-path.invalid" || url.pathname.startsWith("//")) {
+      return "/";
+    }
     if (url.pathname === "/sign-in" || url.pathname.startsWith("/api/auth")) {
       return "/";
     }

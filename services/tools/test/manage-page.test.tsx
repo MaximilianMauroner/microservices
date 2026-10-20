@@ -7,6 +7,7 @@ import type { ManagePageData } from "../src/protected-data.js";
 const initial: ManagePageData = {
   summary: {
     total: 142,
+    activeBytes: 1073741824,
     permanent: 92,
     temporary: 50,
     expiringSoon: 8,
@@ -21,6 +22,7 @@ const initial: ManagePageData = {
       kind: "html",
       filename: "plan.html",
       contentType: "text/html; charset=utf-8",
+      category: "html",
       url: `https://tools.example.test/artifacts/${"a".repeat(32)}`,
       bytes: 4096,
       updatedAt: "2026-08-08T20:00:00.000Z",
@@ -31,6 +33,7 @@ const initial: ManagePageData = {
       kind: "file",
       filename: "logs.txt",
       contentType: "text/plain",
+      category: "documents",
       url: `https://tools.example.test/files/${"b".repeat(32)}/logs.txt`,
       bytes: 2048,
       updatedAt: "2026-08-08T19:00:00.000Z",
@@ -56,6 +59,11 @@ describe("Manage artifact library", () => {
     expect(html).toContain('aria-label="Select all visible artifacts"');
     expect(html).toContain('aria-label="Select plan.html"');
     expect(html).toContain("2 of 142 loaded");
+    expect(html).toContain("1.0 GB active storage");
+    expect(html).toContain(">Size</th>");
+    expect(html).toContain("4.0 KB");
+    expect(html).toContain("2.0 KB");
+    expect(html).toContain('aria-label="File category"');
     expect(html).toContain(">142<");
     expect(html).toContain('href="/publisher"');
     expect(html).toContain('data-suite-accent="violet"');
@@ -88,32 +96,6 @@ describe("Manage artifact library", () => {
     expect(html).toContain(`href="${url}"`);
     expect(html).toContain(`href="${url}?download=1"`);
     expect(html).toContain("Download</a>");
-  });
-
-  it("keeps filters responsive and offers an explicit search of older artifacts", async () => {
-    const source = await readFile(new URL("../publisher/ui/manage-page.tsx", import.meta.url), "utf8");
-    const completeLibrary = source.slice(source.indexOf("async function loadCompleteLibrary"), source.indexOf("async function replaceSelected"));
-    expect(completeLibrary).toContain("while (cursor)");
-    expect(completeLibrary).toContain("remaining.push(...payload.uploads)");
-    expect(completeLibrary).toContain("if (!nextCursor || loadingAllRef.current) return;");
-    expect(source).toContain("onChange={(event) => selectProject(event.currentTarget.value)}");
-    expect(source).toContain("Search remaining artifacts");
-    expect(source).toContain("No matches in loaded artifacts");
-    expect(source).toContain("const selected = visibleUploads.find((upload) => upload.id === selectedId)");
-    expect(source).not.toContain("void loadCompleteLibrary();");
-    expect(source).toContain("disabled={busy}");
-  });
-
-  it("preserves loaded pages while updating rows and exact summaries", async () => {
-    const source = await readFile(new URL("../publisher/ui/manage-page.tsx", import.meta.url), "utf8");
-    const lifecycleUpdates = source.slice(
-      source.indexOf("async function changeProject"),
-      source.indexOf("async function copySelectedUrl")
-    );
-
-    expect(lifecycleUpdates).toContain("setUploads((current)");
-    expect(lifecycleUpdates).toContain("await refreshSummary()");
-    expect(lifecycleUpdates).not.toContain("await refresh()");
   });
 
   it("keeps the library and inspector in two columns with horizontal table overflow", async () => {
