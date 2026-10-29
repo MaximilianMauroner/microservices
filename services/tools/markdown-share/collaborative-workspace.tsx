@@ -12,8 +12,7 @@ import {
   useState,
 } from "react";
 import { favicons } from "../src/favicons.js";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { MarkdownPreview } from "./markdown-preview.js";
 
 import { useDocumentHistory } from "./document-history";
 import {
@@ -33,19 +32,12 @@ import {
   getPresenceIdentity,
   markdownSourceLines,
 } from "./lib";
-import {
-  applyThemeChoice,
-  loadThemeChoice,
-  storeThemeChoice,
-  THEME_CHOICES,
-  type ThemeChoice,
-} from "./theme";
+import { useTheme } from "../src/components/theme-provider.js";
 import {
   useLiveDocumentEditor,
   useSyncFailure,
   type SyncFailure,
 } from "./live-document-session";
-import { remarkPreserveExtraBlankLines } from "./markdown";
 import { useWorkspaceViewport } from "./workspace-viewport";
 
 const DISPLAY_SETTINGS_STORAGE_KEY = "markdown-share:display-settings";
@@ -144,8 +136,7 @@ function EditorWorkspace({
   useEffect(() => () => clearTimeout(copyTimer.current), []);
   const [topbarMenuOpen, setTopbarMenuOpen] = useState(false);
 
-  const [themeChoice, setThemeChoice] =
-    useState<ThemeChoice>(loadThemeChoice);
+  const { theme: themeChoice, setTheme: setThemeChoice } = useTheme();
   const [displaySettings, setDisplaySettings] =
     useState<DisplaySettings>(loadDisplaySettings);
   const topbarMenuRef = useRef<HTMLDivElement>(null);
@@ -180,11 +171,6 @@ function EditorWorkspace({
       // The settings remain active for this session when storage is unavailable.
     }
   }, [displaySettings]);
-
-  useEffect(() => {
-    storeThemeChoice(themeChoice);
-    applyThemeChoice(themeChoice);
-  }, [themeChoice]);
 
   useEffect(() => {
     if (!topbarMenuOpen) {
@@ -268,6 +254,7 @@ function EditorWorkspace({
 
   return (
     <main
+      data-suite-accent="rose"
       className={`editor-shell${viewport.isPreviewOnly ? " preview-only" : ""}${syncFailure ? " has-sync-error" : ""}`}
       style={
         {
@@ -395,7 +382,7 @@ function EditorWorkspace({
                 <div className="theme-control">
                   <p>Theme</p>
                   <div className="theme-options" role="group" aria-label="Color theme">
-                    {THEME_CHOICES.map((choice) => (
+                    {(["light", "dark", "system"] as const).map((choice) => (
                       <button
                         key={choice}
                         type="button"
@@ -559,11 +546,7 @@ function EditorWorkspace({
                 <h2>LaTeX source document</h2>
                 <p>PDF compilation is not available yet. Edit together and download the .tex source.</p>
               </section>
-            ) : <ReactMarkdown
-              remarkPlugins={[remarkGfm, remarkPreserveExtraBlankLines]}
-            >
-              {session.markdown}
-            </ReactMarkdown>}
+            ) : <MarkdownPreview source={session.markdown} />}
           </article>
         </section>
       </section>

@@ -1,6 +1,7 @@
 import { shareRequest, documentRequest } from "./transport.js";
 import type { PublicDocument, DocumentSnapshot } from "./types.js";
 import { useEffect, useState } from "react";
+import { PageHeader } from "../src/components/page-header.js";
 import { favicons } from "../src/favicons.js";
 
 import { CollaborativeWorkspace } from "./collaborative-workspace";
@@ -12,13 +13,7 @@ import {
   normalizeFilename,
   parseDocumentRoute,
 } from "./lib";
-import {
-  applyThemeChoice,
-  loadThemeChoice,
-  storeThemeChoice,
-  THEME_CHOICES,
-  type ThemeChoice,
-} from "./theme";
+import { useTheme } from "../src/components/theme-provider.js";
 import {
   forgetRecentDocument,
   readRecentDocuments,
@@ -41,15 +36,9 @@ function LandingPage() {
   const [format, setFormat] = useState<DocumentFormat>("markdown");
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [themeChoice, setThemeChoice] =
-    useState<ThemeChoice>(loadThemeChoice);
+  const { theme: themeChoice, setTheme: setThemeChoice } = useTheme();
   const [recentDocuments, setRecentDocuments] =
     useState<RecentDocument[]>(readRecentDocuments);
-
-  useEffect(() => {
-    storeThemeChoice(themeChoice);
-    applyThemeChoice(themeChoice);
-  }, [themeChoice]);
 
   const handleCreate = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -78,21 +67,20 @@ function LandingPage() {
   };
 
   return (
-    <main className="landing-shell">
+    <main className="landing-shell" data-suite-accent="rose">
       <section className="landing-card">
         <a className="tools-return" href="/">← Tools dashboard</a>
-        <img className="brand-mark" src={favicons.markdownShare} alt="" />
-        <p className="eyebrow">A temporary shared page</p>
-        <h1>
-          Write Markdown or LaTeX.<br />Share one quiet link.
-        </h1>
+        <div className="share-heading">
+          <img className="brand-mark" src={favicons.markdownShare} alt="" />
+          <PageHeader title="Document Share" facts="Write together. Share one link." />
+        </div>
         <p className="landing-copy">
-          Edit source together in real time. Markdown includes live preview and PDF export.
-          LaTeX source can be shared and downloaded; PDF compilation is not available yet. No account. Anyone with the document link can open it. Unpinned
-          documents expire seven days after the last edit; pinned documents last 30 days.
+          Create a Markdown or LaTeX document and edit it together in real time.
+          Anyone with the link can open and edit it. No account needed.
         </p>
 
         <form className="create-form" onSubmit={handleCreate}>
+          <h2 className="create-title">New document</h2>
           <fieldset className="document-format">
             <legend>Document format</legend>
             {(["markdown", "latex"] as const).map((choice) => (
@@ -126,7 +114,7 @@ function LandingPage() {
         <div className="theme-control landing-theme">
           <p>Theme</p>
           <div className="theme-options" role="group" aria-label="Color theme">
-            {THEME_CHOICES.map((choice) => (
+            {(["light", "dark", "system"] as const).map((choice) => (
               <button
                 key={choice}
                 type="button"
@@ -174,11 +162,10 @@ function LandingPage() {
           )}
         </section>
 
-        <div className="promise-row" aria-label="Product features">
-          <span>Live collaboration</span>
-          <span>7 days · pinned 30 days</span>
-          <span>Markdown PDF export</span>
-        </div>
+        <p className="share-retention">
+          Documents expire seven days after the last edit, or 30 days when pinned.
+          Markdown has live preview and PDF export. LaTeX is shared as source.
+        </p>
       </section>
     </main>
   );
@@ -242,12 +229,12 @@ function CenteredStatus({
   detail?: string;
 }) {
   return (
-    <main className="status-shell">
+    <main className="status-shell" data-suite-accent="rose">
       <div className="status-card">
         <img className="status-glyph" src={favicons.markdownShare} alt="" />
         <h1>{label}</h1>
         {detail ? <p>{detail}</p> : null}
-        <a href="/markdown">Create a new document</a>
+        <a href="/share">Create a new document</a>
       </div>
     </main>
   );

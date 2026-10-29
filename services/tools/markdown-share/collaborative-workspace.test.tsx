@@ -27,6 +27,8 @@ const publicDocument = {
 let liveEditor: Editor;
 let reportSyncError: ((error: Error) => void) | undefined;
 
+vi.mock("../src/components/theme-provider.js", () => ({ useTheme: () => ({ theme: "system", setTheme: vi.fn() }) }));
+
 vi.mock("./transport.js", () => ({ documentRequest: async () => null }));
 vi.mock("./sync-extension.js", async () => {
   const { Extension } = await import("@tiptap/core");
