@@ -1,4 +1,4 @@
-import { ConvexError } from "convex/values";
+import { ShareError } from "./types.js";
 import { describe, expect, it } from "vitest";
 import {
   classifySyncError,
@@ -8,10 +8,7 @@ import {
 
 describe("live document session", () => {
   it("recognizes structured document-unavailable errors", () => {
-    const error = new ConvexError({
-      code: "DOCUMENT_UNAVAILABLE",
-      message: "expired",
-    });
+    const error = new ShareError("DOCUMENT_UNAVAILABLE", "expired");
 
     expect(classifySyncError(error)).toEqual({
       kind: "document-unavailable",
@@ -21,14 +18,14 @@ describe("live document session", () => {
   });
 
   it("gives recovery guidance for a rejected oversized document", () => {
-    expect(classifySyncError(new ConvexError({ code: "DOCUMENT_TOO_LARGE", message: "oversized" })).message).toContain("Undo or shorten");
+    expect(classifySyncError(new ShareError("DOCUMENT_TOO_LARGE", "oversized")).message).toContain("Undo or shorten");
   });
 
   it("uses safe retry guidance for all other errors", () => {
     expect(classifySyncError(new Error("private server detail"))).toEqual({
       kind: "retryable",
       message:
-        "Changes could not be synchronized. Your latest edits may not be saved. Keep this page open and copy your source before leaving. Try editing again to retry.",
+        "Changes could not be synchronized. Your latest edits may not be saved. Keep this page open and copy your source before leaving. Reconnection is automatic.",
     });
   });
 

@@ -2,7 +2,7 @@
 
 Tools is one TanStack Start monolith deployed as a single Railway service. Its
 products live directly under `services/tools`: Dashboard, Status, Publisher,
-Money, Feedback, and the Markdown Share frontend. They share authentication, configuration, lifecycle,
+Money, Feedback, and Markdown Share. They share authentication, configuration, lifecycle,
 health checks, and deployment.
 
 Status work runs in a dedicated bounded Railway cron process. The main Tools
@@ -11,8 +11,10 @@ PostgreSQL arbitrates repeated schedule slots. Dashboard and monitor definitions
 are typed code. PostgreSQL stores runtime state; object storage holds artifact
 bodies and derived status snapshots.
 
-Markdown Share keeps its canonical state, realtime editing, presence, checkpoints,
-retention, and cleanup in Convex. Tools serves its public capability-link frontend.
+Markdown Share belongs to Tools because its public document links and private
+inventory share one product lifecycle. PostgreSQL owns document content, edit
+versions, checkpoints, presence, and retention. This keeps document recovery with
+the canonical Tools state and avoids a second state service.
 
 The web process closes idle PostgreSQL connections after two minutes. Keep that
 timeout below Railway's ten-minute inactivity window. Hourly artifact cleanup

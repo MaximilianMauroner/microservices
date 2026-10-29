@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { getFunctionName, type FunctionReference } from "convex/server";
+
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -28,29 +28,22 @@ const checkpoints = [
   },
 ];
 
-vi.mock("convex/react", () => ({
-  useMutation: () => mocks.saveCheckpoint,
-  useQuery: (reference: FunctionReference<"query">, args: unknown) => {
-    switch (getFunctionName(reference)) {
-      case "checkpoints:list":
-        return checkpoints;
-      case "checkpoints:compare":
-        mocks.comparisonArgs.push(args);
-        return {
-          older: { ...checkpoints[1], markdown: "old" },
-          newer: { ...checkpoints[0], markdown: "newer" },
-        };
-      default:
-        return undefined;
-    }
-  },
-}));
+vi.mock("./transport.js", () => ({ documentRequest: async (token: string, path: string) => {
+  if (path === "/checkpoints") return mocks.saveCheckpoint();
+  mocks.comparisonArgs.push(path);
+  return {
+    older: { ...checkpoints[1], markdown: "old" },
+    newer: { ...checkpoints[0], markdown: "newer" },
+  };
+} }));
 
 function HistoryHarness({ canCreateCheckpoint }: { canCreateCheckpoint: boolean }) {
   const history = useDocumentHistory({
     token: "abcdefghijklmnopqrst",
     createdBy: "Blue Finch",
     canCreateCheckpoint,
+    checkpoints,
+    onCheckpoint: () => {},
   });
   return (
     <main>
@@ -107,18 +100,14 @@ describe("document history", () => {
     expect(button("Save as checkpoint").disabled).toBe(true);
   });
 
-  it("owns comparison defaults and renders the selected diff", () => {
+  it("owns comparison defaults and renders the selected diff", async () => {
     act(() => root.render(<HistoryHarness canCreateCheckpoint />));
     act(() => button("History · 2").click());
-    act(() => button("Compare checkpoints").click());
+    await act(async () => button("Compare checkpoints").click());
 
     expect(host.querySelector('[role="dialog"]')).not.toBeNull();
     expect(host.textContent).toContain("Compare checkpoints");
     expect(host.textContent).toContain("+1 lines");
-    expect(mocks.comparisonArgs).toContainEqual({
-      token: "abcdefghijklmnopqrst",
-      olderId: "checkpoint-older",
-      newerId: "checkpoint-newer",
-    });
+    expect(mocks.comparisonArgs).toContain("/checkpoints/compare?olderId=checkpoint-older&newerId=checkpoint-newer");
   });
 });

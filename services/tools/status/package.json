@@ -16,7 +16,6 @@
   "scripts": {
     "start": "tsx src/cli.ts",
     "seed-local": "tsx src/local-seed.ts",
-    "markdown-mock": "tsx src/markdown-mock.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },

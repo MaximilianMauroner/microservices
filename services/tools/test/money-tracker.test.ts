@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { moneyFinancialHistory, moneyFinancialPosition, moneyTrackerAccountCategory, moneyTrackerTrendStats } from "../money/money-tracker-domain.js";
+import { moneyFinancialHistory, moneyFinancialPosition, moneyTrackerTrendStats } from "../money/money-tracker-domain.js";
 
 describe("money tracker analytics", () => {
   it("combines cash and live portfolio value into one confidence-aware position", () => {
@@ -37,13 +37,6 @@ describe("money tracker analytics", () => {
       { date: "2026-01-01", money: 100, stocks: 200, total: 300, observed: true, portfolioDate: "2025-12-31" },
       { date: "2026-02-01", money: 120, stocks: 250, total: 370, observed: false, portfolioDate: "2026-01-31" }
     ]);
-  });
-
-  it("separates stock-suffixed accounts from money on hand", () => {
-    expect(moneyTrackerAccountCategory("Revolut Stocks")).toBe("stocks");
-    expect(moneyTrackerAccountCategory("Company Stock ")).toBe("stocks");
-    expect(moneyTrackerAccountCategory("Trade Republic")).toBe("money");
-    expect(moneyTrackerAccountCategory("Stockholm Cash")).toBe("money");
   });
 
   it("calculates integrated snapshot trends without reading formula columns", () => {

@@ -6,6 +6,7 @@ import { runChecker } from "./run.js";
 import { loadMonitorDefinitions } from "./definitions.js";
 import type { MonitorDefinition } from "./definitions.js";
 
+export { createPostgresCheckerStore, type CheckerCatalogSource } from "./postgres-store.js";
 export { loadMonitorDefinitions } from "./definitions.js";
 export { createHeartbeats, InvalidHeartbeatTokenError, UnknownHeartbeatMonitorError } from "./heartbeats.js";
 export { createPostgresHeartbeatRepository } from "./heartbeat-repository.js";
@@ -38,7 +39,8 @@ export async function executeChecker(
 ): Promise<void> {
   const config = options.config ?? loadConfig();
   const logger = options.logger ?? consoleLogger;
-  const store = options.store ?? createPostgresCheckerStore(config);
+  const monitorDefinitions = options.monitorDefinitions ?? (options.store ? undefined : loadMonitorDefinitions());
+  const store = options.store ?? await createPostgresCheckerStore(config);
   logger.info("checker_process_started", {
     environment: config.environment
   });
@@ -58,7 +60,7 @@ export async function executeChecker(
     fetcher: options.fetcher,
     now: options.now,
     signal: controller.signal,
-    monitorDefinitions: options.monitorDefinitions ?? (options.store ? undefined : loadMonitorDefinitions())
+    monitorDefinitions
   });
   let settled = false;
   const settlement = run.then(

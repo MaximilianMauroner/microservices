@@ -5,32 +5,26 @@ evidence do not establish browser acceptance.
 
 ## Setup
 
-Read `services/tools/README.md`, `services/markdown-share/README.md`, and the
+Read `services/tools/README.md` and the
 shared skill setup. Record the exact head/base, Node/pnpm versions, selected
 journeys, process handles, ports, commands, and private evidence directory.
 Check existing processes, resources, and the shared heavy-work lock first.
 
-Use an owned disposable local Convex backend with the real checked-out
-functions and installed component packages. Record its data directory and
-stop/disposal commands before creation. The administration mock on port 8787
-cannot provide collaboration. Do not select a cloud or production deployment.
-Set `VITE_CONVEX_URL` before Tools starts. Confirm backend readiness and a real
-public query, then confirm Tools `/live` and dependency `/health` separately.
-Record any unavailable Tools dependencies instead of calling it healthy.
+Use the owned Tools stack and its PostgreSQL fixture. Document Share now runs
+inside Tools. No separate backend, WebSocket proxy, or Convex token is needed.
+Confirm `/live`, `/health`, and a real public creation and retrieval through
+`/api/share/documents`. Confirm browser reachability separately from HTTP readiness.
 
-For a remote browser, first use T3 `preview_status`, `preview_open`, and supported
-environment-port forwarding. Browser reachability is separate from host HTTP
-readiness. A same-origin loopback HTTP proxy can route only Convex's public
-query, mutation, action, and synchronization protocol to the owned backend.
-Keep Tools authentication, private APIs, and server functions on Tools. Keep
-the WebSocket path and browser `Origin` valid. Use an origin accepted by the
-existing Convex client validation and CSP. Do not disable TLS verification,
-weaken authentication, or change shared settings to make the harness work.
+Private inventory needs an authorized local Google OAuth client and subject.
+Sample OAuth values cannot establish a session. Public sharing needs no OAuth.
+If OAuth is unavailable, run anonymous denial checks and record authenticated
+inventory as blocked. Keep private APIs and server functions protected.
 
-Private inventory also needs isolated Tools dependencies, its local Convex
-administration token, and an authorized local Google OAuth client/subject.
-Sample OAuth placeholders cannot establish a session. If unavailable, perform
-anonymous denial checks and record authenticated inventory as blocked.
+Open two independent browser contexts. Edit both without a reload and verify
+convergence. Take one context offline, edit both, restore its connection, and
+verify both sources converge with no lost local text. Restart the owned Tools
+process with the same database and verify acknowledged source, pin state, and
+checkpoints persist. Do not change shared network or proxy settings.
 
 ## M1: creation, editing, collaboration, history, export
 
@@ -121,11 +115,13 @@ otherwise record it unrun. Do not change network, TLS, or shared proxy settings.
 4. Sign out. Verify private inventory access is removed while the unlisted
    capability pages still work anonymously. A backend administration response
    is useful state evidence, but does not prove this private browser journey.
-5. Check retention only through a documented bounded local clock or scheduler.
-   Unpinned documents expire seven days after the last edit; pinned documents
-   expire after 30 days. Verify expired capability denial and cleanup in the
-   disposable backend. Without bounded clock support mark retention blocked;
-   do not wait days or alter production/system time.
+5. Use only the owned fixture for retention. Set `expires_at` on one synthetic
+   document to a past timestamp through its verified loopback database. Confirm
+   expired capability denial and preservation of unsent source in an open
+   offline browser after reconnect. Verify cleanup and cascades through the
+   product expiry function or the required PostgreSQL suite. This row fixture
+   proves the expiry gate. It does not prove elapsed-time scheduling. Do not
+   alter system time or touch production records.
 
 ## Evidence and cleanup
 
@@ -136,22 +132,16 @@ Record local checks, CI, independent review, merge, deployment, and user
 acceptance separately. Keep tokens, OAuth credentials, sessions, and captures
 out of commits and public comments.
 
-Stop only the owned Tools, proxy, and backend sessions. Confirm their listeners
+Stop only the owned Tools and dependency sessions. Confirm their listeners
 close. Dispose of the backend's owned temporary state as recorded before
 creation; keep redacted evidence. Do not delete shared database/bucket volumes.
 Remove owned browser downloads and recent-document entries after evidence is
 retained. Sign out any owned authenticated session and restore its preferences.
 
-## Prior evidence
-
-The [dated 2026-10-06 report](../../../../docs/verification/2026-10-06-document-share.md)
-records protocol checks and browser/setup blockers. Reuse it only when the
-source, setup, and expected results still match.
-
 ## Journey map
 
 | ID | Public actions and observable result | Source and existing checks | Prerequisites and reset |
 | --- | --- | --- | --- |
-| M1 | At /share create Markdown and LaTeX documents; verify .md/.tex filenames, acknowledged source edits, reload persistence, second-session synchronization, presence, two checkpoints and comparison. Verify /markdown capability aliases, Markdown preview/PDF control, and exact LaTeX source download. Use the detailed journeys above. | services/markdown-share/README.md; markdown-share/App.tsx; markdown-share/collaborative-workspace.tsx; markdown-share/document-history.tsx; backend and workspace tests | Owned local Convex, browser-reachable origin, two independent sessions and download access. Establish disposable backend cleanup before creation. History supports comparison, not restoration. |
-| M2 | Anonymous /documents and its inventory API deny access. After local sign-in, verify Documents title, filenames, format badges/filters, expiry, checkpoints, and capability links for both formats. Check invalid capability denial and bounded retention separately. Use the detailed journeys above. | src/routes/documents.tsx; src/routes/api/ops/$.ts; dashboard/ui/documents-page.tsx; test/documents-page.test.tsx; services/markdown-share/convex | Local Convex administration token, isolated Tools dependencies, authorized local OAuth. Retention is blocked without a supported bounded clock; never wait seven days or alter production time. |
-| M3 | Paste bounded multiline source with escapes and Unicode in each real editor. Confirm acknowledgement and reload. Reject source above the character or encoded-byte budget without replacing saved content; a smaller paste then saves. Use the detailed journeys above. | services/markdown-share/source-limits.ts; markdown-share/live-document-session.ts; markdown-share/collaborative-workspace.test.tsx; convex/markdownShare.test.ts | M1 setup and synthetic clipboard payloads. Record payload sizes and each result. Offline multi-step batches beyond the budget need separate evidence. |
+| M1 | At /share create Markdown and LaTeX documents; verify .md/.tex filenames, acknowledged source edits, reload persistence, second-session synchronization, presence, two checkpoints and comparison. Verify /markdown capability aliases, Markdown preview/PDF control, and exact LaTeX source download. Use the detailed journeys above. | services/tools/README.md; markdown-share/App.tsx; markdown-share/collaborative-workspace.tsx; markdown-share/document-history.tsx; backend and workspace tests | Owned local PostgreSQL, browser-reachable origin, two independent sessions and download access. Record owned PostgreSQL fixture cleanup before creation. History supports comparison, not restoration. |
+| M2 | Anonymous /documents and its inventory API deny access. After local sign-in, verify Documents title, filenames, format badges/filters, expiry, checkpoints, and capability links for both formats. Check invalid capability denial and bounded retention separately. Use the detailed journeys above. | src/routes/documents.tsx; src/routes/api/ops/$.ts; dashboard/ui/documents-page.tsx; test/documents-page.test.tsx; markdown-share/repository.ts | Isolated Tools dependencies and authorized local OAuth. Use one owned expiry row fixture and verify cleanup separately. Never alter system time. |
+| M3 | Paste bounded multiline source with escapes and Unicode in each real editor. Confirm acknowledgement and reload. Reject source above the character or encoded-byte budget without replacing saved content; a smaller paste then saves. Use the detailed journeys above. | markdown-share/source-limits.ts; markdown-share/live-document-session.ts; markdown-share/collaborative-workspace.test.tsx; markdown-share/repository.test.ts | M1 setup and synthetic clipboard payloads. Record payload sizes and each result. Offline multi-step batches beyond the budget need separate evidence. |

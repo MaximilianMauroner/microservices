@@ -1,8 +1,8 @@
+import { createDocumentShare } from "../markdown-share/service.js";
 import { randomUUID } from "node:crypto";
 import { createFetchApp, createPostgresUploadLinkRepository, createPostgresUploadStorage, ActivityTracker } from "@tools-platform/artifact-publisher";
 import {
   createApp as createToolsApp,
-  createMarkdownAdminClient,
   createS3JsonBucket,
   WebStorage
 } from "@tools-platform/web";
@@ -43,6 +43,7 @@ export type PlatformRuntime = {
   moneyImports: MoneyImportService;
   moneyMarketData: MoneyMarketDataService;
   feedback: FeedbackRepository;
+  documentShare: ReturnType<typeof createDocumentShare>;
   stop: () => Promise<void>;
 };
 
@@ -91,10 +92,7 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
     repository: heartbeatRepository,
     token: config.towerHeartbeatToken
   });
-  const markdownAdmin = createMarkdownAdminClient({
-    endpoint: config.markdownShare.adminEndpoint,
-    token: config.markdownShare.adminToken
-  });
+  const documentShare = createDocumentShare(config.databaseUrl, config.publicOrigin, config.readOnly);
   const artifactStorage = createPostgresUploadStorage(config.artifact.s3, config.databaseUrl);
   const uploadLinks = createPostgresUploadLinkRepository(config.databaseUrl);
   const activityTracker = new ActivityTracker();
@@ -105,7 +103,7 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
     const tools = createToolsApp({
       storage: toolsStorage,
       authenticate: toolsPrincipalAuthentication(),
-      markdownAdmin,
+      markdownAdmin: documentShare,
       markdownSharePublicOrigin: config.markdownShare.publicOrigin,
       trustedOrigin: config.publicOrigin
     });
@@ -184,7 +182,8 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
         heartbeatRepository.close(),
         moneyImports.close(),
         moneyMarketData.close(),
-        feedback.close()
+        feedback.close(),
+        documentShare.close()
       ]);
     };
 
@@ -207,12 +206,14 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
       moneyImports,
       moneyMarketData,
       feedback,
+      documentShare,
       health: async () => {
         await Promise.all([
           ...Object.values(services).map((service) => service.readiness()),
           moneyImports.readiness(),
           moneyMarketData.readiness(),
-          feedback.readiness()
+          feedback.readiness(),
+          documentShare.readiness()
         ]);
       },
       stop
@@ -224,6 +225,7 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
     await moneyImports.close();
     await moneyMarketData.close();
     await feedback.close();
+    await documentShare.close();
     throw error;
   }
 }

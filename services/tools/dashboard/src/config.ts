@@ -10,8 +10,6 @@ export interface ToolsWebConfig {
     forcePathStyle: boolean;
   };
   markdownShare: {
-    adminEndpoint: string;
-    adminToken: string;
     publicOrigin: string;
   };
 }
@@ -45,15 +43,6 @@ export function loadConfig(
       forcePathStyle: optionalBoolean(env.S3_FORCE_PATH_STYLE, "S3_FORCE_PATH_STYLE")
     },
     markdownShare: {
-      adminEndpoint: parseHttpsUrl(
-        required(env, "MARKDOWN_SHARE_ADMIN_ENDPOINT"),
-        "MARKDOWN_SHARE_ADMIN_ENDPOINT",
-        env.NODE_ENV === "development"
-      ),
-      adminToken: parseSecret(
-        required(env, "MARKDOWN_SHARE_ADMIN_TOKEN"),
-        "MARKDOWN_SHARE_ADMIN_TOKEN"
-      ),
       publicOrigin: trustedOrigin
     }
   };
@@ -91,27 +80,6 @@ function parseOrigin(value: string, name: string, allowHttp = false): string {
   return url.origin;
 }
 
-function parseHttpsUrl(value: string, name: string, allowHttp = false): string {
-  let url: URL;
-  try {
-    url = new URL(value);
-  } catch {
-    throw new Error(`${name} must be an HTTPS URL`);
-  }
-  if ((!allowHttp && url.protocol !== "https:") ||
-      (allowHttp && !["http:", "https:"].includes(url.protocol)) ||
-      url.username || url.password || url.hash) {
-    throw new Error(`${name} must be an HTTP(S) URL`);
-  }
-  return url.toString();
-}
-
-function parseSecret(value: string, name: string): string {
-  if (value.length < 32 || value.length > 512) {
-    throw new Error(`${name} must contain between 32 and 512 characters`);
-  }
-  return value;
-}
 
 function optionalBoolean(value: string | undefined, name: string): boolean {
   if (value === undefined || value === "") return false;

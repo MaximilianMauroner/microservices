@@ -32,7 +32,7 @@ Record the terminal session handle. Require `GET /health` to return
 `{"ok":true}` before the Network Console journey. Do not start or change the installed system service.
 
 For Tools, inspect `compose.yaml` and all existing listeners first. Its
-checked-in stack publishes fixed host ports 3000, 5432, 9000, 9001, and 8787.
+checked-in stack publishes fixed host ports 3000, 5432, 9000, and 9001.
 Use a unique Compose project and a temporary override that remaps every
 published port to unused loopback ports. Set the platform's `PUBLIC_ORIGIN`
 and seed browser origin to the chosen Tools origin. Confirm with
@@ -55,14 +55,14 @@ to succeed; Compose's health check only checks `/live`.
 
 The sample OAuth values cannot verify login. Use a local OAuth client and the
 allowed test subject for private pages. Do not copy production secrets.
-Markdown needs a separately owned local Convex backend and its actual URL as
-`VITE_CONVEX_URL`. The port-8787 administration mock does not implement
-the browser protocol. If these prerequisites are missing, mark the dependent
-journeys blocked rather than using mocked authentication or server functions.
-The exact remapped Tools setup remains unverified. Markdown administration
-only lists documents. Use a separately owned disposable local backend whose
-process and data directory can be disposed of after the run. If this cleanup
-path cannot be established, do not create documents and mark the dependent journeys blocked.
+Document Share uses the same owned PostgreSQL database as Tools. Public
+creation, editing, presence, pinning, and checkpoints need no Google OAuth.
+Require a real public creation and open through `/api/share/documents` before
+the browser journey. Private inventory still requires the unchanged browser
+session. Use two independent browser contexts for simultaneous edits and
+one-context offline recovery. Record process restart persistence separately.
+Use only owned fixture records for bounded expiry tests. Never change system
+time or use production state.
 
 ## Execution and cleanup
 
@@ -76,9 +76,8 @@ Stop only the terminal sessions and Compose project created by this run.
 Use `docker compose -p <owned-project> ... down` without deleting shared
 volumes. Record owned volumes for a later explicitly authorized cleanup.
 Remove only test records created by the run through product controls. For
-Document Share, stop the separately owned disposable backend and dispose of
-its owned data directory as recorded before creation; no document deletion UI
-is available. Preserve the redacted evidence directory.
+Document Share, use the recorded owned PostgreSQL fixture cleanup. No document
+deletion UI is available. Preserve the redacted evidence directory.
 Retain evidence after cleanup and confirm owned listeners have closed.
 
 Report passed, failed, blocked, and unrun journeys separately. Include the

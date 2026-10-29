@@ -137,7 +137,6 @@ function shouldPauseMonitor(url: string | undefined): boolean {
   const parsed = new URL(url);
   return ![
     "platform",
-    "markdown-mock",
     "localhost",
     "127.0.0.1"
   ].includes(parsed.hostname);

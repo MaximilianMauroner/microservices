@@ -1,8 +1,9 @@
-import usePresence from "@convex-dev/presence/react";
-import { useTiptapSync } from "@convex-dev/prosemirror-sync/tiptap";
 import { EditorContent } from "@tiptap/react";
-import type { Content } from "@tiptap/core";
-import { useMutation } from "convex/react";
+import type { Content, AnyExtension } from "@tiptap/core";
+import { documentRequest } from "./transport.js";
+import { rememberRecentDocument } from "./recent-documents.js";
+import { documentSyncExtension } from "./sync-extension.js";
+import type { PublicDocument, DocumentSnapshot, PresenceEntry, SyncUpdate, CheckpointSummary } from "./types.js";
 import {
   Fragment,
   useEffect,
@@ -13,7 +14,7 @@ import {
 import { favicons } from "../src/favicons.js";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { api } from "@tools-platform/markdown-share/api";
+
 import { useDocumentHistory } from "./document-history";
 import {
   DEFAULT_DISPLAY_SETTINGS,
@@ -59,92 +60,67 @@ function loadDisplaySettings(): DisplaySettings {
   }
 }
 
-type PublicDocument = {
-  token: string;
-  filename: string;
-  createdAt: number;
-  updatedAt: number;
-  expiresAt: number;
-  pinned: boolean;
-  format?: "markdown" | "latex";
-};
-
-export function CollaborativeWorkspace({
-  document,
-}: {
-  document: PublicDocument;
-}) {
+export function CollaborativeWorkspace({ snapshot }: { snapshot: DocumentSnapshot }) {
   const identity = useMemo(getPresenceIdentity, []);
+  const sessionId = useMemo(() => crypto.randomUUID(), []);
+  const [document, setDocument] = useState(snapshot.document);
+  const [presence, setPresence] = useState<PresenceEntry[]>([]);
+  const [checkpoints, setCheckpoints] = useState<CheckpointSummary[]>([]);
   const { failure: syncFailure, onSyncError, onSyncRecovered } = useSyncFailure();
-  const setDisplayName = useMutation(api.presence.setDisplayName);
-  const presence = usePresence(
-    api.presence,
-    document.token,
-    identity.userId,
-  );
-  const sync = useTiptapSync(api.editor, document.token, {
-    snapshotDebounceMs: 800,
-    onSyncError,
-  });
-
   useEffect(() => {
-    const self = presence?.find((entry) => entry.userId === identity.userId);
-    if (self && self.name !== identity.displayName) {
-      void setDisplayName({
-        roomId: document.token,
-        userId: identity.userId,
-        name: identity.displayName,
-      });
-    }
-  }, [
-    document.token,
-    identity.displayName,
-    identity.userId,
-    presence,
-    setDisplayName,
-  ]);
-
-  if (sync.isLoading) {
-    return <CenteredStatus label="Loading editor history…" />;
-  }
-  if (sync.initialContent === null || sync.extension === null) {
-    return (
-      <CenteredStatus
-        label="This document has no editor data."
-        detail="For safety, opening a link never creates data implicitly."
-      />
-    );
-  }
-
-  return (
-    <EditorWorkspace
-      document={document}
-      anonymousName={identity.displayName}
-      presence={presence ?? []}
-      syncExtension={sync.extension}
-      initialContent={sync.initialContent}
-      syncFailure={syncFailure}
-      onSyncRecovered={onSyncRecovered}
-    />
-  );
+    rememberRecentDocument({ token: document.token, filename: document.filename, expiresAt: document.expiresAt, lastOpenedAt: Date.now() });
+  }, [document.token, document.filename, document.expiresAt]);
+  const syncExtension = useMemo(() => documentSyncExtension({
+    token: snapshot.document.token,
+    version: snapshot.version,
+    onError: onSyncError,
+    onRecovered: onSyncRecovered,
+    onUpdate(update: SyncUpdate) {
+      setDocument(update.document);
+      setPresence(update.presence);
+      setCheckpoints(update.checkpoints);
+    },
+  }), [snapshot, onSyncError, onSyncRecovered]);
+  useEffect(() => {
+    const abort = new AbortController();
+    const body = { sessionId, userId: identity.userId, name: identity.displayName };
+    const heartbeat = () => void documentRequest(document.token, "/presence", body, abort.signal).catch(() => {});
+    const leave = () => {
+      navigator.sendBeacon?.(`/api/share/documents/${encodeURIComponent(document.token)}/leave`,
+        new Blob([JSON.stringify({ sessionId })], { type: "application/json" }));
+    };
+    let timer: ReturnType<typeof setInterval> | undefined;
+    const visibility = () => {
+      clearInterval(timer);
+      if (!window.document.hidden) {
+        heartbeat();
+        timer = setInterval(heartbeat, 15_000);
+      }
+    };
+    visibility();
+    window.document.addEventListener("visibilitychange", visibility);
+    window.addEventListener("pagehide", leave);
+    return () => {
+      clearInterval(timer);
+      abort.abort();
+      window.document.removeEventListener("visibilitychange", visibility);
+      window.removeEventListener("pagehide", leave);
+      leave();
+    };
+  }, [document.token, identity, sessionId]);
+  return <EditorWorkspace document={document} anonymousName={identity.displayName}
+    presence={presence} checkpoints={checkpoints} onCheckpoint={(checkpoint) => setCheckpoints((current) => [checkpoint, ...current.filter((entry) => entry._id !== checkpoint._id)])}
+    onDocument={setDocument} syncExtension={syncExtension} initialContent={snapshot.content}
+    syncFailure={syncFailure} onSyncRecovered={onSyncRecovered} />;
 }
-
-
-type PresenceEntry = {
-  userId: string;
-  online: boolean;
-  lastDisconnected: number;
-  name?: string;
-};
-
-type SyncExtension = NonNullable<
-  ReturnType<typeof useTiptapSync>["extension"]
->;
 
 function EditorWorkspace({
   document,
   anonymousName,
   presence,
+  checkpoints,
+  onCheckpoint,
+  onDocument,
   syncExtension,
   initialContent,
   syncFailure,
@@ -153,15 +129,21 @@ function EditorWorkspace({
   document: PublicDocument;
   anonymousName: string;
   presence: PresenceEntry[];
-  syncExtension: SyncExtension;
+  syncExtension: AnyExtension;
+  checkpoints: CheckpointSummary[];
+  onCheckpoint: (checkpoint: CheckpointSummary) => void;
+  onDocument: (document: PublicDocument) => void;
   initialContent: Content;
   syncFailure: SyncFailure | null;
   onSyncRecovered: () => void;
 }) {
   const [copied, setCopied] = useState(false);
   const [pinBusy, setPinBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(copyTimer.current), []);
   const [topbarMenuOpen, setTopbarMenuOpen] = useState(false);
-  const setPinned = useMutation(api.documents.setPinned);
+
   const [themeChoice, setThemeChoice] =
     useState<ThemeChoice>(loadThemeChoice);
   const [displaySettings, setDisplaySettings] =
@@ -177,7 +159,9 @@ function EditorWorkspace({
   const history = useDocumentHistory({
     token: document.token,
     createdBy: anonymousName,
-    canCreateCheckpoint: session.canCreateCheckpoint,
+    canCreateCheckpoint: session.canCreateCheckpoint && session.saveStatus === "saved",
+    checkpoints,
+    onCheckpoint,
   });
   const online = presence.filter((entry) => entry.online);
   const viewerCount = Math.max(1, online.length);
@@ -247,7 +231,8 @@ function EditorWorkspace({
   const copyLink = async () => {
     await navigator.clipboard.writeText(window.location.href);
     setCopied(true);
-    window.setTimeout(() => setCopied(false), 1500);
+    clearTimeout(copyTimer.current);
+    copyTimer.current = setTimeout(() => setCopied(false), 1500);
   };
 
   const downloadSource = () => {
@@ -271,8 +256,11 @@ function EditorWorkspace({
 
   const togglePin = async () => {
     setPinBusy(true);
+    setActionError(null);
     try {
-      await setPinned({ token: document.token, pinned: !document.pinned });
+      onDocument(await documentRequest<PublicDocument>(document.token, "/pin", { pinned: !document.pinned }));
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Could not change the pin.");
     } finally {
       setPinBusy(false);
     }
@@ -475,6 +463,7 @@ function EditorWorkspace({
         </div>
       </header>
 
+      {actionError ? <p className="sync-error-banner" role="alert">{actionError}</p> : null}
       {session.inputError ? <p className="sync-error-banner" role="alert">{session.inputError}</p> : null}
       {syncFailure ? (
         <div
@@ -591,25 +580,6 @@ function EditorWorkspace({
       ) : null}
 
       {history.dialog}
-    </main>
-  );
-}
-
-function CenteredStatus({
-  label,
-  detail,
-}: {
-  label: string;
-  detail?: string;
-}) {
-  return (
-    <main className="status-shell">
-      <div className="status-card">
-        <img className="status-glyph" src={favicons.markdownShare} alt="" />
-        <h1>{label}</h1>
-        {detail ? <p>{detail}</p> : null}
-        <a href="/share">Create a new document</a>
-      </div>
     </main>
   );
 }

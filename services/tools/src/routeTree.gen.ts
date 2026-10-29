@@ -23,7 +23,6 @@ import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ShareRouteImport } from './routes/share'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as StatusRouteImport } from './routes/status'
-import { Route as ApiBrowserHtmlUploadsRouteImport } from './routes/api/browser-html-uploads'
 import { Route as ApiExternalUploadsRouteImport } from './routes/api/external-uploads'
 import { Route as ApiUploadLinksRouteImport } from './routes/api/upload-links'
 import { Route as ApiUploadsRouteImport } from './routes/api/uploads'
@@ -52,6 +51,7 @@ import { Route as ApiMoneyTransferRulesRouteImport } from './routes/api/money/tr
 import { Route as ApiMoneyTransfersRouteImport } from './routes/api/money/transfers'
 import { Route as ApiOpsSplatRouteImport } from './routes/api/ops/$'
 import { Route as ApiPublicCatalogRouteImport } from './routes/api/public/catalog'
+import { Route as ApiShareDocumentsRouteImport } from './routes/api/share/documents'
 import { Route as ApiUploadLinksSplatRouteImport } from './routes/api/upload-links/$'
 import { Route as ApiUploadsSplatRouteImport } from './routes/api/uploads/$'
 import { Route as FeedbackFTokenRouteImport } from './routes/feedback/f/$token'
@@ -65,6 +65,7 @@ import { Route as ShareDSlugRouteImport } from './routes/share/d/$slug'
 import { Route as ApiMoneyImportsImportIdRouteImport } from './routes/api/money/imports/$importId'
 import { Route as ApiMoneyImportsPreviewRouteImport } from './routes/api/money/imports/preview'
 import { Route as ApiMoneyImportsReimportRouteImport } from './routes/api/money/imports/reimport'
+import { Route as ApiShareDocumentsSplatRouteImport } from './routes/api/share/documents/$'
 import { Route as ApiStatusHeartbeatsMonitorIdRouteImport } from './routes/api/status/heartbeats/$monitorId'
 import { Route as ApiFeedbackFormsFormIdExportRouteImport } from './routes/api/feedback/forms/$formId/export'
 
@@ -136,11 +137,6 @@ const SignInRoute = SignInRouteImport.update({
 const StatusRoute = StatusRouteImport.update({
   id: '/status',
   path: '/status',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiBrowserHtmlUploadsRoute = ApiBrowserHtmlUploadsRouteImport.update({
-  id: '/api/browser-html-uploads',
-  path: '/api/browser-html-uploads',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiExternalUploadsRoute = ApiExternalUploadsRouteImport.update({
@@ -283,6 +279,11 @@ const ApiPublicCatalogRoute = ApiPublicCatalogRouteImport.update({
   path: '/api/public/catalog',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiShareDocumentsRoute = ApiShareDocumentsRouteImport.update({
+  id: '/api/share/documents',
+  path: '/api/share/documents',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiUploadLinksSplatRoute = ApiUploadLinksSplatRouteImport.update({
   id: '/$',
   path: '/$',
@@ -349,6 +350,11 @@ const ApiMoneyImportsReimportRoute = ApiMoneyImportsReimportRouteImport.update({
   path: '/reimport',
   getParentRoute: () => ApiMoneyImportsRoute,
 } as any)
+const ApiShareDocumentsSplatRoute = ApiShareDocumentsSplatRouteImport.update({
+  id: '/$',
+  path: '/$',
+  getParentRoute: () => ApiShareDocumentsRoute,
+} as any)
 const ApiStatusHeartbeatsMonitorIdRoute =
   ApiStatusHeartbeatsMonitorIdRouteImport.update({
     id: '/api/status/heartbeats/$monitorId',
@@ -377,7 +383,6 @@ export interface FileRoutesByFullPath {
   '/share': typeof ShareRouteWithChildren
   '/sign-in': typeof SignInRoute
   '/status': typeof StatusRoute
-  '/api/browser-html-uploads': typeof ApiBrowserHtmlUploadsRoute
   '/api/external-uploads': typeof ApiExternalUploadsRouteWithChildren
   '/api/upload-links': typeof ApiUploadLinksRouteWithChildren
   '/api/uploads': typeof ApiUploadsRouteWithChildren
@@ -406,6 +411,7 @@ export interface FileRoutesByFullPath {
   '/api/money/transfers': typeof ApiMoneyTransfersRoute
   '/api/ops/$': typeof ApiOpsSplatRoute
   '/api/public/catalog': typeof ApiPublicCatalogRoute
+  '/api/share/documents': typeof ApiShareDocumentsRouteWithChildren
   '/api/upload-links/$': typeof ApiUploadLinksSplatRoute
   '/api/uploads/$': typeof ApiUploadsSplatRoute
   '/feedback/f/$token': typeof FeedbackFTokenRoute
@@ -419,6 +425,7 @@ export interface FileRoutesByFullPath {
   '/api/money/imports/$importId': typeof ApiMoneyImportsImportIdRoute
   '/api/money/imports/preview': typeof ApiMoneyImportsPreviewRoute
   '/api/money/imports/reimport': typeof ApiMoneyImportsReimportRoute
+  '/api/share/documents/$': typeof ApiShareDocumentsSplatRoute
   '/api/status/heartbeats/$monitorId': typeof ApiStatusHeartbeatsMonitorIdRoute
   '/api/feedback/forms/$formId/export': typeof ApiFeedbackFormsFormIdExportRoute
 }
@@ -433,7 +440,6 @@ export interface FileRoutesByTo {
   '/settings': typeof SettingsRoute
   '/sign-in': typeof SignInRoute
   '/status': typeof StatusRoute
-  '/api/browser-html-uploads': typeof ApiBrowserHtmlUploadsRoute
   '/api/external-uploads': typeof ApiExternalUploadsRouteWithChildren
   '/api/upload-links': typeof ApiUploadLinksRouteWithChildren
   '/api/uploads': typeof ApiUploadsRouteWithChildren
@@ -462,6 +468,7 @@ export interface FileRoutesByTo {
   '/api/money/transfers': typeof ApiMoneyTransfersRoute
   '/api/ops/$': typeof ApiOpsSplatRoute
   '/api/public/catalog': typeof ApiPublicCatalogRoute
+  '/api/share/documents': typeof ApiShareDocumentsRouteWithChildren
   '/api/upload-links/$': typeof ApiUploadLinksSplatRoute
   '/api/uploads/$': typeof ApiUploadsSplatRoute
   '/feedback/f/$token': typeof FeedbackFTokenRoute
@@ -475,6 +482,7 @@ export interface FileRoutesByTo {
   '/api/money/imports/$importId': typeof ApiMoneyImportsImportIdRoute
   '/api/money/imports/preview': typeof ApiMoneyImportsPreviewRoute
   '/api/money/imports/reimport': typeof ApiMoneyImportsReimportRoute
+  '/api/share/documents/$': typeof ApiShareDocumentsSplatRoute
   '/api/status/heartbeats/$monitorId': typeof ApiStatusHeartbeatsMonitorIdRoute
   '/api/feedback/forms/$formId/export': typeof ApiFeedbackFormsFormIdExportRoute
 }
@@ -494,7 +502,6 @@ export interface FileRoutesById {
   '/share': typeof ShareRouteWithChildren
   '/sign-in': typeof SignInRoute
   '/status': typeof StatusRoute
-  '/api/browser-html-uploads': typeof ApiBrowserHtmlUploadsRoute
   '/api/external-uploads': typeof ApiExternalUploadsRouteWithChildren
   '/api/upload-links': typeof ApiUploadLinksRouteWithChildren
   '/api/uploads': typeof ApiUploadsRouteWithChildren
@@ -523,6 +530,7 @@ export interface FileRoutesById {
   '/api/money/transfers': typeof ApiMoneyTransfersRoute
   '/api/ops/$': typeof ApiOpsSplatRoute
   '/api/public/catalog': typeof ApiPublicCatalogRoute
+  '/api/share/documents': typeof ApiShareDocumentsRouteWithChildren
   '/api/upload-links/$': typeof ApiUploadLinksSplatRoute
   '/api/uploads/$': typeof ApiUploadsSplatRoute
   '/feedback/f/$token': typeof FeedbackFTokenRoute
@@ -536,6 +544,7 @@ export interface FileRoutesById {
   '/api/money/imports/$importId': typeof ApiMoneyImportsImportIdRoute
   '/api/money/imports/preview': typeof ApiMoneyImportsPreviewRoute
   '/api/money/imports/reimport': typeof ApiMoneyImportsReimportRoute
+  '/api/share/documents/$': typeof ApiShareDocumentsSplatRoute
   '/api/status/heartbeats/$monitorId': typeof ApiStatusHeartbeatsMonitorIdRoute
   '/api/feedback/forms/$formId/export': typeof ApiFeedbackFormsFormIdExportRoute
 }
@@ -556,7 +565,6 @@ export interface FileRouteTypes {
     | '/share'
     | '/sign-in'
     | '/status'
-    | '/api/browser-html-uploads'
     | '/api/external-uploads'
     | '/api/upload-links'
     | '/api/uploads'
@@ -585,6 +593,7 @@ export interface FileRouteTypes {
     | '/api/money/transfers'
     | '/api/ops/$'
     | '/api/public/catalog'
+    | '/api/share/documents'
     | '/api/upload-links/$'
     | '/api/uploads/$'
     | '/feedback/f/$token'
@@ -598,6 +607,7 @@ export interface FileRouteTypes {
     | '/api/money/imports/$importId'
     | '/api/money/imports/preview'
     | '/api/money/imports/reimport'
+    | '/api/share/documents/$'
     | '/api/status/heartbeats/$monitorId'
     | '/api/feedback/forms/$formId/export'
   fileRoutesByTo: FileRoutesByTo
@@ -612,7 +622,6 @@ export interface FileRouteTypes {
     | '/settings'
     | '/sign-in'
     | '/status'
-    | '/api/browser-html-uploads'
     | '/api/external-uploads'
     | '/api/upload-links'
     | '/api/uploads'
@@ -641,6 +650,7 @@ export interface FileRouteTypes {
     | '/api/money/transfers'
     | '/api/ops/$'
     | '/api/public/catalog'
+    | '/api/share/documents'
     | '/api/upload-links/$'
     | '/api/uploads/$'
     | '/feedback/f/$token'
@@ -654,6 +664,7 @@ export interface FileRouteTypes {
     | '/api/money/imports/$importId'
     | '/api/money/imports/preview'
     | '/api/money/imports/reimport'
+    | '/api/share/documents/$'
     | '/api/status/heartbeats/$monitorId'
     | '/api/feedback/forms/$formId/export'
   id:
@@ -672,7 +683,6 @@ export interface FileRouteTypes {
     | '/share'
     | '/sign-in'
     | '/status'
-    | '/api/browser-html-uploads'
     | '/api/external-uploads'
     | '/api/upload-links'
     | '/api/uploads'
@@ -701,6 +711,7 @@ export interface FileRouteTypes {
     | '/api/money/transfers'
     | '/api/ops/$'
     | '/api/public/catalog'
+    | '/api/share/documents'
     | '/api/upload-links/$'
     | '/api/uploads/$'
     | '/feedback/f/$token'
@@ -714,6 +725,7 @@ export interface FileRouteTypes {
     | '/api/money/imports/$importId'
     | '/api/money/imports/preview'
     | '/api/money/imports/reimport'
+    | '/api/share/documents/$'
     | '/api/status/heartbeats/$monitorId'
     | '/api/feedback/forms/$formId/export'
   fileRoutesById: FileRoutesById
@@ -733,7 +745,6 @@ export interface RootRouteChildren {
   ShareRoute: typeof ShareRouteWithChildren
   SignInRoute: typeof SignInRoute
   StatusRoute: typeof StatusRoute
-  ApiBrowserHtmlUploadsRoute: typeof ApiBrowserHtmlUploadsRoute
   ApiExternalUploadsRoute: typeof ApiExternalUploadsRouteWithChildren
   ApiUploadLinksRoute: typeof ApiUploadLinksRouteWithChildren
   ApiUploadsRoute: typeof ApiUploadsRouteWithChildren
@@ -753,6 +764,7 @@ export interface RootRouteChildren {
   ApiMoneyTransfersRoute: typeof ApiMoneyTransfersRoute
   ApiOpsSplatRoute: typeof ApiOpsSplatRoute
   ApiPublicCatalogRoute: typeof ApiPublicCatalogRoute
+  ApiShareDocumentsRoute: typeof ApiShareDocumentsRouteWithChildren
   ApiStatusHeartbeatsMonitorIdRoute: typeof ApiStatusHeartbeatsMonitorIdRoute
   ApiFeedbackFormsFormIdExportRoute: typeof ApiFeedbackFormsFormIdExportRoute
 }
@@ -855,13 +867,6 @@ declare module '@tanstack/react-router' {
       path: '/status'
       fullPath: '/status'
       preLoaderRoute: typeof StatusRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/browser-html-uploads': {
-      id: '/api/browser-html-uploads'
-      path: '/api/browser-html-uploads'
-      fullPath: '/api/browser-html-uploads'
-      preLoaderRoute: typeof ApiBrowserHtmlUploadsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/external-uploads': {
@@ -1060,6 +1065,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicCatalogRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/share/documents': {
+      id: '/api/share/documents'
+      path: '/api/share/documents'
+      fullPath: '/api/share/documents'
+      preLoaderRoute: typeof ApiShareDocumentsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/upload-links/$': {
       id: '/api/upload-links/$'
       path: '/$'
@@ -1150,6 +1162,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/api/money/imports/reimport'
       preLoaderRoute: typeof ApiMoneyImportsReimportRouteImport
       parentRoute: typeof ApiMoneyImportsRoute
+    }
+    '/api/share/documents/$': {
+      id: '/api/share/documents/$'
+      path: '/$'
+      fullPath: '/api/share/documents/$'
+      preLoaderRoute: typeof ApiShareDocumentsSplatRouteImport
+      parentRoute: typeof ApiShareDocumentsRoute
     }
     '/api/status/heartbeats/$monitorId': {
       id: '/api/status/heartbeats/$monitorId'
@@ -1307,6 +1326,17 @@ const ApiMoneyImportsRouteWithChildren = ApiMoneyImportsRoute._addFileChildren(
   ApiMoneyImportsRouteChildren,
 )
 
+interface ApiShareDocumentsRouteChildren {
+  ApiShareDocumentsSplatRoute: typeof ApiShareDocumentsSplatRoute
+}
+
+const ApiShareDocumentsRouteChildren: ApiShareDocumentsRouteChildren = {
+  ApiShareDocumentsSplatRoute: ApiShareDocumentsSplatRoute,
+}
+
+const ApiShareDocumentsRouteWithChildren =
+  ApiShareDocumentsRoute._addFileChildren(ApiShareDocumentsRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DocumentsRoute: DocumentsRoute,
@@ -1322,7 +1352,6 @@ const rootRouteChildren: RootRouteChildren = {
   ShareRoute: ShareRouteWithChildren,
   SignInRoute: SignInRoute,
   StatusRoute: StatusRoute,
-  ApiBrowserHtmlUploadsRoute: ApiBrowserHtmlUploadsRoute,
   ApiExternalUploadsRoute: ApiExternalUploadsRouteWithChildren,
   ApiUploadLinksRoute: ApiUploadLinksRouteWithChildren,
   ApiUploadsRoute: ApiUploadsRouteWithChildren,
@@ -1342,6 +1371,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiMoneyTransfersRoute: ApiMoneyTransfersRoute,
   ApiOpsSplatRoute: ApiOpsSplatRoute,
   ApiPublicCatalogRoute: ApiPublicCatalogRoute,
+  ApiShareDocumentsRoute: ApiShareDocumentsRouteWithChildren,
   ApiStatusHeartbeatsMonitorIdRoute: ApiStatusHeartbeatsMonitorIdRoute,
   ApiFeedbackFormsFormIdExportRoute: ApiFeedbackFormsFormIdExportRoute,
 }

@@ -16,7 +16,9 @@ services:
       retries: 30
 
   minio:
-    image: minio/minio:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.minio.local
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
       MINIO_ROOT_USER: local-minio
@@ -37,8 +39,9 @@ services:
     restart: "no"
     environment:
       DATABASE_URL: postgres://local:local@postgres:5432/postgres
-      TOOLS_SCHEMA_PUSH_CONFIRM: tools-platform-production
-    command: ["pnpm", "--dir", "services/tools", "run", "db:push-postgres"]
+      TOOLS_ENVIRONMENT: development
+      TOOLS_DEVELOPMENT_SCHEMA_PUSH_CONFIRM: tools-platform-development
+    command: ["pnpm", "--dir", "services/tools", "run", "db:push-postgres:development"]
 
   minio-seed:
     build:
@@ -65,35 +68,16 @@ services:
       ARTIFACT_S3_FORCE_PATH_STYLE: true
       LOCAL_PLATFORM_BROWSER_ORIGIN: http://localhost:3000
       LOCAL_PLATFORM_INTERNAL_ORIGIN: http://platform:3000
-      LOCAL_MARKDOWN_INTERNAL_ORIGIN: http://markdown-mock:8787
       SEED_RETRY_ATTEMPTS: 30
     command: ["pnpm", "--dir", "services/tools/status", "run", "seed-local"]
-
-  markdown-mock:
-    build:
-      context: .
-      dockerfile: Dockerfile.local
-    environment:
-      PORT: 8787
-      MARKDOWN_SHARE_ADMIN_TOKEN: local-markdown-admin-token-local-development-001
-    command: ["pnpm", "--dir", "services/tools/status", "run", "markdown-mock"]
-    ports:
-      - "8787:8787"
-    depends_on:
-      minio:
-        condition: service_started
 
   platform:
     build:
       context: .
       dockerfile: Dockerfile.local
-      args:
-        VITE_CONVEX_URL: ${VITE_CONVEX_URL:-http://localhost:3210}
     depends_on:
       minio-seed:
         condition: service_completed_successfully
-      markdown-mock:
-        condition: service_started
     environment:
       NODE_ENV: development
       PORT: 3000
@@ -117,9 +101,6 @@ services:
       ARTIFACT_S3_SECRET_ACCESS_KEY: local-minio-password
       ARTIFACT_S3_FORCE_PATH_STYLE: true
       UPLOAD_TOKEN: local-upload-token-00000000000000000000000000
-      MARKDOWN_SHARE_ADMIN_ENDPOINT: http://markdown-mock:8787/admin/documents
-      MARKDOWN_SHARE_ADMIN_TOKEN: local-markdown-admin-token-local-development-001
-      VITE_CONVEX_URL: ${VITE_CONVEX_URL:-http://localhost:3210}
       TOWER_HEARTBEAT_TOKEN: local-tower-heartbeat-token-000000000000000
       TOOLS_ENVIRONMENT: local
       CHECKER_INTERVAL_MS: 300000

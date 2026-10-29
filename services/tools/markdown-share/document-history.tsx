@@ -1,4 +1,5 @@
-import { useMutation, useQuery } from "convex/react";
+import { documentRequest } from "./transport.js";
+import type { CheckpointSummary, CheckpointComparison } from "./types.js";
 import { diffLines } from "diff";
 import {
   useCallback,
@@ -7,21 +8,8 @@ import {
   useRef,
   useState,
 } from "react";
-import { api } from "@tools-platform/markdown-share/api";
-import type { Id } from "@tools-platform/markdown-share/data-model";
 
-type CheckpointSummary = {
-  _id: Id<"checkpoints">;
-  createdAt: number;
-  createdBy: string;
-  charCount: number;
-  version?: number;
-};
 
-type CheckpointComparison = {
-  older: Omit<CheckpointSummary, "charCount"> & { markdown: string };
-  newer: Omit<CheckpointSummary, "charCount"> & { markdown: string };
-};
 
 export type DiffRow = {
   kind: "added" | "removed" | "unchanged";
@@ -76,10 +64,14 @@ export function useDocumentHistory({
   token,
   createdBy,
   canCreateCheckpoint,
+  checkpoints,
+  onCheckpoint,
 }: {
   token: string;
   createdBy: string;
   canCreateCheckpoint: boolean;
+  checkpoints: CheckpointSummary[];
+  onCheckpoint: (checkpoint: CheckpointSummary) => void;
 }) {
   const [checkpointStatus, setCheckpointStatus] = useState("Save as checkpoint");
   const [isSavingCheckpoint, setIsSavingCheckpoint] = useState(false);
@@ -87,19 +79,24 @@ export function useDocumentHistory({
   const [menuPlacement, setMenuPlacement] = useState<
     "desktop" | "mobile" | null
   >(null);
-  const [olderId, setOlderId] = useState<Id<"checkpoints"> | null>(null);
-  const [newerId, setNewerId] = useState<Id<"checkpoints"> | null>(null);
+  const [olderId, setOlderId] = useState<string | null>(null);
+  const [newerId, setNewerId] = useState<string | null>(null);
   const desktopControlRef = useRef<HTMLDivElement>(null);
   const mobileControlRef = useRef<HTMLDivElement>(null);
+  const statusTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(statusTimer.current), []);
   const comparisonOpenerRef = useRef<HTMLElement | null>(null);
-  const checkpoints = useQuery(api.checkpoints.list, { token });
-  const saveCheckpoint = useMutation(api.checkpoints.create);
-  const comparison = useQuery(
-    api.checkpoints.compare,
-    isComparing && olderId && newerId && olderId !== newerId
-      ? { token, olderId, newerId }
-      : "skip",
-  );
+  const [comparison, setComparison] = useState<CheckpointComparison>();
+  const [comparisonError, setComparisonError] = useState<string | null>(null);
+  useEffect(() => {
+    setComparison(undefined);
+    setComparisonError(null);
+    if (!isComparing || !olderId || !newerId || olderId === newerId) return;
+    const abort = new AbortController();
+    void documentRequest<CheckpointComparison>(token, `/checkpoints/compare?olderId=${encodeURIComponent(olderId)}&newerId=${encodeURIComponent(newerId)}`, undefined, abort.signal)
+      .then(setComparison).catch((error: Error) => { if (!abort.signal.aborted) setComparisonError(error.message); });
+    return () => abort.abort();
+  }, [isComparing, olderId, newerId, token]);
 
   useEffect(() => {
     if (!checkpoints || checkpoints.length < 2) {
@@ -156,9 +153,10 @@ export function useDocumentHistory({
     setIsSavingCheckpoint(true);
     setCheckpointStatus("Saving…");
     try {
-      await saveCheckpoint({ token, createdBy });
+      onCheckpoint(await documentRequest<CheckpointSummary>(token, "/checkpoints", { createdBy }));
       setCheckpointStatus("Saved");
-      window.setTimeout(() => setCheckpointStatus("Save as checkpoint"), 1600);
+      clearTimeout(statusTimer.current);
+      statusTimer.current = setTimeout(() => setCheckpointStatus("Save as checkpoint"), 1600);
     } catch (caught) {
       setCheckpointStatus(
         caught instanceof Error ? "Couldn’t save" : "Save failed",
@@ -256,6 +254,7 @@ export function useDocumentHistory({
           olderId={olderId}
           newerId={newerId}
           comparison={comparison}
+          error={comparisonError}
           onOlderChange={setOlderId}
           onNewerChange={setNewerId}
           onClose={closeComparison}
@@ -269,16 +268,18 @@ function CheckpointCompareDialog({
   olderId,
   newerId,
   comparison,
+  error,
   onOlderChange,
   onNewerChange,
   onClose,
 }: {
   checkpoints: CheckpointSummary[];
-  olderId: Id<"checkpoints"> | null;
-  newerId: Id<"checkpoints"> | null;
+  olderId: string | null;
+  newerId: string | null;
   comparison: CheckpointComparison | undefined;
-  onOlderChange: (id: Id<"checkpoints">) => void;
-  onNewerChange: (id: Id<"checkpoints">) => void;
+  error: string | null;
+  onOlderChange: (id: string) => void;
+  onNewerChange: (id: string) => void;
   onClose: () => void;
 }) {
   const backdropRef = useRef<HTMLDivElement>(null);
@@ -385,7 +386,7 @@ function CheckpointCompareDialog({
             <select
               value={olderId ?? ""}
               onChange={(event) =>
-                onOlderChange(event.target.value as Id<"checkpoints">)
+                onOlderChange(event.target.value as string)
               }
             >
               {checkpoints.map((checkpoint) => (
@@ -401,7 +402,7 @@ function CheckpointCompareDialog({
             <select
               value={newerId ?? ""}
               onChange={(event) =>
-                onNewerChange(event.target.value as Id<"checkpoints">)
+                onNewerChange(event.target.value as string)
               }
             >
               {checkpoints.map((checkpoint) => (
@@ -413,7 +414,7 @@ function CheckpointCompareDialog({
           </label>
         </div>
 
-        {olderId === newerId ? (
+        {error ? <div className="diff-status" role="alert">{error}</div> : olderId === newerId ? (
           <div className="diff-status">Choose two different checkpoints.</div>
         ) : comparison === undefined ? (
           <div className="diff-status">Loading changes…</div>

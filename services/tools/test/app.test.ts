@@ -4,7 +4,7 @@ import {
   createPlatformHandler,
   type PlatformHandler,
   type PrincipalResolver
-} from "../src/app.js";
+} from "./platform-handler.js";
 
 const principal = {
   subject: "google-subject",

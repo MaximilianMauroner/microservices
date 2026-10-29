@@ -246,6 +246,7 @@ export const moneyTransactions = toolsSchema.table("money_transactions", {
   categoryRuleId: uuid("category_rule_id").references(() => moneyCategoryRules.id, { onDelete: "set null" }),
   transferGroupId: uuid("transfer_group_id"),
   transferDisposition: text("transfer_disposition"),
+  transferOrigin: text("transfer_origin").$type<"automatic" | "manual">(),
 }, (table) => [
   check("money_transactions_source_row_check", sql`${table.sourceRow} > 1`),
   check("money_transactions_currency_check", sql`${table.currency} ~ '^[A-Z]{3}$'`),
@@ -255,12 +256,21 @@ export const moneyTransactions = toolsSchema.table("money_transactions", {
   check("money_transactions_category_check", sql`${table.category} in ('housing', 'groceries', 'dining', 'transport', 'shopping', 'health', 'personal_care', 'travel', 'subscriptions', 'software', 'education', 'entertainment', 'recreation', 'gifts', 'taxes', 'fees', 'cash', 'investments', 'income', 'transfer', 'adjustment', 'other', 'uncategorized')`),
   check("money_transactions_category_origin_check", sql`${table.categoryOrigin} in ('source', 'rule', 'manual')`),
   check("money_transactions_transfer_disposition_check", sql`${table.transferDisposition} is null or (${table.flowKind} = 'transfer' and ${table.transferDisposition} in ('internal_transfer', 'income', 'spend', 'refund', 'excluded'))`),
+  check("money_transactions_transfer_origin_check", sql`${table.transferOrigin} is null or ${table.transferOrigin} in ('automatic', 'manual')`),
   index("money_transactions_occurred_idx").on(table.occurredAt),
   index("money_transactions_account_date_idx").on(table.accountId, table.localDate),
   index("money_transactions_flow_date_idx").on(table.flowKind, table.localDate),
   index("money_transactions_category_date_idx").on(table.category, table.localDate),
   index("money_transactions_transfer_group_idx").on(table.transferGroupId),
   index("money_transactions_category_rule_idx").on(table.categoryRuleId),
+]);
+
+export const moneyImportTransactions = toolsSchema.table("money_import_transactions", {
+  importId: uuid("import_id").notNull().references(() => moneyImports.id, { onDelete: "cascade" }),
+  transactionId: uuid("transaction_id").notNull().references(() => moneyTransactions.id, { onDelete: "cascade" }),
+}, (table) => [
+  primaryKey({ columns: [table.importId, table.transactionId] }),
+  index("money_import_transactions_transaction_idx").on(table.transactionId),
 ]);
 
 export const moneyInvestmentEvents = toolsSchema.table("money_investment_events", {
@@ -424,6 +434,9 @@ export const uploadLinks = artifactsSchema.table("upload_links", {
 export const uploadSessions = artifactsSchema.table("upload_sessions", {
   sessionId: uuid("session_id").primaryKey(),
   artifactId: text("artifact_id").notNull().unique(),
+  targetId: text("target_id"),
+  expectedObjectKey: text("expected_object_key"),
+  receipt: jsonb("receipt"),
   audience: text("audience").notNull(),
   uploadLinkId: uuid("upload_link_id"),
   description: jsonb("description").notNull(),
@@ -438,5 +451,8 @@ export const uploadSessions = artifactsSchema.table("upload_sessions", {
 }, (table) => [
   check("upload_sessions_audience_check", sql`${table.audience} in ('browser', 'native', 'drop')`),
   check("upload_sessions_state_check", sql`${table.state} in ('creating', 'uploading', 'completing', 'completed', 'aborted', 'failed')`),
+  check("upload_sessions_target_check", sql`(${table.targetId} is null and ${table.expectedObjectKey} is null) or
+    (${table.targetId} is not null and ${table.expectedObjectKey} is not null and ${table.targetId} <> ${table.artifactId})`),
+  index("upload_sessions_target_idx").on(table.targetId).where(sql`${table.targetId} is not null`),
   index("upload_sessions_cleanup_idx").on(table.expiresAt).where(sql`${table.cleanedAt} is null`),
 ]);
