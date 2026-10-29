@@ -1,7 +1,8 @@
-import { useMutation, useQuery } from "convex/react";
+import { shareRequest, documentRequest } from "./transport.js";
+import type { PublicDocument, DocumentSnapshot } from "./types.js";
 import { useEffect, useState } from "react";
 import { favicons } from "../src/favicons.js";
-import { api } from "@tools-platform/markdown-share/api";
+
 import { CollaborativeWorkspace } from "./collaborative-workspace";
 import {
   documentPath,
@@ -35,7 +36,7 @@ export function App() {
 }
 
 function LandingPage() {
-  const createDocument = useMutation(api.documents.create);
+
   const [name, setName] = useState("notes");
   const [format, setFormat] = useState<DocumentFormat>("markdown");
   const [isCreating, setIsCreating] = useState(false);
@@ -57,11 +58,12 @@ function LandingPage() {
     setError(null);
 
     try {
-      const created = await createDocument({
+      const created = await shareRequest<PublicDocument>("", { method: "POST", body: JSON.stringify({
+        requestId: crypto.randomUUID(),
         filename,
         markdown: initialSource(filename, format),
         format,
-      });
+      }) });
       rememberRecentDocument({
         token: created.token,
         filename: created.filename,
@@ -173,7 +175,7 @@ function LandingPage() {
         </section>
 
         <div className="promise-row" aria-label="Product features">
-          <span>Convex realtime</span>
+          <span>Live collaboration</span>
           <span>7 days · pinned 30 days</span>
           <span>Markdown PDF export</span>
         </div>
@@ -183,7 +185,15 @@ function LandingPage() {
 }
 
 function DocumentPage({ routeToken }: { routeToken: string }) {
-  const document = useQuery(api.documents.get, { token: routeToken });
+  const [snapshot, setSnapshot] = useState<DocumentSnapshot | null>();
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const document = snapshot == null ? snapshot : snapshot.document;
+  useEffect(() => {
+    const abort = new AbortController();
+    void documentRequest<DocumentSnapshot | null>(routeToken, "", undefined, abort.signal)
+      .then(setSnapshot).catch((error: Error) => { if (!abort.signal.aborted) setLoadError(error.message); });
+    return () => abort.abort();
+  }, [routeToken]);
 
   useEffect(() => {
     if (document === null) {
@@ -208,6 +218,7 @@ function DocumentPage({ routeToken }: { routeToken: string }) {
     });
   }, [document?.expiresAt, document?.filename, document?.token]);
 
+  if (loadError) return <CenteredStatus label="Could not open document." detail={loadError} />;
   if (document === undefined) {
     return <CenteredStatus label="Opening shared document…" />;
   }
@@ -220,7 +231,7 @@ function DocumentPage({ routeToken }: { routeToken: string }) {
     );
   }
 
-  return <CollaborativeWorkspace document={document} />;
+  return <CollaborativeWorkspace key={routeToken} snapshot={snapshot!} />;
 }
 
 function CenteredStatus({

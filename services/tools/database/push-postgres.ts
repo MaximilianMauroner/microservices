@@ -1,4 +1,5 @@
 import postgres from "postgres";
+import { applyMarkdownShareSchema } from "../markdown-share/schema.js";
 import {
   DISPOSABLE_DATABASE_SENTINEL,
   resolvePushDatabase,
@@ -10,10 +11,10 @@ import { reconcileRuntimeSchema } from "./runtime-schema-reconciliation.js";
 import { runSchemaPush } from "./run-schema-push.js";
 
 const mode = process.argv[2];
-if (mode !== "production" && mode !== "development" && mode !== "test") throw new Error("Schema push mode must be production, development, or test.");
+if (mode !== "production" && mode !== "preview" && mode !== "development" && mode !== "test") throw new Error("Schema push mode must be production, preview, development, or test.");
 const url = resolvePushDatabase(process.env, mode satisfies PushMode);
 
-if (mode === "production") {
+if (mode === "production" || mode === "preview") {
   await waitForPostgres(() => checkPostgres(url), undefined, undefined, ({ attempt, delayMs }) => {
     console.warn(JSON.stringify({ event: "postgres.readiness.retry", attempt, delayMs }));
   });
@@ -41,6 +42,7 @@ for (const config of ["drizzle.tools.config.ts", "drizzle.artifacts.config.ts"] 
 const database = postgres(url, { max: 1 });
 try {
   await reconcileRuntimeSchema(database);
+  await applyMarkdownShareSchema(database);
 } finally {
   await database.end();
 }

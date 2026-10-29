@@ -1,6 +1,5 @@
 import { defaultStreamHandler, createStartHandler } from "@tanstack/react-start/server";
 import { createServerEntry } from "@tanstack/react-start/server-entry";
-import "./markdown-share-config.server.js";
 import { closePlatformRuntime, getPlatformRuntime } from "./runtime.js";
 
 const fetch = createStartHandler({ handler: defaultStreamHandler });

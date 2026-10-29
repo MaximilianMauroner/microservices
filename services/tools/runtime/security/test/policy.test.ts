@@ -31,11 +31,10 @@ describe("central platform route policy", () => {
     expect(classifyRoute(`/feedback/share/${"a".repeat(43)}`, "POST")).toEqual({ kind: "human-session" });
     expect(classifyRoute("/drop/upload-capability", "GET")).toEqual({ kind: "public" });
     expect(classifyRoute("/api/drop/upload-capability/uploads", "POST")).toEqual({ kind: "public" });
-    expect(classifyRoute(`/api/drop/upload-capability/uploads/chunks/${"a".repeat(32)}/3`, "PUT")).toEqual({ kind: "public" });
-    expect(classifyRoute(`/api/drop/upload-capability/uploads/chunks/${"a".repeat(32)}/complete`, "POST")).toEqual({ kind: "public" });
-    expect(classifyRoute(`/api/drop/upload-capability/uploads/chunks/${"a".repeat(32)}`, "DELETE")).toEqual({ kind: "public" });
+    expect(classifyRoute(`/api/drop/upload-capability/uploads/chunks/${"a".repeat(32)}/3`, "PUT")).toEqual({ kind: "human-session" });
+    expect(classifyRoute(`/api/drop/upload-capability/uploads/chunks/${"a".repeat(32)}/complete`, "POST")).toEqual({ kind: "human-session" });
+    expect(classifyRoute(`/api/drop/upload-capability/uploads/chunks/${"a".repeat(32)}`, "DELETE")).toEqual({ kind: "human-session" });
     expect(classifyRoute("/api/upload-links", "POST")).toEqual({ kind: "human-session" });
-    expect(classifyRoute("/api/browser-html-uploads", "POST")).toEqual({ kind: "human-session" });
     expect(classifyRoute("/api/upload-links/link-id/download", "GET")).toEqual({ kind: "human-session" });
     expect(classifyRoute("/api/drop/upload-capability/uploads", "GET")).toEqual({ kind: "human-session" });
     expect(classifyRoute("/share", "GET")).toEqual({ kind: "public" });
@@ -74,7 +73,8 @@ describe("central platform route policy", () => {
   it("does not widen exact public asset exceptions", () => {
     expect(classifyRoute("/theme.js", "GET")).toEqual({ kind: "human-session" });
     expect(classifyRoute("/theme.js.map", "GET")).toEqual({ kind: "human-session" });
-    expect(classifyRoute("/assets/ops.js", "GET")).toEqual({ kind: "public" });
+    expect(classifyRoute("/assets/ops.js", "GET")).toEqual({ kind: "human-session" });
+    expect(classifyRoute("/assets/markdown-admin.js", "GET")).toEqual({ kind: "human-session" });
     expect(classifyRoute("/assets/local-time.js", "GET")).toEqual({ kind: "public" });
     expect(classifyRoute("/assets/icons/money.png", "GET")).toEqual({ kind: "public" });
     expect(classifyRoute("/assets/icons/tools.png", "GET")).toEqual({ kind: "public" });

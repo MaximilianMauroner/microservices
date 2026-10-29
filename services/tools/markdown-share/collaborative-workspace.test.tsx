@@ -2,8 +2,10 @@
 
 import type { Editor } from "@tiptap/core";
 import { receiveTransaction, sendableSteps } from "prosemirror-collab";
-import { ConvexError } from "convex/values";
-import { getFunctionName, type FunctionReference } from "convex/server";
+import { AllSelection } from "@tiptap/pm/state";
+import { ShareError } from "./types.js";
+import { applySteps } from "./protocol.js";
+
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -20,62 +22,24 @@ const publicDocument = {
   updatedAt: 1_000,
   expiresAt: Date.now() + 60_000,
   pinned: false,
+  format: "markdown" as const,
 };
 let liveEditor: Editor;
 let reportSyncError: ((error: Error) => void) | undefined;
 
-vi.mock("@convex-dev/presence/react", () => ({
-  default: () => [],
-}));
-
-vi.mock("convex/react", () => ({
-  useMutation: () => async () => null,
-  useQuery: (reference: FunctionReference<"query">) => {
-    switch (getFunctionName(reference)) {
-      case "documents:get":
-        return publicDocument;
-      case "checkpoints:list":
-        return [];
-      default:
-        return undefined;
-    }
-  },
-}));
-
-vi.mock("@convex-dev/prosemirror-sync/tiptap", async () => {
-  const { Extension } = await vi.importActual<typeof import("@tiptap/core")>(
-    "@tiptap/core",
-  );
-  const { collab } = await vi.importActual<
-    typeof import("prosemirror-collab")
-  >("prosemirror-collab");
-  const extension = Extension.create({
-    name: "test-sync",
-    addProseMirrorPlugins() {
+vi.mock("./transport.js", () => ({ documentRequest: async () => null }));
+vi.mock("./sync-extension.js", async () => {
+  const { Extension } = await import("@tiptap/core");
+  const { collab } = await import("prosemirror-collab");
+  return { documentSyncExtension: (options: { onError: (error: Error) => void }) => {
+    reportSyncError = options.onError;
+    return Extension.create({ name: "test-sync", addProseMirrorPlugins() {
       liveEditor = this.editor;
-      return [collab({ version: 1 })];
-    },
-  });
-
-  return {
-    useTiptapSync: (_api: unknown, _id: string, options?: SyncOptions) => {
-      reportSyncError = options?.onSyncError;
-      return {
-        extension,
-        isLoading: false,
-        initialContent: {
-          type: "doc",
-          content: [
-            {
-              type: "codeBlock",
-              content: [{ type: "text", text: "initial" }],
-            },
-          ],
-        },
-      };
-    },
-  };
+      return [collab({ version: 0 })];
+    } });
+  } };
 });
+const initialContent = { type: "doc", content: [{ type: "codeBlock", content: [{ type: "text", text: "initial" }] }] };
 
 import { CollaborativeWorkspace } from "./collaborative-workspace.js";
 
@@ -90,13 +54,13 @@ describe("collaborative workspace", () => {
     document.body.append(container);
     root = createRoot(container);
     await act(async () => {
-      root.render(<CollaborativeWorkspace document={publicDocument} />);
+      root.render(<CollaborativeWorkspace snapshot={{ document: publicDocument, content: initialContent, version: 0 }} />);
     });
   });
 
   it("keeps LaTeX source editable and offers source download instead of Markdown PDF export", async () => {
     await act(async () => {
-      root.render(<CollaborativeWorkspace document={{ ...publicDocument, filename: "paper.tex", format: "latex" }} />);
+      root.render(<CollaborativeWorkspace key="latex" snapshot={{ document: { ...publicDocument, filename: "paper.tex", format: "latex" }, content: initialContent, version: 0 }} />);
     });
     expect(container.querySelector("[contenteditable=true]")).not.toBeNull();
     expect(container.querySelector("#preview-panel")?.textContent).toContain("PDF compilation is not available yet");
@@ -177,6 +141,20 @@ describe("collaborative workspace", () => {
     expect(container.querySelector("[role=alert]")).toBeNull();
   });
 
+  it("pastes multiline source over the whole document as server-compatible steps", async () => {
+    const source = '# pasted source\n\nQuotes " and backslashes \\ α 😀\n';
+    const event = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "clipboardData", { value: { getData: () => source.replace(/\n/g, "\r\n") } });
+    await act(async () => {
+      liveEditor.view.dispatch(liveEditor.state.tr.setSelection(new AllSelection(liveEditor.state.doc)));
+      liveEditor.view.pasteText(source, event as ClipboardEvent);
+    });
+    expect(liveEditor.state.doc.childCount).toBe(1);
+    expect(liveEditor.state.doc.textContent).toBe(source);
+    const pending = sendableSteps(liveEditor.state)!;
+    expect(applySteps(initialContent, pending.steps.map(step => step.toJSON())).markdown).toBe(source);
+  });
+
   it("keeps a retryable error visible without disabling editing", async () => {
     expect(reportSyncError).toBeDefined();
 
@@ -202,7 +180,7 @@ describe("collaborative workspace", () => {
     const checkpointButton = container.querySelector<HTMLButtonElement>(
       ".history-control-desktop .history-menu button",
     );
-    expect(checkpointButton?.disabled).toBe(false);
+    expect(checkpointButton?.disabled).toBe(true);
   });
 
   it("latches document unavailability and disables editing and checkpoints", async () => {
@@ -214,10 +192,7 @@ describe("collaborative workspace", () => {
 
     await act(async () => {
       reportSyncError?.(
-        new ConvexError({
-          code: "DOCUMENT_UNAVAILABLE",
-          message: "expired",
-        }),
+        new ShareError("DOCUMENT_UNAVAILABLE", "expired"),
       );
     });
     await act(async () => {

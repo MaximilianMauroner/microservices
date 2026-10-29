@@ -17,6 +17,6 @@ execution status for each journey in the private audit evidence.
 | [Operations](operations.md) | O1 | Partial: live evidence required |
 
 Authenticated Tools journeys need disposable PostgreSQL, storage, encryption,
-and authorized local OAuth. Document Share also needs a disposable Convex
-backend. Retention needs a bounded local clock. Record unavailable setup as
+and authorized local OAuth. Public Document Share uses the same owned PostgreSQL fixture
+and needs no OAuth. Retention needs a bounded local clock. Record unavailable setup as
 blocked and unselected journeys as unrun.

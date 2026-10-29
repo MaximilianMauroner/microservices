@@ -31,7 +31,7 @@ describe("document links", () => {
     });
   });
 
-  it("accepts a server-generated Convex capability postfix", () => {
+  it("accepts a existing capability postfix", () => {
     const token = "j57dzxnpat8g9sbksewde1dznh8bczet";
     expect(parseDocumentRoute(documentPath("server.md", token))).toEqual({
       filename: "server.md",

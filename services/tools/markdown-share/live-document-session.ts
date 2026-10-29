@@ -5,7 +5,7 @@ import Text from "@tiptap/extension-text";
 import { UndoRedo } from "@tiptap/extensions/undo-redo";
 import { useEditor } from "@tiptap/react";
 import { Plugin } from "@tiptap/pm/state";
-import { sourceSizeError } from "@tools-platform/markdown-share/source-limits";
+import { sourceSizeError } from "./source-limits.js";
 import { getVersion, sendableSteps } from "prosemirror-collab";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { markdownFromJson } from "./lib.js";
@@ -31,7 +31,7 @@ function structuredErrorCode(error: Error): string | null {
 }
 
 export function classifySyncError(error: Error): SyncFailure {
-  if (structuredErrorCode(error) === "DOCUMENT_UNAVAILABLE") {
+  if (["DOCUMENT_UNAVAILABLE", "HISTORY_UNAVAILABLE"].includes(structuredErrorCode(error) ?? "")) {
     return {
       kind: "document-unavailable",
       message:
@@ -49,7 +49,7 @@ export function classifySyncError(error: Error): SyncFailure {
   return {
     kind: "retryable",
     message:
-      "Changes could not be synchronized. Your latest edits may not be saved. Keep this page open and copy your source before leaving. Try editing again to retry.",
+      "Changes could not be synchronized. Your latest edits may not be saved. Keep this page open and copy your source before leaving. Reconnection is automatic.",
   };
 }
 
@@ -111,7 +111,7 @@ export function useLiveDocumentEditor({
   const documentUnavailable = syncFailure?.kind === "document-unavailable";
   const editor = useEditor({
     extensions: [
-      Document,
+      Document.extend({ content: "codeBlock" }),
       Text,
       CodeBlock.configure({
         exitOnArrowDown: false,
@@ -137,6 +137,12 @@ export function useLiveDocumentEditor({
     content: initialContent,
     immediatelyRender: true,
     editorProps: {
+      handlePaste(view, event) {
+        if (!event.clipboardData) return false;
+        const text = event.clipboardData.getData("text/plain").replace(/\r\n?/g, "\n");
+        if (text) view.dispatch(view.state.tr.insertText(text).scrollIntoView());
+        return true;
+      },
       attributes: {
         "aria-label": "Document source",
         autocapitalize: "off",
