@@ -1,16 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent, DragEvent } from "react";
 import { Link } from "@tanstack/react-router";
-import { Copy, ExternalLink, FolderOpen, RotateCcw, Upload, X } from "lucide-react";
+import { ArrowUpRight, Check, Copy, File, FileCode, RotateCw, Upload } from "lucide-react";
 import { AppShell } from "../../src/components/app-shell.js";
+import { PageHeader } from "../../src/components/page-header.js";
 import { favicons } from "../../src/favicons.js";
-import { Alert } from "../../src/components/ui/alert.js";
 import { Badge } from "../../src/components/ui/badge.js";
 import { Button } from "../../src/components/ui/button.js";
 import { Card } from "../../src/components/ui/card.js";
 import { Input } from "../../src/components/ui/input.js";
-import type { UploadSummary } from "../../src/protected-data.js";
-import { waitForPublisher } from "./publisher-request.js";
+import { countLabel } from "../../src/lib/count-label.js";
+import { formatDateTime } from "../../src/lib/format-date.js";
+import { cn } from "../../src/lib/utils.js";
+import type { UploadPageData, UploadSummary } from "../../src/protected-data.js";
+import { fetchPublisherRead, readPayload, waitForPublisher } from "./publisher-request.js";
 import {
   UploadCancelledError,
   friendlyUploadError,
@@ -18,8 +21,8 @@ import {
   shouldUseChunkedUpload,
   uploadChunkedFile
 } from "./chunked-upload.js";
-import { UploadLinkManager } from "./upload-link-manager.js";
-import { formatDateTime } from "../../src/lib/format-date.js";
+import { Segmented } from "../../src/components/segmented.js";
+import { ArtifactIcon, LifecycleBadge, copyText, formatBytes, relativeTime, shortUrl } from "./artifact-parts.js";
 
 type ItemStatus = "queued" | "checking" | "uploading" | "processing" | "done" | "error" | "cancelled";
 
@@ -30,9 +33,55 @@ type UploadItem = {
   loaded: number;
   percent: number;
   status: ItemStatus;
-  note: string;
+  chunked: boolean;
   error?: string;
+  result?: UploadSummary;
+  expiryError?: string;
 };
+
+export type ExpiryChoice = "1" | "3" | "7" | "30" | "permanent";
+
+const EXPIRY_OPTIONS = [
+  ["1", "1 day"],
+  ["3", "3 days"],
+  ["7", "7 days"],
+  ["30", "30 days"],
+  ["permanent", "Permanent"]
+] as const satisfies readonly (readonly [ExpiryChoice, string])[];
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const RECENT_PATH = "/api/external-uploads?limit=6&sort=newest&includeSummary=true";
+
+/** The expiry update for a new file. The server already applies 3 days, so that choice sends nothing. */
+export function fileExpiryUpdate(choice: ExpiryChoice, now = Date.now()): { expiresAt: string | null } | undefined {
+  if (choice === "3") return undefined;
+  if (choice === "permanent") return { expiresAt: null };
+  return { expiresAt: new Date(now + Number(choice) * DAY_MS).toISOString() };
+}
+
+/** Applies the chosen expiry to a finished file upload. HTML plans do not expire, so they are returned unchanged. */
+export async function applyFileExpiry(
+  upload: UploadSummary,
+  choice: ExpiryChoice,
+  fetcher: typeof fetch = globalThis.fetch,
+  now = Date.now()
+): Promise<UploadSummary> {
+  const update = upload.kind === "file" ? fileExpiryUpdate(choice, now) : undefined;
+  if (!update) return upload;
+  const response = await fetcher(`/api/external-uploads/${upload.id}`, {
+    method: "PATCH",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(update)
+  });
+  const { expiresAt } = await readPayload<{ expiresAt: string | null }>(response, "The file expiry could not be changed.");
+  const { expiresAt: _serverDefault, ...permanent } = upload;
+  return expiresAt ? { ...permanent, expiresAt } : permanent;
+}
+
+function isHtmlFile(name: string) {
+  return /\.html?$/i.test(name);
+}
 
 function isAbortError(error: unknown, signal?: AbortSignal | null) {
   if (signal?.aborted) return true;
@@ -44,6 +93,7 @@ function isAbortError(error: unknown, signal?: AbortSignal | null) {
 
 function uploadExternalFile(
   file: File,
+  project: string | undefined,
   onProgress: (loaded: number, total: number, lengthComputable: boolean) => void,
   onProcessing: () => void,
   registerXhr: (xhr: XMLHttpRequest | null) => void
@@ -82,41 +132,31 @@ function uploadExternalFile(
     xhr.setRequestHeader("Accept", "application/json");
     xhr.withCredentials = true;
     const form = new FormData();
+    if (project) form.append("project", project);
     form.append("file", file);
     xhr.send(form);
   });
 }
 
-function statusBadgeVariant(status: ItemStatus): "positive" | "secondary" | "destructive" | "outline" {
-  if (status === "error") return "destructive";
-  if (status === "done") return "positive";
-  if (status === "uploading" || status === "checking" || status === "processing") return "secondary";
-  return "outline";
-}
-
-function statusLabel(item: UploadItem) {
-  if (item.status === "queued") return "Queued";
-  if (item.status === "checking") return "Checking…";
-  if (item.status === "uploading") return `Uploading… ${item.percent}%`;
-  if (item.status === "processing") return "Processing…";
-  if (item.status === "done") return "Ready";
-  if (item.status === "error") return "Failed";
-  return "Cancelled";
-}
-
 export function PublishPage() {
   const [busy, setBusy] = useState(false);
   const [dragging, setDragging] = useState(false);
-  const [results, setResults] = useState<UploadSummary[]>([]);
   const [items, setItems] = useState<UploadItem[]>([]);
-  const [message, setMessage] = useState<{ text: string; tone: "success" | "error" }>();
+  const [expiry, setExpiry] = useState<ExpiryChoice>("3");
+  const [project, setProject] = useState("");
+  const [copiedKey, setCopiedKey] = useState<string>();
+  const [copyError, setCopyError] = useState<string>();
+  const [recent, setRecent] = useState<UploadPageData>();
+  const [recentError, setRecentError] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const activeXhr = useRef<XMLHttpRequest | null>(null);
   const abortController = useRef<AbortController | null>(null);
   const cancelRequested = useRef(false);
+  const autoCopied = useRef(false);
   const fileByKey = useRef(new Map<string, File>());
 
   useEffect(() => {
+    void loadRecent();
     return () => {
       cancelRequested.current = true;
       abortController.current?.abort();
@@ -124,34 +164,51 @@ export function PublishPage() {
     };
   }, []);
 
+  async function loadRecent() {
+    try {
+      const response = await fetchPublisherRead(RECENT_PATH, { credentials: "same-origin" });
+      setRecent(await readPayload<UploadPageData>(response, "Recent artifacts could not be loaded."));
+      setRecentError(false);
+    } catch {
+      setRecentError(true);
+    }
+  }
+
   function updateItem(key: string, patch: Partial<UploadItem>) {
     setItems((current) => current.map((item) => (item.key === key ? { ...item, ...patch } : item)));
   }
 
-  async function uploadOne(key: string, file: File) {
+  function copyFirstLink(key: string, url: string) {
+    if (autoCopied.current) return;
+    autoCopied.current = true;
+    void copyText(url).then((copied) => {
+      if (copied) setCopiedKey(key);
+    });
+  }
+
+  async function uploadOne(key: string, file: File, choice: { expiry: ExpiryChoice; project: string }) {
     const signal = abortController.current?.signal;
-    updateItem(key, { status: "checking", percent: 0, loaded: 0, error: undefined, note: "Checking publisher health…" });
+    updateItem(key, { status: "checking", percent: 0, loaded: 0, error: undefined });
     try {
       await waitForPublisher(undefined, globalThis.fetch, signal);
     } catch (error) {
       if (error instanceof UploadCancelledError || isAbortError(error, signal) || cancelRequested.current) {
-        updateItem(key, { status: "cancelled", note: "Cancelled before upload started." });
-        return { outcome: "cancelled" as const };
+        updateItem(key, { status: "cancelled" });
+        return "cancelled" as const;
       }
-      const reason = error instanceof Error ? error.message : "Publisher check failed.";
-      updateItem(key, { status: "error", error: reason, note: "Publisher check failed." });
-      return { outcome: "error" as const, reason };
+      updateItem(key, { status: "error", error: error instanceof Error ? error.message : "The server check failed." });
+      return "error" as const;
     }
 
     if (cancelRequested.current) {
-      updateItem(key, { status: "cancelled", note: "Cancelled before upload started." });
-      return { outcome: "cancelled" as const };
+      updateItem(key, { status: "cancelled" });
+      return "cancelled" as const;
     }
 
-    updateItem(key, { status: "uploading", percent: 0, loaded: 0, note: `Sending ${formatBytes(0)} of ${formatBytes(file.size)}` });
+    updateItem(key, { status: "uploading", percent: 0, loaded: 0 });
     try {
       const onProcessing = () => {
-        updateItem(key, { status: "processing", loaded: file.size, percent: 100, note: "Finalizing on server…" });
+        updateItem(key, { status: "processing", loaded: file.size, percent: 100 });
       };
       const registerXhr = (xhr: XMLHttpRequest | null) => {
         activeXhr.current = xhr;
@@ -162,12 +219,7 @@ export function PublishPage() {
             {
               onProgress: (loaded, total) => {
                 const percent = total > 0 ? Math.min(100, Math.round((loaded / total) * 100)) : 0;
-                updateItem(key, {
-                  status: "uploading",
-                  loaded,
-                  percent,
-                  note: `Sending ${formatBytes(loaded)} of ${formatBytes(total)} in small requests`
-                });
+                updateItem(key, { status: "uploading", loaded, percent });
               },
               onProcessing,
               registerXhr,
@@ -176,174 +228,85 @@ export function PublishPage() {
           )
         : await uploadExternalFile(
             file,
+            isHtmlFile(file.name) && choice.project ? choice.project : undefined,
             (loaded, total, lengthComputable) => {
               const totalBytes = lengthComputable && total > 0 ? total : file.size;
               const percent = totalBytes > 0 ? Math.min(100, Math.round((loaded / totalBytes) * 100)) : 0;
-              updateItem(key, {
-                status: "uploading",
-                loaded: Math.min(loaded, Math.max(totalBytes, file.size)),
-                percent,
-                note: `Sending ${formatBytes(Math.min(loaded, Math.max(totalBytes, file.size)))} of ${formatBytes(file.size)}`
-              });
+              updateItem(key, { status: "uploading", loaded: Math.min(loaded, Math.max(totalBytes, file.size)), percent });
             },
             onProcessing,
             registerXhr
           );
-      updateItem(key, { status: "done", loaded: file.size, percent: 100, note: "Uploaded." });
-      setResults((current) => [...current, payload]);
-      return { outcome: "done" as const, payload };
+      let result = payload;
+      let expiryError: string | undefined;
+      try {
+        result = await applyFileExpiry(payload, choice.expiry);
+      } catch (error) {
+        expiryError = error instanceof Error ? error.message : "The file expiry could not be changed.";
+      }
+      updateItem(key, { status: "done", loaded: file.size, percent: 100, result, expiryError });
+      copyFirstLink(key, result.url);
+      return "done" as const;
     } catch (error) {
       if (error instanceof UploadCancelledError || isAbortError(error, signal) || cancelRequested.current) {
-        updateItem(key, { status: "cancelled", note: "Cancelled." });
-        return { outcome: "cancelled" as const };
+        updateItem(key, { status: "cancelled" });
+        return "cancelled" as const;
       }
-      const reason = error instanceof Error ? error.message : "The upload failed.";
-      updateItem(key, { status: "error", error: reason, note: "Failed." });
-      return { outcome: "error" as const, reason };
+      updateItem(key, { status: "error", error: error instanceof Error ? error.message : "The upload failed." });
+      return "error" as const;
     }
   }
 
-  function summarizeAndFinish(succeeded: number, failed: number, cancelled: number, total: number) {
-    if (failed === 0 && cancelled === 0) {
-      setMessage({
-        text: total === 1 ? "File is ready to share." : `${total} files are ready to share.`,
-        tone: "success"
-      });
-      return;
-    }
-    if (succeeded === 0 && failed > 0 && cancelled === 0) {
-      setMessage({
-        text: failed === 1 ? "Upload failed. See details below." : `${failed} uploads failed. See details below.`,
-        tone: "error"
-      });
-      return;
-    }
-    if (cancelRequested.current && succeeded === 0 && failed === 0) {
-      setMessage({ text: "Upload cancelled.", tone: "success" });
-      return;
-    }
-    const parts: string[] = [];
-    if (succeeded > 0) parts.push(`${succeeded} uploaded`);
-    if (failed > 0) parts.push(`${failed} failed`);
-    if (cancelled > 0) parts.push(`${cancelled} cancelled`);
-    setMessage({ text: `${parts.join(", ")}. See details below.`, tone: failed > 0 ? "error" : "success" });
-  }
-
-  async function startUpload(files: File[]) {
-    if (files.length === 0 || busy) return;
+  /** Uploads one file after the other. After a cancel, the files that did not start are marked as cancelled. */
+  async function runQueue(keys: string[]) {
     cancelRequested.current = false;
     abortController.current?.abort();
     abortController.current = new AbortController();
-    fileByKey.current.clear();
-    const now = Date.now();
-    const nextItems: UploadItem[] = files.map((file, index) => {
-      const key = `${now}-${index}-${file.size}-${file.name}`;
-      fileByKey.current.set(key, file);
-      return {
-        key,
-        name: file.name,
-        size: file.size,
-        loaded: 0,
-        percent: 0,
-        status: "queued" as const,
-        note: "Waiting to start"
-      };
-    });
     setBusy(true);
-    setResults([]);
-    setItems(nextItems);
-    setMessage(undefined);
-
+    setCopyError(undefined);
+    const choice = { expiry, project: project.trim() };
     let succeeded = 0;
-    let failed = 0;
-    let cancelled = 0;
     try {
-      for (const item of nextItems) {
+      for (const key of keys) {
+        const file = fileByKey.current.get(key);
         if (cancelRequested.current) {
-          updateItem(item.key, { status: "cancelled", note: "Cancelled before upload started." });
-          cancelled += 1;
+          updateItem(key, { status: "cancelled" });
           continue;
         }
-        const file = fileByKey.current.get(item.key);
         if (!file) {
-          updateItem(item.key, { status: "error", error: "File reference lost.", note: "Failed." });
-          failed += 1;
+          updateItem(key, { status: "error", error: "The file is no longer available. Choose it again." });
           continue;
         }
-        const result = await uploadOne(item.key, file);
-        if (result.outcome === "done") succeeded += 1;
-        else if (result.outcome === "error") failed += 1;
-        else cancelled += 1;
-        if (cancelRequested.current) {
-          // Mark any remaining queued items as cancelled without attempting them.
-          const currentIndex = nextItems.findIndex((candidate) => candidate.key === item.key);
-          for (const remaining of nextItems.slice(currentIndex + 1)) {
-            updateItem(remaining.key, { status: "cancelled", note: "Cancelled before upload started." });
-            cancelled += 1;
-          }
-          break;
-        }
+        if ((await uploadOne(key, file, choice)) === "done") succeeded += 1;
       }
-      summarizeAndFinish(succeeded, failed, cancelled, nextItems.length);
     } finally {
       setBusy(false);
       activeXhr.current = null;
       if (fileInput.current) fileInput.current.value = "";
     }
+    if (succeeded > 0) void loadRecent();
   }
 
-  async function retryKeys(keys: string[]) {
-    if (keys.length === 0 || busy) return;
-    const retryFiles = keys
-      .map((key) => ({ key, file: fileByKey.current.get(key) }))
-      .filter((entry): entry is { key: string; file: File } => Boolean(entry.file));
-    if (retryFiles.length === 0) return;
-    cancelRequested.current = false;
-    abortController.current?.abort();
-    abortController.current = new AbortController();
-    setBusy(true);
-    setMessage(undefined);
-    for (const { key } of retryFiles) {
-      updateItem(key, { status: "queued", loaded: 0, percent: 0, error: undefined, note: "Waiting to start" });
-    }
+  function startUpload(files: File[]) {
+    if (files.length === 0 || busy) return;
+    fileByKey.current.clear();
+    autoCopied.current = false;
+    setCopiedKey(undefined);
+    const now = Date.now();
+    const nextItems: UploadItem[] = files.map((file, index) => {
+      const key = `${now}-${index}-${file.size}-${file.name}`;
+      fileByKey.current.set(key, file);
+      return { key, name: file.name, size: file.size, loaded: 0, percent: 0, status: "queued", chunked: shouldUseChunkedUpload(file.size) };
+    });
+    setItems(nextItems);
+    void runQueue(nextItems.map((item) => item.key));
+  }
 
-    let succeeded = 0;
-    let failed = 0;
-    let cancelled = 0;
-    try {
-      for (const { key, file } of retryFiles) {
-        if (cancelRequested.current) {
-          updateItem(key, { status: "cancelled", note: "Cancelled before retry started." });
-          cancelled += 1;
-          continue;
-        }
-        const result = await uploadOne(key, file);
-        if (result.outcome === "done") succeeded += 1;
-        else if (result.outcome === "error") failed += 1;
-        else cancelled += 1;
-      }
-      setItems((current) => {
-        const done = current.filter((item) => item.status === "done").length;
-        const errors = current.filter((item) => item.status === "error").length;
-        const cancels = current.filter((item) => item.status === "cancelled").length;
-        if (errors === 0 && cancels === 0) {
-          setMessage({ text: done === 1 ? "File is ready to share." : `${done} files are ready to share.`, tone: "success" });
-        } else {
-          const parts: string[] = [];
-          if (done > 0) parts.push(`${done} uploaded`);
-          if (errors > 0) parts.push(`${errors} failed`);
-          if (cancels > 0) parts.push(`${cancels} cancelled`);
-          setMessage({ text: `${parts.join(", ")}. See details below.`, tone: errors > 0 ? "error" : "success" });
-        }
-        return current;
-      });
-      void succeeded;
-      void failed;
-      void cancelled;
-    } finally {
-      setBusy(false);
-      activeXhr.current = null;
-    }
+  function retryKeys(keys: string[]) {
+    if (keys.length === 0 || busy) return;
+    const available = keys.filter((key) => fileByKey.current.has(key));
+    for (const key of available) updateItem(key, { status: "queued", loaded: 0, percent: 0, error: undefined });
+    void runQueue(available);
   }
 
   function cancelUploads() {
@@ -355,233 +318,241 @@ export function PublishPage() {
   function clearUploads() {
     if (busy) return;
     setItems([]);
-    setMessage(undefined);
+    setCopiedKey(undefined);
+    setCopyError(undefined);
   }
 
   function chooseFile(event: ChangeEvent<HTMLInputElement>) {
-    void startUpload(Array.from(event.currentTarget.files ?? []));
+    startUpload(Array.from(event.currentTarget.files ?? []));
   }
 
   function dropFile(event: DragEvent<HTMLDivElement>) {
     event.preventDefault();
     setDragging(false);
-    void startUpload(Array.from(event.dataTransfer.files));
+    startUpload(Array.from(event.dataTransfer.files));
   }
 
-  async function copyResultUrls(selected: UploadSummary[]) {
-    if (selected.length === 0) return;
-    try {
-      await navigator.clipboard.writeText(capabilityUrlText(selected));
-      setMessage({ text: selected.length === 1 ? "Capability URL copied." : `${selected.length} capability URLs copied.`, tone: "success" });
-    } catch {
-      setMessage({ text: "The URLs could not be copied. Open the uploads to copy them manually.", tone: "error" });
+  async function copyLinks(key: string | undefined, results: UploadSummary[]) {
+    if (results.length === 0) return;
+    if (await copyText(capabilityUrlText(results))) {
+      setCopyError(undefined);
+      if (key) setCopiedKey(key);
+    } else {
+      setCopyError("The links could not be copied. Open a file and copy its address.");
     }
   }
 
-  const hasItems = items.length > 0;
+  const finished = items.flatMap((item) => (item.result ? [item.result] : []));
   const failures = items.filter((item) => item.status === "error");
-  const totalBytes = items.reduce((sum, item) => sum + item.size, 0);
-  const loadedBytes = items.reduce((sum, item) => {
-    if (item.status === "done") return sum + item.size;
-    return sum + Math.min(item.loaded, Math.max(item.size, 0));
-  }, 0);
-  const overallPercent = totalBytes > 0 ? Math.min(100, Math.round((loadedBytes / totalBytes) * 100)) : hasItems ? 100 : 0;
-  const completedCount = items.filter((item) => item.status === "done" || item.status === "error" || item.status === "cancelled").length;
-  const title = !hasItems
-    ? "Drop files here"
-    : busy
-      ? `Uploading ${Math.min(completedCount + 1, items.length)} of ${items.length}…`
-      : failures.length > 0
-        ? "Upload finished with issues"
-        : items.some((item) => item.status === "cancelled")
-          ? "Upload cancelled"
-          : "Upload complete";
+  const projects = (recent?.summary?.projects ?? [])
+    .flatMap(({ project: name, count }) => (name ? [{ name, count }] : []))
+    .toSorted((left, right) => right.count - left.count || left.name.localeCompare(right.name));
 
   return (
     <>
       <AppShell product="Publisher" accent="violet" icon={favicons.publisher} />
-      <main id="main" className="workspace-page workspace-page--narrow">
-        <section className="workspace-header" aria-labelledby="publish-title">
-          <div>
-            <p className="workspace-header__eyebrow">Artifact publisher</p>
-            <h1 id="publish-title">Share a new file</h1>
-            <p className="workspace-header__description">Upload once, then maintain it from the artifact library.</p>
-          </div>
-          <div className="workspace-header__actions"><Button nativeButton={false} variant="outline" size="sm" render={<Link to="/publisher/artifacts" preload="intent" />}>
-            <FolderOpen /> Manage artifacts
-          </Button></div>
-        </section>
+      <main id="main" className="tools-page">
+        <PageHeader title="Publish" facts="Drop a file to get a link. HTML plans stay until you revoke them; other files expire." />
 
-        {message ? <Alert className="mb-4" variant={message.tone === "error" ? "destructive" : "default"}>{message.text}</Alert> : null}
-
-        <section className="grid gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(16rem,.6fr)]" aria-label="Upload workspace">
-          <Card className={`text-center transition-colors ${dragging ? "border-foreground bg-secondary" : ""} ${hasItems ? "place-items-stretch p-6 text-left" : "grid min-h-72 place-items-center border border-dashed"}`} onDragEnter={(event) => { event.preventDefault(); if (!busy) setDragging(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setDragging(false)} onDrop={dropFile}>
-            {!hasItems ? (
-              <div className="max-w-md p-6">
-                <div className="mx-auto mb-4 grid size-11 place-items-center rounded-full border text-muted-foreground" aria-hidden="true"><Upload /></div>
-                <strong className="text-lg">Drop files here</strong>
-                <p className="mt-2 text-sm text-muted-foreground">File links expire after 3 days by default; the exact expiry is shown after upload. Anyone with the link can download the file.</p>
-                <Input className="hidden" ref={fileInput} type="file" multiple onChange={chooseFile} aria-label="Choose files to upload" tabIndex={-1} />
-                <Button className="mt-5" type="button" size="sm" onClick={() => fileInput.current?.click()} disabled={busy}>
-                  {busy ? "Working…" : "Choose files"}
-                </Button>
-              </div>
-            ) : (
-              <div className="w-full" aria-live="polite">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <strong className="text-lg">{title}</strong>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {completedCount} of {items.length} files finished · {formatBytes(loadedBytes)} of {formatBytes(totalBytes)} · {overallPercent}%
-                    </p>
-                  </div>
-                  <div className="grid size-11 shrink-0 place-items-center rounded-full border text-muted-foreground" aria-hidden="true"><Upload /></div>
-                </div>
-
+        <div className="grid items-start gap-3 lg:grid-cols-[minmax(0,1.6fr)_minmax(17.5rem,1fr)]">
+          <div className="grid min-w-0 gap-3">
+            <Card className="gap-0 py-0" aria-label="Upload">
+              <div className="p-3.5">
                 <div
-                  className="mt-4"
-                  role="progressbar"
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-valuenow={overallPercent}
-                  aria-label="Overall upload progress"
+                  className={cn(
+                    "grid place-items-center gap-1.5 rounded-[0.875rem] border-[1.5px] border-dashed border-control-border bg-[color-mix(in_oklab,var(--secondary)_35%,var(--card))] px-5 py-8.5 text-center transition-colors",
+                    dragging && "border-primary bg-secondary"
+                  )}
+                  onDragEnter={(event) => { event.preventDefault(); if (!busy) setDragging(true); }}
+                  onDragOver={(event) => event.preventDefault()}
+                  onDragLeave={() => setDragging(false)}
+                  onDrop={dropFile}
                 >
-                  <div className="relative flex h-1.5 w-full items-center overflow-hidden rounded-full bg-muted">
-                    <div className="h-full bg-primary transition-all" style={{ width: `${overallPercent}%` }} />
+                  <span className="grid size-11 place-items-center rounded-xl bg-secondary text-secondary-foreground [&_svg]:size-5.5" aria-hidden="true"><Upload /></span>
+                  <strong className="text-[0.9375rem] font-semibold">Drop files here</strong>
+                  <span className="flex items-center gap-2 text-[0.8125rem] text-muted-foreground">
+                    or
+                    <Button type="button" size="sm" onClick={() => fileInput.current?.click()} disabled={busy}>Choose files</Button>
+                  </span>
+                  <span className="text-xs text-muted-foreground">Up to 5 GB · HTML up to 25 MB · the link is unlisted</span>
+                  <input className="hidden" ref={fileInput} type="file" multiple onChange={chooseFile} aria-label="Choose files to upload" tabIndex={-1} />
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border/60 px-4 py-3 text-[0.8125rem] text-muted-foreground">
+                <span className="flex max-w-full min-w-0 flex-wrap items-center gap-2">
+                  File expiry
+                  <Segmented label="File expiry" options={EXPIRY_OPTIONS} value={expiry} onValue={setExpiry} />
+                </span>
+                <label className="flex max-w-full min-w-0 items-center gap-2">
+                  HTML project
+                  <Input
+                    className="h-7 w-38 text-[0.8125rem] text-foreground md:text-[0.8125rem]"
+                    list="publish-projects"
+                    value={project}
+                    onChange={(event) => setProject(event.currentTarget.value)}
+                    placeholder="None"
+                    aria-label="Project for HTML plans"
+                    disabled={busy}
+                  />
+                  <datalist id="publish-projects">{projects.map(({ name }) => <option key={name} value={name} />)}</datalist>
+                </label>
+              </div>
+            </Card>
+
+            {items.length > 0 ? (
+              <Card className="gap-0 py-0" aria-labelledby="session-title">
+                <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-4 pt-3">
+                  <div className="min-w-0">
+                    <h2 id="session-title" className="text-sm font-semibold">This session</h2>
+                    <p className="mt-px text-xs text-muted-foreground" aria-live="polite">{sessionSummary(items, busy)}</p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {finished.length > 0 ? <Button type="button" variant="outline" size="sm" onClick={() => void copyLinks(undefined, finished)}><Copy /> Copy {countLabel(finished.length, "link")}</Button> : null}
+                    {!busy && failures.length > 1 ? <Button type="button" variant="outline" size="sm" onClick={() => retryKeys(failures.map((item) => item.key))}><RotateCw /> Retry all</Button> : null}
+                    {!busy ? <Button type="button" variant="ghost" size="sm" onClick={clearUploads}>Clear</Button> : null}
                   </div>
                 </div>
-
-                <ul className="mt-4 grid gap-2" aria-label="Upload progress">
+                {copyError ? <p role="alert" className="px-4 pt-2 text-xs text-destructive">{copyError}</p> : null}
+                <ul className="mt-2 divide-y divide-border/60" aria-label="Uploads">
                   {items.map((item) => (
-                    <li key={item.key} className="rounded-lg border p-3 text-left">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="min-w-0 truncate text-sm font-medium" title={item.name}>{item.name}</span>
-                        <Badge variant={statusBadgeVariant(item.status)}>{statusLabel(item)}</Badge>
-                      </div>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {formatBytes(item.size)} · {item.note}
-                      </p>
-                      <div
-                        className="mt-2"
-                        role="progressbar"
-                        aria-valuemin={0}
-                        aria-valuemax={100}
-                        aria-valuenow={item.percent}
-                        aria-label={`Upload progress for ${item.name}`}
-                      >
-                        <div className="relative flex h-1.5 w-full items-center overflow-hidden rounded-full bg-muted">
-                          <div
-                            className={`h-full transition-all ${item.status === "error" ? "bg-destructive" : "bg-primary"}`}
-                            style={{ width: `${Math.min(100, Math.max(0, item.percent))}%` }}
-                          />
-                        </div>
-                      </div>
-                      <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground">
-                        <span>{item.percent}%</span>
-                        <span>{formatBytes(Math.min(item.loaded, Math.max(item.size, item.loaded)))} of {formatBytes(item.size)}</span>
-                      </div>
-                      {item.error ? <p role="alert" className="mt-2 text-xs text-destructive">{item.error}</p> : null}
-                    </li>
+                    <SessionRow
+                      key={item.key}
+                      item={item}
+                      busy={busy}
+                      copied={copiedKey === item.key}
+                      onCopy={(result) => void copyLinks(item.key, [result])}
+                      onCancel={cancelUploads}
+                      onRetry={() => retryKeys([item.key])}
+                    />
                   ))}
                 </ul>
+              </Card>
+            ) : null}
+          </div>
 
-                <Input className="hidden" ref={fileInput} type="file" multiple onChange={chooseFile} aria-label="Choose files to upload" tabIndex={-1} />
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <Button type="button" size="sm" onClick={() => fileInput.current?.click()} disabled={busy}>
-                    Choose files
-                  </Button>
-                  {busy ? (
-                    <Button type="button" size="sm" variant="outline" onClick={cancelUploads}>
-                      <X /> Cancel
-                    </Button>
-                  ) : null}
-                  {!busy && failures.length > 0 ? (
-                    <Button type="button" size="sm" variant="outline" onClick={() => void retryKeys(failures.map((item) => item.key))}>
-                      <RotateCcw /> Retry failed ({failures.length})
-                    </Button>
-                  ) : null}
-                  {!busy ? (
-                    <Button type="button" size="sm" variant="outline" onClick={clearUploads}>
-                      Dismiss
-                    </Button>
-                  ) : null}
-                </div>
-                <p className="mt-3 text-xs text-muted-foreground">File links expire after 3 days by default; the exact expiry is shown after upload. Anyone with the link can download the file.</p>
-              </div>
-            )}
-          </Card>
-          <aside className="rounded-xl border bg-card p-5" aria-label="Upload policy">
-            <h2 className="font-semibold">Upload policy</h2>
-            <p className="mt-2 text-sm text-muted-foreground">Generated URLs are public, unlisted capability links. Anyone with the URL can download the file until it expires or is revoked.</p>
-            <dl className="mt-5 grid gap-3 text-xs"><div><dt className="text-muted-foreground">Delivery</dt><dd className="mt-1 font-medium">Expires after 3 days by default</dd></div><div><dt className="text-muted-foreground">Access</dt><dd className="mt-1 font-medium">Unlisted URL</dd></div><div><dt className="text-muted-foreground">Maintenance</dt><dd className="mt-1 font-medium">Manage artifact library</dd></div></dl>
-          </aside>
-        </section>
-
-        <UploadResultsList results={results} onCopyAll={() => void copyResultUrls(results)} onCopy={(result) => void copyResultUrls([result])} />
-        {failures.length > 0 ? (
-          <UploadIssuesList
-            issues={failures}
-            onRetryAll={() => void retryKeys(failures.map((item) => item.key))}
-            onRetry={(key) => void retryKeys([key])}
-          />
-        ) : null}
-        <UploadLinkManager />
+          <RecentArtifacts uploads={recent?.uploads} failed={recentError} />
+        </div>
       </main>
     </>
   );
 }
 
-export function UploadIssuesList({ issues, onRetryAll, onRetry }: { issues: UploadItem[]; onRetryAll: () => void; onRetry: (key: string) => void }) {
-  if (issues.length === 0) return null;
+function sessionSummary(items: UploadItem[], busy: boolean) {
+  const count = (status: ItemStatus) => items.filter((item) => item.status === status).length;
+  const done = count("done");
+  const failed = count("error");
+  const cancelled = count("cancelled");
+  if (busy) return `Uploading ${Math.min(done + failed + cancelled + 1, items.length)} of ${items.length}`;
+  if (failed === 0 && cancelled === 0) return done === 1 ? "The file is ready." : `${done} files are ready.`;
+  const parts = [done > 0 ? `${done} uploaded` : "", failed > 0 ? `${failed} failed` : "", cancelled > 0 ? `${cancelled} cancelled` : ""];
+  return `${parts.filter(Boolean).join(", ")}.`;
+}
+
+function SessionRow({ item, busy, copied, onCopy, onCancel, onRetry }: {
+  item: UploadItem;
+  busy: boolean;
+  copied: boolean;
+  onCopy: (result: UploadSummary) => void;
+  onCancel: () => void;
+  onRetry: () => void;
+}) {
+  const active = item.status === "checking" || item.status === "uploading" || item.status === "processing";
+  const result = item.result;
   return (
-    <section className="mt-4" aria-labelledby="upload-issues-title">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <h2 id="upload-issues-title" className="font-semibold">Uploads needing attention ({issues.length})</h2>
-        {issues.length > 1 ? <Button type="button" variant="outline" size="sm" onClick={onRetryAll}><RotateCcw /> Retry all failed</Button> : null}
+    <li className="flex min-w-0 items-center gap-3 px-4 py-2.5">
+      <ArtifactIcon kind={result?.kind ?? (isHtmlFile(item.name) ? "html" : "file")} icon={isHtmlFile(item.name) ? <FileCode /> : <File />} />
+      <div className="min-w-0 flex-1">
+        <p className="truncate font-medium" title={item.name}>{item.name}</p>
+        <SessionRowDetail item={item} />
+        {item.status === "uploading" || item.status === "processing" ? (
+          <div className="mt-1.5 h-1 overflow-hidden rounded-sm bg-muted" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={item.percent} aria-label={`Upload progress for ${item.name}`}>
+            <div className="h-full rounded-sm bg-primary" style={{ width: `${item.percent}%` }} />
+          </div>
+        ) : null}
       </div>
-      <div className="grid gap-3">
-        {issues.map((issue) => (
-          <Card key={issue.key} className="gap-0 border-destructive/40 py-0">
-            <div className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
-              <div className="min-w-0">
-                <Badge variant="destructive">Failed</Badge>
-                <h3 className="mt-3 truncate font-semibold">{issue.name}</h3>
-                <p className="mt-1 text-xs text-muted-foreground">{formatBytes(issue.size)} · {issue.percent}% · {formatBytes(issue.loaded)} sent</p>
-                {issue.error ? <p role="alert" className="mt-2 text-xs text-destructive">{issue.error}</p> : null}
-              </div>
-              <div className="flex shrink-0 gap-2">
-                <Button type="button" variant="outline" size="sm" onClick={() => onRetry(issue.key)}><RotateCcw /> Retry</Button>
-              </div>
-            </div>
-          </Card>
-        ))}
-      </div>
-    </section>
+      {active ? (
+        <>
+          {item.status === "uploading" ? <span className="text-[0.8125rem] text-muted-foreground tabular-nums">{item.percent}%</span> : null}
+          <Button type="button" variant="ghost" size="sm" onClick={onCancel}>Cancel</Button>
+        </>
+      ) : null}
+      {item.status === "error" ? <Button type="button" variant="outline" size="sm" onClick={onRetry} disabled={busy}><RotateCw /> Retry</Button> : null}
+      {result ? (
+        <>
+          <Badge className="max-sm:hidden" variant="positive">{copied ? <><Check /> Copied</> : "Ready"}</Badge>
+          <Button type="button" variant="outline" size="icon-sm" aria-label={`Copy link for ${result.filename}`} onClick={() => onCopy(result)}><Copy /></Button>
+          <Button className="max-sm:hidden" nativeButton={false} variant="outline" size="icon-sm" aria-label={`Open ${result.filename}`} render={<a href={result.url} target="_blank" rel="noreferrer" />}><ArrowUpRight /></Button>
+        </>
+      ) : null}
+    </li>
   );
 }
 
-export function UploadResultsList({ results, onCopyAll, onCopy }: { results: UploadSummary[]; onCopyAll: () => void; onCopy: (result: UploadSummary) => void }) {
-  if (results.length === 0) return null;
+function SessionRowDetail({ item }: { item: UploadItem }) {
+  const detail = "truncate text-xs text-muted-foreground";
+  if (item.result) {
+    const { result } = item;
+    return (
+      <>
+        <p className={cn(detail, "font-mono")}>
+          {shortUrl(result.url)} · {result.kind === "html" ? "stays until revoked" : result.expiresAt ? `expires ${formatDateTime(result.expiresAt)}` : "permanent"}
+        </p>
+        {item.expiryError ? <p role="alert" className="text-xs text-warning">The expiry was not changed: {item.expiryError}</p> : null}
+      </>
+    );
+  }
+  if (item.status === "error") return <p role="alert" className="text-xs text-destructive">{item.error}</p>;
+  if (item.status === "queued") return <p className={detail}>{formatBytes(item.size)} · waiting</p>;
+  if (item.status === "checking") return <p className={detail}>Checking the server</p>;
+  if (item.status === "processing") return <p className={detail}>Finishing on the server</p>;
+  if (item.status === "cancelled") return <p className={detail}>Cancelled</p>;
   return (
-    <section className="mt-4" aria-labelledby="uploaded-files-title">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <h2 id="uploaded-files-title" className="font-semibold">Uploaded files ({results.length})</h2>
-        {results.length > 1 ? <Button type="button" variant="outline" size="sm" onClick={onCopyAll}><Copy /> Copy all URLs</Button> : null}
+    <p className={detail}>
+      {formatBytes(item.loaded)} of {formatBytes(item.size)}{item.chunked ? " · sent in 20 MB parts" : ""}
+    </p>
+  );
+}
+
+function RecentArtifacts({ uploads, failed }: { uploads?: UploadSummary[]; failed: boolean }) {
+  const [copiedId, setCopiedId] = useState<string>();
+  const now = Date.now();
+  return (
+    <Card className="gap-0 py-0" aria-labelledby="recent-title">
+      <div className="flex items-center justify-between gap-3 px-4 pt-3">
+        <h2 id="recent-title" className="text-sm font-semibold">Recent</h2>
+        <Link className="text-[0.8125rem] text-muted-foreground hover:text-foreground" to="/publisher/artifacts" preload="intent">Library ›</Link>
       </div>
-      <div className="grid gap-3">
-        {results.map((result) => <Card key={result.id} className="gap-0 py-0"><div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><Badge variant="positive">Ready</Badge><h3 className="mt-3 truncate font-semibold">{result.filename}</h3><p className="mt-1 truncate font-mono text-xs text-muted-foreground">{result.url}</p><p className="mt-2 text-xs text-muted-foreground">{formatBytes(result.bytes)}{result.expiresAt ? ` · expires ${formatDateTime(result.expiresAt)}` : ""}</p></div><div className="flex shrink-0 gap-2"><Button type="button" variant="outline" size="sm" onClick={() => onCopy(result)}><Copy /> Copy URL</Button><Button nativeButton={false} variant="outline" size="sm" render={<a href={result.url} target="_blank" rel="noreferrer" />}><ExternalLink /> Open</Button></div></div></Card>)}
-      </div>
-    </section>
+      {uploads && uploads.length > 0 ? (
+        <ul className="mt-2 divide-y divide-border/60">
+          {uploads.map((upload) => (
+            <li key={upload.id} className="flex min-w-0 items-center gap-3 px-4 py-2">
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-medium" title={upload.filename}>{upload.filename}</p>
+                <p className="truncate text-xs text-muted-foreground">{upload.project ?? "Unassigned"} · {relativeTime(upload.updatedAt, now)}</p>
+              </div>
+              <LifecycleBadge upload={upload} now={now} />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label={`Copy link for ${upload.filename}`}
+                onClick={() => void copyText(upload.url).then((copied) => setCopiedId(copied ? upload.id : undefined))}
+              >
+                {copiedId === upload.id ? <Check /> : <Copy />}
+              </Button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="px-4 pt-2 pb-3.5 text-[0.8125rem] text-muted-foreground">
+          {failed ? "Recent artifacts could not be loaded." : uploads ? "Nothing is published yet." : "Loading recent artifacts…"}
+        </p>
+      )}
+      {uploads && uploads.length > 0 ? <div className="h-1.5" /> : null}
+    </Card>
   );
 }
 
 export function capabilityUrlText(results: UploadSummary[]) {
   return results.map(({ url }) => url).join("\n");
 }
-
-function formatBytes(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-

@@ -27,3 +27,10 @@ export async function waitForPublisher(
   );
   if (!response.ok) throw new Error("Publisher is still starting. Try again in a moment.");
 }
+
+/** Reads a JSON body, or throws the server's message when the response failed. */
+export async function readPayload<T = unknown>(response: Response, fallback: string): Promise<T> {
+  const payload = await response.json().catch(() => undefined) as { message?: unknown } | undefined;
+  if (!response.ok) throw new Error(typeof payload?.message === "string" ? payload.message : fallback);
+  return payload as T;
+}

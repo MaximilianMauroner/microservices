@@ -1,13 +1,20 @@
 import { useEffect, useRef, useState } from "react";
-import { Copy, Download, Link2, Plus, RotateCcw, X } from "lucide-react";
+import { ArrowUpRight, Check, Copy, Download, Link2 } from "lucide-react";
+import { AppShell } from "../../src/components/app-shell.js";
+import { PageHeader } from "../../src/components/page-header.js";
+import { favicons } from "../../src/favicons.js";
 import { Alert } from "../../src/components/ui/alert.js";
 import { Badge } from "../../src/components/ui/badge.js";
 import { Button } from "../../src/components/ui/button.js";
-import { NativeSelect } from "../../src/components/ui/native-select.js";
 import { Card } from "../../src/components/ui/card.js";
+import { NativeSelect, NativeSelectOption } from "../../src/components/ui/native-select.js";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../src/components/ui/table.js";
+import { countLabel } from "../../src/lib/count-label.js";
 import { formatDateTime } from "../../src/lib/format-date.js";
+import { cn } from "../../src/lib/utils.js";
+import { UrlBox, copyText } from "./artifact-parts.js";
 
-type UploadLinkSummary = {
+export type UploadLinkSummary = {
   id: string;
   createdAt: string;
   expiresAt: string;
@@ -15,7 +22,7 @@ type UploadLinkSummary = {
   fileCount: number;
 };
 
-type CreatedUploadLink = UploadLinkSummary & { url: string };
+type CreatedUploadLink = UploadLinkSummary & { url: string; durationLabel: string };
 
 const durations = [
   { label: "1 hour", value: 60 * 60 * 1000 },
@@ -25,22 +32,23 @@ const durations = [
   { label: "30 days", value: 30 * 24 * 60 * 60 * 1000 }
 ] as const;
 
-export function UploadLinkManager() {
-  const [links, setLinks] = useState<UploadLinkSummary[]>([]);
+/** Guest upload links: people with an active link send files without an account. */
+export function ReceiveFilesPage() {
+  const [links, setLinks] = useState<UploadLinkSummary[]>();
   const [durationMs, setDurationMs] = useState<number>(durations[1].value);
   const [created, setCreated] = useState<CreatedUploadLink>();
+  const [copied, setCopied] = useState(false);
   const [nextCursor, setNextCursor] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const linksRevision = useRef(0);
-  const createdRef = useRef<HTMLDivElement>(null);
 
   async function loadLinks() {
     const revision = ++linksRevision.current;
     setError(undefined);
     await fetch("/api/upload-links", { headers: { Accept: "application/json" } })
       .then(async (response) => {
-        if (!response.ok) throw new Error("Upload links could not be loaded.");
+        if (!response.ok) throw new Error("The links could not be loaded.");
         return response.json() as Promise<{ links: UploadLinkSummary[]; nextCursor?: string }>;
       })
       .then((payload) => {
@@ -50,7 +58,8 @@ export function UploadLinkManager() {
       })
       .catch((reason: unknown) => {
         if (revision === linksRevision.current) {
-          setError(reason instanceof Error ? reason.message : "Upload links could not be loaded.");
+          setLinks((current) => current ?? []);
+          setError(reason instanceof Error ? reason.message : "The links could not be loaded.");
         }
       });
   }
@@ -63,12 +72,12 @@ export function UploadLinkManager() {
       const response = await fetch(`/api/upload-links?cursor=${encodeURIComponent(nextCursor)}`, {
         headers: { Accept: "application/json" }
       });
-      if (!response.ok) throw new Error("Older upload links could not be loaded.");
+      if (!response.ok) throw new Error("Older links could not be loaded.");
       const payload = await response.json() as { links: UploadLinkSummary[]; nextCursor?: string };
-      setLinks((current) => [...current, ...payload.links]);
+      setLinks((current) => [...(current ?? []), ...payload.links]);
       setNextCursor(payload.nextCursor);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Older upload links could not be loaded.");
+      setError(reason instanceof Error ? reason.message : "Older links could not be loaded.");
     } finally {
       setBusy(false);
     }
@@ -86,14 +95,15 @@ export function UploadLinkManager() {
         method: "POST",
         headers: { Accept: "application/json" }
       });
-      const payload = await response.json() as CreatedUploadLink & { message?: string };
-      if (!response.ok) throw new Error(payload.message ?? "Upload link could not be created.");
+      const payload = await response.json() as (UploadLinkSummary & { url: string }) & { message?: string };
+      if (!response.ok) throw new Error(payload.message ?? "The link could not be created.");
       linksRevision.current += 1;
-      setCreated(payload);
-      setLinks((current) => [payload, ...current]);
-      requestAnimationFrame(() => createdRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }));
+      const durationLabel = durations.find((duration) => duration.value === durationMs)?.label ?? "the chosen time";
+      setCreated({ ...payload, durationLabel });
+      setCopied(false);
+      setLinks((current) => [payload, ...(current ?? [])]);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Upload link could not be created.");
+      setError(reason instanceof Error ? reason.message : "The link could not be created.");
     } finally {
       setBusy(false);
     }
@@ -104,13 +114,13 @@ export function UploadLinkManager() {
     setError(undefined);
     try {
       const response = await fetch(`/api/upload-links/${id}`, { method: "DELETE", headers: { Accept: "application/json" } });
-      if (!response.ok) throw new Error("Upload link could not be revoked.");
+      if (!response.ok) throw new Error("The link could not be revoked.");
       linksRevision.current += 1;
       const revokedAt = new Date().toISOString();
-      setLinks((current) => current.map((link) => link.id === id ? { ...link, revokedAt } : link));
-      if (created?.id === id) setCreated((current) => current ? { ...current, revokedAt } : current);
+      setLinks((current) => current?.map((link) => link.id === id ? { ...link, revokedAt } : link));
+      if (created?.id === id) setCreated(undefined);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Upload link could not be revoked.");
+      setError(reason instanceof Error ? reason.message : "The link could not be revoked.");
     } finally {
       setBusy(false);
     }
@@ -118,53 +128,114 @@ export function UploadLinkManager() {
 
   async function copyCreated() {
     if (!created) return;
-    try { await navigator.clipboard.writeText(created.url); }
-    catch { setError("The link could not be copied. Select and copy it manually."); }
+    if (await copyText(created.url)) setCopied(true);
+    else setError("The link could not be copied. Select it and copy it by hand.");
   }
 
-  const now = Date.now();
   return (
-    <section className="mt-6" aria-labelledby="upload-links-title">
-      <div className="mb-3 flex items-end justify-between gap-3">
-        <div><p className="workspace-header__eyebrow">Receive files</p>
-          <h2 id="upload-links-title" className="text-xl font-semibold">Guest upload links</h2>
-          <p className="mt-1 text-sm text-muted-foreground">Anyone with an active link can send any number of files without signing in.</p>
-        </div>
-        <Button type="button" variant="outline" size="sm" onClick={() => void loadLinks()} disabled={busy}><RotateCcw /> Refresh</Button>
-      </div>
-      {error ? <Alert className="mb-3" variant="destructive">{error}</Alert> : null}
-      <Card className="gap-4 p-5">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-          <label className="grid flex-1 gap-1 text-sm font-medium">Link duration
-            <NativeSelect className="w-full" value={durationMs} onChange={(event) => setDurationMs(Number(event.currentTarget.value))} disabled={busy}>
-              {durations.map((duration) => <option key={duration.value} value={duration.value}>{duration.label}</option>)}
+    <>
+      <AppShell product="Publisher" accent="violet" icon={favicons.publisher} />
+      <main id="main" className="tools-page">
+        <PageHeader
+          title="Receive files"
+          facts="People with an active link can send you files without signing in."
+          actions={<>
+            <NativeSelect className="w-28" size="sm" aria-label="Link duration" value={durationMs} onChange={(event) => setDurationMs(Number(event.currentTarget.value))} disabled={busy}>
+              {durations.map((duration) => <NativeSelectOption key={duration.value} value={duration.value}>{duration.label}</NativeSelectOption>)}
             </NativeSelect>
-          </label>
-          <Button type="button" variant="outline" size="sm" onClick={() => void createLink()} disabled={busy}><Plus /> Create upload link</Button>
+            <Button type="button" size="sm" onClick={() => void createLink()} disabled={busy}><Link2 /> Create link</Button>
+          </>}
+        />
+
+        {error ? <Alert className="mb-3" variant="destructive">{error}</Alert> : null}
+
+        <div className="grid gap-3">
+          {created ? (
+            <Card className="gap-0 py-0 ring-[color:var(--product-accent-border)]" aria-labelledby="new-link-title" aria-live="polite">
+              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-4 pt-3">
+                <h2 id="new-link-title" className="text-sm font-semibold">New link · valid for {created.durationLabel}</h2>
+                <p className="text-xs text-muted-foreground">Copy it now. The link secret is not stored, so it cannot be shown again.</p>
+              </div>
+              <div className="px-4 pt-2.5 pb-3.5">
+                <UrlBox url={created.url}>
+                  <Button type="button" size="sm" onClick={() => void copyCreated()}>{copied ? <Check /> : <Copy />} {copied ? "Copied" : "Copy"}</Button>
+                  <Button nativeButton={false} variant="ghost" size="icon-sm" aria-label="Open the new link" render={<a href={created.url} target="_blank" rel="noreferrer" />}><ArrowUpRight /></Button>
+                </UrlBox>
+              </div>
+            </Card>
+          ) : null}
+
+          <UploadLinkTable
+            links={links}
+            busy={busy}
+            hasMore={Boolean(nextCursor)}
+            onRevoke={(id) => void revokeLink(id)}
+            onLoadOlder={() => void loadOlderLinks()}
+          />
         </div>
-        {created ? <div ref={createdRef} className="rounded-lg border border-primary/30 bg-secondary p-4" aria-live="polite">
-          <div className="flex items-center gap-2"><Badge>New link</Badge><span className="text-xs text-muted-foreground">Copy it now; the secret is not stored.</span></div>
-          <p className="mt-3 break-all font-mono text-xs">{created.url}</p>
-          <div className="mt-3 flex flex-wrap gap-2"><Button type="button" variant="outline" size="sm" onClick={() => void copyCreated()}><Copy /> Copy link</Button><Button nativeButton={false} variant="outline" size="sm" render={<a href={created.url} target="_blank" rel="noreferrer" />}><Link2 /> Open link</Button></div>
-        </div> : null}
-      </Card>
-      {links.length > 0 ? <div className="mt-3 grid gap-2" aria-label="Upload links">
-        {links.map((link) => {
-          const active = !link.revokedAt && new Date(link.expiresAt).getTime() > now;
-          return <Card key={link.id} className="gap-0 py-0"><div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-w-0"><div className="flex items-center gap-2"><Link2 className="size-4" aria-hidden="true" /><Badge variant={active ? "positive" : "secondary"}>{link.revokedAt ? "Revoked" : active ? "Active" : "Expired"}</Badge></div><p className="mt-2 text-xs text-muted-foreground">{link.fileCount} {link.fileCount === 1 ? "file" : "files"} received · created {formatDateTime(link.createdAt)} · expires {formatDateTime(link.expiresAt)}</p></div>
-            <div className="flex shrink-0 flex-wrap gap-2">
-              {active && created?.id === link.id ? <><Button type="button" variant="outline" size="sm" onClick={() => void copyCreated()}><Copy /> Copy</Button><Button nativeButton={false} variant="outline" size="sm" render={<a href={created.url} target="_blank" rel="noreferrer" />}><Link2 /> Open</Button></> : null}
-              {active && created?.id !== link.id ? <Button type="button" variant="outline" size="sm" onClick={() => void createLink()} disabled={busy}><Plus /> New shareable link</Button> : null}
-              {link.fileCount > 0 ? <Button nativeButton={false} variant="outline" size="sm" render={<a href={`/api/upload-links/${link.id}/download`} />}><Download /> Download all</Button> : null}
-              {!link.revokedAt ? <Button type="button" variant="outline" size="sm" onClick={() => void revokeLink(link.id)} disabled={busy}><X /> Revoke</Button> : null}
-            </div>
-          </div></Card>;
-        })}
-        {nextCursor ? <div className="flex justify-center pt-1"><Button type="button" variant="outline" size="sm" onClick={() => void loadOlderLinks()} disabled={busy}>Load older links</Button></div> : null}
-        <p className="text-xs text-muted-foreground">For links created earlier, the secret URL cannot be recovered. Create a new shareable link using the selected duration, then revoke the old link if it is no longer needed.</p>
-      </div> : null}
-    </section>
+      </main>
+    </>
   );
 }
 
+function linkStatus(link: UploadLinkSummary, now: number) {
+  if (link.revokedAt) return { label: "Revoked", variant: "destructive" } as const;
+  if (new Date(link.expiresAt).getTime() > now) return { label: "Active", variant: "positive" } as const;
+  return { label: "Expired", variant: "outline" } as const;
+}
+
+export function UploadLinkTable({ links, busy, hasMore, onRevoke, onLoadOlder, now = Date.now() }: {
+  links?: UploadLinkSummary[];
+  busy: boolean;
+  hasMore: boolean;
+  onRevoke: (id: string) => void;
+  onLoadOlder: () => void;
+  now?: number;
+}) {
+  const head = "h-auto px-2.5 py-1.75 text-xs font-medium text-muted-foreground";
+  return (
+    <Card className="gap-0 py-0" aria-label="Upload links">
+      {links && links.length > 0 ? (
+        <Table className="text-[0.8125rem]">
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              <TableHead className={cn(head, "pl-4")}>Link</TableHead>
+              <TableHead className={head}>Status</TableHead>
+              <TableHead className={cn(head, "text-right max-md:hidden")}>Files</TableHead>
+              <TableHead className={cn(head, "max-md:hidden")}>Expires</TableHead>
+              <TableHead className={cn(head, "pr-4")}><span className="sr-only">Actions</span></TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {links.map((link) => {
+              const status = linkStatus(link, now);
+              return (
+                <TableRow key={link.id} className="border-border/60 hover:bg-transparent">
+                  <TableCell className="w-full max-w-0 py-2 pr-2.5 pl-4">
+                    <span className="block truncate font-medium">Created {formatDateTime(link.createdAt)}</span>
+                    <span className="block truncate text-xs text-muted-foreground md:hidden">{countLabel(link.fileCount, "file")} · expires {formatDateTime(link.expiresAt)}</span>
+                  </TableCell>
+                  <TableCell className="px-2.5"><Badge variant={status.variant}>{status.label}</Badge></TableCell>
+                  <TableCell className="px-2.5 text-right tabular-nums max-md:hidden">{link.fileCount}</TableCell>
+                  <TableCell className="px-2.5 text-muted-foreground max-md:hidden">{formatDateTime(link.expiresAt)}</TableCell>
+                  <TableCell className="py-2 pr-4 pl-2.5 text-right">
+                    <span className="inline-flex items-center gap-1">
+                      {link.fileCount > 0 ? <Button nativeButton={false} variant="ghost" size="icon-sm" className="text-muted-foreground" aria-label={`Download all ${countLabel(link.fileCount, "file")}`} render={<a href={`/api/upload-links/${link.id}/download`} />}><Download /></Button> : null}
+                      {!link.revokedAt ? <Button type="button" variant="destructive-subtle" size="sm" onClick={() => onRevoke(link.id)} disabled={busy}>Revoke</Button> : null}
+                    </span>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      ) : (
+        <p className="px-4 py-6 text-center text-[0.8125rem] text-muted-foreground">{links ? "No links yet. Create one to receive files." : "Loading links…"}</p>
+      )}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t px-4 py-2.5 text-[0.8125rem] text-muted-foreground">
+        <span>Older links cannot show their URL again. Make a new link instead.</span>
+        {hasMore ? <Button type="button" variant="outline" size="sm" aria-label="Load older links" onClick={onLoadOlder} disabled={busy}>Load older</Button> : null}
+      </div>
+    </Card>
+  );
+}
