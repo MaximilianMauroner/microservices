@@ -1,41 +1,62 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { DocumentsPage, MobileDocumentInventory, filterDocuments } from "../dashboard/ui/documents-page.js";
+import { DocumentsPage, filterDocuments } from "../dashboard/ui/documents-page.js";
 
+const HOUR = 3_600_000;
+const DAY = 24 * HOUR;
 const now = Date.UTC(2026, 7, 4, 12);
 const documents = [
-  { token: "a".repeat(24), filename: "recent.md", createdAt: now - 1_000, updatedAt: now - 1_000, expiresAt: now + 3_600_000, checkpointCount: 2 },
-  { token: "b".repeat(24), filename: "older.md", createdAt: now - 86_400_000, updatedAt: now - 43_200_000, expiresAt: now + 604_800_000, checkpointCount: 0 }
+  { token: "a".repeat(24), filename: "recent.md", createdAt: now - 1_000, updatedAt: now - 1_000, expiresAt: now + HOUR, checkpointCount: 2 },
+  { token: "b".repeat(24), filename: "older.md", createdAt: now - 4 * DAY, updatedAt: now - 3.5 * DAY, expiresAt: now + 3.5 * DAY, checkpointCount: 0 },
+  // Pinned: the expiry is 30 days after the last edit.
+  { token: "c".repeat(24), filename: "pinned.md", createdAt: now - 5 * DAY, updatedAt: now - 2 * DAY, expiresAt: now + 28 * DAY, checkpointCount: 3 }
 ];
+const page = { actor: "operator@example.test", publicOrigin: "https://markdown.example.test", generatedAt: now, documents, truncated: false };
+
+function row(html: string, filename: string) {
+  return html.split("<tr").find((part) => part.includes(`>${filename}<`)) ?? "";
+}
 
 describe("DocumentsPage", () => {
-  it("renders the task-focused inventory with shadcn table semantics", () => {
-    const html = renderToStaticMarkup(<DocumentsPage initial={{ actor: "operator@example.test", publicOrigin: "https://markdown.example.test", generatedAt: now, documents, truncated: false }} />);
-    expect(html).toContain("Manage active documents");
+  it("renders the header facts and the document table", () => {
+    const html = renderToStaticMarkup(<DocumentsPage initial={page} />);
+    expect(html).toContain("3 active · 1 edited today · next expiry in 1 h");
     expect(html).toContain('data-slot="table"');
-    expect(html).toContain("recent.md");
     expect(html).toContain("New document");
     expect(html).toContain('href="https://markdown.example.test/markdown"');
     expect(html).toContain('href="https://markdown.example.test/markdown/d/recent.md--aaaaaaaaaaaaaaaaaaaaaaaa"');
+    expect(html).toContain("Documents expire 7 days after the last edit, or 30 days when pinned.");
     expect(html).toContain('data-suite-accent="rose"');
+    expect(html).not.toContain("operator@example.test");
+  });
+
+  it("counts the filter chips over the loaded documents", () => {
+    const html = renderToStaticMarkup(<DocumentsPage initial={page} />);
+    expect(html).toMatch(/Expires within 24 h<b[^>]*>1<\/b>/);
+    expect(html).toMatch(/With checkpoints<b[^>]*>2<\/b>/);
+  });
+
+  it("shows time left as a share of 7 days, or 30 days when pinned", () => {
+    const html = renderToStaticMarkup(<DocumentsPage initial={page} />);
+    expect(row(html, "older.md")).toContain("width:50%");
+    expect(row(html, "older.md")).not.toContain("· pinned");
+    expect(row(html, "pinned.md")).toContain("· pinned");
+    expect(row(html, "pinned.md")).toContain("width:93%");
+    expect(row(html, "recent.md")).toContain("text-warning");
   });
 
   it("offers another server page when the inventory has a cursor", () => {
-    const html = renderToStaticMarkup(<DocumentsPage initial={{ actor: "operator@example.test", publicOrigin: "https://markdown.example.test", generatedAt: now, documents, truncated: true, nextCursor: "next-page" }} />);
-    expect(html).toContain("Load more documents");
+    const html = renderToStaticMarkup(<DocumentsPage initial={{ ...page, truncated: true, nextCursor: "next-page" }} />);
+    expect(html).toContain("3+ active");
+    expect(html).toContain("Load more");
     expect(html).toContain("Search and filters apply to loaded documents.");
   });
 
-  it("keeps every mobile document action visible in the focused record", () => {
-    const html = renderToStaticMarkup(<MobileDocumentInventory documents={documents.slice(0, 1)} total={documents.length} generatedAt={now} publicOrigin="https://markdown.example.test" onCopy={() => undefined} onShowMore={() => undefined} />);
-    expect(html).toContain('aria-label="Document inventory"');
-    expect(html).toContain("Copy link");
-    expect(html).toContain("Open");
-    expect(html).toContain("Show 50 more");
-  });
-
-  it("filters checkpoints and expiry before sorting", () => {
-    expect(filterDocuments(documents, now, { query: "recent", checkpoints: "with", expiry: "24", sort: "expiry-asc" }).map(({ filename }) => filename)).toEqual(["recent.md"]);
-    expect(filterDocuments(documents, now, { query: "", checkpoints: "without", expiry: "all", sort: "name-asc" }).map(({ filename }) => filename)).toEqual(["older.md"]);
+  it("applies the chip filters before sorting", () => {
+    const names = (filters: Partial<Parameters<typeof filterDocuments>[2]>) => filterDocuments(documents, now, { query: "", expiringSoon: false, withCheckpoints: false, sort: "name-asc", ...filters }).map(({ filename }) => filename);
+    expect(names({ expiringSoon: true })).toEqual(["recent.md"]);
+    expect(names({ withCheckpoints: true })).toEqual(["pinned.md", "recent.md"]);
+    expect(names({ withCheckpoints: true, sort: "expiry-asc" })).toEqual(["recent.md", "pinned.md"]);
+    expect(names({ query: "OLD" })).toEqual(["older.md"]);
   });
 });

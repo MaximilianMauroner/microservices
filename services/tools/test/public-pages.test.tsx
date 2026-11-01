@@ -91,6 +91,38 @@ const privateSnapshot: PrivateSnapshotDocument = {
   }
 };
 
+function service(id: string, name: string, order: number): PublicSnapshotDocument["entries"][number] {
+  return { id, groupId: "publishing", name, description: `${name} service.`, order, links: [] };
+}
+
+const outageSnapshot: PublicSnapshotDocument = {
+  ...snapshot,
+  entries: [service("home-assistant", "Home Assistant", 0), service("tools", "Tools", 1), service("tower", "Tower", 2), service("markdown", "Markdown Share", 3)],
+  statuses: {
+    "home-assistant": {
+      monitorId: "home-assistant",
+      status: "down",
+      checkedAt: "2026-08-04T06:04:00.000Z",
+      latencyMs: null,
+      statusCode: null,
+      uptimeDays: [{ day: "2026-08-04", successfulChecks: 0, totalChecks: 2 }],
+      downtimeRecords: [
+        { startedAt: "2026-08-04T05:23:00.000Z", resolvedAt: null },
+        { startedAt: "2026-07-25T10:00:00.000Z", resolvedAt: "2026-07-25T10:48:00.000Z" },
+        { startedAt: "2026-06-25T03:00:00.000Z", resolvedAt: "2026-06-25T03:31:00.000Z" }
+      ]
+    },
+    tools: { monitorId: "tools", status: "up", checkedAt: "2026-08-04T06:04:00.000Z", latencyMs: 40, statusCode: 200, uptimeDays: [{ day: "2026-08-04", successfulChecks: 98, totalChecks: 98 }], downtimeRecords: [] },
+    tower: { monitorId: "tower", status: "up", checkedAt: "2026-08-04T06:04:00.000Z", latencyMs: 100, statusCode: 200, downtimeRecords: [] },
+    markdown: { monitorId: "markdown", status: "up", checkedAt: "2026-08-04T06:04:00.000Z", latencyMs: 60, statusCode: 200, downtimeRecords: [] }
+  }
+};
+
+/** The value shown under one summary label. */
+function stat(html: string, label: string) {
+  return html.match(new RegExp(`<dt[^>]*>${label}</dt><dd[^>]*>([^<]*)</dd>`))?.[1];
+}
+
 describe("TanStack Start public pages", () => {
   it("renders the Orbit product dashboard from typed product definitions", () => {
     const html = renderToStaticMarkup(
@@ -142,14 +174,38 @@ describe("TanStack Start public pages", () => {
       <ToolsStatus snapshot={snapshot} publicOrigin="https://tools.mauroner.net" />
     );
 
-    expect(html).toContain("All monitored services operational");
+    expect(html).toContain("All services operational");
+    expect(html).toContain("Checked every 30 minutes · last check");
     expect(html).toContain('aria-label="Observed uptime: 100% across 1 check; 1 recorded day and 89 no-data days."');
-    expect(html).toContain('class="uptime-bar-scroll"');
-    expect(html).toContain("private-status-link");
+    expect(html.match(/title="\d{1,2} \w{3} \d{4} · /g)).toHaveLength(90);
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).toContain("Private service status");
     expect(html).toContain('data-suite-accent="cyan"');
-    expect(html).toContain("30-minute checks");
-    expect(html).not.toContain("Five-minute checks");
-    expect(html.match(/class="uptime-day /g)).toHaveLength(90);
+    expect(html).not.toContain("System status");
+  });
+
+  it("names the down service and summarizes uptime, incidents and latency", () => {
+    const html = renderToStaticMarkup(<ToolsStatus snapshot={outageSnapshot} publicOrigin="https://tools.mauroner.net" />);
+
+    expect(html).toContain("1 service is down");
+    expect(html).toMatch(/Home Assistant has not answered since <time [^>]*"2026-08-04T05:23:00.000Z">[^<]+<\/time>\. The other 3 services are operational\./);
+    expect(html).toContain("Down 42 min");
+    expect(stat(html, "Operational")).toBe("3 of 4");
+    // 98 of 100 checks passed across services, not the 50% mean of per-service percentages.
+    expect(stat(html, "Uptime, 90 days")).toBe("98%");
+    // The record from 40 days ago is outside the window; the ongoing one counts.
+    expect(stat(html, "Incidents, 30 days")).toBe("2");
+    expect(stat(html, "Median latency")).toBe("60 ms");
+  });
+
+  it("lists every down service when more than one is down", () => {
+    const tower = outageSnapshot.statuses.tower;
+    if (!tower) throw new Error("fixture needs tower");
+    const html = renderToStaticMarkup(<ToolsStatus snapshot={{ ...outageSnapshot, statuses: { ...outageSnapshot.statuses, tower: { ...tower, status: "down", latencyMs: null } } }} publicOrigin="https://tools.mauroner.net" />);
+
+    expect(html).toContain("2 services are down");
+    expect(html).toMatch(/Not answering: Home Assistant since <time[^>]*>[^<]+<\/time>, Tower since <time/);
+    expect(html).toContain("The other 2 services are operational.");
   });
 
   it("renders the private status view from the same status surface", () => {
@@ -170,6 +226,6 @@ describe("TanStack Start public pages", () => {
 
     expect(html).toContain("Private console");
     expect(html).toContain("Public console");
-    expect(html).not.toContain("private-status-callout");
+    expect(html).not.toContain("Private service status");
   });
 });
