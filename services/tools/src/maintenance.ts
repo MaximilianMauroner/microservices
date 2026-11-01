@@ -1,4 +1,4 @@
-import type { ScheduledTaskLeaseRepository } from "./scheduled-task-leases.js";
+import { ScheduledTaskLeaseLostError, type ScheduledTaskLeaseRepository } from "./scheduled-task-leases.js";
 import { retryTransientOperation } from "./response-retry.js";
 
 export const MAINTENANCE_DEADLINE_MS = 10 * 60_000;
@@ -36,14 +36,14 @@ export async function runDueMaintenance(options: {
     try {
       await task.run();
       options.signal.throwIfAborted();
-      await options.repository.complete({ ...identity, result: { outcome: "complete" } });
+      await retryTransientOperation(() => options.repository.complete({ ...identity, result: { outcome: "complete" } }));
       options.log("maintenance.task_complete", { task: task.id, slot: slot.toISOString() });
     } catch (error) {
       failed = true;
       // An interrupted process leaves its lease to expire. A known failure can retry this slot.
-      if (options.signal.aborted) throw error;
+      if (options.signal.aborted || error instanceof ScheduledTaskLeaseLostError) throw error;
       const errorType = error instanceof Error ? error.name : "UnknownError";
-      await options.repository.complete({ ...identity, result: { outcome: "failed", errorType } });
+      await retryTransientOperation(() => options.repository.complete({ ...identity, result: { outcome: "failed", errorType } }));
       options.log("maintenance.task_failed", { task: task.id, errorType });
     }
   }

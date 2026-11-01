@@ -74,7 +74,16 @@ if (import.meta.hot) {
 async function createPlatformRuntime(): Promise<PlatformRuntime> {
   const config = loadPlatformConfig();
   let authPromise: Promise<PlatformAuth> | undefined;
-  const auth = () => authPromise ??= import("./lib/auth.js").then(({ createPlatformAuth }) => createPlatformAuth(config.auth));
+  const auth = () => {
+    if (!authPromise) {
+      const pending = import("./lib/auth.js").then(({ createPlatformAuth }) => createPlatformAuth(config.auth)).catch((error: unknown) => {
+        if (authPromise === pending) authPromise = undefined;
+        throw error;
+      });
+      authPromise = pending;
+    }
+    return authPromise;
+  };
   const resolvePrincipal: PrincipalResolver = async (request) => {
     const { resolvePlatformPrincipal } = await import("./lib/auth.js");
     return resolvePlatformPrincipal(await auth(), request, config.auth.allowedGoogleSubject, config.auth.allowedGoogleEmail);
