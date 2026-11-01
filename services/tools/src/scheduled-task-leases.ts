@@ -5,6 +5,13 @@ export type ScheduledTaskResult = Readonly<{
   errorType?: string;
 }>;
 
+export class ScheduledTaskLeaseLostError extends Error {
+  constructor() {
+    super("Maintenance lease is no longer owned");
+    this.name = "ScheduledTaskLeaseLostError";
+  }
+}
+
 export interface ScheduledTaskLeaseRepository {
   acquire(input: Readonly<{
     taskId: string;
@@ -57,21 +64,25 @@ export function postgresScheduledTaskLeaseRepository(
           completed_at = null,
           result = null
         where (tools.scheduled_task_runs.completed_at is null
-          and tools.scheduled_task_runs.lease_until <= now())
+          and (tools.scheduled_task_runs.lease_until <= now()
+            or tools.scheduled_task_runs.owner_id = excluded.owner_id))
           or tools.scheduled_task_runs.result->>'outcome' = 'failed'
         returning task_id
       `;
       return claimed.length === 1;
     }),
     async complete(input) {
-      await sql`
+      const completed = await sql<{ task_id: string }[]>`
         update tools.scheduled_task_runs
-        set completed_at = now(), result = ${sql.json(input.result)}
+        set completed_at = coalesce(completed_at, now()), result = ${sql.json(input.result)}
         where task_id = ${input.taskId}
           and slot = ${input.slot}
           and owner_id = ${input.ownerId}
-          and completed_at is null
+          and ((completed_at is null and lease_until > now())
+            or (completed_at is not null and result = ${sql.json(input.result)}))
+        returning task_id
       `;
+      if (completed.length !== 1) throw new ScheduledTaskLeaseLostError();
     },
     close: () => sql.end()
   };
