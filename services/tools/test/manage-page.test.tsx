@@ -1,8 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { groupProjectsByUsage, ManagePage } from "../publisher/ui/manage-page.js";
-import type { ManagePageData } from "../src/protected-data.js";
+import { filterAndSortUploads, groupProjectsByUsage, ManagePage, type LifecycleFilter } from "../publisher/ui/manage-page.js";
+import type { ManagePageData, UploadSummary } from "../src/protected-data.js";
 
 const initial: ManagePageData = {
   summary: {
@@ -34,105 +34,71 @@ const initial: ManagePageData = {
       url: `https://tools.example.test/files/${"b".repeat(32)}/logs.txt`,
       bytes: 2048,
       updatedAt: "2026-08-08T19:00:00.000Z",
-      expiresAt: "2026-08-09T10:00:00.000Z"
+      expiresAt: "2099-08-09T10:00:00.000Z"
     }
   ]
 };
 
-describe("Manage artifact library", () => {
-  it("renders project navigation, lifecycle state, and selected artifact actions", () => {
+describe("Publisher library", () => {
+  it("renders the header facts, counted filter chips, sortable table and inspector", () => {
     const html = renderToStaticMarkup(<ManagePage initial={initial} />);
 
-    expect(html).toContain("Maintain every plan and file shared through Publish.");
-    expect(html).toContain("microservices");
-    expect(html).toContain("Unassigned");
+    expect(html).toContain("Library");
+    expect(html).toContain("142 artifacts in 1 project");
+    expect(html).toContain('aria-label="Refresh"');
+    expect(html).toContain('href="/publisher"');
+    expect(html).toMatch(/Expiring soon<b[^>]*>8<\/b>/);
+    expect(html).toMatch(/Temporary<b[^>]*>50<\/b>/);
+    expect(html).toMatch(/Permanent<b[^>]*>92<\/b>/);
+    expect(html).toContain("microservices (41)");
+    expect(html).toContain("Unassigned (101)");
+    expect(html).toMatch(/aria-sort="descending"[^>]*><button[^>]*>Updated/);
     expect(html).toContain("plan.html");
     expect(html).toContain("logs.txt");
     expect(html).toContain("Persistent");
     expect(html).toContain("Replace file");
-    expect(html).toContain("Copy URL");
-    expect(html).toContain("Revoke artifact");
-    expect(html).toContain("Total artifacts");
-    expect(html).toContain("2 of 142 loaded");
-    expect(html).toContain(">142<");
-    expect(html).toContain('href="/publisher"');
+    expect(html).toContain("Revoke…");
+    expect(html).toContain("2 of 142 shown · newest first");
     expect(html).toContain('data-suite-accent="violet"');
-    expect(html).not.toContain("Tools architecture and monitoring");
   });
 
-  it("shows the compact expiry control for a selected file", () => {
+  it("offers Change expiry for a selected file", () => {
     const html = renderToStaticMarkup(<ManagePage initial={{ uploads: initial.uploads.toReversed() }} />);
 
-    expect(html).toContain("File expiry");
-    expect(html).toContain("Change");
-    expect(html).toContain("left ·");
+    expect(html).toContain("Change expiry");
+    expect(html).toContain("d left ·");
+    expect(html).not.toContain("Replace file");
   });
 
   it("labels files without an expiry as permanent", () => {
     const { expiresAt: _expiry, ...file } = initial.uploads[1]!;
     const html = renderToStaticMarkup(<ManagePage initial={{ uploads: [file] }} />);
 
-    expect(html).toContain("Permanent");
-    expect(html).toContain("available until revoked");
+    expect(html).toContain("Permanent · until revoked");
   });
 
-  it("keeps filters responsive and offers an explicit search of older artifacts", async () => {
+  it("keeps search of older artifacts explicit and bounded", async () => {
     const source = await readFile(new URL("../publisher/ui/manage-page.tsx", import.meta.url), "utf8");
     const completeLibrary = source.slice(source.indexOf("async function loadCompleteLibrary"), source.indexOf("async function replaceSelected"));
     expect(completeLibrary).toContain("while (cursor)");
     expect(completeLibrary).toContain("remaining.push(...payload.uploads)");
     expect(completeLibrary).toContain("if (!nextCursor || loadingAllRef.current) return;");
-    expect(source).toContain("onSelect={(value) => void selectProject(value)}");
     expect(source).toContain("Search remaining artifacts");
     expect(source).toContain("No matches in loaded artifacts");
     expect(source).toContain("const selected = visibleUploads.find((upload) => upload.id === selectedId)");
     expect(source).not.toContain("void loadCompleteLibrary();");
-    expect(source).toContain("disabled={busy}");
   });
 
   it("preserves loaded pages while updating rows and exact summaries", async () => {
     const source = await readFile(new URL("../publisher/ui/manage-page.tsx", import.meta.url), "utf8");
     const lifecycleUpdates = source.slice(
       source.indexOf("async function changeProject"),
-      source.indexOf("async function copySelectedUrl")
+      source.indexOf("async function copyArtifactUrl")
     );
 
     expect(lifecycleUpdates).toContain("setUploads((current)");
     expect(lifecycleUpdates).toContain("await refreshSummary()");
     expect(lifecycleUpdates).not.toContain("await refresh()");
-  });
-
-  it("widens the project navigation on wide screens without clipping the table at 1280px", async () => {
-    const source = await readFile(new URL("../publisher/ui/manage-page.tsx", import.meta.url), "utf8");
-
-    expect(source).toContain("lg:grid-cols-[16rem_minmax(0,1fr)_20rem]");
-    expect(source).toContain("2xl:grid-cols-[24rem_minmax(0,1fr)_20rem]");
-    expect(source).not.toContain(" xl:grid-cols-");
-  });
-
-  it("groups projects by usage and hides one-off projects by default", () => {
-    const html = renderToStaticMarkup(<ManagePage initial={{
-      ...initial,
-      summary: {
-        ...initial.summary!,
-        projects: [
-          { project: "daily-driver", count: 100 },
-          { project: "regular-work", count: 10 },
-          { project: "small-project", count: 2 },
-          { project: "single-time-plan", count: 1 }
-        ]
-      }
-    }} />);
-
-    expect(html).toContain("100+ uses");
-    expect(html).toContain("10–99 uses");
-    expect(html).toContain("2–9 uses");
-    expect(html).toContain("daily-driver");
-    expect(html).toContain("regular-work");
-    expect(html).toContain("small-project");
-    expect(html).toContain("Show one-off projects");
-    expect(html).not.toContain(">single-time-plan</span>");
-    expect(html).toContain('aria-expanded="false"');
   });
 
   it("uses exact project usage boundaries and sorts each group by usage", () => {
@@ -150,5 +116,28 @@ describe("Manage artifact library", () => {
       { label: "2–9 uses", projects: [["nine", 9], ["two", 2]] },
       { label: "One-off projects", projects: [["one", 1]] }
     ]);
+  });
+});
+
+describe("Library lifecycle chips", () => {
+  const now = Date.parse("2026-09-27T10:00:00.000Z");
+  const base = { contentType: "application/octet-stream", bytes: 1, updatedAt: "2026-09-26T10:00:00.000Z" };
+  const uploads: UploadSummary[] = [
+    { ...base, id: "plan", kind: "html", filename: "plan.html", url: "https://tools.example.test/artifacts/plan" },
+    { ...base, id: "kept", kind: "file", filename: "kept.pdf", url: "https://tools.example.test/files/kept/kept.pdf" },
+    { ...base, id: "soon", kind: "file", filename: "soon.pdf", url: "https://tools.example.test/files/soon/soon.pdf", expiresAt: "2026-09-27T20:00:00.000Z" },
+    { ...base, id: "later", kind: "file", filename: "later.pdf", url: "https://tools.example.test/files/later/later.pdf", expiresAt: "2026-10-03T10:00:00.000Z" },
+    { ...base, id: "gone", kind: "file", filename: "gone.pdf", url: "https://tools.example.test/files/gone/gone.pdf", expiresAt: "2026-09-27T09:00:00.000Z" }
+  ];
+
+  function ids(lifecycle: LifecycleFilter) {
+    return filterAndSortUploads(uploads, { projectFilter: "__all__", query: "", kind: "all", lifecycle, sort: "filename" }, now).map(({ id }) => id);
+  }
+
+  it("matches the counts: soon is within 24 hours, temporary has an expiry, permanent has none", () => {
+    expect(ids("soon")).toEqual(["soon"]);
+    expect(ids("temporary")).toEqual(["gone", "later", "soon"]);
+    expect(ids("permanent")).toEqual(["kept", "plan"]);
+    expect(ids("all")).toHaveLength(5);
   });
 });
