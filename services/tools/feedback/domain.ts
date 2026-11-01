@@ -55,6 +55,21 @@ export type SharedFeedbackResponse = Readonly<{
   expiresAt: string;
 }>;
 
+/** The inbox decrypts every response it lists, so it reads only the newest ones. */
+export const FEEDBACK_INBOX_LIMIT = 500;
+export const FEEDBACK_INBOX_FILTERS = ["unread", "follow-up", "all", "archived"] as const;
+export type FeedbackInboxFilter = (typeof FEEDBACK_INBOX_FILTERS)[number];
+
+/** All shows unread and reviewed responses. Archived responses show only in Archived. */
+export function matchesFeedbackInboxFilter(submission: Pick<FeedbackSubmission, "reviewState" | "followUpState">, filter: FeedbackInboxFilter) {
+  switch (filter) {
+    case "unread": return submission.reviewState === "unread";
+    case "follow-up": return submission.followUpState === "wanted";
+    case "all": return submission.reviewState !== "archived";
+    case "archived": return submission.reviewState === "archived";
+  }
+}
+
 export type FeedbackShareDays = 1 | 7 | 30;
 export function parseFeedbackShareDays(value: string | null): FeedbackShareDays | undefined {
   if (value === null || value === "") return undefined;

@@ -10,7 +10,15 @@ function repository() {
 
 export const getFeedbackForms = createServerFn({ method: "GET" })
   .middleware([requirePlatformSession])
-  .handler(() => repository().listForms());
+  .handler(async () => ({ forms: await repository().listForms(), publicOrigin: getGlobalStartContext()!.runtime.publicOrigin }));
+
+/** The newest responses of all forms, and the form titles for the form filter. */
+export const getFeedbackInbox = createServerFn({ method: "GET" })
+  .middleware([requirePlatformSession])
+  .handler(async () => {
+    const [forms, submissions] = await Promise.all([repository().listForms(), repository().listSubmissions()]);
+    return { forms: forms.map(({ id, title }) => ({ id, title })), submissions };
+  });
 
 export const getFeedbackFormPage = createServerFn({ method: "GET" })
   .middleware([requirePlatformSession])
@@ -18,7 +26,7 @@ export const getFeedbackFormPage = createServerFn({ method: "GET" })
   .handler(async ({ data }) => {
     const form = await repository().getForm(data.formId);
     if (!form) throw new Error("Feedback form not found.");
-    return { form, submissions: await repository().listSubmissions(data.formId), publicOrigin: getGlobalStartContext()!.runtime.publicOrigin };
+    return { form, publicOrigin: getGlobalStartContext()!.runtime.publicOrigin };
   });
 
 export const getFeedbackSubmission = createServerFn({ method: "GET" })

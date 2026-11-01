@@ -11,6 +11,7 @@ import {
   type FeedbackSubmission,
   type FeedbackShareDays,
   type SharedFeedbackResponse,
+  FEEDBACK_INBOX_LIMIT,
   wantsFeedbackFollowUp
 } from "./domain.js";
 
@@ -30,7 +31,8 @@ export interface FeedbackRepository {
   deleteForm(id: string): Promise<boolean>;
   createSubmission(form: FeedbackForm, answers: Readonly<Record<string, string>>, questionSnapshot?: readonly FeedbackQuestion[], shareDays?: FeedbackShareDays): Promise<CreatedFeedbackSubmission>;
   getSharedResponse(token: string): Promise<SharedFeedbackResponse | undefined>;
-  listSubmissions(formId: string): Promise<readonly FeedbackSubmission[]>;
+  /** With a form ID: every response of that form. Without: the newest responses of all forms, up to FEEDBACK_INBOX_LIMIT. */
+  listSubmissions(formId?: string): Promise<readonly FeedbackSubmission[]>;
   getSubmission(id: string): Promise<FeedbackSubmission | undefined>;
   updateSubmission(id: string, input: { reviewState: FeedbackReviewState; followUpState: FeedbackFollowUpState }): Promise<FeedbackSubmission | undefined>;
   deleteSubmission(id: string): Promise<boolean>;
@@ -47,6 +49,8 @@ export function feedbackRepository(sql: Sql, key: Buffer): FeedbackRepository {
   const formSelect = sql`select f.id, f.public_token, f.language, f.title, f.introduction, f.questions, f.status, f.created_at, f.updated_at,
     count(s.id)::int as response_count, count(s.id) filter (where s.review_state = 'unread')::int as unread_count
     from tools.feedback_forms f left join tools.feedback_submissions s on s.form_id = f.id`;
+  const submissionSelect = sql`select s.id, s.form_id, f.title as form_title, s.question_snapshot, s.answers, s.submitted_at, s.review_state, s.follow_up_state
+    from tools.feedback_submissions s join tools.feedback_forms f on f.id = s.form_id`;
   return {
     async listForms() {
       const rows = await sql<FormRow[]>`${formSelect} group by f.id order by f.updated_at desc`;
@@ -101,13 +105,13 @@ export function feedbackRepository(sql: Sql, key: Buffer): FeedbackRepository {
       return row ? { formTitle: row.form_title, language: row.language, questionSnapshot: encryption.decrypt<FeedbackQuestion[]>(row.question_snapshot, row.id, "question_snapshot"), answers: encryption.decrypt<Record<string, string>>(row.answers, row.id, "answers"), submittedAt: row.submitted_at.toISOString(), expiresAt: row.share_expires_at.toISOString() } : undefined;
     },
     async listSubmissions(formId) {
-      const rows = await sql<SubmissionRow[]>`select s.id, s.form_id, f.title as form_title, s.question_snapshot, s.answers, s.submitted_at, s.review_state, s.follow_up_state
-        from tools.feedback_submissions s join tools.feedback_forms f on f.id = s.form_id where s.form_id = ${formId} order by s.submitted_at desc`;
+      const rows = formId
+        ? await sql<SubmissionRow[]>`${submissionSelect} where s.form_id = ${formId} order by s.submitted_at desc`
+        : await sql<SubmissionRow[]>`${submissionSelect} order by s.submitted_at desc limit ${FEEDBACK_INBOX_LIMIT}`;
       return rows.map((row) => submissionFromRow(row, encryption));
     },
     async getSubmission(id) {
-      const [row] = await sql<SubmissionRow[]>`select s.id, s.form_id, f.title as form_title, s.question_snapshot, s.answers, s.submitted_at, s.review_state, s.follow_up_state
-        from tools.feedback_submissions s join tools.feedback_forms f on f.id = s.form_id where s.id = ${id}`;
+      const [row] = await sql<SubmissionRow[]>`${submissionSelect} where s.id = ${id}`;
       return row ? submissionFromRow(row, encryption) : undefined;
     },
     async updateSubmission(id, input) {
