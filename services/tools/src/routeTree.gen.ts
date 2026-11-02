@@ -37,6 +37,7 @@ import { Route as HealthComponentRouteImport } from './routes/health/$component'
 import { Route as MarkdownIndexRouteImport } from './routes/markdown/index'
 import { Route as PublisherIndexRouteImport } from './routes/publisher/index'
 import { Route as PublisherArtifactsRouteImport } from './routes/publisher/artifacts'
+import { Route as PublisherQrRouteImport } from './routes/publisher/qr'
 import { Route as PublisherReceiveRouteImport } from './routes/publisher/receive'
 import { Route as ShareIndexRouteImport } from './routes/share/index'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
@@ -207,6 +208,11 @@ const PublisherIndexRoute = PublisherIndexRouteImport.update({
 const PublisherArtifactsRoute = PublisherArtifactsRouteImport.update({
   id: '/artifacts',
   path: '/artifacts',
+  getParentRoute: () => PublisherRoute,
+} as any)
+const PublisherQrRoute = PublisherQrRouteImport.update({
+  id: '/qr',
+  path: '/qr',
   getParentRoute: () => PublisherRoute,
 } as any)
 const PublisherReceiveRoute = PublisherReceiveRouteImport.update({
@@ -394,6 +400,7 @@ export interface FileRoutesByFullPath {
   '/files/$id': typeof FilesIdRouteWithChildren
   '/health/$component': typeof HealthComponentRoute
   '/publisher/artifacts': typeof PublisherArtifactsRoute
+  '/publisher/qr': typeof PublisherQrRoute
   '/publisher/receive': typeof PublisherReceiveRoute
   '/feedback/': typeof FeedbackIndexRoute
   '/markdown/': typeof MarkdownIndexRoute
@@ -451,6 +458,7 @@ export interface FileRoutesByTo {
   '/files/$id': typeof FilesIdRouteWithChildren
   '/health/$component': typeof HealthComponentRoute
   '/publisher/artifacts': typeof PublisherArtifactsRoute
+  '/publisher/qr': typeof PublisherQrRoute
   '/publisher/receive': typeof PublisherReceiveRoute
   '/feedback': typeof FeedbackIndexRoute
   '/markdown': typeof MarkdownIndexRoute
@@ -513,6 +521,7 @@ export interface FileRoutesById {
   '/files/$id': typeof FilesIdRouteWithChildren
   '/health/$component': typeof HealthComponentRoute
   '/publisher/artifacts': typeof PublisherArtifactsRoute
+  '/publisher/qr': typeof PublisherQrRoute
   '/publisher/receive': typeof PublisherReceiveRoute
   '/feedback/': typeof FeedbackIndexRoute
   '/markdown/': typeof MarkdownIndexRoute
@@ -576,6 +585,7 @@ export interface FileRouteTypes {
     | '/files/$id'
     | '/health/$component'
     | '/publisher/artifacts'
+    | '/publisher/qr'
     | '/publisher/receive'
     | '/feedback/'
     | '/markdown/'
@@ -633,6 +643,7 @@ export interface FileRouteTypes {
     | '/files/$id'
     | '/health/$component'
     | '/publisher/artifacts'
+    | '/publisher/qr'
     | '/publisher/receive'
     | '/feedback'
     | '/markdown'
@@ -694,6 +705,7 @@ export interface FileRouteTypes {
     | '/files/$id'
     | '/health/$component'
     | '/publisher/artifacts'
+    | '/publisher/qr'
     | '/publisher/receive'
     | '/feedback/'
     | '/markdown/'
@@ -967,6 +979,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PublisherArtifactsRouteImport
       parentRoute: typeof PublisherRoute
     }
+    '/publisher/qr': {
+      id: '/publisher/qr'
+      path: '/qr'
+      fullPath: '/publisher/qr'
+      preLoaderRoute: typeof PublisherQrRouteImport
+      parentRoute: typeof PublisherRoute
+    }
     '/publisher/receive': {
       id: '/publisher/receive'
       path: '/receive'
@@ -1238,12 +1257,14 @@ const MarkdownRouteWithChildren = MarkdownRoute._addFileChildren(
 
 interface PublisherRouteChildren {
   PublisherArtifactsRoute: typeof PublisherArtifactsRoute
+  PublisherQrRoute: typeof PublisherQrRoute
   PublisherReceiveRoute: typeof PublisherReceiveRoute
   PublisherIndexRoute: typeof PublisherIndexRoute
 }
 
 const PublisherRouteChildren: PublisherRouteChildren = {
   PublisherArtifactsRoute: PublisherArtifactsRoute,
+  PublisherQrRoute: PublisherQrRoute,
   PublisherReceiveRoute: PublisherReceiveRoute,
   PublisherIndexRoute: PublisherIndexRoute,
 }

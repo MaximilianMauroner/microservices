@@ -9,6 +9,7 @@ import { internalPlatformRequest, readPlatformJson, readPlatformResponse } from 
 import { MONEY_LEDGER_SCOPES, type MoneyLedgerViewScope, type MoneyLedgerSnapshot } from "../money/money-repository.js";
 import type { MoneyMarketSnapshot } from "../money/money-market-data-service.js";
 import { checkInBaseline, moneyCheckIn, previousCheckIn, type MoneyCheckIn } from "../money/money-checkin-domain.js";
+import { FAMILY_QR_FILENAME } from "../publisher/ui/family-qr.js";
 
 export type UploadSummary = {
   id: string;
@@ -119,6 +120,18 @@ export const getManagePageData = createServerFn({ method: "GET" })
     );
     if (!response.ok) throw new Error(`Artifact inventory request failed: ${response.status}`);
     return response.json() as Promise<ManagePageData>;
+  });
+
+export const getFamilyQrPageData = createServerFn({ method: "GET" })
+  .middleware([requirePlatformSession])
+  .handler(async (): Promise<UploadSummary | null> => {
+    const pathname = uploadListPath({ ...DEFAULT_UPLOAD_LIST_CRITERIA, kind: "html",
+      q: FAMILY_QR_FILENAME });
+    const { context } = internalPlatformRequest(pathname);
+    const data = await readPlatformJson<UploadPageData>(context.runtime.services.publisher.handle, pathname);
+    const pages = data.uploads.filter(upload => upload.filename === FAMILY_QR_FILENAME);
+    if (pages.length > 1) throw new Error("Multiple Family QR pages exist. Revoke unused copies in Library before uploading.");
+    return pages[0] ?? null;
   });
 
 export const getDocumentsPageData = createServerFn({ method: "GET" })
