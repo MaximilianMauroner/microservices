@@ -20,6 +20,7 @@ export const TOOLS_PRODUCTS: readonly ToolsProduct[] = [
     pages: [
       { label: "Publish", to: "/publisher", match: exact("/publisher") },
       { label: "Library", to: "/publisher/artifacts", match: exact("/publisher/artifacts") },
+      { label: "Family QR", to: "/publisher/qr", match: exact("/publisher/qr") },
       { label: "Receive files", to: "/publisher/receive", match: exact("/publisher/receive") }
     ]
   },
