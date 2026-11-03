@@ -311,6 +311,7 @@ describe.skipIf(!sql)("Kitchen", () => {
     const friendId = await person(friend.subject);
     const home = await store.admin(admin).create("Home");
     await store.admin(admin).addMember(home.id, friendId);
+    await sql!`drop table tools.kitchen_person_settings`;
     await sql!`alter table tools.kitchens add column if not exists mcp_enabled boolean not null default false`;
     await sql!`update tools.kitchens set mcp_enabled = true where id = ${home.id}`;
     await expect(migrateKitchenPersonSettings(sql!, undefined)).rejects.toThrow(/admin subject/);
@@ -319,6 +320,17 @@ describe.skipIf(!sql)("Kitchen", () => {
     expect((await store.open(admin, home.id)).kitchen.mcpEnabled).toBe(true);
     expect((await store.open(friend, home.id)).kitchen.mcpEnabled).toBe(true);
     expect((await store.admin(admin).create("New")).mcpEnabled).toBe(false);
+  });
+
+  it("does not restore old grants after personal settings are in use", async () => {
+    const store = kitchenStore(sql!);
+    const home = await store.admin(admin).create("Home");
+    await store.setMcpEnabled(admin, home.id, false);
+    await sql!`alter table tools.kitchens add column if not exists mcp_enabled boolean not null default false`;
+    await sql!`update tools.kitchens set mcp_enabled = true where id = ${home.id}`;
+    await migrateKitchenPersonSettings(sql!, admin.subject);
+    expect((await store.open(admin, home.id)).kitchen.mcpEnabled).toBe(false);
+    expect(await sql!`select 1 from information_schema.columns where table_schema = 'tools' and table_name = 'kitchens' and column_name = 'mcp_enabled'`).toEqual([]);
   });
 
   it("requires personal opt-in for MCP and applies changes to connected clients", async () => {

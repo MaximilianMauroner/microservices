@@ -544,7 +544,6 @@ export const productGrants = toolsSchema.table("product_grants", {
 }, (table) => [primaryKey({ columns: [table.personId, table.productId] })]);
 
 export const kitchens = toolsSchema.table("kitchens", {
-  mcpEnabled: boolean("mcp_enabled").notNull().default(false),
   id: uuid("id").primaryKey(),
   name: text("name").notNull(),
   groups: text("groups").array().notNull().default(sql`'{}'::text[]`),
