@@ -41,6 +41,13 @@ export async function reconcileRuntimeSchema(database: postgres.Sql) {
       await transaction`alter table tools.money_category_rules drop constraint if exists money_category_rules_category_check`;
       await transaction`alter table tools.money_category_rules add constraint money_category_rules_category_check check (category in ('housing', 'groceries', 'dining', 'transport', 'shopping', 'health', 'personal_care', 'travel', 'subscriptions', 'software', 'education', 'entertainment', 'recreation', 'gifts', 'taxes', 'fees', 'cash', 'investments', 'income', 'transfer', 'adjustment', 'other', 'uncategorized'))`;
     }
+    const [unitCheck] = await transaction<{ definition: string }[]>`
+      select pg_get_constraintdef(oid) definition from pg_constraint
+      where conrelid = 'tools.kitchen_ingredients'::regclass and conname = 'kitchen_ingredients_unit_check'`;
+    if (!unitCheck?.definition.includes("'can'")) {
+      await transaction`alter table tools.kitchen_ingredients drop constraint if exists kitchen_ingredients_unit_check`;
+      await transaction`alter table tools.kitchen_ingredients add constraint kitchen_ingredients_unit_check check (unit in ('g', 'ml', 'piece', 'can'))`;
+    }
     await transaction`insert into tools.money_import_transactions (import_id, transaction_id)
       select import_id, id from tools.money_transactions on conflict do nothing`;
   });

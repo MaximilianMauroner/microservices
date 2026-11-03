@@ -1,15 +1,33 @@
-export const INGREDIENT_UNITS = ["g", "ml", "piece"] as const;
+export const INGREDIENT_UNITS = ["g", "ml", "piece", "can"] as const;
 export type IngredientUnit = (typeof INGREDIENT_UNITS)[number];
 
-/** The amount that nutrition values refer to: 100 g, 100 ml, or 1 piece. */
-const NUTRITION_BASIS: Record<IngredientUnit, number> = { g: 100, ml: 100, piece: 1 };
+/**
+ * What each unit means. `basis` is the amount that nutrition values refer to: 100 g, 100 ml, or one counted item.
+ * Names are [one, many].
+ */
+const UNITS: Record<IngredientUnit, { basis: number; en: readonly [string, string]; de: readonly [string, string] }> = {
+  g: { basis: 100, en: ["g", "g"], de: ["g", "g"] },
+  ml: { basis: 100, en: ["ml", "ml"], de: ["ml", "ml"] },
+  piece: { basis: 1, en: ["piece", "pieces"], de: ["Stück", "Stück"] },
+  can: { basis: 1, en: ["can", "cans"], de: ["Dose", "Dosen"] }
+};
+
+/** True for units that count items, such as pieces or cans, instead of weighing or measuring them. */
+export function isCountedUnit(unit: IngredientUnit): boolean {
+  return UNITS[unit].basis === 1;
+}
+
+/** The unit as people say it, for one item or for many. */
+export function unitName(unit: IngredientUnit, language: "en" | "de" = "en", amount = 2): string {
+  return UNITS[unit][language][amount === 1 ? 0 : 1];
+}
 
 export const MEALS = ["breakfast", "lunch", "dinner", "snack"] as const;
 export type Meal = (typeof MEALS)[number];
 
 export const MEAL_LABELS: Record<Meal, string> = { breakfast: "Breakfast", lunch: "Lunch", dinner: "Dinner", snack: "Snack" };
 
-/** Nutrition per 100 g or 100 ml, or per piece. A missing value is unknown, not zero. */
+/** Nutrition per 100 g or 100 ml, or per counted item. A missing value is unknown, not zero. */
 export type Nutrition = Readonly<{ kcal: number | null; protein: number | null; carbs: number | null; fat: number | null }>;
 
 export type KitchenMember = Readonly<{ personId: string; email: string }>;
@@ -154,7 +172,7 @@ export function parseRecipeInput(input: RecipeInput): RecipeInput {
 
 export function parseUnit(unit: string): IngredientUnit {
   if ((INGREDIENT_UNITS as readonly string[]).includes(unit)) return unit as IngredientUnit;
-  throw new KitchenError("Use g, ml, or piece as the unit.");
+  throw new KitchenError("Use g, ml, piece, or can as the unit.");
 }
 
 export function parseMeal(meal: string): Meal {
@@ -239,7 +257,7 @@ export function nutritionPerServing(recipe: Pick<Recipe, "servings" | "lines">, 
       const ingredient = ingredients.get(line.ingredientId);
       const value = ingredient?.nutrition[key];
       if (value === null || value === undefined || !ingredient) return null;
-      sum += (value * line.amount) / NUTRITION_BASIS[ingredient.unit];
+      sum += (value * line.amount) / UNITS[ingredient.unit].basis;
     }
     return recipe.lines.length ? Math.round(sum / recipe.servings) : null;
   };
@@ -251,7 +269,7 @@ export function nutritionPerServing(recipe: Pick<Recipe, "servings" | "lines">, 
  * Example: 20 kcal per 100 g is 50 kcal per piece when one piece holds 250 g.
  */
 export function convertNutrition(nutrition: Nutrition, from: IngredientUnit, to: IngredientUnit, oldPerNew: number): Nutrition {
-  const factor = (oldPerNew * NUTRITION_BASIS[to]) / NUTRITION_BASIS[from];
+  const factor = (oldPerNew * UNITS[to].basis) / UNITS[from].basis;
   const convert = (value: number | null) => value === null ? null : round(value * factor);
   return { kcal: convert(nutrition.kcal), protein: convert(nutrition.protein), carbs: convert(nutrition.carbs), fat: convert(nutrition.fat) };
 }
@@ -262,9 +280,9 @@ export function formatNumber(value: number, language: "en" | "de" = "en"): strin
   return language === "de" ? text.replace(".", ",") : text;
 }
 
-/** An amount for people: "1.5 kg" and "2 pieces", or "1,5 kg" and "2 Stück" in German. */
+/** An amount for people: "1.5 kg" and "2 cans", or "1,5 kg" and "2 Dosen" in German. */
 export function formatAmount(amount: number, unit: IngredientUnit, language: "en" | "de" = "en"): string {
-  if (unit === "piece") return `${formatNumber(amount, language)} ${language === "de" ? "Stück" : amount === 1 ? "piece" : "pieces"}`;
+  if (isCountedUnit(unit)) return `${formatNumber(amount, language)} ${unitName(unit, language, amount)}`;
   if (amount >= 1000) return `${formatNumber(amount / 1000, language)} ${unit === "g" ? "kg" : "l"}`;
   return `${formatNumber(amount, language)} ${unit}`;
 }

@@ -6,7 +6,7 @@ import { convertNutrition, INGREDIENT_UNITS, type Ingredient, KitchenError, MEAL
 import type { KitchenScope, KitchenStore } from "./repository.js";
 
 const kitchenRef = z.string().optional().describe("Kitchen name or id. Leave out when you belong to one kitchen only.");
-const nutrient = (what: string) => z.number().min(0).nullable().optional().describe(`${what} per 100 g or 100 ml, or per piece for the piece unit`);
+const nutrient = (what: string) => z.number().min(0).nullable().optional().describe(`${what} per 100 g or 100 ml, or per item for the piece and can units`);
 
 /** Kitchen tools act as the signed-in person and open only the kitchens that person can open. */
 export function registerKitchenTools(server: McpServer, store: KitchenStore, principal: PlatformPrincipal) {

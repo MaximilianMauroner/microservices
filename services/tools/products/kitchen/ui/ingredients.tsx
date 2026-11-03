@@ -4,7 +4,7 @@ import { Button } from "../../../platform/ui/components/ui/button.js";
 import { Input } from "../../../platform/ui/components/ui/input.js";
 import { Label } from "../../../platform/ui/components/ui/label.js";
 import { Textarea } from "../../../platform/ui/components/ui/textarea.js";
-import { convertNutrition, formatNumber, type Ingredient, INGREDIENT_UNITS, type IngredientUnit, UNSORTED_SECTION } from "../domain.js";
+import { convertNutrition, formatNumber, type Ingredient, INGREDIENT_UNITS, isCountedUnit, type IngredientUnit, unitName, UNSORTED_SECTION } from "../domain.js";
 import { byGroup, type Frame, GROUP_LIST, GroupDot, groupColor, GroupLabel, groupLabel, groupListStyle, KitchenEmpty, KitchenPage, KitchenSheet, useKitchenAction } from "./kit.js";
 import { type KitchenLanguage, useLanguage, useText } from "./language.js";
 
@@ -26,7 +26,7 @@ const en = {
   carbs: "Carbs",
   fat: "Fat",
   calories: "Calories",
-  perPiece: "per piece",
+  perOne: (unit: string) => `per ${unit}`,
   per100: (unit: string) => `per 100 ${unit}`,
   noNutrition: "No nutrition yet",
   inRecipes: (count: number) => count === 1 ? "In 1 recipe" : `In ${count} recipes`,
@@ -42,9 +42,7 @@ const en = {
   added: (name: string) => `${name} added`,
   name: "Name",
   unit: "Unit",
-  unitPieces: "pieces",
-  size: (piece: string, other: string) => `1 ${piece} is how many ${other}?`,
-  onePiece: "piece",
+  size: (item: string, other: string) => `1 ${item} is how many ${other}?`,
   sizeHint: "Recipes, stock, and nutrition change to the new unit with this size.",
   group: "Group",
   nutritionPer: (per: string) => `Nutrition ${per}`,
@@ -74,7 +72,7 @@ const TEXT: Record<KitchenLanguage, KitText> = {
     carbs: "Kohlenhydrate",
     fat: "Fett",
     calories: "Kalorien",
-    perPiece: "pro Stück",
+    perOne: (unit: string) => `pro ${unit}`,
     per100: (unit: string) => `pro 100 ${unit}`,
     noNutrition: "Noch keine Nährwerte",
     inRecipes: (count: number) => count === 1 ? "In 1 Rezept" : `In ${count} Rezepten`,
@@ -90,9 +88,7 @@ const TEXT: Record<KitchenLanguage, KitText> = {
     added: (name: string) => `${name} hinzugefügt`,
     name: "Name",
     unit: "Einheit",
-    unitPieces: "Stück",
-    size: (piece: string, other: string) => `Wie viel ${other} sind 1 ${piece}?`,
-    onePiece: "Stück",
+    size: (item: string, other: string) => `Wie viel ${other} sind 1 ${item}?`,
     sizeHint: "Rezepte, Vorrat und Nährwerte wechseln mit dieser Größe zur neuen Einheit.",
     group: "Gruppe",
     nutritionPer: (per: string) => `Nährwerte ${per}`,
@@ -156,7 +152,7 @@ export function KitchenIngredientsPage(data: IngredientsData) {
                         ) : <span className="block text-xs text-muted-foreground">{text.noNutrition}</span>}
                       </span>
                       <span className="shrink-0 text-right text-xs text-muted-foreground">
-                        <span className="block">{ingredient.unit === "piece" ? text.perPiece : text.per100(ingredient.unit)}</span>
+                        <span className="block">{isCountedUnit(ingredient.unit) ? text.perOne(unitName(ingredient.unit, language, 1)) : text.per100(ingredient.unit)}</span>
                         {ingredient.recipeCount ? <span className="block">{text.inRecipes(ingredient.recipeCount)}</span> : null}
                       </span>
                     </button>
@@ -193,11 +189,10 @@ function IngredientSheet({ ingredient, onClose, data }: { ingredient: Ingredient
   const [size, setSize] = useState("");
   const sections = byGroup(data.kitchen.groups, data.ingredients, (one) => one.section).map(([group]) => group).filter((group) => group !== UNSORTED_SECTION);
   const number = (value: string) => value.trim() === "" ? null : Number(value.replace(",", "."));
-  const unitName = (option: string) => option === "piece" ? text.unitPieces : option;
   const nutrientLabel = { kcal: text.calories, protein: text.protein, carbs: text.carbs, fat: text.fat };
-  const per = unit === "piece" ? text.perPiece : text.per100(unit);
+  const per = isCountedUnit(unit) ? text.perOne(unitName(unit, language, 1)) : text.per100(unit);
   const changingUnit = existing !== undefined && unit !== existing.unit;
-  const larger = existing?.unit === "piece" ? existing.unit : unit;
+  const larger = existing && isCountedUnit(existing.unit) ? existing.unit : unit;
   const smaller = larger === unit ? existing?.unit ?? unit : unit;
   /** How much of the old unit one new unit holds. The field asks for the larger unit in the smaller one. */
   const oldPerNew = (input: string) => {
@@ -251,11 +246,11 @@ function IngredientSheet({ ingredient, onClose, data }: { ingredient: Ingredient
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="grid gap-1.5">
             <Label>{text.unit}</Label>
-            <div className="grid grid-cols-3 gap-1 rounded-full bg-muted/60 p-1" role="radiogroup" aria-label={text.unit}>
+            <div className="grid grid-cols-4 gap-1 rounded-full bg-muted/60 p-1" role="radiogroup" aria-label={text.unit}>
               {INGREDIENT_UNITS.map((option) => (
                 <button key={option} type="button" role="radio" aria-checked={unit === option} onClick={() => chooseUnit(option)}
                   className="h-8 rounded-full text-sm font-medium text-muted-foreground aria-checked:bg-background aria-checked:text-foreground aria-checked:shadow-sm">
-                  {unitName(option)}
+                  {unitName(option, language)}
                 </button>
               ))}
             </div>
@@ -268,7 +263,7 @@ function IngredientSheet({ ingredient, onClose, data }: { ingredient: Ingredient
         </div>
         {changingUnit ? (
           <div className="grid gap-1.5">
-            <Label htmlFor="ingredient-size">{text.size(larger === "piece" ? text.onePiece : larger, unitName(smaller))}</Label>
+            <Label htmlFor="ingredient-size">{text.size(unitName(larger, language, 1), unitName(smaller, language))}</Label>
             <Input id="ingredient-size" className="h-10 max-w-40 tabular-nums" inputMode="decimal" value={size} onChange={(event) => changeSize(event.target.value)} placeholder="250" />
             <p className="text-xs text-muted-foreground">{text.sizeHint}</p>
           </div>

@@ -4,7 +4,7 @@ import { Button } from "../../../platform/ui/components/ui/button.js";
 import { Input } from "../../../platform/ui/components/ui/input.js";
 import { Label } from "../../../platform/ui/components/ui/label.js";
 import { cn } from "../../../platform/ui/lib/utils.js";
-import { addDays, formatAmount, type Ingredient, type Leftover, type StockItem } from "../domain.js";
+import { addDays, formatAmount, type Ingredient, type Leftover, type StockItem, unitName } from "../domain.js";
 import { byGroup, type Frame, GROUP_LIST, GroupDot, groupColor, GroupLabel, groupLabel, groupListStyle, KitchenEmpty, KitchenPage, KitchenSheet, Stepper, tint, useByLabel, useKitchenAction } from "./kit.js";
 import { type KitchenLanguage, useLanguage, useText } from "./language.js";
 
@@ -24,7 +24,6 @@ const en = {
   stock: "Stock",
   nothingInStock: "Nothing in stock",
   checkItems: "Check items off the shopping list, or add what is already in your cupboards.",
-  pieces: "pieces",
   amountOf: (name: string) => `Amount of ${name}`,
   usedUpAria: (name: string) => `${name} is used up`,
   usedUpToast: (name: string) => `${name} used up`,
@@ -62,7 +61,6 @@ const TEXT: Record<KitchenLanguage, typeof en> = {
     stock: "Vorrat",
     nothingInStock: "Nichts im Vorrat",
     checkItems: "Hake Artikel auf der Einkaufsliste ab oder füge hinzu, was schon in deinen Schränken liegt.",
-    pieces: "Stück",
     amountOf: (name: string) => `Menge von ${name}`,
     usedUpAria: (name: string) => `${name} ist aufgebraucht`,
     usedUpToast: (name: string) => `${name} aufgebraucht`,
@@ -160,6 +158,7 @@ export function KitchenPantryPage(data: PantryData) {
 }
 
 function StockRow({ item, run, pending }: { item: StockItem; run: ReturnType<typeof useKitchenAction>["run"]; pending: boolean }) {
+  const language = useLanguage();
   const text = useText(TEXT);
   const [value, setValue] = useState(String(item.amount));
   const [last, setLast] = useState(item.amount);
@@ -176,7 +175,7 @@ function StockRow({ item, run, pending }: { item: StockItem; run: ReturnType<typ
         <span className="sr-only">{text.amountOf(item.ingredient)}</span>
         <Input className="h-9 w-20 text-right tabular-nums" inputMode="decimal" value={value} onChange={(event) => setValue(event.target.value)}
           onBlur={commit} onKeyDown={(event) => { if (event.key === "Enter") (event.target as HTMLInputElement).blur(); }} />
-        <span className="w-12 text-sm text-muted-foreground">{item.unit === "piece" ? text.pieces : item.unit}</span>
+        <span className="w-12 text-sm text-muted-foreground">{unitName(item.unit, language)}</span>
       </label>
       <Button size="icon-sm" variant="ghost" className="size-11 md:size-8" aria-label={text.usedUpAria(item.ingredient)} disabled={pending}
         onClick={() => run({ type: "stock.set", ingredientId: item.ingredientId, amount: 0 }, { title: text.usedUpToast(item.ingredient), undo: { type: "stock.set", ingredientId: item.ingredientId, amount: item.amount } })}>
@@ -218,7 +217,7 @@ function AddStockSheet({ open, onClose, data }: { open: boolean; onClose: () => 
               <Label htmlFor="stock-amount">{text.amountOf(selected.name)}</Label>
               <div className="flex items-center gap-2">
                 <Input id="stock-amount" autoFocus className="h-10 w-32 tabular-nums" inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} />
-                <span className="text-sm text-muted-foreground">{selected.unit === "piece" ? text.pieces : selected.unit}</span>
+                <span className="text-sm text-muted-foreground">{unitName(selected.unit, language)}</span>
               </div>
             </div>
           ) : null}
