@@ -800,7 +800,7 @@ describe("native artifact fetch handler", () => {
     expect(source).toContain("and (l.created_at, l.id) <");
     expect(source).toContain("order by created_at desc, id desc");
     expect(source).toContain("limit ${options.limit}");
-    expect(schema).toContain('index("upload_links_owner_history_idx").on(table.ownerSubject, table.createdAt.desc(), table.id.desc())');
+    expect(schema).toContain('index("upload_links_history_idx").on(table.ownerSubject, table.createdAt.desc(), table.id.desc())');
   });
 
   it("revalidates a guest capability after staging and before storing", async () => {
