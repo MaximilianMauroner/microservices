@@ -54,7 +54,7 @@ describe.skipIf(!sql)("existing rows before per-person data", () => {
       await sql!`delete from tools.feedback_forms where owner_subject is null`;
       await sql!`alter table tools.feedback_forms add column if not exists owner_subject text`;
       await sql!`alter table tools.feedback_forms alter column owner_subject set not null`;
-      await sql!`create index if not exists feedback_forms_owner_updated_idx on tools.feedback_forms (owner_subject, updated_at)`;
+      await sql!`create index if not exists feedback_forms_updated_idx on tools.feedback_forms (owner_subject, updated_at)`;
     }
   });
 
@@ -69,7 +69,7 @@ describe.skipIf(!sql)("existing rows before per-person data", () => {
       await sql!`delete from artifacts.upload_links where owner_subject is null`;
       await sql!`alter table artifacts.upload_links add column if not exists owner_subject text`;
       await sql!`alter table artifacts.upload_links alter column owner_subject set not null`;
-      await sql!`create index if not exists upload_links_owner_history_idx on artifacts.upload_links (owner_subject, created_at desc, id desc)`;
+      await sql!`create index if not exists upload_links_history_idx on artifacts.upload_links (owner_subject, created_at desc, id desc)`;
     }
   });
 });
