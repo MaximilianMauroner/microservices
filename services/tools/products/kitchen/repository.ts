@@ -56,6 +56,7 @@ export interface KitchenStore {
 export interface KitchenAdmin {
   create(name: string): Promise<Kitchen>;
   rename(kitchenId: string, name: string): Promise<Kitchen>;
+  setMcpEnabled(kitchenId: string, enabled: boolean): Promise<Kitchen>;
   remove(kitchenId: string): Promise<void>;
   /** Adds an invited person and grants them Kitchen, so the kitchen opens for them at once. */
   addMember(kitchenId: string, personId: string): Promise<Kitchen>;
@@ -121,15 +122,15 @@ export function createPostgresKitchenStore(databaseUrl: string, options: { readO
 
 export function kitchenStore(sql: Sql): KitchenStore {
   async function kitchensWhere(db: Db, filter: postgres.PendingQuery<postgres.Row[]>): Promise<Kitchen[]> {
-    const rows = await db<{ id: string; name: string; groups: string[]; members: { personId: string; email: string }[] }[]>`
-      select k.id, k.name, k.groups,
+    const rows = await db<{ id: string; name: string; mcp_enabled: boolean; groups: string[]; members: { personId: string; email: string }[] }[]>`
+      select k.id, k.name, k.mcp_enabled, k.groups,
         coalesce(json_agg(json_build_object('personId', p.id, 'email', p.email) order by p.email) filter (where p.id is not null), '[]') members
       from tools.kitchens k
       left join tools.kitchen_members m on m.kitchen_id = k.id
       left join tools.people p on p.id = m.person_id
       where ${filter}
       group by k.id order by lower(k.name), k.created_at`;
-    return rows.map((row) => ({ id: row.id, name: row.name, members: row.members, groups: row.groups }));
+    return rows.map((row) => ({ id: row.id, name: row.name, mcpEnabled: row.mcp_enabled, members: row.members, groups: row.groups }));
   }
 
   function visibleTo(who: Who) {
@@ -166,6 +167,11 @@ export function kitchenStore(sql: Sql): KitchenStore {
         async rename(kitchenId, name) {
           await one(kitchenId);
           await sql`update tools.kitchens set name = ${requiredName(name, "kitchen")} where id = ${kitchenId}`;
+          return one(kitchenId);
+        },
+        async setMcpEnabled(kitchenId, enabled) {
+          await one(kitchenId);
+          await sql`update tools.kitchens set mcp_enabled = ${enabled} where id = ${kitchenId}`;
           return one(kitchenId);
         },
         async remove(kitchenId) {

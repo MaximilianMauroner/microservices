@@ -47,6 +47,9 @@ const en = {
   renamed: "Kitchen renamed",
   created: (name: string) => `${name} created`,
   name: "Name",
+  mcpAccess: "Allow MCP access",
+  mcpHint: "Connected assistants can use this kitchen. Off by default.",
+  mcpUpdated: "MCP access updated",
   namePlaceholder: "Home, Max and Anna, …"
 };
 type KitText = typeof en;
@@ -85,6 +88,9 @@ const TEXT: Record<KitchenLanguage, KitText> = {
     renamed: "Küche umbenannt",
     created: (name: string) => `${name} angelegt`,
     name: "Name",
+    mcpAccess: "MCP-Zugriff erlauben",
+    mcpHint: "Verbundene Assistenten können diese Küche nutzen. Standardmäßig aus.",
+    mcpUpdated: "MCP-Zugriff aktualisiert",
     namePlaceholder: "Zuhause, Max und Anna, …"
   }
 };
@@ -170,6 +176,12 @@ export function KitchensPage(data: KitchensData) {
                         </label>
                       ) : <p className="text-xs text-muted-foreground">{data.people.length ? text.everyoneMember : <>{text.inviteIn} <Link to="/settings" className="underline">{text.settings}</Link> {text.inviteFirst}</>}</p>}
                       <p className="text-xs text-muted-foreground">{text.accessNote}</p>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input type="checkbox" checked={kitchen.mcpEnabled} disabled={pending}
+                          onChange={(event) => void run({ type: "kitchen.mcp", kitchenId: kitchen.id, enabled: event.target.checked }, text.mcpUpdated)} />
+                        {text.mcpAccess}
+                      </label>
+                      <p className="text-xs text-muted-foreground">{text.mcpHint}</p>
                     </div>
                   ) : null}
                   <div className="mt-auto flex items-center justify-between gap-2">

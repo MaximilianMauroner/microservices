@@ -247,12 +247,46 @@ describe.skipIf(!sql)("Kitchen", () => {
     expect((await home.stock()).map((item) => [item.unit, item.amount])).toEqual([["can", 3]]);
   });
 
+  it("requires admin opt-in for MCP and applies changes to connected clients", async () => {
+    const store = kitchenStore(sql!);
+    const home = await store.admin(admin).create("Home");
+    expect(home.mcpEnabled).toBe(false);
+    expect(() => store.admin(friend)).toThrow(/Only the admin/);
+    const principal = { ...admin, email: "admin@example.test", products: ["kitchen"] } as PlatformPrincipal;
+    const client = await connect(store, principal);
+    try {
+      const list = async () => {
+        const result = await client.callTool({ name: "kitchen_list", arguments: {} });
+        return JSON.parse((result.content as { text: string }[])[0]!.text);
+      };
+      const read = (kitchen?: string) => client.callTool({ name: "recipe_list", arguments: kitchen ? { kitchen } : {} });
+      expect(await list()).toEqual([]);
+      expect(await read(home.id)).toMatchObject({ isError: true });
+      expect(await read("Home")).toMatchObject({ isError: true });
+      expect(await read()).toMatchObject({ isError: true });
+      expect((await store.open(admin, home.id)).kitchen.name).toBe("Home");
+
+      await store.admin(admin).setMcpEnabled(home.id, true);
+      expect(await list()).toEqual([expect.objectContaining({ id: home.id })]);
+      expect((await read()).isError).not.toBe(true);
+
+      await store.admin(admin).setMcpEnabled(home.id, false);
+      expect(await list()).toEqual([]);
+      expect(await read(home.id)).toMatchObject({ isError: true });
+      expect(await client.callTool({ name: "shopping_add", arguments: { kitchen: home.id, item: "Milk" } })).toMatchObject({ isError: true });
+      expect((await store.open(admin, home.id)).kitchen.mcpEnabled).toBe(false);
+    } finally {
+      await client.close();
+    }
+  });
+
   it("lets an MCP client manage only the kitchens its person can open", async () => {
     const store = kitchenStore(sql!);
     const friendId = await person(friend.subject);
     const shared = await store.admin(admin).create("Shared");
     await store.admin(admin).create("Private");
     await store.admin(admin).addMember(shared.id, friendId);
+    await store.admin(admin).setMcpEnabled(shared.id, true);
     const member: PlatformPrincipal = { ...friend, email: "friend@example.test", products: ["kitchen"] } as PlatformPrincipal;
     const client = await connect(store, member);
     const call = async (name: string, args: Record<string, unknown>) => {
