@@ -20,6 +20,12 @@ must never show the admin's data to someone else. So each product moves to
 per-person data before it can be granted. Rows from before that move belong to
 the admin.
 
+**Market data is shared, holdings are not.** Prices, exchange rates, and
+inflation indices are public facts, so all people use one copy, and one sync
+keeps it current. Accounts, statements, transactions, rules, and positions
+belong to one person. The sync reads every person's instruments only to decide
+which prices to fetch. It shows no person's data to another.
+
 **The Google subject identifies a person, not the email.** An email address
 can change or move to a different account. The subject cannot. An invitation
 uses the email once, at first sign-in, and the subject from then on.

@@ -7,6 +7,8 @@ import { attachPlatformPrincipal, type PlatformPrincipal } from "#security";
 import { assignExistingRowsToAdmin } from "../../../platform/database/assign-existing-owner.js";
 import { DISPOSABLE_DATABASE_SENTINEL, withVerifiedDisposableDatabase } from "../../../platform/database/postgres-push-guard.js";
 import { feedbackRepository } from "../../../products/feedback/repository.js";
+import { parseMoneyImport } from "../../../products/money/money-import-domain.js";
+import { postgresMoneyRepository, type MoneyOwnerRepository } from "../../../products/money/money-repository.js";
 import { createDocumentChanges } from "../../../products/documents/changes.js";
 import { createShareHandler } from "../../../products/documents/http.js";
 import { createMarkdownShareRepository } from "../../../products/documents/repository.js";
@@ -32,7 +34,7 @@ beforeEach(async () => {
       select sentinel_value value from public.tools_runtime_test_sentinel
       where sentinel_key = ${DISPOSABLE_DATABASE_SENTINEL.key}`)[0]?.value,
   }, async () => {
-    await sql`truncate tools.feedback_forms, tools.feedback_submissions, artifacts.objects, artifacts.operations, artifacts.upload_links, artifacts.upload_sessions, tools.markdown_documents cascade`;
+    await sql`truncate tools.feedback_forms, tools.feedback_submissions, artifacts.objects, artifacts.operations, artifacts.upload_links, artifacts.upload_sessions, tools.markdown_documents, tools.money_balance_snapshots, tools.money_category_rules, tools.money_transfer_rules, tools.money_transfer_pair_rules, tools.money_investment_events, tools.money_transactions, tools.money_imports, tools.money_accounts cascade`;
   });
 });
 
@@ -102,6 +104,61 @@ describe.skipIf(!sql)("Feedback per person", () => {
     const own = await friend.createForm({ language: "de" });
     expect((await friend.listForms()).map((item) => item.id)).toEqual([own.id]);
     expect((await max.listForms()).map((item) => item.id)).toEqual([form.id]);
+  });
+});
+
+describe.skipIf(!sql)("Money per person", () => {
+  const statement = (...rows: string[]) => Buffer.from(["Type\tProduct\tStarted Date\tCompleted Date\tDescription\tAmount\tFee\tCurrency\tState\tBalance", ...rows].join("\r\n"));
+  const bakery = "Card Payment\tCurrent\t2026-09-05 12:00:00\t2026-09-05 12:00:00\tBakery\t-4\t0\tEUR\tCOMPLETED\t96";
+  const toSavings = "Transfer\tCurrent\t2026-09-10 12:00:00\t2026-09-10 12:00:00\tTo savings\t-20\t0\tEUR\tCOMPLETED\t76";
+  const intoSavings = "Transfer\tSavings\t2026-09-10 12:00:00\t2026-09-10 12:00:00\tTo savings\t20\t0\tEUR\tCOMPLETED\t20";
+  const commit = (ledger: MoneyOwnerRepository, source: Buffer) => {
+    const parsed = parseMoneyImport(source);
+    return ledger.commitImport({ digest: parsed.digest, format: parsed.format, filename: "statement.tsv", bytes: source.byteLength, rowCount: parsed.rowCount,
+      actor: "person@example.test", transactions: parsed.transactions, investmentEvents: parsed.investmentEvents, balanceSnapshots: parsed.balanceSnapshots, warnings: parsed.warnings });
+  };
+  const items = async (ledger: MoneyOwnerRepository) => (await ledger.readActivityPage({ query: "", offset: 0, limit: 50 })).items;
+
+  it("keeps imports, transfers, rules, and changes inside each person's own ledger", async () => {
+    const money = postgresMoneyRepository(sql!);
+    const max = money.owner("admin-subject");
+    const friend = money.owner("friend-subject");
+    const control = money.owner("control-subject");
+
+    const maxImport = await commit(max, statement(bakery, toSavings));
+    const friendImport = await commit(friend, statement(bakery, toSavings));
+    expect(friendImport).toMatchObject({ replay: false, insertedCount: 2 });
+    expect(friendImport.id).not.toBe(maxImport.id);
+    await commit(friend, statement(intoSavings));
+    await commit(control, statement(toSavings, intoSavings));
+
+    expect((await max.readLedgerSnapshot("all")).transferReview.linkedPairs).toBe(0);
+    expect((await friend.readLedgerSnapshot("all")).transferReview.linkedPairs).toBe(1);
+    expect((await control.readLedgerSnapshot("all")).transferReview.linkedPairs).toBe(1);
+
+    const maxRows = await items(max);
+    const maxBakery = maxRows.find((item) => item.description === "Bakery")!;
+    const maxTransfer = maxRows.find((item) => item.description === "To savings")!;
+    expect(maxRows).toHaveLength(2);
+    expect((await items(friend)).map((item) => item.id)).not.toContain(maxBakery.id);
+
+    const { ruleId } = await max.saveCategoryRule({ matchField: "description", matchOperator: "equals", matchValue: "bakery", category: "groceries", actor: "max@example.test", expectedMatchCount: 1 });
+    expect((await items(max)).find((item) => item.id === maxBakery.id)?.category).toBe("groceries");
+    expect((await items(friend)).find((item) => item.description === "Bakery")?.category).toBe("uncategorized");
+    expect((await friend.readLedgerSnapshot("all")).categoryRules).toEqual([]);
+
+    await expect(friend.setTransactionCategory({ transactionId: maxBakery.id, category: "dining", actor: "friend@example.test", createRule: false })).rejects.toThrow(/not found/);
+    await expect(friend.setTransferDisposition({ transactionId: maxTransfer.id, disposition: "spend" })).rejects.toThrow(/not found/);
+    expect(await friend.setTransferDispositions({ transactionIds: [maxTransfer.id], disposition: "spend" })).toEqual({ affectedCount: 0 });
+    await expect(friend.addManualBalance({ accountId: maxBakery.accountId!, date: "2026-09-30", valueMinor: 1, currency: "EUR" })).rejects.toThrow(/not found/);
+    await expect(friend.saveCategoryRule({ ruleId, matchField: "description", matchOperator: "equals", matchValue: "bakery", category: "dining", actor: "friend@example.test", expectedMatchCount: 1 })).rejects.toMatchObject({ code: "rule_not_found" });
+    expect(await friend.deleteCategoryRule(ruleId)).toBeUndefined();
+    expect(await friend.deleteImport(maxImport.id)).toBeUndefined();
+
+    const after = await items(max);
+    expect(after.find((item) => item.id === maxBakery.id)).toMatchObject({ category: "groceries", categoryOrigin: "rule" });
+    expect(after.find((item) => item.id === maxTransfer.id)?.transferDisposition).toBeUndefined();
+    expect((await max.readLedgerSnapshot("all")).imports.map((item) => item.id)).toEqual([maxImport.id]);
   });
 });
 

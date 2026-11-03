@@ -6,15 +6,17 @@ import { DISPOSABLE_DATABASE_SENTINEL, withVerifiedDisposableDatabase } from "..
 import { reconcileRuntimeSchema } from "../../../platform/database/runtime-schema-reconciliation.js";
 import { parseMoneyImport, REVOLUT_CASH_FORMAT } from "../../../products/money/money-import-domain.js";
 import { cashMovesSince } from "../../../products/money/money-checkin-domain.js";
-import { createPostgresMoneyRepository, type MoneyRepository } from "../../../products/money/money-repository.js";
+import { createPostgresMoneyRepository, type MoneyOwnerRepository } from "../../../products/money/money-repository.js";
 import { moneyTrackerTrendStats } from "../../../products/money/money-tracker-domain.js";
-import { MoneyImportService } from "../../../products/money/money-import-service.js";
+import { MoneyLedger } from "../../../products/money/money-import-service.js";
 import { requireLoopbackPostgres } from "../../harness/postgres.ts";
 import { moneyWorkbookFixture } from "./money-workbook-fixture.js";
 
 const databaseUrl = process.env.TEST_DATABASE_URL ? requireLoopbackPostgres(process.env.TEST_DATABASE_URL) : undefined;
 const confirmed = process.env.MONEY_TEST_DATABASE_CONFIRM === "money-repository-test";
-const repository = databaseUrl && confirmed ? createPostgresMoneyRepository(databaseUrl) : undefined;
+const OWNER = "money-test-owner";
+const store = databaseUrl && confirmed ? createPostgresMoneyRepository(databaseUrl) : undefined;
+const repository = store?.owner(OWNER);
 const admin = databaseUrl && confirmed ? postgres(databaseUrl, { max: 1 }) : undefined;
 
 beforeEach(async () => {
@@ -30,8 +32,8 @@ beforeEach(async () => {
     await admin`truncate tools.money_balance_snapshots, tools.money_category_rules, tools.money_transfer_rules, tools.money_transfer_pair_rules, tools.money_investment_events, tools.money_transactions, tools.money_imports, tools.money_accounts cascade`;
     // Transfer rules are data. These fixtures stand in for the owner's stored rules.
     const rule = (priority: number, disposition: string, sourceType: string | null, match = "any", value: string | null = null, sign = "any") =>
-      admin`insert into tools.money_transfer_rules (id, priority, provider, source_type, description_match, match_value, amount_sign, disposition, created_at, updated_at, created_by)
-        values (gen_random_uuid(), ${priority}, ${sourceType === "Exchange" ? null : "revolut"}, ${sourceType}, ${match}, ${value}, ${sign}, ${disposition}, now(), now(), 'fixture')`;
+      admin`insert into tools.money_transfer_rules (id, owner_subject, priority, provider, source_type, description_match, match_value, amount_sign, disposition, created_at, updated_at, created_by)
+        values (gen_random_uuid(), ${OWNER}, ${priority}, ${sourceType === "Exchange" ? null : "revolut"}, ${sourceType}, ${match}, ${value}, ${sign}, ${disposition}, now(), now(), 'fixture')`;
     await rule(900, "excluded", "Exchange");
     await rule(800, "internal_transfer", "Card Payment", "equals", "hype");
     await rule(600, "income", "Topup", "contains", "provincia autonoma bolzano");
@@ -43,7 +45,7 @@ beforeEach(async () => {
 });
 
 afterAll(async () => {
-  await repository?.close();
+  await store?.close();
   await admin?.end();
 });
 
@@ -58,7 +60,7 @@ it.skipIf(!repository || !admin)("commits savings CSV and Excel into one account
     [{ date: 46242 }, rows[0]![1]!, "", "â_x0082_¬10.00", "", "â_x0082_¬10.00"],
     [{ date: 46243 }, rows[1]![1]!, 0.02, "â_x0082_¬0.01", "", "â_x0082_¬10.01"]
   ], { sharedStrings: true });
-  const service = new MoneyImportService(repository!);
+  const service = new MoneyLedger(repository!);
   const preview = await service.preview("savings.csv", csv);
   expect((await service.commit({ filename: "savings.csv", bytes: csv, expectedDigest: preview.digest, actor: "integration@example.test" })).insertedCount).toBe(2);
   const excelPreview = await service.preview("savings.xlsx", excel);
@@ -77,7 +79,7 @@ it.skipIf(!repository || !admin).each(["original", "duplicate"] as const)("recog
   const csv = Buffer.from([headers, row].map((cells) => cells.join(",")).join("\r\n"));
   const date = { date: 46243 + (5 * 3600 + 8 * 60 + 51) / 86400 };
   const excel = moneyWorkbookFixture([headers, ["Interest", "Deposit", date, date, "Interest paid", 0.01, 0, "EUR", "COMPLETED", 10.01]]);
-  const service = new MoneyImportService(repository!);
+  const service = new MoneyLedger(repository!);
   const preview = await service.preview("old.csv", csv);
   const original = await service.commit({ filename: "old.csv", bytes: csv, expectedDigest: preview.digest, actor: "integration@example.test" });
   const oldKey = createHash("sha256").update(JSON.stringify([REVOLUT_CASH_FORMAT, ...row])).digest("hex");
@@ -115,7 +117,7 @@ it.skipIf(!repository || !admin).each([
   const [original, equivalent] = first === "CSV" ? [csv, excel] : [excel, csv];
   const originalFilename = first === "CSV" ? "original.csv" : "original.xlsx";
   const equivalentFilename = first === "CSV" ? "equivalent.xlsx" : "equivalent.csv";
-  const service = new MoneyImportService(repository!);
+  const service = new MoneyLedger(repository!);
   const preview = await service.preview(originalFilename, original);
   expect(await service.commit({ filename: originalFilename, bytes: original, expectedDigest: preview.digest, actor: "integration@example.test" })).toMatchObject({ insertedCount: 2, duplicateCount: 0, replay: false });
   const activity = await repository!.readActivityPage({ query: "Reviewed", offset: 0, limit: 10 });
@@ -156,7 +158,7 @@ it.skipIf(!repository || !admin).each([false, true])("counts overlapping cash an
     "Transfer\tDeposit\t2026-08-08 12:00:00\t2026-08-08 12:00:00\tDeposit to Instant Access Savings\t10\t0\tEUR\tCOMPLETED\t10",
     "Interest\tDeposit\t2026-08-09 5:08:51\t2026-08-09 5:08:51\tInterest paid\t0.02\t0.01\tEUR\tCOMPLETED\t10.01"
   ]);
-  const service = new MoneyImportService(repository!);
+  const service = new MoneyLedger(repository!);
   let cashImportId = "";
   for (const bytes of cashFirst ? [cashBytes, savings] : [savings, cashBytes]) {
     const preview = await service.preview("statement.csv", bytes);
@@ -296,8 +298,8 @@ it.skipIf(!repository || !admin)("classifies transfers with stored rules that ch
   const disposition = async () => (await repository!.readActivityPage({ query: "To My Savings", offset: 0, limit: 10 })).items[0]?.transferDisposition;
   expect(await disposition()).toBe("spend");
 
-  await admin!`insert into tools.money_transfer_rules (id, priority, provider, source_type, description_match, match_value, amount_sign, disposition, note, created_at, updated_at, created_by)
-    values (gen_random_uuid(), 700, 'revolut', 'Transfer', 'equals', 'to my savings', 'any', 'internal_transfer', 'Own savings account', now(), now(), 'fixture')`;
+  await admin!`insert into tools.money_transfer_rules (id, owner_subject, priority, provider, source_type, description_match, match_value, amount_sign, disposition, note, created_at, updated_at, created_by)
+    values (gen_random_uuid(), ${OWNER}, 700, 'revolut', 'Transfer', 'equals', 'to my savings', 'any', 'internal_transfer', 'Own savings account', now(), now(), 'fixture')`;
   await repository!.reimportAll();
   expect(await disposition()).toBe("internal_transfer");
   expect((await repository!.readLedgerSnapshot("review")).transferRules).toContainEqual(expect.objectContaining({ matchValue: "to my savings", note: "Own savings account" }));
@@ -1194,7 +1196,7 @@ function cash(rows: string[]) {
   return Buffer.from(["Type\tProduct\tStarted Date\tCompleted Date\tDescription\tAmount\tFee\tCurrency\tState\tBalance", ...rows].join("\r\n"));
 }
 
-async function commitCash(target: MoneyRepository, source: Buffer, filename: string) {
+async function commitCash(target: MoneyOwnerRepository, source: Buffer, filename: string) {
   const parsed = parseMoneyImport(source);
   return target.commitImport({ digest: parsed.digest, format: parsed.format, filename, bytes: source.byteLength,
     rowCount: parsed.rowCount, actor: "integration@example.test", transactions: parsed.transactions,
@@ -1202,8 +1204,8 @@ async function commitCash(target: MoneyRepository, source: Buffer, filename: str
 }
 
 function storeTransferRule(priority: number, match: string, value: string, disposition: string) {
-  return admin!`insert into tools.money_transfer_rules (id, priority, provider, source_type, description_match, match_value, amount_sign, disposition, created_at, updated_at, created_by)
-    values (gen_random_uuid(), ${priority}, 'revolut', 'Transfer', ${match}, ${value}, 'any', ${disposition}, now(), now(), 'fixture')`;
+  return admin!`insert into tools.money_transfer_rules (id, owner_subject, priority, provider, source_type, description_match, match_value, amount_sign, disposition, created_at, updated_at, created_by)
+    values (gen_random_uuid(), ${OWNER}, ${priority}, 'revolut', 'Transfer', ${match}, ${value}, 'any', ${disposition}, now(), now(), 'fixture')`;
 }
 
 async function transactionId(description: string) {

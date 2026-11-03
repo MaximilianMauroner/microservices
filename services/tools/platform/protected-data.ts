@@ -56,15 +56,16 @@ export type DocumentsPageData = MarkdownAdminSnapshot & {
 export type MoneyTrackerPageData = MoneyLedgerSnapshot & { actor: string; marketData: MoneyMarketSnapshot; checkIn?: MoneyCheckIn };
 
 export const getMoneyTrackerPageData = createServerFn({ method: "GET" })
-  .middleware([requirePlatformSession])
+  .middleware([requireProductAccess("money")])
   .validator((input: { view: MoneyLedgerViewScope; since?: string }) => {
     if (!MONEY_LEDGER_SCOPES.includes(input.view)) throw new Error("Invalid Money view");
     if (input.since !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(input.since)) throw new Error("Invalid check-in date");
     return input;
   })
-  .handler(async ({ data }): Promise<MoneyTrackerPageData> => {
+  .handler(async ({ context: { principal }, data }): Promise<MoneyTrackerPageData> => {
     const { context } = internalPlatformRequest("/money");
-    const { moneyImports, moneyMarketData } = context.runtime;
+    const moneyImports = context.runtime.moneyImports.owner(principal.subject);
+    const { moneyMarketData } = context.runtime;
     const needsMarketData = data.view === "overview" || data.view === "investments" || data.view === "accounts" || data.view === "plan" || data.view === "review";
     const needsCheckIn = data.view === "overview" || data.view === "investments";
     const days = needsCheckIn ? await moneyImports.readCheckInDays() : [];
@@ -72,12 +73,12 @@ export const getMoneyTrackerPageData = createServerFn({ method: "GET" })
     const overviewBaseline = data.view === "overview" ? baseline : undefined;
     const [ledger, { movesSince, ...marketData }, cash, spending] = await Promise.all([
       moneyImports.readLedgerSnapshot(data.view),
-      needsMarketData ? moneyMarketData.snapshot({ since: baseline, history: data.view === "investments" ? "daily" : data.view === "review" ? "none" : "monthly" }) : Promise.resolve(emptyMarketSnapshot()),
+      needsMarketData ? moneyMarketData.snapshot(principal.subject, { since: baseline, history: data.view === "investments" ? "daily" : data.view === "review" ? "none" : "monthly" }) : Promise.resolve(emptyMarketSnapshot()),
       overviewBaseline ? moneyImports.readCashMovesSince(overviewBaseline) : undefined,
       overviewBaseline ? moneyImports.readSpendingSince(overviewBaseline, previousCheckIn(days, overviewBaseline)) : undefined
     ]);
     return {
-      actor: context.principal?.email ?? "Authenticated user",
+      actor: principal.email,
       ...ledger,
       marketData,
       ...(movesSince ? { checkIn: moneyCheckIn({ days, positions: movesSince, ...(cash ? { cash } : {}), ...(spending ? { spending } : {}) }) } : {})

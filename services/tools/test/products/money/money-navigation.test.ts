@@ -15,7 +15,7 @@ const mocks = vi.hoisted(() => ({
   code: vi.fn(async () => undefined),
 }));
 vi.mock("../../../platform/protected-data.js", () => ({ getMoneyTrackerPageData: mocks.data }));
-vi.mock("../../../platform/auth/session.js", () => ({ requireRouteSession: mocks.session }));
+vi.mock("../../../platform/auth/session.js", () => ({ requireProductSession: mocks.session }));
 vi.mock("../../../products/money/money-view-loading.js", () => ({ preloadMoneyView: mocks.code }));
 vi.mock("../../../products/money/money-tracker-page.js", () => ({ MoneyTrackerPage: () => null }));
 vi.mock("../../../products/money/money-tracker-pending-page.js", () => ({ MoneyTrackerPendingPage: () => null }));

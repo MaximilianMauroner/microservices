@@ -9,7 +9,7 @@ import {
   type MoneyTransferDisposition,
   type MoneyImportPreview
 } from "./money-import-domain.js";
-import type { MoneyCategoryRuleInput, MoneyImportReceipt, MoneyLedgerScope, MoneyLedgerSnapshot, MoneyRepository, MoneyTransferRuleInput } from "./money-repository.js";
+import type { MoneyCategoryRuleInput, MoneyImportReceipt, MoneyLedgerScope, MoneyLedgerSnapshot, MoneyOwnerRepository, MoneyRepository, MoneyTransferRuleInput } from "./money-repository.js";
 import { MONEY_TRANSFER_RULE_MATCHES, MONEY_TRANSFER_RULE_SIGNS, type MoneyTransferRuleMatch, type MoneyTransferRuleSign } from "./money-transfer-inference.js";
 import { MONEY_CATEGORY_RULE_FIELDS, MONEY_CATEGORY_RULE_OPERATORS, normalizeCategoryRuleText, type MoneyCategoryRuleField, type MoneyCategoryRuleOperator } from "./money-category-rules.js";
 
@@ -18,6 +18,23 @@ type TransferRuleFields = Readonly<{ provider?: string; sourceType?: string; des
 
 export class MoneyImportService {
   constructor(private readonly repository: MoneyRepository) {}
+
+  owner(subject: string) {
+    return new MoneyLedger(this.repository.owner(subject));
+  }
+
+  readiness(): Promise<void> {
+    return this.repository.readiness();
+  }
+
+  close(): Promise<void> {
+    return this.repository.close();
+  }
+}
+
+/** One person's Money ledger. */
+export class MoneyLedger {
+  constructor(private readonly repository: MoneyOwnerRepository) {}
 
   async preview(filename: string, bytes: Uint8Array): Promise<MoneyImportPreview> {
     const safeFilename = validateFilename(filename);
@@ -197,14 +214,6 @@ export class MoneyImportService {
     const valueMinor = input.value.startsWith("-") ? -absolute : absolute;
     if (!Number.isSafeInteger(valueMinor)) throw new MoneyImportValidationError("invalid_value", "The balance is outside the supported range.");
     return this.repository.addManualBalance({ ...(accountId ? { accountId } : { accountName: accountName! }), date: input.date, valueMinor, currency: input.currency });
-  }
-
-  readiness(): Promise<void> {
-    return this.repository.readiness();
-  }
-
-  close(): Promise<void> {
-    return this.repository.close();
   }
 }
 

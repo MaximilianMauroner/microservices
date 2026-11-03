@@ -51,10 +51,10 @@ describe("primary page ownership", () => {
     expect(source).toContain("linksRevision.current += 1");
   });
 
-  it("protects private money data with the shared session middleware", () => {
+  it("protects private money data with the Money grant middleware", () => {
     const source = readFileSync(new URL("../../platform/protected-data.ts", import.meta.url), "utf8");
     const moneyLoader = source.slice(source.indexOf("getMoneyTrackerPageData"), source.indexOf("getPrivateStatusPageData"));
-    expect(moneyLoader).toContain(".middleware([requirePlatformSession])");
+    expect(moneyLoader).toContain('.middleware([requireProductAccess("money")])');
   });
 
   it("keeps the public feedback form outside the private feedback route guards", () => {

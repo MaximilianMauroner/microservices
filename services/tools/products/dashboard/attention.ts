@@ -30,7 +30,7 @@ export const getAttentionSummary = createServerFn({ method: "GET" })
   .handler(async ({ context: { principal } }): Promise<AttentionSummary> => {
     const { context } = internalPlatformRequest("/api/ops/snapshot");
     const [money, forms, documents, snapshot] = await Promise.allSettled([
-      context.runtime.moneyImports.readReviewCounts(),
+      context.runtime.moneyImports.owner(principal.subject).readReviewCounts(),
       context.runtime.feedback.owner(principal.subject).listForms(),
       context.runtime.documentShare.owner(principal.subject).list(),
       readSnapshot(context)
@@ -44,7 +44,7 @@ export const getDashboardData = createServerFn({ method: "GET" })
     const { context } = internalPlatformRequest("/api/ops/snapshot");
     const [snapshot, money, forms, documents, uploads] = await Promise.all([
       readSnapshot(context),
-      context.runtime.moneyImports.readReviewCounts().catch(() => undefined),
+      context.runtime.moneyImports.owner(principal.subject).readReviewCounts().catch(() => undefined),
       context.runtime.feedback.owner(principal.subject).listForms().catch(() => undefined),
       context.runtime.documentShare.owner(principal.subject).list().catch(() => undefined),
       readUploadSummary(context).catch(() => undefined)
