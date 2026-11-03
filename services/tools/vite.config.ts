@@ -7,13 +7,13 @@ import { nitro } from "nitro/vite";
 import { defineConfig } from "vite";
 
 export default defineConfig({
-  publicDir: new URL("../../services/tools/dashboard/public", import.meta.url).pathname,
+  publicDir: new URL("./products/dashboard/public", import.meta.url).pathname,
   server: {
     allowedHosts: ["coding.tailbc92d.ts.net"]
   },
   plugins: [
     tailwindcss(),
-    tanstackStart({ serverFns: { base: SERVER_FUNCTION_BASE_PATH } }),
+    tanstackStart({ srcDirectory: "app", serverFns: { base: SERVER_FUNCTION_BASE_PATH } }),
     nitro({
       preset: "node-server",
       // Preserve route and dependency chunks so public requests do not load
@@ -26,7 +26,7 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
-      "@": new URL("./src", import.meta.url).pathname
+      "@": new URL("./platform/ui", import.meta.url).pathname
     }
   }
 });

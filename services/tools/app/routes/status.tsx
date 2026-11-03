@@ -1,0 +1,43 @@
+import { createFileRoute, useRouter } from "@tanstack/react-router";
+import { useEffect } from "react";
+import { ToolsStatus } from "../../products/status/ui/tools-status.js";
+import { getPrivateStatusPageData } from "../../platform/protected-data.js";
+import { tools } from "../../platform/route-handlers.js";
+import { faviconLink, favicons } from "../../platform/ui/favicons.js";
+import { requireRouteSession } from "../../platform/auth/session.js";
+
+export const Route = createFileRoute("/status")({
+  beforeLoad: ({ location }) => requireRouteSession(location.href),
+  head: ({ loaderData }) => ({
+    meta: [
+      { title: "Status — Mauroner Tools" },
+      { name: "description", content: "Current availability of Mauroner tools and services." },
+      { name: "theme-color", content: "#000000" },
+      { property: "og:title", content: "Status — Mauroner Tools" },
+      { property: "og:description", content: "Current availability of Mauroner tools and services." },
+      { property: "og:url", content: `${loaderData?.publicOrigin ?? ""}/status` },
+      { property: "og:type", content: "website" }
+    ],
+    links: [
+      faviconLink(favicons.status),
+      ...(loaderData ? [{ rel: "canonical", href: `${loaderData.publicOrigin}/status` }] : [])
+    ]
+  }),
+  loader: () => getPrivateStatusPageData(),
+  component: ToolsStatusRoute,
+  server: { handlers: { HEAD: tools } }
+});
+
+function ToolsStatusRoute() {
+  const router = useRouter();
+  const data = Route.useLoaderData();
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      void router.invalidate();
+    }, 60_000);
+    return () => window.clearInterval(interval);
+  }, [router]);
+
+  return <ToolsStatus snapshot={data.snapshot} publicOrigin={data.publicOrigin} />;
+}

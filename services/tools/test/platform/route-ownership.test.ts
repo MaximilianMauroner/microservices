@@ -1,0 +1,80 @@
+import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { readOnly } from "../../platform/route-handlers.js";
+
+describe("primary page ownership", () => {
+  it("registers explicit React routes without legacy browser splats", () => {
+    const source = readFileSync(new URL("../../app/routeTree.gen.ts", import.meta.url), "utf8");
+    for (const path of ["/status", "/publisher", "/publisher/artifacts", "/publisher/receive", "/documents", "/money", "/feedback", "/feedback/forms/", "/feedback/forms/$formId", "/feedback/responses/$submissionId", "/feedback/f/$token", "/feedback/share/$token", "/share/", "/share/d/$slug", "/markdown/", "/markdown/d/$slug", "/drop/$", "/api/drop/$", "/api/upload-links", "/api/upload-links/$"]) {
+      expect(source).toContain(`fullPath: '${path}'`);
+    }
+    for (const path of ["/review", "/publish", "/manage", "/manage/status", "/manage/documents", "/tools/private/money", "/ops", "/uploads", "/p", "/f", "/status/private"]) {
+      expect(source).not.toContain(`fullPath: '${path}'`);
+    }
+  });
+
+  it("periodically reloads an open status page", () => {
+    const source = readFileSync(new URL("../../app/routes/status.tsx", import.meta.url), "utf8");
+
+    expect(source).toContain("window.setInterval");
+    expect(source).toContain("void router.invalidate()");
+    expect(source).toContain("window.clearInterval(interval)");
+  });
+
+  it("keeps catalog operations read-only while Manage uses publisher lifecycle routes", () => {
+    const page = readFileSync(new URL("../../products/publisher/ui/manage-page.tsx", import.meta.url), "utf8");
+    const route = readFileSync(new URL("../../app/routes/api/ops/$.ts", import.meta.url), "utf8");
+
+    expect(page).toContain("/api/external-uploads/${selected.id}");
+    expect(page).not.toContain("/api/ops/catalog");
+    expect(route).toContain("handlers: { GET: tools, HEAD: tools, POST: readOnly, PUT: readOnly, PATCH: readOnly, DELETE: readOnly }");
+    expect(route).not.toMatch(/\b(POST|PUT|PATCH|DELETE): tools/);
+  });
+
+  it("keeps upload-link revocation available independently of the browser clock", () => {
+    const source = readFileSync(new URL("../../products/publisher/ui/upload-link-manager.tsx", import.meta.url), "utf8");
+    expect(source).toContain("!link.revokedAt ? <Button");
+    expect(source).not.toContain("active ? <Button type=\"button\"");
+  });
+
+  it("loads upload-link history in bounded pages", () => {
+    const source = readFileSync(new URL("../../products/publisher/ui/upload-link-manager.tsx", import.meta.url), "utf8");
+    expect(source).toContain("setNextCursor(payload.nextCursor)");
+    expect(source).toContain("/api/upload-links?cursor=");
+    expect(source).toContain("Load older links");
+  });
+
+  it("ignores upload-link refreshes made stale by lifecycle changes", () => {
+    const source = readFileSync(new URL("../../products/publisher/ui/upload-link-manager.tsx", import.meta.url), "utf8");
+    expect(source).toContain("const linksRevision = useRef(0)");
+    expect(source).toContain("if (revision !== linksRevision.current) return");
+    expect(source).toContain("linksRevision.current += 1");
+  });
+
+  it("protects private money data with the shared session middleware", () => {
+    const source = readFileSync(new URL("../../platform/protected-data.ts", import.meta.url), "utf8");
+    const moneyLoader = source.slice(source.indexOf("getMoneyTrackerPageData"), source.indexOf("getPrivateStatusPageData"));
+    expect(moneyLoader).toContain(".middleware([requirePlatformSession])");
+  });
+
+  it("keeps the public feedback form outside the private feedback route guards", () => {
+    const layout = readFileSync(new URL("../../app/routes/feedback.tsx", import.meta.url), "utf8");
+    const list = readFileSync(new URL("../../app/routes/feedback/index.tsx", import.meta.url), "utf8");
+    const form = readFileSync(new URL("../../app/routes/feedback/forms/$formId.tsx", import.meta.url), "utf8");
+    const response = readFileSync(new URL("../../app/routes/feedback/responses/$submissionId.tsx", import.meta.url), "utf8");
+    const publicForm = readFileSync(new URL("../../app/routes/feedback/f/$token.tsx", import.meta.url), "utf8");
+    const sharedResponse = readFileSync(new URL("../../app/routes/feedback/share/$token.tsx", import.meta.url), "utf8");
+    expect(layout).not.toContain("requireRouteSession");
+    expect(publicForm).not.toContain("requireRouteSession");
+    expect(sharedResponse).not.toContain("requireRouteSession");
+    for (const source of [list, form, response]) expect(source).toContain('requireProductSession(location.href, "feedback")');
+  });
+
+  it("rejects catalog mutations with an explicit read-only response", async () => {
+    const response = readOnly();
+
+    expect(response.status).toBe(405);
+    expect(response.headers.get("allow")).toBe("GET, HEAD");
+    await expect(response.json()).resolves.toEqual({ error: "read_only" });
+  });
+});

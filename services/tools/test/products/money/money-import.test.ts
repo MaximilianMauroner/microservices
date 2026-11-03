@@ -1,0 +1,530 @@
+import { readFileSync } from "node:fs";
+import { describe, expect, it, vi } from "vitest";
+import {
+  MoneyImportValidationError,
+  MONEY_BALANCE_SNAPSHOT_FORMAT,
+  PORTFOLIO_TRANSACTION_FORMAT,
+  REVOLUT_CASH_FORMAT,
+  REVOLUT_TRADING_FORMAT,
+  parseMoneyImport,
+  type MoneyLedgerTransaction
+} from "../../../products/money/money-import-domain.js";
+import { MoneyImportService } from "../../../products/money/money-import-service.js";
+import { deleteMoneyCategoryRule, deleteMoneyImport, previewMoneyImport, reimportAllMoneyImports, updateMoneyCategory, updateMoneyTransfer } from "../../../products/money/money-route-handlers.js";
+import type {
+  MoneyImportCommitInput,
+  MoneyActivityPageInput,
+  MoneyImportReceipt,
+  MoneyLedgerSnapshot,
+  MoneyRepository,
+  MoneyTransferRuleInput
+} from "../../../products/money/money-repository.js";
+import type { PlatformRouteInput } from "../../../platform/route-handlers.js";
+
+const header = "Type\tProduct\tStarted Date\tCompleted Date\tDescription\tAmount\tFee\tCurrency\tState\tBalance";
+
+describe("Revolut cash statement parser", () => {
+  it("normalizes exact amounts, statuses, flow kinds, and Berlin timestamps", () => {
+    const parsed = statement([
+      "Transfer\tCurrent\t2026-08-09 5:08:51\t2026-08-09 5:08:51\tFrom own account\t20\t0\tEUR\tCOMPLETED\t20",
+      "Card Payment\tCurrent\t2026-08-09 7:10:00\t2026-08-09 7:11:00\tCoffee\t-3.5\t0.1\tEUR\tCOMPLETED\t16.4",
+      "Card Payment\tCurrent\t2026-08-09 8:00:00\t2026-08-09 8:00:00\tReverted purchase\t-5\t0\tEUR\tREVERTED\t",
+    ]);
+
+    expect(parsed.format).toBe(REVOLUT_CASH_FORMAT);
+    expect(parsed.rowCount).toBe(3);
+    expect(parsed.dateRange).toEqual({ from: "2026-08-09", to: "2026-08-09" });
+    expect(parsed.transactions[0]).toMatchObject({
+      occurredAt: "2026-08-09T03:08:51.000Z",
+      amountMinor: 2_000,
+      feeMinor: 0,
+      balanceAfterMinor: 2_000,
+      status: "completed",
+      flowKind: "transfer",
+      category: "transfer"
+    });
+    expect(parsed.transactions[1]).toMatchObject({
+      amountMinor: -350,
+      feeMinor: 10,
+      balanceAfterMinor: 1_640,
+      flowKind: "spend",
+      category: "uncategorized"
+    });
+    expect(parsed.transactions[2]).toMatchObject({ status: "reverted" });
+    expect(parsed.accounts).toEqual([expect.objectContaining({
+      name: "Revolut Current",
+      rowCount: 3,
+      completedCount: 2,
+      revertedCount: 1,
+      endingBalanceMinor: 1_640,
+      reconciliationMismatchCount: 0
+    })]);
+  });
+
+  it("repairs double-encoded merchant descriptions before storing them", () => {
+    const parsed = statement([
+      "Card Payment\tCurrent\t2026-08-09 7:10:00\t2026-08-09 7:11:00\tÃBB\t-3.5\t0\tEUR\tCOMPLETED\t16.5",
+      "Card Payment\tCurrent\t2026-08-09 8:10:00\t2026-08-09 8:11:00\tWaag CafÃ©\t-5\t0\tEUR\tCOMPLETED\t11.5",
+    ]);
+    expect(parsed.transactions.map(({ description }) => description)).toEqual(["ÖBB", "Waag Café"]);
+  });
+
+  it("treats legal-entity migrations as balance adjustments", () => {
+    const parsed = statement([
+      "Transfer\tPocket\t2021-12-09 16:44:13\t2021-12-09 16:44:13\tBalance migration to another region or legal entity\t-54.96\t0\tEUR\tCOMPLETED\t0",
+      "Transfer\tPocket\t2023-12-18 15:52:27\t2023-12-18 15:52:27\tClosing transaction\t0\t0\tEUR\tCOMPLETED\t0"
+    ]);
+
+    expect(parsed.transactions.map(({ flowKind, category }) => [flowKind, category])).toEqual([["balance_adjustment", "adjustment"], ["balance_adjustment", "adjustment"]]);
+    expect(parsed.accounts[0]?.reconciliationMismatchCount).toBe(0);
+  });
+
+  it("treats HYPE card recharges as transfers", () => {
+    const parsed = statement([
+      "Card Payment\tCurrent\t2026-08-09 5:08:51\t2026-08-09 5:08:51\tHYPE\t-25\t0\tEUR\tCOMPLETED\t75"
+    ]);
+
+    expect(parsed.transactions[0]).toMatchObject({ flowKind: "transfer", category: "transfer", amountMinor: -2_500 });
+  });
+
+  it("fingerprints rows independently from their source row number", () => {
+    const row = "Interest\tDeposit\t2026-08-09 5:08:51\t2026-08-09 5:08:51\tInterest paid\t0.01\t0\tEUR\tCOMPLETED\t10.01";
+    const first = statement([row]);
+    const shifted = statement([
+      "Transfer\tCurrent\t2026-08-08 5:08:51\t2026-08-08 5:08:51\tTop up\t10\t0\tEUR\tCOMPLETED\t10",
+      row
+    ]);
+
+    expect(first.transactions[0]?.sourceKey).toBe(shifted.transactions[1]?.sourceKey);
+  });
+
+  it("fails closed on changed headers and unknown transaction types", () => {
+    expect(() => parseMoneyImport(Buffer.from(header.replace("Balance", "Running Balance")))).toThrowError(MoneyImportValidationError);
+    expect(() => statement(["Mystery\tCurrent\t2026-08-09 5:08:51\t2026-08-09 5:08:51\tUnknown\t1\t0\tEUR\tCOMPLETED\t1"])).toThrow("unsupported transaction type");
+  });
+
+  it("rejects non-EUR cash and impossible or nonexistent Berlin dates", () => {
+    expect(() => statement(["Transfer\tCurrent\t2026-08-09 5:08:51\t2026-08-09 5:08:51\tTop up\t10\t0\tUSD\tCOMPLETED\t10"])).toThrow("currently supports EUR only");
+    expect(() => statement(["Transfer\tCurrent\t2026-02-30 5:08:51\t2026-02-30 5:08:51\tTop up\t10\t0\tEUR\tCOMPLETED\t10"])).toThrow("invalid Started Date");
+    expect(() => statement(["Transfer\tCurrent\t2026-03-29 2:30:00\t2026-03-29 2:30:00\tTop up\t10\t0\tEUR\tCOMPLETED\t10"])).toThrow("nonexistent Europe/Berlin time");
+  });
+
+  it("uses source sequence when equal timestamps contain multiple balances", () => {
+    const parsed = statement([
+      "Transfer\tCurrent\t2026-08-09 5:08:51\t2026-08-09 5:08:51\tFirst\t10\t0\tEUR\tCOMPLETED\t10",
+      "Transfer\tCurrent\t2026-08-09 5:08:51\t2026-08-09 5:08:51\tSecond\t5\t0\tEUR\tCOMPLETED\t15"
+    ]);
+    expect(parsed.balanceSnapshots).toEqual([expect.objectContaining({ valueMinor: 1_500, sourceRow: 3 })]);
+  });
+});
+
+describe("investment export parsers", () => {
+  it("normalizes Revolut trading rows into ledger and exact investment events", () => {
+    const bytes = Buffer.from([
+      "Date\tTicker\tType\tQuantity\tPrice per share\tTotal Amount\tCurrency\tFX Rate",
+      "2026-08-09T03:08:51.000Z\tVWCE\tBUY - MARKET\t0.25\tUSD 120.5\tUSD 30.13\tUSD\t2",
+      "2026-08-10T03:08:51.000Z\tVWCE\tDIVIDEND\t\t\tEUR 1.2\tEUR\t1"
+    ].join("\r\n"));
+
+    const parsed = parseMoneyImport(bytes);
+
+    expect(parsed.format).toBe(REVOLUT_TRADING_FORMAT);
+    expect(parsed.transactions[0]).toMatchObject({ flowKind: "trade", amountMinor: -3_013, baseAmountMinor: -1_507, baseCurrency: "EUR", category: "investments" });
+    expect(parsed.investmentEvents[0]).toMatchObject({ eventKind: "buy", symbol: "VWCE", quantity: "0.25", unitPrice: "120.5" });
+    expect(parsed.investmentEvents[1]).toMatchObject({ eventKind: "dividend" });
+  });
+
+  it("rejects investment decimals outside numeric(30,12), non-positive FX, and mismatched price currencies", () => {
+    const tradingHeader = "Date\tTicker\tType\tQuantity\tPrice per share\tTotal Amount\tCurrency\tFX Rate";
+    const parseTrading = (row: string) => parseMoneyImport(Buffer.from(`${tradingHeader}\r\n${row}\r\n`));
+    expect(() => parseTrading("2026-08-09T03:08:51.000Z\tVWCE\tBUY - MARKET\t1234567890123456789\tEUR 1\tEUR 1\tEUR\t1")).toThrow("at most 18 integral");
+    expect(() => parseTrading("2026-08-09T03:08:51.000Z\tVWCE\tBUY - MARKET\t0.1234567890123\tEUR 1\tEUR 1\tEUR\t1")).toThrow("at most 18 integral");
+    expect(() => parseTrading("2026-08-09T03:08:51.000Z\tVWCE\tBUY - MARKET\t1\tUSD 1\tEUR 1\tEUR\t1")).toThrow("invalid Price per share");
+    expect(() => parseTrading("2026-08-09T03:08:51.000Z\tVWCE\tBUY - MARKET\t1\tUSD 1\tUSD 1\tUSD\t0")).toThrow("invalid FX Rate");
+    expect(() => parseTrading("2026-08-09T03:08:51.000Z\tVWCE\tSELL - MARKET\t-1\tEUR 1\tEUR 1\tEUR\t1")).toThrow("positive Quantity");
+  });
+
+  it("rejects oversized UTF-8 indexed identities during preview", () => {
+    const oversized = "é".repeat(257);
+    expect(() => parseMoneyImport(Buffer.from(`Type\tProduct\tStarted Date\tCompleted Date\tDescription\tAmount\tFee\tCurrency\tState\tBalance\r\nCard Payment\t${oversized}\t2026-08-01 12:00:00\t2026-08-01 12:00:00\tTest\t-1\t0\tEUR\tCOMPLETED\t1\r\n`))).toThrow("512 UTF-8 bytes");
+    expect(() => parseMoneyImport(Buffer.from(`Date\tTicker\tType\tQuantity\tPrice per share\tTotal Amount\tCurrency\tFX Rate\r\n2026-08-01T12:00:00.000Z\t${oversized}\tBUY - MARKET\t1\tEUR 1\tEUR -1\tEUR\t1\r\n`))).toThrow("512 UTF-8 bytes");
+    const portfolioHeaders = "datetime,date,account_type,category,type,asset_class,name,symbol,shares,price,amount,fee,tax,currency,original_amount,original_currency,fx_rate,description,transaction_id,counterparty_name,counterparty_iban,payment_reference,mcc_code";
+    expect(() => parseMoneyImport(Buffer.from(`${portfolioHeaders}\r\n2026-08-01T12:00:00.000Z,2026-08-01,${oversized},CASH,CARD_TRANSACTION,,,,,,-3.500000,,,EUR,,,,Payment,stable-id,Merchant,,reference,5812\r\n`))).toThrow("512 UTF-8 bytes");
+  });
+
+  it("accepts portfolio sales as realized-gain events", () => {
+    const headers = "datetime,date,account_type,category,type,asset_class,name,symbol,shares,price,amount,fee,tax,currency,original_amount,original_currency,fx_rate,description,transaction_id,counterparty_name,counterparty_iban,payment_reference,mcc_code";
+    const row = "2026-08-09T03:08:51.123Z,2026-08-09,DEFAULT,TRADING,SELL,ETF,Global ETF,VWCE,0.5,120,60,-1,,EUR,,,,Sell,sale-1,,,,";
+    const parsed = parseMoneyImport(Buffer.from(`${headers}\r\n${row}\r\n`));
+    expect(parsed.transactions[0]).toMatchObject({ accountName: "Trade Republic Investments", flowKind: "trade", baseAmountMinor: 6_000, baseFeeMinor: 100 });
+    expect(parsed.investmentEvents[0]).toMatchObject({ eventKind: "sell", symbol: "VWCE", quantity: "0.5" });
+  });
+
+  it("drops private payment fields and sanitizes account identifiers from portfolio CSV descriptions", () => {
+    const headers = "datetime,date,account_type,category,type,asset_class,name,symbol,shares,price,amount,fee,tax,currency,original_amount,original_currency,fx_rate,description,transaction_id,counterparty_name,counterparty_iban,payment_reference,mcc_code";
+    const row = "2026-08-09T03:08:51.123Z,2026-08-09,DEFAULT,CASH,CARD_TRANSACTION,,,,,,-3.500000,,,EUR,,,,Payment to DE00AAAAAAAAAAAAAAAAAA,stable-id,Merchant,DE00AAAAAAAAAAAAAAAAAA,private reference,5812";
+
+    const parsed = parseMoneyImport(Buffer.from(`${headers}\r\n${row}\r\n`));
+
+    expect(parsed.format).toBe(PORTFOLIO_TRANSACTION_FORMAT);
+    expect(parsed.transactions[0]).toMatchObject({ accountName: "Trade Republic Cash", description: "Payment to [account]", amountMinor: -350, category: "uncategorized", mcc: "5812" });
+    expect(JSON.stringify(parsed)).not.toContain("private reference");
+    expect(JSON.stringify(parsed)).not.toContain("DE00AAAAAAAAAAAAAAAAAA");
+  });
+
+  it("keeps Revolut trading FX support but rejects non-EUR portfolio rows", () => {
+    const headers = "datetime,date,account_type,category,type,asset_class,name,symbol,shares,price,amount,fee,tax,currency,original_amount,original_currency,fx_rate,description,transaction_id,counterparty_name,counterparty_iban,payment_reference,mcc_code";
+    const row = "2026-08-09T03:08:51.123Z,2026-08-09,DEFAULT,CASH,CARD_TRANSACTION,,,,,,-3.500000,,,USD,,,,Funding,stable-id,Merchant,,private reference,5812";
+    expect(() => parseMoneyImport(Buffer.from(`${headers}\r\n${row}\r\n`))).toThrow("currently supports EUR only");
+  });
+
+  it("preserves portfolio fee and tax correction signs", () => {
+    const headers = "datetime,date,account_type,category,type,asset_class,name,symbol,shares,price,amount,fee,tax,currency,original_amount,original_currency,fx_rate,description,transaction_id,counterparty_name,counterparty_iban,payment_reference,mcc_code";
+    const rows = [
+      "2026-08-09T03:08:51.123Z,2026-08-09,DEFAULT,TRADING,TAX_OPTIMIZATION,FUND,Fund,FUND,,,0,-1.25,-2.50,EUR,,,,Tax,id-1,,,,",
+      "2026-08-10T03:08:51.123Z,2026-08-10,DEFAULT,TRADING,TAX_OPTIMIZATION,FUND,Fund,FUND,,,0,0.25,0.50,EUR,,,,Correction,id-2,,,,"
+    ];
+    const parsed = parseMoneyImport(Buffer.from([headers, ...rows].join("\r\n")));
+    expect(parsed.transactions.map(({ feeMinor, taxMinor }) => ({ feeMinor, taxMinor }))).toEqual([
+      { feeMinor: 125, taxMinor: 250 }, { feeMinor: -25, taxMinor: -50 }
+    ]);
+  });
+
+});
+
+describe("balance snapshot parser", () => {
+  it("imports the explicit cutover CSV contract and normalizes legacy day-first dates", () => {
+    const parsed = parseMoneyImport(Buffer.from([
+      "Date,Account,Value,Role,Currency",
+      "08/08/2026,Broker,1580.25,investment,EUR",
+      "2026-08-09,Cash,420,cash,EUR"
+    ].join("\r\n")));
+
+    expect(parsed.format).toBe(MONEY_BALANCE_SNAPSHOT_FORMAT);
+    expect(parsed.balanceSnapshots).toEqual([
+      expect.objectContaining({ date: "2026-08-08", valueMinor: 158_025 }),
+      expect.objectContaining({ date: "2026-08-09", valueMinor: 42_000 })
+    ]);
+    expect(parsed.transactions.every((item) => item.flowKind === "balance_adjustment")).toBe(true);
+  });
+
+  it("rejects non-EUR, impossible dates, and repeated account/date keys during preview parsing", () => {
+    const headers = "Date,Account,Value,Role,Currency";
+    expect(() => parseMoneyImport(Buffer.from(`${headers}\r\n2026-08-09,Cash,1,cash,USD\r\n`))).toThrow("currently supports EUR only");
+    expect(() => parseMoneyImport(Buffer.from(`${headers}\r\n2026-02-30,Cash,1,cash,EUR\r\n`))).toThrow("invalid Date");
+    expect(() => parseMoneyImport(Buffer.from(`${headers}\r\n2026-08-09,Cash,1,cash,EUR\r\n2026-08-09,Cash,2,cash,EUR\r\n`))).toThrow("duplicates the account and date");
+  });
+});
+
+describe("money import service", () => {
+  it("allowlists complete-ledger activity filters and sorting", async () => {
+    const repository = new MemoryMoneyRepository();
+    const service = new MoneyImportService(repository);
+    await service.readActivityPage({ query: " coffee ", accountId: "00000000-0000-4000-8000-000000000000", category: "dining", fromMonth: "2026-06", toMonth: "2026-07", sort: "amount", direction: "asc", offset: 0, limit: 50 });
+    expect(repository.lastActivityInput).toEqual({ query: "coffee", accountId: "00000000-0000-4000-8000-000000000000", category: "dining", fromMonth: "2026-06", toMonth: "2026-07", sort: "amount", direction: "asc", offset: 0, limit: 50 });
+    expect(() => service.readActivityPage({ query: "", sort: "amount desc; drop table", offset: 0, limit: 50 })).toThrow("activity sort is invalid");
+  });
+
+  it("normalizes transfer rules and rejects rules that would match every transfer", async () => {
+    const repository = new MemoryMoneyRepository();
+    const service = new MoneyImportService(repository);
+    await service.previewTransferRule({ provider: " ", sourceType: "Transfer", descriptionMatch: "contains", matchValue: "  To Broker ", amountSign: "negative", disposition: "internal_transfer" });
+    expect(repository.lastTransferRule).toEqual({ sourceType: "Transfer", descriptionMatch: "contains", matchValue: "to broker", amountSign: "negative", disposition: "internal_transfer" });
+    expect(() => service.previewTransferRule({ descriptionMatch: "any", matchValue: "ignored", amountSign: "any", disposition: "excluded" })).toThrow("cannot match every transfer");
+    expect(() => service.previewTransferRule({ sourceType: "Transfer", descriptionMatch: "equals", amountSign: "any", disposition: "excluded" })).toThrow("description text");
+  });
+
+  it("reports existing source rows during preview", async () => {
+    const repository = new MemoryMoneyRepository();
+    const bytes = fixture(["Transfer\tCurrent\t2026-08-09 5:08:51\t2026-08-09 5:08:51\tTop up\t10\t0\tEUR\tCOMPLETED\t10"]);
+    const parsed = parseMoneyImport(bytes);
+    repository.sourceKeys.add(parsed.transactions[0]!.sourceKey);
+
+    const preview = await new MoneyImportService(repository).preview("account.tsv", bytes);
+
+    expect(preview.duplicateCount).toBe(1);
+    expect(preview.digest).toBe(parsed.digest);
+  });
+
+  it("reports duplicate source rows within the selected statement", async () => {
+    const row = "Transfer\tCurrent\t2026-08-09 5:08:51\t2026-08-09 5:08:51\tTop up\t10\t0\tEUR\tCOMPLETED\t10";
+    const preview = await new MoneyImportService(new MemoryMoneyRepository()).preview("account.tsv", fixture([row, row]));
+
+    expect(preview.rowCount).toBe(2);
+    expect(preview.duplicateCount).toBe(1);
+  });
+
+  it("allows Sparkasse XLSX filenames before detecting the file contents", async () => {
+    const bytes = fixture(["Transfer\tCurrent\t2026-08-09 5:08:51\t2026-08-09 5:08:51\tTop up\t10\t0\tEUR\tCOMPLETED\t10"]);
+
+    const preview = await new MoneyImportService(new MemoryMoneyRepository()).preview("movimenti.xlsx", bytes);
+
+    expect(preview.filename).toBe("movimenti.xlsx");
+  });
+
+  it("still rejects unsupported money import extensions", async () => {
+    const bytes = fixture(["Transfer\tCurrent\t2026-08-09 5:08:51\t2026-08-09 5:08:51\tTop up\t10\t0\tEUR\tCOMPLETED\t10"]);
+
+    await expect(new MoneyImportService(new MemoryMoneyRepository()).preview("account.txt", bytes)).rejects.toMatchObject({ code: "unsupported_file_extension" });
+  });
+
+  it("requires the committed file to match the preview digest", async () => {
+    const service = new MoneyImportService(new MemoryMoneyRepository());
+    const bytes = fixture(["Transfer\tCurrent\t2026-08-09 5:08:51\t2026-08-09 5:08:51\tTop up\t10\t0\tEUR\tCOMPLETED\t10"]);
+
+    await expect(service.commit({
+      filename: "account.tsv",
+      bytes,
+      expectedDigest: "0".repeat(64),
+      actor: "operator@example.test"
+    })).rejects.toMatchObject({ code: "file_changed" });
+  });
+
+  it("validates explicit transfer dispositions", () => {
+    const service = new MoneyImportService(new MemoryMoneyRepository());
+    expect(() => service.setTransferDisposition({ transactionId: "00000000-0000-4000-8000-000000000000", disposition: "uncategorized" })).toThrow("valid transfer disposition");
+  });
+
+  it("normalizes category rules and requires a current preview to save", async () => {
+    const repository = new MemoryMoneyRepository();
+    const preview = vi.spyOn(repository, "previewCategoryRule");
+    const save = vi.spyOn(repository, "saveCategoryRule");
+    const service = new MoneyImportService(repository);
+    const rule = { matchField: "description", matchOperator: "word", matchValue: "  Café   Shop  ", category: "dining" };
+    await service.previewCategoryRule(rule);
+    expect(preview).toHaveBeenCalledWith({ ...rule, matchValue: "cafe shop" });
+    expect(() => service.saveCategoryRule({ ...rule, actor: "operator@example.test", expectedMatchCount: -1 })).toThrow("Preview the rule");
+    const scoped = { ...rule, ruleId: "00000000-0000-4000-8000-000000000001", accountId: "00000000-0000-4000-8000-000000000000", category: "uncategorized" };
+    await service.saveCategoryRule({ ...scoped, actor: "operator@example.test", expectedMatchCount: 0 });
+    expect(save).toHaveBeenCalledWith({ ...scoped, matchValue: "cafe shop", actor: "operator@example.test", expectedMatchCount: 0 });
+    expect(() => service.previewCategoryRule({ ...rule, matchField: "mcc", matchOperator: "equals", matchValue: "text" })).toThrow("3 or 4 digits");
+    expect(() => service.previewCategoryRule({ ...rule, matchField: "source_type" })).toThrow("only match exactly");
+    expect(() => service.previewCategoryRule({ ...rule, accountId: "not-an-account" })).toThrow("valid account");
+  });
+
+  it("validates import deletion identifiers and reports missing imports", async () => {
+    const service = new MoneyImportService(new MemoryMoneyRepository());
+    await expect(service.deleteImport("not-an-import")).rejects.toMatchObject({ code: "invalid_import" });
+    await expect(service.deleteImport("00000000-0000-4000-8000-000000000000")).rejects.toMatchObject({ code: "import_not_found" });
+  });
+});
+
+describe("money import route", () => {
+  it("requires an authenticated same-origin multipart request", async () => {
+    const preview = vi.fn().mockResolvedValue({ ok: true });
+    const response = await previewMoneyImport(routeInput(
+      uploadRequest("https://attacker.example", fixture(["Transfer\tCurrent\t2026-08-09 5:08:51\t2026-08-09 5:08:51\tTop up\t10\t0\tEUR\tCOMPLETED\t10"])),
+      preview
+    ));
+
+    expect(response.status).toBe(403);
+    expect(preview).not.toHaveBeenCalled();
+  });
+
+  it("bounds streamed JSON bodies without Content-Length", async () => {
+    const bytes = new TextEncoder().encode(JSON.stringify({ transactionId: "00000000-0000-4000-8000-000000000000", category: "other", padding: "x".repeat(20_000) }));
+    const request = new Request("https://tools.example.test/api/money/categories", { method: "POST", headers: { Origin: "https://tools.example.test", "Content-Type": "application/json" }, body: new ReadableStream({ start(controller) { controller.enqueue(bytes); controller.close(); } }), duplex: "half" } as RequestInit);
+    const response = await updateMoneyCategory({ request, params: {}, context: { principal: { subject: "subject", email: "operator@example.test" }, runtime: { publicOrigin: "https://tools.example.test", moneyImports: { setTransactionCategory: vi.fn() } } } } as unknown as PlatformRouteInput);
+    expect(response.status).toBe(413);
+  });
+
+  it("bounds streamed multipart bodies without Content-Length", async () => {
+    const bytes = new Uint8Array(11 * 1024 * 1024 + 1);
+    const request = new Request("https://tools.example.test/api/money/imports/preview", { method: "POST", headers: { Origin: "https://tools.example.test", "Content-Type": "multipart/form-data; boundary=money" }, body: new ReadableStream({ start(controller) { controller.enqueue(bytes); controller.close(); } }), duplex: "half" } as RequestInit);
+    const response = await previewMoneyImport(routeInput(request, vi.fn()));
+    expect(response.status).toBe(413);
+  });
+
+  it("rejects malformed Content-Length before reading the request", async () => {
+    const request = new Request("https://tools.example.test/api/money/categories", { method: "POST", headers: { Origin: "https://tools.example.test", "Content-Type": "application/json", "Content-Length": "wat" }, body: "{}" });
+    const response = await updateMoneyCategory({ request, params: {}, context: { principal: { subject: "subject", email: "operator@example.test" }, runtime: { publicOrigin: "https://tools.example.test", moneyImports: { setTransactionCategory: vi.fn() } } } } as unknown as PlatformRouteInput);
+    expect(response.status).toBe(400);
+  });
+
+  it("persists an explicit transfer disposition independently from category", async () => {
+    const setTransferDisposition = vi.fn().mockResolvedValue(undefined);
+    const request = new Request("https://tools.example.test/api/money/transfers", { method: "POST", headers: { Origin: "https://tools.example.test", "Content-Type": "application/json" }, body: JSON.stringify({ transactionId: "00000000-0000-4000-8000-000000000000", disposition: "refund" }) });
+    const response = await updateMoneyTransfer({ request, params: {}, context: { principal: { subject: "subject", email: "operator@example.test" }, runtime: { publicOrigin: "https://tools.example.test", moneyImports: { setTransferDisposition } } } } as unknown as PlatformRouteInput);
+    expect(response.status).toBe(200);
+    expect(setTransferDisposition).toHaveBeenCalledWith({ transactionId: "00000000-0000-4000-8000-000000000000", disposition: "refund" });
+  });
+
+  it("applies one treatment to an explicit multi-row selection", async () => {
+    const setTransferDispositions = vi.fn().mockResolvedValue({ affectedCount: 2 });
+    const transactionIds = [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000002"
+    ];
+    const request = new Request("https://tools.example.test/api/money/transfers", { method: "POST", headers: { Origin: "https://tools.example.test", "Content-Type": "application/json" }, body: JSON.stringify({ transactionIds, disposition: "internal_transfer" }) });
+    const response = await updateMoneyTransfer({ request, params: {}, context: { principal: { subject: "subject", email: "operator@example.test" }, runtime: { publicOrigin: "https://tools.example.test", moneyImports: { setTransferDispositions } } } } as unknown as PlatformRouteInput);
+    expect(response.status).toBe(200);
+    expect(setTransferDispositions).toHaveBeenCalledWith({ transactionIds, disposition: "internal_transfer" });
+  });
+
+  it("deletes a category rule through an authenticated same-origin request", async () => {
+    const deleteCategoryRule = vi.fn().mockResolvedValue({ affectedCount: 3 });
+    const request = new Request("https://tools.example.test/api/money/categories", {
+      method: "DELETE",
+      headers: { Origin: "https://tools.example.test", "Content-Type": "application/json" },
+      body: JSON.stringify({ ruleId: "00000000-0000-4000-8000-000000000000" })
+    });
+    const response = await deleteMoneyCategoryRule({
+      request,
+      params: {},
+      context: { principal: { subject: "subject", email: "operator@example.test" }, runtime: { publicOrigin: "https://tools.example.test", moneyImports: { deleteCategoryRule } } }
+    } as unknown as PlatformRouteInput);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, affectedCount: 3 });
+    expect(deleteCategoryRule).toHaveBeenCalledWith("00000000-0000-4000-8000-000000000000");
+  });
+
+  it("deletes an import through an authenticated same-origin request", async () => {
+    const deleteImport = vi.fn().mockResolvedValue({ transactionCount: 12, investmentEventCount: 2, balanceSnapshotCount: 1 });
+    const request = new Request("https://tools.example.test/api/money/imports/00000000-0000-4000-8000-000000000000", {
+      method: "DELETE",
+      headers: { Origin: "https://tools.example.test" }
+    });
+    const response = await deleteMoneyImport({
+      request,
+      params: { importId: "00000000-0000-4000-8000-000000000000" },
+      context: { principal: { subject: "subject", email: "operator@example.test" }, runtime: { publicOrigin: "https://tools.example.test", moneyImports: { deleteImport } } }
+    } as unknown as PlatformRouteInput);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, transactionCount: 12, investmentEventCount: 2, balanceSnapshotCount: 1 });
+    expect(deleteImport).toHaveBeenCalledWith("00000000-0000-4000-8000-000000000000");
+  });
+
+  it("re-imports every normalized document through an authenticated same-origin request", async () => {
+    const result = { importCount: 7, transactionCount: 8_907, linkedPairCount: 1_054 };
+    const reimportAll = vi.fn().mockResolvedValue(result);
+    const request = new Request("https://tools.example.test/api/money/imports/reimport", {
+      method: "POST",
+      headers: { Origin: "https://tools.example.test", "Content-Type": "application/json" },
+      body: "{}"
+    });
+    const response = await reimportAllMoneyImports({
+      request,
+      params: {},
+      context: { principal: { subject: "subject", email: "operator@example.test" }, runtime: { publicOrigin: "https://tools.example.test", moneyImports: { reimportAll } } }
+    } as unknown as PlatformRouteInput);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, ...result });
+    expect(reimportAll).toHaveBeenCalledOnce();
+  });
+
+  it("passes only the private file bytes and filename to preview", async () => {
+    const result = { format: REVOLUT_CASH_FORMAT };
+    const preview = vi.fn().mockResolvedValue(result);
+    const bytes = fixture(["Transfer\tCurrent\t2026-08-09 5:08:51\t2026-08-09 5:08:51\tTop up\t10\t0\tEUR\tCOMPLETED\t10"]);
+    const response = await previewMoneyImport(routeInput(uploadRequest("https://tools.example.test", bytes), preview));
+
+    expect(response.status).toBe(200);
+    expect(preview).toHaveBeenCalledOnce();
+    expect(preview.mock.calls[0]?.[0]).toBe("account.tsv");
+    expect([...preview.mock.calls[0]?.[1] as Uint8Array]).toEqual([...bytes]);
+  });
+});
+
+describe("money schema and Option A route contract", () => {
+  it("registers finance tables in the guarded tools schema push", () => {
+    const schema = readFileSync(new URL("../../../platform/database/postgres-schema.ts", import.meta.url), "utf8");
+    const config = readFileSync(new URL("../../../platform/database/drizzle.tools.config.ts", import.meta.url), "utf8");
+    for (const table of ["money_accounts", "money_imports", "money_instruments", "money_instrument_aliases", "money_market_series", "money_daily_prices", "money_fx_rates", "money_inflation_indices", "money_transactions", "money_investment_events", "money_category_rules", "money_balance_snapshots", "money_transfer_rules", "money_transfer_pair_rules"]) {
+      expect(schema).toContain(`\"${table}\"`);
+      expect(config).toContain(`\"${table}\"`);
+    }
+    expect(schema).toContain('accountId: uuid("account_id").notNull().references(() => moneyAccounts.id)');
+    expect(schema).toContain("table.accountId, table.matchField, table.matchOperator, table.matchValue).nullsNotDistinct()");
+    expect(schema).toContain('transferDisposition: text("transfer_disposition")');
+    expect(schema).toContain("'manual', 'sparkasse'");
+  });
+
+
+});
+
+function statement(rows: string[]) {
+  return parseMoneyImport(fixture(rows));
+}
+
+function fixture(rows: string[]) {
+  return Buffer.from(`${header}\r\n${rows.join("\r\n")}\r\n`, "utf8");
+}
+
+function uploadRequest(origin: string, bytes: Uint8Array) {
+  const form = new FormData();
+  const contents = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+  form.set("file", new File([contents], "account.tsv", { type: "text/tab-separated-values" }));
+  return new Request("https://tools.example.test/api/money/imports/preview", {
+    method: "POST",
+    headers: { Origin: origin },
+    body: form
+  });
+}
+
+function routeInput(request: Request, preview: ReturnType<typeof vi.fn>) {
+  return {
+    request,
+    params: {},
+    context: {
+      principal: { subject: "subject", email: "operator@example.test" },
+      runtime: {
+        publicOrigin: "https://tools.example.test",
+        moneyImports: { preview }
+      }
+    }
+  } as unknown as PlatformRouteInput;
+}
+
+class MemoryMoneyRepository implements MoneyRepository {
+  readonly sourceKeys = new Set<string>();
+  lastActivityInput?: MoneyActivityPageInput;
+  lastTransferRule?: MoneyTransferRuleInput;
+
+  async existingSourceKeys(transactions: readonly MoneyLedgerTransaction[]) {
+    return new Set(transactions.map((item) => item.sourceKey).filter((key) => this.sourceKeys.has(key)));
+  }
+
+  async commitImport(_input: MoneyImportCommitInput): Promise<MoneyImportReceipt> {
+    throw new Error("Not used by this test.");
+  }
+
+  async deleteImport() { return undefined; }
+  async reimportAll() { return { importCount: 0, transactionCount: 0, linkedPairCount: 0 }; }
+
+  async readReviewCounts() {
+    return { uncategorized: 0, transfers: 0 };
+  }
+
+  async readLedgerSnapshot(): Promise<MoneyLedgerSnapshot> {
+    return {
+      imports: [], currentMonthTransactionAccounts: [], transferRules: [], transferPairRules: [], transferRuleOptions: [], categoryRules: [], activity: [], transactionCount: 0, revertedCount: 0, transferReview: { linkedPairs: 0, unlinkedCount: 0, unresolvedPositiveCount: 0, unresolvedNegativeCount: 0 }, transferReviewGroups: [], accounts: [], accountLabels: {}, accountRoles: {}, months: [],
+      spending: { months: [], categories: [], categoryMonths: [], merchantMonths: [], categoryActivity: [], uncategorizedCount: 0 },
+      investments: { positions: [], trades: [], totals: { eventCount: 0, boughtMinor: 0, soldMinor: 0, incomeMinor: 0, feesMinor: 0, taxesMinor: 0 }, realized: { positions: [], totals: { saleCount: 0, proceedsMinor: 0, costBasisMinor: 0, gainMinor: 0, unmatchedSaleCount: 0 } } },
+      planning: { ready: true, unresolvedTransferCount: 0, medianMonthlyNetMinor: 0, observedMonthCount: 6, projections: [{ months: 6, changeMinor: 0 }, { months: 12, changeMinor: 0 }, { months: 60, changeMinor: 0 }] },
+      accountLastObserved: {},
+      reviewCounts: { uncategorized: 0, transfers: 0 }, reviewQueue: { items: [], commonCategories: [] }
+    };
+  }
+
+  async readActivityPage(input: MoneyActivityPageInput) { this.lastActivityInput = input; return { items: [], total: 0, hasMore: false }; }
+
+  async setTransactionCategory() { return { affectedCount: 1 }; }
+  async previewCategoryRule() { return { matchCount: 0, changeCount: 0, manualCount: 0, examples: [] }; }
+  async saveCategoryRule() { return { ruleId: "00000000-0000-4000-8000-000000000001", affectedCount: 0 }; }
+  async deleteCategoryRule() { return undefined; }
+  async previewTransferRule(input: MoneyTransferRuleInput) { this.lastTransferRule = input; return { matchCount: 0, examples: [] }; }
+  async createTransferRule() { return { affectedCount: 0 }; }
+  async deleteTransferRule() { return false; }
+  async setTransferDisposition() {}
+  async setTransferDispositions() { return { affectedCount: 0 }; }
+  async addManualBalance() {}
+  async readCheckInDays() { return []; }
+  async readCashSince() { return { snapshots: [], flows: [], items: [] }; }
+  async readSpendingSince() { return []; }
+
+  async readiness() {}
+  async close() {}
+}
