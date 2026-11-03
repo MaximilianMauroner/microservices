@@ -7,10 +7,13 @@ Google account cannot sign in, or session material may be compromised.
 
 1. Disable the platform deployment if private data may be exposed. Keep public
    routes online only when their routing is clearly separate.
-2. Rotate `BETTER_AUTH_SECRET` to invalidate every browser session. Never log
-   either secret value.
-3. Rotate the Google OAuth client secret if it may have been exposed.
-4. Remove database and object-storage write credentials while investigating
+2. Delete the affected rows in `tools.auth_sessions`. Tools reads the session
+   row on each request, so the next request from that cookie fails. Delete all
+   rows to end every browser session.
+3. Rotate `BETTER_AUTH_SECRET` if it may have been exposed. The rotation also
+   makes every session cookie invalid. Never log either secret value.
+4. Rotate the Google OAuth client secret if it may have been exposed.
+5. Remove database and object-storage write credentials while investigating
    unauthorized writes.
 
 ## Diagnose
