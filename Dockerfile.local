@@ -5,12 +5,6 @@ WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY services/network-console/package.json ./services/network-console/
 COPY services/tools/package.json ./services/tools/
-COPY services/tools/dashboard/package.json ./services/tools/dashboard/
-COPY services/tools/publisher/package.json ./services/tools/publisher/
-COPY services/tools/status/package.json ./services/tools/status/
-COPY services/tools/runtime/domain/package.json ./services/tools/runtime/domain/
-COPY services/tools/runtime/security/package.json ./services/tools/runtime/security/
-COPY services/tools/runtime/suite-chrome/package.json ./services/tools/runtime/suite-chrome/
 
 RUN corepack enable \
     && corepack prepare pnpm@11.16.0 --activate \

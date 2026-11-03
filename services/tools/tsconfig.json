@@ -9,23 +9,17 @@
     "skipLibCheck": true,
     "types": ["node", "vite/client"],
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./platform/ui/*"]
     },
     "allowImportingTsExtensions": true
   },
   "include": [
-    "src/**/*.ts",
-    "src/**/*.tsx",
-    "dashboard/ui/**/*.ts",
-    "dashboard/ui/**/*.tsx",
-    "status/ui/**/*.ts",
-    "status/ui/**/*.tsx",
-    "publisher/ui/**/*.ts",
-    "publisher/ui/**/*.tsx",
-    "money/**/*.ts",
-    "money/**/*.tsx",
-    "markdown-share/**/*.ts",
-    "markdown-share/**/*.tsx",
+    "app/**/*.ts",
+    "app/**/*.tsx",
+    "platform/**/*.ts",
+    "platform/**/*.tsx",
+    "products/**/*.ts",
+    "products/**/*.tsx",
     "test/**/*.ts",
     "test/**/*.tsx"
   ]

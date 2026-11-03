@@ -2,6 +2,21 @@
 
 The platform service is the single production compute and browser-authentication boundary for Mauroner Tools.
 
+## Folders
+
+| Folder | Holds |
+| --- | --- |
+| `app` | The web entry: route files, the router, and the server start |
+| `platform` | What every product uses: `auth`, `access` (people, grants, MCP), `database`, `scheduler`, `ui`, the request `gateway`, and the shared `domain` and `security` code |
+| `products` | One folder per product: `dashboard`, `documents` (Document Share), `feedback`, `kitchen`, `money`, `publisher`, and `status` |
+| `test` | All tests. `test/app`, `test/platform`, and `test/products` mirror the source folders. `test/harness` runs the verification stacks, and `test/support` holds shared test helpers |
+
+[runtime-boundaries.md](../../docs/tools-platform/runtime-boundaries.md) gives
+the reason for this split.
+
+This folder is one pnpm package. Code in one folder imports another folder through
+the `#` subpath imports in `package.json`.
+
 ## Route policy
 
 | Surface | Authentication |
@@ -24,11 +39,17 @@ are private and non-cacheable.
 
 ## Browser authentication
 
-Better Auth runs without an auth database. It uses a secure, HTTP-only,
-same-site encrypted cookie with a seven-day lifetime. Google is the only provider
-and requests only the default OpenID, email, and profile scopes. The verified
-Google `sub` must exactly match `AUTH_ALLOWED_GOOGLE_SUBJECT` before a session
-is created.
+Better Auth stores sessions in PostgreSQL. A session lasts seven days in a
+secure, HTTP-only, same-site cookie. Google is the only provider and requests
+only the default OpenID, email, and profile scopes.
+
+The admin is the Google account whose verified `sub` matches
+`AUTH_ALLOWED_GOOGLE_SUBJECT`. The admin can invite other people by Google email
+in Settings and grant them products. Each person sees only their own data. See
+[people-and-access.md](../../docs/tools-platform/people-and-access.md).
+
+MCP clients connect to `/api/mcp` through OAuth sign-in and consent. That
+endpoint accepts only its OAuth bearer token.
 
 Required variables:
 
@@ -69,7 +90,11 @@ pnpm run start
 `/share` creates Markdown or LaTeX documents in one collaborative editor.
 Tools owns document state, collaboration, checkpoints, and retention in PostgreSQL.
 The public document API uses the same origin as the browser.
-`/documents` lists both formats behind the existing browser session boundary.
+`/documents` lists both formats behind the browser session boundary. It shows
+only the signed-in person's documents. A document belongs to the person who was
+signed in when it was created. Anonymous documents and documents from before
+ownership belong to the admin. Capability links and the public document API do
+not check the owner.
 Markdown retains live preview and browser PDF printing. LaTeX currently shares
 and downloads `.tex` source; compiler hosting and engine selection remain open.
 Existing `/markdown` capability routes continue to resolve the same documents.

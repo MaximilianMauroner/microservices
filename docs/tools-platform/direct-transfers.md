@@ -42,6 +42,6 @@ sessions remain unresolved. Keep historical readers for retained recovery data.
 A quiet upload window is sufficient for the owner to coordinate a small release.
 No separate global pause service is required.
 
-The [Publisher transfer reference](../../services/tools/publisher/direct-transfers.md)
+The [Publisher transfer reference](../../services/tools/products/publisher/direct-transfers.md)
 holds the current protocol, commands, limits, and verification setup. Concrete
 release steps, caller registers, and run evidence belong in `.agents/artifacts/`.

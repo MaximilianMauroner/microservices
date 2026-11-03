@@ -1,0 +1,193 @@
+import crypto from "node:crypto";
+import postgres from "postgres";
+
+export const MIN_UPLOAD_LINK_DURATION_MS = 5 * 60 * 1000;
+export const MAX_UPLOAD_LINK_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
+export const UPLOAD_LINK_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
+const CREATE_RETRY_DELAYS_MS = [100, 250, 500, 1_000, 2_000, 3_000, 3_000] as const;
+
+export type UploadLink = Readonly<{
+  id: string;
+  ownerSubject: string;
+  createdAt: Date;
+  expiresAt: Date;
+  revokedAt?: Date;
+  fileCount: number;
+}>;
+
+export type CreatedUploadLink = UploadLink & Readonly<{ token: string }>;
+export type UploadLinkFile = Readonly<{ id: string; filename: string; bytes: number }>;
+export type UploadLinkCreateOptions = Readonly<{ signal?: AbortSignal }>;
+export type UploadLinkListOptions = Readonly<{
+  limit: number;
+  before?: Readonly<{ createdAt: Date; id: string }>;
+}>;
+
+export interface UploadLinkRepository {
+  /** Creates, lists, and revokes only the links of one person. */
+  owner(subject: string): OwnedUploadLinks;
+  find(token: string): Promise<UploadLink | null>;
+  findActive(token: string, now: Date): Promise<UploadLink | null>;
+  readiness?(): Promise<void>;
+  close?(): void | Promise<void>;
+}
+
+export interface OwnedUploadLinks {
+  create(expiresAt: Date, options?: UploadLinkCreateOptions): Promise<CreatedUploadLink>;
+  list(options: UploadLinkListOptions): Promise<readonly UploadLink[]>;
+  listFiles(id: string, now: Date): Promise<readonly UploadLinkFile[] | null>;
+  revoke(id: string, now: Date): Promise<boolean>;
+}
+
+export function uploadLinkTokenHash(token: string) {
+  return crypto.createHash("sha256").update(token, "utf8").digest("hex");
+}
+
+export function createPostgresUploadLinkRepository(databaseUrl: string): UploadLinkRepository {
+  const sql = postgres(databaseUrl, { max: 3, idle_timeout: 120 });
+  return {
+    owner(ownerSubject) {
+      return {
+        async create(expiresAt, options) {
+          const id = crypto.randomUUID();
+          const token = crypto.randomBytes(32).toString("base64url");
+          const createdAt = new Date();
+          const tokenHash = uploadLinkTokenHash(token);
+          const rows = await retryTransientPostgresQuery(() => sql<UploadLinkRow[]>`
+            insert into artifacts.upload_links (id, token_hash, created_at, expires_at, owner_subject)
+            values (${id}, ${tokenHash}, ${createdAt}, ${expiresAt}, ${ownerSubject})
+            on conflict (id) do update set id = excluded.id
+            returning id::text, owner_subject, created_at, expires_at, revoked_at`, options?.signal);
+          return { ...toUploadLink(rows[0]!), token };
+        },
+        async list(options) {
+          const rows = options.before
+            ? await sql<UploadLinkRow[]>`
+              select id::text, owner_subject, created_at, expires_at, revoked_at,
+                (select count(*)::int from artifacts.objects o where o.upload_link_id = l.id
+                  and o.kind = 'file' and o.revoked_at is null and (o.expires_at is null or o.expires_at > now())) file_count
+              from artifacts.upload_links l
+              where l.owner_subject = ${ownerSubject}
+                and (l.created_at, l.id) < (${options.before.createdAt}, ${options.before.id}::uuid)
+              order by created_at desc, id desc
+              limit ${options.limit}`
+            : await sql<UploadLinkRow[]>`
+              select id::text, owner_subject, created_at, expires_at, revoked_at,
+                (select count(*)::int from artifacts.objects o where o.upload_link_id = l.id
+                  and o.kind = 'file' and o.revoked_at is null and (o.expires_at is null or o.expires_at > now())) file_count
+              from artifacts.upload_links l
+              where l.owner_subject = ${ownerSubject}
+              order by created_at desc, id desc
+              limit ${options.limit}`;
+          return rows.map(toUploadLink);
+        },
+        async listFiles(id, now) {
+          const links = await sql<{ id: string }[]>`select id::text from artifacts.upload_links
+            where id = ${id}::uuid and owner_subject = ${ownerSubject}`;
+          if (links.length === 0) return null;
+          const rows = await sql<{ id: string; filename: string; bytes: string }[]>`
+            select id, filename, bytes::text
+            from artifacts.objects
+            where upload_link_id = ${id}::uuid and owner_subject = ${ownerSubject} and kind = 'file' and revoked_at is null
+              and (expires_at is null or expires_at > ${now})
+            order by created_at, id`;
+          return rows.map((row) => ({ id: row.id, filename: row.filename, bytes: Number(row.bytes) }));
+        },
+        async revoke(id, now) {
+          const rows = await sql<{ id: string }[]>`
+            update artifacts.upload_links set revoked_at = coalesce(revoked_at, ${now})
+            where id = ${id}::uuid and owner_subject = ${ownerSubject} returning id::text`;
+          return rows.length === 1;
+        }
+      };
+    },
+    async find(token) {
+      if (!UPLOAD_LINK_TOKEN_PATTERN.test(token)) return null;
+      const rows = await sql<UploadLinkRow[]>`
+        select id::text, owner_subject, created_at, expires_at, revoked_at
+        from artifacts.upload_links
+        where token_hash = ${uploadLinkTokenHash(token)}`;
+      return rows[0] ? toUploadLink(rows[0]) : null;
+    },
+    async findActive(token, now) {
+      const link = await this.find(token);
+      return link && !link.revokedAt && link.expiresAt > now ? link : null;
+    },
+    async readiness() {
+      await sql`select 1 from artifacts.upload_links limit 1`;
+    },
+    close: () => sql.end()
+  };
+}
+
+async function retryTransientPostgresQuery<Result>(query: () => Promise<Result>, signal?: AbortSignal) {
+  for (let attempt = 0; ; attempt += 1) {
+    throwIfAborted(signal);
+    try {
+      return await query();
+    } catch (error) {
+      const delayMs = CREATE_RETRY_DELAYS_MS[attempt];
+      if (delayMs === undefined || !isTransientPostgresError(error)) throw error;
+      await waitForRetry(delayMs, signal);
+    }
+  }
+}
+
+function waitForRetry(milliseconds: number, signal?: AbortSignal) {
+  if (!signal) return new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
+  throwIfAborted(signal);
+  return new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", abort);
+      resolve();
+    }, milliseconds);
+    const abort = () => {
+      clearTimeout(timer);
+      reject(abortError(signal));
+    };
+    signal.addEventListener("abort", abort, { once: true });
+  });
+}
+
+function throwIfAborted(signal?: AbortSignal) {
+  if (signal?.aborted) throw abortError(signal);
+}
+
+function abortError(signal: AbortSignal) {
+  return signal.reason instanceof Error ? signal.reason : new Error("Upload-link creation was aborted.");
+}
+
+function isTransientPostgresError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const code = (error as Error & { code?: unknown }).code;
+  if (typeof code === "string" && (
+    code.startsWith("08") ||
+    [
+      "53300", "53400", "57P01", "57P02", "57P03",
+      "CONNECTION_CLOSED", "CONNECTION_DESTROYED", "CONNECTION_ENDED", "CONNECT_TIMEOUT",
+      "ECONNREFUSED", "ECONNRESET", "EPIPE", "ETIMEDOUT"
+    ].includes(code)
+  )) return true;
+  if (error instanceof AggregateError) return error.errors.some(isTransientPostgresError);
+  return error.cause ? isTransientPostgresError(error.cause) : false;
+}
+
+type UploadLinkRow = {
+  id: string;
+  owner_subject: string;
+  created_at: Date;
+  expires_at: Date;
+  revoked_at: Date | null;
+  file_count?: number;
+};
+
+function toUploadLink(row: UploadLinkRow): UploadLink {
+  return {
+    id: row.id,
+    ownerSubject: row.owner_subject,
+    createdAt: row.created_at,
+    expiresAt: row.expires_at,
+    fileCount: row.file_count ?? 0,
+    ...(row.revoked_at ? { revokedAt: row.revoked_at } : {})
+  };
+}

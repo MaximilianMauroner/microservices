@@ -6,9 +6,9 @@ export default defineConfig({
   test: {
     ...config.test,
     include: [
-      "test/money-statement-formats.test.ts",
-      "test/publish-page-resume.test.tsx",
-      "publisher/test/direct-uploads.integration.test.ts",
+      "test/products/money/money-statement-formats.test.ts",
+      "test/products/publisher/publish-page-resume.test.tsx",
+      "test/products/publisher/direct-uploads.integration.test.ts",
     ],
     exclude: [],
     maxWorkers: 1,

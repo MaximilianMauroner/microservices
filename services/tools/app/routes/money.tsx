@@ -1,0 +1,52 @@
+import { createFileRoute } from "@tanstack/react-router";
+import { MoneyTrackerPage } from "../../products/money/money-tracker-page.js";
+import { MoneyTrackerPendingPage } from "../../products/money/money-tracker-pending-page.js";
+import { MONEY_REVIEW_TABS, MONEY_VIEWS, type MoneyReviewTab, type MoneyTrackerView } from "../../products/money/money-tracker-navigation.js";
+import { getMoneyTrackerPageData } from "../../platform/protected-data.js";
+import { faviconLink, favicons } from "../../platform/ui/favicons.js";
+import { requireProductSession } from "../../platform/auth/session.js";
+import { MONEY_CATEGORIES, type MoneyCategory } from "../../products/money/money-enums.js";
+import { preloadMoneyView } from "../../products/money/money-view-loading.js";
+
+type MoneySearch = { view?: Exclude<MoneyTrackerView, "overview">; tab?: MoneyReviewTab; rule?: string; category?: MoneyCategory; review?: boolean; fromMonth?: string; toMonth?: string; since?: string };
+
+export const Route = createFileRoute("/money")({
+  beforeLoad: ({ location }) => requireProductSession(location.href, "money"),
+  validateSearch: (search: Record<string, unknown>): MoneySearch => {
+    const view = MONEY_VIEWS.find((item) => item === search.view);
+    return {
+      view: view === "overview" ? undefined : view,
+      tab: MONEY_REVIEW_TABS.find((tab) => tab === search.tab),
+      rule: typeof search.rule === "string" && search.rule.trim() ? search.rule.slice(0, 250) : undefined,
+      category: typeof search.category === "string" && MONEY_CATEGORIES.includes(search.category as MoneyCategory) ? search.category as MoneyCategory : undefined,
+      review: search.review === true || search.review === "true" ? true : undefined,
+      fromMonth: typeof search.fromMonth === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(search.fromMonth) ? search.fromMonth : undefined,
+      toMonth: typeof search.toMonth === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(search.toMonth) ? search.toMonth : undefined,
+      since: typeof search.since === "string" && /^\d{4}-\d{2}-\d{2}$/.test(search.since) ? search.since : undefined
+    };
+  },
+  loaderDeps: ({ search }) => ({ view: (search.view ?? "overview") as MoneyTrackerView, since: search.since }),
+  loader: async ({ deps }) => {
+    const [data] = await Promise.all([getMoneyTrackerPageData({ data: deps }), preloadMoneyView(deps.view)]);
+    return data;
+  },
+  staleTime: 30_000,
+  preloadStaleTime: 30_000,
+  pendingComponent: MoneyTrackerPendingRoute,
+  pendingMs: 150,
+  pendingMinMs: 0,
+  head: () => ({
+    meta: [{ title: "Money dashboard | Mauroner Tools" }, { name: "robots", content: "noindex, nofollow" }],
+    links: [faviconLink(favicons.money)]
+  }),
+  component: MoneyTrackerRoute
+});
+
+function MoneyTrackerRoute() {
+  const search = Route.useSearch();
+  return <MoneyTrackerPage {...Route.useLoaderData()} view={search.view ?? "overview"} tab={search.tab ?? "queue"} rule={search.rule} category={search.category} review={search.review} fromMonth={search.fromMonth} toMonth={search.toMonth} />;
+}
+
+function MoneyTrackerPendingRoute() {
+  return <MoneyTrackerPendingPage view={Route.useSearch().view ?? "overview"} />;
+}
