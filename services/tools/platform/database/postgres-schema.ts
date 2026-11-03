@@ -81,7 +81,7 @@ export const feedbackForms = toolsSchema.table("feedback_forms", {
 }, (table) => [
   check("feedback_forms_language_check", sql`${table.language} in ('en', 'de')`),
   check("feedback_forms_status_check", sql`${table.status} in ('draft', 'active', 'closed')`),
-  index("feedback_forms_owner_updated_idx").on(table.ownerSubject, table.updatedAt),
+  index("feedback_forms_updated_idx").on(table.ownerSubject, table.updatedAt),
 ]);
 
 export const feedbackSubmissions = toolsSchema.table("feedback_submissions", {
@@ -588,7 +588,7 @@ export const uploadLinks = artifactsSchema.table("upload_links", {
 }, (table) => [
   check("upload_links_expiry_check", sql`${table.expiresAt} > ${table.createdAt}`),
   index("upload_links_active_idx").on(table.expiresAt, table.revokedAt),
-  index("upload_links_owner_history_idx").on(table.ownerSubject, table.createdAt.desc(), table.id.desc()),
+  index("upload_links_history_idx").on(table.ownerSubject, table.createdAt.desc(), table.id.desc()),
 ]);
 
 export const uploadSessions = artifactsSchema.table("upload_sessions", {
