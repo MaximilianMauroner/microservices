@@ -1,5 +1,5 @@
 import { Link, useHydrated, useRouter, useRouterState } from "@tanstack/react-router";
-import { BookOpenIcon, CalendarDaysIcon, CheckIcon, ChevronDownIcon, LanguagesIcon, LayoutGridIcon, LeafIcon, RefrigeratorIcon, SearchIcon, ShoppingBasketIcon, XIcon } from "lucide-react";
+import { BookOpenIcon, CalendarDaysIcon, CheckIcon, ChevronDownIcon, LanguagesIcon, LayoutGridIcon, LeafIcon, PlusIcon, RefrigeratorIcon, SearchIcon, ShoppingBasketIcon, XIcon } from "lucide-react";
 import { createContext, type CSSProperties, type ReactNode, useContext, useEffect, useRef, useState } from "react";
 import { AppShell } from "../../../platform/ui/components/app-shell.js";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../../../platform/ui/components/ui/dialog.js";
@@ -425,7 +425,8 @@ function useKeyboard(active: boolean): { open: boolean; inset: number; height: n
  * at the top while you scroll, and tapping it moves it to the top so the results show above the keyboard.
  * `inSheet` places it at the top of a sheet instead of under the page header.
  */
-export function SearchField({ value, onValue, label, inSheet = false, children }: { value: string; onValue: (value: string) => void; label: string; inSheet?: boolean; children: ReactNode }) {
+/** With `add`, the field also creates what was typed: a plus inside the field runs it, and typing still searches. */
+export function SearchField({ value, onValue, label, inSheet = false, add, children }: { value: string; onValue: (value: string) => void; label: string; inSheet?: boolean; add?: { label: string; run: () => void }; children: ReactNode }) {
   const text = useText(TEXT);
   const mobile = useIsMobile();
   const field = useRef<HTMLDivElement>(null);
@@ -440,7 +441,7 @@ export function SearchField({ value, onValue, label, inSheet = false, children }
       <div ref={field} className={cn("relative z-10 max-md:sticky max-md:-mx-4 max-md:px-4 max-md:py-2",
         inSheet ? "max-md:top-0 max-md:bg-popover" : "max-md:top-13 max-md:scroll-mt-13 max-md:bg-background/95 max-md:backdrop-blur")}>
         <SearchIcon className={cn("pointer-events-none absolute top-1/2 size-4 -translate-y-1/2 text-muted-foreground", "left-3 max-md:left-7")} aria-hidden />
-        <Input ref={input} type="search" enterKeyHint="search" autoComplete="off" className="h-10 pr-10 pl-9 [&::-webkit-search-cancel-button]:hidden" placeholder={label} aria-label={label} value={value}
+        <Input ref={input} type="search" enterKeyHint="search" autoComplete="off" className={cn("h-10 pl-9 [&::-webkit-search-cancel-button]:hidden", add ? "pr-20" : "pr-10")} placeholder={label} aria-label={label} value={value}
           onChange={(event) => onValue(event.target.value)}
           onKeyDown={(event) => { if (event.key === "Enter") input.current?.blur(); }}
           onFocus={() => { clearTimeout(leave.current); setActive(true); if (mobile) toTop(); }}
@@ -448,8 +449,14 @@ export function SearchField({ value, onValue, label, inSheet = false, children }
           onBlur={() => { leave.current = setTimeout(() => setActive(false), 400); }} />
         {value ? (
           <button type="button" aria-label={text.clearSearch} onClick={() => { onValue(""); input.current?.focus(); }}
-            className="absolute top-1/2 right-1 grid size-9 -translate-y-1/2 place-items-center rounded-full text-muted-foreground hover:text-foreground max-md:right-5">
+            className={cn("absolute top-1/2 grid size-9 -translate-y-1/2 place-items-center rounded-full text-muted-foreground hover:text-foreground", add ? "right-10 max-md:right-14" : "right-1 max-md:right-5")}>
             <XIcon className="size-4" aria-hidden />
+          </button>
+        ) : null}
+        {add ? (
+          <button type="button" aria-label={add.label} onClick={add.run}
+            className="absolute top-1/2 right-1 grid size-8 -translate-y-1/2 place-items-center rounded-full bg-primary text-primary-foreground hover:brightness-110 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none max-md:right-5">
+            <PlusIcon className="size-4" aria-hidden />
           </button>
         ) : null}
       </div>
