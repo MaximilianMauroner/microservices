@@ -17,6 +17,9 @@ Mauroner Tools application.
 - `services/tools` is one TanStack Start application. Its products share
   authentication, lifecycle, health checks, and deployment.
 - Other direct children of `services/` are independent deployments.
+- `services/tools` is one pnpm package. Do not add a `package.json` to a Tools
+  product or runtime folder. Use the `#` subpath imports in
+  `services/tools/package.json` to share code between Tools folders.
 - Keep shared Tools runtime code under `services/tools/runtime` only when more
   than one Tools product uses it.
 - Keep scheduled work with the product that owns its state.

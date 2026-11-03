@@ -1,7 +1,7 @@
 # Status
 
 Status is presented by Tools and checked by a separate Railway cron service.
-Railway starts `pnpm --dir services/tools/status run start` every 30 minutes
+Railway starts `pnpm --dir services/tools run status:start` every 30 minutes
 from this directory's `railway.json`; the process runs one bounded monitoring
 pass, closes its resources, and exits.
 
@@ -29,7 +29,7 @@ revision checks keep repeated invocations idempotent.
 
 Product presentation metadata is deployed from
 `dashboard/config/initial-catalog.json`. Monitor identity, URLs, scope, expected
-status, and timeouts come from typed definitions in `src/definitions.ts` and are
+status, and timeouts come from typed definitions in `definitions.ts` and are
 checked for matching IDs at startup. Runtime state and history use transactional
 revision checks in PostgreSQL. The bucket contains only derived public/private
 snapshots and is never the runtime authority.

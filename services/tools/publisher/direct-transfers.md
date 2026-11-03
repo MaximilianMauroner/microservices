@@ -53,7 +53,7 @@ The native client is available from this checkout:
 
 ```sh
 PUBLIC_BASE_URL=https://tools.mauroner.net UPLOAD_TOKEN=<native-token> \
-  pnpm --dir services/tools/publisher upload:direct /path/to/file [request-id]
+  pnpm --dir services/tools run publisher:upload-direct /path/to/file [request-id]
 ```
 
 The client prints its request ID before transferring bytes. Retain it to resume
@@ -139,7 +139,7 @@ already local static responses. None requires a new storage transfer path.
 ## Active compatibility
 
 The native multipart `/api/uploads` and chunk `/api/uploads/chunks` handlers in
-`publisher/src/fetch-app.ts` remain for external clients. Observed external callers must switch to sessions or `upload:direct` separately.
+`publisher/fetch-app.ts` remain for external clients. Observed external callers must switch to sessions or `publisher:upload-direct` separately.
 The retained audit sample is in the task artifacts.
 Their legacy uploads still incur application-to-bucket egress and have their
 existing local-staging restart limit. Current Fleet HTML creation and replacement use
@@ -157,7 +157,7 @@ confirm migration and route observations confirm no calls. Keep the native
 replacement writer until every declared device and harness has verified the
 direct client and offline or unknown callers are accounted for.
 
-The artifact recovery reader in `publisher/src/postgres-storage.ts` also accepts
+The artifact recovery reader in `publisher/postgres-storage.ts` also accepts
 JSON strings written by the old double-encoding path. New recovery records use
 native JSONB objects. Keep that decoder for retained historical recovery data.
 It preserves interrupted legacy replacements,
@@ -244,8 +244,8 @@ TOOLS_TEST_DATABASE_CONFIRM=tools-platform-test \
   pnpm --dir services/tools run db:push-postgres:test
 PUBLISHER_TRANSFER_TEST_DATABASE_URL=postgres://transfer_test@127.0.0.1:45432/tools_runtime_test \
 PUBLISHER_TRANSFER_TEST_S3_ENDPOINT=http://127.0.0.1:49000 \
-  pnpm --dir services/tools/publisher exec vitest run \
-    test/direct-uploads.integration.test.ts --maxWorkers=1 --fileParallelism=false
+  pnpm --dir services/tools exec vitest run \
+    test/publisher/direct-uploads.integration.test.ts --maxWorkers=1 --fileParallelism=false
 ```
 
 This suite checks large direct transfers, interruption/resume, repeat completion,
