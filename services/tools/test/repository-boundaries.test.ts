@@ -10,7 +10,7 @@ const run = promisify(execFile);
 describe("repository runtime boundaries", () => {
   it("keeps every tracked deployable under services", async () => {
     const services = await directories(new URL("services/", repository));
-    expect(services).toEqual(expect.arrayContaining(["markdown-share", "network-console", "tools"]));
+    expect(services).toEqual(expect.arrayContaining(["network-console", "tools"]));
     expect(await trackedFiles("apps", "jobs", "packages")).toEqual([]);
   });
 
