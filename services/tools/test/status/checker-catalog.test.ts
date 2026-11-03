@@ -1,16 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type postgres from "postgres";
-import { createPostgresCheckerStore } from "../src/postgres-store.js";
-import * as definitions from "../src/definitions.js";
+import { createPostgresCheckerStore } from "../../status/postgres-store.js";
+import * as definitions from "../../status/definitions.js";
 import { catalogFixture, configFixture } from "./helpers.js";
-import type { CheckerCatalogSource } from "../src/postgres-store.js";
+import type { CheckerCatalogSource } from "../../status/postgres-store.js";
 
 const resources = vi.hoisted(() => {
   const sql = Object.assign(vi.fn(), { end: vi.fn().mockResolvedValue(undefined) });
   return { sql, postgres: vi.fn((_url: string, _options: postgres.Options<{}>) => sql), snapshots: vi.fn(() => ({ close: vi.fn() })) };
 });
 vi.mock("postgres", () => ({ default: resources.postgres }));
-vi.mock("../src/bucket.js", async (original) => ({ ...await original<typeof import("../src/bucket.js")>(), createSnapshotStore: resources.snapshots }));
+vi.mock("../../status/bucket.js", async (original) => ({ ...await original<typeof import("../../status/bucket.js")>(), createSnapshotStore: resources.snapshots }));
 
 function sourceFixture(): CheckerCatalogSource {
   const catalog = catalogFixture();

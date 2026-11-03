@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import catalogSource from "../../dashboard/config/initial-catalog.json" with { type: "json" };
-import { products } from "../../dashboard/products.js";
-import { assertMonitorIdentities, loadMonitorDefinitions } from "../src/definitions.js";
+import { products } from "#dashboard/products";
+import { assertMonitorIdentities, loadMonitorDefinitions } from "../../status/definitions.js";
 
 describe("monitor definitions", () => {
   it("owns HTTP and heartbeat check behavior in typed code", () => {

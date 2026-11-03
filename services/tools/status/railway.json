@@ -4,7 +4,7 @@
     "builder": "RAILPACK"
   },
   "deploy": {
-    "startCommand": "pnpm --dir services/tools/status run start",
+    "startCommand": "pnpm --dir services/tools run status:start",
     "cronSchedule": "*/30 * * * *",
     "restartPolicyType": "NEVER"
   }

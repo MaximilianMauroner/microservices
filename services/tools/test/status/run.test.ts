@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { runChecker } from "../src/run.js";
+import { runChecker } from "../../status/run.js";
 import {
   MemoryStore,
   NOW,

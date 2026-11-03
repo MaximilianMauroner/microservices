@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createHeartbeats, InvalidHeartbeatTokenError, UnknownHeartbeatMonitorError } from "@tools-platform/tools-checker";
-import type { HeartbeatRepository } from "../status/src/heartbeat-repository.js";
+import { createHeartbeats, InvalidHeartbeatTokenError, UnknownHeartbeatMonitorError } from "#status";
+import type { HeartbeatRepository } from "../status/heartbeat-repository.js";
 
 class MemoryHeartbeatRepository implements HeartbeatRepository {
   readonly values = new Map<string, Date>();

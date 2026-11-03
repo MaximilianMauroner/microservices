@@ -8,7 +8,8 @@
     "#security": "./runtime/security/index.ts",
     "#suite-chrome": "./runtime/suite-chrome/index.js",
     "#dashboard": "./dashboard/src/index.ts",
-    "#dashboard/products": "./dashboard/products.ts"
+    "#dashboard/products": "./dashboard/products.ts",
+    "#status": "./status/index.ts"
   },
   "scripts": {
     "build": "NODE_ENV=production vite build",
@@ -21,7 +22,9 @@
     "start": "node .output/server/index.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "test:money-postgres": "node --experimental-strip-types test/runtime/run.ts money-postgres"
+    "test:money-postgres": "node --experimental-strip-types test/runtime/run.ts money-postgres",
+    "status:start": "tsx status/cli.ts",
+    "status:seed-local": "tsx status/local-seed.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1141.0",
@@ -40,7 +43,6 @@
     "@tiptap/pm": "3.29.2",
     "@tiptap/react": "3.29.2",
     "@tools-platform/artifact-publisher": "workspace:*",
-    "@tools-platform/tools-checker": "workspace:*",
     "better-auth": "1.6.26",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

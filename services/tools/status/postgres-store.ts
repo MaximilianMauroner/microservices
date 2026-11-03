@@ -7,7 +7,7 @@ import {
   type CatalogDocument,
   type CheckerStateDocument,
   type HistoryPartitionDocument
-} from "../../runtime/domain/index.js";
+} from "#domain";
 import { CheckerConflictError, createSnapshotStore, type CheckerStore } from "./bucket.js";
 import type { CheckerConfig } from "./config.js";
 import { assertMonitorIdentities, loadMonitorDefinitions, type MonitorDefinition } from "./definitions.js";
@@ -21,8 +21,8 @@ export interface CheckerCatalogSource {
 export async function createPostgresCheckerStore(config: CheckerConfig, source?: CheckerCatalogSource): Promise<CheckerStore> {
   if (!source) {
     const [{ default: catalog }, { products }] = await Promise.all([
-      import("../../dashboard/config/initial-catalog.json", { with: { type: "json" } }),
-      import("../../dashboard/products.js"),
+      import("../dashboard/config/initial-catalog.json", { with: { type: "json" } }),
+      import("#dashboard/products"),
     ]);
     source = {
       catalog: decodeCatalogDocument(catalog), definitions: loadMonitorDefinitions(),
