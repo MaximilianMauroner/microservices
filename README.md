@@ -11,8 +11,8 @@ TanStack Start monolith whose products live directly beneath `services/tools`.
 | Tools | `services/tools` | Railway, Node.js | Authenticated product monolith and product-owned scheduled work. |
 | Network Console | `services/network-console` | Local VM, Node.js | Private network and listening-port dashboard. |
 
-Tools contains the `dashboard`, `status`, `publisher`, `money`, `feedback`, and
-Markdown Share products. Code reused within Tools remains owned by the product or
+Tools contains the `dashboard`, `status`, `publisher`, `money`, `feedback`,
+`kitchen`, and Markdown Share products. Code reused within Tools remains owned by the product or
 runtime module that provides it; there is no repository-wide shared package.
 
 ## Requirements
