@@ -194,6 +194,18 @@ describe.skipIf(!sql)("Kitchen", () => {
     expect((await home.saveIngredient(unused.id, { ...perPiece, name: "Gurke" })).unit).toBe("piece");
   });
 
+  it("counts canned food in cans", async () => {
+    const store = kitchenStore(sql!);
+    const home = await store.open(admin, (await store.admin(admin).create("Home")).id);
+    const chickpeas = await home.saveIngredient(undefined, { name: "Kichererbsen", unit: "g", section: "Proteine", nutrition: { kcal: 120, protein: 7, carbs: 15, fat: 2 }, notes: "" });
+    const recipe = await home.saveRecipe(undefined, { name: "Hummus", servings: 4, minutes: 10, instructions: "", lines: [{ ingredientId: chickpeas.id, amount: 800, note: "" }] });
+
+    await home.saveIngredient(chickpeas.id, { name: "Kichererbsen", unit: "can", section: "Proteine", nutrition: { kcal: 480, protein: 28, carbs: 60, fat: 8 }, notes: "" }, 400);
+    expect((await home.recipe(recipe.id)).lines.map((line) => [line.unit, line.amount])).toEqual([["can", 2]]);
+    await home.setStock(chickpeas.id, 3);
+    expect((await home.stock()).map((item) => [item.unit, item.amount])).toEqual([["can", 3]]);
+  });
+
   it("lets an MCP client manage only the kitchens its person can open", async () => {
     const store = kitchenStore(sql!);
     const friendId = await person(friend.subject);

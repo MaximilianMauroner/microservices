@@ -6,7 +6,7 @@ import { Input } from "../../../platform/ui/components/ui/input.js";
 import { Label } from "../../../platform/ui/components/ui/label.js";
 import { Textarea } from "../../../platform/ui/components/ui/textarea.js";
 import { cn } from "../../../platform/ui/lib/utils.js";
-import { formatAmount, type Ingredient, INGREDIENT_UNITS, type IngredientUnit, type Nutrition, type Recipe, scaledLines } from "../domain.js";
+import { formatAmount, type Ingredient, INGREDIENT_UNITS, type IngredientUnit, type Nutrition, type Recipe, scaledLines, unitName } from "../domain.js";
 import type { RecipeSummary } from "../server-functions.js";
 import { byGroup, type Frame, GroupDot, groupColor, KitchenEmpty, KitchenPage, KitchenSheet, mainGroup, PlateRing, Stepper, tint, useKitchenAction } from "./kit.js";
 import { type KitchenLanguage, useLanguage, useText } from "./language.js";
@@ -60,7 +60,6 @@ const en = {
   amount: "Amount",
   removeItem: (name: string) => name ? `Remove ${name}` : "Remove ingredient",
   unit: "Unit",
-  unitPieces: "pieces",
   note: "Note",
   notePlaceholder: "Note, such as diced",
   addIngredient: "Add ingredient",
@@ -121,7 +120,6 @@ const TEXT: Record<KitchenLanguage, KitText> = {
     amount: "Menge",
     removeItem: (name: string) => name ? `${name} entfernen` : "Zutat entfernen",
     unit: "Einheit",
-    unitPieces: "Stück",
     note: "Notiz",
     notePlaceholder: "Notiz, zum Beispiel gewürfelt",
     addIngredient: "Zutat hinzufügen",
@@ -318,7 +316,6 @@ function RecipeEditor({ data, onDone }: { data: RecipeData; onDone: () => void }
   const [lines, setLines] = useState<DraftLine[]>(() => (recipe?.lines ?? []).map((line) => ({ key: line.ingredientId, ingredientId: line.ingredientId, name: line.ingredient, unit: line.unit, amount: String(line.amount), note: line.note })));
   const [error, setError] = useState<string | undefined>();
   const byName = new Map(data.ingredients.map((ingredient) => [ingredient.name.toLowerCase(), ingredient]));
-  const unitName = (unit: string) => unit === "piece" ? text.unitPieces : unit;
 
   const update = (key: string, patch: Partial<DraftLine>) => setLines((current) => current.map((line) => line.key === key ? { ...line, ...patch } : line));
 
@@ -388,11 +385,11 @@ function RecipeEditor({ data, onDone }: { data: RecipeData; onDone: () => void }
                   <Input aria-label={text.amount} inputMode="decimal" value={line.amount} placeholder="200" onChange={(event) => update(line.key, { amount: event.target.value })} />
                   <Button type="button" variant="ghost" size="icon" aria-label={text.removeItem(line.name)} className="sm:order-last" onClick={() => setLines((current) => current.filter((one) => one.key !== line.key))}><XIcon /></Button>
                   {known ? (
-                    <span className="col-span-1 flex h-9 items-center px-1 text-sm text-muted-foreground">{unitName(known.unit)}</span>
+                    <span className="col-span-1 flex h-9 items-center px-1 text-sm text-muted-foreground">{unitName(known.unit, language)}</span>
                   ) : (
                     <select aria-label={text.unit} value={line.unit} onChange={(event) => update(line.key, { unit: event.target.value as IngredientUnit })}
                       className="h-9 rounded-lg border border-input bg-field px-2 text-sm">
-                      {INGREDIENT_UNITS.map((unit) => <option key={unit} value={unit}>{unitName(unit)}</option>)}
+                      {INGREDIENT_UNITS.map((unit) => <option key={unit} value={unit}>{unitName(unit, language)}</option>)}
                     </select>
                   )}
                   <Input aria-label={text.note} value={line.note} placeholder={text.notePlaceholder} className="col-span-2 sm:col-span-1" onChange={(event) => update(line.key, { note: event.target.value })} />

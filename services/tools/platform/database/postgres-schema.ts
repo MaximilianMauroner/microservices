@@ -569,7 +569,7 @@ export const kitchenIngredients = toolsSchema.table("kitchen_ingredients", {
   notes: text("notes").notNull().default(""),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
 }, (table) => [
-  check("kitchen_ingredients_unit_check", sql`${table.unit} in ('g', 'ml', 'piece')`),
+  check("kitchen_ingredients_unit_check", sql`${table.unit} in ('g', 'ml', 'piece', 'can')`),
   unique("kitchen_ingredients_kitchen_id_unique").on(table.kitchenId, table.id),
   unique("kitchen_ingredients_name_unique").on(table.kitchenId, table.name),
 ]);
