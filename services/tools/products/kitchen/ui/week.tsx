@@ -35,7 +35,9 @@ const en = {
   openAtHome: "Open At home",
   planTitle: (weekday: string, date: string) => `Plan ${weekday}, ${date}`,
   addToPlan: "Add to plan",
-  findRecipe: "Find a recipe",
+  findRecipe: "Find or add a recipe",
+  addIdea: (name: string) => `Add “${name}” as a new recipe idea`,
+  ideaAdded: (name: string) => `${name} added as an idea`,
   meal: "Meal",
   servingsLabel: "Servings",
   recipes: "Recipes",
@@ -99,7 +101,9 @@ const TEXT: Record<KitchenLanguage, typeof en> = {
     openAtHome: "Vorrat öffnen",
     planTitle: (weekday: string, date: string) => `${weekday}, ${date} planen`,
     addToPlan: "Zum Plan hinzufügen",
-    findRecipe: "Rezept suchen",
+    findRecipe: "Rezept suchen oder hinzufügen",
+    addIdea: (name: string) => `„${name}“ als neue Rezeptidee hinzufügen`,
+    ideaAdded: (name: string) => `${name} als Idee hinzugefügt`,
     meal: "Mahlzeit",
     servingsLabel: "Portionen",
     recipes: "Rezepte",
@@ -308,6 +312,15 @@ function PlanSheet({ day, onClose, data }: { day: string | undefined; onClose: (
   }
   const matches = data.recipes.filter((recipe) => recipe.name.toLowerCase().includes(query.trim().toLowerCase()));
   const parts = day ? dayParts(day, language) : undefined;
+  const typed = query.trim();
+  const isNew = Boolean(typed) && !data.recipes.some((recipe) => recipe.name.toLowerCase() === typed.toLowerCase());
+
+  /** Keeps the typed name as a recipe idea and picks it for this meal. */
+  async function addIdea() {
+    if (pending) return;
+    const created = await run({ type: "recipe.save", name: typed, servings: 2, minutes: null, instructions: "", lines: [] }, { title: text.ideaAdded(typed) });
+    if (created?.id) { setRecipeId(created.id); setServings(2); }
+  }
 
   async function plan() {
     if (!day || !recipeId) return;
@@ -345,7 +358,7 @@ function PlanSheet({ day, onClose, data }: { day: string | undefined; onClose: (
       ) : undefined}
     >
       {data.recipes.length ? (
-        <SearchField value={query} onValue={setQuery} label={text.findRecipe} inSheet>
+        <SearchField value={query} onValue={setQuery} label={text.findRecipe} inSheet add={isNew ? { label: text.addIdea(typed), run: () => void addIdea() } : undefined}>
           <ul className="grid gap-1" role="listbox" aria-label={text.recipes}>
             {matches.map((recipe) => (
               <li key={recipe.id}>
