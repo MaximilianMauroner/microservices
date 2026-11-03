@@ -20,23 +20,28 @@ type SharedResponseRow = { id: string; form_title: string; language: FeedbackLan
 export type CreatedFeedbackSubmission = Readonly<{ id: string; shareToken?: string; shareExpiresAt?: string }>;
 
 export interface FeedbackRepository {
+  /** Reads and changes only the forms and responses of one person. */
+  owner(subject: string): FeedbackOwnerRepository;
+  getPublicForm(token: string): Promise<FeedbackForm | undefined>;
+  createSubmission(form: FeedbackForm, answers: Readonly<Record<string, string>>, questionSnapshot?: readonly FeedbackQuestion[], shareDays?: FeedbackShareDays): Promise<CreatedFeedbackSubmission>;
+  getSharedResponse(token: string): Promise<SharedFeedbackResponse | undefined>;
+  readiness(): Promise<void>;
+  close(): Promise<void>;
+}
+
+export interface FeedbackOwnerRepository {
   listForms(): Promise<readonly FeedbackForm[]>;
   createForm(input: { language: FeedbackLanguage }): Promise<FeedbackForm>;
   getForm(id: string): Promise<FeedbackForm | undefined>;
-  getPublicForm(token: string): Promise<FeedbackForm | undefined>;
   updateForm(id: string, input: { language: FeedbackLanguage; title: string; introduction: string; questions: readonly FeedbackQuestion[] }): Promise<FeedbackForm | undefined>;
   setFormStatus(id: string, status: FeedbackFormStatus): Promise<FeedbackForm | undefined>;
   rotateToken(id: string): Promise<FeedbackForm | undefined>;
   deleteForm(id: string): Promise<boolean>;
-  createSubmission(form: FeedbackForm, answers: Readonly<Record<string, string>>, questionSnapshot?: readonly FeedbackQuestion[], shareDays?: FeedbackShareDays): Promise<CreatedFeedbackSubmission>;
-  getSharedResponse(token: string): Promise<SharedFeedbackResponse | undefined>;
   listSubmissions(formId: string): Promise<readonly FeedbackSubmission[]>;
   listRecentSubmissions(limit: number): Promise<readonly FeedbackSubmission[]>;
   getSubmission(id: string): Promise<FeedbackSubmission | undefined>;
   updateSubmission(id: string, input: { reviewState: FeedbackReviewState; followUpState: FeedbackFollowUpState }): Promise<FeedbackSubmission | undefined>;
   deleteSubmission(id: string): Promise<boolean>;
-  readiness(): Promise<void>;
-  close(): Promise<void>;
 }
 
 export function createPostgresFeedbackRepository(databaseUrl: string, options: { readOnly?: boolean; encryptionKey: Buffer }): FeedbackRepository {
@@ -48,41 +53,68 @@ export function feedbackRepository(sql: Sql, key: Buffer): FeedbackRepository {
   const formSelect = sql`select f.id, f.public_token, f.language, f.title, f.introduction, f.questions, f.status, f.created_at, f.updated_at,
     count(s.id)::int as response_count, count(s.id) filter (where s.review_state = 'unread')::int as unread_count
     from tools.feedback_forms f left join tools.feedback_submissions s on s.form_id = f.id`;
+  const submissionSelect = sql`select s.id, s.form_id, f.title as form_title, s.question_snapshot, s.answers, s.submitted_at, s.review_state, s.follow_up_state
+    from tools.feedback_submissions s join tools.feedback_forms f on f.id = s.form_id`;
   return {
-    async listForms() {
-      const rows = await sql<FormRow[]>`${formSelect} group by f.id order by f.updated_at desc`;
-      return rows.map(formFromRow);
-    },
-    async createForm(input) {
-      const now = new Date();
-      const id = randomUUID();
-      await sql`insert into tools.feedback_forms (id, public_token, language, title, introduction, questions, status, created_at, updated_at)
-        values (${id}, ${publicToken()}, ${input.language}, '', '', ${sql.json([])}, 'draft', ${now}, ${now})`;
-      return required(await this.getForm(id));
-    },
-    async getForm(id) {
-      const [row] = await sql<FormRow[]>`${formSelect} where f.id = ${id} group by f.id`;
-      return row ? formFromRow(row) : undefined;
+    owner(owner) {
+      const ownedForms = sql`select id from tools.feedback_forms where owner_subject = ${owner}`;
+      return {
+        async listForms() {
+          const rows = await sql<FormRow[]>`${formSelect} where f.owner_subject = ${owner} group by f.id order by f.updated_at desc`;
+          return rows.map(formFromRow);
+        },
+        async createForm(input) {
+          const now = new Date();
+          const id = randomUUID();
+          await sql`insert into tools.feedback_forms (id, owner_subject, public_token, language, title, introduction, questions, status, created_at, updated_at)
+            values (${id}, ${owner}, ${publicToken()}, ${input.language}, '', '', ${sql.json([])}, 'draft', ${now}, ${now})`;
+          return required(await this.getForm(id));
+        },
+        async getForm(id) {
+          const [row] = await sql<FormRow[]>`${formSelect} where f.id = ${id} and f.owner_subject = ${owner} group by f.id`;
+          return row ? formFromRow(row) : undefined;
+        },
+        async updateForm(id, input) {
+          await sql`update tools.feedback_forms set language = ${input.language}, title = ${input.title}, introduction = ${input.introduction}, questions = ${sql.json([...input.questions])}, updated_at = ${new Date()} where id = ${id} and owner_subject = ${owner}`;
+          return this.getForm(id);
+        },
+        async setFormStatus(id, status) {
+          await sql`update tools.feedback_forms set status = ${status}, updated_at = ${new Date()} where id = ${id} and owner_subject = ${owner}`;
+          return this.getForm(id);
+        },
+        async rotateToken(id) {
+          await sql`update tools.feedback_forms set public_token = ${publicToken()}, updated_at = ${new Date()} where id = ${id} and owner_subject = ${owner}`;
+          return this.getForm(id);
+        },
+        async deleteForm(id) {
+          const rows = await sql<{ id: string }[]>`delete from tools.feedback_forms where id = ${id} and owner_subject = ${owner} returning id`;
+          return rows.length === 1;
+        },
+        async listSubmissions(formId) {
+          const rows = await sql<SubmissionRow[]>`${submissionSelect} where s.form_id = ${formId} and f.owner_subject = ${owner} order by s.submitted_at desc`;
+          return rows.map((row) => submissionFromRow(row, encryption));
+        },
+        async listRecentSubmissions(limit) {
+          const rows = await sql<SubmissionRow[]>`${submissionSelect} where f.owner_subject = ${owner} order by s.submitted_at desc limit ${Math.max(1, Math.min(200, limit))}`;
+          return rows.map((row) => submissionFromRow(row, encryption));
+        },
+        async getSubmission(id) {
+          const [row] = await sql<SubmissionRow[]>`${submissionSelect} where s.id = ${id} and f.owner_subject = ${owner}`;
+          return row ? submissionFromRow(row, encryption) : undefined;
+        },
+        async updateSubmission(id, input) {
+          await sql`update tools.feedback_submissions set review_state = ${input.reviewState}, follow_up_state = ${input.followUpState} where id = ${id} and form_id in (${ownedForms})`;
+          return this.getSubmission(id);
+        },
+        async deleteSubmission(id) {
+          const rows = await sql<{ id: string }[]>`delete from tools.feedback_submissions where id = ${id} and form_id in (${ownedForms}) returning id`;
+          return rows.length === 1;
+        }
+      };
     },
     async getPublicForm(token) {
       const [row] = await sql<FormRow[]>`${formSelect} where f.public_token = ${token} and f.status = 'active' group by f.id`;
       return row ? formFromRow(row) : undefined;
-    },
-    async updateForm(id, input) {
-      await sql`update tools.feedback_forms set language = ${input.language}, title = ${input.title}, introduction = ${input.introduction}, questions = ${sql.json([...input.questions])}, updated_at = ${new Date()} where id = ${id}`;
-      return this.getForm(id);
-    },
-    async setFormStatus(id, status) {
-      await sql`update tools.feedback_forms set status = ${status}, updated_at = ${new Date()} where id = ${id}`;
-      return this.getForm(id);
-    },
-    async rotateToken(id) {
-      await sql`update tools.feedback_forms set public_token = ${publicToken()}, updated_at = ${new Date()} where id = ${id}`;
-      return this.getForm(id);
-    },
-    async deleteForm(id) {
-      const rows = await sql<{ id: string }[]>`delete from tools.feedback_forms where id = ${id} returning id`;
-      return rows.length === 1;
     },
     async createSubmission(form, answers, questionSnapshot = form.questions, shareDays) {
       const id = randomUUID();
@@ -100,29 +132,6 @@ export function feedbackRepository(sql: Sql, key: Buffer): FeedbackRepository {
         from tools.feedback_submissions s join tools.feedback_forms f on f.id = s.form_id
         where s.share_token_hash = ${hashShareToken(token)} and s.share_expires_at > ${new Date()}`;
       return row ? { formTitle: row.form_title, language: row.language, questionSnapshot: encryption.decrypt<FeedbackQuestion[]>(row.question_snapshot, row.id, "question_snapshot"), answers: encryption.decrypt<Record<string, string>>(row.answers, row.id, "answers"), submittedAt: row.submitted_at.toISOString(), expiresAt: row.share_expires_at.toISOString() } : undefined;
-    },
-    async listSubmissions(formId) {
-      const rows = await sql<SubmissionRow[]>`select s.id, s.form_id, f.title as form_title, s.question_snapshot, s.answers, s.submitted_at, s.review_state, s.follow_up_state
-        from tools.feedback_submissions s join tools.feedback_forms f on f.id = s.form_id where s.form_id = ${formId} order by s.submitted_at desc`;
-      return rows.map((row) => submissionFromRow(row, encryption));
-    },
-    async listRecentSubmissions(limit) {
-      const rows = await sql<SubmissionRow[]>`select s.id, s.form_id, f.title as form_title, s.question_snapshot, s.answers, s.submitted_at, s.review_state, s.follow_up_state
-        from tools.feedback_submissions s join tools.feedback_forms f on f.id = s.form_id order by s.submitted_at desc limit ${Math.max(1, Math.min(200, limit))}`;
-      return rows.map((row) => submissionFromRow(row, encryption));
-    },
-    async getSubmission(id) {
-      const [row] = await sql<SubmissionRow[]>`select s.id, s.form_id, f.title as form_title, s.question_snapshot, s.answers, s.submitted_at, s.review_state, s.follow_up_state
-        from tools.feedback_submissions s join tools.feedback_forms f on f.id = s.form_id where s.id = ${id}`;
-      return row ? submissionFromRow(row, encryption) : undefined;
-    },
-    async updateSubmission(id, input) {
-      await sql`update tools.feedback_submissions set review_state = ${input.reviewState}, follow_up_state = ${input.followUpState} where id = ${id}`;
-      return this.getSubmission(id);
-    },
-    async deleteSubmission(id) {
-      const rows = await sql<{ id: string }[]>`delete from tools.feedback_submissions where id = ${id} returning id`;
-      return rows.length === 1;
     },
     async readiness() { await sql`select 1 from tools.feedback_forms limit 1`; },
     async close() { await sql.end(); }

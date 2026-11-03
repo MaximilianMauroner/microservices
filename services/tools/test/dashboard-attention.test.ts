@@ -8,14 +8,15 @@ const sources = vi.hoisted(() => ({
   response: vi.fn()
 }));
 vi.mock("@tanstack/react-start", () => ({
-  createServerFn: () => ({ middleware: () => ({ handler: (handler: () => Promise<unknown>) => handler }) })
+  createServerFn: () => ({ middleware: () => ({ handler: (handler: (input: unknown) => Promise<unknown>) =>
+    () => handler({ context: { principal: { role: "admin", subject: "admin-subject", email: "admin@example.test" } } }) }) })
 }));
 vi.mock("../src/auth-middleware.js", () => ({ requirePlatformSession: {} }));
 vi.mock("../src/server-data.js", () => ({
   internalPlatformRequest: () => ({ context: { runtime: {
     publicOrigin: "https://tools.example.test",
     moneyImports: { readReviewCounts: sources.money },
-    feedback: { listForms: sources.forms },
+    feedback: { owner: (subject: string) => subject === "admin-subject" ? { listForms: sources.forms } : undefined },
     services: { manage: { handle: vi.fn() }, publisher: { handle: vi.fn() } }
   } } }),
   readPlatformJson: sources.json,

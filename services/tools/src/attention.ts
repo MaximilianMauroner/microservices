@@ -27,11 +27,11 @@ type PlatformContext = ReturnType<typeof internalPlatformRequest>["context"];
 
 export const getAttentionSummary = createServerFn({ method: "GET" })
   .middleware([requirePlatformSession])
-  .handler(async (): Promise<AttentionSummary> => {
+  .handler(async ({ context: { principal } }): Promise<AttentionSummary> => {
     const { context } = internalPlatformRequest("/api/ops/snapshot");
     const [money, forms, documents, snapshot] = await Promise.allSettled([
       context.runtime.moneyImports.readReviewCounts(),
-      context.runtime.feedback.listForms(),
+      context.runtime.feedback.owner(principal.subject).listForms(),
       readDocuments(context),
       readSnapshot(context)
     ]);
@@ -40,12 +40,12 @@ export const getAttentionSummary = createServerFn({ method: "GET" })
 
 export const getDashboardData = createServerFn({ method: "GET" })
   .middleware([requirePlatformSession])
-  .handler(async (): Promise<DashboardData> => {
+  .handler(async ({ context: { principal } }): Promise<DashboardData> => {
     const { context } = internalPlatformRequest("/api/ops/snapshot");
     const [snapshot, money, forms, documents, uploads] = await Promise.all([
       readSnapshot(context),
       context.runtime.moneyImports.readReviewCounts().catch(() => undefined),
-      context.runtime.feedback.listForms().catch(() => undefined),
+      context.runtime.feedback.owner(principal.subject).listForms().catch(() => undefined),
       readDocuments(context).catch(() => undefined),
       readUploadSummary(context).catch(() => undefined)
     ]);
