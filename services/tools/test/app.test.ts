@@ -21,12 +21,14 @@ const member = {
 } as const;
 
 const kitchenMember = { ...member, products: ["kitchen"] };
+const publisherMember = { ...member, products: ["publisher"] };
 
 const resolvePrincipal: PrincipalResolver = async (request) => {
   const cookie = request.headers.get("cookie");
   if (cookie === "session=valid") return principal;
   if (cookie === "session=member") return member;
   if (cookie === "session=kitchen") return kitchenMember;
+  if (cookie === "session=publisher") return publisherMember;
   return undefined;
 };
 
@@ -125,6 +127,54 @@ describe("platform fetch gateway", () => {
     expect(page.status).toBe(302);
     expect(page.headers.get("location")).toBe("/kitchen");
     expect((await request(platform, "/kitchen", { headers: { Cookie: "session=member" } })).status).toBe(403);
+  });
+
+  it("opens Publisher's private paths for a granted member and leaves capability and machine paths alone", async () => {
+    const subjects: (string | undefined)[] = [];
+    const platform = createPlatformHandler({
+      resolvePrincipal,
+      services: {
+        publisher: mounted(async (request) => {
+          subjects.push(getAttachedPlatformPrincipal(request)?.subject);
+          if (new URL(request.url).pathname.startsWith("/api/uploads")) {
+            return request.headers.get("authorization") === "Bearer upload-token"
+              ? new Response("upload-ok")
+              : new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 });
+          }
+          return new Response("artifact");
+        }),
+        manage: mounted(async () => new Response("tools"))
+      },
+      publicOrigin: "https://tools.example.test"
+    });
+    const as = (cookie: string, path: string, method = "GET") =>
+      request(platform, path, { method, headers: { Cookie: `session=${cookie}` } });
+    const privatePaths = [
+      ["GET", "/publisher"], ["GET", "/publisher/artifacts"], ["GET", "/publisher/receive"], ["GET", "/publisher/qr"],
+      ["GET", "/api/external-uploads"], ["PATCH", `/api/external-uploads/${"a".repeat(32)}`],
+      ["POST", "/api/external-uploads/sessions"], ["GET", "/api/upload-links"], ["POST", "/api/upload-links"],
+      ["DELETE", "/api/upload-links/123e4567-e89b-42d3-a456-426614174001"]
+    ] as const;
+    for (const [method, path] of privatePaths) {
+      expect((await as("publisher", path, method)).status, `${method} ${path} with the grant`).toBe(200);
+      expect((await as("kitchen", path, method)).status, `${method} ${path} without the grant`).toBe(403);
+    }
+    expect(subjects.every((subject) => subject === publisherMember.subject)).toBe(true);
+    expect((await as("publisher", "/money")).status).toBe(403);
+
+    subjects.splice(0);
+    for (const [method, path] of [
+      ["GET", "/artifacts/01234567890123456789012345678901"], ["GET", "/files/01234567890123456789012345678901/report.pdf"],
+      ["GET", "/drop/guest-upload-token"], ["POST", "/api/drop/guest-upload-token/uploads"],
+      ["POST", "/api/drop/guest-upload-token/uploads/sessions"]
+    ] as const) {
+      expect((await request(platform, path, { method })).status, `${method} ${path} without a session`).toBe(200);
+    }
+    expect(subjects).toEqual([undefined, undefined, undefined, undefined, undefined]);
+
+    expect((await as("publisher", "/api/uploads", "POST")).status, "a session is not an upload token").toBe(401);
+    expect((await request(platform, "/api/uploads", { method: "POST", headers: { Authorization: "Bearer upload-token" } })).status).toBe(200);
+    expect(subjects.slice(-2)).toEqual([undefined, undefined]);
   });
 
   it("redirects private document navigations to a validated sign-in return path", async () => {

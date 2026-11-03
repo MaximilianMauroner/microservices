@@ -140,7 +140,7 @@ describe("Postgres artifact metadata paging", () => {
   it("finalizes guest artifacts only while their upload link is active", async () => {
     const source = await readFile(new URL("../../publisher/postgres-storage.ts", import.meta.url), "utf8");
 
-    expect(source).toContain("where id = ${uploadLinkId}::uuid and revoked_at is null and expires_at > now()");
+    expect(source).toContain("where id = ${uploadLinkId}::uuid and owner_subject = ${ownerSubject} and revoked_at is null and expires_at > now()");
     expect(source).toContain("for update`");
     expect(source).toContain("set operation_kind = 'delete', payload = null");
     expect(source).toContain("await finalizeDelete(sql, operationOwner, operation.artifact_id)");

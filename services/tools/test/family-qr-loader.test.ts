@@ -8,7 +8,10 @@ vi.mock("@tanstack/react-start", () => ({
     validator: () => ({ handler: () => {} })
   }) })
 }));
-vi.mock("../src/auth-middleware.js", () => ({ requirePlatformSession: middleware }));
+vi.mock("../src/auth-middleware.js", () => ({
+  requirePlatformSession: {},
+  requireProductAccess: (product: string) => product === "publisher" ? middleware : {}
+}));
 vi.mock("../src/server-data.js", () => ({
   internalPlatformRequest: () => ({ context: { runtime: { services: { publisher: { handle: vi.fn() } } } } }),
   readPlatformResponse: vi.fn(),

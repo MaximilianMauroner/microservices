@@ -41,7 +41,7 @@ describe("Postgres upload links", () => {
     });
 
     const repository = createPostgresUploadLinkRepository("postgresql://database.example.test/tools");
-    const created = await repository.create(expiresAt);
+    const created = await repository.owner("admin-subject").create(expiresAt);
 
     expect(persisted.size).toBe(1);
     expect(created.id).toBe(sqlMock.mock.calls[0]![1]);
@@ -66,7 +66,7 @@ describe("Postgres upload links", () => {
       }]);
     const repository = createPostgresUploadLinkRepository("postgresql://database.example.test/tools");
 
-    await expect(repository.create(expiresAt)).resolves.toMatchObject({ expiresAt });
+    await expect(repository.owner("admin-subject").create(expiresAt)).resolves.toMatchObject({ expiresAt });
     expect(sqlMock).toHaveBeenCalledTimes(2);
   });
 
@@ -79,7 +79,7 @@ describe("Postgres upload links", () => {
     });
     const repository = createPostgresUploadLinkRepository("postgresql://database.example.test/tools");
 
-    await expect(repository.create(
+    await expect(repository.owner("admin-subject").create(
       new Date(Date.now() + 86_400_000),
       { signal: controller.signal }
     )).rejects.toBe(aborted);
@@ -91,7 +91,7 @@ describe("Postgres upload links", () => {
     sqlMock.mockRejectedValueOnce(constraintFailure);
     const repository = createPostgresUploadLinkRepository("postgresql://database.example.test/tools");
 
-    await expect(repository.create(new Date(Date.now() + 86_400_000))).rejects.toBe(constraintFailure);
+    await expect(repository.owner("admin-subject").create(new Date(Date.now() + 86_400_000))).rejects.toBe(constraintFailure);
     expect(sqlMock).toHaveBeenCalledTimes(1);
   });
 });

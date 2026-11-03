@@ -3,7 +3,7 @@ import { handleDirectUpload } from "../../publisher/direct-upload-request.js";
 import type { DirectUploads } from "../../publisher/direct-uploads.js";
 
 const sessionId = "123e4567-e89b-42d3-a456-426614174002";
-const owner = { audience: "native" } as const;
+const owner = { audience: "native", subject: "admin-subject" } as const;
 const options = { maxBytes: 100, maxHtmlBytes: 100, maxConcurrent: 1,
   retentionMs: 60_000, baseUrl: "https://tools.example.test", allowHtml: true };
 

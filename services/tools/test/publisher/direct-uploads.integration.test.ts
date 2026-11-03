@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import postgres, { type Sql } from "postgres";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { CreateBucketCommand, GetObjectCommand, HeadObjectCommand, ListMultipartUploadsCommand, PutObjectCommand, S3Client, UploadPartCommand } from "@aws-sdk/client-s3";
+import { attachPlatformPrincipal } from "#security";
 import { createFetchApp } from "../../publisher/fetch-app.js";
 import { createDirectUploads, DIRECT_PART_BYTES } from "../../publisher/direct-uploads.js";
 import { createMultipartStorage } from "../../publisher/multipart-storage.js";
@@ -17,6 +18,9 @@ const origin = process.env.PUBLISHER_TRANSFER_TEST_ORIGIN ?? "http://127.0.0.1:4
 const config = { bucket: "tools-transfer-test", endpoint: endpoint ?? "http://127.0.0.1:49000",
   region: "us-east-1", accessKeyId: process.env.PUBLISHER_TRANSFER_TEST_S3_ACCESS_KEY_ID ?? "transfer-local",
   secretAccessKey: process.env.PUBLISHER_TRANSFER_TEST_S3_SECRET_ACCESS_KEY ?? "transfer-local-secret", forcePathStyle: true };
+const ADMIN = "transfer-admin";
+const admin = { role: "admin", subject: ADMIN, email: "admin@example.test" } as const;
+const friend = { role: "member", subject: "transfer-friend", email: "friend@example.test", products: ["publisher"] } as const;
 const digest = (bytes: Uint8Array) => crypto.createHash("sha256").update(bytes).digest("hex");
 
 describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", () => {
@@ -37,7 +41,7 @@ describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", () => {
     bucket = createMultipartStorage(config);
     storage.directUploads = createDirectUploads(sql, bucket, postgres(databaseUrl!, { max: 2, idle_timeout: 1 }));
     storage.uploadOrigins = [config.endpoint];
-    app = createFetchApp({ storage, uploadLinks: links, uploadToken: "transfer-local-token", publicBaseUrl: origin,
+    app = createFetchApp({ storage, uploadLinks: links, uploadToken: "transfer-local-token", adminSubject: ADMIN, publicBaseUrl: origin,
       externalUpload: true, browserPersistentUpload: true, maxConcurrentUploads: 1 });
   }
 
@@ -69,19 +73,19 @@ describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", () => {
     for (const session of sessions) {
       await request(session.base + "/" + session.id, "DELETE");
       const [row] = await sql<{ artifact_id: string }[]>`select artifact_id from artifacts.upload_sessions where session_id = ${session.id}::uuid`;
-      if (row) await storage.deleteUpload(row.artifact_id);
+      if (row) await storage.owner(ADMIN).deleteUpload(row.artifact_id);
     }
     await storage.close?.();
     await links.close?.();
     client.destroy();
   }, 60_000);
 
-  async function request(path: string, method = "POST", value?: unknown) {
+  async function request(path: string, method = "POST", value?: unknown, principal: typeof admin | typeof friend = admin) {
     const body = value === undefined ? undefined : JSON.stringify(value);
     applicationUploadBytes += Buffer.byteLength(body ?? "");
-    return app(new Request(origin + path, { method, headers: {
+    return app(attachPlatformPrincipal(new Request(origin + path, { method, headers: {
       Authorization: "Bearer transfer-local-token", Origin: origin,
-      ...(body ? { "Content-Type": "application/json" } : {}) }, ...(body ? { body } : {}) }));
+      ...(body ? { "Content-Type": "application/json" } : {}) }, ...(body ? { body } : {}) }), principal));
   }
 
   async function initialize(bytes: number, options: { base?: string; requestId?: string; filename?: string; kind?: "html" | "file"; contentType?: string; project?: string; replaceId?: string } = {}) {
@@ -147,7 +151,7 @@ describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", () => {
     const pending = legacyReplace(id, "after legacy verification", base);
     try {
       await entered.promise;
-      expect(await storage.updateHtmlProject(id, "edited-during-verification")).toBe(true);
+      expect(await storage.owner(ADMIN).updateHtmlProject(id, "edited-during-verification")).toBe(true);
     } finally { release.resolve(); }
     try {
       const response = await pending;
@@ -164,7 +168,7 @@ describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", () => {
       expect(current?.project).toBe("explicit-project");
     } finally {
       verify.mockRestore();
-      await storage.deleteUpload(id);
+      await storage.owner(ADMIN).deleteUpload(id);
     }
   });
 
@@ -185,7 +189,7 @@ describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", () => {
         select operation_id, payload from artifacts.operations where artifact_id = ${id}`;
       expect(operation?.payload.expectedObjectKey).toBe(before!.object_key);
       expect(await raw(operation!.payload.objectKey)).toBe("recovered legacy replacement");
-      expect(await storage.updateHtmlProject(id, "edited-after-interruption")).toBe(true);
+      expect(await storage.owner(ADMIN).updateHtmlProject(id, "edited-after-interruption")).toBe(true);
       await sql`update artifacts.operations set lease_until = now() - interval '1 second'
         where operation_id = ${operation!.operation_id}::uuid`;
       const recovered = await storage.getHtml(id, { headOnly: true });
@@ -198,7 +202,7 @@ describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", () => {
       expect(await raw(before!.object_key)).toBe("before journal recovery");
     } finally {
       await sql`delete from artifacts.operations where artifact_id = ${id}`;
-      await storage.deleteUpload(id);
+      await storage.owner(ADMIN).deleteUpload(id);
     }
   });
 
@@ -249,8 +253,8 @@ describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", () => {
       expect(Boolean(operation)).toBe(interrupted);
       await sql`update artifacts.operations set lease_until = now() - interval '1 second', created_at = now() - interval '2 minutes'
         where artifact_id = ${id}`;
-      await sql`insert into artifacts.operations (operation_id, artifact_id, owner_id, lease_until, operation_kind, created_at)
-        values (${nextOperation}::uuid, ${nextArtifact}, 'following-stale-fixture', now() - interval '1 second', 'delete', now() - interval '1 minute')`;
+      await sql`insert into artifacts.operations (operation_id, artifact_id, owner_id, owner_subject, lease_until, operation_kind, created_at)
+        values (${nextOperation}::uuid, ${nextArtifact}, 'following-stale-fixture', ${ADMIN}, now() - interval '1 second', 'delete', now() - interval '1 minute')`;
       const response = await app(new Request(other.url));
       expect(response.status).toBe(200);
       expect(await response.text()).toContain("unrelated healthy page");
@@ -294,8 +298,8 @@ describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", () => {
     } finally {
       race.mockRestore();
       await sql`delete from artifacts.operations where artifact_id = ${id} or operation_id = ${nextOperation}::uuid`;
-      await storage.deleteUpload(id);
-      await storage.deleteUpload(other.id);
+      await storage.owner(ADMIN).deleteUpload(id);
+      await storage.owner(ADMIN).deleteUpload(other.id);
     }
   });
 
@@ -308,8 +312,8 @@ describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", () => {
       const [target] = await sql`select object_key from artifacts.objects where id = ${id}`;
       for (const row of cleaned) {
         await sql`insert into artifacts.upload_sessions
-          (session_id, artifact_id, target_id, expected_object_key, audience, description, state, expires_at, cleaned_at)
-          values (${row.sessionId}::uuid, ${row.artifactId}, ${id}, ${target!.object_key}, 'native',
+          (session_id, owner_subject, artifact_id, target_id, expected_object_key, audience, description, state, expires_at, cleaned_at)
+          values (${row.sessionId}::uuid, ${ADMIN}, ${row.artifactId}, ${id}, ${target!.object_key}, 'native',
             ${sql.json({ kind: "html", filename: "plan.html", contentType: "text/html", totalBytes: 4, partBytes: DIRECT_PART_BYTES })},
             'aborted', now() - interval '1 hour', now())`;
       }
@@ -332,7 +336,7 @@ describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", () => {
         kind: "html", filename: "plan.html", contentType: "text/html", totalBytes: 4, replaceId: id })).status).toBe(404);
     } finally {
       await sql`update artifacts.upload_sessions set expires_at = now() - interval '3 days' where target_id = ${id}`;
-      await storage.deleteUpload(id);
+      await storage.owner(ADMIN).deleteUpload(id);
     }
   });
 
@@ -348,9 +352,9 @@ describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", () => {
     const payload = JSON.stringify({ id: result.id, kind: "html", filename: row!.filename, contentType: row!.content_type,
       bytes: Number(row!.bytes), objectKey: row!.object_key, sha256: row!.sha256, now: row!.updated_at });
     await sql`delete from artifacts.objects where id = ${result.id}`;
-    await sql`insert into artifacts.operations (operation_id, artifact_id, owner_id, lease_until, operation_kind, payload, created_at)
-      values (${operationId}::uuid, ${result.id}, 'ambiguous-fixture', now() - interval '1 second', 'put_html', ${sql.json(payload)}, now() - interval '2 minutes'),
-        (${nextOperation}::uuid, ${nextArtifact}, 'following-fixture', now() - interval '1 second', 'delete', null, now() - interval '1 minute')`;
+    await sql`insert into artifacts.operations (operation_id, artifact_id, owner_id, owner_subject, lease_until, operation_kind, payload, created_at)
+      values (${operationId}::uuid, ${result.id}, 'ambiguous-fixture', ${ADMIN}, now() - interval '1 second', 'put_html', ${sql.json(payload)}, now() - interval '2 minutes'),
+        (${nextOperation}::uuid, ${nextArtifact}, 'following-fixture', ${ADMIN}, now() - interval '1 second', 'delete', null, now() - interval '1 minute')`;
     const log = vi.spyOn(console, "error");
     try {
       for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -372,8 +376,8 @@ describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", () => {
     } finally {
       log.mockRestore();
       await sql`delete from artifacts.operations where operation_id in (${operationId}::uuid, ${nextOperation}::uuid)`;
-      await storage.deleteUpload(result.id);
-      await storage.deleteUpload(other.id);
+      await storage.owner(ADMIN).deleteUpload(result.id);
+      await storage.owner(ADMIN).deleteUpload(other.id);
     }
   });
 
@@ -386,7 +390,7 @@ describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", () => {
     const replacement = await html("<h1>replacement</h1>", original.id);
     expect(await raw(before!.object_key)).toBe("<h1>original</h1>");
     expect(await (await app(new Request(original.url))).text()).toContain("<h1>original</h1>");
-    await storage.updateHtmlProject(original.id, "edited-during-upload");
+    await storage.owner(ADMIN).updateHtmlProject(original.id, "edited-during-upload");
     const response = await request(replacement.path + "/complete");
     expect(response.status).toBe(201);
     const result = await response.json();
@@ -459,7 +463,7 @@ describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", () => {
       const downloaded = await fetch(download.headers.get("location")!);
       expect(downloaded.headers.get("content-disposition")).toMatch(/^attachment;/);
       expect(Buffer.from(await downloaded.arrayBuffer())).toEqual(bytes);
-      await storage.deleteUpload(result.id);
+      await storage.owner(ADMIN).deleteUpload(result.id);
       expect((await app(new Request(result.url))).status).toBe(404);
       expect((await fetch(redirect.headers.get("location")!)).status).toBe(404);
     }
@@ -484,18 +488,18 @@ describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", () => {
     const payload = { id: original.id, kind: "html", filename: "legacy.html", contentType: "text/html; charset=utf-8",
       bytes: 15, objectKey: before!.object_key, project: "stale-project", sha256: digest(Buffer.from("legacy original")), now: before!.updated_at };
     const operationId = crypto.randomUUID();
-    await sql`insert into artifacts.operations (operation_id, artifact_id, owner_id, lease_until, operation_kind, payload)
-      values (${operationId}::uuid, ${original.id}, 'stale-fixture', now() - interval '1 second', 'put_html', ${sql.json(JSON.stringify(payload))})`;
+    await sql`insert into artifacts.operations (operation_id, artifact_id, owner_id, owner_subject, lease_until, operation_kind, payload)
+      values (${operationId}::uuid, ${original.id}, 'stale-fixture', ${ADMIN}, now() - interval '1 second', 'put_html', ${sql.json(JSON.stringify(payload))})`;
     const recovered = await storage.getHtml(original.id, { headOnly: true });
     recovered?.body.destroy();
     expect(recovered?.sha256).toBe(digest(Buffer.from("legacy winner")));
     expect(recovered?.project).toBe("original-project");
     expect((await sql`select operation_id from artifacts.operations where operation_id = ${operationId}::uuid`).length).toBe(0);
     const projectOperation = crypto.randomUUID();
-    await sql`insert into artifacts.operations (operation_id, artifact_id, owner_id, lease_until, operation_kind, payload)
-      values (${projectOperation}::uuid, ${original.id}, 'project-fixture', now() + interval '1 hour', 'put_html',
+    await sql`insert into artifacts.operations (operation_id, artifact_id, owner_id, owner_subject, lease_until, operation_kind, payload)
+      values (${projectOperation}::uuid, ${original.id}, 'project-fixture', ${ADMIN}, now() + interval '1 hour', 'put_html',
         ${sql.json({ ...payload, objectKey: current!.object_key, sha256: current!.sha256, bytes: 13, now: current!.updated_at })})`;
-    await storage.updateHtmlProject(original.id, "new-project");
+    await storage.owner(ADMIN).updateHtmlProject(original.id, "new-project");
     const [edited] = await sql`select * from artifacts.objects where id = ${original.id}`;
     await sql`update artifacts.operations set lease_until = now() - interval '1 second' where operation_id = ${projectOperation}::uuid`;
     const project = await storage.getHtml(original.id, { headOnly: true });
@@ -504,9 +508,9 @@ describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", () => {
     const [reconciled] = await sql`select filename, content_type, project, updated_at from artifacts.objects where id = ${original.id}`;
     expect(reconciled).toEqual({ filename: payload.filename, content_type: "text/html; charset=utf-8",
       project: "new-project", updated_at: edited!.updated_at });
-    await storage.deleteUpload(original.id);
-    await sql`insert into artifacts.operations (operation_id, artifact_id, owner_id, lease_until, operation_kind, payload)
-      values (${crypto.randomUUID()}::uuid, ${original.id}, 'revoked-fixture', now() - interval '1 second', 'put_html', ${sql.json(payload)})`;
+    await storage.owner(ADMIN).deleteUpload(original.id);
+    await sql`insert into artifacts.operations (operation_id, artifact_id, owner_id, owner_subject, lease_until, operation_kind, payload)
+      values (${crypto.randomUUID()}::uuid, ${original.id}, 'revoked-fixture', ${ADMIN}, now() - interval '1 second', 'put_html', ${sql.json(payload)})`;
     expect(await storage.getHtml(original.id)).toBeNull();
     expect((await sql`select id from artifacts.objects where id = ${original.id} and revoked_at is null`).length).toBe(0);
     await expect(raw(before!.object_key)).rejects.toThrow();
@@ -532,11 +536,11 @@ describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", () => {
       bytes: body.length, objectKey: before!.object_key, project: "stale-project", sha256: digest(body), now: before!.updated_at };
     try {
       await client.send(new PutObjectCommand({ Bucket: config.bucket, Key: before!.object_key, Body: body }));
-      await sql`insert into artifacts.operations (operation_id, artifact_id, owner_id, lease_until, operation_kind, payload)
-        values (${crypto.randomUUID()}::uuid, ${id}, 'old-format-fixture', now() + interval '1 hour', 'put_html',
+      await sql`insert into artifacts.operations (operation_id, artifact_id, owner_id, owner_subject, lease_until, operation_kind, payload)
+        values (${crypto.randomUUID()}::uuid, ${id}, 'old-format-fixture', ${ADMIN}, now() + interval '1 hour', 'put_html',
           ${sql.json(encoding === "object" ? payload : JSON.stringify(payload))})`;
       if (project === null) await sql`update artifacts.objects set project = null, updated_at = now() where id = ${id}`;
-      else expect(await storage.updateHtmlProject(id, project)).toBe(true);
+      else expect(await storage.owner(ADMIN).updateHtmlProject(id, project)).toBe(true);
       const [edited] = await sql`select * from artifacts.objects where id = ${id}`;
       await sql`update artifacts.operations set lease_until = now() - interval '1 second' where artifact_id = ${id}`;
       const read = await app(new Request(url));
@@ -548,13 +552,13 @@ describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", () => {
         updated_at: edited!.updated_at, created_at: before!.created_at,
         object_key: before!.object_key, kind: before!.kind, upload_link_id: before!.upload_link_id });
       expect(await sql`select operation_id from artifacts.operations where artifact_id = ${id}`).toHaveLength(0);
-      const inventory = await storage.listUploads(new Date(), { limit: 100, criteria: { ...DEFAULT_UPLOAD_LIST_CRITERIA, kind: "html" } });
+      const inventory = await storage.owner(ADMIN).listUploads(new Date(), { limit: 100, criteria: { ...DEFAULT_UPLOAD_LIST_CRITERIA, kind: "html" } });
       expect(inventory.uploads.find(row => row.id === id)).toMatchObject({
         originalName: payload.filename, contentType: payload.contentType, bytes: body.length, updatedAt: edited!.updated_at
       });
     } finally {
       await sql`delete from artifacts.operations where artifact_id = ${id}`;
-      await storage.deleteUpload(id);
+      await storage.owner(ADMIN).deleteUpload(id);
     }
   });
 
@@ -570,11 +574,11 @@ describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", () => {
     const expiresAt = permanent ? null : new Date(Date.now() + 7 * 86_400_000);
     try {
       await client.send(new PutObjectCommand({ Bucket: config.bucket, Key: before!.object_key, Body: body }));
-      await sql`insert into artifacts.operations (operation_id, artifact_id, owner_id, lease_until, operation_kind, payload)
-        values (${crypto.randomUUID()}::uuid, ${id}, 'old-file-fixture', now() + interval '1 hour', 'put_file',
+      await sql`insert into artifacts.operations (operation_id, artifact_id, owner_id, owner_subject, lease_until, operation_kind, payload)
+        values (${crypto.randomUUID()}::uuid, ${id}, 'old-file-fixture', ${ADMIN}, now() + interval '1 hour', 'put_file',
           ${sql.json({ id, kind: "file", filename: "recovered.txt", contentType: "text/plain", bytes: body.length,
             sha256: digest(body), objectKey: before!.object_key, now: before!.updated_at, expiresAt: before!.expires_at })})`;
-      expect(await storage.updateFileExpiry(id, expiresAt)).toBe(true);
+      expect(await storage.owner(ADMIN).updateFileExpiry(id, expiresAt)).toBe(true);
       expect(await (await request(session.path + "/complete")).json()).toEqual(completed);
       const [edited] = await sql`select * from artifacts.objects where id = ${id}`;
       await sql`update artifacts.operations set lease_until = now() - interval '1 second' where artifact_id = ${id}`;
@@ -587,7 +591,7 @@ describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", () => {
       expect(await sql`select operation_id from artifacts.operations where artifact_id = ${id}`).toHaveLength(0);
     } finally {
       await sql`delete from artifacts.operations where artifact_id = ${id}`;
-      await storage.deleteUpload(id);
+      await storage.owner(ADMIN).deleteUpload(id);
     }
   });
 
@@ -612,8 +616,8 @@ describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", () => {
     try {
       await client.send(new PutObjectCommand({ Bucket: config.bucket, Key: before!.object_key, Body: body }));
       if (winner === "pointer") await client.send(new PutObjectCommand({ Bucket: config.bucket, Key: movedKey, Body: "pointer winner" }));
-      await sql`insert into artifacts.operations (operation_id, artifact_id, owner_id, lease_until, operation_kind, payload)
-        values (${crypto.randomUUID()}::uuid, ${id}, 'verification-fixture', now() - interval '1 second', 'put_html',
+      await sql`insert into artifacts.operations (operation_id, artifact_id, owner_id, owner_subject, lease_until, operation_kind, payload)
+        values (${crypto.randomUUID()}::uuid, ${id}, 'verification-fixture', ${ADMIN}, now() - interval '1 second', 'put_html',
           ${sql.json({ id, kind: "html", filename: "recovered.html", contentType: "application/xhtml+xml", bytes: body.length,
             sha256: digest(winner === "digest" ? Buffer.from("mismatch") : body), objectKey: before!.object_key,
             project: "journal-project", now: new Date(before!.updated_at.getTime() + 1) })})`;
@@ -630,7 +634,7 @@ describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", () => {
     } finally {
       race.mockRestore();
       await sql`delete from artifacts.operations where artifact_id = ${id}`;
-      await storage.deleteUpload(id);
+      await storage.owner(ADMIN).deleteUpload(id);
       await bodies.deleteUpload(id, { objectKey: before!.object_key });
     }
   });
@@ -670,7 +674,7 @@ describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", () => {
     const verify = bucket.verify.bind(bucket);
     const revoke = vi.spyOn(bucket, "verify").mockImplementationOnce(async (...args) => {
       const hash = await verify(...args);
-      await storage.deleteUpload(id);
+      await storage.owner(ADMIN).deleteUpload(id);
       return hash;
     });
     expect((await request(replacement.path + "/complete")).status).toBe(404);
@@ -726,7 +730,7 @@ describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", () => {
       expect(await staleSource.json()).toMatchObject({ error: "source_changed" });
       expect(await sql`select * from artifacts.objects where id = ${id}`).toEqual(published);
       expect(await sql`select * from artifacts.upload_sessions where session_id = ${replacement.sessionId}::uuid`).toEqual(completedSession);
-    } finally { await storage.deleteUpload(id); }
+    } finally { await storage.owner(ADMIN).deleteUpload(id); }
   });
 
   it("resumes 85 MiB after a web restart, then completes exactly once without application body uploads", async () => {
@@ -809,6 +813,37 @@ describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", () => {
     expect((await fetch(signed, { method: "PUT", body: Buffer.from("test") })).ok).toBe(false);
   });
 
+  it("keeps browser sessions and replacement targets with their owner and gives guest uploads to the link owner", async () => {
+    const mine = await initialize(4, { base: "/api/external-uploads/sessions" });
+    await put(mine, 1, Buffer.from("test"));
+    expect((await request(mine.path, "GET", undefined, friend)).status).toBe(404);
+    expect((await request(mine.path + "/complete", "POST", undefined, friend)).status).toBe(404);
+    expect((await request(mine.path, "DELETE", undefined, friend)).status).toBe(404);
+    const completed = await request(mine.path + "/complete");
+    expect(completed.status).toBe(201);
+    const { id } = await completed.json() as { id: string };
+    const form = new FormData();
+    form.append("file", new Blob(["<h1>mine</h1>"], { type: "text/html" }), "mine.html");
+    const page = await (await app(new Request(origin + "/api/uploads", { method: "POST",
+      headers: { Authorization: "Bearer transfer-local-token" }, body: form }))).json() as { id: string };
+    const takeover = await request("/api/external-uploads/sessions", "POST", { requestId: crypto.randomUUID(), filename: "taken.html",
+      contentType: "text/html", totalBytes: 5, kind: "html", replaceId: page.id }, friend);
+    expect(takeover.status).toBe(404);
+
+    const link = await links.owner(friend.subject).create(new Date(Date.now() + 60_000));
+    const guest = await initialize(4, { base: `/api/drop/${link.token}/uploads/sessions` });
+    await put(guest, 1, Buffer.from("hey!"));
+    const received = await (await request(guest.path + "/complete")).json() as { id: string };
+    const owners = await sql<{ id: string; owner_subject: string }[]>`select id, owner_subject from artifacts.objects
+      where id in (${id}, ${page.id}, ${received.id})`;
+    expect(Object.fromEntries(owners.map((row) => [row.id, row.owner_subject])))
+      .toEqual({ [id]: ADMIN, [page.id]: ADMIN, [received.id]: friend.subject });
+    await storage.owner(ADMIN).deleteUpload(id);
+    await storage.owner(ADMIN).deleteUpload(page.id);
+    await storage.owner(friend.subject).deleteUpload(received.id);
+    await links.owner(friend.subject).revoke(link.id, new Date());
+  });
+
   it("checks bucket bytes rather than client size, hashes, metadata, or ETags", async () => {
     const incorrect = await initialize(4);
     await put(incorrect, 1, Buffer.from("test"), digest(Buffer.from("fake")));
@@ -827,22 +862,22 @@ describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", () => {
   });
 
   it("isolates guest owners and revocation, including a revoke during verification", async () => {
-    const first = await links.create(new Date(Date.now() + 60_000));
-    const other = await links.create(new Date(Date.now() + 60_000));
+    const first = await links.owner(ADMIN).create(new Date(Date.now() + 60_000));
+    const other = await links.owner(ADMIN).create(new Date(Date.now() + 60_000));
     const session = await initialize(4, { base: `/api/drop/${first.token}/uploads/sessions` });
     expect((await request(session.path.replace(first.token, other.token), "GET")).status).toBe(404);
     await put(session, 1, Buffer.from("test"));
     const original = bucket.verify.bind(bucket);
     const revoke = vi.spyOn(bucket, "verify").mockImplementationOnce(async (...args) => {
       const hash = await original(...args);
-      await links.revoke(first.id, new Date());
+      await links.owner(ADMIN).revoke(first.id, new Date());
       return hash;
     });
     expect((await request(session.path + "/complete")).status).toBe(404);
     revoke.mockRestore();
     expect((await request(session.path + "/parts", "POST", { number: 1, sha256: digest(Buffer.from("test")) })).status).toBe(404);
     await storage.directUploads!.cleanup();
-    await links.revoke(other.id, new Date());
+    await links.owner(ADMIN).revoke(other.id, new Date());
   });
 
   it("bounds completion concurrency and freezes parts until publication", async () => {
@@ -987,7 +1022,7 @@ describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", () => {
     const storageRead = await fetch(redirect.headers.get("location")!, { headers: { Range: "bytes=1-3", Origin: "null" } });
     expect(storageRead.status).toBe(206); expect(await storageRead.text()).toBe("234");
     expect(["*", "null"]).toContain(storageRead.headers.get("access-control-allow-origin"));
-    await storage.deleteUpload(completed.id);
+    await storage.owner(ADMIN).deleteUpload(completed.id);
     expect((await app(new Request(completed.url))).status).toBe(404);
     expect((await fetch(redirect.headers.get("location")!)).ok).toBe(false);
     expect((await request(file.path + "/complete")).status).toBe(404);
