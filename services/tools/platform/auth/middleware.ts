@@ -11,6 +11,9 @@ type PlatformFunctionContext = {
 
 export const requirePlatformSession = sessionMiddleware((principal) => principal.role === "admin");
 
+/** Lets every signed-in person call a server function, whatever products they can open. */
+export const requireSignedInSession = sessionMiddleware(() => true);
+
 /** Lets the admin and every member with a grant for the product call its server functions. */
 export function requireProductAccess(product: GrantableProductId) {
   return sessionMiddleware((principal) => principalSeesProduct(principal, product));

@@ -24,6 +24,7 @@ import { createPostgresMoneyRepository } from "../products/money/money-repositor
 import { MoneyMarketDataService } from "../products/money/money-market-data-service.js";
 import { createPostgresMoneyMarketDataRepository } from "../products/money/money-market-data-repository.js";
 import { createPostgresFeedbackRepository, type FeedbackRepository } from "../products/feedback/repository.js";
+import { createPostgresDevFeedbackRepository, type DevFeedbackRepository } from "../platform/dev-feedback/dev-feedback.js";
 import { createPostgresKitchenStore, type KitchenStore } from "../products/kitchen/repository.js";
 import { createPlatformIdentity, type PlatformIdentity } from "../platform/auth/auth.js";
 
@@ -42,6 +43,7 @@ export type PlatformRuntime = {
   moneyImports: MoneyImportService;
   moneyMarketData: MoneyMarketDataService;
   feedback: FeedbackRepository;
+  devFeedback: DevFeedbackRepository;
   kitchen: KitchenStore;
   documentShare: ReturnType<typeof createDocumentShare>;
   stop: () => Promise<void>;
@@ -94,6 +96,7 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
   const moneyMarketData = new MoneyMarketDataService(createPostgresMoneyMarketDataRepository(config.databaseUrl, { readOnly: config.readOnly }));
   const feedback = createPostgresFeedbackRepository(config.databaseUrl, { readOnly: config.readOnly, encryptionKey: config.feedbackEncryptionKey });
   const kitchen = createPostgresKitchenStore(config.databaseUrl, { readOnly: config.readOnly });
+  const devFeedback = createPostgresDevFeedbackRepository(config.databaseUrl, { readOnly: config.readOnly });
   try {
     const tools = createToolsApp({
       storage: toolsStorage,
@@ -177,6 +180,7 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
         moneyImports.close(),
         moneyMarketData.close(),
         feedback.close(),
+        devFeedback.close(),
         kitchen.close(),
         documentShare.close(),
         identity.close()
@@ -204,6 +208,7 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
       moneyImports,
       moneyMarketData,
       feedback,
+      devFeedback,
       kitchen,
       documentShare,
       health: async () => {

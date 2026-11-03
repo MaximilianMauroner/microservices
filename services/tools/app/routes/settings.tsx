@@ -4,6 +4,8 @@ import type { ReactNode } from "react";
 import { requireSignedIn } from "../../platform/auth/session.js";
 import { getPeople } from "../../platform/access/people-server-functions.js";
 import { PeopleSettings } from "../../platform/access/people-settings.js";
+import { getDevFeedback } from "../../platform/dev-feedback/server-functions.js";
+import { DevFeedbackSettings } from "../../platform/dev-feedback/dev-feedback-ui.js";
 import { authClient } from "../../platform/auth/auth-client.js";
 import { formatDate } from "../../platform/ui/lib/format-date.js";
 import { useTheme, type ThemePreference } from "../../platform/ui/components/theme-provider.js";
@@ -16,7 +18,11 @@ import { useSidebar } from "../../platform/ui/components/ui/sidebar.js";
 
 export const Route = createFileRoute("/settings")({
   beforeLoad: async ({ location }) => ({ principal: await requireSignedIn(location.href) }),
-  loader: ({ context }) => context.principal.role === "admin" ? getPeople() : undefined,
+  loader: async ({ context }) => {
+    if (context.principal.role !== "admin") return undefined;
+    const [people, devFeedback] = await Promise.all([getPeople(), getDevFeedback()]);
+    return { people, devFeedback };
+  },
   head: () => ({ meta: [{ title: "Settings — Mauroner Tools" }] }),
   component: SettingsPage
 });
@@ -25,7 +31,7 @@ const THEMES = [["light", "Light"], ["dark", "Dark"], ["system", "System"]] as c
 const SIDEBAR = [["open", "Open"], ["icons", "Icons only"]] as const;
 
 function SettingsPage() {
-  const people = Route.useLoaderData();
+  const admin = Route.useLoaderData();
   const { data: session } = authClient.useSession();
   const { theme, resolvedTheme, setTheme } = useTheme();
   const sidebar = useSidebar();
@@ -63,7 +69,8 @@ function SettingsPage() {
             <Button variant="destructive-subtle" size="sm" onClick={() => void signOut()}><LogOutIcon />Sign out</Button>
           </SettingRow>
         </section>
-        {people ? <PeopleSettings people={people.people} products={people.products} /> : null}
+        {admin ? <PeopleSettings people={admin.people.people} products={admin.people.products} /> : null}
+        {admin ? <DevFeedbackSettings items={admin.devFeedback} /> : null}
       </main>
     </>
   );

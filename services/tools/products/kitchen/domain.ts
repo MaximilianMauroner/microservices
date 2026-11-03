@@ -50,7 +50,11 @@ export type PlanEntry = Readonly<{
 
 export type StockItem = Readonly<{ ingredientId: string; ingredient: string; unit: IngredientUnit; section: string; amount: number }>;
 export type Leftover = Readonly<{ id: string; name: string; servings: number; useBy: string }>;
-export type ExtraItem = Readonly<{ id: string; name: string }>;
+/**
+ * An item on the shopping list that no meal needs. A one-time item leaves the list when you buy it.
+ * An every-week item stays: `bought` says if it is bought for the week the list shows.
+ */
+export type ExtraItem = Readonly<{ id: string; name: string; everyWeek: boolean; bought: boolean }>;
 
 export type ShoppingLine = Readonly<{
   ingredientId: string;

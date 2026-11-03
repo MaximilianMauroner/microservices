@@ -3,6 +3,7 @@ import { ExternalLinkIcon, LaptopIcon, LogOutIcon, MoonIcon, MoreVerticalIcon, S
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { favicons } from "../favicons.js";
 import { getAttentionSummary, type AttentionSummary } from "../../../products/dashboard/attention.js";
+import { SendFeedbackButton } from "../../dev-feedback/dev-feedback-ui.js";
 import { MONEY_VIEWS, MoneyReviewBadge, moneyReviewCount, moneyReviewCounts, moneyViewTitle } from "../../../products/money/money-tracker-navigation.js";
 import { authClient } from "../../auth/auth-client.js";
 import { homePath, principalSeesProduct } from "../../access/product-access.js";
@@ -134,6 +135,7 @@ export function ToolsSidebar() {
         ) : null}
       </SidebarContent>
       <SidebarFooter className="border-t border-sidebar-border p-2">
+        <SendFeedbackButton />
         <AccountMenu />
       </SidebarFooter>
       <SidebarRail />
