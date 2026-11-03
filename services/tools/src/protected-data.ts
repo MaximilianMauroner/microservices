@@ -1,5 +1,5 @@
 import { DEFAULT_UPLOAD_LIST_CRITERIA, uploadListPath, type UploadCategory } from "../publisher/upload-list.js";
-import { createServerFn } from "@tanstack/react-start";
+import { createServerFn, getGlobalStartContext } from "@tanstack/react-start";
 import type {
   PrivateSnapshotDocument
 } from "#domain";
@@ -137,15 +137,18 @@ export const getFamilyQrPageData = createServerFn({ method: "GET" })
   });
 
 export const getDocumentsPageData = createServerFn({ method: "GET" })
-  .middleware([requirePlatformSession])
-  .handler(async (): Promise<DocumentsPageData> => {
-    const { context } = internalPlatformRequest("/api/ops/documents");
-    const result = await readPlatformJson<MarkdownAdminSnapshot & { publicOrigin: string }>(
-      context.runtime.services.manage.handle,
-      "/api/ops/documents"
-    );
+  .middleware([requireProductAccess("markdown")])
+  .validator((input: { cursor?: string; asOf?: number } | undefined) => {
+    if ((input?.cursor !== undefined && typeof input.cursor !== "string") || (input?.asOf !== undefined && typeof input.asOf !== "number")) {
+      throw new Error("Invalid document page request.");
+    }
+    return { cursor: input?.cursor, asOf: input?.asOf };
+  })
+  .handler(async ({ data, context: { principal } }): Promise<DocumentsPageData> => {
+    const { runtime } = getGlobalStartContext()!;
     return {
-      ...result,
-      actor: context.principal?.email ?? "Authenticated user"
+      ...await runtime.documentShare.owner(principal.subject).list(data.cursor, data.asOf),
+      publicOrigin: runtime.publicOrigin,
+      actor: principal.email
     };
   });

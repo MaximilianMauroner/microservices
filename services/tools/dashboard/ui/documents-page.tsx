@@ -12,7 +12,7 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "..
 import { Input } from "../../src/components/ui/input.js";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../src/components/ui/table.js";
 import { useIsMobile } from "../../src/components/ui/use-mobile.js";
-import type { DocumentsPageData } from "../../src/protected-data.js";
+import { getDocumentsPageData, type DocumentsPageData } from "../../src/protected-data.js";
 import { formatDateTime } from "../../src/lib/format-date.js";
 import { PageHeader } from "../../src/components/page-header.js";
 import { toggleVisibleAll, toggleVisibleRange } from "../../src/lib/range-selection.js";
@@ -53,9 +53,7 @@ export function DocumentsPage({ initial }: { initial: DocumentsPageData }) {
     if (!nextCursor || loading) return;
     setLoading(true); setLoadError(undefined);
     try {
-      const response = await fetch(`/api/ops/documents?cursor=${encodeURIComponent(nextCursor)}&asOf=${initial.generatedAt}`, { credentials: "same-origin" });
-      if (!response.ok) throw new Error("Older documents could not be loaded.");
-      const page = await response.json() as DocumentsPageData;
+      const page = await getDocumentsPageData({ data: { cursor: nextCursor, asOf: initial.generatedAt } });
       setLoadedDocuments((current) => [...current, ...page.documents.filter((document) => !current.some((item) => item.token === document.token))]);
       setNextCursor(page.nextCursor);
     } catch { setLoadError("Older documents could not be loaded. Try again."); }
@@ -68,9 +66,7 @@ export function DocumentsPage({ initial }: { initial: DocumentsPageData }) {
       let cursor: string | undefined = nextCursor;
       const remaining: MarkdownAdminDocument[] = [];
       while (cursor) {
-        const response = await fetch(`/api/ops/documents?cursor=${encodeURIComponent(cursor)}&asOf=${initial.generatedAt}`, { credentials: "same-origin" });
-        if (!response.ok) throw new Error("Older documents could not be loaded.");
-        const page = await response.json() as DocumentsPageData;
+        const page: DocumentsPageData = await getDocumentsPageData({ data: { cursor, asOf: initial.generatedAt } });
         remaining.push(...page.documents); cursor = page.nextCursor;
       }
       setLoadedDocuments((current) => [...current, ...remaining.filter((document) => !current.some((item) => item.token === document.token))]);

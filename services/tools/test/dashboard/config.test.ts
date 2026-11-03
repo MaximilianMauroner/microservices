@@ -22,9 +22,6 @@ describe("configuration", () => {
         accessKeyId: "key",
         secretAccessKey: "secret",
         forcePathStyle: false
-      },
-      markdownShare: {
-        publicOrigin: "https://tools.example.test"
       }
     });
   });

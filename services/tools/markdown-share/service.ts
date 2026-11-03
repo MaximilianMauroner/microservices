@@ -5,7 +5,7 @@ import { createMarkdownShareRepository } from "./repository.js";
 import { createDocumentChanges } from "./changes.js";
 import { createShareHandler } from "./http.js";
 
-export function createDocumentShare(databaseUrl: string, publicOrigin: string, readOnly: boolean) {
+export function createDocumentShare(databaseUrl: string, publicOrigin: string, readOnly: boolean, creator: (request: Request) => Promise<string>) {
   const repository = createMarkdownShareRepository(databaseUrl);
   const changes = createDocumentChanges(databaseUrl);
   const cleanup = readOnly ? undefined : startAlignedScheduler({
@@ -26,8 +26,8 @@ export function createDocumentShare(databaseUrl: string, publicOrigin: string, r
     },
   });
   return {
-    handle: createShareHandler(repository, changes, publicOrigin),
-    list: repository.list,
+    handle: createShareHandler(repository, changes, publicOrigin, creator),
+    owner: repository.owner,
     readiness: repository.readiness,
     async close() {
       await cleanup?.close();

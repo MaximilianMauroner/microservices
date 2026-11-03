@@ -12,6 +12,5 @@ export { loadConfig } from "./config.js";
 export { WebStorage } from "./storage.js";
 export type {
   MarkdownAdminDocument,
-  MarkdownAdminReader,
   MarkdownAdminSnapshot
 } from "./markdown-admin.js";

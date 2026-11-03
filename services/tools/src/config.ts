@@ -36,7 +36,6 @@ export function loadPlatformConfig(env: Environment = process.env) {
     auth: loadPlatformAuthConfig(env, tools.trustedOrigin),
     tools,
     artifact,
-    markdownShare: tools.markdownShare,
     towerHeartbeatToken: secret(
       required(env, "TOWER_HEARTBEAT_TOKEN"),
       "TOWER_HEARTBEAT_TOKEN"

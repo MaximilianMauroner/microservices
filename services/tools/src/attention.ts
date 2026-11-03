@@ -32,7 +32,7 @@ export const getAttentionSummary = createServerFn({ method: "GET" })
     const [money, forms, documents, snapshot] = await Promise.allSettled([
       context.runtime.moneyImports.readReviewCounts(),
       context.runtime.feedback.owner(principal.subject).listForms(),
-      readDocuments(context),
+      context.runtime.documentShare.owner(principal.subject).list(),
       readSnapshot(context)
     ]);
     return attentionFrom({ money: settled(money), forms: settled(forms), documents: settled(documents), snapshot: settled(snapshot) }, Date.now());
@@ -46,7 +46,7 @@ export const getDashboardData = createServerFn({ method: "GET" })
       readSnapshot(context),
       context.runtime.moneyImports.readReviewCounts().catch(() => undefined),
       context.runtime.feedback.owner(principal.subject).listForms().catch(() => undefined),
-      readDocuments(context).catch(() => undefined),
+      context.runtime.documentShare.owner(principal.subject).list().catch(() => undefined),
       readUploadSummary(context).catch(() => undefined)
     ]);
     const now = Date.now();
@@ -97,10 +97,6 @@ function settled<T>(result: PromiseSettledResult<T>) {
 
 function readSnapshot(context: PlatformContext) {
   return readPlatformJson<PrivateSnapshotDocument>(context.runtime.services.manage.handle, "/api/ops/snapshot");
-}
-
-function readDocuments(context: PlatformContext) {
-  return readPlatformJson<MarkdownAdminSnapshot>(context.runtime.services.manage.handle, "/api/ops/documents");
 }
 
 async function readUploadSummary(context: PlatformContext) {

@@ -4,7 +4,8 @@ import type { PlatformPrincipal } from "#security";
 export const GRANTABLE_PRODUCTS = {
   kitchen: { label: "Kitchen", paths: ["/kitchen", "/api/kitchen"] },
   feedback: { label: "Feedback", paths: ["/feedback", "/api/feedback"] },
-  publisher: { label: "Publisher", paths: ["/publisher", "/api/external-uploads", "/api/upload-links"] }
+  publisher: { label: "Publisher", paths: ["/publisher", "/api/external-uploads", "/api/upload-links"] },
+  markdown: { label: "Document Share", paths: ["/documents"] }
 } as const satisfies Record<string, Readonly<{ label: string; paths: readonly [string, ...string[]] }>>;
 
 const MEMBER_PATHS = new Set(["/settings", "/consent"]);

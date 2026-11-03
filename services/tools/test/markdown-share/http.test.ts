@@ -21,7 +21,7 @@ describe.skipIf(!url)("Document Share over HTTP", () => {
     return fetch(`${origin}/api/share/documents${path}`, { method: 'POST', headers: { Origin: requestOrigin, 'Content-Type':'application/json' }, body: JSON.stringify(body) });
   }
   beforeAll(async () => {
-    await applyMarkdownShareSchema(sql!);
+    await applyMarkdownShareSchema(sql!, "admin-subject");
     server = createServer(async (incoming, outgoing) => {
       const abort = new AbortController();
       outgoing.on('close', () => abort.abort());
@@ -29,7 +29,7 @@ describe.skipIf(!url)("Document Share over HTTP", () => {
       for await (const chunk of incoming) chunks.push(Buffer.from(chunk));
       const request = new Request(`${origin}${incoming.url}`, { method: incoming.method, headers: incoming.headers as Record<string,string>, signal: abort.signal,
         ...(incoming.method === 'POST' ? { body: Buffer.concat(chunks) } : {}) });
-      const response = await createShareHandler(repository!, changes!, origin)(request);
+      const response = await createShareHandler(repository!, changes!, origin, async () => 'admin-subject')(request);
       outgoing.writeHead(response.status, Object.fromEntries(response.headers));
       outgoing.end(Buffer.from(await response.arrayBuffer()));
     });

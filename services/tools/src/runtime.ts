@@ -83,7 +83,8 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
     repository: heartbeatRepository,
     token: config.towerHeartbeatToken
   });
-  const documentShare = createDocumentShare(config.databaseUrl, config.publicOrigin, config.readOnly);
+  const documentShare = createDocumentShare(config.databaseUrl, config.publicOrigin, config.readOnly,
+    async (request) => (await identity.resolvePrincipal(request))?.subject ?? config.auth.allowedGoogleSubject);
   const artifactStorage = createPostgresUploadStorage(config.artifact.s3, config.databaseUrl);
   const uploadLinks = createPostgresUploadLinkRepository(config.databaseUrl);
   const activityTracker = new ActivityTracker();
@@ -94,8 +95,6 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
     const tools = createToolsApp({
       storage: toolsStorage,
       authenticate: toolsPrincipalAuthentication(),
-      markdownAdmin: documentShare,
-      markdownSharePublicOrigin: config.markdownShare.publicOrigin,
       trustedOrigin: config.publicOrigin
     });
     const artifact = createFetchApp({

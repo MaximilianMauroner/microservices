@@ -50,7 +50,7 @@ for (const config of ["drizzle.tools.config.ts", "drizzle.artifacts.config.ts"] 
 const database = postgres(url, { max: 1 });
 try {
   await reconcileRuntimeSchema(database);
-  await applyMarkdownShareSchema(database);
+  await applyMarkdownShareSchema(database, process.env.AUTH_ALLOWED_GOOGLE_SUBJECT);
 } finally {
   await database.end();
 }

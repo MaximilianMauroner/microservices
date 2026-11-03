@@ -7,7 +7,8 @@ type Changes = ReturnType<typeof createDocumentChanges>;
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
 const TOKEN_PATTERN = /^(?:[a-z0-9]{20,64}|[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/;
 
-export function createShareHandler(repository: Repository, changes: Changes, publicOrigin: string) {
+/** `creator` names the owner of a new document. Every other operation needs only the capability link. */
+export function createShareHandler(repository: Repository, changes: Changes, publicOrigin: string, creator: (request: Request) => Promise<string>) {
   return async (request: Request): Promise<Response> => {
     try {
       const url = new URL(request.url);
@@ -26,7 +27,7 @@ export function createShareHandler(repository: Repository, changes: Changes, pub
         const body = await readBody(request);
         const format = text(body, "format");
         if (format !== "markdown" && format !== "latex") throw invalid("Unknown document format.");
-        return json(await repository.create({ requestId: text(body, "requestId"), filename: text(body, "filename"), format, markdown: text(body, "markdown") }));
+        return json(await repository.create({ requestId: text(body, "requestId"), filename: text(body, "filename"), format, markdown: text(body, "markdown") }, await creator(request)));
       }
       if (!token || !TOKEN_PATTERN.test(token)) return json({ error: { code: "DOCUMENT_UNAVAILABLE", message: "This link is unavailable." } }, 404);
       if (request.method === "GET") {

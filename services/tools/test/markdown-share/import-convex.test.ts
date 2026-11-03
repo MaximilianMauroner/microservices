@@ -37,14 +37,14 @@ describe.skipIf(!url)('PostgreSQL import safety',()=>{
       {id:crypto.randomUUID(),version:2,createdAt:now-400,createdBy:'B',source:'old'},
     ]}];
     try {
-      await applyMarkdownShareSchema(sql);
-      await importDocuments(sql,documents); await importDocuments(sql,documents);
+      await applyMarkdownShareSchema(sql, 'admin-subject');
+      await importDocuments(sql,documents,'admin-subject'); await importDocuments(sql,documents,'admin-subject');
       await verifyImportedDocuments(sql,documents);
       expect((await sql`SELECT count(*)::int n FROM tools.markdown_checkpoints WHERE token=${token}`)[0].n).toBe(2);
-      await expect(importDocuments(sql,[{...documents[0],source:'different'}])).rejects.toThrow('differs');
+      await expect(importDocuments(sql,[{...documents[0],source:'different'}],'admin-subject')).rejects.toThrow('differs');
       expect((await sql`SELECT source FROM tools.markdown_documents WHERE token=${token}`)[0].source).toBe('legacy source');
       await sql`UPDATE tools.markdown_documents SET source='changed by a live editor' WHERE token=${token}`;
-      await expect(importDocuments(sql,documents)).rejects.toThrow('differs');
+      await expect(importDocuments(sql,documents,'admin-subject')).rejects.toThrow('differs');
     } finally { await sql`DELETE FROM tools.markdown_documents WHERE token=${token}`; await sql.end(); }
   });
 });

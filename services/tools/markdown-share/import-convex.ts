@@ -86,13 +86,13 @@ export function exportDigest(documents: ImportedDocument[]) {
   return createHash("sha256").update(JSON.stringify(normalized)).digest("hex");
 }
 
-export async function importDocuments(sql: Sql, documents: ImportedDocument[]): Promise<void> {
+export async function importDocuments(sql: Sql, documents: ImportedDocument[], ownerSubject: string): Promise<void> {
   await sql.begin(async tx => {
     await tx`SELECT pg_advisory_xact_lock(hashtext('markdown-share-import'))`;
     for (const d of documents) {
       const content = sourceSnapshot(d.source);
-      await tx`INSERT INTO tools.markdown_documents (token,request_id,request_hash,filename,format,created_at,updated_at,expires_at,pinned,version,history_floor,content,source)
-        VALUES (${d.token},${`convex-import:${d.token}`},${exportDigest([d])},${d.filename},${d.format},${d.createdAt},${d.updatedAt},${d.expiresAt},${d.pinned},${d.version},${d.version},${tx.json(content as unknown as postgres.JSONValue)},${d.source})
+      await tx`INSERT INTO tools.markdown_documents (token,request_id,request_hash,owner_subject,filename,format,created_at,updated_at,expires_at,pinned,version,history_floor,content,source)
+        VALUES (${d.token},${`convex-import:${d.token}`},${exportDigest([d])},${ownerSubject},${d.filename},${d.format},${d.createdAt},${d.updatedAt},${d.expiresAt},${d.pinned},${d.version},${d.version},${tx.json(content as unknown as postgres.JSONValue)},${d.source})
         ON CONFLICT (token) DO NOTHING`;
       const [existing] = await tx`SELECT request_hash FROM tools.markdown_documents WHERE token=${d.token} FOR UPDATE`;
       if (existing.request_hash !== exportDigest([d])) throw new Error("An existing document differs from the export. Import stopped without overwriting it.");
@@ -126,9 +126,11 @@ async function main() {
   if (operation !== "check") {
     if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required.");
     if (operation === "apply" && process.env.DOCUMENT_SHARE_IMPORT_CONFIRM !== "preserve-convex-documents") throw new Error("Import requires DOCUMENT_SHARE_IMPORT_CONFIRM=preserve-convex-documents and operator approval for production.");
+    const admin = process.env.AUTH_ALLOWED_GOOGLE_SUBJECT;
+    if (operation === "apply" && !admin) throw new Error("AUTH_ALLOWED_GOOGLE_SUBJECT is required. Imported documents belong to the admin.");
     const sql = postgres(process.env.DATABASE_URL, { max: 1 });
     try {
-      if (operation === "apply") { await applyMarkdownShareSchema(sql); await importDocuments(sql,documents); }
+      if (operation === "apply" && admin) { await applyMarkdownShareSchema(sql, admin); await importDocuments(sql, documents, admin); }
       else await verifyImportedDocuments(sql,documents);
     } finally { await sql.end(); }
   }

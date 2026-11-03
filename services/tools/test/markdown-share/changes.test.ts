@@ -17,8 +17,8 @@ describe.skipIf(!url)("document change subscriptions", () => {
   const second = url ? createDocumentChanges(url) : undefined;
   let token = "";
   beforeAll(async () => {
-    await applyMarkdownShareSchema(sql!);
-    token = (await repository!.create({ requestId: randomUUID(), filename: "notify.md", format: "markdown", markdown: "" })).token;
+    await applyMarkdownShareSchema(sql!, "admin-subject");
+    token = (await repository!.create({ requestId: randomUUID(), filename: "notify.md", format: "markdown", markdown: "" }, "admin-subject")).token;
   });
   afterAll(async () => {
     await Promise.all([changes!.close(), second!.close(), repository!.close()]);
