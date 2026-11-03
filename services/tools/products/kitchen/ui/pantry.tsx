@@ -5,7 +5,7 @@ import { Input } from "../../../platform/ui/components/ui/input.js";
 import { Label } from "../../../platform/ui/components/ui/label.js";
 import { cn } from "../../../platform/ui/lib/utils.js";
 import { addDays, formatAmount, type Ingredient, type Leftover, type StockItem, unitName } from "../domain.js";
-import { byGroup, type Frame, GROUP_LIST, GroupDot, groupColor, GroupLabel, groupLabel, groupListStyle, KitchenEmpty, KitchenPage, KitchenSheet, Stepper, tint, useByLabel, useKitchenAction } from "./kit.js";
+import { byGroup, type Frame, GROUP_LIST, GroupDot, groupColor, GroupLabel, groupLabel, groupListStyle, KitchenEmpty, KitchenPage, KitchenSheet, SearchField, Stepper, tint, useByLabel, useKitchenAction } from "./kit.js";
 import { type KitchenLanguage, useLanguage, useText } from "./language.js";
 
 const en = {
@@ -202,8 +202,8 @@ function AddStockSheet({ open, onClose, data }: { open: boolean; onClose: () => 
         onClick={async () => { if (selected && await run({ type: "stock.add", ingredientId: selected.id, amount: Number(amount.replace(",", ".")) }, { title: text.added(formatAmount(Number(amount.replace(",", ".")), selected.unit, language), selected.name) })) close(); }}>{text.addToStock}</Button>}>
       {data.ingredients.length ? (
         <div className="grid gap-4">
-          <Input className="h-10" placeholder={text.findIngredient} value={query} onChange={(event) => setQuery(event.target.value)} aria-label={text.findIngredient} />
-          <div className="flex max-h-56 flex-wrap gap-1.5 overflow-y-auto">
+          <SearchField value={query} onValue={setQuery} label={text.findIngredient} inSheet>
+          <div className="flex flex-wrap gap-1.5">
             {matches.map((one) => (
               <button key={one.id} type="button" aria-pressed={one.id === ingredientId} onClick={() => setIngredientId(one.id)}
                 className="inline-flex h-9 items-center gap-1.5 rounded-full border border-control-border bg-control px-3 text-sm aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground">
@@ -212,6 +212,7 @@ function AddStockSheet({ open, onClose, data }: { open: boolean; onClose: () => 
               </button>
             ))}
           </div>
+          </SearchField>
           {selected ? (
             <div className="grid gap-1.5">
               <Label htmlFor="stock-amount">{text.amountOf(selected.name)}</Label>

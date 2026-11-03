@@ -103,6 +103,33 @@ describe.skipIf(!sql)("Kitchen", () => {
     expect(await home.leftovers()).toEqual([expect.objectContaining({ name: "Pasta al pomodoro", servings: 1, useBy: "2026-11-06" })]);
   });
 
+  it("changes the ingredients of one planned meal and keeps the recipe as it is", async () => {
+    const store = kitchenStore(sql!);
+    const home = await store.open(admin, (await store.admin(admin).create("Home")).id);
+    const { spaghetti, tomato, recipe } = await pasta(home);
+    const basil = await home.saveIngredient(undefined, { name: "Basil", unit: "g", section: "Herbs", nutrition: noNutrition, notes: "" });
+    const monday = await home.plan({ day: "2026-11-02", meal: "dinner", recipeId: recipe.id, servings: 4 });
+    await home.plan({ day: "2026-11-03", meal: "dinner", recipeId: recipe.id, servings: 2 });
+    expect(monday.lines.map((line) => [line.ingredient, line.amount])).toEqual([["Spaghetti", 400], ["Tomato", 8]]);
+
+    const changed = await home.customizePlan(monday.id, [{ ingredientId: spaghetti.id, amount: 300, note: "" }, { ingredientId: basil.id, amount: 20, note: "fresh" }]);
+    expect(changed).toMatchObject({ custom: true, servings: 4 });
+    expect((await home.recipe(recipe.id)).lines.map((line) => line.ingredient)).toEqual(["Spaghetti", "Tomato"]);
+    expect((await home.shopping("2026-11-02")).lines.map(({ ingredient, needed }) => [ingredient, needed])).toEqual([["Spaghetti", 500], ["Tomato", 4], ["Basil", 20]]);
+
+    await home.updatePlan(monday.id, { day: "2026-11-02", meal: "dinner", servings: 2 });
+    expect((await home.week("2026-11-02")).entries[0]?.lines.map((line) => [line.ingredient, line.amount])).toEqual([["Spaghetti", 150], ["Basil", 10]]);
+
+    await home.setStock(tomato.id, 10);
+    await home.cook(monday.id, undefined);
+    expect((await home.stock()).map((item) => [item.ingredient, item.amount])).toEqual([["Tomato", 10]]);
+    await expect(home.customizePlan(monday.id, [])).rejects.toThrow(/already cooked/);
+
+    const tuesday = (await home.week("2026-11-02")).entries[1]!;
+    await home.customizePlan(tuesday.id, [{ ingredientId: tomato.id, amount: 6, note: "" }]);
+    expect(await home.resetPlan(tuesday.id)).toMatchObject({ custom: false, lines: [expect.objectContaining({ ingredient: "Spaghetti", amount: 200 }), expect.objectContaining({ ingredient: "Tomato", amount: 4 })] });
+  });
+
   it("brings every-week items back each week and drops one-time items once bought", async () => {
     const store = kitchenStore(sql!);
     const home = await store.open(admin, (await store.admin(admin).create("Home")).id);
@@ -192,6 +219,20 @@ describe.skipIf(!sql)("Kitchen", () => {
 
     const unused = await home.saveIngredient(undefined, { name: "Gurke", unit: "g", section: "Gemüse", nutrition: noNutrition, notes: "" });
     expect((await home.saveIngredient(unused.id, { ...perPiece, name: "Gurke" })).unit).toBe("piece");
+  });
+
+  it("keeps an ingredient in more than one group and shops for it in its main group", async () => {
+    const store = kitchenStore(sql!);
+    const home = await store.open(admin, (await store.admin(admin).create("Home")).id);
+    const chickpeas = await home.saveIngredient(undefined, { name: "Kichererbsen", unit: "g", section: "Proteine", otherGroups: [" Kohlenhydrate ", "proteine", "Kohlenhydrate"], nutrition: noNutrition, notes: "" });
+    expect(chickpeas).toMatchObject({ section: "Proteine", otherGroups: ["Kohlenhydrate"] });
+    expect((await store.list(admin)).find((kitchen) => kitchen.id === home.kitchen.id)?.groups).toEqual(["Proteine", "Kohlenhydrate"]);
+
+    const recipe = await home.saveRecipe(undefined, { name: "Hummus", servings: 2, minutes: null, instructions: "", lines: [{ ingredientId: chickpeas.id, amount: 400, note: "" }] });
+    await home.plan({ day: "2026-11-02", meal: "lunch", recipeId: recipe.id, servings: 2 });
+    expect((await home.shopping("2026-11-02")).lines.map((line) => [line.ingredient, line.section])).toEqual([["Kichererbsen", "Proteine"]]);
+
+    expect((await home.saveIngredient(chickpeas.id, { name: "Kichererbsen", unit: "g", section: "Proteine", otherGroups: [], nutrition: noNutrition, notes: "" })).otherGroups).toEqual([]);
   });
 
   it("counts canned food in cans", async () => {

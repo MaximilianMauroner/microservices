@@ -1,9 +1,10 @@
 import { Link, useHydrated, useRouter, useRouterState } from "@tanstack/react-router";
-import { BookOpenIcon, CalendarDaysIcon, CheckIcon, ChevronDownIcon, LanguagesIcon, LayoutGridIcon, LeafIcon, RefrigeratorIcon, ShoppingBasketIcon } from "lucide-react";
-import { createContext, type CSSProperties, type ReactNode, useContext, useEffect, useState } from "react";
+import { BookOpenIcon, CalendarDaysIcon, CheckIcon, ChevronDownIcon, LanguagesIcon, LayoutGridIcon, LeafIcon, RefrigeratorIcon, SearchIcon, ShoppingBasketIcon, XIcon } from "lucide-react";
+import { createContext, type CSSProperties, type ReactNode, useContext, useEffect, useRef, useState } from "react";
 import { AppShell } from "../../../platform/ui/components/app-shell.js";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../../../platform/ui/components/ui/dialog.js";
 import { Drawer, DrawerContent, DrawerDescription, DrawerFooter, DrawerHeader, DrawerTitle } from "../../../platform/ui/components/ui/drawer.js";
+import { Input } from "../../../platform/ui/components/ui/input.js";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "../../../platform/ui/components/ui/dropdown-menu.js";
 import { toast } from "../../../platform/ui/components/ui/toast.js";
 import { useIsMobile } from "../../../platform/ui/components/ui/use-mobile.js";
@@ -76,7 +77,8 @@ const en = {
   useTomorrow: "Use by tomorrow",
   useBy: (day: string) => `Use by ${day}`,
   other: "Other",
-  foodGroups: "Food groups"
+  foodGroups: "Food groups",
+  clearSearch: "Clear search"
 };
 type KitText = typeof en;
 const TEXT: Record<KitchenLanguage, KitText> = {
@@ -102,7 +104,8 @@ const TEXT: Record<KitchenLanguage, KitText> = {
     useTomorrow: "Bis morgen verbrauchen",
     useBy: (day: string) => `Verbrauchen bis ${day}`,
     other: "Sonstiges",
-    foodGroups: "Lebensmittelgruppen"
+    foodGroups: "Lebensmittelgruppen",
+    clearSearch: "Suche löschen"
   }
 };
 
@@ -363,16 +366,20 @@ export function KitchenSheet({ open, onOpenChange, title, description, children,
 }) {
   const mobile = useIsMobile();
   const hue = hueStyle(useContext(OpenTab));
+  const keyboard = useKeyboard(open && mobile);
   if (mobile) {
+    // With the keyboard open, the sheet sits on top of it and fits the visible area, like a native sheet.
+    // While a search has the focus, the footer steps aside so the results get the room.
+    const searching = keyboard.open && typeof document !== "undefined" && document.activeElement?.closest("[data-kitchen-search]") !== null;
     return (
       <Drawer open={open} onOpenChange={onOpenChange} showSwipeHandle>
-        <DrawerContent style={hue} className="kitchen-hue max-h-[92dvh]">
+        <DrawerContent style={keyboard.open ? { ...hue, marginBottom: keyboard.inset, maxHeight: keyboard.height - 8 } : hue} className="kitchen-hue max-h-[92dvh]">
           <DrawerHeader className="text-left">
             <DrawerTitle className="font-kitchen font-semibold tracking-tight text-xl">{title}</DrawerTitle>
             {description ? <DrawerDescription>{description}</DrawerDescription> : null}
           </DrawerHeader>
           <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-2">{children}</div>
-          {footer ? <DrawerFooter className="pb-[max(1rem,env(safe-area-inset-bottom))]">{footer}</DrawerFooter> : null}
+          {footer && !searching ? <DrawerFooter className="pb-[max(1rem,env(safe-area-inset-bottom))]">{footer}</DrawerFooter> : null}
         </DrawerContent>
       </Drawer>
     );
@@ -388,6 +395,67 @@ export function KitchenSheet({ open, onOpenChange, title, description, children,
         {footer ? <DialogFooter>{footer}</DialogFooter> : <span />}
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** How much of the screen the on-screen keyboard covers, from the visual viewport. */
+function useKeyboard(active: boolean): { open: boolean; inset: number; height: number } {
+  const [state, setState] = useState({ open: false, inset: 0, height: 0 });
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    if (!active || !viewport) return;
+    const update = () => {
+      const inset = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop);
+      setState({ open: inset > 80, inset, height: viewport.height });
+    };
+    update();
+    viewport.addEventListener("resize", update);
+    viewport.addEventListener("scroll", update);
+    return () => {
+      viewport.removeEventListener("resize", update);
+      viewport.removeEventListener("scroll", update);
+      setState({ open: false, inset: 0, height: 0 });
+    };
+  }, [active]);
+  return state;
+}
+
+/**
+ * A search field with its results, that works like search on iOS and Android. On a phone the field stays
+ * at the top while you scroll, and tapping it moves it to the top so the results show above the keyboard.
+ * `inSheet` places it at the top of a sheet instead of under the page header.
+ */
+export function SearchField({ value, onValue, label, inSheet = false, children }: { value: string; onValue: (value: string) => void; label: string; inSheet?: boolean; children: ReactNode }) {
+  const text = useText(TEXT);
+  const mobile = useIsMobile();
+  const field = useRef<HTMLDivElement>(null);
+  const input = useRef<HTMLInputElement>(null);
+  const [active, setActive] = useState(false);
+  const leave = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(leave.current), []);
+  // The keyboard opens after the focus, so the field moves up once it is there.
+  const toTop = () => setTimeout(() => field.current?.scrollIntoView({ block: "start", behavior: "smooth" }), 300);
+  return (
+    <div data-kitchen-search className="grid gap-3">
+      <div ref={field} className={cn("relative z-10 max-md:sticky max-md:-mx-4 max-md:px-4 max-md:py-2",
+        inSheet ? "max-md:top-0 max-md:bg-popover" : "max-md:top-13 max-md:scroll-mt-13 max-md:bg-background/95 max-md:backdrop-blur")}>
+        <SearchIcon className={cn("pointer-events-none absolute top-1/2 size-4 -translate-y-1/2 text-muted-foreground", "left-3 max-md:left-7")} aria-hidden />
+        <Input ref={input} type="search" enterKeyHint="search" autoComplete="off" className="h-10 pr-10 pl-9 [&::-webkit-search-cancel-button]:hidden" placeholder={label} aria-label={label} value={value}
+          onChange={(event) => onValue(event.target.value)}
+          onKeyDown={(event) => { if (event.key === "Enter") input.current?.blur(); }}
+          onFocus={() => { clearTimeout(leave.current); setActive(true); if (mobile) toTop(); }}
+          // A tap on a result blurs the field first. The room stays a moment so the tap lands where it was aimed.
+          onBlur={() => { leave.current = setTimeout(() => setActive(false), 400); }} />
+        {value ? (
+          <button type="button" aria-label={text.clearSearch} onClick={() => { onValue(""); input.current?.focus(); }}
+            className="absolute top-1/2 right-1 grid size-9 -translate-y-1/2 place-items-center rounded-full text-muted-foreground hover:text-foreground max-md:right-5">
+            <XIcon className="size-4" aria-hidden />
+          </button>
+        ) : null}
+      </div>
+      {/* Room below the results, so the field can reach the top even when few results match. */}
+      <div className={cn(mobile && active && (inSheet ? "min-h-[70dvh]" : "min-h-[100dvh]"))}>{children}</div>
+    </div>
   );
 }
 

@@ -81,7 +81,8 @@ export function registerKitchenTools(server: McpServer, store: KitchenStore, pri
     unit: z.enum(INGREDIENT_UNITS).optional().describe("Unit for amounts. Default for a new ingredient: g."),
     oldPerNew: z.number().positive().optional()
       .describe("Needed to change the unit of an ingredient that recipes or stock use: how much of the old unit one new unit holds, such as 250 when one zucchini weighs 250 g. Recipe and stock amounts change with the unit, and nutrition you leave out is converted."),
-    section: z.string().optional().describe("Group, such as Proteine or Gemüse. The shopping list groups items by it."),
+    section: z.string().optional().describe("Main group, such as Proteine or Gemüse. The shopping list groups items by it."),
+    otherGroups: z.array(z.string()).optional().describe("More groups the ingredient also belongs to, such as Kohlenhydrate for chickpeas. They count in the meal balance."),
     kcal: nutrient("Calories"),
     protein: nutrient("Protein in g"),
     carbs: nutrient("Carbohydrates in g"),
@@ -102,6 +103,7 @@ export function registerKitchenTools(server: McpServer, store: KitchenStore, pri
       name,
       unit,
       section: fields.section ?? existing?.section ?? "",
+      otherGroups: [...(fields.otherGroups ?? existing?.otherGroups ?? [])],
       kcal: keep(fields.kcal, nutrition?.kcal ?? null),
       protein: keep(fields.protein, nutrition?.protein ?? null),
       carbs: keep(fields.carbs, nutrition?.carbs ?? null),
