@@ -2,7 +2,7 @@
 
 Tools is one TanStack Start monolith deployed as a single Railway service. Its
 products live directly under `services/tools`: Dashboard, Status, Publisher,
-Money, Feedback, and Markdown Share. They share authentication, configuration, lifecycle,
+Money, Feedback, Markdown Share, and Kitchen. They share authentication, configuration, lifecycle,
 health checks, and deployment.
 
 Status work runs in a dedicated bounded Railway cron process. The main Tools
@@ -22,6 +22,7 @@ and daily market-data work may wake the service, but neither should keep it
 awake between runs.
 
 - [runtime-boundaries.md](./runtime-boundaries.md): service and product ownership.
+- [people-and-access.md](./people-and-access.md): the admin, invited people, product grants, and per-person data.
 - [access-incident.md](./access-incident.md): authentication containment and recovery.
 - [direct-transfers.md](./direct-transfers.md): durable direct uploads, signed downloads, and reviewed rollout.
 - [bucket-recovery.md](./bucket-recovery.md): PostgreSQL and object-storage recovery.
@@ -35,7 +36,9 @@ awake between runs.
 - Expiring `/drop/:token` capabilities accept guest uploads until revoked or expired;
   their management routes require the browser session.
 - Document Share creation (`/share`) and capability document pages do not require a browser session. Existing `/markdown` links remain public aliases.
-- Private browser routes use one Better Auth Google session.
+- Private browser routes use one Better Auth Google session. A person opens only
+  the products that the admin granted.
+- The MCP endpoint accepts only OAuth bearer tokens, issued after sign-in and consent.
 - Upload, agent, and heartbeat APIs retain dedicated bearer credentials.
 
 Deployments run `pnpm run railway:predeploy` before starting Tools. That command
