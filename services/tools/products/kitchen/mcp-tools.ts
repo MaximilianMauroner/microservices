@@ -5,15 +5,17 @@ import { applyKitchenAction, applyKitchenAdminAction } from "./actions.js";
 import { convertNutrition, INGREDIENT_UNITS, type Ingredient, KitchenError, MEALS, nutritionPerServing, today, weekStart } from "./domain.js";
 import type { KitchenScope, KitchenStore } from "./repository.js";
 
-const kitchenRef = z.string().optional().describe("Kitchen name or id. Leave out when you belong to one kitchen only.");
+const kitchenRef = z.string().optional().describe("MCP-enabled kitchen name or id. Leave out when only one kitchen is enabled for you.");
 const nutrient = (what: string) => z.number().min(0).nullable().optional().describe(`${what} per 100 g or 100 ml, or per item for the piece and can units`);
 
 /** Kitchen tools act as the signed-in person and open only the kitchens that person can open. */
 export function registerKitchenTools(server: McpServer, store: KitchenStore, principal: PlatformPrincipal) {
   const who = principal;
 
+  const available = async () => (await store.list(who)).filter((one) => one.mcpEnabled);
+
   async function kitchen(ref: string | undefined): Promise<KitchenScope> {
-    const kitchens = await store.list(who);
+    const kitchens = await available();
     const match = ref === undefined
       ? (kitchens.length === 1 ? kitchens[0] : undefined)
       : kitchens.find((one) => one.id === ref || one.name.toLowerCase() === ref.trim().toLowerCase());
@@ -51,10 +53,10 @@ export function registerKitchenTools(server: McpServer, store: KitchenStore, pri
     });
   };
 
-  tool("kitchen_list", "Lists the kitchens you can open, with their members.", {}, () => store.list(who), true);
+  tool("kitchen_list", "Lists your MCP-enabled kitchens and their members.", {}, available, true);
 
   if (principal.role === "admin") {
-    tool("kitchen_create", "Creates a kitchen. Admin only.", { name: z.string() }, ({ name }) => applyKitchenAdminAction(store, who, { type: "kitchen.create", name }));
+    tool("kitchen_create", "Creates a kitchen with MCP access off. Enable access on the Kitchens page. Admin only.", { name: z.string() }, ({ name }) => applyKitchenAdminAction(store, who, { type: "kitchen.create", name }));
   }
 
   tool("kitchen_week", "Shows the week plan, leftovers to use first, and what to buy for one week.", {

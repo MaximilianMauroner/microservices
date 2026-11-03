@@ -32,7 +32,7 @@ export type Nutrition = Readonly<{ kcal: number | null; protein: number | null; 
 
 export type KitchenMember = Readonly<{ personId: string; email: string }>;
 /** `groups` is the kitchen's order of ingredient groups, such as the order of a shop or of a food list. */
-export type Kitchen = Readonly<{ id: string; name: string; members: readonly KitchenMember[]; groups: readonly string[] }>;
+export type Kitchen = Readonly<{ id: string; name: string; mcpEnabled: boolean; members: readonly KitchenMember[]; groups: readonly string[] }>;
 
 export type Ingredient = Readonly<{
   id: string;
