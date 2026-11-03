@@ -3,6 +3,14 @@ import type postgres from "postgres";
 /** Tables whose rows belong to one person, keyed by `owner_subject`, the person's Google subject. */
 export const OWNED_TABLES = [
   "tools.feedback_forms",
+  "tools.money_accounts",
+  "tools.money_imports",
+  "tools.money_transactions",
+  "tools.money_investment_events",
+  "tools.money_balance_snapshots",
+  "tools.money_category_rules",
+  "tools.money_transfer_rules",
+  "tools.money_transfer_pair_rules",
   "artifacts.objects",
   "artifacts.operations",
   "artifacts.upload_links",

@@ -15,15 +15,15 @@ describe("money market-data service", () => {
       usdRates: [], inflationIndices: [],
     });
     const service = new MoneyMarketDataService(repository);
-    const daily = await service.snapshot({ since: "2026-01-15" });
-    const monthly = await service.snapshot({ since: "2026-01-15", history: "monthly" });
+    const daily = await service.snapshot("owner", { since: "2026-01-15" });
+    const monthly = await service.snapshot("owner", { since: "2026-01-15", history: "monthly" });
     expect(monthly.history.map((point) => point.date)).toEqual(["2026-01-01", "2026-01-31", "2026-02-01", "2026-02-28"]);
     expect(monthly.positions).toEqual(daily.positions);
     expect(monthly.totals).toEqual(daily.totals);
     expect(monthly.movesSince).toEqual(daily.movesSince);
     const cash = [{ date: "2026-01-01", cashValue: 200, observedCashAccountCount: 1, cashAccountCount: 1 }, { date: "2026-02-01", cashValue: 300, observedCashAccountCount: 1, cashAccountCount: 1 }];
     expect(moneyFinancialHistory(cash, monthly.history)).toEqual(moneyFinancialHistory(cash, daily.history));
-    const noHistory = await service.snapshot({ since: "2026-01-15", history: "none" });
+    const noHistory = await service.snapshot("owner", { since: "2026-01-15", history: "none" });
     expect(noHistory.history).toEqual([]);
     expect(noHistory.movesSince).toEqual(daily.movesSince);
   });
@@ -31,9 +31,9 @@ describe("money market-data service", () => {
   it("does not read historical prices for a view that only needs current positions", async () => {
     const repository = fakeRepository();
     const service = new MoneyMarketDataService(repository);
-    expect((await service.snapshot({ history: "none" })).history).toEqual([]);
+    expect((await service.snapshot("owner", { history: "none" })).history).toEqual([]);
     expect(repository.readHistoryInputs).not.toHaveBeenCalled();
-    expect(repository.readValuationInputs).toHaveBeenCalledOnce();
+    expect(repository.readValuationInputs).toHaveBeenCalledExactlyOnceWith("owner");
   });
 
   it("values remaining FIFO lots in EUR and exposes stale data", async () => {
@@ -66,7 +66,7 @@ describe("money market-data service", () => {
     });
     const service = new MoneyMarketDataService(repository, undefined, undefined, () => new Date("2026-08-10T12:00:00Z"));
 
-    expect(await service.snapshot()).toMatchObject({
+    expect(await service.snapshot("owner")).toMatchObject({
       positions: [{
         canonicalKey: "listing:XNAS:AAPL",
         quantity: "1.5",
@@ -106,8 +106,8 @@ describe("money market-data service", () => {
     });
     const service = new MoneyMarketDataService(repository, undefined, undefined, () => new Date("2026-08-10T12:00:00Z"));
 
-    expect((await service.snapshot()).movesSince).toBeUndefined();
-    expect((await service.snapshot({ since: "2026-01-15" })).movesSince).toMatchObject({
+    expect((await service.snapshot("owner")).movesSince).toBeUndefined();
+    expect((await service.snapshot("owner", { since: "2026-01-15" })).movesSince).toMatchObject({
       baseline: "2026-01-15",
       moves: [{ canonicalKey: "listing:XNAS:AAPL", baselineValueMinor: 16_000, soldMinor: 8_000, currentValueMinor: 30_000, moveMinor: 22_000, returnPercent: 137.5, closed: false }],
       unpricedNames: []

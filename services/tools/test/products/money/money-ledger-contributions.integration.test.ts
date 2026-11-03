@@ -5,7 +5,8 @@ import { parseMoneyImport, type MoneyCategory, type MoneyTransferDisposition } f
 import { createPostgresMoneyRepository } from "../../../products/money/money-repository.js";
 import { requireLoopbackPostgres } from "../../harness/postgres.ts";
 
-let repository: ReturnType<typeof createPostgresMoneyRepository>;
+let store: ReturnType<typeof createPostgresMoneyRepository>;
+let repository: ReturnType<typeof store.owner>;
 let admin: ReturnType<typeof postgres>;
 const actor = "ledger-contributions@example.test";
 
@@ -14,7 +15,8 @@ beforeAll(() => {
     throw new Error("Run the required Money PostgreSQL runner with its owned disposable fixture.");
   }
   const databaseUrl = requireLoopbackPostgres(process.env.TEST_DATABASE_URL);
-  repository = createPostgresMoneyRepository(databaseUrl);
+  store = createPostgresMoneyRepository(databaseUrl);
+  repository = store.owner("money-test-owner");
   admin = postgres(databaseUrl, { max: 1 });
 });
 
@@ -32,7 +34,7 @@ beforeEach(async () => {
 });
 
 afterAll(async () => {
-  await repository?.close();
+  await store?.close();
   await admin?.end();
 });
 

@@ -3,7 +3,7 @@ import postgres, { type Sql } from "postgres";
 import type { MoneyInvestmentEventKind } from "./money-import-domain.js";
 import type { MoneyDailyPriceBar, MoneyFxRate, MoneyInflationIndex } from "./money-market-data-domain.js";
 import type { MoneyMarketInstrumentDefinition } from "./money-market-data-catalog.js";
-import { effectiveTransactions } from "./money-ledger-sql.js";
+import { effectiveTransactions, everyonesMoneyTables, ownedMoneyTables } from "./money-ledger-sql.js";
 
 export type MoneyMarketSyncTarget = Readonly<{
   seriesId: string;
@@ -54,8 +54,8 @@ export interface MoneyMarketDataRepository {
   saveSeriesFailure(input: Readonly<{ seriesId: string; errorCode: string; attemptedAt: Date }>): Promise<void>;
   saveUsdRates(rates: readonly MoneyFxRate[], fetchedAt: Date): Promise<void>;
   saveInflationIndices(indices: readonly MoneyInflationIndex[], fetchedAt: Date): Promise<void>;
-  readValuationInputs(): Promise<Readonly<{ events: readonly MoneyMarketValuationEvent[]; prices: readonly MoneyLatestPrice[] }>>;
-  readHistoryInputs(): Promise<Readonly<{
+  readValuationInputs(subject: string): Promise<Readonly<{ events: readonly MoneyMarketValuationEvent[]; prices: readonly MoneyLatestPrice[] }>>;
+  readHistoryInputs(subject: string): Promise<Readonly<{
     events: readonly MoneyMarketValuationEvent[];
     prices: readonly MoneyHistoricalPrice[];
     usdRates: readonly MoneyFxRate[];
@@ -114,7 +114,7 @@ export function postgresMoneyMarketDataRepository(sql: Sql): MoneyMarketDataRepo
           from (
             select e.instrument_id, min(t.local_date) - 1 first_required_date
             from tools.money_investment_events e
-            join (${effectiveTransactions(tx)}) t on t.id = e.transaction_id
+            join (${effectiveTransactions(tx, everyonesMoneyTables(tx))}) t on t.id = e.transaction_id
             where e.instrument_id is not null
               and e.event_kind in ('buy', 'sell', 'split', 'position_transfer', 'delivery')
               and e.quantity is not null
@@ -183,13 +183,14 @@ export function postgresMoneyMarketDataRepository(sql: Sql): MoneyMarketDataRepo
       }
     },
 
-    async readValuationInputs() {
+    async readValuationInputs(subject) {
+      const own = ownedMoneyTables(sql, subject);
       const [eventRows, priceRows] = await Promise.all([
         sql<ValuationEventRow[]>`select t.account_id::text account_id, i.canonical_key, i.name, i.asset_class,
           t.occurred_at, t.local_date::text local_date, t.source_row, t.source_key, e.event_kind, e.quantity::text quantity,
           t.base_amount_minor::text base_amount_minor, t.base_fee_minor::text base_fee_minor
-          from tools.money_investment_events e
-          join (${effectiveTransactions(sql)}) t on t.id = e.transaction_id
+          from ${own.events} e
+          join (${effectiveTransactions(sql, own)}) t on t.id = e.transaction_id
           join tools.money_instruments i on i.id = e.instrument_id
           where t.base_currency = 'EUR'
           order by t.occurred_at, t.source_row, t.source_key`,
@@ -235,13 +236,14 @@ export function postgresMoneyMarketDataRepository(sql: Sql): MoneyMarketDataRepo
       };
     },
 
-    async readHistoryInputs() {
+    async readHistoryInputs(subject) {
+      const own = ownedMoneyTables(sql, subject);
       const [eventRows, priceRows, rateRows, inflationRows] = await Promise.all([
         sql<ValuationEventRow[]>`select t.account_id::text account_id, i.canonical_key, i.name, i.asset_class,
           t.occurred_at, t.local_date::text local_date, t.source_row, t.source_key, e.event_kind, e.quantity::text quantity,
           t.base_amount_minor::text base_amount_minor, t.base_fee_minor::text base_fee_minor
-          from tools.money_investment_events e
-          join (${effectiveTransactions(sql)}) t on t.id = e.transaction_id
+          from ${own.events} e
+          join (${effectiveTransactions(sql, own)}) t on t.id = e.transaction_id
           join tools.money_instruments i on i.id = e.instrument_id
           where t.base_currency = 'EUR'
           order by t.occurred_at, t.source_row, t.source_key`,

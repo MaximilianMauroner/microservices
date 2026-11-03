@@ -79,11 +79,11 @@ export class MoneyMarketDataService {
     return this.currentSync;
   }
 
-  async snapshot(options: Readonly<{ since?: string; history?: "daily" | "monthly" | "none" }> = {}): Promise<MoneyMarketSnapshot> {
+  async snapshot(subject: string, options: Readonly<{ since?: string; history?: "daily" | "monthly" | "none" }> = {}): Promise<MoneyMarketSnapshot> {
     const now = this.now();
     const [inputs, historyInputs] = await Promise.all([
-      this.repository.readValuationInputs(),
-      options.history === "none" && !options.since ? undefined : this.repository.readHistoryInputs()
+      this.repository.readValuationInputs(subject),
+      options.history === "none" && !options.since ? undefined : this.repository.readHistoryInputs(subject)
     ]);
     const analytics = fifoInvestmentLots(inputs.events.map(lotEvent));
     const prices = new Map(inputs.prices.map((price) => [price.canonicalKey, price]));

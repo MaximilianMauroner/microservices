@@ -16,7 +16,7 @@ vi.mock("../../../platform/auth/middleware.js", () => ({ requirePlatformSession:
 vi.mock("../../../platform/server-data.js", () => ({
   internalPlatformRequest: () => ({ context: { runtime: {
     publicOrigin: "https://tools.example.test",
-    moneyImports: { readReviewCounts: sources.money },
+    moneyImports: { owner: () => ({ readReviewCounts: sources.money }) },
     feedback: { owner: (subject: string) => subject === "admin-subject" ? { listForms: sources.forms } : undefined },
     documentShare: { owner: (subject: string) => subject === "admin-subject" ? { list: sources.documents } : undefined },
     services: { manage: { handle: vi.fn() }, publisher: { handle: vi.fn() } }

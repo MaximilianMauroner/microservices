@@ -9,14 +9,14 @@ import {
   parseMoneyImport,
   type MoneyLedgerTransaction
 } from "../../../products/money/money-import-domain.js";
-import { MoneyImportService } from "../../../products/money/money-import-service.js";
+import { MoneyLedger } from "../../../products/money/money-import-service.js";
 import { deleteMoneyCategoryRule, deleteMoneyImport, previewMoneyImport, reimportAllMoneyImports, updateMoneyCategory, updateMoneyTransfer } from "../../../products/money/money-route-handlers.js";
 import type {
   MoneyImportCommitInput,
   MoneyActivityPageInput,
   MoneyImportReceipt,
   MoneyLedgerSnapshot,
-  MoneyRepository,
+  MoneyOwnerRepository,
   MoneyTransferRuleInput
 } from "../../../products/money/money-repository.js";
 import type { PlatformRouteInput } from "../../../platform/route-handlers.js";
@@ -219,7 +219,7 @@ describe("balance snapshot parser", () => {
 describe("money import service", () => {
   it("allowlists complete-ledger activity filters and sorting", async () => {
     const repository = new MemoryMoneyRepository();
-    const service = new MoneyImportService(repository);
+    const service = new MoneyLedger(repository);
     await service.readActivityPage({ query: " coffee ", accountId: "00000000-0000-4000-8000-000000000000", category: "dining", fromMonth: "2026-06", toMonth: "2026-07", sort: "amount", direction: "asc", offset: 0, limit: 50 });
     expect(repository.lastActivityInput).toEqual({ query: "coffee", accountId: "00000000-0000-4000-8000-000000000000", category: "dining", fromMonth: "2026-06", toMonth: "2026-07", sort: "amount", direction: "asc", offset: 0, limit: 50 });
     expect(() => service.readActivityPage({ query: "", sort: "amount desc; drop table", offset: 0, limit: 50 })).toThrow("activity sort is invalid");
@@ -227,7 +227,7 @@ describe("money import service", () => {
 
   it("normalizes transfer rules and rejects rules that would match every transfer", async () => {
     const repository = new MemoryMoneyRepository();
-    const service = new MoneyImportService(repository);
+    const service = new MoneyLedger(repository);
     await service.previewTransferRule({ provider: " ", sourceType: "Transfer", descriptionMatch: "contains", matchValue: "  To Broker ", amountSign: "negative", disposition: "internal_transfer" });
     expect(repository.lastTransferRule).toEqual({ sourceType: "Transfer", descriptionMatch: "contains", matchValue: "to broker", amountSign: "negative", disposition: "internal_transfer" });
     expect(() => service.previewTransferRule({ descriptionMatch: "any", matchValue: "ignored", amountSign: "any", disposition: "excluded" })).toThrow("cannot match every transfer");
@@ -240,7 +240,7 @@ describe("money import service", () => {
     const parsed = parseMoneyImport(bytes);
     repository.sourceKeys.add(parsed.transactions[0]!.sourceKey);
 
-    const preview = await new MoneyImportService(repository).preview("account.tsv", bytes);
+    const preview = await new MoneyLedger(repository).preview("account.tsv", bytes);
 
     expect(preview.duplicateCount).toBe(1);
     expect(preview.digest).toBe(parsed.digest);
@@ -248,7 +248,7 @@ describe("money import service", () => {
 
   it("reports duplicate source rows within the selected statement", async () => {
     const row = "Transfer\tCurrent\t2026-08-09 5:08:51\t2026-08-09 5:08:51\tTop up\t10\t0\tEUR\tCOMPLETED\t10";
-    const preview = await new MoneyImportService(new MemoryMoneyRepository()).preview("account.tsv", fixture([row, row]));
+    const preview = await new MoneyLedger(new MemoryMoneyRepository()).preview("account.tsv", fixture([row, row]));
 
     expect(preview.rowCount).toBe(2);
     expect(preview.duplicateCount).toBe(1);
@@ -257,7 +257,7 @@ describe("money import service", () => {
   it("allows Sparkasse XLSX filenames before detecting the file contents", async () => {
     const bytes = fixture(["Transfer\tCurrent\t2026-08-09 5:08:51\t2026-08-09 5:08:51\tTop up\t10\t0\tEUR\tCOMPLETED\t10"]);
 
-    const preview = await new MoneyImportService(new MemoryMoneyRepository()).preview("movimenti.xlsx", bytes);
+    const preview = await new MoneyLedger(new MemoryMoneyRepository()).preview("movimenti.xlsx", bytes);
 
     expect(preview.filename).toBe("movimenti.xlsx");
   });
@@ -265,11 +265,11 @@ describe("money import service", () => {
   it("still rejects unsupported money import extensions", async () => {
     const bytes = fixture(["Transfer\tCurrent\t2026-08-09 5:08:51\t2026-08-09 5:08:51\tTop up\t10\t0\tEUR\tCOMPLETED\t10"]);
 
-    await expect(new MoneyImportService(new MemoryMoneyRepository()).preview("account.txt", bytes)).rejects.toMatchObject({ code: "unsupported_file_extension" });
+    await expect(new MoneyLedger(new MemoryMoneyRepository()).preview("account.txt", bytes)).rejects.toMatchObject({ code: "unsupported_file_extension" });
   });
 
   it("requires the committed file to match the preview digest", async () => {
-    const service = new MoneyImportService(new MemoryMoneyRepository());
+    const service = new MoneyLedger(new MemoryMoneyRepository());
     const bytes = fixture(["Transfer\tCurrent\t2026-08-09 5:08:51\t2026-08-09 5:08:51\tTop up\t10\t0\tEUR\tCOMPLETED\t10"]);
 
     await expect(service.commit({
@@ -281,7 +281,7 @@ describe("money import service", () => {
   });
 
   it("validates explicit transfer dispositions", () => {
-    const service = new MoneyImportService(new MemoryMoneyRepository());
+    const service = new MoneyLedger(new MemoryMoneyRepository());
     expect(() => service.setTransferDisposition({ transactionId: "00000000-0000-4000-8000-000000000000", disposition: "uncategorized" })).toThrow("valid transfer disposition");
   });
 
@@ -289,7 +289,7 @@ describe("money import service", () => {
     const repository = new MemoryMoneyRepository();
     const preview = vi.spyOn(repository, "previewCategoryRule");
     const save = vi.spyOn(repository, "saveCategoryRule");
-    const service = new MoneyImportService(repository);
+    const service = new MoneyLedger(repository);
     const rule = { matchField: "description", matchOperator: "word", matchValue: "  Café   Shop  ", category: "dining" };
     await service.previewCategoryRule(rule);
     expect(preview).toHaveBeenCalledWith({ ...rule, matchValue: "cafe shop" });
@@ -303,7 +303,7 @@ describe("money import service", () => {
   });
 
   it("validates import deletion identifiers and reports missing imports", async () => {
-    const service = new MoneyImportService(new MemoryMoneyRepository());
+    const service = new MoneyLedger(new MemoryMoneyRepository());
     await expect(service.deleteImport("not-an-import")).rejects.toMatchObject({ code: "invalid_import" });
     await expect(service.deleteImport("00000000-0000-4000-8000-000000000000")).rejects.toMatchObject({ code: "import_not_found" });
   });
@@ -324,7 +324,7 @@ describe("money import route", () => {
   it("bounds streamed JSON bodies without Content-Length", async () => {
     const bytes = new TextEncoder().encode(JSON.stringify({ transactionId: "00000000-0000-4000-8000-000000000000", category: "other", padding: "x".repeat(20_000) }));
     const request = new Request("https://tools.example.test/api/money/categories", { method: "POST", headers: { Origin: "https://tools.example.test", "Content-Type": "application/json" }, body: new ReadableStream({ start(controller) { controller.enqueue(bytes); controller.close(); } }), duplex: "half" } as RequestInit);
-    const response = await updateMoneyCategory({ request, params: {}, context: { principal: { subject: "subject", email: "operator@example.test" }, runtime: { publicOrigin: "https://tools.example.test", moneyImports: { setTransactionCategory: vi.fn() } } } } as unknown as PlatformRouteInput);
+    const response = await updateMoneyCategory({ request, params: {}, context: { principal: { subject: "subject", email: "operator@example.test" }, runtime: { publicOrigin: "https://tools.example.test", moneyImports: { owner: () => ({ setTransactionCategory: vi.fn() }) } } } } as unknown as PlatformRouteInput);
     expect(response.status).toBe(413);
   });
 
@@ -337,14 +337,14 @@ describe("money import route", () => {
 
   it("rejects malformed Content-Length before reading the request", async () => {
     const request = new Request("https://tools.example.test/api/money/categories", { method: "POST", headers: { Origin: "https://tools.example.test", "Content-Type": "application/json", "Content-Length": "wat" }, body: "{}" });
-    const response = await updateMoneyCategory({ request, params: {}, context: { principal: { subject: "subject", email: "operator@example.test" }, runtime: { publicOrigin: "https://tools.example.test", moneyImports: { setTransactionCategory: vi.fn() } } } } as unknown as PlatformRouteInput);
+    const response = await updateMoneyCategory({ request, params: {}, context: { principal: { subject: "subject", email: "operator@example.test" }, runtime: { publicOrigin: "https://tools.example.test", moneyImports: { owner: () => ({ setTransactionCategory: vi.fn() }) } } } } as unknown as PlatformRouteInput);
     expect(response.status).toBe(400);
   });
 
   it("persists an explicit transfer disposition independently from category", async () => {
     const setTransferDisposition = vi.fn().mockResolvedValue(undefined);
     const request = new Request("https://tools.example.test/api/money/transfers", { method: "POST", headers: { Origin: "https://tools.example.test", "Content-Type": "application/json" }, body: JSON.stringify({ transactionId: "00000000-0000-4000-8000-000000000000", disposition: "refund" }) });
-    const response = await updateMoneyTransfer({ request, params: {}, context: { principal: { subject: "subject", email: "operator@example.test" }, runtime: { publicOrigin: "https://tools.example.test", moneyImports: { setTransferDisposition } } } } as unknown as PlatformRouteInput);
+    const response = await updateMoneyTransfer({ request, params: {}, context: { principal: { subject: "subject", email: "operator@example.test" }, runtime: { publicOrigin: "https://tools.example.test", moneyImports: { owner: () => ({ setTransferDisposition }) } } } } as unknown as PlatformRouteInput);
     expect(response.status).toBe(200);
     expect(setTransferDisposition).toHaveBeenCalledWith({ transactionId: "00000000-0000-4000-8000-000000000000", disposition: "refund" });
   });
@@ -356,7 +356,7 @@ describe("money import route", () => {
       "00000000-0000-4000-8000-000000000002"
     ];
     const request = new Request("https://tools.example.test/api/money/transfers", { method: "POST", headers: { Origin: "https://tools.example.test", "Content-Type": "application/json" }, body: JSON.stringify({ transactionIds, disposition: "internal_transfer" }) });
-    const response = await updateMoneyTransfer({ request, params: {}, context: { principal: { subject: "subject", email: "operator@example.test" }, runtime: { publicOrigin: "https://tools.example.test", moneyImports: { setTransferDispositions } } } } as unknown as PlatformRouteInput);
+    const response = await updateMoneyTransfer({ request, params: {}, context: { principal: { subject: "subject", email: "operator@example.test" }, runtime: { publicOrigin: "https://tools.example.test", moneyImports: { owner: () => ({ setTransferDispositions }) } } } } as unknown as PlatformRouteInput);
     expect(response.status).toBe(200);
     expect(setTransferDispositions).toHaveBeenCalledWith({ transactionIds, disposition: "internal_transfer" });
   });
@@ -371,7 +371,7 @@ describe("money import route", () => {
     const response = await deleteMoneyCategoryRule({
       request,
       params: {},
-      context: { principal: { subject: "subject", email: "operator@example.test" }, runtime: { publicOrigin: "https://tools.example.test", moneyImports: { deleteCategoryRule } } }
+      context: { principal: { subject: "subject", email: "operator@example.test" }, runtime: { publicOrigin: "https://tools.example.test", moneyImports: { owner: () => ({ deleteCategoryRule }) } } }
     } as unknown as PlatformRouteInput);
 
     expect(response.status).toBe(200);
@@ -388,7 +388,7 @@ describe("money import route", () => {
     const response = await deleteMoneyImport({
       request,
       params: { importId: "00000000-0000-4000-8000-000000000000" },
-      context: { principal: { subject: "subject", email: "operator@example.test" }, runtime: { publicOrigin: "https://tools.example.test", moneyImports: { deleteImport } } }
+      context: { principal: { subject: "subject", email: "operator@example.test" }, runtime: { publicOrigin: "https://tools.example.test", moneyImports: { owner: () => ({ deleteImport }) } } }
     } as unknown as PlatformRouteInput);
 
     expect(response.status).toBe(200);
@@ -407,7 +407,7 @@ describe("money import route", () => {
     const response = await reimportAllMoneyImports({
       request,
       params: {},
-      context: { principal: { subject: "subject", email: "operator@example.test" }, runtime: { publicOrigin: "https://tools.example.test", moneyImports: { reimportAll } } }
+      context: { principal: { subject: "subject", email: "operator@example.test" }, runtime: { publicOrigin: "https://tools.example.test", moneyImports: { owner: () => ({ reimportAll }) } } }
     } as unknown as PlatformRouteInput);
 
     expect(response.status).toBe(200);
@@ -472,13 +472,13 @@ function routeInput(request: Request, preview: ReturnType<typeof vi.fn>) {
       principal: { subject: "subject", email: "operator@example.test" },
       runtime: {
         publicOrigin: "https://tools.example.test",
-        moneyImports: { preview }
+        moneyImports: { owner: () => ({ preview }) }
       }
     }
   } as unknown as PlatformRouteInput;
 }
 
-class MemoryMoneyRepository implements MoneyRepository {
+class MemoryMoneyRepository implements MoneyOwnerRepository {
   readonly sourceKeys = new Set<string>();
   lastActivityInput?: MoneyActivityPageInput;
   lastTransferRule?: MoneyTransferRuleInput;
@@ -525,6 +525,4 @@ class MemoryMoneyRepository implements MoneyRepository {
   async readCashSince() { return { snapshots: [], flows: [], items: [] }; }
   async readSpendingSince() { return []; }
 
-  async readiness() {}
-  async close() {}
 }

@@ -4,14 +4,14 @@ import { MoneyTrackerPendingPage } from "../../products/money/money-tracker-pend
 import { MONEY_REVIEW_TABS, MONEY_VIEWS, type MoneyReviewTab, type MoneyTrackerView } from "../../products/money/money-tracker-navigation.js";
 import { getMoneyTrackerPageData } from "../../platform/protected-data.js";
 import { faviconLink, favicons } from "../../platform/ui/favicons.js";
-import { requireRouteSession } from "../../platform/auth/session.js";
+import { requireProductSession } from "../../platform/auth/session.js";
 import { MONEY_CATEGORIES, type MoneyCategory } from "../../products/money/money-enums.js";
 import { preloadMoneyView } from "../../products/money/money-view-loading.js";
 
 type MoneySearch = { view?: Exclude<MoneyTrackerView, "overview">; tab?: MoneyReviewTab; rule?: string; category?: MoneyCategory; review?: boolean; fromMonth?: string; toMonth?: string; since?: string };
 
 export const Route = createFileRoute("/money")({
-  beforeLoad: ({ location }) => requireRouteSession(location.href),
+  beforeLoad: ({ location }) => requireProductSession(location.href, "money"),
   validateSearch: (search: Record<string, unknown>): MoneySearch => {
     const view = MONEY_VIEWS.find((item) => item === search.view);
     return {

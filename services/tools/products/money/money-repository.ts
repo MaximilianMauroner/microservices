@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import postgres, { type Sql, type TransactionSql } from "postgres";
-import { effectiveTransactions, ledgerContributions } from "./money-ledger-sql.js";
+import { effectiveTransactions, ledgerContributions, ownedMoneyTables, type MoneyOwner } from "./money-ledger-sql.js";
 import type { MoneyTrackerSnapshot } from "./money-tracker.js";
 import { fifoRealizedGains, type MoneyRealizedGainAnalytics } from "./money-investment-domain.js";
 import { moneyDisplayDescription, moneyMerchantName, moneyTransferReviewDescription } from "./money-description.js";
@@ -191,6 +191,13 @@ const TRANSACTION_INSERT_CHUNK_SIZE = 2_000;
 const RELATED_INSERT_CHUNK_SIZE = 5_000;
 
 export interface MoneyRepository {
+  owner(subject: string): MoneyOwnerRepository;
+  readiness(): Promise<void>;
+  close(): Promise<void>;
+}
+
+/** One person's Money data. Every read and write is limited to rows that person owns. */
+export interface MoneyOwnerRepository {
   existingSourceKeys(transactions: readonly MoneyLedgerTransaction[]): Promise<ReadonlySet<string>>;
   commitImport(input: MoneyImportCommitInput): Promise<MoneyImportReceipt>;
   reimportAll(): Promise<MoneyReimportResult>;
@@ -218,8 +225,6 @@ export interface MoneyRepository {
   readCashSince(baseline: string): Promise<Readonly<{ snapshots: readonly MoneyCashSnapshotPoint[]; flows: readonly MoneyCashFlowDay[]; items: readonly MoneyCashItemDay[] }>>;
   /** Spending rows after a day, with the same definition as the category totals. */
   readSpendingSince(from: string): Promise<readonly MoneySpendingRow[]>;
-  readiness(): Promise<void>;
-  close(): Promise<void>;
 }
 
 export function createPostgresMoneyRepository(databaseUrl: string, options: { readOnly?: boolean } = {}): MoneyRepository {
@@ -229,8 +234,16 @@ export function createPostgresMoneyRepository(databaseUrl: string, options: { re
 
 export function postgresMoneyRepository(sql: Sql): MoneyRepository {
   return {
+    owner: (subject) => ownerRepository(sql, ownedMoneyTables(sql, subject)),
+    async readiness() { await sql`select 1 from tools.money_imports limit 1`; },
+    close: () => sql.end()
+  };
+}
+
+function ownerRepository(sql: Sql, own: MoneyOwner): MoneyOwnerRepository {
+  return {
     async existingSourceKeys(transactions) {
-      return new Set((await existingTransactionIds(sql, transactions)).keys());
+      return new Set((await existingTransactionIds(sql, own, transactions)).keys());
     },
 
     commitImport(input) {
@@ -238,31 +251,31 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
         await lockCategoryRules(tx);
         const committedAt = new Date();
         const created = await tx<{ id: string }[]>`
-          insert into tools.money_imports (id, digest, format, filename, bytes, source_row_count, inserted_row_count, duplicate_row_count, warnings, committed_at, created_by)
-          values (${randomUUID()}, ${input.digest}, ${input.format}, ${input.filename}, ${input.bytes}, 0, 0, 0, ${tx.json([...input.warnings])}, ${committedAt}, ${input.actor})
-          on conflict (digest) do nothing returning id`;
+          insert into tools.money_imports (id, owner_subject, digest, format, filename, bytes, source_row_count, inserted_row_count, duplicate_row_count, warnings, committed_at, created_by)
+          values (${randomUUID()}, ${own.subject}, ${input.digest}, ${input.format}, ${input.filename}, ${input.bytes}, 0, 0, 0, ${tx.json([...input.warnings])}, ${committedAt}, ${input.actor})
+          on conflict (owner_subject, digest) do nothing returning id`;
         const replay = !created[0];
-        const [moneyImport] = await tx<ImportRow[]>`select id, digest, format, filename, bytes, source_row_count, inserted_row_count, duplicate_row_count, committed_at, created_by from tools.money_imports where digest = ${input.digest}`;
+        const [moneyImport] = await tx<ImportRow[]>`select id, digest, format, filename, bytes, source_row_count, inserted_row_count, duplicate_row_count, committed_at, created_by from ${own.imports} owned_imports where digest = ${input.digest}`;
         if (!moneyImport) throw new Error("Money import replay could not be read.");
         const importId = moneyImport.id;
 
         const accountIds = new Map<string, string>();
         for (const batch of chunks(uniqueAccounts(input.transactions), ACCOUNT_INSERT_CHUNK_SIZE)) {
           const saved = await tx<{ id: string; external_ref: string }[]>`
-            insert into tools.money_accounts ${tx(batch.map((account) => ({ id: randomUUID(), provider: account.provider,
+            insert into tools.money_accounts ${tx(batch.map((account) => ({ id: randomUUID(), owner_subject: own.subject, provider: account.provider,
               external_ref: account.externalRef, display_name: account.name, role: account.role, currency: account.currency,
               created_at: committedAt, updated_at: committedAt })))}
-            on conflict (provider, external_ref) do update set display_name = excluded.display_name, role = excluded.role,
+            on conflict (owner_subject, provider, external_ref) do update set display_name = excluded.display_name, role = excluded.role,
               currency = excluded.currency, updated_at = excluded.updated_at returning id, external_ref`;
           for (const account of saved) accountIds.set(account.external_ref, account.id);
         }
 
-        const existingKeys = await existingTransactionIds(tx, input.transactions);
+        const existingKeys = await existingTransactionIds(tx, own, input.transactions);
         const transactionIds = new Map<string, string>();
         let insertedCount = 0;
         for (const batch of chunks(input.transactions.filter((item) => !existingKeys.has(item.sourceKey)), TRANSACTION_INSERT_CHUNK_SIZE)) {
           const values = batch.map((item) => ({
-            id: randomUUID(), account_id: requiredAccountId(accountIds, item.accountExternalRef), import_id: importId,
+            id: randomUUID(), owner_subject: own.subject, account_id: requiredAccountId(accountIds, item.accountExternalRef), import_id: importId,
             source_key: item.sourceKey, source_row: item.sourceRow, occurred_at: item.occurredAt, completed_at: item.completedAt ?? null,
             local_date: item.localDate, description: item.description, amount_minor: item.amountMinor, fee_minor: item.feeMinor,
             tax_minor: item.taxMinor, balance_after_minor: item.balanceAfterMinor ?? null, currency: item.currency, status: item.status,
@@ -271,21 +284,21 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
             source_type: item.sourceType, mcc: item.mcc ?? null, flow_kind: item.flowKind, category: item.category,
             category_origin: "source", transfer_group_id: null, transfer_disposition: null, transfer_origin: null
           }));
-          const inserted = await tx<{ id: string; source_key: string }[]>`insert into tools.money_transactions ${tx(values)} on conflict (source_key) do nothing returning id, source_key`;
+          const inserted = await tx<{ id: string; source_key: string }[]>`insert into tools.money_transactions ${tx(values)} on conflict (owner_subject, source_key) do nothing returning id, source_key`;
           for (const row of inserted) transactionIds.set(row.source_key, row.id);
           insertedCount += inserted.length;
         }
 
         const eventValues = input.investmentEvents.flatMap((event) => {
           const transactionId = transactionIds.get(event.transactionSourceKey);
-          return transactionId ? [{ id: randomUUID(), transaction_id: transactionId, event_kind: event.eventKind, symbol: event.symbol ?? null,
+          return transactionId ? [{ id: randomUUID(), owner_subject: own.subject, transaction_id: transactionId, event_kind: event.eventKind, symbol: event.symbol ?? null,
             name: event.name ?? null, asset_class: event.assetClass ?? null, quantity: event.quantity ?? null, unit_price: event.unitPrice ?? null,
             price_currency: event.priceCurrency ?? null, fx_rate: event.fxRate ?? null }] : [];
         });
         for (const batch of chunks(eventValues, RELATED_INSERT_CHUNK_SIZE)) if (batch.length) await tx`insert into tools.money_investment_events ${tx(batch)} on conflict (transaction_id) do nothing`;
 
         for (const batch of chunks(replay ? [] : input.balanceSnapshots, RELATED_INSERT_CHUNK_SIZE)) {
-          const values = batch.map((item) => ({ account_id: requiredAccountId(accountIds, item.accountExternalRef), snapshot_date: item.date,
+          const values = batch.map((item) => ({ owner_subject: own.subject, account_id: requiredAccountId(accountIds, item.accountExternalRef), snapshot_date: item.date,
             observed_at: item.observedAt, value_minor: item.valueMinor, currency: item.currency, origin: "import", import_id: importId }));
           if (values.length) await tx`insert into tools.money_balance_snapshots ${tx(values)} on conflict (account_id, snapshot_date, origin) do update set observed_at = excluded.observed_at, value_minor = excluded.value_minor, currency = excluded.currency, import_id = excluded.import_id
             where excluded.observed_at > tools.money_balance_snapshots.observed_at
@@ -294,18 +307,18 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
         const memberIds = [...new Set([...existingKeys.values(), ...transactionIds.values()])];
         for (const batch of chunks(memberIds, RELATED_INSERT_CHUNK_SIZE)) {
           if (batch.length) await tx`insert into tools.money_import_transactions (import_id, transaction_id)
-            select import_id, id from tools.money_transactions where id in ${tx(batch)}
-            union select ${importId}::uuid, id from tools.money_transactions where id in ${tx(batch)}
+            select import_id, id from ${own.transactions} owned_transactions where id in ${tx(batch)}
+            union select ${importId}::uuid, id from ${own.transactions} owned_transactions where id in ${tx(batch)}
             on conflict do nothing`;
         }
-        await refreshInferredTransactions(tx, input.transactions.filter((transaction) => !transactionIds.has(transaction.sourceKey)));
-        await linkUnambiguousTransfers(tx);
-        await applyCategoryRules(tx);
+        await refreshInferredTransactions(tx, own, input.transactions.filter((transaction) => !transactionIds.has(transaction.sourceKey)));
+        await linkUnambiguousTransfers(tx, own);
+        await applyCategoryRules(tx, own);
         if (replay) return receipt(moneyImport, true);
         const duplicateCount = input.rowCount - insertedCount;
         const [saved] = await tx<ImportRow[]>`
           update tools.money_imports set source_row_count = ${input.rowCount}, inserted_row_count = ${insertedCount}, duplicate_row_count = ${duplicateCount}
-          where id = ${importId} returning id, digest, format, filename, bytes, source_row_count, inserted_row_count, duplicate_row_count, committed_at, created_by`;
+          where owner_subject = ${own.subject} and id = ${importId} returning id, digest, format, filename, bytes, source_row_count, inserted_row_count, duplicate_row_count, committed_at, created_by`;
         return receipt(saved!, false);
       });
     },
@@ -313,17 +326,17 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
     reimportAll() {
       return sql.begin(async (tx) => {
         await lockCategoryRules(tx);
-        const [count] = await tx<{ import_count: string }[]>`select count(*)::text import_count from tools.money_imports`;
-        const rows = await tx<{ id: string }[]>`select id from tools.money_transactions where import_id is not null order by id for update`;
+        const [count] = await tx<{ import_count: string }[]>`select count(*)::text import_count from ${own.imports} owned_imports`;
+        const rows = await tx<{ id: string }[]>`select id from tools.money_transactions where owner_subject = ${own.subject} and import_id is not null order by id for update`;
         await tx`update tools.money_accounts set display_name = case role
             when 'investment' then 'Trade Republic Investments'
             else 'Trade Republic Cash'
           end, updated_at = now()
-          where provider = 'portfolio_export'`;
-        await relinkAutomaticTransfers(tx);
-        await applyCategoryRules(tx);
+          where owner_subject = ${own.subject} and provider = 'portfolio_export'`;
+        await relinkAutomaticTransfers(tx, own);
+        await applyCategoryRules(tx, own);
         const [linked] = await tx<{ linked_pair_count: string }[]>`select count(distinct transfer_group_id)::text linked_pair_count
-          from tools.money_transactions where transfer_group_id is not null`;
+          from ${own.transactions} owned_transactions where transfer_group_id is not null`;
         return { importCount: integer(count?.import_count ?? "0"), transactionCount: rows.length, linkedPairCount: integer(linked?.linked_pair_count ?? "0") };
       });
     },
@@ -331,11 +344,11 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
     deleteImport(importId) {
       return sql.begin(async (tx) => {
         await lockCategoryRules(tx);
-        const [moneyImport] = await tx<{ id: string }[]>`select id from tools.money_imports where id = ${importId} for update`;
+        const [moneyImport] = await tx<{ id: string }[]>`select id from tools.money_imports where owner_subject = ${own.subject} and id = ${importId} for update`;
         if (!moneyImport) return undefined;
 
         await tx`insert into tools.money_import_transactions (import_id, transaction_id)
-          select import_id, id from tools.money_transactions
+          select import_id, id from ${own.transactions} owned_transactions
           where import_id = ${importId} or id in (
             select transaction_id from tools.money_import_transactions where import_id = ${importId})
           on conflict do nothing`;
@@ -343,23 +356,23 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
           where member.import_id = ${importId} and not exists (select 1 from tools.money_import_transactions other
             where other.transaction_id = member.transaction_id and other.import_id <> ${importId})`;
         await tx`update tools.money_transactions set transfer_group_id = null, transfer_disposition = null, transfer_origin = null
-          where transfer_group_id in (select transfer_group_id from tools.money_transactions where id in (${onlyHere}) and transfer_group_id is not null)`;
+          where owner_subject = ${own.subject} and transfer_group_id in (select transfer_group_id from ${own.transactions} owned_transactions where id in (${onlyHere}) and transfer_group_id is not null)`;
 
         const deletedEvents = await tx<{ id: string }[]>`delete from tools.money_investment_events
-          where transaction_id in (${onlyHere}) returning id`;
+          where owner_subject = ${own.subject} and transaction_id in (${onlyHere}) returning id`;
         const deletedSnapshots = await tx<{ account_id: string }[]>`delete from tools.money_balance_snapshots
-          where import_id = ${importId} returning account_id`;
+          where owner_subject = ${own.subject} and import_id = ${importId} returning account_id`;
         const deletedTransactions = await tx<{ id: string }[]>`delete from tools.money_transactions
-          where id in (${onlyHere}) returning id`;
+          where owner_subject = ${own.subject} and id in (${onlyHere}) returning id`;
         await tx`update tools.money_transactions kept set import_id = (
             select member.import_id from tools.money_import_transactions member
-            join tools.money_imports remaining on remaining.id = member.import_id
+            join ${own.imports} remaining on remaining.id = member.import_id
             where member.transaction_id = kept.id and member.import_id <> ${importId}
             order by remaining.committed_at, remaining.id limit 1)
-          where kept.import_id = ${importId}`;
-        await tx`delete from tools.money_imports where id = ${importId}`;
-        await linkUnambiguousTransfers(tx);
-        await applyCategoryRules(tx);
+          where kept.owner_subject = ${own.subject} and kept.import_id = ${importId}`;
+        await tx`delete from tools.money_imports where owner_subject = ${own.subject} and id = ${importId}`;
+        await linkUnambiguousTransfers(tx, own);
+        await applyCategoryRules(tx, own);
 
         return {
           transactionCount: deletedTransactions.length,
@@ -373,33 +386,33 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
       const queries = new Set(moneyLedgerQueriesFor(scope));
       const needs = (query: MoneyLedgerQuery) => queries.has(query);
       const [transferRuleSet, imports, currentMonthTransactions, categoryRules, activity, count, transfers, transferReviewItems, monthly, categories, categoryMonths, merchantMonths, categoryActivity, events, investmentTotals, tradeMarkers, realizedEvents, snapshotRows, transferRuleOptions, reviewCounts, reviewQueue] = await Promise.all([
-        needs("transferRules") ? readTransferRules(sql) : { rules: [], pairRules: [] },
-        needs("imports") ? sql<ImportRow[]>`select id, digest, format, filename, bytes, source_row_count, inserted_row_count, duplicate_row_count, committed_at, created_by from tools.money_imports order by committed_at desc limit 50` : emptyRows<ImportRow>(),
-        needs("currentMonthTransactions") ? sql<{ account_id: string; month: string }[]>`select distinct account_id::text account_id, to_char(local_date, 'YYYY-MM') as month from tools.money_transactions
+        needs("transferRules") ? readTransferRules(sql, own) : { rules: [], pairRules: [] },
+        needs("imports") ? sql<ImportRow[]>`select id, digest, format, filename, bytes, source_row_count, inserted_row_count, duplicate_row_count, committed_at, created_by from ${own.imports} owned_imports order by committed_at desc limit 50` : emptyRows<ImportRow>(),
+        needs("currentMonthTransactions") ? sql<{ account_id: string; month: string }[]>`select distinct account_id::text account_id, to_char(local_date, 'YYYY-MM') as month from ${own.transactions} owned_transactions
           where status = 'completed' and local_date >= date_trunc('month', current_date) - interval '1 month'
             and local_date < date_trunc('month', current_date) + interval '2 months'` : emptyRows<{ account_id: string; month: string }>(),
         needs("categoryRules") ? sql<CategoryRuleRow[]>`select r.id::text id, r.account_id::text account_id, a.display_name account_name,
           r.match_field, r.match_operator, r.match_value, r.category, r.updated_at, coalesce(used.row_count, 0)::text row_count
-          from tools.money_category_rules r
-          left join tools.money_accounts a on a.id = r.account_id
-          left join (select category_rule_id, count(*) row_count from (${effectiveTransactions(sql)}) effective
+          from ${own.categoryRules} r
+          left join ${own.accounts} a on a.id = r.account_id
+          left join (select category_rule_id, count(*) row_count from (${effectiveTransactions(sql, own)}) effective
             where category_rule_id is not null group by category_rule_id) used on used.category_rule_id = r.id
           where r.active order by r.priority desc, r.id` : emptyRows<CategoryRuleRow>(),
         needs("activity") ? sql<ActivityRow[]>`select t.id, t.occurred_at, t.account_id::text account_id, a.display_name account_name, t.description, t.amount_minor, t.fee_minor, t.tax_minor, t.currency, t.status, t.source_type, t.flow_kind, t.category, t.category_origin, t.transfer_group_id, t.transfer_disposition
-          from (${effectiveTransactions(sql)}) t join tools.money_accounts a on a.id = t.account_id
+          from (${effectiveTransactions(sql, own)}) t join ${own.accounts} a on a.id = t.account_id
           order by t.occurred_at desc, t.source_row desc limit 50` : emptyRows<ActivityRow>(),
         needs("counts") ? sql<{ count: string; reverted_count: string }[]>`select
-          (select count(*)::text from (${effectiveTransactions(sql)}) effective) count,
-          (select count(*)::text from tools.money_transactions where status = 'reverted') reverted_count` : emptyRows<{ count: string; reverted_count: string }>(),
+          (select count(*)::text from (${effectiveTransactions(sql, own)}) effective) count,
+          (select count(*)::text from ${own.transactions} owned_transactions where status = 'reverted') reverted_count` : emptyRows<{ count: string; reverted_count: string }>(),
         needs("transferSummary") ? sql<TransferReviewRow[]>`select count(distinct transfer_group_id)::text linked_pairs,
           count(*) filter (where transfer_group_id is null)::text unlinked_count,
           count(*) filter (where transfer_group_id is null and transfer_disposition is null and amount_minor > 0)::text unresolved_positive_count,
           count(*) filter (where transfer_group_id is null and transfer_disposition is null and amount_minor < 0)::text unresolved_negative_count
-          from (${effectiveTransactions(sql)}) effective where flow_kind = 'transfer'` : emptyRows<TransferReviewRow>(),
+          from (${effectiveTransactions(sql, own)}) effective where flow_kind = 'transfer'` : emptyRows<TransferReviewRow>(),
         needs("transferReview") ? sql<ActivityRow[]>`select t.id, t.occurred_at, t.account_id::text account_id, a.display_name account_name,
           t.description, t.amount_minor, t.fee_minor, t.tax_minor, t.currency, t.status, t.source_type,
           t.flow_kind, t.category, t.category_origin, t.transfer_group_id, t.transfer_disposition
-          from (${effectiveTransactions(sql)}) t join tools.money_accounts a on a.id = t.account_id
+          from (${effectiveTransactions(sql, own)}) t join ${own.accounts} a on a.id = t.account_id
           where t.flow_kind = 'transfer'
             and t.transfer_group_id is null and t.transfer_disposition is null
           order by a.display_name, t.occurred_at desc, t.source_row desc, t.id desc` : emptyRows<ActivityRow>(),
@@ -410,7 +423,7 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
               when flow_kind = 'transfer' then coalesce(transfer_disposition, 'unreviewed')
               else flow_kind
             end effective_flow
-          from (${effectiveTransactions(sql)}) effective
+          from (${effectiveTransactions(sql, own)}) effective
           where base_currency = 'EUR' and local_date < date_trunc('month', current_date)
         ), contributors as (
           select * from classified where
@@ -437,25 +450,25 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
           coalesce(monthly_contributors.fees_minor, 0)::text fees_minor, coalesce(monthly_contributors.taxes_minor, 0)::text taxes_minor
           from calendar left join monthly_contributors using (month_start) left join coverage using (month_start) order by calendar.month_start` : emptyRows<MonthlyRow>(),
         needs("categoryTotals") ? sql<CategoryRow[]>`select category, coalesce(sum(category_spend_minor), 0)::text amount_minor,
-          count(*)::text count from (${ledgerContributions(sql)}) contributions
+          count(*)::text count from (${ledgerContributions(sql, own)}) contributions
           where base_currency = 'EUR' and effective_flow in ('spend', 'refund') group by category
           order by sum(category_spend_minor) desc` : emptyRows<CategoryRow>(),
         needs("categoryMonths") ? sql<CategoryMonthRow[]>`select to_char(date_trunc('month', local_date), 'YYYY-MM') as month, category,
           sum(category_spend_minor)::text amount_minor, count(*)::text count
-          from (${ledgerContributions(sql)}) contributions
+          from (${ledgerContributions(sql, own)}) contributions
           where base_currency = 'EUR' and local_date < date_trunc('month', current_date) and effective_flow in ('spend', 'refund')
           group by date_trunc('month', local_date), category order by date_trunc('month', local_date), category` : emptyRows<CategoryMonthRow>(),
         needs("merchantMonths") ? sql<MerchantMonthRow[]>`select to_char(date_trunc('month', local_date), 'YYYY-MM') as month, category, source_type,
           coalesce(nullif(trim(description), ''), 'Unknown merchant') description,
           sum(category_spend_minor)::text amount_minor, count(*)::text count
-          from (${ledgerContributions(sql)}) contributions
+          from (${ledgerContributions(sql, own)}) contributions
           where base_currency = 'EUR' and local_date < date_trunc('month', current_date) and effective_flow in ('spend', 'refund')
           group by date_trunc('month', local_date), category, source_type, coalesce(nullif(trim(description), ''), 'Unknown merchant')
           order by date_trunc('month', local_date), category, sum(category_spend_minor) desc` : emptyRows<MerchantMonthRow>(),
         needs("categoryActivity") ? sql<ActivityRow[]>`select id, occurred_at, account_name, description, amount_minor, fee_minor, tax_minor, currency, status, source_type, flow_kind, category, category_origin, transfer_group_id, transfer_disposition from (
           select t.id, t.occurred_at, a.display_name account_name, t.description, t.amount_minor, t.fee_minor, t.tax_minor, t.currency, t.status, t.source_type, t.flow_kind, t.category, t.category_origin, t.transfer_group_id, t.transfer_disposition,
             row_number() over (partition by t.category order by t.occurred_at desc, t.source_row desc) category_rank
-          from (${effectiveTransactions(sql)}) t join tools.money_accounts a on a.id = t.account_id
+          from (${effectiveTransactions(sql, own)}) t join ${own.accounts} a on a.id = t.account_id
           where t.base_currency = 'EUR'
             and t.local_date < date_trunc('month', current_date) and (
             t.flow_kind in ('spend', 'refund') or (t.flow_kind = 'transfer' and t.transfer_group_id is null and t.transfer_disposition in ('spend', 'refund'))
@@ -470,7 +483,7 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
           coalesce(sum(t.base_amount_minor) filter (where e.event_kind = 'dividend'), 0)::text income_minor,
           coalesce(sum(t.base_fee_minor), 0)::text fees_minor, coalesce(sum(t.base_tax_minor), 0)::text taxes_minor,
           count(*)::text event_count, t.base_currency currency
-          from tools.money_investment_events e join (${effectiveTransactions(sql)}) t on t.id = e.transaction_id
+          from ${own.events} e join (${effectiveTransactions(sql, own)}) t on t.id = e.transaction_id
           where t.base_currency = 'EUR' and e.symbol is not null and trim(e.symbol) <> ''
           group by upper(trim(e.symbol)), t.base_currency order by sum(abs(t.base_amount_minor)) desc nulls last` : emptyRows<InvestmentRow>(),
         needs("investmentTotals") ? sql<InvestmentTotalsRow[]>`select count(*)::text event_count,
@@ -478,27 +491,27 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
           coalesce(sum(abs(t.base_amount_minor)) filter (where e.event_kind = 'sell'), 0)::text sold_minor,
           coalesce(sum(t.base_amount_minor) filter (where e.event_kind = 'dividend'), 0)::text income_minor,
           coalesce(sum(t.base_fee_minor), 0)::text fees_minor, coalesce(sum(t.base_tax_minor), 0)::text taxes_minor
-          from tools.money_investment_events e join (${effectiveTransactions(sql)}) t on t.id = e.transaction_id
+          from ${own.events} e join (${effectiveTransactions(sql, own)}) t on t.id = e.transaction_id
           where t.base_currency = 'EUR'` : emptyRows<InvestmentTotalsRow>(),
         needs("tradeMarkers") ? sql<TradeMarkerRow[]>`select t.local_date::text local_date, e.event_kind, upper(trim(e.symbol)) symbol,
           e.name, e.quantity::text quantity, t.base_amount_minor::text base_amount_minor,
           t.base_fee_minor::text base_fee_minor, t.base_currency currency
-          from tools.money_investment_events e join (${effectiveTransactions(sql)}) t on t.id = e.transaction_id
+          from ${own.events} e join (${effectiveTransactions(sql, own)}) t on t.id = e.transaction_id
           where t.base_currency = 'EUR' and e.event_kind in ('buy', 'sell')
             and e.symbol is not null and trim(e.symbol) <> '' and e.quantity is not null
           order by t.local_date, t.occurred_at, t.source_row, t.source_key` : emptyRows<TradeMarkerRow>(),
         needs("realizedEvents") ? sql<RealizedEventRow[]>`select t.account_id::text account_id, t.occurred_at, t.source_row, t.source_key, e.event_kind, e.symbol, e.quantity::text quantity,
           t.base_amount_minor::text base_amount_minor, t.base_fee_minor::text base_fee_minor
-          from tools.money_investment_events e join (${effectiveTransactions(sql)}) t on t.id = e.transaction_id
+          from ${own.events} e join (${effectiveTransactions(sql, own)}) t on t.id = e.transaction_id
           where t.base_currency = 'EUR'
           order by t.occurred_at, t.source_row, t.source_key` : emptyRows<RealizedEventRow>(),
-        needs("balanceSnapshots") ? balanceSnapshotRows(sql) : emptyRows<SnapshotRow>(),
+        needs("balanceSnapshots") ? balanceSnapshotRows(sql, own) : emptyRows<SnapshotRow>(),
         needs("transferRuleOptions") ? sql<TransferRuleOptionRow[]>`select a.provider, t.source_type, count(*)::text count,
             count(*) filter (where t.transfer_group_id is null and t.transfer_disposition is null)::text unresolved_count
-          from (${effectiveTransactions(sql)}) t join tools.money_accounts a on a.id = t.account_id
+          from (${effectiveTransactions(sql, own)}) t join ${own.accounts} a on a.id = t.account_id
           where t.flow_kind = 'transfer' group by a.provider, t.source_type order by a.provider, t.source_type` : emptyRows<TransferRuleOptionRow>(),
-        needs("reviewCounts") ? reviewCountRows(sql) : emptyRows<ReviewCountRow>(),
-        needs("reviewQueue") ? readReviewQueue(sql) : { items: [], commonCategories: [] }
+        needs("reviewCounts") ? reviewCountRows(sql, own) : emptyRows<ReviewCountRow>(),
+        needs("reviewQueue") ? readReviewQueue(sql, own) : { items: [], commonCategories: [] }
       ]);
       const spending = spendingAnalytics(monthly, categories, categoryMonths, merchantMonths, categoryActivity);
       return {
@@ -511,7 +524,7 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
     },
 
     async readReviewCounts() {
-      return reviewCountsFrom(await reviewCountRows(sql));
+      return reviewCountsFrom(await reviewCountRows(sql, own));
     },
     async readActivityPage(input) {
       const pattern = `%${input.query.replaceAll("%", "\\%").replaceAll("_", "\\_")}%`;
@@ -529,7 +542,7 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
         or (t.category = 'uncategorized' and (t.flow_kind = 'spend' or (t.flow_kind = 'transfer' and t.transfer_group_id is null and t.transfer_disposition = 'spend')))))`;
       const [rows, count] = await Promise.all([
         sql<ActivityRow[]>`select t.id, t.occurred_at, t.account_id::text account_id, ${accountName} account_name, t.description, t.amount_minor, t.fee_minor, t.tax_minor, t.currency, t.status, t.source_type, t.flow_kind, t.category, t.category_origin, t.transfer_group_id, t.transfer_disposition
-          from (${effectiveTransactions(sql)}) t join tools.money_accounts a on a.id = t.account_id
+          from (${effectiveTransactions(sql, own)}) t join ${own.accounts} a on a.id = t.account_id
           where (${input.query} = '' or t.description ilike ${pattern} escape '\\' or ${accountName} ilike ${pattern} escape '\\' or t.source_type ilike ${pattern} escape '\\')
             and (${input.flow ?? null}::text is null or t.flow_kind = ${input.flow ?? null})
             and (${input.accountId ?? null}::uuid is null or t.account_id = ${input.accountId ?? null}::uuid)
@@ -538,7 +551,7 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
             and (${input.toMonth ? `${input.toMonth}-01` : null}::date is null or t.local_date < (${input.toMonth ? `${input.toMonth}-01` : null}::date + interval '1 month'))
             and (${input.reviewOnly ?? false} = false or ${needsReview})
           order by ${order} ${direction}, t.occurred_at desc, t.source_row desc, t.id desc limit ${input.limit} offset ${input.offset}`,
-        sql<{ count: string }[]>`select count(*)::text count from (${effectiveTransactions(sql)}) t join tools.money_accounts a on a.id = t.account_id
+        sql<{ count: string }[]>`select count(*)::text count from (${effectiveTransactions(sql, own)}) t join ${own.accounts} a on a.id = t.account_id
           where (${input.query} = '' or t.description ilike ${pattern} escape '\\' or ${accountName} ilike ${pattern} escape '\\' or t.source_type ilike ${pattern} escape '\\')
             and (${input.flow ?? null}::text is null or t.flow_kind = ${input.flow ?? null})
             and (${input.accountId ?? null}::uuid is null or t.account_id = ${input.accountId ?? null}::uuid)
@@ -557,44 +570,44 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
         await lockCategoryRules(tx);
         const [row] = await tx<{ description: string; account_id: string; flow_kind: MoneyLedgerTransaction["flowKind"]; transfer_group_id: string | null; transfer_disposition: MoneyTransferDisposition | null }[]>`update tools.money_transactions
           set category = ${input.category}, category_origin = 'manual', category_rule_id = null
-          where id = ${input.transactionId} returning description, account_id::text account_id, flow_kind, transfer_group_id::text transfer_group_id, transfer_disposition`;
+          where owner_subject = ${own.subject} and id = ${input.transactionId} returning description, account_id::text account_id, flow_kind, transfer_group_id::text transfer_group_id, transfer_disposition`;
         if (!row) throw new Error("Money transaction not found.");
         if (input.createRule && !isRuleCategorized({ flowKind: row.flow_kind, transferGroupId: row.transfer_group_id, transferDisposition: row.transfer_disposition })) throw new Error('Category rules can only be created for spending and refund rows.');
         const matchValue = normalizeCategoryRuleText(row.description);
         if (!input.createRule || !matchValue) return { affectedCount: 1 };
-        await saveCategoryRuleRow(tx, { accountId: row.account_id, matchField: "description", matchOperator: "equals", matchValue, category: input.category }, input.actor);
-        return { affectedCount: 1 + await applyCategoryRules(tx) };
+        await saveCategoryRuleRow(tx, own, { accountId: row.account_id, matchField: "description", matchOperator: "equals", matchValue, category: input.category }, input.actor);
+        return { affectedCount: 1 + await applyCategoryRules(tx, own) };
       });
     },
 
     async previewCategoryRule(input) {
-      const [rules, targets] = await Promise.all([readCategoryRules(sql), readCategoryRuleTargets(sql)]);
+      const [rules, targets] = await Promise.all([readCategoryRules(sql, own), readCategoryRuleTargets(sql, own)]);
       return categoryRulePreview(rules, targets, input);
     },
 
     saveCategoryRule(input) {
       return sql.begin(async (tx) => {
         await lockCategoryRules(tx);
-        const rules = await readCategoryRules(tx);
+        const rules = await readCategoryRules(tx, own);
         if (input.ruleId && !rules.some((rule) => rule.id === input.ruleId)) throw new MoneyImportValidationError('rule_not_found', 'The rule no longer exists. Reload the rules.');
-        const preview = categoryRulePreview(rules, await readCategoryRuleTargets(tx), input);
+        const preview = categoryRulePreview(rules, await readCategoryRuleTargets(tx, own), input);
         if (preview.matchCount !== input.expectedMatchCount) throw new MoneyImportValidationError('rule_preview_stale', 'The matching transactions changed. Preview the rule again.');
-        const ruleId = await saveCategoryRuleRow(tx, input, input.actor, input.ruleId);
-        return { ruleId, affectedCount: await applyCategoryRules(tx) };
+        const ruleId = await saveCategoryRuleRow(tx, own, input, input.actor, input.ruleId);
+        return { ruleId, affectedCount: await applyCategoryRules(tx, own) };
       });
     },
 
     deleteCategoryRule(ruleId) {
       return sql.begin(async (tx) => {
         await lockCategoryRules(tx);
-        const [rule] = await tx<{ id: string }[]>`delete from tools.money_category_rules where id = ${ruleId} returning id`;
+        const [rule] = await tx<{ id: string }[]>`delete from tools.money_category_rules where owner_subject = ${own.subject} and id = ${ruleId} returning id`;
         if (!rule) return undefined;
-        return { affectedCount: await applyCategoryRules(tx) };
+        return { affectedCount: await applyCategoryRules(tx, own) };
       });
     },
 
     async previewTransferRule(input) {
-      const rows = await unresolvedTransferRuleMatches(sql, input);
+      const rows = await unresolvedTransferRuleMatches(sql, own, input);
       return {
         matchCount: rows.length,
         examples: rows.slice(0, 20).map((row) => ({ id: row.id, date: row.local_date, accountName: row.account_name, description: row.description, amountMinor: integer(row.amount_minor), currency: row.currency }))
@@ -604,16 +617,16 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
     createTransferRule(input) {
       return sql.begin(async (tx) => {
         await lockCategoryRules(tx);
-        const matches = await unresolvedTransferRuleMatches(tx, input);
+        const matches = await unresolvedTransferRuleMatches(tx, own, input);
         if (matches.length !== input.expectedMatchCount) throw new MoneyImportValidationError("rule_preview_stale", "The unresolved transfers changed. Preview the rule again.");
-        const [priority] = await tx<{ next_priority: number }[]>`select coalesce(max(priority), 90) + 10 next_priority from tools.money_transfer_rules`;
-        await tx`insert into tools.money_transfer_rules (id, priority, provider, source_type, description_match, match_value, amount_sign, disposition, note, active, created_at, updated_at, created_by)
-          values (${randomUUID()}, ${priority!.next_priority}, ${input.provider ?? null}, ${input.sourceType ?? null}, ${input.descriptionMatch},
+        const [priority] = await tx<{ next_priority: number }[]>`select coalesce(max(priority), 90) + 10 next_priority from ${own.transferRules} owned_transferRules`;
+        await tx`insert into tools.money_transfer_rules (id, owner_subject, priority, provider, source_type, description_match, match_value, amount_sign, disposition, note, active, created_at, updated_at, created_by)
+          values (${randomUUID()}, ${own.subject}, ${priority!.next_priority}, ${input.provider ?? null}, ${input.sourceType ?? null}, ${input.descriptionMatch},
             ${input.matchValue ?? null}, ${input.amountSign}, ${input.disposition}, ${input.note ?? null}, true, now(), now(), ${input.actor})`;
-        const before = await unresolvedTransferCount(tx);
-        await linkUnambiguousTransfers(tx);
-        const affectedCount = before - await unresolvedTransferCount(tx);
-        await applyCategoryRules(tx);
+        const before = await unresolvedTransferCount(tx, own);
+        await linkUnambiguousTransfers(tx, own);
+        const affectedCount = before - await unresolvedTransferCount(tx, own);
+        await applyCategoryRules(tx, own);
         return { affectedCount };
       });
     },
@@ -621,7 +634,7 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
     deleteTransferRule(ruleId) {
       return sql.begin(async (tx) => {
         await lockCategoryRules(tx);
-        const deleted = await tx`delete from tools.money_transfer_rules where id = ${ruleId} returning id`;
+        const deleted = await tx`delete from tools.money_transfer_rules where owner_subject = ${own.subject} and id = ${ruleId} returning id`;
         return deleted.length === 1;
       });
     },
@@ -629,8 +642,8 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
     async setTransferDisposition(input) {
       await sql.begin(async (tx) => {
         await lockCategoryRules(tx);
-        await recordManualTransferDisposition(tx, input);
-        await applyCategoryRules(tx);
+        await recordManualTransferDisposition(tx, own, input);
+        await applyCategoryRules(tx, own);
       });
     },
 
@@ -638,9 +651,9 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
       return sql.begin(async (tx) => {
         await lockCategoryRules(tx);
         const updated = await tx<{ id: string }[]>`update tools.money_transactions set transfer_disposition = ${input.disposition}, transfer_origin = 'manual'
-          where id in ${tx(input.transactionIds)} and status = 'completed' and flow_kind = 'transfer'
+          where owner_subject = ${own.subject} and id in ${tx(input.transactionIds)} and status = 'completed' and flow_kind = 'transfer'
             and transfer_group_id is null and transfer_disposition is null returning id`;
-        await applyCategoryRules(tx);
+        await applyCategoryRules(tx, own);
         return { affectedCount: updated.length };
       });
     },
@@ -648,23 +661,23 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
     addManualBalance(input) {
       return sql.begin(async (tx) => {
         const account = "accountId" in input
-          ? (await tx<{ id: string }[]>`select id from tools.money_accounts where id = ${input.accountId} and role = 'cash' and currency = ${input.currency}`)[0]
-          : await createManualAccount(tx, input.accountName, input.currency);
+          ? (await tx<{ id: string }[]>`select id from ${own.accounts} owned_accounts where id = ${input.accountId} and role = 'cash' and currency = ${input.currency}`)[0]
+          : await createManualAccount(tx, own, input.accountName, input.currency);
         if (!account) throw new Error("Cash account not found.");
-        await tx`insert into tools.money_balance_snapshots (account_id, snapshot_date, observed_at, value_minor, currency, origin, import_id)
-          values (${account.id}, ${input.date}, ${`${input.date}T12:00:00.000Z`}, ${input.valueMinor}, ${input.currency}, 'manual', null)
+        await tx`insert into tools.money_balance_snapshots (owner_subject, account_id, snapshot_date, observed_at, value_minor, currency, origin, import_id)
+          values (${own.subject}, ${account.id}, ${input.date}, ${`${input.date}T12:00:00.000Z`}, ${input.valueMinor}, ${input.currency}, 'manual', null)
           on conflict (account_id, snapshot_date, origin) do update set observed_at = excluded.observed_at, value_minor = excluded.value_minor, currency = excluded.currency`;
       });
     },
 
     async readCheckInDays() {
       const rows = await sql<{ day: string }[]>`select distinct (committed_at at time zone 'Europe/Berlin')::date::text as day
-        from tools.money_imports order by day`;
+        from ${own.imports} owned_imports order by day`;
       return rows.map((row) => row.day);
     },
 
     async readCashSince(baseline) {
-      const snapshots = (await balanceSnapshotRows(sql)).flatMap((row): MoneyCashSnapshotPoint[] =>
+      const snapshots = (await balanceSnapshotRows(sql, own)).flatMap((row): MoneyCashSnapshotPoint[] =>
         row.role === "cash" && row.currency === "EUR" && row.snapshot_date !== null && row.value_minor !== null
           ? [{ accountId: row.account_id, date: row.snapshot_date, valueMinor: integer(row.value_minor) }]
           : []);
@@ -678,14 +691,14 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
       let from = baseline;
       for (const start of starts.values()) if (start === undefined || start < from) from = start ?? "0001-01-01";
       const [rows, items] = await Promise.all([
-        sql<CashFlowRow[]>`with classified as (${classifiedCashTransactions(sql, from)})
+        sql<CashFlowRow[]>`with classified as (${classifiedCashTransactions(sql, own, from)})
           select cash_id account_id, local_date::text local_date,
             sum(case when effective_flow in ('income', 'investment_income') then base_amount_minor else 0 end)::text income_minor,
             sum(case when effective_flow in ('spend', 'refund', 'fee', 'tax') then base_amount_minor else 0 end - base_fee_minor - base_tax_minor)::text spending_minor,
             sum(case when flow_kind = 'trade' then base_amount_minor else 0 end)::text trades_minor,
             sum(case when flow_kind <> 'trade' and effective_flow not in ('income', 'investment_income', 'refund', 'spend', 'fee', 'tax') then base_amount_minor else 0 end)::text transfers_minor
           from classified group by cash_id, local_date order by local_date`,
-        sql<CashItemRow[]>`with classified as (${classifiedCashTransactions(sql, from)})
+        sql<CashItemRow[]>`with classified as (${classifiedCashTransactions(sql, own, from)})
           select cash_id account_id, local_date::text local_date,
             case when effective_flow in ('income', 'investment_income') then 'income' else 'spending' end kind,
             description, source_type,
@@ -716,7 +729,7 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
     async readSpendingSince(from) {
       const rows = await sql<SpendingRow[]>`select local_date::text local_date, category, description, source_type,
           sum(category_spend_minor)::text amount_minor
-        from (${ledgerContributions(sql)}) contributions
+        from (${ledgerContributions(sql, own)}) contributions
         where base_currency = 'EUR' and local_date > ${from} and effective_flow in ('spend', 'refund')
         group by local_date, category, description, source_type`;
       return rows.map((row) => ({
@@ -725,10 +738,7 @@ export function postgresMoneyRepository(sql: Sql): MoneyRepository {
         merchant: moneyMerchantName(row.description, row.source_type),
         amountMinor: integer(row.amount_minor)
       }));
-    },
-
-    async readiness() { await sql`select 1 from tools.money_imports limit 1`; },
-    close: () => sql.end()
+    }
   };
 }
 
@@ -779,12 +789,12 @@ function activityCategory(row: ActivityRow): MoneyCategory {
 }
 
 /** The newest uncategorized spending with category suggestions from other rows with the same description. */
-async function readReviewQueue(sql: Sql): Promise<MoneyReviewQueue> {
+async function readReviewQueue(sql: Sql, own: MoneyOwner): Promise<MoneyReviewQueue> {
   const [rows, common] = await Promise.all([
-    sql<ReviewQueueRow[]>`with effective as materialized (${effectiveTransactions(sql)}), queue as (
+    sql<ReviewQueueRow[]>`with effective as materialized (${effectiveTransactions(sql, own)}), queue as (
         select t.id, t.occurred_at, t.account_id::text account_id, a.display_name account_name, t.description, t.amount_minor, t.fee_minor, t.tax_minor,
           t.currency, t.status, t.source_type, t.flow_kind, t.category, t.category_origin, t.transfer_group_id, t.transfer_disposition, t.account_id account_uuid
-        from effective t join tools.money_accounts a on a.id = t.account_id
+        from effective t join ${own.accounts} a on a.id = t.account_id
         where t.category = 'uncategorized' and t.base_currency = 'EUR'
           and (t.flow_kind in ('spend', 'refund') or (t.flow_kind = 'transfer' and t.transfer_group_id is null and t.transfer_disposition in ('spend', 'refund')))
         order by t.occurred_at desc, t.source_row desc limit 40
@@ -800,7 +810,7 @@ async function readReviewQueue(sql: Sql): Promise<MoneyReviewQueue> {
           group by other.category order by count(*) desc, other.category limit 3
         ) used), '{}') suggestions
       from queue order by queue.occurred_at desc`,
-    sql<{ category: MoneyCategory }[]>`select category from (${effectiveTransactions(sql)}) t
+    sql<{ category: MoneyCategory }[]>`select category from (${effectiveTransactions(sql, own)}) t
       where t.flow_kind = 'spend' and t.category not in ('uncategorized', 'transfer', 'income', 'adjustment') and t.local_date >= current_date - interval '1 year'
       group by category order by count(*) desc, category limit 6`
   ]);
@@ -867,31 +877,31 @@ function planningAnalytics(months: MoneySpendingAnalytics["months"], review: Mon
 }
 
 /** Cash-account transactions after a day. Trade Republic rows count toward its derived cash account. */
-function classifiedCashTransactions(sql: Sql, from: string) {
+function classifiedCashTransactions(sql: Sql, own: MoneyOwner, from: string) {
   return sql`select c.cash_id, t.local_date, t.flow_kind, t.description, t.source_type, t.base_amount_minor, t.base_fee_minor, t.base_tax_minor,
       case
         when t.flow_kind = 'transfer' and t.transfer_group_id is not null then 'internal_transfer'
         when t.flow_kind = 'transfer' then coalesce(t.transfer_disposition, 'unreviewed')
         else t.flow_kind
       end effective_flow
-    from (${effectiveTransactions(sql)}) t
+    from (${effectiveTransactions(sql, own)}) t
     join (
       select source.id source_id, coalesce(trade_republic_cash.id, source.id)::text cash_id
-      from tools.money_accounts source
-      left join tools.money_accounts trade_republic_cash
+      from ${own.accounts} source
+      left join ${own.accounts} trade_republic_cash
         on source.provider = 'portfolio_export' and trade_republic_cash.provider = 'portfolio_export' and trade_republic_cash.role = 'cash'
         and regexp_replace(trade_republic_cash.external_ref, ':(cash|investment)$', '') = regexp_replace(source.external_ref, ':(cash|investment)$', '')
-        and not exists (select 1 from tools.money_balance_snapshots s where s.account_id = trade_republic_cash.id)
+        and not exists (select 1 from ${own.snapshots} s where s.account_id = trade_republic_cash.id)
     ) c on c.source_id = t.account_id
     where t.base_currency = 'EUR' and t.flow_kind <> 'balance_adjustment' and t.local_date > ${from}`;
 }
 
 /** Explicit balance snapshots, monthly Trade Republic cash derived from its ledger, and unobserved accounts. */
-function balanceSnapshotRows(sql: Sql) {
+function balanceSnapshotRows(sql: Sql, own: MoneyOwner) {
   return sql<SnapshotRow[]>`with explicit_snapshots as (
     select distinct on (s.account_id, s.snapshot_date) s.account_id::text account_id, s.snapshot_date::text snapshot_date,
       s.value_minor::text value_minor, s.currency, a.display_name, a.role, a.provider
-    from tools.money_balance_snapshots s join tools.money_accounts a on a.id = s.account_id
+    from ${own.snapshots} s join ${own.accounts} a on a.id = s.account_id
     order by s.account_id, s.snapshot_date, case when s.origin = 'manual' then 0 else 1 end, s.observed_at desc
   ), trade_republic_cash_snapshots as (
     select monthly.account_id, monthly.snapshot_date,
@@ -901,13 +911,13 @@ function balanceSnapshotRows(sql: Sql) {
       select cash_account.id::text account_id, max(t.local_date)::text snapshot_date,
         sum(t.amount_minor - t.fee_minor - t.tax_minor) change_minor,
         cash_account.currency, cash_account.display_name, cash_account.role, cash_account.provider
-      from (${effectiveTransactions(sql)}) t
-      join tools.money_accounts source_account on source_account.id = t.account_id
-      join tools.money_accounts cash_account
+      from (${effectiveTransactions(sql, own)}) t
+      join ${own.accounts} source_account on source_account.id = t.account_id
+      join ${own.accounts} cash_account
         on cash_account.provider = 'portfolio_export' and cash_account.role = 'cash'
         and regexp_replace(cash_account.external_ref, ':(cash|investment)$', '') = regexp_replace(source_account.external_ref, ':(cash|investment)$', '')
       where source_account.provider = 'portfolio_export' and t.currency = 'EUR'
-        and not exists (select 1 from tools.money_balance_snapshots s where s.account_id = cash_account.id)
+        and not exists (select 1 from ${own.snapshots} s where s.account_id = cash_account.id)
       group by cash_account.id, date_trunc('month', t.local_date), cash_account.currency,
         cash_account.display_name, cash_account.role, cash_account.provider
     ) monthly
@@ -917,11 +927,11 @@ function balanceSnapshotRows(sql: Sql) {
   select * from trade_republic_cash_snapshots
   union all
   select a.id::text, null, null, a.currency, a.display_name, a.role, a.provider
-  from tools.money_accounts a
+  from ${own.accounts} a
   where a.currency = 'EUR'
     and not (a.provider = 'portfolio_export' and a.role = 'cash')
-    and not exists (select 1 from tools.money_balance_snapshots s where s.account_id = a.id)
-    and exists (select 1 from tools.money_transactions t where t.account_id = a.id and t.status = 'completed')
+    and not exists (select 1 from ${own.snapshots} s where s.account_id = a.id)
+    and exists (select 1 from ${own.transactions} t where t.account_id = a.id and t.status = 'completed')
   order by snapshot_date nulls last, display_name`;
 }
 
@@ -992,20 +1002,20 @@ async function lockCategoryRules(tx: postgres.TransactionSql) {
   await tx`lock table tools.money_category_rules in share row exclusive mode`;
 }
 
-async function readCategoryRules(sql: Sql | postgres.TransactionSql) {
+async function readCategoryRules(sql: Sql | postgres.TransactionSql, own: MoneyOwner) {
   const rows = await sql<ActiveCategoryRuleRow[]>`select id::text id, account_id::text account_id, match_field, match_operator, match_value, category
-    from tools.money_category_rules where active order by priority desc, id`;
+    from ${own.categoryRules} owned_categoryRules where active order by priority desc, id`;
   return rows.map(categoryRuleDefinition);
 }
 
 /** Every row: rules decide the rule-categorized rows, and the others take the category their flow implies. */
-function readCategoryRuleTargets(sql: Sql | postgres.TransactionSql) {
+function readCategoryRuleTargets(sql: Sql | postgres.TransactionSql, own: MoneyOwner) {
   return sql<CategoryRuleTargetRow[]>`select t.id::text id, t.account_id::text account_id, a.display_name account_name, t.local_date::text local_date, t.flow_kind,
       t.transfer_group_id::text transfer_group_id, t.transfer_disposition, t.description, t.mcc, t.source_type, t.amount_minor::text amount_minor,
       t.currency, t.category, t.category_origin, t.category_rule_id::text category_rule_id, effective.id is not null visible
-    from tools.money_transactions t
-    join tools.money_accounts a on a.id = t.account_id
-    left join (select id from (${effectiveTransactions(sql)}) effective_rows) effective on effective.id = t.id
+    from ${own.transactions} t
+    join ${own.accounts} a on a.id = t.account_id
+    left join (select id from (${effectiveTransactions(sql, own)}) effective_rows) effective on effective.id = t.id
     order by t.occurred_at desc, t.source_row desc, t.id`;
 }
 
@@ -1051,15 +1061,16 @@ function categoryRulePreview(rules: readonly (MoneyCategoryRuleDefinition & Read
 }
 
 /** Stores a rule first in match order. It replaces another rule with the same condition. */
-async function saveCategoryRuleRow(tx: postgres.TransactionSql, rule: MoneyCategoryRuleDefinition, actor: string, ruleId: string = randomUUID()) {
+async function saveCategoryRuleRow(tx: postgres.TransactionSql, own: MoneyOwner, rule: MoneyCategoryRuleDefinition, actor: string, ruleId: string = randomUUID()) {
   const accountId = rule.accountId ?? null;
-  await tx`delete from tools.money_category_rules where id <> ${ruleId} and account_id is not distinct from ${accountId}::uuid
+  await tx`delete from tools.money_category_rules where owner_subject = ${own.subject} and id <> ${ruleId} and account_id is not distinct from ${accountId}::uuid
     and match_field = ${rule.matchField} and match_operator = ${rule.matchOperator} and match_value = ${rule.matchValue}`;
-  const [priority] = await tx<{ next_priority: number }[]>`select coalesce(max(priority), 0) + 1 next_priority from tools.money_category_rules`;
-  await tx`insert into tools.money_category_rules (id, account_id, priority, match_field, match_operator, match_value, category, active, created_at, updated_at, created_by)
-    values (${ruleId}, ${accountId}, ${priority!.next_priority}, ${rule.matchField}, ${rule.matchOperator}, ${rule.matchValue}, ${rule.category}, true, now(), now(), ${actor})
+  const [priority] = await tx<{ next_priority: number }[]>`select coalesce(max(priority), 0) + 1 next_priority from ${own.categoryRules} owned_categoryRules`;
+  await tx`insert into tools.money_category_rules (id, owner_subject, account_id, priority, match_field, match_operator, match_value, category, active, created_at, updated_at, created_by)
+    values (${ruleId}, ${own.subject}, ${accountId}, ${priority!.next_priority}, ${rule.matchField}, ${rule.matchOperator}, ${rule.matchValue}, ${rule.category}, true, now(), now(), ${actor})
     on conflict (id) do update set account_id = excluded.account_id, priority = excluded.priority, match_field = excluded.match_field,
-      match_operator = excluded.match_operator, match_value = excluded.match_value, category = excluded.category, active = true, updated_at = now()`;
+      match_operator = excluded.match_operator, match_value = excluded.match_value, category = excluded.category, active = true, updated_at = now()
+    where tools.money_category_rules.owner_subject = excluded.owner_subject`;
   return ruleId;
 }
 
@@ -1067,11 +1078,11 @@ async function saveCategoryRuleRow(tx: postgres.TransactionSql, rule: MoneyCateg
  * Applies the active rules in match order to every row without a manual category. Every call computes the same
  * result from the rules and rows alone. Returns how many visible rows changed category. Callers hold the rule lock.
  */
-async function applyCategoryRules(tx: postgres.TransactionSql) {
-  const match = categoryRuleMatcher(await readCategoryRules(tx));
+async function applyCategoryRules(tx: postgres.TransactionSql, own: MoneyOwner) {
+  const match = categoryRuleMatcher(await readCategoryRules(tx, own));
   const updates = new Map<string, { outcome: CategoryRuleOutcome; ids: string[] }>();
   let affectedCount = 0;
-  for (const target of await readCategoryRuleTargets(tx)) {
+  for (const target of await readCategoryRuleTargets(tx, own)) {
     if (target.category_origin === "manual") continue;
     const outcome = categoryRuleOutcome(target, match);
     if (outcome.category === target.category && outcome.origin === target.category_origin && outcome.ruleId === target.category_rule_id) continue;
@@ -1087,22 +1098,22 @@ async function applyCategoryRules(tx: postgres.TransactionSql) {
     await tx`update tools.money_transactions t set category = changes.category, category_origin = changes.origin, category_rule_id = changes.rule_id
       from unnest(${tx.array(batch.map((change) => change.id))}::uuid[], ${tx.array(batch.map((change) => change.category))}::text[],
         ${tx.array(batch.map((change) => change.origin))}::text[], ${tx.array(batch.map((change) => change.ruleId))}::uuid[]) as changes(id, category, origin, rule_id)
-      where t.id = changes.id and t.category_origin <> 'manual'`;
+      where t.owner_subject = ${own.subject} and t.id = changes.id and t.category_origin <> 'manual'`;
   }
   return affectedCount;
 }
 
-async function createManualAccount(tx: postgres.TransactionSql, accountName: string, currency: string) {
+async function createManualAccount(tx: postgres.TransactionSql, own: MoneyOwner, accountName: string, currency: string) {
   const name = accountName.trim();
   const ref = `manual:${name.toLocaleLowerCase("en-GB")}:cash:${currency}`;
-  const [account] = await tx<{ id: string }[]>`insert into tools.money_accounts (id, provider, external_ref, display_name, role, currency, created_at, updated_at)
-    values (${randomUUID()}, 'manual', ${ref}, ${name}, 'cash', ${currency}, now(), now())
-    on conflict (provider, external_ref) do update set display_name = excluded.display_name, role = excluded.role, updated_at = now() returning id`;
+  const [account] = await tx<{ id: string }[]>`insert into tools.money_accounts (id, owner_subject, provider, external_ref, display_name, role, currency, created_at, updated_at)
+    values (${randomUUID()}, ${own.subject}, 'manual', ${ref}, ${name}, 'cash', ${currency}, now(), now())
+    on conflict (owner_subject, provider, external_ref) do update set display_name = excluded.display_name, role = excluded.role, updated_at = now() returning id`;
   return account;
 }
 
 /** Re-imports pick up improved defaults without overwriting category or transfer review choices. */
-async function refreshInferredTransactions(tx: postgres.TransactionSql, transactions: readonly MoneyLedgerTransaction[]) {
+async function refreshInferredTransactions(tx: postgres.TransactionSql, own: MoneyOwner, transactions: readonly MoneyLedgerTransaction[]) {
   const sourceKeysByFlow = new Map<MoneyLedgerTransaction["flowKind"], string[]>();
   for (const transaction of transactions) {
     const sourceKeys = sourceKeysByFlow.get(transaction.flowKind) ?? [];
@@ -1112,31 +1123,31 @@ async function refreshInferredTransactions(tx: postgres.TransactionSql, transact
   for (const [flowKind, sourceKeys] of sourceKeysByFlow) {
     for (const keys of chunks(sourceKeys, 1_000)) {
       if (keys.length) await tx`update tools.money_transactions set flow_kind = ${flowKind}
-        where source_key in ${tx(keys)} and transfer_group_id is null and transfer_disposition is null and flow_kind <> ${flowKind}`;
+        where owner_subject = ${own.subject} and source_key in ${tx(keys)} and transfer_group_id is null and transfer_disposition is null and flow_kind <> ${flowKind}`;
     }
   }
   for (const category of MONEY_CATEGORIES) {
     const sourceKeys = transactions.filter((item) => item.category === category).map((item) => item.sourceKey);
     for (const keys of chunks(sourceKeys, 1_000)) {
       if (keys.length) await tx`update tools.money_transactions set category = ${category}
-        where source_key in ${tx(keys)} and category_origin = 'source' and category <> ${category}`;
+        where owner_subject = ${own.subject} and source_key in ${tx(keys)} and category_origin = 'source' and category <> ${category}`;
     }
   }
 }
 
-async function relinkAutomaticTransfers(tx: postgres.TransactionSql) {
+async function relinkAutomaticTransfers(tx: postgres.TransactionSql, own: MoneyOwner) {
   const cleared = await tx<{ id: string; group_id: string | null }[]>`with automatic_groups as (
-      select transfer_group_id from tools.money_transactions where transfer_group_id is not null
+      select transfer_group_id from ${own.transactions} owned_transactions where transfer_group_id is not null
       group by transfer_group_id having bool_and(transfer_origin is not distinct from 'automatic')
     ), targets as (
-      select id, transfer_group_id from tools.money_transactions
+      select id, transfer_group_id from ${own.transactions} owned_transactions
       where (transfer_group_id is null and transfer_origin = 'automatic')
         or transfer_group_id in (select transfer_group_id from automatic_groups)
     )
     update tools.money_transactions t set transfer_group_id = null, transfer_disposition = null, transfer_origin = null
-    from targets where t.id = targets.id
+    from targets where t.owner_subject = ${own.subject} and t.id = targets.id
     returning t.id, targets.transfer_group_id::text group_id`;
-  await linkUnambiguousTransfers(tx);
+  await linkUnambiguousTransfers(tx, own);
   const members = new Map<string, string[]>();
   for (const row of cleared) if (row.group_id) members.set(row.group_id, [...(members.get(row.group_id) ?? []), row.id]);
   const pairs = [...members].filter(([, ids]) => ids.length === 2);
@@ -1144,18 +1155,18 @@ async function relinkAutomaticTransfers(tx: postgres.TransactionSql) {
   await tx`update tools.money_transactions t set transfer_group_id = previous.group_id
     from unnest(${tx.array(pairs.map(([groupId]) => groupId))}::uuid[], ${tx.array(pairs.map(([, ids]) => ids[0]!))}::uuid[],
       ${tx.array(pairs.map(([, ids]) => ids[1]!))}::uuid[]) as previous(group_id, left_id, right_id)
-    join tools.money_transactions left_row on left_row.id = previous.left_id
-    join tools.money_transactions right_row on right_row.id = previous.right_id
-    where left_row.transfer_group_id = right_row.transfer_group_id and t.transfer_group_id = left_row.transfer_group_id`;
+    join ${own.transactions} left_row on left_row.id = previous.left_id
+    join ${own.transactions} right_row on right_row.id = previous.right_id
+    where t.owner_subject = ${own.subject} and left_row.transfer_group_id = right_row.transfer_group_id and t.transfer_group_id = left_row.transfer_group_id`;
 }
 
-async function linkUnambiguousTransfers(tx: postgres.TransactionSql) {
+async function linkUnambiguousTransfers(tx: postgres.TransactionSql, own: MoneyOwner) {
   await tx`update tools.money_transactions set transfer_disposition = 'excluded', transfer_origin = 'automatic'
-    where status = 'completed' and flow_kind = 'transfer' and source_type = 'Exchange'
+    where owner_subject = ${own.subject} and status = 'completed' and flow_kind = 'transfer' and source_type = 'Exchange'
       and transfer_group_id is null and transfer_disposition is null`;
-  const { rules, pairRules } = await readTransferRules(tx);
+  const { rules, pairRules } = await readTransferRules(tx, own);
   const unresolved = await tx<TransferRow[]>`select t.id, t.account_id, a.provider, t.source_type, t.occurred_at, t.local_date::text, lower(trim(t.description)) description, t.amount_minor::text, t.currency
-    from (${effectiveTransactions(tx)}) t join tools.money_accounts a on a.id = t.account_id
+    from (${effectiveTransactions(tx, own)}) t join ${own.accounts} a on a.id = t.account_id
     where t.flow_kind = 'transfer' and t.amount_minor <> 0
       and t.transfer_group_id is null and t.transfer_disposition is null`;
   const inference = (row: TransferRow) => ({ provider: row.provider, sourceType: row.source_type, description: row.description, amountMinor: integer(row.amount_minor) });
@@ -1178,8 +1189,8 @@ async function linkUnambiguousTransfers(tx: postgres.TransactionSql) {
     const lockedIds = new Set<string>();
     for (const batch of chunks(candidateIds, RELATED_INSERT_CHUNK_SIZE)) {
       const locked = await tx<{ id: string }[]>`select raw.id from tools.money_transactions raw
-        join (${effectiveTransactions(tx)}) effective on effective.id = raw.id
-        where raw.id in ${tx(batch)} and raw.flow_kind = 'transfer'
+        join (${effectiveTransactions(tx, own)}) effective on effective.id = raw.id
+        where raw.owner_subject = ${own.subject} and raw.id in ${tx(batch)} and raw.flow_kind = 'transfer'
           and raw.transfer_group_id is null and raw.transfer_disposition is null
         order by raw.id for update of raw`;
       for (const row of locked) lockedIds.add(row.id);
@@ -1195,10 +1206,10 @@ async function linkUnambiguousTransfers(tx: postgres.TransactionSql) {
       await tx`update tools.money_transactions t set transfer_group_id = assignments.group_id,
         transfer_disposition = 'internal_transfer', transfer_origin = 'automatic'
         from unnest(${tx.array(ids)}::uuid[], ${tx.array(groupIds)}::uuid[]) as assignments(id, group_id)
-        where t.id = assignments.id and t.transfer_group_id is null and t.transfer_disposition is null`;
+        where t.owner_subject = ${own.subject} and t.id = assignments.id and t.transfer_group_id is null and t.transfer_disposition is null`;
     }
   }
-  await inferUnlinkedTransferDispositions(tx, rules);
+  await inferUnlinkedTransferDispositions(tx, own, rules);
 }
 
 const SPARKASSE_TRANSFER_TYPE_SET = new Set<string>(SPARKASSE_TRANSFER_TYPES);
@@ -1210,12 +1221,12 @@ function isStatementTransfer(row: TransferRow) {
     || (row.provider === "sparkasse" && SPARKASSE_TRANSFER_TYPE_SET.has(row.source_type));
 }
 
-async function readTransferRules(sql: Sql | TransactionSql) {
+async function readTransferRules(sql: Sql | TransactionSql, own: MoneyOwner) {
   const [rules, pairRules] = await Promise.all([
     sql<TransferRuleRow[]>`select id, priority, provider, source_type, description_match, match_value, amount_sign, disposition, note
-      from tools.money_transfer_rules where active order by priority desc, created_at, id`,
+      from ${own.transferRules} owned_transferRules where active order by priority desc, created_at, id`,
     sql<TransferPairRuleRow[]>`select id, debit_provider, debit_source_type, debit_match_value, credit_provider, credit_source_type, note
-      from tools.money_transfer_pair_rules where active order by created_at, id`
+      from ${own.pairRules} owned_pairRules where active order by created_at, id`
   ]);
   return {
     rules: rules.map((row): MoneyTransferRule => ({
@@ -1241,54 +1252,54 @@ async function readTransferRules(sql: Sql | TransactionSql) {
   };
 }
 
-async function recordManualTransferDisposition(tx: TransactionSql, input: Readonly<{ transactionId: string; disposition: MoneyTransferDisposition }>) {
+async function recordManualTransferDisposition(tx: TransactionSql, own: MoneyOwner, input: Readonly<{ transactionId: string; disposition: MoneyTransferDisposition }>) {
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const [snapshot] = await tx<{ transfer_group_id: string | null }[]>`select transfer_group_id from tools.money_transactions
+    const [snapshot] = await tx<{ transfer_group_id: string | null }[]>`select transfer_group_id from ${own.transactions} owned_transactions
       where id = ${input.transactionId} and status = 'completed' and flow_kind = 'transfer'`;
     if (!snapshot) throw new Error("Reviewable money transfer not found.");
     if (snapshot.transfer_group_id) {
       const locked = await tx<{ id: string }[]>`select id from tools.money_transactions
-        where transfer_group_id = ${snapshot.transfer_group_id} order by id for update`;
+        where owner_subject = ${own.subject} and transfer_group_id = ${snapshot.transfer_group_id} order by id for update`;
       if (!locked.some((row) => row.id === input.transactionId)) continue;
       if (input.disposition === "internal_transfer") {
-        await tx`update tools.money_transactions set transfer_origin = 'manual' where transfer_group_id = ${snapshot.transfer_group_id}`;
+        await tx`update tools.money_transactions set transfer_origin = 'manual' where owner_subject = ${own.subject} and transfer_group_id = ${snapshot.transfer_group_id}`;
         return;
       }
       await tx`update tools.money_transactions set transfer_group_id = null,
         transfer_disposition = case when id = ${input.transactionId} then ${input.disposition} else null end,
         transfer_origin = case when id = ${input.transactionId} then 'manual' else null end
-        where transfer_group_id = ${snapshot.transfer_group_id}`;
+        where owner_subject = ${own.subject} and transfer_group_id = ${snapshot.transfer_group_id}`;
       return;
     }
     const updated = await tx<{ id: string }[]>`update tools.money_transactions set transfer_disposition = ${input.disposition}, transfer_origin = 'manual'
-      where id = ${input.transactionId} and status = 'completed' and flow_kind = 'transfer'
+      where owner_subject = ${own.subject} and id = ${input.transactionId} and status = 'completed' and flow_kind = 'transfer'
         and transfer_group_id is null returning id`;
     if (updated[0]) return;
   }
   throw new Error("The transfer changed while it was being reviewed. Try again.");
 }
 
-async function unresolvedTransferRuleMatches(sql: Sql | TransactionSql, input: MoneyTransferRuleInput) {
+async function unresolvedTransferRuleMatches(sql: Sql | TransactionSql, own: MoneyOwner, input: MoneyTransferRuleInput) {
   const rule: MoneyTransferRule = { ...input, id: "preview", priority: 0 };
   const rows = await sql<TransferRulePreviewRow[]>`select t.id, a.provider, a.display_name account_name, t.source_type, t.description,
       t.amount_minor::text, t.currency, t.local_date::text
-    from tools.money_transactions t join tools.money_accounts a on a.id = t.account_id
+    from ${own.transactions} t join ${own.accounts} a on a.id = t.account_id
     where t.status = 'completed' and t.flow_kind = 'transfer'
       and t.transfer_group_id is null and t.transfer_disposition is null
     order by t.local_date desc, t.id`;
   return rows.filter((row) => transferRuleMatches(rule, { provider: row.provider, sourceType: row.source_type, description: row.description, amountMinor: integer(row.amount_minor) }));
 }
 
-async function unresolvedTransferCount(tx: TransactionSql) {
-  const [row] = await tx<{ count: string }[]>`select count(*)::text count from tools.money_transactions
+async function unresolvedTransferCount(tx: TransactionSql, own: MoneyOwner) {
+  const [row] = await tx<{ count: string }[]>`select count(*)::text count from ${own.transactions} owned_transactions
     where status = 'completed' and flow_kind = 'transfer' and transfer_group_id is null and transfer_disposition is null`;
   return integer(row?.count ?? "0");
 }
 
-async function inferUnlinkedTransferDispositions(tx: postgres.TransactionSql, rules: readonly MoneyTransferRule[]) {
+async function inferUnlinkedTransferDispositions(tx: postgres.TransactionSql, own: MoneyOwner, rules: readonly MoneyTransferRule[]) {
   const rows = await tx<TransferInferenceRow[]>`select t.id, a.provider,
       t.source_type, t.description, t.amount_minor::text
-    from tools.money_transactions t join tools.money_accounts a on a.id = t.account_id
+    from ${own.transactions} t join ${own.accounts} a on a.id = t.account_id
     where t.status = 'completed' and t.flow_kind = 'transfer'
       and t.transfer_group_id is null and t.transfer_disposition is null`;
   const dispositions = new Map<MoneyTransferDisposition, string[]>();
@@ -1305,7 +1316,7 @@ async function inferUnlinkedTransferDispositions(tx: postgres.TransactionSql, ru
   for (const [disposition, ids] of dispositions) {
     for (const batch of chunks(ids, RELATED_INSERT_CHUNK_SIZE)) {
       await tx`update tools.money_transactions set transfer_disposition = ${disposition}, transfer_origin = 'automatic'
-        where id in ${tx(batch)} and transfer_group_id is null and transfer_disposition is null`;
+        where owner_subject = ${own.subject} and id in ${tx(batch)} and transfer_group_id is null and transfer_disposition is null`;
     }
   }
 }
@@ -1344,11 +1355,11 @@ function collectMutuallyUnique(rows: readonly TransferRow[], used: Set<string>, 
   }
 }
 
-async function existingTransactionIds(sql: Sql | TransactionSql, transactions: readonly MoneyLedgerTransaction[]) {
+async function existingTransactionIds(sql: Sql | TransactionSql, own: MoneyOwner, transactions: readonly MoneyLedgerTransaction[]) {
   const sourceKeys = new Set(transactions.map((item) => item.sourceKey));
   const existing = new Map<string, string>();
   for (const keys of chunks([...sourceKeys], 1_000)) {
-    const rows = await sql<{ id: string; source_key: string }[]>`select id, source_key from tools.money_transactions where source_key in ${sql(keys)}`;
+    const rows = await sql<{ id: string; source_key: string }[]>`select id, source_key from ${own.transactions} owned_transactions where source_key in ${sql(keys)}`;
     for (const row of rows) existing.set(row.source_key, row.id);
   }
   const cash = transactions.filter((item) => item.provider === "revolut" && item.accountRole === "cash"
@@ -1362,8 +1373,8 @@ async function existingTransactionIds(sql: Sql | TransactionSql, transactions: r
     amount_minor: string; fee_minor: string; currency: string; status: MoneyLedgerTransaction["status"]; balance_after_minor: string | null;
   }[]>`select t.id, a.external_ref, t.source_type, t.occurred_at, t.completed_at, t.description,
       t.amount_minor::text, t.fee_minor::text, t.currency, t.status, t.balance_after_minor::text
-    from tools.money_transactions t join tools.money_accounts a on a.id = t.account_id
-    join tools.money_imports i on i.id = t.import_id
+    from ${own.transactions} t join ${own.accounts} a on a.id = t.account_id
+    join ${own.imports} i on i.id = t.import_id
     where a.provider = 'revolut' and a.role = 'cash' and i.format = ${REVOLUT_CASH_FORMAT}
       and t.local_date between ${dates[0]!} and ${dates.at(-1)!}`;
   for (const row of rows) {
@@ -1385,13 +1396,13 @@ function day(value: string) { return Date.parse(`${value}T00:00:00Z`) / 86_400_0
 function chunks<Value>(values: readonly Value[], size: number): Value[][] { return Array.from({ length: Math.ceil(values.length / size) }, (_, index) => values.slice(index * size, (index + 1) * size)); }
 function emptyRows<Row>(): Promise<Row[]> { return Promise.resolve([]); }
 
-function reviewCountRows(sql: Sql) {
+function reviewCountRows(sql: Sql, own: MoneyOwner) {
   return sql<ReviewCountRow[]>`select
       count(*) filter (where category = 'uncategorized' and (flow_kind in ('spend', 'refund') or (flow_kind = 'transfer' and transfer_group_id is null and transfer_disposition in ('spend', 'refund'))) and base_currency = 'EUR')::text uncategorized,
       count(*) filter (where (flow_kind in ('spend', 'refund') or (flow_kind = 'transfer' and transfer_group_id is null and transfer_disposition in ('spend', 'refund'))) and base_currency = 'EUR')::text spending_rows,
       count(*) filter (where category = 'other' and category_origin = 'rule' and flow_kind in ('spend', 'refund') and base_currency = 'EUR')::text other_rows,
       count(*) filter (where flow_kind = 'transfer' and transfer_group_id is null and transfer_disposition is null)::text transfers
-    from (${effectiveTransactions(sql)}) effective`;
+    from (${effectiveTransactions(sql, own)}) effective`;
 }
 
 function reviewCountsFrom(rows: readonly ReviewCountRow[]): MoneyReviewCounts {

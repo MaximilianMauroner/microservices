@@ -7,7 +7,7 @@ export async function previewMoneyImport(input: PlatformRouteInput) {
   if (rejected) return rejected;
   try {
     const file = await moneyFile(input.request);
-    const preview = await input.context.runtime.moneyImports.preview(file.name, await fileBytes(file));
+    const preview = await ledger(input).preview(file.name, await fileBytes(file));
     return json(preview);
   } catch (error) {
     return importError(error);
@@ -22,7 +22,7 @@ export async function commitMoneyImport(input: PlatformRouteInput) {
     const file = singleFile(form);
     const digest = singleString(form, "expectedDigest");
     assertMoneyImportFileSize(file.size);
-    const receipt = await input.context.runtime.moneyImports.commit({
+    const receipt = await ledger(input).commit({
       filename: file.name,
       bytes: await fileBytes(file),
       expectedDigest: digest,
@@ -38,7 +38,7 @@ export async function deleteMoneyImport(input: PlatformRouteInput) {
   const rejected = validateMutationRequest(input);
   if (rejected) return rejected;
   try {
-    const deleted = await input.context.runtime.moneyImports.deleteImport(input.params.importId ?? "");
+    const deleted = await ledger(input).deleteImport(input.params.importId ?? "");
     return json({ ok: true, ...deleted });
   } catch (error) {
     return importError(error);
@@ -49,7 +49,7 @@ export async function reimportAllMoneyImports(input: PlatformRouteInput) {
   const rejected = validateMutationRequest(input);
   if (rejected) return rejected;
   try {
-    return json({ ok: true, ...await input.context.runtime.moneyImports.reimportAll() });
+    return json({ ok: true, ...await ledger(input).reimportAll() });
   } catch (error) {
     return importError(error);
   }
@@ -69,11 +69,11 @@ export async function updateMoneyCategory(input: PlatformRouteInput) {
         matchValue: stringField(body, "matchValue"),
         category: stringField(body, "category")
       };
-      if (body.action === "previewRule") return json(await input.context.runtime.moneyImports.previewCategoryRule(rule));
+      if (body.action === "previewRule") return json(await ledger(input).previewCategoryRule(rule));
       if (typeof body.expectedMatchCount !== "number") throw new MoneyImportValidationError("invalid_rule_preview", "Preview the rule before saving it.");
-      return json({ ok: true, ...await input.context.runtime.moneyImports.saveCategoryRule({ ...rule, actor: input.context.principal!.email, expectedMatchCount: body.expectedMatchCount }) });
+      return json({ ok: true, ...await ledger(input).saveCategoryRule({ ...rule, actor: input.context.principal!.email, expectedMatchCount: body.expectedMatchCount }) });
     }
-    const result = await input.context.runtime.moneyImports.setTransactionCategory({
+    const result = await ledger(input).setTransactionCategory({
       transactionId: stringField(body, "transactionId"),
       category: stringField(body, "category"),
       createRule: body.createRule === true,
@@ -90,7 +90,7 @@ export async function deleteMoneyCategoryRule(input: PlatformRouteInput) {
   if (rejected) return rejected;
   try {
     const body = await jsonBody(input.request);
-    const result = await input.context.runtime.moneyImports.deleteCategoryRule(stringField(body, "ruleId"));
+    const result = await ledger(input).deleteCategoryRule(stringField(body, "ruleId"));
     return json({ ok: true, ...result });
   } catch (error) {
     return importError(error);
@@ -111,10 +111,10 @@ export async function saveMoneyTransferRule(input: PlatformRouteInput) {
       disposition: stringField(body, "disposition"),
       note: optionalStringField(body, "note")
     };
-    if (body.action === "previewRule") return json(await input.context.runtime.moneyImports.previewTransferRule(rule));
+    if (body.action === "previewRule") return json(await ledger(input).previewTransferRule(rule));
     if (body.action !== "createRule") throw new MoneyImportValidationError("invalid_request", "Expected a preview or create action.");
     if (typeof body.expectedMatchCount !== "number") throw new MoneyImportValidationError("invalid_rule_preview", "Preview the rule before saving it.");
-    return json({ ok: true, ...await input.context.runtime.moneyImports.createTransferRule({ ...rule, actor: input.context.principal!.email, expectedMatchCount: body.expectedMatchCount }) });
+    return json({ ok: true, ...await ledger(input).createTransferRule({ ...rule, actor: input.context.principal!.email, expectedMatchCount: body.expectedMatchCount }) });
   } catch (error) {
     return importError(error);
   }
@@ -125,7 +125,7 @@ export async function deleteMoneyTransferRule(input: PlatformRouteInput) {
   if (rejected) return rejected;
   try {
     const body = await jsonBody(input.request);
-    await input.context.runtime.moneyImports.deleteTransferRule(stringField(body, "ruleId"));
+    await ledger(input).deleteTransferRule(stringField(body, "ruleId"));
     return json({ ok: true });
   } catch (error) {
     return importError(error);
@@ -138,7 +138,7 @@ export async function updateMoneyTransfer(input: PlatformRouteInput) {
   try {
     const body = await jsonBody(input.request);
     if (Array.isArray(body.transactionIds)) {
-      const result = await input.context.runtime.moneyImports.setTransferDispositions({
+      const result = await ledger(input).setTransferDispositions({
         transactionIds: body.transactionIds.map((value) => {
           if (typeof value !== "string") throw new MoneyImportValidationError("invalid_transaction_selection", "Every selected transfer row must have a valid identifier.");
           return value;
@@ -147,7 +147,7 @@ export async function updateMoneyTransfer(input: PlatformRouteInput) {
       });
       return json({ ok: true, ...result });
     }
-    await input.context.runtime.moneyImports.setTransferDisposition({
+    await ledger(input).setTransferDisposition({
       transactionId: stringField(body, "transactionId"),
       disposition: stringField(body, "disposition")
     });
@@ -162,7 +162,7 @@ export async function addMoneyBalance(input: PlatformRouteInput) {
   if (rejected) return rejected;
   try {
     const body = await jsonBody(input.request);
-    await input.context.runtime.moneyImports.addManualBalance({
+    await ledger(input).addManualBalance({
       ...(optionalStringField(body, "accountId") ? { accountId: optionalStringField(body, "accountId") } : { accountName: optionalStringField(body, "accountName") }),
       date: stringField(body, "date"), value: stringField(body, "value"), currency: stringField(body, "currency")
     });
@@ -176,7 +176,7 @@ export async function getMoneyActivity(input: PlatformRouteInput) {
   if (!input.context.principal) return json({ error: "authentication_required" }, 401);
   try {
     const url = new URL(input.request.url);
-    return json(await input.context.runtime.moneyImports.readActivityPage({
+    return json(await ledger(input).readActivityPage({
       query: url.searchParams.get("query") ?? "",
       ...(url.searchParams.get("flow") ? { flow: url.searchParams.get("flow")! } : {}),
       ...(url.searchParams.get("accountId") ? { accountId: url.searchParams.get("accountId")! } : {}),
@@ -199,7 +199,7 @@ function validMonth(value: string | null): boolean { return value !== null && /^
 export async function getMoneyMarketData(input: PlatformRouteInput) {
   if (!input.context.principal) return json({ error: "authentication_required" }, 401);
   try {
-    return json(await input.context.runtime.moneyMarketData.snapshot());
+    return json(await input.context.runtime.moneyMarketData.snapshot(input.context.principal.subject));
   } catch (error) {
     return marketDataError(error);
   }
@@ -366,4 +366,8 @@ function json(body: unknown, status = 200) {
       "Content-Type": "application/json; charset=utf-8"
     }
   });
+}
+
+function ledger(input: PlatformRouteInput) {
+  return input.context.runtime.moneyImports.owner(input.context.principal!.subject);
 }

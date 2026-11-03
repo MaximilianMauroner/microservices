@@ -102,6 +102,7 @@ export const feedbackSubmissions = toolsSchema.table("feedback_submissions", {
 
 export const moneyAccounts = toolsSchema.table("money_accounts", {
   id: uuid("id").primaryKey(),
+  ownerSubject: text("owner_subject").notNull(),
   provider: text("provider").notNull(),
   externalRef: text("external_ref").notNull(),
   displayName: text("display_name").notNull(),
@@ -113,12 +114,13 @@ export const moneyAccounts = toolsSchema.table("money_accounts", {
   check("money_accounts_provider_check", sql`${table.provider} in ('revolut', 'portfolio_export', 'manual', 'sparkasse')`),
   check("money_accounts_role_check", sql`${table.role} in ('cash', 'investment')`),
   check("money_accounts_currency_check", sql`${table.currency} ~ '^[A-Z]{3}$'`),
-  uniqueIndex("money_accounts_provider_ref_idx").on(table.provider, table.externalRef),
+  uniqueIndex("money_accounts_provider_ref_idx").on(table.ownerSubject, table.provider, table.externalRef),
 ]);
 
 export const moneyImports = toolsSchema.table("money_imports", {
   id: uuid("id").primaryKey(),
-  digest: text("digest").notNull().unique(),
+  ownerSubject: text("owner_subject").notNull(),
+  digest: text("digest").notNull(),
   format: text("format").notNull(),
   filename: text("filename").notNull(),
   bytes: bigint("bytes", { mode: "number" }).notNull(),
@@ -132,6 +134,7 @@ export const moneyImports = toolsSchema.table("money_imports", {
   check("money_imports_format_check", sql`${table.format} in ('revolut_cash_statement_v1', 'revolut_savings_statement_v1', 'revolut_trading_statement_v1', 'portfolio_transaction_export_v1', 'money_balance_snapshot_v1', 'sparkasse_cash_statement_v1')`),
   check("money_imports_bytes_check", sql`${table.bytes} > 0`),
   check("money_imports_row_counts_check", sql`${table.sourceRowCount} >= 0 and ${table.insertedRowCount} >= 0 and ${table.duplicateRowCount} >= 0 and ${table.insertedRowCount} + ${table.duplicateRowCount} = ${table.sourceRowCount}`),
+  uniqueIndex("money_imports_owner_digest_idx").on(table.ownerSubject, table.digest),
   index("money_imports_committed_idx").on(table.committedAt),
 ]);
 
@@ -220,9 +223,10 @@ export const moneyInflationIndices = toolsSchema.table("money_inflation_indices"
 
 export const moneyTransactions = toolsSchema.table("money_transactions", {
   id: uuid("id").primaryKey(),
+  ownerSubject: text("owner_subject").notNull(),
   accountId: uuid("account_id").notNull().references(() => moneyAccounts.id),
   importId: uuid("import_id").notNull().references(() => moneyImports.id),
-  sourceKey: text("source_key").notNull().unique(),
+  sourceKey: text("source_key").notNull(),
   sourceRow: integer("source_row").notNull(),
   occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
   completedAt: timestamp("completed_at", { withTimezone: true }),
@@ -258,6 +262,7 @@ export const moneyTransactions = toolsSchema.table("money_transactions", {
   check("money_transactions_category_origin_check", sql`${table.categoryOrigin} in ('source', 'rule', 'manual')`),
   check("money_transactions_transfer_disposition_check", sql`${table.transferDisposition} is null or (${table.flowKind} = 'transfer' and ${table.transferDisposition} in ('internal_transfer', 'income', 'spend', 'refund', 'excluded'))`),
   check("money_transactions_transfer_origin_check", sql`${table.transferOrigin} is null or ${table.transferOrigin} in ('automatic', 'manual')`),
+  uniqueIndex("money_transactions_owner_source_key_idx").on(table.ownerSubject, table.sourceKey),
   index("money_transactions_occurred_idx").on(table.occurredAt),
   index("money_transactions_account_date_idx").on(table.accountId, table.localDate),
   index("money_transactions_flow_date_idx").on(table.flowKind, table.localDate),
@@ -276,6 +281,7 @@ export const moneyImportTransactions = toolsSchema.table("money_import_transacti
 
 export const moneyInvestmentEvents = toolsSchema.table("money_investment_events", {
   id: uuid("id").primaryKey(),
+  ownerSubject: text("owner_subject").notNull(),
   transactionId: uuid("transaction_id").notNull().references(() => moneyTransactions.id).unique(),
   instrumentId: uuid("instrument_id").references(() => moneyInstruments.id),
   eventKind: text("event_kind").notNull(),
@@ -296,6 +302,7 @@ export const moneyInvestmentEvents = toolsSchema.table("money_investment_events"
 /** Ordered category rules for spending and refunds; the highest-priority match wins. A null account means every account. */
 export const moneyCategoryRules = toolsSchema.table("money_category_rules", {
   id: uuid("id").primaryKey(),
+  ownerSubject: text("owner_subject").notNull(),
   accountId: uuid("account_id").references(() => moneyAccounts.id),
   priority: integer("priority").notNull(),
   matchField: text("match_field").notNull(),
@@ -310,13 +317,14 @@ export const moneyCategoryRules = toolsSchema.table("money_category_rules", {
   check("money_category_rules_field_check", sql`${table.matchField} in ('description', 'mcc', 'source_type')`),
   check("money_category_rules_operator_check", sql`${table.matchOperator} in ('equals', 'starts_with', 'contains', 'word') and (${table.matchField} = 'description' or ${table.matchOperator} = 'equals')`),
   check("money_category_rules_category_check", sql`${table.category} in ('housing', 'groceries', 'dining', 'transport', 'shopping', 'health', 'personal_care', 'travel', 'subscriptions', 'software', 'education', 'entertainment', 'recreation', 'gifts', 'taxes', 'fees', 'cash', 'investments', 'income', 'transfer', 'adjustment', 'other', 'uncategorized')`),
-  unique("money_category_rules_condition_unique").on(table.accountId, table.matchField, table.matchOperator, table.matchValue).nullsNotDistinct(),
+  unique("money_category_rules_condition_unique").on(table.ownerSubject, table.accountId, table.matchField, table.matchOperator, table.matchValue).nullsNotDistinct(),
   index("money_category_rules_priority_idx").on(table.priority),
 ]);
 
 /** Ordered transfer disposition rules; owner-specific evidence stays in data, not code. */
 export const moneyTransferRules = toolsSchema.table("money_transfer_rules", {
   id: uuid("id").primaryKey(),
+  ownerSubject: text("owner_subject").notNull(),
   priority: integer("priority").notNull(),
   provider: text("provider"),
   sourceType: text("source_type"),
@@ -341,6 +349,7 @@ export const moneyTransferRules = toolsSchema.table("money_transfer_rules", {
 /** Card debits that name a destination, paired with that provider's top-ups on the purchase date. */
 export const moneyTransferPairRules = toolsSchema.table("money_transfer_pair_rules", {
   id: uuid("id").primaryKey(),
+  ownerSubject: text("owner_subject").notNull(),
   debitProvider: text("debit_provider").notNull(),
   debitSourceType: text("debit_source_type").notNull(),
   debitMatchValue: text("debit_match_value").notNull(),
@@ -353,10 +362,11 @@ export const moneyTransferPairRules = toolsSchema.table("money_transfer_pair_rul
   createdBy: text("created_by").notNull(),
 }, (table) => [
   check("money_transfer_pair_rules_value_case_check", sql`${table.debitMatchValue} = lower(${table.debitMatchValue})`),
-  uniqueIndex("money_transfer_pair_rules_unique_idx").on(table.debitProvider, table.debitSourceType, table.debitMatchValue),
+  uniqueIndex("money_transfer_pair_rules_unique_idx").on(table.ownerSubject, table.debitProvider, table.debitSourceType, table.debitMatchValue),
 ]);
 
 export const moneyBalanceSnapshots = toolsSchema.table("money_balance_snapshots", {
+  ownerSubject: text("owner_subject").notNull(),
   accountId: uuid("account_id").notNull().references(() => moneyAccounts.id),
   snapshotDate: date("snapshot_date").notNull(),
   observedAt: timestamp("observed_at", { withTimezone: true }).notNull(),
