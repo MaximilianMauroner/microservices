@@ -139,9 +139,8 @@ export type StoredUploadSummary = {
   project?: string;
 };
 
-export interface UploadStorage {
-  directUploads?: DirectUploads;
-  uploadOrigins?: readonly string[];
+/** Holds artifact bodies. Callers decide which object key to read or change. */
+export interface UploadBodyStorage {
   putHtml(
     id: string,
     filePath: string,
@@ -166,6 +165,18 @@ export interface UploadStorage {
     delivery?: FileDelivery,
     options?: StorageOperationOptions
   ): Promise<string | null>;
+  updateFileExpiry(
+    id: string,
+    expiresAt: Date | null,
+    options?: StorageOperationOptions
+  ): Promise<boolean>;
+  deleteUpload(id: string, options?: StorageOperationOptions): Promise<void>;
+  close?(): void;
+}
+
+/** Reads and changes only the artifacts of one person. */
+export interface OwnedUploadStorage
+  extends Pick<UploadBodyStorage, "putHtml" | "getHtml" | "putTemporaryFile" | "updateFileExpiry" | "deleteUpload"> {
   listUploads(
     asOf: Date,
     options: ListUploadsOptions
@@ -175,12 +186,13 @@ export interface UploadStorage {
     project: string,
     options?: StorageOperationOptions
   ): Promise<boolean>;
-  updateFileExpiry(
-    id: string,
-    expiresAt: Date | null,
-    options?: StorageOperationOptions
-  ): Promise<boolean>;
-  deleteUpload(id: string, options?: StorageOperationOptions): Promise<void>;
+}
+
+/** Capability reads and retention cleanup see every artifact. Everything else goes through `owner`. */
+export interface UploadStorage extends Pick<UploadBodyStorage, "getHtml" | "getTemporaryFile" | "presignTemporaryFile"> {
+  directUploads?: DirectUploads;
+  uploadOrigins?: readonly string[];
+  owner(subject: string): OwnedUploadStorage;
   deleteExpiredTemporaryFiles(
     expiresAtOrBefore: Date,
     options?: StorageOperationOptions
@@ -220,10 +232,6 @@ export class FileUpdateConflictError extends Error {
     this.name = "FileUpdateConflictError";
   }
 }
-
-export type UploadBodyStorage = Omit<UploadStorage,
-  "directUploads" | "uploadOrigins" | "listUploads" | "updateHtmlProject" | "deleteExpiredTemporaryFiles"
->;
 
 export function createS3BodyStorage(config: S3UploadStorageConfig): UploadBodyStorage {
   const client = new S3Client({

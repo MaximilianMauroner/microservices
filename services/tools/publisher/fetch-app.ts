@@ -7,6 +7,7 @@ import { pipeline } from "node:stream/promises";
 import { Readable, Transform, type TransformCallback } from "node:stream";
 import { ZipWriter } from "@zip.js/zip.js";
 import busboy from "busboy";
+import { getAttachedPlatformPrincipal } from "#security";
 import { ActivityTracker } from "./activity-tracker.js";
 import { renderDropUploadPage } from "./drop-upload-page.js";
 import { handleDirectUpload } from "./direct-upload-request.js";
@@ -38,6 +39,7 @@ import {
   HtmlUpdateConflictError,
   UploadLinkInactiveError,
   type ListUploadsOptions,
+  type OwnedUploadStorage,
   type UploadExpiryFilter,
   type UploadListCursor,
   type UploadListSort,
@@ -90,6 +92,8 @@ export type FetchArtifactAppOptions = {
   activityTracker?: ActivityTracker;
   storage: UploadStorage;
   uploadToken: string;
+  /** Uploads made with the native upload token belong to this Google subject. */
+  adminSubject: string;
   externalUpload?: boolean;
   browserPersistentUpload?: boolean;
   uploadLinks?: UploadLinkRepository;
@@ -139,6 +143,7 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
   const uploadGate = createUploadGate(maxConcurrentUploads);
   const directRequestGate = createUploadGate(16);
   const uploadToken = requireUploadToken(options.uploadToken);
+  const nativeStorage = options.storage.owner(options.adminSubject);
 
   return async function artifactFetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
@@ -154,13 +159,14 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
           ? options.uploadLinks?.find(directDrop[1]!)
           : options.uploadLinks?.findActive(directDrop[1]!, getNow(options))) : undefined;
         if (directDrop && !link) return dropLinkUnavailable();
+        const subject = link ? link.ownerSubject : audience === "native" ? options.adminSubject : signedInSubject(request);
         const uploads = options.storage.directUploads;
         if (!uploads) throw new DirectUploadError(503, "direct_upload_unavailable", "Direct uploads are not available.");
         const release = directRequestGate.tryAcquire();
         if (!release) throw new DirectUploadError(503, "upload_capacity_reached", "Too many upload requests are pending. Retry shortly.");
         try {
           return await activityTracker.track(handleDirectUpload(request, directDrop?.[2] ?? direct?.[2] ?? "",
-            uploads, { audience, ...(link ? { uploadLinkId: link.id } : {}) }, {
+            uploads, { audience, subject, ...(link ? { uploadLinkId: link.id } : {}) }, {
               maxBytes: maxUploadBytes, maxHtmlBytes: maxHtmlUploadBytes, maxConcurrent: maxConcurrentUploads,
               retentionMs: temporaryFileRetentionMs, baseUrl: getPublicBaseUrl(request, options.publicBaseUrl),
               allowHtml: audience === "native" || (audience === "browser" && Boolean(options.browserPersistentUpload)),
@@ -186,7 +192,7 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
       if (request.method === "GET" && url.pathname === "/api/upload-links") {
         requireUploadLinks(options);
         const before = parseUploadLinkCursor(singleQuery(url.searchParams, "cursor"));
-        const batch = await options.uploadLinks!.list({
+        const batch = await options.uploadLinks!.owner(signedInSubject(request)).list({
           limit: UPLOAD_LINK_PAGE_SIZE + 1,
           ...(before ? { before } : {})
         });
@@ -210,7 +216,7 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
         if (!UUID_PATTERN.test(uploadLinkDownload)) {
           throw new ArtifactRequestError(400, "invalid_upload_link_id", "Upload link ID is invalid.");
         }
-        const files = await options.uploadLinks!.listFiles(uploadLinkDownload, getNow(options));
+        const files = await options.uploadLinks!.owner(signedInSubject(request)).listFiles(uploadLinkDownload, getNow(options));
         if (!files) throw new ArtifactRequestError(404, "upload_link_not_found", "Upload link was not found.");
         return downloadUploadLinkFiles(
           files,
@@ -224,8 +230,9 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
       if (request.method === "POST" && url.pathname === "/api/upload-links") {
         requireSameOrigin(request, url, options.publicBaseUrl);
         requireUploadLinks(options);
+        const mine = options.uploadLinks!.owner(signedInSubject(request));
         const durationMs = await readUploadLinkDuration(request, url);
-        const created = await options.uploadLinks!.create(
+        const created = await mine.create(
           new Date(getNow(options).getTime() + durationMs)
         );
         const baseUrl = getPublicBaseUrl(request, options.publicBaseUrl);
@@ -239,7 +246,7 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
         if (!UUID_PATTERN.test(uploadLinkId)) {
           throw new ArtifactRequestError(400, "invalid_upload_link_id", "Upload link ID is invalid.");
         }
-        const revoked = await options.uploadLinks!.revoke(uploadLinkId, getNow(options));
+        const revoked = await options.uploadLinks!.owner(signedInSubject(request)).revoke(uploadLinkId, getNow(options));
         if (!revoked) {
           throw new ArtifactRequestError(404, "upload_link_not_found", "Upload link was not found.");
         }
@@ -256,6 +263,7 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
           request,
           url,
           options,
+          options.storage.owner(link.ownerSubject),
           {
             kind: "create",
             temporaryOnly: true,
@@ -289,9 +297,10 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
 
       if (request.method === "GET" && url.pathname === "/api/external-uploads") {
         if (!options.externalUpload) return externalUploadUnavailable();
+        const mine = options.storage.owner(signedInSubject(request));
         return tracked(
           activityTracker,
-          () => listExternalUploads(request, url, options),
+          () => listExternalUploads(request, url, options, mine),
           request.signal
         );
       }
@@ -307,11 +316,12 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
             "Upload ID is invalid."
           );
         }
+        const mine = options.storage.owner(signedInSubject(request));
         if (request.method === "PATCH") {
           const update = await readUploadUpdate(request, getNow(options));
           if (update.kind === "expiry") {
             try {
-              const updated = await options.storage.updateFileExpiry(
+              const updated = await mine.updateFileExpiry(
                 externalUploadId,
                 update.expiresAt,
                 { signal: request.signal }
@@ -340,7 +350,7 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
           }
           const { project } = update;
           try {
-            const updated = await options.storage.updateHtmlProject(
+            const updated = await mine.updateHtmlProject(
               externalUploadId,
               project,
               { signal: request.signal }
@@ -364,7 +374,7 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
           }
           return jsonResponse({ id: externalUploadId, project });
         }
-        await options.storage.deleteUpload(externalUploadId, { signal: request.signal });
+        await mine.deleteUpload(externalUploadId, { signal: request.signal });
         return new Response(null, { status: 204 });
       }
 
@@ -375,6 +385,7 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
           request,
           url,
           options,
+          nativeStorage,
           { kind: "create" },
           uploadGate,
           maxUploadBytes,
@@ -403,6 +414,7 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
             request,
             url,
             options,
+            nativeStorage,
             chunkComplete,
             uploadGate,
             maxUploadBytes,
@@ -432,7 +444,7 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
           throw new ArtifactRequestError(400, "invalid_upload_update", "Native uploads can only change file expiry.");
         }
         try {
-          const updated = await options.storage.updateFileExpiry(uploadId, update.expiresAt, { signal: request.signal });
+          const updated = await nativeStorage.updateFileExpiry(uploadId, update.expiresAt, { signal: request.signal });
           if (!updated) {
             throw new ArtifactRequestError(404, "upload_not_found", "The file upload was not found.");
           }
@@ -458,6 +470,7 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
           request,
           url,
           options,
+          nativeStorage,
           { kind: "update", id: uploadId },
           uploadGate,
           maxUploadBytes,
@@ -475,7 +488,7 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
             "Upload ID is invalid."
           );
         }
-        await options.storage.deleteUpload(uploadId, { signal: request.signal });
+        await nativeStorage.deleteUpload(uploadId, { signal: request.signal });
         return new Response(null, { status: 204 });
       }
 
@@ -561,11 +574,12 @@ async function readPageRoute(
 async function listExternalUploads(
   request: Request,
   url: URL,
-  options: FetchArtifactAppOptions
+  options: FetchArtifactAppOptions,
+  storage: OwnedUploadStorage
 ): Promise<Response> {
   const pagination = parseUploadListOptions(url.searchParams);
   const baseUrl = getPublicBaseUrl(request, options.publicBaseUrl);
-  const page = await options.storage.listUploads(getNow(options), {
+  const page = await storage.listUploads(getNow(options), {
     ...pagination,
     signal: request.signal
   });
@@ -603,6 +617,7 @@ async function upload(
   request: Request,
   url: URL,
   options: FetchArtifactAppOptions,
+  storage: OwnedUploadStorage,
   mode: UploadMode,
   gate: ReturnType<typeof createUploadGate>,
   maxUploadBytes: number,
@@ -672,7 +687,7 @@ async function upload(
         let updateEtag: string | undefined;
         let expectedObjectKey: string | undefined;
         if (mode.kind === "update") {
-          const existing = await options.storage.getHtml(id, {
+          const existing = await storage.getHtml(id, {
             headOnly: true,
             signal: request.signal
           });
@@ -694,7 +709,7 @@ async function upload(
         if (uploadType.kind === "html") {
           if (mode.kind === "create") cleanupId = id;
           try {
-            await options.storage.putHtml(
+            await storage.putHtml(
               id,
               staged.filePath,
               {
@@ -717,7 +732,7 @@ async function upload(
           }
           throwIfAborted(request.signal);
           if (mode.kind === "update") {
-            const committed = await options.storage.getHtml(id, { headOnly: true, signal: request.signal });
+            const committed = await storage.getHtml(id, { headOnly: true, signal: request.signal });
             committed?.body.destroy();
             project = committed?.project;
           }
@@ -748,7 +763,7 @@ async function upload(
             "This upload link has expired or was revoked."
           );
         }
-        await options.storage.putTemporaryFile(
+        await storage.putTemporaryFile(
           id,
           staged.filePath,
           {
@@ -779,7 +794,7 @@ async function upload(
       } catch (error) {
         if (cleanupId && !responseSent) {
           try {
-            await options.storage.deleteUpload(cleanupId, { signal: request.signal });
+            await storage.deleteUpload(cleanupId, { signal: request.signal });
           } catch (cleanupError) {
             console.error("failed to clean up an interrupted upload", cleanupError);
           }
@@ -1140,6 +1155,7 @@ async function completeChunkedUpload(
   request: Request,
   url: URL,
   options: FetchArtifactAppOptions,
+  storage: OwnedUploadStorage,
   sessionId: string,
   gate: ReturnType<typeof createUploadGate>,
   maxUploadBytes: number,
@@ -1226,7 +1242,7 @@ async function completeChunkedUpload(
         throwIfAborted(request.signal);
         const expiresAt = new Date(getNow(options).getTime() + temporaryFileRetentionMs);
         cleanupId = id;
-        await options.storage.putTemporaryFile(
+        await storage.putTemporaryFile(
           id,
           assembledPath,
           {
@@ -1256,7 +1272,7 @@ async function completeChunkedUpload(
       } catch (error) {
         if (cleanupId && !responseSent) {
           try {
-            await options.storage.deleteUpload(cleanupId, { signal: request.signal });
+            await storage.deleteUpload(cleanupId, { signal: request.signal });
           } catch (cleanupError) {
             console.error("failed to clean up an interrupted upload", cleanupError);
           }
@@ -1625,6 +1641,12 @@ type UploadClassification =
 function requireUploadToken(value: string) {
   if (!value) throw new Error("UPLOAD_TOKEN must not be empty");
   return value;
+}
+
+function signedInSubject(request: Request) {
+  const principal = getAttachedPlatformPrincipal(request);
+  if (!principal) throw new ArtifactRequestError(401, "authentication_required", "A signed-in browser session is required.");
+  return principal.subject;
 }
 
 function requireBearer(request: Request, expectedToken: string) {

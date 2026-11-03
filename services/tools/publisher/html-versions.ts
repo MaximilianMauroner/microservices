@@ -2,7 +2,7 @@ import type { Sql, TransactionSql } from "postgres";
 import { DirectUploadError } from "./multipart-storage.js";
 
 type ArtifactRow = {
-  id: string; kind: "html" | "file"; filename: string; content_type: string;
+  id: string; owner_subject: string; kind: "html" | "file"; filename: string; content_type: string;
   bytes: string; object_key: string; project: string | null;
   created_at: Date; updated_at: Date; expires_at: Date | null;
   revoked_at: Date | null; upload_link_id: string | null; sha256: string | null;
@@ -13,16 +13,16 @@ export type ArtifactSnapshot = Omit<ArtifactRow, "created_at" | "updated_at" | "
 export type HtmlVersionReceipt = { format: 1; before: ArtifactSnapshot; after: ArtifactSnapshot };
 export type HtmlBody = { objectKey: string; filename: string; bytes: number; sha256: string; project?: string };
 
-export async function lockHtmlVersion(tx: Sql | TransactionSql, id: string) {
+export async function lockHtmlVersion(tx: Sql | TransactionSql, id: string, ownerSubject: string) {
   const [row] = await tx<ArtifactRow[]>`select *, bytes::text from artifacts.objects
-    where id = ${id} and kind = 'html' and revoked_at is null for update`;
+    where id = ${id} and owner_subject = ${ownerSubject} and kind = 'html' and revoked_at is null for update`;
   if (!row) throw new DirectUploadError(404, "upload_not_found", "The HTML upload was not found or was revoked.");
   return row;
 }
 
-export async function commitHtmlVersion(tx: TransactionSql, id: string, expectedObjectKey: string,
+export async function commitHtmlVersion(tx: TransactionSql, id: string, ownerSubject: string, expectedObjectKey: string,
   body: HtmlBody, journalId?: string): Promise<HtmlVersionReceipt> {
-  const before = await lockHtmlVersion(tx, id);
+  const before = await lockHtmlVersion(tx, id, ownerSubject);
   const pending = await tx`select operation_id from artifacts.operations where artifact_id = ${id}
     and (${journalId ?? null}::uuid is null or operation_id <> ${journalId ?? null}::uuid)`;
   if (pending.length) throw new DirectUploadError(409, "upload_busy", "The HTML page has a pending operation. Retry shortly.");

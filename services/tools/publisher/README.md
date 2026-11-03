@@ -19,6 +19,10 @@ capabilities, while management routes use the Tools browser session or native be
 - `/drop/:token` lets a guest upload any number of temporary files without a
   browser session. PostgreSQL stores only the token hash; the secret URL is
   returned once, expires after 5 minutes to 30 days, and can be revoked early.
+- Each artifact and upload link belongs to one person, by Google subject. A
+  signed-in person lists and changes only their own. Uploads with the native
+  upload token belong to the admin. A guest upload belongs to the owner of
+  its link. Capability URLs work for everyone who has them.
 
 ## Configuration
 

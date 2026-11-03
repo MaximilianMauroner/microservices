@@ -1,9 +1,10 @@
 import { HeadObjectCommand, ListObjectsV2Command, S3Client } from "@aws-sdk/client-s3";
 import postgres from "postgres";
 
-/** Idempotently imports legacy S3 object metadata without changing object IDs or keys. */
+/** Idempotently imports legacy S3 object metadata without changing object IDs or keys. Legacy objects belong to the admin. */
 export async function backfillArtifactMetadata(env: NodeJS.ProcessEnv = process.env) {
   const databaseUrl = required(env, "DATABASE_URL");
+  const adminSubject = required(env, "AUTH_ALLOWED_GOOGLE_SUBJECT");
   const bucket = required(env, "ARTIFACT_S3_BUCKET");
   const client = new S3Client({
     endpoint: required(env, "ARTIFACT_S3_ENDPOINT"), region: required(env, "ARTIFACT_S3_REGION"),
@@ -29,8 +30,8 @@ export async function backfillArtifactMetadata(env: NodeJS.ProcessEnv = process.
           const expiresAt = kind === "file" ? parseDate(metadata["expires-at"]) ?? head.Expires : undefined;
           await sql`
             insert into artifacts.objects
-              (id, kind, filename, content_type, bytes, object_key, project, created_at, updated_at, expires_at)
-            values (${id}, ${kind}, ${filename}, ${contentType}, ${head.ContentLength ?? object.Size ?? 0}, ${object.Key},
+              (id, owner_subject, kind, filename, content_type, bytes, object_key, project, created_at, updated_at, expires_at)
+            values (${id}, ${adminSubject}, ${kind}, ${filename}, ${contentType}, ${head.ContentLength ?? object.Size ?? 0}, ${object.Key},
               ${decode(metadata["project-base64"]) ?? null}, ${updatedAt}, ${updatedAt}, ${expiresAt ?? null})
             on conflict (id) do nothing
           `;

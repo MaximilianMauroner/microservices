@@ -102,6 +102,7 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
       activityTracker,
       storage: artifactStorage,
       uploadToken: config.artifact.uploadToken,
+      adminSubject: config.auth.allowedGoogleSubject,
       externalUpload: true,
       browserPersistentUpload: true,
       uploadLinks,
@@ -150,7 +151,7 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
         handle: artifact,
         readiness: async () => {
           await Promise.all([
-            artifactStorage.listUploads(new Date(), { limit: 1 }),
+            artifactStorage.owner(config.auth.allowedGoogleSubject).listUploads(new Date(), { limit: 1 }),
             uploadLinks.readiness?.()
           ]);
         },

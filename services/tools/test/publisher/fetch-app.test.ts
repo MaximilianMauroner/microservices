@@ -6,9 +6,10 @@ import { Readable } from "node:stream";
 import { describe, expect, it, vi } from "vitest";
 import { strFromU8, unzipSync } from "fflate";
 import { ActivityTracker } from "../../publisher/activity-tracker.js";
+import { attachPlatformPrincipal, type PlatformPrincipal } from "#security";
 import { createFetchApp } from "../../publisher/fetch-app.js";
 import type { DirectUploads } from "../../publisher/direct-uploads.js";
-import type { CreatedUploadLink, UploadLink, UploadLinkListOptions, UploadLinkRepository } from "../../publisher/upload-links.js";
+import type { CreatedUploadLink, OwnedUploadLinks, UploadLink, UploadLinkListOptions, UploadLinkRepository } from "../../publisher/upload-links.js";
 import type {
   GetStoredObjectOptions,
   GetTemporaryFileOptions,
@@ -23,8 +24,15 @@ import type {
   UploadStorage
 } from "../../publisher/storage.js";
 
+const admin: PlatformPrincipal = { role: "admin", subject: "admin-subject", email: "admin@example.test" };
+
+function signedIn(input: string, init?: RequestInit, principal = admin) {
+  return attachPlatformPrincipal(new Request(input, init), principal);
+}
+
 class MemoryUploadStorage implements UploadStorage {
   directUploads?: DirectUploads;
+  readonly owners: string[] = [];
   readonly pages = new Map<string, { body: Buffer; metadata: PutHtmlMetadata }>();
   readonly files = new Map<string, { body: Buffer; metadata: Omit<PutTemporaryFileMetadata, "expiresAt"> & { expiresAt?: Date } }>();
 
@@ -65,6 +73,11 @@ class MemoryUploadStorage implements UploadStorage {
     };
   }
 
+  owner(subject: string) {
+    this.owners.push(subject);
+    return this;
+  }
+
   async listUploads(_asOf: Date, _options: ListUploadsOptions): Promise<StoredUploadPage> {
     return { uploads: [] };
   }
@@ -93,15 +106,21 @@ class MemoryUploadStorage implements UploadStorage {
   }
 }
 
-class MemoryUploadLinkRepository implements UploadLinkRepository {
+class MemoryUploadLinkRepository implements UploadLinkRepository, OwnedUploadLinks {
+  readonly owners: string[] = [];
+  ownerSubject = "admin-subject";
   readonly token = "u".repeat(43);
   readonly id = "123e4567-e89b-42d3-a456-426614174001";
   link: UploadLink | undefined;
   files: { id: string; filename: string; bytes: number }[] = [];
 
   async create(expiresAt: Date): Promise<CreatedUploadLink> {
-    this.link = { id: this.id, createdAt: new Date("2026-09-15T12:00:00.000Z"), expiresAt, fileCount: this.files.length };
+    this.link = { id: this.id, ownerSubject: this.ownerSubject, createdAt: new Date("2026-09-15T12:00:00.000Z"), expiresAt, fileCount: this.files.length };
     return { ...this.link, token: this.token };
+  }
+  owner(subject: string) {
+    this.owners.push(subject);
+    return this;
   }
   async list(_options: UploadLinkListOptions) { return this.link ? [this.link] : []; }
   async find(token: string) { return token === this.token ? this.link ?? null : null; }
@@ -135,16 +154,16 @@ describe("native artifact fetch handler", () => {
     storage.directUploads = { status, create: vi.fn<DirectUploads["create"]>(), sign: vi.fn<DirectUploads["sign"]>(),
       complete: vi.fn<DirectUploads["complete"]>(), abort: vi.fn<DirectUploads["abort"]>(),
       cleanup: vi.fn<DirectUploads["cleanup"]>(), close: vi.fn<DirectUploads["close"]>() };
-    const app = createFetchApp({ storage, uploadLinks, uploadToken: "upload-token", externalUpload: true,
+    const app = createFetchApp({ storage, uploadLinks, uploadToken: "upload-token", adminSubject: "admin-subject", externalUpload: true,
       publicBaseUrl: "https://tools.example.test", now: () => now });
     const base = audience === "browser" ? "/api/external-uploads/sessions" : `/api/drop/${uploadLinks.token}/uploads/sessions`;
     const url = "https://tools.example.test" + base + "/" + sessionId;
-    const response = await app(new Request(url));
+    const response = await app(signedIn(url));
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ sessionId, uploaded: [1] });
     expect(response.headers.get("cache-control")).toBe("private, no-store");
-    expect(status).toHaveBeenCalledWith(sessionId, { audience, ...(audience === "drop" ? { uploadLinkId: uploadLinks.id } : {}) }, expect.any(AbortSignal));
-    expect((await app(new Request(url, { headers: { Origin: "https://other.example.test" } }))).status).toBe(403);
+    expect(status).toHaveBeenCalledWith(sessionId, { audience, subject: "admin-subject", ...(audience === "drop" ? { uploadLinkId: uploadLinks.id } : {}) }, expect.any(AbortSignal));
+    expect((await app(signedIn(url, { headers: { Origin: "https://other.example.test" } }))).status).toBe(403);
     expect(status).toHaveBeenCalledTimes(1);
     for (const [method, path] of [["POST", base], ["POST", base + "/" + sessionId + "/parts"], ["POST", base + "/" + sessionId + "/complete"], ["DELETE", base + "/" + sessionId]]) {
       const denied = await app(new Request("https://tools.example.test" + path, { method }));
@@ -153,10 +172,39 @@ describe("native artifact fetch handler", () => {
     }
     if (audience === "drop") {
       await uploadLinks.revoke(uploadLinks.id, now);
-      expect((await app(new Request(url))).status).toBe(404);
+      expect((await app(signedIn(url))).status).toBe(404);
       expect(status).toHaveBeenCalledTimes(1);
     }
     expect((await app(new Request("https://tools.example.test/api/uploads/sessions/" + sessionId))).status).toBe(401);
+  });
+
+  it("gives browser routes the signed-in person and guest uploads the owner of the link", async () => {
+    const storage = new MemoryUploadStorage();
+    const uploadLinks = new MemoryUploadLinkRepository();
+    uploadLinks.ownerSubject = "friend-subject";
+    const friend: PlatformPrincipal = { role: "member", subject: "friend-subject", email: "friend@example.test", products: ["publisher"] };
+    const app = createFetchApp({ storage, uploadLinks, externalUpload: true, uploadToken: "upload-token", adminSubject: "admin-subject",
+      publicBaseUrl: "https://tools.example.test" });
+    const origin = { Origin: "https://tools.example.test" };
+    for (const [method, path] of [["GET", "/api/external-uploads"], ["GET", "/api/upload-links"], ["POST", "/api/upload-links"],
+      ["DELETE", `/api/external-uploads/${"a".repeat(32)}`], ["POST", "/api/external-uploads/sessions"]] as const) {
+      const response = await app(new Request(`https://tools.example.test${path}`, { method, headers: origin }));
+      expect(response.status, `${method} ${path}`).toBe(401);
+      expect(await response.json()).toMatchObject({ error: "authentication_required" });
+    }
+
+    storage.owners.splice(0);
+    expect((await app(signedIn("https://tools.example.test/api/external-uploads", {}, friend))).status).toBe(200);
+    expect((await app(signedIn("https://tools.example.test/api/upload-links?durationMs=86400000",
+      { method: "POST", headers: origin }, friend))).status).toBe(201);
+    expect(storage.owners).toEqual(["friend-subject"]);
+    expect(uploadLinks.owners).toEqual(["friend-subject"]);
+
+    storage.owners.splice(0);
+    const guest = await app(new Request(`https://tools.example.test/api/drop/${uploadLinks.token}/uploads`,
+      { method: "POST", headers: origin, body: multipart("from-guest.txt", "hello", "text/plain") }));
+    expect(guest.status).toBe(201);
+    expect(storage.owners).toEqual(["friend-subject"]);
   });
 
   it("filters metadata before paging and binds size cursors to every criterion", async () => {
@@ -177,9 +225,9 @@ describe("native artifact fetch handler", () => {
       { ...rows[0]!, id: "i".repeat(32), key: `transfers/${"i".repeat(32)}`, bytes: 100, kind: "html" as const, contentType: "text/html" }
     ];
     storage.listUploads = vi.fn(async (asOf, options) => pageArtifactMetadata([...rows, ...excluded].reverse(), asOf, options));
-    const app = createFetchApp({ storage, externalUpload: true, uploadToken: "upload-token", now: () => now });
+    const app = createFetchApp({ storage, externalUpload: true, uploadToken: "upload-token", adminSubject: "admin-subject", now: () => now });
     const criteria = new URLSearchParams({ limit: "1", q: " REPORT ", kind: "file", project: "named", projectName: "work", category: "pdf", expiry: "24h", sort: "size" });
-    const list = async (params: URLSearchParams) => app(new Request(`https://tools.example.test/api/external-uploads?${params}`));
+    const list = async (params: URLSearchParams) => app(signedIn(`https://tools.example.test/api/external-uploads?${params}`));
     const firstResponse = await list(criteria);
     expect(firstResponse.status).toBe(200);
     const first = await firstResponse.json() as { uploads: Array<{ id: string; category: string; bytes: number }>; nextCursor: string };
@@ -224,8 +272,8 @@ describe("native artifact fetch handler", () => {
   it.each(["category=unknown", "sort=unknown", "category=pdf&category=html", "project=named", "project=all&projectName=work", "project=unknown"])("rejects invalid list criteria %s", async (query) => {
     const storage = new MemoryUploadStorage();
     storage.listUploads = vi.fn();
-    const app = createFetchApp({ storage, externalUpload: true, uploadToken: "upload-token" });
-    expect((await app(new Request(`https://tools.example.test/api/external-uploads?${query}`))).status).toBe(400);
+    const app = createFetchApp({ storage, externalUpload: true, uploadToken: "upload-token", adminSubject: "admin-subject" });
+    expect((await app(signedIn(`https://tools.example.test/api/external-uploads?${query}`))).status).toBe(400);
     expect(storage.listUploads).not.toHaveBeenCalled();
   });
 
@@ -247,11 +295,11 @@ describe("native artifact fetch handler", () => {
     const app = createFetchApp({
       storage,
       externalUpload: true,
-      uploadToken: "upload-token",
+      uploadToken: "upload-token", adminSubject: "admin-subject",
       publicBaseUrl: "https://tools.example.test"
     });
 
-    const response = await app(new Request("https://tools.example.test/api/external-uploads?limit=100&includeSummary=true"));
+    const response = await app(signedIn("https://tools.example.test/api/external-uploads?limit=100&includeSummary=true"));
 
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ summary: { total: 142, permanent: 92, activeBytes: 8192 } });
@@ -267,7 +315,7 @@ describe("native artifact fetch handler", () => {
     });
     const app = createFetchApp({
       storage,
-      uploadToken: "upload-token",
+      uploadToken: "upload-token", adminSubject: "admin-subject",
       publicBaseUrl: "https://tools.example.test"
     });
 
@@ -301,7 +349,7 @@ describe("native artifact fetch handler", () => {
         sha256: "d".repeat(64)
       }
     });
-    const app = createFetchApp({ storage, uploadToken: "upload-token", now: () => now });
+    const app = createFetchApp({ storage, uploadToken: "upload-token", adminSubject: "admin-subject", now: () => now });
     const videoUrl = `https://tools.example.test/files/${videoId}/lecture.mp4`;
 
     const video = await app(new Request(videoUrl));
@@ -334,7 +382,7 @@ describe("native artifact fetch handler", () => {
       body: Buffer.from("lecture"),
       metadata: { originalName: "lecture.mp4", contentType: "video/mp4", bytes: 7, sha256: "b".repeat(64) }
     });
-    const app = createFetchApp({ storage, uploadToken: "upload-token" });
+    const app = createFetchApp({ storage, uploadToken: "upload-token", adminSubject: "admin-subject" });
 
     const url = `https://tools.example.test/files/${id}/lecture.mp4`;
     const response = await app(new Request(url, {
@@ -359,7 +407,7 @@ describe("native artifact fetch handler", () => {
       body: Buffer.from("lecture"),
       metadata: { originalName: "lecture.mp4", contentType: "video/mp4", bytes: 7, sha256: "b".repeat(64) }
     });
-    const app = createFetchApp({ storage, uploadToken: "upload-token" });
+    const app = createFetchApp({ storage, uploadToken: "upload-token", adminSubject: "admin-subject" });
     const url = `https://tools.example.test/${prefix}/${id}/lecture.mp4`;
     const etag = `"sha256-${"b".repeat(64)}"`;
     const head = await app(new Request(url, { method: "HEAD" }));
@@ -394,7 +442,7 @@ describe("native artifact fetch handler", () => {
         sha256: "b".repeat(64), expiresAt: now
       }
     });
-    const app = createFetchApp({ storage, uploadToken: "upload-token", now: () => now });
+    const app = createFetchApp({ storage, uploadToken: "upload-token", adminSubject: "admin-subject", now: () => now });
 
     const response = await app(new Request(`https://tools.example.test/files/${id}/lecture.mp4`));
 
@@ -410,7 +458,7 @@ describe("native artifact fetch handler", () => {
     const id = "a".repeat(32);
     storage.files.set(id, { body: Buffer.from("lecture"),
       metadata: { originalName: "lecture.mp4", contentType: "video/mp4", bytes: 7, sha256: "b".repeat(64) } });
-    const app = createFetchApp({ storage, uploadToken: "upload-token" });
+    const app = createFetchApp({ storage, uploadToken: "upload-token", adminSubject: "admin-subject" });
     let origin = "";
     const server = createServer(async (incoming, outgoing) => {
       try {
@@ -462,7 +510,7 @@ describe("native artifact fetch handler", () => {
       body: bytes, metadata: { ...metadata, bytes: threshold - 1 }
     });
     storage.files.set(expiredId, { body: bytes, metadata: { ...metadata, expiresAt: new Date(now.getTime()) } });
-    const app = createFetchApp({ storage, uploadToken: "upload-token", now: () => now });
+    const app = createFetchApp({ storage, uploadToken: "upload-token", adminSubject: "admin-subject", now: () => now });
     const url = `https://tools.example.test/files/${largeId}/release.apk`;
 
     const redirected = await app(new Request(url));
@@ -504,7 +552,7 @@ describe("native artifact fetch handler", () => {
       body: Buffer.alloc(8 * 1024 * 1024),
       metadata: { originalName: "report.pdf", contentType: "application/pdf", bytes: 8 * 1024 * 1024, sha256: "b".repeat(64) }
     });
-    const app = createFetchApp({ storage, uploadToken: "upload-token" });
+    const app = createFetchApp({ storage, uploadToken: "upload-token", adminSubject: "admin-subject" });
     const url = `https://tools.example.test/files/${id}/report.pdf`;
 
     for (const expectedCall of [1, 2]) {
@@ -525,13 +573,13 @@ describe("native artifact fetch handler", () => {
       storage,
       uploadLinks,
       externalUpload: true,
-      uploadToken: "upload-token",
+      uploadToken: "upload-token", adminSubject: "admin-subject",
       publicBaseUrl: "https://tools.example.test",
       publisherFaviconUrl: "/assets/publisher-build-hash.png",
       now: () => now
     });
 
-    const createResponse = await app(new Request("https://tools.example.test/api/upload-links", {
+    const createResponse = await app(signedIn("https://tools.example.test/api/upload-links", {
       method: "POST",
       headers: { Origin: "https://tools.example.test", "Content-Type": "application/json" },
       body: JSON.stringify({ durationMs: 86_400_000 })
@@ -542,7 +590,7 @@ describe("native artifact fetch handler", () => {
       url: `https://tools.example.test/drop/${uploadLinks.token}`,
       expiresAt: "2026-09-16T12:00:00.000Z"
     });
-    const listResponse = await app(new Request("https://tools.example.test/api/upload-links"));
+    const listResponse = await app(signedIn("https://tools.example.test/api/upload-links"));
     expect(listResponse.status).toBe(200);
     expect(listResponse.headers.get("cache-control")).toBe("private, no-store");
 
@@ -574,7 +622,7 @@ describe("native artifact fetch handler", () => {
     uploadLinks.files = [{ id: uploaded.id, filename: uploaded.filename, bytes: uploaded.bytes }];
     expect(storage.files.size).toBe(1);
 
-    const downloadResponse = await app(new Request(`https://tools.example.test/api/upload-links/${uploadLinks.id}/download`));
+    const downloadResponse = await app(signedIn(`https://tools.example.test/api/upload-links/${uploadLinks.id}/download`));
     expect(downloadResponse.status).toBe(200);
     expect(downloadResponse.headers.get("content-type")).toBe("application/zip");
     const archiveBytes = new Uint8Array(await downloadResponse.arrayBuffer());
@@ -582,13 +630,13 @@ describe("native artifact fetch handler", () => {
     const archive = unzipSync(archiveBytes);
     expect(strFromU8(archive["from-guest.txt"]!)).toBe("hello");
 
-    const revokeResponse = await app(new Request(`https://tools.example.test/api/upload-links/${uploadLinks.id}`, {
+    const revokeResponse = await app(signedIn(`https://tools.example.test/api/upload-links/${uploadLinks.id}`, {
       method: "DELETE",
       headers: { Origin: "https://tools.example.test" }
     }));
     expect(revokeResponse.status).toBe(204);
     expect((await app(new Request(`https://tools.example.test/drop/${uploadLinks.token}`))).status).toBe(404);
-    const downloadAfterRevoke = await app(new Request(`https://tools.example.test/api/upload-links/${uploadLinks.id}/download`));
+    const downloadAfterRevoke = await app(signedIn(`https://tools.example.test/api/upload-links/${uploadLinks.id}/download`));
     expect(downloadAfterRevoke.status).toBe(200);
     expect(strFromU8(unzipSync(new Uint8Array(await downloadAfterRevoke.arrayBuffer()))["from-guest.txt"]!)).toBe("hello");
     const unavailable = await app(new Request(`https://tools.example.test/api/drop/${uploadLinks.token}/uploads`, {
@@ -614,14 +662,14 @@ describe("native artifact fetch handler", () => {
     const app = createFetchApp({
       storage: new MemoryUploadStorage(),
       uploadLinks,
-      uploadToken: "upload-token",
+      uploadToken: "upload-token", adminSubject: "admin-subject",
       publicBaseUrl: "https://tools.example.test"
     });
     const controller = new AbortController();
     controller.abort(new DOMException("Adapter request was already closed.", "AbortError"));
 
     try {
-      const response = await app(new Request("https://tools.example.test/api/upload-links", {
+      const response = await app(signedIn("https://tools.example.test/api/upload-links", {
         method: "POST",
         headers: { Origin: "https://tools.example.test", "Content-Type": "application/json" },
         body: JSON.stringify({ durationMs: 86_400_000 }),
@@ -644,13 +692,13 @@ describe("native artifact fetch handler", () => {
     const app = createFetchApp({
       storage: new MemoryUploadStorage(),
       uploadLinks,
-      uploadToken: "upload-token",
+      uploadToken: "upload-token", adminSubject: "admin-subject",
       publicBaseUrl: "https://tools.example.test"
     });
     const controller = new AbortController();
     controller.abort(new DOMException("Adapter request was already closed.", "AbortError"));
 
-    const response = await app(new Request("https://tools.example.test/api/upload-links", {
+    const response = await app(signedIn("https://tools.example.test/api/upload-links", {
       method: "POST",
       headers: { Origin: "https://tools.example.test", "Content-Type": "application/json" },
       body: JSON.stringify({ durationMs: 86_400_000 }),
@@ -667,11 +715,11 @@ describe("native artifact fetch handler", () => {
     const app = createFetchApp({
       storage: new MemoryUploadStorage(),
       uploadLinks,
-      uploadToken: "upload-token",
+      uploadToken: "upload-token", adminSubject: "admin-subject",
       publicBaseUrl: "https://tools.example.test"
     });
     const controller = new AbortController();
-    const request = new Request("https://tools.example.test/api/upload-links?durationMs=86400000", {
+    const request = signedIn("https://tools.example.test/api/upload-links?durationMs=86400000", {
       method: "POST",
       headers: { Origin: "https://tools.example.test" },
       signal: controller.signal
@@ -692,12 +740,12 @@ describe("native artifact fetch handler", () => {
     const app = createFetchApp({
       storage: new MemoryUploadStorage(),
       uploadLinks: new MemoryUploadLinkRepository(),
-      uploadToken: "upload-token",
+      uploadToken: "upload-token", adminSubject: "admin-subject",
       publicBaseUrl: "https://tools.example.test"
     });
 
     for (const query of ["durationMs=86400000&durationMs=86400000", "durationMs=1e6"]) {
-      const response = await app(new Request(`https://tools.example.test/api/upload-links?${query}`, {
+      const response = await app(signedIn(`https://tools.example.test/api/upload-links?${query}`, {
         method: "POST",
         headers: { Origin: "https://tools.example.test" }
       }));
@@ -710,6 +758,7 @@ describe("native artifact fetch handler", () => {
     class PagedUploadLinks extends MemoryUploadLinkRepository {
       readonly links = Array.from({ length: 25 }, (_, index): UploadLink => ({
         id: `123e4567-e89b-42d3-a456-${String(index + 1).padStart(12, "0")}`,
+        ownerSubject: "admin-subject",
         createdAt: new Date(Date.UTC(2026, 8, 15, 12, 0, 25 - index)),
         expiresAt: new Date("2026-09-16T12:00:00.000Z"),
         fileCount: index
@@ -725,21 +774,21 @@ describe("native artifact fetch handler", () => {
     const app = createFetchApp({
       storage: new MemoryUploadStorage(),
       uploadLinks: new PagedUploadLinks(),
-      uploadToken: "upload-token"
+      uploadToken: "upload-token", adminSubject: "admin-subject"
     });
 
-    const first = await app(new Request("https://tools.example.test/api/upload-links"));
+    const first = await app(signedIn("https://tools.example.test/api/upload-links"));
     const firstPage = await first.json() as { links: UploadLink[]; nextCursor: string };
     expect(firstPage.links).toHaveLength(20);
     expect(firstPage.nextCursor).toBeTypeOf("string");
 
-    const second = await app(new Request(`https://tools.example.test/api/upload-links?cursor=${encodeURIComponent(firstPage.nextCursor)}`));
+    const second = await app(signedIn(`https://tools.example.test/api/upload-links?cursor=${encodeURIComponent(firstPage.nextCursor)}`));
     const secondPage = await second.json() as { links: UploadLink[]; nextCursor?: string };
     expect(secondPage.links).toHaveLength(5);
     expect(secondPage.nextCursor).toBeUndefined();
     expect(new Set([...firstPage.links, ...secondPage.links].map((link) => link.id)).size).toBe(25);
 
-    const invalid = await app(new Request("https://tools.example.test/api/upload-links?cursor=invalid"));
+    const invalid = await app(signedIn("https://tools.example.test/api/upload-links?cursor=invalid"));
     expect(invalid.status).toBe(400);
     expect(await invalid.json()).toMatchObject({ error: "invalid_pagination" });
   });
@@ -747,10 +796,11 @@ describe("native artifact fetch handler", () => {
   it("bounds upload-link history queries with a keyset limit", async () => {
     const source = await readFile(new URL("../../publisher/upload-links.ts", import.meta.url), "utf8");
     const schema = await readFile(new URL("../../database/postgres-schema.ts", import.meta.url), "utf8");
-    expect(source).toContain("where (l.created_at, l.id) <");
+    expect(source).toContain("where l.owner_subject = ${ownerSubject}");
+    expect(source).toContain("and (l.created_at, l.id) <");
     expect(source).toContain("order by created_at desc, id desc");
     expect(source).toContain("limit ${options.limit}");
-    expect(schema).toContain('index("upload_links_history_idx").on(table.createdAt.desc(), table.id.desc())');
+    expect(schema).toContain('index("upload_links_owner_history_idx").on(table.ownerSubject, table.createdAt.desc(), table.id.desc())');
   });
 
   it("revalidates a guest capability after staging and before storing", async () => {
@@ -767,7 +817,7 @@ describe("native artifact fetch handler", () => {
     const app = createFetchApp({
       storage,
       uploadLinks,
-      uploadToken: "upload-token",
+      uploadToken: "upload-token", adminSubject: "admin-subject",
       publicBaseUrl: "https://tools.example.test",
       now: () => new Date("2026-09-15T12:00:00.000Z")
     });
@@ -799,10 +849,10 @@ describe("native artifact fetch handler", () => {
       { id: "a".repeat(32), filename: "first.txt", bytes: 5 },
       { id: "b".repeat(32), filename: "second.txt", bytes: 6 }
     ];
-    const app = createFetchApp({ storage, uploadLinks, uploadToken: "upload-token" });
+    const app = createFetchApp({ storage, uploadLinks, uploadToken: "upload-token", adminSubject: "admin-subject" });
     const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
     try {
-      const response = await app(new Request(`https://tools.example.test/api/upload-links/${uploadLinks.id}/download`));
+      const response = await app(signedIn(`https://tools.example.test/api/upload-links/${uploadLinks.id}/download`));
       await expect(response.arrayBuffer()).rejects.toThrow("storage unavailable");
     } finally {
       errorLog.mockRestore();
@@ -814,10 +864,10 @@ describe("native artifact fetch handler", () => {
     const uploadLinks = new MemoryUploadLinkRepository();
     await uploadLinks.create(new Date("2026-09-16T12:00:00.000Z"));
     uploadLinks.files = [{ id: "a".repeat(32), filename: "missing.txt", bytes: 5 }];
-    const app = createFetchApp({ storage, uploadLinks, uploadToken: "upload-token" });
+    const app = createFetchApp({ storage, uploadLinks, uploadToken: "upload-token", adminSubject: "admin-subject" });
     const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
     try {
-      const response = await app(new Request(`https://tools.example.test/api/upload-links/${uploadLinks.id}/download`));
+      const response = await app(signedIn(`https://tools.example.test/api/upload-links/${uploadLinks.id}/download`));
       await expect(response.arrayBuffer()).rejects.toThrow("disappeared during archive creation");
     } finally {
       errorLog.mockRestore();
@@ -839,7 +889,7 @@ describe("native artifact fetch handler", () => {
     const app = createFetchApp({
       storage,
       uploadLinks,
-      uploadToken: "upload-token",
+      uploadToken: "upload-token", adminSubject: "admin-subject",
       publicBaseUrl: "https://tools.example.test",
       maxConcurrentUploads: 1,
       guestUploadBodyTimeoutMs: 20,
@@ -877,9 +927,9 @@ describe("native artifact fetch handler", () => {
       { id: "a".repeat(32), filename: "Report.pdf", bytes: 5 },
       { id: "b".repeat(32), filename: "report.pdf", bytes: 6 }
     ];
-    const app = createFetchApp({ storage, uploadLinks, uploadToken: "upload-token" });
+    const app = createFetchApp({ storage, uploadLinks, uploadToken: "upload-token", adminSubject: "admin-subject" });
 
-    const response = await app(new Request(`https://tools.example.test/api/upload-links/${uploadLinks.id}/download`));
+    const response = await app(signedIn(`https://tools.example.test/api/upload-links/${uploadLinks.id}/download`));
     const archive = unzipSync(new Uint8Array(await response.arrayBuffer()));
 
     expect(Object.keys(archive)).toEqual(["Report.pdf", "report (2).pdf"]);
@@ -906,9 +956,9 @@ describe("native artifact fetch handler", () => {
       });
       return { id, filename, bytes: Buffer.byteLength(filename) };
     });
-    const app = createFetchApp({ storage, uploadLinks, uploadToken: "upload-token" });
+    const app = createFetchApp({ storage, uploadLinks, uploadToken: "upload-token", adminSubject: "admin-subject" });
 
-    const response = await app(new Request(`https://tools.example.test/api/upload-links/${uploadLinks.id}/download`));
+    const response = await app(signedIn(`https://tools.example.test/api/upload-links/${uploadLinks.id}/download`));
     const archive = unzipSync(new Uint8Array(await response.arrayBuffer()));
 
     expect(Object.keys(archive)).toEqual(["_ON.txt", "_ux", "_PT¹.csv", "report_.pdf", "trailing__"]);
@@ -934,9 +984,9 @@ describe("native artifact fetch handler", () => {
       { id: "a".repeat(32), filename, bytes: 1 },
       { id: "b".repeat(32), filename, bytes: 1 }
     ];
-    const app = createFetchApp({ storage, uploadLinks, uploadToken: "upload-token" });
+    const app = createFetchApp({ storage, uploadLinks, uploadToken: "upload-token", adminSubject: "admin-subject" });
 
-    const response = await app(new Request(`https://tools.example.test/api/upload-links/${uploadLinks.id}/download`));
+    const response = await app(signedIn(`https://tools.example.test/api/upload-links/${uploadLinks.id}/download`));
     const names = Object.keys(unzipSync(new Uint8Array(await response.arrayBuffer())));
 
     expect(names).toEqual([filename, `${"a".repeat(232)} (2).txt`]);
@@ -961,9 +1011,9 @@ describe("native artifact fetch handler", () => {
       metadata: { bytes: 5, originalName: "first.txt", sha256: "a".repeat(64), contentType: "text/plain", expiresAt: new Date("2026-09-16T12:00:00.000Z") }
     });
     uploadLinks.files = [{ id: "a".repeat(32), filename: "first.txt", bytes: 5 }];
-    const app = createFetchApp({ storage, uploadLinks, uploadToken: "upload-token", activityTracker });
+    const app = createFetchApp({ storage, uploadLinks, uploadToken: "upload-token", adminSubject: "admin-subject", activityTracker });
 
-    const response = await app(new Request(`https://tools.example.test/api/upload-links/${uploadLinks.id}/download`));
+    const response = await app(signedIn(`https://tools.example.test/api/upload-links/${uploadLinks.id}/download`));
     const consumed = response.arrayBuffer();
     let idle = false;
     const waiting = activityTracker.waitForIdle().then(() => { idle = true; });
@@ -980,10 +1030,10 @@ describe("native artifact fetch handler", () => {
     const app = createFetchApp({
       storage: new MemoryUploadStorage(),
       uploadLinks: new MemoryUploadLinkRepository(),
-      uploadToken: "upload-token",
+      uploadToken: "upload-token", adminSubject: "admin-subject",
       publicBaseUrl: "https://tools.example.test"
     });
-    const invalid = await app(new Request("https://tools.example.test/api/upload-links", {
+    const invalid = await app(signedIn("https://tools.example.test/api/upload-links", {
       method: "POST",
       headers: { Origin: "https://tools.example.test", "Content-Type": "application/json" },
       body: JSON.stringify({ durationMs: 1000 })
@@ -991,7 +1041,7 @@ describe("native artifact fetch handler", () => {
     expect(invalid.status).toBe(400);
     expect(await invalid.json()).toMatchObject({ error: "invalid_upload_link_duration" });
 
-    const crossOrigin = await app(new Request("https://tools.example.test/api/upload-links", {
+    const crossOrigin = await app(signedIn("https://tools.example.test/api/upload-links", {
       method: "POST",
       headers: { Origin: "https://evil.example", "Content-Type": "application/json" },
       body: JSON.stringify({ durationMs: 86_400_000 })
@@ -1004,7 +1054,7 @@ describe("native artifact fetch handler", () => {
     const app = createFetchApp({
       storage,
       activityTracker: new ActivityTracker(),
-      uploadToken: "upload-token",
+      uploadToken: "upload-token", adminSubject: "admin-subject",
       publicBaseUrl: "https://tools.example.test"
     });
 
@@ -1033,7 +1083,7 @@ describe("native artifact fetch handler", () => {
     const storage = new MemoryUploadStorage();
     const app = createFetchApp({
       storage,
-      uploadToken: "upload-token",
+      uploadToken: "upload-token", adminSubject: "admin-subject",
       publisherFaviconUrl: "/assets/publisher-build-hash.png"
     });
     const createdResponse = await app(
@@ -1066,7 +1116,7 @@ describe("native artifact fetch handler", () => {
   it("enforces the HTML limit while staging the multipart stream", async () => {
     const app = createFetchApp({
       storage: new MemoryUploadStorage(),
-      uploadToken: "upload-token",
+      uploadToken: "upload-token", adminSubject: "admin-subject",
       maxUploadBytes: 64,
       maxHtmlUploadBytes: 4
     });
@@ -1084,7 +1134,7 @@ describe("native artifact fetch handler", () => {
 
   it("rejects invalid project metadata without storing the plan", async () => {
     const storage = new MemoryUploadStorage();
-    const app = createFetchApp({ storage, uploadToken: "upload-token" });
+    const app = createFetchApp({ storage, uploadToken: "upload-token", adminSubject: "admin-subject" });
 
     const response = await app(
       new Request("https://tools.example.test/api/uploads", {
@@ -1113,7 +1163,7 @@ describe("native artifact fetch handler", () => {
     ["GET", "/publish/app.js"]
   ])("rejects the retired %s %s upload route", async (method, pathname) => {
     const storage = new MemoryUploadStorage();
-    const app = createFetchApp({ storage, uploadToken: "upload-token", externalUpload: true,
+    const app = createFetchApp({ storage, uploadToken: "upload-token", adminSubject: "admin-subject", externalUpload: true,
       browserPersistentUpload: true, publicBaseUrl: "https://tools.example.test" });
     const response = await app(new Request(`https://tools.example.test${pathname}`, {
       method, headers: { Origin: "https://tools.example.test" }
@@ -1125,7 +1175,7 @@ describe("native artifact fetch handler", () => {
 
   it("returns the saved project when a legacy replacement overlaps a project edit", async () => {
     const storage = new MemoryUploadStorage();
-    const app = createFetchApp({ storage, uploadToken: "upload-token", publicBaseUrl: "https://tools.example.test" });
+    const app = createFetchApp({ storage, uploadToken: "upload-token", adminSubject: "admin-subject", publicBaseUrl: "https://tools.example.test" });
     const created = await app(new Request("https://tools.example.test/api/uploads", {
       method: "POST", headers: { Authorization: "Bearer upload-token" },
       body: multipart("first.html", "<h1>first</h1>", "text/html", "first-project")
@@ -1150,7 +1200,7 @@ describe("native artifact fetch handler", () => {
     const storage = new MemoryUploadStorage();
     const app = createFetchApp({
       storage,
-      uploadToken: "upload-token",
+      uploadToken: "upload-token", adminSubject: "admin-subject",
       publicBaseUrl: "https://tools.example.test",
       externalUpload: true
     });
@@ -1164,7 +1214,7 @@ describe("native artifact fetch handler", () => {
     const created = await createdResponse.json() as { id: string; url: string };
 
     const projectResponse = await app(
-      new Request(`https://tools.example.test/api/external-uploads/${created.id}`, {
+      signedIn(`https://tools.example.test/api/external-uploads/${created.id}`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
@@ -1178,7 +1228,7 @@ describe("native artifact fetch handler", () => {
     expect(storage.pages.get(created.id)?.metadata.project).toBe("documentation");
 
     const revokedResponse = await app(
-      new Request(`https://tools.example.test/api/external-uploads/${created.id}`, {
+      signedIn(`https://tools.example.test/api/external-uploads/${created.id}`, {
         method: "DELETE",
         headers: { Origin: "https://tools.example.test" }
       })
@@ -1192,7 +1242,7 @@ describe("native artifact fetch handler", () => {
     const now = new Date("2026-08-14T12:00:00.000Z");
     const app = createFetchApp({
       storage,
-      uploadToken: "upload-token",
+      uploadToken: "upload-token", adminSubject: "admin-subject",
       publicBaseUrl: "https://tools.example.test",
       externalUpload: true,
       now: () => now
@@ -1208,7 +1258,7 @@ describe("native artifact fetch handler", () => {
     const expiresAt = "2026-08-30T12:00:00.000Z";
 
     const expiryResponse = await app(
-      new Request(`https://tools.example.test/api/external-uploads/${created.id}`, {
+      signedIn(`https://tools.example.test/api/external-uploads/${created.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", Origin: "https://tools.example.test" },
         body: JSON.stringify({ expiresAt })
@@ -1219,7 +1269,7 @@ describe("native artifact fetch handler", () => {
     expect(storage.files.get(created.id)?.metadata.expiresAt).toEqual(new Date(expiresAt));
 
     const permanentResponse = await app(
-      new Request(`https://tools.example.test/api/external-uploads/${created.id}`, {
+      signedIn(`https://tools.example.test/api/external-uploads/${created.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", Origin: "https://tools.example.test" },
         body: JSON.stringify({ expiresAt: null })
@@ -1236,7 +1286,7 @@ describe("native artifact fetch handler", () => {
     const now = new Date("2026-08-14T12:00:00.000Z");
     const app = createFetchApp({
       storage,
-      uploadToken: "upload-token",
+      uploadToken: "upload-token", adminSubject: "admin-subject",
       publicBaseUrl: "https://tools.example.test",
       now: () => now
     });
@@ -1278,14 +1328,14 @@ describe("native artifact fetch handler", () => {
     const storage = new MemoryUploadStorage();
     const app = createFetchApp({
       storage,
-      uploadToken: "upload-token",
+      uploadToken: "upload-token", adminSubject: "admin-subject",
       publicBaseUrl: "https://tools.example.test",
       externalUpload: true,
       now: () => new Date("2026-08-14T12:00:00.000Z")
     });
 
     const response = await app(
-      new Request(`https://tools.example.test/api/external-uploads/${"a".repeat(32)}`, {
+      signedIn(`https://tools.example.test/api/external-uploads/${"a".repeat(32)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", Origin: "https://tools.example.test" },
         body: JSON.stringify({ expiresAt: "2026-08-14T11:59:59.000Z" })
@@ -1300,12 +1350,12 @@ describe("native artifact fetch handler", () => {
     const storage = new MemoryUploadStorage();
     const app = createFetchApp({
       storage,
-      uploadToken: "upload-token",
+      uploadToken: "upload-token", adminSubject: "admin-subject",
       externalUpload: true
     });
 
     const response = await app(
-      new Request(`https://tools.example.test/api/external-uploads/${"a".repeat(32)}`, {
+      signedIn(`https://tools.example.test/api/external-uploads/${"a".repeat(32)}`, {
         method: "DELETE",
         headers: { Origin: "https://attacker.example" }
       })
@@ -1319,7 +1369,7 @@ describe("native artifact fetch handler", () => {
     const storage = new MemoryUploadStorage();
     const app = createFetchApp({
       storage,
-      uploadToken: "upload-token",
+      uploadToken: "upload-token", adminSubject: "admin-subject",
       externalUpload: true,
       publicBaseUrl: "https://tools.example.test"
     });
@@ -1330,7 +1380,7 @@ describe("native artifact fetch handler", () => {
     });
 
     const response = await app(
-      new Request(`http://tools.example.test/api/external-uploads/${"a".repeat(32)}`, {
+      signedIn(`http://tools.example.test/api/external-uploads/${"a".repeat(32)}`, {
         method: "PATCH",
         headers: { Origin: "https://tools.example.test", "Content-Type": "application/json" },
         body: JSON.stringify({ expiresAt: null })

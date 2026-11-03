@@ -11,9 +11,11 @@ export const DIRECT_SESSION_MS = 2 * 60 * 60 * 1000;
 const SIGNED_PART_SECONDS = 300;
 const COMPLETION_TIMEOUT_MS = 15 * 60 * 1000;
 
-export type DirectUploadOwner = { audience: "browser" | "native" | "drop"; uploadLinkId?: string };
+/** `subject` is the person the upload belongs to. A drop upload belongs to the owner of its link. */
+export type DirectUploadOwner = { audience: "browser" | "native" | "drop"; subject: string; uploadLinkId?: string };
 type Session = {
   session_id: string;
+  owner_subject: string;
   artifact_id: string;
   target_id: string | null;
   expected_object_key: string | null;
@@ -47,7 +49,8 @@ export function createDirectUploads(sql: Sql, bucket: ReturnType<typeof createMu
 
   async function load(id: string, owner: DirectUploadOwner) {
     const [session] = await sql<Session[]>`select * from artifacts.upload_sessions where session_id = ${id}::uuid`;
-    if (!session || session.audience !== owner.audience || session.upload_link_id !== (owner.uploadLinkId ?? null)) {
+    if (!session || session.audience !== owner.audience || session.owner_subject !== owner.subject
+      || session.upload_link_id !== (owner.uploadLinkId ?? null)) {
       throw unavailable();
     }
     return session;
@@ -58,12 +61,12 @@ export function createDirectUploads(sql: Sql, bucket: ReturnType<typeof createMu
       || ["aborted", "failed"].includes(session.state)) throw unavailable();
     if (session.target_id) {
       const rows = await tx`select id from artifacts.objects where id = ${session.target_id}
-        and kind = 'html' and revoked_at is null`;
+        and owner_subject = ${session.owner_subject} and kind = 'html' and revoked_at is null`;
       if (!rows.length) throw unavailable();
     }
     if (!session.upload_link_id) return;
     const rows = await tx`select id from artifacts.upload_links where id = ${session.upload_link_id}::uuid
-      and revoked_at is null and expires_at > clock_timestamp()`;
+      and owner_subject = ${session.owner_subject} and revoked_at is null and expires_at > clock_timestamp()`;
     if (rows.length === 0) throw unavailable();
   }
 
@@ -104,10 +107,10 @@ export function createDirectUploads(sql: Sql, bucket: ReturnType<typeof createMu
             and state in ('creating', 'uploading', 'completing')`;
           if ((linkCount?.count ?? 0) >= 3) throw new DirectUploadError(429, "upload_capacity_reached", "This link already has three pending uploads.");
         }
-        const target = intent.kind === "replace" ? await lockHtmlVersion(tx, intent.targetId) : undefined;
+        const target = intent.kind === "replace" ? await lockHtmlVersion(tx, intent.targetId, owner.subject) : undefined;
         await tx`insert into artifacts.upload_sessions
-          (session_id, artifact_id, target_id, expected_object_key, audience, upload_link_id, description, state, expires_at)
-          values (${id}::uuid, ${crypto.randomBytes(24).toString("base64url")},
+          (session_id, owner_subject, artifact_id, target_id, expected_object_key, audience, upload_link_id, description, state, expires_at)
+          values (${id}::uuid, ${owner.subject}, ${crypto.randomBytes(24).toString("base64url")},
             ${target?.id ?? null}, ${target?.object_key ?? null}, ${owner.audience}, ${owner.uploadLinkId ?? null}::uuid, ${tx.json(description)}, 'creating',
             now() + ${DIRECT_SESSION_MS} * interval '1 millisecond')`;
       });
@@ -204,7 +207,7 @@ export function createDirectUploads(sql: Sql, bucket: ReturnType<typeof createMu
           let receipt: HtmlVersionReceipt | null = null;
           let updatedAt: Date;
           if (session.target_id && session.expected_object_key) {
-            receipt = await commitHtmlVersion(tx, session.target_id, session.expected_object_key, {
+            receipt = await commitHtmlVersion(tx, session.target_id, session.owner_subject, session.expected_object_key, {
               objectKey: key(session), filename: description.filename, bytes: description.totalBytes,
               sha256, project: description.project
             });
@@ -212,8 +215,8 @@ export function createDirectUploads(sql: Sql, bucket: ReturnType<typeof createMu
             description = { ...description, ...(receipt.after.project ? { project: receipt.after.project } : {}) };
           } else {
             const [created] = await tx<{ updated_at: Date }[]>`insert into artifacts.objects
-              (id, kind, filename, content_type, bytes, object_key, project, created_at, updated_at, expires_at, upload_link_id, sha256)
-              values (${session.artifact_id}, ${description.kind}, ${description.filename}, ${description.contentType},
+              (id, owner_subject, kind, filename, content_type, bytes, object_key, project, created_at, updated_at, expires_at, upload_link_id, sha256)
+              values (${session.artifact_id}, ${session.owner_subject}, ${description.kind}, ${description.filename}, ${description.contentType},
                 ${description.totalBytes}, ${key(session)}, ${description.project ?? null}, now(), now(),
                 ${description.fileExpiresAt ?? null}, ${session.upload_link_id}::uuid, ${sha256})
               returning updated_at`;
@@ -255,7 +258,8 @@ export function createDirectUploads(sql: Sql, bucket: ReturnType<typeof createMu
       for (const candidate of sessions) {
         try {
           await locked(candidate.session_id, async () => {
-            const session = await load(candidate.session_id, { audience: candidate.audience, uploadLinkId: candidate.upload_link_id ?? undefined });
+            const session = await load(candidate.session_id, { audience: candidate.audience,
+              subject: candidate.owner_subject, uploadLinkId: candidate.upload_link_id ?? undefined });
             if (session.state !== "completed") {
               await sql`update artifacts.upload_sessions set state = 'aborted' where session_id = ${session.session_id}::uuid`;
               await removeUnpublished(session, signal);

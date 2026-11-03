@@ -533,6 +533,7 @@ export const productGrants = toolsSchema.table("product_grants", {
 
 export const objects = artifactsSchema.table("objects", {
   id: text("id").primaryKey(),
+  ownerSubject: text("owner_subject").notNull(),
   kind: text("kind").notNull(),
   filename: text("filename").notNull(),
   contentType: text("content_type").notNull(),
@@ -549,12 +550,14 @@ export const objects = artifactsSchema.table("objects", {
   check("objects_kind_check", sql`${table.kind} in ('html', 'file')`),
   check("objects_bytes_check", sql`${table.bytes} >= 0`),
   index("objects_upload_link_idx").on(table.uploadLinkId),
+  index("objects_owner_updated_idx").on(table.ownerSubject, table.updatedAt),
 ]);
 
 export const operations = artifactsSchema.table("operations", {
   operationId: uuid("operation_id").primaryKey(),
   artifactId: text("artifact_id").notNull(),
   ownerId: text("owner_id").notNull(),
+  ownerSubject: text("owner_subject").notNull(),
   leaseUntil: timestamp("lease_until", { withTimezone: true }).notNull(),
   operationKind: text("operation_kind").notNull(),
   payload: jsonb("payload").$type<Record<string, unknown>>(),
@@ -567,6 +570,7 @@ export const operations = artifactsSchema.table("operations", {
 
 export const uploadLinks = artifactsSchema.table("upload_links", {
   id: uuid("id").primaryKey(),
+  ownerSubject: text("owner_subject").notNull(),
   tokenHash: text("token_hash").notNull().unique(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
@@ -574,11 +578,12 @@ export const uploadLinks = artifactsSchema.table("upload_links", {
 }, (table) => [
   check("upload_links_expiry_check", sql`${table.expiresAt} > ${table.createdAt}`),
   index("upload_links_active_idx").on(table.expiresAt, table.revokedAt),
-  index("upload_links_history_idx").on(table.createdAt.desc(), table.id.desc()),
+  index("upload_links_owner_history_idx").on(table.ownerSubject, table.createdAt.desc(), table.id.desc()),
 ]);
 
 export const uploadSessions = artifactsSchema.table("upload_sessions", {
   sessionId: uuid("session_id").primaryKey(),
+  ownerSubject: text("owner_subject").notNull(),
   artifactId: text("artifact_id").notNull().unique(),
   targetId: text("target_id"),
   expectedObjectKey: text("expected_object_key"),

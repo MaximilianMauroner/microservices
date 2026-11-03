@@ -1,3 +1,4 @@
+import { attachPlatformPrincipal } from "#security";
 import { InvalidHeartbeatTokenError, UnknownHeartbeatMonitorError } from "#status";
 import type { PlatformRequestContext } from "./start.js";
 import { favicons } from "./favicons.js";
@@ -21,6 +22,7 @@ export function readOnly() {
 }
 
 export function artifact({ request, context }: PlatformRouteInput) {
+  if (context.principal) attachPlatformPrincipal(request, context.principal);
   return handleArtifactRequest(request, context.runtime.services.publisher.handle);
 }
 

@@ -3,7 +3,8 @@ import type { PlatformPrincipal } from "#security";
 /** A product is listed here only once its data belongs to each person, so a grant never shows the admin's data. */
 export const GRANTABLE_PRODUCTS = {
   kitchen: { label: "Kitchen", paths: ["/kitchen", "/api/kitchen"] },
-  feedback: { label: "Feedback", paths: ["/feedback", "/api/feedback"] }
+  feedback: { label: "Feedback", paths: ["/feedback", "/api/feedback"] },
+  publisher: { label: "Publisher", paths: ["/publisher", "/api/external-uploads", "/api/upload-links"] }
 } as const satisfies Record<string, Readonly<{ label: string; paths: readonly [string, ...string[]] }>>;
 
 const MEMBER_PATHS = new Set(["/settings", "/consent"]);

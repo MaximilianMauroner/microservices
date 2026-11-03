@@ -49,6 +49,10 @@ class ChunkTestStorage implements UploadStorage {
     };
   }
 
+  owner(_subject: string) {
+    return this;
+  }
+
   async listUploads(_asOf: Date, _options: ListUploadsOptions): Promise<StoredUploadPage> {
     return { uploads: [] };
   }
@@ -75,6 +79,7 @@ function testApp(storage: UploadStorage, overrides: Record<string, unknown> = {}
     storage,
     activityTracker: new ActivityTracker(),
     uploadToken: "upload-token",
+    adminSubject: "admin-subject",
     publicBaseUrl: ORIGIN,
     now: () => new Date("2026-08-14T12:00:00.000Z"),
     ...overrides

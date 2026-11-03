@@ -89,7 +89,7 @@ describe("durable browser upload client", () => {
     const original = globalThis.fetch;
     vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
       if (url.endsWith("/complete")) return handleDirectUpload(new Request("https://tools.example" + url, init),
-        url.split("/sessions/")[1]!, direct, { audience: "browser" }, {
+        url.split("/sessions/")[1]!, direct, { audience: "browser", subject: "admin-subject" }, {
           maxBytes: 100, maxHtmlBytes: 100, maxConcurrent: 1, retentionMs: 60_000,
           baseUrl: "https://tools.example", allowHtml: true
         });

@@ -4,7 +4,7 @@ import type {
   PrivateSnapshotDocument
 } from "#domain";
 import type { MarkdownAdminSnapshot } from "#dashboard";
-import { requirePlatformSession } from "./auth-middleware.js";
+import { requirePlatformSession, requireProductAccess } from "./auth-middleware.js";
 import { internalPlatformRequest, readPlatformJson, readPlatformResponse } from "./server-data.js";
 import { MONEY_LEDGER_SCOPES, type MoneyLedgerViewScope, type MoneyLedgerSnapshot } from "../money/money-repository.js";
 import type { MoneyMarketSnapshot } from "../money/money-market-data-service.js";
@@ -109,8 +109,10 @@ export const getPrivateStatusPageData = createServerFn({ method: "GET" })
     };
   });
 
+const publisherSession = requireProductAccess("publisher");
+
 export const getManagePageData = createServerFn({ method: "GET" })
-  .middleware([requirePlatformSession])
+  .middleware([publisherSession])
   .handler(async (): Promise<ManagePageData> => {
     const pathname = uploadListPath(DEFAULT_UPLOAD_LIST_CRITERIA);
     const { context } = internalPlatformRequest(pathname);
@@ -123,7 +125,7 @@ export const getManagePageData = createServerFn({ method: "GET" })
   });
 
 export const getFamilyQrPageData = createServerFn({ method: "GET" })
-  .middleware([requirePlatformSession])
+  .middleware([publisherSession])
   .handler(async (): Promise<UploadSummary | null> => {
     const pathname = uploadListPath({ ...DEFAULT_UPLOAD_LIST_CRITERIA, kind: "html",
       q: FAMILY_QR_FILENAME });
