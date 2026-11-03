@@ -2,11 +2,11 @@ import { createServer, type Server } from "node:http";
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createMarkdownShareRepository } from "./repository.js";
-import { applyMarkdownShareSchema } from "./schema.js";
-import { createDocumentChanges } from "./changes.js";
-import { createShareHandler } from "./http.js";
-import type { PublicDocument, SyncUpdate } from "./types.js";
+import { createMarkdownShareRepository } from "../../markdown-share/repository.js";
+import { applyMarkdownShareSchema } from "../../markdown-share/schema.js";
+import { createDocumentChanges } from "../../markdown-share/changes.js";
+import { createShareHandler } from "../../markdown-share/http.js";
+import type { PublicDocument, SyncUpdate } from "../../markdown-share/types.js";
 
 const url = process.env.MARKDOWN_SHARE_TEST_DATABASE_URL;
 if (url && (!['127.0.0.1','localhost','[::1]'].includes(new URL(url).hostname) || !new URL(url).pathname.endsWith('_test'))) throw new Error('HTTP tests require an owned loopback *_test database.');

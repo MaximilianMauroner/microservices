@@ -6,8 +6,8 @@ import CodeBlock from "@tiptap/extension-code-block";
 import Text from "@tiptap/extension-text";
 import { getVersion, sendableSteps } from "prosemirror-collab";
 import { afterEach, expect, it, vi } from "vitest";
-import { documentSyncExtension } from "./sync-extension.js";
-import type { SubmitSteps, SyncUpdate } from "./types.js";
+import { documentSyncExtension } from "../../markdown-share/sync-extension.js";
+import type { SubmitSteps, SyncUpdate } from "../../markdown-share/types.js";
 
 const liveDocument = { token: "test", filename: "test.md", format: "markdown" as const, pinned: false, createdAt: 0, updatedAt: 0, expiresAt: 1000 };
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });

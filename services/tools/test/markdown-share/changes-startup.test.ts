@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 
 const boundary = vi.hoisted(() => ({ postgres: vi.fn() }));
 vi.mock("postgres", () => ({ default: boundary.postgres }));
-import { createDocumentChanges } from "./changes";
+import { createDocumentChanges } from "../../markdown-share/changes";
 
 afterEach(() => { vi.useRealTimers(); vi.resetAllMocks(); });
 

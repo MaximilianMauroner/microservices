@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createMarkdownShareRepository } from "./repository";
-import { applyMarkdownShareSchema } from "./schema";
+import { createMarkdownShareRepository } from "../../markdown-share/repository";
+import { applyMarkdownShareSchema } from "../../markdown-share/schema";
 
 const url = process.env.MARKDOWN_SHARE_TEST_DATABASE_URL;
 if (url) {

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { renderToStaticMarkup } from "react-dom/server";
-import { MarkdownPreview } from "./markdown-preview.js";
+import { MarkdownPreview } from "../../markdown-share/markdown-preview.js";
 import { describe, expect, it } from "vitest";
 
 function render(markdown: string): string {

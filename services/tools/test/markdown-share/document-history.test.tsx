@@ -4,7 +4,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { buildDiffRows, useDocumentHistory } from "./document-history.js";
+import { buildDiffRows, useDocumentHistory } from "../../markdown-share/document-history.js";
 
 const mocks = vi.hoisted(() => ({
   saveCheckpoint: vi.fn(async () => null),
@@ -28,7 +28,7 @@ const checkpoints = [
   },
 ];
 
-vi.mock("./transport.js", () => ({ documentRequest: async (token: string, path: string) => {
+vi.mock("../../markdown-share/transport.js", () => ({ documentRequest: async (token: string, path: string) => {
   if (path === "/checkpoints") return mocks.saveCheckpoint();
   mocks.comparisonArgs.push(path);
   return {

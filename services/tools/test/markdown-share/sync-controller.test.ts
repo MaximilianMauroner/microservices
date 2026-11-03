@@ -4,8 +4,8 @@ import type { EditorView } from "@tiptap/pm/view";
 import { Step } from "@tiptap/pm/transform";
 import { collab, getVersion, sendableSteps } from "prosemirror-collab";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createSyncController, receiveUpdate } from "./sync-controller.js";
-import { ShareError, type SubmitSteps, type SyncUpdate } from "./types.js";
+import { createSyncController, receiveUpdate } from "../../markdown-share/sync-controller.js";
+import { ShareError, type SubmitSteps, type SyncUpdate } from "../../markdown-share/types.js";
 
 const schema = new Schema({ nodes: {
   doc: { content: "codeBlock" }, codeBlock: { content: "text*" }, text: {},

@@ -4,9 +4,9 @@ import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import postgres from "postgres";
 import { describe, expect, it } from "vitest";
-import { exportDigest, readConvexExport, importDocuments, verifyImportedDocuments } from "./import-convex.js";
-import { sourceSnapshot } from "./protocol.js";
-import { applyMarkdownShareSchema } from "./schema.js";
+import { exportDigest, readConvexExport, importDocuments, verifyImportedDocuments } from "../../markdown-share/import-convex.js";
+import { sourceSnapshot } from "../../markdown-share/protocol.js";
+import { applyMarkdownShareSchema } from "../../markdown-share/schema.js";
 const url = process.env.MARKDOWN_SHARE_TEST_DATABASE_URL;
 if (url && (!['127.0.0.1','localhost','[::1]'].includes(new URL(url).hostname) || !new URL(url).pathname.endsWith('_test'))) throw new Error('Import tests require an owned loopback *_test database.');
 it('reconstructs an offline Convex snapshot and refuses missing component history',async()=>{
