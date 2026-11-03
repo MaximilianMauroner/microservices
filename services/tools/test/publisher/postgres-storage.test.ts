@@ -1,10 +1,10 @@
-import { DEFAULT_UPLOAD_LIST_CRITERIA, serializeUploadListCriteria } from "../src/upload-list.js";
+import { DEFAULT_UPLOAD_LIST_CRITERIA, serializeUploadListCriteria } from "../../publisher/upload-list.js";
 import { describe, expect, it } from "vitest";
 import { readFile } from "node:fs/promises";
 import { Readable } from "node:stream";
-import { assertOperationOwnership, createMetadataBackedUploadStorage, pageArtifactMetadata, runDurableMutation } from "../src/postgres-storage.js";
+import { assertOperationOwnership, createMetadataBackedUploadStorage, pageArtifactMetadata, runDurableMutation } from "../../publisher/postgres-storage.js";
 import { vi } from "vitest";
-import { artifactId } from "../src/artifact-backfill.js";
+import { artifactId } from "../../publisher/artifact-backfill.js";
 
 const now = new Date("2026-08-09T12:00:00.000Z");
 const uploads = [
@@ -130,7 +130,7 @@ describe("Postgres artifact metadata paging", () => {
   });
 
   it("claims only expired operations and locks ownership during finalization", async () => {
-    const source = await readFile(new URL("../src/postgres-storage.ts", import.meta.url), "utf8");
+    const source = await readFile(new URL("../../publisher/postgres-storage.ts", import.meta.url), "utf8");
     const schema = await readFile(new URL("../../database/postgres-schema.ts", import.meta.url), "utf8");
     expect(source).toContain("where lease_until <= now()");
     expect(source).toContain("and owner_id = ${operation.ownerId} for update");
@@ -138,7 +138,7 @@ describe("Postgres artifact metadata paging", () => {
   });
 
   it("finalizes guest artifacts only while their upload link is active", async () => {
-    const source = await readFile(new URL("../src/postgres-storage.ts", import.meta.url), "utf8");
+    const source = await readFile(new URL("../../publisher/postgres-storage.ts", import.meta.url), "utf8");
 
     expect(source).toContain("where id = ${uploadLinkId}::uuid and revoked_at is null and expires_at > now()");
     expect(source).toContain("for update`");

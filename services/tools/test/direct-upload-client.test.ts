@@ -1,8 +1,8 @@
 import crypto from "node:crypto";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { handleDirectUpload } from "../publisher/src/direct-upload-request.js";
-import type { DirectUploads } from "../publisher/src/direct-uploads.js";
+import { handleDirectUpload } from "../publisher/direct-upload-request.js";
+import type { DirectUploads } from "../publisher/direct-uploads.js";
 import { ManagePage } from "../publisher/ui/manage-page.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { uploadDirectFile, type DirectUploadCallbacks } from "../publisher/ui/direct-upload.js";

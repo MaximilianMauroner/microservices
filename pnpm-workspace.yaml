@@ -1,6 +1,5 @@
 packages:
   - services/*
-  - services/tools/*
 
 allowBuilds:
   '@parcel/watcher': true

@@ -8,7 +8,7 @@ import {
   readOriginalNameMetadata,
   readProjectMetadata,
   safeFileName
-} from "../src/file-metadata.js";
+} from "../../publisher/file-metadata.js";
 
 describe("file metadata", () => {
   it("normalizes portable, bounded file names", () => {

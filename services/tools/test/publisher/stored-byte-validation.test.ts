@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { Readable } from "node:stream";
 import { describe, expect, it } from "vitest";
-import { verifyStoredBytes } from "../src/multipart-storage.js";
+import { verifyStoredBytes } from "../../publisher/multipart-storage.js";
 const digest = (bytes: Uint8Array) => crypto.createHash("sha256").update(bytes).digest("hex");
 
 describe("stored byte verification", () => {

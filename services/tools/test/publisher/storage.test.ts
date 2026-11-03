@@ -8,7 +8,7 @@ import {
   S3Client
 } from "@aws-sdk/client-s3";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createS3BodyStorage, HtmlUpdateConflictError } from "../src/storage.js";
+import { createS3BodyStorage, HtmlUpdateConflictError } from "../../publisher/storage.js";
 
 const storageConfig = {
   bucket: "bucket",

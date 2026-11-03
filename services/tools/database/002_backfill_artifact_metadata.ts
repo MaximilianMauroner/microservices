@@ -1,3 +1,3 @@
-import { backfillArtifactMetadata } from "../publisher/src/artifact-backfill.js";
+import { backfillArtifactMetadata } from "../publisher/artifact-backfill.js";
 
 await backfillArtifactMetadata();

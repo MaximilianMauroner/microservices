@@ -35,6 +35,9 @@ importers:
       '@aws-sdk/client-s3':
         specifier: ^3.1141.0
         version: 3.1141.0
+      '@aws-sdk/s3-request-presigner':
+        specifier: ^3.1141.0
+        version: 3.1141.0
       '@base-ui/react':
         specifier: ^1.6.0
         version: 1.7.0(@date-fns/tz@1.5.0)(@types/react@19.2.18)(date-fns@4.4.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -77,12 +80,15 @@ importers:
       '@tiptap/react':
         specifier: 3.29.2
         version: 3.29.2(@floating-ui/dom@1.8.0)(@tiptap/core@3.29.2(@tiptap/pm@3.29.2))(@tiptap/pm@3.29.2)(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      '@tools-platform/artifact-publisher':
-        specifier: workspace:*
-        version: link:publisher
+      '@zip.js/zip.js':
+        specifier: ^2.15.0
+        version: 2.15.0
       better-auth:
         specifier: 1.6.26
         version: 1.6.26(@tanstack/react-start@1.168.34(crossws@0.4.10(srvx@0.11.22))(esbuild@0.28.1)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(rolldown@1.2.3)(supports-color@10.2.2)(vite@8.2.0(@types/node@22.20.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.11)))(drizzle-kit@1.0.0-rc.4)(drizzle-orm@1.0.0-rc.4(postgres@3.4.9)(zod@4.4.3))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(vitest@4.1.10(@types/node@22.20.1)(jsdom@30.0.1(@noble/hashes@2.3.0))(vite@8.2.0(@types/node@22.20.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.11)))
+      busboy:
+        specifier: 1.6.0
+        version: 1.6.0
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -168,6 +174,9 @@ importers:
       '@types/babel__core':
         specifier: ^7.20.5
         version: 7.20.5
+      '@types/busboy':
+        specifier: 1.5.4
+        version: 1.5.4
       '@types/node':
         specifier: ^22.10.2
         version: 22.20.1
@@ -207,43 +216,6 @@ importers:
       vitest:
         specifier: ^4.1.10
         version: 4.1.10(@types/node@22.20.1)(jsdom@30.0.1(@noble/hashes@2.3.0))(vite@8.2.0(@types/node@22.20.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.11))
-
-  services/tools/publisher:
-    dependencies:
-      '@aws-sdk/client-s3':
-        specifier: ^3.1141.0
-        version: 3.1141.0
-      '@aws-sdk/s3-request-presigner':
-        specifier: ^3.1141.0
-        version: 3.1141.0
-      '@zip.js/zip.js':
-        specifier: ^2.15.0
-        version: 2.15.0
-      busboy:
-        specifier: 1.6.0
-        version: 1.6.0
-      postgres:
-        specifier: ^3.4.7
-        version: 3.4.9
-    devDependencies:
-      '@types/busboy':
-        specifier: 1.5.4
-        version: 1.5.4
-      '@types/node':
-        specifier: ^22.10.2
-        version: 22.20.1
-      fflate:
-        specifier: ^0.8.3
-        version: 0.8.3
-      tsx:
-        specifier: ^4.20.6
-        version: 4.23.11
-      typescript:
-        specifier: ^5.7.2
-        version: 5.9.3
-      vitest:
-        specifier: ^4.1.9
-        version: 4.1.10(@types/node@22.20.1)(jsdom@30.0.1(@noble/hashes@2.3.0))(vite@8.2.1(@types/node@22.20.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.11))
 
 packages:
 

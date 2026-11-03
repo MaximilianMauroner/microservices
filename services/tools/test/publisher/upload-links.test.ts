@@ -7,7 +7,7 @@ const { postgresMock, sqlMock } = vi.hoisted(() => ({
 
 vi.mock("postgres", () => ({ default: postgresMock }));
 
-import { createPostgresUploadLinkRepository } from "../src/upload-links.js";
+import { createPostgresUploadLinkRepository } from "../../publisher/upload-links.js";
 
 describe("Postgres upload links", () => {
   beforeEach(() => {
