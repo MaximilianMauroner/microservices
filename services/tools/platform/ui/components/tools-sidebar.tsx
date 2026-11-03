@@ -172,6 +172,8 @@ function useAttention(pathname: string, enabled: boolean) {
 
 function AccountMenu() {
   const { data: session } = authClient.useSession();
+  // On a phone the sidebar fills the screen, so the menu opens upward over it instead of beside it.
+  const { isMobile } = useSidebar();
   const { theme, setTheme } = useTheme();
   const userName = session?.user.name || "Account";
   const userEmail = session?.user.email || "Signed in";
@@ -181,6 +183,14 @@ function AccountMenu() {
     await authClient.signOut();
     window.location.assign("/");
   }
+
+  const themeChoices = (
+    <DropdownMenuRadioGroup value={theme} onValueChange={(value) => setTheme(value as ThemePreference)}>
+      <DropdownMenuRadioItem value="light"><SunIcon />Light</DropdownMenuRadioItem>
+      <DropdownMenuRadioItem value="dark"><MoonIcon />Dark</DropdownMenuRadioItem>
+      <DropdownMenuRadioItem value="system"><LaptopIcon />System</DropdownMenuRadioItem>
+    </DropdownMenuRadioGroup>
+  );
 
   return (
     <DropdownMenu>
@@ -195,7 +205,7 @@ function AccountMenu() {
         </span>
         <MoreVerticalIcon className="size-4 shrink-0 text-muted-foreground group-data-[collapsible=icon]:hidden" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent side="right" align="end" sideOffset={10} className="w-64 rounded-xl p-1.5">
+      <DropdownMenuContent side={isMobile ? "top" : "right"} align={isMobile ? "start" : "end"} sideOffset={isMobile ? 6 : 10} className={isMobile ? "w-(--anchor-width) rounded-xl p-1.5" : "w-64 rounded-xl p-1.5"}>
         <DropdownMenuGroup>
           <DropdownMenuLabel className="px-2 py-1.5 font-normal">
             <strong className="block truncate text-sm font-semibold text-foreground">{userName}</strong>
@@ -204,16 +214,17 @@ function AccountMenu() {
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
         <DropdownMenuItem render={<Link to="/settings" preload="intent" />}><SettingsIcon />Settings</DropdownMenuItem>
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger><SunIcon />Appearance</DropdownMenuSubTrigger>
-          <DropdownMenuSubContent className="min-w-40">
-            <DropdownMenuRadioGroup value={theme} onValueChange={(value) => setTheme(value as ThemePreference)}>
-              <DropdownMenuRadioItem value="light"><SunIcon />Light</DropdownMenuRadioItem>
-              <DropdownMenuRadioItem value="dark"><MoonIcon />Dark</DropdownMenuRadioItem>
-              <DropdownMenuRadioItem value="system"><LaptopIcon />System</DropdownMenuRadioItem>
-            </DropdownMenuRadioGroup>
-          </DropdownMenuSubContent>
-        </DropdownMenuSub>
+        {isMobile ? (
+          <DropdownMenuGroup>
+            <DropdownMenuLabel className="px-2 pt-2 pb-1 text-xs font-normal text-muted-foreground">Appearance</DropdownMenuLabel>
+            {themeChoices}
+          </DropdownMenuGroup>
+        ) : (
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger><SunIcon />Appearance</DropdownMenuSubTrigger>
+            <DropdownMenuSubContent className="min-w-40">{themeChoices}</DropdownMenuSubContent>
+          </DropdownMenuSub>
+        )}
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={() => void signOut()}><LogOutIcon />Sign out</DropdownMenuItem>
       </DropdownMenuContent>
