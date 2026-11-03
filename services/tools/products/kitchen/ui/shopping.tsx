@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { CheckIcon, ChevronLeftIcon, ChevronRightIcon, PlusIcon } from "lucide-react";
+import { CheckIcon, ChevronLeftIcon, ChevronRightIcon, PlusIcon, RepeatIcon, XIcon } from "lucide-react";
 import { useState } from "react";
 import { Button } from "../../../platform/ui/components/ui/button.js";
 import { Input } from "../../../platform/ui/components/ui/input.js";
@@ -20,6 +20,12 @@ const en = {
   emptyTitle: "Your list is empty",
   emptyBody: "Plan meals for this week, and their ingredients show up here. Add anything else with Add item.",
   alsoBuy: "Also buy",
+  everyWeek: "Every week",
+  addEveryWeek: "Every week",
+  addEveryWeekHint: "On, an item comes back every week, for snacks and other things you always buy.",
+  stopEveryWeek: (name: string) => `Stop buying ${name} every week`,
+  stopped: (name: string) => `${name} is no longer on every week's list`,
+  notBought: (name: string) => `${name} back on the list`,
   bought: (name: string) => `${name} bought`,
   addedToHome: (amount: string, name: string) => `${amount} ${name} added to At home`,
   forRecipes: (recipes: string) => `For ${recipes}`,
@@ -51,6 +57,12 @@ const TEXT: Record<KitchenLanguage, typeof en> = {
     emptyTitle: "Deine Liste ist leer",
     emptyBody: "Plane Mahlzeiten für diese Woche, dann erscheinen hier ihre Zutaten. Alles andere fügst du mit „Artikel hinzufügen“ hinzu.",
     alsoBuy: "Zusätzlich kaufen",
+    everyWeek: "Jede Woche",
+    addEveryWeek: "Jede Woche",
+    addEveryWeekHint: "Eingeschaltet kommt ein Artikel jede Woche wieder, für Snacks und andere Dinge, die du immer kaufst.",
+    stopEveryWeek: (name: string) => `${name} nicht mehr jede Woche kaufen`,
+    stopped: (name: string) => `${name} ist nicht mehr auf der Wochenliste`,
+    notBought: (name: string) => `${name} wieder auf der Liste`,
     bought: (name: string) => `${name} gekauft`,
     addedToHome: (amount: string, name: string) => `${amount} ${name} in den Vorrat gelegt`,
     forRecipes: (recipes: string) => `Für ${recipes}`,
@@ -81,7 +93,9 @@ export function KitchenShoppingPage(data: ShoppingData) {
   const toBuy = shopping.lines.filter((line) => line.toBuy > 0);
   const covered = shopping.lines.filter((line) => line.toBuy === 0);
   const groups = byGroup(kitchen.groups, toBuy, (line) => line.section);
-  const count = toBuy.length + shopping.extras.length;
+  const once = shopping.extras.filter((extra) => !extra.everyWeek);
+  const weekly = shopping.extras.filter((extra) => extra.everyWeek);
+  const count = toBuy.length + once.length + weekly.filter((extra) => !extra.bought).length;
   const goWeek = (start: string) => void navigate({ to: "/kitchen/$kitchenId/shopping", params: { kitchenId: kitchen.id }, search: { week: start } });
 
   return (
@@ -118,9 +132,18 @@ export function KitchenShoppingPage(data: ShoppingData) {
         {!count && !covered.length ? (
           <KitchenEmpty title={text.emptyTitle} body={text.emptyBody} />
         ) : null}
-        {shopping.extras.length ? (
+        {weekly.length ? (
+          <Group id="shopping-every-week" title={text.everyWeek} color="var(--kitchen-home-ink)" count={weekly.filter((extra) => !extra.bought).length}>
+            {weekly.map((extra) => (
+              <Row key={extra.id} name={extra.name} disabled={pending} color="var(--kitchen-home-ink)" done={extra.bought}
+                onCheck={() => run({ type: "extra.mark", id: extra.id, week: shopping.start, bought: true }, { title: text.bought(extra.name), undo: { type: "extra.mark", id: extra.id, week: shopping.start, bought: false } })}
+                onUncheck={() => run({ type: "extra.mark", id: extra.id, week: shopping.start, bought: false }, { title: text.notBought(extra.name) })} />
+            ))}
+          </Group>
+        ) : null}
+        {once.length ? (
           <Group id="shopping-extras" title={text.alsoBuy} color="var(--kitchen-shopping-ink)">
-            {shopping.extras.map((extra) => (
+            {once.map((extra) => (
               <Row key={extra.id} name={extra.name} disabled={pending} color="var(--kitchen-shopping-ink)"
                 onCheck={() => run({ type: "extra.remove", id: extra.id }, { title: text.bought(extra.name), undo: { type: "extra.add", name: extra.name } })} />
             ))}
@@ -180,15 +203,30 @@ function Group({ id, title, color, count, children }: { id: string; title: strin
   );
 }
 
-function Row({ name, amount, detail, color, onCheck, disabled }: { name: string; amount?: string; detail?: string; color: string; onCheck: () => Promise<unknown>; disabled: boolean }) {
+/**
+ * One item to tick off. Without `onUncheck`, a ticked row stays ticked until the list drops it.
+ * With it, as for every-week items, a second tap unticks it.
+ */
+function Row({ name, amount, detail, color, onCheck, onUncheck, done = false, disabled }: {
+  name: string; amount?: string; detail?: string; color: string; done?: boolean; disabled: boolean;
+  onCheck: () => Promise<unknown>; onUncheck?: () => Promise<unknown>;
+}) {
   const text = useText(TEXT);
-  const [checked, setChecked] = useState(false);
+  const [optimistic, setOptimistic] = useState<boolean>();
+  const checked = optimistic ?? done;
+  async function toggle() {
+    const next = !checked;
+    setOptimistic(next);
+    const ok = await (next ? onCheck() : onUncheck?.());
+    setOptimistic(ok ? next : undefined);
+  }
   return (
     <li>
       <button
         type="button"
-        disabled={disabled || checked}
-        onClick={async () => { setChecked(true); if (!(await onCheck())) setChecked(false); }}
+        disabled={disabled || (checked && !onUncheck)}
+        aria-pressed={onUncheck ? checked : undefined}
+        onClick={() => void toggle()}
         className="flex min-h-14 w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-background/40 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none focus-visible:ring-inset sm:px-4"
         aria-label={text.boughtAria(name, amount)}
       >
@@ -214,13 +252,15 @@ function AddSheet({ open, onClose, data }: { open: boolean; onClose: () => void;
   const text = useText(TEXT);
   const [name, setName] = useState("");
   const [added, setAdded] = useState<string[]>([]);
+  const [everyWeek, setEveryWeek] = useState(false);
+  const weekly = data.shopping.extras.filter((extra) => extra.everyWeek);
   const onList = new Set([...data.shopping.extras.map((extra) => extra.name.toLowerCase()), ...added.map((item) => item.toLowerCase())]);
   const groups = byGroup(data.kitchen.groups, data.ingredients, (ingredient) => ingredient.section);
 
   async function add(item: string) {
     const trimmed = item.trim();
     if (!trimmed || onList.has(trimmed.toLowerCase())) return;
-    if (await run({ type: "extra.add", name: trimmed })) setAdded((current) => [...current, trimmed]);
+    if (await run({ type: "extra.add", name: trimmed, everyWeek })) setAdded((current) => [...current, trimmed]);
   }
 
   return (
@@ -231,10 +271,34 @@ function AddSheet({ open, onClose, data }: { open: boolean; onClose: () => void;
       description={text.addDescription}
       footer={<Button size="lg" className="px-5" onClick={() => { onClose(); setAdded([]); }}>{added.length ? text.doneAdded(added.length) : text.done}</Button>}
     >
-      <form className="mb-4 flex gap-2" onSubmit={(event) => { event.preventDefault(); void add(name).then(() => setName("")); }}>
+      <form className="mb-2 flex gap-2" onSubmit={(event) => { event.preventDefault(); void add(name).then(() => setName("")); }}>
         <Input className="h-10" placeholder={text.itemPlaceholder} value={name} onChange={(event) => setName(event.target.value)} aria-label={text.item} />
         <Button type="submit" variant="outline" className="h-10" disabled={!name.trim() || pending}>{text.add}</Button>
       </form>
+      <div className="mb-4 flex items-start gap-3">
+        <button type="button" aria-pressed={everyWeek} onClick={() => setEveryWeek((on) => !on)}
+          className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-control-border bg-control px-3 text-sm font-medium hover:border-control-border-hover aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground">
+          <RepeatIcon className="size-4" aria-hidden /> {text.addEveryWeek}
+        </button>
+        <p className="pt-1 text-xs text-muted-foreground">{text.addEveryWeekHint}</p>
+      </div>
+      {weekly.length ? (
+        <section className="mb-4">
+          <h3 className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-muted-foreground"><RepeatIcon className="size-3.5" aria-hidden />{text.everyWeek}</h3>
+          <ul className="flex flex-wrap gap-1.5">
+            {weekly.map((extra) => (
+              <li key={extra.id} className="inline-flex h-9 items-center gap-1 rounded-full border border-control-border pr-1 pl-3 text-sm">
+                {extra.name}
+                <button type="button" disabled={pending} aria-label={text.stopEveryWeek(extra.name)}
+                  onClick={() => void run({ type: "extra.remove", id: extra.id }, { title: text.stopped(extra.name), undo: { type: "extra.add", name: extra.name, everyWeek: true } })}
+                  className="grid size-7 place-items-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground">
+                  <XIcon className="size-3.5" aria-hidden />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
       <div className="grid gap-4">
         {groups.map(([section, ingredients]) => (
           <section key={section}>

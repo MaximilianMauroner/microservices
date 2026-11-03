@@ -643,8 +643,26 @@ export const kitchenExtras = toolsSchema.table("kitchen_extras", {
   id: uuid("id").primaryKey(),
   kitchenId: uuid("kitchen_id").notNull().references(() => kitchens.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
+  everyWeek: boolean("every_week").notNull().default(false),
+  boughtWeek: date("bought_week", { mode: "string" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
 }, (table) => [index("kitchen_extras_kitchen_idx").on(table.kitchenId, table.createdAt)]);
+
+/** Bug reports and feature requests about Tools itself, for the developer. Not the Feedback product. */
+export const devFeedback = toolsSchema.table("dev_feedback", {
+  id: uuid("id").primaryKey(),
+  authorSubject: text("author_subject").notNull(),
+  authorEmail: text("author_email").notNull(),
+  kind: text("kind").notNull(),
+  page: text("page").notNull(),
+  message: text("message").notNull(),
+  state: text("state").notNull().default("open"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+}, (table) => [
+  check("dev_feedback_kind_check", sql`${table.kind} in ('bug', 'feature')`),
+  check("dev_feedback_state_check", sql`${table.state} in ('open', 'done')`),
+  index("dev_feedback_created_idx").on(table.createdAt),
+]);
 
 export const objects = artifactsSchema.table("objects", {
   id: text("id").primaryKey(),

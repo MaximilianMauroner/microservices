@@ -198,7 +198,11 @@ export function registerKitchenTools(server: McpServer, store: KitchenStore, pri
     week: z.string().optional().describe("Any date in the week, as YYYY-MM-DD. Default: this week.")
   }, async ({ kitchen: ref, week }) => (await kitchen(ref)).shopping(weekStart(week ?? today())), true);
 
-  tool("shopping_add", "Adds an extra item to the shopping list, such as soap.", { kitchen: kitchenRef, item: z.string() }, async ({ kitchen: ref, item }) => (await kitchen(ref)).addExtra(item));
+  tool("shopping_add", "Adds an extra item to the shopping list, such as soap.", {
+    kitchen: kitchenRef,
+    item: z.string(),
+    everyWeek: z.boolean().optional().describe("Put the item on every week's list, such as snacks or coffee. Default: once.")
+  }, async ({ kitchen: ref, item, everyWeek }) => (await kitchen(ref)).addExtra(item, everyWeek));
 
   tool("stock_list", "Shows the food at home.", { kitchen: kitchenRef }, async ({ kitchen: ref }) => (await kitchen(ref)).stock(), true);
 

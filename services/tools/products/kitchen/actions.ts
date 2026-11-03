@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { INGREDIENT_UNITS, MEALS } from "./domain.js";
+import { INGREDIENT_UNITS, MEALS, weekStart } from "./domain.js";
 import type { KitchenScope, KitchenStore } from "./repository.js";
 import type { PlatformPrincipal } from "#security";
 
@@ -47,7 +47,8 @@ export const kitchenAction = z.discriminatedUnion("type", [
   z.object({ type: z.literal("leftover.add"), name: z.string().max(200), servings: amount, useBy: day }),
   z.object({ type: z.literal("leftover.eat"), id, servings: amount }),
   z.object({ type: z.literal("leftover.remove"), id }),
-  z.object({ type: z.literal("extra.add"), name: z.string().max(200) }),
+  z.object({ type: z.literal("extra.add"), name: z.string().max(200), everyWeek: z.boolean().optional() }),
+  z.object({ type: z.literal("extra.mark"), id, week: day, bought: z.boolean() }),
   z.object({ type: z.literal("extra.remove"), id }),
   z.object({ type: z.literal("groups.set"), groups: z.array(z.string().max(100)).max(100) })
 ]);
@@ -89,7 +90,8 @@ function apply(kitchen: KitchenScope, action: Exclude<KitchenAction, { type: "re
     case "leftover.add": return kitchen.addLeftover(action);
     case "leftover.eat": return kitchen.eatLeftover(action.id, action.servings);
     case "leftover.remove": return kitchen.removeLeftover(action.id);
-    case "extra.add": return kitchen.addExtra(action.name);
+    case "extra.add": return kitchen.addExtra(action.name, action.everyWeek);
+    case "extra.mark": return kitchen.markExtra(action.id, weekStart(action.week), action.bought);
     case "extra.remove": return kitchen.removeExtra(action.id);
     case "groups.set": return kitchen.setGroups(action.groups);
   }

@@ -103,6 +103,24 @@ describe.skipIf(!sql)("Kitchen", () => {
     expect(await home.leftovers()).toEqual([expect.objectContaining({ name: "Pasta al pomodoro", servings: 1, useBy: "2026-11-06" })]);
   });
 
+  it("brings every-week items back each week and drops one-time items once bought", async () => {
+    const store = kitchenStore(sql!);
+    const home = await store.open(admin, (await store.admin(admin).create("Home")).id);
+    const snacks = await home.addExtra("Snacks", true);
+    const soap = await home.addExtra("Soap");
+    const view = async (week: string) => (await home.shopping(week)).extras.map(({ name, everyWeek, bought }) => ({ name, everyWeek, bought }));
+
+    await home.markExtra(snacks.id, "2026-11-02", true);
+    expect(await view("2026-11-02")).toEqual([{ name: "Snacks", everyWeek: true, bought: true }, { name: "Soap", everyWeek: false, bought: false }]);
+    expect(await view("2026-11-09")).toEqual([{ name: "Snacks", everyWeek: true, bought: false }, { name: "Soap", everyWeek: false, bought: false }]);
+
+    await home.markExtra(snacks.id, "2026-11-09", false);
+    expect((await view("2026-11-02"))[0]).toMatchObject({ bought: true });
+    await home.markExtra(snacks.id, "2026-11-02", false);
+    expect((await view("2026-11-02"))[0]).toMatchObject({ bought: false });
+    await expect(home.markExtra(soap.id, "2026-11-02", true)).rejects.toMatchObject({ code: "not_found" });
+  });
+
   it("remembers each new group and shops in the kitchen's group order", async () => {
     const store = kitchenStore(sql!);
     const created = await store.admin(admin).create("Home");

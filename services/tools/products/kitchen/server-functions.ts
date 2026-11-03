@@ -71,7 +71,7 @@ export const getKitchenWeek = createServerFn({ method: "GET" })
       week,
       recipes: summaries(recipes, ingredients),
       leftovers,
-      toBuy: shopping.lines.filter((line) => line.toBuy > 0).length + shopping.extras.length,
+      toBuy: shopping.lines.filter((line) => line.toBuy > 0).length + shopping.extras.filter((extra) => !extra.bought).length,
       buySections: shopping.lines.filter((line) => line.toBuy > 0).map((line) => line.section)
     };
   });

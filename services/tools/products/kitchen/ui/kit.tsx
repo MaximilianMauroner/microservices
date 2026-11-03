@@ -506,11 +506,12 @@ export function PlateRing({ groups, sections, size = 32, className }: { groups: 
       role="img" aria-label={counts.length ? `${TEXT[language].foodGroups}: ${counts.map(([group, items]) => `${groupLabel(group, language)} ${items.length}`).join(", ")}` : TEXT[language].foodGroups}>
       {counts.length ? counts.map(([group, items]) => {
         const share = (items.length / total) * 100;
-        const arc = <circle key={group} r="15.915" cx="18" cy="18" fill="none" strokeWidth="6" stroke={groupColor(groups, group)}
+        // The radius plus half the stroke stays inside the 36-unit box, so no arc is cut off.
+        const arc = <circle key={group} r="14.5" cx="18" cy="18" pathLength={100} fill="none" strokeWidth="6" stroke={groupColor(groups, group)}
           strokeDasharray={`${Math.max(share - gap, 1)} ${100 - Math.max(share - gap, 1)}`} strokeDashoffset={start} />;
         start -= share;
         return arc;
-      }) : <circle r="15.915" cx="18" cy="18" fill="none" strokeWidth="3" strokeDasharray="3 3" className="stroke-[color:var(--surface-border)]" />}
+      }) : <circle r="14.5" cx="18" cy="18" pathLength={100} fill="none" strokeWidth="3" strokeDasharray="3 3" className="stroke-[color:var(--surface-border)]" />}
     </svg>
   );
 }

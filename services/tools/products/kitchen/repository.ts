@@ -93,7 +93,9 @@ export interface KitchenScope {
   eatLeftover(id: string, servings: number): Promise<void>;
   removeLeftover(id: string): Promise<void>;
   shopping(start: string): Promise<KitchenShopping>;
-  addExtra(name: string): Promise<ExtraItem>;
+  addExtra(name: string, everyWeek?: boolean): Promise<ExtraItem>;
+  /** Marks an every-week item as bought, or not bought, for the week that starts on `week`. */
+  markExtra(id: string, week: string, bought: boolean): Promise<void>;
   removeExtra(id: string): Promise<void>;
 }
 
@@ -426,7 +428,8 @@ function scope(sql: Db, kitchen: Kitchen): KitchenScope {
         recipes(sql),
         stock(sql),
         sql<{ id: string; section: string }[]>`select id, section from tools.kitchen_ingredients where kitchen_id = ${k}`,
-        sql<ExtraItem[]>`select id, name from tools.kitchen_extras where kitchen_id = ${k} order by created_at`,
+        sql<ExtraItem[]>`select id, name, every_week "everyWeek", (every_week and bought_week is not distinct from ${start}::date) bought
+          from tools.kitchen_extras where kitchen_id = ${k} order by created_at`,
         sql<{ groups: string[] }[]>`select groups from tools.kitchens where id = ${k}`
       ]);
       return {
@@ -435,11 +438,18 @@ function scope(sql: Db, kitchen: Kitchen): KitchenScope {
         extras: [...extras]
       };
     },
-    async addExtra(name) {
+    async addExtra(name, everyWeek = false) {
       const id = randomUUID();
       const item = requiredName(name, "item");
-      await sql`insert into tools.kitchen_extras (id, kitchen_id, name, created_at) values (${id}, ${k}, ${item}, now())`;
-      return { id, name: item };
+      await sql`insert into tools.kitchen_extras (id, kitchen_id, name, every_week, created_at) values (${id}, ${k}, ${item}, ${everyWeek}, now())`;
+      return { id, name: item, everyWeek, bought: false };
+    },
+    async markExtra(id, week, bought) {
+      const rows = isUuid(id)
+        ? await sql`update tools.kitchen_extras set bought_week = case when ${bought}::boolean then ${week}::date when bought_week = ${week}::date then null else bought_week end
+            where kitchen_id = ${k} and id = ${id} and every_week returning id`
+        : [];
+      if (!rows.length) throw new KitchenError("This every-week item does not exist.", "not_found");
     },
     async removeExtra(id) {
       if (isUuid(id)) await sql`delete from tools.kitchen_extras where kitchen_id = ${k} and id = ${id}`;
