@@ -2,6 +2,21 @@
 
 The platform service is the single production compute and browser-authentication boundary for Mauroner Tools.
 
+## Folders
+
+Each product is a direct child of this folder. The other folders serve all products.
+
+| Folder | Holds |
+| --- | --- |
+| `dashboard`, `feedback`, `kitchen`, `markdown-share`, `money`, `publisher`, `status` | One product each: its domain logic, storage, and UI |
+| `src` | The application shell: routes, gateway, authentication, settings, and shared UI |
+| `runtime` | Code that more than one product uses: `domain`, `security`, and `suite-chrome` |
+| `database` | The PostgreSQL schema and the guarded schema push |
+| `test` | All tests, grouped by product |
+
+This folder is one pnpm package. Code in one folder imports another folder through
+the `#` subpath imports in `package.json`.
+
 ## Route policy
 
 | Surface | Authentication |
@@ -24,11 +39,17 @@ are private and non-cacheable.
 
 ## Browser authentication
 
-Better Auth runs without an auth database. It uses a secure, HTTP-only,
-same-site encrypted cookie with a seven-day lifetime. Google is the only provider
-and requests only the default OpenID, email, and profile scopes. The verified
-Google `sub` must exactly match `AUTH_ALLOWED_GOOGLE_SUBJECT` before a session
-is created.
+Better Auth stores sessions in PostgreSQL. A session lasts seven days in a
+secure, HTTP-only, same-site cookie. Google is the only provider and requests
+only the default OpenID, email, and profile scopes.
+
+The admin is the Google account whose verified `sub` matches
+`AUTH_ALLOWED_GOOGLE_SUBJECT`. The admin can invite other people by Google email
+in Settings and grant them products. Each person sees only their own data. See
+[people-and-access.md](../../docs/tools-platform/people-and-access.md).
+
+MCP clients connect to `/api/mcp` through OAuth sign-in and consent. That
+endpoint accepts only its OAuth bearer token.
 
 Required variables:
 
