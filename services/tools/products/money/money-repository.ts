@@ -1063,6 +1063,9 @@ function categoryRulePreview(rules: readonly (MoneyCategoryRuleDefinition & Read
 /** Stores a rule first in match order. It replaces another rule with the same condition. */
 async function saveCategoryRuleRow(tx: postgres.TransactionSql, own: MoneyOwner, rule: MoneyCategoryRuleDefinition, actor: string, ruleId: string = randomUUID()) {
   const accountId = rule.accountId ?? null;
+  if (accountId && !(await tx`select 1 from ${own.accounts} owned_accounts where id = ${accountId}`).length) {
+    throw new MoneyImportValidationError("account_not_found", "The account no longer exists. Reload the rules.");
+  }
   await tx`delete from tools.money_category_rules where owner_subject = ${own.subject} and id <> ${ruleId} and account_id is not distinct from ${accountId}::uuid
     and match_field = ${rule.matchField} and match_operator = ${rule.matchOperator} and match_value = ${rule.matchValue}`;
   const [priority] = await tx<{ next_priority: number }[]>`select coalesce(max(priority), 0) + 1 next_priority from ${own.categoryRules} owned_categoryRules`;

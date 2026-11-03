@@ -41,6 +41,8 @@ awake between runs.
 - The MCP endpoint accepts only OAuth bearer tokens, issued after sign-in and consent.
 - Upload, agent, and heartbeat APIs retain dedicated bearer credentials.
 
-Deployments run `pnpm run railway:predeploy` before starting Tools. That command
-applies the Tools database schemas and reconciles artifact metadata.
+Before Tools starts, each deployment runs the `preDeployCommand` in
+`railway.json`. It applies the Tools database schemas and reconciles artifact
+metadata. The schema push needs `AUTH_ALLOWED_GOOGLE_SUBJECT`, because rows
+from before per-person data go to the admin.
 Never point a local or preview process at production data.

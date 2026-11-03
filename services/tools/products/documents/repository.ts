@@ -55,8 +55,8 @@ export function createMarkdownShareRepository(databaseUrl: string) {
         const now = Date.now();
         const token = randomBytes(32).toString("hex");
         await tx`INSERT INTO tools.markdown_documents (token,request_id,request_hash,owner_subject,filename,format,created_at,updated_at,expires_at,content,source)
-          VALUES (${token},${input.requestId},${hash},${ownerSubject},${input.filename},${input.format},${now},${now},${now+7*DAY},${tx.json(content as never)},${input.markdown}) ON CONFLICT (request_id) DO NOTHING`;
-        const [row] = await tx<Row[]>`SELECT * FROM tools.markdown_documents WHERE request_id=${input.requestId} FOR UPDATE`;
+          VALUES (${token},${input.requestId},${hash},${ownerSubject},${input.filename},${input.format},${now},${now},${now+7*DAY},${tx.json(content as never)},${input.markdown}) ON CONFLICT (owner_subject, request_id) DO NOTHING`;
+        const [row] = await tx<Row[]>`SELECT * FROM tools.markdown_documents WHERE owner_subject=${ownerSubject} AND request_id=${input.requestId} FOR UPDATE`;
         if (row.request_hash !== hash) throw invalid("Creation request was already used for different content.");
         if (Number(row.expires_at) <= Date.now()) throw unavailable();
         return document(row);

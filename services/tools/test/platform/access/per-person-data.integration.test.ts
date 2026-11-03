@@ -152,6 +152,7 @@ describe.skipIf(!sql)("Money per person", () => {
     expect(await friend.setTransferDispositions({ transactionIds: [maxTransfer.id], disposition: "spend" })).toEqual({ affectedCount: 0 });
     await expect(friend.addManualBalance({ accountId: maxBakery.accountId!, date: "2026-09-30", valueMinor: 1, currency: "EUR" })).rejects.toThrow(/not found/);
     await expect(friend.saveCategoryRule({ ruleId, matchField: "description", matchOperator: "equals", matchValue: "bakery", category: "dining", actor: "friend@example.test", expectedMatchCount: 1 })).rejects.toMatchObject({ code: "rule_not_found" });
+    await expect(friend.saveCategoryRule({ accountId: maxBakery.accountId!, matchField: "description", matchOperator: "equals", matchValue: "bakery", category: "dining", actor: "friend@example.test", expectedMatchCount: 0 })).rejects.toMatchObject({ code: "account_not_found" });
     expect(await friend.deleteCategoryRule(ruleId)).toBeUndefined();
     expect(await friend.deleteImport(maxImport.id)).toBeUndefined();
 
@@ -186,6 +187,14 @@ describe.skipIf(!sql)("Document Share per person", () => {
       expect(await tokens("admin-subject")).toEqual([mine.token, anonymous.token].sort());
       expect(await tokens("friend-subject")).toEqual([friends.token]);
       expect(await tokens("someone-else")).toEqual([]);
+
+      const request = { requestId: "shared-request", filename: "notes.md", format: "markdown", markdown: "" };
+      const original = (await (await call("", request, "session=max")).json()) as PublicDocument;
+      const replayed = (await (await call("", request, "session=friend")).json()) as PublicDocument;
+      expect(replayed.token, "a replayed creation request never returns another person's document").not.toBe(original.token);
+      expect((await (await call("", request, "session=max")).json()) as PublicDocument).toMatchObject({ token: original.token });
+      expect(await tokens("friend-subject")).toEqual([friends.token, replayed.token].sort());
+      await sql!`delete from tools.markdown_documents where request_id = 'shared-request'`;
 
       const opened = await call(`/${friends.token}`);
       expect(opened.status, "a capability link needs no session").toBe(200);

@@ -10,7 +10,7 @@ export async function applyMarkdownShareSchema(sql: Sql, adminSubject: string | 
     await transaction.unsafe(`
     CREATE SCHEMA IF NOT EXISTS tools;
     CREATE TABLE IF NOT EXISTS tools.markdown_documents (
-      token text PRIMARY KEY, request_id text UNIQUE NOT NULL, request_hash text NOT NULL,
+      token text PRIMARY KEY, request_id text NOT NULL, request_hash text NOT NULL,
       owner_subject text NOT NULL,
       filename text NOT NULL, format text NOT NULL CHECK (format IN ('markdown', 'latex')),
       created_at bigint NOT NULL, updated_at bigint NOT NULL, expires_at bigint NOT NULL,
@@ -46,5 +46,8 @@ export async function applyMarkdownShareSchema(sql: Sql, adminSubject: string | 
       await transaction`UPDATE tools.markdown_documents SET owner_subject=${adminSubject} WHERE owner_subject IS NULL`;
     }
     await transaction`ALTER TABLE tools.markdown_documents ALTER COLUMN owner_subject SET NOT NULL`;
+    // A creation request is unique per person, so a replay never returns another person's document.
+    await transaction`CREATE UNIQUE INDEX IF NOT EXISTS markdown_owner_request ON tools.markdown_documents (owner_subject, request_id)`;
+    await transaction`ALTER TABLE tools.markdown_documents DROP CONSTRAINT IF EXISTS markdown_documents_request_id_key`;
   });
 }
