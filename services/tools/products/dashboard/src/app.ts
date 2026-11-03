@@ -1,6 +1,3 @@
-import { readFile } from "node:fs/promises";
-import { dirname, resolve, posix, sep } from "node:path";
-import { fileURLToPath } from "node:url";
 import { suiteChromeStyles } from "#suite-chrome";
 import type { PublicSnapshotDocument } from "#domain";
 import { BucketReadError } from "./bucket.js";
@@ -9,43 +6,6 @@ import {
   renderPublicPage,
   renderStatusPage
 } from "./ui/index.js";
-
-const STATIC_ASSETS = {
-  "/assets/tools.css": {
-    file: "../public/assets/tools.css",
-    contentType: "text/css; charset=utf-8"
-  },
-  "/assets/local-time.js": {
-    file: "../public/assets/local-time.js",
-    contentType: "text/javascript; charset=utf-8"
-  },
-  "/assets/icons/publisher.png": {
-    file: "../public/assets/icons/publisher.png",
-    contentType: "image/png"
-  },
-  "/assets/icons/status.png": {
-    file: "../public/assets/icons/status.png",
-    contentType: "image/png"
-  },
-  "/assets/icons/money.png": {
-    file: "../public/assets/icons/money.png",
-    contentType: "image/png"
-  },
-  "/assets/icons/markdown-share.png": {
-    file: "../public/assets/icons/markdown-share.png",
-    contentType: "image/png"
-  },
-  "/assets/icons/network-console.png": {
-    file: "../public/assets/icons/network-console.png",
-    contentType: "image/png"
-  },
-  "/assets/icons/tools.png": {
-    file: "../public/assets/icons/tools.png",
-    contentType: "image/png"
-  }
-} as const;
-
-type StaticAssetPath = keyof typeof STATIC_ASSETS;
 
 export interface PageRenderer {
   public(snapshot: PublicSnapshotDocument, publicOrigin: string): string;
@@ -152,9 +112,6 @@ async function route(
       }
     });
   }
-  if (readMethod && isStaticAssetPath(url.pathname)) {
-    return asset(url.pathname);
-  }
 
   if (isProtectedPath(url.pathname)) {
     await authenticate(request);
@@ -222,53 +179,6 @@ function html(body: string): Response {
         "default-src 'none'; style-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
     }
   });
-}
-
-function isStaticAssetPath(pathname: string): pathname is StaticAssetPath {
-  return pathname in STATIC_ASSETS;
-}
-
-async function asset(path: StaticAssetPath): Promise<Response> {
-  const metadata = STATIC_ASSETS[path];
-  const modulePath = fileURLToPath(import.meta.url);
-  const moduleDir = dirname(modulePath);
-  const assetPath = metadata.file;
-  const withoutParent = assetPath.replace(/^\.\.\//, "");
-  const relativeWithoutLeadingPublic = withoutParent.replace(/^public\//, "");
-  const candidateFiles = new Set([
-    resolve(moduleDir, "..", withoutParent),
-    resolve(process.cwd(), withoutParent),
-    resolve(process.cwd(), "services", "tools", "dashboard", withoutParent),
-    resolve(process.cwd(), "apps", "tools-web", withoutParent),
-    resolve(process.cwd(), "..", "tools-web", withoutParent)
-  ]);
-  if (
-    modulePath.includes(`${sep}.output${sep}server${sep}`) ||
-    modulePath.includes(`${sep}.output${sep}server`) ||
-    modulePath.includes(`${posix.sep}.output${posix.sep}server${posix.sep}`) ||
-    modulePath.includes(`${posix.sep}.output${posix.sep}server`)
-  ) {
-    candidateFiles.add(
-      resolve(moduleDir, "..", "..", "public", relativeWithoutLeadingPublic)
-    );
-  }
-
-  let lastError: unknown;
-  for (const filePath of candidateFiles) {
-    try {
-      const file = await readFile(filePath);
-      return new Response(file, {
-        headers: {
-          "Content-Type": metadata.contentType,
-          "Cache-Control": "public, max-age=3600"
-        }
-      });
-    } catch (error) {
-      lastError = error;
-    }
-  }
-  if (lastError instanceof Error) throw lastError;
-  throw new Error("Unable to resolve static asset");
 }
 
 const safeConsoleLogger: AppLogger = {

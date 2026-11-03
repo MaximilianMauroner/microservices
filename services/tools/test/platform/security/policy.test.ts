@@ -75,9 +75,6 @@ describe("central platform route policy", () => {
     expect(classifyRoute("/theme.js.map", "GET")).toEqual({ kind: "human-session" });
     expect(classifyRoute("/assets/ops.js", "GET")).toEqual({ kind: "human-session" });
     expect(classifyRoute("/assets/markdown-admin.js", "GET")).toEqual({ kind: "human-session" });
-    expect(classifyRoute("/assets/local-time.js", "GET")).toEqual({ kind: "public" });
-    expect(classifyRoute("/assets/icons/money.png", "GET")).toEqual({ kind: "public" });
-    expect(classifyRoute("/assets/icons/tools.png", "GET")).toEqual({ kind: "public" });
     expect(classifyRoute("/assets/App-B71UvkP1.js", "GET")).toEqual({ kind: "public" });
     expect(classifyRoute("/assets/styles-DHyxYeeB.css", "HEAD")).toEqual({ kind: "public" });
     expect(classifyRoute("/assets/App-B71UvkP1.js.map", "GET")).toEqual({ kind: "human-session" });

@@ -16,6 +16,8 @@ export default defineConfig({
     tanstackStart({ srcDirectory: "app", serverFns: { base: SERVER_FUNCTION_BASE_PATH } }),
     nitro({
       preset: "node-server",
+      // Nitro ships only its own public folders. Vite's publicDir serves these in development.
+      publicAssets: [{ dir: "./products/dashboard/public", maxAge: 3600 }],
       // Preserve route and dependency chunks so public requests do not load
       // every product's SSR code. Smoke-check rendered routes after upgrades:
       // an older Rolldown version emitted invalid cross-chunk namespace exports.

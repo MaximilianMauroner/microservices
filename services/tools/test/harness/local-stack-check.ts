@@ -65,7 +65,7 @@ try {
       const deadline = AbortSignal.timeout(60_000);
       for (;;) {
         try {
-          const responses = await Promise.all(["/live", "/health"].map((path) => fetch(new URL(path, config.publicOrigin), {
+          const responses = await Promise.all(["/live", "/health", "/assets/tools.css", "/assets/icons/tools.png"].map((path) => fetch(new URL(path, config.publicOrigin), {
             signal: AbortSignal.any([deadline, AbortSignal.timeout(3_000)]), redirect: "error",
           })));
           const ready = responses.every((response) => response.status === 200);
