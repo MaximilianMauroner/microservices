@@ -9,11 +9,13 @@ import type { KitchenStore } from "../../../products/kitchen/repository.js";
 
 it("hides disabled kitchens and denies reads, writes, and copies to them", async () => {
   let enabled = false;
-  const home: Kitchen = { id: "home", name: "Home", mcpEnabled: true, groups: [], members: [] };
+  const home: Kitchen = { id: "home", name: "Home", mcpEnabled: true, hidden: false, groups: [], members: [] };
   const privateKitchen: Kitchen = { ...home, id: "private", name: "Private", mcpEnabled: false };
   const store: KitchenStore = {
     list: vi.fn(async () => [{ ...home, mcpEnabled: enabled }, privateKitchen]),
     open: vi.fn(),
+    setMcpEnabled: vi.fn(),
+    leave: vi.fn(),
     admin: vi.fn(),
     copyRecipe: vi.fn(),
     readiness: vi.fn(),

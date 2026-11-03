@@ -42,9 +42,11 @@ export type KitchenPerson = Readonly<{ id: string; email: string }>;
 
 export interface KitchenStore {
   /** Kitchens the person can open: every kitchen for the admin, their own kitchens for a member. */
-  list(who: Who): Promise<readonly Kitchen[]>;
+  list(who: Who, options?: { includeHidden?: boolean }): Promise<readonly Kitchen[]>;
   /** Opens one kitchen, or fails with not_found when the person may not open it. */
   open(who: Who, kitchenId: string): Promise<KitchenScope>;
+  setMcpEnabled(who: Who, kitchenId: string, enabled: boolean): Promise<void>;
+  leave(who: Who, kitchenId: string): Promise<void>;
   /** Admin-only kitchen management. */
   admin(who: Who): KitchenAdmin;
   /** Copies a recipe and the ingredients it uses into another kitchen the person can open. */
@@ -56,7 +58,8 @@ export interface KitchenStore {
 export interface KitchenAdmin {
   create(name: string): Promise<Kitchen>;
   rename(kitchenId: string, name: string): Promise<Kitchen>;
-  setMcpEnabled(kitchenId: string, enabled: boolean): Promise<Kitchen>;
+  move(kitchenId: string, personId: string): Promise<void>;
+  restore(kitchenId: string): Promise<void>;
   remove(kitchenId: string): Promise<void>;
   /** Adds an invited person and grants them Kitchen, so the kitchen opens for them at once. */
   addMember(kitchenId: string, personId: string): Promise<Kitchen>;
@@ -121,16 +124,18 @@ export function createPostgresKitchenStore(databaseUrl: string, options: { readO
 }
 
 export function kitchenStore(sql: Sql): KitchenStore {
-  async function kitchensWhere(db: Db, filter: postgres.PendingQuery<postgres.Row[]>): Promise<Kitchen[]> {
-    const rows = await db<{ id: string; name: string; mcp_enabled: boolean; groups: string[]; members: { personId: string; email: string }[] }[]>`
-      select k.id, k.name, k.mcp_enabled, k.groups,
+  async function kitchensWhere(db: Db, who: Who, filter: postgres.PendingQuery<postgres.Row[]>): Promise<Kitchen[]> {
+    const rows = await db<{ id: string; name: string; mcp_enabled: boolean; hidden: boolean; groups: string[]; members: { personId: string; email: string }[] }[]>`
+      select k.id, k.name, k.groups,
+        coalesce((select s.mcp_enabled from tools.kitchen_person_settings s where s.kitchen_id = k.id and s.subject = ${who.subject}), false) mcp_enabled,
+        coalesce((select s.hidden from tools.kitchen_person_settings s where s.kitchen_id = k.id and s.subject = ${who.subject}), false) hidden,
         coalesce(json_agg(json_build_object('personId', p.id, 'email', p.email) order by p.email) filter (where p.id is not null), '[]') members
       from tools.kitchens k
       left join tools.kitchen_members m on m.kitchen_id = k.id
       left join tools.people p on p.id = m.person_id
       where ${filter}
       group by k.id order by lower(k.name), k.created_at`;
-    return rows.map((row) => ({ id: row.id, name: row.name, mcpEnabled: row.mcp_enabled, members: row.members, groups: row.groups }));
+    return rows.map((row) => ({ id: row.id, name: row.name, mcpEnabled: row.mcp_enabled, hidden: row.hidden, members: row.members, groups: row.groups }));
   }
 
   function visibleTo(who: Who) {
@@ -139,22 +144,47 @@ export function kitchenStore(sql: Sql): KitchenStore {
       : sql`k.id in (select m.kitchen_id from tools.kitchen_members m join tools.people p on p.id = m.person_id where p.google_subject = ${who.subject})`;
   }
 
-  async function openKitchen(who: Who, kitchenId: string): Promise<Kitchen> {
+  async function openKitchen(who: Who, kitchenId: string, db: Db = sql): Promise<Kitchen> {
     if (!isUuid(kitchenId)) throw new KitchenError("This kitchen does not exist.", "not_found");
-    const [kitchen] = await kitchensWhere(sql, sql`k.id = ${kitchenId} and ${visibleTo(who)}`);
+    const [kitchen] = await kitchensWhere(db, who, sql`k.id = ${kitchenId} and ${visibleTo(who)}`);
     if (!kitchen) throw new KitchenError("This kitchen does not exist.", "not_found");
     return kitchen;
   }
 
   return {
-    list: (who) => kitchensWhere(sql, visibleTo(who)),
+    async list(who, options = {}) {
+      const all = await kitchensWhere(sql, who, visibleTo(who));
+      return options.includeHidden && who.role === "admin" ? all : all.filter((one) => !one.hidden);
+    },
+    async setMcpEnabled(who, kitchenId, enabled) {
+      await openKitchen(who, kitchenId);
+      await sql.begin(async (tx) => {
+        await tx`select id from tools.kitchens where id = ${kitchenId} for update`;
+        const kitchen = await openKitchen(who, kitchenId, tx);
+        if (kitchen.hidden) throw new KitchenError("Return this kitchen to your list before enabling MCP access.", "forbidden");
+        await tx`insert into tools.kitchen_person_settings (kitchen_id, subject, mcp_enabled)
+          values (${kitchenId}, ${who.subject}, ${enabled})
+          on conflict (kitchen_id, subject) do update set mcp_enabled = excluded.mcp_enabled`;
+      });
+    },
+    async leave(who, kitchenId) {
+      await openKitchen(who, kitchenId);
+      await sql.begin(async (tx) => {
+        await tx`select id from tools.kitchens where id = ${kitchenId} for update`;
+        await openKitchen(who, kitchenId, tx);
+        const [other] = await tx`select m.person_id from tools.kitchen_members m join tools.people p on p.id = m.person_id
+          where m.kitchen_id = ${kitchenId} and p.google_subject is distinct from ${who.subject} limit 1`;
+        if (!other) throw new KitchenError("Add another person before leaving this kitchen.", "conflict");
+        await leaveKitchen(tx, who, kitchenId);
+      });
+    },
     async open(who, kitchenId) {
       return scope(sql, await openKitchen(who, kitchenId));
     },
     admin(who) {
       if (who.role !== "admin") throw new KitchenError("Only the admin can manage kitchens.", "forbidden");
       const one = async (kitchenId: string) => {
-        const [kitchen] = await kitchensWhere(sql, sql`k.id = ${kitchenId}`);
+        const [kitchen] = await kitchensWhere(sql, who, sql`k.id = ${kitchenId}`);
         if (!kitchen) throw new KitchenError("This kitchen does not exist.", "not_found");
         return kitchen;
       };
@@ -169,10 +199,23 @@ export function kitchenStore(sql: Sql): KitchenStore {
           await sql`update tools.kitchens set name = ${requiredName(name, "kitchen")} where id = ${kitchenId}`;
           return one(kitchenId);
         },
-        async setMcpEnabled(kitchenId, enabled) {
+        async move(kitchenId, personId) {
           await one(kitchenId);
-          await sql`update tools.kitchens set mcp_enabled = ${enabled} where id = ${kitchenId}`;
-          return one(kitchenId);
+          if (!isUuid(personId)) throw new KitchenError("This person is not invited.", "not_found");
+          await sql.begin(async (tx) => {
+            await tx`select id from tools.kitchens where id = ${kitchenId} for update`;
+            const [person] = await tx<{ google_subject: string | null }[]>`select google_subject from tools.people where id = ${personId}`;
+            if (!person) throw new KitchenError("This person is not invited.", "not_found");
+            if (person.google_subject === who.subject) throw new KitchenError("Choose another person.");
+            await tx`insert into tools.kitchen_members (kitchen_id, person_id, added_at) values (${kitchenId}, ${personId}, now()) on conflict do nothing`;
+            await tx`update tools.kitchen_person_settings set hidden = false where kitchen_id = ${kitchenId} and subject in (select google_subject from tools.people where id = ${personId})`;
+            await tx`insert into tools.product_grants (person_id, product_id, granted_at) values (${personId}, 'kitchen', now()) on conflict do nothing`;
+            await leaveKitchen(tx, who, kitchenId);
+          });
+        },
+        async restore(kitchenId) {
+          await one(kitchenId);
+          await sql`update tools.kitchen_person_settings set hidden = false where kitchen_id = ${kitchenId} and subject = ${who.subject}`;
         },
         async remove(kitchenId) {
           await one(kitchenId);
@@ -185,17 +228,22 @@ export function kitchenStore(sql: Sql): KitchenStore {
             const [person] = await tx`select id from tools.people where id = ${personId}`;
             if (!person) throw new KitchenError("This person is not invited.", "not_found");
             await tx`insert into tools.kitchen_members (kitchen_id, person_id, added_at) values (${kitchenId}, ${personId}, now()) on conflict do nothing`;
+            await tx`update tools.kitchen_person_settings set hidden = false where kitchen_id = ${kitchenId} and subject in (select google_subject from tools.people where id = ${personId})`;
             await tx`insert into tools.product_grants (person_id, product_id, granted_at) values (${personId}, 'kitchen', now()) on conflict do nothing`;
           });
           return one(kitchenId);
         },
         async removeMember(kitchenId, personId) {
           await one(kitchenId);
-          if (isUuid(personId)) await sql`delete from tools.kitchen_members where kitchen_id = ${kitchenId} and person_id = ${personId}`;
+          if (isUuid(personId)) await sql.begin(async (tx) => {
+            await tx`select id from tools.kitchens where id = ${kitchenId} for update`;
+            await tx`delete from tools.kitchen_person_settings where kitchen_id = ${kitchenId} and subject in (select google_subject from tools.people where id = ${personId})`;
+            await tx`delete from tools.kitchen_members where kitchen_id = ${kitchenId} and person_id = ${personId}`;
+          });
           return one(kitchenId);
         },
         async people() {
-          return sql<KitchenPerson[]>`select id, email from tools.people order by email`;
+          return sql<KitchenPerson[]>`select id, email from tools.people where google_subject is distinct from ${who.subject} order by email`;
         }
       };
     },
@@ -223,6 +271,13 @@ export function kitchenStore(sql: Sql): KitchenStore {
     },
     close: () => sql.end()
   };
+}
+
+async function leaveKitchen(sql: TransactionSql, who: Who, kitchenId: string) {
+  await sql`delete from tools.kitchen_members where kitchen_id = ${kitchenId} and person_id in (select id from tools.people where google_subject = ${who.subject})`;
+  await sql`insert into tools.kitchen_person_settings (kitchen_id, subject, hidden, mcp_enabled)
+    values (${kitchenId}, ${who.subject}, true, false)
+    on conflict (kitchen_id, subject) do update set hidden = true, mcp_enabled = false`;
 }
 
 function scope(sql: Db, kitchen: Kitchen): KitchenScope {

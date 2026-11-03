@@ -5,14 +5,14 @@ import { AppShell } from "../../../platform/ui/components/app-shell.js";
 import { Button } from "../../../platform/ui/components/ui/button.js";
 import { Input } from "../../../platform/ui/components/ui/input.js";
 import { toast } from "../../../platform/ui/components/ui/toast.js";
-import type { KitchenAdminAction } from "../actions.js";
+import type { KitchenAdminAction, KitchenPersonalAction } from "../actions.js";
 import type { Kitchen } from "../domain.js";
 import type { KitchenPerson } from "../repository.js";
-import { runKitchenAdminAction } from "../server-functions.js";
+import { runKitchenAdminAction, runKitchenPersonalAction } from "../server-functions.js";
 import { KitchenSheet, LanguageMenu, memberLine, messageOf } from "./kit.js";
 import { type KitchenLanguage, useLanguage, useText } from "./language.js";
 
-type KitchensData = { kitchens: readonly Kitchen[]; isAdmin: boolean; people: readonly KitchenPerson[] };
+type KitchensData = { kitchens: readonly Kitchen[]; hiddenKitchens: readonly Kitchen[]; isAdmin: boolean; people: readonly KitchenPerson[] };
 
 const en = {
   title: "Kitchens",
@@ -47,8 +47,20 @@ const en = {
   renamed: "Kitchen renamed",
   created: (name: string) => `${name} created`,
   name: "Name",
-  mcpAccess: "Allow MCP access",
-  mcpHint: "Connected assistants can use this kitchen. Off by default.",
+  leave: "Leave kitchen",
+  leaveConfirm: (name: string) => `Leave ${name}? Its other members keep the kitchen and all its data.`,
+  left: "You left the kitchen",
+  move: "Hand over and leave",
+  moveTitle: (name: string) => `Hand over ${name}`,
+  moveHint: "Choose the person who will keep this kitchen. Other members stay. You leave and turn off your MCP access. Admin recovery access stays available.",
+  recipient: "Person",
+  choosePerson: "Choose a person…",
+  moved: "Kitchen handed over",
+  recovery: "Kitchens you left",
+  restore: "Return to my list",
+  restored: "Kitchen returned to your list",
+  mcpAccess: "Allow my assistants to use this kitchen",
+  mcpHint: "This setting applies only to your account. Off by default.",
   mcpUpdated: "MCP access updated",
   namePlaceholder: "Home, Max and Anna, …"
 };
@@ -88,8 +100,20 @@ const TEXT: Record<KitchenLanguage, KitText> = {
     renamed: "Küche umbenannt",
     created: (name: string) => `${name} angelegt`,
     name: "Name",
-    mcpAccess: "MCP-Zugriff erlauben",
-    mcpHint: "Verbundene Assistenten können diese Küche nutzen. Standardmäßig aus.",
+    leave: "Küche verlassen",
+    leaveConfirm: (name: string) => `${name} verlassen? Die anderen Mitglieder behalten die Küche und alle Daten.`,
+    left: "Du hast die Küche verlassen",
+    move: "Übergeben und verlassen",
+    moveTitle: (name: string) => `${name} übergeben`,
+    moveHint: "Wähle die Person, die diese Küche behält. Andere Mitglieder bleiben. Du verlässt die Küche und schaltest deinen MCP-Zugriff aus. Der Admin kann die Küche weiterhin verwalten.",
+    recipient: "Person",
+    choosePerson: "Person auswählen…",
+    moved: "Küche übergeben",
+    recovery: "Verlassene Küchen",
+    restore: "Wieder in meiner Liste anzeigen",
+    restored: "Küche wieder in deiner Liste",
+    mcpAccess: "Meinen Assistenten Zugriff auf diese Küche erlauben",
+    mcpHint: "Diese Einstellung gilt nur für dein Konto. Standardmäßig aus.",
     mcpUpdated: "MCP-Zugriff aktualisiert",
     namePlaceholder: "Zuhause, Max und Anna, …"
   }
@@ -102,12 +126,16 @@ export function KitchensPage(data: KitchensData) {
   const [pending, setPending] = useState(false);
   const [creating, setCreating] = useState(false);
   const [renaming, setRenaming] = useState<Kitchen | undefined>();
+  const [moving, setMoving] = useState<Kitchen | undefined>();
+  const [recipient, setRecipient] = useState("");
   const [name, setName] = useState("");
 
-  async function run(action: KitchenAdminAction, title: string) {
+  async function run(action: KitchenAdminAction | KitchenPersonalAction, title: string) {
     setPending(true);
     try {
-      const result = await runKitchenAdminAction({ data: action });
+      const result = action.type === "kitchen.mcp" || action.type === "kitchen.leave"
+        ? await runKitchenPersonalAction({ data: action })
+        : await runKitchenAdminAction({ data: action });
       await router.invalidate();
       toast.add({ title, type: "success" });
       return result;
@@ -176,14 +204,22 @@ export function KitchensPage(data: KitchensData) {
                         </label>
                       ) : <p className="text-xs text-muted-foreground">{data.people.length ? text.everyoneMember : <>{text.inviteIn} <Link to="/settings" className="underline">{text.settings}</Link> {text.inviteFirst}</>}</p>}
                       <p className="text-xs text-muted-foreground">{text.accessNote}</p>
-                      <label className="flex items-center gap-2 text-sm">
-                        <input type="checkbox" checked={kitchen.mcpEnabled} disabled={pending}
-                          onChange={(event) => void run({ type: "kitchen.mcp", kitchenId: kitchen.id, enabled: event.target.checked }, text.mcpUpdated)} />
-                        {text.mcpAccess}
-                      </label>
-                      <p className="text-xs text-muted-foreground">{text.mcpHint}</p>
                     </div>
                   ) : null}
+                  <div className="grid gap-2">
+                    <label className="flex min-h-11 items-center gap-2 text-sm">
+                      <input type="checkbox" checked={kitchen.mcpEnabled} disabled={pending}
+                        onChange={(event) => void run({ type: "kitchen.mcp", kitchenId: kitchen.id, enabled: event.target.checked }, text.mcpUpdated)} />
+                      {text.mcpAccess}
+                    </label>
+                    <p className="text-xs text-muted-foreground">{text.mcpHint}</p>
+                    <div className="flex flex-wrap gap-2">
+                      <Button size="sm" variant="outline" disabled={pending} onClick={() => {
+                        if (window.confirm(text.leaveConfirm(kitchen.name))) void run({ type: "kitchen.leave", kitchenId: kitchen.id }, text.left);
+                      }}>{text.leave}</Button>
+                      {data.isAdmin && data.people.length ? <Button size="sm" variant="outline" disabled={pending} onClick={() => { setMoving(kitchen); setRecipient(""); }}>{text.move}</Button> : null}
+                    </div>
+                  </div>
                   <div className="mt-auto flex items-center justify-between gap-2">
                     <Button nativeButton={false} render={<Link to="/kitchen/$kitchenId" params={{ kitchenId: kitchen.id }} />}>{text.open}</Button>
                     {data.isAdmin ? (
@@ -205,7 +241,32 @@ export function KitchensPage(data: KitchensData) {
             {data.isAdmin ? <Button className="mt-4" onClick={() => { setName(""); setCreating(true); }}><PlusIcon aria-hidden /> {text.createFirst}</Button> : null}
           </div>
         )}
+        {data.isAdmin && data.hiddenKitchens.length ? (
+          <details className="mt-6 rounded-2xl border border-[color:var(--surface-border)] p-4">
+            <summary className="cursor-pointer font-medium">{text.recovery}</summary>
+            <ul className="mt-3 grid gap-3">
+              {data.hiddenKitchens.map((kitchen) => <li key={kitchen.id} className="flex flex-wrap items-center justify-between gap-2">
+                <Link to="/kitchen/$kitchenId" params={{ kitchenId: kitchen.id }} className="underline">{kitchen.name}</Link>
+                <Button size="sm" variant="outline" disabled={pending} onClick={() => void run({ type: "kitchen.restore", kitchenId: kitchen.id }, text.restored)}>{text.restore}</Button>
+              </li>)}
+            </ul>
+          </details>
+        ) : null}
       </main>
+      <KitchenSheet open={moving !== undefined} onOpenChange={(open) => { if (!open) setMoving(undefined); }}
+        title={moving ? text.moveTitle(moving.name) : text.move}
+        footer={<Button disabled={!recipient || pending} onClick={async () => {
+          if (moving && await run({ type: "kitchen.move", kitchenId: moving.id, personId: recipient }, text.moved)) setMoving(undefined);
+        }}>{text.move}</Button>}>
+        <p className="mb-4 text-sm text-muted-foreground">{text.moveHint}</p>
+        <label className="grid gap-1.5 text-sm font-medium">
+          {text.recipient}
+          <select className="h-11 rounded-lg border border-input bg-field px-2 text-sm" value={recipient} disabled={pending} onChange={(event) => setRecipient(event.target.value)}>
+            <option value="">{text.choosePerson}</option>
+            {data.people.map((person) => <option key={person.id} value={person.id}>{person.email}</option>)}
+          </select>
+        </label>
+      </KitchenSheet>
       <KitchenSheet
         open={creating || renaming !== undefined}
         onOpenChange={(next) => { if (!next) { setCreating(false); setRenaming(undefined); } }}
