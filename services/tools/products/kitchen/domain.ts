@@ -231,6 +231,11 @@ export function scaledLines(recipe: Pick<Recipe, "servings" | "lines">, servings
   return recipe.lines.map((line) => ({ ...line, amount: round(line.amount * factor) }));
 }
 
+/** The ingredients of a recipe, as written, that are not fully at home. */
+export function missingAtHome(recipe: Pick<Recipe, "lines">, stock: ReadonlyMap<string, number>): readonly string[] {
+  return recipe.lines.filter((line) => (stock.get(line.ingredientId) ?? 0) < line.amount).map((line) => line.ingredient);
+}
+
 /**
  * What to buy for the meals that are not cooked yet: the sum of their scaled
  * lines, minus what is at home. Cooking removes amounts from stock, so cooked

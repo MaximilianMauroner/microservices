@@ -98,7 +98,7 @@ describe("platform fetch gateway", () => {
         const admin = await request(platform, path, { method, headers: { Cookie: "session=valid" } });
         const asMember = await request(platform, path, { method, headers: { Cookie: "session=member" } });
         expect(admin.status, `${method} ${path} as admin`).toBe(200);
-        expect(asMember.status, `${method} ${path} as member`).toBe(["/settings", "/consent"].includes(path) ? 200 : 403);
+        expect(asMember.status, `${method} ${path} as member`).toBe(["/settings", "/consent", "/connect"].includes(path) ? 200 : 403);
       }
     }
   });

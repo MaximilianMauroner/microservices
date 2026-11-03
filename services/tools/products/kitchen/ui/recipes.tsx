@@ -1,5 +1,5 @@
 import { Link, useNavigate } from "@tanstack/react-router";
-import { ChevronLeftIcon, ClockIcon, CopyIcon, PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
+import { ChevronLeftIcon, ClockIcon, CopyIcon, PencilIcon, PlusIcon, RefrigeratorIcon, Trash2Icon, XIcon } from "lucide-react";
 import { useState } from "react";
 import { Button } from "../../../platform/ui/components/ui/button.js";
 import { Input } from "../../../platform/ui/components/ui/input.js";
@@ -19,6 +19,13 @@ const en = {
   intro: "Collect the dishes you cook. A name is enough to start.",
   newRecipe: "New recipe",
   findRecipe: "Find a recipe",
+  fromHome: "Cook from home",
+  withIngredient: "With an ingredient",
+  removeFilter: (name: string) => `Remove ${name}`,
+  allAtHome: "All at home",
+  missing: (names: readonly string[]) => `${names.length} missing: ${names.slice(0, 3).join(", ")}${names.length > 3 ? ", …" : ""}`,
+  noFit: "No recipe fits these filters",
+  removeAFilter: "Remove a filter to see more.",
   quickIdea: "Quick idea, such as Shakshuka",
   ideaLabel: "Recipe idea",
   addIdea: "Add idea",
@@ -71,6 +78,13 @@ const TEXT: Record<KitchenLanguage, KitText> = {
     intro: "Sammle die Gerichte, die du kochst. Ein Name reicht zum Start.",
     newRecipe: "Neues Rezept",
     findRecipe: "Rezept suchen",
+    fromHome: "Mit dem Vorrat kochen",
+    withIngredient: "Mit einer Zutat",
+    removeFilter: (name: string) => `${name} entfernen`,
+    allAtHome: "Alles im Vorrat",
+    missing: (names: readonly string[]) => `${names.length} ${names.length === 1 ? "fehlt" : "fehlen"}: ${names.slice(0, 3).join(", ")}${names.length > 3 ? ", …" : ""}`,
+    noFit: "Kein Rezept passt zu diesen Filtern",
+    removeAFilter: "Entferne einen Filter, um mehr zu sehen.",
     quickIdea: "Schnelle Idee, zum Beispiel Shakshuka",
     ideaLabel: "Rezeptidee",
     addIdea: "Idee hinzufügen",
@@ -115,13 +129,30 @@ const TEXT: Record<KitchenLanguage, KitText> = {
   }
 };
 
-export function KitchenRecipesPage(data: Frame & { recipes: readonly RecipeSummary[] }) {
+/** `missing` lists, for each recipe id, the ingredients that are not fully at home. */
+export function KitchenRecipesPage(data: Frame & { recipes: readonly RecipeSummary[]; ingredients: readonly Ingredient[]; missing: Readonly<Record<string, readonly string[]>> }) {
   const { kitchen, recipes } = data;
   const { run, pending } = useKitchenAction(kitchen.id);
   const text = useText(TEXT);
   const [query, setQuery] = useState("");
   const [idea, setIdea] = useState("");
-  const matches = recipes.filter((recipe) => recipe.name.toLowerCase().includes(query.trim().toLowerCase()));
+  const [fromHome, setFromHome] = useState(false);
+  const [wanted, setWanted] = useState<readonly Ingredient[]>([]);
+  const [pick, setPick] = useState("");
+  const byName = new Map(data.ingredients.map((one) => [one.name.toLowerCase(), one]));
+  const missingOf = (recipe: RecipeSummary) => data.missing[recipe.id] ?? [];
+  const filtered = Boolean(fromHome || wanted.length);
+  const matches = recipes
+    .filter((recipe) => recipe.name.toLowerCase().includes(query.trim().toLowerCase()))
+    .filter((recipe) => wanted.every((one) => recipe.ingredientIds.includes(one.id)))
+    .filter((recipe) => !fromHome || recipe.ingredientCount > 0)
+    // Cooking from home puts the recipes with the fewest missing ingredients first.
+    .sort((a, b) => fromHome ? missingOf(a).length - missingOf(b).length : 0);
+  const addWanted = (name: string) => {
+    const found = byName.get(name.trim().toLowerCase());
+    if (found && !wanted.some((one) => one.id === found.id)) setWanted((current) => [...current, found]);
+    if (found) setPick("");
+  };
   const ideas = recipes.filter((recipe) => !recipe.ingredientCount).length;
 
   async function addIdea() {
@@ -142,6 +173,23 @@ export function KitchenRecipesPage(data: Frame & { recipes: readonly RecipeSumma
           <Button type="submit" variant="outline" className="h-10" disabled={!idea.trim() || pending}>{text.addIdea}</Button>
         </form>
         <SearchField value={query} onValue={setQuery} label={text.findRecipe}>
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <button type="button" aria-pressed={fromHome} onClick={() => setFromHome((value) => !value)}
+            className="inline-flex h-9 items-center gap-1.5 rounded-full border border-control-border bg-control px-3 text-sm font-medium text-muted-foreground aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground">
+            <RefrigeratorIcon className="size-4" aria-hidden /> {text.fromHome}
+          </button>
+          {wanted.map((one) => (
+            <span key={one.id} className="inline-flex h-9 items-center gap-1 rounded-full border border-primary bg-[color-mix(in_srgb,var(--kitchen-hue)_12%,transparent)] pr-1 pl-3 text-sm font-medium">
+              {one.name}
+              <button type="button" aria-label={text.removeFilter(one.name)} onClick={() => setWanted((current) => current.filter((item) => item.id !== one.id))}
+                className="grid size-7 place-items-center rounded-full text-muted-foreground hover:text-foreground"><XIcon className="size-3.5" aria-hidden /></button>
+            </span>
+          ))}
+          <datalist id="kitchen-recipe-ingredients">{data.ingredients.filter((one) => !wanted.some((item) => item.id === one.id)).map((one) => <option key={one.id} value={one.name} />)}</datalist>
+          <Input className="h-9 w-48 rounded-full" list="kitchen-recipe-ingredients" placeholder={text.withIngredient} aria-label={text.withIngredient} value={pick}
+            onChange={(event) => { setPick(event.target.value); if (byName.has(event.target.value.trim().toLowerCase())) addWanted(event.target.value); }}
+            onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addWanted(pick); } }} />
+        </div>
         {matches.length ? (
           <ul className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
             {matches.map((recipe) => {
@@ -166,6 +214,11 @@ export function KitchenRecipesPage(data: Frame & { recipes: readonly RecipeSumma
                         </>
                       ) : <span>{text.idea}</span>}
                     </span>
+                    {recipe.ingredientCount ? (
+                      missingOf(recipe).length
+                        ? fromHome ? <span className="text-xs text-muted-foreground">{text.missing(missingOf(recipe))}</span> : null
+                        : <span className="inline-flex items-center gap-1 text-xs font-medium text-(--kitchen-home-ink)"><RefrigeratorIcon className="size-3.5" aria-hidden />{text.allAtHome}</span>
+                    ) : null}
                   </span>
                 </Link>
               </li>
@@ -173,7 +226,7 @@ export function KitchenRecipesPage(data: Frame & { recipes: readonly RecipeSumma
             })}
           </ul>
         ) : (
-          <KitchenEmpty title={recipes.length ? text.noMatch(query) : text.noRecipes} body={recipes.length ? text.tryAnother : text.addIdeaHint} />
+          <KitchenEmpty title={!recipes.length ? text.noRecipes : filtered ? text.noFit : text.noMatch(query)} body={!recipes.length ? text.addIdeaHint : filtered ? text.removeAFilter : text.tryAnother} />
         )}
         </SearchField>
       </div>

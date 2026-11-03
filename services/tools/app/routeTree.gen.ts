@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ConnectRouteImport } from './routes/connect'
 import { Route as ConsentRouteImport } from './routes/consent'
 import { Route as DocumentsRouteImport } from './routes/documents'
 import { Route as FaviconDoticoRouteImport } from './routes/favicon[.]ico'
@@ -85,6 +86,11 @@ import { Route as ApiFeedbackFormsFormIdExportRouteImport } from './routes/api/f
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ConnectRoute = ConnectRouteImport.update({
+  id: '/connect',
+  path: '/connect',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ConsentRoute = ConsentRouteImport.update({
@@ -452,6 +458,7 @@ const ApiFeedbackFormsFormIdExportRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/connect': typeof ConnectRoute
   '/consent': typeof ConsentRoute
   '/documents': typeof DocumentsRoute
   '/favicon.ico': typeof FaviconDoticoRoute
@@ -526,6 +533,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/connect': typeof ConnectRoute
   '/consent': typeof ConsentRoute
   '/documents': typeof DocumentsRoute
   '/favicon.ico': typeof FaviconDoticoRoute
@@ -595,6 +603,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/connect': typeof ConnectRoute
   '/consent': typeof ConsentRoute
   '/documents': typeof DocumentsRoute
   '/favicon.ico': typeof FaviconDoticoRoute
@@ -671,6 +680,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/connect'
     | '/consent'
     | '/documents'
     | '/favicon.ico'
@@ -745,6 +755,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/connect'
     | '/consent'
     | '/documents'
     | '/favicon.ico'
@@ -813,6 +824,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/connect'
     | '/consent'
     | '/documents'
     | '/favicon.ico'
@@ -888,6 +900,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ConnectRoute: typeof ConnectRoute
   ConsentRoute: typeof ConsentRoute
   DocumentsRoute: typeof DocumentsRoute
   FaviconDoticoRoute: typeof FaviconDoticoRoute
@@ -936,6 +949,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/connect': {
+      id: '/connect'
+      path: '/connect'
+      fullPath: '/connect'
+      preLoaderRoute: typeof ConnectRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/consent': {
@@ -1628,6 +1648,7 @@ const ApiShareDocumentsRouteWithChildren =
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ConnectRoute: ConnectRoute,
   ConsentRoute: ConsentRoute,
   DocumentsRoute: DocumentsRoute,
   FaviconDoticoRoute: FaviconDoticoRoute,

@@ -9,7 +9,7 @@ export const GRANTABLE_PRODUCTS = {
   money: { label: "Money", paths: ["/money", "/api/money"] }
 } as const satisfies Record<string, Readonly<{ label: string; paths: readonly [string, ...string[]] }>>;
 
-const MEMBER_PATHS = new Set(["/settings", "/consent"]);
+const MEMBER_PATHS = new Set(["/settings", "/consent", "/connect"]);
 
 export type GrantableProductId = keyof typeof GRANTABLE_PRODUCTS;
 

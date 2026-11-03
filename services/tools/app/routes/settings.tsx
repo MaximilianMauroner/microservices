@@ -1,5 +1,5 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { LogOutIcon } from "lucide-react";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { LogOutIcon, PlugIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { requireSignedIn } from "../../platform/auth/session.js";
 import { getPeople } from "../../platform/access/people-server-functions.js";
@@ -64,6 +64,9 @@ function SettingsPage() {
           </SettingRow>
           <SettingRow label="Sidebar" detail="Also Ctrl+B or ⌘B">
             <Segmented label="Sidebar" options={SIDEBAR} value={sidebar.open ? "open" : "icons"} onValue={(value) => sidebar.setOpen(value === "open")} />
+          </SettingRow>
+          <SettingRow label="AI apps" detail="Claude, ChatGPT, Codex, and more">
+            <Button nativeButton={false} variant="outline" size="sm" render={<Link to="/connect" preload="intent" />}><PlugIcon />Connect an AI app</Button>
           </SettingRow>
           <SettingRow label="Session" detail={session?.session.expiresAt ? `Ends ${formatDate(session.session.expiresAt)}` : "Signed in"}>
             <Button variant="destructive-subtle" size="sm" onClick={() => void signOut()}><LogOutIcon />Sign out</Button>

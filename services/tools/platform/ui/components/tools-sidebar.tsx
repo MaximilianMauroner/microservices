@@ -1,5 +1,5 @@
 import { Link, useLoaderData, useRouterState } from "@tanstack/react-router";
-import { ExternalLinkIcon, LaptopIcon, LogOutIcon, MoonIcon, MoreVerticalIcon, SettingsIcon, SunIcon } from "lucide-react";
+import { ExternalLinkIcon, LaptopIcon, LogOutIcon, MoonIcon, MoreVerticalIcon, PlugIcon, SettingsIcon, SunIcon } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { favicons } from "../favicons.js";
 import { getAttentionSummary, type AttentionSummary } from "../../../products/dashboard/attention.js";
@@ -214,6 +214,7 @@ function AccountMenu() {
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
         <DropdownMenuItem render={<Link to="/settings" preload="intent" />}><SettingsIcon />Settings</DropdownMenuItem>
+        <DropdownMenuItem render={<Link to="/connect" preload="intent" />}><PlugIcon />Connect an AI app</DropdownMenuItem>
         {isMobile ? (
           <DropdownMenuGroup>
             <DropdownMenuLabel className="px-2 pt-2 pb-1 text-xs font-normal text-muted-foreground">Appearance</DropdownMenuLabel>
