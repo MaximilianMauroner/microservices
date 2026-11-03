@@ -21,7 +21,8 @@ const en = {
   intro: "What you cook with, grouped the way you shop.",
   arrangeGroups: "Arrange groups",
   newIngredient: "New ingredient",
-  findPlaceholder: "Find an ingredient or group",
+  findPlaceholder: "Find or add an ingredient",
+  addNew: (name: string) => `Add “${name}” as a new ingredient`,
   kcal: "kcal",
   protein: "Protein",
   carbs: "Carbs",
@@ -71,7 +72,8 @@ const TEXT: Record<KitchenLanguage, KitText> = {
     intro: "Was du kochst, nach Gruppen sortiert, so wie du einkaufst.",
     arrangeGroups: "Gruppen ordnen",
     newIngredient: "Neue Zutat",
-    findPlaceholder: "Zutat oder Gruppe suchen",
+    findPlaceholder: "Zutat suchen oder hinzufügen",
+    addNew: (name: string) => `„${name}“ als neue Zutat hinzufügen`,
     kcal: "kcal",
     protein: "Eiweiß",
     carbs: "Kohlenhydrate",
@@ -118,6 +120,9 @@ export function KitchenIngredientsPage(data: IngredientsData) {
   const text = useText(TEXT);
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState<Ingredient | "new" | undefined>();
+  const [newName, setNewName] = useState("");
+  const typed = query.trim();
+  const create = (name: string) => { setNewName(name); setEditing("new"); };
   const [arranging, setArranging] = useState(false);
   const matches = data.ingredients.filter((one) => [one.name, ...ingredientGroups(one).map((group) => groupLabel(group, language))].join(" ").toLowerCase().includes(query.trim().toLowerCase()));
   // An ingredient in more than one group shows in each of them.
@@ -132,12 +137,13 @@ export function KitchenIngredientsPage(data: IngredientsData) {
       actions={(
         <>
           {data.ingredients.length ? <Button variant="outline" onClick={() => setArranging(true)}><ListOrderedIcon aria-hidden /> {text.arrangeGroups}</Button> : null}
-          <Button onClick={() => setEditing("new")}><PlusIcon aria-hidden /> {text.newIngredient}</Button>
+          <Button onClick={() => create("")}><PlusIcon aria-hidden /> {text.newIngredient}</Button>
         </>
       )}
     >
       <div className="grid gap-5">
-        <SearchField value={query} onValue={setQuery} label={text.findPlaceholder}>
+        <SearchField value={query} onValue={setQuery} label={text.findPlaceholder}
+          add={typed && !data.ingredients.some((one) => one.name.toLowerCase() === typed.toLowerCase()) ? { label: text.addNew(typed), run: () => create(typed) } : undefined}>
         <div className="gap-5 lg:columns-2">
           {groups.map(([section, items]) => (
             <section key={section} aria-label={groupLabel(section, language)} className="mb-5 min-w-0 break-inside-avoid last:mb-0">
@@ -177,18 +183,18 @@ export function KitchenIngredientsPage(data: IngredientsData) {
         </SearchField>
       </div>
       <GroupsSheet open={arranging} onClose={() => setArranging(false)} data={data} />
-      <IngredientSheet key={editing === "new" ? "new" : editing?.id ?? "none"} ingredient={editing} onClose={() => setEditing(undefined)} data={data} />
+      <IngredientSheet key={editing === "new" ? `new:${newName}` : editing?.id ?? "none"} ingredient={editing} newName={newName} onClose={() => setEditing(undefined)} data={data} />
     </KitchenPage>
   );
 }
 
 /** Shows and edits one ingredient: unit, groups, nutrition, notes, and the recipes that use it. */
-export function IngredientSheet({ ingredient, onClose, data }: { ingredient: Ingredient | "new" | undefined; onClose: () => void; data: IngredientsData }) {
+export function IngredientSheet({ ingredient, newName = "", onClose, data }: { ingredient: Ingredient | "new" | undefined; newName?: string; onClose: () => void; data: IngredientsData }) {
   const language = useLanguage();
   const text = useText(TEXT);
   const { run, pending } = useKitchenAction(data.kitchen.id);
   const existing = ingredient === "new" ? undefined : ingredient;
-  const [name, setName] = useState(existing?.name ?? "");
+  const [name, setName] = useState(existing?.name ?? newName);
   const [unit, setUnit] = useState<IngredientUnit>(existing?.unit ?? "g");
   const [section, setSection] = useState(existing && existing.section !== UNSORTED_SECTION ? existing.section : "");
   const [otherGroups, setOtherGroups] = useState<readonly string[]>(existing?.otherGroups ?? []);

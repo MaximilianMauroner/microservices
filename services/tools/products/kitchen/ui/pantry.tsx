@@ -4,7 +4,7 @@ import { Button } from "../../../platform/ui/components/ui/button.js";
 import { Input } from "../../../platform/ui/components/ui/input.js";
 import { Label } from "../../../platform/ui/components/ui/label.js";
 import { cn } from "../../../platform/ui/lib/utils.js";
-import { addDays, formatAmount, type Ingredient, ingredientGroups, type Leftover, type StockItem, unitName } from "../domain.js";
+import { addDays, formatAmount, type Ingredient, ingredientGroups, INGREDIENT_UNITS, type IngredientUnit, type Leftover, type StockItem, unitName } from "../domain.js";
 import { byGroup, GROUP_LIST, GroupDot, groupColor, GroupLabel, groupLabel, groupListStyle, ink, KitchenEmpty, KitchenPage, KitchenSheet, SearchField, Stepper, tint, useByLabel, useKitchenAction } from "./kit.js";
 import { IngredientSheet, type IngredientsData } from "./ingredients.js";
 import { type KitchenLanguage, useLanguage, useText } from "./language.js";
@@ -33,9 +33,12 @@ const en = {
   addStockTitle: "Add to stock",
   addToGroup: (group: string) => `Add to ${group}`,
   addStockDescription: "The amount adds to what is already at home.",
-  findIngredient: "Find an ingredient",
+  findIngredient: "Find or add an ingredient",
+  addNew: (name: string) => `Add “${name}” as a new ingredient`,
+  newIngredient: "New ingredient. You can add nutrition later on the Ingredients page.",
+  unit: "Unit",
   added: (amount: string, name: string) => `${amount} ${name} added`,
-  addIngredientsFirst: "Add ingredients first, on the Ingredients page or inside a recipe.",
+  addIngredientsFirst: "No ingredients yet. Type a name above and select + to add one.",
   addLeftoverTitle: "Add a leftover",
   keepIt: "Keep it",
   kept: (name: string) => `${name} kept`,
@@ -72,9 +75,12 @@ const TEXT: Record<KitchenLanguage, typeof en> = {
     addStockTitle: "Zum Vorrat hinzufügen",
     addToGroup: (group: string) => `Zu ${group} hinzufügen`,
     addStockDescription: "Die Menge kommt zu dem dazu, was schon zu Hause ist.",
-    findIngredient: "Zutat suchen",
+    findIngredient: "Zutat suchen oder hinzufügen",
+    addNew: (name: string) => `„${name}“ als neue Zutat hinzufügen`,
+    newIngredient: "Neue Zutat. Nährwerte kannst du später auf der Seite Zutaten ergänzen.",
+    unit: "Einheit",
     added: (amount: string, name: string) => `${amount} ${name} hinzugefügt`,
-    addIngredientsFirst: "Füge zuerst Zutaten hinzu, auf der Seite Zutaten oder in einem Rezept.",
+    addIngredientsFirst: "Noch keine Zutaten. Tippe oben einen Namen ein und dann auf +, um eine hinzuzufügen.",
     addLeftoverTitle: "Rest hinzufügen",
     keepIt: "Aufbewahren",
     kept: (name: string) => `${name} aufbewahrt`,
@@ -212,23 +218,37 @@ function AddStockSheet({ open, group, onClose, data }: { open: boolean; group?: 
   const language = useLanguage();
   const text = useText(TEXT);
   const [ingredientId, setIngredientId] = useState("");
+  /** A name that is not an ingredient yet. Adding it to the stock creates the ingredient first. */
+  const [draft, setDraft] = useState<{ name: string; unit: IngredientUnit }>();
   const [amount, setAmount] = useState("");
   const [query, setQuery] = useState("");
-  const selected = data.ingredients.find((one) => one.id === ingredientId);
+  const selected = draft ?? data.ingredients.find((one) => one.id === ingredientId);
+  const typed = query.trim();
+  const isNew = Boolean(typed) && !data.ingredients.some((one) => one.name.toLowerCase() === typed.toLowerCase());
+  const value = Number(amount.replace(",", "."));
   const home = new Map(data.stock.map((item) => [item.ingredientId, item.amount]));
   const matches = byGroup(data.kitchen.groups, data.ingredients.filter((one) => (!group || ingredientGroups(one).includes(group)) && one.name.toLowerCase().includes(query.trim().toLowerCase())), (one) => one.section)
     .flatMap(([, items]) => items).slice(0, 60);
-  const close = () => { onClose(); setIngredientId(""); setAmount(""); setQuery(""); };
+  const close = () => { onClose(); setIngredientId(""); setDraft(undefined); setAmount(""); setQuery(""); };
+  async function add() {
+    if (!selected) return;
+    let id = ingredientId;
+    if (draft) {
+      const created = await run({ type: "ingredient.save", name: draft.name, unit: draft.unit, section: group ?? "", kcal: null, protein: null, carbs: null, fat: null, notes: "" });
+      if (!created?.id) return;
+      id = created.id;
+    }
+    if (await run({ type: "stock.add", ingredientId: id, amount: value }, { title: text.added(formatAmount(value, selected.unit, language), selected.name) })) close();
+  }
   return (
     <KitchenSheet open={open} onOpenChange={(next) => { if (!next) close(); }} title={group ? text.addToGroup(groupLabel(group, language)) : text.addStockTitle} description={text.addStockDescription}
-      footer={<Button size="lg" className="px-5" disabled={!selected || !(Number(amount.replace(",", ".")) > 0) || pending}
-        onClick={async () => { if (selected && await run({ type: "stock.add", ingredientId: selected.id, amount: Number(amount.replace(",", ".")) }, { title: text.added(formatAmount(Number(amount.replace(",", ".")), selected.unit, language), selected.name) })) close(); }}>{text.addToStock}</Button>}>
-      {data.ingredients.length ? (
-        <div className="grid gap-4">
-          <SearchField value={query} onValue={setQuery} label={text.findIngredient} inSheet>
+      footer={<Button size="lg" className="px-5" disabled={!selected || !(value > 0) || pending} onClick={() => void add()}>{text.addToStock}</Button>}>
+      <div className="grid gap-4">
+          <SearchField value={query} onValue={setQuery} label={text.findIngredient} inSheet
+            add={isNew ? { label: text.addNew(typed), run: () => { setDraft({ name: typed, unit: draft?.unit ?? "g" }); setIngredientId(""); } } : undefined}>
           <div className="flex flex-wrap gap-1.5">
             {matches.map((one) => (
-              <button key={one.id} type="button" aria-pressed={one.id === ingredientId} onClick={() => setIngredientId(one.id)}
+              <button key={one.id} type="button" aria-pressed={!draft && one.id === ingredientId} onClick={() => { setIngredientId(one.id); setDraft(undefined); }}
                 className="inline-flex h-9 items-center gap-1.5 rounded-full border border-control-border bg-control px-3 text-sm aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground">
                 <GroupDot groups={data.kitchen.groups} group={one.section} className="size-2" />
                 {one.name}
@@ -240,14 +260,22 @@ function AddStockSheet({ open, group, onClose, data }: { open: boolean; group?: 
           {selected ? (
             <div className="grid gap-1.5">
               <Label htmlFor="stock-amount">{text.amountOf(selected.name)}</Label>
-              <div className="flex items-center gap-2">
+              {draft ? <p className="text-xs text-muted-foreground">{text.newIngredient}</p> : null}
+              <div className="flex flex-wrap items-center gap-2">
                 <Input id="stock-amount" autoFocus className="h-10 w-32 tabular-nums" inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} />
-                <span className="text-sm text-muted-foreground">{unitName(selected.unit, language)}</span>
+                {draft ? (
+                  <div role="radiogroup" aria-label={text.unit} className="inline-flex rounded-full bg-muted p-1">
+                    {INGREDIENT_UNITS.map((unit) => (
+                      <button key={unit} type="button" role="radio" aria-checked={draft.unit === unit} onClick={() => setDraft({ ...draft, unit })}
+                        className="h-8 rounded-full px-3 text-sm text-muted-foreground aria-checked:bg-background aria-checked:text-foreground aria-checked:shadow-sm">{unitName(unit, language)}</button>
+                    ))}
+                  </div>
+                ) : <span className="text-sm text-muted-foreground">{unitName(selected.unit, language)}</span>}
               </div>
             </div>
           ) : null}
-        </div>
-      ) : <p className="pb-2 text-sm text-muted-foreground">{text.addIngredientsFirst}</p>}
+          {!data.ingredients.length && !typed ? <p className="pb-2 text-sm text-muted-foreground">{text.addIngredientsFirst}</p> : null}
+      </div>
     </KitchenSheet>
   );
 }
