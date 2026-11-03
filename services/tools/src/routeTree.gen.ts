@@ -15,6 +15,7 @@ import { Route as FaviconDoticoRouteImport } from './routes/favicon[.]ico'
 import { Route as FaviconDotsvgRouteImport } from './routes/favicon[.]svg'
 import { Route as FeedbackRouteImport } from './routes/feedback'
 import { Route as HealthRouteImport } from './routes/health'
+import { Route as KitchenRouteImport } from './routes/kitchen'
 import { Route as LiveRouteImport } from './routes/live'
 import { Route as MarkdownRouteImport } from './routes/markdown'
 import { Route as MoneyRouteImport } from './routes/money'
@@ -98,6 +99,11 @@ const FeedbackRoute = FeedbackRouteImport.update({
 const HealthRoute = HealthRouteImport.update({
   id: '/health',
   path: '/health',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const KitchenRoute = KitchenRouteImport.update({
+  id: '/kitchen',
+  path: '/kitchen',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LiveRoute = LiveRouteImport.update({
@@ -381,6 +387,7 @@ export interface FileRoutesByFullPath {
   '/favicon.svg': typeof FaviconDotsvgRoute
   '/feedback': typeof FeedbackRouteWithChildren
   '/health': typeof HealthRouteWithChildren
+  '/kitchen': typeof KitchenRoute
   '/live': typeof LiveRoute
   '/markdown': typeof MarkdownRouteWithChildren
   '/money': typeof MoneyRoute
@@ -442,6 +449,7 @@ export interface FileRoutesByTo {
   '/favicon.ico': typeof FaviconDoticoRoute
   '/favicon.svg': typeof FaviconDotsvgRoute
   '/health': typeof HealthRouteWithChildren
+  '/kitchen': typeof KitchenRoute
   '/live': typeof LiveRoute
   '/money': typeof MoneyRoute
   '/settings': typeof SettingsRoute
@@ -502,6 +510,7 @@ export interface FileRoutesById {
   '/favicon.svg': typeof FaviconDotsvgRoute
   '/feedback': typeof FeedbackRouteWithChildren
   '/health': typeof HealthRouteWithChildren
+  '/kitchen': typeof KitchenRoute
   '/live': typeof LiveRoute
   '/markdown': typeof MarkdownRouteWithChildren
   '/money': typeof MoneyRoute
@@ -566,6 +575,7 @@ export interface FileRouteTypes {
     | '/favicon.svg'
     | '/feedback'
     | '/health'
+    | '/kitchen'
     | '/live'
     | '/markdown'
     | '/money'
@@ -627,6 +637,7 @@ export interface FileRouteTypes {
     | '/favicon.ico'
     | '/favicon.svg'
     | '/health'
+    | '/kitchen'
     | '/live'
     | '/money'
     | '/settings'
@@ -686,6 +697,7 @@ export interface FileRouteTypes {
     | '/favicon.svg'
     | '/feedback'
     | '/health'
+    | '/kitchen'
     | '/live'
     | '/markdown'
     | '/money'
@@ -749,6 +761,7 @@ export interface RootRouteChildren {
   FaviconDotsvgRoute: typeof FaviconDotsvgRoute
   FeedbackRoute: typeof FeedbackRouteWithChildren
   HealthRoute: typeof HealthRouteWithChildren
+  KitchenRoute: typeof KitchenRoute
   LiveRoute: typeof LiveRoute
   MarkdownRoute: typeof MarkdownRouteWithChildren
   MoneyRoute: typeof MoneyRoute
@@ -823,6 +836,13 @@ declare module '@tanstack/react-router' {
       path: '/health'
       fullPath: '/health'
       preLoaderRoute: typeof HealthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/kitchen': {
+      id: '/kitchen'
+      path: '/kitchen'
+      fullPath: '/kitchen'
+      preLoaderRoute: typeof KitchenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/live': {
@@ -1365,6 +1385,7 @@ const rootRouteChildren: RootRouteChildren = {
   FaviconDotsvgRoute: FaviconDotsvgRoute,
   FeedbackRoute: FeedbackRouteWithChildren,
   HealthRoute: HealthRouteWithChildren,
+  KitchenRoute: KitchenRoute,
   LiveRoute: LiveRoute,
   MarkdownRoute: MarkdownRouteWithChildren,
   MoneyRoute: MoneyRoute,

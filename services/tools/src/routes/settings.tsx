@@ -2,6 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { LogOutIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { requireSignedIn } from "../auth-session.js";
+import { getPeople } from "../people-server-functions.js";
+import { PeopleSettings } from "../components/people-settings.js";
 import { authClient } from "../lib/auth-client.js";
 import { formatDate } from "../lib/format-date.js";
 import { useTheme, type ThemePreference } from "../components/theme-provider.js";
@@ -13,7 +15,8 @@ import { Button } from "../components/ui/button.js";
 import { useSidebar } from "../components/ui/sidebar.js";
 
 export const Route = createFileRoute("/settings")({
-  beforeLoad: ({ location }) => requireSignedIn(location.href),
+  beforeLoad: async ({ location }) => ({ principal: await requireSignedIn(location.href) }),
+  loader: ({ context }) => context.principal.role === "admin" ? getPeople() : undefined,
   head: () => ({ meta: [{ title: "Settings — Mauroner Tools" }] }),
   component: SettingsPage
 });
@@ -22,6 +25,7 @@ const THEMES = [["light", "Light"], ["dark", "Dark"], ["system", "System"]] as c
 const SIDEBAR = [["open", "Open"], ["icons", "Icons only"]] as const;
 
 function SettingsPage() {
+  const people = Route.useLoaderData();
   const { data: session } = authClient.useSession();
   const { theme, resolvedTheme, setTheme } = useTheme();
   const sidebar = useSidebar();
@@ -59,6 +63,7 @@ function SettingsPage() {
             <Button variant="destructive-subtle" size="sm" onClick={() => void signOut()}><LogOutIcon />Sign out</Button>
           </SettingRow>
         </section>
+        {people ? <PeopleSettings people={people.people} products={people.products} /> : null}
       </main>
     </>
   );

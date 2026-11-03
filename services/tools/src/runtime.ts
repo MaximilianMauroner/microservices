@@ -31,6 +31,7 @@ export type PlatformRuntime = {
   artifactUploadOrigins: readonly string[];
   readOnly: boolean;
   auth: PlatformIdentity["auth"];
+  people: PlatformIdentity["people"];
   resolvePrincipal: PrincipalResolver;
   services: PlatformServices;
   publicSnapshot: () => Promise<PublicSnapshotDocument>;
@@ -189,6 +190,7 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
       artifactUploadOrigins: artifactStorage.uploadOrigins ?? [],
       readOnly: config.readOnly,
       auth: identity.auth,
+      people: identity.people,
       resolvePrincipal: identity.resolvePrincipal,
       services,
       publicSnapshot: () => toolsStorage.readPublicSnapshot(),

@@ -1,10 +1,11 @@
-import { Link, useRouterState } from "@tanstack/react-router";
+import { Link, useLoaderData, useRouterState } from "@tanstack/react-router";
 import { ExternalLinkIcon, LaptopIcon, LogOutIcon, MoonIcon, MoreVerticalIcon, SettingsIcon, SunIcon } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { favicons } from "../favicons.js";
 import { getAttentionSummary, type AttentionSummary } from "../attention.js";
 import { MONEY_VIEWS, MoneyReviewBadge, moneyReviewCount, moneyReviewCounts, moneyViewTitle } from "../../money/money-tracker-navigation.js";
 import { authClient } from "../lib/auth-client.js";
+import { homePath, principalSeesProduct } from "../product-access.js";
 import { Avatar, AvatarFallback } from "./ui/avatar.js";
 import { useTheme, type ThemePreference } from "./theme-provider.js";
 import { TOOLS_PRODUCTS, type ToolsPage, type ToolsProduct } from "./tools-nav.js";
@@ -47,7 +48,9 @@ export function ToolsSidebar() {
   const search = useRouterState({ select: (state) => state.location.search as Record<string, unknown> });
   // The Money route loads fresh review counts with its data; elsewhere the attention summary supplies them.
   const moneyRouteReview = useRouterState({ select: (state) => moneyReviewCounts(state.matches.find((match) => match.routeId === "/money")?.loaderData) });
-  const attention = useAttention(pathname);
+  const principal = useLoaderData({ from: "__root__" });
+  const isAdmin = principal?.role === "admin";
+  const attention = useAttention(pathname, isAdmin);
   const contentRef = useRef<HTMLDivElement>(null);
   const { setOpenMobile } = useSidebar();
 
@@ -67,7 +70,7 @@ export function ToolsSidebar() {
     <Sidebar className="suite-sidebar" collapsible="icon">
       <SidebarHeader className="px-3 pb-1 pt-3">
         <div className="flex items-center gap-1">
-          <Link className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 text-sm font-semibold hover:bg-sidebar-accent group-data-[collapsible=icon]:hidden" to="/" preload="intent" aria-label="Tools dashboard">
+          <Link className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 text-sm font-semibold hover:bg-sidebar-accent group-data-[collapsible=icon]:hidden" to={principal ? homePath(principal) : "/"} preload="intent" aria-label="Tools home">
             <img className="size-6 rounded-md" src={favicons.directory} alt="" width={24} height={24} />
             <span className="truncate">Tools</span>
           </Link>
@@ -79,7 +82,7 @@ export function ToolsSidebar() {
           <SidebarGroupLabel className="sr-only">Tools</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu className="gap-0.5">
-              {TOOLS_PRODUCTS.map((product) => {
+              {TOOLS_PRODUCTS.filter((product) => principalSeesProduct(principal, product.id)).map((product) => {
                 const active = product.match(pathname) || Boolean(product.pages?.some((page) => page.match(pathname)));
                 return (
                   <SidebarMenuItem key={product.id}>
@@ -114,19 +117,21 @@ export function ToolsSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+        {isAdmin ? (
         <SidebarGroup className="mt-3 p-1">
-          <SidebarGroupLabel className="px-2.5 text-xs normal-case tracking-normal">External</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton className="h-9 px-2.5 text-sm" tooltip="Network Console" render={<a href="https://coding.tailbc92d.ts.net" target="_blank" rel="noreferrer" />}>
-                  <img className="size-5 rounded" src={favicons.networkConsole} alt="" width={20} height={20} />
-                  <span>Network Console</span><ExternalLinkIcon className="ml-auto size-3! opacity-50" />
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+            <SidebarGroupLabel className="px-2.5 text-xs normal-case tracking-normal">External</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton className="h-9 px-2.5 text-sm" tooltip="Network Console" render={<a href="https://coding.tailbc92d.ts.net" target="_blank" rel="noreferrer" />}>
+                    <img className="size-5 rounded" src={favicons.networkConsole} alt="" width={20} height={20} />
+                    <span>Network Console</span><ExternalLinkIcon className="ml-auto size-3! opacity-50" />
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        ) : null}
       </SidebarContent>
       <SidebarFooter className="border-t border-sidebar-border p-2">
         <AccountMenu />
@@ -152,13 +157,14 @@ function countBadge(count: number | undefined) {
 }
 
 /** Loads the attention counts after hydration and again after each navigation. */
-function useAttention(pathname: string) {
+function useAttention(pathname: string, enabled: boolean) {
   const [summary, setSummary] = useState<AttentionSummary>();
   useEffect(() => {
+    if (!enabled) return;
     let current = true;
     getAttentionSummary().then((next) => { if (current) setSummary(next); }, () => undefined);
     return () => { current = false; };
-  }, [pathname]);
+  }, [pathname, enabled]);
   return summary;
 }
 

@@ -66,7 +66,7 @@ async function runSessionMiddleware(role: "admin" | "member" | undefined) {
         headers: { Referer: "https://tools.example.test/review?view=queue" }
       }),
       ...(role
-        ? { principal: { role, subject: "google-subject", email: "operator@example.test" } }
+        ? { principal: { role, subject: "google-subject", email: "operator@example.test", products: [] } }
         : {})
     },
     next: async (nextContext: Record<string, unknown>) => ({

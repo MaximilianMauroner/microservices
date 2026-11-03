@@ -2,7 +2,7 @@ import { favicons } from "../favicons.js";
 
 export type ToolsPage = Readonly<{ label: string; to: string; match: (path: string) => boolean; external?: true }>;
 export type ToolsProduct = Readonly<{
-  id: "dashboard" | "publisher" | "money" | "feedback" | "markdown" | "status";
+  id: "dashboard" | "publisher" | "money" | "feedback" | "markdown" | "kitchen" | "status";
   label: string;
   to: string;
   icon: string;
@@ -39,6 +39,7 @@ export const TOOLS_PRODUCTS: readonly ToolsProduct[] = [
       { label: "Editor", to: "/share", match: () => false, external: true }
     ]
   },
+  { id: "kitchen", label: "Kitchen", to: "/kitchen", icon: favicons.directory, match: (path) => path.startsWith("/kitchen") },
   { id: "status", label: "Status", to: "/status", icon: favicons.status, match: (path) => path.startsWith("/status") }
 ];
 

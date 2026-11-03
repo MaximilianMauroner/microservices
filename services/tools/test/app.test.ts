@@ -16,13 +16,17 @@ const principal = {
 const member = {
   role: "member",
   subject: "friend-subject",
-  email: "friend@example.test"
+  email: "friend@example.test",
+  products: [] as string[]
 } as const;
+
+const kitchenMember = { ...member, products: ["kitchen"] };
 
 const resolvePrincipal: PrincipalResolver = async (request) => {
   const cookie = request.headers.get("cookie");
   if (cookie === "session=valid") return principal;
   if (cookie === "session=member") return member;
+  if (cookie === "session=kitchen") return kitchenMember;
   return undefined;
 };
 
@@ -103,6 +107,22 @@ describe("platform fetch gateway", () => {
 
     const serverFunction = await request(platform, "/_serverFn/any", { method: "POST", headers: { Cookie: "session=member" } });
     expect(serverFunction.status).toBe(200);
+  });
+
+  it("opens only granted products for a member and sends page loads to the first one", async () => {
+    const platform = app();
+    const asKitchen = (path: string, init: RequestInit = {}) =>
+      request(platform, path, { ...init, headers: { Cookie: "session=kitchen", ...init.headers } });
+    expect((await asKitchen("/kitchen")).status).toBe(200);
+    expect((await asKitchen("/api/kitchen/recipes", { method: "POST" })).status).toBe(200);
+    expect((await asKitchen("/settings")).status).toBe(200);
+    expect((await asKitchen("/kitchenette")).status).toBe(403);
+    expect((await asKitchen("/money")).status).toBe(403);
+    expect((await asKitchen("/api/money/activity")).status).toBe(403);
+    const page = await asKitchen("/", { headers: { Accept: "text/html" } });
+    expect(page.status).toBe(302);
+    expect(page.headers.get("location")).toBe("/kitchen");
+    expect((await request(platform, "/kitchen", { headers: { Cookie: "session=member" } })).status).toBe(403);
   });
 
   it("redirects private document navigations to a validated sign-in return path", async () => {
