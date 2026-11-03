@@ -48,12 +48,12 @@ export async function handleArtifactRequest(
 /** Nginx convention for a request the client abandoned; Railway reports the same status. */
 const CLIENT_CLOSED_REQUEST = 499;
 
-export function favicon({ request }: PlatformRouteInput) {
+export function favicon() {
   return new Response(null, {
     status: 307,
     headers: {
       "Cache-Control": "public, max-age=3600",
-      Location: new URL(favicons.directory, request.url).href
+      Location: favicons.directory
     }
   });
 }

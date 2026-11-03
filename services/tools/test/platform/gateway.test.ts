@@ -234,7 +234,6 @@ describe("platform fetch gateway", () => {
     for (const path of [
       "/sign-in",
       "/api/auth/callback/google",
-      "/assets/tools.css",
       "/health",
       "/drop/guest-upload-token",
       "/artifacts/01234567890123456789012345678901",

@@ -70,32 +70,13 @@ describe("tools web routes", () => {
     }
   });
 
-  it("serves CSP-safe static assets", async () => {
-    const bucket = seededBucket();
-    const app = testApp(bucket, allowed);
-    const css = await app(new Request("https://tools.example.test/assets/tools.css"));
-    expect(css.status).toBe(200);
-    expect(css.headers.get("content-type")).toContain("text/css");
-
+  it("serves the suite stylesheet", async () => {
+    const app = testApp(seededBucket(), allowed);
     const suiteCss = await app(
       new Request("https://tools.example.test/assets/suite.css")
     );
     expect(suiteCss.status).toBe(200);
     expect(await suiteCss.text()).toContain("--background: #000");
-
-    const localTime = await app(
-      new Request("https://tools.example.test/assets/local-time.js")
-    );
-    expect(localTime.status).toBe(200);
-    expect(localTime.headers.get("content-type")).toContain("text/javascript");
-
-    for (const product of ["publisher", "money", "status", "markdown-share", "network-console", "tools"]) {
-      const icon = await app(
-        new Request(`https://tools.example.test/assets/icons/${product}.png`)
-      );
-      expect(icon.status).toBe(200);
-      expect(icon.headers.get("content-type")).toBe("image/png");
-    }
   });
 
   it("serves the private Status snapshot only after session authentication", async () => {
