@@ -24,17 +24,13 @@ import { createPostgresMoneyRepository } from "../money/money-repository.js";
 import { MoneyMarketDataService } from "../money/money-market-data-service.js";
 import { createPostgresMoneyMarketDataRepository } from "../money/money-market-data-repository.js";
 import { createPostgresFeedbackRepository, type FeedbackRepository } from "../feedback/repository.js";
-import {
-  createPlatformAuth,
-  resolvePlatformPrincipal,
-  type PlatformAuth
-} from "./lib/auth.js";
+import { createPlatformIdentity, type PlatformIdentity } from "./lib/auth.js";
 
 export type PlatformRuntime = {
   publicOrigin: string;
   artifactUploadOrigins: readonly string[];
   readOnly: boolean;
-  auth: PlatformAuth;
+  auth: PlatformIdentity["auth"];
   resolvePrincipal: PrincipalResolver;
   services: PlatformServices;
   publicSnapshot: () => Promise<PublicSnapshotDocument>;
@@ -76,14 +72,7 @@ if (import.meta.hot) {
 
 async function createPlatformRuntime(): Promise<PlatformRuntime> {
   const config = loadPlatformConfig();
-  const auth = createPlatformAuth(config.auth);
-  const resolvePrincipal: PrincipalResolver = (request) =>
-    resolvePlatformPrincipal(
-      auth,
-      request,
-      config.auth.allowedGoogleSubject,
-      config.auth.allowedGoogleEmail
-    );
+  const identity = createPlatformIdentity(config.auth, config.databaseUrl);
   const toolsBucket = createS3JsonBucket(config.tools.bucket);
   const toolsStorage = new WebStorage(toolsBucket);
   const heartbeatRepository = createPostgresHeartbeatRepository(config.databaseUrl);
@@ -183,7 +172,8 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
         moneyImports.close(),
         moneyMarketData.close(),
         feedback.close(),
-        documentShare.close()
+        documentShare.close(),
+        identity.close()
       ]);
     };
 
@@ -198,8 +188,8 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
       publicOrigin: config.publicOrigin,
       artifactUploadOrigins: artifactStorage.uploadOrigins ?? [],
       readOnly: config.readOnly,
-      auth,
-      resolvePrincipal,
+      auth: identity.auth,
+      resolvePrincipal: identity.resolvePrincipal,
       services,
       publicSnapshot: () => toolsStorage.readPublicSnapshot(),
       heartbeats,
@@ -226,6 +216,7 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
     await moneyMarketData.close();
     await feedback.close();
     await documentShare.close();
+    await identity.close();
     throw error;
   }
 }

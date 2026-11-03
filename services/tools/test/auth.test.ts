@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isAllowedGoogleProfile, principalFromSession } from "../src/lib/auth.js";
+import { isAllowedGoogleProfile, principalFromIdentity } from "../src/lib/auth.js";
 import { safeReturnPath, signInLocation } from "../src/lib/auth-return-path.js";
 
 describe("Google account authorization", () => {
@@ -33,29 +33,16 @@ describe("Google account authorization", () => {
     )).toBe(false);
   });
 
-  it("rechecks the configured subject when resolving a session", () => {
-    const session = {
-      user: { id: "allowed-subject", email: "owner@example.com" }
-    };
-    expect(principalFromSession(
-      session,
-      "allowed-subject",
-      "owner@example.com"
-    )).toEqual({
-      role: "admin",
-      subject: "allowed-subject",
-      email: "owner@example.com"
-    });
-    expect(principalFromSession(
-      session,
-      "different-subject",
-      "owner@example.com"
-    )).toBeUndefined();
-    expect(principalFromSession(
-      { user: { id: "allowed-subject", email: "someone-else@gmail.com" } },
-      "allowed-subject",
-      "owner@example.com"
-    )).toBeUndefined();
+  it("rechecks the configured Google subject and email when resolving a session", () => {
+    const allowed = { subject: "allowed-subject", email: "owner@example.com" };
+    expect(principalFromIdentity(allowed, "allowed-subject", "owner@example.com"))
+      .toEqual({ role: "admin", ...allowed });
+    expect(principalFromIdentity(allowed, "different-subject", "owner@example.com"))
+      .toBeUndefined();
+    expect(principalFromIdentity({ ...allowed, email: "someone-else@gmail.com" }, "allowed-subject", "owner@example.com"))
+      .toBeUndefined();
+    expect(principalFromIdentity({ subject: undefined, email: allowed.email }, "allowed-subject", "owner@example.com"))
+      .toBeUndefined();
   });
 });
 

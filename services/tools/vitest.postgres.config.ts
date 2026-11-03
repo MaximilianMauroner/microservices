@@ -5,7 +5,7 @@ export default defineConfig({
   ...config,
   test: {
     ...config.test,
-    include: ["test/money-repository.integration.test.ts", "test/money-ledger-contributions.integration.test.ts", "markdown-share/repository.test.ts", "markdown-share/changes.test.ts", "markdown-share/http.test.ts", "markdown-share/import-convex.test.ts"],
+    include: ["test/platform-identity.integration.test.ts", "test/money-repository.integration.test.ts", "test/money-ledger-contributions.integration.test.ts", "markdown-share/repository.test.ts", "markdown-share/changes.test.ts", "markdown-share/http.test.ts", "markdown-share/import-convex.test.ts"],
     exclude: [],
     maxWorkers: 1,
     fileParallelism: false,
