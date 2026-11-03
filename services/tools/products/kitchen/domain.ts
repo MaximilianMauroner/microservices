@@ -38,7 +38,10 @@ export type Ingredient = Readonly<{
   id: string;
   name: string;
   unit: IngredientUnit;
+  /** The main group. The shopping list and the stock show the ingredient here. */
   section: string;
+  /** More groups the ingredient also belongs to, such as Kohlenhydrate for chickpeas in Proteine. */
+  otherGroups: readonly string[];
   nutrition: Nutrition;
   notes: string;
   recipeCount: number;
@@ -64,6 +67,10 @@ export type PlanEntry = Readonly<{
   recipe: string;
   servings: number;
   cooked: boolean;
+  /** True when this one meal has its own ingredients. Its recipe stays as it is. */
+  custom: boolean;
+  /** What this meal uses for its servings: its own ingredients, or else the recipe's, scaled. */
+  lines: readonly RecipeLine[];
 }>;
 
 export type StockItem = Readonly<{ ingredientId: string; ingredient: string; unit: IngredientUnit; section: string; amount: number }>;
@@ -85,7 +92,7 @@ export type ShoppingLine = Readonly<{
   recipes: readonly string[];
 }>;
 
-export type IngredientInput = Readonly<{ name: string; unit: IngredientUnit; section: string; nutrition: Nutrition; notes: string }>;
+export type IngredientInput = Readonly<{ name: string; unit: IngredientUnit; section: string; otherGroups?: readonly string[]; nutrition: Nutrition; notes: string }>;
 export type RecipeLineInput = Readonly<{ ingredientId: string; amount: number; note: string }>;
 export type RecipeInput = Readonly<{ name: string; servings: number; minutes: number | null; instructions: string; lines: readonly RecipeLineInput[] }>;
 
@@ -143,11 +150,25 @@ export function weekDays(start: string): readonly string[] {
   return Array.from({ length: 7 }, (_, index) => addDays(start, index));
 }
 
-export function parseIngredientInput(input: IngredientInput): IngredientInput {
+/** Every group an ingredient belongs to, the main group first. */
+export function ingredientGroups(ingredient: Pick<Ingredient, "section" | "otherGroups">): readonly string[] {
+  return [ingredient.section, ...ingredient.otherGroups];
+}
+
+export function parseIngredientInput(input: IngredientInput): IngredientInput & { otherGroups: readonly string[] } {
+  const section = input.section.trim().slice(0, 60) || UNSORTED_SECTION;
+  const seen = new Set([section.toLowerCase(), UNSORTED_SECTION.toLowerCase()]);
+  const otherGroups = (input.otherGroups ?? []).map((group) => group.trim().slice(0, 60)).filter((group) => {
+    if (!group || seen.has(group.toLowerCase())) return false;
+    seen.add(group.toLowerCase());
+    return true;
+  });
+  if (otherGroups.length > 10) throw new KitchenError("An ingredient can be in at most 11 groups.");
   return {
     name: requiredName(input.name, "ingredient"),
     unit: parseUnit(input.unit),
-    section: input.section.trim().slice(0, 60) || UNSORTED_SECTION,
+    section,
+    otherGroups,
     nutrition: {
       kcal: nutritionValue(input.nutrition.kcal, "Calories"),
       protein: nutritionValue(input.nutrition.protein, "Protein"),
@@ -161,13 +182,16 @@ export function parseIngredientInput(input: IngredientInput): IngredientInput {
 export function parseRecipeInput(input: RecipeInput): RecipeInput {
   const servings = positiveInteger(input.servings, "Servings", 100);
   const minutes = input.minutes === null ? null : positiveInteger(input.minutes, "Minutes", 10_000);
+  return { name: requiredName(input.name, "recipe"), servings, minutes, instructions: input.instructions.trim().slice(0, 20_000), lines: parseLines(input.lines) };
+}
+
+export function parseLines(lines: readonly RecipeLineInput[]): RecipeLineInput[] {
   const seen = new Set<string>();
-  const lines = input.lines.map((line) => {
-    if (seen.has(line.ingredientId)) throw new KitchenError("Each ingredient can appear once in a recipe. Combine the amounts.");
+  return lines.map((line) => {
+    if (seen.has(line.ingredientId)) throw new KitchenError("Each ingredient can appear once. Combine the amounts.");
     seen.add(line.ingredientId);
     return { ingredientId: line.ingredientId, amount: positiveAmount(line.amount), note: line.note.trim().slice(0, 200) };
   });
-  return { name: requiredName(input.name, "recipe"), servings, minutes, instructions: input.instructions.trim().slice(0, 20_000), lines };
 }
 
 export function parseUnit(unit: string): IngredientUnit {
@@ -214,7 +238,6 @@ export function scaledLines(recipe: Pick<Recipe, "servings" | "lines">, servings
  */
 export function shoppingList(
   entries: readonly PlanEntry[],
-  recipes: ReadonlyMap<string, Recipe>,
   stock: readonly StockItem[],
   sections: ReadonlyMap<string, string>,
   groups: readonly string[]
@@ -222,12 +245,11 @@ export function shoppingList(
   const order = byGroupOrder(groups);
   const needed = new Map<string, { line: RecipeLine; amount: number; recipes: Set<string> }>();
   for (const entry of entries) {
-    const recipe = recipes.get(entry.recipeId);
-    if (entry.cooked || !recipe) continue;
-    for (const line of scaledLines(recipe, entry.servings)) {
+    if (entry.cooked) continue;
+    for (const line of entry.lines) {
       const current = needed.get(line.ingredientId) ?? { line, amount: 0, recipes: new Set<string>() };
       current.amount += line.amount;
-      current.recipes.add(recipe.name);
+      current.recipes.add(entry.recipe);
       needed.set(line.ingredientId, current);
     }
   }

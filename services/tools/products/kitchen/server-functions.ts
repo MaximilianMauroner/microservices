@@ -2,7 +2,7 @@ import { createServerFn, getGlobalStartContext } from "@tanstack/react-start";
 import { getCookie, getRequestHeader } from "@tanstack/react-start/server";
 import { requireProductAccess } from "../../platform/auth/middleware.js";
 import { applyKitchenAction, applyKitchenAdminAction, kitchenAction, kitchenAdminAction } from "./actions.js";
-import { type Ingredient, type Kitchen, nutritionPerServing, type Recipe, today, UNSORTED_SECTION, weekStart } from "./domain.js";
+import { type Ingredient, ingredientGroups, type Kitchen, nutritionPerServing, type Recipe, today, UNSORTED_SECTION, weekStart } from "./domain.js";
 import type { KitchenScope } from "./repository.js";
 import { LANGUAGE_COOKIE, pickLanguage } from "./ui/language.js";
 
@@ -33,7 +33,7 @@ function summaries(recipes: readonly Recipe[], ingredients: readonly Ingredient[
     const nutrition = nutritionPerServing(recipe, byId);
     return {
       id: recipe.id, name: recipe.name, servings: recipe.servings, minutes: recipe.minutes, kcal: nutrition.kcal, protein: nutrition.protein,
-      ingredientCount: recipe.lines.length, sections: recipe.lines.map((line) => byId.get(line.ingredientId)?.section ?? UNSORTED_SECTION)
+      ingredientCount: recipe.lines.length, sections: recipe.lines.flatMap((line) => { const one = byId.get(line.ingredientId); return one ? ingredientGroups(one) : [UNSORTED_SECTION]; })
     };
   });
 }
@@ -70,6 +70,7 @@ export const getKitchenWeek = createServerFn({ method: "GET" })
       ...base,
       week,
       recipes: summaries(recipes, ingredients),
+      ingredients,
       leftovers,
       toBuy: shopping.lines.filter((line) => line.toBuy > 0).length + shopping.extras.filter((extra) => !extra.bought).length,
       buySections: shopping.lines.filter((line) => line.toBuy > 0).map((line) => line.section)
@@ -118,7 +119,10 @@ export const getKitchenIngredients = createServerFn({ method: "GET" })
   .validator(kitchenInput)
   .handler(async ({ data, context }) => {
     const { scope, frame: base } = await frame(context, data.kitchenId);
-    return { ...base, ingredients: await scope.ingredients() };
+    const [ingredients, recipes] = await Promise.all([scope.ingredients(), scope.recipes()]);
+    const usedIn: Record<string, { id: string; name: string }[]> = {};
+    for (const recipe of recipes) for (const line of recipe.lines) (usedIn[line.ingredientId] ??= []).push({ id: recipe.id, name: recipe.name });
+    return { ...base, ingredients, usedIn };
   });
 
 export const runKitchenAction = createServerFn({ method: "POST" })

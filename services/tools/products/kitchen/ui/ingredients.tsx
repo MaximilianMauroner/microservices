@@ -1,14 +1,16 @@
-import { ArrowDownIcon, ArrowUpIcon, ListOrderedIcon, PlusIcon, SearchIcon } from "lucide-react";
+import { ArrowDownIcon, ArrowUpIcon, ListOrderedIcon, PlusIcon, XIcon } from "lucide-react";
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { Button } from "../../../platform/ui/components/ui/button.js";
 import { Input } from "../../../platform/ui/components/ui/input.js";
 import { Label } from "../../../platform/ui/components/ui/label.js";
 import { Textarea } from "../../../platform/ui/components/ui/textarea.js";
-import { convertNutrition, formatNumber, type Ingredient, INGREDIENT_UNITS, isCountedUnit, type IngredientUnit, unitName, UNSORTED_SECTION } from "../domain.js";
-import { byGroup, type Frame, GROUP_LIST, GroupDot, groupColor, GroupLabel, groupLabel, groupListStyle, KitchenEmpty, KitchenPage, KitchenSheet, useKitchenAction } from "./kit.js";
+import { convertNutrition, formatNumber, type Ingredient, ingredientGroups, INGREDIENT_UNITS, isCountedUnit, type IngredientUnit, unitName, UNSORTED_SECTION } from "../domain.js";
+import { byGroup, type Frame, GROUP_LIST, GroupDot, groupColor, GroupLabel, groupLabel, groupListStyle, KitchenEmpty, KitchenPage, KitchenSheet, SearchField, useKitchenAction } from "./kit.js";
 import { type KitchenLanguage, useLanguage, useText } from "./language.js";
 
-type IngredientsData = Frame & { ingredients: readonly Ingredient[] };
+/** `usedIn` lists, for each ingredient id, the recipes that use it. */
+type IngredientsData = Frame & { ingredients: readonly Ingredient[]; usedIn: Readonly<Record<string, readonly { id: string; name: string }[]>> };
 
 const NUTRIENTS = [["kcal", "kcal"], ["protein", "g"], ["carbs", "g"], ["fat", "g"]] as const;
 
@@ -20,7 +22,6 @@ const en = {
   arrangeGroups: "Arrange groups",
   newIngredient: "New ingredient",
   findPlaceholder: "Find an ingredient or group",
-  findIngredient: "Find an ingredient",
   kcal: "kcal",
   protein: "Protein",
   carbs: "Carbs",
@@ -36,6 +37,7 @@ const en = {
   addHere: "Add them here, or type them into a recipe and they appear here.",
   delete: "Delete",
   usedInRecipes: "Used in recipes",
+  recipesUsingIt: "Recipes with this ingredient",
   deleted: (name: string) => `${name} deleted`,
   save: "Save",
   saved: (name: string) => `${name} saved`,
@@ -45,6 +47,10 @@ const en = {
   size: (item: string, other: string) => `1 ${item} is how many ${other}?`,
   sizeHint: "Recipes, stock, and nutrition change to the new unit with this size.",
   group: "Group",
+  alsoIn: "Also in",
+  addGroup: "Add group",
+  removeGroup: (group: string) => `Remove ${group}`,
+  alsoInHint: "These groups count in the meal balance too. The shopping list uses the first group.",
   nutritionPer: (per: string) => `Nutrition ${per}`,
   leaveEmpty: "Leave a value empty when you do not know it. Recipes then show it as unknown.",
   notes: "Notes",
@@ -66,7 +72,6 @@ const TEXT: Record<KitchenLanguage, KitText> = {
     arrangeGroups: "Gruppen ordnen",
     newIngredient: "Neue Zutat",
     findPlaceholder: "Zutat oder Gruppe suchen",
-    findIngredient: "Zutat suchen",
     kcal: "kcal",
     protein: "Eiweiß",
     carbs: "Kohlenhydrate",
@@ -82,6 +87,7 @@ const TEXT: Record<KitchenLanguage, KitText> = {
     addHere: "Füge sie hier hinzu oder schreib sie in ein Rezept, dann erscheinen sie hier.",
     delete: "Löschen",
     usedInRecipes: "In Rezepten verwendet",
+    recipesUsingIt: "Rezepte mit dieser Zutat",
     deleted: (name: string) => `${name} gelöscht`,
     save: "Speichern",
     saved: (name: string) => `${name} gespeichert`,
@@ -91,6 +97,10 @@ const TEXT: Record<KitchenLanguage, KitText> = {
     size: (item: string, other: string) => `Wie viel ${other} sind 1 ${item}?`,
     sizeHint: "Rezepte, Vorrat und Nährwerte wechseln mit dieser Größe zur neuen Einheit.",
     group: "Gruppe",
+    alsoIn: "Auch in",
+    addGroup: "Gruppe hinzufügen",
+    removeGroup: (group: string) => `${group} entfernen`,
+    alsoInHint: "Diese Gruppen zählen auch für die Balance der Mahlzeit. Die Einkaufsliste nutzt die erste Gruppe.",
     nutritionPer: (per: string) => `Nährwerte ${per}`,
     leaveEmpty: "Lass ein Feld leer, wenn du den Wert nicht kennst. Rezepte zeigen ihn dann als unbekannt.",
     notes: "Notizen",
@@ -109,8 +119,10 @@ export function KitchenIngredientsPage(data: IngredientsData) {
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState<Ingredient | "new" | undefined>();
   const [arranging, setArranging] = useState(false);
-  const matches = data.ingredients.filter((one) => `${one.name} ${groupLabel(one.section, language)}`.toLowerCase().includes(query.trim().toLowerCase()));
-  const groups = byGroup(data.kitchen.groups, matches, (ingredient) => ingredient.section);
+  const matches = data.ingredients.filter((one) => [one.name, ...ingredientGroups(one).map((group) => groupLabel(group, language))].join(" ").toLowerCase().includes(query.trim().toLowerCase()));
+  // An ingredient in more than one group shows in each of them.
+  const groups = byGroup(data.kitchen.groups, matches.flatMap((ingredient) => ingredientGroups(ingredient).map((group) => ({ group, ingredient }))), (entry) => entry.group)
+    .map(([section, entries]) => [section, entries.map((entry) => entry.ingredient)] as const);
   const missing = data.ingredients.filter((one) => one.nutrition.kcal === null).length;
 
   return (
@@ -125,10 +137,7 @@ export function KitchenIngredientsPage(data: IngredientsData) {
       )}
     >
       <div className="grid gap-5">
-        <div className="relative max-w-md">
-          <SearchIcon className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-          <Input className="h-10 pl-9" placeholder={text.findPlaceholder} value={query} onChange={(event) => setQuery(event.target.value)} aria-label={text.findIngredient} />
-        </div>
+        <SearchField value={query} onValue={setQuery} label={text.findPlaceholder}>
         <div className="gap-5 lg:columns-2">
           {groups.map(([section, items]) => (
             <section key={section} aria-label={groupLabel(section, language)} className="mb-5 min-w-0 break-inside-avoid last:mb-0">
@@ -165,6 +174,7 @@ export function KitchenIngredientsPage(data: IngredientsData) {
         {!matches.length ? (
           <KitchenEmpty title={data.ingredients.length ? text.noMatch(query) : text.noIngredients} body={data.ingredients.length ? text.tryAnother : text.addHere} />
         ) : null}
+        </SearchField>
       </div>
       <GroupsSheet open={arranging} onClose={() => setArranging(false)} data={data} />
       <IngredientSheet key={editing === "new" ? "new" : editing?.id ?? "none"} ingredient={editing} onClose={() => setEditing(undefined)} data={data} />
@@ -180,6 +190,13 @@ function IngredientSheet({ ingredient, onClose, data }: { ingredient: Ingredient
   const [name, setName] = useState(existing?.name ?? "");
   const [unit, setUnit] = useState<IngredientUnit>(existing?.unit ?? "g");
   const [section, setSection] = useState(existing && existing.section !== UNSORTED_SECTION ? existing.section : "");
+  const [otherGroups, setOtherGroups] = useState<readonly string[]>(existing?.otherGroups ?? []);
+  const [newGroup, setNewGroup] = useState("");
+  const addGroup = () => {
+    const group = newGroup.trim();
+    if (group && ![section, ...otherGroups].some((one) => one.toLowerCase() === group.toLowerCase())) setOtherGroups((current) => [...current, group]);
+    setNewGroup("");
+  };
   const [notes, setNotes] = useState(existing?.notes ?? "");
   const shown = (nutrition: Ingredient["nutrition"] | undefined) => ({
     kcal: nutrition?.kcal?.toString() ?? "", protein: nutrition?.protein?.toString() ?? "",
@@ -215,7 +232,7 @@ function IngredientSheet({ ingredient, onClose, data }: { ingredient: Ingredient
 
   async function save() {
     const done = await run({
-      type: "ingredient.save", id: existing?.id, name, unit, section, notes, oldPerNew: changingUnit ? oldPerNew(size) : undefined,
+      type: "ingredient.save", id: existing?.id, name, unit, section, otherGroups: newGroup.trim() ? [...otherGroups, newGroup.trim()] : [...otherGroups], notes, oldPerNew: changingUnit ? oldPerNew(size) : undefined,
       kcal: number(values.kcal), protein: number(values.protein), carbs: number(values.carbs), fat: number(values.fat)
     }, { title: existing ? text.saved(name.trim()) : text.added(name.trim()) });
     if (done) onClose();
@@ -261,6 +278,27 @@ function IngredientSheet({ ingredient, onClose, data }: { ingredient: Ingredient
             <datalist id="kitchen-groups">{sections.map((one) => <option key={one} value={one} />)}</datalist>
           </div>
         </div>
+        <div className="grid gap-1.5">
+          <Label htmlFor="ingredient-other-group">{text.alsoIn}</Label>
+          {otherGroups.length ? (
+            <ul className="flex flex-wrap gap-1.5">
+              {otherGroups.map((group) => (
+                <li key={group} className="inline-flex h-9 items-center gap-1.5 rounded-full border border-control-border bg-control pr-1 pl-3 text-sm">
+                  <GroupDot groups={data.kitchen.groups} group={group} className="size-2" />
+                  {groupLabel(group, language)}
+                  <button type="button" aria-label={text.removeGroup(group)} onClick={() => setOtherGroups((current) => current.filter((one) => one !== group))}
+                    className="grid size-7 place-items-center rounded-full text-muted-foreground hover:bg-control-hover hover:text-foreground"><XIcon className="size-3.5" aria-hidden /></button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          <div className="flex gap-2">
+            <Input id="ingredient-other-group" className="h-10" list="kitchen-groups" value={newGroup} onChange={(event) => setNewGroup(event.target.value)}
+              onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addGroup(); } }} placeholder="Kohlenhydrate" />
+            <Button type="button" variant="outline" className="h-10" disabled={!newGroup.trim()} onClick={addGroup}><PlusIcon aria-hidden /> {text.addGroup}</Button>
+          </div>
+          <p className="text-xs text-muted-foreground">{text.alsoInHint}</p>
+        </div>
         {changingUnit ? (
           <div className="grid gap-1.5">
             <Label htmlFor="ingredient-size">{text.size(unitName(larger, language, 1), unitName(smaller, language))}</Label>
@@ -284,6 +322,21 @@ function IngredientSheet({ ingredient, onClose, data }: { ingredient: Ingredient
           <Label htmlFor="ingredient-notes">{text.notes}</Label>
           <Textarea id="ingredient-notes" rows={2} value={notes} onChange={(event) => setNotes(event.target.value)} placeholder={text.notesPlaceholder} />
         </div>
+        {existing && data.usedIn[existing.id]?.length ? (
+          <section className="grid gap-1.5" aria-labelledby="ingredient-recipes">
+            <h3 id="ingredient-recipes" className="text-sm font-medium">{text.recipesUsingIt}</h3>
+            <ul className="flex flex-wrap gap-1.5">
+              {data.usedIn[existing.id]!.map((recipe) => (
+                <li key={recipe.id}>
+                  <Link to="/kitchen/$kitchenId/recipes/$recipeId" params={{ kitchenId: data.kitchen.id, recipeId: recipe.id }}
+                    className="inline-flex min-h-9 items-center rounded-full border border-control-border bg-control px-3 text-sm hover:bg-control-hover focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none">
+                    {recipe.name}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
       </form>
     </KitchenSheet>
   );

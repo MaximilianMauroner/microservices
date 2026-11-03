@@ -14,9 +14,12 @@ import {
   type PlanEntry,
   type Recipe,
   type RecipeInput,
+  type RecipeLineInput,
   type ShoppingLine,
   type StockItem,
+  ingredientGroups,
   parseIngredientInput,
+  parseLines,
   parseDay,
   parseGroups,
   parseLeftoverServings,
@@ -81,6 +84,13 @@ export interface KitchenScope {
   plan(input: { day: string; meal: Meal; recipeId: string; servings: number }): Promise<PlanEntry>;
   updatePlan(id: string, input: { day: string; meal: Meal; servings: number }): Promise<PlanEntry>;
   removePlan(id: string): Promise<void>;
+  /**
+   * Gives one planned meal its own ingredients, for its current servings. The recipe stays as it is.
+   * The shopping list and cooking then use these lines.
+   */
+  customizePlan(id: string, lines: readonly RecipeLineInput[]): Promise<PlanEntry>;
+  /** Lets a planned meal use its recipe's ingredients again. */
+  resetPlan(id: string): Promise<PlanEntry>;
   /** Marks a meal as cooked, takes its ingredients out of stock, and keeps any leftover servings. */
   cook(id: string, leftover: { servings: number; useBy: string } | undefined): Promise<void>;
   stock(): Promise<readonly StockItem[]>;
@@ -99,10 +109,11 @@ export interface KitchenScope {
   removeExtra(id: string): Promise<void>;
 }
 
-type IngredientRow = { id: string; name: string; unit: IngredientUnit; section: string; kcal: number | null; protein: number | null; carbs: number | null; fat: number | null; notes: string; recipe_count: number };
+type IngredientRow = { id: string; name: string; unit: IngredientUnit; section: string; other_groups: string[]; kcal: number | null; protein: number | null; carbs: number | null; fat: number | null; notes: string; recipe_count: number };
 type RecipeRow = { id: string; name: string; servings: number; minutes: number | null; instructions: string; updated_at: Date };
 type LineRow = { recipe_id: string; ingredient_id: string; ingredient: string; unit: IngredientUnit; amount: number; note: string };
-type PlanRow = { id: string; day: string; meal: Meal; recipe_id: string; recipe: string; servings: number; cooked_at: Date | null };
+type PlanRow = { id: string; day: string; meal: Meal; recipe_id: string; recipe: string; servings: number; custom_servings: number | null; cooked_at: Date | null };
+type PlanLineRow = { entry_id: string; ingredient_id: string; ingredient: string; unit: IngredientUnit; amount: number; note: string; base: number; servings: number };
 
 export function createPostgresKitchenStore(databaseUrl: string, options: { readOnly?: boolean } = {}): KitchenStore {
   return kitchenStore(postgres(databaseUrl, { max: 3, idle_timeout: 120, connection: options.readOnly ? { default_transaction_read_only: true } : undefined }));
@@ -248,7 +259,35 @@ function scope(sql: Db, kitchen: Kitchen): KitchenScope {
   async function entry(db: Db, id: string): Promise<PlanEntry> {
     const [row] = isUuid(id) ? await db<PlanRow[]>`${planSelect(db, k)} and e.id = ${id}` : [];
     if (!row) throw new KitchenError("This meal is not in the plan.", "not_found");
-    return planFromRow(row);
+    const [found] = await withLines(db, [row]);
+    return found!;
+  }
+
+  /** Adds what each meal uses: its own lines when it has them, else its recipe's lines, scaled to its servings. */
+  async function withLines(db: Db, rows: readonly PlanRow[]): Promise<PlanEntry[]> {
+    const ids = rows.map((row) => row.id);
+    const lines = ids.length ? await db<PlanLineRow[]>`
+      select e.id entry_id, l.ingredient_id, i.name ingredient, i.unit, l.amount, l.note, l.position, r.servings base, e.servings
+        from tools.kitchen_plan_entries e
+        join tools.kitchen_recipes r on r.kitchen_id = e.kitchen_id and r.id = e.recipe_id
+        join tools.kitchen_recipe_lines l on l.kitchen_id = e.kitchen_id and l.recipe_id = e.recipe_id
+        join tools.kitchen_ingredients i on i.kitchen_id = l.kitchen_id and i.id = l.ingredient_id
+        where e.kitchen_id = ${k} and e.id = any(${ids}::uuid[]) and e.custom_servings is null
+      union all
+      select e.id, p.ingredient_id, i.name, i.unit, p.amount, p.note, p.position, e.custom_servings, e.servings
+        from tools.kitchen_plan_entries e
+        join tools.kitchen_plan_lines p on p.entry_id = e.id
+        join tools.kitchen_ingredients i on i.kitchen_id = p.kitchen_id and i.id = p.ingredient_id
+        where e.kitchen_id = ${k} and e.id = any(${ids}::uuid[]) and e.custom_servings is not null
+      order by 1, 7` : [];
+    const byEntry = new Map<string, PlanLineRow[]>();
+    for (const line of lines) byEntry.set(line.entry_id, [...(byEntry.get(line.entry_id) ?? []), line]);
+    return rows.map((row) => {
+      const own = byEntry.get(row.id) ?? [];
+      const base = own[0]?.base ?? row.servings;
+      const recipeLines = own.map((line) => ({ ingredientId: line.ingredient_id, ingredient: line.ingredient, unit: line.unit, amount: line.amount, note: line.note }));
+      return { ...planFromRow(row), lines: scaledLines({ servings: base, lines: recipeLines }, row.servings) };
+    });
   }
 
   async function stock(db: Db): Promise<StockItem[]> {
@@ -267,12 +306,15 @@ function scope(sql: Db, kitchen: Kitchen): KitchenScope {
   /** Recipe and stock amounts are in the ingredient's unit, so a new unit needs new amounts. */
   async function convertAmounts(tx: Db, current: Ingredient, unit: IngredientUnit, oldPerNew: number | undefined) {
     const [{ used }] = await tx<[{ used: boolean }]>`select ${current.recipeCount > 0}::boolean
-      or exists (select 1 from tools.kitchen_stock where kitchen_id = ${k} and ingredient_id = ${current.id} and amount > 0) used`;
+      or exists (select 1 from tools.kitchen_stock where kitchen_id = ${k} and ingredient_id = ${current.id} and amount > 0)
+      or exists (select 1 from tools.kitchen_plan_lines where kitchen_id = ${k} and ingredient_id = ${current.id}) used`;
     if (!used) return;
     if (oldPerNew === undefined) {
       throw new KitchenError(`Recipes or stock use ${current.name} in ${current.unit}. Say how much ${current.unit} one ${unit} holds, so those amounts change too.`);
     }
     await tx`update tools.kitchen_recipe_lines set amount = greatest(round((amount / ${oldPerNew}::float8)::numeric, 3), 0.001)
+      where kitchen_id = ${k} and ingredient_id = ${current.id}`;
+    await tx`update tools.kitchen_plan_lines set amount = greatest(round((amount / ${oldPerNew}::float8)::numeric, 3), 0.001)
       where kitchen_id = ${k} and ingredient_id = ${current.id}`;
     await tx`update tools.kitchen_stock set amount = round((amount / ${oldPerNew}::float8)::numeric, 3), updated_at = now()
       where kitchen_id = ${k} and ingredient_id = ${current.id}`;
@@ -296,15 +338,15 @@ function scope(sql: Db, kitchen: Kitchen): KitchenScope {
         if (id) {
           const current = await ingredient(tx, id);
           if (current.unit !== input.unit) await convertAmounts(tx, current, input.unit, oldPerNew);
-          await tx`update tools.kitchen_ingredients set name = ${input.name}, unit = ${input.unit}, section = ${input.section}, kcal = ${n.kcal}, protein = ${n.protein},
-            carbs = ${n.carbs}, fat = ${n.fat}, notes = ${input.notes}, updated_at = now() where kitchen_id = ${k} and id = ${id}`;
-          await rememberGroup(tx, input.section);
+          await tx`update tools.kitchen_ingredients set name = ${input.name}, unit = ${input.unit}, section = ${input.section}, other_groups = ${[...input.otherGroups]}::text[],
+            kcal = ${n.kcal}, protein = ${n.protein}, carbs = ${n.carbs}, fat = ${n.fat}, notes = ${input.notes}, updated_at = now() where kitchen_id = ${k} and id = ${id}`;
+          for (const group of ingredientGroups(input)) await rememberGroup(tx, group);
           return ingredient(tx, id);
         }
         const created = randomUUID();
-        await tx`insert into tools.kitchen_ingredients (id, kitchen_id, name, unit, section, kcal, protein, carbs, fat, notes, updated_at)
-          values (${created}, ${k}, ${input.name}, ${input.unit}, ${input.section}, ${n.kcal}, ${n.protein}, ${n.carbs}, ${n.fat}, ${input.notes}, now())`;
-        await rememberGroup(tx, input.section);
+        await tx`insert into tools.kitchen_ingredients (id, kitchen_id, name, unit, section, other_groups, kcal, protein, carbs, fat, notes, updated_at)
+          values (${created}, ${k}, ${input.name}, ${input.unit}, ${input.section}, ${[...input.otherGroups]}::text[], ${n.kcal}, ${n.protein}, ${n.carbs}, ${n.fat}, ${input.notes}, now())`;
+        for (const group of ingredientGroups(input)) await rememberGroup(tx, group);
         return ingredient(tx, created);
       });
     },
@@ -353,7 +395,7 @@ function scope(sql: Db, kitchen: Kitchen): KitchenScope {
       const start = parseDay(day);
       const rows = await sql<PlanRow[]>`${planSelect(sql, k)} and e.day >= ${start} and e.day < ${addDays(start, 7)}
         order by e.day, array_position(array['breakfast', 'lunch', 'dinner', 'snack'], e.meal), e.created_at`;
-      return { start, entries: rows.map(planFromRow) };
+      return { start, entries: await withLines(sql, rows) };
     },
     async plan(input) {
       await recipe(sql, input.recipeId);
@@ -371,20 +413,41 @@ function scope(sql: Db, kitchen: Kitchen): KitchenScope {
       await entry(sql, id);
       await sql`delete from tools.kitchen_plan_entries where kitchen_id = ${k} and id = ${id}`;
     },
+    async customizePlan(id, input) {
+      const lines = parseLines(input);
+      return begin(async (tx) => {
+        const planned = await entry(tx, id);
+        if (planned.cooked) throw new KitchenError("This meal is already cooked, so its ingredients cannot change.");
+        await tx`update tools.kitchen_plan_entries set custom_servings = servings where kitchen_id = ${k} and id = ${id}`;
+        await tx`delete from tools.kitchen_plan_lines where entry_id = ${id}`;
+        for (const [position, line] of lines.entries()) {
+          await tx`insert into tools.kitchen_plan_lines (kitchen_id, entry_id, ingredient_id, position, amount, note)
+            values (${k}, ${id}, ${line.ingredientId}, ${position}, ${line.amount}, ${line.note})`;
+        }
+        return entry(tx, id);
+      });
+    },
+    async resetPlan(id) {
+      return begin(async (tx) => {
+        await entry(tx, id);
+        await tx`delete from tools.kitchen_plan_lines where entry_id = ${id}`;
+        await tx`update tools.kitchen_plan_entries set custom_servings = null where kitchen_id = ${k} and id = ${id}`;
+        return entry(tx, id);
+      });
+    },
     async cook(id, leftover) {
       await begin(async (tx) => {
         const [row] = isUuid(id)
-          ? await tx<{ recipe_id: string; servings: number }[]>`select recipe_id, servings from tools.kitchen_plan_entries
-              where kitchen_id = ${k} and id = ${id} and cooked_at is null for update`
+          ? await tx<{ id: string }[]>`select id from tools.kitchen_plan_entries where kitchen_id = ${k} and id = ${id} and cooked_at is null for update`
           : [];
         if (!row) throw new KitchenError("This meal is not in the plan, or it is already cooked.", "not_found");
-        const cooked = await recipe(tx, row.recipe_id);
-        for (const line of scaledLines(cooked, row.servings)) {
+        const cooked = await entry(tx, id);
+        for (const line of cooked.lines) {
           await tx`update tools.kitchen_stock set amount = greatest(0, amount - ${line.amount}), updated_at = now()
             where kitchen_id = ${k} and ingredient_id = ${line.ingredientId}`;
         }
         await tx`update tools.kitchen_plan_entries set cooked_at = now() where kitchen_id = ${k} and id = ${id}`;
-        if (leftover) await scope(tx, kitchen).addLeftover({ name: cooked.name, ...leftover });
+        if (leftover) await scope(tx, kitchen).addLeftover({ name: cooked.recipe, ...leftover });
       });
     },
     stock: () => stock(sql),
@@ -423,9 +486,8 @@ function scope(sql: Db, kitchen: Kitchen): KitchenScope {
       if (isUuid(id)) await sql`delete from tools.kitchen_leftovers where kitchen_id = ${k} and id = ${id}`;
     },
     async shopping(start) {
-      const [{ entries }, all, items, sections, extras, [current]] = await Promise.all([
+      const [{ entries }, items, sections, extras, [current]] = await Promise.all([
         this.week(start),
-        recipes(sql),
         stock(sql),
         sql<{ id: string; section: string }[]>`select id, section from tools.kitchen_ingredients where kitchen_id = ${k}`,
         sql<ExtraItem[]>`select id, name, every_week "everyWeek", (every_week and bought_week is not distinct from ${start}::date) bought
@@ -434,7 +496,7 @@ function scope(sql: Db, kitchen: Kitchen): KitchenScope {
       ]);
       return {
         start,
-        lines: shoppingList(entries, new Map(all.map((one) => [one.id, one])), items, new Map(sections.map((row) => [row.id, row.section])), current?.groups ?? []),
+        lines: shoppingList(entries, items, new Map(sections.map((row) => [row.id, row.section])), current?.groups ?? []),
         extras: [...extras]
       };
     },
@@ -458,13 +520,13 @@ function scope(sql: Db, kitchen: Kitchen): KitchenScope {
 }
 
 function ingredientSelect(db: Db, kitchenId: string) {
-  return db`select i.id, i.name, i.unit, i.section, i.kcal, i.protein, i.carbs, i.fat, i.notes, count(l.recipe_id)::int recipe_count
+  return db`select i.id, i.name, i.unit, i.section, i.other_groups, i.kcal, i.protein, i.carbs, i.fat, i.notes, count(l.recipe_id)::int recipe_count
     from tools.kitchen_ingredients i left join tools.kitchen_recipe_lines l on l.kitchen_id = i.kitchen_id and l.ingredient_id = i.id
     where i.kitchen_id = ${kitchenId}`;
 }
 
 function planSelect(db: Db, kitchenId: string) {
-  return db`select e.id, e.day::text, e.meal, e.recipe_id, r.name recipe, e.servings, e.cooked_at from tools.kitchen_plan_entries e
+  return db`select e.id, e.day::text, e.meal, e.recipe_id, r.name recipe, e.servings, e.custom_servings, e.cooked_at from tools.kitchen_plan_entries e
     join tools.kitchen_recipes r on r.kitchen_id = e.kitchen_id and r.id = e.recipe_id where e.kitchen_id = ${kitchenId}`;
 }
 
@@ -488,14 +550,15 @@ function ingredientFromRow(row: IngredientRow): Ingredient {
     name: row.name,
     unit: row.unit,
     section: row.section,
+    otherGroups: row.other_groups,
     nutrition: { kcal: row.kcal, protein: row.protein, carbs: row.carbs, fat: row.fat },
     notes: row.notes,
     recipeCount: row.recipe_count
   };
 }
 
-function planFromRow(row: PlanRow): PlanEntry {
-  return { id: row.id, day: row.day, meal: row.meal, recipeId: row.recipe_id, recipe: row.recipe, servings: row.servings, cooked: row.cooked_at !== null };
+function planFromRow(row: PlanRow): Omit<PlanEntry, "lines"> {
+  return { id: row.id, day: row.day, meal: row.meal, recipeId: row.recipe_id, recipe: row.recipe, servings: row.servings, cooked: row.cooked_at !== null, custom: row.custom_servings !== null };
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

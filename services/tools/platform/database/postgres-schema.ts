@@ -562,6 +562,8 @@ export const kitchenIngredients = toolsSchema.table("kitchen_ingredients", {
   name: text("name").notNull(),
   unit: text("unit").notNull(),
   section: text("section").notNull(),
+  /** More groups the ingredient also belongs to. `section` stays its main group, where the shopping list shows it. */
+  otherGroups: text("other_groups").array().notNull().default(sql`'{}'::text[]`),
   kcal: doublePrecision("kcal"),
   protein: doublePrecision("protein"),
   carbs: doublePrecision("carbs"),
@@ -610,13 +612,31 @@ export const kitchenPlanEntries = toolsSchema.table("kitchen_plan_entries", {
   meal: text("meal").notNull(),
   recipeId: uuid("recipe_id").notNull(),
   servings: integer("servings").notNull(),
+  /** Set when this one meal has its own ingredients in kitchen_plan_lines, written for this many servings. */
+  customServings: integer("custom_servings"),
   cookedAt: timestamp("cooked_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
 }, (table) => [
   check("kitchen_plan_entries_meal_check", sql`${table.meal} in ('breakfast', 'lunch', 'dinner', 'snack')`),
   check("kitchen_plan_entries_servings_check", sql`${table.servings} > 0`),
+  check("kitchen_plan_entries_custom_servings_check", sql`${table.customServings} > 0`),
   foreignKey({ name: "kitchen_plan_entries_recipe_fk", columns: [table.kitchenId, table.recipeId], foreignColumns: [kitchenRecipes.kitchenId, kitchenRecipes.id] }).onDelete("cascade"),
   index("kitchen_plan_entries_day_idx").on(table.kitchenId, table.day),
+]);
+
+/** The ingredients of one planned meal that differs from its recipe. The recipe stays as it is. */
+export const kitchenPlanLines = toolsSchema.table("kitchen_plan_lines", {
+  kitchenId: uuid("kitchen_id").notNull(),
+  entryId: uuid("entry_id").notNull().references(() => kitchenPlanEntries.id, { onDelete: "cascade" }),
+  ingredientId: uuid("ingredient_id").notNull(),
+  position: integer("position").notNull(),
+  amount: doublePrecision("amount").notNull(),
+  note: text("note").notNull().default(""),
+}, (table) => [
+  primaryKey({ columns: [table.entryId, table.ingredientId] }),
+  check("kitchen_plan_lines_amount_check", sql`${table.amount} > 0`),
+  foreignKey({ name: "kitchen_plan_lines_ingredient_fk", columns: [table.kitchenId, table.ingredientId], foreignColumns: [kitchenIngredients.kitchenId, kitchenIngredients.id] }).onDelete("cascade"),
+  index("kitchen_plan_lines_ingredient_idx").on(table.kitchenId, table.ingredientId),
 ]);
 
 export const kitchenStock = toolsSchema.table("kitchen_stock", {

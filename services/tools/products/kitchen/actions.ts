@@ -7,11 +7,13 @@ const id = z.string().max(64);
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD.");
 const amount = z.number().finite();
 const nutrient = z.number().finite().nullable();
+const lines = z.array(z.object({ ingredientId: id, amount, note: z.string().max(400) })).max(200);
 
 export const ingredientFields = {
   name: z.string().max(200),
   unit: z.enum(INGREDIENT_UNITS),
   section: z.string().max(100),
+  otherGroups: z.array(z.string().max(100)).max(20).optional(),
   kcal: nutrient,
   protein: nutrient,
   carbs: nutrient,
@@ -34,13 +36,15 @@ export const kitchenAction = z.discriminatedUnion("type", [
     type: z.literal("recipe.save"),
     id: id.optional(),
     ...recipeFields,
-    lines: z.array(z.object({ ingredientId: id, amount, note: z.string().max(400) })).max(200)
+    lines
   }),
   z.object({ type: z.literal("recipe.delete"), id }),
   z.object({ type: z.literal("recipe.copy"), id, toKitchenId: id }),
   z.object({ type: z.literal("plan.add"), day, meal: z.enum(MEALS), recipeId: id, servings: z.number().int() }),
   z.object({ type: z.literal("plan.update"), id, day, meal: z.enum(MEALS), servings: z.number().int() }),
   z.object({ type: z.literal("plan.remove"), id }),
+  z.object({ type: z.literal("plan.customize"), id, lines }),
+  z.object({ type: z.literal("plan.reset"), id }),
   z.object({ type: z.literal("plan.cook"), id, leftover: z.object({ servings: amount, useBy: day }).optional() }),
   z.object({ type: z.literal("stock.set"), ingredientId: id, amount }),
   z.object({ type: z.literal("stock.add"), ingredientId: id, amount }),
@@ -84,6 +88,8 @@ function apply(kitchen: KitchenScope, action: Exclude<KitchenAction, { type: "re
     case "plan.add": return kitchen.plan(action);
     case "plan.update": return kitchen.updatePlan(action.id, action);
     case "plan.remove": return kitchen.removePlan(action.id);
+    case "plan.customize": return kitchen.customizePlan(action.id, action.lines);
+    case "plan.reset": return kitchen.resetPlan(action.id);
     case "plan.cook": return kitchen.cook(action.id, action.leftover);
     case "stock.set": return kitchen.setStock(action.ingredientId, action.amount);
     case "stock.add": return kitchen.addStock(action.ingredientId, action.amount);

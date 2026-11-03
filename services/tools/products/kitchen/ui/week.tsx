@@ -1,14 +1,14 @@
 import { Link, useNavigate } from "@tanstack/react-router";
-import { CheckIcon, ChefHatIcon, ChevronLeftIcon, ChevronRightIcon, PlusIcon, SearchIcon, ShoppingBasketIcon } from "lucide-react";
+import { CheckIcon, ChefHatIcon, ChevronLeftIcon, ChevronRightIcon, PencilIcon, PlusIcon, RotateCcwIcon, ShoppingBasketIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Button } from "../../../platform/ui/components/ui/button.js";
-import { Input } from "../../../platform/ui/components/ui/input.js";
 import { Label } from "../../../platform/ui/components/ui/label.js";
 import { cn } from "../../../platform/ui/lib/utils.js";
-import { addDays, type Leftover, type Meal, MEALS, type PlanEntry, weekDays } from "../domain.js";
+import { addDays, formatAmount, type Ingredient, type Leftover, type Meal, MEALS, type PlanEntry, weekDays } from "../domain.js";
 import type { RecipeSummary } from "../server-functions.js";
-import { dayParts, type Frame, groupColor, KitchenPage, KitchenSheet, mainGroup, PlateRing, Stepper, tint, useByLabel, useKitchenAction, weekLabel, weekRange } from "./kit.js";
+import { dayParts, type Frame, groupColor, KitchenPage, KitchenSheet, mainGroup, Pill, PlateRing, SearchField, Stepper, tint, useByLabel, useKitchenAction, weekLabel, weekRange } from "./kit.js";
 import { type KitchenLanguage, useLanguage, useText } from "./language.js";
+import { type DraftLine, draftLines, LineEditor, useResolveLines } from "./lines.js";
 
 const en = {
   previousWeek: "Previous week",
@@ -58,7 +58,18 @@ const en = {
   leftoverNote: "Kept in At home for 3 days when you mark it cooked",
   leftoverAria: "Leftover servings",
   cookedMeal: "This meal is cooked. Its ingredients came out of At home.",
-  openRecipe: "Open the recipe"
+  openRecipe: "Open the recipe",
+  ingredientsLabel: "Ingredients",
+  onlyThisMeal: "Only this meal",
+  noIngredients: "No ingredients for this meal.",
+  changeThisMeal: "Change for this meal",
+  saveFirst: "Save the other changes first.",
+  useRecipeAgain: "Use the recipe again",
+  editHint: "Changes apply to this meal only. The recipe stays as it is.",
+  cancel: "Cancel",
+  saveForMeal: "Save for this meal",
+  changedForMeal: "Changed for this meal",
+  backToRecipe: "This meal uses the recipe again"
 };
 
 const TEXT: Record<KitchenLanguage, typeof en> = {
@@ -111,11 +122,22 @@ const TEXT: Record<KitchenLanguage, typeof en> = {
     leftoverNote: "Bleiben 3 Tage im Vorrat, wenn du die Mahlzeit als gekocht markierst",
     leftoverAria: "Restportionen",
     cookedMeal: "Diese Mahlzeit ist gekocht. Die Zutaten kamen aus dem Vorrat.",
-    openRecipe: "Rezept öffnen"
+    openRecipe: "Rezept öffnen",
+    ingredientsLabel: "Zutaten",
+    onlyThisMeal: "Nur diese Mahlzeit",
+    noIngredients: "Keine Zutaten für diese Mahlzeit.",
+    changeThisMeal: "Für diese Mahlzeit ändern",
+    saveFirst: "Speichere zuerst die anderen Änderungen.",
+    useRecipeAgain: "Wieder das Rezept nutzen",
+    editHint: "Die Änderungen gelten nur für diese Mahlzeit. Das Rezept bleibt, wie es ist.",
+    cancel: "Abbrechen",
+    saveForMeal: "Für diese Mahlzeit speichern",
+    changedForMeal: "Für diese Mahlzeit geändert",
+    backToRecipe: "Diese Mahlzeit nutzt wieder das Rezept"
   }
 };
 
-type WeekData = Frame & { week: { start: string; entries: readonly PlanEntry[] }; recipes: readonly RecipeSummary[]; leftovers: readonly Leftover[]; toBuy: number; buySections: readonly string[] };
+type WeekData = Frame & { week: { start: string; entries: readonly PlanEntry[] }; recipes: readonly RecipeSummary[]; ingredients: readonly Ingredient[]; leftovers: readonly Leftover[]; toBuy: number; buySections: readonly string[] };
 
 export function KitchenWeekPage(data: WeekData) {
   const { kitchen, week, today } = data;
@@ -123,7 +145,7 @@ export function KitchenWeekPage(data: WeekData) {
   const language = useLanguage();
   const text = useText(TEXT);
   const [planning, setPlanning] = useState<string | undefined>();
-  const [open, setOpen] = useState<PlanEntry | undefined>();
+  const [openId, setOpenId] = useState<string | undefined>();
   const days = weekDays(week.start);
   const byDay = useMemo(() => groupBy(week.entries), [week.entries]);
   const recipes = new Map(data.recipes.map((recipe) => [recipe.id, recipe]));
@@ -179,7 +201,7 @@ export function KitchenWeekPage(data: WeekData) {
                       <button
                         key={entry.id}
                         type="button"
-                        onClick={() => setOpen(entry)}
+                        onClick={() => setOpenId(entry.id)}
                         style={entry.cooked || !group ? undefined : { background: tint(groupColor(kitchen.groups, group), 16) }}
                         className={cn(
                           "flex min-h-16 w-full items-start gap-3 rounded-xl bg-muted/60 py-2.5 pr-3 pl-2.5 text-left transition-[filter,background-color] hover:brightness-[1.06] focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none sm:w-auto sm:min-w-60 sm:flex-1",
@@ -251,7 +273,7 @@ export function KitchenWeekPage(data: WeekData) {
         </aside>
       </div>
       <PlanSheet day={planning} onClose={() => setPlanning(undefined)} data={data} />
-      <EntrySheet entry={open} onClose={() => setOpen(undefined)} data={data} />
+      <EntrySheet entry={week.entries.find((entry) => entry.id === openId)} onClose={() => setOpenId(undefined)} data={data} />
     </KitchenPage>
   );
 }
@@ -300,14 +322,7 @@ function PlanSheet({ day, onClose, data }: { day: string | undefined; onClose: (
       onOpenChange={(next) => { if (!next) onClose(); }}
       title={parts ? text.planTitle(parts.weekdayLong, parts.dayMonth) : text.planAMeal}
       footer={data.recipes.length ? (
-        <div className="flex w-full items-center justify-between gap-3">
-          <Stepper label={text.servingsLabel} value={servings} onValue={setServings} />
-          <Button size="lg" className="px-5" onClick={plan} disabled={!recipeId || pending}>{text.addToPlan}</Button>
-        </div>
-      ) : undefined}
-    >
-      {data.recipes.length ? (
-        <div className="grid gap-4">
+        <div className="grid w-full gap-3">
           <div className="grid grid-cols-4 gap-1 rounded-full bg-muted/60 p-1" role="radiogroup" aria-label={text.meal}>
             {MEALS.map((option) => (
               <button
@@ -322,11 +337,16 @@ function PlanSheet({ day, onClose, data }: { day: string | undefined; onClose: (
               </button>
             ))}
           </div>
-          <div className="relative">
-            <SearchIcon className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-            <Input className="h-10 pl-9" placeholder={text.findRecipe} value={query} onChange={(event) => setQuery(event.target.value)} aria-label={text.findRecipe} />
+          <div className="flex items-center justify-between gap-3">
+            <Stepper label={text.servingsLabel} value={servings} onValue={setServings} />
+            <Button size="lg" className="px-5" onClick={plan} disabled={!recipeId || pending}>{text.addToPlan}</Button>
           </div>
-          <ul className="grid max-h-80 gap-1 overflow-y-auto" role="listbox" aria-label={text.recipes}>
+        </div>
+      ) : undefined}
+    >
+      {data.recipes.length ? (
+        <SearchField value={query} onValue={setQuery} label={text.findRecipe} inSheet>
+          <ul className="grid gap-1" role="listbox" aria-label={text.recipes}>
             {matches.map((recipe) => (
               <li key={recipe.id}>
                 <button
@@ -348,7 +368,7 @@ function PlanSheet({ day, onClose, data }: { day: string | undefined; onClose: (
             ))}
             {!matches.length ? <li className="px-3 py-6 text-center text-sm text-muted-foreground">{text.noRecipeMatch(query)}</li> : null}
           </ul>
-        </div>
+        </SearchField>
       ) : (
         <div className="grid justify-items-start gap-3 pb-2">
           <p className="text-sm text-muted-foreground">{text.plansUseRecipes}</p>
@@ -367,14 +387,28 @@ function EntrySheet({ entry, onClose, data }: { entry: PlanEntry | undefined; on
   const [day, setDay] = useState("");
   const [meal, setMeal] = useState<Meal>("dinner");
   const [leftover, setLeftover] = useState(0);
+  const [draft, setDraft] = useState<DraftLine[] | undefined>();
+  const [error, setError] = useState<string | undefined>();
+  const resolveLines = useResolveLines(data.kitchen.id, data.ingredients);
   const [lastId, setLastId] = useState<string | undefined>();
   if (entry?.id !== lastId) {
     setLastId(entry?.id);
-    if (entry) { setServings(entry.servings); setDay(entry.day); setMeal(entry.meal); setLeftover(0); }
+    if (entry) { setServings(entry.servings); setDay(entry.day); setMeal(entry.meal); setLeftover(0); setDraft(undefined); setError(undefined); }
   }
   if (!entry) return <KitchenSheet open={false} onOpenChange={() => {}} title="">{null}</KitchenSheet>;
   const changed = servings !== entry.servings || day !== entry.day || meal !== entry.meal;
   const days = weekDays(data.week.start);
+  const current = entry.lines.map((line) => ({ ingredientId: line.ingredientId, amount: line.amount, note: line.note }));
+
+  async function saveLines() {
+    if (!draft || !entry) return;
+    setError(undefined);
+    const lines = await resolveLines(draft);
+    if (typeof lines === "string") return setError(lines);
+    if (!lines) return;
+    const undo = entry.custom ? { type: "plan.customize" as const, id: entry.id, lines: current } : { type: "plan.reset" as const, id: entry.id };
+    if (await run({ type: "plan.customize", id: entry.id, lines }, { title: text.changedForMeal, undo })) setDraft(undefined);
+  }
 
   return (
     <KitchenSheet
@@ -382,7 +416,12 @@ function EntrySheet({ entry, onClose, data }: { entry: PlanEntry | undefined; on
       onOpenChange={(next) => { if (!next) onClose(); }}
       title={entry.recipe}
       description={`${text.meals[entry.meal]}, ${dayParts(entry.day, language).weekdayLong} ${dayParts(entry.day, language).dayMonth}${entry.cooked ? text.cookedSuffix : ""}`}
-      footer={(
+      footer={draft ? (
+        <div className="flex w-full items-center justify-end gap-2">
+          <Button variant="ghost" disabled={pending} onClick={() => { setDraft(undefined); setError(undefined); }}>{text.cancel}</Button>
+          <Button size="lg" className="px-4" disabled={pending} onClick={saveLines}>{text.saveForMeal}</Button>
+        </div>
+      ) : (
         <div className="flex w-full flex-wrap items-center justify-between gap-2">
           <Button variant="destructive-subtle" disabled={pending} onClick={async () => {
             if (await run({ type: "plan.remove", id: entry.id }, { title: text.removedFromPlan(entry.recipe), undo: { type: "plan.add", day: entry.day, meal: entry.meal, recipeId: entry.recipeId, servings: entry.servings } })) onClose();
@@ -399,6 +438,13 @@ function EntrySheet({ entry, onClose, data }: { entry: PlanEntry | undefined; on
         </div>
       )}
     >
+      {draft ? (
+        <div className="grid gap-3 pb-1">
+          <p className="text-sm text-muted-foreground">{text.editHint}</p>
+          <LineEditor lines={draft} onLines={(update) => setDraft((lines) => update(lines ?? []))} ingredients={data.ingredients} />
+          {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
+        </div>
+      ) : (
       <div className="grid gap-5 pb-1">
         {!entry.cooked ? (
           <>
@@ -434,8 +480,35 @@ function EntrySheet({ entry, onClose, data }: { entry: PlanEntry | undefined; on
             </div>
           </>
         ) : <p className="text-sm text-muted-foreground">{text.cookedMeal}</p>}
+        <section className="grid gap-2" aria-label={text.ingredientsLabel}>
+          <div className="flex items-center justify-between gap-2">
+            <Label>{text.ingredientsLabel}</Label>
+            {entry.custom ? <Pill tone="accent">{text.onlyThisMeal}</Pill> : null}
+          </div>
+          {entry.lines.length ? (
+            <ul className="grid gap-1.5 text-sm">
+              {entry.lines.map((line) => (
+                <li key={line.ingredientId} className="flex items-baseline justify-between gap-3">
+                  <span className="min-w-0 break-words">{line.ingredient}{line.note ? <span className="text-muted-foreground">, {line.note}</span> : null}</span>
+                  <span className="shrink-0 text-muted-foreground tabular-nums">{formatAmount(line.amount, line.unit, language)}</span>
+                </li>
+              ))}
+            </ul>
+          ) : <p className="text-sm text-muted-foreground">{text.noIngredients}</p>}
+          {!entry.cooked ? (
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" size="sm" disabled={pending || changed} title={changed ? text.saveFirst : undefined} onClick={() => setDraft(draftLines(entry.lines))}><PencilIcon aria-hidden /> {text.changeThisMeal}</Button>
+              {entry.custom ? (
+                <Button variant="ghost" size="sm" disabled={pending} onClick={() => void run({ type: "plan.reset", id: entry.id }, { title: text.backToRecipe, undo: { type: "plan.customize", id: entry.id, lines: current } })}>
+                  <RotateCcwIcon aria-hidden /> {text.useRecipeAgain}
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
+        </section>
         <Link to="/kitchen/$kitchenId/recipes/$recipeId" params={{ kitchenId: data.kitchen.id, recipeId: entry.recipeId }} className="text-sm font-medium underline decoration-foreground/30 underline-offset-4 hover:decoration-foreground">{text.openRecipe}</Link>
       </div>
+      )}
     </KitchenSheet>
   );
 }

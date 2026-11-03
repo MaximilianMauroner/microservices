@@ -1,15 +1,16 @@
 import { Link, useNavigate } from "@tanstack/react-router";
-import { ChevronLeftIcon, ClockIcon, CopyIcon, PencilIcon, PlusIcon, SearchIcon, Trash2Icon, XIcon } from "lucide-react";
+import { ChevronLeftIcon, ClockIcon, CopyIcon, PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import { useState } from "react";
 import { Button } from "../../../platform/ui/components/ui/button.js";
 import { Input } from "../../../platform/ui/components/ui/input.js";
 import { Label } from "../../../platform/ui/components/ui/label.js";
 import { Textarea } from "../../../platform/ui/components/ui/textarea.js";
 import { cn } from "../../../platform/ui/lib/utils.js";
-import { formatAmount, type Ingredient, INGREDIENT_UNITS, type IngredientUnit, type Nutrition, type Recipe, scaledLines, unitName } from "../domain.js";
+import { formatAmount, type Ingredient, type Nutrition, type Recipe, scaledLines } from "../domain.js";
 import type { RecipeSummary } from "../server-functions.js";
-import { byGroup, type Frame, GroupDot, groupColor, KitchenEmpty, KitchenPage, KitchenSheet, mainGroup, PlateRing, Stepper, tint, useKitchenAction } from "./kit.js";
+import { byGroup, type Frame, GroupDot, groupColor, KitchenEmpty, KitchenPage, KitchenSheet, mainGroup, PlateRing, SearchField, Stepper, tint, useKitchenAction } from "./kit.js";
 import { type KitchenLanguage, useLanguage, useText } from "./language.js";
+import { type DraftLine, draftLines, LineEditor, useResolveLines } from "./lines.js";
 
 const en = {
   title: "Recipes",
@@ -56,17 +57,9 @@ const en = {
   name: "Name",
   minutesLabel: "Minutes",
   newNames: "New names become new ingredients",
-  ingredient: "Ingredient",
-  amount: "Amount",
-  removeItem: (name: string) => name ? `Remove ${name}` : "Remove ingredient",
-  unit: "Unit",
-  note: "Note",
-  notePlaceholder: "Note, such as diced",
-  addIngredient: "Add ingredient",
   stepsPlaceholder: "One step per line.\nDice the onions.\nFry them in olive oil.",
   recipeSaved: "Recipe saved",
-  nameRequired: "Give the recipe a name.",
-  amountRequired: (name: string) => `Enter an amount for ${name}.`
+  nameRequired: "Give the recipe a name."
 };
 type KitText = typeof en;
 const TEXT: Record<KitchenLanguage, KitText> = {
@@ -116,17 +109,9 @@ const TEXT: Record<KitchenLanguage, KitText> = {
     name: "Name",
     minutesLabel: "Minuten",
     newNames: "Neue Namen werden zu neuen Zutaten",
-    ingredient: "Zutat",
-    amount: "Menge",
-    removeItem: (name: string) => name ? `${name} entfernen` : "Zutat entfernen",
-    unit: "Einheit",
-    note: "Notiz",
-    notePlaceholder: "Notiz, zum Beispiel gewürfelt",
-    addIngredient: "Zutat hinzufügen",
     stepsPlaceholder: "Ein Schritt pro Zeile.\nZwiebeln würfeln.\nIn Olivenöl anbraten.",
     recipeSaved: "Rezept gespeichert",
-    nameRequired: "Gib dem Rezept einen Namen.",
-    amountRequired: (name: string) => `Gib eine Menge für ${name} ein.`
+    nameRequired: "Gib dem Rezept einen Namen."
   }
 };
 
@@ -152,16 +137,11 @@ export function KitchenRecipesPage(data: Frame & { recipes: readonly RecipeSumma
       actions={<Button nativeButton={false} render={<Link to="/kitchen/$kitchenId/recipes/$recipeId" params={{ kitchenId: kitchen.id, recipeId: "new" }} />}><PlusIcon aria-hidden /> {text.newRecipe}</Button>}
     >
       <div className="grid gap-4">
-        <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-          <div className="relative">
-            <SearchIcon className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-            <Input className="h-10 pl-9" placeholder={text.findRecipe} value={query} onChange={(event) => setQuery(event.target.value)} aria-label={text.findRecipe} />
-          </div>
-          <form className="flex gap-2" onSubmit={(event) => { event.preventDefault(); void addIdea(); }}>
-            <Input className="h-10" placeholder={text.quickIdea} value={idea} onChange={(event) => setIdea(event.target.value)} aria-label={text.ideaLabel} />
-            <Button type="submit" variant="outline" className="h-10" disabled={!idea.trim() || pending}>{text.addIdea}</Button>
-          </form>
-        </div>
+        <form className="flex gap-2 sm:max-w-md" onSubmit={(event) => { event.preventDefault(); void addIdea(); }}>
+          <Input className="h-10" placeholder={text.quickIdea} value={idea} onChange={(event) => setIdea(event.target.value)} aria-label={text.ideaLabel} />
+          <Button type="submit" variant="outline" className="h-10" disabled={!idea.trim() || pending}>{text.addIdea}</Button>
+        </form>
+        <SearchField value={query} onValue={setQuery} label={text.findRecipe}>
         {matches.length ? (
           <ul className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
             {matches.map((recipe) => {
@@ -195,6 +175,7 @@ export function KitchenRecipesPage(data: Frame & { recipes: readonly RecipeSumma
         ) : (
           <KitchenEmpty title={recipes.length ? text.noMatch(query) : text.noRecipes} body={recipes.length ? text.tryAnother : text.addIdeaHint} />
         )}
+        </SearchField>
       </div>
     </KitchenPage>
   );
@@ -301,11 +282,8 @@ function RecipeView({ data, recipe, onEdit }: { data: RecipeData; recipe: Recipe
   );
 }
 
-type DraftLine = { key: string; ingredientId?: string; name: string; unit: IngredientUnit; amount: string; note: string };
-
 function RecipeEditor({ data, onDone }: { data: RecipeData; onDone: () => void }) {
   const navigate = useNavigate();
-  const language = useLanguage();
   const text = useText(TEXT);
   const { run, pending } = useKitchenAction(data.kitchen.id);
   const recipe = data.recipe;
@@ -313,27 +291,16 @@ function RecipeEditor({ data, onDone }: { data: RecipeData; onDone: () => void }
   const [servings, setServings] = useState(recipe?.servings ?? 2);
   const [minutes, setMinutes] = useState(recipe?.minutes ? String(recipe.minutes) : "");
   const [instructions, setInstructions] = useState(recipe?.instructions ?? "");
-  const [lines, setLines] = useState<DraftLine[]>(() => (recipe?.lines ?? []).map((line) => ({ key: line.ingredientId, ingredientId: line.ingredientId, name: line.ingredient, unit: line.unit, amount: String(line.amount), note: line.note })));
+  const [lines, setLines] = useState<DraftLine[]>(() => draftLines(recipe?.lines ?? []));
   const [error, setError] = useState<string | undefined>();
-  const byName = new Map(data.ingredients.map((ingredient) => [ingredient.name.toLowerCase(), ingredient]));
-
-  const update = (key: string, patch: Partial<DraftLine>) => setLines((current) => current.map((line) => line.key === key ? { ...line, ...patch } : line));
+  const resolveLines = useResolveLines(data.kitchen.id, data.ingredients);
 
   async function save() {
     setError(undefined);
     if (!name.trim()) return setError(text.nameRequired);
-    const resolved = [];
-    for (const line of lines.filter((one) => one.name.trim())) {
-      const amount = Number(line.amount.replace(",", "."));
-      if (!(amount > 0)) return setError(text.amountRequired(line.name));
-      let ingredientId = line.ingredientId ?? byName.get(line.name.trim().toLowerCase())?.id;
-      if (!ingredientId) {
-        const created = await run({ type: "ingredient.save", name: line.name, unit: line.unit, section: "", kcal: null, protein: null, carbs: null, fat: null, notes: "" });
-        if (!created?.id) return;
-        ingredientId = created.id;
-      }
-      resolved.push({ ingredientId, amount, note: line.note });
-    }
+    const resolved = await resolveLines(lines);
+    if (typeof resolved === "string") return setError(resolved);
+    if (!resolved) return;
     const saved = await run({ type: "recipe.save", id: recipe?.id, name, servings, minutes: minutes ? Number(minutes) : null, instructions, lines: resolved }, { title: recipe ? text.recipeSaved : text.added(name.trim()) });
     if (!saved?.id) return;
     if (recipe) onDone();
@@ -371,35 +338,7 @@ function RecipeEditor({ data, onDone }: { data: RecipeData; onDone: () => void }
             <h2 className="font-kitchen font-semibold tracking-tight text-xl">{text.ingredients}</h2>
             <span className="text-xs text-muted-foreground">{text.newNames}</span>
           </div>
-          <datalist id="kitchen-ingredients">{data.ingredients.map((ingredient) => <option key={ingredient.id} value={ingredient.name} />)}</datalist>
-          <ul className="grid gap-2">
-            {lines.map((line) => {
-              const known = line.ingredientId ? data.ingredients.find((one) => one.id === line.ingredientId) : byName.get(line.name.trim().toLowerCase());
-              return (
-                <li key={line.key} className="grid grid-cols-[minmax(0,1fr)_5.5rem_auto] gap-2 rounded-xl border border-[color:var(--surface-border)] bg-card p-2 sm:grid-cols-[minmax(0,1fr)_6rem_6.5rem_minmax(0,0.8fr)_auto]">
-                  <Input aria-label={text.ingredient} list="kitchen-ingredients" value={line.name} placeholder={text.ingredient}
-                    onChange={(event) => {
-                      const match = byName.get(event.target.value.trim().toLowerCase());
-                      update(line.key, { name: event.target.value, ingredientId: match?.id, unit: match?.unit ?? line.unit });
-                    }} />
-                  <Input aria-label={text.amount} inputMode="decimal" value={line.amount} placeholder="200" onChange={(event) => update(line.key, { amount: event.target.value })} />
-                  <Button type="button" variant="ghost" size="icon" aria-label={text.removeItem(line.name)} className="sm:order-last" onClick={() => setLines((current) => current.filter((one) => one.key !== line.key))}><XIcon /></Button>
-                  {known ? (
-                    <span className="col-span-1 flex h-9 items-center px-1 text-sm text-muted-foreground">{unitName(known.unit, language)}</span>
-                  ) : (
-                    <select aria-label={text.unit} value={line.unit} onChange={(event) => update(line.key, { unit: event.target.value as IngredientUnit })}
-                      className="h-9 rounded-lg border border-input bg-field px-2 text-sm">
-                      {INGREDIENT_UNITS.map((unit) => <option key={unit} value={unit}>{unitName(unit, language)}</option>)}
-                    </select>
-                  )}
-                  <Input aria-label={text.note} value={line.note} placeholder={text.notePlaceholder} className="col-span-2 sm:col-span-1" onChange={(event) => update(line.key, { note: event.target.value })} />
-                </li>
-              );
-            })}
-          </ul>
-          <Button type="button" variant="outline" className="justify-self-start" onClick={() => setLines((current) => [...current, { key: crypto.randomUUID(), name: "", unit: "g", amount: "", note: "" }])}>
-            <PlusIcon aria-hidden /> {text.addIngredient}
-          </Button>
+          <LineEditor lines={lines} onLines={setLines} ingredients={data.ingredients} />
         </section>
         <section className="grid gap-1.5">
           <Label htmlFor="recipe-steps" className="font-semibold">{text.steps}</Label>
