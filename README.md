@@ -79,7 +79,8 @@ feedback encryption key there and retains it for restart. Reuse the same
 directory to reuse its Compose project, database, object storage, key, and port
 bindings. If a retained port is occupied, the command stops before it changes
 the configuration or command logs. Stop that port's owner before you restart.
-Do not delete the key while you retain encrypted Feedback responses.
+The Bodyshop key is derived from the same key.
+Do not delete the key while you retain encrypted Feedback responses or Bodyshop records.
 
 The command resolves root `compose.yaml`, then creates a private port override.
 Every published port uses an unused `127.0.0.1` port. PostgreSQL and MinIO run

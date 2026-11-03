@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { chmod, mkdir, mkdtemp, open, readFile, readdir, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -151,6 +151,8 @@ function hostSettings(base: ComposeConfig, bindings: LocalStackManifest["binding
     TOOLS_S3_ENDPOINT: `http://127.0.0.1:${port("minio", 9000)}`,
     ARTIFACT_S3_ENDPOINT: `http://127.0.0.1:${port("minio", 9000)}`,
     FEEDBACK_ENCRYPTION_KEY: key,
+    // A local stack keeps one retained key. Bodyshop derives its own from it, so restarts read earlier data.
+    BODYSHOP_ENCRYPTION_KEY: createHash("sha256").update(`bodyshop:${key}`).digest("base64url"),
   };
   for (const name of ["PUBLIC_ORIGIN", "TOOLS_S3_ENDPOINT", "ARTIFACT_S3_ENDPOINT"]) loopbackOrigin(env[name], name);
   return env;

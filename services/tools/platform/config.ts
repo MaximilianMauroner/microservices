@@ -1,6 +1,7 @@
 import { loadConfig as loadArtifactConfig } from "#publisher";
 import { loadConfig as loadToolsConfig } from "#dashboard";
 import { parseFeedbackEncryptionKey } from "../products/feedback/encryption.js";
+import { parseEncryptionKey } from "./security/sealed.js";
 
 type Environment = Readonly<Record<string, string | undefined>>;
 
@@ -33,6 +34,7 @@ export function loadPlatformConfig(env: Environment = process.env) {
     publicOrigin: tools.trustedOrigin,
     databaseUrl,
     feedbackEncryptionKey: parseFeedbackEncryptionKey(env.FEEDBACK_ENCRYPTION_KEY),
+    bodyshopEncryptionKey: parseEncryptionKey("BODYSHOP_ENCRYPTION_KEY", env.BODYSHOP_ENCRYPTION_KEY),
     auth: loadPlatformAuthConfig(env, tools.trustedOrigin),
     tools,
     artifact,

@@ -58,6 +58,7 @@ Required variables:
 - `GOOGLE_CLIENT_SECRET`
 - `BETTER_AUTH_SECRET`, at least 32 non-whitespace characters
 - `FEEDBACK_ENCRYPTION_KEY`, a base64url-encoded 32-byte key for response encryption
+- `BODYSHOP_ENCRYPTION_KEY`, a base64url-encoded 32-byte key for Bodyshop records. A lost key makes the records unreadable.
 - `AUTH_ALLOWED_GOOGLE_SUBJECT`
 
 The Google OAuth web client must register this exact callback URL:

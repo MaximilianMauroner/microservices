@@ -26,6 +26,7 @@ import { createPostgresMoneyMarketDataRepository } from "../products/money/money
 import { createPostgresFeedbackRepository, type FeedbackRepository } from "../products/feedback/repository.js";
 import { createPostgresDevFeedbackRepository, type DevFeedbackRepository } from "../platform/dev-feedback/dev-feedback.js";
 import { createPostgresKitchenStore, type KitchenStore } from "../products/kitchen/repository.js";
+import { type BodyshopStore, createPostgresBodyshopStore } from "../products/bodyshop/repository.js";
 import { createPlatformIdentity, type PlatformIdentity } from "../platform/auth/auth.js";
 
 export type PlatformRuntime = {
@@ -45,6 +46,7 @@ export type PlatformRuntime = {
   feedback: FeedbackRepository;
   devFeedback: DevFeedbackRepository;
   kitchen: KitchenStore;
+  bodyshop: BodyshopStore;
   documentShare: ReturnType<typeof createDocumentShare>;
   stop: () => Promise<void>;
 };
@@ -96,6 +98,7 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
   const moneyMarketData = new MoneyMarketDataService(createPostgresMoneyMarketDataRepository(config.databaseUrl, { readOnly: config.readOnly }));
   const feedback = createPostgresFeedbackRepository(config.databaseUrl, { readOnly: config.readOnly, encryptionKey: config.feedbackEncryptionKey });
   const kitchen = createPostgresKitchenStore(config.databaseUrl, { readOnly: config.readOnly });
+  const bodyshop = createPostgresBodyshopStore(config.databaseUrl, { readOnly: config.readOnly, encryptionKey: config.bodyshopEncryptionKey });
   const devFeedback = createPostgresDevFeedbackRepository(config.databaseUrl, { readOnly: config.readOnly });
   try {
     const tools = createToolsApp({
@@ -182,6 +185,7 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
         feedback.close(),
         devFeedback.close(),
         kitchen.close(),
+        bodyshop.close(),
         documentShare.close(),
         identity.close()
       ]);
@@ -210,6 +214,7 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
       feedback,
       devFeedback,
       kitchen,
+      bodyshop,
       documentShare,
       health: async () => {
         await Promise.all([
@@ -218,6 +223,7 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
           moneyMarketData.readiness(),
           feedback.readiness(),
           kitchen.readiness(),
+          bodyshop.readiness(),
           documentShare.readiness()
         ]);
       },
@@ -231,6 +237,7 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
     await moneyMarketData.close();
     await feedback.close();
     await kitchen.close();
+    await bodyshop.close();
     await documentShare.close();
     await identity.close();
     throw error;
