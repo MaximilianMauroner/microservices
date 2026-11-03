@@ -434,6 +434,20 @@ export const authVerifications = toolsSchema.table("auth_verifications", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
 }, (table) => [index("auth_verifications_identifier_idx").on(table.identifier)]);
 
+export const people = toolsSchema.table("people", {
+  id: uuid("id").primaryKey(),
+  email: text("email").notNull().unique(),
+  googleSubject: text("google_subject").unique(),
+  invitedAt: timestamp("invited_at", { withTimezone: true }).notNull(),
+  boundAt: timestamp("bound_at", { withTimezone: true }),
+}, (table) => [check("people_email_lowercase_check", sql`${table.email} = lower(${table.email})`)]);
+
+export const productGrants = toolsSchema.table("product_grants", {
+  personId: uuid("person_id").notNull().references(() => people.id, { onDelete: "cascade" }),
+  productId: text("product_id").notNull(),
+  grantedAt: timestamp("granted_at", { withTimezone: true }).notNull(),
+}, (table) => [primaryKey({ columns: [table.personId, table.productId] })]);
+
 export const objects = artifactsSchema.table("objects", {
   id: text("id").primaryKey(),
   kind: text("kind").notNull(),

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import type { PlatformPrincipal } from "@tools-platform/security";
 import { createMemoryHistory, createRootRoute, createRoute, createRouter, RouterProvider } from "@tanstack/react-router";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
@@ -20,7 +21,7 @@ vi.mock("../money/money-tracker-page.js", () => ({ MoneyTrackerPage: () => null 
 vi.mock("../money/money-tracker-pending-page.js", () => ({ MoneyTrackerPendingPage: () => null }));
 
 it("reuses preloaded view data and refreshes it after a mutation without skipping session checks", async () => {
-  const root = createRootRoute();
+  const root = createRootRoute({ loader: async (): Promise<PlatformPrincipal | undefined> => undefined });
   const money = createRoute({
     getParentRoute: () => root,
     path: "/money",
@@ -53,7 +54,7 @@ it("reuses preloaded view data and refreshes it after a mutation without skippin
 it("preloads navigation links once and does not repeat session checks while rerendering", async () => {
   vi.clearAllMocks();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  const root = createRootRoute();
+  const root = createRootRoute({ loader: async (): Promise<PlatformPrincipal | undefined> => undefined });
   const money = createRoute({
     getParentRoute: () => root, path: "/money",
     validateSearch: Route.options.validateSearch, beforeLoad: Route.options.beforeLoad,

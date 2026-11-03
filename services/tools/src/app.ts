@@ -2,7 +2,6 @@ import {
   attachPlatformPrincipal,
   classifyRoute,
   getAttachedPlatformPrincipal,
-  principalMayOpen,
   type PlatformPrincipal,
   type ServiceFamily
 } from "@tools-platform/security";
@@ -11,6 +10,7 @@ import {
   type PrincipalAuthenticator
 } from "@tools-platform/web";
 import { signInLocation } from "./lib/auth-return-path.js";
+import { homePath, principalMayOpen } from "./product-access.js";
 
 type FetchHandler = (request: Request) => Promise<Response>;
 
@@ -40,7 +40,7 @@ export async function authenticatePlatformRequest(
   const principal = await resolvePrincipal(request);
   if (principal) {
     if (route.kind === "human-session" && !principalMayOpen(principal, pathname)) {
-      return { response: accessDenied(request) };
+      return { response: accessDenied(request, principal) };
     }
     attachPlatformPrincipal(request, principal);
     return { principal };
@@ -79,11 +79,11 @@ export function toolsPrincipalAuthentication(): PrincipalAuthenticator {
   };
 }
 
-function accessDenied(request: Request): Response {
+function accessDenied(request: Request, principal: PlatformPrincipal): Response {
   if (isDocumentNavigation(request)) {
     return new Response(null, {
       status: 302,
-      headers: { "Cache-Control": "private, no-store", Location: "/settings" }
+      headers: { "Cache-Control": "private, no-store", Location: homePath(principal) }
     });
   }
   return new Response(JSON.stringify({ error: "access_denied" }), {

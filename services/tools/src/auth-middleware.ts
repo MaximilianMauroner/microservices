@@ -2,6 +2,7 @@ import { redirect } from "@tanstack/react-router";
 import { createMiddleware } from "@tanstack/react-start";
 import type { PlatformPrincipal } from "@tools-platform/security";
 import { safeReturnPath, signInLocation } from "./lib/auth-return-path.js";
+import { homePath } from "./product-access.js";
 
 type PlatformFunctionContext = {
   request: Request;
@@ -14,7 +15,7 @@ export const requirePlatformSession = createMiddleware({ type: "function" })
     if (platformContext.principal?.role === "admin") {
       return next({ context: { principal: platformContext.principal } });
     }
-    if (platformContext.principal) throw redirect({ href: "/settings" });
+    if (platformContext.principal) throw redirect({ href: homePath(platformContext.principal) });
     throw redirect({
       href: signInLocation(
         returnPathFromRequest(platformContext.request),

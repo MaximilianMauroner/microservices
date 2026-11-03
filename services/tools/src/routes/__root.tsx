@@ -10,6 +10,7 @@ import { Toaster } from "../components/ui/toast.js";
 import { SidebarProvider } from "../components/ui/sidebar.js";
 import { ToolsSidebar } from "../components/tools-sidebar.js";
 import { ThemeProvider } from "../components/theme-provider.js";
+import { getCurrentPrincipal } from "../auth-session.js";
 import "../styles.css";
 
 export const Route = createRootRoute({
@@ -19,6 +20,8 @@ export const Route = createRootRoute({
       { name: "viewport", content: "width=device-width, initial-scale=1" }
     ]
   }),
+  loader: () => getCurrentPrincipal(),
+  staleTime: Infinity,
   component: RootDocument
 });
 
@@ -51,5 +54,5 @@ function RootDocument() {
 
 export function isWorkspacePath(pathname: string) {
   if (pathname.startsWith("/feedback/f/") || pathname.startsWith("/feedback/share/") || pathname === "/feedback/confirmation" || pathname === "/share" || pathname.startsWith("/share/") || pathname === "/markdown" || pathname.startsWith("/markdown/")) return false;
-  return pathname === "/" || ["/documents", "/feedback", "/money", "/publisher", "/settings", "/status"].some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+  return pathname === "/" || ["/documents", "/feedback", "/kitchen", "/money", "/publisher", "/settings", "/status"].some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
