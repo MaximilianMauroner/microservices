@@ -1,5 +1,5 @@
 import { loadConfig as loadArtifactConfig } from "@tools-platform/artifact-publisher";
-import { loadConfig as loadToolsConfig } from "@tools-platform/web";
+import { loadConfig as loadToolsConfig } from "#dashboard";
 import { parseFeedbackEncryptionKey } from "../feedback/encryption.js";
 
 type Environment = Readonly<Record<string, string | undefined>>;

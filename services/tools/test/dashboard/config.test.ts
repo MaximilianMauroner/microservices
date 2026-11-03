@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { loadConfig } from "../src/config.js";
+import { loadConfig } from "../../dashboard/src/config.js";
 
 const valid = {
   S3_ENDPOINT: "https://bucket.example.test",

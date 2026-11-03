@@ -5,8 +5,8 @@ import {
   type CatalogDocument,
   type PrivateSnapshotDocument,
   type PublicSnapshotDocument
-} from "../../runtime/domain/index.js";
-import type { BucketObject, JsonBucket } from "../src/bucket.js";
+} from "#domain";
+import type { BucketObject, JsonBucket } from "../../dashboard/src/bucket.js";
 
 export const catalog: CatalogDocument = {
   schemaVersion: CATALOG_SCHEMA_VERSION,

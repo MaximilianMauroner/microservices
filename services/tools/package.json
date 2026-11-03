@@ -6,7 +6,9 @@
   "imports": {
     "#domain": "./runtime/domain/index.ts",
     "#security": "./runtime/security/index.ts",
-    "#suite-chrome": "./runtime/suite-chrome/index.js"
+    "#suite-chrome": "./runtime/suite-chrome/index.js",
+    "#dashboard": "./dashboard/src/index.ts",
+    "#dashboard/products": "./dashboard/products.ts"
   },
   "scripts": {
     "build": "NODE_ENV=production vite build",
@@ -22,6 +24,7 @@
     "test:money-postgres": "node --experimental-strip-types test/runtime/run.ts money-postgres"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1141.0",
     "@base-ui/react": "^1.6.0",
     "@better-auth/oauth-provider": "1.6.26",
     "@modelcontextprotocol/sdk": "1.32.2",
@@ -38,7 +41,6 @@
     "@tiptap/react": "3.29.2",
     "@tools-platform/artifact-publisher": "workspace:*",
     "@tools-platform/tools-checker": "workspace:*",
-    "@tools-platform/web": "workspace:*",
     "better-auth": "1.6.26",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

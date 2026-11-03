@@ -16,8 +16,8 @@
   "include": [
     "src/**/*.ts",
     "src/**/*.tsx",
-    "dashboard/ui/**/*.ts",
-    "dashboard/ui/**/*.tsx",
+    "dashboard/**/*.ts",
+    "dashboard/**/*.tsx",
     "status/ui/**/*.ts",
     "status/ui/**/*.tsx",
     "publisher/ui/**/*.ts",

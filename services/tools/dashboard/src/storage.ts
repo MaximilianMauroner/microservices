@@ -4,7 +4,7 @@ import {
   decodePublicSnapshotDocument,
   type PrivateSnapshotDocument,
   type PublicSnapshotDocument
-} from "../../runtime/domain/index.js";
+} from "#domain";
 import {
   BucketReadError,
   type BucketObject,

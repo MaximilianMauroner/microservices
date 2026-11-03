@@ -1,16 +1,16 @@
-import { BUCKET_KEYS } from "../../runtime/domain/index.js";
+import { BUCKET_KEYS } from "#domain";
 import { describe, expect, it, vi } from "vitest";
 import {
   AuthenticationRequiredError,
   createApp,
   type AppLogger,
   type PrincipalAuthenticator
-} from "../src/app.js";
+} from "../../dashboard/src/app.js";
 import {
   MarkdownAdminUnavailableError,
   type MarkdownAdminReader
-} from "../src/markdown-admin.js";
-import { WebStorage } from "../src/storage.js";
+} from "../../dashboard/src/markdown-admin.js";
+import { WebStorage } from "../../dashboard/src/storage.js";
 import { MemoryBucket, privateSnapshot, publicSnapshot } from "./fixtures.js";
 
 const allowed: PrincipalAuthenticator = async () => {

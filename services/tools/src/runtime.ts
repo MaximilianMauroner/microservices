@@ -5,7 +5,7 @@ import {
   createApp as createToolsApp,
   createS3JsonBucket,
   WebStorage
-} from "@tools-platform/web";
+} from "#dashboard";
 import { createHeartbeats, createPostgresHeartbeatRepository, loadMonitorDefinitions } from "@tools-platform/tools-checker";
 import type { PublicSnapshotDocument } from "#domain";
 import {
