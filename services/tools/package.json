@@ -3,6 +3,11 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
+  "imports": {
+    "#domain": "./runtime/domain/index.ts",
+    "#security": "./runtime/security/index.ts",
+    "#suite-chrome": "./runtime/suite-chrome/index.js"
+  },
   "scripts": {
     "build": "NODE_ENV=production vite build",
     "db:push-postgres": "tsx database/push-postgres.ts production",
@@ -32,8 +37,6 @@
     "@tiptap/pm": "3.29.2",
     "@tiptap/react": "3.29.2",
     "@tools-platform/artifact-publisher": "workspace:*",
-    "@tools-platform/domain": "workspace:*",
-    "@tools-platform/security": "workspace:*",
     "@tools-platform/tools-checker": "workspace:*",
     "@tools-platform/web": "workspace:*",
     "better-auth": "1.6.26",

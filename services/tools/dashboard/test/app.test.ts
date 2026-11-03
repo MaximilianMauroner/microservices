@@ -1,4 +1,4 @@
-import { BUCKET_KEYS } from "@tools-platform/domain";
+import { BUCKET_KEYS } from "../../runtime/domain/index.js";
 import { describe, expect, it, vi } from "vitest";
 import {
   AuthenticationRequiredError,

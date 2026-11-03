@@ -7,7 +7,7 @@ import {
   WebStorage
 } from "@tools-platform/web";
 import { createHeartbeats, createPostgresHeartbeatRepository, loadMonitorDefinitions } from "@tools-platform/tools-checker";
-import type { PublicSnapshotDocument } from "@tools-platform/domain";
+import type { PublicSnapshotDocument } from "#domain";
 import {
   toolsPrincipalAuthentication,
   type PlatformServices,

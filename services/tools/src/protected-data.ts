@@ -2,7 +2,7 @@ import { DEFAULT_UPLOAD_LIST_CRITERIA, uploadListPath, type UploadCategory } fro
 import { createServerFn } from "@tanstack/react-start";
 import type {
   PrivateSnapshotDocument
-} from "@tools-platform/domain";
+} from "#domain";
 import type { MarkdownAdminSnapshot } from "@tools-platform/web";
 import { requirePlatformSession } from "./auth-middleware.js";
 import { internalPlatformRequest, readPlatformJson, readPlatformResponse } from "./server-data.js";

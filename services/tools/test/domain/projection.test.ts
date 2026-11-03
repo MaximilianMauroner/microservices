@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   projectPrivateSnapshot,
   projectPublicSnapshot
-} from "../src/index.js";
+} from "#domain";
 import { NOW, catalogFixture, stateFixture } from "./fixtures.js";
 
 describe("snapshot projection", () => {

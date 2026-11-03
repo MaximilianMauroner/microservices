@@ -4,7 +4,7 @@ import {
   type CheckObservation,
   type Incident,
   type MonitorState
-} from "../src/index.js";
+} from "#domain";
 
 const firstFailure: CheckObservation = {
   id: "observation-1",

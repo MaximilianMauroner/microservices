@@ -1,7 +1,7 @@
 import babel from "@rolldown/plugin-babel";
 import react, { reactCompilerPreset } from "@vitejs/plugin-react";
 import { tanstackStart } from "@tanstack/react-start/plugin/vite";
-import { SERVER_FUNCTION_BASE_PATH } from "@tools-platform/security";
+import { SERVER_FUNCTION_BASE_PATH } from "#security";
 import tailwindcss from "@tailwindcss/vite";
 import { nitro } from "nitro/vite";
 import { defineConfig } from "vite";

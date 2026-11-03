@@ -3,7 +3,7 @@ import {
   CHECKER_STATE_SCHEMA_VERSION,
   decodeCatalogDocument,
   projectPublicSnapshot
-} from "@tools-platform/domain";
+} from "../../runtime/domain/index.js";
 import { describe, expect, it } from "vitest";
 
 describe("initial catalog", () => {

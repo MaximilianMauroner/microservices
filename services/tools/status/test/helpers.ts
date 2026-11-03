@@ -6,7 +6,7 @@ import {
   type HistoryPartitionDocument,
   type PrivateSnapshotDocument,
   type PublicSnapshotDocument
-} from "@tools-platform/domain";
+} from "../../runtime/domain/index.js";
 import type {
   CheckerStore,
   Versioned

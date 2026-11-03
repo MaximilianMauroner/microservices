@@ -4,7 +4,7 @@ import {
   getAttachedPlatformPrincipal,
   type PlatformPrincipal,
   type ServiceFamily
-} from "@tools-platform/security";
+} from "#security";
 import {
   AuthenticationRequiredError,
   type PrincipalAuthenticator

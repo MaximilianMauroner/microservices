@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import type { PrivateSnapshotDocument, PublicSnapshotDocument } from "@tools-platform/domain";
+import type { PrivateSnapshotDocument, PublicSnapshotDocument } from "#domain";
 import { ToolsDirectory } from "../dashboard/ui/tools-directory.js";
 import { PrivateToolsStatus, ToolsStatus } from "../status/ui/tools-status.js";
 

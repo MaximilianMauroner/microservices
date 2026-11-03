@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import type { PlatformPrincipal } from "@tools-platform/security";
+import type { PlatformPrincipal } from "#security";
 import { createMemoryHistory, createRootRoute, createRoute, createRouter, RouterProvider } from "@tanstack/react-router";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";

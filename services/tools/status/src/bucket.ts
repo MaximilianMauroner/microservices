@@ -8,7 +8,7 @@ import {
   type HistoryPartitionDocument,
   type PrivateSnapshotDocument,
   type PublicSnapshotDocument
-} from "@tools-platform/domain";
+} from "../../runtime/domain/index.js";
 import type { CheckerConfig } from "./config.js";
 
 export interface Versioned<Value> {

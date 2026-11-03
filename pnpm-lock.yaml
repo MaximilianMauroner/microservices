@@ -77,12 +77,6 @@ importers:
       '@tools-platform/artifact-publisher':
         specifier: workspace:*
         version: link:publisher
-      '@tools-platform/domain':
-        specifier: workspace:*
-        version: link:runtime/domain
-      '@tools-platform/security':
-        specifier: workspace:*
-        version: link:runtime/security
       '@tools-platform/tools-checker':
         specifier: workspace:*
         version: link:status
@@ -222,12 +216,6 @@ importers:
       '@aws-sdk/client-s3':
         specifier: ^3.717.0
         version: 3.1106.0
-      '@tools-platform/domain':
-        specifier: workspace:*
-        version: link:../runtime/domain
-      '@tools-platform/suite-chrome':
-        specifier: workspace:*
-        version: link:../runtime/suite-chrome
     devDependencies:
       '@types/node':
         specifier: ^22.10.2
@@ -247,9 +235,6 @@ importers:
       '@aws-sdk/s3-request-presigner':
         specifier: ^3.1141.0
         version: 3.1141.0
-      '@tools-platform/suite-chrome':
-        specifier: workspace:*
-        version: link:../runtime/suite-chrome
       '@zip.js/zip.js':
         specifier: ^2.15.0
         version: 2.15.0
@@ -279,44 +264,11 @@ importers:
         specifier: ^4.1.9
         version: 4.1.10(@types/node@22.20.1)(jsdom@30.0.1(@noble/hashes@2.3.0))(vite@8.2.1(@types/node@22.20.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.11))
 
-  services/tools/runtime/domain:
-    devDependencies:
-      '@types/node':
-        specifier: ^22.10.2
-        version: 22.20.1
-      typescript:
-        specifier: 7.0.2
-        version: 7.0.2
-      vitest:
-        specifier: ^4.1.10
-        version: 4.1.10(@types/node@22.20.1)(jsdom@30.0.1(@noble/hashes@2.3.0))(vite@8.2.1(@types/node@22.20.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.11))
-
-  services/tools/runtime/security:
-    devDependencies:
-      '@types/node':
-        specifier: ^22.10.2
-        version: 22.20.1
-      typescript:
-        specifier: 7.0.2
-        version: 7.0.2
-      vitest:
-        specifier: ^4.1.10
-        version: 4.1.10(@types/node@22.20.1)(jsdom@30.0.1(@noble/hashes@2.3.0))(vite@8.2.1(@types/node@22.20.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.11))
-
-  services/tools/runtime/suite-chrome:
-    devDependencies:
-      typescript:
-        specifier: 7.0.2
-        version: 7.0.2
-
   services/tools/status:
     dependencies:
       '@aws-sdk/client-s3':
         specifier: ^3.717.0
         version: 3.1106.0
-      '@tools-platform/domain':
-        specifier: workspace:*
-        version: link:../runtime/domain
       postgres:
         specifier: ^3.4.7
         version: 3.4.9

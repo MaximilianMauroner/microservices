@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import postgres from "postgres";
-import { validatedMonitorUrl } from "@tools-platform/domain";
+import { validatedMonitorUrl } from "../../runtime/domain/index.js";
 import { fixtureFetcher, heartbeatFixture } from "./heartbeat-fixture.js";
 import { probeTarget } from "../src/probe.js";
 

@@ -5,7 +5,7 @@ import {
   exportKey,
   historyKey,
   recoveryKey
-} from "../src/index.js";
+} from "#domain";
 
 describe("bucket key contract", () => {
   it("exports every fixed owner-separated key", () => {

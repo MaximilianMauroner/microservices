@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { CATALOG_SCHEMA_VERSION } from "@tools-platform/domain";
+import { CATALOG_SCHEMA_VERSION } from "../../runtime/domain/index.js";
 import type { CheckerCatalogSource } from "../src/postgres-store.js";
 import type { CheckerConfig } from "../src/config.js";
 

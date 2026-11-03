@@ -3,7 +3,7 @@ import {
   attachPlatformPrincipal,
   classifyRoute,
   getAttachedPlatformPrincipal
-} from "../src/index.js";
+} from "#security";
 
 describe("central platform route policy", () => {
   it("keeps direct transfer owners on their existing authentication boundaries", () => {

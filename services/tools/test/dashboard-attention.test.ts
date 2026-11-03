@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { PrivateSnapshotDocument } from "@tools-platform/domain";
+import type { PrivateSnapshotDocument } from "#domain";
 
 const sources = vi.hoisted(() => ({
   money: vi.fn(async () => ({ uncategorized: 0, transfers: 0 })),

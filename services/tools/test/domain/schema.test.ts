@@ -10,7 +10,7 @@ import {
   decodeHistoryPartitionDocument,
   decodePrivateSnapshotDocument,
   decodePublicSnapshotDocument
-} from "../src/index.js";
+} from "#domain";
 import { NOW, catalogFixture, stateFixture } from "./fixtures.js";
 
 describe("schema decoding and migration", () => {

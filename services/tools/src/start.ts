@@ -1,6 +1,6 @@
 import { createCsrfMiddleware, createMiddleware, createStart } from "@tanstack/react-start";
 import { getResponse, setResponseHeader } from "@tanstack/react-start/server";
-import { classifyRoute, isMarkdownSharePath, type PlatformPrincipal } from "@tools-platform/security";
+import { classifyRoute, isMarkdownSharePath, type PlatformPrincipal } from "#security";
 import { authenticatePlatformRequest } from "./app.js";
 import { getPlatformRuntime, type PlatformRuntime } from "./runtime.js";
 import { PLATFORM_UI_BUILD } from "./build-identity.js";

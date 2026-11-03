@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   type CheckerStateDocument,
   type NotificationDelivery,
-} from "@tools-platform/domain";
+} from "../../runtime/domain/index.js";
 import {
   drainNotifications,
   retryDelaySeconds

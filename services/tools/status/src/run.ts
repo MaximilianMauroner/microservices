@@ -13,7 +13,7 @@ import {
   type Incident,
   type MonitorState,
   type NotificationDelivery
-} from "@tools-platform/domain";
+} from "../../runtime/domain/index.js";
 import type { CheckerConfig } from "./config.js";
 import type { CheckerStore } from "./bucket.js";
 import type { SafeLogger } from "./logger.js";
