@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { describe, expect, test } from "vitest";
 
-const assets = new URL("../public/assets/", import.meta.url);
+const assets = new URL("../../dashboard/public/assets/", import.meta.url);
 const icons = new URL("icons/", assets);
 
 describe("static UI assets", () => {

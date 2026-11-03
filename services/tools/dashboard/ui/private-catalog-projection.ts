@@ -2,7 +2,7 @@ import type {
   PrivateSnapshotDocument,
   PublicMonitorStatus,
   PublicSnapshotDocument
-} from "../../runtime/domain/index.js";
+} from "#domain";
 
 /** Projects the authenticated catalog into the shared directory/status view model. */
 export function projectPrivateCatalog(snapshot: PrivateSnapshotDocument, visibility: "all" | "private"): PublicSnapshotDocument {

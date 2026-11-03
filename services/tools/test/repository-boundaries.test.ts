@@ -14,9 +14,10 @@ describe("repository runtime boundaries", () => {
     expect(await trackedFiles("apps", "jobs", "packages")).toEqual([]);
   });
 
-  it("keeps tools products directly inside the tools service", async () => {
-    for (const name of ["dashboard", "publisher", "status"]) {
-      await expect(access(new URL(`services/tools/${name}/package.json`, repository))).resolves.toBeUndefined();
+  it("keeps tools products as folders of the one tools package", async () => {
+    await expect(access(new URL("services/tools/package.json", repository))).resolves.toBeUndefined();
+    for (const name of ["dashboard"]) {
+      await expect(access(new URL(`services/tools/${name}/package.json`, repository))).rejects.toThrow();
     }
     for (const name of ["dashboard", "publisher"]) {
       await expect(access(new URL(`services/tools/${name}/railway.json`, repository))).rejects.toThrow();

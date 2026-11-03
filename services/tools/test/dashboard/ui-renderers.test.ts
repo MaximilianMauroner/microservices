@@ -1,11 +1,11 @@
 import { describe, expect, test } from "vitest";
 import type {
   PublicSnapshotDocument
-} from "../../runtime/domain/index.js";
+} from "#domain";
 import {
   renderPublicPage,
   renderStatusPage
-} from "../src/ui/index.js";
+} from "../../dashboard/src/ui/index.js";
 
 const generatedAt = "2026-07-27T12:00:00.000Z";
 

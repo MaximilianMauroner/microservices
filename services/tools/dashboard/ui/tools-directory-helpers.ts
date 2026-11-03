@@ -1,4 +1,4 @@
-import type { PublicMonitorStatus } from "../../runtime/domain/index.js";
+import type { PublicMonitorStatus } from "#domain";
 import { formatDateTime } from "../../src/lib/format-date.js";
 
 export function resolveBrowserLink(href: string, publicOrigin: string) {

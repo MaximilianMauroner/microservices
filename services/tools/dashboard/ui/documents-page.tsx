@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { ArrowUpRightIcon, CheckIcon, CopyIcon, FileTextIcon, PlusIcon, SearchIcon } from "lucide-react";
-import type { MarkdownAdminDocument } from "@tools-platform/web";
+import type { MarkdownAdminDocument } from "#dashboard";
 import { AppShell } from "../../src/components/app-shell.js";
 import { favicons } from "../../src/favicons.js";
 import { AppSelect } from "../../src/components/form-controls.js";

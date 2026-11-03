@@ -3,14 +3,14 @@ import {
   CHECKER_STATE_SCHEMA_VERSION,
   decodeCatalogDocument,
   projectPublicSnapshot
-} from "../../runtime/domain/index.js";
+} from "#domain";
 import { describe, expect, it } from "vitest";
 
 describe("initial catalog", () => {
   it("is schema-valid, names only qualifying services, and projects safely", async () => {
     const input: unknown = JSON.parse(
       await readFile(
-        new URL("../config/initial-catalog.json", import.meta.url),
+        new URL("../../dashboard/config/initial-catalog.json", import.meta.url),
         "utf8"
       )
     );

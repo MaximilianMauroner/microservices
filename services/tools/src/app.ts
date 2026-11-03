@@ -8,7 +8,7 @@ import {
 import {
   AuthenticationRequiredError,
   type PrincipalAuthenticator
-} from "@tools-platform/web";
+} from "#dashboard";
 import { signInLocation } from "./lib/auth-return-path.js";
 import { homePath, principalMayOpen } from "./product-access.js";
 

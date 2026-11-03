@@ -1,7 +1,7 @@
-import { BUCKET_KEYS } from "../../runtime/domain/index.js";
+import { BUCKET_KEYS } from "#domain";
 import { describe, expect, it } from "vitest";
-import { BucketReadError } from "../src/bucket.js";
-import { WebStorage } from "../src/storage.js";
+import { BucketReadError } from "../../dashboard/src/bucket.js";
+import { WebStorage } from "../../dashboard/src/storage.js";
 import { MemoryBucket, privateSnapshot, publicSnapshot } from "./fixtures.js";
 
 describe("dashboard snapshot reads", () => {
