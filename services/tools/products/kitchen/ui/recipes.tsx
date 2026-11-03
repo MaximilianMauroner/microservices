@@ -18,7 +18,7 @@ const en = {
   stillIdeas: (count: number) => count === 1 ? ", 1 still an idea without ingredients" : `, ${count} still ideas without ingredients`,
   intro: "Collect the dishes you cook. A name is enough to start.",
   newRecipe: "New recipe",
-  findRecipe: "Find a recipe",
+  findRecipe: "Find or add a recipe",
   fromHome: "Cook from home",
   withIngredient: "With an ingredient",
   removeFilter: (name: string) => `Remove ${name}`,
@@ -26,9 +26,7 @@ const en = {
   missing: (names: readonly string[]) => `${names.length} missing: ${names.slice(0, 3).join(", ")}${names.length > 3 ? ", …" : ""}`,
   noFit: "No recipe fits these filters",
   removeAFilter: "Remove a filter to see more.",
-  quickIdea: "Quick idea, such as Shakshuka",
-  ideaLabel: "Recipe idea",
-  addIdea: "Add idea",
+  addIdea: (name: string) => `Add “${name}” as an idea`,
   added: (name: string) => `${name} added`,
   idea: "Idea. Add ingredients when you cook it.",
   kcal: "kcal",
@@ -40,8 +38,8 @@ const en = {
   servingsLabel: "Servings",
   noMatch: (query: string) => `No recipe matches “${query}”`,
   noRecipes: "No recipes yet",
-  tryAnother: "Try another word.",
-  addIdeaHint: "Add an idea above, then fill in the ingredients when you cook it.",
+  tryAnother: "Try another word, or select + to keep it as an idea.",
+  addIdeaHint: "Type a recipe name above and select + to keep it as an idea. Fill in the ingredients when you cook it.",
   allRecipes: "All recipes",
   copy: "Copy",
   edit: "Edit",
@@ -77,7 +75,7 @@ const TEXT: Record<KitchenLanguage, KitText> = {
     stillIdeas: (count: number) => count === 1 ? ", 1 noch eine Idee ohne Zutaten" : `, ${count} noch Ideen ohne Zutaten`,
     intro: "Sammle die Gerichte, die du kochst. Ein Name reicht zum Start.",
     newRecipe: "Neues Rezept",
-    findRecipe: "Rezept suchen",
+    findRecipe: "Rezept suchen oder hinzufügen",
     fromHome: "Mit dem Vorrat kochen",
     withIngredient: "Mit einer Zutat",
     removeFilter: (name: string) => `${name} entfernen`,
@@ -85,9 +83,7 @@ const TEXT: Record<KitchenLanguage, KitText> = {
     missing: (names: readonly string[]) => `${names.length} ${names.length === 1 ? "fehlt" : "fehlen"}: ${names.slice(0, 3).join(", ")}${names.length > 3 ? ", …" : ""}`,
     noFit: "Kein Rezept passt zu diesen Filtern",
     removeAFilter: "Entferne einen Filter, um mehr zu sehen.",
-    quickIdea: "Schnelle Idee, zum Beispiel Shakshuka",
-    ideaLabel: "Rezeptidee",
-    addIdea: "Idee hinzufügen",
+    addIdea: (name: string) => `„${name}“ als Idee hinzufügen`,
     added: (name: string) => `${name} hinzugefügt`,
     idea: "Idee. Füge Zutaten hinzu, wenn du es kochst.",
     kcal: "kcal",
@@ -99,8 +95,8 @@ const TEXT: Record<KitchenLanguage, KitText> = {
     servingsLabel: "Portionen",
     noMatch: (query: string) => `Kein Rezept passt zu „${query}“`,
     noRecipes: "Noch keine Rezepte",
-    tryAnother: "Probier ein anderes Wort.",
-    addIdeaHint: "Füge oben eine Idee hinzu und trage die Zutaten ein, wenn du sie kochst.",
+    tryAnother: "Probier ein anderes Wort, oder tippe auf +, um es als Idee zu behalten.",
+    addIdeaHint: "Tippe oben einen Rezeptnamen ein und dann auf +, um ihn als Idee zu behalten. Trage die Zutaten ein, wenn du ihn kochst.",
     allRecipes: "Alle Rezepte",
     copy: "Kopieren",
     edit: "Bearbeiten",
@@ -135,7 +131,6 @@ export function KitchenRecipesPage(data: Frame & { recipes: readonly RecipeSumma
   const { run, pending } = useKitchenAction(kitchen.id);
   const text = useText(TEXT);
   const [query, setQuery] = useState("");
-  const [idea, setIdea] = useState("");
   const [fromHome, setFromHome] = useState(false);
   const [wanted, setWanted] = useState<readonly Ingredient[]>([]);
   const [pick, setPick] = useState("");
@@ -155,11 +150,10 @@ export function KitchenRecipesPage(data: Frame & { recipes: readonly RecipeSumma
   };
   const ideas = recipes.filter((recipe) => !recipe.ingredientCount).length;
 
-  async function addIdea() {
-    const name = idea.trim();
-    if (!name) return;
-    if (await run({ type: "recipe.save", name, servings: 2, minutes: null, instructions: "", lines: [] }, { title: text.added(name) })) setIdea("");
-  }
+  const idea = query.trim();
+  const isNew = Boolean(idea) && !recipes.some((recipe) => recipe.name.toLowerCase() === idea.toLowerCase());
+  // The name stays in the field, so the new idea shows as the match.
+  const addIdea = () => { if (!pending) void run({ type: "recipe.save", name: idea, servings: 2, minutes: null, instructions: "", lines: [] }, { title: text.added(idea) }); };
 
   return (
     <KitchenPage
@@ -168,11 +162,7 @@ export function KitchenRecipesPage(data: Frame & { recipes: readonly RecipeSumma
       actions={<Button nativeButton={false} render={<Link to="/kitchen/$kitchenId/recipes/$recipeId" params={{ kitchenId: kitchen.id, recipeId: "new" }} />}><PlusIcon aria-hidden /> {text.newRecipe}</Button>}
     >
       <div className="grid gap-4">
-        <form className="flex gap-2 sm:max-w-md" onSubmit={(event) => { event.preventDefault(); void addIdea(); }}>
-          <Input className="h-10" placeholder={text.quickIdea} value={idea} onChange={(event) => setIdea(event.target.value)} aria-label={text.ideaLabel} />
-          <Button type="submit" variant="outline" className="h-10" disabled={!idea.trim() || pending}>{text.addIdea}</Button>
-        </form>
-        <SearchField value={query} onValue={setQuery} label={text.findRecipe}>
+        <SearchField value={query} onValue={setQuery} label={text.findRecipe} add={isNew ? { label: text.addIdea(idea), run: addIdea } : undefined}>
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <button type="button" aria-pressed={fromHome} onClick={() => setFromHome((value) => !value)}
             className="inline-flex h-9 items-center gap-1.5 rounded-full border border-control-border bg-control px-3 text-sm font-medium text-muted-foreground aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground">
