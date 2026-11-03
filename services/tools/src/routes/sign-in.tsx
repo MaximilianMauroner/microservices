@@ -12,8 +12,15 @@ type SignInSearch = {
   error?: string;
 };
 
+/** An OAuth authorize redirect signs its query, and the auth client sends it back with the sign-in. */
+function oauthQuery(search: Record<string, unknown>) {
+  if (typeof search.sig !== "string") return {};
+  return Object.fromEntries(Object.entries(search).filter(([, value]) => typeof value === "string" || Array.isArray(value)));
+}
+
 export const Route = createFileRoute("/sign-in")({
   validateSearch: (search: Record<string, unknown>): SignInSearch => ({
+    ...oauthQuery(search),
     returnTo: safeReturnPath(search.returnTo),
     ...(search.reason === "session_required" || search.reason === "session_expired"
       ? { reason: search.reason }

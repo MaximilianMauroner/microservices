@@ -1,8 +1,9 @@
 import postgres from "postgres";
-import { createHmac } from "node:crypto";
+import { createHash, createHmac, randomBytes } from "node:crypto";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { DISPOSABLE_DATABASE_SENTINEL, withVerifiedDisposableDatabase } from "../database/postgres-push-guard.js";
 import { createPlatformIdentity } from "../src/lib/auth.js";
+import { handleMcpRequest } from "../src/mcp.js";
 import { requireLoopbackPostgres } from "./runtime/postgres.ts";
 
 const databaseUrl = process.env.TEST_DATABASE_URL ? requireLoopbackPostgres(process.env.TEST_DATABASE_URL) : undefined;
@@ -29,7 +30,7 @@ beforeEach(async () => {
       select sentinel_value value from public.tools_runtime_test_sentinel
       where sentinel_key = ${DISPOSABLE_DATABASE_SENTINEL.key}`)[0]?.value,
   }, async () => {
-    await admin`truncate tools.auth_users, tools.auth_sessions, tools.auth_accounts, tools.auth_verifications, tools.people, tools.product_grants cascade`;
+    await admin`truncate tools.auth_users, tools.auth_sessions, tools.auth_accounts, tools.auth_verifications, tools.people, tools.product_grants, tools.oauth_clients, tools.oauth_refresh_tokens, tools.oauth_access_tokens, tools.oauth_consents cascade`;
   });
 });
 
@@ -47,7 +48,7 @@ async function signIn(subject: string, email: string) {
   const session = await context.internalAdapter.createSession(user.id);
   const signature = createHmac("sha256", config.secret).update(session.token).digest("base64");
   const cookie = `mauroner-tools.session_token=${encodeURIComponent(`${session.token}.${signature}`)}`;
-  return { session, request: () => new Request(`${config.publicOrigin}/money`, { headers: { cookie } }) };
+  return { session, cookie, request: () => new Request(`${config.publicOrigin}/money`, { headers: { cookie } }) };
 }
 
 describe.skipIf(!admin)("platform identity on PostgreSQL sessions", () => {
@@ -130,5 +131,90 @@ describe.skipIf(!admin)("people and product grants", () => {
   it("does not treat an uninvited account with a stored session as a member", async () => {
     const { request } = await signIn("stranger-subject", "stranger@example.test");
     expect(await identity!.resolvePrincipal(request())).toBeUndefined();
+  });
+});
+
+async function connectMcpClient(cookie: string) {
+  const auth = identity!.auth;
+  const redirectUri = "http://127.0.0.1:43123/callback";
+  const registered = await auth.handler(new Request(`${config.publicOrigin}/api/auth/oauth2/register`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ client_name: "Test MCP client", redirect_uris: [redirectUri], token_endpoint_auth_method: "none", grant_types: ["authorization_code", "refresh_token"], response_types: ["code"] })
+  }));
+  expect(registered.status, await registered.clone().text()).toBeLessThan(300);
+  const { client_id: clientId } = await registered.json() as { client_id: string };
+
+  const verifier = randomBytes(32).toString("base64url");
+  const authorize = new URL(`${config.publicOrigin}/api/auth/oauth2/authorize`);
+  for (const [key, value] of Object.entries({
+    response_type: "code", client_id: clientId, redirect_uri: redirectUri, scope: "openid profile email offline_access", state: "state-1",
+    code_challenge: createHash("sha256").update(verifier).digest("base64url"), code_challenge_method: "S256",
+    resource: `${config.publicOrigin}/api/mcp`
+  })) authorize.searchParams.set(key, value);
+  const toConsent = await auth.handler(new Request(authorize, { headers: { cookie, accept: "text/html" } }));
+  const consentLocation = new URL(toConsent.headers.get("location") ?? "", config.publicOrigin);
+  expect(consentLocation.pathname, await toConsent.clone().text()).toBe("/consent");
+
+  const consent = await auth.handler(new Request(`${config.publicOrigin}/api/auth/oauth2/consent`, {
+    method: "POST",
+    headers: { cookie, "content-type": "application/json" },
+    body: JSON.stringify({ accept: true, oauth_query: consentLocation.search.slice(1) })
+  }));
+  const consentBody = await consent.json() as { url?: string; redirect_uri?: string };
+  const callback = new URL(consentBody.url ?? consentBody.redirect_uri ?? "");
+  const code = callback.searchParams.get("code");
+  expect(code, JSON.stringify(consentBody)).toBeTruthy();
+
+  const token = await auth.handler(new Request(`${config.publicOrigin}/api/auth/oauth2/token`, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ grant_type: "authorization_code", code: code!, redirect_uri: redirectUri, client_id: clientId, code_verifier: verifier, resource: `${config.publicOrigin}/api/mcp` })
+  }));
+  const tokens = await token.json() as { access_token?: string };
+  expect(tokens.access_token, JSON.stringify(tokens)).toBeTruthy();
+  return tokens.access_token!;
+}
+
+function callWhoami(headers: Record<string, string>) {
+  return handleMcpRequest(new Request(`${config.publicOrigin}/api/mcp`, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json, text/event-stream", ...headers },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "whoami", arguments: {} } })
+  }), config.publicOrigin, identity!.resolveAccessToken);
+}
+
+async function whoami(accessToken: string) {
+  const response = await callWhoami({ authorization: `Bearer ${accessToken}` });
+  expect(response.status).toBe(200);
+  const body = await response.json() as { result: { content: { text: string }[] } };
+  return JSON.parse(body.result.content[0]!.text) as { email: string; role: string; tools: unknown };
+}
+
+describe.skipIf(!admin)("MCP over OAuth as the signed-in person", () => {
+  it("issues a token through dynamic registration, consent, and PKCE, then answers as the admin", async () => {
+    const { cookie } = await signIn("admin-subject", config.allowedGoogleEmail);
+    const accessToken = await connectMcpClient(cookie);
+    expect(await whoami(accessToken)).toEqual({ email: config.allowedGoogleEmail, role: "admin", tools: "all" });
+  });
+
+  it("answers a member with only their granted tools and stops after the person is removed", async () => {
+    const person = await identity!.people.invite("friend@example.test");
+    await identity!.people.admit("friend-subject", "friend@example.test");
+    await identity!.people.setGrant(person.id, "kitchen", true);
+    const { cookie } = await signIn("friend-subject", "friend@example.test");
+    const accessToken = await connectMcpClient(cookie);
+    expect(await whoami(accessToken)).toEqual({ email: "friend@example.test", role: "member", tools: ["Kitchen"] });
+    await identity!.people.remove(person.id);
+    expect((await callWhoami({ authorization: `Bearer ${accessToken}` })).status).toBe(401);
+  });
+
+  it("rejects a browser cookie and a missing token with a resource metadata link", async () => {
+    const { cookie } = await signIn("admin-subject", config.allowedGoogleEmail);
+    for (const headers of [{ cookie }, {}, { authorization: "Bearer not-a-real-token" }] as Record<string, string>[]) {
+      const response = await callWhoami(headers);
+      expect(response.status).toBe(401);
+      expect(response.headers.get("www-authenticate")).toBe(`Bearer resource_metadata="${config.publicOrigin}/.well-known/oauth-protected-resource/api/mcp"`);
+    }
   });
 });

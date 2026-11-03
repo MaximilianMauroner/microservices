@@ -5,6 +5,8 @@ export const GRANTABLE_PRODUCTS = {
   kitchen: { label: "Kitchen", paths: ["/kitchen", "/api/kitchen"] }
 } as const satisfies Record<string, Readonly<{ label: string; paths: readonly [string, ...string[]] }>>;
 
+const MEMBER_PATHS = new Set(["/settings", "/consent"]);
+
 export type GrantableProductId = keyof typeof GRANTABLE_PRODUCTS;
 
 export function isGrantableProduct(id: string): id is GrantableProductId {
@@ -16,7 +18,7 @@ export function grantedProducts(principal: PlatformPrincipal): readonly Grantabl
 }
 
 export function principalMayOpen(principal: PlatformPrincipal, pathname: string): boolean {
-  if (principal.role === "admin" || pathname === "/settings") return true;
+  if (principal.role === "admin" || MEMBER_PATHS.has(pathname)) return true;
   return grantedProducts(principal).some((id) => GRANTABLE_PRODUCTS[id].paths.some((path) =>
     pathname === path || pathname.startsWith(`${path}/`)));
 }

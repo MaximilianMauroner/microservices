@@ -33,6 +33,7 @@ export type PlatformRuntime = {
   auth: PlatformIdentity["auth"];
   people: PlatformIdentity["people"];
   resolvePrincipal: PrincipalResolver;
+  resolveAccessToken: PrincipalResolver;
   services: PlatformServices;
   publicSnapshot: () => Promise<PublicSnapshotDocument>;
   health: () => Promise<void>;
@@ -192,6 +193,7 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
       auth: identity.auth,
       people: identity.people,
       resolvePrincipal: identity.resolvePrincipal,
+      resolveAccessToken: identity.resolveAccessToken,
       services,
       publicSnapshot: () => toolsStorage.readPublicSnapshot(),
       heartbeats,

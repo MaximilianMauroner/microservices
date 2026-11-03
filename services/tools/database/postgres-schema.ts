@@ -434,6 +434,88 @@ export const authVerifications = toolsSchema.table("auth_verifications", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
 }, (table) => [index("auth_verifications_identifier_idx").on(table.identifier)]);
 
+export const oauthClients = toolsSchema.table("oauth_clients", {
+  id: text("id").primaryKey(),
+  clientId: text("client_id").notNull().unique(),
+  clientSecret: text("client_secret"),
+  disabled: boolean("disabled").default(false),
+  skipConsent: boolean("skip_consent"),
+  enableEndSession: boolean("enable_end_session"),
+  subjectType: text("subject_type"),
+  scopes: text("scopes").array(),
+  userId: text("user_id").references(() => authUsers.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at", { withTimezone: true }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }),
+  name: text("name"),
+  uri: text("uri"),
+  icon: text("icon"),
+  contacts: text("contacts").array(),
+  tos: text("tos"),
+  policy: text("policy"),
+  softwareId: text("software_id"),
+  softwareVersion: text("software_version"),
+  softwareStatement: text("software_statement"),
+  redirectUris: text("redirect_uris").array().notNull(),
+  postLogoutRedirectUris: text("post_logout_redirect_uris").array(),
+  tokenEndpointAuthMethod: text("token_endpoint_auth_method"),
+  grantTypes: text("grant_types").array(),
+  responseTypes: text("response_types").array(),
+  public: boolean("public"),
+  type: text("type"),
+  requirePKCE: boolean("require_pkce"),
+  referenceId: text("reference_id"),
+  metadata: jsonb("metadata"),
+}, (table) => [index("oauth_clients_user_idx").on(table.userId)]);
+
+export const oauthRefreshTokens = toolsSchema.table("oauth_refresh_tokens", {
+  id: text("id").primaryKey(),
+  token: text("token").notNull().unique(),
+  clientId: text("client_id").notNull().references(() => oauthClients.clientId, { onDelete: "cascade" }),
+  sessionId: text("session_id").references(() => authSessions.id, { onDelete: "set null" }),
+  userId: text("user_id").notNull().references(() => authUsers.id, { onDelete: "cascade" }),
+  referenceId: text("reference_id"),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }),
+  revoked: timestamp("revoked", { withTimezone: true }),
+  authTime: timestamp("auth_time", { withTimezone: true }),
+  scopes: text("scopes").array().notNull(),
+}, (table) => [
+  index("oauth_refresh_tokens_client_idx").on(table.clientId),
+  index("oauth_refresh_tokens_session_idx").on(table.sessionId),
+  index("oauth_refresh_tokens_user_idx").on(table.userId),
+]);
+
+export const oauthAccessTokens = toolsSchema.table("oauth_access_tokens", {
+  id: text("id").primaryKey(),
+  token: text("token").unique(),
+  clientId: text("client_id").notNull().references(() => oauthClients.clientId, { onDelete: "cascade" }),
+  sessionId: text("session_id").references(() => authSessions.id, { onDelete: "set null" }),
+  userId: text("user_id").references(() => authUsers.id, { onDelete: "cascade" }),
+  referenceId: text("reference_id"),
+  refreshId: text("refresh_id").references(() => oauthRefreshTokens.id, { onDelete: "cascade" }),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }),
+  scopes: text("scopes").array().notNull(),
+}, (table) => [
+  index("oauth_access_tokens_client_idx").on(table.clientId),
+  index("oauth_access_tokens_session_idx").on(table.sessionId),
+  index("oauth_access_tokens_user_idx").on(table.userId),
+  index("oauth_access_tokens_refresh_idx").on(table.refreshId),
+]);
+
+export const oauthConsents = toolsSchema.table("oauth_consents", {
+  id: text("id").primaryKey(),
+  clientId: text("client_id").notNull().references(() => oauthClients.clientId, { onDelete: "cascade" }),
+  userId: text("user_id").references(() => authUsers.id, { onDelete: "cascade" }),
+  referenceId: text("reference_id"),
+  scopes: text("scopes").array().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }),
+}, (table) => [
+  index("oauth_consents_client_idx").on(table.clientId),
+  index("oauth_consents_user_idx").on(table.userId),
+]);
+
 export const people = toolsSchema.table("people", {
   id: uuid("id").primaryKey(),
   email: text("email").notNull().unique(),

@@ -94,7 +94,7 @@ describe("platform fetch gateway", () => {
         const admin = await request(platform, path, { method, headers: { Cookie: "session=valid" } });
         const asMember = await request(platform, path, { method, headers: { Cookie: "session=member" } });
         expect(admin.status, `${method} ${path} as admin`).toBe(200);
-        expect(asMember.status, `${method} ${path} as member`).toBe(path === "/settings" ? 200 : 403);
+        expect(asMember.status, `${method} ${path} as member`).toBe(["/settings", "/consent"].includes(path) ? 200 : 403);
       }
     }
   });
@@ -144,7 +144,9 @@ describe("platform fetch gateway", () => {
       "/health",
       "/drop/guest-upload-token",
       "/artifacts/01234567890123456789012345678901",
-      "/files/01234567890123456789012345678901/index.html"
+      "/files/01234567890123456789012345678901/index.html",
+      "/.well-known/oauth-protected-resource/api/mcp",
+      "/.well-known/oauth-authorization-server/api/auth"
     ]) {
       expect((await request(platform, path)).status, path).toBe(200);
     }
@@ -153,6 +155,7 @@ describe("platform fetch gateway", () => {
     expect((await request(platform, "/files/id/index.html", { method: "DELETE" })).status).toBe(401);
     expect((await request(platform, "/api/drop/guest-upload-token/uploads", { method: "POST" })).status).toBe(200);
     expect((await request(platform, "/api/upload-links", { method: "POST" })).status).toBe(401);
+    expect((await request(platform, "/.well-known/oauth-protected-resource", { method: "POST" })).status).toBe(401);
   });
 
   it("keeps machine APIs on their native service tokens", async () => {
@@ -168,6 +171,7 @@ describe("platform fetch gateway", () => {
       publicOrigin: "https://tools.example.test"
     });
 
+    expect((await request(platform, "/api/mcp", { method: "POST" })).status, "MCP checks its own bearer token").toBe(200);
     expect((await request(platform, "/api/uploads")).status).toBe(401);
     expect((await request(platform, "/api/uploads", {
       method: "POST",
