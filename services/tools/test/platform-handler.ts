@@ -1,4 +1,4 @@
-import { serviceForPath } from "@tools-platform/security";
+import { serviceForPath } from "#security";
 import { authenticatePlatformRequest, type PlatformServices, type PrincipalResolver } from "../src/app.js";
 
 export type { PrincipalResolver } from "../src/app.js";

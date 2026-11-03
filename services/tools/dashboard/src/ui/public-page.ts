@@ -4,7 +4,7 @@ import type {
   PublicDowntimeRecord,
   PublicMonitorStatus,
   PublicSnapshotDocument
-} from "@tools-platform/domain";
+} from "../../../runtime/domain/index.js";
 import { escapeHtml, safeHttpUrl } from "./escape.js";
 import {
   byOrderThenId,

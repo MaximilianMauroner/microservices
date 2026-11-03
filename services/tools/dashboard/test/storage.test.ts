@@ -1,4 +1,4 @@
-import { BUCKET_KEYS } from "@tools-platform/domain";
+import { BUCKET_KEYS } from "../../runtime/domain/index.js";
 import { describe, expect, it } from "vitest";
 import { BucketReadError } from "../src/bucket.js";
 import { WebStorage } from "../src/storage.js";

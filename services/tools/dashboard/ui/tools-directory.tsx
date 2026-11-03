@@ -1,6 +1,6 @@
 "use client";
 
-import type { CatalogEntry, PrivateSnapshotDocument, PublicMonitorStatus, PublicSnapshotDocument } from "@tools-platform/domain";
+import type { CatalogEntry, PrivateSnapshotDocument, PublicMonitorStatus, PublicSnapshotDocument } from "../../runtime/domain/index.js";
 import { Link, useRouter } from "@tanstack/react-router";
 import { useEffect, type ReactElement, type ReactNode } from "react";
 import { ArrowUpRight, CheckCircle2, ChevronRight } from "lucide-react";

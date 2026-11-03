@@ -9,7 +9,7 @@ import {
 import { tanstackStartCookies } from "better-auth/tanstack-start";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import type { PlatformPrincipal } from "@tools-platform/security";
+import type { PlatformPrincipal } from "#security";
 import {
   authAccounts,
   authSessions,

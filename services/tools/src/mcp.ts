@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
-import type { PlatformPrincipal } from "@tools-platform/security";
+import type { PlatformPrincipal } from "#security";
 import { GRANTABLE_PRODUCTS, grantedProducts } from "./product-access.js";
 
 export const MCP_PATH = "/api/mcp";

@@ -26,6 +26,7 @@
     "money/**/*.tsx",
     "markdown-share/**/*.ts",
     "markdown-share/**/*.tsx",
+    "runtime/**/*.ts",
     "test/**/*.ts",
     "test/**/*.tsx"
   ]

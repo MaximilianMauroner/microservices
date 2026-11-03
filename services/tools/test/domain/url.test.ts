@@ -5,7 +5,7 @@ import {
   normalizeMonitorUrl,
   validatedMonitorUrl,
   validatedRedirectUrl
-} from "../src/index.js";
+} from "#domain";
 
 describe("monitor URL validation", () => {
   it("normalizes HTTP URLs and strips fragments", () => {

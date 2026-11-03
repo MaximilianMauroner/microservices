@@ -7,8 +7,8 @@ import {
   projectPrivateSnapshot,
   projectPublicSnapshot,
   type CatalogDocument
-} from "@tools-platform/domain";
-import type { CheckerStateDocument } from "@tools-platform/domain";
+} from "../../runtime/domain/index.js";
+import type { CheckerStateDocument } from "../../runtime/domain/index.js";
 import {
   CreateBucketCommand,
   HeadBucketCommand,

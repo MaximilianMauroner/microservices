@@ -4,7 +4,7 @@ import type {
   PublicMonitorStatus,
   PublicSnapshotDocument,
   PrivateSnapshotDocument
-} from "@tools-platform/domain";
+} from "../../runtime/domain/index.js";
 import { Link } from "@tanstack/react-router";
 import { ArrowUpRight, ChevronRight, LockKeyhole } from "lucide-react";
 import { PageHeader } from "../../src/components/page-header.js";

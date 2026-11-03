@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import type {
   PublicSnapshotDocument
-} from "@tools-platform/domain";
+} from "../../runtime/domain/index.js";
 import {
   renderPublicPage,
   renderStatusPage

@@ -3,7 +3,7 @@ import {
   CHECKER_STATE_SCHEMA_VERSION,
   type CatalogDocument,
   type CheckerStateDocument
-} from "../src/index.js";
+} from "#domain";
 
 export const NOW = "2026-07-27T12:00:00.000Z";
 

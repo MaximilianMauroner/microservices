@@ -3,7 +3,7 @@ import type {
   CheckerStateDocument,
   Incident,
   NotificationDelivery
-} from "@tools-platform/domain";
+} from "../../runtime/domain/index.js";
 
 export interface NotificationDrainResult {
   state: CheckerStateDocument;

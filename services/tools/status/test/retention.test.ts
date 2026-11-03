@@ -3,7 +3,7 @@ import {
   HISTORY_SCHEMA_VERSION,
   type Incident,
   type HistoryPartitionDocument
-} from "@tools-platform/domain";
+} from "../../runtime/domain/index.js";
 import { describe, expect, it, vi } from "vitest";
 import { runChecker } from "../src/run.js";
 import {

@@ -1,4 +1,4 @@
-import type { PlatformPrincipal } from "@tools-platform/security";
+import type { PlatformPrincipal } from "#security";
 
 /** A product is listed here only once its data belongs to each person, so a grant never shows the admin's data. */
 export const GRANTABLE_PRODUCTS = {

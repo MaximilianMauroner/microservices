@@ -1,6 +1,6 @@
 import { redirect } from "@tanstack/react-router";
 import { createServerFn, getGlobalStartContext } from "@tanstack/react-start";
-import type { PlatformPrincipal } from "@tools-platform/security";
+import type { PlatformPrincipal } from "#security";
 import { safeReturnPath, signInLocation } from "./lib/auth-return-path.js";
 import { grantedProducts, homePath, type GrantableProductId } from "./product-access.js";
 

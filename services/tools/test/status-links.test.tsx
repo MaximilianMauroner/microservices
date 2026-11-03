@@ -2,7 +2,7 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { describe, expect, it, vi } from "vitest";
-import type { PublicSnapshotDocument } from "@tools-platform/domain";
+import type { PublicSnapshotDocument } from "#domain";
 import { ToolsStatus } from "../status/ui/tools-status.js";
 
 const snapshot: PublicSnapshotDocument = {

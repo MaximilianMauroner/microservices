@@ -1,8 +1,8 @@
-import type { MonitorStatus, PublicMonitorStatus } from "@tools-platform/domain";
+import type { MonitorStatus, PublicMonitorStatus } from "../../../runtime/domain/index.js";
 import {
   renderSuiteChrome,
   type SuiteDestination
-} from "@tools-platform/suite-chrome";
+} from "../../../runtime/suite-chrome/index.js";
 import { escapeHtml } from "./escape.js";
 
 export function pageShell(input: {

@@ -1,5 +1,5 @@
 import { getGlobalStartContext } from "@tanstack/react-start";
-import { attachPlatformPrincipal } from "@tools-platform/security";
+import { attachPlatformPrincipal } from "#security";
 import {
   TRANSIENT_RESPONSE_RETRY_DELAYS_MS,
   retryTransientResponse

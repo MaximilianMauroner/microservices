@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import type { PrivateSnapshotDocument } from "@tools-platform/domain";
+import type { PrivateSnapshotDocument } from "#domain";
 import type { MarkdownAdminSnapshot } from "@tools-platform/web";
 import { requirePlatformSession } from "./auth-middleware.js";
 import { internalPlatformRequest, readPlatformJson, readPlatformResponse } from "./server-data.js";

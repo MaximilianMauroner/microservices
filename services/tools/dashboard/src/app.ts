@@ -1,8 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { dirname, resolve, posix, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { suiteChromeStyles } from "@tools-platform/suite-chrome";
-import type { PublicSnapshotDocument } from "@tools-platform/domain";
+import { suiteChromeStyles } from "../../runtime/suite-chrome/index.js";
+import type { PublicSnapshotDocument } from "../../runtime/domain/index.js";
 import { BucketReadError } from "./bucket.js";
 import {
   MarkdownAdminUnavailableError,

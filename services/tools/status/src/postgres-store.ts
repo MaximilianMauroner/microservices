@@ -7,7 +7,7 @@ import {
   type CatalogDocument,
   type CheckerStateDocument,
   type HistoryPartitionDocument
-} from "@tools-platform/domain";
+} from "../../runtime/domain/index.js";
 import { CheckerConflictError, createSnapshotStore, type CheckerStore } from "./bucket.js";
 import type { CheckerConfig } from "./config.js";
 import { assertMonitorIdentities, loadMonitorDefinitions, type MonitorDefinition } from "./definitions.js";

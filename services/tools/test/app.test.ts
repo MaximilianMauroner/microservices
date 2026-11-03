@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { classifyRoute, getAttachedPlatformPrincipal } from "@tools-platform/security";
+import { classifyRoute, getAttachedPlatformPrincipal } from "#security";
 import {
   createPlatformHandler,
   type PlatformHandler,

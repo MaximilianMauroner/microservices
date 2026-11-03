@@ -5,7 +5,7 @@ import {
   type CatalogDocument,
   type PrivateSnapshotDocument,
   type PublicSnapshotDocument
-} from "@tools-platform/domain";
+} from "../../runtime/domain/index.js";
 import type { BucketObject, JsonBucket } from "../src/bucket.js";
 
 export const catalog: CatalogDocument = {
