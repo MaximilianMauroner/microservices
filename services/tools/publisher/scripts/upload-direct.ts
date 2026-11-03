@@ -6,7 +6,7 @@ import path from "node:path";
 class ApiError extends Error {}
 
 const [filePath, resumeId] = process.argv.slice(2);
-if (!filePath) throw new Error("Usage: pnpm upload:direct <file> [request-id]");
+if (!filePath) throw new Error("Usage: pnpm --dir services/tools run publisher:upload-direct <file> [request-id]");
 const origin = process.env.PUBLIC_BASE_URL;
 const token = process.env.UPLOAD_TOKEN;
 if (!origin || !token) throw new Error("PUBLIC_BASE_URL and UPLOAD_TOKEN are required.");

@@ -8,7 +8,7 @@ export default defineConfig({
     include: [
       "test/money-statement-formats.test.ts",
       "test/publish-page-resume.test.tsx",
-      "publisher/test/direct-uploads.integration.test.ts",
+      "test/publisher/direct-uploads.integration.test.ts",
     ],
     exclude: [],
     maxWorkers: 1,

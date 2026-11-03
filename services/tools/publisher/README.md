@@ -48,7 +48,7 @@ through durable multipart sessions. Tools authorizes short-lived URLs, verifies
 actual stored bytes, and commits canonical metadata in PostgreSQL. Interrupted
 uploads can resume after web sleep or restart without local chunk files.
 
-Native agents can use `pnpm upload:direct <file> [request-id]` with
+Native agents can use `pnpm --dir services/tools run publisher:upload-direct <file> [request-id]` with
 `PUBLIC_BASE_URL` and `UPLOAD_TOKEN`, or `/api/uploads/sessions`. Browser session
 routes use `/api/external-uploads/sessions`; guest routes use
 `/api/drop/:token/uploads/sessions`. HTML replacements use the same direct protocol with
