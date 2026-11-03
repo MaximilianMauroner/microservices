@@ -1,0 +1,141 @@
+import postgres from "postgres";
+import {
+  decodeCatalogDocument,
+  decodeCheckerStateDocument,
+  decodeHistoryPartitionDocument,
+  validatedMonitorUrl,
+  type CatalogDocument,
+  type CheckerStateDocument,
+  type HistoryPartitionDocument
+} from "#domain";
+import { CheckerConflictError, createSnapshotStore, type CheckerStore } from "./bucket.js";
+import type { CheckerConfig } from "./config.js";
+import { assertMonitorIdentities, loadMonitorDefinitions, type MonitorDefinition } from "./definitions.js";
+
+export interface CheckerCatalogSource {
+  catalog: CatalogDocument;
+  definitions: readonly MonitorDefinition[];
+  productMonitorIds: readonly string[];
+}
+
+export async function createPostgresCheckerStore(config: CheckerConfig, source?: CheckerCatalogSource): Promise<CheckerStore> {
+  if (!source) {
+    const [{ default: catalog }, { products }] = await Promise.all([
+      import("../dashboard/config/initial-catalog.json", { with: { type: "json" } }),
+      import("#dashboard/products"),
+    ]);
+    source = {
+      catalog: decodeCatalogDocument(catalog), definitions: loadMonitorDefinitions(),
+      productMonitorIds: products.flatMap(({ monitorId }) => monitorId ? [monitorId] : []),
+    };
+  }
+  const catalog = decodeCatalogDocument(source.catalog);
+  const definitions = source.definitions;
+  assertMonitorIdentities(catalog.entries.map(({ id }) => id), source.productMonitorIds, definitions);
+  for (const definition of definitions) {
+    validatedMonitorUrl(definition.kind === "http" ? definition.url : definition.checkUrl);
+  }
+  const byId = new Map(definitions.map((definition) => [definition.id, definition]));
+  const sql = postgres(config.databaseUrl, { max: 4 });
+  const snapshots = createSnapshotStore(config.bucket);
+  return {
+    async readCatalog() {
+      const overrides = await sql<{ monitor_id: string; paused: boolean }[]>`select monitor_id, paused from tools.monitor_overrides`;
+      const paused = new Map(overrides.map((row) => [row.monitor_id, row.paused]));
+      return {
+        etag: catalog.revision,
+        value: {
+          ...catalog,
+          entries: catalog.entries.map((entry) => {
+            const definition = byId.get(entry.id);
+            return {
+              ...entry,
+              monitor: definition ? {
+                tracking: definition.kind,
+                enabled: true,
+                paused: paused.get(definition.id) ?? false,
+                scope: definition.scope === "tailnet" ? "tailscale" : "public",
+                url: definition.kind === "http" ? definition.url : definition.checkUrl
+              } : undefined
+            };
+          })
+        }
+      };
+    },
+    async readState() {
+      const [row] = await sql<{ value: unknown; revision: string }[]>`
+        select value, revision::text as revision from tools.checker_states where environment = ${config.environment}`;
+      return row ? { value: decodeCheckerStateDocument(persistedJsonValue(row.value)), etag: row.revision } : null;
+    },
+    async readHistory(day) {
+      const [row] = await sql<{ value: unknown; revision: string }[]>`
+        select value, revision::text as revision from tools.history_partitions where environment = ${config.environment} and day = ${day}::date`;
+      return row ? { value: decodeHistoryPartitionDocument(persistedJsonValue(row.value)), etag: row.revision } : null;
+    },
+    async listHistoryDays() {
+      const rows = await sql<{ day: string }[]>`
+        select day::text as day from tools.history_partitions where environment = ${config.environment} order by day`;
+      return rows.map(({ day }) => day);
+    },
+    async writeState(value, expectedEtag) {
+      decodeCheckerStateDocument(value);
+      return guardedWrite(sql, config.environment, null, value, expectedEtag);
+    },
+    async writeHistory(value, expectedEtag) {
+      decodeHistoryPartitionDocument(value);
+      return guardedWrite(sql, config.environment, value.day, value, expectedEtag);
+    },
+    writePublicSnapshot: (value, signal) => snapshots.writePublicSnapshot(value, signal),
+    writePrivateSnapshot: (value, signal) => snapshots.writePrivateSnapshot(value, signal),
+    async close() {
+      try { await snapshots.close(); }
+      finally { await sql.end(); }
+    }
+  };
+}
+
+type Sql = ReturnType<typeof postgres>;
+
+async function guardedWrite(sql: Sql, environment: string, day: string | null, value: CheckerStateDocument | HistoryPartitionDocument, expectedEtag: string | null) {
+  // postgres.js accepts domain objects through its supported toJSON contract.
+  const document = { toJSON: () => value };
+  return sql.begin(async (tx) => {
+    const rows = day === null
+      ? await tx<{ revision: string }[]>`select revision::text as revision from tools.checker_states where environment = ${environment} for update`
+      : await tx<{ revision: string }[]>`select revision::text as revision from tools.history_partitions where environment = ${environment} and day = ${day}::date for update`;
+    const current = rows[0]?.revision;
+    if ((current ?? null) !== expectedEtag) throw new CheckerConflictError(day ?? environment);
+    const next = nextRevision(current);
+    if (day === null) {
+      await tx`insert into tools.checker_states (environment, revision, value, updated_at) values (${environment}, ${next}::bigint, ${tx.json(document)}, now())
+        on conflict (environment) do update set revision = excluded.revision, value = excluded.value, updated_at = excluded.updated_at`;
+      await persistFacts(tx, value as CheckerStateDocument);
+    } else {
+      await tx`insert into tools.history_partitions (environment, day, revision, value, updated_at) values (${environment}, ${day}::date, ${next}::bigint, ${tx.json(document)}, now())
+        on conflict (environment, day) do update set revision = excluded.revision, value = excluded.value, updated_at = excluded.updated_at`;
+    }
+    return next;
+  });
+}
+
+/** Increments Postgres bigint revisions without crossing JavaScript's safe-integer boundary. */
+export function nextRevision(current: string | undefined) {
+  return (BigInt(current ?? "0") + 1n).toString();
+}
+
+/** Recovers rows written as JSON strings by the former double-serialization bug. */
+export function persistedJsonValue(value: unknown): unknown {
+  return typeof value === "string" ? JSON.parse(value) : value;
+}
+
+async function persistFacts(sql: postgres.TransactionSql, state: CheckerStateDocument) {
+  if (state.lastRunId) await sql`insert into tools.check_runs (id, started_at, completed_at) values (${state.lastRunId}, ${state.updatedAt}, ${state.updatedAt}) on conflict (id) do update set completed_at = excluded.completed_at`;
+  for (const [monitorId, monitor] of Object.entries(state.monitors)) {
+    const observation = monitor.latestObservation;
+    if (observation) await sql`insert into tools.observations (id, run_id, monitor_id, checked_at, success, status_code, latency_ms, error_code)
+      values (${observation.id}, ${observation.runId}, ${monitorId}, ${observation.checkedAt}, ${observation.success}, ${observation.statusCode ?? null}, ${observation.latencyMs}, ${observation.errorCode ?? null}) on conflict (id) do nothing`;
+  }
+  for (const incident of state.incidents) await sql`insert into tools.incidents (id, monitor_id, started_at, resolved_at, opening_observation_id, closing_observation_id)
+    values (${incident.id}, ${incident.monitorId}, ${incident.startedAt}, ${incident.resolvedAt}, ${incident.openingObservationId}, ${incident.closingObservationId})
+    on conflict (id) do update set resolved_at = excluded.resolved_at, closing_observation_id = excluded.closing_observation_id`;
+}

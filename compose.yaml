@@ -69,7 +69,7 @@ services:
       LOCAL_PLATFORM_BROWSER_ORIGIN: http://localhost:3000
       LOCAL_PLATFORM_INTERNAL_ORIGIN: http://platform:3000
       SEED_RETRY_ATTEMPTS: 30
-    command: ["pnpm", "--dir", "services/tools/status", "run", "seed-local"]
+    command: ["pnpm", "--dir", "services/tools", "run", "status:seed-local"]
 
   platform:
     build:

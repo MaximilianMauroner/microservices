@@ -1,0 +1,224 @@
+// @vitest-environment jsdom
+
+import type { Editor } from "@tiptap/core";
+import { receiveTransaction, sendableSteps } from "prosemirror-collab";
+import { AllSelection } from "@tiptap/pm/state";
+import { ShareError } from "../../../products/documents/types.js";
+import { applySteps } from "../../../products/documents/protocol.js";
+
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+type SyncOptions = {
+  onSyncError?: (error: Error) => void;
+};
+
+const TOKEN = "abcdefghijklmnopqrst";
+const publicDocument = {
+  token: TOKEN,
+  filename: "sync-errors.md",
+  createdAt: 1_000,
+  updatedAt: 1_000,
+  expiresAt: Date.now() + 60_000,
+  pinned: false,
+  format: "markdown" as const,
+};
+let liveEditor: Editor;
+let reportSyncError: ((error: Error) => void) | undefined;
+
+vi.mock("../../../platform/ui/components/theme-provider.js", () => ({ useTheme: () => ({ theme: "system", setTheme: vi.fn() }) }));
+
+vi.mock("../../../products/documents/transport.js", () => ({ documentRequest: async () => null }));
+vi.mock("../../../products/documents/sync-extension.js", async () => {
+  const { Extension } = await import("@tiptap/core");
+  const { collab } = await import("prosemirror-collab");
+  return { documentSyncExtension: (options: { onError: (error: Error) => void }) => {
+    reportSyncError = options.onError;
+    return Extension.create({ name: "test-sync", addProseMirrorPlugins() {
+      liveEditor = this.editor;
+      return [collab({ version: 0 })];
+    } });
+  } };
+});
+const initialContent = { type: "doc", content: [{ type: "codeBlock", content: [{ type: "text", text: "initial" }] }] };
+
+import { CollaborativeWorkspace } from "../../../products/documents/collaborative-workspace.js";
+
+describe("collaborative workspace", () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    reportSyncError = undefined;
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () => {
+      root.render(<CollaborativeWorkspace snapshot={{ document: publicDocument, content: initialContent, version: 0 }} />);
+    });
+  });
+
+  it("keeps LaTeX source editable and offers source download instead of Markdown PDF export", async () => {
+    await act(async () => {
+      root.render(<CollaborativeWorkspace key="latex" snapshot={{ document: { ...publicDocument, filename: "paper.tex", format: "latex" }, content: initialContent, version: 0 }} />);
+    });
+    expect(container.querySelector("[contenteditable=true]")).not.toBeNull();
+    expect(container.querySelector("#preview-panel")?.textContent).toContain("PDF compilation is not available yet");
+    expect(container.querySelector(".direct-pdf")?.textContent).toBe("Download .tex");
+    expect(container.querySelector(".wordmark")?.getAttribute("href")).toBe("/share");
+  });
+
+  it("switches between the source and preview panes", async () => {
+    const sourcePanel = container.querySelector("#source-panel");
+    const previewPanel = container.querySelector("#preview-panel");
+    const previewTab = container.querySelector<HTMLButtonElement>(
+      "#mobile-preview-tab",
+    );
+
+    expect(sourcePanel?.classList.contains("mobile-active")).toBe(true);
+    expect(previewPanel?.classList.contains("mobile-inactive")).toBe(true);
+
+    await act(async () => {
+      previewTab?.click();
+    });
+
+    expect(sourcePanel?.classList.contains("mobile-inactive")).toBe(true);
+    expect(previewPanel?.classList.contains("mobile-active")).toBe(true);
+    expect(previewTab?.getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("sets the preview custom properties used by the stylesheet", () => {
+    const workspace = container.querySelector<HTMLElement>(".editor-shell");
+
+    expect(
+      workspace?.style.getPropertyValue(
+        "--markdown-share-preview-font-scale",
+      ),
+    ).toBe("1");
+    expect(
+      workspace?.style.getPropertyValue(
+        "--markdown-share-preview-line-height",
+      ),
+    ).toBe("1.7");
+    expect(workspace?.style.getPropertyValue("--preview-font-scale")).toBe("");
+    expect(workspace?.style.getPropertyValue("--preview-line-height")).toBe("");
+  });
+
+  afterEach(async () => {
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+    vi.unstubAllGlobals();
+  });
+
+  it("clears a save error only after pending edits are acknowledged", async () => {
+    await act(async () => {
+      liveEditor.view.dispatch(liveEditor.state.tr.insertText("prompt ".repeat(20_000), 1));
+      reportSyncError?.(new Error("temporary failure"));
+    });
+    expect(container.querySelector(".save-status-error")?.textContent).toContain("Save failed");
+    await act(async () => { liveEditor.view.dispatch(liveEditor.state.tr.insertText("retry", 1)); });
+    expect(container.querySelector(".save-status-error")).not.toBeNull();
+    const pending = sendableSteps(liveEditor.state)!;
+    await act(async () => {
+      liveEditor.view.dispatch(receiveTransaction(liveEditor.state, pending.steps, pending.steps.map(() => pending.clientID)));
+    });
+    expect(container.querySelector("[role=alert]")).toBeNull();
+    expect(container.querySelector(".save-status")?.textContent).toContain("Saved");
+  });
+
+  it("rejects oversized edits without losing saved source and accepts a smaller paste", async () => {
+    await act(async () => { liveEditor.view.dispatch(liveEditor.state.tr.insertText("x".repeat(500_001), 1)); });
+    expect(liveEditor.state.doc.textContent).toBe("initial");
+    expect(sendableSteps(liveEditor.state)).toBeNull();
+    expect(container.querySelector("[role=alert]")?.textContent).toContain("500,000 characters");
+    await act(async () => { liveEditor.view.dispatch(liveEditor.state.tr.insertText("\\".repeat(300_000), 1)); });
+    expect(liveEditor.state.doc.textContent).toBe("initial");
+    expect(container.querySelector("[role=alert]")?.textContent).toContain("after encoding");
+    await act(async () => { liveEditor.view.dispatch(liveEditor.state.tr.insertText("short prompt", 1)); });
+    expect(liveEditor.state.doc.textContent).toContain("short prompt");
+    expect(container.querySelector("[role=alert]")).toBeNull();
+  });
+
+  it("pastes multiline source over the whole document as server-compatible steps", async () => {
+    const source = '# pasted source\n\nQuotes " and backslashes \\ α 😀\n';
+    const event = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "clipboardData", { value: { getData: () => source.replace(/\n/g, "\r\n") } });
+    await act(async () => {
+      liveEditor.view.dispatch(liveEditor.state.tr.setSelection(new AllSelection(liveEditor.state.doc)));
+      liveEditor.view.pasteText(source, event as ClipboardEvent);
+    });
+    expect(liveEditor.state.doc.childCount).toBe(1);
+    expect(liveEditor.state.doc.textContent).toBe(source);
+    const pending = sendableSteps(liveEditor.state)!;
+    expect(applySteps(initialContent, pending.steps.map(step => step.toJSON())).markdown).toBe(source);
+  });
+
+  it("keeps a retryable error visible without disabling editing", async () => {
+    expect(reportSyncError).toBeDefined();
+
+    await act(async () => {
+      reportSyncError?.(new Error("temporary failure"));
+    });
+
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "may not be saved",
+    );
+    expect(container.querySelector(".save-status-error")?.textContent).toContain(
+      "Save failed",
+    );
+    expect(container.querySelector(".tiptap")?.getAttribute("contenteditable"))
+      .toBe("true");
+
+    const historyButton = container.querySelector<HTMLButtonElement>(
+      ".history-control-desktop .history-trigger",
+    );
+    await act(async () => {
+      historyButton?.click();
+    });
+    const checkpointButton = container.querySelector<HTMLButtonElement>(
+      ".history-control-desktop .history-menu button",
+    );
+    expect(checkpointButton?.disabled).toBe(true);
+  });
+
+  it("latches document unavailability and disables editing and checkpoints", async () => {
+    expect(reportSyncError).toBeDefined();
+
+    await act(async () => {
+      reportSyncError?.(new Error("temporary failure"));
+    });
+
+    await act(async () => {
+      reportSyncError?.(
+        new ShareError("DOCUMENT_UNAVAILABLE", "expired"),
+      );
+    });
+    await act(async () => {
+      reportSyncError?.(new Error("later retryable failure"));
+    });
+
+    const alert = container.querySelector('[role="alert"]');
+    expect(alert?.textContent).toContain("no longer available");
+    expect(alert?.textContent).not.toContain("try editing again");
+    expect(container.querySelector(".tiptap")?.getAttribute("contenteditable"))
+      .toBe("false");
+    expect(container.querySelector(".save-status-error")?.textContent).toContain(
+      "Save failed",
+    );
+
+    const historyButton = container.querySelector<HTMLButtonElement>(
+      ".history-control-desktop .history-trigger",
+    );
+    await act(async () => {
+      historyButton?.click();
+    });
+    const checkpointButton = container.querySelector<HTMLButtonElement>(
+      ".history-control-desktop .history-menu button",
+    );
+    expect(checkpointButton?.disabled).toBe(true);
+  });
+});

@@ -1,0 +1,95 @@
+import { describe, expect, it } from "vitest";
+import {
+  attachPlatformPrincipal,
+  classifyRoute,
+  getAttachedPlatformPrincipal
+} from "#security";
+
+describe("central platform route policy", () => {
+  it("keeps direct transfer owners on their existing authentication boundaries", () => {
+    const session = "123e4567-e89b-42d3-a456-426614174000";
+    expect(classifyRoute("/api/uploads/sessions", "POST")).toEqual({ kind: "machine", service: "uploads" });
+    expect(classifyRoute(`/api/uploads/sessions/${session}/parts`, "POST")).toEqual({ kind: "machine", service: "uploads" });
+    expect(classifyRoute(`/api/external-uploads/sessions/${session}`, "GET")).toEqual({ kind: "human-session" });
+    expect(classifyRoute("/api/external-uploads/sessions", "POST")).toEqual({ kind: "human-session" });
+    expect(classifyRoute(`/api/drop/capability/uploads/sessions/${session}`, "GET")).toEqual({ kind: "public" });
+    expect(classifyRoute(`/api/drop/capability/uploads/sessions/${session}/parts`, "POST")).toEqual({ kind: "public" });
+    expect(classifyRoute(`/api/drop/capability/uploads/sessions/${session}/complete`, "POST")).toEqual({ kind: "public" });
+    expect(classifyRoute(`/api/drop/capability/uploads/sessions/${session}`, "PUT")).toEqual({ kind: "human-session" });
+    expect(classifyRoute(`/api/drop/capability/uploads/sessions/${session}/unexpected`, "GET")).toEqual({ kind: "human-session" });
+  });
+
+  it("keeps public reads, human sessions, and machine APIs distinct", () => {
+    expect(classifyRoute("/", "GET")).toEqual({ kind: "human-session" });
+    expect(classifyRoute("/sign-in", "GET")).toEqual({ kind: "public" });
+    expect(classifyRoute("/api/auth/callback/google", "GET")).toEqual({ kind: "public" });
+    expect(classifyRoute("/feedback/f/token", "GET")).toEqual({ kind: "public" });
+    expect(classifyRoute("/feedback/f/token", "POST")).toEqual({ kind: "public" });
+    expect(classifyRoute("/feedback/confirmation", "GET")).toEqual({ kind: "public" });
+    expect(classifyRoute("/feedback/confirmation", "POST")).toEqual({ kind: "human-session" });
+    expect(classifyRoute(`/feedback/share/${"a".repeat(43)}`, "GET")).toEqual({ kind: "public" });
+    expect(classifyRoute(`/feedback/share/${"a".repeat(43)}`, "POST")).toEqual({ kind: "human-session" });
+    expect(classifyRoute("/drop/upload-capability", "GET")).toEqual({ kind: "public" });
+    expect(classifyRoute("/api/drop/upload-capability/uploads", "POST")).toEqual({ kind: "public" });
+    expect(classifyRoute(`/api/drop/upload-capability/uploads/chunks/${"a".repeat(32)}/3`, "PUT")).toEqual({ kind: "human-session" });
+    expect(classifyRoute(`/api/drop/upload-capability/uploads/chunks/${"a".repeat(32)}/complete`, "POST")).toEqual({ kind: "human-session" });
+    expect(classifyRoute(`/api/drop/upload-capability/uploads/chunks/${"a".repeat(32)}`, "DELETE")).toEqual({ kind: "human-session" });
+    expect(classifyRoute("/api/upload-links", "POST")).toEqual({ kind: "human-session" });
+    expect(classifyRoute("/api/upload-links/link-id/download", "GET")).toEqual({ kind: "human-session" });
+    expect(classifyRoute("/api/drop/upload-capability/uploads", "GET")).toEqual({ kind: "human-session" });
+    expect(classifyRoute("/share", "GET")).toEqual({ kind: "public" });
+    expect(classifyRoute("/share/d/notes.tex--capability", "HEAD")).toEqual({ kind: "public" });
+    expect(classifyRoute("/share", "POST")).toEqual({ kind: "human-session" });
+    expect(classifyRoute("/share/private", "GET")).toEqual({ kind: "human-session" });
+    expect(classifyRoute("/markdown", "GET")).toEqual({ kind: "public" });
+    expect(classifyRoute("/markdown/d/notes.md--capability", "HEAD")).toEqual({ kind: "public" });
+    expect(classifyRoute("/markdown", "POST")).toEqual({ kind: "human-session" });
+    expect(classifyRoute("/markdown/private", "GET")).toEqual({ kind: "human-session" });
+    expect(classifyRoute("/feedback", "GET")).toEqual({ kind: "human-session" });
+    expect(classifyRoute("/feedback/f/token", "DELETE")).toEqual({ kind: "human-session" });
+    expect(classifyRoute("/feedback/f", "GET")).toEqual({ kind: "human-session" });
+    expect(classifyRoute("/feedback/f/token/extra", "GET")).toEqual({ kind: "human-session" });
+    expect(classifyRoute("/api/feedback/forms/form-id/export", "GET")).toEqual({ kind: "human-session" });
+    expect(classifyRoute("/status", "GET")).toEqual({ kind: "human-session" });
+    expect(classifyRoute("/api/public/catalog", "HEAD")).toEqual({ kind: "human-session" });
+    expect(classifyRoute("/artifacts/abc", "GET")).toEqual({ kind: "public" });
+    expect(classifyRoute("/artifacts/abc", "HEAD")).toEqual({ kind: "public" });
+    expect(classifyRoute("/files/abc/index.html", "GET")).toEqual({ kind: "public" });
+    expect(classifyRoute("/files/abc/index.html", "HEAD")).toEqual({ kind: "public" });
+    expect(classifyRoute("/artifacts/abc", "POST")).toEqual({ kind: "human-session" });
+    expect(classifyRoute("/files/abc/index.html", "DELETE")).toEqual({ kind: "human-session" });
+    expect(classifyRoute("/api/uploads", "POST")).toEqual({ kind: "machine", service: "uploads" });
+    expect(classifyRoute("/api/status/heartbeats/tower", "POST")).toEqual({ kind: "machine", service: "heartbeat" });
+    expect(classifyRoute("/api/money/imports", "POST")).toEqual({ kind: "human-session" });
+    expect(classifyRoute("/api/money/activity", "GET")).toEqual({ kind: "human-session" });
+    expect(classifyRoute("/api/money/categories", "POST")).toEqual({ kind: "human-session" });
+    expect(classifyRoute("/api/money/categories", "DELETE")).toEqual({ kind: "human-session" });
+    expect(classifyRoute("/api/money/transfers", "POST")).toEqual({ kind: "human-session" });
+    expect(classifyRoute("/api/money/balances", "POST")).toEqual({ kind: "human-session" });
+    expect(classifyRoute("/manage/status", "GET")).toEqual({ kind: "human-session" });
+    expect(classifyRoute("/_serverFn/getPublicPageData", "GET")).toEqual({ kind: "server-function" });
+  });
+
+  it("does not widen exact public asset exceptions", () => {
+    expect(classifyRoute("/theme.js", "GET")).toEqual({ kind: "human-session" });
+    expect(classifyRoute("/theme.js.map", "GET")).toEqual({ kind: "human-session" });
+    expect(classifyRoute("/assets/ops.js", "GET")).toEqual({ kind: "human-session" });
+    expect(classifyRoute("/assets/markdown-admin.js", "GET")).toEqual({ kind: "human-session" });
+    expect(classifyRoute("/assets/local-time.js", "GET")).toEqual({ kind: "public" });
+    expect(classifyRoute("/assets/icons/money.png", "GET")).toEqual({ kind: "public" });
+    expect(classifyRoute("/assets/icons/tools.png", "GET")).toEqual({ kind: "public" });
+    expect(classifyRoute("/assets/App-B71UvkP1.js", "GET")).toEqual({ kind: "public" });
+    expect(classifyRoute("/assets/styles-DHyxYeeB.css", "HEAD")).toEqual({ kind: "public" });
+    expect(classifyRoute("/assets/App-B71UvkP1.js.map", "GET")).toEqual({ kind: "human-session" });
+    expect(classifyRoute("/assets/unhashed.js", "GET")).toEqual({ kind: "human-session" });
+    expect(classifyRoute("/assets/ops.js.map", "GET")).toEqual({ kind: "human-session" });
+  });
+
+  it("attaches a verified principal without exposing it as a header", () => {
+    const request = new Request("https://tools.example.test/manage");
+    const principal = { role: "admin", subject: "google-subject", email: "operator@example.test" } as const;
+    attachPlatformPrincipal(request, principal);
+    expect(getAttachedPlatformPrincipal(request)).toEqual(principal);
+    expect([...request.headers]).toEqual([]);
+  });
+});

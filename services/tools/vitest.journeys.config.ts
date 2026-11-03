@@ -5,7 +5,7 @@ export default defineConfig({
   ...config,
   test: {
     ...config.test,
-    include: ["test/runtime/journeys.test.ts", "test/status-links.test.tsx"],
+    include: ["test/harness/journeys.test.ts", "test/products/status/status-links.test.tsx"],
     exclude: [],
     maxWorkers: 1,
     fileParallelism: false,
