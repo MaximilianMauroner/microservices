@@ -65,7 +65,11 @@ export interface KitchenScope {
   /** Sets the order of the ingredient groups. */
   setGroups(groups: readonly string[]): Promise<void>;
   ingredients(): Promise<readonly Ingredient[]>;
-  saveIngredient(id: string | undefined, input: IngredientInput): Promise<Ingredient>;
+  /**
+   * Creates or changes an ingredient. To change the unit of an ingredient that recipes or stock use, give
+   * `oldPerNew`, how much of the old unit one new unit holds. Those amounts then change to the new unit.
+   */
+  saveIngredient(id: string | undefined, input: IngredientInput, oldPerNew?: number): Promise<Ingredient>;
   /** Finds an ingredient by name, ignoring case, or creates it with the given unit. */
   ingredientNamed(name: string, unit: IngredientUnit): Promise<Ingredient>;
   deleteIngredient(id: string): Promise<void>;
@@ -258,6 +262,20 @@ function scope(sql: Db, kitchen: Kitchen): KitchenScope {
     await db`update tools.kitchens set groups = array_append(groups, ${group}::text) where id = ${k} and not (${group}::text = any(groups))`;
   }
 
+  /** Recipe and stock amounts are in the ingredient's unit, so a new unit needs new amounts. */
+  async function convertAmounts(tx: Db, current: Ingredient, unit: IngredientUnit, oldPerNew: number | undefined) {
+    const [{ used }] = await tx<[{ used: boolean }]>`select ${current.recipeCount > 0}::boolean
+      or exists (select 1 from tools.kitchen_stock where kitchen_id = ${k} and ingredient_id = ${current.id} and amount > 0) used`;
+    if (!used) return;
+    if (oldPerNew === undefined) {
+      throw new KitchenError(`Recipes or stock use ${current.name} in ${current.unit}. Say how much ${current.unit} one ${unit} holds, so those amounts change too.`);
+    }
+    await tx`update tools.kitchen_recipe_lines set amount = greatest(round((amount / ${oldPerNew}::float8)::numeric, 3), 0.001)
+      where kitchen_id = ${k} and ingredient_id = ${current.id}`;
+    await tx`update tools.kitchen_stock set amount = round((amount / ${oldPerNew}::float8)::numeric, 3), updated_at = now()
+      where kitchen_id = ${k} and ingredient_id = ${current.id}`;
+  }
+
   return {
     kitchen,
     async setGroups(groups) {
@@ -267,14 +285,15 @@ function scope(sql: Db, kitchen: Kitchen): KitchenScope {
       const rows = await sql<IngredientRow[]>`${ingredientSelect(sql, k)} group by i.id order by lower(i.name)`;
       return rows.map(ingredientFromRow);
     },
-    async saveIngredient(id, raw) {
+    async saveIngredient(id, raw, oldPerNew) {
       const input = parseIngredientInput(raw);
       return begin(async (tx) => {
         const clash = await findIngredient(tx, k, input.name);
         if (clash && clash.id !== id) throw new KitchenError(`${clash.name} already exists in this kitchen.`, "conflict");
         const n = input.nutrition;
         if (id) {
-          await ingredient(tx, id);
+          const current = await ingredient(tx, id);
+          if (current.unit !== input.unit) await convertAmounts(tx, current, input.unit, oldPerNew);
           await tx`update tools.kitchen_ingredients set name = ${input.name}, unit = ${input.unit}, section = ${input.section}, kcal = ${n.kcal}, protein = ${n.protein},
             carbs = ${n.carbs}, fat = ${n.fat}, notes = ${input.notes}, updated_at = now() where kitchen_id = ${k} and id = ${id}`;
           await rememberGroup(tx, input.section);

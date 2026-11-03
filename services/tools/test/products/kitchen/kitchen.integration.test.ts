@@ -157,6 +157,25 @@ describe.skipIf(!sql)("Kitchen", () => {
     await expect(store.copyRecipe(friend, theirs.id, copy.id, mine.id)).rejects.toMatchObject({ code: "not_found" });
   });
 
+  it("changes the unit of a used ingredient only together with its recipe and stock amounts", async () => {
+    const store = kitchenStore(sql!);
+    const home = await store.open(admin, (await store.admin(admin).create("Home")).id);
+    const zucchini = await home.saveIngredient(undefined, { name: "Zucchini", unit: "g", section: "Gemüse", nutrition: { kcal: 20, protein: 1.6, carbs: 2, fat: 0.4 }, notes: "" });
+    const recipe = await home.saveRecipe(undefined, { name: "Gefüllte Zucchini", servings: 2, minutes: 45, instructions: "", lines: [{ ingredientId: zucchini.id, amount: 500, note: "halbiert" }] });
+    await home.setStock(zucchini.id, 750);
+    const perPiece = { name: "Zucchini", unit: "piece", section: "Gemüse", nutrition: { kcal: 50, protein: 4, carbs: 5, fat: 1 }, notes: "" } as const;
+
+    await expect(home.saveIngredient(zucchini.id, perPiece)).rejects.toMatchObject({ code: "invalid" });
+    expect((await home.recipe(recipe.id)).lines.map((line) => [line.unit, line.amount])).toEqual([["g", 500]]);
+
+    await home.saveIngredient(zucchini.id, perPiece, 250);
+    expect((await home.recipe(recipe.id)).lines.map((line) => [line.unit, line.amount, line.note])).toEqual([["piece", 2, "halbiert"]]);
+    expect((await home.stock()).map((item) => [item.unit, item.amount])).toEqual([["piece", 3]]);
+
+    const unused = await home.saveIngredient(undefined, { name: "Gurke", unit: "g", section: "Gemüse", nutrition: noNutrition, notes: "" });
+    expect((await home.saveIngredient(unused.id, { ...perPiece, name: "Gurke" })).unit).toBe("piece");
+  });
+
   it("lets an MCP client manage only the kitchens its person can open", async () => {
     const store = kitchenStore(sql!);
     const friendId = await person(friend.subject);
@@ -180,6 +199,12 @@ describe.skipIf(!sql)("Kitchen", () => {
     expect((await call("ingredient_save", { name: "eier", kcal: 155 })).error).toBe(false);
     expect(JSON.parse((await call("ingredient_list", {})).body).map((one: { name: string; unit: string; nutrition: { kcal: number | null } }) => [one.name, one.unit, one.nutrition.kcal]))
       .toEqual([["eier", "piece", 155], ["Gewürfelte Tomaten", "g", null]]);
+    await call("ingredient_save", { name: "Gewürfelte Tomaten", kcal: 25, protein: 1.2 });
+    expect((await call("ingredient_save", { name: "Gewürfelte Tomaten", unit: "piece" })).error).toBe(true);
+    const can = JSON.parse((await call("ingredient_save", { name: "Gewürfelte Tomaten", unit: "piece", oldPerNew: 400 })).body);
+    expect([can.unit, can.nutrition]).toEqual(["piece", { kcal: 100, protein: 4.8, carbs: null, fat: null }]);
+    expect(JSON.parse((await call("recipe_get", { recipe: "Shakshuka" })).body).lines.map((line: { ingredient: string; amount: number }) => [line.ingredient, line.amount]))
+      .toEqual([["eier", 4], ["Gewürfelte Tomaten", 1]]);
     expect(await call("recipe_list", { kitchen: "Private" })).toEqual({ error: true, body: "No kitchen named Private. You can open: Shared." });
     await client.close();
   });

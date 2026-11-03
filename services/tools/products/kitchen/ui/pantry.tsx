@@ -5,7 +5,7 @@ import { Input } from "../../../platform/ui/components/ui/input.js";
 import { Label } from "../../../platform/ui/components/ui/label.js";
 import { cn } from "../../../platform/ui/lib/utils.js";
 import { addDays, formatAmount, type Ingredient, type Leftover, type StockItem } from "../domain.js";
-import { byGroup, type Frame, GroupDot, groupColor, groupLabel, KitchenPage, KitchenSheet, Stepper, useByLabel, useKitchenAction } from "./kit.js";
+import { byGroup, type Frame, GROUP_LIST, GroupDot, groupColor, GroupLabel, groupLabel, groupListStyle, KitchenEmpty, KitchenPage, KitchenSheet, Stepper, tint, useByLabel, useKitchenAction } from "./kit.js";
 import { type KitchenLanguage, useLanguage, useText } from "./language.js";
 
 const en = {
@@ -106,13 +106,13 @@ export function KitchenPantryPage(data: PantryData) {
     >
       <div className="grid gap-8 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
         <section aria-labelledby="leftovers-title" className="grid content-start gap-2">
-          <h2 id="leftovers-title" className="px-1 font-kitchen text-lg leading-tight">{text.useFirst}</h2>
+          <h2 id="leftovers-title" className="px-1 font-kitchen font-semibold tracking-tight text-lg leading-tight">{text.useFirst}</h2>
           {leftovers.length ? (
             <ul className="grid gap-2">
               {leftovers.map((leftover) => {
                 const label = useByLabel(leftover.useBy, today, language);
                 return (
-                  <li key={leftover.id} className={cn("rounded-2xl border bg-card p-3.5", label.urgent ? "border-destructive/40" : "border-[color:var(--surface-border)]")}>
+                  <li key={leftover.id} className="rounded-2xl p-3.5" style={{ background: tint(label.urgent ? "var(--destructive)" : "var(--kitchen-home-ink)", 11) }}>
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <p className="font-medium break-words">{leftover.name}</p>
@@ -140,20 +140,16 @@ export function KitchenPantryPage(data: PantryData) {
           <h2 id="stock-title" className="sr-only">{text.stock}</h2>
           {groups.map(([section, items]) => (
             <div key={section} className="min-w-0">
-              <h3 className="mb-2 flex items-center gap-2 px-1 font-kitchen text-lg leading-tight">
-                <span aria-hidden className="h-4 w-1 rounded-full" style={{ background: groupColor(kitchen.groups, section) }} />
-                {groupLabel(section, language)}
+              <h3 className="mb-2 font-kitchen font-semibold tracking-tight text-lg leading-tight">
+                <GroupLabel color={groupColor(kitchen.groups, section)} count={items.length}>{groupLabel(section, language)}</GroupLabel>
               </h3>
-              <ul className="divide-y divide-[color:var(--surface-border)] overflow-hidden rounded-2xl border border-[color:var(--surface-border)] bg-card">
+              <ul className={GROUP_LIST} style={groupListStyle(groupColor(kitchen.groups, section))}>
                 {items.map((item) => <StockRow key={item.ingredientId} item={item} run={run} pending={pending} />)}
               </ul>
             </div>
           ))}
           {!stock.length ? (
-            <div className="rounded-2xl border border-dashed border-[color:var(--surface-border)] px-6 py-12 text-center">
-              <p className="font-medium">{text.nothingInStock}</p>
-              <p className="mt-1 text-sm text-muted-foreground">{text.checkItems}</p>
-            </div>
+            <KitchenEmpty title={text.nothingInStock} body={text.checkItems} />
           ) : null}
         </section>
       </div>
@@ -211,7 +207,7 @@ function AddStockSheet({ open, onClose, data }: { open: boolean; onClose: () => 
           <div className="flex max-h-56 flex-wrap gap-1.5 overflow-y-auto">
             {matches.map((one) => (
               <button key={one.id} type="button" aria-pressed={one.id === ingredientId} onClick={() => setIngredientId(one.id)}
-                className="inline-flex h-9 items-center gap-1.5 rounded-full border border-control-border bg-control px-3 text-sm aria-pressed:border-foreground aria-pressed:bg-foreground aria-pressed:text-background">
+                className="inline-flex h-9 items-center gap-1.5 rounded-full border border-control-border bg-control px-3 text-sm aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground">
                 <GroupDot groups={data.kitchen.groups} group={one.section} className="size-2" />
                 {one.name}
               </button>

@@ -8,7 +8,7 @@ import { Textarea } from "../../../platform/ui/components/ui/textarea.js";
 import { cn } from "../../../platform/ui/lib/utils.js";
 import { formatAmount, type Ingredient, INGREDIENT_UNITS, type IngredientUnit, type Nutrition, type Recipe, scaledLines } from "../domain.js";
 import type { RecipeSummary } from "../server-functions.js";
-import { BalanceStripe, byGroup, type Frame, GroupDot, KitchenPage, KitchenSheet, Stepper, useKitchenAction } from "./kit.js";
+import { byGroup, type Frame, GroupDot, groupColor, KitchenEmpty, KitchenPage, KitchenSheet, mainGroup, PlateRing, Stepper, tint, useKitchenAction } from "./kit.js";
 import { type KitchenLanguage, useLanguage, useText } from "./language.js";
 
 const en = {
@@ -166,15 +166,19 @@ export function KitchenRecipesPage(data: Frame & { recipes: readonly RecipeSumma
         </div>
         {matches.length ? (
           <ul className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-            {matches.map((recipe) => (
+            {matches.map((recipe) => {
+              const group = mainGroup(kitchen.groups, recipe.sections);
+              return (
               <li key={recipe.id}>
                 <Link
                   to="/kitchen/$kitchenId/recipes/$recipeId"
                   params={{ kitchenId: kitchen.id, recipeId: recipe.id }}
-                  className="flex h-full flex-col gap-3 rounded-2xl border border-[color:var(--surface-border)] bg-card p-4 transition-colors hover:border-foreground/30 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+                  style={{ background: group ? tint(groupColor(kitchen.groups, group), 11) : "var(--muted)" }}
+                  className="flex h-full items-start gap-3 rounded-2xl p-4 transition-[filter] hover:brightness-[1.04] focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
                 >
-                  <span className="font-kitchen text-lg leading-snug break-words">{recipe.name}</span>
-                  <span className="mt-auto grid gap-2.5">
+                  <PlateRing groups={kitchen.groups} sections={recipe.sections} size={36} />
+                  <span className="grid min-w-0 flex-1 gap-1.5">
+                  <span className="font-kitchen font-semibold tracking-tight text-lg leading-snug break-words">{recipe.name}</span>
                     <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground tabular-nums">
                       {recipe.ingredientCount ? (
                         <>
@@ -184,17 +188,14 @@ export function KitchenRecipesPage(data: Frame & { recipes: readonly RecipeSumma
                         </>
                       ) : <span>{text.idea}</span>}
                     </span>
-                    <BalanceStripe groups={kitchen.groups} sections={recipe.sections} />
                   </span>
                 </Link>
               </li>
-            ))}
+              );
+            })}
           </ul>
         ) : (
-          <div className="rounded-2xl border border-dashed border-[color:var(--surface-border)] px-6 py-12 text-center">
-            <p className="font-medium">{recipes.length ? text.noMatch(query) : text.noRecipes}</p>
-            <p className="mt-1 text-sm text-muted-foreground">{recipes.length ? text.tryAnother : text.addIdeaHint}</p>
-          </div>
+          <KitchenEmpty title={recipes.length ? text.noMatch(query) : text.noRecipes} body={recipes.length ? text.tryAnother : text.addIdeaHint} />
         )}
       </div>
     </KitchenPage>
@@ -237,7 +238,7 @@ function RecipeView({ data, recipe, onEdit }: { data: RecipeData; recipe: Recipe
       <div className="grid gap-6 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
         <section className="grid content-start gap-4 rounded-2xl border border-[color:var(--surface-border)] bg-card p-4 sm:p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 className="font-kitchen text-xl">{text.ingredients}</h2>
+            <h2 className="font-kitchen font-semibold tracking-tight text-xl">{text.ingredients}</h2>
             <Stepper label={text.servingsLabel} value={servings} onValue={setServings} />
           </div>
           {lines.length ? (
@@ -258,7 +259,7 @@ function RecipeView({ data, recipe, onEdit }: { data: RecipeData; recipe: Recipe
               {([[text.kcal, n.kcal, ""], [text.protein, n.protein, " g"], [text.carbs, n.carbs, " g"], [text.fat, n.fat, " g"]] as const).map(([label, value, unit]) => (
                 <div key={label}>
                   <dt className="text-[0.6875rem] text-muted-foreground">{label}</dt>
-                  <dd className="font-kitchen text-lg leading-tight tabular-nums">{value === null ? "?" : `${value}${unit}`}</dd>
+                  <dd className="font-kitchen font-semibold tracking-tight text-lg leading-tight tabular-nums">{value === null ? "?" : `${value}${unit}`}</dd>
                 </div>
               ))}
               <p className="col-span-4 text-[0.6875rem] text-muted-foreground">{text.perServing}</p>
@@ -266,7 +267,7 @@ function RecipeView({ data, recipe, onEdit }: { data: RecipeData; recipe: Recipe
           ) : lines.length ? <p className="text-xs text-muted-foreground">{text.addNutrition}</p> : null}
         </section>
         <section className="grid content-start gap-3">
-          <h2 className="font-kitchen text-xl">{text.steps}</h2>
+          <h2 className="font-kitchen font-semibold tracking-tight text-xl">{text.steps}</h2>
           {steps.length ? (
             <ol className="grid gap-3">
               {steps.map((step, index) => (
@@ -370,7 +371,7 @@ function RecipeEditor({ data, onDone }: { data: RecipeData; onDone: () => void }
         </div>
         <section className="grid gap-2">
           <div className="flex items-center justify-between">
-            <h2 className="font-kitchen text-xl">{text.ingredients}</h2>
+            <h2 className="font-kitchen font-semibold tracking-tight text-xl">{text.ingredients}</h2>
             <span className="text-xs text-muted-foreground">{text.newNames}</span>
           </div>
           <datalist id="kitchen-ingredients">{data.ingredients.map((ingredient) => <option key={ingredient.id} value={ingredient.name} />)}</datalist>
