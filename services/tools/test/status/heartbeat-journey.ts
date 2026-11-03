@@ -3,9 +3,9 @@ import { GetObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import postgres from "postgres";
 import {
   BUCKET_KEYS, decodeCheckerStateDocument, decodePrivateSnapshotDocument, decodePublicSnapshotDocument,
-} from "../../runtime/domain/index.js";
-import { createPostgresCheckerStore, executeChecker } from "../src/index.js";
-import { persistedJsonValue } from "../src/postgres-store.js";
+} from "#domain";
+import { createPostgresCheckerStore, executeChecker } from "../../status/index.js";
+import { persistedJsonValue } from "../../status/postgres-store.js";
 import { fixtureFetcher, heartbeatFixture } from "./heartbeat-fixture.js";
 
 export async function verifyHeartbeatJourney(environment: Readonly<Record<string, string | undefined>>) {

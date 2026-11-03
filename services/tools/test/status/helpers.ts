@@ -6,12 +6,12 @@ import {
   type HistoryPartitionDocument,
   type PrivateSnapshotDocument,
   type PublicSnapshotDocument
-} from "../../runtime/domain/index.js";
+} from "#domain";
 import type {
   CheckerStore,
   Versioned
-} from "../src/bucket.js";
-import type { CheckerConfig } from "../src/config.js";
+} from "../../status/bucket.js";
+import type { CheckerConfig } from "../../status/config.js";
 
 export const NOW = new Date("2026-07-27T12:01:00.000Z");
 

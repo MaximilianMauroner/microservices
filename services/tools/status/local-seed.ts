@@ -7,8 +7,8 @@ import {
   projectPrivateSnapshot,
   projectPublicSnapshot,
   type CatalogDocument
-} from "../../runtime/domain/index.js";
-import type { CheckerStateDocument } from "../../runtime/domain/index.js";
+} from "#domain";
+import type { CheckerStateDocument } from "#domain";
 import {
   CreateBucketCommand,
   HeadBucketCommand,
@@ -40,7 +40,7 @@ const catalogPath = env(
   "SEED_CATALOG_PATH",
   path.join(
     import.meta.dirname,
-    "../../dashboard/config/initial-catalog.json"
+    "../dashboard/config/initial-catalog.json"
   )
 );
 

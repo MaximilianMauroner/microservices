@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { verifyHeartbeatJourney } from "../../status/test/heartbeat-journey.js";
+import { verifyHeartbeatJourney } from "../status/heartbeat-journey.js";
 import { VerificationBlocked } from "./receipt.ts";
 
 let origin: string;

@@ -19,7 +19,7 @@ describe("runtime schema management", () => {
     expect(JSON.parse(rootConfig).deploy.sleepApplication).toBe(true);
     expect(JSON.parse(previewConfig).deploy.sleepApplication).toBe(false);
     expect(JSON.parse(statusConfig).deploy).toMatchObject({
-      startCommand: "pnpm --dir services/tools/status run start",
+      startCommand: "pnpm --dir services/tools run status:start",
       cronSchedule: "*/30 * * * *",
       restartPolicyType: "NEVER"
     });

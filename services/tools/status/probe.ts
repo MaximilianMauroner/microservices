@@ -4,7 +4,7 @@ import {
   validatedMonitorUrl,
   validatedRedirectUrl,
   type CheckObservation
-} from "../../runtime/domain/index.js";
+} from "#domain";
 
 export interface ProbeOptions {
   fetcher?: typeof fetch;

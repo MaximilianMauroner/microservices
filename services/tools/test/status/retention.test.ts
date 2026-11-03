@@ -3,9 +3,9 @@ import {
   HISTORY_SCHEMA_VERSION,
   type Incident,
   type HistoryPartitionDocument
-} from "../../runtime/domain/index.js";
+} from "#domain";
 import { describe, expect, it, vi } from "vitest";
-import { runChecker } from "../src/run.js";
+import { runChecker } from "../../status/run.js";
 import {
   MemoryStore,
   NOW,

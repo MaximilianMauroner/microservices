@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nextRevision, persistedJsonValue } from "../src/postgres-store.js";
+import { nextRevision, persistedJsonValue } from "../../status/postgres-store.js";
 
 describe("Postgres checker documents", () => {
   it("unwraps documents affected by the former double-serialization bug", () => {

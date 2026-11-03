@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 
 const productionPoolSources = [
-  "../status/src/heartbeat-repository.ts",
+  "../status/heartbeat-repository.ts",
   "../publisher/src/postgres-storage.ts",
   "../money/money-repository.ts",
   "../money/money-market-data-repository.ts",

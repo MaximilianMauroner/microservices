@@ -2,11 +2,11 @@ import { describe, expect, it, vi } from "vitest";
 import {
   type CheckerStateDocument,
   type NotificationDelivery,
-} from "../../runtime/domain/index.js";
+} from "#domain";
 import {
   drainNotifications,
   retryDelaySeconds
-} from "../src/notifications.js";
+} from "../../status/notifications.js";
 import {
   NOW,
   catalogFixture,

@@ -1,4 +1,4 @@
-import { runCheckerCli } from "../../src/index.js";
+import { runCheckerCli } from "../../../status/index.js";
 import { MemoryStore, configFixture } from "../helpers.js";
 
 const store = new MemoryStore();

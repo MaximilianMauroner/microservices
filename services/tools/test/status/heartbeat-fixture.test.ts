@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import postgres from "postgres";
-import { validatedMonitorUrl } from "../../runtime/domain/index.js";
+import { validatedMonitorUrl } from "#domain";
 import { fixtureFetcher, heartbeatFixture } from "./heartbeat-fixture.js";
-import { probeTarget } from "../src/probe.js";
+import { probeTarget } from "../../status/probe.js";
 
 const environment = {
   TOOLS_JOURNEY_FIXTURE: "tools-local-12345678-1234-1234-1234-123456789abc",

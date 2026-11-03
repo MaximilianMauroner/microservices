@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { probeTarget } from "../src/probe.js";
+import { probeTarget } from "../../status/probe.js";
 
 const options = {
   observationId: "observation-1",

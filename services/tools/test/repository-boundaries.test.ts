@@ -16,7 +16,7 @@ describe("repository runtime boundaries", () => {
 
   it("keeps tools products as folders of the one tools package", async () => {
     await expect(access(new URL("services/tools/package.json", repository))).resolves.toBeUndefined();
-    for (const name of ["dashboard"]) {
+    for (const name of ["dashboard", "status"]) {
       await expect(access(new URL(`services/tools/${name}/package.json`, repository))).rejects.toThrow();
     }
     for (const name of ["dashboard", "publisher"]) {
