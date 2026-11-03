@@ -1,0 +1,8 @@
+import { createFileRoute } from "@tanstack/react-router";
+import { artifact } from "../../../platform/route-handlers.js";
+
+export const Route = createFileRoute("/api/external-uploads")({
+  server: {
+    handlers: { GET: artifact }
+  }
+});

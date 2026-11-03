@@ -11,9 +11,10 @@ TanStack Start monolith whose products live directly beneath `services/tools`.
 | Tools | `services/tools` | Railway, Node.js | Authenticated product monolith and product-owned scheduled work. |
 | Network Console | `services/network-console` | Local VM, Node.js | Private network and listening-port dashboard. |
 
-Tools contains the `dashboard`, `status`, `publisher`, `money`, `feedback`,
-`kitchen`, and Markdown Share products. Code reused within Tools remains owned by the product or
-runtime module that provides it; there is no repository-wide shared package.
+Tools contains the Dashboard, Status, Publisher, Money, Feedback, Kitchen, and
+Document Share products under `services/tools/products`. Code that more than one
+product uses lives in `services/tools/platform`. There is no repository-wide
+shared package.
 
 ## Requirements
 
@@ -61,7 +62,7 @@ pnpm run start:network-console
 ```
 
 Status probes run in the dedicated bounded cron process defined in
-`services/tools/status/railway.json`. Other Tools scheduled work retains its
+`services/tools/products/status/railway.json`. Other Tools scheduled work retains its
 product ownership.
 
 ## Local stack
@@ -132,7 +133,7 @@ the canonical fixture pause state, and notifications disabled. The setup does
 not start a checker or default monitors.
 
 The runtime helper `withLocalStack` in
-`services/tools/test/runtime/local-stack.ts` exposes the same setup for future
+`services/tools/test/harness/local-stack.ts` exposes the same setup for future
 journeys. Its caller supplies R1 owned command executors, an explicit private run
 directory, and a bounded host lifetime. Its callback receives the manifest,
 private environment, and cancellation signal. Cleanup runs when the callback

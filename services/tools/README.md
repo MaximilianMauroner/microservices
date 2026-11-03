@@ -4,15 +4,15 @@ The platform service is the single production compute and browser-authentication
 
 ## Folders
 
-Each product is a direct child of this folder. The other folders serve all products.
-
 | Folder | Holds |
 | --- | --- |
-| `dashboard`, `feedback`, `kitchen`, `markdown-share`, `money`, `publisher`, `status` | One product each: its domain logic, storage, and UI |
-| `src` | The application shell: routes, gateway, authentication, settings, and shared UI |
-| `runtime` | Code that more than one product uses: `domain`, `security`, and `suite-chrome` |
-| `database` | The PostgreSQL schema and the guarded schema push |
-| `test` | All tests, grouped by product |
+| `app` | The web entry: route files, the router, and the server start |
+| `platform` | What every product uses: `auth`, `access` (people, grants, MCP), `database`, `scheduler`, `ui`, the request `gateway`, and the shared `domain` and `security` code |
+| `products` | One folder per product: `dashboard`, `documents` (Document Share), `feedback`, `kitchen`, `money`, `publisher`, and `status` |
+| `test` | All tests. `test/app`, `test/platform`, and `test/products` mirror the source folders. `test/harness` runs the verification stacks, and `test/support` holds shared test helpers |
+
+[runtime-boundaries.md](../../docs/tools-platform/runtime-boundaries.md) gives
+the reason for this split.
 
 This folder is one pnpm package. Code in one folder imports another folder through
 the `#` subpath imports in `package.json`.
