@@ -118,6 +118,8 @@ describe("platform fetch gateway", () => {
     expect((await asKitchen("/settings")).status).toBe(200);
     expect((await asKitchen("/kitchenette")).status).toBe(403);
     expect((await asKitchen("/money")).status).toBe(403);
+    expect((await asKitchen("/feedback")).status).toBe(403);
+    expect((await asKitchen("/feedback/f/public-token")).status, "public form").toBe(200);
     expect((await asKitchen("/api/money/activity")).status).toBe(403);
     const page = await asKitchen("/", { headers: { Accept: "text/html" } });
     expect(page.status).toBe(302);

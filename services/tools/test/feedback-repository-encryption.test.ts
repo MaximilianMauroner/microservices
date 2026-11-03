@@ -30,7 +30,7 @@ describe("Feedback repository encryption boundary", () => {
     expect(isEncryptedFeedbackValue(stored[2])).toBe(true);
     expect(isEncryptedFeedbackValue(stored[3])).toBe(true);
     expect(JSON.stringify(stored)).not.toContain("Private comment");
-    expect((await repository.getSubmission(created.id))?.answers).toEqual(answers);
-    expect((await repository.getSubmission(created.id))?.questionSnapshot).toEqual(FEEDBACK_TEMPLATE);
+    expect((await repository.owner("owner-subject").getSubmission(created.id))?.answers).toEqual(answers);
+    expect((await repository.owner("owner-subject").getSubmission(created.id))?.questionSnapshot).toEqual(FEEDBACK_TEMPLATE);
   });
 });

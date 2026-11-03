@@ -34,21 +34,17 @@ ${source}
 }
 
 describe("schema push child failures", () => {
-  it("stops the deployment script before the next schema or reconciliation", async () => {
-    const { environment, record } = await fakeDrizzle('console.error("read ECONNRESET"); process.exit(1);');
+  it("stops the deployment script before any schema push when existing rows cannot get an owner", async () => {
+    const { environment, record } = await fakeDrizzle('process.exit(0);');
     const result = await promisify(execFile)(process.execPath, [
       "--import", "tsx", "database/push-postgres.ts", "development",
-    ], { cwd: new URL("..", import.meta.url), env: environment }).then(
-      () => { throw new Error("Interrupted push unexpectedly succeeded."); },
+    ], { cwd: new URL("..", import.meta.url), env: { ...environment, DATABASE_URL: "postgres://test:test@127.0.0.1:1/disposable" } }).then(
+      () => { throw new Error("Push without a reachable database unexpectedly succeeded."); },
       (error: { code: number; stderr: string }) => error,
     );
     expect(result.code).toBe(1);
-    expect(result.stderr).toContain("Schema push failed for drizzle.tools.config.ts");
-    expect(result.stderr).toContain("read ECONNRESET");
-    const attempts = (await readFile(record, "utf8")).trim().split("\n");
-    expect(attempts).toHaveLength(1);
-    const attempt = JSON.parse(attempts[0]) as { handoff: string };
-    await expect(stat(join(attempt.handoff, ".."))).rejects.toMatchObject({ code: "ENOENT" });
+    expect(result.stderr).toContain("ECONNREFUSED");
+    await expect(stat(record)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it.each([

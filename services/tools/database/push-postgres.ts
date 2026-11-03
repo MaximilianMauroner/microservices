@@ -1,5 +1,6 @@
 import postgres from "postgres";
 import { applyMarkdownShareSchema } from "../markdown-share/schema.js";
+import { assignExistingRowsToAdmin } from "./assign-existing-owner.js";
 import {
   DISPOSABLE_DATABASE_SENTINEL,
   resolvePushDatabase,
@@ -33,6 +34,13 @@ if (mode === "test") {
   } finally {
     await database.end();
   }
+}
+
+const owners = postgres(url, { max: 1 });
+try {
+  await assignExistingRowsToAdmin(owners, process.env.AUTH_ALLOWED_GOOGLE_SUBJECT);
+} finally {
+  await owners.end();
 }
 
 for (const config of ["drizzle.tools.config.ts", "drizzle.artifacts.config.ts"] as const) {

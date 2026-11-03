@@ -67,7 +67,7 @@ describe("primary page ownership", () => {
     expect(layout).not.toContain("requireRouteSession");
     expect(publicForm).not.toContain("requireRouteSession");
     expect(sharedResponse).not.toContain("requireRouteSession");
-    for (const source of [list, form, response]) expect(source).toContain("requireRouteSession");
+    for (const source of [list, form, response]) expect(source).toContain('requireProductSession(location.href, "feedback")');
   });
 
   it("rejects catalog mutations with an explicit read-only response", async () => {
