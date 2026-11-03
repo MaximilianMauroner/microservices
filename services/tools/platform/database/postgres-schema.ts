@@ -4,6 +4,8 @@ import {
   boolean,
   check,
   date,
+  doublePrecision,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -540,6 +542,109 @@ export const productGrants = toolsSchema.table("product_grants", {
   productId: text("product_id").notNull(),
   grantedAt: timestamp("granted_at", { withTimezone: true }).notNull(),
 }, (table) => [primaryKey({ columns: [table.personId, table.productId] })]);
+
+export const kitchens = toolsSchema.table("kitchens", {
+  id: uuid("id").primaryKey(),
+  name: text("name").notNull(),
+  groups: text("groups").array().notNull().default(sql`'{}'::text[]`),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+});
+
+export const kitchenMembers = toolsSchema.table("kitchen_members", {
+  kitchenId: uuid("kitchen_id").notNull().references(() => kitchens.id, { onDelete: "cascade" }),
+  personId: uuid("person_id").notNull().references(() => people.id, { onDelete: "cascade" }),
+  addedAt: timestamp("added_at", { withTimezone: true }).notNull(),
+}, (table) => [primaryKey({ columns: [table.kitchenId, table.personId] }), index("kitchen_members_person_idx").on(table.personId)]);
+
+export const kitchenIngredients = toolsSchema.table("kitchen_ingredients", {
+  id: uuid("id").primaryKey(),
+  kitchenId: uuid("kitchen_id").notNull().references(() => kitchens.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  unit: text("unit").notNull(),
+  section: text("section").notNull(),
+  kcal: doublePrecision("kcal"),
+  protein: doublePrecision("protein"),
+  carbs: doublePrecision("carbs"),
+  fat: doublePrecision("fat"),
+  notes: text("notes").notNull().default(""),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+}, (table) => [
+  check("kitchen_ingredients_unit_check", sql`${table.unit} in ('g', 'ml', 'piece')`),
+  unique("kitchen_ingredients_kitchen_id_unique").on(table.kitchenId, table.id),
+  unique("kitchen_ingredients_name_unique").on(table.kitchenId, table.name),
+]);
+
+export const kitchenRecipes = toolsSchema.table("kitchen_recipes", {
+  id: uuid("id").primaryKey(),
+  kitchenId: uuid("kitchen_id").notNull().references(() => kitchens.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  servings: integer("servings").notNull(),
+  minutes: integer("minutes"),
+  instructions: text("instructions").notNull().default(""),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+}, (table) => [
+  check("kitchen_recipes_servings_check", sql`${table.servings} > 0`),
+  unique("kitchen_recipes_kitchen_id_unique").on(table.kitchenId, table.id),
+  unique("kitchen_recipes_name_unique").on(table.kitchenId, table.name),
+]);
+
+export const kitchenRecipeLines = toolsSchema.table("kitchen_recipe_lines", {
+  kitchenId: uuid("kitchen_id").notNull(),
+  recipeId: uuid("recipe_id").notNull(),
+  ingredientId: uuid("ingredient_id").notNull(),
+  position: integer("position").notNull(),
+  amount: doublePrecision("amount").notNull(),
+  note: text("note").notNull().default(""),
+}, (table) => [
+  primaryKey({ columns: [table.recipeId, table.ingredientId] }),
+  check("kitchen_recipe_lines_amount_check", sql`${table.amount} > 0`),
+  foreignKey({ name: "kitchen_recipe_lines_recipe_fk", columns: [table.kitchenId, table.recipeId], foreignColumns: [kitchenRecipes.kitchenId, kitchenRecipes.id] }).onDelete("cascade"),
+  foreignKey({ name: "kitchen_recipe_lines_ingredient_fk", columns: [table.kitchenId, table.ingredientId], foreignColumns: [kitchenIngredients.kitchenId, kitchenIngredients.id] }),
+  index("kitchen_recipe_lines_ingredient_idx").on(table.kitchenId, table.ingredientId),
+]);
+
+export const kitchenPlanEntries = toolsSchema.table("kitchen_plan_entries", {
+  id: uuid("id").primaryKey(),
+  kitchenId: uuid("kitchen_id").notNull(),
+  day: date("day", { mode: "string" }).notNull(),
+  meal: text("meal").notNull(),
+  recipeId: uuid("recipe_id").notNull(),
+  servings: integer("servings").notNull(),
+  cookedAt: timestamp("cooked_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+}, (table) => [
+  check("kitchen_plan_entries_meal_check", sql`${table.meal} in ('breakfast', 'lunch', 'dinner', 'snack')`),
+  check("kitchen_plan_entries_servings_check", sql`${table.servings} > 0`),
+  foreignKey({ name: "kitchen_plan_entries_recipe_fk", columns: [table.kitchenId, table.recipeId], foreignColumns: [kitchenRecipes.kitchenId, kitchenRecipes.id] }).onDelete("cascade"),
+  index("kitchen_plan_entries_day_idx").on(table.kitchenId, table.day),
+]);
+
+export const kitchenStock = toolsSchema.table("kitchen_stock", {
+  kitchenId: uuid("kitchen_id").notNull(),
+  ingredientId: uuid("ingredient_id").notNull(),
+  amount: doublePrecision("amount").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.kitchenId, table.ingredientId] }),
+  check("kitchen_stock_amount_check", sql`${table.amount} >= 0`),
+  foreignKey({ name: "kitchen_stock_ingredient_fk", columns: [table.kitchenId, table.ingredientId], foreignColumns: [kitchenIngredients.kitchenId, kitchenIngredients.id] }).onDelete("cascade"),
+]);
+
+export const kitchenLeftovers = toolsSchema.table("kitchen_leftovers", {
+  id: uuid("id").primaryKey(),
+  kitchenId: uuid("kitchen_id").notNull().references(() => kitchens.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  servings: doublePrecision("servings").notNull(),
+  useBy: date("use_by", { mode: "string" }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+}, (table) => [check("kitchen_leftovers_servings_check", sql`${table.servings} > 0`), index("kitchen_leftovers_kitchen_idx").on(table.kitchenId, table.useBy)]);
+
+export const kitchenExtras = toolsSchema.table("kitchen_extras", {
+  id: uuid("id").primaryKey(),
+  kitchenId: uuid("kitchen_id").notNull().references(() => kitchens.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+}, (table) => [index("kitchen_extras_kitchen_idx").on(table.kitchenId, table.createdAt)]);
 
 export const objects = artifactsSchema.table("objects", {
   id: text("id").primaryKey(),

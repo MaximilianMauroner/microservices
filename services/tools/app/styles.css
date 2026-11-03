@@ -1,9 +1,11 @@
 @import "tailwindcss";
+@import "@fontsource/young-serif/latin-400.css";
 @source "../products/dashboard/ui";
 @source "../products/status/ui";
 @source "../products/publisher/ui";
 @source "../products/money";
 @source "../products/feedback";
+@source "../products/kitchen";
 
 /* `dark:` follows the app theme on <html data-theme>, not the OS setting. */
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
@@ -54,6 +56,30 @@
   --field: #101010;
   --field-hover: #161616;
   --radius: 0.75rem;
+}
+
+/* Kitchen food groups. Each group of a kitchen takes the next hue, so the shopping list,
+   recipes, and week show the same color for the same group. Dark values first, light below. */
+:root {
+  --kitchen-group-0: #ef7d6b;
+  --kitchen-group-1: #aebf55;
+  --kitchen-group-2: #d8a46c;
+  --kitchen-group-3: #5cbf8a;
+  --kitchen-group-4: #a8a29e;
+  --kitchen-group-5: #b38be0;
+  --kitchen-group-6: #63aee0;
+  --kitchen-group-7: #e47ba6;
+}
+
+html[data-theme="light"] {
+  --kitchen-group-0: #d4503b;
+  --kitchen-group-1: #74841a;
+  --kitchen-group-2: #b0712c;
+  --kitchen-group-3: #23935d;
+  --kitchen-group-4: #78716c;
+  --kitchen-group-5: #8655c4;
+  --kitchen-group-6: #2a7fbd;
+  --kitchen-group-7: #c24a7d;
 }
 
 html[data-theme="light"] {
@@ -119,16 +145,6 @@ html:has([data-suite-accent="violet"]) {
   --product-accent-border: #6d5a9e;
 }
 
-html:has([data-suite-accent="amber"]) {
-  --primary: #fcd34d;
-  --primary-foreground: #251a00;
-  --secondary: #261e08;
-  --secondary-foreground: #fde68a;
-  --ring: #fcd34d;
-  --product-accent: #fcd34d;
-  --product-accent-soft: #261e08;
-  --product-accent-border: #8a6510;
-}
 
 html:has([data-suite-accent="cyan"]) {
   --primary: #67e8f9;
@@ -196,15 +212,6 @@ html[data-theme="light"]:has([data-suite-accent="violet"]) {
   --product-accent-border: #8b5cf6;
 }
 
-html[data-theme="light"]:has([data-suite-accent="amber"]) {
-  --primary: #b45309;
-  --primary-foreground: #ffffff;
-  --secondary: #fef3c7;
-  --secondary-foreground: #92400e;
-  --ring: #d97706;
-  --product-accent-soft: #fffbeb;
-  --product-accent-border: #f59e0b;
-}
 
 html[data-theme="light"]:has([data-suite-accent="cyan"]) {
   --primary: #0e7490;
@@ -244,6 +251,8 @@ html[data-theme="light"]:has([data-suite-accent]) {
 }
 
 @theme inline {
+  /* Kitchen headings: a warm cookbook serif. */
+  --font-kitchen: "Young Serif", ui-serif, Georgia, serif;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -576,3 +585,8 @@ html[data-theme="light"]:has([data-suite-accent]) {
     .downtime-history li { grid-template-columns: 4.25rem 1fr auto; gap: .5rem; }
   }
 }
+
+/* Kitchen page switch: a thin bar while the next page loads. It shows only after a short wait, so instant switches show nothing. */
+.kitchen-progress { pointer-events: none; opacity: 0; background: var(--foreground); transform-origin: left; transform: scaleX(0); }
+.kitchen-progress--on { opacity: .7; transition: opacity .15s .15s, transform 2.5s .15s cubic-bezier(.1, .7, .3, 1); transform: scaleX(.85); }
+@media (prefers-reduced-motion: reduce) { .kitchen-progress--on { transition: opacity .15s .15s; transform: scaleX(1); } }

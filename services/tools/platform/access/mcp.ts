@@ -7,9 +7,11 @@ export const MCP_PATH = "/api/mcp";
 export const MCP_RESOURCE_METADATA_PATH = `/.well-known/oauth-protected-resource${MCP_PATH}`;
 
 type AccessTokenResolver = (request: Request) => Promise<PlatformPrincipal | undefined>;
+/** Adds the product tools that the person may use. */
+export type McpProductTools = (server: McpServer, principal: PlatformPrincipal) => void;
 
 /** Serves one stateless MCP request as the person who owns the bearer token. */
-export async function handleMcpRequest(request: Request, publicOrigin: string, resolveAccessToken: AccessTokenResolver): Promise<Response> {
+export async function handleMcpRequest(request: Request, publicOrigin: string, resolveAccessToken: AccessTokenResolver, productTools: McpProductTools = () => {}): Promise<Response> {
   const principal = await resolveAccessToken(request);
   if (!principal) {
     return Response.json({ error: "invalid_token" }, {
@@ -21,6 +23,7 @@ export async function handleMcpRequest(request: Request, publicOrigin: string, r
     });
   }
   const server = mcpServerFor(principal);
+  productTools(server, principal);
   const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
   await server.connect(transport);
   try {
