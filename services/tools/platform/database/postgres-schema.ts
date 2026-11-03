@@ -551,6 +551,13 @@ export const kitchens = toolsSchema.table("kitchens", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
 });
 
+export const kitchenPersonSettings = toolsSchema.table("kitchen_person_settings", {
+  kitchenId: uuid("kitchen_id").notNull().references(() => kitchens.id, { onDelete: "cascade" }),
+  subject: text("subject").notNull(),
+  mcpEnabled: boolean("mcp_enabled").notNull().default(false),
+  hidden: boolean("hidden").notNull().default(false),
+}, (table) => [primaryKey({ columns: [table.kitchenId, table.subject] })]);
+
 export const kitchenMembers = toolsSchema.table("kitchen_members", {
   kitchenId: uuid("kitchen_id").notNull().references(() => kitchens.id, { onDelete: "cascade" }),
   personId: uuid("person_id").notNull().references(() => people.id, { onDelete: "cascade" }),

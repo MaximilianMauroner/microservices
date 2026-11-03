@@ -1,7 +1,7 @@
 import { createServerFn, getGlobalStartContext } from "@tanstack/react-start";
 import { getCookie, getRequestHeader } from "@tanstack/react-start/server";
 import { requireProductAccess } from "../../platform/auth/middleware.js";
-import { applyKitchenAction, applyKitchenAdminAction, kitchenAction, kitchenAdminAction } from "./actions.js";
+import { applyKitchenAction, applyKitchenAdminAction, applyKitchenPersonalAction, kitchenAction, kitchenAdminAction, kitchenPersonalAction } from "./actions.js";
 import { type Ingredient, ingredientGroups, type Kitchen, missingAtHome, nutritionPerServing, type Recipe, today, UNSORTED_SECTION, weekStart } from "./domain.js";
 import type { KitchenScope } from "./repository.js";
 import { LANGUAGE_COOKIE, pickLanguage } from "./ui/language.js";
@@ -57,7 +57,8 @@ export const getKitchens = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const kitchens = await store().list(context.principal);
     const isAdmin = context.principal.role === "admin";
-    return { kitchens, isAdmin, people: isAdmin ? await store().admin(context.principal).people() : [] };
+    return { kitchens, isAdmin, people: isAdmin ? await store().admin(context.principal).people() : [],
+      hiddenKitchens: isAdmin ? (await store().list(context.principal, { includeHidden: true })).filter((one) => one.hidden) : [] };
   });
 
 /** The kitchen switcher and tabs that stay on screen across the pages of one kitchen. */
@@ -147,4 +148,12 @@ export const runKitchenAdminAction = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const result = await applyKitchenAdminAction(store(), context.principal, data);
     return result && typeof result === "object" && "id" in result ? { id: String(result.id) } : {};
+  });
+
+export const runKitchenPersonalAction = createServerFn({ method: "POST" })
+  .middleware([kitchenSession])
+  .validator((input: unknown) => kitchenPersonalAction.parse(input))
+  .handler(async ({ data, context }) => {
+    await applyKitchenPersonalAction(store(), context.principal, data);
+    return {};
   });

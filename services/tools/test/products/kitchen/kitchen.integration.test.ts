@@ -5,6 +5,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import type { PlatformPrincipal } from "#security";
 import { handleMcpRequest } from "../../../platform/access/mcp.js";
+import { migrateKitchenPersonSettings } from "../../../products/kitchen/migrate-person-settings.js";
 import { registerKitchenTools } from "../../../products/kitchen/mcp-tools.js";
 import { DISPOSABLE_DATABASE_SENTINEL, withVerifiedDisposableDatabase } from "../../../platform/database/postgres-push-guard.js";
 import { kitchenStore, type KitchenScope, type KitchenStore } from "../../../products/kitchen/repository.js";
@@ -247,7 +248,80 @@ describe.skipIf(!sql)("Kitchen", () => {
     expect((await home.stock()).map((item) => [item.unit, item.amount])).toEqual([["can", 3]]);
   });
 
-  it("requires admin opt-in for MCP and applies changes to connected clients", async () => {
+  it("keeps MCP permission separate for each person and kitchen", async () => {
+    const store = kitchenStore(sql!);
+    const friendId = await person(friend.subject);
+    const home = await store.admin(admin).create("Home");
+    const other = await store.admin(admin).create("Other");
+    await store.admin(admin).addMember(home.id, friendId);
+    await store.admin(admin).addMember(other.id, friendId);
+    await store.setMcpEnabled(friend, home.id, true);
+    expect((await store.open(friend, home.id)).kitchen.mcpEnabled).toBe(true);
+    expect((await store.open(admin, home.id)).kitchen.mcpEnabled).toBe(false);
+    expect((await store.open(friend, other.id)).kitchen.mcpEnabled).toBe(false);
+    await expect(store.setMcpEnabled(stranger, home.id, true)).rejects.toMatchObject({ code: "not_found" });
+    await store.setMcpEnabled(admin, home.id, true);
+    await store.setMcpEnabled(friend, home.id, false);
+    expect((await store.open(admin, home.id)).kitchen.mcpEnabled).toBe(true);
+    await store.setMcpEnabled(friend, home.id, true);
+    await store.admin(admin).removeMember(home.id, friendId);
+    await store.admin(admin).addMember(home.id, friendId);
+    expect((await store.open(friend, home.id)).kitchen.mcpEnabled).toBe(false);
+  });
+
+  it("hands a kitchen over without losing its data and keeps admin recovery access", async () => {
+    const store = kitchenStore(sql!);
+    const friendId = await person(friend.subject);
+    const home = await store.admin(admin).create("Home");
+    const { recipe } = await pasta(await store.open(admin, home.id));
+    await store.setMcpEnabled(admin, home.id, true);
+    await expect(store.admin(admin).move(home.id, randomUUID())).rejects.toMatchObject({ code: "not_found" });
+    expect((await store.list(admin)).map((one) => one.id)).toEqual([home.id]);
+    await store.admin(admin).move(home.id, friendId);
+    expect(await store.list(admin)).toEqual([]);
+    expect(await store.list(admin, { includeHidden: true })).toEqual([expect.objectContaining({ id: home.id, hidden: true, mcpEnabled: false })]);
+    expect((await store.list(friend)).map((one) => one.id)).toEqual([home.id]);
+    expect((await store.open(friend, home.id)).kitchen.mcpEnabled).toBe(false);
+    expect((await (await store.open(friend, home.id)).recipe(recipe.id)).name).toBe(recipe.name);
+    expect((await store.open(admin, home.id)).kitchen.hidden).toBe(true);
+    await expect(store.setMcpEnabled(admin, home.id, true)).rejects.toMatchObject({ code: "forbidden" });
+    await store.admin(admin).restore(home.id);
+    expect((await store.list(admin))[0]).toMatchObject({ id: home.id, hidden: false, mcpEnabled: false });
+  });
+
+  it("lets a member leave while keeping the kitchen for its remaining members", async () => {
+    const store = kitchenStore(sql!);
+    const friendId = await person(friend.subject);
+    const strangerId = await person(stranger.subject);
+    const home = await store.admin(admin).create("Home");
+    await store.admin(admin).addMember(home.id, friendId);
+    await expect(store.leave(friend, home.id)).rejects.toMatchObject({ code: "conflict" });
+    await store.admin(admin).addMember(home.id, strangerId);
+    await store.setMcpEnabled(friend, home.id, true);
+    await store.leave(friend, home.id);
+    expect(await store.list(friend)).toEqual([]);
+    await expect(store.open(friend, home.id)).rejects.toMatchObject({ code: "not_found" });
+    expect((await store.open(stranger, home.id)).kitchen.members.map((one) => one.personId)).toEqual([strangerId]);
+    await store.admin(admin).addMember(home.id, friendId);
+    expect((await store.open(friend, home.id)).kitchen).toMatchObject({ hidden: false, mcpEnabled: false });
+  });
+
+  it("preserves existing MCP access for current people when it migrates the shared flag", async () => {
+    const store = kitchenStore(sql!);
+    const friendId = await person(friend.subject);
+    const home = await store.admin(admin).create("Home");
+    await store.admin(admin).addMember(home.id, friendId);
+    await sql!`alter table tools.kitchens add column if not exists mcp_enabled boolean not null default false`;
+    await sql!`update tools.kitchens set mcp_enabled = true where id = ${home.id}`;
+    await expect(migrateKitchenPersonSettings(sql!, undefined)).rejects.toThrow(/admin subject/);
+    await migrateKitchenPersonSettings(sql!, admin.subject);
+    await migrateKitchenPersonSettings(sql!, admin.subject);
+    expect((await store.open(admin, home.id)).kitchen.mcpEnabled).toBe(true);
+    expect((await store.open(friend, home.id)).kitchen.mcpEnabled).toBe(true);
+    expect((await store.admin(admin).create("New")).mcpEnabled).toBe(false);
+  });
+
+  it("requires personal opt-in for MCP and applies changes to connected clients", async () => {
     const store = kitchenStore(sql!);
     const home = await store.admin(admin).create("Home");
     expect(home.mcpEnabled).toBe(false);
@@ -266,11 +340,11 @@ describe.skipIf(!sql)("Kitchen", () => {
       expect(await read()).toMatchObject({ isError: true });
       expect((await store.open(admin, home.id)).kitchen.name).toBe("Home");
 
-      await store.admin(admin).setMcpEnabled(home.id, true);
+      await store.setMcpEnabled(admin, home.id, true);
       expect(await list()).toEqual([expect.objectContaining({ id: home.id })]);
       expect((await read()).isError).not.toBe(true);
 
-      await store.admin(admin).setMcpEnabled(home.id, false);
+      await store.setMcpEnabled(admin, home.id, false);
       expect(await list()).toEqual([]);
       expect(await read(home.id)).toMatchObject({ isError: true });
       expect(await client.callTool({ name: "shopping_add", arguments: { kitchen: home.id, item: "Milk" } })).toMatchObject({ isError: true });
@@ -286,7 +360,7 @@ describe.skipIf(!sql)("Kitchen", () => {
     const shared = await store.admin(admin).create("Shared");
     await store.admin(admin).create("Private");
     await store.admin(admin).addMember(shared.id, friendId);
-    await store.admin(admin).setMcpEnabled(shared.id, true);
+    await store.setMcpEnabled(friend, shared.id, true);
     const member: PlatformPrincipal = { ...friend, email: "friend@example.test", products: ["kitchen"] } as PlatformPrincipal;
     const client = await connect(store, member);
     const call = async (name: string, args: Record<string, unknown>) => {
