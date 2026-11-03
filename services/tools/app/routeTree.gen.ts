@@ -38,6 +38,8 @@ import { Route as FeedbackIndexRouteImport } from './routes/feedback/index'
 import { Route as FeedbackConfirmationRouteImport } from './routes/feedback/confirmation'
 import { Route as FilesIdRouteImport } from './routes/files/$id'
 import { Route as HealthComponentRouteImport } from './routes/health/$component'
+import { Route as KitchenIndexRouteImport } from './routes/kitchen/index'
+import { Route as KitchenKitchenIdRouteRouteImport } from './routes/kitchen/$kitchenId/route'
 import { Route as MarkdownIndexRouteImport } from './routes/markdown/index'
 import { Route as PublisherIndexRouteImport } from './routes/publisher/index'
 import { Route as PublisherArtifactsRouteImport } from './routes/publisher/artifacts'
@@ -65,6 +67,10 @@ import { Route as FeedbackFormsFormIdRouteImport } from './routes/feedback/forms
 import { Route as FeedbackResponsesSubmissionIdRouteImport } from './routes/feedback/responses/$submissionId'
 import { Route as FeedbackShareTokenRouteImport } from './routes/feedback/share/$token'
 import { Route as FilesIdSplatRouteImport } from './routes/files/$id/$'
+import { Route as KitchenKitchenIdIndexRouteImport } from './routes/kitchen/$kitchenId/index'
+import { Route as KitchenKitchenIdHomeRouteImport } from './routes/kitchen/$kitchenId/home'
+import { Route as KitchenKitchenIdIngredientsRouteImport } from './routes/kitchen/$kitchenId/ingredients'
+import { Route as KitchenKitchenIdShoppingRouteImport } from './routes/kitchen/$kitchenId/shopping'
 import { Route as MarkdownDSlugRouteImport } from './routes/markdown/d/$slug'
 import { Route as ShareDSlugRouteImport } from './routes/share/d/$slug'
 import { Route as ApiMoneyImportsImportIdRouteImport } from './routes/api/money/imports/$importId'
@@ -72,6 +78,8 @@ import { Route as ApiMoneyImportsPreviewRouteImport } from './routes/api/money/i
 import { Route as ApiMoneyImportsReimportRouteImport } from './routes/api/money/imports/reimport'
 import { Route as ApiShareDocumentsSplatRouteImport } from './routes/api/share/documents/$'
 import { Route as ApiStatusHeartbeatsMonitorIdRouteImport } from './routes/api/status/heartbeats/$monitorId'
+import { Route as KitchenKitchenIdRecipesIndexRouteImport } from './routes/kitchen/$kitchenId/recipes/index'
+import { Route as KitchenKitchenIdRecipesRecipeIdRouteImport } from './routes/kitchen/$kitchenId/recipes/$recipeId'
 import { Route as ApiFeedbackFormsFormIdExportRouteImport } from './routes/api/feedback/forms/$formId/export'
 
 const IndexRoute = IndexRouteImport.update({
@@ -219,6 +227,16 @@ const HealthComponentRoute = HealthComponentRouteImport.update({
   path: '/$component',
   getParentRoute: () => HealthRoute,
 } as any)
+const KitchenIndexRoute = KitchenIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => KitchenRoute,
+} as any)
+const KitchenKitchenIdRouteRoute = KitchenKitchenIdRouteRouteImport.update({
+  id: '/$kitchenId',
+  path: '/$kitchenId',
+  getParentRoute: () => KitchenRoute,
+} as any)
 const MarkdownIndexRoute = MarkdownIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -355,6 +373,28 @@ const FilesIdSplatRoute = FilesIdSplatRouteImport.update({
   path: '/$',
   getParentRoute: () => FilesIdRoute,
 } as any)
+const KitchenKitchenIdIndexRoute = KitchenKitchenIdIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => KitchenKitchenIdRouteRoute,
+} as any)
+const KitchenKitchenIdHomeRoute = KitchenKitchenIdHomeRouteImport.update({
+  id: '/home',
+  path: '/home',
+  getParentRoute: () => KitchenKitchenIdRouteRoute,
+} as any)
+const KitchenKitchenIdIngredientsRoute =
+  KitchenKitchenIdIngredientsRouteImport.update({
+    id: '/ingredients',
+    path: '/ingredients',
+    getParentRoute: () => KitchenKitchenIdRouteRoute,
+  } as any)
+const KitchenKitchenIdShoppingRoute =
+  KitchenKitchenIdShoppingRouteImport.update({
+    id: '/shopping',
+    path: '/shopping',
+    getParentRoute: () => KitchenKitchenIdRouteRoute,
+  } as any)
 const MarkdownDSlugRoute = MarkdownDSlugRouteImport.update({
   id: '/d/$slug',
   path: '/d/$slug',
@@ -391,6 +431,18 @@ const ApiStatusHeartbeatsMonitorIdRoute =
     path: '/api/status/heartbeats/$monitorId',
     getParentRoute: () => rootRouteImport,
   } as any)
+const KitchenKitchenIdRecipesIndexRoute =
+  KitchenKitchenIdRecipesIndexRouteImport.update({
+    id: '/recipes/',
+    path: '/recipes/',
+    getParentRoute: () => KitchenKitchenIdRouteRoute,
+  } as any)
+const KitchenKitchenIdRecipesRecipeIdRoute =
+  KitchenKitchenIdRecipesRecipeIdRouteImport.update({
+    id: '/recipes/$recipeId',
+    path: '/recipes/$recipeId',
+    getParentRoute: () => KitchenKitchenIdRouteRoute,
+  } as any)
 const ApiFeedbackFormsFormIdExportRoute =
   ApiFeedbackFormsFormIdExportRouteImport.update({
     id: '/api/feedback/forms/$formId/export',
@@ -406,7 +458,7 @@ export interface FileRoutesByFullPath {
   '/favicon.svg': typeof FaviconDotsvgRoute
   '/feedback': typeof FeedbackRouteWithChildren
   '/health': typeof HealthRouteWithChildren
-  '/kitchen': typeof KitchenRoute
+  '/kitchen': typeof KitchenRouteWithChildren
   '/live': typeof LiveRoute
   '/markdown': typeof MarkdownRouteWithChildren
   '/money': typeof MoneyRoute
@@ -415,6 +467,7 @@ export interface FileRoutesByFullPath {
   '/share': typeof ShareRouteWithChildren
   '/sign-in': typeof SignInRoute
   '/status': typeof StatusRoute
+  '/kitchen/$kitchenId': typeof KitchenKitchenIdRouteRouteWithChildren
   '/.well-known/$': typeof DotwellKnownSplatRoute
   '/api/external-uploads': typeof ApiExternalUploadsRouteWithChildren
   '/api/mcp': typeof ApiMcpRoute
@@ -431,6 +484,7 @@ export interface FileRoutesByFullPath {
   '/publisher/qr': typeof PublisherQrRoute
   '/publisher/receive': typeof PublisherReceiveRoute
   '/feedback/': typeof FeedbackIndexRoute
+  '/kitchen/': typeof KitchenIndexRoute
   '/markdown/': typeof MarkdownIndexRoute
   '/publisher/': typeof PublisherIndexRoute
   '/share/': typeof ShareIndexRoute
@@ -454,14 +508,20 @@ export interface FileRoutesByFullPath {
   '/feedback/responses/$submissionId': typeof FeedbackResponsesSubmissionIdRoute
   '/feedback/share/$token': typeof FeedbackShareTokenRoute
   '/files/$id/$': typeof FilesIdSplatRoute
+  '/kitchen/$kitchenId/home': typeof KitchenKitchenIdHomeRoute
+  '/kitchen/$kitchenId/ingredients': typeof KitchenKitchenIdIngredientsRoute
+  '/kitchen/$kitchenId/shopping': typeof KitchenKitchenIdShoppingRoute
   '/markdown/d/$slug': typeof MarkdownDSlugRoute
   '/share/d/$slug': typeof ShareDSlugRoute
   '/feedback/forms/': typeof FeedbackFormsIndexRoute
+  '/kitchen/$kitchenId/': typeof KitchenKitchenIdIndexRoute
   '/api/money/imports/$importId': typeof ApiMoneyImportsImportIdRoute
   '/api/money/imports/preview': typeof ApiMoneyImportsPreviewRoute
   '/api/money/imports/reimport': typeof ApiMoneyImportsReimportRoute
   '/api/share/documents/$': typeof ApiShareDocumentsSplatRoute
   '/api/status/heartbeats/$monitorId': typeof ApiStatusHeartbeatsMonitorIdRoute
+  '/kitchen/$kitchenId/recipes/$recipeId': typeof KitchenKitchenIdRecipesRecipeIdRoute
+  '/kitchen/$kitchenId/recipes/': typeof KitchenKitchenIdRecipesIndexRoute
   '/api/feedback/forms/$formId/export': typeof ApiFeedbackFormsFormIdExportRoute
 }
 export interface FileRoutesByTo {
@@ -471,7 +531,6 @@ export interface FileRoutesByTo {
   '/favicon.ico': typeof FaviconDoticoRoute
   '/favicon.svg': typeof FaviconDotsvgRoute
   '/health': typeof HealthRouteWithChildren
-  '/kitchen': typeof KitchenRoute
   '/live': typeof LiveRoute
   '/money': typeof MoneyRoute
   '/settings': typeof SettingsRoute
@@ -493,6 +552,7 @@ export interface FileRoutesByTo {
   '/publisher/qr': typeof PublisherQrRoute
   '/publisher/receive': typeof PublisherReceiveRoute
   '/feedback': typeof FeedbackIndexRoute
+  '/kitchen': typeof KitchenIndexRoute
   '/markdown': typeof MarkdownIndexRoute
   '/publisher': typeof PublisherIndexRoute
   '/share': typeof ShareIndexRoute
@@ -516,14 +576,20 @@ export interface FileRoutesByTo {
   '/feedback/responses/$submissionId': typeof FeedbackResponsesSubmissionIdRoute
   '/feedback/share/$token': typeof FeedbackShareTokenRoute
   '/files/$id/$': typeof FilesIdSplatRoute
+  '/kitchen/$kitchenId/home': typeof KitchenKitchenIdHomeRoute
+  '/kitchen/$kitchenId/ingredients': typeof KitchenKitchenIdIngredientsRoute
+  '/kitchen/$kitchenId/shopping': typeof KitchenKitchenIdShoppingRoute
   '/markdown/d/$slug': typeof MarkdownDSlugRoute
   '/share/d/$slug': typeof ShareDSlugRoute
   '/feedback/forms': typeof FeedbackFormsIndexRoute
+  '/kitchen/$kitchenId': typeof KitchenKitchenIdIndexRoute
   '/api/money/imports/$importId': typeof ApiMoneyImportsImportIdRoute
   '/api/money/imports/preview': typeof ApiMoneyImportsPreviewRoute
   '/api/money/imports/reimport': typeof ApiMoneyImportsReimportRoute
   '/api/share/documents/$': typeof ApiShareDocumentsSplatRoute
   '/api/status/heartbeats/$monitorId': typeof ApiStatusHeartbeatsMonitorIdRoute
+  '/kitchen/$kitchenId/recipes/$recipeId': typeof KitchenKitchenIdRecipesRecipeIdRoute
+  '/kitchen/$kitchenId/recipes': typeof KitchenKitchenIdRecipesIndexRoute
   '/api/feedback/forms/$formId/export': typeof ApiFeedbackFormsFormIdExportRoute
 }
 export interface FileRoutesById {
@@ -535,7 +601,7 @@ export interface FileRoutesById {
   '/favicon.svg': typeof FaviconDotsvgRoute
   '/feedback': typeof FeedbackRouteWithChildren
   '/health': typeof HealthRouteWithChildren
-  '/kitchen': typeof KitchenRoute
+  '/kitchen': typeof KitchenRouteWithChildren
   '/live': typeof LiveRoute
   '/markdown': typeof MarkdownRouteWithChildren
   '/money': typeof MoneyRoute
@@ -544,6 +610,7 @@ export interface FileRoutesById {
   '/share': typeof ShareRouteWithChildren
   '/sign-in': typeof SignInRoute
   '/status': typeof StatusRoute
+  '/kitchen/$kitchenId': typeof KitchenKitchenIdRouteRouteWithChildren
   '/.well-known/$': typeof DotwellKnownSplatRoute
   '/api/external-uploads': typeof ApiExternalUploadsRouteWithChildren
   '/api/mcp': typeof ApiMcpRoute
@@ -560,6 +627,7 @@ export interface FileRoutesById {
   '/publisher/qr': typeof PublisherQrRoute
   '/publisher/receive': typeof PublisherReceiveRoute
   '/feedback/': typeof FeedbackIndexRoute
+  '/kitchen/': typeof KitchenIndexRoute
   '/markdown/': typeof MarkdownIndexRoute
   '/publisher/': typeof PublisherIndexRoute
   '/share/': typeof ShareIndexRoute
@@ -583,14 +651,20 @@ export interface FileRoutesById {
   '/feedback/responses/$submissionId': typeof FeedbackResponsesSubmissionIdRoute
   '/feedback/share/$token': typeof FeedbackShareTokenRoute
   '/files/$id/$': typeof FilesIdSplatRoute
+  '/kitchen/$kitchenId/home': typeof KitchenKitchenIdHomeRoute
+  '/kitchen/$kitchenId/ingredients': typeof KitchenKitchenIdIngredientsRoute
+  '/kitchen/$kitchenId/shopping': typeof KitchenKitchenIdShoppingRoute
   '/markdown/d/$slug': typeof MarkdownDSlugRoute
   '/share/d/$slug': typeof ShareDSlugRoute
   '/feedback/forms/': typeof FeedbackFormsIndexRoute
+  '/kitchen/$kitchenId/': typeof KitchenKitchenIdIndexRoute
   '/api/money/imports/$importId': typeof ApiMoneyImportsImportIdRoute
   '/api/money/imports/preview': typeof ApiMoneyImportsPreviewRoute
   '/api/money/imports/reimport': typeof ApiMoneyImportsReimportRoute
   '/api/share/documents/$': typeof ApiShareDocumentsSplatRoute
   '/api/status/heartbeats/$monitorId': typeof ApiStatusHeartbeatsMonitorIdRoute
+  '/kitchen/$kitchenId/recipes/$recipeId': typeof KitchenKitchenIdRecipesRecipeIdRoute
+  '/kitchen/$kitchenId/recipes/': typeof KitchenKitchenIdRecipesIndexRoute
   '/api/feedback/forms/$formId/export': typeof ApiFeedbackFormsFormIdExportRoute
 }
 export interface FileRouteTypes {
@@ -612,6 +686,7 @@ export interface FileRouteTypes {
     | '/share'
     | '/sign-in'
     | '/status'
+    | '/kitchen/$kitchenId'
     | '/.well-known/$'
     | '/api/external-uploads'
     | '/api/mcp'
@@ -628,6 +703,7 @@ export interface FileRouteTypes {
     | '/publisher/qr'
     | '/publisher/receive'
     | '/feedback/'
+    | '/kitchen/'
     | '/markdown/'
     | '/publisher/'
     | '/share/'
@@ -651,14 +727,20 @@ export interface FileRouteTypes {
     | '/feedback/responses/$submissionId'
     | '/feedback/share/$token'
     | '/files/$id/$'
+    | '/kitchen/$kitchenId/home'
+    | '/kitchen/$kitchenId/ingredients'
+    | '/kitchen/$kitchenId/shopping'
     | '/markdown/d/$slug'
     | '/share/d/$slug'
     | '/feedback/forms/'
+    | '/kitchen/$kitchenId/'
     | '/api/money/imports/$importId'
     | '/api/money/imports/preview'
     | '/api/money/imports/reimport'
     | '/api/share/documents/$'
     | '/api/status/heartbeats/$monitorId'
+    | '/kitchen/$kitchenId/recipes/$recipeId'
+    | '/kitchen/$kitchenId/recipes/'
     | '/api/feedback/forms/$formId/export'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -668,7 +750,6 @@ export interface FileRouteTypes {
     | '/favicon.ico'
     | '/favicon.svg'
     | '/health'
-    | '/kitchen'
     | '/live'
     | '/money'
     | '/settings'
@@ -690,6 +771,7 @@ export interface FileRouteTypes {
     | '/publisher/qr'
     | '/publisher/receive'
     | '/feedback'
+    | '/kitchen'
     | '/markdown'
     | '/publisher'
     | '/share'
@@ -713,14 +795,20 @@ export interface FileRouteTypes {
     | '/feedback/responses/$submissionId'
     | '/feedback/share/$token'
     | '/files/$id/$'
+    | '/kitchen/$kitchenId/home'
+    | '/kitchen/$kitchenId/ingredients'
+    | '/kitchen/$kitchenId/shopping'
     | '/markdown/d/$slug'
     | '/share/d/$slug'
     | '/feedback/forms'
+    | '/kitchen/$kitchenId'
     | '/api/money/imports/$importId'
     | '/api/money/imports/preview'
     | '/api/money/imports/reimport'
     | '/api/share/documents/$'
     | '/api/status/heartbeats/$monitorId'
+    | '/kitchen/$kitchenId/recipes/$recipeId'
+    | '/kitchen/$kitchenId/recipes'
     | '/api/feedback/forms/$formId/export'
   id:
     | '__root__'
@@ -740,6 +828,7 @@ export interface FileRouteTypes {
     | '/share'
     | '/sign-in'
     | '/status'
+    | '/kitchen/$kitchenId'
     | '/.well-known/$'
     | '/api/external-uploads'
     | '/api/mcp'
@@ -756,6 +845,7 @@ export interface FileRouteTypes {
     | '/publisher/qr'
     | '/publisher/receive'
     | '/feedback/'
+    | '/kitchen/'
     | '/markdown/'
     | '/publisher/'
     | '/share/'
@@ -779,14 +869,20 @@ export interface FileRouteTypes {
     | '/feedback/responses/$submissionId'
     | '/feedback/share/$token'
     | '/files/$id/$'
+    | '/kitchen/$kitchenId/home'
+    | '/kitchen/$kitchenId/ingredients'
+    | '/kitchen/$kitchenId/shopping'
     | '/markdown/d/$slug'
     | '/share/d/$slug'
     | '/feedback/forms/'
+    | '/kitchen/$kitchenId/'
     | '/api/money/imports/$importId'
     | '/api/money/imports/preview'
     | '/api/money/imports/reimport'
     | '/api/share/documents/$'
     | '/api/status/heartbeats/$monitorId'
+    | '/kitchen/$kitchenId/recipes/$recipeId'
+    | '/kitchen/$kitchenId/recipes/'
     | '/api/feedback/forms/$formId/export'
   fileRoutesById: FileRoutesById
 }
@@ -798,7 +894,7 @@ export interface RootRouteChildren {
   FaviconDotsvgRoute: typeof FaviconDotsvgRoute
   FeedbackRoute: typeof FeedbackRouteWithChildren
   HealthRoute: typeof HealthRouteWithChildren
-  KitchenRoute: typeof KitchenRoute
+  KitchenRoute: typeof KitchenRouteWithChildren
   LiveRoute: typeof LiveRoute
   MarkdownRoute: typeof MarkdownRouteWithChildren
   MoneyRoute: typeof MoneyRoute
@@ -1038,6 +1134,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HealthComponentRouteImport
       parentRoute: typeof HealthRoute
     }
+    '/kitchen/': {
+      id: '/kitchen/'
+      path: '/'
+      fullPath: '/kitchen/'
+      preLoaderRoute: typeof KitchenIndexRouteImport
+      parentRoute: typeof KitchenRoute
+    }
+    '/kitchen/$kitchenId': {
+      id: '/kitchen/$kitchenId'
+      path: '/$kitchenId'
+      fullPath: '/kitchen/$kitchenId'
+      preLoaderRoute: typeof KitchenKitchenIdRouteRouteImport
+      parentRoute: typeof KitchenRoute
+    }
     '/markdown/': {
       id: '/markdown/'
       path: '/'
@@ -1227,6 +1337,34 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof FilesIdSplatRouteImport
       parentRoute: typeof FilesIdRoute
     }
+    '/kitchen/$kitchenId/': {
+      id: '/kitchen/$kitchenId/'
+      path: '/'
+      fullPath: '/kitchen/$kitchenId/'
+      preLoaderRoute: typeof KitchenKitchenIdIndexRouteImport
+      parentRoute: typeof KitchenKitchenIdRouteRoute
+    }
+    '/kitchen/$kitchenId/home': {
+      id: '/kitchen/$kitchenId/home'
+      path: '/home'
+      fullPath: '/kitchen/$kitchenId/home'
+      preLoaderRoute: typeof KitchenKitchenIdHomeRouteImport
+      parentRoute: typeof KitchenKitchenIdRouteRoute
+    }
+    '/kitchen/$kitchenId/ingredients': {
+      id: '/kitchen/$kitchenId/ingredients'
+      path: '/ingredients'
+      fullPath: '/kitchen/$kitchenId/ingredients'
+      preLoaderRoute: typeof KitchenKitchenIdIngredientsRouteImport
+      parentRoute: typeof KitchenKitchenIdRouteRoute
+    }
+    '/kitchen/$kitchenId/shopping': {
+      id: '/kitchen/$kitchenId/shopping'
+      path: '/shopping'
+      fullPath: '/kitchen/$kitchenId/shopping'
+      preLoaderRoute: typeof KitchenKitchenIdShoppingRouteImport
+      parentRoute: typeof KitchenKitchenIdRouteRoute
+    }
     '/markdown/d/$slug': {
       id: '/markdown/d/$slug'
       path: '/d/$slug'
@@ -1276,6 +1414,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiStatusHeartbeatsMonitorIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/kitchen/$kitchenId/recipes/': {
+      id: '/kitchen/$kitchenId/recipes/'
+      path: '/recipes'
+      fullPath: '/kitchen/$kitchenId/recipes/'
+      preLoaderRoute: typeof KitchenKitchenIdRecipesIndexRouteImport
+      parentRoute: typeof KitchenKitchenIdRouteRoute
+    }
+    '/kitchen/$kitchenId/recipes/$recipeId': {
+      id: '/kitchen/$kitchenId/recipes/$recipeId'
+      path: '/recipes/$recipeId'
+      fullPath: '/kitchen/$kitchenId/recipes/$recipeId'
+      preLoaderRoute: typeof KitchenKitchenIdRecipesRecipeIdRouteImport
+      parentRoute: typeof KitchenKitchenIdRouteRoute
+    }
     '/api/feedback/forms/$formId/export': {
       id: '/api/feedback/forms/$formId/export'
       path: '/api/feedback/forms/$formId/export'
@@ -1320,6 +1472,42 @@ const HealthRouteChildren: HealthRouteChildren = {
 
 const HealthRouteWithChildren =
   HealthRoute._addFileChildren(HealthRouteChildren)
+
+interface KitchenKitchenIdRouteRouteChildren {
+  KitchenKitchenIdHomeRoute: typeof KitchenKitchenIdHomeRoute
+  KitchenKitchenIdIngredientsRoute: typeof KitchenKitchenIdIngredientsRoute
+  KitchenKitchenIdShoppingRoute: typeof KitchenKitchenIdShoppingRoute
+  KitchenKitchenIdIndexRoute: typeof KitchenKitchenIdIndexRoute
+  KitchenKitchenIdRecipesRecipeIdRoute: typeof KitchenKitchenIdRecipesRecipeIdRoute
+  KitchenKitchenIdRecipesIndexRoute: typeof KitchenKitchenIdRecipesIndexRoute
+}
+
+const KitchenKitchenIdRouteRouteChildren: KitchenKitchenIdRouteRouteChildren = {
+  KitchenKitchenIdHomeRoute: KitchenKitchenIdHomeRoute,
+  KitchenKitchenIdIngredientsRoute: KitchenKitchenIdIngredientsRoute,
+  KitchenKitchenIdShoppingRoute: KitchenKitchenIdShoppingRoute,
+  KitchenKitchenIdIndexRoute: KitchenKitchenIdIndexRoute,
+  KitchenKitchenIdRecipesRecipeIdRoute: KitchenKitchenIdRecipesRecipeIdRoute,
+  KitchenKitchenIdRecipesIndexRoute: KitchenKitchenIdRecipesIndexRoute,
+}
+
+const KitchenKitchenIdRouteRouteWithChildren =
+  KitchenKitchenIdRouteRoute._addFileChildren(
+    KitchenKitchenIdRouteRouteChildren,
+  )
+
+interface KitchenRouteChildren {
+  KitchenKitchenIdRouteRoute: typeof KitchenKitchenIdRouteRouteWithChildren
+  KitchenIndexRoute: typeof KitchenIndexRoute
+}
+
+const KitchenRouteChildren: KitchenRouteChildren = {
+  KitchenKitchenIdRouteRoute: KitchenKitchenIdRouteRouteWithChildren,
+  KitchenIndexRoute: KitchenIndexRoute,
+}
+
+const KitchenRouteWithChildren =
+  KitchenRoute._addFileChildren(KitchenRouteChildren)
 
 interface MarkdownRouteChildren {
   MarkdownIndexRoute: typeof MarkdownIndexRoute
@@ -1446,7 +1634,7 @@ const rootRouteChildren: RootRouteChildren = {
   FaviconDotsvgRoute: FaviconDotsvgRoute,
   FeedbackRoute: FeedbackRouteWithChildren,
   HealthRoute: HealthRouteWithChildren,
-  KitchenRoute: KitchenRoute,
+  KitchenRoute: KitchenRouteWithChildren,
   LiveRoute: LiveRoute,
   MarkdownRoute: MarkdownRouteWithChildren,
   MoneyRoute: MoneyRoute,

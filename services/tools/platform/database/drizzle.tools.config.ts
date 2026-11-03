@@ -16,6 +16,8 @@ export default defineConfig({
     "money_inflation_indices", "money_transactions", "money_investment_events",
     "money_category_rules", "money_balance_snapshots", "money_transfer_rules", "money_transfer_pair_rules",
     "auth_users", "auth_sessions", "auth_accounts", "auth_verifications", "people", "product_grants",
-    "oauth_clients", "oauth_refresh_tokens", "oauth_access_tokens", "oauth_consents"
+    "oauth_clients", "oauth_refresh_tokens", "oauth_access_tokens", "oauth_consents",
+    "kitchens", "kitchen_members", "kitchen_ingredients", "kitchen_recipes", "kitchen_recipe_lines",
+    "kitchen_plan_entries", "kitchen_stock", "kitchen_leftovers", "kitchen_extras"
   ],
 });

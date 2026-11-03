@@ -1,0 +1,194 @@
+import postgres from "postgres";
+import { randomUUID } from "node:crypto";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import type { PlatformPrincipal } from "#security";
+import { handleMcpRequest } from "../../../platform/access/mcp.js";
+import { registerKitchenTools } from "../../../products/kitchen/mcp-tools.js";
+import { DISPOSABLE_DATABASE_SENTINEL, withVerifiedDisposableDatabase } from "../../../platform/database/postgres-push-guard.js";
+import { kitchenStore, type KitchenScope, type KitchenStore } from "../../../products/kitchen/repository.js";
+import { requireLoopbackPostgres } from "../../harness/postgres.ts";
+
+const databaseUrl = process.env.TEST_DATABASE_URL ? requireLoopbackPostgres(process.env.TEST_DATABASE_URL) : undefined;
+const confirmed = process.env.MONEY_TEST_DATABASE_CONFIRM === "money-repository-test";
+const sql = databaseUrl && confirmed ? postgres(databaseUrl, { max: 2 }) : undefined;
+
+const admin = { role: "admin", subject: "admin-subject" } as const;
+const friend = { role: "member", subject: "friend-subject" } as const;
+const stranger = { role: "member", subject: "stranger-subject" } as const;
+const noNutrition = { kcal: null, protein: null, carbs: null, fat: null };
+
+beforeEach(async () => {
+  if (!sql) return;
+  await withVerifiedDisposableDatabase({
+    readRelationKind: async () => (await sql<{ kind: string }[]>`
+      select c.relkind::text kind from pg_class c join pg_namespace n on n.oid = c.relnamespace
+      where n.nspname = 'public' and c.relname = ${DISPOSABLE_DATABASE_SENTINEL.relation}`)[0]?.kind,
+    readValue: async () => (await sql<{ value: string }[]>`
+      select sentinel_value value from public.tools_runtime_test_sentinel
+      where sentinel_key = ${DISPOSABLE_DATABASE_SENTINEL.key}`)[0]?.value,
+  }, async () => {
+    await sql`truncate tools.kitchens, tools.people cascade`;
+  });
+});
+
+afterAll(async () => { await sql?.end(); });
+
+async function person(subject: string) {
+  const id = randomUUID();
+  await sql!`insert into tools.people (id, email, google_subject, invited_at) values (${id}, ${`${subject}@example.test`}, ${subject}, now())`;
+  return id;
+}
+
+async function pasta(kitchen: KitchenScope) {
+  const spaghetti = await kitchen.saveIngredient(undefined, { name: "Spaghetti", unit: "g", section: "Pasta", nutrition: { kcal: 350, protein: 12, carbs: 70, fat: 2 }, notes: "" });
+  const tomato = await kitchen.saveIngredient(undefined, { name: "Tomato", unit: "piece", section: "Vegetables", nutrition: { kcal: 20, protein: 1, carbs: 4, fat: 0 }, notes: "" });
+  const recipe = await kitchen.saveRecipe(undefined, {
+    name: "Pasta al pomodoro", servings: 2, minutes: 20, instructions: "Cook.",
+    lines: [{ ingredientId: spaghetti.id, amount: 200, note: "" }, { ingredientId: tomato.id, amount: 4, note: "ripe" }]
+  });
+  return { spaghetti, tomato, recipe };
+}
+
+describe.skipIf(!sql)("Kitchen", () => {
+  it("opens a kitchen only for the admin and its members", async () => {
+    const store = kitchenStore(sql!);
+    const friendId = await person(friend.subject);
+    await person(stranger.subject);
+    const home = await store.admin(admin).create("Home");
+    const other = await store.admin(admin).create("Office");
+    await store.admin(admin).addMember(home.id, friendId);
+
+    expect((await store.list(admin)).map((kitchen) => kitchen.name)).toEqual(["Home", "Office"]);
+    expect((await store.list(friend)).map((kitchen) => kitchen.name)).toEqual(["Home"]);
+    expect(await store.list(stranger)).toEqual([]);
+    expect(await sql!`select product_id from tools.product_grants where person_id = ${friendId}`).toEqual([{ product_id: "kitchen" }]);
+
+    await expect(store.open(friend, other.id)).rejects.toMatchObject({ code: "not_found" });
+    await expect(store.open(stranger, home.id)).rejects.toMatchObject({ code: "not_found" });
+    expect(() => store.admin(friend)).toThrow(/Only the admin/);
+
+    await store.admin(admin).removeMember(home.id, friendId);
+    await expect(store.open(friend, home.id)).rejects.toMatchObject({ code: "not_found" });
+  });
+
+  it("buys what the plan needs minus what is at home, and cooking uses it up", async () => {
+    const store = kitchenStore(sql!);
+    const home = await store.open(admin, (await store.admin(admin).create("Home")).id);
+    const { spaghetti, tomato, recipe } = await pasta(home);
+    await home.plan({ day: "2026-11-02", meal: "dinner", recipeId: recipe.id, servings: 4 });
+    const lunch = await home.plan({ day: "2026-11-04", meal: "lunch", recipeId: recipe.id, servings: 2 });
+    await home.plan({ day: "2026-11-09", meal: "dinner", recipeId: recipe.id, servings: 2 });
+    await home.setStock(spaghetti.id, 500);
+
+    const before = await home.shopping("2026-11-02");
+    expect(before.lines.map(({ ingredient, needed, inStock, toBuy }) => ({ ingredient, needed, inStock, toBuy }))).toEqual([
+      { ingredient: "Spaghetti", needed: 600, inStock: 500, toBuy: 100 },
+      { ingredient: "Tomato", needed: 12, inStock: 0, toBuy: 12 }
+    ]);
+
+    await home.addStock(tomato.id, 12);
+    await home.cook(lunch.id, { servings: 1, useBy: "2026-11-06" });
+    await expect(home.cook(lunch.id, undefined)).rejects.toMatchObject({ code: "not_found" });
+
+    expect((await home.stock()).map(({ ingredient, amount }) => ({ ingredient, amount }))).toEqual([
+      { ingredient: "Spaghetti", amount: 300 },
+      { ingredient: "Tomato", amount: 8 }
+    ]);
+    expect((await home.shopping("2026-11-02")).lines.map(({ ingredient, toBuy }) => ({ ingredient, toBuy }))).toEqual([
+      { ingredient: "Spaghetti", toBuy: 100 },
+      { ingredient: "Tomato", toBuy: 0 }
+    ]);
+    expect(await home.leftovers()).toEqual([expect.objectContaining({ name: "Pasta al pomodoro", servings: 1, useBy: "2026-11-06" })]);
+  });
+
+  it("remembers each new group and shops in the kitchen's group order", async () => {
+    const store = kitchenStore(sql!);
+    const created = await store.admin(admin).create("Home");
+    const home = await store.open(admin, created.id);
+    const { recipe } = await pasta(home);
+    await home.saveIngredient(undefined, { name: "Basil", unit: "g", section: "Herbs", nutrition: noNutrition, notes: "" });
+    expect((await store.open(admin, created.id)).kitchen.groups).toEqual(["Pasta", "Vegetables", "Herbs"]);
+
+    await home.plan({ day: "2026-11-02", meal: "dinner", recipeId: recipe.id, servings: 2 });
+    const sections = async () => (await (await store.open(admin, created.id)).shopping("2026-11-02")).lines.map((line) => line.section);
+    expect(await sections()).toEqual(["Pasta", "Vegetables"]);
+
+    await home.setGroups(["Vegetables"]);
+    expect((await store.open(admin, created.id)).kitchen.groups).toEqual(["Vegetables"]);
+    expect(await sections()).toEqual(["Vegetables", "Pasta"]);
+  });
+
+  it("keeps each kitchen's ingredients and recipes inside that kitchen", async () => {
+    const store = kitchenStore(sql!);
+    const home = await store.open(admin, (await store.admin(admin).create("Home")).id);
+    const other = await store.open(admin, (await store.admin(admin).create("Office")).id);
+    const { tomato, recipe } = await pasta(home);
+
+    await expect(other.saveRecipe(undefined, { name: "Theft", servings: 1, minutes: null, instructions: "", lines: [{ ingredientId: tomato.id, amount: 1, note: "" }] }))
+      .rejects.toMatchObject({ code: "not_found" });
+    await expect(other.recipe(recipe.id)).rejects.toMatchObject({ code: "not_found" });
+    await expect(other.plan({ day: "2026-11-02", meal: "lunch", recipeId: recipe.id, servings: 1 })).rejects.toMatchObject({ code: "not_found" });
+    await expect(other.setStock(tomato.id, 3)).rejects.toMatchObject({ code: "not_found" });
+    await expect(home.deleteIngredient(tomato.id)).rejects.toMatchObject({ code: "conflict" });
+    await expect(home.saveIngredient(undefined, { name: "tomato", unit: "g", section: "", nutrition: noNutrition, notes: "" }))
+      .rejects.toMatchObject({ code: "conflict" });
+  });
+
+  it("copies a recipe with only the ingredients it uses", async () => {
+    const store = kitchenStore(sql!);
+    const friendId = await person(friend.subject);
+    const mine = await store.admin(admin).create("Max");
+    const theirs = await store.admin(admin).create("Friend");
+    await store.admin(admin).addMember(theirs.id, friendId);
+    const home = await store.open(admin, mine.id);
+    const { recipe } = await pasta(home);
+    await home.saveIngredient(undefined, { name: "Secret spice", unit: "g", section: "", nutrition: noNutrition, notes: "" });
+    const target = await store.open(admin, theirs.id);
+    await target.saveIngredient(undefined, { name: "TOMATO", unit: "piece", section: "Garden", nutrition: noNutrition, notes: "" });
+
+    const copy = await store.copyRecipe(admin, mine.id, recipe.id, theirs.id);
+    const again = await store.copyRecipe(admin, mine.id, recipe.id, theirs.id);
+
+    expect(copy.lines.map((line) => [line.ingredient, line.amount])).toEqual([["Spaghetti", 200], ["TOMATO", 4]]);
+    expect(again.name).toBe("Pasta al pomodoro (2)");
+    expect((await (await store.open(friend, theirs.id)).ingredients()).map((ingredient) => ingredient.name)).toEqual(["Spaghetti", "TOMATO"]);
+    await expect(store.copyRecipe(friend, theirs.id, copy.id, mine.id)).rejects.toMatchObject({ code: "not_found" });
+  });
+
+  it("lets an MCP client manage only the kitchens its person can open", async () => {
+    const store = kitchenStore(sql!);
+    const friendId = await person(friend.subject);
+    const shared = await store.admin(admin).create("Shared");
+    await store.admin(admin).create("Private");
+    await store.admin(admin).addMember(shared.id, friendId);
+    const member: PlatformPrincipal = { ...friend, email: "friend@example.test", products: ["kitchen"] } as PlatformPrincipal;
+    const client = await connect(store, member);
+    const call = async (name: string, args: Record<string, unknown>) => {
+      const result = await client.callTool({ name, arguments: args }) as { isError?: boolean; content: { text: string }[] };
+      return { error: result.isError === true, body: result.content[0]!.text };
+    };
+
+    const tools = (await client.listTools()).tools.map((tool) => tool.name);
+    expect(tools).toContain("recipe_save");
+    expect(tools).not.toContain("kitchen_create");
+
+    const saved = await call("recipe_save", { name: "Shakshuka", servings: 2, ingredients: [{ name: "Eier", amount: 4, unit: "piece" }, { name: "Gewürfelte Tomaten", amount: 400 }] });
+    expect(saved.error).toBe(false);
+    expect(JSON.parse(saved.body).lines.map((line: { ingredient: string; unit: string }) => [line.ingredient, line.unit])).toEqual([["Eier", "piece"], ["Gewürfelte Tomaten", "g"]]);
+    expect((await call("ingredient_save", { name: "eier", kcal: 155 })).error).toBe(false);
+    expect(JSON.parse((await call("ingredient_list", {})).body).map((one: { name: string; unit: string; nutrition: { kcal: number | null } }) => [one.name, one.unit, one.nutrition.kcal]))
+      .toEqual([["eier", "piece", 155], ["Gewürfelte Tomaten", "g", null]]);
+    expect(await call("recipe_list", { kitchen: "Private" })).toEqual({ error: true, body: "No kitchen named Private. You can open: Shared." });
+    await client.close();
+  });
+});
+
+async function connect(store: KitchenStore, principal: PlatformPrincipal) {
+  const client = new Client({ name: "kitchen-test", version: "1.0.0" });
+  await client.connect(new StreamableHTTPClientTransport(new URL("https://tools.example.test/api/mcp"), {
+    fetch: (url, init) => handleMcpRequest(new Request(url, init), "https://tools.example.test", async () => principal, (server, who) => registerKitchenTools(server, store, who))
+  }));
+  return client;
+}
