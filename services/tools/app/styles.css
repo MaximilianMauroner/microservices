@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "@fontsource-variable/instrument-sans";
+@import "@fontsource-variable/instrument-sans/wdth.css";
 @source "../products/dashboard/ui";
 @source "../products/status/ui";
 @source "../products/publisher/ui";
@@ -93,6 +94,43 @@ html[data-theme="light"] {
   --kitchen-home-ink: var(--kitchen-home);
   --kitchen-ingredients-ink: var(--kitchen-ingredients);
 }
+
+/* Bodyshop. Ink and surface carry most of the page; five colors carry meaning.
+   Energy is food eaten, burn is expenditure, trend is the smoothed weight, good is complete or on target,
+   flag is a failed check or a day over the target. Dark values first, light below. */
+:root {
+  --bs-energy: #8ab4ff;
+  --bs-burn: #f0a35e;
+  --bs-trend: #ece7dd;
+  --bs-good: #6cc99a;
+  --bs-flag: #f07a6a;
+}
+
+html[data-theme="light"] {
+  --bs-energy: #2357c5;
+  --bs-burn: #b4621a;
+  --bs-trend: #23211e;
+  --bs-good: #1d7f52;
+  --bs-flag: #c0392b;
+}
+
+/* Numbers set like a nutrition label: condensed, bold, and in columns. */
+.bs-figure {
+  font-family: var(--font-kitchen);
+  font-stretch: 75%;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.005em;
+  line-height: 1;
+}
+
+/* The day label: one heavy rule under the total and thin rules between nutrients, like a food package. */
+.bs-label { border: 1.5px solid var(--foreground); }
+.bs-rule-heavy { border-top: 7px solid var(--foreground); }
+.bs-rule { border-top: 1px solid color-mix(in srgb, var(--foreground) 55%, transparent); }
+
+.bs-fill { transition: width 400ms cubic-bezier(.2, .7, .2, 1), left 400ms cubic-bezier(.2, .7, .2, 1); }
+@media (prefers-reduced-motion: reduce) { .bs-fill { transition: none; } }
 
 /* Main buttons, selected states, and focus rings in Kitchen take the color of the open page. */
 .kitchen-hue {

@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as BodyshopRouteImport } from './routes/bodyshop'
 import { Route as ConnectRouteImport } from './routes/connect'
 import { Route as ConsentRouteImport } from './routes/consent'
 import { Route as DocumentsRouteImport } from './routes/documents'
@@ -34,6 +35,10 @@ import { Route as ApiUploadsRouteImport } from './routes/api/uploads'
 import { Route as ArtifactsSplatRouteImport } from './routes/artifacts/$'
 import { Route as ArtifactsIdRouteImport } from './routes/artifacts/$id'
 import { Route as AssetsSplatRouteImport } from './routes/assets/$'
+import { Route as BodyshopIndexRouteImport } from './routes/bodyshop/index'
+import { Route as BodyshopFoodsRouteImport } from './routes/bodyshop/foods'
+import { Route as BodyshopProgressRouteImport } from './routes/bodyshop/progress'
+import { Route as BodyshopSettingsRouteImport } from './routes/bodyshop/settings'
 import { Route as DropSplatRouteImport } from './routes/drop/$'
 import { Route as FeedbackIndexRouteImport } from './routes/feedback/index'
 import { Route as FeedbackConfirmationRouteImport } from './routes/feedback/confirmation'
@@ -48,6 +53,7 @@ import { Route as PublisherQrRouteImport } from './routes/publisher/qr'
 import { Route as PublisherReceiveRouteImport } from './routes/publisher/receive'
 import { Route as ShareIndexRouteImport } from './routes/share/index'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as ApiBodyshopImportRouteImport } from './routes/api/bodyshop/import'
 import { Route as ApiDropSplatRouteImport } from './routes/api/drop/$'
 import { Route as ApiExternalUploadsSplatRouteImport } from './routes/api/external-uploads/$'
 import { Route as ApiMoneyActivityRouteImport } from './routes/api/money/activity'
@@ -74,6 +80,7 @@ import { Route as KitchenKitchenIdIngredientsRouteImport } from './routes/kitche
 import { Route as KitchenKitchenIdShoppingRouteImport } from './routes/kitchen/$kitchenId/shopping'
 import { Route as MarkdownDSlugRouteImport } from './routes/markdown/d/$slug'
 import { Route as ShareDSlugRouteImport } from './routes/share/d/$slug'
+import { Route as ApiBodyshopImportPreviewRouteImport } from './routes/api/bodyshop/import/preview'
 import { Route as ApiMoneyImportsImportIdRouteImport } from './routes/api/money/imports/$importId'
 import { Route as ApiMoneyImportsPreviewRouteImport } from './routes/api/money/imports/preview'
 import { Route as ApiMoneyImportsReimportRouteImport } from './routes/api/money/imports/reimport'
@@ -86,6 +93,11 @@ import { Route as ApiFeedbackFormsFormIdExportRouteImport } from './routes/api/f
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BodyshopRoute = BodyshopRouteImport.update({
+  id: '/bodyshop',
+  path: '/bodyshop',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ConnectRoute = ConnectRouteImport.update({
@@ -208,6 +220,26 @@ const AssetsSplatRoute = AssetsSplatRouteImport.update({
   path: '/assets/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const BodyshopIndexRoute = BodyshopIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => BodyshopRoute,
+} as any)
+const BodyshopFoodsRoute = BodyshopFoodsRouteImport.update({
+  id: '/foods',
+  path: '/foods',
+  getParentRoute: () => BodyshopRoute,
+} as any)
+const BodyshopProgressRoute = BodyshopProgressRouteImport.update({
+  id: '/progress',
+  path: '/progress',
+  getParentRoute: () => BodyshopRoute,
+} as any)
+const BodyshopSettingsRoute = BodyshopSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => BodyshopRoute,
+} as any)
 const DropSplatRoute = DropSplatRouteImport.update({
   id: '/drop/$',
   path: '/drop/$',
@@ -276,6 +308,11 @@ const ShareIndexRoute = ShareIndexRouteImport.update({
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiBodyshopImportRoute = ApiBodyshopImportRouteImport.update({
+  id: '/api/bodyshop/import',
+  path: '/api/bodyshop/import',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiDropSplatRoute = ApiDropSplatRouteImport.update({
@@ -411,6 +448,12 @@ const ShareDSlugRoute = ShareDSlugRouteImport.update({
   path: '/d/$slug',
   getParentRoute: () => ShareRoute,
 } as any)
+const ApiBodyshopImportPreviewRoute =
+  ApiBodyshopImportPreviewRouteImport.update({
+    id: '/preview',
+    path: '/preview',
+    getParentRoute: () => ApiBodyshopImportRoute,
+  } as any)
 const ApiMoneyImportsImportIdRoute = ApiMoneyImportsImportIdRouteImport.update({
   id: '/$importId',
   path: '/$importId',
@@ -458,6 +501,7 @@ const ApiFeedbackFormsFormIdExportRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/bodyshop': typeof BodyshopRouteWithChildren
   '/connect': typeof ConnectRoute
   '/consent': typeof ConsentRoute
   '/documents': typeof DocumentsRoute
@@ -483,6 +527,9 @@ export interface FileRoutesByFullPath {
   '/artifacts/$': typeof ArtifactsSplatRoute
   '/artifacts/$id': typeof ArtifactsIdRoute
   '/assets/$': typeof AssetsSplatRoute
+  '/bodyshop/foods': typeof BodyshopFoodsRoute
+  '/bodyshop/progress': typeof BodyshopProgressRoute
+  '/bodyshop/settings': typeof BodyshopSettingsRoute
   '/drop/$': typeof DropSplatRoute
   '/feedback/confirmation': typeof FeedbackConfirmationRoute
   '/files/$id': typeof FilesIdRouteWithChildren
@@ -490,12 +537,14 @@ export interface FileRoutesByFullPath {
   '/publisher/artifacts': typeof PublisherArtifactsRoute
   '/publisher/qr': typeof PublisherQrRoute
   '/publisher/receive': typeof PublisherReceiveRoute
+  '/bodyshop/': typeof BodyshopIndexRoute
   '/feedback/': typeof FeedbackIndexRoute
   '/kitchen/': typeof KitchenIndexRoute
   '/markdown/': typeof MarkdownIndexRoute
   '/publisher/': typeof PublisherIndexRoute
   '/share/': typeof ShareIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/bodyshop/import': typeof ApiBodyshopImportRouteWithChildren
   '/api/drop/$': typeof ApiDropSplatRoute
   '/api/external-uploads/$': typeof ApiExternalUploadsSplatRoute
   '/api/money/activity': typeof ApiMoneyActivityRoute
@@ -522,6 +571,7 @@ export interface FileRoutesByFullPath {
   '/share/d/$slug': typeof ShareDSlugRoute
   '/feedback/forms/': typeof FeedbackFormsIndexRoute
   '/kitchen/$kitchenId/': typeof KitchenKitchenIdIndexRoute
+  '/api/bodyshop/import/preview': typeof ApiBodyshopImportPreviewRoute
   '/api/money/imports/$importId': typeof ApiMoneyImportsImportIdRoute
   '/api/money/imports/preview': typeof ApiMoneyImportsPreviewRoute
   '/api/money/imports/reimport': typeof ApiMoneyImportsReimportRoute
@@ -552,6 +602,9 @@ export interface FileRoutesByTo {
   '/artifacts/$': typeof ArtifactsSplatRoute
   '/artifacts/$id': typeof ArtifactsIdRoute
   '/assets/$': typeof AssetsSplatRoute
+  '/bodyshop/foods': typeof BodyshopFoodsRoute
+  '/bodyshop/progress': typeof BodyshopProgressRoute
+  '/bodyshop/settings': typeof BodyshopSettingsRoute
   '/drop/$': typeof DropSplatRoute
   '/feedback/confirmation': typeof FeedbackConfirmationRoute
   '/files/$id': typeof FilesIdRouteWithChildren
@@ -559,12 +612,14 @@ export interface FileRoutesByTo {
   '/publisher/artifacts': typeof PublisherArtifactsRoute
   '/publisher/qr': typeof PublisherQrRoute
   '/publisher/receive': typeof PublisherReceiveRoute
+  '/bodyshop': typeof BodyshopIndexRoute
   '/feedback': typeof FeedbackIndexRoute
   '/kitchen': typeof KitchenIndexRoute
   '/markdown': typeof MarkdownIndexRoute
   '/publisher': typeof PublisherIndexRoute
   '/share': typeof ShareIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/bodyshop/import': typeof ApiBodyshopImportRouteWithChildren
   '/api/drop/$': typeof ApiDropSplatRoute
   '/api/external-uploads/$': typeof ApiExternalUploadsSplatRoute
   '/api/money/activity': typeof ApiMoneyActivityRoute
@@ -591,6 +646,7 @@ export interface FileRoutesByTo {
   '/share/d/$slug': typeof ShareDSlugRoute
   '/feedback/forms': typeof FeedbackFormsIndexRoute
   '/kitchen/$kitchenId': typeof KitchenKitchenIdIndexRoute
+  '/api/bodyshop/import/preview': typeof ApiBodyshopImportPreviewRoute
   '/api/money/imports/$importId': typeof ApiMoneyImportsImportIdRoute
   '/api/money/imports/preview': typeof ApiMoneyImportsPreviewRoute
   '/api/money/imports/reimport': typeof ApiMoneyImportsReimportRoute
@@ -603,6 +659,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/bodyshop': typeof BodyshopRouteWithChildren
   '/connect': typeof ConnectRoute
   '/consent': typeof ConsentRoute
   '/documents': typeof DocumentsRoute
@@ -628,6 +685,9 @@ export interface FileRoutesById {
   '/artifacts/$': typeof ArtifactsSplatRoute
   '/artifacts/$id': typeof ArtifactsIdRoute
   '/assets/$': typeof AssetsSplatRoute
+  '/bodyshop/foods': typeof BodyshopFoodsRoute
+  '/bodyshop/progress': typeof BodyshopProgressRoute
+  '/bodyshop/settings': typeof BodyshopSettingsRoute
   '/drop/$': typeof DropSplatRoute
   '/feedback/confirmation': typeof FeedbackConfirmationRoute
   '/files/$id': typeof FilesIdRouteWithChildren
@@ -635,12 +695,14 @@ export interface FileRoutesById {
   '/publisher/artifacts': typeof PublisherArtifactsRoute
   '/publisher/qr': typeof PublisherQrRoute
   '/publisher/receive': typeof PublisherReceiveRoute
+  '/bodyshop/': typeof BodyshopIndexRoute
   '/feedback/': typeof FeedbackIndexRoute
   '/kitchen/': typeof KitchenIndexRoute
   '/markdown/': typeof MarkdownIndexRoute
   '/publisher/': typeof PublisherIndexRoute
   '/share/': typeof ShareIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/bodyshop/import': typeof ApiBodyshopImportRouteWithChildren
   '/api/drop/$': typeof ApiDropSplatRoute
   '/api/external-uploads/$': typeof ApiExternalUploadsSplatRoute
   '/api/money/activity': typeof ApiMoneyActivityRoute
@@ -667,6 +729,7 @@ export interface FileRoutesById {
   '/share/d/$slug': typeof ShareDSlugRoute
   '/feedback/forms/': typeof FeedbackFormsIndexRoute
   '/kitchen/$kitchenId/': typeof KitchenKitchenIdIndexRoute
+  '/api/bodyshop/import/preview': typeof ApiBodyshopImportPreviewRoute
   '/api/money/imports/$importId': typeof ApiMoneyImportsImportIdRoute
   '/api/money/imports/preview': typeof ApiMoneyImportsPreviewRoute
   '/api/money/imports/reimport': typeof ApiMoneyImportsReimportRoute
@@ -680,6 +743,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/bodyshop'
     | '/connect'
     | '/consent'
     | '/documents'
@@ -705,6 +769,9 @@ export interface FileRouteTypes {
     | '/artifacts/$'
     | '/artifacts/$id'
     | '/assets/$'
+    | '/bodyshop/foods'
+    | '/bodyshop/progress'
+    | '/bodyshop/settings'
     | '/drop/$'
     | '/feedback/confirmation'
     | '/files/$id'
@@ -712,12 +779,14 @@ export interface FileRouteTypes {
     | '/publisher/artifacts'
     | '/publisher/qr'
     | '/publisher/receive'
+    | '/bodyshop/'
     | '/feedback/'
     | '/kitchen/'
     | '/markdown/'
     | '/publisher/'
     | '/share/'
     | '/api/auth/$'
+    | '/api/bodyshop/import'
     | '/api/drop/$'
     | '/api/external-uploads/$'
     | '/api/money/activity'
@@ -744,6 +813,7 @@ export interface FileRouteTypes {
     | '/share/d/$slug'
     | '/feedback/forms/'
     | '/kitchen/$kitchenId/'
+    | '/api/bodyshop/import/preview'
     | '/api/money/imports/$importId'
     | '/api/money/imports/preview'
     | '/api/money/imports/reimport'
@@ -774,6 +844,9 @@ export interface FileRouteTypes {
     | '/artifacts/$'
     | '/artifacts/$id'
     | '/assets/$'
+    | '/bodyshop/foods'
+    | '/bodyshop/progress'
+    | '/bodyshop/settings'
     | '/drop/$'
     | '/feedback/confirmation'
     | '/files/$id'
@@ -781,12 +854,14 @@ export interface FileRouteTypes {
     | '/publisher/artifacts'
     | '/publisher/qr'
     | '/publisher/receive'
+    | '/bodyshop'
     | '/feedback'
     | '/kitchen'
     | '/markdown'
     | '/publisher'
     | '/share'
     | '/api/auth/$'
+    | '/api/bodyshop/import'
     | '/api/drop/$'
     | '/api/external-uploads/$'
     | '/api/money/activity'
@@ -813,6 +888,7 @@ export interface FileRouteTypes {
     | '/share/d/$slug'
     | '/feedback/forms'
     | '/kitchen/$kitchenId'
+    | '/api/bodyshop/import/preview'
     | '/api/money/imports/$importId'
     | '/api/money/imports/preview'
     | '/api/money/imports/reimport'
@@ -824,6 +900,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/bodyshop'
     | '/connect'
     | '/consent'
     | '/documents'
@@ -849,6 +926,9 @@ export interface FileRouteTypes {
     | '/artifacts/$'
     | '/artifacts/$id'
     | '/assets/$'
+    | '/bodyshop/foods'
+    | '/bodyshop/progress'
+    | '/bodyshop/settings'
     | '/drop/$'
     | '/feedback/confirmation'
     | '/files/$id'
@@ -856,12 +936,14 @@ export interface FileRouteTypes {
     | '/publisher/artifacts'
     | '/publisher/qr'
     | '/publisher/receive'
+    | '/bodyshop/'
     | '/feedback/'
     | '/kitchen/'
     | '/markdown/'
     | '/publisher/'
     | '/share/'
     | '/api/auth/$'
+    | '/api/bodyshop/import'
     | '/api/drop/$'
     | '/api/external-uploads/$'
     | '/api/money/activity'
@@ -888,6 +970,7 @@ export interface FileRouteTypes {
     | '/share/d/$slug'
     | '/feedback/forms/'
     | '/kitchen/$kitchenId/'
+    | '/api/bodyshop/import/preview'
     | '/api/money/imports/$importId'
     | '/api/money/imports/preview'
     | '/api/money/imports/reimport'
@@ -900,6 +983,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  BodyshopRoute: typeof BodyshopRouteWithChildren
   ConnectRoute: typeof ConnectRoute
   ConsentRoute: typeof ConsentRoute
   DocumentsRoute: typeof DocumentsRoute
@@ -927,6 +1011,7 @@ export interface RootRouteChildren {
   DropSplatRoute: typeof DropSplatRoute
   FilesIdRoute: typeof FilesIdRouteWithChildren
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiBodyshopImportRoute: typeof ApiBodyshopImportRouteWithChildren
   ApiDropSplatRoute: typeof ApiDropSplatRoute
   ApiMoneyActivityRoute: typeof ApiMoneyActivityRoute
   ApiMoneyBalancesRoute: typeof ApiMoneyBalancesRoute
@@ -949,6 +1034,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/bodyshop': {
+      id: '/bodyshop'
+      path: '/bodyshop'
+      fullPath: '/bodyshop'
+      preLoaderRoute: typeof BodyshopRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/connect': {
@@ -1119,6 +1211,34 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AssetsSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/bodyshop/': {
+      id: '/bodyshop/'
+      path: '/'
+      fullPath: '/bodyshop/'
+      preLoaderRoute: typeof BodyshopIndexRouteImport
+      parentRoute: typeof BodyshopRoute
+    }
+    '/bodyshop/foods': {
+      id: '/bodyshop/foods'
+      path: '/foods'
+      fullPath: '/bodyshop/foods'
+      preLoaderRoute: typeof BodyshopFoodsRouteImport
+      parentRoute: typeof BodyshopRoute
+    }
+    '/bodyshop/progress': {
+      id: '/bodyshop/progress'
+      path: '/progress'
+      fullPath: '/bodyshop/progress'
+      preLoaderRoute: typeof BodyshopProgressRouteImport
+      parentRoute: typeof BodyshopRoute
+    }
+    '/bodyshop/settings': {
+      id: '/bodyshop/settings'
+      path: '/settings'
+      fullPath: '/bodyshop/settings'
+      preLoaderRoute: typeof BodyshopSettingsRouteImport
+      parentRoute: typeof BodyshopRoute
+    }
     '/drop/$': {
       id: '/drop/$'
       path: '/drop/$'
@@ -1215,6 +1335,13 @@ declare module '@tanstack/react-router' {
       path: '/api/auth/$'
       fullPath: '/api/auth/$'
       preLoaderRoute: typeof ApiAuthSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/bodyshop/import': {
+      id: '/api/bodyshop/import'
+      path: '/api/bodyshop/import'
+      fullPath: '/api/bodyshop/import'
+      preLoaderRoute: typeof ApiBodyshopImportRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/drop/$': {
@@ -1399,6 +1526,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShareDSlugRouteImport
       parentRoute: typeof ShareRoute
     }
+    '/api/bodyshop/import/preview': {
+      id: '/api/bodyshop/import/preview'
+      path: '/preview'
+      fullPath: '/api/bodyshop/import/preview'
+      preLoaderRoute: typeof ApiBodyshopImportPreviewRouteImport
+      parentRoute: typeof ApiBodyshopImportRoute
+    }
     '/api/money/imports/$importId': {
       id: '/api/money/imports/$importId'
       path: '/$importId'
@@ -1457,6 +1591,24 @@ declare module '@tanstack/react-router' {
     }
   }
 }
+
+interface BodyshopRouteChildren {
+  BodyshopFoodsRoute: typeof BodyshopFoodsRoute
+  BodyshopProgressRoute: typeof BodyshopProgressRoute
+  BodyshopSettingsRoute: typeof BodyshopSettingsRoute
+  BodyshopIndexRoute: typeof BodyshopIndexRoute
+}
+
+const BodyshopRouteChildren: BodyshopRouteChildren = {
+  BodyshopFoodsRoute: BodyshopFoodsRoute,
+  BodyshopProgressRoute: BodyshopProgressRoute,
+  BodyshopSettingsRoute: BodyshopSettingsRoute,
+  BodyshopIndexRoute: BodyshopIndexRoute,
+}
+
+const BodyshopRouteWithChildren = BodyshopRoute._addFileChildren(
+  BodyshopRouteChildren,
+)
 
 interface FeedbackRouteChildren {
   FeedbackConfirmationRoute: typeof FeedbackConfirmationRoute
@@ -1619,6 +1771,17 @@ const FilesIdRouteChildren: FilesIdRouteChildren = {
 const FilesIdRouteWithChildren =
   FilesIdRoute._addFileChildren(FilesIdRouteChildren)
 
+interface ApiBodyshopImportRouteChildren {
+  ApiBodyshopImportPreviewRoute: typeof ApiBodyshopImportPreviewRoute
+}
+
+const ApiBodyshopImportRouteChildren: ApiBodyshopImportRouteChildren = {
+  ApiBodyshopImportPreviewRoute: ApiBodyshopImportPreviewRoute,
+}
+
+const ApiBodyshopImportRouteWithChildren =
+  ApiBodyshopImportRoute._addFileChildren(ApiBodyshopImportRouteChildren)
+
 interface ApiMoneyImportsRouteChildren {
   ApiMoneyImportsImportIdRoute: typeof ApiMoneyImportsImportIdRoute
   ApiMoneyImportsPreviewRoute: typeof ApiMoneyImportsPreviewRoute
@@ -1648,6 +1811,7 @@ const ApiShareDocumentsRouteWithChildren =
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  BodyshopRoute: BodyshopRouteWithChildren,
   ConnectRoute: ConnectRoute,
   ConsentRoute: ConsentRoute,
   DocumentsRoute: DocumentsRoute,
@@ -1675,6 +1839,7 @@ const rootRouteChildren: RootRouteChildren = {
   DropSplatRoute: DropSplatRoute,
   FilesIdRoute: FilesIdRouteWithChildren,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiBodyshopImportRoute: ApiBodyshopImportRouteWithChildren,
   ApiDropSplatRoute: ApiDropSplatRoute,
   ApiMoneyActivityRoute: ApiMoneyActivityRoute,
   ApiMoneyBalancesRoute: ApiMoneyBalancesRoute,

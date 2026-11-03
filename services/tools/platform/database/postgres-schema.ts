@@ -767,3 +767,38 @@ export const uploadSessions = artifactsSchema.table("upload_sessions", {
   index("upload_sessions_target_idx").on(table.targetId).where(sql`${table.targetId} is not null`),
   index("upload_sessions_cleanup_idx").on(table.expiresAt).where(sql`${table.cleanedAt} is null`),
 ]);
+
+/**
+ * Bodyshop keeps one person's food, weight, and check-ins. Only the owner, kind, day, and bookkeeping
+ * columns are readable. Everything a person logged sits in `payload`, sealed with BODYSHOP_ENCRYPTION_KEY.
+ * Each change adds a revision; `current` marks the latest one of each record.
+ */
+export const bodyshopRecords = toolsSchema.table("bodyshop_records", {
+  id: uuid("id").primaryKey(),
+  ownerSubject: text("owner_subject").notNull(),
+  kind: text("kind").notNull(),
+  recordId: uuid("record_id").notNull(),
+  revision: integer("revision").notNull(),
+  current: boolean("current").notNull(),
+  removed: boolean("removed").notNull().default(false),
+  day: date("day", { mode: "string" }),
+  payload: text("payload").notNull(),
+  importId: uuid("import_id"),
+  source: text("source"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+}, (table) => [
+  check("bodyshop_records_kind_check", sql`${table.kind} in ('food', 'entry', 'template', 'weight', 'checkin', 'allocation', 'setting')`),
+  check("bodyshop_records_revision_check", sql`${table.revision} > 0`),
+  uniqueIndex("bodyshop_records_revision_idx").on(table.ownerSubject, table.recordId, table.revision),
+  uniqueIndex("bodyshop_records_one_current_idx").on(table.ownerSubject, table.recordId).where(sql`${table.current}`),
+  index("bodyshop_records_current_idx").on(table.ownerSubject, table.kind, table.current, table.day),
+]);
+
+/** One committed workbook import. The digest makes a repeated import of the same file a replay. */
+export const bodyshopImports = toolsSchema.table("bodyshop_imports", {
+  id: uuid("id").primaryKey(),
+  ownerSubject: text("owner_subject").notNull(),
+  digest: text("digest").notNull(),
+  payload: text("payload").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+}, (table) => [uniqueIndex("bodyshop_imports_digest_idx").on(table.ownerSubject, table.digest)]);

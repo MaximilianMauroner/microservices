@@ -42,7 +42,7 @@ configuration with secrets removed. Use the exact private environment and key
 override in the root README's Local stack section, then add the run's port and
 origin override to the same explicit Compose invocation. The README example
 uses the fixed ports and does not provide the required audit remapping. Compose
-omits `FEEDBACK_ENCRYPTION_KEY`; configuration rejects startup without it.
+omits `FEEDBACK_ENCRYPTION_KEY` and `BODYSHOP_ENCRYPTION_KEY`; configuration rejects startup without them.
 Keep the key only in the owned private environment file outside the checkout
 and retain it until test response cleanup ends. Use `config --quiet` for the
 unredacted setup; never save a resolved key to evidence.

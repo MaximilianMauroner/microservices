@@ -1,4 +1,5 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
+import { parseEncryptionKey } from "../../platform/security/sealed.js";
 
 const MARKER = "__feedback_encrypted";
 const VERSION = 1;
@@ -11,11 +12,7 @@ type EncryptedValue = Readonly<{
 }>;
 
 export function parseFeedbackEncryptionKey(value: string | undefined): Buffer {
-  if (!value) throw new Error("Missing required environment variable: FEEDBACK_ENCRYPTION_KEY");
-  if (!/^[A-Za-z0-9_-]{43}$/.test(value)) throw new Error("FEEDBACK_ENCRYPTION_KEY must be a base64url-encoded 32-byte key");
-  const key = Buffer.from(value, "base64url");
-  if (key.length !== 32 || key.toString("base64url") !== value) throw new Error("FEEDBACK_ENCRYPTION_KEY must be a base64url-encoded 32-byte key");
-  return key;
+  return parseEncryptionKey("FEEDBACK_ENCRYPTION_KEY", value);
 }
 
 export function isEncryptedFeedbackValue(value: unknown): value is EncryptedValue {
