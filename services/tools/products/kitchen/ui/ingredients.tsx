@@ -10,7 +10,7 @@ import { byGroup, type Frame, GROUP_LIST, GroupDot, groupColor, GroupLabel, grou
 import { type KitchenLanguage, useLanguage, useText } from "./language.js";
 
 /** `usedIn` lists, for each ingredient id, the recipes that use it. */
-type IngredientsData = Frame & { ingredients: readonly Ingredient[]; usedIn: Readonly<Record<string, readonly { id: string; name: string }[]>> };
+export type IngredientsData = Frame & { ingredients: readonly Ingredient[]; usedIn: Readonly<Record<string, readonly { id: string; name: string }[]>> };
 
 const NUTRIENTS = [["kcal", "kcal"], ["protein", "g"], ["carbs", "g"], ["fat", "g"]] as const;
 
@@ -182,7 +182,8 @@ export function KitchenIngredientsPage(data: IngredientsData) {
   );
 }
 
-function IngredientSheet({ ingredient, onClose, data }: { ingredient: Ingredient | "new" | undefined; onClose: () => void; data: IngredientsData }) {
+/** Shows and edits one ingredient: unit, groups, nutrition, notes, and the recipes that use it. */
+export function IngredientSheet({ ingredient, onClose, data }: { ingredient: Ingredient | "new" | undefined; onClose: () => void; data: IngredientsData }) {
   const language = useLanguage();
   const text = useText(TEXT);
   const { run, pending } = useKitchenAction(data.kitchen.id);

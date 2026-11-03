@@ -4,8 +4,9 @@ import { Button } from "../../../platform/ui/components/ui/button.js";
 import { Input } from "../../../platform/ui/components/ui/input.js";
 import { Label } from "../../../platform/ui/components/ui/label.js";
 import { cn } from "../../../platform/ui/lib/utils.js";
-import { addDays, formatAmount, type Ingredient, type Leftover, type StockItem, unitName } from "../domain.js";
-import { byGroup, type Frame, GROUP_LIST, GroupDot, groupColor, GroupLabel, groupLabel, groupListStyle, KitchenEmpty, KitchenPage, KitchenSheet, SearchField, Stepper, tint, useByLabel, useKitchenAction } from "./kit.js";
+import { addDays, formatAmount, type Ingredient, ingredientGroups, type Leftover, type StockItem, unitName } from "../domain.js";
+import { byGroup, GROUP_LIST, GroupDot, groupColor, GroupLabel, groupLabel, groupListStyle, ink, KitchenEmpty, KitchenPage, KitchenSheet, SearchField, Stepper, tint, useByLabel, useKitchenAction } from "./kit.js";
+import { IngredientSheet, type IngredientsData } from "./ingredients.js";
 import { type KitchenLanguage, useLanguage, useText } from "./language.js";
 
 const en = {
@@ -25,10 +26,12 @@ const en = {
   nothingInStock: "Nothing in stock",
   checkItems: "Check items off the shopping list, or add what is already in your cupboards.",
   amountOf: (name: string) => `Amount of ${name}`,
+  showIngredient: (name: string) => `Show ${name}`,
   usedUpAria: (name: string) => `${name} is used up`,
   usedUpToast: (name: string) => `${name} used up`,
   updated: (name: string) => `${name} updated`,
   addStockTitle: "Add to stock",
+  addToGroup: (group: string) => `Add to ${group}`,
   addStockDescription: "The amount adds to what is already at home.",
   findIngredient: "Find an ingredient",
   added: (amount: string, name: string) => `${amount} ${name} added`,
@@ -62,10 +65,12 @@ const TEXT: Record<KitchenLanguage, typeof en> = {
     nothingInStock: "Nichts im Vorrat",
     checkItems: "Hake Artikel auf der Einkaufsliste ab oder füge hinzu, was schon in deinen Schränken liegt.",
     amountOf: (name: string) => `Menge von ${name}`,
+    showIngredient: (name: string) => `${name} anzeigen`,
     usedUpAria: (name: string) => `${name} ist aufgebraucht`,
     usedUpToast: (name: string) => `${name} aufgebraucht`,
     updated: (name: string) => `${name} aktualisiert`,
     addStockTitle: "Zum Vorrat hinzufügen",
+    addToGroup: (group: string) => `Zu ${group} hinzufügen`,
     addStockDescription: "Die Menge kommt zu dem dazu, was schon zu Hause ist.",
     findIngredient: "Zutat suchen",
     added: (amount: string, name: string) => `${amount} ${name} hinzugefügt`,
@@ -81,7 +86,7 @@ const TEXT: Record<KitchenLanguage, typeof en> = {
   }
 };
 
-type PantryData = Frame & { stock: readonly StockItem[]; leftovers: readonly Leftover[]; ingredients: readonly Ingredient[] };
+type PantryData = IngredientsData & { stock: readonly StockItem[]; leftovers: readonly Leftover[] };
 
 export function KitchenPantryPage(data: PantryData) {
   const { kitchen, stock, leftovers, today } = data;
@@ -89,7 +94,11 @@ export function KitchenPantryPage(data: PantryData) {
   const text = useText(TEXT);
   const { run, pending } = useKitchenAction(kitchen.id);
   const [adding, setAdding] = useState<"stock" | "leftover" | undefined>();
-  const groups = byGroup(kitchen.groups, stock, (item) => item.section);
+  const [addingTo, setAddingTo] = useState<string>();
+  const [viewing, setViewing] = useState<Ingredient | undefined>();
+  const sections = [...new Set([...stock.map((item) => item.section), ...data.ingredients.flatMap(ingredientGroups)])];
+  const shelves = byGroup(kitchen.groups, sections, (section) => section).map(([section]) => [section, stock.filter((item) => item.section === section)] as const);
+  const addStock = (group?: string) => { setAddingTo(group); setAdding("stock"); };
 
   return (
     <KitchenPage
@@ -98,7 +107,7 @@ export function KitchenPantryPage(data: PantryData) {
       actions={(
         <>
           <Button variant="outline" onClick={() => setAdding("leftover")}><UtensilsIcon aria-hidden /> {text.addLeftover}</Button>
-          <Button onClick={() => setAdding("stock")}><PlusIcon aria-hidden /> {text.addToStock}</Button>
+          <Button onClick={() => addStock()}><PlusIcon aria-hidden /> {text.addToStock}</Button>
         </>
       )}
     >
@@ -136,28 +145,39 @@ export function KitchenPantryPage(data: PantryData) {
         </section>
         <section aria-labelledby="stock-title" className="grid content-start gap-4">
           <h2 id="stock-title" className="sr-only">{text.stock}</h2>
-          {groups.map(([section, items]) => (
-            <div key={section} className="min-w-0">
-              <h3 className="mb-2 font-kitchen font-semibold tracking-tight text-lg leading-tight">
-                <GroupLabel color={groupColor(kitchen.groups, section)} count={items.length}>{groupLabel(section, language)}</GroupLabel>
-              </h3>
-              <ul className={GROUP_LIST} style={groupListStyle(groupColor(kitchen.groups, section))}>
-                {items.map((item) => <StockRow key={item.ingredientId} item={item} run={run} pending={pending} />)}
-              </ul>
-            </div>
-          ))}
           {!stock.length ? (
             <KitchenEmpty title={text.nothingInStock} body={text.checkItems} />
           ) : null}
+          {shelves.map(([section, items]) => {
+            const color = groupColor(kitchen.groups, section);
+            return (
+              <div key={section} className="min-w-0">
+                <div className={cn("flex items-center gap-1", items.length && "mb-2")}>
+                  <h3 className="min-w-0 font-kitchen font-semibold tracking-tight text-lg leading-tight">
+                    <GroupLabel color={color} count={items.length}>{groupLabel(section, language)}</GroupLabel>
+                  </h3>
+                  <Button size="icon-sm" variant="ghost" className="size-11 md:size-8" style={{ color: ink(color) }} aria-label={text.addToGroup(groupLabel(section, language))} onClick={() => addStock(section)}>
+                    <PlusIcon />
+                  </Button>
+                </div>
+                {items.length ? (
+                  <ul className={GROUP_LIST} style={groupListStyle(color)}>
+                    {items.map((item) => <StockRow key={item.ingredientId} item={item} run={run} pending={pending} onOpen={() => setViewing(data.ingredients.find((one) => one.id === item.ingredientId))} />)}
+                  </ul>
+                ) : null}
+              </div>
+            );
+          })}
         </section>
       </div>
-      <AddStockSheet open={adding === "stock"} onClose={() => setAdding(undefined)} data={data} />
+      <AddStockSheet open={adding === "stock"} group={addingTo} onClose={() => setAdding(undefined)} data={data} />
       <AddLeftoverSheet open={adding === "leftover"} onClose={() => setAdding(undefined)} data={data} />
+      <IngredientSheet key={viewing?.id ?? "none"} ingredient={viewing} onClose={() => setViewing(undefined)} data={data} />
     </KitchenPage>
   );
 }
 
-function StockRow({ item, run, pending }: { item: StockItem; run: ReturnType<typeof useKitchenAction>["run"]; pending: boolean }) {
+function StockRow({ item, run, pending, onOpen }: { item: StockItem; run: ReturnType<typeof useKitchenAction>["run"]; pending: boolean; onOpen: () => void }) {
   const language = useLanguage();
   const text = useText(TEXT);
   const [value, setValue] = useState(String(item.amount));
@@ -170,7 +190,8 @@ function StockRow({ item, run, pending }: { item: StockItem; run: ReturnType<typ
   };
   return (
     <li className="flex min-h-14 items-center gap-3 px-3 py-2 sm:px-4">
-      <span className="min-w-0 flex-1 font-medium break-words">{item.ingredient}</span>
+      <button type="button" onClick={onOpen} aria-label={text.showIngredient(item.ingredient)}
+        className="min-w-0 flex-1 self-stretch text-left font-medium break-words underline-offset-4 hover:underline focus-visible:rounded-md focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none">{item.ingredient}</button>
       <label className="flex items-center gap-1.5">
         <span className="sr-only">{text.amountOf(item.ingredient)}</span>
         <Input className="h-9 w-20 text-right tabular-nums" inputMode="decimal" value={value} onChange={(event) => setValue(event.target.value)}
@@ -185,7 +206,8 @@ function StockRow({ item, run, pending }: { item: StockItem; run: ReturnType<typ
   );
 }
 
-function AddStockSheet({ open, onClose, data }: { open: boolean; onClose: () => void; data: PantryData }) {
+/** Adds an amount to the stock. With a group, it offers only that group's ingredients and shows what is already at home. */
+function AddStockSheet({ open, group, onClose, data }: { open: boolean; group?: string; onClose: () => void; data: PantryData }) {
   const { run, pending } = useKitchenAction(data.kitchen.id);
   const language = useLanguage();
   const text = useText(TEXT);
@@ -193,11 +215,12 @@ function AddStockSheet({ open, onClose, data }: { open: boolean; onClose: () => 
   const [amount, setAmount] = useState("");
   const [query, setQuery] = useState("");
   const selected = data.ingredients.find((one) => one.id === ingredientId);
-  const matches = byGroup(data.kitchen.groups, data.ingredients.filter((one) => one.name.toLowerCase().includes(query.trim().toLowerCase())), (one) => one.section)
+  const home = new Map(data.stock.map((item) => [item.ingredientId, item.amount]));
+  const matches = byGroup(data.kitchen.groups, data.ingredients.filter((one) => (!group || ingredientGroups(one).includes(group)) && one.name.toLowerCase().includes(query.trim().toLowerCase())), (one) => one.section)
     .flatMap(([, items]) => items).slice(0, 60);
   const close = () => { onClose(); setIngredientId(""); setAmount(""); setQuery(""); };
   return (
-    <KitchenSheet open={open} onOpenChange={(next) => { if (!next) close(); }} title={text.addStockTitle} description={text.addStockDescription}
+    <KitchenSheet open={open} onOpenChange={(next) => { if (!next) close(); }} title={group ? text.addToGroup(groupLabel(group, language)) : text.addStockTitle} description={text.addStockDescription}
       footer={<Button size="lg" className="px-5" disabled={!selected || !(Number(amount.replace(",", ".")) > 0) || pending}
         onClick={async () => { if (selected && await run({ type: "stock.add", ingredientId: selected.id, amount: Number(amount.replace(",", ".")) }, { title: text.added(formatAmount(Number(amount.replace(",", ".")), selected.unit, language), selected.name) })) close(); }}>{text.addToStock}</Button>}>
       {data.ingredients.length ? (
@@ -209,6 +232,7 @@ function AddStockSheet({ open, onClose, data }: { open: boolean; onClose: () => 
                 className="inline-flex h-9 items-center gap-1.5 rounded-full border border-control-border bg-control px-3 text-sm aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground">
                 <GroupDot groups={data.kitchen.groups} group={one.section} className="size-2" />
                 {one.name}
+                {home.get(one.id) ? <span className="text-xs tabular-nums opacity-70">{formatAmount(home.get(one.id) ?? 0, one.unit, language)}</span> : null}
               </button>
             ))}
           </div>

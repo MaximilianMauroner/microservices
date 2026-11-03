@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { convertNutrition, formatAmount, nutritionPerServing, parseUnit } from "../../../products/kitchen/domain.js";
+import { convertNutrition, formatAmount, missingAtHome, nutritionPerServing, parseUnit } from "../../../products/kitchen/domain.js";
 
 describe("Kitchen units", () => {
   it("names cans like people say them in English and German", () => {
@@ -21,5 +21,12 @@ describe("Kitchen units", () => {
   it("accepts can as a unit", () => {
     expect(parseUnit("can")).toBe("can");
     expect(() => parseUnit("tin")).toThrow();
+  });
+
+  it("names the recipe ingredients that are not fully at home", () => {
+    const line = (ingredientId: string, amount: number) => ({ ingredientId, ingredient: ingredientId, unit: "g" as const, amount, note: "" });
+    const curry = { lines: [line("Linsen", 200), line("Reis", 300), line("Spinat", 150)] };
+    expect(missingAtHome(curry, new Map([["Linsen", 500], ["Reis", 100]]))).toEqual(["Reis", "Spinat"]);
+    expect(missingAtHome(curry, new Map([["Linsen", 200], ["Reis", 300], ["Spinat", 150]]))).toEqual([]);
   });
 });

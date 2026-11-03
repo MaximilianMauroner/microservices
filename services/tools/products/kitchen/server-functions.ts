@@ -2,7 +2,7 @@ import { createServerFn, getGlobalStartContext } from "@tanstack/react-start";
 import { getCookie, getRequestHeader } from "@tanstack/react-start/server";
 import { requireProductAccess } from "../../platform/auth/middleware.js";
 import { applyKitchenAction, applyKitchenAdminAction, kitchenAction, kitchenAdminAction } from "./actions.js";
-import { type Ingredient, ingredientGroups, type Kitchen, nutritionPerServing, type Recipe, today, UNSORTED_SECTION, weekStart } from "./domain.js";
+import { type Ingredient, ingredientGroups, type Kitchen, missingAtHome, nutritionPerServing, type Recipe, today, UNSORTED_SECTION, weekStart } from "./domain.js";
 import type { KitchenScope } from "./repository.js";
 import { LANGUAGE_COOKIE, pickLanguage } from "./ui/language.js";
 
@@ -16,8 +16,8 @@ function store() {
   return runtime.kitchen;
 }
 
-/** `sections` holds the group of each ingredient line, for the balance stripe. */
-export type RecipeSummary = Readonly<{ id: string; name: string; servings: number; minutes: number | null; kcal: number | null; protein: number | null; ingredientCount: number; sections: readonly string[] }>;
+/** `sections` holds the groups of each ingredient line, for the food-group ring. */
+export type RecipeSummary = Readonly<{ id: string; name: string; servings: number; minutes: number | null; kcal: number | null; protein: number | null; ingredientCount: number; ingredientIds: readonly string[]; sections: readonly string[] }>;
 
 export type KitchenFrame = Readonly<{ kitchen: Kitchen; kitchens: readonly Kitchen[]; isAdmin: boolean; today: string }>;
 
@@ -33,9 +33,16 @@ function summaries(recipes: readonly Recipe[], ingredients: readonly Ingredient[
     const nutrition = nutritionPerServing(recipe, byId);
     return {
       id: recipe.id, name: recipe.name, servings: recipe.servings, minutes: recipe.minutes, kcal: nutrition.kcal, protein: nutrition.protein,
-      ingredientCount: recipe.lines.length, sections: recipe.lines.flatMap((line) => { const one = byId.get(line.ingredientId); return one ? ingredientGroups(one) : [UNSORTED_SECTION]; })
+      ingredientCount: recipe.lines.length, ingredientIds: recipe.lines.map((line) => line.ingredientId), sections: recipe.lines.flatMap((line) => { const one = byId.get(line.ingredientId); return one ? ingredientGroups(one) : [UNSORTED_SECTION]; })
     };
   });
+}
+
+/** For each ingredient id, the recipes that use it. */
+function recipesUsing(recipes: readonly Recipe[]): Record<string, { id: string; name: string }[]> {
+  const usedIn: Record<string, { id: string; name: string }[]> = {};
+  for (const recipe of recipes) for (const line of recipe.lines) (usedIn[line.ingredientId] ??= []).push({ id: recipe.id, name: recipe.name });
+  return usedIn;
 }
 
 const kitchenInput = (input: { kitchenId: string }) => ({ kitchenId: String(input.kitchenId) });
@@ -92,8 +99,11 @@ export const getKitchenRecipes = createServerFn({ method: "GET" })
   .validator(kitchenInput)
   .handler(async ({ data, context }) => {
     const { scope, frame: base } = await frame(context, data.kitchenId);
-    const [recipes, ingredients] = await Promise.all([scope.recipes(), scope.ingredients()]);
-    return { ...base, recipes: summaries(recipes, ingredients) };
+    const [recipes, ingredients, stock] = await Promise.all([scope.recipes(), scope.ingredients(), scope.stock()]);
+    const home = new Map(stock.map((item) => [item.ingredientId, item.amount]));
+    /** For each recipe, the ingredients that are not fully at home. */
+    const missing = Object.fromEntries(recipes.map((recipe) => [recipe.id, missingAtHome(recipe, home)]));
+    return { ...base, recipes: summaries(recipes, ingredients), ingredients, missing };
   });
 
 export const getKitchenRecipe = createServerFn({ method: "GET" })
@@ -110,8 +120,8 @@ export const getKitchenPantry = createServerFn({ method: "GET" })
   .validator(kitchenInput)
   .handler(async ({ data, context }) => {
     const { scope, frame: base } = await frame(context, data.kitchenId);
-    const [stock, leftovers, ingredients] = await Promise.all([scope.stock(), scope.leftovers(), scope.ingredients()]);
-    return { ...base, stock, leftovers, ingredients };
+    const [stock, leftovers, ingredients, recipes] = await Promise.all([scope.stock(), scope.leftovers(), scope.ingredients(), scope.recipes()]);
+    return { ...base, stock, leftovers, ingredients, usedIn: recipesUsing(recipes) };
   });
 
 export const getKitchenIngredients = createServerFn({ method: "GET" })
@@ -120,9 +130,7 @@ export const getKitchenIngredients = createServerFn({ method: "GET" })
   .handler(async ({ data, context }) => {
     const { scope, frame: base } = await frame(context, data.kitchenId);
     const [ingredients, recipes] = await Promise.all([scope.ingredients(), scope.recipes()]);
-    const usedIn: Record<string, { id: string; name: string }[]> = {};
-    for (const recipe of recipes) for (const line of recipe.lines) (usedIn[line.ingredientId] ??= []).push({ id: recipe.id, name: recipe.name });
-    return { ...base, ingredients, usedIn };
+    return { ...base, ingredients, usedIn: recipesUsing(recipes) };
   });
 
 export const runKitchenAction = createServerFn({ method: "POST" })
