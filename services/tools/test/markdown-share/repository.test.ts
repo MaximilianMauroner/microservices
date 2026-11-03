@@ -17,9 +17,9 @@ describe.skipIf(!url)("PostgreSQL document aggregate", () => {
   const tokens: string[] = [];
   async function create(markdown = "abc") {
     const input = { requestId: randomUUID(), filename: "example.md", format: "markdown" as const, markdown };
-    const doc = await repository!.create(input); tokens.push(doc.token); return { doc, input };
+    const doc = await repository!.create(input, "admin-subject"); tokens.push(doc.token); return { doc, input };
   }
-  beforeAll(async () => { await applyMarkdownShareSchema(sql!); });
+  beforeAll(async () => { await applyMarkdownShareSchema(sql!, "admin-subject"); });
   afterAll(async () => {
     if (tokens.length) await sql!`DELETE FROM tools.markdown_documents WHERE token IN ${sql!(tokens)}`;
     await Promise.all([repository!.close(), second!.close(), sql!.end()]);
@@ -27,8 +27,8 @@ describe.skipIf(!url)("PostgreSQL document aggregate", () => {
   it("creates idempotently, rejects changed requests, and survives a repository restart", async () => {
     const { doc, input } = await create();
     expect(doc.token).toMatch(/^[0-9a-f]{64}$/);
-    expect(await second!.create(input)).toEqual(doc);
-    await expect(second!.create({ ...input, markdown: "changed" })).rejects.toMatchObject({ data: { code: "INVALID_EDITOR_PAYLOAD" } });
+    expect(await second!.create(input, "admin-subject")).toEqual(doc);
+    await expect(second!.create({ ...input, markdown: "changed" }, "admin-subject")).rejects.toMatchObject({ data: { code: "INVALID_EDITOR_PAYLOAD" } });
     const restarted = createMarkdownShareRepository(url!);
     try { expect(await restarted.open(doc.token)).toMatchObject({ version: 0, content: { content: [{ content: [{ text: "abc" }] }] } }); }
     finally { await restarted.close(); }

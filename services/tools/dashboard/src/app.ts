@@ -4,10 +4,6 @@ import { fileURLToPath } from "node:url";
 import { suiteChromeStyles } from "#suite-chrome";
 import type { PublicSnapshotDocument } from "#domain";
 import { BucketReadError } from "./bucket.js";
-import {
-  MarkdownAdminUnavailableError,
-  type MarkdownAdminReader
-} from "./markdown-admin.js";
 import type { WebStorage } from "./storage.js";
 import {
   renderPublicPage,
@@ -79,8 +75,6 @@ export class AuthenticationRequiredError extends Error {
 export function createApp(options: {
   storage: WebStorage;
   authenticate: PrincipalAuthenticator;
-  markdownAdmin: MarkdownAdminReader;
-  markdownSharePublicOrigin: string;
   trustedOrigin: string;
   renderer?: PageRenderer;
   logger?: AppLogger;
@@ -98,8 +92,6 @@ export function createApp(options: {
         url,
         options.storage,
         options.authenticate,
-        options.markdownAdmin,
-        options.markdownSharePublicOrigin,
         renderer,
         options.trustedOrigin
       );
@@ -130,8 +122,6 @@ async function route(
   url: URL,
   storage: WebStorage,
   authenticate: PrincipalAuthenticator,
-  markdownAdmin: MarkdownAdminReader,
-  markdownSharePublicOrigin: string,
   renderer: PageRenderer,
   trustedOrigin: string
 ): Promise<Response> {
@@ -168,15 +158,6 @@ async function route(
 
   if (isProtectedPath(url.pathname)) {
     await authenticate(request);
-    if (request.method === "GET" && url.pathname === "/api/ops/documents") {
-      return json(
-        {
-          ...await markdownAdmin.list(url.searchParams.get("cursor") ?? undefined, url.searchParams.has("asOf") ? Number(url.searchParams.get("asOf")) : undefined),
-          publicOrigin: markdownSharePublicOrigin
-        },
-        { headers: { "Cache-Control": "private, no-store" } }
-      );
-    }
     if (request.method === "GET" && url.pathname === "/api/ops/snapshot") {
       return json(await storage.readPrivateSnapshot(), {
         headers: { "Cache-Control": "private, no-store" }
@@ -188,8 +169,7 @@ async function route(
 }
 
 function isProtectedPath(path: string): boolean {
-  return path === "/api/ops/documents" ||
-    path === "/api/ops/snapshot";
+  return path === "/api/ops/snapshot";
 }
 
 function json(body: unknown, init: ResponseInit = {}): Response {
@@ -207,9 +187,6 @@ function errorResponse(error: unknown): Response {
   }
   if (error instanceof BucketReadError) {
     return json({ error: "storage_unavailable" }, { status: 503 });
-  }
-  if (error instanceof MarkdownAdminUnavailableError) {
-    return json({ error: "markdown_admin_unavailable" }, { status: 503 });
   }
   return json({ error: "internal_error" }, { status: 500 });
 }

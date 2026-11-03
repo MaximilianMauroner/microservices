@@ -22,6 +22,7 @@ const member = {
 
 const kitchenMember = { ...member, products: ["kitchen"] };
 const publisherMember = { ...member, products: ["publisher"] };
+const documentsMember = { ...member, products: ["markdown"] };
 
 const resolvePrincipal: PrincipalResolver = async (request) => {
   const cookie = request.headers.get("cookie");
@@ -29,6 +30,7 @@ const resolvePrincipal: PrincipalResolver = async (request) => {
   if (cookie === "session=member") return member;
   if (cookie === "session=kitchen") return kitchenMember;
   if (cookie === "session=publisher") return publisherMember;
+  if (cookie === "session=documents") return documentsMember;
   return undefined;
 };
 
@@ -175,6 +177,46 @@ describe("platform fetch gateway", () => {
     expect((await as("publisher", "/api/uploads", "POST")).status, "a session is not an upload token").toBe(401);
     expect((await request(platform, "/api/uploads", { method: "POST", headers: { Authorization: "Bearer upload-token" } })).status).toBe(200);
     expect(subjects.slice(-2)).toEqual([undefined, undefined]);
+  });
+
+  it("opens Document Share's inventory for a granted member and leaves capability links public", async () => {
+    const subjects: (string | undefined)[] = [];
+    const platform = createPlatformHandler({
+      resolvePrincipal,
+      services: {
+        publisher: mounted(async () => new Response("artifact")),
+        manage: mounted(async (request) => {
+          subjects.push(getAttachedPlatformPrincipal(request)?.subject);
+          return new Response("tools");
+        })
+      },
+      publicOrigin: "https://tools.example.test"
+    });
+    const as = (cookie: string, path: string, init: RequestInit = {}) =>
+      request(platform, path, { ...init, headers: { Cookie: `session=${cookie}`, ...init.headers } });
+    expect((await as("documents", "/documents")).status).toBe(200);
+    expect((await as("kitchen", "/documents")).status).toBe(403);
+    expect((await as("documents", "/api/ops/documents")).status, "the old admin inventory API is not granted").toBe(403);
+    expect((await as("documents", "/api/ops/snapshot")).status).toBe(403);
+    expect((await as("documents", "/money")).status).toBe(403);
+    const page = await as("documents", "/", { headers: { Accept: "text/html" } });
+    expect(page.headers.get("location")).toBe("/documents");
+
+    subjects.splice(0);
+    const capability = "a".repeat(64);
+    const publicRequests = [
+      ["GET", "/share"], ["GET", `/share/d/${capability}`], ["GET", "/markdown"], ["GET", `/markdown/d/${capability}`],
+      ["POST", "/api/share/documents"], ["GET", `/api/share/documents/${capability}`],
+      ["GET", `/api/share/documents/${capability}/updates`], ["POST", `/api/share/documents/${capability}/steps`],
+      ["POST", `/api/share/documents/${capability}/pin`], ["POST", `/api/share/documents/${capability}/checkpoints`],
+      ["GET", `/api/share/documents/${capability}/checkpoints/compare`], ["POST", `/api/share/documents/${capability}/presence`],
+      ["POST", `/api/share/documents/${capability}/leave`]
+    ] as const;
+    for (const [method, path] of publicRequests) {
+      expect((await request(platform, path, { method })).status, `${method} ${path} without a session`).toBe(200);
+      expect((await as("kitchen", path, { method })).status, `${method} ${path} without the grant`).toBe(200);
+    }
+    expect(subjects.every((subject) => subject === undefined), "the gateway attaches no person to capability requests").toBe(true);
   });
 
   it("redirects private document navigations to a validated sign-in return path", async () => {

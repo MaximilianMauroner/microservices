@@ -7,6 +7,11 @@ import { attachPlatformPrincipal, type PlatformPrincipal } from "#security";
 import { assignExistingRowsToAdmin } from "../database/assign-existing-owner.js";
 import { DISPOSABLE_DATABASE_SENTINEL, withVerifiedDisposableDatabase } from "../database/postgres-push-guard.js";
 import { feedbackRepository } from "../feedback/repository.js";
+import { createDocumentChanges } from "../markdown-share/changes.js";
+import { createShareHandler } from "../markdown-share/http.js";
+import { createMarkdownShareRepository } from "../markdown-share/repository.js";
+import { applyMarkdownShareSchema } from "../markdown-share/schema.js";
+import type { PublicDocument } from "../markdown-share/types.js";
 import { createFetchApp } from "../publisher/fetch-app.js";
 import { createMetadataBackedUploadStorage } from "../publisher/postgres-storage.js";
 import { htmlKey, temporaryFileKey, type UploadBodyStorage } from "../publisher/storage.js";
@@ -27,7 +32,7 @@ beforeEach(async () => {
       select sentinel_value value from public.tools_runtime_test_sentinel
       where sentinel_key = ${DISPOSABLE_DATABASE_SENTINEL.key}`)[0]?.value,
   }, async () => {
-    await sql`truncate tools.feedback_forms, tools.feedback_submissions, artifacts.objects, artifacts.operations, artifacts.upload_links, artifacts.upload_sessions cascade`;
+    await sql`truncate tools.feedback_forms, tools.feedback_submissions, artifacts.objects, artifacts.operations, artifacts.upload_links, artifacts.upload_sessions, tools.markdown_documents cascade`;
   });
 });
 
@@ -97,6 +102,69 @@ describe.skipIf(!sql)("Feedback per person", () => {
     const own = await friend.createForm({ language: "de" });
     expect((await friend.listForms()).map((item) => item.id)).toEqual([own.id]);
     expect((await max.listForms()).map((item) => item.id)).toEqual([form.id]);
+  });
+});
+
+describe.skipIf(!sql)("Document Share per person", () => {
+  const origin = "https://tools.example.test";
+  const sessions: Record<string, string> = { "session=max": "admin-subject", "session=friend": "friend-subject" };
+
+  it("lists only the person's own documents, keeps capability links open without a session, and expires every owner's documents", async () => {
+    const repository = createMarkdownShareRepository(databaseUrl!);
+    const changes = createDocumentChanges(databaseUrl!);
+    const share = createShareHandler(repository, changes, origin,
+      async (request) => sessions[request.headers.get("cookie") ?? ""] ?? "admin-subject");
+    const call = (path: string, body?: unknown, cookie?: string) => share(new Request(`${origin}/api/share/documents${path}`, body === undefined ? {} : {
+      method: "POST", body: JSON.stringify(body),
+      headers: { Origin: origin, "Content-Type": "application/json", ...(cookie ? { Cookie: cookie } : {}) }
+    }));
+    const create = async (filename: string, cookie?: string) =>
+      (await (await call("", { requestId: randomBytes(16).toString("hex"), filename, format: "markdown", markdown: filename }, cookie)).json()) as PublicDocument;
+    const tokens = async (subject: string) => (await repository.owner(subject).list()).documents.map((document) => document.token).sort();
+    try {
+      const mine = await create("max.md", "session=max");
+      const anonymous = await create("anonymous.md");
+      const friends = await create("friend.md", "session=friend");
+
+      expect(await tokens("admin-subject")).toEqual([mine.token, anonymous.token].sort());
+      expect(await tokens("friend-subject")).toEqual([friends.token]);
+      expect(await tokens("someone-else")).toEqual([]);
+
+      const opened = await call(`/${friends.token}`);
+      expect(opened.status, "a capability link needs no session").toBe(200);
+      expect(await opened.json()).toMatchObject({ document: { token: friends.token, filename: "friend.md" }, version: 0 });
+      expect((await call(`/${friends.token}/pin`, { pinned: true })).status, "anyone with the link can pin").toBe(200);
+      expect((await call(`/${mine.token}/checkpoints`, { createdBy: "Guest" })).status, "anyone with the link can save a checkpoint").toBe(200);
+      expect((await repository.owner("friend-subject").list()).documents).toMatchObject([{ token: friends.token, pinned: true }]);
+      expect((await repository.owner("admin-subject").list()).documents.find((document) => document.token === mine.token)?.checkpointCount).toBe(1);
+
+      await sql!`update tools.markdown_documents set expires_at = ${Date.now() - 1} where token in ${sql!([mine.token, friends.token])}`;
+      expect(await repository.expire(1000)).toBe(2);
+      expect(await tokens("admin-subject")).toEqual([anonymous.token]);
+      expect(await tokens("friend-subject")).toEqual([]);
+    } finally {
+      await changes.close();
+      await repository.close();
+    }
+  });
+
+  it("gives documents from before the owner column to the admin, once", async () => {
+    await applyMarkdownShareSchema(sql!, "admin-subject");
+    await sql!`alter table tools.markdown_documents drop column owner_subject`;
+    try {
+      await sql!`insert into tools.markdown_documents (token, request_id, request_hash, filename, format, created_at, updated_at, expires_at, content, source)
+        values ('old-document-token-0000000000', 'old-request', 'hash', 'old.md', 'markdown', 0, 0, ${Date.now() + 86_400_000}, '{}', 'old')`;
+      await expect(applyMarkdownShareSchema(sql!, undefined)).rejects.toThrow(/AUTH_ALLOWED_GOOGLE_SUBJECT/);
+      await applyMarkdownShareSchema(sql!, "admin-subject");
+      await applyMarkdownShareSchema(sql!, "someone-else");
+      expect(await sql!`select token, owner_subject from tools.markdown_documents`).toEqual([{ token: "old-document-token-0000000000", owner_subject: "admin-subject" }]);
+      expect(await sql!`select is_nullable from information_schema.columns
+        where table_schema = 'tools' and table_name = 'markdown_documents' and column_name = 'owner_subject'`).toEqual([{ is_nullable: "NO" }]);
+    } finally {
+      await sql!`alter table tools.markdown_documents add column if not exists owner_subject text`;
+      await sql!`delete from tools.markdown_documents where owner_subject is null`;
+      await applyMarkdownShareSchema(sql!, "admin-subject");
+    }
   });
 });
 

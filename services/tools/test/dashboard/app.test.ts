@@ -6,10 +6,6 @@ import {
   type AppLogger,
   type PrincipalAuthenticator
 } from "../../dashboard/src/app.js";
-import {
-  MarkdownAdminUnavailableError,
-  type MarkdownAdminReader
-} from "../../dashboard/src/markdown-admin.js";
 import { WebStorage } from "../../dashboard/src/storage.js";
 import { MemoryBucket, privateSnapshot, publicSnapshot } from "./fixtures.js";
 
@@ -19,25 +15,6 @@ const allowed: PrincipalAuthenticator = async () => {
 
 const denied: PrincipalAuthenticator = async () => {
   throw new AuthenticationRequiredError();
-};
-
-const markdownAdmin: MarkdownAdminReader = {
-  async list() {
-    return {
-      generatedAt: Date.UTC(2026, 6, 29, 9),
-      truncated: false,
-      documents: [
-        {
-          token: "j57dzxnpat8g9sbksewde1dznh8bczet",
-          filename: "private-notes.md",
-          createdAt: Date.UTC(2026, 6, 28, 9),
-          updatedAt: Date.UTC(2026, 6, 29, 8),
-          expiresAt: Date.UTC(2026, 7, 5, 8),
-          checkpointCount: 2
-        }
-      ]
-    };
-  }
 };
 
 describe("tools web routes", () => {
@@ -121,56 +98,6 @@ describe("tools web routes", () => {
     }
   });
 
-  it("requires a verified session for private reads", async () => {
-    const bucket = seededBucket();
-    const app = testApp(bucket, denied);
-    for (const path of [
-      "/api/ops/snapshot",
-      "/api/ops/documents"
-    ]) {
-      const response = await app(new Request(`https://tools.example.test${path}`));
-      expect(response.status).toBe(401);
-    }
-  });
-
-  it("serves document metadata through the private inventory API", async () => {
-    const response = await testApp(seededBucket(), allowed)(
-      new Request("https://tools.example.test/api/ops/documents")
-    );
-    expect(response.status).toBe(200);
-    expect(response.headers.get("cache-control")).toBe("private, no-store");
-    await expect(response.json()).resolves.toEqual({
-      ...await markdownAdmin.list(),
-      publicOrigin: "https://markdown.example.test"
-    });
-  });
-
-  it("fails closed when the private Markdown inventory is unavailable", async () => {
-    const bucket = seededBucket();
-    const unavailable: MarkdownAdminReader = {
-      async list() {
-        throw new MarkdownAdminUnavailableError();
-      }
-    };
-    const app = testApp(bucket, allowed, quiet, unavailable);
-    const response = await app(
-      new Request("https://tools.example.test/api/ops/documents")
-    );
-    expect(response.status).toBe(503);
-    expect(await response.json()).toEqual({
-      error: "markdown_admin_unavailable"
-    });
-  });
-
-  it("passes document pagination cursors only through the authenticated admin route", async () => {
-    const list = vi.fn(async (cursor?: string, asOf?: number) => ({ generatedAt: asOf ?? 1_000, documents: [], truncated: Boolean(cursor), ...(cursor ? { nextCursor: "next-page" } : {}) }));
-    const app = testApp(seededBucket(), allowed, quiet, { list });
-    const response = await app(new Request("https://tools.example.test/api/ops/documents?cursor=previous-page&asOf=1000"));
-    expect(response.status).toBe(200);
-    expect(list).toHaveBeenCalledWith("previous-page", 1_000);
-    expect(await response.json()).toMatchObject({ nextCursor: "next-page" });
-  });
-
   it("serves the private Status snapshot only after session authentication", async () => {
     const bucket = seededBucket();
     const deniedResponse = await testApp(bucket, denied)(
@@ -199,6 +126,7 @@ describe("tools web routes", () => {
       "/status/private",
       "/manage/documents",
       "/api/ops/catalog",
+      "/api/ops/documents",
       "/api/ops/audit",
       "/api/ops/history",
       "/api/ops/incidents",
@@ -267,14 +195,11 @@ const quiet: AppLogger = {
 function testApp(
   bucket: MemoryBucket,
   authenticate: PrincipalAuthenticator,
-  logger: AppLogger = quiet,
-  markdownReader: MarkdownAdminReader = markdownAdmin
+  logger: AppLogger = quiet
 ) {
   return createApp({
     storage: new WebStorage(bucket),
     authenticate,
-    markdownAdmin: markdownReader,
-    markdownSharePublicOrigin: "https://markdown.example.test",
     trustedOrigin: "https://tools.example.test",
     logger
   });

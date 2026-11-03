@@ -44,7 +44,7 @@ export function createMarkdownShareRepository(databaseUrl: string) {
     return { document: document(row), version: version + steps.length, steps: steps.map(s => s.step), clientIds: steps.map(s => String(s.client_id)), checkpoints: checkpoints.map(summary), presence: presence.map(p => ({ userId: String(p.user_id), name: String(p.name), online: Boolean(p.online), lastDisconnected: p.online ? 0 : Number(p.last_disconnected) })) };
   }
   return {
-    async create(input: CreateDocument): Promise<PublicDocument> {
+    async create(input: CreateDocument, ownerSubject: string): Promise<PublicDocument> {
       if (typeof input.requestId !== "string" || input.requestId.length < 1 || input.requestId.length > 128) throw invalid("A creation request identifier is required.");
       if ((input.format !== "markdown" && input.format !== "latex") || typeof input.filename !== "string" || input.filename.length > 80 || !/^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?\.(?:md|tex)$/.test(input.filename) || !input.filename.endsWith(input.format === "latex" ? ".tex" : ".md")) throw new ShareError("INVALID_FILENAME", "Use a short URL-safe filename matching the document format.");
       if (typeof input.markdown !== "string") throw invalid("Document source must be text.");
@@ -54,8 +54,8 @@ export function createMarkdownShareRepository(databaseUrl: string) {
         const tx = transaction as unknown as Sql;
         const now = Date.now();
         const token = randomBytes(32).toString("hex");
-        await tx`INSERT INTO tools.markdown_documents (token,request_id,request_hash,filename,format,created_at,updated_at,expires_at,content,source)
-          VALUES (${token},${input.requestId},${hash},${input.filename},${input.format},${now},${now},${now+7*DAY},${tx.json(content as never)},${input.markdown}) ON CONFLICT (request_id) DO NOTHING`;
+        await tx`INSERT INTO tools.markdown_documents (token,request_id,request_hash,owner_subject,filename,format,created_at,updated_at,expires_at,content,source)
+          VALUES (${token},${input.requestId},${hash},${ownerSubject},${input.filename},${input.format},${now},${now},${now+7*DAY},${tx.json(content as never)},${input.markdown}) ON CONFLICT (request_id) DO NOTHING`;
         const [row] = await tx<Row[]>`SELECT * FROM tools.markdown_documents WHERE request_id=${input.requestId} FOR UPDATE`;
         if (row.request_hash !== hash) throw invalid("Creation request was already used for different content.");
         if (Number(row.expires_at) <= Date.now()) throw unavailable();
@@ -130,10 +130,15 @@ export function createMarkdownShareRepository(databaseUrl: string) {
         await notify(tx, token);
       });
     },
-    async list(cursor?: string, asOf = Date.now()): Promise<MarkdownAdminSnapshot> {
-      if (!Number.isSafeInteger(asOf) || asOf < 0 || (cursor !== undefined && !/^[A-Za-z0-9_-]{20,128}$/.test(cursor))) throw invalid("Invalid document list cursor.");
-      const rows = await sql`SELECT d.token, d.filename, d.format, d.created_at, d.updated_at, d.expires_at, d.pinned, (SELECT count(*)::int FROM tools.markdown_checkpoints c WHERE c.token=d.token) AS checkpoint_count FROM tools.markdown_documents d WHERE expires_at>${Date.now()} AND created_at<=${asOf} AND token>${cursor ?? ""} ORDER BY token LIMIT 201`;
-      return { generatedAt: asOf, documents: rows.slice(0,200).map(r => ({ ...document(r as Row), checkpointCount: Number(r.checkpoint_count) })), truncated: rows.length>200, ...(rows.length>200 ? { nextCursor: String(rows[199].token) } : {}) };
+    /** The private operations of one person. Capability operations above stay open to anyone with the link. */
+    owner(subject: string) {
+      return {
+        async list(cursor?: string, asOf = Date.now()): Promise<MarkdownAdminSnapshot> {
+          if (!Number.isSafeInteger(asOf) || asOf < 0 || (cursor !== undefined && !/^[A-Za-z0-9_-]{20,128}$/.test(cursor))) throw invalid("Invalid document list cursor.");
+          const rows = await sql`SELECT d.token, d.filename, d.format, d.created_at, d.updated_at, d.expires_at, d.pinned, (SELECT count(*)::int FROM tools.markdown_checkpoints c WHERE c.token=d.token) AS checkpoint_count FROM tools.markdown_documents d WHERE owner_subject=${subject} AND expires_at>${Date.now()} AND created_at<=${asOf} AND token>${cursor ?? ""} ORDER BY token LIMIT 201`;
+          return { generatedAt: asOf, documents: rows.slice(0,200).map(r => ({ ...document(r as Row), checkpointCount: Number(r.checkpoint_count) })), truncated: rows.length>200, ...(rows.length>200 ? { nextCursor: String(rows[199].token) } : {}) };
+        },
+      };
     },
     async expire(limit = 100): Promise<number> {
       if (!Number.isInteger(limit) || limit < 1 || limit > 1000) throw invalid("Expiry batch must contain 1 to 1,000 documents.");

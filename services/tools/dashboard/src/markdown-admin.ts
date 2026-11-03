@@ -14,14 +14,3 @@ export interface MarkdownAdminSnapshot {
   truncated: boolean;
   nextCursor?: string;
 }
-
-export interface MarkdownAdminReader {
-  list(cursor?: string, asOf?: number): Promise<MarkdownAdminSnapshot>;
-}
-
-export class MarkdownAdminUnavailableError extends Error {
-  constructor() {
-    super("Document inventory is unavailable");
-    this.name = "MarkdownAdminUnavailableError";
-  }
-}

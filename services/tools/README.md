@@ -90,7 +90,11 @@ pnpm run start
 `/share` creates Markdown or LaTeX documents in one collaborative editor.
 Tools owns document state, collaboration, checkpoints, and retention in PostgreSQL.
 The public document API uses the same origin as the browser.
-`/documents` lists both formats behind the existing browser session boundary.
+`/documents` lists both formats behind the browser session boundary. It shows
+only the signed-in person's documents. A document belongs to the person who was
+signed in when it was created. Anonymous documents and documents from before
+ownership belong to the admin. Capability links and the public document API do
+not check the owner.
 Markdown retains live preview and browser PDF printing. LaTeX currently shares
 and downloads `.tex` source; compiler hosting and engine selection remain open.
 Existing `/markdown` capability routes continue to resolve the same documents.

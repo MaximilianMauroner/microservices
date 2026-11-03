@@ -1,11 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { DocumentsPage } from "../../dashboard/ui/documents-page.js";
 import { getDocumentsPageData } from "../protected-data.js";
-import { requireRouteSession } from "../auth-session.js";
+import { requireProductSession } from "../auth-session.js";
 import { faviconLink, favicons } from "../favicons.js";
 
 export const Route = createFileRoute("/documents")({
-  beforeLoad: ({ location }) => requireRouteSession(location.href),
+  beforeLoad: ({ location }) => requireProductSession(location.href, "markdown"),
   loader: () => getDocumentsPageData(),
   head: () => ({
     meta: [

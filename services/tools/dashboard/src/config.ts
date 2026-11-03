@@ -9,9 +9,6 @@ export interface ToolsWebConfig {
     secretAccessKey: string;
     forcePathStyle: boolean;
   };
-  markdownShare: {
-    publicOrigin: string;
-  };
 }
 
 export function loadConfig(
@@ -41,9 +38,6 @@ export function loadConfig(
       accessKeyId: required(env, "S3_ACCESS_KEY_ID"),
       secretAccessKey: required(env, "S3_SECRET_ACCESS_KEY"),
       forcePathStyle: optionalBoolean(env.S3_FORCE_PATH_STYLE, "S3_FORCE_PATH_STYLE")
-    },
-    markdownShare: {
-      publicOrigin: trustedOrigin
     }
   };
 }

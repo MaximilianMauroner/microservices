@@ -54,9 +54,9 @@ one focused lifecycle inspector. Browser actions replace persistent HTML in plac
 metadata, copy or open capability URLs, and revoke stored artifacts through the
 same-origin `/api/external-uploads/:id` routes. The native upload token is never
 sent to the browser.
-`/documents` is the read-only Markdown and LaTeX inventory. It uses the same
-browser session and reads `/api/ops/documents`. Tools reads active document metadata from PostgreSQL. It never retrieves
-document bodies. The inventory API supports private pagination cursors.
+`/documents` is the read-only Markdown and LaTeX inventory of the signed-in
+person. A server function reads active document metadata from PostgreSQL and
+pages through it with cursors. It never retrieves document bodies.
 
 The former `/manage/*` and `/ops/*` dashboard pages are not production routes.
 The dashboard has no catalog mutation, audit, history, or incident administration
