@@ -6,9 +6,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { rootCertificates } from 'node:tls';
-import { configuration, legacyInventory, preflight, references, requireSourceIdentity, restore } from './release-paired-backup.mjs';
+import { configuration, legacyInventory, preflight, references, requireSourceIdentity, restore } from '../../publisher/scripts/release-paired-backup.mjs';
 
-const script = fileURLToPath(new URL('./release-paired-backup.mjs', import.meta.url));
+const script = fileURLToPath(new URL('../../publisher/scripts/release-paired-backup.mjs', import.meta.url));
 const artifactRoot = fileURLToPath(new URL('../../../../.agents/artifacts/direct-upload-release-proof-vm-20261016/', import.meta.url));
 const env = { RELEASE_DATABASE_URL: 'postgres://fixture@127.0.0.1:5432/tools_runtime_test',
   RELEASE_S3_ENDPOINT: 'http://127.0.0.1:49000', RELEASE_S3_BUCKET: 'tools-transfer-test',

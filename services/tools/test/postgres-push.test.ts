@@ -36,7 +36,7 @@ async function scriptInvocation(script: string, environment: Environment): Promi
 async function railwayInvocation(path: string) {
   const config = JSON.parse(await readFile(new URL(path, import.meta.url), "utf8")) as { deploy: { preDeployCommand: string[] } };
   const [push, backfill, ...rest] = config.deploy.preDeployCommand.join(" ").split(" && ");
-  expect(backfill).toBe("pnpm --dir services/tools/publisher run db:backfill");
+  expect(backfill).toBe("pnpm --dir services/tools run publisher:db-backfill");
   expect(rest).toEqual([]);
   const { environment, rest: words } = splitAssignments(push!.split(" "));
   expect(words.slice(0, 4)).toEqual(["pnpm", "--dir", "services/tools", "run"]);

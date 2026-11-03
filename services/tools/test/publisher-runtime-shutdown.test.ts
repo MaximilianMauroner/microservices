@@ -5,7 +5,7 @@ describe("Publisher runtime shutdown", () => {
   it("checks upload-link storage as part of Publisher readiness", async () => {
     const source = await readFile(new URL("../src/runtime.ts", import.meta.url), "utf8");
     const repository = await readFile(
-      new URL("../publisher/src/upload-links.ts", import.meta.url),
+      new URL("../publisher/upload-links.ts", import.meta.url),
       "utf8"
     );
     expect(source).toContain("uploadLinks.readiness?.()");

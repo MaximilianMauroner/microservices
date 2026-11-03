@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { loadPlatformConfig } from "../../src/config.ts";
-import { createMultipartStorage } from "../../publisher/src/multipart-storage.ts";
+import { createMultipartStorage } from "../../publisher/multipart-storage.ts";
 
 function origin(value: string, name: string) {
   const url = new URL(value);

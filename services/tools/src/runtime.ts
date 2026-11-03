@@ -1,6 +1,6 @@
 import { createDocumentShare } from "../markdown-share/service.js";
 import { randomUUID } from "node:crypto";
-import { createFetchApp, createPostgresUploadLinkRepository, createPostgresUploadStorage, ActivityTracker } from "@tools-platform/artifact-publisher";
+import { createFetchApp, createPostgresUploadLinkRepository, createPostgresUploadStorage, ActivityTracker } from "#publisher";
 import {
   createApp as createToolsApp,
   createS3JsonBucket,

@@ -1,8 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { Readable } from "node:stream";
 import { describe, expect, it } from "vitest";
-import { ActivityTracker } from "../src/activity-tracker.js";
-import { createFetchApp } from "../src/fetch-app.js";
+import { ActivityTracker } from "../../publisher/activity-tracker.js";
+import { createFetchApp } from "../../publisher/fetch-app.js";
 import type {
   GetStoredObjectOptions,
   GetTemporaryFileOptions,
@@ -15,7 +15,7 @@ import type {
   StoredTemporaryFile,
   StoredUploadPage,
   UploadStorage
-} from "../src/storage.js";
+} from "../../publisher/storage.js";
 
 const ORIGIN = "https://tools.example.test";
 const CHUNK_BYTES = 1024 * 1024;

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { handleDirectUpload } from "../src/direct-upload-request.js";
-import type { DirectUploads } from "../src/direct-uploads.js";
+import { handleDirectUpload } from "../../publisher/direct-upload-request.js";
+import type { DirectUploads } from "../../publisher/direct-uploads.js";
 
 const sessionId = "123e4567-e89b-42d3-a456-426614174002";
 const owner = { audience: "native" } as const;

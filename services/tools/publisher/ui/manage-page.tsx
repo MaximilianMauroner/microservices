@@ -1,4 +1,4 @@
-import { DEFAULT_UPLOAD_LIST_CRITERIA, UPLOAD_CATEGORIES, isUploadCategory, serializeUploadListCriteria, uploadListPath, type UploadListCriteria } from "../src/upload-list.js";
+import { DEFAULT_UPLOAD_LIST_CRITERIA, UPLOAD_CATEGORIES, isUploadCategory, serializeUploadListCriteria, uploadListPath, type UploadListCriteria } from "../upload-list.js";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { uploadDirectFile } from "./direct-upload.js";
 import type { RefObject } from "react";

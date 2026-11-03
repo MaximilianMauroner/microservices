@@ -1,4 +1,4 @@
-import { loadConfig as loadArtifactConfig } from "@tools-platform/artifact-publisher";
+import { loadConfig as loadArtifactConfig } from "#publisher";
 import { loadConfig as loadToolsConfig } from "#dashboard";
 import { parseFeedbackEncryptionKey } from "../feedback/encryption.js";
 

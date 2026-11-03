@@ -9,7 +9,8 @@
     "#suite-chrome": "./runtime/suite-chrome/index.js",
     "#dashboard": "./dashboard/src/index.ts",
     "#dashboard/products": "./dashboard/products.ts",
-    "#status": "./status/index.ts"
+    "#status": "./status/index.ts",
+    "#publisher": "./publisher/index.ts"
   },
   "scripts": {
     "build": "NODE_ENV=production vite build",
@@ -21,13 +22,16 @@
     "dev": "vite dev",
     "start": "node .output/server/index.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run",
+    "test": "vitest run && node --test test/publisher/release-paired-backup.test.mjs",
     "test:money-postgres": "node --experimental-strip-types test/runtime/run.ts money-postgres",
     "status:start": "tsx status/cli.ts",
-    "status:seed-local": "tsx status/local-seed.ts"
+    "status:seed-local": "tsx status/local-seed.ts",
+    "publisher:upload-direct": "tsx publisher/scripts/upload-direct.ts",
+    "publisher:db-backfill": "tsx database/002_backfill_artifact_metadata.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1141.0",
+    "@aws-sdk/s3-request-presigner": "^3.1141.0",
     "@base-ui/react": "^1.6.0",
     "@better-auth/oauth-provider": "1.6.26",
     "@modelcontextprotocol/sdk": "1.32.2",
@@ -42,8 +46,9 @@
     "@tiptap/extensions": "3.29.2",
     "@tiptap/pm": "3.29.2",
     "@tiptap/react": "3.29.2",
-    "@tools-platform/artifact-publisher": "workspace:*",
+    "@zip.js/zip.js": "^2.15.0",
     "better-auth": "1.6.26",
+    "busboy": "1.6.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
@@ -74,6 +79,7 @@
     "@rolldown/plugin-babel": "^0.2.3",
     "@tailwindcss/vite": "^4.3.3",
     "@types/babel__core": "^7.20.5",
+    "@types/busboy": "1.5.4",
     "@types/node": "^22.10.2",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",

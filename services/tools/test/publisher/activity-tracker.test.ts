@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ActivityTracker } from "../src/activity-tracker.js";
+import { ActivityTracker } from "../../publisher/activity-tracker.js";
 
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;

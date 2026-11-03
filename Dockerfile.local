@@ -5,7 +5,6 @@ WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY services/network-console/package.json ./services/network-console/
 COPY services/tools/package.json ./services/tools/
-COPY services/tools/publisher/package.json ./services/tools/publisher/
 
 RUN corepack enable \
     && corepack prepare pnpm@11.16.0 --activate \

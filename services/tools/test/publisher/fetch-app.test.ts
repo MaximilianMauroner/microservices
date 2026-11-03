@@ -1,14 +1,14 @@
-import { pageArtifactMetadata } from "../src/postgres-storage.js";
+import { pageArtifactMetadata } from "../../publisher/postgres-storage.js";
 import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { once } from "node:events";
 import { Readable } from "node:stream";
 import { describe, expect, it, vi } from "vitest";
 import { strFromU8, unzipSync } from "fflate";
-import { ActivityTracker } from "../src/activity-tracker.js";
-import { createFetchApp } from "../src/fetch-app.js";
-import type { DirectUploads } from "../src/direct-uploads.js";
-import type { CreatedUploadLink, UploadLink, UploadLinkListOptions, UploadLinkRepository } from "../src/upload-links.js";
+import { ActivityTracker } from "../../publisher/activity-tracker.js";
+import { createFetchApp } from "../../publisher/fetch-app.js";
+import type { DirectUploads } from "../../publisher/direct-uploads.js";
+import type { CreatedUploadLink, UploadLink, UploadLinkListOptions, UploadLinkRepository } from "../../publisher/upload-links.js";
 import type {
   GetStoredObjectOptions,
   GetTemporaryFileOptions,
@@ -21,7 +21,7 @@ import type {
   StoredTemporaryFile,
   StoredUploadPage,
   UploadStorage
-} from "../src/storage.js";
+} from "../../publisher/storage.js";
 
 class MemoryUploadStorage implements UploadStorage {
   directUploads?: DirectUploads;
@@ -745,7 +745,7 @@ describe("native artifact fetch handler", () => {
   });
 
   it("bounds upload-link history queries with a keyset limit", async () => {
-    const source = await readFile(new URL("../src/upload-links.ts", import.meta.url), "utf8");
+    const source = await readFile(new URL("../../publisher/upload-links.ts", import.meta.url), "utf8");
     const schema = await readFile(new URL("../../database/postgres-schema.ts", import.meta.url), "utf8");
     expect(source).toContain("where (l.created_at, l.id) <");
     expect(source).toContain("order by created_at desc, id desc");

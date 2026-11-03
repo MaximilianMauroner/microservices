@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 const productionPoolSources = [
   "../status/heartbeat-repository.ts",
-  "../publisher/src/postgres-storage.ts",
+  "../publisher/postgres-storage.ts",
   "../money/money-repository.ts",
   "../money/money-market-data-repository.ts",
   "../feedback/repository.ts",

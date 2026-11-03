@@ -1,5 +1,5 @@
 import type { UploadSummary } from "../../src/protected-data.js";
-import { isUploadCategory } from "../src/upload-list.js";
+import { isUploadCategory } from "../upload-list.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { friendlyUploadError, UploadCancelledError } from "./upload-errors.js";
 

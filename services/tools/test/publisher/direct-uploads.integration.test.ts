@@ -1,14 +1,14 @@
-import { DEFAULT_UPLOAD_LIST_CRITERIA } from "../src/upload-list.js";
+import { DEFAULT_UPLOAD_LIST_CRITERIA } from "../../publisher/upload-list.js";
 import crypto from "node:crypto";
 import postgres, { type Sql } from "postgres";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { CreateBucketCommand, GetObjectCommand, HeadObjectCommand, ListMultipartUploadsCommand, PutObjectCommand, S3Client, UploadPartCommand } from "@aws-sdk/client-s3";
-import { createFetchApp } from "../src/fetch-app.js";
-import { createDirectUploads, DIRECT_PART_BYTES } from "../src/direct-uploads.js";
-import { createMultipartStorage } from "../src/multipart-storage.js";
-import { createMetadataBackedUploadStorage } from "../src/postgres-storage.js";
-import { createS3BodyStorage, type UploadBodyStorage, type UploadStorage } from "../src/storage.js";
-import { createPostgresUploadLinkRepository } from "../src/upload-links.js";
+import { createFetchApp } from "../../publisher/fetch-app.js";
+import { createDirectUploads, DIRECT_PART_BYTES } from "../../publisher/direct-uploads.js";
+import { createMultipartStorage } from "../../publisher/multipart-storage.js";
+import { createMetadataBackedUploadStorage } from "../../publisher/postgres-storage.js";
+import { createS3BodyStorage, type UploadBodyStorage, type UploadStorage } from "../../publisher/storage.js";
+import { createPostgresUploadLinkRepository } from "../../publisher/upload-links.js";
 
 const databaseUrl = process.env.PUBLISHER_TRANSFER_TEST_DATABASE_URL;
 const endpoint = process.env.PUBLISHER_TRANSFER_TEST_S3_ENDPOINT;

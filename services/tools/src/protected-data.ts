@@ -1,4 +1,4 @@
-import { DEFAULT_UPLOAD_LIST_CRITERIA, uploadListPath, type UploadCategory } from "../publisher/src/upload-list.js";
+import { DEFAULT_UPLOAD_LIST_CRITERIA, uploadListPath, type UploadCategory } from "../publisher/upload-list.js";
 import { createServerFn } from "@tanstack/react-start";
 import type {
   PrivateSnapshotDocument
