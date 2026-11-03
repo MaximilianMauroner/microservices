@@ -88,10 +88,10 @@ export function SignInPanel({
       </h1>
       <p className="text-sm text-muted-foreground">
         {state === "unauthorized"
-          ? "Only one Google account can use this workspace. Choose that account."
+          ? "This Google account is not invited. Ask the owner for an invitation, or choose the account you were invited with."
           : state === "expired"
             ? "Sign in again to return to your work."
-            : "Use the Google account that owns this workspace."}
+            : "Use your Google account. You need an invitation from the owner."}
       </p>
       <Button className="h-10 w-full" type="button" disabled={submitting} onClick={onSignIn}>
         <GoogleMark />

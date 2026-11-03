@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { CheckIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { requireSignedIn } from "../auth-session.js";
 import { favicons } from "../favicons.js";
@@ -6,6 +7,13 @@ import { Button } from "../components/ui/button.js";
 import { authClient } from "../lib/auth-client.js";
 
 type ConsentSearch = { client_id?: string; scope?: string };
+
+const SCOPE_TEXT: Readonly<Record<string, string>> = {
+  openid: "Confirm that you are signed in",
+  profile: "See your name",
+  email: "See your email address",
+  offline_access: "Stay connected without asking you again"
+};
 
 export const Route = createFileRoute("/consent")({
   validateSearch: (search: Record<string, unknown>): ConsentSearch => search as ConsentSearch,
@@ -36,19 +44,30 @@ function ConsentPage() {
     setBusy(false);
   }
 
+  const scopes = [...new Set((search.scope ?? "").split(" ").filter(Boolean))];
+  const app = clientName ?? "This app";
+
   return (
-    <main id="main" className="grid min-h-dvh place-items-center px-4">
-      <section className="w-full max-w-sm rounded-xl bg-card p-6 ring-1 ring-[color:var(--surface-border)]" aria-labelledby="consent-title">
-        <img className="mb-4 size-10 rounded-lg" src={favicons.directory} alt="" width={40} height={40} />
-        <h1 id="consent-title" className="text-lg font-semibold">Allow {clientName ?? "this app"} to use Tools?</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          It acts as {principal.email} and can use only the tools that this account can open.
+    <main id="main" className="grid min-h-dvh place-items-center bg-background px-4 py-8">
+      <section className="w-full max-w-sm rounded-2xl bg-card p-6 shadow-sm ring-1 ring-[color:var(--surface-border)] sm:p-7" aria-labelledby="consent-title">
+        <img className="mb-5 size-11 rounded-xl" src={favicons.directory} alt="" width={44} height={44} />
+        <h1 id="consent-title" className="text-xl font-semibold leading-tight text-balance">{app} wants to use your Tools account</h1>
+        <p className="mt-3 rounded-lg bg-muted/60 px-3 py-2 text-sm">
+          <span className="block text-muted-foreground">It acts as</span>
+          <strong className="block truncate font-semibold" title={principal.email}>{principal.email}</strong>
         </p>
-        {search.scope ? <p className="mt-3 text-xs text-muted-foreground">Requested: {search.scope}</p> : null}
-        {error ? <p role="alert" className="mt-3 text-sm text-negative">{error}</p> : null}
-        <div className="mt-5 flex gap-2">
-          <Button className="flex-1" disabled={busy} onClick={() => void decide(true)}>Allow</Button>
-          <Button className="flex-1" variant="outline" disabled={busy} onClick={() => void decide(false)}>Deny</Button>
+        <p className="mt-3 text-sm text-muted-foreground">It can use only the tools and data that this account can open.</p>
+        {scopes.length ? (
+          <ul className="mt-4 grid gap-2 text-sm" aria-label="Requested access">
+            {scopes.map((scope) => (
+              <li key={scope} className="flex items-start gap-2"><CheckIcon className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden />{SCOPE_TEXT[scope] ?? scope}</li>
+            ))}
+          </ul>
+        ) : null}
+        {error ? <p role="alert" className="mt-4 text-sm text-negative">{error}</p> : null}
+        <div className="mt-6 grid grid-cols-2 gap-2">
+          <Button variant="outline" size="lg" disabled={busy} onClick={() => void decide(false)}>Deny</Button>
+          <Button size="lg" disabled={busy} onClick={() => void decide(true)}>Allow</Button>
         </div>
       </section>
     </main>
