@@ -2,6 +2,7 @@ import {
   attachPlatformPrincipal,
   classifyRoute,
   getAttachedPlatformPrincipal,
+  principalMayOpen,
   type PlatformPrincipal,
   type ServiceFamily
 } from "@tools-platform/security";
@@ -30,13 +31,17 @@ export async function authenticatePlatformRequest(
   request: Request,
   resolvePrincipal: PrincipalResolver
 ): Promise<{ principal?: PlatformPrincipal; response?: Response }> {
-  const route = classifyRoute(new URL(request.url).pathname, request.method);
+  const pathname = new URL(request.url).pathname;
+  const route = classifyRoute(pathname, request.method);
   if (route.kind !== "human-session" && route.kind !== "server-function") {
     return {};
   }
 
   const principal = await resolvePrincipal(request);
   if (principal) {
+    if (route.kind === "human-session" && !principalMayOpen(principal, pathname)) {
+      return { response: accessDenied(request) };
+    }
     attachPlatformPrincipal(request, principal);
     return { principal };
   }
@@ -69,9 +74,25 @@ export async function authenticatePlatformRequest(
 export function toolsPrincipalAuthentication(): PrincipalAuthenticator {
   return (request: Request) => {
     const principal = getAttachedPlatformPrincipal(request);
-    if (!principal) throw new AuthenticationRequiredError();
+    if (principal?.role !== "admin") throw new AuthenticationRequiredError();
     return { id: principal.email };
   };
+}
+
+function accessDenied(request: Request): Response {
+  if (isDocumentNavigation(request)) {
+    return new Response(null, {
+      status: 302,
+      headers: { "Cache-Control": "private, no-store", Location: "/settings" }
+    });
+  }
+  return new Response(JSON.stringify({ error: "access_denied" }), {
+    status: 403,
+    headers: {
+      "Cache-Control": "no-store",
+      "Content-Type": "application/json; charset=utf-8"
+    }
+  });
 }
 
 function isDocumentNavigation(request: Request): boolean {

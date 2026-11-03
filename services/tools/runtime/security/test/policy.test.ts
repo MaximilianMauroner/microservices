@@ -87,7 +87,7 @@ describe("central platform route policy", () => {
 
   it("attaches a verified principal without exposing it as a header", () => {
     const request = new Request("https://tools.example.test/manage");
-    const principal = { subject: "google-subject", email: "operator@example.test" };
+    const principal = { role: "admin", subject: "google-subject", email: "operator@example.test" } as const;
     attachPlatformPrincipal(request, principal);
     expect(getAttachedPlatformPrincipal(request)).toEqual(principal);
     expect([...request.headers]).toEqual([]);

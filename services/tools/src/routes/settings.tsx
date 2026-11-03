@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { LogOutIcon } from "lucide-react";
 import type { ReactNode } from "react";
-import { requireRouteSession } from "../auth-session.js";
+import { requireSignedIn } from "../auth-session.js";
 import { authClient } from "../lib/auth-client.js";
 import { formatDate } from "../lib/format-date.js";
 import { useTheme, type ThemePreference } from "../components/theme-provider.js";
@@ -13,7 +13,7 @@ import { Button } from "../components/ui/button.js";
 import { useSidebar } from "../components/ui/sidebar.js";
 
 export const Route = createFileRoute("/settings")({
-  beforeLoad: ({ location }) => requireRouteSession(location.href),
+  beforeLoad: ({ location }) => requireSignedIn(location.href),
   head: () => ({ meta: [{ title: "Settings — Mauroner Tools" }] }),
   component: SettingsPage
 });

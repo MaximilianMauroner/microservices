@@ -42,6 +42,7 @@ describe("Google account authorization", () => {
       "allowed-subject",
       "owner@example.com"
     )).toEqual({
+      role: "admin",
       subject: "allowed-subject",
       email: "owner@example.com"
     });

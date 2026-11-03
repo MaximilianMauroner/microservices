@@ -124,5 +124,5 @@ export function principalFromSession(
     session.user.id !== allowedSubject ||
     session.user.email !== allowedEmail
   ) return undefined;
-  return { subject: session.user.id, email: session.user.email };
+  return { role: "admin", subject: session.user.id, email: session.user.email };
 }
