@@ -5,7 +5,7 @@ import { Button } from "../../../platform/ui/components/ui/button.js";
 import { Input } from "../../../platform/ui/components/ui/input.js";
 import { cn } from "../../../platform/ui/lib/utils.js";
 import { addDays, type ExtraItem, formatAmount, type Ingredient, type ShoppingLine } from "../domain.js";
-import { BalanceStripe, byGroup, type Frame, GroupDot, groupColor, groupLabel, KitchenPage, KitchenSheet, useKitchenAction, weekLabel } from "./kit.js";
+import { byGroup, type Frame, GROUP_LIST, GroupDot, groupColor, GroupLabel, groupLabel, groupListStyle, ink, KitchenEmpty, KitchenPage, KitchenSheet, PlateRing, tint, useKitchenAction, weekLabel } from "./kit.js";
 import { type KitchenLanguage, useLanguage, useText } from "./language.js";
 
 const en = {
@@ -100,15 +100,15 @@ export function KitchenShoppingPage(data: ShoppingData) {
     >
       <div className="grid max-w-2xl gap-6">
         {groups.length ? (
-          <nav aria-label={text.groupsOnList} className="grid gap-3 rounded-2xl border border-[color:var(--surface-border)] bg-card p-4">
-            <BalanceStripe groups={kitchen.groups} sections={toBuy.map((line) => line.section)} className="h-2" />
-            <ul className="flex flex-wrap gap-x-1 gap-y-1.5">
+          <nav aria-label={text.groupsOnList} className="flex items-center gap-4 rounded-2xl p-4" style={{ background: tint("var(--kitchen-shopping-ink)", 10) }}>
+            <PlateRing groups={kitchen.groups} sections={toBuy.map((line) => line.section)} size={64} />
+            <ul className="flex min-w-0 flex-wrap gap-x-1 gap-y-0.5">
               {groups.map(([section, lines]) => (
                 <li key={section}>
-                  <a href={`#${anchor(section)}`} className="inline-flex h-11 items-center gap-1.5 rounded-full px-2.5 text-sm hover:bg-muted/60 md:h-8 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none">
+                  <a href={`#${anchor(section)}`} style={{ color: ink(groupColor(kitchen.groups, section)) }} className="inline-flex h-11 items-center gap-1.5 rounded-full px-2 text-sm font-semibold hover:underline hover:underline-offset-4 md:h-8 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none">
                     <GroupDot groups={kitchen.groups} group={section} />
                     {groupLabel(section, language)}
-                    <span className="text-muted-foreground tabular-nums">{lines.length}</span>
+                    <span className="font-medium tabular-nums opacity-75">{lines.length}</span>
                   </a>
                 </li>
               ))}
@@ -116,15 +116,12 @@ export function KitchenShoppingPage(data: ShoppingData) {
           </nav>
         ) : null}
         {!count && !covered.length ? (
-          <div className="rounded-2xl border border-dashed border-[color:var(--surface-border)] px-6 py-12 text-center">
-            <p className="font-medium">{text.emptyTitle}</p>
-            <p className="mt-1 text-sm text-muted-foreground">{text.emptyBody}</p>
-          </div>
+          <KitchenEmpty title={text.emptyTitle} body={text.emptyBody} />
         ) : null}
         {shopping.extras.length ? (
-          <Group id="shopping-extras" title={text.alsoBuy} color="var(--muted-foreground)">
+          <Group id="shopping-extras" title={text.alsoBuy} color="var(--kitchen-shopping-ink)">
             {shopping.extras.map((extra) => (
-              <Row key={extra.id} name={extra.name} disabled={pending} color="var(--muted-foreground)"
+              <Row key={extra.id} name={extra.name} disabled={pending} color="var(--kitchen-shopping-ink)"
                 onCheck={() => run({ type: "extra.remove", id: extra.id }, { title: text.bought(extra.name), undo: { type: "extra.add", name: extra.name } })} />
             ))}
           </Group>
@@ -175,12 +172,10 @@ function anchor(section: string) {
 function Group({ id, title, color, count, children }: { id: string; title: string; color: string; count?: number; children: React.ReactNode }) {
   return (
     <section aria-labelledby={id} className="min-w-0 scroll-mt-20">
-      <h2 id={id} className="mb-2 flex items-center gap-2 px-1 font-kitchen text-lg leading-tight">
-        <span aria-hidden className="h-4 w-1 rounded-full" style={{ background: color }} />
-        {title}
-        {count ? <span className="text-sm font-normal text-muted-foreground tabular-nums">{count}</span> : null}
+      <h2 id={id} className="mb-2 font-kitchen font-semibold tracking-tight text-lg leading-tight">
+        <GroupLabel color={color} count={count}>{title}</GroupLabel>
       </h2>
-      <ul className="divide-y divide-[color:var(--surface-border)] overflow-hidden rounded-2xl border border-[color:var(--surface-border)] bg-card">{children}</ul>
+      <ul className={GROUP_LIST} style={groupListStyle(color)}>{children}</ul>
     </section>
   );
 }
@@ -194,12 +189,12 @@ function Row({ name, amount, detail, color, onCheck, disabled }: { name: string;
         type="button"
         disabled={disabled || checked}
         onClick={async () => { setChecked(true); if (!(await onCheck())) setChecked(false); }}
-        className="flex min-h-14 w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none sm:px-4"
+        className="flex min-h-14 w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-background/40 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none focus-visible:ring-inset sm:px-4"
         aria-label={text.boughtAria(name, amount)}
       >
         <span className={cn(
           "grid size-7 shrink-0 place-items-center rounded-full border-2 transition-colors",
-          checked && "text-background"
+          checked ? "text-background" : "bg-card"
         )} style={{ borderColor: color, background: checked ? color : undefined }} aria-hidden>
           {checked ? <CheckIcon className="size-4" strokeWidth={3} /> : null}
         </span>
@@ -207,7 +202,7 @@ function Row({ name, amount, detail, color, onCheck, disabled }: { name: string;
           <span className={cn("block font-medium break-words", checked && "text-muted-foreground line-through")}>{name}</span>
           {detail ? <span className="line-clamp-2 text-xs text-muted-foreground">{detail}</span> : null}
         </span>
-        {amount ? <span className="shrink-0 text-sm font-semibold tabular-nums">{amount}</span> : null}
+        {amount ? <span className="shrink-0 text-sm font-semibold tabular-nums" style={{ color: ink(color) }}>{amount}</span> : null}
       </button>
     </li>
   );
@@ -254,7 +249,7 @@ function AddSheet({ open, onClose, data }: { open: boolean; onClose: () => void;
                     aria-pressed={isOn}
                     disabled={isOn || pending}
                     onClick={() => void add(ingredient.name)}
-                    className="inline-flex h-9 items-center gap-1 rounded-full border border-control-border bg-control px-3 text-sm hover:border-control-border-hover aria-pressed:border-foreground aria-pressed:bg-foreground aria-pressed:text-background"
+                    className="inline-flex h-9 items-center gap-1 rounded-full border border-control-border bg-control px-3 text-sm hover:border-control-border-hover aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground"
                   >
                     {isOn ? <CheckIcon className="size-3.5" aria-hidden /> : null}
                     {ingredient.name}

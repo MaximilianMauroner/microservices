@@ -4,8 +4,8 @@ import { Button } from "../../../platform/ui/components/ui/button.js";
 import { Input } from "../../../platform/ui/components/ui/input.js";
 import { Label } from "../../../platform/ui/components/ui/label.js";
 import { Textarea } from "../../../platform/ui/components/ui/textarea.js";
-import { formatNumber, type Ingredient, INGREDIENT_UNITS, type IngredientUnit, UNSORTED_SECTION } from "../domain.js";
-import { byGroup, type Frame, GroupDot, groupColor, groupLabel, KitchenPage, KitchenSheet, useKitchenAction } from "./kit.js";
+import { convertNutrition, formatNumber, type Ingredient, INGREDIENT_UNITS, type IngredientUnit, UNSORTED_SECTION } from "../domain.js";
+import { byGroup, type Frame, GROUP_LIST, GroupDot, groupColor, GroupLabel, groupLabel, groupListStyle, KitchenEmpty, KitchenPage, KitchenSheet, useKitchenAction } from "./kit.js";
 import { type KitchenLanguage, useLanguage, useText } from "./language.js";
 
 type IngredientsData = Frame & { ingredients: readonly Ingredient[] };
@@ -43,6 +43,9 @@ const en = {
   name: "Name",
   unit: "Unit",
   unitPieces: "pieces",
+  size: (piece: string, other: string) => `1 ${piece} is how many ${other}?`,
+  onePiece: "piece",
+  sizeHint: "Recipes, stock, and nutrition change to the new unit with this size.",
   group: "Group",
   nutritionPer: (per: string) => `Nutrition ${per}`,
   leaveEmpty: "Leave a value empty when you do not know it. Recipes then show it as unknown.",
@@ -88,6 +91,9 @@ const TEXT: Record<KitchenLanguage, KitText> = {
     name: "Name",
     unit: "Einheit",
     unitPieces: "Stück",
+    size: (piece: string, other: string) => `Wie viel ${other} sind 1 ${piece}?`,
+    onePiece: "Stück",
+    sizeHint: "Rezepte, Vorrat und Nährwerte wechseln mit dieser Größe zur neuen Einheit.",
     group: "Gruppe",
     nutritionPer: (per: string) => `Nährwerte ${per}`,
     leaveEmpty: "Lass ein Feld leer, wenn du den Wert nicht kennst. Rezepte zeigen ihn dann als unbekannt.",
@@ -130,12 +136,10 @@ export function KitchenIngredientsPage(data: IngredientsData) {
         <div className="gap-5 lg:columns-2">
           {groups.map(([section, items]) => (
             <section key={section} aria-label={groupLabel(section, language)} className="mb-5 min-w-0 break-inside-avoid last:mb-0">
-              <h2 className="mb-2 flex items-center gap-2 px-1 font-kitchen text-lg leading-tight">
-                <span aria-hidden className="h-4 w-1 rounded-full" style={{ background: groupColor(data.kitchen.groups, section) }} />
-                {groupLabel(section, language)}
-                <span className="text-sm font-normal text-muted-foreground tabular-nums">{items.length}</span>
+              <h2 className="mb-2 font-kitchen font-semibold tracking-tight text-lg leading-tight">
+                <GroupLabel color={groupColor(data.kitchen.groups, section)} count={items.length}>{groupLabel(section, language)}</GroupLabel>
               </h2>
-              <ul className="divide-y divide-[color:var(--surface-border)] overflow-hidden rounded-2xl border border-[color:var(--surface-border)] bg-card">
+              <ul className={GROUP_LIST} style={groupListStyle(groupColor(data.kitchen.groups, section))}>
                 {items.map((ingredient) => (
                   <li key={ingredient.id}>
                     <button type="button" onClick={() => setEditing(ingredient)}
@@ -163,10 +167,7 @@ export function KitchenIngredientsPage(data: IngredientsData) {
           ))}
         </div>
         {!matches.length ? (
-          <div className="rounded-2xl border border-dashed border-[color:var(--surface-border)] px-6 py-12 text-center">
-            <p className="font-medium">{data.ingredients.length ? text.noMatch(query) : text.noIngredients}</p>
-            <p className="mt-1 text-sm text-muted-foreground">{data.ingredients.length ? text.tryAnother : text.addHere}</p>
-          </div>
+          <KitchenEmpty title={data.ingredients.length ? text.noMatch(query) : text.noIngredients} body={data.ingredients.length ? text.tryAnother : text.addHere} />
         ) : null}
       </div>
       <GroupsSheet open={arranging} onClose={() => setArranging(false)} data={data} />
@@ -184,19 +185,42 @@ function IngredientSheet({ ingredient, onClose, data }: { ingredient: Ingredient
   const [unit, setUnit] = useState<IngredientUnit>(existing?.unit ?? "g");
   const [section, setSection] = useState(existing && existing.section !== UNSORTED_SECTION ? existing.section : "");
   const [notes, setNotes] = useState(existing?.notes ?? "");
-  const [values, setValues] = useState<Record<(typeof NUTRIENTS)[number][0], string>>({
-    kcal: existing?.nutrition.kcal?.toString() ?? "", protein: existing?.nutrition.protein?.toString() ?? "",
-    carbs: existing?.nutrition.carbs?.toString() ?? "", fat: existing?.nutrition.fat?.toString() ?? ""
+  const shown = (nutrition: Ingredient["nutrition"] | undefined) => ({
+    kcal: nutrition?.kcal?.toString() ?? "", protein: nutrition?.protein?.toString() ?? "",
+    carbs: nutrition?.carbs?.toString() ?? "", fat: nutrition?.fat?.toString() ?? ""
   });
+  const [values, setValues] = useState<Record<(typeof NUTRIENTS)[number][0], string>>(shown(existing?.nutrition));
+  const [size, setSize] = useState("");
   const sections = byGroup(data.kitchen.groups, data.ingredients, (one) => one.section).map(([group]) => group).filter((group) => group !== UNSORTED_SECTION);
   const number = (value: string) => value.trim() === "" ? null : Number(value.replace(",", "."));
   const unitName = (option: string) => option === "piece" ? text.unitPieces : option;
   const nutrientLabel = { kcal: text.calories, protein: text.protein, carbs: text.carbs, fat: text.fat };
   const per = unit === "piece" ? text.perPiece : text.per100(unit);
+  const changingUnit = existing !== undefined && unit !== existing.unit;
+  const larger = existing?.unit === "piece" ? existing.unit : unit;
+  const smaller = larger === unit ? existing?.unit ?? unit : unit;
+  /** How much of the old unit one new unit holds. The field asks for the larger unit in the smaller one. */
+  const oldPerNew = (input: string) => {
+    const value = number(input);
+    if (!value || !Number.isFinite(value) || value <= 0) return undefined;
+    return larger === unit ? value : 1 / value;
+  };
+
+  function chooseUnit(next: IngredientUnit) {
+    setUnit(next);
+    setSize("");
+    setValues(shown(existing?.nutrition));
+  }
+
+  function changeSize(input: string) {
+    setSize(input);
+    const factor = oldPerNew(input);
+    if (existing && factor) setValues(shown(convertNutrition(existing.nutrition, existing.unit, unit, factor)));
+  }
 
   async function save() {
     const done = await run({
-      type: "ingredient.save", id: existing?.id, name, unit, section, notes,
+      type: "ingredient.save", id: existing?.id, name, unit, section, notes, oldPerNew: changingUnit ? oldPerNew(size) : undefined,
       kcal: number(values.kcal), protein: number(values.protein), carbs: number(values.carbs), fat: number(values.fat)
     }, { title: existing ? text.saved(name.trim()) : text.added(name.trim()) });
     if (done) onClose();
@@ -229,7 +253,7 @@ function IngredientSheet({ ingredient, onClose, data }: { ingredient: Ingredient
             <Label>{text.unit}</Label>
             <div className="grid grid-cols-3 gap-1 rounded-full bg-muted/60 p-1" role="radiogroup" aria-label={text.unit}>
               {INGREDIENT_UNITS.map((option) => (
-                <button key={option} type="button" role="radio" aria-checked={unit === option} onClick={() => setUnit(option)}
+                <button key={option} type="button" role="radio" aria-checked={unit === option} onClick={() => chooseUnit(option)}
                   className="h-8 rounded-full text-sm font-medium text-muted-foreground aria-checked:bg-background aria-checked:text-foreground aria-checked:shadow-sm">
                   {unitName(option)}
                 </button>
@@ -242,6 +266,13 @@ function IngredientSheet({ ingredient, onClose, data }: { ingredient: Ingredient
             <datalist id="kitchen-groups">{sections.map((one) => <option key={one} value={one} />)}</datalist>
           </div>
         </div>
+        {changingUnit ? (
+          <div className="grid gap-1.5">
+            <Label htmlFor="ingredient-size">{text.size(larger === "piece" ? text.onePiece : larger, unitName(smaller))}</Label>
+            <Input id="ingredient-size" className="h-10 max-w-40 tabular-nums" inputMode="decimal" value={size} onChange={(event) => changeSize(event.target.value)} placeholder="250" />
+            <p className="text-xs text-muted-foreground">{text.sizeHint}</p>
+          </div>
+        ) : null}
         <fieldset className="grid gap-2">
           <legend className="mb-1 text-sm font-medium">{text.nutritionPer(per)}</legend>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">

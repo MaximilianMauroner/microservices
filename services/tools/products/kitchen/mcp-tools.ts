@@ -2,7 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { PlatformPrincipal } from "#security";
 import { applyKitchenAction, applyKitchenAdminAction } from "./actions.js";
-import { INGREDIENT_UNITS, type Ingredient, KitchenError, MEALS, nutritionPerServing, today, weekStart } from "./domain.js";
+import { convertNutrition, INGREDIENT_UNITS, type Ingredient, KitchenError, MEALS, nutritionPerServing, today, weekStart } from "./domain.js";
 import type { KitchenScope, KitchenStore } from "./repository.js";
 
 const kitchenRef = z.string().optional().describe("Kitchen name or id. Leave out when you belong to one kitchen only.");
@@ -79,6 +79,8 @@ export function registerKitchenTools(server: McpServer, store: KitchenStore, pri
     id: z.string().optional().describe("Ingredient id, to rename an ingredient."),
     name: z.string(),
     unit: z.enum(INGREDIENT_UNITS).optional().describe("Unit for amounts. Default for a new ingredient: g."),
+    oldPerNew: z.number().positive().optional()
+      .describe("Needed to change the unit of an ingredient that recipes or stock use: how much of the old unit one new unit holds, such as 250 when one zucchini weighs 250 g. Recipe and stock amounts change with the unit, and nutrition you leave out is converted."),
     section: z.string().optional().describe("Group, such as Proteine or Gemüse. The shopping list groups items by it."),
     kcal: nutrient("Calories"),
     protein: nutrient("Protein in g"),
@@ -90,17 +92,22 @@ export function registerKitchenTools(server: McpServer, store: KitchenStore, pri
     const existing = (await scope.ingredients()).find((one) => id ? one.id === id : one.name.toLowerCase() === name.trim().toLowerCase());
     if (id && !existing) throw new KitchenError("This ingredient does not exist.", "not_found");
     const keep = <T>(value: T | undefined, current: T) => value === undefined ? current : value;
+    const unit = fields.unit ?? existing?.unit ?? "g";
+    const nutrition = existing && fields.oldPerNew && unit !== existing.unit
+      ? convertNutrition(existing.nutrition, existing.unit, unit, fields.oldPerNew)
+      : existing?.nutrition;
     return applyKitchenAction(store, who, scope.kitchen.id, {
       type: "ingredient.save",
       id: existing?.id,
       name,
-      unit: fields.unit ?? existing?.unit ?? "g",
+      unit,
       section: fields.section ?? existing?.section ?? "",
-      kcal: keep(fields.kcal, existing?.nutrition.kcal ?? null),
-      protein: keep(fields.protein, existing?.nutrition.protein ?? null),
-      carbs: keep(fields.carbs, existing?.nutrition.carbs ?? null),
-      fat: keep(fields.fat, existing?.nutrition.fat ?? null),
-      notes: fields.notes ?? existing?.notes ?? ""
+      kcal: keep(fields.kcal, nutrition?.kcal ?? null),
+      protein: keep(fields.protein, nutrition?.protein ?? null),
+      carbs: keep(fields.carbs, nutrition?.carbs ?? null),
+      fat: keep(fields.fat, nutrition?.fat ?? null),
+      notes: fields.notes ?? existing?.notes ?? "",
+      oldPerNew: fields.oldPerNew
     });
   });
 

@@ -28,7 +28,7 @@ export const recipeFields = {
 
 /** Every change a person can make inside one kitchen, from the web app or from MCP. */
 export const kitchenAction = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("ingredient.save"), id: id.optional(), ...ingredientFields }),
+  z.object({ type: z.literal("ingredient.save"), id: id.optional(), ...ingredientFields, oldPerNew: z.number().finite().positive().optional() }),
   z.object({ type: z.literal("ingredient.delete"), id }),
   z.object({
     type: z.literal("recipe.save"),
@@ -74,8 +74,8 @@ export async function applyKitchenAction(store: KitchenStore, who: Who, kitchenI
 function apply(kitchen: KitchenScope, action: Exclude<KitchenAction, { type: "recipe.copy" }>): Promise<unknown> {
   switch (action.type) {
     case "ingredient.save": {
-      const { id: ingredientId, kcal, protein, carbs, fat, ...rest } = action;
-      return kitchen.saveIngredient(ingredientId, { ...rest, nutrition: { kcal, protein, carbs, fat } });
+      const { id: ingredientId, kcal, protein, carbs, fat, oldPerNew, ...rest } = action;
+      return kitchen.saveIngredient(ingredientId, { ...rest, nutrition: { kcal, protein, carbs, fat } }, oldPerNew);
     }
     case "ingredient.delete": return kitchen.deleteIngredient(action.id);
     case "recipe.save": return kitchen.saveRecipe(action.id, action);

@@ -1,5 +1,5 @@
 @import "tailwindcss";
-@import "@fontsource/young-serif/latin-400.css";
+@import "@fontsource-variable/instrument-sans";
 @source "../products/dashboard/ui";
 @source "../products/status/ui";
 @source "../products/publisher/ui";
@@ -69,6 +69,36 @@
   --kitchen-group-5: #b38be0;
   --kitchen-group-6: #63aee0;
   --kitchen-group-7: #e47ba6;
+}
+
+/* Kitchen page colors. Each page has a produce color for its tab, title badge, and main buttons.
+   A fill takes white text in both themes. An ink is for text and icons on the page background. */
+:root {
+  --kitchen-week: #c4402b;
+  --kitchen-shopping: #1f7d47;
+  --kitchen-recipes: #7343b5;
+  --kitchen-home: #2366ad;
+  --kitchen-ingredients: #b4521a;
+  --kitchen-week-ink: #ff8a73;
+  --kitchen-shopping-ink: #5fd08f;
+  --kitchen-recipes-ink: #c3a2f5;
+  --kitchen-home-ink: #7db7f2;
+  --kitchen-ingredients-ink: #f5a066;
+}
+
+html[data-theme="light"] {
+  --kitchen-week-ink: var(--kitchen-week);
+  --kitchen-shopping-ink: var(--kitchen-shopping);
+  --kitchen-recipes-ink: var(--kitchen-recipes);
+  --kitchen-home-ink: var(--kitchen-home);
+  --kitchen-ingredients-ink: var(--kitchen-ingredients);
+}
+
+/* Main buttons, selected states, and focus rings in Kitchen take the color of the open page. */
+.kitchen-hue {
+  --primary: var(--kitchen-hue);
+  --primary-foreground: #ffffff;
+  --ring: var(--kitchen-hue);
 }
 
 html[data-theme="light"] {
@@ -252,7 +282,7 @@ html[data-theme="light"]:has([data-suite-accent]) {
 
 @theme inline {
   /* Kitchen headings: a warm cookbook serif. */
-  --font-kitchen: "Young Serif", ui-serif, Georgia, serif;
+  --font-kitchen: "Instrument Sans Variable", ui-sans-serif, system-ui, sans-serif;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -587,6 +617,6 @@ html[data-theme="light"]:has([data-suite-accent]) {
 }
 
 /* Kitchen page switch: a thin bar while the next page loads. It shows only after a short wait, so instant switches show nothing. */
-.kitchen-progress { pointer-events: none; opacity: 0; background: var(--foreground); transform-origin: left; transform: scaleX(0); }
+.kitchen-progress { pointer-events: none; opacity: 0; background: var(--kitchen-hue, var(--foreground)); transform-origin: left; transform: scaleX(0); }
 .kitchen-progress--on { opacity: .7; transition: opacity .15s .15s, transform 2.5s .15s cubic-bezier(.1, .7, .3, 1); transform: scaleX(.85); }
 @media (prefers-reduced-motion: reduce) { .kitchen-progress--on { transition: opacity .15s .15s; transform: scaleX(1); } }

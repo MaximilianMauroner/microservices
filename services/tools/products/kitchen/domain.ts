@@ -1,6 +1,9 @@
 export const INGREDIENT_UNITS = ["g", "ml", "piece"] as const;
 export type IngredientUnit = (typeof INGREDIENT_UNITS)[number];
 
+/** The amount that nutrition values refer to: 100 g, 100 ml, or 1 piece. */
+const NUTRITION_BASIS: Record<IngredientUnit, number> = { g: 100, ml: 100, piece: 1 };
+
 export const MEALS = ["breakfast", "lunch", "dinner", "snack"] as const;
 export type Meal = (typeof MEALS)[number];
 
@@ -232,20 +235,30 @@ export function nutritionPerServing(recipe: Pick<Recipe, "servings" | "lines">, 
       const ingredient = ingredients.get(line.ingredientId);
       const value = ingredient?.nutrition[key];
       if (value === null || value === undefined || !ingredient) return null;
-      sum += ingredient.unit === "piece" ? value * line.amount : (value * line.amount) / 100;
+      sum += (value * line.amount) / NUTRITION_BASIS[ingredient.unit];
     }
     return recipe.lines.length ? Math.round(sum / recipe.servings) : null;
   };
   return { kcal: total("kcal"), protein: total("protein"), carbs: total("carbs"), fat: total("fat") };
 }
 
-/** An amount for people: "1.5 kg" and "2 pieces", or "1,5 kg" and "2 Stück" in German. */
+/**
+ * Nutrition for a new unit, when one new unit holds `oldPerNew` of the old unit.
+ * Example: 20 kcal per 100 g is 50 kcal per piece when one piece holds 250 g.
+ */
+export function convertNutrition(nutrition: Nutrition, from: IngredientUnit, to: IngredientUnit, oldPerNew: number): Nutrition {
+  const factor = (oldPerNew * NUTRITION_BASIS[to]) / NUTRITION_BASIS[from];
+  const convert = (value: number | null) => value === null ? null : round(value * factor);
+  return { kcal: convert(nutrition.kcal), protein: convert(nutrition.protein), carbs: convert(nutrition.carbs), fat: convert(nutrition.fat) };
+}
+
 /** A number with at most two decimals, and a decimal comma in German. */
 export function formatNumber(value: number, language: "en" | "de" = "en"): string {
   const text = String(Math.round(value * 100) / 100);
   return language === "de" ? text.replace(".", ",") : text;
 }
 
+/** An amount for people: "1.5 kg" and "2 pieces", or "1,5 kg" and "2 Stück" in German. */
 export function formatAmount(amount: number, unit: IngredientUnit, language: "en" | "de" = "en"): string {
   if (unit === "piece") return `${formatNumber(amount, language)} ${language === "de" ? "Stück" : amount === 1 ? "piece" : "pieces"}`;
   if (amount >= 1000) return `${formatNumber(amount / 1000, language)} ${unit === "g" ? "kg" : "l"}`;

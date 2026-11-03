@@ -1,6 +1,6 @@
 import { Link, useRouter } from "@tanstack/react-router";
 import { PencilIcon, PlusIcon, Trash2Icon, UserPlusIcon, XIcon } from "lucide-react";
-import { useState } from "react";
+import { type CSSProperties, useState } from "react";
 import { AppShell } from "../../../platform/ui/components/app-shell.js";
 import { Button } from "../../../platform/ui/components/ui/button.js";
 import { Input } from "../../../platform/ui/components/ui/input.js";
@@ -116,10 +116,10 @@ export function KitchensPage(data: KitchensData) {
   return (
     <>
       <AppShell product="Kitchen" />
-      <main id="main" lang={language} className="tools-page kitchen-page">
+      <main id="main" lang={language} className="tools-page kitchen-page kitchen-hue" style={{ "--kitchen-hue": "var(--kitchen-week)", "--kitchen-hue-ink": "var(--kitchen-week-ink)" } as CSSProperties}>
         <header className="mb-6 flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h1 className="font-kitchen text-[2rem] leading-[1.05] font-normal sm:text-[2.5rem]">{text.title}</h1>
+            <h1 className="font-kitchen font-semibold tracking-tight text-[2rem] leading-[1.05] sm:text-[2.5rem]">{text.title}</h1>
             <p className="mt-1 text-sm text-muted-foreground">
               {data.isAdmin ? text.introAdmin : text.introMember}
             </p>
@@ -136,9 +136,9 @@ export function KitchensPage(data: KitchensData) {
               return (
                 <li key={kitchen.id} className="flex min-w-0 flex-col gap-4 rounded-2xl border border-[color:var(--surface-border)] bg-card p-4">
                   <div className="flex items-start gap-3">
-                    <span className="grid size-11 shrink-0 place-items-center rounded-full bg-muted font-kitchen text-xl text-foreground" aria-hidden>{kitchen.name.slice(0, 1).toUpperCase()}</span>
+                    <span className="grid size-11 shrink-0 place-items-center rounded-full bg-muted font-kitchen font-semibold tracking-tight text-xl text-foreground" aria-hidden>{kitchen.name.slice(0, 1).toUpperCase()}</span>
                     <div className="min-w-0 flex-1">
-                      <h2 className="font-kitchen text-lg leading-tight break-words">{kitchen.name}</h2>
+                      <h2 className="font-kitchen font-semibold tracking-tight text-lg leading-tight break-words">{kitchen.name}</h2>
                       <p className="truncate text-xs text-muted-foreground">{memberLine(kitchen, language)}</p>
                     </div>
                     {data.isAdmin ? (

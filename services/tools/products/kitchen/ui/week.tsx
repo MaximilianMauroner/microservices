@@ -7,7 +7,7 @@ import { Label } from "../../../platform/ui/components/ui/label.js";
 import { cn } from "../../../platform/ui/lib/utils.js";
 import { addDays, type Leftover, type Meal, MEALS, type PlanEntry, weekDays } from "../domain.js";
 import type { RecipeSummary } from "../server-functions.js";
-import { BalanceStripe, dayParts, type Frame, KitchenPage, KitchenSheet, Stepper, useByLabel, useKitchenAction, weekLabel } from "./kit.js";
+import { dayParts, type Frame, groupColor, KitchenPage, KitchenSheet, mainGroup, PlateRing, Stepper, tint, useByLabel, useKitchenAction, weekLabel, weekRange } from "./kit.js";
 import { type KitchenLanguage, useLanguage, useText } from "./language.js";
 
 const en = {
@@ -130,11 +130,13 @@ export function KitchenWeekPage(data: WeekData) {
   const planned = week.entries.length;
   const cooked = week.entries.filter((entry) => entry.cooked).length;
   const goWeek = (start: string) => void navigate({ to: "/kitchen/$kitchenId", params: { kitchenId: kitchen.id }, search: { week: start } });
+  const title = weekLabel(week.start, today, language);
+  const range = weekRange(week.start, language);
 
   return (
     <KitchenPage
-      title={weekLabel(week.start, today, language)}
-      facts={planned ? text.plannedFacts(planned, cooked) : text.nothingPlanned}
+      title={title}
+      facts={`${title === range ? "" : `${range}. `}${planned ? text.plannedFacts(planned, cooked) : text.nothingPlanned}`}
       actions={(
         <div className="flex items-center gap-1">
           <Button variant="outline" size="icon" className="size-11 md:size-9" aria-label={text.previousWeek} onClick={() => goWeek(addDays(week.start, -7))}><ChevronLeftIcon /></Button>
@@ -151,18 +153,18 @@ export function KitchenWeekPage(data: WeekData) {
             const past = day < today;
             const entries = byDay.get(day) ?? [];
             return (
-              <li key={day} className="grid grid-cols-[3.25rem_minmax(0,1fr)] gap-3 py-3 sm:grid-cols-[4.5rem_minmax(0,1fr)] sm:gap-4" aria-current={isToday ? "date" : undefined}>
+              <li key={day} className={cn("grid grid-cols-[3.25rem_minmax(0,1fr)] gap-3 py-3 sm:grid-cols-[4.5rem_minmax(0,1fr)] sm:gap-4", isToday && "-mx-2 rounded-2xl bg-[color-mix(in_srgb,var(--kitchen-hue)_7%,transparent)] px-2")} aria-current={isToday ? "date" : undefined}>
                 <div className={cn("flex flex-col items-center gap-1 pt-1", past && "text-muted-foreground")}>
-                  <span className={cn("text-xs font-medium", isToday ? "text-foreground" : "text-muted-foreground")}>{isToday ? text.today : parts.weekday}</span>
+                  <span className={cn("text-xs font-medium", isToday ? "font-semibold text-(--kitchen-hue-ink)" : "text-muted-foreground")}>{isToday ? text.today : parts.weekday}</span>
                   <span className={cn(
-                    "grid size-11 place-items-center rounded-full font-kitchen text-[1.625rem] leading-none tabular-nums sm:size-12 sm:text-[1.875rem]",
-                    isToday && "bg-foreground text-background"
+                    "grid size-11 place-items-center rounded-full font-kitchen font-medium tracking-tight text-[1.625rem] leading-none tabular-nums sm:size-12 sm:text-[1.875rem]",
+                    isToday && "bg-primary text-primary-foreground shadow-sm"
                   )}>{parts.number}</span>
                   {entries.length ? (
                     <button
                       type="button"
                       onClick={() => setPlanning(day)}
-                      className="mt-1 grid size-11 place-items-center rounded-full border border-dashed border-[color:var(--surface-border)] text-muted-foreground hover:border-foreground/40 hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none sm:hidden"
+                      className="mt-1 grid size-11 place-items-center rounded-full border border-dashed border-[color:var(--surface-border)] text-muted-foreground hover:border-primary hover:text-(--kitchen-hue-ink) focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none sm:hidden"
                       aria-label={text.planAnother(parts.weekdayLong, parts.dayMonth)}
                     >
                       <PlusIcon className="size-4" aria-hidden />
@@ -172,23 +174,25 @@ export function KitchenWeekPage(data: WeekData) {
                 <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-stretch">
                   {entries.map((entry) => {
                     const recipe = recipes.get(entry.recipeId);
+                    const group = mainGroup(kitchen.groups, recipe?.sections ?? []);
                     return (
                       <button
                         key={entry.id}
                         type="button"
                         onClick={() => setOpen(entry)}
+                        style={entry.cooked || !group ? undefined : { background: tint(groupColor(kitchen.groups, group), 16) }}
                         className={cn(
-                          "flex min-h-16 w-full items-stretch gap-3 rounded-xl bg-muted/60 py-2.5 pr-3 pl-2.5 text-left transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none sm:w-auto sm:min-w-60 sm:flex-1",
+                          "flex min-h-16 w-full items-start gap-3 rounded-xl bg-muted/60 py-2.5 pr-3 pl-2.5 text-left transition-[filter,background-color] hover:brightness-[1.06] focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none sm:w-auto sm:min-w-60 sm:flex-1",
                           entry.cooked && "bg-transparent ring-1 ring-[color:var(--surface-border)] ring-inset hover:bg-muted/40"
                         )}
                       >
-                        <BalanceStripe vertical groups={kitchen.groups} sections={recipe?.sections ?? []} className={cn("shrink-0", entry.cooked && "opacity-40")} />
+                        <PlateRing groups={kitchen.groups} sections={recipe?.sections ?? []} size={34} className={cn("mt-0.5", entry.cooked && "opacity-40")} />
                         <span className="min-w-0 flex-1">
                           <span className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
                             {text.meals[entry.meal]}
                             {entry.cooked ? <span className="inline-flex items-center gap-1 font-medium text-foreground"><CheckIcon className="size-3.5" aria-hidden />{text.cooked}</span> : null}
                           </span>
-                          <span className={cn("mt-0.5 block font-kitchen text-[1.0625rem] leading-snug break-words", entry.cooked && "text-muted-foreground")}>{entry.recipe}</span>
+                          <span className={cn("mt-0.5 block font-kitchen font-medium text-[1.0625rem] leading-snug break-words", entry.cooked && "text-muted-foreground")}>{entry.recipe}</span>
                           <span className="mt-1 block text-xs text-muted-foreground tabular-nums">
                             {text.servings(entry.servings)}{recipe?.kcal ? text.kcalEach(recipe.kcal) : ""}
                           </span>
@@ -200,7 +204,7 @@ export function KitchenWeekPage(data: WeekData) {
                     <button
                       type="button"
                       onClick={() => setPlanning(day)}
-                      className={cn("flex min-h-12 items-center justify-center gap-1.5 rounded-xl border border-dashed border-[color:var(--surface-border)] px-4 text-sm text-muted-foreground transition-colors hover:border-foreground/40 hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none sm:min-h-16", entries.length ? "hidden sm:flex sm:min-h-0 sm:h-11 sm:self-center sm:rounded-full sm:px-3.5" : "sm:flex-1 sm:justify-start")}
+                      className={cn("flex min-h-12 items-center justify-center gap-1.5 rounded-xl border border-dashed border-[color:var(--surface-border)] px-4 text-sm text-muted-foreground transition-colors hover:border-primary hover:text-(--kitchen-hue-ink) focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none sm:min-h-16", entries.length ? "hidden sm:flex sm:min-h-0 sm:h-11 sm:self-center sm:rounded-full sm:px-3.5" : "sm:flex-1 sm:justify-start")}
                       aria-label={text.planMeal(parts.weekdayLong, parts.dayMonth)}
                     >
                       <PlusIcon className="size-4" aria-hidden /> {entries.length ? text.add : text.planAMeal}
@@ -216,19 +220,19 @@ export function KitchenWeekPage(data: WeekData) {
             to="/kitchen/$kitchenId/shopping"
             params={{ kitchenId: kitchen.id }}
             search={{ week: week.start }}
-            className="grid gap-3 rounded-2xl border border-[color:var(--surface-border)] bg-card p-4 transition-colors hover:border-foreground/30"
+            className="flex items-center gap-4 rounded-2xl p-4 transition-[filter] hover:brightness-[1.04] focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+            style={{ background: tint("var(--kitchen-shopping-ink)", 10) }}
           >
-            <span className="flex items-center gap-3">
-              <span className="grid size-10 place-items-center rounded-full bg-muted text-foreground"><ShoppingBasketIcon className="size-5" aria-hidden /></span>
-              <span>
-                <span className="block font-kitchen text-lg leading-tight">{data.toBuy ? text.toBuy(data.toBuy) : text.nothingToBuy}</span>
-                <span className="block text-xs text-muted-foreground">{text.notCookedYet}</span>
-              </span>
+            {data.buySections.length
+              ? <PlateRing groups={kitchen.groups} sections={data.buySections} size={60} />
+              : <span className="grid size-[3.75rem] shrink-0 place-items-center rounded-full text-(--kitchen-shopping-ink)" style={{ background: "color-mix(in srgb, var(--kitchen-shopping-ink) 16%, transparent)" }}><ShoppingBasketIcon className="size-6" aria-hidden /></span>}
+            <span>
+              <span className="block font-kitchen font-semibold tracking-tight text-lg leading-tight text-(--kitchen-shopping-ink)">{data.toBuy ? text.toBuy(data.toBuy) : text.nothingToBuy}</span>
+              <span className="block text-xs text-muted-foreground">{text.notCookedYet}</span>
             </span>
-            {data.buySections.length ? <BalanceStripe groups={kitchen.groups} sections={data.buySections} /> : null}
           </Link>
-          <section className="rounded-2xl border border-[color:var(--surface-border)] bg-card p-4">
-            <h2 className="font-kitchen text-lg leading-tight">{text.useFirst}</h2>
+          <section className="rounded-2xl p-4" style={{ background: data.leftovers.some((one) => useByLabel(one.useBy, today, language).urgent) ? tint("var(--destructive)", 7) : "var(--muted)" }}>
+            <h2 className="font-kitchen font-semibold tracking-tight text-lg leading-tight">{text.useFirst}</h2>
             {data.leftovers.length ? (
               <ul className="mt-2 grid gap-2">
                 {data.leftovers.slice(0, 5).map((leftover) => {
@@ -312,7 +316,7 @@ function PlanSheet({ day, onClose, data }: { day: string | undefined; onClose: (
                 role="radio"
                 aria-checked={meal === option}
                 onClick={() => setMeal(option)}
-                className="h-9 rounded-full text-sm font-medium text-muted-foreground aria-checked:bg-background aria-checked:text-foreground aria-checked:shadow-sm"
+                className="h-9 rounded-full text-sm font-medium text-muted-foreground aria-checked:bg-primary aria-checked:text-primary-foreground aria-checked:shadow-sm"
               >
                 {text.meals[option]}
               </button>
@@ -330,15 +334,15 @@ function PlanSheet({ day, onClose, data }: { day: string | undefined; onClose: (
                   role="option"
                   aria-selected={recipeId === recipe.id}
                   onClick={() => { setRecipeId(recipe.id); setServings(recipe.servings); }}
-                  className="grid w-full gap-1.5 rounded-xl border border-transparent px-3 py-2.5 text-left hover:bg-muted/60 aria-selected:border-foreground/50 aria-selected:bg-muted"
+                  className="flex w-full items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 text-left hover:bg-muted/60 aria-selected:border-primary aria-selected:bg-[color-mix(in_srgb,var(--kitchen-hue)_12%,transparent)]"
                 >
-                  <span className="flex items-baseline justify-between gap-3">
-                    <span className="min-w-0 font-kitchen text-base leading-snug break-words">{recipe.name}</span>
+                  <PlateRing groups={data.kitchen.groups} sections={recipe.sections} size={26} />
+                  <span className="flex min-w-0 flex-1 items-baseline justify-between gap-3">
+                    <span className="min-w-0 font-kitchen font-medium text-base leading-snug break-words">{recipe.name}</span>
                     <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
                       {recipe.ingredientCount ? [recipe.minutes ? `${recipe.minutes} min` : "", recipe.kcal ? `${recipe.kcal} kcal` : ""].filter(Boolean).join(", ") : text.idea}
                     </span>
                   </span>
-                  <BalanceStripe groups={data.kitchen.groups} sections={recipe.sections} className="h-1 max-w-40" />
                 </button>
               </li>
             ))}
@@ -407,7 +411,7 @@ function EntrySheet({ entry, onClose, data }: { entry: PlanEntry | undefined; on
               <div className="grid grid-cols-7 gap-1">
                 {days.map((option) => (
                   <button key={option} type="button" aria-pressed={day === option} onClick={() => setDay(option)}
-                    className="flex h-12 flex-col items-center justify-center rounded-xl text-xs text-muted-foreground hover:bg-muted/60 aria-pressed:bg-foreground aria-pressed:text-background">
+                    className="flex h-12 flex-col items-center justify-center rounded-xl text-xs text-muted-foreground hover:bg-muted/60 aria-pressed:bg-primary aria-pressed:text-primary-foreground">
                     <span>{dayParts(option, language).weekday}</span><span className="text-sm font-semibold tabular-nums">{dayParts(option, language).number}</span>
                   </button>
                 ))}
@@ -416,7 +420,7 @@ function EntrySheet({ entry, onClose, data }: { entry: PlanEntry | undefined; on
             <div className="grid grid-cols-4 gap-1 rounded-full bg-muted/60 p-1" role="radiogroup" aria-label={text.meal}>
               {MEALS.map((option) => (
                 <button key={option} type="button" role="radio" aria-checked={meal === option} onClick={() => setMeal(option)}
-                  className="h-9 rounded-full text-sm font-medium text-muted-foreground aria-checked:bg-background aria-checked:text-foreground aria-checked:shadow-sm">
+                  className="h-9 rounded-full text-sm font-medium text-muted-foreground aria-checked:bg-primary aria-checked:text-primary-foreground aria-checked:shadow-sm">
                   {text.meals[option]}
                 </button>
               ))}

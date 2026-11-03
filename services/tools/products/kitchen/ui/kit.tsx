@@ -1,6 +1,6 @@
 import { Link, useHydrated, useRouter, useRouterState } from "@tanstack/react-router";
 import { BookOpenIcon, CalendarDaysIcon, CheckIcon, ChevronDownIcon, LanguagesIcon, LayoutGridIcon, LeafIcon, RefrigeratorIcon, ShoppingBasketIcon } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+import { createContext, type CSSProperties, type ReactNode, useContext, useEffect, useState } from "react";
 import { AppShell } from "../../../platform/ui/components/app-shell.js";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../../../platform/ui/components/ui/dialog.js";
 import { Drawer, DrawerContent, DrawerDescription, DrawerFooter, DrawerHeader, DrawerTitle } from "../../../platform/ui/components/ui/drawer.js";
@@ -22,6 +22,33 @@ const TABS = [
   { key: "home", icon: RefrigeratorIcon, path: "/home" },
   { key: "ingredients", icon: LeafIcon, path: "/ingredients" }
 ] as const;
+
+type Tab = (typeof TABS)[number];
+
+/** The produce color of a page, as CSS properties that its tab, title badge, buttons, and sheets read. */
+function hueStyle(tab: Tab): CSSProperties {
+  return { "--kitchen-hue": `var(--kitchen-${tab.key})`, "--kitchen-hue-ink": `var(--kitchen-${tab.key}-ink)` } as CSSProperties;
+}
+
+/** The open page. Sheets render outside the page, so they read its color from here. */
+const OpenTab = createContext<Tab>(TABS[0]);
+
+/** A food color mixed into the card surface, for tinted tiles and labels. */
+export function tint(color: string, percent: number): string {
+  return `color-mix(in srgb, ${color} ${percent}%, var(--card))`;
+}
+
+/** A list of one food group: a light panel of its color, with lines in its color. */
+export function groupListStyle(color: string): CSSProperties {
+  return { background: tint(color, 11), "--row-line": `color-mix(in srgb, ${color} 22%, transparent)` } as CSSProperties;
+}
+
+export const GROUP_LIST = "divide-y divide-(--row-line) overflow-hidden rounded-2xl";
+
+/** A food color moved toward the text color, so small text in it stays readable in both themes. */
+export function ink(color: string): string {
+  return `color-mix(in srgb, ${color} 72%, var(--foreground))`;
+}
 
 /** Loads the data of every tab into memory, so a tab switch needs no request. */
 function preloadTabs(router: ReturnType<typeof useRouter>, kitchenId: string) {
@@ -92,17 +119,19 @@ export function KitchenLayout({ frame, children }: { frame: Frame; children: Rea
   const loading = useHydrated() && pending;
   const router = useRouter();
   const base = `/kitchen/${frame.kitchen.id}`;
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const open = TABS.slice(1).find((tab) => pathname.startsWith(`${base}${tab.path}`)) ?? TABS[0];
   useEffect(() => preloadTabs(router, frame.kitchen.id), [router, frame.kitchen.id]);
   return (
     <>
       <AppShell product="Kitchen" />
-      <div aria-hidden className={cn("kitchen-progress fixed inset-x-0 top-0 z-50 h-0.5", loading && "kitchen-progress--on")} />
-      <main id="main" lang={language} className="tools-page kitchen-page pb-28 md:pb-12">
+      <div aria-hidden style={hueStyle(open)} className={cn("kitchen-progress fixed inset-x-0 top-0 z-50 h-0.5", loading && "kitchen-progress--on")} />
+      <main id="main" lang={language} style={hueStyle(open)} className="tools-page kitchen-page kitchen-hue pb-28 md:pb-12">
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <KitchenSwitcher frame={frame} />
           <div className="flex items-center gap-2">
             <nav aria-label={text.pages} className="hidden md:block">
-              <ul className="flex gap-1 rounded-full bg-muted/60 p-1">
+              <ul className="flex gap-1">
               {TABS.map((tab) => (
                 <li key={tab.path}>
                   <Link
@@ -110,9 +139,10 @@ export function KitchenLayout({ frame, children }: { frame: Frame; children: Rea
                     activeOptions={{ exact: tab.path === "" }}
                     preload="intent"
                     title={text.tabs[tab.key][0]}
-                    className="inline-flex h-8 items-center gap-1.5 rounded-full px-2.5 text-sm font-medium lg:px-3 text-muted-foreground transition-colors hover:text-foreground aria-[current=page]:bg-background aria-[current=page]:text-foreground aria-[current=page]:shadow-sm"
+                    style={hueStyle(tab)}
+                    className="inline-flex h-9 items-center gap-1.5 px-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:rounded-md focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none aria-[current=page]:text-foreground aria-[current=page]:shadow-[inset_0_-3px_0_var(--kitchen-hue-ink)] lg:px-2.5"
                   >
-                    <tab.icon className="size-4" aria-hidden />
+                    <tab.icon className="size-4 text-(--kitchen-hue-ink)" aria-hidden />
                     {/* With the sidebar open, a tablet has no room for five labels. */}
                     <span className="sr-only lg:not-sr-only">{text.tabs[tab.key][0]}</span>
                   </Link>
@@ -123,7 +153,7 @@ export function KitchenLayout({ frame, children }: { frame: Frame; children: Rea
             <LanguageMenu />
           </div>
         </div>
-        {children}
+        <OpenTab.Provider value={open}>{children}</OpenTab.Provider>
       </main>
       <nav aria-label={text.pages} lang={language} className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">
         <ul className="grid grid-cols-5">
@@ -133,9 +163,10 @@ export function KitchenLayout({ frame, children }: { frame: Frame; children: Rea
                 to={`${base}${tab.path}`}
                 activeOptions={{ exact: tab.path === "" }}
                 preload="intent"
+                style={hueStyle(tab)}
                 className="group flex h-16 flex-col items-center justify-center gap-1 text-[0.6875rem] font-medium text-muted-foreground aria-[current=page]:text-foreground"
               >
-                <span className="grid h-7 w-12 place-items-center rounded-full transition-colors group-aria-[current=page]:bg-foreground group-aria-[current=page]:text-background">
+                <span className="grid h-7 w-12 place-items-center rounded-full text-(--kitchen-hue-ink) transition-colors group-aria-[current=page]:bg-[color-mix(in_srgb,var(--kitchen-hue-ink)_18%,transparent)]">
                   <tab.icon className="size-[1.15rem]" aria-hidden />
                 </span>
                 {text.tabs[tab.key][1]}
@@ -148,6 +179,16 @@ export function KitchenLayout({ frame, children }: { frame: Frame; children: Rea
   );
 }
 
+/** The page icon on a tint of the page color. */
+function HueBadge({ className }: { className?: string }) {
+  const Icon = useContext(OpenTab).icon;
+  return (
+    <span aria-hidden className={cn("grid shrink-0 place-items-center rounded-2xl text-(--kitchen-hue-ink)", className)} style={{ background: "color-mix(in srgb, var(--kitchen-hue-ink) 20%, transparent)" }}>
+      <Icon className="size-[45%]" />
+    </span>
+  );
+}
+
 /** The title row of one kitchen page. */
 export function KitchenPage({ title, facts, actions, back, children }: { title: ReactNode; facts?: ReactNode; actions?: ReactNode; back?: ReactNode; children: ReactNode }) {
   return (
@@ -155,13 +196,27 @@ export function KitchenPage({ title, facts, actions, back, children }: { title: 
       {back ? <div className="-mt-2 mb-1">{back}</div> : null}
       <header className="mb-5 flex flex-wrap items-end justify-between gap-x-4 gap-y-3">
         <div className="min-w-0">
-          <h1 className="font-kitchen text-[2rem] leading-[1.05] font-normal sm:text-[2.5rem]">{title}</h1>
-          {facts ? <p className="mt-1 text-sm text-muted-foreground">{facts}</p> : null}
+          <h1 className="font-kitchen font-semibold tracking-tight text-[2rem] leading-[1.05] break-words sm:text-[2.5rem]">{title}</h1>
+          {facts ? <p className="mt-1.5 text-sm text-muted-foreground">{facts}</p> : null}
         </div>
         {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
       </header>
       {children}
     </>
+  );
+}
+
+/** What an empty page or list says, with the page icon so the page still feels like itself. */
+export function KitchenEmpty({ title, body, children }: { title: ReactNode; body?: ReactNode; children?: ReactNode }) {
+  return (
+    <div className="grid justify-items-center gap-3 rounded-2xl border border-dashed border-[color:var(--surface-border)] px-6 py-10 text-center">
+      <HueBadge className="size-14" />
+      <div>
+        <p className="font-kitchen font-semibold tracking-tight text-lg leading-tight">{title}</p>
+        {body ? <p className="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">{body}</p> : null}
+      </div>
+      {children}
+    </div>
   );
 }
 
@@ -211,7 +266,7 @@ function KitchenSwitcher({ frame }: { frame: Frame }) {
   const others = frame.kitchens.filter((kitchen) => kitchen.id !== frame.kitchen.id);
   const label = (
     <span className="flex min-w-0 items-center gap-2.5">
-      <span className="grid size-8 shrink-0 place-items-center rounded-full bg-muted font-kitchen text-base text-foreground" aria-hidden>
+      <span className="grid size-8 shrink-0 place-items-center rounded-full bg-muted font-kitchen font-semibold tracking-tight text-base text-foreground" aria-hidden>
         {frame.kitchen.name.slice(0, 1).toUpperCase()}
       </span>
       <span className="min-w-0 text-left">
@@ -307,12 +362,13 @@ export function KitchenSheet({ open, onOpenChange, title, description, children,
   footer?: ReactNode;
 }) {
   const mobile = useIsMobile();
+  const hue = hueStyle(useContext(OpenTab));
   if (mobile) {
     return (
       <Drawer open={open} onOpenChange={onOpenChange} showSwipeHandle>
-        <DrawerContent className="max-h-[92dvh]">
+        <DrawerContent style={hue} className="kitchen-hue max-h-[92dvh]">
           <DrawerHeader className="text-left">
-            <DrawerTitle className="font-kitchen text-xl font-normal">{title}</DrawerTitle>
+            <DrawerTitle className="font-kitchen font-semibold tracking-tight text-xl">{title}</DrawerTitle>
             {description ? <DrawerDescription>{description}</DrawerDescription> : null}
           </DrawerHeader>
           <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-2">{children}</div>
@@ -323,9 +379,9 @@ export function KitchenSheet({ open, onOpenChange, title, description, children,
   }
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[88dvh] grid-rows-[auto_minmax(0,1fr)_auto] sm:max-w-lg">
+      <DialogContent style={hue} className="kitchen-hue max-h-[88dvh] grid-rows-[auto_minmax(0,1fr)_auto] sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle className="font-kitchen text-xl font-normal">{title}</DialogTitle>
+          <DialogTitle className="font-kitchen font-semibold tracking-tight text-xl">{title}</DialogTitle>
           {description ? <DialogDescription>{description}</DialogDescription> : null}
         </DialogHeader>
         <div className="-mx-1 min-h-0 overflow-y-auto px-1">{children}</div>
@@ -359,13 +415,17 @@ export function dayParts(day: string, language: KitchenLanguage) {
   return { weekday: format.weekday.format(date), weekdayLong: format.weekdayLong.format(date), number: date.getUTCDate(), dayMonth: format.dayMonth.format(date) };
 }
 
+export function weekRange(start: string, language: KitchenLanguage): string {
+  return TEXT[language].range(dayParts(start, language).dayMonth, dayParts(addDays(start, 6), language).dayMonth);
+}
+
 export function weekLabel(start: string, today: string, language: KitchenLanguage): string {
   const text = TEXT[language];
   const thisWeek = addDays(today, -((new Date(`${today}T00:00:00Z`).getUTCDay() + 6) % 7));
   if (start === thisWeek) return text.thisWeek;
   if (start === addDays(thisWeek, 7)) return text.nextWeek;
   if (start === addDays(thisWeek, -7)) return text.lastWeek;
-  return text.range(dayParts(start, language).dayMonth, dayParts(addDays(start, 6), language).dayMonth);
+  return weekRange(start, language);
 }
 
 export function useByLabel(useBy: string, today: string, language: KitchenLanguage): { text: string; urgent: boolean } {
@@ -387,7 +447,7 @@ export function Pill({ children, tone = "muted", className }: { children: ReactN
   return (
     <span className={cn(
       "inline-flex h-6 items-center gap-1 rounded-full px-2 text-xs font-medium",
-      tone === "accent" && "bg-foreground text-background",
+      tone === "accent" && "bg-primary text-primary-foreground",
       tone === "warn" && "bg-destructive/10 text-destructive",
       tone === "muted" && "bg-muted text-muted-foreground",
       className
@@ -403,6 +463,22 @@ export function groupColor(groups: readonly string[], group: string): string {
   return `var(--kitchen-group-${index % 8})`;
 }
 
+/** A group name in its color, for the heading of a group list. */
+export function GroupLabel({ color, children, count }: { color: string; children: ReactNode; count?: number }) {
+  return (
+    <span className="inline-flex max-w-full items-center gap-2 px-1" style={{ color: ink(color) }}>
+      <span aria-hidden className="size-2.5 shrink-0 rounded-full" style={{ background: color }} />
+      <span className="min-w-0 truncate">{children}</span>
+      {count ? <span className="text-sm font-medium tabular-nums opacity-75">{count}</span> : null}
+    </span>
+  );
+}
+
+/** The group that most of a dish's ingredients belong to, which tints its tile. */
+export function mainGroup(groups: readonly string[], sections: readonly string[]): string | undefined {
+  return byGroup(groups, sections, (section) => section).sort(([, a], [, b]) => b.length - a.length)[0]?.[0];
+}
+
 export function GroupDot({ groups, group, className }: { groups: readonly string[]; group: string; className?: string }) {
   return <span aria-hidden className={cn("inline-block size-2.5 shrink-0 rounded-full", className)} style={{ background: groupColor(groups, group) }} />;
 }
@@ -415,15 +491,26 @@ export function byGroup<T>(groups: readonly string[], items: readonly T[], group
   return [...map].sort(([a], [b]) => order(a, b));
 }
 
-/** A thin bar of the food groups in a dish, a week, or a list. Each group gets a segment as wide as its share. */
-export function BalanceStripe({ groups, sections, vertical = false, className }: { groups: readonly string[]; sections: readonly string[]; vertical?: boolean; className?: string }) {
+/**
+ * A plate ring: one circle split into the food groups of a dish, a week, or a list.
+ * Each group gets an arc as long as its share.
+ */
+export function PlateRing({ groups, sections, size = 32, className }: { groups: readonly string[]; sections: readonly string[]; size?: number; className?: string }) {
   const language = useLanguage();
   const counts = byGroup(groups, sections, (section) => section);
-  if (!counts.length) return <span aria-hidden className={cn("block rounded-full border border-dashed border-[color:var(--surface-border)]", vertical ? "w-1.5" : "h-1.5", className)} />;
+  const total = sections.length;
+  const gap = counts.length > 1 ? 4 : 0;
+  let start = -gap / 2;
   return (
-    <span role="img" aria-label={`${TEXT[language].foodGroups}: ${counts.map(([group, items]) => `${groupLabel(group, language)} ${items.length}`).join(", ")}`} className={cn("flex gap-0.5 overflow-hidden rounded-full", vertical ? "w-1.5 flex-col" : "h-1.5", className)}>
-      {counts.map(([group, items]) => <span key={group} className={vertical ? "min-h-1.5" : "min-w-1.5"} style={{ flexGrow: items.length, background: groupColor(groups, group) }} />)}
-    </span>
+    <svg viewBox="0 0 36 36" width={size} height={size} className={cn("shrink-0 -rotate-90", className)}
+      role="img" aria-label={counts.length ? `${TEXT[language].foodGroups}: ${counts.map(([group, items]) => `${groupLabel(group, language)} ${items.length}`).join(", ")}` : TEXT[language].foodGroups}>
+      {counts.length ? counts.map(([group, items]) => {
+        const share = (items.length / total) * 100;
+        const arc = <circle key={group} r="15.915" cx="18" cy="18" fill="none" strokeWidth="6" stroke={groupColor(groups, group)}
+          strokeDasharray={`${Math.max(share - gap, 1)} ${100 - Math.max(share - gap, 1)}`} strokeDashoffset={start} />;
+        start -= share;
+        return arc;
+      }) : <circle r="15.915" cx="18" cy="18" fill="none" strokeWidth="3" strokeDasharray="3 3" className="stroke-[color:var(--surface-border)]" />}
+    </svg>
   );
 }
-
