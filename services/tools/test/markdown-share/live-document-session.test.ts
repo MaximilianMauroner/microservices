@@ -1,10 +1,10 @@
-import { ShareError } from "./types.js";
+import { ShareError } from "../../markdown-share/types.js";
 import { describe, expect, it } from "vitest";
 import {
   classifySyncError,
   editorSaveLabel,
   editorSaveStatus,
-} from "./live-document-session.js";
+} from "../../markdown-share/live-document-session.js";
 
 describe("live document session", () => {
   it("recognizes structured document-unavailable errors", () => {

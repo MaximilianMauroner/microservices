@@ -7,7 +7,7 @@ import {
   getScrollProgress,
   getScrollTop,
   useWorkspaceViewport,
-} from "./workspace-viewport.js";
+} from "../../markdown-share/workspace-viewport.js";
 
 let root: Root;
 let host: HTMLDivElement;

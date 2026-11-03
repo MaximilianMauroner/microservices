@@ -8,7 +8,7 @@ import {
   markdownFromJson,
   normalizeFilename,
   parseDocumentRoute,
-} from "./lib.js";
+} from "../../markdown-share/lib.js";
 
 const TOKEN = "81f2a9dd-9ca3-4e4c-9d30-13d3f50dcf3b";
 

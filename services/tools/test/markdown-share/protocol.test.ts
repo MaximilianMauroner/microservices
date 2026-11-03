@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applySteps, parseSnapshot, sourceSnapshot } from "./protocol";
+import { applySteps, parseSnapshot, sourceSnapshot } from "../../markdown-share/protocol";
 
 describe("plain source protocol", () => {
   it("accepts plain source replacements and empty source", () => {

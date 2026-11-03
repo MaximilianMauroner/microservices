@@ -4,12 +4,12 @@ import { describe, expect, it } from "vitest";
 describe("integrated Markdown Share theme", () => {
   it("keeps runtime custom-property writes aligned with the stylesheet", async () => {
     const [styles, workspace, viewport] = await Promise.all([
-      readFile(new URL("./styles.css", import.meta.url), "utf8"),
+      readFile(new URL("../../markdown-share/styles.css", import.meta.url), "utf8"),
       readFile(
-        new URL("./collaborative-workspace.tsx", import.meta.url),
+        new URL("../../markdown-share/collaborative-workspace.tsx", import.meta.url),
         "utf8",
       ),
-      readFile(new URL("./workspace-viewport.ts", import.meta.url), "utf8"),
+      readFile(new URL("../../markdown-share/workspace-viewport.ts", import.meta.url), "utf8"),
     ]);
     const runtimeProperties = [...`${workspace}\n${viewport}`.matchAll(/"(--[a-z][a-z-]+)"/g)]
       .map(([, property]) => property);
@@ -26,7 +26,7 @@ describe("integrated Markdown Share theme", () => {
   });
 
   it("prints the preview without hiding application mount ancestors", async () => {
-    const styles = await readFile(new URL("./styles.css", import.meta.url), "utf8");
+    const styles = await readFile(new URL("../../markdown-share/styles.css", import.meta.url), "utf8");
     const printStyles = styles.slice(styles.indexOf("@media print"));
 
     expect(printStyles).not.toContain("#root");

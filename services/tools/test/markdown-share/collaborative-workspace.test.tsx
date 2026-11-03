@@ -3,8 +3,8 @@
 import type { Editor } from "@tiptap/core";
 import { receiveTransaction, sendableSteps } from "prosemirror-collab";
 import { AllSelection } from "@tiptap/pm/state";
-import { ShareError } from "./types.js";
-import { applySteps } from "./protocol.js";
+import { ShareError } from "../../markdown-share/types.js";
+import { applySteps } from "../../markdown-share/protocol.js";
 
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -27,10 +27,10 @@ const publicDocument = {
 let liveEditor: Editor;
 let reportSyncError: ((error: Error) => void) | undefined;
 
-vi.mock("../src/components/theme-provider.js", () => ({ useTheme: () => ({ theme: "system", setTheme: vi.fn() }) }));
+vi.mock("../../src/components/theme-provider.js", () => ({ useTheme: () => ({ theme: "system", setTheme: vi.fn() }) }));
 
-vi.mock("./transport.js", () => ({ documentRequest: async () => null }));
-vi.mock("./sync-extension.js", async () => {
+vi.mock("../../markdown-share/transport.js", () => ({ documentRequest: async () => null }));
+vi.mock("../../markdown-share/sync-extension.js", async () => {
   const { Extension } = await import("@tiptap/core");
   const { collab } = await import("prosemirror-collab");
   return { documentSyncExtension: (options: { onError: (error: Error) => void }) => {
@@ -43,7 +43,7 @@ vi.mock("./sync-extension.js", async () => {
 });
 const initialContent = { type: "doc", content: [{ type: "codeBlock", content: [{ type: "text", text: "initial" }] }] };
 
-import { CollaborativeWorkspace } from "./collaborative-workspace.js";
+import { CollaborativeWorkspace } from "../../markdown-share/collaborative-workspace.js";
 
 describe("collaborative workspace", () => {
   let container: HTMLDivElement;
