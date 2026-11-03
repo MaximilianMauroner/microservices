@@ -11,9 +11,10 @@ type PlatformFunctionContext = {
 export const requirePlatformSession = createMiddleware({ type: "function" })
   .server(async ({ context, next }) => {
     const platformContext = context as PlatformFunctionContext;
-    if (platformContext.principal) {
+    if (platformContext.principal?.role === "admin") {
       return next({ context: { principal: platformContext.principal } });
     }
+    if (platformContext.principal) throw redirect({ href: "/settings" });
     throw redirect({
       href: signInLocation(
         returnPathFromRequest(platformContext.request),

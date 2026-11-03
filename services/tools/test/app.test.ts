@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { getAttachedPlatformPrincipal } from "@tools-platform/security";
+import { readFileSync } from "node:fs";
+import { classifyRoute, getAttachedPlatformPrincipal } from "@tools-platform/security";
 import {
   createPlatformHandler,
   type PlatformHandler,
@@ -7,12 +8,23 @@ import {
 } from "./platform-handler.js";
 
 const principal = {
+  role: "admin",
   subject: "google-subject",
   email: "operator@example.test"
-};
+} as const;
 
-const resolvePrincipal: PrincipalResolver = async (request) =>
-  request.headers.get("cookie") === "session=valid" ? principal : undefined;
+const member = {
+  role: "member",
+  subject: "friend-subject",
+  email: "friend@example.test"
+} as const;
+
+const resolvePrincipal: PrincipalResolver = async (request) => {
+  const cookie = request.headers.get("cookie");
+  if (cookie === "session=valid") return principal;
+  if (cookie === "session=member") return member;
+  return undefined;
+};
 
 const mounted = (handle: PlatformHandler) => ({
   handle,
@@ -26,6 +38,13 @@ function request(
   init?: RequestInit
 ) {
   return app(new Request(`https://tools.example.test${path}`, init));
+}
+
+function routeTreePaths(): string[] {
+  const source = readFileSync(new URL("../src/routeTree.gen.ts", import.meta.url), "utf8");
+  const paths = [...source.matchAll(/fullPath: '([^']+)'/g)].map(([, path]) =>
+    path!.replace(/\$[A-Za-z]*/g, "x").replace(/(.)\/$/, "$1"));
+  return [...new Set(paths)];
 }
 
 function app() {
@@ -57,6 +76,33 @@ describe("platform fetch gateway", () => {
         path
       ).toBe(200);
     }
+  });
+
+  it("keeps every private route admin-only for a member without grants", async () => {
+    const platform = app();
+    const privatePaths = routeTreePaths().filter((path) =>
+      ["GET", "POST"].some((method) => classifyRoute(path, method).kind === "human-session"));
+    expect(privatePaths).toEqual(expect.arrayContaining(["/", "/money", "/status", "/feedback", "/documents", "/api/money/activity", "/settings"]));
+
+    for (const path of privatePaths) {
+      for (const method of ["GET", "POST"]) {
+        if (classifyRoute(path, method).kind !== "human-session") continue;
+        const admin = await request(platform, path, { method, headers: { Cookie: "session=valid" } });
+        const asMember = await request(platform, path, { method, headers: { Cookie: "session=member" } });
+        expect(admin.status, `${method} ${path} as admin`).toBe(200);
+        expect(asMember.status, `${method} ${path} as member`).toBe(path === "/settings" ? 200 : 403);
+      }
+    }
+  });
+
+  it("sends a member's page navigation to Settings and leaves server functions to their own check", async () => {
+    const platform = app();
+    const page = await request(platform, "/money", { headers: { Cookie: "session=member", Accept: "text/html" } });
+    expect(page.status).toBe(302);
+    expect(page.headers.get("location")).toBe("/settings");
+
+    const serverFunction = await request(platform, "/_serverFn/any", { method: "POST", headers: { Cookie: "session=member" } });
+    expect(serverFunction.status).toBe(200);
   });
 
   it("redirects private document navigations to a validated sign-in return path", async () => {

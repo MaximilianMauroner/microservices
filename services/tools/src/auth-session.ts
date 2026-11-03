@@ -9,6 +9,12 @@ export const getCurrentPrincipal = createServerFn({ method: "GET" }).handler(
 );
 
 export async function requireRouteSession(locationHref: string) {
+  const principal = await requireSignedIn(locationHref);
+  if (principal.role !== "admin") throw redirect({ href: "/settings" });
+  return principal;
+}
+
+export async function requireSignedIn(locationHref: string) {
   const principal = await getCurrentPrincipal();
   if (!principal) {
     throw redirect({

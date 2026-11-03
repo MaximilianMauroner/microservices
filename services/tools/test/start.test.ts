@@ -7,7 +7,7 @@ import { documentContentSecurityPolicy } from "../src/content-security-policy.js
 import { uploadLinkPostMiddleware } from "../src/routes/api/upload-links.js";
 import { getPlatformRuntime } from "../src/runtime.js";
 
-const operator = { subject: "google-subject", email: "operator@example.test" };
+const operator = { role: "admin", subject: "google-subject", email: "operator@example.test" } as const;
 const runtime = vi.hoisted(() => ({
   signedIn: true,
   readOnly: false,
@@ -57,7 +57,7 @@ async function handleThroughRequestMiddleware(
   return handle(request, {});
 }
 
-async function runSessionMiddleware(authenticated: boolean) {
+async function runSessionMiddleware(role: "admin" | "member" | undefined) {
   const server = requirePlatformSession.options.server;
   if (!server) throw new Error("function middleware server handler is missing");
   return server({
@@ -65,8 +65,8 @@ async function runSessionMiddleware(authenticated: boolean) {
       request: new Request("https://tools.example.test/_serverFn/test", {
         headers: { Referer: "https://tools.example.test/review?view=queue" }
       }),
-      ...(authenticated
-        ? { principal: { subject: "google-subject", email: "operator@example.test" } }
+      ...(role
+        ? { principal: { role, subject: "google-subject", email: "operator@example.test" } }
         : {})
     },
     next: async (nextContext: Record<string, unknown>) => ({
@@ -107,13 +107,19 @@ describe("TanStack Start request boundaries", () => {
   });
 
   it("shares one principal across protected server functions", async () => {
-    await expect(runSessionMiddleware(true)).resolves.toMatchObject({
+    await expect(runSessionMiddleware("admin")).resolves.toMatchObject({
       result: "authorized"
     });
   });
 
+  it("keeps protected server functions admin-only for members", async () => {
+    await expect(runSessionMiddleware("member")).rejects.toMatchObject({
+      options: { href: "/settings" }
+    });
+  });
+
   it("redirects an expired server-function session to safe recovery", async () => {
-    await expect(runSessionMiddleware(false)).rejects.toMatchObject({
+    await expect(runSessionMiddleware(undefined)).rejects.toMatchObject({
       options: {
         href: "/sign-in?returnTo=%2Freview%3Fview%3Dqueue&reason=session_expired",
         statusCode: 307

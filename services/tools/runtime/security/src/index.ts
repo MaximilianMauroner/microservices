@@ -1,6 +1,14 @@
-export interface PlatformPrincipal {
+export type PlatformPrincipal = Readonly<{
+  role: "admin" | "member";
   subject: string;
   email: string;
+}>;
+
+const MEMBER_PATHS = new Set(["/settings"]);
+
+/** Members open only what is granted to them. Every other private path stays admin-only. */
+export function principalMayOpen(principal: PlatformPrincipal, pathname: string): boolean {
+  return principal.role === "admin" || MEMBER_PATHS.has(pathname);
 }
 
 const verifiedPrincipal = Symbol("tools-platform.verified-principal");
