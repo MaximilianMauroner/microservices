@@ -36,7 +36,7 @@ export function serviceForPath(pathname: string): ServiceFamily {
 
 export type RouteAccess =
   | { kind: "public" }
-  | { kind: "machine"; service: "uploads" | "heartbeat" }
+  | { kind: "machine"; service: "uploads" | "heartbeat" | "mcp" }
   | { kind: "server-function" }
   | { kind: "human-session" };
 
@@ -72,6 +72,12 @@ export function classifyRoute(pathname: string, method: string): RouteAccess {
   }
 
   if (matchesPrefix(pathname, ["/api/auth"])) return { kind: "public" };
+
+  if ((normalizedMethod === "GET" || normalizedMethod === "HEAD") && matchesPrefix(pathname, ["/.well-known"])) {
+    return { kind: "public" };
+  }
+
+  if (pathname === "/api/mcp") return { kind: "machine", service: "mcp" };
 
   if (/^\/feedback\/f\/[^/]+$/.test(pathname) && (normalizedMethod === "GET" || normalizedMethod === "HEAD" || normalizedMethod === "POST")) {
     return { kind: "public" };

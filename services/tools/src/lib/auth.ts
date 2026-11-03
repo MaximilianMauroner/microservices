@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { oauthProvider } from "@better-auth/oauth-provider";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import {
@@ -12,9 +14,14 @@ import {
   authAccounts,
   authSessions,
   authUsers,
-  authVerifications
+  authVerifications,
+  oauthAccessTokens,
+  oauthClients,
+  oauthConsents,
+  oauthRefreshTokens
 } from "../../database/postgres-schema.js";
 import type { PlatformAuthConfig } from "../config.js";
+import { MCP_PATH } from "../mcp.js";
 import { createPeopleRepository, type PeopleRepository } from "./people.js";
 
 const SESSION_SECONDS = 7 * 24 * 60 * 60;
@@ -24,6 +31,9 @@ export function createPlatformIdentity(config: PlatformAuthConfig, databaseUrl: 
   const sql = postgres(databaseUrl, { max: 2, idle_timeout: 120 });
   const people = createPeopleRepository(sql, config.allowedGoogleEmail);
   const auth = createPlatformAuth(config, sql, people);
+  const principalFor = async (identity: { subject: string; email: string }) =>
+    principalFromIdentity(identity, config.allowedGoogleSubject, config.allowedGoogleEmail) ??
+      memberPrincipal(identity, await people.grantsFor(identity.subject));
   return {
     auth,
     people,
@@ -34,13 +44,23 @@ export function createPlatformIdentity(config: PlatformAuthConfig, databaseUrl: 
         const [account] = await sql<{ subject: string }[]>`
           select account_id subject from tools.auth_accounts
           where user_id = ${session.user.id} and provider_id = 'google'`;
-        if (!account) return undefined;
-        const identity = { subject: account.subject, email: session.user.email };
-        return principalFromIdentity(identity, config.allowedGoogleSubject, config.allowedGoogleEmail) ??
-          memberPrincipal(identity, await people.grantsFor(account.subject));
+        return account && principalFor({ subject: account.subject, email: session.user.email });
       } catch {
         return undefined;
       }
+    },
+    /** Resolves an MCP bearer token. It never reads the browser cookie, so the two credentials stay apart. */
+    resolveAccessToken: async (request: Request): Promise<PlatformPrincipal | undefined> => {
+      const token = /^Bearer ([A-Za-z0-9._~+/-]+=*)$/.exec(request.headers.get("authorization") ?? "")?.[1];
+      if (!token) return undefined;
+      const [row] = await sql<{ subject: string; email: string }[]>`
+        select a.account_id subject, u.email
+        from tools.oauth_access_tokens t
+        join tools.oauth_clients c on c.client_id = t.client_id and c.disabled is not true
+        join tools.auth_users u on u.id = t.user_id
+        join tools.auth_accounts a on a.user_id = u.id and a.provider_id = 'google'
+        where t.token = ${createHash("sha256").update(token).digest("base64url")} and t.expires_at > now()`;
+      return row && principalFor(row);
     },
     close: () => sql.end({ timeout: 5 })
   };
@@ -61,7 +81,11 @@ function createPlatformAuth(config: PlatformAuthConfig, sql: postgres.Sql, peopl
         user: authUsers,
         session: authSessions,
         account: authAccounts,
-        verification: authVerifications
+        verification: authVerifications,
+        oauthClient: oauthClients,
+        oauthRefreshToken: oauthRefreshTokens,
+        oauthAccessToken: oauthAccessTokens,
+        oauthConsent: oauthConsents
       }
     }),
     emailAndPassword: { enabled: false },
@@ -113,7 +137,18 @@ function createPlatformAuth(config: PlatformAuthConfig, sql: postgres.Sql, peopl
       }
     },
     telemetry: { enabled: false },
-    plugins: [tanstackStartCookies()]
+    plugins: [
+      oauthProvider({
+        loginPage: "/sign-in",
+        consentPage: "/consent",
+        disableJwtPlugin: true,
+        grantTypes: ["authorization_code", "refresh_token"],
+        allowDynamicClientRegistration: true,
+        allowUnauthenticatedClientRegistration: true,
+        validAudiences: [`${config.publicOrigin}${MCP_PATH}`]
+      }),
+      tanstackStartCookies()
+    ]
   });
 }
 

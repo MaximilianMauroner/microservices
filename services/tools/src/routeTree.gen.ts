@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ConsentRouteImport } from './routes/consent'
 import { Route as DocumentsRouteImport } from './routes/documents'
 import { Route as FaviconDoticoRouteImport } from './routes/favicon[.]ico'
 import { Route as FaviconDotsvgRouteImport } from './routes/favicon[.]svg'
@@ -24,7 +25,9 @@ import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ShareRouteImport } from './routes/share'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as StatusRouteImport } from './routes/status'
+import { Route as DotwellKnownSplatRouteImport } from './routes/[.]well-known/$'
 import { Route as ApiExternalUploadsRouteImport } from './routes/api/external-uploads'
+import { Route as ApiMcpRouteImport } from './routes/api/mcp'
 import { Route as ApiUploadLinksRouteImport } from './routes/api/upload-links'
 import { Route as ApiUploadsRouteImport } from './routes/api/uploads'
 import { Route as ArtifactsSplatRouteImport } from './routes/artifacts/$'
@@ -74,6 +77,11 @@ import { Route as ApiFeedbackFormsFormIdExportRouteImport } from './routes/api/f
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ConsentRoute = ConsentRouteImport.update({
+  id: '/consent',
+  path: '/consent',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DocumentsRoute = DocumentsRouteImport.update({
@@ -146,9 +154,19 @@ const StatusRoute = StatusRouteImport.update({
   path: '/status',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DotwellKnownSplatRoute = DotwellKnownSplatRouteImport.update({
+  id: '/.well-known/$',
+  path: '/.well-known/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiExternalUploadsRoute = ApiExternalUploadsRouteImport.update({
   id: '/api/external-uploads',
   path: '/api/external-uploads',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiMcpRoute = ApiMcpRouteImport.update({
+  id: '/api/mcp',
+  path: '/api/mcp',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiUploadLinksRoute = ApiUploadLinksRouteImport.update({
@@ -382,6 +400,7 @@ const ApiFeedbackFormsFormIdExportRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/consent': typeof ConsentRoute
   '/documents': typeof DocumentsRoute
   '/favicon.ico': typeof FaviconDoticoRoute
   '/favicon.svg': typeof FaviconDotsvgRoute
@@ -396,7 +415,9 @@ export interface FileRoutesByFullPath {
   '/share': typeof ShareRouteWithChildren
   '/sign-in': typeof SignInRoute
   '/status': typeof StatusRoute
+  '/.well-known/$': typeof DotwellKnownSplatRoute
   '/api/external-uploads': typeof ApiExternalUploadsRouteWithChildren
+  '/api/mcp': typeof ApiMcpRoute
   '/api/upload-links': typeof ApiUploadLinksRouteWithChildren
   '/api/uploads': typeof ApiUploadsRouteWithChildren
   '/artifacts/$': typeof ArtifactsSplatRoute
@@ -445,6 +466,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/consent': typeof ConsentRoute
   '/documents': typeof DocumentsRoute
   '/favicon.ico': typeof FaviconDoticoRoute
   '/favicon.svg': typeof FaviconDotsvgRoute
@@ -455,7 +477,9 @@ export interface FileRoutesByTo {
   '/settings': typeof SettingsRoute
   '/sign-in': typeof SignInRoute
   '/status': typeof StatusRoute
+  '/.well-known/$': typeof DotwellKnownSplatRoute
   '/api/external-uploads': typeof ApiExternalUploadsRouteWithChildren
+  '/api/mcp': typeof ApiMcpRoute
   '/api/upload-links': typeof ApiUploadLinksRouteWithChildren
   '/api/uploads': typeof ApiUploadsRouteWithChildren
   '/artifacts/$': typeof ArtifactsSplatRoute
@@ -505,6 +529,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/consent': typeof ConsentRoute
   '/documents': typeof DocumentsRoute
   '/favicon.ico': typeof FaviconDoticoRoute
   '/favicon.svg': typeof FaviconDotsvgRoute
@@ -519,7 +544,9 @@ export interface FileRoutesById {
   '/share': typeof ShareRouteWithChildren
   '/sign-in': typeof SignInRoute
   '/status': typeof StatusRoute
+  '/.well-known/$': typeof DotwellKnownSplatRoute
   '/api/external-uploads': typeof ApiExternalUploadsRouteWithChildren
+  '/api/mcp': typeof ApiMcpRoute
   '/api/upload-links': typeof ApiUploadLinksRouteWithChildren
   '/api/uploads': typeof ApiUploadsRouteWithChildren
   '/artifacts/$': typeof ArtifactsSplatRoute
@@ -570,6 +597,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/consent'
     | '/documents'
     | '/favicon.ico'
     | '/favicon.svg'
@@ -584,7 +612,9 @@ export interface FileRouteTypes {
     | '/share'
     | '/sign-in'
     | '/status'
+    | '/.well-known/$'
     | '/api/external-uploads'
+    | '/api/mcp'
     | '/api/upload-links'
     | '/api/uploads'
     | '/artifacts/$'
@@ -633,6 +663,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/consent'
     | '/documents'
     | '/favicon.ico'
     | '/favicon.svg'
@@ -643,7 +674,9 @@ export interface FileRouteTypes {
     | '/settings'
     | '/sign-in'
     | '/status'
+    | '/.well-known/$'
     | '/api/external-uploads'
+    | '/api/mcp'
     | '/api/upload-links'
     | '/api/uploads'
     | '/artifacts/$'
@@ -692,6 +725,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/consent'
     | '/documents'
     | '/favicon.ico'
     | '/favicon.svg'
@@ -706,7 +740,9 @@ export interface FileRouteTypes {
     | '/share'
     | '/sign-in'
     | '/status'
+    | '/.well-known/$'
     | '/api/external-uploads'
+    | '/api/mcp'
     | '/api/upload-links'
     | '/api/uploads'
     | '/artifacts/$'
@@ -756,6 +792,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ConsentRoute: typeof ConsentRoute
   DocumentsRoute: typeof DocumentsRoute
   FaviconDoticoRoute: typeof FaviconDoticoRoute
   FaviconDotsvgRoute: typeof FaviconDotsvgRoute
@@ -770,7 +807,9 @@ export interface RootRouteChildren {
   ShareRoute: typeof ShareRouteWithChildren
   SignInRoute: typeof SignInRoute
   StatusRoute: typeof StatusRoute
+  DotwellKnownSplatRoute: typeof DotwellKnownSplatRoute
   ApiExternalUploadsRoute: typeof ApiExternalUploadsRouteWithChildren
+  ApiMcpRoute: typeof ApiMcpRoute
   ApiUploadLinksRoute: typeof ApiUploadLinksRouteWithChildren
   ApiUploadsRoute: typeof ApiUploadsRouteWithChildren
   ArtifactsSplatRoute: typeof ArtifactsSplatRoute
@@ -801,6 +840,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/consent': {
+      id: '/consent'
+      path: '/consent'
+      fullPath: '/consent'
+      preLoaderRoute: typeof ConsentRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/documents': {
@@ -901,11 +947,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof StatusRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/.well-known/$': {
+      id: '/.well-known/$'
+      path: '/.well-known/$'
+      fullPath: '/.well-known/$'
+      preLoaderRoute: typeof DotwellKnownSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/external-uploads': {
       id: '/api/external-uploads'
       path: '/api/external-uploads'
       fullPath: '/api/external-uploads'
       preLoaderRoute: typeof ApiExternalUploadsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/mcp': {
+      id: '/api/mcp'
+      path: '/api/mcp'
+      fullPath: '/api/mcp'
+      preLoaderRoute: typeof ApiMcpRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/upload-links': {
@@ -1380,6 +1440,7 @@ const ApiShareDocumentsRouteWithChildren =
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ConsentRoute: ConsentRoute,
   DocumentsRoute: DocumentsRoute,
   FaviconDoticoRoute: FaviconDoticoRoute,
   FaviconDotsvgRoute: FaviconDotsvgRoute,
@@ -1394,7 +1455,9 @@ const rootRouteChildren: RootRouteChildren = {
   ShareRoute: ShareRouteWithChildren,
   SignInRoute: SignInRoute,
   StatusRoute: StatusRoute,
+  DotwellKnownSplatRoute: DotwellKnownSplatRoute,
   ApiExternalUploadsRoute: ApiExternalUploadsRouteWithChildren,
+  ApiMcpRoute: ApiMcpRoute,
   ApiUploadLinksRoute: ApiUploadLinksRouteWithChildren,
   ApiUploadsRoute: ApiUploadsRouteWithChildren,
   ArtifactsSplatRoute: ArtifactsSplatRoute,
