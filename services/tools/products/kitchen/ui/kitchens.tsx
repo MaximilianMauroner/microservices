@@ -50,9 +50,11 @@ const en = {
   leave: "Leave kitchen",
   leaveConfirm: (name: string) => `Leave ${name}? Its other members keep the kitchen and all its data.`,
   left: "You left the kitchen",
-  move: "Hand over and leave",
+  move: "Hand over kitchen",
+  moveAndLeave: "Hand over and leave",
+  leaveAfterMove: "Leave this kitchen after handing it over",
   moveTitle: (name: string) => `Hand over ${name}`,
-  moveHint: "Choose the person who will keep this kitchen. Other members stay. You leave and turn off your MCP access. Admin recovery access stays available.",
+  moveHint: "Choose the person who will get this kitchen. You stay unless you choose to leave. Leaving turns off your MCP access. Admin recovery access stays available.",
   recipient: "Person",
   choosePerson: "Choose a person…",
   moved: "Kitchen handed over",
@@ -103,9 +105,11 @@ const TEXT: Record<KitchenLanguage, KitText> = {
     leave: "Küche verlassen",
     leaveConfirm: (name: string) => `${name} verlassen? Die anderen Mitglieder behalten die Küche und alle Daten.`,
     left: "Du hast die Küche verlassen",
-    move: "Übergeben und verlassen",
+    move: "Küche übergeben",
+    moveAndLeave: "Übergeben und verlassen",
+    leaveAfterMove: "Diese Küche nach der Übergabe verlassen",
     moveTitle: (name: string) => `${name} übergeben`,
-    moveHint: "Wähle die Person, die diese Küche behält. Andere Mitglieder bleiben. Du verlässt die Küche und schaltest deinen MCP-Zugriff aus. Der Admin kann die Küche weiterhin verwalten.",
+    moveHint: "Wähle die Person, die diese Küche bekommt. Du bleibst, wenn du nicht auswählst, die Küche zu verlassen. Beim Verlassen wird dein MCP-Zugriff ausgeschaltet. Der Admin kann die Küche weiterhin verwalten.",
     recipient: "Person",
     choosePerson: "Person auswählen…",
     moved: "Küche übergeben",
@@ -127,6 +131,7 @@ export function KitchensPage(data: KitchensData) {
   const [creating, setCreating] = useState(false);
   const [renaming, setRenaming] = useState<Kitchen | undefined>();
   const [moving, setMoving] = useState<Kitchen | undefined>();
+  const [leaveAfterMove, setLeaveAfterMove] = useState(false);
   const [recipient, setRecipient] = useState("");
   const [name, setName] = useState("");
 
@@ -217,7 +222,7 @@ export function KitchensPage(data: KitchensData) {
                       <Button size="sm" variant="outline" disabled={pending} onClick={() => {
                         if (window.confirm(text.leaveConfirm(kitchen.name))) void run({ type: "kitchen.leave", kitchenId: kitchen.id }, text.left);
                       }}>{text.leave}</Button>
-                      {data.isAdmin && data.people.length ? <Button size="sm" variant="outline" disabled={pending} onClick={() => { setMoving(kitchen); setRecipient(""); }}>{text.move}</Button> : null}
+                      {data.isAdmin && data.people.length ? <Button size="sm" variant="outline" disabled={pending} onClick={() => { setMoving(kitchen); setRecipient(""); setLeaveAfterMove(false); }}>{text.move}</Button> : null}
                     </div>
                   </div>
                   <div className="mt-auto flex items-center justify-between gap-2">
@@ -256,8 +261,8 @@ export function KitchensPage(data: KitchensData) {
       <KitchenSheet open={moving !== undefined} onOpenChange={(open) => { if (!open) setMoving(undefined); }}
         title={moving ? text.moveTitle(moving.name) : text.move}
         footer={<Button disabled={!recipient || pending} onClick={async () => {
-          if (moving && await run({ type: "kitchen.move", kitchenId: moving.id, personId: recipient }, text.moved)) setMoving(undefined);
-        }}>{text.move}</Button>}>
+          if (moving && await run({ type: "kitchen.move", kitchenId: moving.id, personId: recipient, leave: leaveAfterMove }, text.moved)) setMoving(undefined);
+        }}>{leaveAfterMove ? text.moveAndLeave : text.move}</Button>}>
         <p className="mb-4 text-sm text-muted-foreground">{text.moveHint}</p>
         <label className="grid gap-1.5 text-sm font-medium">
           {text.recipient}
@@ -265,6 +270,10 @@ export function KitchensPage(data: KitchensData) {
             <option value="">{text.choosePerson}</option>
             {data.people.map((person) => <option key={person.id} value={person.id}>{person.email}</option>)}
           </select>
+        </label>
+        <label className="mt-3 flex min-h-11 items-center gap-2 text-sm">
+          <input type="checkbox" checked={leaveAfterMove} disabled={pending} onChange={(event) => setLeaveAfterMove(event.target.checked)} />
+          {text.leaveAfterMove}
         </label>
       </KitchenSheet>
       <KitchenSheet
