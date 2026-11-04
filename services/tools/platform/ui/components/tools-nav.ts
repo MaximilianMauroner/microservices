@@ -42,14 +42,7 @@ export const TOOLS_PRODUCTS: readonly ToolsProduct[] = [
   },
   { id: "kitchen", label: "Kitchen", description: "Recipes and meal planning", to: "/kitchen", icon: favicons.kitchen, match: (path) => path.startsWith("/kitchen") },
   {
-    id: "bodyshop", label: "Bodyshop", description: "Food and weight log", to: "/bodyshop", icon: favicons.bodyshop, match: (path) => path.startsWith("/bodyshop"),
-    pages: [
-      { label: "Today", to: "/bodyshop", match: exact("/bodyshop") },
-      { label: "Progress", to: "/bodyshop/progress", match: exact("/bodyshop/progress") },
-      { label: "Foods", to: "/bodyshop/foods", match: exact("/bodyshop/foods") },
-      { label: "Settings", to: "/bodyshop/settings", match: exact("/bodyshop/settings") }
-    ]
-  },
+    id: "bodyshop", label: "Bodyshop", description: "Food and weight log", to: "/bodyshop", icon: favicons.bodyshop, match: (path) => path.startsWith("/bodyshop") },
   { id: "status", label: "Status", to: "/status", icon: favicons.status, match: (path) => path.startsWith("/status") }
 ];
 

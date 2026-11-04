@@ -95,69 +95,88 @@ html[data-theme="light"] {
   --kitchen-ingredients-ink: var(--kitchen-ingredients);
 }
 
-/* Bodyshop. One typeface in two widths: text at normal width, every number condensed. Amber is food eaten,
-   teal is energy burned and a day under target, rose is a day over target or a failed check. Each meal is one
-   step of amber, so the day bar, the meal list, and the meal share read as one set. Dark values first. */
+/* Bodyshop. A sibling of Kitchen: food colors on soft tints. Each meal and each macro has its own hue, used on the
+   day ring, its tile, and its card. Blue is weight, coral is energy burned and a day over target, green is a complete
+   day under target. Each page has its own hue for its badge, tab, and main buttons. Dark values first. */
 :root {
-  --bs-panel: #0f100d;
-  --bs-line: #272822;
-  --bs-quiet: #9d9b90;
-  --bs-energy: #f2b646;
-  --bs-burn: #4cc3bb;
-  --bs-trend: #f3f1ea;
-  --bs-flag: #ff7d8c;
-  --bs-meal-breakfast: #f8dc9c;
-  --bs-meal-lunch: #f2b646;
-  --bs-meal-dinner: #d9881c;
-  --bs-meal-snack: #a6661a;
-  --bs-meal-other: #75501f;
-  --bs-on-energy: #1f1400;
+  --bs-panel: #191816;
+  --bs-edge: transparent;
+  --bs-line: #2b2a26;
+  --bs-track: #2a2925;
+  --bs-quiet: #a3a097;
+  --bs-meal-breakfast: #f2b85a;
+  --bs-meal-lunch: #5cbf8a;
+  --bs-meal-dinner: #ef7d6b;
+  --bs-meal-snack: #b38be0;
+  --bs-meal-other: #a8a29e;
+  --bs-protein: #6fb0f0;
+  --bs-carbs: #f2b85a;
+  --bs-fat: #e47ba6;
+  --bs-fiber: #5cbf8a;
+  --bs-energy: #f2b85a;
+  --bs-weight: #6fb0f0;
+  --bs-burn: #ef7d6b;
+  --bs-good: #5cbf8a;
+  --bs-flag: #ef7d6b;
+  --bs-partial: #6b675e;
+  --bs-on-hue: #170d08;
+  --bs-today: #ef7d6b;
+  --bs-progress: #6fb0f0;
+  --bs-foods: #5cbf8a;
+  --bs-settings: #b38be0;
 }
 
 html[data-theme="light"] {
   --bs-panel: #ffffff;
-  --bs-line: #e5e2d8;
-  --bs-quiet: #6a685e;
-  --bs-energy: #c98500;
-  --bs-burn: #0d7d75;
-  --bs-trend: #1b1c18;
+  --bs-edge: #ebe8e1;
+  --bs-line: #e4e1d9;
+  --bs-track: #eeebe4;
+  --bs-quiet: #68655d;
+  --bs-meal-breakfast: #dc9415;
+  --bs-meal-lunch: #23935d;
+  --bs-meal-dinner: #d4503b;
+  --bs-meal-snack: #8655c4;
+  --bs-meal-other: #78716c;
+  --bs-protein: #2a6fbd;
+  --bs-carbs: #dc9415;
+  --bs-fat: #c2477d;
+  --bs-fiber: #23935d;
+  --bs-energy: #dc9415;
+  --bs-weight: #2a6fbd;
+  --bs-burn: #d4503b;
+  --bs-good: #23935d;
   --bs-flag: #c3324a;
-  --bs-meal-breakfast: #f1cd72;
-  --bs-meal-lunch: #dc9f22;
-  --bs-meal-dinner: #b67400;
-  --bs-meal-snack: #855409;
-  --bs-meal-other: #5c3d0c;
+  --bs-partial: #b9b4a8;
+  --bs-on-hue: #ffffff;
+  --bs-today: #d4503b;
+  --bs-progress: #2a6fbd;
+  --bs-foods: #23935d;
+  --bs-settings: #8655c4;
 }
 
 .bodyshop-page, .bodyshop-surface {
   font-family: "Instrument Sans Variable", ui-sans-serif, system-ui, sans-serif;
-  font-feature-settings: "ss01";
+  --primary: var(--bs-hue, var(--bs-today));
+  --primary-foreground: var(--bs-on-hue);
+  --ring: var(--bs-hue, var(--bs-today));
 }
 
-/* Every number: condensed, bold, in columns. */
-.bs-figure {
-  font-stretch: 75%;
-  font-weight: 650;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.01em;
-  line-height: 1;
-}
-
-/* Headings sit between text and figures: a little narrower and heavier than text. */
-.bs-title {
-  font-stretch: 87.5%;
-  font-weight: 600;
-  letter-spacing: -0.015em;
-  line-height: 1.1;
-}
-
+.bs-figure { font-weight: 650; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; line-height: 1; }
+.bs-title { font-weight: 650; letter-spacing: -0.02em; line-height: 1.15; }
 .bs-quiet { color: var(--bs-quiet); }
-.bs-panel { border: 1px solid var(--bs-line); border-radius: 1.125rem; background: var(--bs-panel); }
-.bs-hairline { border-color: var(--bs-line); }
-.bs-hatch { background: repeating-linear-gradient(135deg, var(--bs-energy) 0 2px, transparent 2px 5px); }
 
-.bs-fill { transition: width 450ms cubic-bezier(.2, .7, .2, 1), left 450ms cubic-bezier(.2, .7, .2, 1); }
-@media (prefers-reduced-motion: reduce) { .bs-fill { transition: none; } }
+/* A card. --tint colors it softly; without one it is plain. */
+.bs-panel {
+  border-radius: 1.375rem;
+  background: color-mix(in oklab, var(--tint, var(--bs-panel)) var(--tint-share, 14%), var(--bs-panel));
+  box-shadow: inset 0 0 0 1px var(--bs-edge);
+}
+.bs-plate {
+  background: radial-gradient(circle at 50% 36%, var(--bs-panel) 0 33%, color-mix(in oklab, var(--bs-meal-breakfast) 9%, var(--bs-panel)) 62%, color-mix(in oklab, var(--bs-meal-dinner) 10%, var(--bs-panel)));
+}
+
+.bs-arc { transition: stroke-dasharray 450ms cubic-bezier(.2, .7, .2, 1), stroke-dashoffset 450ms cubic-bezier(.2, .7, .2, 1); }
+@media (prefers-reduced-motion: reduce) { .bs-arc { transition: none; } }
 
 /* Main buttons, selected states, and focus rings in Kitchen take the color of the open page. */
 .kitchen-hue {

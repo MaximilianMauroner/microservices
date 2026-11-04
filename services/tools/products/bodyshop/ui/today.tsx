@@ -8,7 +8,7 @@ import { Textarea } from "../../../platform/ui/components/ui/textarea.js";
 import { cn } from "../../../platform/ui/lib/utils.js";
 import { type DayStatus, MEALS, type Meal } from "../domain.js";
 import type { getBodyshopDay } from "../server-functions.js";
-import { COLORS, DayBudget, dayLabel, Field, fmt, MEAL_COLORS, numberOrNull, percent, Sheet, shiftDay, statusReason, useBodyshopAction } from "./kit.js";
+import { BodyshopPage, COLORS, DayBudget, dayLabel, Field, fmt, MEAL_COLORS, numberOrNull, percent, Sheet, shiftDay, statusReason, tint, useBodyshopAction } from "./kit.js";
 
 type Data = Awaited<ReturnType<typeof getBodyshopDay>>;
 type Entry = Data["entries"][number];
@@ -30,20 +30,16 @@ export function TodayPage({ data }: { data: Data }) {
   const isToday = data.day === data.today;
   const meals = MEALS.map((meal) => ({ meal, kcal: data.entries.filter((entry) => entry.meal === meal).reduce((sum, entry) => sum + (entry.nutrients.kcal ?? 0), 0) }));
   return (
-    <>
-      <header className="mb-6 flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="bs-title text-[1.75rem]">{dayLabel(data.day, data.today)}</h1>
-          <p className="bs-quiet mt-1 text-sm">{isToday ? dayLabel(data.day) : <Link to="/bodyshop" search={{}} className="underline decoration-(--bs-line) underline-offset-4 hover:text-foreground">Back to today</Link>}</p>
-        </div>
-        <nav aria-label="Days" className="flex shrink-0 gap-1">
-          <Link to="/bodyshop" search={{ day: shiftDay(data.day, -1) }} aria-label="Day before" className="grid size-11 place-items-center rounded-full border border-(--bs-line) hover:bg-muted"><ChevronLeftIcon className="size-5" /></Link>
-          <Link to="/bodyshop" search={{ day: shiftDay(data.day, 1) }} aria-label="Next day" disabled={data.day >= data.today} className="grid size-11 place-items-center rounded-full border border-(--bs-line) hover:bg-muted aria-disabled:pointer-events-none aria-disabled:opacity-30"><ChevronRightIcon className="size-5" /></Link>
+    <BodyshopPage title={dayLabel(data.day, data.today)}
+      facts={isToday ? dayLabel(data.day) : <Link to="/bodyshop" search={{}} className="underline decoration-(--bs-line) underline-offset-4 hover:text-foreground">Back to today</Link>}
+      actions={
+        <nav aria-label="Days" className="flex shrink-0 gap-1.5">
+          <Link to="/bodyshop" search={{ day: shiftDay(data.day, -1) }} aria-label="Day before" className="bs-panel grid size-11 place-items-center rounded-full hover:bg-muted"><ChevronLeftIcon className="size-5" /></Link>
+          <Link to="/bodyshop" search={{ day: shiftDay(data.day, 1) }} aria-label="Next day" disabled={data.day >= data.today} className="bs-panel grid size-11 place-items-center rounded-full hover:bg-muted aria-disabled:pointer-events-none aria-disabled:opacity-30"><ChevronRightIcon className="size-5" /></Link>
         </nav>
-      </header>
-
-      <div className="grid grid-cols-[minmax(0,1fr)] gap-8 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)] lg:items-start lg:gap-14">
-        <div className="grid gap-8 lg:sticky lg:top-6">
+      }>
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-3 lg:grid-cols-[minmax(0,25rem)_minmax(0,1fr)] lg:items-start lg:gap-8">
+        <div className="grid gap-3 lg:sticky lg:top-6">
           <DayBudget totals={summary ?? { kcal: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 }} low={summary?.low ?? { kcal: null }} high={summary?.high ?? { kcal: null }}
             targets={data.targets} known={!summary || summary.check === "Ready"} meals={meals} />
           <div className="hidden lg:block"><DayPanel data={data} onCheckIn={() => setCheckIn(true)} /></div>
@@ -51,18 +47,19 @@ export function TodayPage({ data }: { data: Data }) {
 
         <div className="min-w-0">
           {data.templates.length ? (
-            <section aria-label="Usual meals" className="-mx-3 mb-5 flex gap-2 overflow-x-auto px-3 [scrollbar-width:none] lg:mx-0 lg:flex-wrap lg:px-0">
+            <section aria-label="Usual meals" className="-mx-3 mb-3 flex gap-2 overflow-x-auto px-3 [scrollbar-width:none] lg:mx-0 lg:flex-wrap lg:px-0">
               {data.templates.map((one) => (
                 <button key={one.name} type="button" onClick={() => setTemplate(one)}
-                  className="flex h-10 shrink-0 items-center gap-2 rounded-full border border-(--bs-line) pr-4 pl-1.5 text-sm font-medium hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none">
-                  <span aria-hidden className="grid size-7 place-items-center rounded-full" style={{ background: MEAL_COLORS[one.meal], color: "var(--bs-on-energy)" }}><PlusIcon className="size-4" /></span>
+                  style={tint(MEAL_COLORS[one.meal]!, 16)}
+                  className="bs-panel flex h-10 shrink-0 items-center gap-2 rounded-full pr-4 pl-1.5 text-sm font-medium hover:brightness-95 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none dark:hover:brightness-125">
+                  <span aria-hidden className="grid size-7 place-items-center rounded-full text-(--bs-on-hue)" style={{ background: MEAL_COLORS[one.meal] }}><PlusIcon className="size-4" /></span>
                   {one.name}
                 </button>
               ))}
             </section>
           ) : null}
           <MealList entries={data.entries} meals={meals} onAdd={setAdding} onEdit={setEditing} />
-          <div className="mt-8 lg:hidden"><DayPanel data={data} onCheckIn={() => setCheckIn(true)} /></div>
+          <div className="mt-3 lg:hidden"><DayPanel data={data} onCheckIn={() => setCheckIn(true)} /></div>
         </div>
       </div>
 
@@ -72,16 +69,15 @@ export function TodayPage({ data }: { data: Data }) {
       <CheckInSheet key={`${data.day}-${checkIn}`} open={checkIn} data={data} onClose={() => setCheckIn(false)} />
       {isToday ? (
         <button type="button" aria-label="Add food" onClick={() => setAdding(mealNow())}
-          className="fixed right-4 bottom-[max(1.25rem,env(safe-area-inset-bottom))] z-30 grid size-15 place-items-center rounded-full shadow-[0_6px_24px_rgb(0_0_0/35%)] focus-visible:ring-4 focus-visible:ring-ring/60 focus-visible:outline-none md:hidden"
-          style={{ background: COLORS.energy, color: "var(--bs-on-energy)" }}>
+          className="fixed right-4 bottom-[calc(5rem+env(safe-area-inset-bottom))] z-30 grid size-15 place-items-center rounded-[1.25rem] bg-(--bs-hue) text-(--bs-on-hue) shadow-[0_8px_24px_color-mix(in_srgb,var(--bs-hue)_40%,transparent)] focus-visible:ring-4 focus-visible:ring-ring/60 focus-visible:outline-none md:hidden">
           <PlusIcon className="size-7" strokeWidth={2.5} />
         </button>
       ) : null}
-    </>
+    </BodyshopPage>
   );
 }
 
-/** The day's food by meal. Each meal carries the shade it has on the day bar. */
+/** The day's food by meal. Each meal card has the color of its arc on the day ring. */
 function MealList({ entries, meals, onAdd, onEdit }: { entries: readonly Entry[]; meals: readonly { meal: Meal; kcal: number }[]; onAdd: (meal: Meal) => void; onEdit: (entry: Entry) => void }) {
   return (
     <div className="grid gap-2">
@@ -89,21 +85,22 @@ function MealList({ entries, meals, onAdd, onEdit }: { entries: readonly Entry[]
         const own = entries.filter((entry) => entry.meal === meal);
         if (!own.length && meal === "Other") return null;
         return (
-          <section key={meal} aria-label={meal} className="border-t border-(--bs-line) pt-1 pb-2">
+          <section key={meal} aria-label={meal} className="bs-panel px-4 py-2" style={tint(MEAL_COLORS[meal]!, 16)}>
             <header className="flex items-center justify-between gap-2">
-              <h2 className="bs-title flex items-center gap-2.5 py-2.5 text-[1.0625rem]">
-                <span aria-hidden className="size-3 rounded-[3px]" style={{ background: MEAL_COLORS[meal] }} />{meal}
+              <h2 className="bs-title flex items-center gap-2.5 py-2 text-[1.0625rem]">
+                <span aria-hidden className="size-3 rounded-full" style={{ background: MEAL_COLORS[meal] }} />{meal}
               </h2>
-              <div className="flex items-center gap-1">
-                {own.length ? <span className="bs-figure text-[1.25rem]">{fmt(kcal)}</span> : null}
-                <Button variant="ghost" size="icon" className="size-11 rounded-full" aria-label={`Add to ${meal.toLowerCase()}`} onClick={() => onAdd(meal)}><PlusIcon className="size-5" /></Button>
+              <div className="flex items-center gap-2.5">
+                {own.length ? <span className="bs-figure text-[1.25rem]">{fmt(kcal)}</span> : <span className="bs-quiet text-sm">Nothing yet</span>}
+                <button type="button" aria-label={`Add to ${meal.toLowerCase()}`} onClick={() => onAdd(meal)} style={{ background: MEAL_COLORS[meal] }}
+                  className="grid size-9 place-items-center rounded-full text-(--bs-on-hue) hover:brightness-110 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"><PlusIcon className="size-5" strokeWidth={2.5} /></button>
               </div>
             </header>
             {own.length ? (
-              <ul>
+              <ul className="mb-1 border-t border-[color-mix(in_srgb,currentColor_8%,transparent)]">
                 {own.map((entry) => (
                   <li key={entry.id}>
-                    <button type="button" onClick={() => onEdit(entry)} className="-mx-2 flex w-[calc(100%+1rem)] items-center justify-between gap-3 rounded-lg px-2 py-2 text-left hover:bg-muted/60 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none">
+                    <button type="button" onClick={() => onEdit(entry)} className="-mx-2 flex w-[calc(100%+1rem)] items-center justify-between gap-3 rounded-lg px-2 py-2 text-left hover:bg-[color-mix(in_srgb,currentColor_6%,transparent)] focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none">
                       <span className="min-w-0 pl-[1.375rem]">
                         <span className="block truncate text-[0.9375rem]">{entry.food}</span>
                         <span className="bs-quiet block text-[0.8125rem]">
@@ -140,21 +137,21 @@ function DayPanel({ data, onCheckIn }: { data: Data; onCheckIn: () => void }) {
     if (await run({ type: "weight.log", day: data.day, kg: value }, "Weight logged")) setKg("");
   }
   return (
-    <section aria-label="Weight and log status" className="bs-panel grid gap-5 p-4">
-      <div>
+    <div className="grid gap-3">
+      <section aria-label="Weight" className="bs-panel p-4" style={tint(COLORS.trend)}>
         <div className="flex items-baseline justify-between gap-2">
           <h2 className="bs-title text-[1.0625rem]">Weight</h2>
           {mean !== null ? <p><span className="bs-figure text-[2rem]">{fmt(mean, 1)}</span> <span className="bs-quiet text-sm">kg</span></p> : <p className="bs-quiet text-sm">Not weighed</p>}
         </div>
         <form onSubmit={submit} className="mt-3 flex gap-2">
           <Input inputMode="decimal" placeholder="Weight in kg" aria-label="Weight in kg" value={kg} onChange={(event) => setKg(event.target.value)} className="h-11" />
-          <Button type="submit" className="h-11 px-5" disabled={pending || numberOrNull(kg) === null}>Log</Button>
+          <Button type="submit" className="h-11 bg-(--bs-weight) px-5 hover:bg-(--bs-weight)/90" disabled={pending || numberOrNull(kg) === null}>Log</Button>
         </form>
         {data.weights.length > 1 || (data.weights.length && data.weights[0]!.time) ? (
-          <ul className="mt-2 flex flex-wrap gap-1.5" aria-label="Weigh-ins of the day">
+          <ul className="mt-2.5 flex flex-wrap gap-1.5" aria-label="Weigh-ins of the day">
             {data.weights.map((one) => (
               <li key={one.id}>
-                <button type="button" disabled={pending} onClick={() => void run({ type: "remove", kind: "weight", id: one.id }, "Weight removed")} className="bs-quiet rounded-full border border-(--bs-line) px-2.5 py-1 text-xs hover:text-foreground" aria-label={`Remove ${fmt(one.kg, 1)} kg`}>
+                <button type="button" disabled={pending} onClick={() => void run({ type: "remove", kind: "weight", id: one.id }, "Weight removed")} className="bs-quiet rounded-full bg-(--bs-panel) px-2.5 py-1 text-xs hover:text-foreground" aria-label={`Remove ${fmt(one.kg, 1)} kg`}>
                   {one.time ? `${one.time}, ` : ""}{fmt(one.kg, 1)} kg ×
                 </button>
               </li>
@@ -163,20 +160,20 @@ function DayPanel({ data, onCheckIn }: { data: Data; onCheckIn: () => void }) {
         ) : data.weights.length ? (
           <button type="button" disabled={pending} onClick={() => void run({ type: "remove", kind: "weight", id: data.weights[0]!.id }, "Weight removed")} className="bs-quiet mt-2 text-xs underline decoration-(--bs-line) underline-offset-4 hover:text-foreground">Remove this weight</button>
         ) : null}
-      </div>
-      <div className="grid gap-2.5 border-t border-(--bs-line) pt-4">
+      </section>
+      <section aria-label="Food log status" className="bs-panel grid gap-2.5 p-4" style={status === "Complete" ? tint(COLORS.good, 16) : undefined}>
         <div className="flex items-baseline justify-between gap-2">
           <h2 className="bs-title text-[1.0625rem]">Food log</h2>
-          <span className="text-sm font-medium" style={{ color: status === "Complete" ? undefined : COLORS.quiet }}>{status === "Complete" ? "Complete" : status === "Unknown" ? "Not complete" : status}</span>
+          <span className="text-sm font-semibold" style={{ color: status === "Complete" ? COLORS.good : COLORS.quiet }}>{status === "Complete" ? "Complete" : status === "Unknown" ? "Not complete" : status}</span>
         </div>
         <div className={cn(pending && "opacity-60")}>
           <Segmented label="Food log status" options={STATUS_OPTIONS} value={override ?? "auto"}
             onValue={(value) => void run({ type: "day.update", day: data.day, override: value === "auto" ? null : value as DayStatus }, "Day updated")} />
         </div>
         <p className="bs-quiet text-[0.8125rem] leading-snug">{statusReason(data.summary?.basis, status)} Only complete days count for the expenditure model.</p>
-      </div>
-      <Button variant="outline" className="h-11" onClick={onCheckIn}>Check in: training, sleep, hunger</Button>
-    </section>
+        <Button variant="outline" className="mt-1 h-11 bg-(--bs-panel)" onClick={onCheckIn}>Check in: training, sleep, hunger</Button>
+      </section>
+    </div>
   );
 }
 
