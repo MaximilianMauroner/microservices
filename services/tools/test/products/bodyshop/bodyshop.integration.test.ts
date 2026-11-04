@@ -11,7 +11,7 @@ import type { FoodEntry, WeightReading } from "../../../products/bodyshop/domain
 import { entryNutrients } from "../../../products/bodyshop/model/day.js";
 import { registerBodyshopTools } from "../../../products/bodyshop/mcp-tools.js";
 import { type BodyshopStore, bodyshopStore } from "../../../products/bodyshop/repository.js";
-import { commitImport, correctEntry, dayView, logFood, logMeal, logWeight, previewImport, removeRecord, saveFood, updateSettings } from "../../../products/bodyshop/service.js";
+import { commitImport, correctEntry, dayView, logFood, logMeal, logWeight, previewImport, progress, removeRecord, saveFood, updateProfile, updateSettings } from "../../../products/bodyshop/service.js";
 import { requireLoopbackPostgres } from "../../harness/postgres.ts";
 import { eatingWorkbook } from "./workbook-fixture.js";
 
@@ -164,6 +164,18 @@ describe.skipIf(!store)("Bodyshop logging", () => {
     await expect(updateSettings(scope, { rateTargetPercent: 200 })).rejects.toThrow("from 0 to 10 %");
     await expect(updateSettings(scope, { expenditureMin: 9000 })).rejects.toThrow("must be below");
     expect((await updateSettings(scope, { calorieTarget: 2300 })).calorieTarget).toBe(2300);
+  });
+
+  it("estimates resting energy from the age on the current day once a birthday and sex are set", async () => {
+    const scope = store!.owner("owner-subject");
+    for (const day of ["2026-10-30", "2026-11-01", "2026-11-02"]) await logWeight(scope, { day, kg: 100 }, at("07:00"));
+    expect((await progress(scope, at("10:00"))).steps.resting).toBeNull();
+    await expect(updateProfile(scope, { birthday: "2015-01-01" }, at("10:00"))).rejects.toThrow("age from 18 to 110");
+    // Born on 4 November 1998, the person is still 27 on 3 November 2026: 10 × 100 + 6.25 × 187 − 5 × 27 + 5.
+    await updateProfile(scope, { birthday: "1998-11-04", sex: "Male" }, at("10:00"));
+    expect((await progress(scope, at("10:00"))).steps.resting).toBeCloseTo(2038.75);
+    await updateProfile(scope, { sex: null }, at("10:00"));
+    expect((await progress(scope, at("10:00"))).steps.resting).toBeNull();
   });
 
   it("counts the food of the day a pooled log was split from", async () => {

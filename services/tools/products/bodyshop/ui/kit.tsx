@@ -22,10 +22,10 @@ export function BodyshopLayout({ children }: { children: ReactNode }) {
 export function BodyshopPage({ title, facts, actions, children }: { title: ReactNode; facts?: ReactNode; actions?: ReactNode; children: ReactNode }) {
   return (
     <>
-      <header className="mb-5 flex flex-wrap items-end justify-between gap-x-4 gap-y-3">
+      <header className="mb-6 flex flex-wrap items-end justify-between gap-x-4 gap-y-3">
         <div className="min-w-0">
-          <h1 className="font-semibold tracking-tight text-[1.75rem] leading-tight sm:text-[2.25rem]">{title}</h1>
-          {facts ? <p className="mt-1 text-sm text-muted-foreground">{facts}</p> : null}
+          <h1 className="bs-title text-[1.75rem]">{title}</h1>
+          {facts ? <p className="bs-quiet mt-1.5 max-w-[60ch] text-sm">{facts}</p> : null}
         </div>
         {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
       </header>
@@ -77,9 +77,9 @@ export function Sheet({ open, onOpenChange, title, description, children, footer
   if (mobile) {
     return (
       <Drawer open={open} onOpenChange={onOpenChange} showSwipeHandle>
-        <DrawerContent style={keyboard ? { marginBottom: keyboard.inset, maxHeight: keyboard.height - 8 } : undefined} className="max-h-[92dvh]">
+        <DrawerContent style={keyboard ? { marginBottom: keyboard.inset, maxHeight: keyboard.height - 8 } : undefined} className="bodyshop-surface max-h-[92dvh]">
           <DrawerHeader className="text-left">
-            <DrawerTitle className="text-xl font-semibold tracking-tight">{title}</DrawerTitle>
+            <DrawerTitle className="bs-title text-[1.375rem]">{title}</DrawerTitle>
             {description ? <DrawerDescription>{description}</DrawerDescription> : null}
           </DrawerHeader>
           <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-2">{children}</div>
@@ -90,9 +90,9 @@ export function Sheet({ open, onOpenChange, title, description, children, footer
   }
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[88dvh] grid-rows-[auto_minmax(0,1fr)_auto] sm:max-w-lg">
+      <DialogContent className="bodyshop-surface max-h-[88dvh] grid-rows-[auto_minmax(0,1fr)_auto] sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle className="text-xl font-semibold tracking-tight">{title}</DialogTitle>
+          <DialogTitle className="bs-title text-[1.375rem]">{title}</DialogTitle>
           {description ? <DialogDescription>{description}</DialogDescription> : null}
         </DialogHeader>
         <div className="-mx-1 min-h-0 overflow-y-auto px-1">{children}</div>
@@ -150,8 +150,13 @@ export function shiftDay(day: string, count: number): string {
   return new Date(Date.parse(`${day}T00:00:00Z`) + count * 86_400_000).toISOString().slice(0, 10);
 }
 
-/** The meaning colors. Everything else on a Bodyshop page is ink on the card surface. */
-export const COLORS = { energy: "var(--bs-energy)", burn: "var(--bs-burn)", trend: "var(--bs-trend)", good: "var(--bs-good)", flag: "var(--bs-flag)" } as const;
+/** The meaning colors. Everything else on a Bodyshop page is ink and quiet text on the page. */
+export const COLORS = { energy: "var(--bs-energy)", burn: "var(--bs-burn)", trend: "var(--bs-trend)", flag: "var(--bs-flag)", quiet: "var(--bs-quiet)" } as const;
+
+/** One step of amber per meal, the same on the day bar, in the meal list, and in the meal share. */
+export const MEAL_COLORS: Readonly<Record<string, string>> = {
+  Breakfast: "var(--bs-meal-breakfast)", Lunch: "var(--bs-meal-lunch)", Dinner: "var(--bs-meal-dinner)", Snack: "var(--bs-meal-snack)", Other: "var(--bs-meal-other)"
+};
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -160,67 +165,82 @@ export function shortDay(day: string): string {
   return `${Number(day.slice(8, 10))} ${MONTHS[Number(day.slice(5, 7)) - 1]}`;
 }
 
+/** Why a day counts as complete or not, in words. The model keeps the workbook's own wording for parity. */
+export function statusReason(basis: string | undefined, status: string): string {
+  if (!basis) return "Log breakfast, lunch, and dinner, or mark the day complete.";
+  if (basis.startsWith("Manual override")) return `You set this day to ${status.toLowerCase()}.`;
+  if (basis.startsWith("Recorded Complete")) return "You marked this day complete.";
+  if (basis.startsWith("Automatic")) return "Breakfast, lunch, and dinner are logged, so the day counts as complete.";
+  return "Log breakfast, lunch, and dinner, or mark the day complete.";
+}
+
 type Totals = Readonly<{ kcal: number; protein: number; carbs: number; fat: number; fiber: number | null }>;
 type Bounds = Readonly<{ kcal: number | null }>;
 
 /**
- * The day's food as a nutrition label: the calorie total with its range and the target, then one row per
- * nutrient. The range is drawn as a whisker under the bar, the same mark the charts use for a range.
+ * The day's energy budget: what is left in large figures, then one bar split into the meals in their order,
+ * with the target as a tick and the likely range as a bracket under the bar. Macros follow in four columns.
  */
-export function DayLabel({ totals, low, high, targets, known, status }: {
-  totals: Totals; low: Bounds; high: Bounds; known: boolean; status: string;
+export function DayBudget({ totals, low, high, targets, known, meals }: {
+  totals: Totals; low: Bounds; high: Bounds; known: boolean; meals: readonly { meal: string; kcal: number }[];
   targets: Readonly<{ kcal: number; protein: number; carbs: number; fat: number; fiber: number }>;
 }) {
-  const scale = Math.max(targets.kcal * 1.2, (known && high.kcal !== null ? high.kcal : totals.kcal) * 1.04, 1);
+  const ranged = known && low.kcal !== null && high.kcal !== null;
+  const scale = Math.max(targets.kcal * 1.15, (ranged ? high.kcal! : totals.kcal) * 1.03, 1);
   const at = (value: number) => `${Math.max(0, Math.min(100, (value / scale) * 100))}%`;
   const over = totals.kcal > targets.kcal;
-  const ranged = known && low.kcal !== null && high.kcal !== null;
+  const left = targets.kcal - totals.kcal;
+  let start = 0;
   return (
-    <section aria-label="Day total" className="bs-label rounded-lg bg-card px-4 pt-3 pb-2">
-      <div className="flex items-baseline justify-between gap-3">
-        <h2 className="text-lg font-semibold tracking-tight">Day total</h2>
-        <span className="text-sm" style={{ color: status === "Complete" ? COLORS.good : undefined }}>{status === "Complete" ? "Complete" : `${status} log`}</span>
-      </div>
-      <div className="bs-rule mt-2 flex items-end justify-between gap-3 pt-2">
-        <p className="flex items-baseline gap-1.5">
-          <span className="bs-figure text-[3.75rem]">{fmt(totals.kcal)}</span>
-          <span className="text-sm font-medium">kcal</span>
+    <section aria-label="Day total">
+      <div className="flex items-end justify-between gap-4">
+        <p className="min-w-0">
+          <span className="bs-figure block text-[4.75rem] leading-[0.8] sm:text-[5.5rem]" style={{ color: over ? COLORS.flag : undefined }}>{fmt(Math.abs(left))}</span>
+          <span className="mt-2 block text-[0.9375rem] font-medium">{over ? "kcal over target" : "kcal left"}</span>
         </p>
-        <p className="pb-1.5 text-right text-sm text-muted-foreground">of <span className="bs-figure text-base text-foreground">{fmt(targets.kcal)}</span></p>
+        <p className="bs-quiet shrink-0 pb-0.5 text-right text-sm leading-snug">
+          <span className="bs-figure text-[1.375rem] text-foreground">{fmt(totals.kcal)}</span> eaten
+          <span className="block">of <span className="bs-figure text-base text-foreground">{fmt(targets.kcal)}</span></span>
+        </p>
       </div>
-      <div className="relative mt-2 mb-1 h-6" role="img" aria-label={`${fmt(totals.kcal)} of ${fmt(targets.kcal)} kcal${ranged ? `, range ${fmt(low.kcal)} to ${fmt(high.kcal)}` : ""}`}>
-        <div className="absolute inset-x-0 top-0 h-2.5 rounded-sm bg-muted" />
-        <div className="bs-fill absolute top-0 left-0 h-2.5 rounded-l-sm" style={{ width: at(Math.min(totals.kcal, targets.kcal)), background: COLORS.energy }} />
-        {over ? <div className="bs-fill absolute top-0 h-2.5 rounded-r-sm" style={{ left: at(targets.kcal), width: `calc(${at(totals.kcal)} - ${at(targets.kcal)})`, background: COLORS.flag }} /> : null}
-        <div className="absolute -top-1 h-[1.125rem] w-0.5 bg-foreground" style={{ left: `calc(${at(targets.kcal)} - 1px)` }} />
+
+      <div className="relative mt-5 h-9" role="img" aria-label={`${fmt(totals.kcal)} of ${fmt(targets.kcal)} kcal: ${meals.filter((one) => one.kcal > 0).map((one) => `${one.meal} ${fmt(one.kcal)}`).join(", ") || "nothing logged"}${ranged ? `. Likely ${fmt(low.kcal)} to ${fmt(high.kcal)}` : ""}`}>
+        <div className="absolute inset-x-0 top-0 h-4 rounded-[5px] bg-(--bs-line)" />
+        {meals.map((one) => {
+          if (one.kcal <= 0) return null;
+          const from = start;
+          start += one.kcal;
+          return <div key={one.meal} className="bs-fill absolute top-0 h-4 border-r-2 border-background first:rounded-l-[5px]" style={{ left: at(from), width: at(one.kcal), background: MEAL_COLORS[one.meal] }} />;
+        })}
+        {over ? <div className="bs-fill absolute top-0 h-4 opacity-90" style={{ left: at(targets.kcal), width: `calc(${at(totals.kcal)} - ${at(targets.kcal)})`, background: `repeating-linear-gradient(135deg, ${COLORS.flag} 0 2px, transparent 2px 5px)` }} /> : null}
+        <div className="absolute -top-1.5 h-7 w-[3px] rounded-full bg-foreground" style={{ left: `calc(${at(targets.kcal)} - 1.5px)` }} />
         {ranged ? (
-          <div className="bs-fill absolute top-4 h-2 border-x-2 border-foreground/70" style={{ left: at(low.kcal!), width: `calc(${at(high.kcal!)} - ${at(low.kcal!)})` }}>
-            <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-foreground/70" />
+          <div className="bs-fill absolute top-6 h-2 border-x-[1.5px] border-(--bs-quiet)" style={{ left: at(low.kcal!), width: `calc(${at(high.kcal!)} - ${at(low.kcal!)})` }}>
+            <div className="absolute inset-x-0 top-1/2 h-[1.5px] -translate-y-1/2 bg-(--bs-quiet)" />
           </div>
         ) : null}
       </div>
-      <p className="flex justify-between gap-3 text-sm">
-        <span style={{ color: over ? COLORS.flag : undefined }}>{over ? `${fmt(totals.kcal - targets.kcal)} kcal over` : `${fmt(targets.kcal - totals.kcal)} kcal left`}</span>
-        <span className="text-muted-foreground">{ranged ? `Range ${fmt(low.kcal)} to ${fmt(high.kcal)}` : "Range not known yet"}</span>
+      <p className="bs-quiet -mt-1 text-[0.8125rem]">
+        {ranged ? <>Likely <span className="bs-figure text-sm text-foreground">{fmt(low.kcal)}</span> to <span className="bs-figure text-sm text-foreground">{fmt(high.kcal)}</span> kcal</> : totals.kcal > 0 ? "The likely range shows once every entry passes its checks." : "Nothing logged yet."}
       </p>
-      <dl className="bs-rule-heavy mt-2">
-        <Nutrient label="Protein" value={totals.protein} target={targets.protein} first />
-        <Nutrient label="Carbs" value={totals.carbs} target={targets.carbs} />
-        <Nutrient label="Fat" value={totals.fat} target={targets.fat} />
-        <Nutrient label="Fiber" value={totals.fiber} target={targets.fiber} />
+
+      <dl className="mt-6 grid grid-cols-4 gap-3">
+        <Macro label="Protein" value={totals.protein} target={targets.protein} />
+        <Macro label="Carbs" value={totals.carbs} target={targets.carbs} />
+        <Macro label="Fat" value={totals.fat} target={targets.fat} />
+        <Macro label="Fiber" value={totals.fiber} target={targets.fiber} />
       </dl>
-      {!ranged && totals.kcal > 0 ? <p className="bs-rule pt-1.5 text-xs text-muted-foreground">Fiber and the range show once every entry passes its checks.</p> : null}
     </section>
   );
 }
 
-function Nutrient({ label, value, target, first }: { label: string; value: number | null; target: number; first?: boolean }) {
+function Macro({ label, value, target }: { label: string; value: number | null; target: number }) {
   const share = value === null || target <= 0 ? 0 : Math.min(1, value / target);
   return (
-    <div className={cn("grid grid-cols-[4.25rem_6.25rem_minmax(0,1fr)] items-center gap-x-3 py-1.5", !first && "bs-rule")}>
-      <dt className="text-sm font-medium">{label}</dt>
-      <dd className="text-right"><span className="bs-figure text-lg">{fmt(value)}</span><span className="text-xs text-muted-foreground"> / {fmt(target)} g</span></dd>
-      <dd aria-hidden className="h-1.5 rounded-full bg-muted"><div className="bs-fill h-full rounded-full bg-foreground/80" style={{ width: `${share * 100}%` }} /></dd>
+    <div className="min-w-0">
+      <dt className="bs-quiet text-[0.8125rem]">{label}</dt>
+      <dd className="mt-1 truncate"><span className="bs-figure text-[1.5rem]">{fmt(value)}</span><span className="bs-quiet text-xs"> / {fmt(target)} g</span></dd>
+      <dd aria-hidden className="mt-1.5 h-1 rounded-full bg-(--bs-line)"><div className="bs-fill h-full rounded-full bg-foreground" style={{ width: `${share * 100}%` }} /></dd>
     </div>
   );
 }
@@ -229,11 +249,11 @@ function Nutrient({ label, value, target, first }: { label: string; value: numbe
 export function ChartTip({ active, label, rows }: { active?: boolean; label?: string; rows: readonly { color: string; name: string; value: string; dashed?: boolean }[] }) {
   if (!active || !label || !rows.length) return null;
   return (
-    <div className="min-w-40 rounded-md border border-(--surface-border) bg-popover px-3 py-2 text-xs shadow-md">
-      <p className="mb-1 font-medium">{dayLabel(label)}</p>
+    <div className="min-w-44 rounded-xl border border-(--bs-line) bg-popover px-3 py-2.5 text-xs shadow-[0_8px_24px_rgb(0_0_0/25%)]">
+      <p className="mb-1.5 font-semibold">{dayLabel(label)}</p>
       {rows.map((row) => (
         <p key={row.name} className="flex items-center justify-between gap-4 py-0.5">
-          <span className="flex items-center gap-1.5 text-muted-foreground">
+          <span className="bs-quiet flex items-center gap-1.5">
             <span aria-hidden className="inline-block h-0.5 w-3" style={{ background: row.color, borderTop: row.dashed ? `2px dashed ${row.color}` : undefined }} />{row.name}
           </span>
           <span className="bs-figure text-sm">{row.value}</span>
@@ -248,7 +268,7 @@ export function Field({ label, hint, children, className }: { label: string; hin
     <label className={cn("grid gap-1.5 text-sm", className)}>
       <span className="font-medium">{label}</span>
       {children}
-      {hint ? <span className="text-xs text-muted-foreground">{hint}</span> : null}
+      {hint ? <span className="bs-quiet text-xs">{hint}</span> : null}
     </label>
   );
 }

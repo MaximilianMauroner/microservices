@@ -14,28 +14,28 @@ export function FoodsPage({ foods }: { foods: readonly SavedFood[] }) {
     return foods.filter((food) => words.every((word) => `${food.name} ${food.brand}`.toLowerCase().includes(word)));
   }, [foods, query]);
   return (
-    <BodyshopPage title="Saved foods" facts={`${foods.length} foods. Entries keep the nutrition they were logged with, so a change here never changes past days.`}
+    <BodyshopPage title="Saved foods" facts={`${foods.length} foods. An entry keeps the nutrition it was logged with, so a change here does not change past days.`}
       actions={<Button onClick={() => setEditing("new")}><PlusIcon aria-hidden />New food</Button>}>
-      <div className="relative mb-3">
-        <SearchIcon className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-        <Input type="search" placeholder="Search foods" aria-label="Search foods" value={query} onChange={(event) => setQuery(event.target.value)} className="h-10 pl-9" />
+      <div className="relative mb-4">
+        <SearchIcon className="bs-quiet pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2" aria-hidden />
+        <Input type="search" placeholder="Search foods" aria-label="Search foods" value={query} onChange={(event) => setQuery(event.target.value)} className="h-11 rounded-full pl-10" />
       </div>
-      <ul className="divide-y divide-(--surface-border) rounded-2xl border border-(--surface-border) bg-card">
+      <ul className="bs-panel divide-y divide-(--bs-line) overflow-hidden">
         {shown.map((food) => (
           <li key={food.id}>
-            <button type="button" onClick={() => setEditing(food)} className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-muted/50">
+            <button type="button" onClick={() => setEditing(food)} className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:outline-none">
               <span className="min-w-0">
-                <span className="block truncate">{food.name}</span>
-                <span className="block truncate text-xs text-muted-foreground">{[food.brand, food.fullSize ? `${food.container || "package"} ${fmt(food.fullSize.amount)} ${food.fullSize.unit}` : ""].filter(Boolean).join(" · ")}</span>
+                <span className="block truncate text-[0.9375rem]">{food.name}</span>
+                <span className="bs-quiet block truncate text-[0.8125rem]">{[food.brand, food.fullSize ? `1 ${food.container || "package"} is ${fmt(food.fullSize.amount)} ${food.fullSize.unit}` : ""].filter(Boolean).join(", ") || `${percent(food.range)} range`}</span>
               </span>
-              <span className="shrink-0 text-right text-sm tabular-nums">
-                {fmt(food.nutrients.kcal)} kcal
-                <span className="block text-xs text-muted-foreground">per {fmt(food.amount)} {food.unit} · {percent(food.range)}</span>
+              <span className="shrink-0 text-right">
+                <span className="bs-figure text-[1.125rem]">{fmt(food.nutrients.kcal)}</span><span className="bs-quiet text-xs"> kcal</span>
+                <span className="bs-quiet block text-xs">per {fmt(food.amount)} {food.unit}</span>
               </span>
             </button>
           </li>
         ))}
-        {!shown.length ? <li className="px-4 py-6 text-center text-sm text-muted-foreground">No food matches.</li> : null}
+        {!shown.length ? <li className="bs-quiet px-4 py-8 text-center text-sm">No saved food matches. Use New food to save it.</li> : null}
       </ul>
       {editing ? <FoodSheet key={editing === "new" ? "new" : editing.id} food={editing === "new" ? undefined : editing} initialName={editing === "new" ? query : ""} onClose={() => setEditing(undefined)} /> : null}
     </BodyshopPage>

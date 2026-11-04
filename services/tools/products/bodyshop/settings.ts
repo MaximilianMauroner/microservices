@@ -121,3 +121,27 @@ export function readSettings(rows: readonly Pick<Setting, "label" | "value">[]):
   }
   return settings;
 }
+
+/**
+ * Birthday and sex for the resting energy equation. They are setting rows too, so they stay sealed with the
+ * other settings, but their values are text, so `readSettings` does not read them.
+ */
+export const PROFILE_LABELS = { birthday: "Birthday", sex: "Sex" } as const;
+export const SEXES = ["Male", "Female"] as const;
+export type Profile = Readonly<{ birthday: string | null; sex: (typeof SEXES)[number] | null }>;
+
+export function readProfile(rows: readonly Pick<Setting, "label" | "value">[]): Profile {
+  const value = (label: string) => rows.find((row) => row.label.trim().toLowerCase() === label.toLowerCase())?.value;
+  const birthday = value(PROFILE_LABELS.birthday);
+  const sex = value(PROFILE_LABELS.sex);
+  return {
+    birthday: typeof birthday === "string" && /^\d{4}-\d{2}-\d{2}$/.test(birthday) ? birthday : null,
+    sex: SEXES.find((one) => one === sex) ?? null
+  };
+}
+
+/** Full years from a birthday to a day, both as YYYY-MM-DD. */
+export function ageOn(birthday: string, day: string): number {
+  const years = Number(day.slice(0, 4)) - Number(birthday.slice(0, 4));
+  return day.slice(5) < birthday.slice(5) ? years - 1 : years;
+}
