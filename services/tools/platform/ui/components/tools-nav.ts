@@ -4,6 +4,7 @@ export type ToolsPage = Readonly<{ label: string; to: string; match: (path: stri
 export type ToolsProduct = Readonly<{
   id: "dashboard" | "publisher" | "money" | "feedback" | "markdown" | "kitchen" | "bodyshop" | "status";
   label: string;
+  description?: string;
   to: string;
   icon: string;
   match: (path: string) => boolean;
@@ -39,9 +40,9 @@ export const TOOLS_PRODUCTS: readonly ToolsProduct[] = [
       { label: "Editor", to: "/share", match: () => false, external: true }
     ]
   },
-  { id: "kitchen", label: "Kitchen", to: "/kitchen", icon: favicons.directory, match: (path) => path.startsWith("/kitchen") },
+  { id: "kitchen", label: "Kitchen", description: "Recipes and meal planning", to: "/kitchen", icon: favicons.kitchen, match: (path) => path.startsWith("/kitchen") },
   {
-    id: "bodyshop", label: "Bodyshop", to: "/bodyshop", icon: favicons.directory, match: (path) => path.startsWith("/bodyshop"),
+    id: "bodyshop", label: "Bodyshop", description: "Food and weight log", to: "/bodyshop", icon: favicons.bodyshop, match: (path) => path.startsWith("/bodyshop"),
     pages: [
       { label: "Today", to: "/bodyshop", match: exact("/bodyshop") },
       { label: "Progress", to: "/bodyshop/progress", match: exact("/bodyshop/progress") },
@@ -55,3 +56,7 @@ export const TOOLS_PRODUCTS: readonly ToolsProduct[] = [
 export function currentProduct(pathname: string) {
   return TOOLS_PRODUCTS.find((product) => product.match(pathname));
 }
+
+export const EXTERNAL_TOOLS = [
+  { id: "network-console", label: "Network Console", to: "https://coding.tailbc92d.ts.net", icon: favicons.networkConsole }
+] as const;

@@ -1,3 +1,4 @@
+import { faviconLink, favicons } from "../../platform/ui/favicons.js";
 import { Outlet, createFileRoute } from "@tanstack/react-router";
 import { requireProductSession } from "../../platform/auth/session.js";
 import { getKitchenLanguage } from "../../products/kitchen/server-functions.js";
@@ -8,7 +9,7 @@ export const Route = createFileRoute("/kitchen")({
   beforeLoad: ({ location, cause }) => (cause === "enter" ? requireProductSession(location.href, "kitchen") : undefined),
   loader: () => getKitchenLanguage(),
   staleTime: Infinity,
-  head: () => ({ meta: [{ title: "Kitchen | Mauroner Tools" }, { name: "robots", content: "noindex, nofollow" }] }),
+  head: () => ({ meta: [{ title: "Kitchen | Mauroner Tools" }, { name: "robots", content: "noindex, nofollow" }], links: [faviconLink(favicons.kitchen)] }),
   component: KitchenLayout
 });
 
