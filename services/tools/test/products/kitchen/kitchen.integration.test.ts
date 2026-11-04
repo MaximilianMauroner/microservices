@@ -214,12 +214,34 @@ describe.skipIf(!sql)("Kitchen", () => {
     await expect(home.saveIngredient(zucchini.id, perPiece)).rejects.toMatchObject({ code: "invalid" });
     expect((await home.recipe(recipe.id)).lines.map((line) => [line.unit, line.amount])).toEqual([["g", 500]]);
 
-    await home.saveIngredient(zucchini.id, perPiece, 250);
+    await home.saveIngredient(zucchini.id, perPiece, { oldPerNew: 250 });
     expect((await home.recipe(recipe.id)).lines.map((line) => [line.unit, line.amount, line.note])).toEqual([["piece", 2, "halbiert"]]);
     expect((await home.stock()).map((item) => [item.unit, item.amount])).toEqual([["piece", 3]]);
 
     const unused = await home.saveIngredient(undefined, { name: "Gurke", unit: "g", section: "Gemüse", nutrition: noNutrition, notes: "" });
     expect((await home.saveIngredient(unused.id, { ...perPiece, name: "Gurke" })).unit).toBe("piece");
+  });
+
+  it("puts a new ingredient into chosen recipes at once, or saves nothing", async () => {
+    const store = kitchenStore(sql!);
+    const home = await store.open(admin, (await store.admin(admin).create("Home")).id);
+    const { recipe: pastaRecipe } = await pasta(home);
+    const chili = await home.saveRecipe(undefined, { name: "Chili", servings: 4, minutes: 60, instructions: "", lines: [] });
+    const paste = { name: "Tomatenmark", unit: "g", section: "Basics", nutrition: noNutrition, notes: "" } as const;
+
+    await expect(home.saveIngredient(undefined, paste, { addToRecipes: [{ recipeId: chili.id, amount: 0 }] })).rejects.toMatchObject({ code: "invalid" });
+    await expect(home.saveIngredient(undefined, paste, { addToRecipes: [{ recipeId: chili.id, amount: 30 }, { recipeId: randomUUID(), amount: 10 }] }))
+      .rejects.toMatchObject({ code: "not_found" });
+    expect((await home.ingredients()).map((one) => one.name)).not.toContain("Tomatenmark");
+    expect((await home.recipe(chili.id)).lines).toEqual([]);
+
+    const tomatenmark = await home.saveIngredient(undefined, paste, { addToRecipes: [{ recipeId: pastaRecipe.id, amount: 20 }, { recipeId: chili.id, amount: 30 }] });
+    expect(tomatenmark.recipeCount).toBe(2);
+    expect((await home.recipe(pastaRecipe.id)).lines.map((line) => [line.ingredient, line.amount])).toEqual([["Spaghetti", 200], ["Tomato", 4], ["Tomatenmark", 20]]);
+    expect((await home.recipe(chili.id)).lines.map((line) => [line.ingredient, line.amount])).toEqual([["Tomatenmark", 30]]);
+
+    await expect(home.saveIngredient(tomatenmark.id, paste, { addToRecipes: [{ recipeId: chili.id, amount: 10 }] })).rejects.toMatchObject({ code: "conflict" });
+    expect((await home.recipe(chili.id)).lines.map((line) => line.amount)).toEqual([30]);
   });
 
   it("keeps an ingredient in more than one group and shops for it in its main group", async () => {
@@ -242,7 +264,7 @@ describe.skipIf(!sql)("Kitchen", () => {
     const chickpeas = await home.saveIngredient(undefined, { name: "Kichererbsen", unit: "g", section: "Proteine", nutrition: { kcal: 120, protein: 7, carbs: 15, fat: 2 }, notes: "" });
     const recipe = await home.saveRecipe(undefined, { name: "Hummus", servings: 4, minutes: 10, instructions: "", lines: [{ ingredientId: chickpeas.id, amount: 800, note: "" }] });
 
-    await home.saveIngredient(chickpeas.id, { name: "Kichererbsen", unit: "can", section: "Proteine", nutrition: { kcal: 480, protein: 28, carbs: 60, fat: 8 }, notes: "" }, 400);
+    await home.saveIngredient(chickpeas.id, { name: "Kichererbsen", unit: "can", section: "Proteine", nutrition: { kcal: 480, protein: 28, carbs: 60, fat: 8 }, notes: "" }, { oldPerNew: 400 });
     expect((await home.recipe(recipe.id)).lines.map((line) => [line.unit, line.amount])).toEqual([["can", 2]]);
     await home.setStock(chickpeas.id, 3);
     expect((await home.stock()).map((item) => [item.unit, item.amount])).toEqual([["can", 3]]);

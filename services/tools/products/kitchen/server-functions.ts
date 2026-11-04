@@ -38,11 +38,11 @@ function summaries(recipes: readonly Recipe[], ingredients: readonly Ingredient[
   });
 }
 
-/** For each ingredient id, the recipes that use it. */
-function recipesUsing(recipes: readonly Recipe[]): Record<string, { id: string; name: string }[]> {
-  const usedIn: Record<string, { id: string; name: string }[]> = {};
-  for (const recipe of recipes) for (const line of recipe.lines) (usedIn[line.ingredientId] ??= []).push({ id: recipe.id, name: recipe.name });
-  return usedIn;
+/** What an ingredient sheet needs to know about each recipe: which ingredients it has, and for how many servings. */
+export type RecipeChoice = Readonly<{ id: string; name: string; servings: number; ingredientIds: readonly string[] }>;
+
+function recipeChoices(recipes: readonly Recipe[]): RecipeChoice[] {
+  return recipes.map((recipe) => ({ id: recipe.id, name: recipe.name, servings: recipe.servings, ingredientIds: recipe.lines.map((line) => line.ingredientId) }));
 }
 
 const kitchenInput = (input: { kitchenId: string }) => ({ kitchenId: String(input.kitchenId) });
@@ -122,7 +122,7 @@ export const getKitchenPantry = createServerFn({ method: "GET" })
   .handler(async ({ data, context }) => {
     const { scope, frame: base } = await frame(context, data.kitchenId);
     const [stock, leftovers, ingredients, recipes] = await Promise.all([scope.stock(), scope.leftovers(), scope.ingredients(), scope.recipes()]);
-    return { ...base, stock, leftovers, ingredients, usedIn: recipesUsing(recipes) };
+    return { ...base, stock, leftovers, ingredients, recipes: recipeChoices(recipes) };
   });
 
 export const getKitchenIngredients = createServerFn({ method: "GET" })
@@ -131,7 +131,7 @@ export const getKitchenIngredients = createServerFn({ method: "GET" })
   .handler(async ({ data, context }) => {
     const { scope, frame: base } = await frame(context, data.kitchenId);
     const [ingredients, recipes] = await Promise.all([scope.ingredients(), scope.recipes()]);
-    return { ...base, ingredients, usedIn: recipesUsing(recipes) };
+    return { ...base, ingredients, recipes: recipeChoices(recipes) };
   });
 
 export const runKitchenAction = createServerFn({ method: "POST" })
