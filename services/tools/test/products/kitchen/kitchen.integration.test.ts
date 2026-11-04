@@ -275,9 +275,9 @@ describe.skipIf(!sql)("Kitchen", () => {
     const home = await store.admin(admin).create("Home");
     const { recipe } = await pasta(await store.open(admin, home.id));
     await store.setMcpEnabled(admin, home.id, true);
-    await expect(store.admin(admin).move(home.id, randomUUID())).rejects.toMatchObject({ code: "not_found" });
+    await expect(store.admin(admin).move(home.id, randomUUID(), true)).rejects.toMatchObject({ code: "not_found" });
     expect((await store.list(admin)).map((one) => one.id)).toEqual([home.id]);
-    await store.admin(admin).move(home.id, friendId);
+    await store.admin(admin).move(home.id, friendId, true);
     expect(await store.list(admin)).toEqual([]);
     expect(await store.list(admin, { includeHidden: true })).toEqual([expect.objectContaining({ id: home.id, hidden: true, mcpEnabled: false })]);
     expect((await store.list(friend)).map((one) => one.id)).toEqual([home.id]);
@@ -287,6 +287,20 @@ describe.skipIf(!sql)("Kitchen", () => {
     await expect(store.setMcpEnabled(admin, home.id, true)).rejects.toMatchObject({ code: "forbidden" });
     await store.admin(admin).restore(home.id);
     expect((await store.list(admin))[0]).toMatchObject({ id: home.id, hidden: false, mcpEnabled: false });
+  });
+
+  it("hands a kitchen over while keeping the admin's membership and personal MCP access", async () => {
+    const store = kitchenStore(sql!);
+    const adminId = await person(admin.subject);
+    const friendId = await person(friend.subject);
+    const home = await store.admin(admin).create("Home");
+    await store.admin(admin).addMember(home.id, adminId);
+    await store.setMcpEnabled(admin, home.id, true);
+    await store.admin(admin).move(home.id, friendId, false);
+    expect((await store.list(admin))[0]).toMatchObject({ id: home.id, hidden: false, mcpEnabled: true });
+    expect((await store.open(admin, home.id)).kitchen.members.map((one) => one.personId)).toEqual(expect.arrayContaining([adminId, friendId]));
+    expect((await store.open(friend, home.id)).kitchen.mcpEnabled).toBe(false);
+    expect((await store.list(friend)).map((one) => one.id)).toEqual([home.id]);
   });
 
   it("lets a member leave while keeping the kitchen for its remaining members", async () => {

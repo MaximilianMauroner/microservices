@@ -63,7 +63,7 @@ export const kitchenAdminAction = z.discriminatedUnion("type", [
   z.object({ type: z.literal("kitchen.create"), name: z.string().max(200) }),
   z.object({ type: z.literal("kitchen.rename"), kitchenId: id, name: z.string().max(200) }),
   z.object({ type: z.literal("kitchen.remove"), kitchenId: id }),
-  z.object({ type: z.literal("kitchen.move"), kitchenId: id, personId: id }),
+  z.object({ type: z.literal("kitchen.move"), kitchenId: id, personId: id, leave: z.boolean() }),
   z.object({ type: z.literal("kitchen.restore"), kitchenId: id }),
   z.object({ type: z.literal("member.add"), kitchenId: id, personId: id }),
   z.object({ type: z.literal("member.remove"), kitchenId: id, personId: id })
@@ -123,7 +123,7 @@ export async function applyKitchenAdminAction(store: KitchenStore, who: Who, act
     case "kitchen.create": return admin.create(action.name);
     case "kitchen.rename": return admin.rename(action.kitchenId, action.name);
     case "kitchen.remove": return admin.remove(action.kitchenId);
-    case "kitchen.move": return admin.move(action.kitchenId, action.personId);
+    case "kitchen.move": return admin.move(action.kitchenId, action.personId, action.leave);
     case "kitchen.restore": return admin.restore(action.kitchenId);
     case "member.add": return admin.addMember(action.kitchenId, action.personId);
     case "member.remove": return admin.removeMember(action.kitchenId, action.personId);

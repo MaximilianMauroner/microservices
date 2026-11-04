@@ -58,7 +58,7 @@ export interface KitchenStore {
 export interface KitchenAdmin {
   create(name: string): Promise<Kitchen>;
   rename(kitchenId: string, name: string): Promise<Kitchen>;
-  move(kitchenId: string, personId: string): Promise<void>;
+  move(kitchenId: string, personId: string, leave: boolean): Promise<void>;
   restore(kitchenId: string): Promise<void>;
   remove(kitchenId: string): Promise<void>;
   /** Adds an invited person and grants them Kitchen, so the kitchen opens for them at once. */
@@ -199,7 +199,7 @@ export function kitchenStore(sql: Sql): KitchenStore {
           await sql`update tools.kitchens set name = ${requiredName(name, "kitchen")} where id = ${kitchenId}`;
           return one(kitchenId);
         },
-        async move(kitchenId, personId) {
+        async move(kitchenId, personId, leave) {
           await one(kitchenId);
           if (!isUuid(personId)) throw new KitchenError("This person is not invited.", "not_found");
           await sql.begin(async (tx) => {
@@ -210,7 +210,7 @@ export function kitchenStore(sql: Sql): KitchenStore {
             await tx`insert into tools.kitchen_members (kitchen_id, person_id, added_at) values (${kitchenId}, ${personId}, now()) on conflict do nothing`;
             await tx`update tools.kitchen_person_settings set hidden = false where kitchen_id = ${kitchenId} and subject in (select google_subject from tools.people where id = ${personId})`;
             await tx`insert into tools.product_grants (person_id, product_id, granted_at) values (${personId}, 'kitchen', now()) on conflict do nothing`;
-            await leaveKitchen(tx, who, kitchenId);
+            if (leave) await leaveKitchen(tx, who, kitchenId);
           });
         },
         async restore(kitchenId) {
