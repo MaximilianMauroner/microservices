@@ -5,9 +5,9 @@ import { BodyshopError, DAY_STATUSES, type FoodEntry, MEALS, type Nutrients } fr
 import { entryCheck, entryNutrients } from "./model/day.js";
 import type { BodyshopStore } from "./repository.js";
 import {
-  correctEntry, dayView, logFood, logMeal, logWeight, progress, readBodyshopSettings, removeRecord, saveFood, searchFoods, templateParts, updateDay, updateSettings
+  correctEntry, dayView, logFood, logMeal, logWeight, progress, readBodyshopSettings, removeRecord, saveFood, searchFoods, templateParts, updateDay, updateProfile, updateSettings
 } from "./service.js";
-import { SETTING_LABELS, type SettingKey } from "./settings.js";
+import { SETTING_LABELS, SEXES, type SettingKey } from "./settings.js";
 
 const LOGGING_RULES = [
   "Log what was eaten, not what was planned.",
@@ -149,10 +149,14 @@ export function registerBodyshopTools(server: McpServer, store: BodyshopStore, p
     };
   }, true);
 
-  tool("bodyshop_settings", "Shows your targets and model settings. Give values to change them, keyed by setting name.", {
-    values: z.record(z.string(), z.number()).optional().describe(`Keys: ${Object.keys(SETTING_LABELS).join(", ")}.`)
-  }, async ({ values }) => {
-    if (values && Object.keys(values).length) return updateSettings(scope(), values as Partial<Record<SettingKey, number>>);
-    return (await readBodyshopSettings(scope())).settings;
+  tool("bodyshop_settings", "Shows your targets, model settings, birthday, and sex. Give values to change them. The birthday and sex are for the resting energy estimate.", {
+    values: z.record(z.string(), z.number()).optional().describe(`Keys: ${Object.keys(SETTING_LABELS).join(", ")}.`),
+    birthday: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional().describe("YYYY-MM-DD. Null clears it."),
+    sex: z.enum(SEXES).nullable().optional().describe("For the resting energy equation. Null clears it.")
+  }, async ({ values, birthday, sex }) => {
+    const mine = scope();
+    if (birthday !== undefined || sex !== undefined) await updateProfile(mine, { birthday, sex });
+    const settings = values && Object.keys(values).length ? await updateSettings(mine, values as Partial<Record<SettingKey, number>>) : (await readBodyshopSettings(mine)).settings;
+    return { ...settings, ...(await readBodyshopSettings(mine)).profile };
   });
 }

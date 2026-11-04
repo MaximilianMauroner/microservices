@@ -13,7 +13,7 @@ import { projectWeight } from "./model/projection.js";
 import { weeklyReview } from "./model/review.js";
 import { dailyMeanWeights } from "./model/weight.js";
 import type { BodyshopChange, BodyshopKind, BodyshopScope } from "./repository.js";
-import { readSettings, SETTING_LABELS, type SettingKey, type Settings } from "./settings.js";
+import { ageOn, PROFILE_LABELS, type Profile, readProfile, readSettings, SETTING_LABELS, SEXES, type SettingKey, type Settings } from "./settings.js";
 
 /** A second log of the same food, meal, and amount within this time returns the first entry. */
 const REPEAT_WINDOW_MS = 10 * 60 * 1000;
@@ -301,9 +301,31 @@ async function updateDayLocked(scope: BodyshopScope, input: DayInput, now: Date)
   return checkIn;
 }
 
-export async function readBodyshopSettings(scope: BodyshopScope): Promise<{ settings: Settings; rows: Setting[] }> {
+export async function readBodyshopSettings(scope: BodyshopScope): Promise<{ settings: Settings; profile: Profile; rows: Setting[] }> {
   const rows = await scope.list("setting");
-  return { settings: readSettings(rows), rows: rows.sort((a, b) => a.order - b.order) };
+  return { settings: readSettings(rows), profile: readProfile(rows), rows: rows.sort((a, b) => a.order - b.order) };
+}
+
+/** Sets the birthday and sex for the resting energy equation. Null clears a value; a value left out stays. */
+export async function updateProfile(scope: BodyshopScope, input: { birthday?: string | null; sex?: Profile["sex"] }, now = new Date()): Promise<Profile> {
+  if (input.birthday) {
+    const birthday = parseDay(input.birthday, "The birthday");
+    const age = ageOn(birthday, loggingDay(now, 0));
+    if (!(age >= 18 && age <= 110)) throw new BodyshopError("The resting energy equation needs an age from 18 to 110.");
+  }
+  if (input.sex && !SEXES.includes(input.sex)) throw new BodyshopError("Choose Male or Female.");
+  return scope.exclusive(async (locked) => {
+    const rows = await locked.list("setting");
+    const changes: BodyshopChange[] = [];
+    for (const [key, value] of [["birthday", input.birthday], ["sex", input.sex]] as const) {
+      if (value === undefined) continue;
+      const label = PROFILE_LABELS[key];
+      const row = rows.find((one) => sameName(one.label, label));
+      changes.push({ kind: "setting", record: row ? { ...row, value } : { id: randomUUID(), label, value, unit: "", notes: "", order: 900 + changes.length } });
+    }
+    if (changes.length) await locked.save(changes);
+    return readProfile([...rows.filter((row) => !changes.some((change) => "record" in change && change.record.id === row.id)), ...changes.flatMap((change) => ("record" in change ? [change.record as Setting] : []))]);
+  });
 }
 
 /** Settings that count days, weeks, or hours. They must be whole numbers of at least 1. */
@@ -383,7 +405,7 @@ export async function history(scope: BodyshopScope, now = new Date()) {
   const settings = readSettings(settingRows);
   const today = loggingDay(now, settings.dayStartHour);
   const days = daySummaries(entries, checkIns, allocations);
-  return { entries, checkIns, allocations, weights, settings, today, days };
+  return { entries, checkIns, allocations, weights, settings, profile: readProfile(settingRows), today, days };
 }
 
 /** How many days the insight and step views look back. */
@@ -394,8 +416,9 @@ export async function progress(scope: BodyshopScope, now = new Date()) {
   const data = await history(scope, now);
   const { settings, today } = data;
   const model = runModel({ days: data.days, weights: data.weights, checkIns: data.checkIns, settings, asOf: today });
-  // Age and sex are not recorded, so resting energy stays empty, as in the workbook.
-  const steps = stepEnergy(model, data.days, data.checkIns, settings, { heightCm: settings.heightCm, strideRatio: settings.strideRatio, walkingCost: settings.walkingCost, age: null, sex: null }, VIEW_DAYS);
+  const { profile } = data;
+  const age = profile.birthday ? ageOn(profile.birthday, today) : null;
+  const steps = stepEnergy(model, data.days, data.checkIns, settings, { heightCm: settings.heightCm, strideRatio: settings.strideRatio, walkingCost: settings.walkingCost, age, sex: profile.sex }, VIEW_DAYS);
   return {
     ...data, model, steps,
     projection: projectWeight(model.rows, model.summary, settings),

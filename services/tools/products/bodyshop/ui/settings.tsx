@@ -1,6 +1,7 @@
 import { useRouter } from "@tanstack/react-router";
 import { FileSpreadsheetIcon } from "lucide-react";
 import { useState } from "react";
+import { Segmented } from "../../../platform/ui/components/segmented.js";
 import { Button } from "../../../platform/ui/components/ui/button.js";
 import { Input } from "../../../platform/ui/components/ui/input.js";
 import { toast } from "../../../platform/ui/components/ui/toast.js";
@@ -12,21 +13,59 @@ import { BodyshopPage, Field, fmt, numberOrNull, useBodyshopAction } from "./kit
 type Data = Awaited<ReturnType<typeof getBodyshopSettings>>;
 
 const TARGETS: readonly SettingKey[] = ["calorieTarget", "proteinTarget", "carbTarget", "fatTarget", "fiberTarget", "goalLow", "goalHigh", "rateTargetPercent"];
+const SEX_OPTIONS = [["", "Not set"], ["Male", "Male"], ["Female", "Female"]] as const;
 
 export function SettingsPage({ data }: { data: Data }) {
   return (
-    <BodyshopPage title="Settings" facts="Targets, model settings, and the import from your Eating workbook.">
-      <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
-        <SettingsForm data={data} keys={TARGETS} title="Targets" />
+    <BodyshopPage title="Settings" facts="Targets, the facts about you that the model uses, and the import from your Eating workbook.">
+      <div className="grid gap-5 lg:grid-cols-2 lg:items-start">
+        <div className="grid gap-5">
+          <SettingsForm data={data} keys={TARGETS} title="Targets" />
+          <ProfileCard data={data} />
+        </div>
         <ImportCard data={data} />
-        <details className="rounded-2xl border border-(--surface-border) bg-card lg:col-span-2">
-          <summary className="cursor-pointer px-4 py-3 font-semibold">Model settings</summary>
-          <div className="border-t border-(--surface-border) p-4">
-            <SettingsForm data={data} keys={(Object.keys(data.labels) as SettingKey[]).filter((key) => !TARGETS.includes(key))} plain />
+        <details className="bs-panel lg:col-span-2">
+          <summary className="bs-title cursor-pointer px-4 py-3.5 text-[1.0625rem]">Model settings</summary>
+          <div className="border-t border-(--bs-line) p-4">
+            <SettingsForm data={data} keys={(Object.keys(data.labels) as SettingKey[]).filter((key) => !TARGETS.includes(key) && key !== "heightCm")} plain />
           </div>
         </details>
       </div>
     </BodyshopPage>
+  );
+}
+
+/** Birthday, sex, and height. The resting energy equation needs all three; the age follows from the birthday. */
+function ProfileCard({ data }: { data: Data }) {
+  const { run, pending } = useBodyshopAction();
+  const [birthday, setBirthday] = useState(data.profile.birthday ?? "");
+  const [sex, setSex] = useState<(typeof SEX_OPTIONS)[number][0]>(data.profile.sex ?? "");
+  const [height, setHeight] = useState(String(data.settings.heightCm));
+  const heightValue = numberOrNull(height);
+  const profileChanged = birthday !== (data.profile.birthday ?? "") || sex !== (data.profile.sex ?? "");
+  const heightChanged = heightValue !== null && heightValue !== data.settings.heightCm;
+  const today = new Date().toISOString().slice(0, 10);
+  const age = birthday ? Number(today.slice(0, 4)) - Number(birthday.slice(0, 4)) - (today.slice(5) < birthday.slice(5) ? 1 : 0) : null;
+  async function save() {
+    if (profileChanged && !await run({ type: "profile.update", birthday: birthday || null, sex: sex || null }, heightChanged ? undefined : "Saved")) return;
+    if (heightChanged) await run({ type: "settings.update", values: { heightCm: heightValue } as Record<SettingKey, number> }, "Saved");
+  }
+  return (
+    <section className="bs-panel grid gap-4 p-4">
+      <div>
+        <h2 className="bs-title text-[1.0625rem]">You</h2>
+        <p className="bs-quiet mt-1 text-[0.8125rem]">For the resting energy estimate on Progress. Bodyshop keeps them encrypted with your other records.</p>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Birthday" hint={age !== null ? `${age} years old today.` : undefined}><Input type="date" value={birthday} max={today} onChange={(event) => setBirthday(event.target.value)} /></Field>
+        <Field label="Height in cm"><Input inputMode="decimal" value={height} onChange={(event) => setHeight(event.target.value)} /></Field>
+      </div>
+      <div className="grid gap-1.5 text-sm">
+        <span className="font-medium">Sex</span>
+        <Segmented label="Sex" options={SEX_OPTIONS} value={sex} onValue={setSex} />
+      </div>
+      <div><Button onClick={() => void save()} disabled={pending || !(profileChanged || heightChanged)}>Save</Button></div>
+    </section>
   );
 }
 
@@ -51,8 +90,8 @@ function SettingsForm({ data, keys, title, plain }: { data: Data; keys: readonly
   );
   if (plain) return form;
   return (
-    <section className="rounded-2xl border border-(--surface-border) bg-card p-4">
-      <h2 className="mb-3 font-semibold">{title}</h2>
+    <section className="bs-panel p-4">
+      <h2 className="bs-title mb-4 text-[1.0625rem]">{title}</h2>
       {form}
     </section>
   );
@@ -97,9 +136,9 @@ function ImportCard({ data }: { data: Data }) {
 
   const rec = preview?.reconciliation;
   return (
-    <section className="grid gap-3 rounded-2xl border border-(--surface-border) bg-card p-4">
-      <h2 className="flex items-center gap-2 font-semibold"><FileSpreadsheetIcon className="size-4 text-muted-foreground" aria-hidden />Import the Eating workbook</h2>
-      <p className="text-sm text-muted-foreground">
+    <section className="bs-panel grid gap-3 p-4">
+      <h2 className="bs-title flex items-center gap-2 text-[1.0625rem]"><FileSpreadsheetIcon className="bs-quiet size-4" aria-hidden />Import the Eating workbook</h2>
+      <p className="bs-quiet text-[0.8125rem] leading-relaxed">
         In Google Sheets choose File, Download, Microsoft Excel (.xlsx), then pick the file here. Bodyshop checks it first and writes nothing until you import.
         A new import replaces the records of earlier imports. Food and weights you logged in Bodyshop stay.
       </p>

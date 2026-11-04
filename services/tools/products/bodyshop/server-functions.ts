@@ -4,9 +4,9 @@ import { requireProductAccess } from "../../platform/auth/middleware.js";
 import { DAY_STATUSES, findTemplate, MEALS } from "./domain.js";
 import type { BodyshopScope } from "./repository.js";
 import {
-  correctEntry, dayView, type ImportReceipt, logFood, logMeal, logWeight, progress, readBodyshopSettings, removeRecord, saveFood, templateParts, updateDay, updateSettings
+  correctEntry, dayView, type ImportReceipt, logFood, logMeal, logWeight, progress, readBodyshopSettings, removeRecord, saveFood, templateParts, updateDay, updateProfile, updateSettings
 } from "./service.js";
-import { SETTING_LABELS, type SettingKey } from "./settings.js";
+import { SETTING_LABELS, SEXES, type SettingKey } from "./settings.js";
 
 const session = requireProductAccess("bodyshop");
 
@@ -52,7 +52,8 @@ export const bodyshopAction = z.discriminatedUnion("type", [
     nutrients: nutrients.optional(), range: share.optional(), fiberRange: share.optional(), container: text(100).optional(),
     fullSize: z.object({ amount: z.number().positive(), unit: text(40) }).nullable().optional(), source: text(200).optional(), notes: text(4000).optional()
   }),
-  z.object({ type: z.literal("settings.update"), values: z.record(z.enum(Object.keys(SETTING_LABELS) as [SettingKey, ...SettingKey[]]), z.number().finite()) })
+  z.object({ type: z.literal("settings.update"), values: z.record(z.enum(Object.keys(SETTING_LABELS) as [SettingKey, ...SettingKey[]]), z.number().finite()) }),
+  z.object({ type: z.literal("profile.update"), birthday: day.nullable().optional(), sex: z.enum(SEXES).nullable().optional() })
 ]);
 
 export type BodyshopAction = z.infer<typeof bodyshopAction>;
@@ -71,6 +72,7 @@ export const runBodyshopAction = createServerFn({ method: "POST" })
       case "day.update": { const { type: _, ...input } = data; return { id: (await updateDay(mine, input)).id }; }
       case "food.save": { const { type: _, ...input } = data; return { id: (await saveFood(mine, input)).id }; }
       case "settings.update": await updateSettings(mine, data.values); return {};
+      case "profile.update": await updateProfile(mine, { birthday: data.birthday, sex: data.sex }); return {};
     }
   });
 
@@ -108,7 +110,8 @@ export const getBodyshopProgress = createServerFn({ method: "GET" })
       projection: result.projection,
       energy: { headline: result.energy.headline, decision: result.energy.decision, maintenance: result.energy.maintenance, weightTrend: result.energy.weightTrend },
       review: result.review,
-      steps: { status: result.steps.status, maintenance: result.steps.maintenance, stepDays: result.steps.stepDays, calibrationText: result.steps.calibrationText },
+      steps: { status: result.steps.status, maintenance: result.steps.maintenance, stepDays: result.steps.stepDays, calibrationText: result.steps.calibrationText, resting: result.steps.resting },
+      profile: result.profile,
       insights: result.insights,
       uncertain: result.uncertain
     };
@@ -122,9 +125,9 @@ export const getBodyshopSettings = createServerFn({ method: "GET" })
   .middleware([session])
   .handler(async ({ context }) => {
     const mine = scope(context);
-    const [{ settings, rows }, imports] = await Promise.all([readBodyshopSettings(mine), mine.imports<ImportReceipt>()]);
+    const [{ settings, profile, rows }, imports] = await Promise.all([readBodyshopSettings(mine), mine.imports<ImportReceipt>()]);
     return {
-      settings, labels: SETTING_LABELS, rows,
+      settings, profile, labels: SETTING_LABELS, rows,
       imports: imports.map((one) => ({ id: one.id, importedAt: one.receipt.importedAt, fileName: one.receipt.fileName, records: one.receipt.records, matchingDays: one.receipt.reconciliation.matchingDays, days: one.receipt.reconciliation.days }))
     };
   });

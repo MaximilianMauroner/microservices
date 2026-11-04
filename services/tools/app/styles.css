@@ -95,41 +95,68 @@ html[data-theme="light"] {
   --kitchen-ingredients-ink: var(--kitchen-ingredients);
 }
 
-/* Bodyshop. Ink and surface carry most of the page; five colors carry meaning.
-   Energy is food eaten, burn is expenditure, trend is the smoothed weight, good is complete or on target,
-   flag is a failed check or a day over the target. Dark values first, light below. */
+/* Bodyshop. One typeface in two widths: text at normal width, every number condensed. Amber is food eaten,
+   teal is energy burned and a day under target, rose is a day over target or a failed check. Each meal is one
+   step of amber, so the day bar, the meal list, and the meal share read as one set. Dark values first. */
 :root {
-  --bs-energy: #8ab4ff;
-  --bs-burn: #f0a35e;
-  --bs-trend: #ece7dd;
-  --bs-good: #6cc99a;
-  --bs-flag: #f07a6a;
+  --bs-panel: #0f100d;
+  --bs-line: #272822;
+  --bs-quiet: #9d9b90;
+  --bs-energy: #f2b646;
+  --bs-burn: #4cc3bb;
+  --bs-trend: #f3f1ea;
+  --bs-flag: #ff7d8c;
+  --bs-meal-breakfast: #f8dc9c;
+  --bs-meal-lunch: #f2b646;
+  --bs-meal-dinner: #d9881c;
+  --bs-meal-snack: #a6661a;
+  --bs-meal-other: #75501f;
+  --bs-on-energy: #1f1400;
 }
 
 html[data-theme="light"] {
-  --bs-energy: #2357c5;
-  --bs-burn: #b4621a;
-  --bs-trend: #23211e;
-  --bs-good: #1d7f52;
-  --bs-flag: #c0392b;
+  --bs-panel: #ffffff;
+  --bs-line: #e5e2d8;
+  --bs-quiet: #6a685e;
+  --bs-energy: #c98500;
+  --bs-burn: #0d7d75;
+  --bs-trend: #1b1c18;
+  --bs-flag: #c3324a;
+  --bs-meal-breakfast: #f1cd72;
+  --bs-meal-lunch: #dc9f22;
+  --bs-meal-dinner: #b67400;
+  --bs-meal-snack: #855409;
+  --bs-meal-other: #5c3d0c;
 }
 
-/* Numbers set like a nutrition label: condensed, bold, and in columns. */
+.bodyshop-page, .bodyshop-surface {
+  font-family: "Instrument Sans Variable", ui-sans-serif, system-ui, sans-serif;
+  font-feature-settings: "ss01";
+}
+
+/* Every number: condensed, bold, in columns. */
 .bs-figure {
-  font-family: var(--font-kitchen);
   font-stretch: 75%;
-  font-weight: 700;
+  font-weight: 650;
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.005em;
+  letter-spacing: -0.01em;
   line-height: 1;
 }
 
-/* The day label: one heavy rule under the total and thin rules between nutrients, like a food package. */
-.bs-label { border: 1.5px solid var(--foreground); }
-.bs-rule-heavy { border-top: 7px solid var(--foreground); }
-.bs-rule { border-top: 1px solid color-mix(in srgb, var(--foreground) 55%, transparent); }
+/* Headings sit between text and figures: a little narrower and heavier than text. */
+.bs-title {
+  font-stretch: 87.5%;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.1;
+}
 
-.bs-fill { transition: width 400ms cubic-bezier(.2, .7, .2, 1), left 400ms cubic-bezier(.2, .7, .2, 1); }
+.bs-quiet { color: var(--bs-quiet); }
+.bs-panel { border: 1px solid var(--bs-line); border-radius: 1.125rem; background: var(--bs-panel); }
+.bs-hairline { border-color: var(--bs-line); }
+.bs-hatch { background: repeating-linear-gradient(135deg, var(--bs-energy) 0 2px, transparent 2px 5px); }
+
+.bs-fill { transition: width 450ms cubic-bezier(.2, .7, .2, 1), left 450ms cubic-bezier(.2, .7, .2, 1); }
 @media (prefers-reduced-motion: reduce) { .bs-fill { transition: none; } }
 
 /* Main buttons, selected states, and focus rings in Kitchen take the color of the open page. */
