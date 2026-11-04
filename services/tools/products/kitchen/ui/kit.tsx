@@ -5,7 +5,7 @@ import { createContext, type CSSProperties, type ReactNode, useContext, useEffec
 import { AppShell } from "../../../platform/ui/components/app-shell.js";
 import { Button } from "../../../platform/ui/components/ui/button.js";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../../../platform/ui/components/ui/dialog.js";
-import { Drawer, DrawerContent, DrawerDescription, DrawerFooter, DrawerHeader, DrawerTitle } from "../../../platform/ui/components/ui/drawer.js";
+import { Drawer, DrawerClose, DrawerContent, DrawerDescription, DrawerFooter, DrawerHeader, DrawerTitle } from "../../../platform/ui/components/ui/drawer.js";
 import { Input } from "../../../platform/ui/components/ui/input.js";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "../../../platform/ui/components/ui/dropdown-menu.js";
 import { toast } from "../../../platform/ui/components/ui/toast.js";
@@ -67,7 +67,8 @@ const en = {
   language: "Language",
   undo: "Undo",
   failed: "That did not work",
-  tryAgain: "Try again.",
+  retry: "Try again",
+  close: "Close",
   fewer: (label: string) => `Fewer ${label.toLowerCase()}`,
   more: (label: string) => `More ${label.toLowerCase()}`,
   thisWeek: "This week",
@@ -94,7 +95,8 @@ const TEXT: Record<KitchenLanguage, KitText> = {
     language: "Sprache",
     undo: "Rückgängig",
     failed: "Das hat nicht funktioniert",
-    tryAgain: "Versuch es noch einmal.",
+    retry: "Erneut versuchen",
+    close: "Schließen",
     fewer: (label: string) => `Weniger ${label}`,
     more: (label: string) => `Mehr ${label}`,
     thisWeek: "Diese Woche",
@@ -336,7 +338,7 @@ export function useKitchenAction(kitchenId: string) {
       }
       return result;
     } catch (error) {
-      toast.add({ title: text.failed, description: messageOf(error) ?? text.tryAgain, type: "error" });
+      toast.add({ title: text.failed, description: messageOf(error), type: "error", actionProps: { children: text.retry, onClick: () => void run(action, done) } });
       return undefined;
     } finally {
       setPending(false);
@@ -358,14 +360,17 @@ export function messageOf(error: unknown): string | undefined {
 }
 
 /** A form surface: a bottom sheet on phones, where thumbs reach it, and a dialog on larger screens. */
-export function KitchenSheet({ open, onOpenChange, title, description, children, footer }: {
+export function KitchenSheet({ open, onOpenChange, title, description, children, footer, view }: {
   open: boolean;
+  /** A new view starts scrolled to the top. */
+  view?: string;
   onOpenChange: (open: boolean) => void;
   title: ReactNode;
   description?: ReactNode;
   children: ReactNode;
   footer?: ReactNode;
 }) {
+  const text = useText(TEXT);
   const mobile = useIsMobile();
   const hue = hueStyle(useContext(OpenTab));
   const keyboard = useKeyboard(open && mobile);
@@ -376,11 +381,12 @@ export function KitchenSheet({ open, onOpenChange, title, description, children,
     return (
       <Drawer open={open} onOpenChange={onOpenChange} showSwipeHandle>
         <DrawerContent style={keyboard.open ? { ...hue, marginBottom: keyboard.inset, maxHeight: keyboard.height - 8 } : hue} className="kitchen-hue max-h-[92dvh]">
-          <DrawerHeader className="border-b border-[color:var(--surface-border)] pb-3 text-left">
+          <DrawerHeader className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2 border-b border-[color:var(--surface-border)] pb-3 text-left group-data-[swipe-axis=y]/drawer-popup:text-left">
             <DrawerTitle className="font-kitchen font-semibold tracking-tight text-xl">{title}</DrawerTitle>
-            {description ? <DrawerDescription>{description}</DrawerDescription> : null}
+            <DrawerClose render={<Button variant="ghost" size="icon" className="-mt-1.5 -mr-2 size-11 text-muted-foreground" aria-label={text.close} />}><XIcon className="size-5" aria-hidden /></DrawerClose>
+            {description ? <DrawerDescription className="col-span-2">{description}</DrawerDescription> : null}
           </DrawerHeader>
-          <div className="min-h-0 flex-1 overflow-y-auto px-4 pt-4 pb-2">{children}</div>
+          <div key={view} className="min-h-0 flex-1 overflow-y-auto px-4 pt-4 pb-2">{children}</div>
           {footer && !searching ? <DrawerFooter className="border-t border-[color:var(--surface-border)] pb-[max(1rem,env(safe-area-inset-bottom))]">{footer}</DrawerFooter> : null}
         </DrawerContent>
       </Drawer>
@@ -393,7 +399,7 @@ export function KitchenSheet({ open, onOpenChange, title, description, children,
           <DialogTitle className="font-kitchen font-semibold tracking-tight text-xl">{title}</DialogTitle>
           {description ? <DialogDescription>{description}</DialogDescription> : null}
         </DialogHeader>
-        <div className="-mx-1 min-h-0 overflow-y-auto px-1">{children}</div>
+        <div key={view} className="-mx-1 min-h-0 overflow-y-auto px-1">{children}</div>
         {footer ? <DialogFooter>{footer}</DialogFooter> : <span />}
       </DialogContent>
     </Dialog>
@@ -488,12 +494,12 @@ export function SearchField({ value, onValue, label, inSheet = false, add, child
 }
 
 /** A number control with large minus and plus targets, for servings at the stove. */
-export function Stepper({ value, onValue, min = 1, max = 100, label }: { value: number; onValue: (value: number) => void; min?: number; max?: number; label: string }) {
+export function Stepper({ value, onValue, min = 1, max = 100, label, unit }: { value: number; onValue: (value: number) => void; min?: number; max?: number; label: string; unit?: string }) {
   const text = useText(TEXT);
   return (
     <div className="inline-flex items-center rounded-full border border-control-border bg-control" role="group" aria-label={label}>
       <button type="button" className="grid size-11 place-items-center rounded-full text-lg hover:bg-control-hover disabled:opacity-40 md:size-10" onClick={() => onValue(Math.max(min, value - 1))} disabled={value <= min} aria-label={text.fewer(label)}>−</button>
-      <output className="w-9 text-center text-sm font-semibold tabular-nums" aria-live="polite">{value}</output>
+      <output className="min-w-9 px-1 text-center text-sm font-semibold tabular-nums" aria-live="polite">{value}{unit ? <span className="font-normal text-muted-foreground"> {unit}</span> : null}</output>
       <button type="button" className="grid size-11 place-items-center rounded-full text-lg hover:bg-control-hover disabled:opacity-40 md:size-10" onClick={() => onValue(Math.min(max, value + 1))} disabled={value >= max} aria-label={text.more(label)}>+</button>
     </div>
   );

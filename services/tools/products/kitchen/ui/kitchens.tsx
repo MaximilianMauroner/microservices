@@ -4,7 +4,10 @@ import { PencilIcon, PlusIcon, Trash2Icon, UserPlusIcon, XIcon } from "lucide-re
 import { type CSSProperties, useState } from "react";
 import { AppShell } from "../../../platform/ui/components/app-shell.js";
 import { Button } from "../../../platform/ui/components/ui/button.js";
+import { Checkbox } from "../../../platform/ui/components/ui/checkbox.js";
 import { Input } from "../../../platform/ui/components/ui/input.js";
+import { NativeSelect, NativeSelectOption } from "../../../platform/ui/components/ui/native-select.js";
+import { Switch } from "../../../platform/ui/components/ui/switch.js";
 import { toast } from "../../../platform/ui/components/ui/toast.js";
 import type { KitchenAdminAction, KitchenPersonalAction } from "../actions.js";
 import type { Kitchen } from "../domain.js";
@@ -23,6 +26,7 @@ const en = {
   introMember: "The kitchens you cook in.",
   newKitchen: "New kitchen",
   failed: "That did not work",
+  retry: "Try again",
   rename: (name: string) => `Rename ${name}`,
   membersOf: (name: string) => `Members of ${name}`,
   removeMember: (email: string, name: string) => `Remove ${email} from ${name}`,
@@ -57,7 +61,7 @@ const en = {
   moveAndLeave: "Hand over and leave",
   leaveAfterMove: "Leave this kitchen after handing it over",
   moveTitle: (name: string) => `Hand over ${name}`,
-  moveHint: "Choose the person who will get this kitchen. You stay unless you choose to leave. Leaving turns off your MCP access. Admin recovery access stays available.",
+  moveHint: "Choose who gets this kitchen. You stay a member unless you tick the box below. If you leave, your assistant loses access to this kitchen too.",
   recipient: "Person",
   choosePerson: "Choose a person…",
   moved: "Kitchen handed over",
@@ -66,7 +70,7 @@ const en = {
   restored: "Kitchen returned to your list",
   mcpAccess: "Allow my assistants to use this kitchen",
   mcpHint: "This setting applies only to your account. Off by default.",
-  mcpUpdated: "MCP access updated",
+  mcpUpdated: "Assistant access updated",
   namePlaceholder: "Home, Max and Anna, …"
 };
 type KitText = typeof en;
@@ -80,6 +84,7 @@ const TEXT: Record<KitchenLanguage, KitText> = {
     introMember: "Die Küchen, in denen du kochst.",
     newKitchen: "Neue Küche",
     failed: "Das hat nicht funktioniert",
+    retry: "Erneut versuchen",
     rename: (name: string) => `${name} umbenennen`,
     membersOf: (name: string) => `Mitglieder von ${name}`,
     removeMember: (email: string, name: string) => `${email} aus ${name} entfernen`,
@@ -114,7 +119,7 @@ const TEXT: Record<KitchenLanguage, KitText> = {
     moveAndLeave: "Übergeben und verlassen",
     leaveAfterMove: "Diese Küche nach der Übergabe verlassen",
     moveTitle: (name: string) => `${name} übergeben`,
-    moveHint: "Wähle die Person, die diese Küche bekommt. Du bleibst, wenn du nicht auswählst, die Küche zu verlassen. Beim Verlassen wird dein MCP-Zugriff ausgeschaltet. Der Admin kann die Küche weiterhin verwalten.",
+    moveHint: "Wähle, wer diese Küche bekommt. Du bleibst Mitglied, außer du hakst unten das Verlassen an. Wenn du gehst, verliert auch dein Assistent den Zugriff auf diese Küche.",
     recipient: "Person",
     choosePerson: "Person auswählen…",
     moved: "Küche übergeben",
@@ -123,7 +128,7 @@ const TEXT: Record<KitchenLanguage, KitText> = {
     restored: "Küche wieder in deiner Liste",
     mcpAccess: "Meinen Assistenten Zugriff auf diese Küche erlauben",
     mcpHint: "Diese Einstellung gilt nur für dein Konto. Standardmäßig aus.",
-    mcpUpdated: "MCP-Zugriff aktualisiert",
+    mcpUpdated: "Zugriff für deinen Assistenten aktualisiert",
     namePlaceholder: "Zuhause, Max und Anna, …"
   }
 };
@@ -150,7 +155,7 @@ export function KitchensPage(data: KitchensData) {
       toast.add({ title, type: "success" });
       return result;
     } catch (error) {
-      toast.add({ title: text.failed, description: messageOf(error), type: "error" });
+      toast.add({ title: text.failed, description: messageOf(error), type: "error", actionProps: { children: text.retry, onClick: () => void run(action, title) } });
       return undefined;
     } finally {
       setPending(false);
@@ -206,25 +211,25 @@ export function KitchensPage(data: KitchensData) {
                         <label className="flex items-center gap-2 text-sm">
                           <UserPlusIcon className="size-4 text-muted-foreground" aria-hidden />
                           <span className="sr-only">{text.addPersonTo(kitchen.name)}</span>
-                          <select className="h-11 w-0 min-w-0 flex-1 rounded-lg border border-input bg-field px-2 text-sm md:h-9" value="" disabled={pending}
+                          <NativeSelect className="w-0 min-w-0 flex-1 [&_select]:h-11 md:[&_select]:h-9" value="" disabled={pending}
                             onChange={(event) => { const person = outside.find((one) => one.id === event.target.value); if (person) void run({ type: "member.add", kitchenId: kitchen.id, personId: person.id }, text.joined(person.email, kitchen.name)); }}>
-                            <option value="">{text.addPerson}</option>
-                            {outside.map((person) => <option key={person.id} value={person.id}>{person.email}</option>)}
-                          </select>
+                            <NativeSelectOption value="">{text.addPerson}</NativeSelectOption>
+                            {outside.map((person) => <NativeSelectOption key={person.id} value={person.id}>{person.email}</NativeSelectOption>)}
+                          </NativeSelect>
                         </label>
                       ) : <p className="text-xs text-muted-foreground">{data.people.length ? text.everyoneMember : <>{text.inviteIn} <Link to="/settings" className="underline">{text.settings}</Link> {text.inviteFirst}</>}</p>}
                       <p className="text-xs text-muted-foreground">{text.accessNote}</p>
                     </div>
                   ) : null}
                   <div className="grid gap-2">
-                    <label className="flex min-h-11 items-center gap-2 text-sm">
-                      <input type="checkbox" checked={kitchen.mcpEnabled} disabled={pending}
-                        onChange={(event) => void run({ type: "kitchen.mcp", kitchenId: kitchen.id, enabled: event.target.checked }, text.mcpUpdated)} />
+                    <label className="flex min-h-11 items-center justify-between gap-3 text-sm">
                       {text.mcpAccess}
+                      <Switch checked={kitchen.mcpEnabled} disabled={pending}
+                        onCheckedChange={(enabled) => void run({ type: "kitchen.mcp", kitchenId: kitchen.id, enabled }, text.mcpUpdated)} />
                     </label>
                     <p className="text-xs text-muted-foreground">{text.mcpHint}</p>
                     <div className="flex flex-wrap gap-2">
-                      <Button size="sm" variant="outline" disabled={pending} onClick={() => {
+                      <Button size="sm" variant="destructive-outline" disabled={pending} onClick={() => {
                         if (window.confirm(text.leaveConfirm(kitchen.name))) void run({ type: "kitchen.leave", kitchenId: kitchen.id }, text.left);
                       }}>{text.leave}</Button>
                       {data.isAdmin && data.people.length ? <Button size="sm" variant="outline" disabled={pending} onClick={() => { setMoving(kitchen); setRecipient(""); setLeaveAfterMove(false); }}>{text.move}</Button> : null}
@@ -233,7 +238,7 @@ export function KitchensPage(data: KitchensData) {
                   <div className="mt-auto flex items-center justify-between gap-2">
                     <Button nativeButton={false} render={<Link to="/kitchen/$kitchenId" params={{ kitchenId: kitchen.id }} />}>{text.open}</Button>
                     {data.isAdmin ? (
-                      <Button size="sm" variant="destructive-subtle" disabled={pending} onClick={() => {
+                      <Button size="sm" variant="destructive-outline" disabled={pending} onClick={() => {
                         if (window.confirm(text.deleteConfirm(kitchen.name))) void run({ type: "kitchen.remove", kitchenId: kitchen.id }, text.deleted(kitchen.name));
                       }}><Trash2Icon aria-hidden /> {text.delete}</Button>
                     ) : null}
@@ -271,13 +276,13 @@ export function KitchensPage(data: KitchensData) {
         <p className="mb-4 text-sm text-muted-foreground">{text.moveHint}</p>
         <label className="grid gap-1.5 text-sm font-medium">
           {text.recipient}
-          <select className="h-11 rounded-lg border border-input bg-field px-2 text-sm" value={recipient} disabled={pending} onChange={(event) => setRecipient(event.target.value)}>
-            <option value="">{text.choosePerson}</option>
-            {data.people.map((person) => <option key={person.id} value={person.id}>{person.email}</option>)}
-          </select>
+          <NativeSelect className="w-full [&_select]:h-11" value={recipient} disabled={pending} onChange={(event) => setRecipient(event.target.value)}>
+            <NativeSelectOption value="">{text.choosePerson}</NativeSelectOption>
+            {data.people.map((person) => <NativeSelectOption key={person.id} value={person.id}>{person.email}</NativeSelectOption>)}
+          </NativeSelect>
         </label>
         <label className="mt-3 flex min-h-11 items-center gap-2 text-sm">
-          <input type="checkbox" checked={leaveAfterMove} disabled={pending} onChange={(event) => setLeaveAfterMove(event.target.checked)} />
+          <Checkbox checked={leaveAfterMove} disabled={pending} onCheckedChange={setLeaveAfterMove} />
           {text.leaveAfterMove}
         </label>
       </KitchenSheet>

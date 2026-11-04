@@ -41,7 +41,7 @@ const en = {
   noMatch: (query: string) => `No recipe matches “${query}”`,
   noRecipes: "No recipes yet",
   tryAnother: "Try another word, or select + to keep it as an idea.",
-  addIdeaHint: "Type a recipe name above and select + to keep it as an idea. Fill in the ingredients when you cook it.",
+  addIdeaHint: "Select “New recipe” to write one down. Or type a name in the search and select the + to keep it as an idea for later.",
   allRecipes: "All recipes",
   copy: "Copy",
   edit: "Edit",
@@ -100,7 +100,7 @@ const TEXT: Record<KitchenLanguage, KitText> = {
     noMatch: (query: string) => `Kein Rezept passt zu „${query}“`,
     noRecipes: "Noch keine Rezepte",
     tryAnother: "Probier ein anderes Wort, oder tippe auf +, um es als Idee zu behalten.",
-    addIdeaHint: "Tippe oben einen Rezeptnamen ein und dann auf +, um ihn als Idee zu behalten. Trage die Zutaten ein, wenn du ihn kochst.",
+    addIdeaHint: "Mit „Neues Rezept“ schreibst du eins auf. Oder tippe einen Namen in die Suche und behalte ihn mit dem + als Idee für später.",
     allRecipes: "Alle Rezepte",
     copy: "Kopieren",
     edit: "Bearbeiten",
@@ -167,7 +167,7 @@ export function KitchenRecipesPage(data: Frame & { recipes: readonly RecipeSumma
     >
       <div className="grid gap-4">
         <SearchField value={query} onValue={setQuery} label={text.findRecipe} add={isNew ? { label: text.addIdea(idea), run: addIdea } : undefined}>
-        <div className="mb-3 flex flex-wrap items-center gap-2">
+        {recipes.length ? <div className="mb-3 flex flex-wrap items-center gap-2">
           <button type="button" aria-pressed={fromHome} onClick={() => setFromHome((value) => !value)}
             className="inline-flex h-9 items-center gap-1.5 rounded-full border border-control-border bg-control px-3 text-sm font-medium text-muted-foreground aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground">
             <RefrigeratorIcon className="size-4" aria-hidden /> {text.fromHome}
@@ -183,7 +183,7 @@ export function KitchenRecipesPage(data: Frame & { recipes: readonly RecipeSumma
           <Input className="h-9 w-48 rounded-full" list="kitchen-recipe-ingredients" placeholder={text.withIngredient} aria-label={text.withIngredient} value={pick}
             onChange={(event) => { setPick(event.target.value); if (byName.has(event.target.value.trim().toLowerCase())) addWanted(event.target.value); }}
             onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addWanted(pick); } }} />
-        </div>
+        </div> : null}
         {matches.length ? (
           <ul className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
             {matches.map((recipe) => {
@@ -284,11 +284,11 @@ function RecipeView({ data, recipe, onEdit }: { data: RecipeData; recipe: Recipe
             <dl className="grid grid-cols-4 gap-2 rounded-xl bg-muted/60 p-3 text-center">
               {([[text.kcal, n.kcal, ""], [text.protein, n.protein, " g"], [text.carbs, n.carbs, " g"], [text.fat, n.fat, " g"]] as const).map(([label, value, unit]) => (
                 <div key={label}>
-                  <dt className="text-[0.6875rem] text-muted-foreground">{label}</dt>
+                  <dt className="text-xs text-muted-foreground">{label}</dt>
                   <dd className="font-kitchen font-semibold tracking-tight text-lg leading-tight tabular-nums">{value === null ? "?" : `${value}${unit}`}</dd>
                 </div>
               ))}
-              <p className="col-span-4 text-[0.6875rem] text-muted-foreground">{text.perServing}</p>
+              <p className="col-span-4 text-xs text-muted-foreground">{text.perServing}</p>
             </dl>
           ) : lines.length ? <p className="text-xs text-muted-foreground">{text.addNutrition}</p> : null}
         </section>
@@ -305,7 +305,7 @@ function RecipeView({ data, recipe, onEdit }: { data: RecipeData; recipe: Recipe
             </ol>
           ) : <p className="text-sm text-muted-foreground">{text.noSteps}</p>}
           <div className="mt-6 border-t border-[color:var(--surface-border)] pt-4">
-            <Button variant="destructive-subtle" disabled={pending} onClick={async () => {
+            <Button variant="destructive-outline" disabled={pending} onClick={async () => {
               if (!window.confirm(text.deleteConfirm(recipe.name))) return;
               if (await run({ type: "recipe.delete", id: recipe.id }, { title: text.deleted(recipe.name) })) void navigate({ to: "/kitchen/$kitchenId/recipes", params: { kitchenId: data.kitchen.id } });
             }}><Trash2Icon aria-hidden /> {text.deleteRecipe}</Button>
@@ -319,7 +319,7 @@ function RecipeView({ data, recipe, onEdit }: { data: RecipeData; recipe: Recipe
               <button type="button" disabled={pending} className="flex w-full items-center justify-between rounded-xl px-3 py-3 text-left hover:bg-muted/60"
                 onClick={async () => { if (await run({ type: "recipe.copy", id: recipe.id, toKitchenId: kitchen.id }, { title: text.copiedTo(kitchen.name) })) setCopying(false); }}>
                 <span className="font-medium">{kitchen.name}</span>
-                <CopyIcon className="size-4 text-muted-foreground" aria-hidden />
+                <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground"><CopyIcon className="size-4" aria-hidden /> {text.copy}</span>
               </button>
             </li>
           ))}
@@ -331,6 +331,7 @@ function RecipeView({ data, recipe, onEdit }: { data: RecipeData; recipe: Recipe
 
 function RecipeEditor({ data, onDone }: { data: RecipeData; onDone: () => void }) {
   const navigate = useNavigate();
+  const language = useLanguage();
   const text = useText(TEXT);
   const { run, pending } = useKitchenAction(data.kitchen.id);
   const recipe = data.recipe;
@@ -338,7 +339,7 @@ function RecipeEditor({ data, onDone }: { data: RecipeData; onDone: () => void }
   const [servings, setServings] = useState(recipe?.servings ?? 2);
   const [minutes, setMinutes] = useState(recipe?.minutes ? String(recipe.minutes) : "");
   const [instructions, setInstructions] = useState(recipe?.instructions ?? "");
-  const [lines, setLines] = useState<DraftLine[]>(() => draftLines(recipe?.lines ?? []));
+  const [lines, setLines] = useState<DraftLine[]>(() => draftLines(recipe?.lines ?? [], language));
   const [error, setError] = useState<string | undefined>();
   const resolveLines = useResolveLines(data.kitchen.id, data.ingredients);
 
@@ -365,7 +366,7 @@ function RecipeEditor({ data, onDone }: { data: RecipeData; onDone: () => void }
         </>
       )}
     >
-      <form className="mx-auto grid max-w-3xl gap-6" onSubmit={(event) => { event.preventDefault(); void save(); }}>
+      <form className="grid max-w-3xl gap-6" onSubmit={(event) => { event.preventDefault(); void save(); }}>
         <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto_7rem]">
           <div className="grid gap-1.5">
             <Label htmlFor="recipe-name">{text.name}</Label>

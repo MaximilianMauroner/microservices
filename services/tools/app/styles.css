@@ -178,16 +178,18 @@ html[data-theme="light"] {
 .bs-arc { transition: stroke-dasharray 450ms cubic-bezier(.2, .7, .2, 1), stroke-dashoffset 450ms cubic-bezier(.2, .7, .2, 1); }
 @media (prefers-reduced-motion: reduce) { .bs-arc { transition: none; } }
 
-/* Main buttons, selected states, and focus rings in Kitchen take the color of the open page. */
 /* On a phone, Kitchen's tab bar sits at the bottom, so toasts go above it instead of over it. */
 @media (max-width: 47.99rem) {
   body:has(.kitchen-page) [data-slot="toast-viewport"] { bottom: calc(5rem + env(safe-area-inset-bottom)); }
 }
 
+/* Kitchen's small helper text reads on dark surfaces. */
+html:not([data-theme="light"]) :is(.kitchen-page, .kitchen-hue) { --muted-foreground: #ababab; }
+
+/* Main buttons and selected states in Kitchen take the color of the open page. Focus rings keep one color, so a red page does not look like an error. */
 .kitchen-hue {
   --primary: var(--kitchen-hue);
   --primary-foreground: #ffffff;
-  --ring: var(--kitchen-hue);
 }
 
 html[data-theme="light"] {

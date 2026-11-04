@@ -4,7 +4,7 @@ import { Button } from "../../../platform/ui/components/ui/button.js";
 import { Input } from "../../../platform/ui/components/ui/input.js";
 import { Label } from "../../../platform/ui/components/ui/label.js";
 import { cn } from "../../../platform/ui/lib/utils.js";
-import { addDays, formatAmount, type Ingredient, ingredientGroups, INGREDIENT_UNITS, type IngredientUnit, type Leftover, type StockItem, unitName } from "../domain.js";
+import { addDays, fieldNumber, formatAmount, type Ingredient, ingredientGroups, INGREDIENT_UNITS, type IngredientUnit, type Leftover, type StockItem, unitName } from "../domain.js";
 import { byGroup, GROUP_LIST, GroupDot, groupColor, GroupLabel, groupLabel, groupListStyle, ink, KitchenEmpty, KitchenPage, KitchenSheet, SearchField, SheetAction, Stepper, tint, useByLabel, useKitchenAction } from "./kit.js";
 import { IngredientSheet, type IngredientsData } from "./ingredients.js";
 import { type KitchenLanguage, useLanguage, useText } from "./language.js";
@@ -49,7 +49,8 @@ const en = {
   chiliPlaceholder: "e.g. chili con carne",
   servingsLabel: "Servings",
   goodForDays: "Good for days",
-  days: "Days"
+  days: "Days",
+  day: "Day"
 };
 
 const TEXT: Record<KitchenLanguage, typeof en> = {
@@ -94,7 +95,8 @@ const TEXT: Record<KitchenLanguage, typeof en> = {
     chiliPlaceholder: "z. B. Chili con Carne",
     servingsLabel: "Portionen",
     goodForDays: "Haltbar für",
-    days: "Tage"
+    days: "Tage",
+    day: "Tag"
   }
 };
 
@@ -144,7 +146,7 @@ export function KitchenPantryPage(data: PantryData) {
                         onClick={() => run({ type: "leftover.eat", id: leftover.id, servings: Math.min(1, leftover.servings) }, { title: text.ate(leftover.name), undo: leftover.servings <= 1 ? { type: "leftover.add", name: leftover.name, servings: leftover.servings, useBy: leftover.useBy } : undefined })}>
                         {text.eatOne}
                       </Button>
-                      <Button size="sm" variant="destructive-subtle" disabled={pending}
+                      <Button size="sm" variant="destructive-outline" disabled={pending}
                         onClick={() => run({ type: "leftover.remove", id: leftover.id }, { title: text.thrownAway(leftover.name), undo: { type: "leftover.add", name: leftover.name, servings: leftover.servings, useBy: leftover.useBy } })}>
                         {text.throwAway}
                       </Button>
@@ -192,12 +194,12 @@ export function KitchenPantryPage(data: PantryData) {
 function StockRow({ item, run, pending, onOpen }: { item: StockItem; run: ReturnType<typeof useKitchenAction>["run"]; pending: boolean; onOpen: () => void }) {
   const language = useLanguage();
   const text = useText(TEXT);
-  const [value, setValue] = useState(String(item.amount));
+  const [value, setValue] = useState(fieldNumber(item.amount, language));
   const [last, setLast] = useState(item.amount);
-  if (item.amount !== last) { setLast(item.amount); setValue(String(item.amount)); }
+  if (item.amount !== last) { setLast(item.amount); setValue(fieldNumber(item.amount, language)); }
   const commit = () => {
     const amount = Number(value.replace(",", "."));
-    if (!Number.isFinite(amount) || amount < 0) return setValue(String(item.amount));
+    if (!Number.isFinite(amount) || amount < 0) return setValue(fieldNumber(item.amount, language));
     if (amount !== item.amount) void run({ type: "stock.set", ingredientId: item.ingredientId, amount }, { title: text.updated(item.ingredient), undo: { type: "stock.set", ingredientId: item.ingredientId, amount: item.amount } });
   };
   return (
@@ -208,7 +210,7 @@ function StockRow({ item, run, pending, onOpen }: { item: StockItem; run: Return
         <span className="sr-only">{text.amountOf(item.ingredient)}</span>
         <Input className="h-9 w-20 text-right tabular-nums" inputMode="decimal" value={value} onChange={(event) => setValue(event.target.value)}
           onBlur={commit} onKeyDown={(event) => { if (event.key === "Enter") (event.target as HTMLInputElement).blur(); }} />
-        <span className="w-12 text-sm text-muted-foreground">{unitName(item.unit, language)}</span>
+        <span className="w-12 text-sm text-muted-foreground">{unitName(item.unit, language, item.amount)}</span>
       </label>
       <Button size="icon-sm" variant="ghost" className="size-11 md:size-8" aria-label={text.usedUpAria(item.ingredient)} disabled={pending}
         onClick={() => run({ type: "stock.set", ingredientId: item.ingredientId, amount: 0 }, { title: text.usedUpToast(item.ingredient), undo: { type: "stock.set", ingredientId: item.ingredientId, amount: item.amount } })}>
@@ -303,7 +305,7 @@ function AddLeftoverSheet({ open, onClose, data }: { open: boolean; onClose: () 
           <Input id="leftover-name" className="h-10" value={name} onChange={(event) => setName(event.target.value)} placeholder={text.chiliPlaceholder} />
         </div>
         <div className="flex flex-wrap items-center justify-between gap-3"><Label>{text.servingsLabel}</Label><Stepper label={text.servingsLabel} value={servings} onValue={setServings} /></div>
-        <div className="flex flex-wrap items-center justify-between gap-3"><Label>{text.goodForDays}</Label><Stepper label={text.days} value={days} onValue={setDays} max={30} /></div>
+        <div className="flex flex-wrap items-center justify-between gap-3"><Label>{text.goodForDays}</Label><Stepper label={text.days} value={days} onValue={setDays} max={30} unit={days === 1 ? text.day : text.days} /></div>
       </div>
     </KitchenSheet>
   );

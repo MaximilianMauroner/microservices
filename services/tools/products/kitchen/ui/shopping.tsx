@@ -3,6 +3,7 @@ import { CheckIcon, ChevronLeftIcon, ChevronRightIcon, PlusIcon, RepeatIcon, XIc
 import { useState } from "react";
 import { Button } from "../../../platform/ui/components/ui/button.js";
 import { Input } from "../../../platform/ui/components/ui/input.js";
+import { Switch } from "../../../platform/ui/components/ui/switch.js";
 import { cn } from "../../../platform/ui/lib/utils.js";
 import { addDays, type ExtraItem, formatAmount, type Ingredient, type ShoppingLine } from "../domain.js";
 import { byGroup, type Frame, GROUP_LIST, GroupDot, groupColor, GroupLabel, groupLabel, groupListStyle, ink, KitchenEmpty, KitchenPage, KitchenSheet, PlateRing, tint, useKitchenAction, weekLabel } from "./kit.js";
@@ -157,7 +158,7 @@ export function KitchenShoppingPage(data: ShoppingData) {
                 color={groupColor(kitchen.groups, section)}
                 name={line.ingredient}
                 amount={formatAmount(line.toBuy, line.unit, language)}
-                detail={`${text.forRecipes(line.recipes.join(", "))}${line.inStock ? `. ${text.inStock(formatAmount(line.inStock, line.unit, language))}` : ""}`}
+                detail={`${line.inStock ? `${text.inStock(formatAmount(line.inStock, line.unit, language))}. ` : ""}${text.forRecipes(line.recipes.join(", "))}`}
                 disabled={pending}
                 onCheck={() => run(
                   { type: "stock.add", ingredientId: line.ingredientId, amount: line.toBuy },
@@ -276,10 +277,10 @@ function AddSheet({ open, onClose, data }: { open: boolean; onClose: () => void;
         <Button type="submit" variant="outline" className="h-10" disabled={!name.trim() || pending}>{text.add}</Button>
       </form>
       <div className="mb-4 flex items-start gap-3">
-        <button type="button" aria-pressed={everyWeek} onClick={() => setEveryWeek((on) => !on)}
-          className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-control-border bg-control px-3 text-sm font-medium hover:border-control-border-hover aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground">
-          <RepeatIcon className="size-4" aria-hidden /> {text.addEveryWeek}
-        </button>
+        <label className="inline-flex min-h-9 shrink-0 cursor-pointer items-center gap-2.5 text-sm font-medium">
+          <Switch checked={everyWeek} onCheckedChange={setEveryWeek} />
+          <RepeatIcon className="size-4 text-muted-foreground" aria-hidden /> {text.addEveryWeek}
+        </label>
         <p className="pt-1 text-xs text-muted-foreground">{text.addEveryWeekHint}</p>
       </div>
       {weekly.length ? (

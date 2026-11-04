@@ -6,7 +6,7 @@ import { Input } from "../../../platform/ui/components/ui/input.js";
 import { Label } from "../../../platform/ui/components/ui/label.js";
 import { Textarea } from "../../../platform/ui/components/ui/textarea.js";
 import type { RecipeChoice } from "../server-functions.js";
-import { convertNutrition, formatNumber, type Ingredient, ingredientGroups, INGREDIENT_UNITS, isCountedUnit, type IngredientUnit, unitName, UNSORTED_SECTION } from "../domain.js";
+import { convertNutrition, fieldNumber, formatNumber, type Ingredient, ingredientGroups, INGREDIENT_UNITS, isCountedUnit, type IngredientUnit, unitName, UNSORTED_SECTION } from "../domain.js";
 import { byGroup, type Frame, GROUP_LIST, GroupDot, groupColor, GroupLabel, groupLabel, groupListStyle, KitchenEmpty, KitchenPage, KitchenSheet, SearchField, SheetAction, useKitchenAction } from "./kit.js";
 import { type KitchenLanguage, useLanguage, useText } from "./language.js";
 
@@ -21,6 +21,7 @@ const en = {
   title: "Ingredients",
   inKitchen: (count: number) => `${count} in this kitchen`,
   withoutNutrition: (count: number) => `, ${count} without nutrition`,
+  inTwoGroups: (count: number) => `, ${count} of them in more than one group`,
   intro: "What you cook with, grouped the way you shop.",
   arrangeGroups: "Arrange groups",
   newIngredient: "New ingredient",
@@ -40,7 +41,7 @@ const en = {
   tryAnother: "Try another word.",
   addHere: "Add them here, or type them into a recipe and they appear here.",
   delete: "Delete",
-  usedInRecipes: "Used in recipes",
+  usedInRecipes: "Used in recipes, so it cannot be deleted.",
   recipesUsingIt: "Recipes with this ingredient",
   deleted: (name: string) => `${name} deleted`,
   save: "Save",
@@ -64,7 +65,7 @@ const en = {
   groups: "Groups",
   groupPlaceholder: "Type a group, such as Basics",
   anotherGroup: "Another group",
-  mainGroup: "shopping",
+  mainGroup: "main",
   makeMain: (group: string) => `Make ${group} the main group`,
   addGroupNamed: (group: string) => `Add ${group}`,
   removeGroup: (group: string) => `Remove ${group}`,
@@ -89,6 +90,7 @@ const TEXT: Record<KitchenLanguage, KitText> = {
     title: "Zutaten",
     inKitchen: (count: number) => `${count} in dieser Küche`,
     withoutNutrition: (count: number) => `, ${count} ohne Nährwerte`,
+    inTwoGroups: (count: number) => `, ${count} davon in mehreren Gruppen`,
     intro: "Was du kochst, nach Gruppen sortiert, so wie du einkaufst.",
     arrangeGroups: "Gruppen ordnen",
     newIngredient: "Neue Zutat",
@@ -108,7 +110,7 @@ const TEXT: Record<KitchenLanguage, KitText> = {
     tryAnother: "Probier ein anderes Wort.",
     addHere: "Füge sie hier hinzu oder schreib sie in ein Rezept, dann erscheinen sie hier.",
     delete: "Löschen",
-    usedInRecipes: "In Rezepten verwendet",
+    usedInRecipes: "In Rezepten verwendet, darum nicht löschbar.",
     recipesUsingIt: "Rezepte mit dieser Zutat",
     deleted: (name: string) => `${name} gelöscht`,
     save: "Speichern",
@@ -132,7 +134,7 @@ const TEXT: Record<KitchenLanguage, KitText> = {
     groups: "Gruppen",
     groupPlaceholder: "Gruppe eingeben, z. B. Basics",
     anotherGroup: "Weitere Gruppe",
-    mainGroup: "Einkauf",
+    mainGroup: "Hauptgruppe",
     makeMain: (group: string) => `${group} als Hauptgruppe`,
     addGroupNamed: (group: string) => `${group} hinzufügen`,
     removeGroup: (group: string) => `${group} entfernen`,
@@ -163,11 +165,12 @@ export function KitchenIngredientsPage(data: IngredientsData) {
   const groups = byGroup(data.kitchen.groups, matches.flatMap((ingredient) => ingredientGroups(ingredient).map((group) => ({ group, ingredient }))), (entry) => entry.group)
     .map(([section, entries]) => [section, entries.map((entry) => entry.ingredient)] as const);
   const missing = data.ingredients.filter((one) => one.nutrition.kcal === null).length;
+  const shared = data.ingredients.filter((one) => one.otherGroups.length > 0).length;
 
   return (
     <KitchenPage
       title={text.title}
-      facts={data.ingredients.length ? `${text.inKitchen(data.ingredients.length)}${missing ? text.withoutNutrition(missing) : ""}` : text.intro}
+      facts={data.ingredients.length ? `${text.inKitchen(data.ingredients.length)}${shared ? text.inTwoGroups(shared) : ""}${missing ? text.withoutNutrition(missing) : ""}` : text.intro}
       actions={(
         <>
           {data.ingredients.length ? <Button variant="outline" onClick={() => setArranging(true)}><ListOrderedIcon aria-hidden /> {text.arrangeGroups}</Button> : null}
@@ -234,9 +237,9 @@ export function IngredientSheet({ ingredient, newName = "", onClose, data }: { i
   const [groups, setGroups] = useState<readonly string[]>(existing ? ingredientGroups(existing).filter((group) => group !== UNSORTED_SECTION) : []);
   const [typedGroup, setTypedGroup] = useState("");
   const [notes, setNotes] = useState(existing?.notes ?? "");
+  const field = (value: number | null | undefined) => value == null ? "" : fieldNumber(value, language);
   const shown = (nutrition: Ingredient["nutrition"] | undefined) => ({
-    kcal: nutrition?.kcal?.toString() ?? "", protein: nutrition?.protein?.toString() ?? "",
-    carbs: nutrition?.carbs?.toString() ?? "", fat: nutrition?.fat?.toString() ?? ""
+    kcal: field(nutrition?.kcal), protein: field(nutrition?.protein), carbs: field(nutrition?.carbs), fat: field(nutrition?.fat)
   });
   const [values, setValues] = useState<Record<(typeof NUTRIENTS)[number][0], string>>(shown(existing?.nutrition));
   const [size, setSize] = useState("");
@@ -287,8 +290,8 @@ export function IngredientSheet({ ingredient, newName = "", onClose, data }: { i
       title={existing ? existing.name : text.newIngredient}
       footer={(
         <div className="flex w-full items-center justify-between gap-2">
-          {existing ? (
-            <Button variant="destructive-subtle" disabled={pending || existing.recipeCount > 0} title={existing.recipeCount ? text.usedInRecipes : undefined}
+          {existing && existing.recipeCount > 0 ? <p className="max-w-48 text-xs text-muted-foreground">{text.usedInRecipes}</p> : existing ? (
+            <Button variant="destructive-outline" disabled={pending}
               onClick={async () => { if (await run({ type: "ingredient.delete", id: existing.id }, { title: text.deleted(existing.name) })) onClose(); }}>
               {text.delete}
             </Button>
@@ -494,7 +497,7 @@ function GroupsSheet({ open, onClose, data }: { open: boolean; onClose: () => vo
   const language = useLanguage();
   const text = useText(TEXT);
   const { run, pending } = useKitchenAction(data.kitchen.id);
-  const counts = byGroup(data.kitchen.groups, data.ingredients, (one) => one.section).filter(([group]) => group !== UNSORTED_SECTION);
+  const counts = byGroup(data.kitchen.groups, data.ingredients.flatMap((one) => ingredientGroups(one)), (group) => group).filter(([group]) => group !== UNSORTED_SECTION);
   const [order, setOrder] = useState<string[]>([]);
   const [wasOpen, setWasOpen] = useState(false);
   if (open !== wasOpen) { setWasOpen(open); if (open) setOrder(counts.map(([group]) => group)); }
