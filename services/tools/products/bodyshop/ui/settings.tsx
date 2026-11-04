@@ -8,7 +8,7 @@ import { toast } from "../../../platform/ui/components/ui/toast.js";
 import type { getBodyshopSettings } from "../server-functions.js";
 import type { ImportPreview, ImportReceipt } from "../service.js";
 import type { SettingKey } from "../settings.js";
-import { BodyshopPage, Field, fmt, numberOrNull, useBodyshopAction } from "./kit.js";
+import { BodyshopPage, Field, fmt, numberOrNull, tint, useBodyshopAction } from "./kit.js";
 
 type Data = Awaited<ReturnType<typeof getBodyshopSettings>>;
 
@@ -51,7 +51,7 @@ function ProfileCard({ data }: { data: Data }) {
     if (heightChanged) await run({ type: "settings.update", values: { heightCm: heightValue } as Record<SettingKey, number> }, "Saved");
   }
   return (
-    <section className="bs-panel grid gap-4 p-4">
+    <section className="bs-panel grid gap-4 p-4" style={tint("var(--bs-settings)", 12)}>
       <div>
         <h2 className="bs-title text-[1.0625rem]">You</h2>
         <p className="bs-quiet mt-1 text-[0.8125rem]">For the resting energy estimate on Progress. Bodyshop keeps them encrypted with your other records.</p>

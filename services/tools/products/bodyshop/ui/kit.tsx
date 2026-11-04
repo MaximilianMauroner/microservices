@@ -1,7 +1,8 @@
-import { favicons } from "../../../platform/ui/favicons.js";
-import { useRouter } from "@tanstack/react-router";
-import { type ReactNode, useEffect, useState } from "react";
+import { Link, useRouter, useRouterState } from "@tanstack/react-router";
+import { AppleIcon, type LucideIcon, SlidersHorizontalIcon, SunIcon, TrendingDownIcon } from "lucide-react";
+import { createContext, type CSSProperties, type ReactNode, useContext, useEffect, useState } from "react";
 import { AppShell } from "../../../platform/ui/components/app-shell.js";
+import { favicons } from "../../../platform/ui/favicons.js";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../../../platform/ui/components/ui/dialog.js";
 import { Drawer, DrawerContent, DrawerDescription, DrawerFooter, DrawerHeader, DrawerTitle } from "../../../platform/ui/components/ui/drawer.js";
 import { toast } from "../../../platform/ui/components/ui/toast.js";
@@ -9,23 +10,71 @@ import { useIsMobile } from "../../../platform/ui/components/ui/use-mobile.js";
 import { cn } from "../../../platform/ui/lib/utils.js";
 import { type BodyshopAction, runBodyshopAction } from "../server-functions.js";
 
-/** The frame of every Bodyshop page: the shell and the page width. */
+type Page = Readonly<{ to: "/bodyshop" | "/bodyshop/progress" | "/bodyshop/foods" | "/bodyshop/settings"; label: string; icon: LucideIcon; hue: string }>;
+
+/** The Bodyshop pages. Each has a hue for its badge, its tab, and its main buttons. */
+const PAGES: readonly Page[] = [
+  { to: "/bodyshop", label: "Today", icon: SunIcon, hue: "var(--bs-today)" },
+  { to: "/bodyshop/progress", label: "Progress", icon: TrendingDownIcon, hue: "var(--bs-progress)" },
+  { to: "/bodyshop/foods", label: "Foods", icon: AppleIcon, hue: "var(--bs-foods)" },
+  { to: "/bodyshop/settings", label: "Settings", icon: SlidersHorizontalIcon, hue: "var(--bs-settings)" }
+];
+
+const OpenPage = createContext<Page>(PAGES[0]!);
+const hue = (page: Page) => ({ "--bs-hue": page.hue }) as CSSProperties;
+
+/** The frame of every Bodyshop page: the shell, tabs on top for wide screens and at the bottom for phones. */
 export function BodyshopLayout({ children }: { children: ReactNode }) {
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const open = PAGES.slice(1).find((page) => pathname.startsWith(page.to)) ?? PAGES[0]!;
   return (
     <>
       <AppShell product="Bodyshop" icon={favicons.bodyshop} />
-      <main id="main" className="tools-page bodyshop-page pb-16">{children}</main>
+      <main id="main" style={hue(open)} className="tools-page bodyshop-page pb-32 md:pb-16">
+        <nav aria-label="Bodyshop pages" className="mb-5 hidden md:block">
+          <ul className="flex gap-1">
+            {PAGES.map((page) => (
+              <li key={page.to}>
+                <Link to={page.to} activeOptions={{ exact: page.to === "/bodyshop", includeSearch: false }} preload="intent" style={hue(page)}
+                  className="inline-flex h-9 items-center gap-1.5 px-2.5 text-sm font-medium text-muted-foreground hover:text-foreground focus-visible:rounded-md focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none aria-[current=page]:text-foreground aria-[current=page]:shadow-[inset_0_-3px_0_var(--bs-hue)]">
+                  <page.icon className="size-4 text-(--bs-hue)" aria-hidden />{page.label}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </nav>
+        <OpenPage.Provider value={open}>{children}</OpenPage.Provider>
+      </main>
+      <nav aria-label="Bodyshop pages" className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">
+        <ul className="grid grid-cols-4">
+          {PAGES.map((page) => (
+            <li key={page.to}>
+              <Link to={page.to} activeOptions={{ exact: page.to === "/bodyshop", includeSearch: false }} preload="intent" style={hue(page)}
+                className="group flex h-16 flex-col items-center justify-center gap-1 text-[0.6875rem] font-medium text-muted-foreground aria-[current=page]:text-foreground">
+                <span className="grid h-7 w-12 place-items-center rounded-full text-(--bs-hue) transition-colors group-aria-[current=page]:bg-[color-mix(in_srgb,var(--bs-hue)_18%,transparent)]">
+                  <page.icon className="size-[1.15rem]" aria-hidden />
+                </span>
+                {page.label}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </nav>
     </>
   );
 }
 
 export function BodyshopPage({ title, facts, actions, children }: { title: ReactNode; facts?: ReactNode; actions?: ReactNode; children: ReactNode }) {
+  const open = useContext(OpenPage);
   return (
     <>
-      <header className="mb-6 flex flex-wrap items-end justify-between gap-x-4 gap-y-3">
-        <div className="min-w-0">
-          <h1 className="bs-title text-[1.75rem]">{title}</h1>
-          {facts ? <p className="bs-quiet mt-1.5 max-w-[60ch] text-sm">{facts}</p> : null}
+      <header className="mb-5 flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <span aria-hidden className="grid size-10 shrink-0 place-items-center self-start rounded-[0.875rem] bg-(--bs-hue) text-(--bs-on-hue)"><open.icon className="size-5" /></span>
+          <div className="min-w-0">
+            <h1 className="bs-title text-[1.875rem] leading-[1.05]">{title}</h1>
+            {facts ? <p className="bs-quiet mt-1 max-w-[60ch] text-sm">{facts}</p> : null}
+          </div>
         </div>
         {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
       </header>
@@ -150,10 +199,16 @@ export function shiftDay(day: string, count: number): string {
   return new Date(Date.parse(`${day}T00:00:00Z`) + count * 86_400_000).toISOString().slice(0, 10);
 }
 
-/** The meaning colors. Everything else on a Bodyshop page is ink and quiet text on the page. */
-export const COLORS = { energy: "var(--bs-energy)", burn: "var(--bs-burn)", trend: "var(--bs-trend)", flag: "var(--bs-flag)", quiet: "var(--bs-quiet)" } as const;
+/** The meaning colors: food eaten, energy burned, weight, a complete day, and a failed check or a day over target. */
+export const COLORS = {
+  energy: "var(--bs-energy)", burn: "var(--bs-burn)", trend: "var(--bs-weight)", good: "var(--bs-good)", flag: "var(--bs-flag)", quiet: "var(--bs-quiet)", partial: "var(--bs-partial)"
+} as const;
 
-/** One step of amber per meal, the same on the day bar, in the meal list, and in the meal share. */
+export function tint(color: string, share = 14): CSSProperties {
+  return { "--tint": color, "--tint-share": `${share}%` } as CSSProperties;
+}
+
+/** One food color per meal, the same on the day ring, the meal card, and the meal share. */
 export const MEAL_COLORS: Readonly<Record<string, string>> = {
   Breakfast: "var(--bs-meal-breakfast)", Lunch: "var(--bs-meal-lunch)", Dinner: "var(--bs-meal-dinner)", Snack: "var(--bs-meal-snack)", Other: "var(--bs-meal-other)"
 };
@@ -177,70 +232,97 @@ export function statusReason(basis: string | undefined, status: string): string 
 type Totals = Readonly<{ kcal: number; protein: number; carbs: number; fat: number; fiber: number | null }>;
 type Bounds = Readonly<{ kcal: number | null }>;
 
+const R = 15.915;
+
 /**
- * The day's energy budget: what is left in large figures, then one bar split into the meals in their order,
- * with the target as a tick and the likely range as a bracket under the bar. Macros follow in four columns.
+ * A ring with rounded ends. Each part takes its share of the full circle, clockwise from the top.
+ * An optional outer arc marks a range in the same shares.
+ */
+export function Ring({ parts, size, width, range, label, children }: {
+  parts: readonly { color: string; share: number }[]; size: number; width: number; range?: readonly [number, number] | null; label?: string; children?: ReactNode;
+}) {
+  const shown = parts.filter((part) => part.share > 0.002);
+  const gap = shown.length > 1 ? width + 1.4 : width + 0.2;
+  let offset = 25;
+  const full = shown.length === 1 && shown[0]!.share >= 0.999;
+  return (
+    <div className="relative shrink-0" style={{ width: size, height: size }}>
+      <svg viewBox="-2.5 -2.5 41 41" width={size} height={size} role={label ? "img" : undefined} aria-label={label} aria-hidden={label ? undefined : true}>
+        <circle r={R} cx={18} cy={18} fill="none" stroke="var(--bs-track)" strokeWidth={width} />
+        {shown.map((part, index) => {
+          const share = Math.min(part.share, 1) * 100;
+          const start = offset;
+          offset -= share;
+          return full
+            ? <circle key={index} r={R} cx={18} cy={18} fill="none" stroke={part.color} strokeWidth={width} />
+            : <circle key={index} className="bs-arc" r={R} cx={18} cy={18} fill="none" stroke={part.color} strokeWidth={width} strokeLinecap="round"
+                strokeDasharray={`${Math.max(share - gap, 0.1)} ${100 - share + gap}`} strokeDashoffset={start - gap / 2} />;
+        })}
+        {range ? (
+          <circle className="bs-arc" r={R + width / 2 + 1.7} cx={18} cy={18} fill="none" stroke="var(--foreground)" strokeOpacity={0.7} strokeWidth={1.4} strokeLinecap="round" pathLength={100}
+            strokeDasharray={`${Math.max((range[1] - range[0]) * 100, 0.5)} ${100 - (range[1] - range[0]) * 100}`} strokeDashoffset={25 - range[0] * 100} />
+        ) : null}
+      </svg>
+      {children ? <div className="absolute inset-0 grid place-content-center text-center">{children}</div> : null}
+    </div>
+  );
+}
+
+/**
+ * The day on a plate: one ring that fills meal by meal against the calorie target, the calories left in the middle,
+ * and the likely range as an outer arc. Four macro tiles follow, each in its own color.
  */
 export function DayBudget({ totals, low, high, targets, known, meals }: {
   totals: Totals; low: Bounds; high: Bounds; known: boolean; meals: readonly { meal: string; kcal: number }[];
   targets: Readonly<{ kcal: number; protein: number; carbs: number; fat: number; fiber: number }>;
 }) {
   const ranged = known && low.kcal !== null && high.kcal !== null;
-  const scale = Math.max(targets.kcal * 1.15, (ranged ? high.kcal! : totals.kcal) * 1.03, 1);
-  const at = (value: number) => `${Math.max(0, Math.min(100, (value / scale) * 100))}%`;
   const over = totals.kcal > targets.kcal;
-  const left = targets.kcal - totals.kcal;
-  let start = 0;
+  const scale = Math.max(targets.kcal, totals.kcal, 1);
+  const shown = meals.filter((one) => one.kcal > 0 || one.meal !== "Other");
+  const summary = `${fmt(totals.kcal)} of ${fmt(targets.kcal)} kcal: ${meals.filter((one) => one.kcal > 0).map((one) => `${one.meal} ${fmt(one.kcal)}`).join(", ") || "nothing logged"}${ranged ? `. Likely ${fmt(low.kcal)} to ${fmt(high.kcal)}` : ""}`;
   return (
-    <section aria-label="Day total">
-      <div className="flex items-end justify-between gap-4">
-        <p className="min-w-0">
-          <span className="bs-figure block text-[4.75rem] leading-[0.8] sm:text-[5.5rem]" style={{ color: over ? COLORS.flag : undefined }}>{fmt(Math.abs(left))}</span>
-          <span className="mt-2 block text-[0.9375rem] font-medium">{over ? "kcal over target" : "kcal left"}</span>
+    <div className="grid gap-2.5">
+      <section aria-label="Day total" className="bs-panel bs-plate px-4 pt-5 pb-4 text-center">
+        <div className="flex justify-center">
+          <Ring size={232} width={4.6} label={summary} parts={meals.map((one) => ({ color: MEAL_COLORS[one.meal]!, share: one.kcal / scale }))}
+            range={ranged ? [Math.min(low.kcal! / scale, 1), Math.min(high.kcal! / scale, 1)] : null}>
+            <span className="bs-figure text-[3.75rem]" style={{ color: over ? COLORS.flag : undefined }}>{fmt(Math.abs(targets.kcal - totals.kcal))}</span>
+            <span className="bs-quiet mt-1 text-sm">{over ? "kcal over target" : "kcal left"}</span>
+          </Ring>
+        </div>
+        <p className="mt-3 font-semibold">{fmt(totals.kcal)} of {fmt(targets.kcal)} kcal eaten</p>
+        <p className="bs-quiet mt-0.5 flex items-center justify-center gap-1.5 text-[0.8125rem]">
+          {ranged ? <><span aria-hidden className="h-1 w-4 rounded-full bg-foreground/70" />Likely {fmt(low.kcal)} to {fmt(high.kcal)}, shown by the outer arc</>
+            : totals.kcal > 0 ? "The likely range shows once every entry passes its checks." : "Nothing logged yet."}
         </p>
-        <p className="bs-quiet shrink-0 pb-0.5 text-right text-sm leading-snug">
-          <span className="bs-figure text-[1.375rem] text-foreground">{fmt(totals.kcal)}</span> eaten
-          <span className="block">of <span className="bs-figure text-base text-foreground">{fmt(targets.kcal)}</span></span>
-        </p>
-      </div>
-
-      <div className="relative mt-5 h-9" role="img" aria-label={`${fmt(totals.kcal)} of ${fmt(targets.kcal)} kcal: ${meals.filter((one) => one.kcal > 0).map((one) => `${one.meal} ${fmt(one.kcal)}`).join(", ") || "nothing logged"}${ranged ? `. Likely ${fmt(low.kcal)} to ${fmt(high.kcal)}` : ""}`}>
-        <div className="absolute inset-x-0 top-0 h-4 rounded-[5px] bg-(--bs-line)" />
-        {meals.map((one) => {
-          if (one.kcal <= 0) return null;
-          const from = start;
-          start += one.kcal;
-          return <div key={one.meal} className="bs-fill absolute top-0 h-4 border-r-2 border-background first:rounded-l-[5px]" style={{ left: at(from), width: at(one.kcal), background: MEAL_COLORS[one.meal] }} />;
-        })}
-        {over ? <div className="bs-fill absolute top-0 h-4 opacity-90" style={{ left: at(targets.kcal), width: `calc(${at(totals.kcal)} - ${at(targets.kcal)})`, background: `repeating-linear-gradient(135deg, ${COLORS.flag} 0 2px, transparent 2px 5px)` }} /> : null}
-        <div className="absolute -top-1.5 h-7 w-[3px] rounded-full bg-foreground" style={{ left: `calc(${at(targets.kcal)} - 1.5px)` }} />
-        {ranged ? (
-          <div className="bs-fill absolute top-6 h-2 border-x-[1.5px] border-(--bs-quiet)" style={{ left: at(low.kcal!), width: `calc(${at(high.kcal!)} - ${at(low.kcal!)})` }}>
-            <div className="absolute inset-x-0 top-1/2 h-[1.5px] -translate-y-1/2 bg-(--bs-quiet)" />
-          </div>
-        ) : null}
-      </div>
-      <p className="bs-quiet -mt-1 text-[0.8125rem]">
-        {ranged ? <>Likely <span className="bs-figure text-sm text-foreground">{fmt(low.kcal)}</span> to <span className="bs-figure text-sm text-foreground">{fmt(high.kcal)}</span> kcal</> : totals.kcal > 0 ? "The likely range shows once every entry passes its checks." : "Nothing logged yet."}
-      </p>
-
-      <dl className="mt-6 grid grid-cols-4 gap-3">
-        <Macro label="Protein" value={totals.protein} target={targets.protein} />
-        <Macro label="Carbs" value={totals.carbs} target={targets.carbs} />
-        <Macro label="Fat" value={totals.fat} target={targets.fat} />
-        <Macro label="Fiber" value={totals.fiber} target={targets.fiber} />
+        <ul className="mt-3.5 grid grid-cols-2 gap-2 text-left text-sm">
+          {shown.map((one) => (
+            <li key={one.meal} className="bs-panel flex items-center gap-2 rounded-xl px-2.5 py-2" style={tint(MEAL_COLORS[one.meal]!, 20)}>
+              <span aria-hidden className="size-2.5 shrink-0 rounded-full" style={{ background: MEAL_COLORS[one.meal] }} />{one.meal}
+              <span className="bs-figure ml-auto text-[0.9375rem]">{one.kcal ? fmt(one.kcal) : "–"}</span>
+            </li>
+          ))}
+        </ul>
+      </section>
+      <dl className="grid grid-cols-4 gap-2">
+        <Macro label="Protein" color="var(--bs-protein)" value={totals.protein} target={targets.protein} />
+        <Macro label="Carbs" color="var(--bs-carbs)" value={totals.carbs} target={targets.carbs} />
+        <Macro label="Fat" color="var(--bs-fat)" value={totals.fat} target={targets.fat} />
+        <Macro label="Fiber" color="var(--bs-fiber)" value={totals.fiber} target={targets.fiber} />
       </dl>
-    </section>
+    </div>
   );
 }
 
-function Macro({ label, value, target }: { label: string; value: number | null; target: number }) {
+function Macro({ label, color, value, target }: { label: string; color: string; value: number | null; target: number }) {
   const share = value === null || target <= 0 ? 0 : Math.min(1, value / target);
   return (
-    <div className="min-w-0">
-      <dt className="bs-quiet text-[0.8125rem]">{label}</dt>
-      <dd className="mt-1 truncate"><span className="bs-figure text-[1.5rem]">{fmt(value)}</span><span className="bs-quiet text-xs"> / {fmt(target)} g</span></dd>
-      <dd aria-hidden className="mt-1.5 h-1 rounded-full bg-(--bs-line)"><div className="bs-fill h-full rounded-full bg-foreground" style={{ width: `${share * 100}%` }} /></dd>
+    <div className="bs-panel grid min-w-0 justify-items-center rounded-[1.125rem] px-1 pt-2.5 pb-2 text-center" style={tint(color, 12)}>
+      <Ring size={52} width={5} parts={[{ color, share }]} />
+      <dd className="mt-1.5"><span className="bs-figure text-[1.0625rem]">{fmt(value)}</span><span className="bs-quiet text-xs"> g</span></dd>
+      <dt className="text-xs font-semibold">{label}</dt>
+      <dd className="bs-quiet text-xs">of {fmt(target)} g</dd>
     </div>
   );
 }
