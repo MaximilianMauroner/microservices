@@ -22,6 +22,7 @@ const en = {
   planMeal: (weekday: string, date: string) => `Plan a meal on ${weekday} ${date}`,
   servings: (count: number) => `${count} ${count === 1 ? "serving" : "servings"}`,
   kcalEach: (kcal: number) => `, ${kcal} kcal each`,
+  minutes: (count: number) => `${count} min`,
   meals: { breakfast: "Breakfast", lunch: "Lunch", dinner: "Dinner", snack: "Snack" },
   cooked: "Cooked",
   nothingPlannedDay: "Nothing planned",
@@ -41,6 +42,7 @@ const en = {
   ideaAdded: (name: string) => `${name} added as an idea`,
   meal: "Meal",
   servingsLabel: "Servings",
+  servingUnit: (count: number): string => (count === 1 ? "serving" : "servings"),
   recipes: "Recipes",
   idea: "Idea",
   noRecipeMatch: (query: string) => `No recipe matches “${query}”.`,
@@ -89,6 +91,7 @@ const TEXT: Record<KitchenLanguage, typeof en> = {
     planMeal: (weekday: string, date: string) => `Mahlzeit am ${weekday}, ${date} planen`,
     servings: (count: number) => (count === 1 ? "1 Portion" : `${count} Portionen`),
     kcalEach: (kcal: number) => `, ${kcal} kcal pro Portion`,
+    minutes: (count: number) => `${count} Min.`,
     meals: { breakfast: "Frühstück", lunch: "Mittagessen", dinner: "Abendessen", snack: "Snack" },
     cooked: "Gekocht",
     nothingPlannedDay: "Nichts geplant",
@@ -108,6 +111,7 @@ const TEXT: Record<KitchenLanguage, typeof en> = {
     ideaAdded: (name: string) => `${name} als Idee hinzugefügt`,
     meal: "Mahlzeit",
     servingsLabel: "Portionen",
+    servingUnit: (count: number) => (count === 1 ? "Portion" : "Portionen"),
     recipes: "Rezepte",
     idea: "Idee",
     noRecipeMatch: (query: string) => `Kein Rezept passt zu „${query}“.`,
@@ -188,19 +192,9 @@ export function KitchenWeekPage(data: WeekData) {
                     "grid size-11 place-items-center rounded-full font-kitchen font-medium tracking-tight text-[1.625rem] leading-none tabular-nums sm:size-12 sm:text-[1.875rem]",
                     isToday && "bg-primary text-primary-foreground shadow-sm"
                   )}>{parts.number}</span>
-                  {entries.length ? (
-                    <button
-                      type="button"
-                      onClick={() => setPlanning(day)}
-                      className="mt-1 grid size-11 place-items-center rounded-full border border-dashed border-[color:var(--surface-border)] text-muted-foreground hover:border-primary hover:text-(--kitchen-hue-ink) focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none sm:hidden"
-                      aria-label={text.planAnother(parts.weekdayLong, parts.dayMonth)}
-                    >
-                      <PlusIcon className="size-4" aria-hidden />
-                    </button>
-                  ) : null}
                 </div>
-                <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-stretch">
-                  {entries.map((entry) => {
+                <div className={cn("flex min-w-0 flex-col gap-2", entries.length ? "sm:grid sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-3" : "sm:flex-row")}>
+                  {entries.length ? <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-stretch">{entries.map((entry) => {
                     const recipe = recipes.get(entry.recipeId);
                     const group = mainGroup(kitchen.groups, recipe?.sections ?? []);
                     return (
@@ -227,13 +221,13 @@ export function KitchenWeekPage(data: WeekData) {
                         </span>
                       </button>
                     );
-                  })}
+                  })}</div> : null}
                   {past && !entries.length ? <span className="flex min-h-16 items-center text-sm text-muted-foreground">{text.nothingPlannedDay}</span> : (
                     <button
                       type="button"
                       onClick={() => setPlanning(day)}
-                      className={cn("flex min-h-12 items-center justify-center gap-1.5 rounded-xl border border-dashed border-[color:var(--surface-border)] px-4 text-sm text-muted-foreground transition-colors hover:border-primary hover:text-(--kitchen-hue-ink) focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none sm:min-h-16", entries.length ? "hidden sm:flex sm:min-h-0 sm:h-11 sm:self-center sm:rounded-full sm:px-3.5" : "sm:flex-1 sm:justify-start")}
-                      aria-label={text.planMeal(parts.weekdayLong, parts.dayMonth)}
+                      className={cn("flex min-h-12 items-center justify-center gap-1.5 rounded-xl border border-dashed border-[color:var(--surface-border)] px-4 text-sm text-muted-foreground transition-colors hover:border-primary hover:text-(--kitchen-hue-ink) focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none sm:min-h-16", entries.length ? "min-h-11 justify-start self-start rounded-full px-3 max-sm:border-transparent max-sm:px-1 sm:h-11 sm:min-h-0 sm:self-center sm:px-3.5" : "sm:flex-1 sm:justify-start")}
+                      aria-label={entries.length ? text.planAnother(parts.weekdayLong, parts.dayMonth) : text.planMeal(parts.weekdayLong, parts.dayMonth)}
                     >
                       <PlusIcon className="size-4" aria-hidden /> {entries.length ? text.add : text.planAMeal}
                     </button>
@@ -287,6 +281,7 @@ export function KitchenWeekPage(data: WeekData) {
 function groupBy(entries: readonly PlanEntry[]) {
   const map = new Map<string, PlanEntry[]>();
   for (const entry of entries) map.set(entry.day, [...(map.get(entry.day) ?? []), entry]);
+  for (const day of map.values()) day.sort((a, b) => MEALS.indexOf(a.meal) - MEALS.indexOf(b.meal));
   return map;
 }
 
@@ -353,7 +348,7 @@ function PlanSheet({ day, onClose, data }: { day: string | undefined; onClose: (
             ))}
           </div>
           <div className="flex items-center justify-between gap-3">
-            <Stepper label={text.servingsLabel} value={servings} onValue={setServings} />
+            <Stepper label={text.servingsLabel} value={servings} onValue={setServings} unit={text.servingUnit(servings)} />
             <SheetAction pending={pending} missing={recipeId ? undefined : text.chooseRecipe} onClick={plan}>{text.addToPlan}</SheetAction>
           </div>
         </div>
@@ -375,7 +370,7 @@ function PlanSheet({ day, onClose, data }: { day: string | undefined; onClose: (
                   <span className="flex min-w-0 flex-1 items-baseline justify-between gap-3">
                     <span className="min-w-0 font-kitchen font-medium text-base leading-snug break-words">{recipe.name}</span>
                     <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-                      {recipe.ingredientCount ? [recipe.minutes ? `${recipe.minutes} min` : "", recipe.kcal ? `${recipe.kcal} kcal` : ""].filter(Boolean).join(", ") : text.idea}
+                      {recipe.ingredientCount ? [recipe.minutes ? text.minutes(recipe.minutes) : "", recipe.kcal ? `${recipe.kcal} kcal` : ""].filter(Boolean).join(", ") : text.idea}
                     </span>
                   </span>
                 </button>
@@ -428,6 +423,7 @@ function EntrySheet({ entry, onClose, data }: { entry: PlanEntry | undefined; on
   return (
     <KitchenSheet
       open
+      view={draft ? "lines" : "entry"}
       onOpenChange={(next) => { if (!next) onClose(); }}
       title={entry.recipe}
       description={`${text.meals[entry.meal]}, ${dayParts(entry.day, language).weekdayLong} ${dayParts(entry.day, language).dayMonth}${entry.cooked ? text.cookedSuffix : ""}`}
@@ -438,7 +434,7 @@ function EntrySheet({ entry, onClose, data }: { entry: PlanEntry | undefined; on
         </div>
       ) : (
         <div className="flex w-full flex-wrap items-center justify-between gap-2">
-          <Button variant="destructive-subtle" disabled={pending} onClick={async () => {
+          <Button variant="destructive-outline" disabled={pending} onClick={async () => {
             if (await run({ type: "plan.remove", id: entry.id }, { title: text.removedFromPlan(entry.recipe), undo: { type: "plan.add", day: entry.day, meal: entry.meal, recipeId: entry.recipeId, servings: entry.servings } })) onClose();
           }}>{text.remove}</Button>
           <div className="flex gap-2">
@@ -512,7 +508,7 @@ function EntrySheet({ entry, onClose, data }: { entry: PlanEntry | undefined; on
           ) : <p className="text-sm text-muted-foreground">{text.noIngredients}</p>}
           {!entry.cooked ? (
             <div className="flex flex-wrap gap-2">
-              <Button variant="outline" size="sm" disabled={pending || changed} title={changed ? text.saveFirst : undefined} onClick={() => setDraft(draftLines(entry.lines))}><PencilIcon aria-hidden /> {text.changeThisMeal}</Button>
+              <Button variant="outline" size="sm" disabled={pending || changed} title={changed ? text.saveFirst : undefined} onClick={() => setDraft(draftLines(entry.lines, language))}><PencilIcon aria-hidden /> {text.changeThisMeal}</Button>
               {entry.custom ? (
                 <Button variant="ghost" size="sm" disabled={pending} onClick={() => void run({ type: "plan.reset", id: entry.id }, { title: text.backToRecipe, undo: { type: "plan.customize", id: entry.id, lines: current } })}>
                   <RotateCcwIcon aria-hidden /> {text.useRecipeAgain}

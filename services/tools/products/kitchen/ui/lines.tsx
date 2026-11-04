@@ -1,7 +1,7 @@
 import { PlusIcon, XIcon } from "lucide-react";
 import { Button } from "../../../platform/ui/components/ui/button.js";
 import { Input } from "../../../platform/ui/components/ui/input.js";
-import { type Ingredient, INGREDIENT_UNITS, type IngredientUnit, type RecipeLine, type RecipeLineInput, unitName } from "../domain.js";
+import { fieldNumber, type Ingredient, INGREDIENT_UNITS, type IngredientUnit, type RecipeLine, type RecipeLineInput, unitName } from "../domain.js";
 import { useKitchenAction } from "./kit.js";
 import { type KitchenLanguage, useLanguage, useText } from "./language.js";
 
@@ -37,8 +37,8 @@ const TEXT: Record<KitchenLanguage, typeof en> = {
 /** One ingredient line while a person edits it. A new name has no ingredient yet. */
 export type DraftLine = { key: string; ingredientId?: string; name: string; unit: IngredientUnit; amount: string; note: string };
 
-export function draftLines(lines: readonly RecipeLine[]): DraftLine[] {
-  return lines.map((line) => ({ key: line.ingredientId, ingredientId: line.ingredientId, name: line.ingredient, unit: line.unit, amount: String(line.amount), note: line.note }));
+export function draftLines(lines: readonly RecipeLine[], language: KitchenLanguage): DraftLine[] {
+  return lines.map((line) => ({ key: line.ingredientId, ingredientId: line.ingredientId, name: line.ingredient, unit: line.unit, amount: fieldNumber(line.amount, language), note: line.note }));
 }
 
 /** Edits a list of ingredient lines, for a recipe or for one planned meal. Rows lay out by the width they get. */
@@ -67,7 +67,7 @@ export function LineEditor({ lines, onLines, ingredients }: { lines: readonly Dr
                 {known ? (
                   <span className="relative">
                     <Input aria-label={text.amountOf(called)} inputMode="decimal" className="pr-12 tabular-nums" value={line.amount} placeholder={text.amountPlaceholder} onChange={(event) => update(line.key, { amount: event.target.value })} />
-                    <span aria-hidden className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-sm text-muted-foreground">{unitName(known.unit, language)}</span>
+                    <span aria-hidden className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-sm text-muted-foreground">{unitName(known.unit, language, Number(line.amount.replace(",", ".")))}</span>
                   </span>
                 ) : (
                   <span className="grid grid-cols-[minmax(0,1fr)_auto] gap-1">

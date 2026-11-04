@@ -313,6 +313,11 @@ export function convertNutrition(nutrition: Nutrition, from: IngredientUnit, to:
 }
 
 /** A number with at most two decimals, and a decimal comma in German. */
+/** A number as a person types it into a field: no rounding, and a decimal comma in German. */
+export function fieldNumber(value: number, language: "en" | "de" = "en"): string {
+  return language === "de" ? String(value).replace(".", ",") : String(value);
+}
+
 export function formatNumber(value: number, language: "en" | "de" = "en"): string {
   const text = String(Math.round(value * 100) / 100);
   return language === "de" ? text.replace(".", ",") : text;
