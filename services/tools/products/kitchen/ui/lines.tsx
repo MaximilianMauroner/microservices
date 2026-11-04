@@ -6,12 +6,14 @@ import { useKitchenAction } from "./kit.js";
 import { type KitchenLanguage, useLanguage, useText } from "./language.js";
 
 const en = {
+  amountPlaceholder: "e.g. 200",
   ingredient: "Ingredient",
-  amount: "Amount",
+  ingredientNumber: (position: number) => `Ingredient ${position}`,
+  amountOf: (name: string) => `Amount of ${name}`,
+  unitOf: (name: string) => `Unit of ${name}`,
+  noteOn: (name: string) => `Note on ${name}`,
   removeItem: (name: string) => name ? `Remove ${name}` : "Remove ingredient",
-  unit: "Unit",
-  note: "Note",
-  notePlaceholder: "Note, such as diced",
+  notePlaceholder: "Note, e.g. diced",
   addIngredient: "Add ingredient",
   amountRequired: (name: string) => `Enter an amount for ${name}.`
 };
@@ -19,12 +21,14 @@ const en = {
 const TEXT: Record<KitchenLanguage, typeof en> = {
   en,
   de: {
+    amountPlaceholder: "z. B. 200",
     ingredient: "Zutat",
-    amount: "Menge",
+    ingredientNumber: (position: number) => `Zutat ${position}`,
+    amountOf: (name: string) => `Menge von ${name}`,
+    unitOf: (name: string) => `Einheit von ${name}`,
+    noteOn: (name: string) => `Notiz zu ${name}`,
     removeItem: (name: string) => name ? `${name} entfernen` : "Zutat entfernen",
-    unit: "Einheit",
-    note: "Notiz",
-    notePlaceholder: "Notiz, zum Beispiel gewürfelt",
+    notePlaceholder: "Notiz, z. B. gewürfelt",
     addIngredient: "Zutat hinzufügen",
     amountRequired: (name: string) => `Gib eine Menge für ${name} ein.`
   }
@@ -47,26 +51,35 @@ export function LineEditor({ lines, onLines, ingredients }: { lines: readonly Dr
     <div className="@container grid gap-2">
       <datalist id="kitchen-ingredients">{ingredients.map((ingredient) => <option key={ingredient.id} value={ingredient.name} />)}</datalist>
       <ul className="grid gap-2">
-        {lines.map((line) => {
+        {lines.map((line, index) => {
           const known = line.ingredientId ? ingredients.find((one) => one.id === line.ingredientId) : byName.get(line.name.trim().toLowerCase());
+          const called = line.name.trim() || text.ingredientNumber(index + 1);
           return (
-            <li key={line.key} className="grid grid-cols-[minmax(0,1fr)_5.5rem_auto] gap-2 rounded-xl border border-[color:var(--surface-border)] bg-card p-2 @xl:grid-cols-[minmax(0,1fr)_6rem_6.5rem_minmax(0,0.8fr)_auto]">
-              <Input aria-label={text.ingredient} list="kitchen-ingredients" value={line.name} placeholder={text.ingredient}
+            // On a narrow screen the name gets its own row, so long names stay readable. From @xl, one row holds everything.
+            <li key={line.key} className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 rounded-xl border border-[color:var(--surface-border)] bg-card p-2 @xl:grid-cols-[minmax(0,1fr)_9.5rem_minmax(0,0.8fr)_auto]">
+              <Input aria-label={text.ingredientNumber(index + 1)} list="kitchen-ingredients" value={line.name} placeholder={text.ingredient}
                 onChange={(event) => {
                   const match = byName.get(event.target.value.trim().toLowerCase());
                   update(line.key, { name: event.target.value, ingredientId: match?.id, unit: match?.unit ?? line.unit });
                 }} />
-              <Input aria-label={text.amount} inputMode="decimal" value={line.amount} placeholder="200" onChange={(event) => update(line.key, { amount: event.target.value })} />
               <Button type="button" variant="ghost" size="icon" aria-label={text.removeItem(line.name)} className="@xl:order-last" onClick={() => onLines((current) => current.filter((one) => one.key !== line.key))}><XIcon /></Button>
-              {known ? (
-                <span className="col-span-1 flex h-9 items-center px-1 text-sm text-muted-foreground">{unitName(known.unit, language)}</span>
-              ) : (
-                <select aria-label={text.unit} value={line.unit} onChange={(event) => update(line.key, { unit: event.target.value as IngredientUnit })}
-                  className="h-9 rounded-lg border border-input bg-field px-2 text-sm">
-                  {INGREDIENT_UNITS.map((unit) => <option key={unit} value={unit}>{unitName(unit, language)}</option>)}
-                </select>
-              )}
-              <Input aria-label={text.note} value={line.note} placeholder={text.notePlaceholder} className="col-span-2 @xl:col-span-1" onChange={(event) => update(line.key, { note: event.target.value })} />
+              <div className="col-span-2 grid grid-cols-[9.5rem_minmax(0,1fr)] gap-2 @xl:contents">
+                {known ? (
+                  <span className="relative">
+                    <Input aria-label={text.amountOf(called)} inputMode="decimal" className="pr-12 tabular-nums" value={line.amount} placeholder={text.amountPlaceholder} onChange={(event) => update(line.key, { amount: event.target.value })} />
+                    <span aria-hidden className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-sm text-muted-foreground">{unitName(known.unit, language)}</span>
+                  </span>
+                ) : (
+                  <span className="grid grid-cols-[minmax(0,1fr)_auto] gap-1">
+                    <Input aria-label={text.amountOf(called)} inputMode="decimal" className="tabular-nums" value={line.amount} placeholder={text.amountPlaceholder} onChange={(event) => update(line.key, { amount: event.target.value })} />
+                    <select aria-label={text.unitOf(called)} value={line.unit} onChange={(event) => update(line.key, { unit: event.target.value as IngredientUnit })}
+                      className="h-9 rounded-lg border border-input bg-field px-1.5 text-sm">
+                      {INGREDIENT_UNITS.map((unit) => <option key={unit} value={unit}>{unitName(unit, language)}</option>)}
+                    </select>
+                  </span>
+                )}
+                <Input aria-label={text.noteOn(called)} value={line.note} placeholder={text.notePlaceholder} onChange={(event) => update(line.key, { note: event.target.value })} />
+              </div>
             </li>
           );
         })}

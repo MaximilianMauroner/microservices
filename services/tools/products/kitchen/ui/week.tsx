@@ -6,11 +6,12 @@ import { Label } from "../../../platform/ui/components/ui/label.js";
 import { cn } from "../../../platform/ui/lib/utils.js";
 import { addDays, formatAmount, type Ingredient, type Leftover, type Meal, MEALS, type PlanEntry, weekDays } from "../domain.js";
 import type { RecipeSummary } from "../server-functions.js";
-import { dayParts, type Frame, groupColor, KitchenPage, KitchenSheet, mainGroup, Pill, PlateRing, SearchField, Stepper, tint, useByLabel, useKitchenAction, weekLabel, weekRange } from "./kit.js";
+import { dayParts, type Frame, groupColor, KitchenPage, KitchenSheet, mainGroup, Pill, PlateRing, SearchField, SheetAction, Stepper, tint, useByLabel, useKitchenAction, weekLabel, weekRange } from "./kit.js";
 import { type KitchenLanguage, useLanguage, useText } from "./language.js";
 import { type DraftLine, draftLines, LineEditor, useResolveLines } from "./lines.js";
 
 const en = {
+  chooseRecipe: "Choose a recipe.",
   previousWeek: "Previous week",
   nextWeek: "Next week",
   today: "Today",
@@ -77,6 +78,7 @@ const en = {
 const TEXT: Record<KitchenLanguage, typeof en> = {
   en,
   de: {
+    chooseRecipe: "Wähle ein Rezept.",
     previousWeek: "Vorherige Woche",
     nextWeek: "Nächste Woche",
     today: "Heute",
@@ -162,7 +164,7 @@ export function KitchenWeekPage(data: WeekData) {
   return (
     <KitchenPage
       title={title}
-      facts={`${title === range ? "" : `${range}. `}${planned ? text.plannedFacts(planned, cooked) : text.nothingPlanned}`}
+      facts={`${title === range ? "" : `${range} · `}${planned ? text.plannedFacts(planned, cooked) : text.nothingPlanned}`}
       actions={(
         <div className="flex items-center gap-1">
           <Button variant="outline" size="icon" className="size-11 md:size-9" aria-label={text.previousWeek} onClick={() => goWeek(addDays(week.start, -7))}><ChevronLeftIcon /></Button>
@@ -352,7 +354,7 @@ function PlanSheet({ day, onClose, data }: { day: string | undefined; onClose: (
           </div>
           <div className="flex items-center justify-between gap-3">
             <Stepper label={text.servingsLabel} value={servings} onValue={setServings} />
-            <Button size="lg" className="px-5" onClick={plan} disabled={!recipeId || pending}>{text.addToPlan}</Button>
+            <SheetAction pending={pending} missing={recipeId ? undefined : text.chooseRecipe} onClick={plan}>{text.addToPlan}</SheetAction>
           </div>
         </div>
       ) : undefined}

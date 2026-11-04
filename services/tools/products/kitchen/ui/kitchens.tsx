@@ -10,12 +10,14 @@ import type { KitchenAdminAction, KitchenPersonalAction } from "../actions.js";
 import type { Kitchen } from "../domain.js";
 import type { KitchenPerson } from "../repository.js";
 import { runKitchenAdminAction, runKitchenPersonalAction } from "../server-functions.js";
-import { KitchenSheet, LanguageMenu, memberLine, messageOf } from "./kit.js";
+import { KitchenSheet, LanguageMenu, memberLine, messageOf, SheetAction } from "./kit.js";
 import { type KitchenLanguage, useLanguage, useText } from "./language.js";
 
 type KitchensData = { kitchens: readonly Kitchen[]; hiddenKitchens: readonly Kitchen[]; isAdmin: boolean; people: readonly KitchenPerson[] };
 
 const en = {
+  chooseRecipient: "Choose who gets the kitchen.",
+  nameKitchen: "Give the kitchen a name.",
   title: "Kitchens",
   introAdmin: "Each kitchen has its own recipes, ingredients, plan, list, and stock. Its members share all of it.",
   introMember: "The kitchens you cook in.",
@@ -71,6 +73,8 @@ type KitText = typeof en;
 const TEXT: Record<KitchenLanguage, KitText> = {
   en,
   de: {
+    chooseRecipient: "Wähle, wer die Küche bekommt.",
+    nameKitchen: "Gib der Küche einen Namen.",
     title: "Küchen",
     introAdmin: "Jede Küche hat eigene Rezepte, Zutaten, Wochenplan, Einkaufsliste und Vorrat. Ihre Mitglieder teilen alles.",
     introMember: "Die Küchen, in denen du kochst.",
@@ -261,9 +265,9 @@ export function KitchensPage(data: KitchensData) {
       </main>
       <KitchenSheet open={moving !== undefined} onOpenChange={(open) => { if (!open) setMoving(undefined); }}
         title={moving ? text.moveTitle(moving.name) : text.move}
-        footer={<Button disabled={!recipient || pending} onClick={async () => {
+        footer={<SheetAction pending={pending} missing={recipient ? undefined : text.chooseRecipient} onClick={async () => {
           if (moving && await run({ type: "kitchen.move", kitchenId: moving.id, personId: recipient, leave: leaveAfterMove }, text.moved)) setMoving(undefined);
-        }}>{leaveAfterMove ? text.moveAndLeave : text.move}</Button>}>
+        }}>{leaveAfterMove ? text.moveAndLeave : text.move}</SheetAction>}>
         <p className="mb-4 text-sm text-muted-foreground">{text.moveHint}</p>
         <label className="grid gap-1.5 text-sm font-medium">
           {text.recipient}
@@ -281,12 +285,12 @@ export function KitchensPage(data: KitchensData) {
         open={creating || renaming !== undefined}
         onOpenChange={(next) => { if (!next) { setCreating(false); setRenaming(undefined); } }}
         title={renaming ? text.renameTitle(renaming.name) : text.newKitchen}
-        footer={<Button size="lg" className="px-5" disabled={!name.trim() || pending} onClick={async () => {
+        footer={<SheetAction pending={pending} missing={name.trim() ? undefined : text.nameKitchen} onClick={async () => {
           const done = renaming
             ? await run({ type: "kitchen.rename", kitchenId: renaming.id, name }, text.renamed)
             : await run({ type: "kitchen.create", name }, text.created(name.trim()));
           if (done) { setCreating(false); setRenaming(undefined); }
-        }}>{renaming ? text.renameButton : text.createKitchen}</Button>}
+        }}>{renaming ? text.renameButton : text.createKitchen}</SheetAction>}
       >
         <form className="pb-2" onSubmit={(event) => event.preventDefault()}>
           <label className="grid gap-1.5 text-sm font-medium">

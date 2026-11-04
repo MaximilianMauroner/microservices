@@ -3,6 +3,7 @@ import { Link, useHydrated, useRouter, useRouterState } from "@tanstack/react-ro
 import { BookOpenIcon, CalendarDaysIcon, CheckIcon, ChevronDownIcon, LanguagesIcon, LayoutGridIcon, LeafIcon, PlusIcon, RefrigeratorIcon, SearchIcon, ShoppingBasketIcon, XIcon } from "lucide-react";
 import { createContext, type CSSProperties, type ReactNode, useContext, useEffect, useRef, useState } from "react";
 import { AppShell } from "../../../platform/ui/components/app-shell.js";
+import { Button } from "../../../platform/ui/components/ui/button.js";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../../../platform/ui/components/ui/dialog.js";
 import { Drawer, DrawerContent, DrawerDescription, DrawerFooter, DrawerHeader, DrawerTitle } from "../../../platform/ui/components/ui/drawer.js";
 import { Input } from "../../../platform/ui/components/ui/input.js";
@@ -375,12 +376,12 @@ export function KitchenSheet({ open, onOpenChange, title, description, children,
     return (
       <Drawer open={open} onOpenChange={onOpenChange} showSwipeHandle>
         <DrawerContent style={keyboard.open ? { ...hue, marginBottom: keyboard.inset, maxHeight: keyboard.height - 8 } : hue} className="kitchen-hue max-h-[92dvh]">
-          <DrawerHeader className="text-left">
+          <DrawerHeader className="border-b border-[color:var(--surface-border)] pb-3 text-left">
             <DrawerTitle className="font-kitchen font-semibold tracking-tight text-xl">{title}</DrawerTitle>
             {description ? <DrawerDescription>{description}</DrawerDescription> : null}
           </DrawerHeader>
-          <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-2">{children}</div>
-          {footer && !searching ? <DrawerFooter className="pb-[max(1rem,env(safe-area-inset-bottom))]">{footer}</DrawerFooter> : null}
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 pt-4 pb-2">{children}</div>
+          {footer && !searching ? <DrawerFooter className="border-t border-[color:var(--surface-border)] pb-[max(1rem,env(safe-area-inset-bottom))]">{footer}</DrawerFooter> : null}
         </DrawerContent>
       </Drawer>
     );
@@ -396,6 +397,16 @@ export function KitchenSheet({ open, onOpenChange, title, description, children,
         {footer ? <DialogFooter>{footer}</DialogFooter> : <span />}
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** The main button of a sheet. While something is missing, the button stays off and says next to it what is missing. */
+export function SheetAction({ missing, pending, onClick, children }: { missing?: string; pending: boolean; onClick: () => void; children: ReactNode }) {
+  return (
+    <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-x-3 gap-y-1">
+      {missing ? <p className="min-w-0 text-right text-xs text-muted-foreground" aria-live="polite">{missing}</p> : null}
+      <Button size="lg" className="px-5" disabled={missing !== undefined || pending} onClick={onClick}>{children}</Button>
+    </div>
   );
 }
 
@@ -448,9 +459,9 @@ export function SearchField({ value, onValue, label, inSheet = false, add, child
   const toTop = () => setTimeout(() => field.current?.scrollIntoView({ block: "start", behavior: "smooth" }), 300);
   return (
     <div data-kitchen-search className="grid gap-3">
-      <div ref={field} className={cn("relative z-10 max-md:sticky max-md:-mx-4 max-md:px-4 max-md:py-2",
+      <div ref={field} className={cn("relative z-10 max-md:sticky max-md:-mx-3 max-md:px-3 max-md:py-2",
         inSheet ? "max-md:top-0 max-md:bg-popover" : "max-md:top-13 max-md:scroll-mt-13 max-md:bg-background/95 max-md:backdrop-blur")}>
-        <SearchIcon className={cn("pointer-events-none absolute top-1/2 size-4 -translate-y-1/2 text-muted-foreground", "left-3 max-md:left-7")} aria-hidden />
+        <SearchIcon className={cn("pointer-events-none absolute top-1/2 size-4 -translate-y-1/2 text-muted-foreground", "left-3 max-md:left-6")} aria-hidden />
         <Input ref={input} type="search" enterKeyHint="search" autoComplete="off" className={cn("h-10 pl-9 [&::-webkit-search-cancel-button]:hidden", adding ? "pr-20" : "pr-10")} placeholder={label} aria-label={label} value={value}
           onChange={(event) => onValue(event.target.value)}
           onKeyDown={(event) => { if (event.key === "Enter") input.current?.blur(); }}
@@ -459,13 +470,13 @@ export function SearchField({ value, onValue, label, inSheet = false, add, child
           onBlur={() => { leave.current = setTimeout(() => setActive(false), 400); }} />
         {value ? (
           <button type="button" aria-label={text.clearSearch} onClick={() => { onValue(""); input.current?.focus(); }}
-            className={cn("absolute top-1/2 grid size-9 -translate-y-1/2 place-items-center rounded-full text-muted-foreground hover:text-foreground", adding ? "right-10 max-md:right-14" : "right-1 max-md:right-5")}>
+            className={cn("absolute top-1/2 grid size-9 -translate-y-1/2 place-items-center rounded-full text-muted-foreground hover:text-foreground", adding ? "right-10 max-md:right-13" : "right-1 max-md:right-4")}>
             <XIcon className="size-4" aria-hidden />
           </button>
         ) : null}
         {adding ? (
           <button type="button" aria-label={adding.label} onClick={adding.run}
-            className="absolute top-1/2 right-1 grid size-8 -translate-y-1/2 place-items-center rounded-full bg-primary text-primary-foreground hover:brightness-110 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none max-md:right-5">
+            className="absolute top-1/2 right-1 grid size-8 -translate-y-1/2 place-items-center rounded-full bg-primary text-primary-foreground hover:brightness-110 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none max-md:right-4">
             <PlusIcon className="size-4" aria-hidden />
           </button>
         ) : null}
