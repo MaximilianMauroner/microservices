@@ -1,3 +1,4 @@
+import { favicons } from "../../../platform/ui/favicons.js";
 import { Link, useHydrated, useRouter, useRouterState } from "@tanstack/react-router";
 import { BookOpenIcon, CalendarDaysIcon, CheckIcon, ChevronDownIcon, LanguagesIcon, LayoutGridIcon, LeafIcon, PlusIcon, RefrigeratorIcon, SearchIcon, ShoppingBasketIcon, XIcon } from "lucide-react";
 import { createContext, type CSSProperties, type ReactNode, useContext, useEffect, useRef, useState } from "react";
@@ -127,7 +128,7 @@ export function KitchenLayout({ frame, children }: { frame: Frame; children: Rea
   useEffect(() => preloadTabs(router, frame.kitchen.id), [router, frame.kitchen.id]);
   return (
     <>
-      <AppShell product="Kitchen" />
+      <AppShell product="Kitchen" icon={favicons.kitchen} />
       <div aria-hidden style={hueStyle(open)} className={cn("kitchen-progress fixed inset-x-0 top-0 z-50 h-0.5", loading && "kitchen-progress--on")} />
       <main id="main" lang={language} style={hueStyle(open)} className="tools-page kitchen-page kitchen-hue pb-28 md:pb-12">
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">

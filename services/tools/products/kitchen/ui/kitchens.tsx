@@ -1,3 +1,4 @@
+import { favicons } from "../../../platform/ui/favicons.js";
 import { Link, useRouter } from "@tanstack/react-router";
 import { PencilIcon, PlusIcon, Trash2Icon, UserPlusIcon, XIcon } from "lucide-react";
 import { type CSSProperties, useState } from "react";
@@ -154,7 +155,7 @@ export function KitchensPage(data: KitchensData) {
 
   return (
     <>
-      <AppShell product="Kitchen" />
+      <AppShell product="Kitchen" icon={favicons.kitchen} />
       <main id="main" lang={language} className="tools-page kitchen-page kitchen-hue" style={{ "--kitchen-hue": "var(--kitchen-week)", "--kitchen-hue-ink": "var(--kitchen-week-ink)" } as CSSProperties}>
         <header className="mb-6 flex flex-wrap items-end justify-between gap-3">
           <div>
