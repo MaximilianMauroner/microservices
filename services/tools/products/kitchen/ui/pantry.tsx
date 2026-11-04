@@ -5,11 +5,14 @@ import { Input } from "../../../platform/ui/components/ui/input.js";
 import { Label } from "../../../platform/ui/components/ui/label.js";
 import { cn } from "../../../platform/ui/lib/utils.js";
 import { addDays, formatAmount, type Ingredient, ingredientGroups, INGREDIENT_UNITS, type IngredientUnit, type Leftover, type StockItem, unitName } from "../domain.js";
-import { byGroup, GROUP_LIST, GroupDot, groupColor, GroupLabel, groupLabel, groupListStyle, ink, KitchenEmpty, KitchenPage, KitchenSheet, SearchField, Stepper, tint, useByLabel, useKitchenAction } from "./kit.js";
+import { byGroup, GROUP_LIST, GroupDot, groupColor, GroupLabel, groupLabel, groupListStyle, ink, KitchenEmpty, KitchenPage, KitchenSheet, SearchField, SheetAction, Stepper, tint, useByLabel, useKitchenAction } from "./kit.js";
 import { IngredientSheet, type IngredientsData } from "./ingredients.js";
 import { type KitchenLanguage, useLanguage, useText } from "./language.js";
 
 const en = {
+  chooseIngredientFirst: "Choose an ingredient first.",
+  enterAmount: "Enter an amount.",
+  nameLeftover: "Say what is left.",
   title: "At home",
   inStock: (count: number) => `${count} ${count === 1 ? "ingredient" : "ingredients"} in stock`,
   toUseFirst: (count: number) => `, ${count} ${count === 1 ? "leftover" : "leftovers"} to use first`,
@@ -43,7 +46,7 @@ const en = {
   keepIt: "Keep it",
   kept: (name: string) => `${name} kept`,
   whatIsLeft: "What is left",
-  chiliPlaceholder: "Chili con Carne",
+  chiliPlaceholder: "e.g. chili con carne",
   servingsLabel: "Servings",
   goodForDays: "Good for days",
   days: "Days"
@@ -52,6 +55,9 @@ const en = {
 const TEXT: Record<KitchenLanguage, typeof en> = {
   en,
   de: {
+    chooseIngredientFirst: "Wähle zuerst eine Zutat.",
+    enterAmount: "Gib eine Menge ein.",
+    nameLeftover: "Gib an, was übrig ist.",
     title: "Vorrat",
     inStock: (count: number) => (count === 1 ? "1 Zutat im Vorrat" : `${count} Zutaten im Vorrat`),
     toUseFirst: (count: number) => (count === 1 ? ", 1 Rest zuerst verbrauchen" : `, ${count} Reste zuerst verbrauchen`),
@@ -85,7 +91,7 @@ const TEXT: Record<KitchenLanguage, typeof en> = {
     keepIt: "Aufbewahren",
     kept: (name: string) => `${name} aufbewahrt`,
     whatIsLeft: "Was übrig ist",
-    chiliPlaceholder: "Chili con Carne",
+    chiliPlaceholder: "z. B. Chili con Carne",
     servingsLabel: "Portionen",
     goodForDays: "Haltbar für",
     days: "Tage"
@@ -242,7 +248,7 @@ function AddStockSheet({ open, group, onClose, data }: { open: boolean; group?: 
   }
   return (
     <KitchenSheet open={open} onOpenChange={(next) => { if (!next) close(); }} title={group ? text.addToGroup(groupLabel(group, language)) : text.addStockTitle} description={text.addStockDescription}
-      footer={<Button size="lg" className="px-5" disabled={!selected || !(value > 0) || pending} onClick={() => void add()}>{text.addToStock}</Button>}>
+      footer={<SheetAction pending={pending} missing={!selected ? text.chooseIngredientFirst : !(value > 0) ? text.enterAmount : undefined} onClick={() => void add()}>{text.addToStock}</SheetAction>}>
       <div className="grid gap-4">
           <SearchField value={query} onValue={setQuery} label={text.findIngredient} inSheet
             add={isNew ? { label: text.addNew(typed), run: () => { setDraft({ name: typed, unit: draft?.unit ?? "g" }); setIngredientId(""); } } : undefined}>
@@ -289,8 +295,8 @@ function AddLeftoverSheet({ open, onClose, data }: { open: boolean; onClose: () 
   const close = () => { onClose(); setName(""); setServings(2); setDays(3); };
   return (
     <KitchenSheet open={open} onOpenChange={(next) => { if (!next) close(); }} title={text.addLeftoverTitle}
-      footer={<Button size="lg" className="px-5" disabled={!name.trim() || pending}
-        onClick={async () => { if (await run({ type: "leftover.add", name, servings, useBy: addDays(data.today, days) }, { title: text.kept(name.trim()) })) close(); }}>{text.keepIt}</Button>}>
+      footer={<SheetAction pending={pending} missing={name.trim() ? undefined : text.nameLeftover}
+        onClick={async () => { if (await run({ type: "leftover.add", name, servings, useBy: addDays(data.today, days) }, { title: text.kept(name.trim()) })) close(); }}>{text.keepIt}</SheetAction>}>
       <div className="grid gap-4 pb-2">
         <div className="grid gap-1.5">
           <Label htmlFor="leftover-name">{text.whatIsLeft}</Label>

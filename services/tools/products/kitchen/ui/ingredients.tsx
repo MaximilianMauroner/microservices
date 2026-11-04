@@ -1,14 +1,13 @@
-import { ArrowDownIcon, ArrowUpIcon, ListOrderedIcon, PlusIcon, XIcon } from "lucide-react";
+import { ArrowDownIcon, ArrowUpIcon, ListOrderedIcon, PlusIcon, SearchIcon, XIcon } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { Button } from "../../../platform/ui/components/ui/button.js";
-import { Checkbox } from "../../../platform/ui/components/ui/checkbox.js";
 import { Input } from "../../../platform/ui/components/ui/input.js";
 import { Label } from "../../../platform/ui/components/ui/label.js";
 import { Textarea } from "../../../platform/ui/components/ui/textarea.js";
 import type { RecipeChoice } from "../server-functions.js";
 import { convertNutrition, formatNumber, type Ingredient, ingredientGroups, INGREDIENT_UNITS, isCountedUnit, type IngredientUnit, unitName, UNSORTED_SECTION } from "../domain.js";
-import { byGroup, type Frame, GROUP_LIST, GroupDot, groupColor, GroupLabel, groupLabel, groupListStyle, KitchenEmpty, KitchenPage, KitchenSheet, SearchField, useKitchenAction } from "./kit.js";
+import { byGroup, type Frame, GROUP_LIST, GroupDot, groupColor, GroupLabel, groupLabel, groupListStyle, KitchenEmpty, KitchenPage, KitchenSheet, SearchField, SheetAction, useKitchenAction } from "./kit.js";
 import { type KitchenLanguage, useLanguage, useText } from "./language.js";
 
 export type IngredientsData = Frame & { ingredients: readonly Ingredient[]; recipes: readonly RecipeChoice[] };
@@ -16,6 +15,9 @@ export type IngredientsData = Frame & { ingredients: readonly Ingredient[]; reci
 const NUTRIENTS = [["kcal", "kcal"], ["protein", "g"], ["carbs", "g"], ["fat", "g"]] as const;
 
 const en = {
+  nameIngredient: "Give the ingredient a name.",
+  namePlaceholder: "e.g. tomato paste",
+  sizePlaceholder: "e.g. 250",
   title: "Ingredients",
   inKitchen: (count: number) => `${count} in this kitchen`,
   withoutNutrition: (count: number) => `, ${count} without nutrition`,
@@ -45,21 +47,30 @@ const en = {
   saved: (name: string) => `${name} saved`,
   added: (name: string) => `${name} added`,
   inRecipesToo: (count: number) => count === 1 ? " and put in 1 recipe" : ` and put in ${count} recipes`,
-  addToRecipes: "Add to recipes",
-  addToRecipesHint: "Choose the recipes that need it and enter how much each one uses.",
+  recipes: "Recipes",
+  alreadyIn: "Already in",
+  findRecipe: "Add to a recipe",
+  findAnotherRecipe: "Add to another recipe",
+  noRecipeMatch: (query: string) => `No other recipe matches “${query}”`,
+  addingTo: "Recipes it goes into on save",
+  amountsNeeded: "Enter how much each recipe needs.",
+  removeRecipe: (recipe: string) => `Do not add to ${recipe}`,
   amountFor: (recipe: string) => `Amount for ${recipe}`,
   forServings: (count: number) => count === 1 ? "for 1 serving" : `for ${count} servings`,
   name: "Name",
   unit: "Unit",
   size: (item: string, other: string) => `1 ${item} is how many ${other}?`,
   sizeHint: "Recipes, stock, and nutrition change to the new unit with this size.",
-  group: "Group",
-  alsoIn: "Also in",
-  addGroup: "Add group",
+  groups: "Groups",
+  groupPlaceholder: "Type a group, such as Basics",
+  anotherGroup: "Another group",
+  mainGroup: "shopping",
+  makeMain: (group: string) => `Make ${group} the main group`,
+  addGroupNamed: (group: string) => `Add ${group}`,
   removeGroup: (group: string) => `Remove ${group}`,
-  alsoInHint: "These groups count in the meal balance too. The shopping list uses the first group.",
+  groupsHint: "The first group places it on the shopping list. All groups count in the meal balance.",
   nutritionPer: (per: string) => `Nutrition ${per}`,
-  leaveEmpty: "Leave a value empty when you do not know it. Recipes then show it as unknown.",
+  leaveEmpty: "Leave empty what you do not know.",
   notes: "Notes",
   notesPlaceholder: "Where to buy it, a brand, a source for the values",
   arrangeDescription: "Put the groups in the order you shop. The shopping list follows it.",
@@ -72,6 +83,9 @@ type KitText = typeof en;
 const TEXT: Record<KitchenLanguage, KitText> = {
   en,
   de: {
+    nameIngredient: "Gib der Zutat einen Namen.",
+    namePlaceholder: "z. B. Tomatenmark",
+    sizePlaceholder: "z. B. 250",
     title: "Zutaten",
     inKitchen: (count: number) => `${count} in dieser Küche`,
     withoutNutrition: (count: number) => `, ${count} ohne Nährwerte`,
@@ -101,21 +115,30 @@ const TEXT: Record<KitchenLanguage, KitText> = {
     saved: (name: string) => `${name} gespeichert`,
     added: (name: string) => `${name} hinzugefügt`,
     inRecipesToo: (count: number) => count === 1 ? " und in 1 Rezept aufgenommen" : ` und in ${count} Rezepte aufgenommen`,
-    addToRecipes: "In Rezepte aufnehmen",
-    addToRecipesHint: "Wähle die Rezepte, die sie brauchen, und gib an, wie viel jedes davon braucht.",
+    recipes: "Rezepte",
+    alreadyIn: "Schon in",
+    findRecipe: "Zu einem Rezept hinzufügen",
+    findAnotherRecipe: "Zu weiterem Rezept hinzufügen",
+    noRecipeMatch: (query: string) => `Kein weiteres Rezept passt zu „${query}“`,
+    addingTo: "Rezepte, in die sie beim Speichern kommt",
+    amountsNeeded: "Gib an, wie viel jedes Rezept braucht.",
+    removeRecipe: (recipe: string) => `Nicht zu ${recipe} hinzufügen`,
     amountFor: (recipe: string) => `Menge für ${recipe}`,
     forServings: (count: number) => count === 1 ? "für 1 Portion" : `für ${count} Portionen`,
     name: "Name",
     unit: "Einheit",
     size: (item: string, other: string) => `Wie viel ${other} sind 1 ${item}?`,
     sizeHint: "Rezepte, Vorrat und Nährwerte wechseln mit dieser Größe zur neuen Einheit.",
-    group: "Gruppe",
-    alsoIn: "Auch in",
-    addGroup: "Gruppe hinzufügen",
+    groups: "Gruppen",
+    groupPlaceholder: "Gruppe eingeben, z. B. Basics",
+    anotherGroup: "Weitere Gruppe",
+    mainGroup: "Einkauf",
+    makeMain: (group: string) => `${group} als Hauptgruppe`,
+    addGroupNamed: (group: string) => `${group} hinzufügen`,
     removeGroup: (group: string) => `${group} entfernen`,
-    alsoInHint: "Diese Gruppen zählen auch für die Balance der Mahlzeit. Die Einkaufsliste nutzt die erste Gruppe.",
+    groupsHint: "Die erste Gruppe bestimmt den Platz auf der Einkaufsliste. Alle zählen für die Balance der Mahlzeit.",
     nutritionPer: (per: string) => `Nährwerte ${per}`,
-    leaveEmpty: "Lass ein Feld leer, wenn du den Wert nicht kennst. Rezepte zeigen ihn dann als unbekannt.",
+    leaveEmpty: "Lass leer, was du nicht weißt.",
     notes: "Notizen",
     notesPlaceholder: "Wo du es kaufst, eine Marke, eine Quelle für die Werte",
     arrangeDescription: "Sortiere die Gruppen in der Reihenfolge, in der du einkaufst. Die Einkaufsliste folgt ihr.",
@@ -199,7 +222,7 @@ export function KitchenIngredientsPage(data: IngredientsData) {
   );
 }
 
-/** Shows and edits one ingredient: unit, groups, nutrition, notes, and the recipes that use it. */
+/** Shows and edits one ingredient: unit, groups, the recipes that use it, nutrition, and notes. */
 export function IngredientSheet({ ingredient, newName = "", onClose, data }: { ingredient: Ingredient | "new" | undefined; newName?: string; onClose: () => void; data: IngredientsData }) {
   const language = useLanguage();
   const text = useText(TEXT);
@@ -207,14 +230,9 @@ export function IngredientSheet({ ingredient, newName = "", onClose, data }: { i
   const existing = ingredient === "new" ? undefined : ingredient;
   const [name, setName] = useState(existing?.name ?? newName);
   const [unit, setUnit] = useState<IngredientUnit>(existing?.unit ?? "g");
-  const [section, setSection] = useState(existing && existing.section !== UNSORTED_SECTION ? existing.section : "");
-  const [otherGroups, setOtherGroups] = useState<readonly string[]>(existing?.otherGroups ?? []);
-  const [newGroup, setNewGroup] = useState("");
-  const addGroup = () => {
-    const group = newGroup.trim();
-    if (group && ![section, ...otherGroups].some((one) => one.toLowerCase() === group.toLowerCase())) setOtherGroups((current) => [...current, group]);
-    setNewGroup("");
-  };
+  /** The main group first. It places the ingredient on the shopping list. */
+  const [groups, setGroups] = useState<readonly string[]>(existing ? ingredientGroups(existing).filter((group) => group !== UNSORTED_SECTION) : []);
+  const [typedGroup, setTypedGroup] = useState("");
   const [notes, setNotes] = useState(existing?.notes ?? "");
   const shown = (nutrition: Ingredient["nutrition"] | undefined) => ({
     kcal: nutrition?.kcal?.toString() ?? "", protein: nutrition?.protein?.toString() ?? "",
@@ -222,11 +240,8 @@ export function IngredientSheet({ ingredient, newName = "", onClose, data }: { i
   });
   const [values, setValues] = useState<Record<(typeof NUTRIENTS)[number][0], string>>(shown(existing?.nutrition));
   const [size, setSize] = useState("");
-  const usedIn = existing ? data.recipes.filter((recipe) => recipe.ingredientIds.includes(existing.id)) : [];
-  const candidates = data.recipes.filter((recipe) => !existing || !recipe.ingredientIds.includes(existing.id));
-  /** The chosen recipes, each with the amount as typed. */
+  /** The recipes that get this ingredient on save, in the order they were picked, each with the amount as typed. */
   const [uses, setUses] = useState<ReadonlyMap<string, string>>(new Map());
-  const sections = byGroup(data.kitchen.groups, data.ingredients, (one) => one.section).map(([group]) => group).filter((group) => group !== UNSORTED_SECTION);
   const number = (value: string) => value.trim() === "" ? null : Number(value.replace(",", "."));
   const nutrientLabel = { kcal: text.calories, protein: text.protein, carbs: text.carbs, fat: text.fat };
   const per = isCountedUnit(unit) ? text.perOne(unitName(unit, language, 1)) : text.per100(unit);
@@ -254,18 +269,12 @@ export function IngredientSheet({ ingredient, newName = "", onClose, data }: { i
 
   const addToRecipes = [...uses].map(([recipeId, amount]) => ({ recipeId, amount: number(amount) ?? Number.NaN }));
   const amountsReady = addToRecipes.every((use) => Number.isFinite(use.amount) && use.amount > 0);
-  function choose(recipeId: string, chosen: boolean) {
-    setUses((current) => {
-      const next = new Map(current);
-      if (chosen) next.set(recipeId, ""); else next.delete(recipeId);
-      return next;
-    });
-  }
 
   async function save() {
+    const [section = "", ...otherGroups] = withGroup(groups, typedGroup);
     const title = (existing ? text.saved(name.trim()) : text.added(name.trim())) + (addToRecipes.length ? text.inRecipesToo(addToRecipes.length) : "");
     const done = await run({
-      type: "ingredient.save", id: existing?.id, name, unit, section, otherGroups: newGroup.trim() ? [...otherGroups, newGroup.trim()] : [...otherGroups], notes, oldPerNew: changingUnit ? oldPerNew(size) : undefined,
+      type: "ingredient.save", id: existing?.id, name, unit, section, otherGroups, notes, oldPerNew: changingUnit ? oldPerNew(size) : undefined,
       kcal: number(values.kcal), protein: number(values.protein), carbs: number(values.carbs), fat: number(values.fat), addToRecipes
     }, { title });
     if (done) onClose();
@@ -284,19 +293,19 @@ export function IngredientSheet({ ingredient, newName = "", onClose, data }: { i
               {text.delete}
             </Button>
           ) : <span />}
-          <Button size="lg" className="px-5" disabled={!name.trim() || !amountsReady || pending} onClick={save}>{text.save}</Button>
+          <SheetAction pending={pending} missing={!name.trim() ? text.nameIngredient : !amountsReady ? text.amountsNeeded : undefined} onClick={save}>{text.save}</SheetAction>
         </div>
       )}
     >
-      <form className="grid gap-4 pb-2" onSubmit={(event) => { event.preventDefault(); void save(); }}>
-        <div className="grid gap-1.5">
-          <Label htmlFor="ingredient-name">{text.name}</Label>
-          <Input id="ingredient-name" className="h-10" value={name} onChange={(event) => setName(event.target.value)} placeholder="Kichererbsen" />
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2">
+      <form className="grid gap-6 pb-2" onSubmit={(event) => { event.preventDefault(); void save(); }}>
+        <div className="grid gap-4">
+          <div className="grid gap-1.5">
+            <Label htmlFor="ingredient-name">{text.name}</Label>
+            <Input id="ingredient-name" className="h-11 text-base font-medium" value={name} onChange={(event) => setName(event.target.value)} placeholder={text.namePlaceholder} />
+          </div>
           <div className="grid gap-1.5">
             <Label>{text.unit}</Label>
-            <div className="grid grid-cols-4 gap-1 rounded-full bg-muted/60 p-1" role="radiogroup" aria-label={text.unit}>
+            <div className="grid max-w-xs grid-cols-4 gap-1 rounded-full bg-muted/60 p-1" role="radiogroup" aria-label={text.unit}>
               {INGREDIENT_UNITS.map((option) => (
                 <button key={option} type="button" role="radio" aria-checked={unit === option} onClick={() => chooseUnit(option)}
                   className="h-8 rounded-full text-sm font-medium text-muted-foreground aria-checked:bg-background aria-checked:text-foreground aria-checked:shadow-sm">
@@ -305,47 +314,26 @@ export function IngredientSheet({ ingredient, newName = "", onClose, data }: { i
               ))}
             </div>
           </div>
-          <div className="grid gap-1.5">
-            <Label htmlFor="ingredient-group">{text.group}</Label>
-            <Input id="ingredient-group" className="h-10" list="kitchen-groups" value={section} onChange={(event) => setSection(event.target.value)} placeholder="Proteine, Gemüse, …" />
-            <datalist id="kitchen-groups">{sections.map((one) => <option key={one} value={one} />)}</datalist>
-          </div>
-        </div>
-        <div className="grid gap-1.5">
-          <Label htmlFor="ingredient-other-group">{text.alsoIn}</Label>
-          {otherGroups.length ? (
-            <ul className="flex flex-wrap gap-1.5">
-              {otherGroups.map((group) => (
-                <li key={group} className="inline-flex h-9 items-center gap-1.5 rounded-full border border-control-border bg-control pr-1 pl-3 text-sm">
-                  <GroupDot groups={data.kitchen.groups} group={group} className="size-2" />
-                  {groupLabel(group, language)}
-                  <button type="button" aria-label={text.removeGroup(group)} onClick={() => setOtherGroups((current) => current.filter((one) => one !== group))}
-                    className="grid size-7 place-items-center rounded-full text-muted-foreground hover:bg-control-hover hover:text-foreground"><XIcon className="size-3.5" aria-hidden /></button>
-                </li>
-              ))}
-            </ul>
+          {changingUnit ? (
+            <div className="grid gap-1.5">
+              <Label htmlFor="ingredient-size">{text.size(unitName(larger, language, 1), unitName(smaller, language))}</Label>
+              <Input id="ingredient-size" className="h-10 max-w-40 tabular-nums" inputMode="decimal" value={size} onChange={(event) => changeSize(event.target.value)} placeholder={text.sizePlaceholder} />
+              <p className="text-xs text-muted-foreground">{text.sizeHint}</p>
+            </div>
           ) : null}
-          <div className="flex gap-2">
-            <Input id="ingredient-other-group" className="h-10" list="kitchen-groups" value={newGroup} onChange={(event) => setNewGroup(event.target.value)}
-              onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addGroup(); } }} placeholder="Kohlenhydrate" />
-            <Button type="button" variant="outline" className="h-10" disabled={!newGroup.trim()} onClick={addGroup}><PlusIcon aria-hidden /> {text.addGroup}</Button>
-          </div>
-          <p className="text-xs text-muted-foreground">{text.alsoInHint}</p>
+          <GroupField groups={groups} onGroups={setGroups} typed={typedGroup} onTyped={setTypedGroup} data={data} />
         </div>
-        {changingUnit ? (
-          <div className="grid gap-1.5">
-            <Label htmlFor="ingredient-size">{text.size(unitName(larger, language, 1), unitName(smaller, language))}</Label>
-            <Input id="ingredient-size" className="h-10 max-w-40 tabular-nums" inputMode="decimal" value={size} onChange={(event) => changeSize(event.target.value)} placeholder="250" />
-            <p className="text-xs text-muted-foreground">{text.sizeHint}</p>
-          </div>
-        ) : null}
+        <RecipeUses existing={existing} unit={unit} uses={uses} onUses={setUses} data={data} />
         <fieldset className="grid gap-2">
           <legend className="mb-1 text-sm font-medium">{text.nutritionPer(per)}</legend>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {NUTRIENTS.map(([key, suffix]) => (
               <label key={key} className="grid gap-1 text-xs text-muted-foreground">
-                {nutrientLabel[key]} ({suffix})
-                <Input className="h-10 tabular-nums" inputMode="decimal" value={values[key]} onChange={(event) => setValues((current) => ({ ...current, [key]: event.target.value }))} placeholder="?" />
+                {nutrientLabel[key]}
+                <span className="relative">
+                  <Input className="h-10 pr-11 tabular-nums" inputMode="decimal" value={values[key]} onChange={(event) => setValues((current) => ({ ...current, [key]: event.target.value }))} placeholder="–" />
+                  <span aria-hidden className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-xs text-muted-foreground">{suffix}</span>
+                </span>
               </label>
             ))}
           </div>
@@ -355,49 +343,149 @@ export function IngredientSheet({ ingredient, newName = "", onClose, data }: { i
           <Label htmlFor="ingredient-notes">{text.notes}</Label>
           <Textarea id="ingredient-notes" rows={2} value={notes} onChange={(event) => setNotes(event.target.value)} placeholder={text.notesPlaceholder} />
         </div>
-        {existing && usedIn.length ? (
-          <section className="grid gap-1.5" aria-labelledby="ingredient-recipes">
-            <h3 id="ingredient-recipes" className="text-sm font-medium">{text.recipesUsingIt}</h3>
-            <ul className="flex flex-wrap gap-1.5">
-              {usedIn.map((recipe) => (
-                <li key={recipe.id}>
-                  <Link to="/kitchen/$kitchenId/recipes/$recipeId" params={{ kitchenId: data.kitchen.id, recipeId: recipe.id }}
-                    className="inline-flex min-h-9 items-center rounded-full border border-control-border bg-control px-3 text-sm hover:bg-control-hover focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none">
-                    {recipe.name}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </section>
-        ) : null}
-        {candidates.length ? (
-          <fieldset className="grid gap-2">
-            <legend className="mb-1 text-sm font-medium">{text.addToRecipes}</legend>
-            <ul className="grid max-h-80 overflow-y-auto rounded-xl border border-[color:var(--surface-border)] bg-card">
-              {candidates.map((recipe) => {
-                const amount = uses.get(recipe.id);
-                return (
-                  <li key={recipe.id} className="flex min-h-12 flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-[color:var(--surface-border)] px-3 py-2 last:border-b-0">
-                    <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-sm">
-                      <Checkbox checked={amount !== undefined} onCheckedChange={(checked) => choose(recipe.id, checked)} />
-                      <span className="min-w-0 break-words">{recipe.name}</span>
-                    </label>
-                    {amount !== undefined ? (
-                      <span className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <Input className="h-9 w-24 tabular-nums" inputMode="decimal" autoFocus aria-label={text.amountFor(recipe.name)} value={amount} placeholder="?"
-                          onChange={(event) => setUses((current) => new Map(current).set(recipe.id, event.target.value))} />
-                        <span className="whitespace-nowrap">{unitName(unit, language)} {text.forServings(recipe.servings)}</span>
-                      </span>
-                    ) : null}
-                  </li>
-                );
-              })}
-            </ul>
-            <p className="text-xs text-muted-foreground">{text.addToRecipesHint}</p>
-          </fieldset>
-        ) : null}
       </form>
     </KitchenSheet>
+  );
+}
+
+/** The groups with a typed name added at the end, unless it is empty or already there. */
+function withGroup(groups: readonly string[], typed: string): string[] {
+  const group = typed.trim();
+  return group && !groups.some((one) => one.toLowerCase() === group.toLowerCase()) ? [...groups, group] : [...groups];
+}
+
+/**
+ * The groups of an ingredient as chips. The first chip is the main group, which places the ingredient on the
+ * shopping list. A tap on another chip makes it the main group. The kitchen's other groups wait below as suggestions.
+ */
+function GroupField({ groups, onGroups, typed, onTyped, data }: {
+  groups: readonly string[]; onGroups: (groups: readonly string[]) => void; typed: string; onTyped: (typed: string) => void; data: IngredientsData;
+}) {
+  const language = useLanguage();
+  const text = useText(TEXT);
+  const known = byGroup(data.kitchen.groups, data.ingredients.flatMap((one) => ingredientGroups(one).map((group) => ({ group }))), (entry) => entry.group)
+    .map(([group]) => group).filter((group) => group !== UNSORTED_SECTION);
+  const suggestions = [...new Set([...data.kitchen.groups, ...known])].filter((group) => !groups.some((one) => one.toLowerCase() === group.toLowerCase()));
+  const add = (group: string) => { onGroups(withGroup(groups, group)); onTyped(""); };
+  return (
+    <div className="grid gap-1.5">
+      <Label htmlFor="ingredient-group">{text.groups}</Label>
+      <div className="flex min-h-11 flex-wrap items-center gap-1.5 rounded-lg border border-input bg-field p-1.5 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
+        {groups.map((group, index) => (
+          <span key={group} className="inline-flex h-8 items-center rounded-full border border-control-border bg-control text-sm">
+            <button type="button" disabled={index === 0} title={index ? text.makeMain(groupLabel(group, language)) : undefined}
+              onClick={() => onGroups([group, ...groups.filter((one) => one !== group)])}
+              className="inline-flex h-full items-center gap-1.5 rounded-l-full pl-2.5 enabled:hover:text-foreground">
+              <GroupDot groups={data.kitchen.groups} group={group} className="size-2" />
+              {groupLabel(group, language)}
+              {index === 0 && groups.length > 1 ? <span className="text-xs text-muted-foreground">{text.mainGroup}</span> : null}
+            </button>
+            <button type="button" aria-label={text.removeGroup(group)} onClick={() => onGroups(groups.filter((one) => one !== group))}
+              className="grid size-7 place-items-center rounded-full text-muted-foreground hover:bg-control-hover hover:text-foreground"><XIcon className="size-3.5" aria-hidden /></button>
+          </span>
+        ))}
+        <input id="ingredient-group" value={typed} onChange={(event) => onTyped(event.target.value)} placeholder={groups.length ? text.anotherGroup : text.groupPlaceholder}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === ",") { event.preventDefault(); add(typed); }
+            if (event.key === "Backspace" && !typed && groups.length) onGroups(groups.slice(0, -1));
+          }}
+          className="h-8 min-w-28 flex-1 bg-transparent px-1.5 text-sm outline-none placeholder:text-muted-foreground" />
+      </div>
+      {suggestions.length ? (
+        <div className="flex flex-wrap gap-1.5">
+          {suggestions.map((group) => (
+            <button key={group} type="button" onClick={() => add(group)} aria-label={text.addGroupNamed(groupLabel(group, language))}
+              className="inline-flex h-7 items-center gap-1.5 rounded-full border border-dashed border-control-border px-2.5 text-xs text-muted-foreground hover:border-solid hover:bg-control hover:text-foreground">
+              <PlusIcon className="size-3" aria-hidden />{groupLabel(group, language)}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      <p className="text-xs text-muted-foreground">{text.groupsHint}</p>
+    </div>
+  );
+}
+
+/**
+ * The recipes this ingredient is in, and a search to put it into more. Each picked recipe gets a row with the amount
+ * it needs. They are saved together with the ingredient.
+ */
+function RecipeUses({ existing, unit, uses, onUses, data }: {
+  existing: Ingredient | undefined; unit: IngredientUnit; uses: ReadonlyMap<string, string>; onUses: (uses: ReadonlyMap<string, string>) => void; data: IngredientsData;
+}) {
+  const language = useLanguage();
+  const text = useText(TEXT);
+  const [query, setQuery] = useState("");
+  const [focus, setFocus] = useState<string>();
+  const usedIn = existing ? data.recipes.filter((recipe) => recipe.ingredientIds.includes(existing.id)) : [];
+  const open = data.recipes.filter((recipe) => !usedIn.includes(recipe) && !uses.has(recipe.id));
+  const typed = query.trim().toLowerCase();
+  const matches = typed ? open.filter((recipe) => recipe.name.toLowerCase().includes(typed)).slice(0, 6) : [];
+  const picked = [...uses].flatMap(([id, amount]) => { const recipe = data.recipes.find((one) => one.id === id); return recipe ? [{ recipe, amount }] : []; });
+  const missing = picked.some(({ amount }) => !(Number(amount.replace(",", ".")) > 0));
+  const pick = (id: string) => { onUses(new Map(uses).set(id, "")); setQuery(""); setFocus(id); };
+  if (!data.recipes.length) return null;
+  return (
+    <section className="grid gap-2" aria-labelledby="ingredient-recipes">
+      <h3 id="ingredient-recipes" className="text-sm font-medium">{text.recipes}</h3>
+      {usedIn.length ? (
+        <ul className="flex flex-wrap items-center gap-1.5" aria-label={text.recipesUsingIt}>
+          <li aria-hidden className="pr-1 text-xs text-muted-foreground">{text.alreadyIn}</li>
+          {usedIn.map((recipe) => (
+            <li key={recipe.id}>
+              <Link to="/kitchen/$kitchenId/recipes/$recipeId" params={{ kitchenId: data.kitchen.id, recipeId: recipe.id }}
+                className="inline-flex min-h-8 items-center rounded-full border border-control-border bg-control px-3 text-sm hover:bg-control-hover focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none">
+                {recipe.name}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {picked.length ? (
+        <ul className="divide-y divide-[color:var(--surface-border)] rounded-xl border border-[color:var(--surface-border)] bg-card" aria-label={text.addingTo}>
+          {picked.map(({ recipe, amount }) => (
+            <li key={recipe.id} className="flex items-center gap-3 py-2 pr-1.5 pl-3">
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-medium break-words">{recipe.name}</span>
+                <span className="block text-xs text-muted-foreground">{text.forServings(recipe.servings)}</span>
+              </span>
+              <span className="relative shrink-0">
+                <Input className="h-9 w-24 pr-10 text-right tabular-nums" inputMode="decimal" autoFocus={focus === recipe.id} aria-label={text.amountFor(recipe.name)} value={amount} placeholder="–"
+                  onChange={(event) => onUses(new Map(uses).set(recipe.id, event.target.value))} />
+                <span aria-hidden className="pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2 text-xs text-muted-foreground">{unitName(unit, language)}</span>
+              </span>
+              <Button type="button" size="icon" variant="ghost" aria-label={text.removeRecipe(recipe.name)} onClick={() => { const next = new Map(uses); next.delete(recipe.id); onUses(next); }}><XIcon /></Button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {missing ? <p className="text-xs text-muted-foreground">{text.amountsNeeded}</p> : null}
+      {open.length ? (
+        <div className="grid gap-1">
+          <div className="relative">
+            <SearchIcon className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+            <Input type="search" autoComplete="off" className="h-10 pl-9" value={query} onChange={(event) => setQuery(event.target.value)}
+              aria-label={text.findRecipe} placeholder={usedIn.length || picked.length ? text.findAnotherRecipe : text.findRecipe}
+              onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); if (matches[0]) pick(matches[0].id); } }} />
+          </div>
+          {typed ? (
+            matches.length ? (
+              <ul className="grid rounded-xl border border-[color:var(--surface-border)] bg-popover p-1" aria-label={text.findRecipe}>
+                {matches.map((recipe) => (
+                  <li key={recipe.id}>
+                    <button type="button" onClick={() => pick(recipe.id)}
+                      className="flex min-h-10 w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:outline-none">
+                      <PlusIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+                      <span className="min-w-0 flex-1 break-words">{recipe.name}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : <p className="px-1 text-xs text-muted-foreground">{text.noRecipeMatch(query.trim())}</p>
+          ) : null}
+        </div>
+      ) : null}
+    </section>
   );
 }
 

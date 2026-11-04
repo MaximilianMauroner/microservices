@@ -13,6 +13,8 @@ import { type KitchenLanguage, useLanguage, useText } from "./language.js";
 import { type DraftLine, draftLines, LineEditor, useResolveLines } from "./lines.js";
 
 const en = {
+  namePlaceholder: "e.g. lentil and chickpea curry",
+  minutesPlaceholder: "e.g. 30",
   title: "Recipes",
   recipes: (count: number) => count === 1 ? "1 recipe" : `${count} recipes`,
   stillIdeas: (count: number) => count === 1 ? ", 1 still an idea without ingredients" : `, ${count} still ideas without ingredients`,
@@ -70,6 +72,8 @@ type KitText = typeof en;
 const TEXT: Record<KitchenLanguage, KitText> = {
   en,
   de: {
+    namePlaceholder: "z. B. Linsen-Kichererbsen-Curry",
+    minutesPlaceholder: "z. B. 30",
     title: "Rezepte",
     recipes: (count: number) => count === 1 ? "1 Rezept" : `${count} Rezepte`,
     stillIdeas: (count: number) => count === 1 ? ", 1 noch eine Idee ohne Zutaten" : `, ${count} noch Ideen ohne Zutaten`,
@@ -365,7 +369,9 @@ function RecipeEditor({ data, onDone }: { data: RecipeData; onDone: () => void }
         <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto_7rem]">
           <div className="grid gap-1.5">
             <Label htmlFor="recipe-name">{text.name}</Label>
-            <Input id="recipe-name" className="h-10" value={name} onChange={(event) => setName(event.target.value)} placeholder="Linsen-Kichererbsen Curry" />
+            <Textarea id="recipe-name" rows={1} className="min-h-10 resize-none py-2 [field-sizing:content]" value={name} placeholder={text.namePlaceholder}
+              onChange={(event) => setName(event.target.value.replace(/\s*\n\s*/g, " "))}
+              onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} />
           </div>
           <div className="grid gap-1.5">
             <Label>{text.servingsLabel}</Label>
@@ -373,7 +379,7 @@ function RecipeEditor({ data, onDone }: { data: RecipeData; onDone: () => void }
           </div>
           <div className="grid gap-1.5">
             <Label htmlFor="recipe-minutes">{text.minutesLabel}</Label>
-            <Input id="recipe-minutes" className="h-10" inputMode="numeric" value={minutes} onChange={(event) => setMinutes(event.target.value.replace(/\D/g, ""))} placeholder="30" />
+            <Input id="recipe-minutes" className="h-10" inputMode="numeric" value={minutes} onChange={(event) => setMinutes(event.target.value.replace(/\D/g, ""))} placeholder={text.minutesPlaceholder} />
           </div>
         </div>
         <section className="grid gap-2">
