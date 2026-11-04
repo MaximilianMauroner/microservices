@@ -95,6 +95,8 @@ export type ShoppingLine = Readonly<{
 export type IngredientInput = Readonly<{ name: string; unit: IngredientUnit; section: string; otherGroups?: readonly string[]; nutrition: Nutrition; notes: string }>;
 export type RecipeLineInput = Readonly<{ ingredientId: string; amount: number; note: string }>;
 export type RecipeInput = Readonly<{ name: string; servings: number; minutes: number | null; instructions: string; lines: readonly RecipeLineInput[] }>;
+/** A recipe that gets an ingredient, and how much of it the recipe needs in the ingredient's unit. */
+export type RecipeUse = Readonly<{ recipeId: string; amount: number }>;
 
 export class KitchenError extends Error {
   constructor(message: string, readonly code: "not_found" | "forbidden" | "invalid" | "conflict" = "invalid") {
@@ -191,6 +193,15 @@ export function parseLines(lines: readonly RecipeLineInput[]): RecipeLineInput[]
     if (seen.has(line.ingredientId)) throw new KitchenError("Each ingredient can appear once. Combine the amounts.");
     seen.add(line.ingredientId);
     return { ingredientId: line.ingredientId, amount: positiveAmount(line.amount), note: line.note.trim().slice(0, 200) };
+  });
+}
+
+export function parseRecipeUses(uses: readonly RecipeUse[]): RecipeUse[] {
+  const seen = new Set<string>();
+  return uses.map((use) => {
+    if (seen.has(use.recipeId)) throw new KitchenError("Choose each recipe once.");
+    seen.add(use.recipeId);
+    return { recipeId: use.recipeId, amount: positiveAmount(use.amount) };
   });
 }
 

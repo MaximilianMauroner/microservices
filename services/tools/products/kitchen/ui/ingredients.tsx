@@ -2,15 +2,16 @@ import { ArrowDownIcon, ArrowUpIcon, ListOrderedIcon, PlusIcon, XIcon } from "lu
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { Button } from "../../../platform/ui/components/ui/button.js";
+import { Checkbox } from "../../../platform/ui/components/ui/checkbox.js";
 import { Input } from "../../../platform/ui/components/ui/input.js";
 import { Label } from "../../../platform/ui/components/ui/label.js";
 import { Textarea } from "../../../platform/ui/components/ui/textarea.js";
+import type { RecipeChoice } from "../server-functions.js";
 import { convertNutrition, formatNumber, type Ingredient, ingredientGroups, INGREDIENT_UNITS, isCountedUnit, type IngredientUnit, unitName, UNSORTED_SECTION } from "../domain.js";
 import { byGroup, type Frame, GROUP_LIST, GroupDot, groupColor, GroupLabel, groupLabel, groupListStyle, KitchenEmpty, KitchenPage, KitchenSheet, SearchField, useKitchenAction } from "./kit.js";
 import { type KitchenLanguage, useLanguage, useText } from "./language.js";
 
-/** `usedIn` lists, for each ingredient id, the recipes that use it. */
-export type IngredientsData = Frame & { ingredients: readonly Ingredient[]; usedIn: Readonly<Record<string, readonly { id: string; name: string }[]>> };
+export type IngredientsData = Frame & { ingredients: readonly Ingredient[]; recipes: readonly RecipeChoice[] };
 
 const NUTRIENTS = [["kcal", "kcal"], ["protein", "g"], ["carbs", "g"], ["fat", "g"]] as const;
 
@@ -43,6 +44,11 @@ const en = {
   save: "Save",
   saved: (name: string) => `${name} saved`,
   added: (name: string) => `${name} added`,
+  inRecipesToo: (count: number) => count === 1 ? " and put in 1 recipe" : ` and put in ${count} recipes`,
+  addToRecipes: "Add to recipes",
+  addToRecipesHint: "Choose the recipes that need it and enter how much each one uses.",
+  amountFor: (recipe: string) => `Amount for ${recipe}`,
+  forServings: (count: number) => count === 1 ? "for 1 serving" : `for ${count} servings`,
   name: "Name",
   unit: "Unit",
   size: (item: string, other: string) => `1 ${item} is how many ${other}?`,
@@ -94,6 +100,11 @@ const TEXT: Record<KitchenLanguage, KitText> = {
     save: "Speichern",
     saved: (name: string) => `${name} gespeichert`,
     added: (name: string) => `${name} hinzugefügt`,
+    inRecipesToo: (count: number) => count === 1 ? " und in 1 Rezept aufgenommen" : ` und in ${count} Rezepte aufgenommen`,
+    addToRecipes: "In Rezepte aufnehmen",
+    addToRecipesHint: "Wähle die Rezepte, die sie brauchen, und gib an, wie viel jedes davon braucht.",
+    amountFor: (recipe: string) => `Menge für ${recipe}`,
+    forServings: (count: number) => count === 1 ? "für 1 Portion" : `für ${count} Portionen`,
     name: "Name",
     unit: "Einheit",
     size: (item: string, other: string) => `Wie viel ${other} sind 1 ${item}?`,
@@ -211,6 +222,10 @@ export function IngredientSheet({ ingredient, newName = "", onClose, data }: { i
   });
   const [values, setValues] = useState<Record<(typeof NUTRIENTS)[number][0], string>>(shown(existing?.nutrition));
   const [size, setSize] = useState("");
+  const usedIn = existing ? data.recipes.filter((recipe) => recipe.ingredientIds.includes(existing.id)) : [];
+  const candidates = data.recipes.filter((recipe) => !existing || !recipe.ingredientIds.includes(existing.id));
+  /** The chosen recipes, each with the amount as typed. */
+  const [uses, setUses] = useState<ReadonlyMap<string, string>>(new Map());
   const sections = byGroup(data.kitchen.groups, data.ingredients, (one) => one.section).map(([group]) => group).filter((group) => group !== UNSORTED_SECTION);
   const number = (value: string) => value.trim() === "" ? null : Number(value.replace(",", "."));
   const nutrientLabel = { kcal: text.calories, protein: text.protein, carbs: text.carbs, fat: text.fat };
@@ -237,11 +252,22 @@ export function IngredientSheet({ ingredient, newName = "", onClose, data }: { i
     if (existing && factor) setValues(shown(convertNutrition(existing.nutrition, existing.unit, unit, factor)));
   }
 
+  const addToRecipes = [...uses].map(([recipeId, amount]) => ({ recipeId, amount: number(amount) ?? Number.NaN }));
+  const amountsReady = addToRecipes.every((use) => Number.isFinite(use.amount) && use.amount > 0);
+  function choose(recipeId: string, chosen: boolean) {
+    setUses((current) => {
+      const next = new Map(current);
+      if (chosen) next.set(recipeId, ""); else next.delete(recipeId);
+      return next;
+    });
+  }
+
   async function save() {
+    const title = (existing ? text.saved(name.trim()) : text.added(name.trim())) + (addToRecipes.length ? text.inRecipesToo(addToRecipes.length) : "");
     const done = await run({
       type: "ingredient.save", id: existing?.id, name, unit, section, otherGroups: newGroup.trim() ? [...otherGroups, newGroup.trim()] : [...otherGroups], notes, oldPerNew: changingUnit ? oldPerNew(size) : undefined,
-      kcal: number(values.kcal), protein: number(values.protein), carbs: number(values.carbs), fat: number(values.fat)
-    }, { title: existing ? text.saved(name.trim()) : text.added(name.trim()) });
+      kcal: number(values.kcal), protein: number(values.protein), carbs: number(values.carbs), fat: number(values.fat), addToRecipes
+    }, { title });
     if (done) onClose();
   }
 
@@ -258,7 +284,7 @@ export function IngredientSheet({ ingredient, newName = "", onClose, data }: { i
               {text.delete}
             </Button>
           ) : <span />}
-          <Button size="lg" className="px-5" disabled={!name.trim() || pending} onClick={save}>{text.save}</Button>
+          <Button size="lg" className="px-5" disabled={!name.trim() || !amountsReady || pending} onClick={save}>{text.save}</Button>
         </div>
       )}
     >
@@ -329,11 +355,11 @@ export function IngredientSheet({ ingredient, newName = "", onClose, data }: { i
           <Label htmlFor="ingredient-notes">{text.notes}</Label>
           <Textarea id="ingredient-notes" rows={2} value={notes} onChange={(event) => setNotes(event.target.value)} placeholder={text.notesPlaceholder} />
         </div>
-        {existing && data.usedIn[existing.id]?.length ? (
+        {existing && usedIn.length ? (
           <section className="grid gap-1.5" aria-labelledby="ingredient-recipes">
             <h3 id="ingredient-recipes" className="text-sm font-medium">{text.recipesUsingIt}</h3>
             <ul className="flex flex-wrap gap-1.5">
-              {data.usedIn[existing.id]!.map((recipe) => (
+              {usedIn.map((recipe) => (
                 <li key={recipe.id}>
                   <Link to="/kitchen/$kitchenId/recipes/$recipeId" params={{ kitchenId: data.kitchen.id, recipeId: recipe.id }}
                     className="inline-flex min-h-9 items-center rounded-full border border-control-border bg-control px-3 text-sm hover:bg-control-hover focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none">
@@ -343,6 +369,32 @@ export function IngredientSheet({ ingredient, newName = "", onClose, data }: { i
               ))}
             </ul>
           </section>
+        ) : null}
+        {candidates.length ? (
+          <fieldset className="grid gap-2">
+            <legend className="mb-1 text-sm font-medium">{text.addToRecipes}</legend>
+            <ul className="grid max-h-80 overflow-y-auto rounded-xl border border-[color:var(--surface-border)] bg-card">
+              {candidates.map((recipe) => {
+                const amount = uses.get(recipe.id);
+                return (
+                  <li key={recipe.id} className="flex min-h-12 flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-[color:var(--surface-border)] px-3 py-2 last:border-b-0">
+                    <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-sm">
+                      <Checkbox checked={amount !== undefined} onCheckedChange={(checked) => choose(recipe.id, checked)} />
+                      <span className="min-w-0 break-words">{recipe.name}</span>
+                    </label>
+                    {amount !== undefined ? (
+                      <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <Input className="h-9 w-24 tabular-nums" inputMode="decimal" autoFocus aria-label={text.amountFor(recipe.name)} value={amount} placeholder="?"
+                          onChange={(event) => setUses((current) => new Map(current).set(recipe.id, event.target.value))} />
+                        <span className="whitespace-nowrap">{unitName(unit, language)} {text.forServings(recipe.servings)}</span>
+                      </span>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+            <p className="text-xs text-muted-foreground">{text.addToRecipesHint}</p>
+          </fieldset>
         ) : null}
       </form>
     </KitchenSheet>

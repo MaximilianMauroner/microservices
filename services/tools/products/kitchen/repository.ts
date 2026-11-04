@@ -15,6 +15,7 @@ import {
   type Recipe,
   type RecipeInput,
   type RecipeLineInput,
+  type RecipeUse,
   type ShoppingLine,
   type StockItem,
   ingredientGroups,
@@ -25,6 +26,7 @@ import {
   parseLeftoverServings,
   parseMeal,
   parseRecipeInput,
+  parseRecipeUses,
   parseServings,
   parseStockAmount,
   requiredName,
@@ -75,8 +77,9 @@ export interface KitchenScope {
   /**
    * Creates or changes an ingredient. To change the unit of an ingredient that recipes or stock use, give
    * `oldPerNew`, how much of the old unit one new unit holds. Those amounts then change to the new unit.
+   * `addToRecipes` puts the ingredient at the end of each of those recipes, with its amount in the saved unit.
    */
-  saveIngredient(id: string | undefined, input: IngredientInput, oldPerNew?: number): Promise<Ingredient>;
+  saveIngredient(id: string | undefined, input: IngredientInput, options?: { oldPerNew?: number; addToRecipes?: readonly RecipeUse[] }): Promise<Ingredient>;
   /** Finds an ingredient by name, ignoring case, or creates it with the given unit. */
   ingredientNamed(name: string, unit: IngredientUnit): Promise<Ingredient>;
   deleteIngredient(id: string): Promise<void>;
@@ -381,6 +384,16 @@ function scope(sql: Db, kitchen: Kitchen): KitchenScope {
       where kitchen_id = ${k} and ingredient_id = ${current.id}`;
   }
 
+  async function putInRecipes(tx: Db, ingredientId: string, name: string, uses: readonly RecipeUse[]) {
+    for (const use of uses) {
+      const found = await recipe(tx, use.recipeId);
+      if (found.lines.some((line) => line.ingredientId === ingredientId)) throw new KitchenError(`${found.name} already has ${name}.`, "conflict");
+      await tx`insert into tools.kitchen_recipe_lines (kitchen_id, recipe_id, ingredient_id, position, amount, note)
+        values (${k}, ${found.id}, ${ingredientId}, ${found.lines.length}, ${use.amount}, '')`;
+      await tx`update tools.kitchen_recipes set updated_at = now() where kitchen_id = ${k} and id = ${found.id}`;
+    }
+  }
+
   return {
     kitchen,
     async setGroups(groups) {
@@ -390,8 +403,9 @@ function scope(sql: Db, kitchen: Kitchen): KitchenScope {
       const rows = await sql<IngredientRow[]>`${ingredientSelect(sql, k)} group by i.id order by lower(i.name)`;
       return rows.map(ingredientFromRow);
     },
-    async saveIngredient(id, raw, oldPerNew) {
+    async saveIngredient(id, raw, { oldPerNew, addToRecipes = [] } = {}) {
       const input = parseIngredientInput(raw);
+      const uses = parseRecipeUses(addToRecipes);
       return begin(async (tx) => {
         const clash = await findIngredient(tx, k, input.name);
         if (clash && clash.id !== id) throw new KitchenError(`${clash.name} already exists in this kitchen.`, "conflict");
@@ -402,12 +416,14 @@ function scope(sql: Db, kitchen: Kitchen): KitchenScope {
           await tx`update tools.kitchen_ingredients set name = ${input.name}, unit = ${input.unit}, section = ${input.section}, other_groups = ${[...input.otherGroups]}::text[],
             kcal = ${n.kcal}, protein = ${n.protein}, carbs = ${n.carbs}, fat = ${n.fat}, notes = ${input.notes}, updated_at = now() where kitchen_id = ${k} and id = ${id}`;
           for (const group of ingredientGroups(input)) await rememberGroup(tx, group);
+          await putInRecipes(tx, id, input.name, uses);
           return ingredient(tx, id);
         }
         const created = randomUUID();
         await tx`insert into tools.kitchen_ingredients (id, kitchen_id, name, unit, section, other_groups, kcal, protein, carbs, fat, notes, updated_at)
           values (${created}, ${k}, ${input.name}, ${input.unit}, ${input.section}, ${[...input.otherGroups]}::text[], ${n.kcal}, ${n.protein}, ${n.carbs}, ${n.fat}, ${input.notes}, now())`;
         for (const group of ingredientGroups(input)) await rememberGroup(tx, group);
+        await putInRecipes(tx, created, input.name, uses);
         return ingredient(tx, created);
       });
     },
