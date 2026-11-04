@@ -1,3 +1,6 @@
+import feedback from "../../products/dashboard/public/assets/icons/feedback.svg?url&no-inline";
+import kitchen from "../../products/dashboard/public/assets/icons/kitchen.svg?url&no-inline";
+import bodyshop from "../../products/dashboard/public/assets/icons/bodyshop.svg?url&no-inline";
 import markdownShare from "../../products/dashboard/public/assets/icons/markdown-share.png?url&no-inline";
 import money from "../../products/dashboard/public/assets/icons/money.png?url&no-inline";
 import networkConsole from "../../products/dashboard/public/assets/icons/network-console.png?url&no-inline";
@@ -7,7 +10,9 @@ import tools from "../../products/dashboard/public/assets/icons/tools.png?url&no
 
 export const favicons = {
   directory: tools,
-  feedback: tools,
+  feedback,
+  kitchen,
+  bodyshop,
   markdownShare,
   money,
   networkConsole,
@@ -16,5 +21,5 @@ export const favicons = {
 } as const;
 
 export function faviconLink(href: string) {
-  return { rel: "icon", href, type: "image/png", sizes: "96x96" };
+  return { rel: "icon", href, type: href.includes(".svg") ? "image/svg+xml" : "image/png", sizes: href.includes(".svg") ? "any" : "96x96" };
 }
