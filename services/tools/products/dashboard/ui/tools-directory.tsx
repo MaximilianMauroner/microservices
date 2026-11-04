@@ -5,6 +5,8 @@ import { Link, useRouter } from "@tanstack/react-router";
 import { useEffect, type ReactElement, type ReactNode } from "react";
 import { ArrowUpRight, CheckCircle2, ChevronRight } from "lucide-react";
 import type { AttentionSummary, DashboardData } from "../attention.js";
+import { MONEY_VIEWS, moneyViewTitle } from "../../money/money-tracker-navigation.js";
+import { EXTERNAL_TOOLS, TOOLS_PRODUCTS } from "../../../platform/ui/components/tools-nav.js";
 import { AppShell } from "../../../platform/ui/components/app-shell.js";
 import { PageHeader } from "../../../platform/ui/components/page-header.js";
 import { Button } from "../../../platform/ui/components/ui/button.js";
@@ -16,15 +18,6 @@ const REFRESH_INTERVAL_MS = 60_000;
 const TIME_ZONE = "Europe/Berlin";
 const dayFormatter = new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "short", timeZone: TIME_ZONE });
 const clockFormatter = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: TIME_ZONE });
-
-const productIcons: Record<ProductId, string> = {
-  feedback: favicons.feedback,
-  publisher: favicons.publisher,
-  money: favicons.money,
-  status: favicons.status,
-  "markdown-share": favicons.markdownShare,
-  "network-console": favicons.networkConsole
-};
 
 type Snapshot = PublicSnapshotDocument | PrivateSnapshotDocument;
 type CatalogProduct = Pick<ProductDefinition, "id" | "name" | "description" | "href" | "monitorId">;
@@ -73,20 +66,33 @@ export function ToolsDirectory({ snapshot, attention = {}, facts = {} }: { snaps
         </section>
 
         <section aria-labelledby="workspace-title"><h2 id="workspace-title" className="mb-2 text-sm font-semibold">Your tools</h2><div className="grid grid-cols-1 gap-x-6 sm:grid-cols-2 xl:grid-cols-3">
-          {products.map((product) => {
-            const card = <>
+          {TOOLS_PRODUCTS.filter((product) => product.id !== "dashboard").map((product) => {
+            const metadata = products.find((item) => item.id === (product.id === "markdown" ? "markdown-share" : product.id));
+            return <div key={product.id} className="min-w-0 border-b border-border/60">
+            <Link className="block px-1 py-3 transition-colors hover:bg-accent" to={product.to} preload="intent">
               <span className="flex min-w-0 items-center gap-2.5">
-                <img className="size-8 shrink-0 rounded-lg" src={productIcons[product.id]} alt="" width={32} height={32} />
-                <span className="min-w-0 flex-1"><strong className="block truncate text-sm font-semibold">{product.name}</strong><span className="block truncate text-xs text-muted-foreground">{toolFacts(product.id, { attention, facts, statuses, operational, total: monitorIds.size, now, monitorId: product.monitorId })}</span></span>
-                {product.external ? <ArrowUpRight className="size-4 text-muted-foreground" aria-hidden="true" /> : <ChevronRight className="size-4 text-muted-foreground" aria-hidden="true" />}
+                <img className="size-8 shrink-0 rounded-lg" src={product.icon} alt="" width={32} height={32} />
+                <span className="min-w-0 flex-1"><strong className="block truncate text-sm font-semibold">{product.label}</strong><span className="block truncate text-xs text-muted-foreground">{metadata ? toolFacts(metadata.id, { attention, facts, statuses, operational, total: monitorIds.size, now, monitorId: metadata.monitorId }) : product.description ?? "Open tool"}</span></span>
+                <ChevronRight className="size-4 text-muted-foreground" aria-hidden="true" />
               </span>
-            </>;
-            const className = "block min-w-0 border-b border-border/60 px-1 py-3 transition-colors hover:bg-accent";
-            return product.external
-              ? <a key={product.id} className={className} href={product.href} target="_blank" rel="noreferrer">{card}</a>
-              : product.id === "markdown-share"
-                ? <Link key={product.id} className={className} to="/documents" preload="intent">{card}</Link>
-                : <Link key={product.id} className={className} to={product.href as "/feedback" | "/publisher" | "/money" | "/status"} preload="intent">{card}</Link>;
+            </Link>
+            {product.pages?.some((page) => page.to !== product.to) || product.id === "money" ? <nav aria-label={`${product.label} pages`} className="flex flex-wrap gap-x-3 gap-y-1 px-1 pb-3 text-xs text-muted-foreground">
+              {product.pages?.filter((page) => page.to !== product.to).map((page) => page.external
+                ? <a key={page.to} className="hover:text-foreground hover:underline" href={page.to} target="_blank" rel="noreferrer">{page.label} <span className="sr-only">(opens in a new tab)</span></a>
+                : <Link key={page.to} className="hover:text-foreground hover:underline" to={page.to} preload="intent">{page.label}</Link>)}
+              {product.id === "money" ? MONEY_VIEWS.filter((view) => view !== "overview").map((view) => <Link key={view} className="hover:text-foreground hover:underline" to="/money" search={{ view }} preload="intent">{moneyViewTitle(view)}</Link>) : null}
+            </nav> : null}
+            </div>;
+          })}
+          {EXTERNAL_TOOLS.map((product) => {
+            const metadata = products.find((item) => item.id === product.id);
+            return <a key={product.id} className="block min-w-0 border-b border-border/60 px-1 py-3 transition-colors hover:bg-accent" href={product.to} target="_blank" rel="noreferrer">
+              <span className="flex min-w-0 items-center gap-2.5">
+                <img className="size-8 shrink-0 rounded-lg" src={product.icon} alt="" width={32} height={32} />
+                <span className="min-w-0 flex-1"><strong className="block truncate text-sm font-semibold">{product.label}</strong><span className="block truncate text-xs text-muted-foreground">{metadata ? toolFacts(metadata.id, { attention, facts, statuses, operational, total: monitorIds.size, now, monitorId: metadata.monitorId }) : "External tool"}</span></span>
+                <ArrowUpRight className="size-4 text-muted-foreground" aria-hidden="true" />
+              </span>
+            </a>;
           })}
         </div></section>
 

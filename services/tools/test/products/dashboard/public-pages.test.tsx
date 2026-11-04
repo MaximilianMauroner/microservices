@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { PrivateSnapshotDocument, PublicSnapshotDocument } from "#domain";
+import { EXTERNAL_TOOLS, TOOLS_PRODUCTS } from "../../../platform/ui/components/tools-nav.js";
 import { ToolsDirectory } from "../../../products/dashboard/ui/tools-directory.js";
 import { PrivateToolsStatus, ToolsStatus } from "../../../products/status/ui/tools-status.js";
 
@@ -101,7 +102,10 @@ describe("TanStack Start public pages", () => {
     expect(html).toContain("3 checks need attention");
     expect(html).toContain("Nothing needs you right now.");
     expect(html).not.toContain("Useful things,");
-    for (const href of ["/publisher", "/money", "/feedback", "/status", "/documents"]) expect(html).toContain(`href="${href}"`);
+    for (const product of TOOLS_PRODUCTS.filter((item) => item.id !== "dashboard")) expect(html).toContain(`href="${product.to}"`);
+    for (const product of EXTERNAL_TOOLS) expect(html).toContain(`href="${product.to}"`);
+    for (const page of TOOLS_PRODUCTS.flatMap((product) => product.pages ?? [])) expect(html).toContain(`href="${page.to}"`);
+    expect(html).toContain('href="/money?view=review"');
     expect(html.indexOf("Publisher")).toBeLessThan(html.indexOf("Feedback"));
     expect(html.indexOf("Money")).toBeLessThan(html.indexOf("Feedback"));
     expect(html.indexOf("Feedback")).toBeLessThan(html.indexOf(">Status<"));

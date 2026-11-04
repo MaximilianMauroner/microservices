@@ -9,7 +9,7 @@ import { authClient } from "../../auth/auth-client.js";
 import { homePath, principalSeesProduct } from "../../access/product-access.js";
 import { Avatar, AvatarFallback } from "./ui/avatar.js";
 import { useTheme, type ThemePreference } from "./theme-provider.js";
-import { TOOLS_PRODUCTS, type ToolsPage, type ToolsProduct } from "./tools-nav.js";
+import { EXTERNAL_TOOLS, TOOLS_PRODUCTS, type ToolsPage, type ToolsProduct } from "./tools-nav.js";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -123,12 +123,12 @@ export function ToolsSidebar() {
             <SidebarGroupLabel className="px-2.5 text-xs normal-case tracking-normal">External</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                <SidebarMenuItem>
-                  <SidebarMenuButton className="h-9 px-2.5 text-sm" tooltip="Network Console" render={<a href="https://coding.tailbc92d.ts.net" target="_blank" rel="noreferrer" />}>
-                    <img className="size-5 rounded" src={favicons.networkConsole} alt="" width={20} height={20} />
-                    <span>Network Console</span><ExternalLinkIcon className="ml-auto size-3! opacity-50" />
+                {EXTERNAL_TOOLS.map((product) => <SidebarMenuItem key={product.id}>
+                  <SidebarMenuButton className="h-9 px-2.5 text-sm" tooltip={product.label} render={<a href={product.to} target="_blank" rel="noreferrer" />}>
+                    <img className="size-5 rounded" src={product.icon} alt="" width={20} height={20} />
+                    <span>{product.label}</span><ExternalLinkIcon className="ml-auto size-3! opacity-50" />
                   </SidebarMenuButton>
-                </SidebarMenuItem>
+                </SidebarMenuItem>)}
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>

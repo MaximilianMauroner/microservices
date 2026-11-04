@@ -1,3 +1,4 @@
+import { favicons } from "../../../platform/ui/favicons.js";
 import { useRouter } from "@tanstack/react-router";
 import { type ReactNode, useEffect, useState } from "react";
 import { AppShell } from "../../../platform/ui/components/app-shell.js";
@@ -12,7 +13,7 @@ import { type BodyshopAction, runBodyshopAction } from "../server-functions.js";
 export function BodyshopLayout({ children }: { children: ReactNode }) {
   return (
     <>
-      <AppShell product="Bodyshop" />
+      <AppShell product="Bodyshop" icon={favicons.bodyshop} />
       <main id="main" className="tools-page bodyshop-page pb-16">{children}</main>
     </>
   );
