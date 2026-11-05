@@ -46,7 +46,9 @@ function TabBar({ state, navigateToTab }: TabBarProps) {
             onPress={() => { const route = state.routes.find((one) => one.name === ROUTES[page.key]); if (route) navigateToTab(route.key); }}
             style={styles.tab}
           >
-            <View style={[styles.icon, active && { backgroundColor: tint(ink, 18, colors.background) }]}>
+            <View style={styles.icon}>
+              {/* Android drops the corner radius when a mounted view changes its background, so the highlight mounts with its tab. */}
+              {active ? <View style={[StyleSheet.absoluteFill, styles.highlight, { backgroundColor: tint(ink, 18, colors.background) }]} /> : null}
               <page.icon size={19} color={ink} />
             </View>
             <T weight="medium" muted={!active} style={{ fontSize: 11 }}>{text.tabs[page.key][1]}</T>
@@ -60,5 +62,6 @@ function TabBar({ state, navigateToTab }: TabBarProps) {
 const styles = StyleSheet.create({
   bar: { flexDirection: "row", borderTopWidth: StyleSheet.hairlineWidth },
   tab: { flex: 1, height: 64, alignItems: "center", justifyContent: "center", gap: 4 },
-  icon: { height: 28, width: 48, borderRadius: 14, alignItems: "center", justifyContent: "center" }
+  icon: { height: 28, width: 48, alignItems: "center", justifyContent: "center" },
+  highlight: { borderRadius: 14 }
 });

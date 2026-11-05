@@ -1,5 +1,5 @@
 import * as Crypto from "expo-crypto";
-import { Link, router } from "expo-router";
+import { router } from "expo-router";
 import { Clock, Plus, Refrigerator, X } from "lucide-react-native";
 import { useMemo, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
@@ -125,8 +125,7 @@ function Recipes({ data: { kitchen, change } }: { data: OpenKitchen }) {
       {matches.length ? <View style={{ gap: 8 }}>{matches.map((recipe) => {
         const group = mainGroup(kitchen.kitchen.groups, recipe.sections);
         return (
-          <Link key={recipe.id} href={{ pathname: "/recipes/[recipeId]", params: { recipeId: recipe.id } }} asChild>
-            <Pressable accessibilityRole="link" style={({ pressed }) => [styles.recipe, { backgroundColor: group ? tint(groupColor(colors, kitchen.kitchen.groups, group), 11, colors.card) : colors.muted, opacity: pressed ? 0.8 : 1 }]}>
+          <Pressable key={recipe.id} accessibilityRole="link" onPress={() => router.push({ pathname: "/recipes/[recipeId]", params: { recipeId: recipe.id } })} style={({ pressed }) => [styles.recipe, { backgroundColor: group ? tint(groupColor(colors, kitchen.kitchen.groups, group), 11, colors.card) : colors.muted, opacity: pressed ? 0.8 : 1 }]}>
               <PlateRing groups={kitchen.kitchen.groups} sections={recipe.sections} size={36} />
               <View style={{ flex: 1, gap: 6 }}>
                 <T weight="semibold" style={{ fontSize: 18, lineHeight: 23 }}>{recipe.name}</T>
@@ -140,8 +139,7 @@ function Recipes({ data: { kitchen, change } }: { data: OpenKitchen }) {
                   : <View style={styles.inline}><Refrigerator size={14} color={colors.pageInk.home} /><T weight="medium" style={[styles.small, { color: colors.pageInk.home }]}>{text.allAtHome}</T></View>
                   : null}
               </View>
-            </Pressable>
-          </Link>
+          </Pressable>
         );
       })}</View> : <Empty title={!recipes.length ? text.noRecipes : filtered ? text.noFit : text.noMatch(query)} body={!recipes.length ? text.addIdeaHint : filtered ? text.removeAFilter : text.tryAnother} />}
     </Screen>
