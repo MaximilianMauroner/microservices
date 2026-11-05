@@ -134,9 +134,12 @@ export const appActionBatch = z.object({
 
 /**
  * The server keeps the answer to each app change for 30 days. A change queued earlier than this could be one whose
- * answer is already forgotten, so it is refused rather than applied twice. The gap allows for a phone clock that is wrong.
+ * answer is already forgotten, so it is refused rather than applied twice. A queue time in the future is refused too,
+ * because a phone clock that runs ahead would make an old change look new. The days between allow for a small clock error.
  */
-const MAX_QUEUE_AGE_MS = 28 * 24 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const MAX_QUEUE_AGE_MS = 28 * DAY_MS;
+const MAX_CLOCK_AHEAD_MS = DAY_MS;
 
 export type AppActionResult = Readonly<{ clientActionId: string } & AppliedOutcome>;
 
@@ -146,13 +149,14 @@ export async function applyAppActions(store: KitchenStore, who: Who, batch: z.in
   const results: AppActionResult[] = [];
   for (const { clientActionId, kitchenId, queuedAt, action: raw } of batch.actions) {
     const parsed = kitchenAction.safeParse(raw);
-    const tooOld = now.getTime() - Date.parse(queuedAt) > MAX_QUEUE_AGE_MS;
+    const age = now.getTime() - Date.parse(queuedAt);
     const outcome: AppliedOutcome = !parsed.success
       ? { status: "rejected", message: "The app sent a change that the server does not understand. Update the app." }
       : parsed.data.type === "recipe.copy"
         ? { status: "rejected", message: "Copy recipes to another kitchen on the web." }
         : await store.applyOnce(who, clientActionId, kitchenId, (kitchen) => {
-          if (tooOld) throw new KitchenError("This change waited on the phone for more than four weeks. Make it again if you still need it.");
+          if (age > MAX_QUEUE_AGE_MS) throw new KitchenError("This change waited on the phone for more than four weeks. Make it again if you still need it.");
+          if (age < -MAX_CLOCK_AHEAD_MS) throw new KitchenError("The phone's date is wrong. Correct it, then make this change again.");
           return apply(kitchen, parsed.data as Exclude<KitchenAction, { type: "recipe.copy" }>);
         });
     results.push({ clientActionId, ...outcome });

@@ -48,11 +48,18 @@ function setup(server: { push?: (items: readonly OutboxItem[]) => Promise<AppAct
   return { engine, vault, sent };
 }
 
+/** An engine started for a signed-in account, as the app has it after sign-in. */
+async function started(server: Parameters<typeof setup>[0] = {}) {
+  const parts = setup(server);
+  await parts.engine.load();
+  return parts;
+}
+
 const addMilk = { type: "extra.add", name: "Milk" } as const;
 
 describe("sync engine", () => {
   it("shows a change at once and clears it after the server confirms it", async () => {
-    const { engine, vault, sent } = setup();
+    const { engine, vault, sent } = await started();
     vault.data.snapshot = empty;
     await engine.load();
     await engine.change("home", addMilk);
@@ -63,7 +70,7 @@ describe("sync engine", () => {
   });
 
   it("gives a new item its ID on the phone, so later changes can name it", async () => {
-    const { engine, vault } = setup({ push: async () => { throw new Offline(); } });
+    const { engine, vault } = await started({ push: async () => { throw new Offline(); } });
     await engine.change("home", addMilk);
     await engine.change("home", { type: "extra.remove", id: "x" });
     await engine.sync();
@@ -71,7 +78,7 @@ describe("sync engine", () => {
   });
 
   it("keeps changes and the last snapshot when the phone is offline", async () => {
-    const { engine, vault } = setup({ pull: async () => { throw new Offline(); }, push: async () => { throw new Offline(); } });
+    const { engine, vault } = await started({ pull: async () => { throw new Offline(); }, push: async () => { throw new Offline(); } });
     vault.data.snapshot = empty;
     await engine.load();
     await engine.change("home", addMilk);
@@ -80,7 +87,7 @@ describe("sync engine", () => {
   });
 
   it("drops a refused change and keeps its message as a notice", async () => {
-    const { engine } = setup({ push: async (items) => items.map((one) => ({ clientActionId: one.clientActionId, status: "rejected" as const, message: "Gone." })) });
+    const { engine } = await started({ push: async (items) => items.map((one) => ({ clientActionId: one.clientActionId, status: "rejected" as const, message: "Gone." })) });
     await engine.change("home", addMilk);
     await engine.sync();
     expect(engine.getState()).toMatchObject({ pending: 0, notices: [{ clientActionId: "change-1", message: "Gone." }] });
@@ -90,7 +97,7 @@ describe("sync engine", () => {
 
   it("keeps a sent change until a snapshot that contains it is stored, and sends it again after a failed pull", async () => {
     let reachable = false;
-    const { engine, vault, sent } = setup({ pull: async () => { if (!reachable) throw new Offline(); return empty; } });
+    const { engine, vault, sent } = await started({ pull: async () => { if (!reachable) throw new Offline(); return empty; } });
     vault.data.snapshot = empty;
     await engine.load();
     await engine.change("home", addMilk);
@@ -103,10 +110,10 @@ describe("sync engine", () => {
     expect(engine.getState()).toMatchObject({ pending: 0, view: { today: "2026-11-05+0" } });
   });
 
-  it("writes nothing from a sync that was running when the person signed out", async () => {
+  it("writes and shows nothing from a sync that was running when the person signed out", async () => {
     let release: () => void = () => undefined;
     const old: KitchenSync = { ...empty, today: "old account" };
-    const { engine, vault } = setup({ pull: async () => { await new Promise<void>((resolve) => { release = resolve; }); return old; } });
+    const { engine, vault } = await started({ pull: async () => { await new Promise<void>((resolve) => { release = resolve; }); return old; } });
     const running = engine.sync();
     await new Promise((resolve) => setTimeout(resolve, 0));
     await engine.stop();
@@ -116,8 +123,34 @@ describe("sync engine", () => {
     expect(engine.getState().view).toBeNull();
   });
 
+  it("sends no further batch after a stop, so another account's token never carries these changes", async () => {
+    let release: () => void = () => undefined;
+    let pushes = 0;
+    const { engine, vault, sent } = await started({ push: async (items) => {
+      pushes += 1;
+      if (pushes === 1) await new Promise<void>((resolve) => { release = resolve; });
+      return items.map((one) => ({ clientActionId: one.clientActionId, status: "applied" as const }));
+    } });
+    for (let index = 0; index < 201; index += 1) vault.data.outbox.push({ seq: index, clientActionId: `queued-${index}`, kitchenId: "home", queuedAt: "2026-11-05T09:00:00.000Z", action: addMilk });
+    const running = engine.sync();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await engine.stop();
+    release();
+    await running;
+    expect(sent.map((batch) => batch.length), "only the batch already on its way").toEqual([200]);
+  });
+
+  it("ignores changes and syncs while stopped", async () => {
+    const { engine, vault, sent } = await started();
+    await engine.stop();
+    await engine.change("home", addMilk);
+    await engine.sync();
+    expect(vault.data.outbox).toEqual([]);
+    expect(sent).toEqual([]);
+  });
+
   it("asks for sign-in again and keeps the queued changes", async () => {
-    const { engine } = setup({ push: async () => { throw new SignedOut(); } });
+    const { engine } = await started({ push: async () => { throw new SignedOut(); } });
     await engine.change("home", addMilk);
     await engine.sync();
     expect(engine.getState()).toMatchObject({ signedOut: true, pending: 1 });
@@ -126,7 +159,7 @@ describe("sync engine", () => {
   it("runs one more sync for a change made during a sync, never two at once", async () => {
     let release: () => void = () => undefined;
     let calls = 0;
-    const { engine, sent } = setup({ pull: async () => { calls += 1; if (calls === 1) await new Promise<void>((resolve) => { release = resolve; }); return empty; } });
+    const { engine, sent } = await started({ pull: async () => { calls += 1; if (calls === 1) await new Promise<void>((resolve) => { release = resolve; }); return empty; } });
     const first = engine.sync();
     await new Promise((resolve) => setTimeout(resolve, 0));
     await engine.change("home", addMilk);

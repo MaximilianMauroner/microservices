@@ -136,12 +136,23 @@ describe.skipIf(!sql)("Kitchen app sync", () => {
       change({ type: "plan.add", createId: planId, day: "2026-11-04", meal: "dinner", recipeId: bowlId, servings: 2 }),
       change({ type: "plan.cook", id: planId, leftover: { servings: 1, useBy: "2026-11-07", createId: soupId } }),
       change({ type: "leftover.eat", id: soupId, servings: 1 }),
-      change({ type: "extra.add", name: "Old milk" }, "2026-09-30T09:00:00Z")
+      change({ type: "extra.add", name: "Old milk" }, "2026-09-30T09:00:00Z"),
+      change({ type: "extra.add", name: "Future milk" }, "2026-11-06T09:00:00Z")
     ] }, wednesday);
-    expect(results.map((one) => one.status)).toEqual(["applied", "applied", "applied", "applied", "applied", "rejected"]);
+    expect(results.map((one) => one.status)).toEqual(["applied", "applied", "applied", "applied", "applied", "rejected", "rejected"]);
     const [home] = (await kitchenSync(store, friend, wednesday)).kitchens;
     expect(home!.leftovers, "eating the last serving removes the leftover").toEqual([]);
-    expect(home!.extras, "a change older than the answer the server keeps is not applied").toEqual([]);
+    expect(home!.extras, "a change older than the answer the server keeps, or from a phone clock far ahead, is not applied").toEqual([]);
+  });
+
+  it("applies two parallel eats of the last servings, and removes the leftover once", async () => {
+    const { store, kitchen } = await homeWithFriend();
+    const soup = await kitchen.addLeftover({ name: "Soup", servings: 2, useBy: "2026-11-07" });
+    const eat = () => applyAppActions(store, friend, { actions: [{ clientActionId: randomUUID(), kitchenId: kitchen.kitchen.id, queuedAt, action: { type: "leftover.eat", id: soup.id, servings: 1 } }] }, wednesday);
+    const [one, two] = await Promise.all([eat(), eat()]);
+    expect([one[0]!.status, two[0]!.status]).toEqual(["applied", "applied"]);
+    const [home] = (await kitchenSync(store, friend, wednesday)).kitchens;
+    expect(home!.leftovers).toEqual([]);
   });
 
   it("answers 400 for a malformed batch and applies a valid one over HTTP", async () => {

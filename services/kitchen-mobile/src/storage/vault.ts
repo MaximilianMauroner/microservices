@@ -24,6 +24,7 @@ const KEY = "kitchen.database-key";
 const SECURE = { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY };
 
 let opened: Promise<SQLite.SQLiteDatabase> | undefined;
+let wiping: Promise<void> | undefined;
 
 /**
  * Opens the encrypted database. A build without SQLCipher ignores the key and would write plain text,
@@ -32,6 +33,7 @@ let opened: Promise<SQLite.SQLiteDatabase> | undefined;
  */
 function database(): Promise<SQLite.SQLiteDatabase> {
   opened ??= (async () => {
+    await wiping;
     let key = await SecureStore.getItemAsync(KEY, SECURE);
     if (!key) {
       await SQLite.deleteDatabaseAsync(FILE).catch(() => undefined);
@@ -42,13 +44,13 @@ function database(): Promise<SQLite.SQLiteDatabase> {
     if (!(await db.getFirstAsync("PRAGMA cipher_version"))) throw new Error("This build has no SQLCipher. Kitchen data would not be encrypted.");
     await db.execAsync(`PRAGMA key = "x'${key}'"`);
     try {
-      await db.execAsync(SCHEMA);
+      await migrate(db);
     } catch {
       await db.closeAsync();
       await SQLite.deleteDatabaseAsync(FILE);
       const fresh = await SQLite.openDatabaseAsync(FILE);
       await fresh.execAsync(`PRAGMA key = "x'${key}'"`);
-      await fresh.execAsync(SCHEMA);
+      await migrate(fresh);
       return fresh;
     }
     return db;
@@ -57,6 +59,8 @@ function database(): Promise<SQLite.SQLiteDatabase> {
   return opened;
 }
 
+/** Raise this when the tables change. The vault is a copy of the server, so an older layout is dropped and filled by the next sync. */
+const SCHEMA_VERSION = 1;
 const SCHEMA = `
   create table if not exists settings (key text primary key, value text not null);
   create table if not exists outbox (seq integer primary key autoincrement, client_action_id text not null unique, kitchen_id text not null, queued_at text not null, action text not null);
@@ -98,11 +102,23 @@ export const vault: Vault = {
   }
 };
 
-/** Deletes the database and its key. Sign-out calls this, so nothing of the kitchen stays on the phone. */
+async function migrate(db: SQLite.SQLiteDatabase): Promise<void> {
+  const version = (await db.getFirstAsync<{ user_version: number }>("PRAGMA user_version"))?.user_version;
+  if (version === SCHEMA_VERSION) return;
+  await db.execAsync(`drop table if exists settings; drop table if exists outbox; drop table if exists notices; ${SCHEMA} PRAGMA user_version = ${SCHEMA_VERSION};`);
+}
+
+/** Deletes the database and its key. Sign-out calls this, so nothing of the kitchen stays on the phone. A new open waits until it is done. */
 export async function wipeVault(): Promise<void> {
-  const db = await opened?.catch(() => undefined);
+  const previous = opened;
   opened = undefined;
-  await db?.closeAsync().catch(() => undefined);
-  await SQLite.deleteDatabaseAsync(FILE).catch(() => undefined);
-  await SecureStore.deleteItemAsync(KEY, SECURE);
+  const done = (async () => {
+    await wiping;
+    const db = await previous?.catch(() => undefined);
+    await db?.closeAsync().catch(() => undefined);
+    await SQLite.deleteDatabaseAsync(FILE).catch(() => undefined);
+    await SecureStore.deleteItemAsync(KEY, SECURE);
+  })();
+  wiping = done.catch(() => undefined);
+  await done;
 }

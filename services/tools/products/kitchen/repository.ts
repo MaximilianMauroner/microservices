@@ -596,15 +596,15 @@ function scope(sql: Db, kitchen: Kitchen): KitchenScope {
     },
     async eatLeftover(id, servings) {
       const eaten = parseLeftoverServings(servings);
-      // One statement, because the servings check refuses a row that reaches zero before a later delete could run.
-      const rows = isUuid(id)
-        ? await sql`with gone as (
-            delete from tools.kitchen_leftovers where kitchen_id = ${k} and id = ${id} and servings - ${eaten} <= 0.001 returning id
-          ), kept as (
-            update tools.kitchen_leftovers set servings = servings - ${eaten} where kitchen_id = ${k} and id = ${id} and servings - ${eaten} > 0.001 returning id
-          ) select id from gone union all select id from kept`
-        : [];
-      if (!rows.length) throw new KitchenError("This leftover does not exist.", "not_found");
+      await begin(async (tx) => {
+        const [row] = isUuid(id)
+          ? await tx<{ servings: number }[]>`select servings from tools.kitchen_leftovers where kitchen_id = ${k} and id = ${id} for update`
+          : [];
+        if (!row) throw new KitchenError("This leftover does not exist.", "not_found");
+        // The servings check refuses zero, so the last serving deletes the row instead of updating it.
+        if (row.servings - eaten <= 0.001) await tx`delete from tools.kitchen_leftovers where kitchen_id = ${k} and id = ${id}`;
+        else await tx`update tools.kitchen_leftovers set servings = servings - ${eaten} where kitchen_id = ${k} and id = ${id}`;
+      });
     },
     async removeLeftover(id) {
       if (isUuid(id)) await sql`delete from tools.kitchen_leftovers where kitchen_id = ${k} and id = ${id}`;
