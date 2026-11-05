@@ -196,6 +196,9 @@ export function createDirectUploads(sql: Sql, bucket: ReturnType<typeof createMu
             const links = await tx`select id from artifacts.upload_links where id = ${session.upload_link_id}::uuid
               and revoked_at is null and expires_at > clock_timestamp() for update`;
             if (!links.length) throw unavailable();
+            // A session that expired while waiting no longer holds quota, so a new upload may already use it.
+            const live = await tx`select 1 from artifacts.upload_sessions where session_id = ${id}::uuid and expires_at > clock_timestamp()`;
+            if (!live.length) throw unavailable();
           }
           let description = { ...session.description,
             ...(session.description.kind === "file" ? { fileExpiresAt: new Date(Math.max(

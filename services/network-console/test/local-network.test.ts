@@ -511,4 +511,18 @@ describe("local network dashboard", () => {
       `http://${TEST_TAILSCALE_IPV4}:3000/favicon.ico`
     );
   });
+
+  it("keeps a website link and favicon on its origin when the probed path starts with two slashes", async () => {
+    const snapshot = await collectNetworkSnapshot({
+      runner: createFixtureRunner(),
+      websiteProbe: async (candidate) => {
+        const result = await WEBSITE_PROBE(candidate);
+        return result && { ...result, path: "//attacker.example/?next=1", faviconPath: "/icon.png" };
+      }
+    });
+    const [website] = snapshot.websites;
+    expect(new URL(website!.url).host).toBe(`${TEST_TAILSCALE_IPV4}:3000`);
+    expect(website!.url).toBe(`http://${TEST_TAILSCALE_IPV4}:3000//attacker.example/?next=1`);
+    expect(new URL(website!.faviconUrl!).host).toBe(`${TEST_TAILSCALE_IPV4}:3000`);
+  });
 });
