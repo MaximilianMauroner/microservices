@@ -10,6 +10,7 @@ import {
 } from "./postgres-push-guard.js";
 import { waitForPostgres } from "./postgres-readiness.js";
 import { reconcileRuntimeSchema } from "./runtime-schema-reconciliation.js";
+import { registerAppClients } from "../auth/app-clients.js";
 import { runSchemaPush } from "./run-schema-push.js";
 
 const mode = process.argv[2];
@@ -52,6 +53,7 @@ for (const config of ["drizzle.tools.config.ts", "drizzle.artifacts.config.ts"] 
 const database = postgres(url, { max: 1 });
 try {
   await reconcileRuntimeSchema(database);
+  await registerAppClients(database);
   await applyMarkdownShareSchema(database, process.env.AUTH_ALLOWED_GOOGLE_SUBJECT);
 } finally {
   await database.end();

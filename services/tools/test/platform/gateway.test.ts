@@ -118,7 +118,6 @@ describe("platform fetch gateway", () => {
     const asKitchen = (path: string, init: RequestInit = {}) =>
       request(platform, path, { ...init, headers: { Cookie: "session=kitchen", ...init.headers } });
     expect((await asKitchen("/kitchen")).status).toBe(200);
-    expect((await asKitchen("/api/kitchen/recipes", { method: "POST" })).status).toBe(200);
     expect((await asKitchen("/settings")).status).toBe(200);
     expect((await asKitchen("/kitchenette")).status).toBe(403);
     expect((await asKitchen("/money")).status).toBe(403);

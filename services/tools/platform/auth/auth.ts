@@ -22,6 +22,7 @@ import {
 } from "../database/postgres-schema.js";
 import type { PlatformAuthConfig } from "../config.js";
 import { MCP_PATH } from "../access/mcp.js";
+import { APP_CLIENT_IDS, APP_CLIENTS, type AppClientId } from "./app-clients.js";
 import { createPeopleRepository, type PeopleRepository } from "../access/people.js";
 
 const SESSION_SECONDS = 7 * 24 * 60 * 60;
@@ -49,21 +50,25 @@ export function createPlatformIdentity(config: PlatformAuthConfig, databaseUrl: 
         return undefined;
       }
     },
-    /** Resolves an MCP bearer token. It never reads the browser cookie, so the two credentials stay apart. */
-    resolveAccessToken: async (request: Request): Promise<PlatformPrincipal | undefined> => {
-      const token = /^Bearer ([A-Za-z0-9._~+/-]+=*)$/.exec(request.headers.get("authorization") ?? "")?.[1];
-      if (!token) return undefined;
-      const [row] = await sql<{ subject: string; email: string }[]>`
-        select a.account_id subject, u.email
-        from tools.oauth_access_tokens t
-        join tools.oauth_clients c on c.client_id = t.client_id and c.disabled is not true
-        join tools.auth_users u on u.id = t.user_id
-        join tools.auth_accounts a on a.user_id = u.id and a.provider_id = 'google'
-        where t.token = ${createHash("sha256").update(token).digest("base64url")} and t.expires_at > now()`;
-      return row && principalFor(row);
-    },
+    /** Resolves an MCP bearer token. It never reads the browser cookie, and it refuses app tokens, so each credential keeps one purpose. */
+    resolveAccessToken: (request: Request) => resolveBearer(request, (clientId) => !APP_CLIENT_IDS.includes(clientId)),
+    /** Resolves a bearer token that the given first-party app holds. */
+    resolveAppToken: (request: Request, app: AppClientId) => resolveBearer(request, (clientId) => clientId === APP_CLIENTS[app].clientId),
     close: () => sql.end({ timeout: 5 })
   };
+
+  async function resolveBearer(request: Request, accepts: (clientId: string) => boolean): Promise<PlatformPrincipal | undefined> {
+    const token = /^Bearer ([A-Za-z0-9._~+/-]+=*)$/.exec(request.headers.get("authorization") ?? "")?.[1];
+    if (!token) return undefined;
+    const [row] = await sql<{ subject: string; email: string; client_id: string }[]>`
+      select a.account_id subject, u.email, t.client_id
+      from tools.oauth_access_tokens t
+      join tools.oauth_clients c on c.client_id = t.client_id and c.disabled is not true
+      join tools.auth_users u on u.id = t.user_id
+      join tools.auth_accounts a on a.user_id = u.id and a.provider_id = 'google'
+      where t.token = ${createHash("sha256").update(token).digest("base64url")} and t.expires_at > now()`;
+    return row && accepts(row.client_id) ? principalFor(row) : undefined;
+  }
 }
 
 export type PlatformIdentity = ReturnType<typeof createPlatformIdentity>;
