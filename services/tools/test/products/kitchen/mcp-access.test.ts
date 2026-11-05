@@ -39,6 +39,10 @@ it("hides disabled kitchens and denies reads, writes, and copies to them", async
     const list = await call("kitchen_list");
     expect(JSON.parse((list.content as { text: string }[])[0]!.text)).toEqual([home]);
     expect((await client.listTools()).tools.map((tool) => tool.name)).not.toContain("kitchen_mcp");
+    const annotations = new Map((await client.listTools()).tools.map((tool) => [tool.name, tool.annotations]));
+    expect(annotations.get("recipe_list")).toMatchObject({ readOnlyHint: true, openWorldHint: false });
+    expect(annotations.get("plan_add")).toMatchObject({ readOnlyHint: false, destructiveHint: false });
+    expect(annotations.get("recipe_delete")).toMatchObject({ readOnlyHint: false, destructiveHint: true });
     expect(await call("recipe_copy", { kitchen: "home", recipe: "Soup", toKitchen: "private" })).toMatchObject({ isError: true });
     expect(store.copyRecipe).not.toHaveBeenCalled();
     enabled = false;

@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { PlatformPrincipal } from "#security";
+import { type McpEffect, mcpAnnotations } from "../../platform/access/mcp.js";
 import { applyKitchenAction, applyKitchenAdminAction } from "./actions.js";
 import { convertNutrition, INGREDIENT_UNITS, type Ingredient, KitchenError, MEALS, nutritionPerServing, today, weekStart } from "./domain.js";
 import type { KitchenScope, KitchenStore } from "./repository.js";
@@ -41,8 +42,8 @@ export function registerKitchenTools(server: McpServer, store: KitchenStore, pri
 
   // The SDK infers callback types per call. One loose signature keeps each tool's own zod type below.
   const register = server.registerTool.bind(server) as unknown as (name: string, config: object, callback: (input: never) => Promise<object>) => void;
-  const tool = <Shape extends z.ZodRawShape>(name: string, description: string, shape: Shape, run: (input: z.infer<z.ZodObject<Shape>>) => Promise<unknown>, readOnly = false) => {
-    register(name, { description, inputSchema: shape, annotations: { readOnlyHint: readOnly } }, async (input: z.infer<z.ZodObject<Shape>>) => {
+  const tool = <Shape extends z.ZodRawShape>(name: string, title: string, effect: McpEffect, description: string, shape: Shape, run: (input: z.infer<z.ZodObject<Shape>>) => Promise<unknown>) => {
+    register(name, { title, description, inputSchema: shape, annotations: { title, ...mcpAnnotations[effect] } }, async (input: z.infer<z.ZodObject<Shape>>) => {
       try {
         const result = await run(input);
         return { content: [{ type: "text" as const, text: JSON.stringify(result ?? { ok: true }) }] };
@@ -53,13 +54,13 @@ export function registerKitchenTools(server: McpServer, store: KitchenStore, pri
     });
   };
 
-  tool("kitchen_list", "Lists your MCP-enabled kitchens and their members.", {}, available, true);
+  tool("kitchen_list", "List kitchens", "read", "Use this first to see which kitchens you can open through MCP and who is in each one. Other tools take a kitchen name or id from this list.", {}, available);
 
   if (principal.role === "admin") {
-    tool("kitchen_create", "Creates a kitchen with MCP access off. Enable access on the Kitchens page. Admin only.", { name: z.string() }, ({ name }) => applyKitchenAdminAction(store, who, { type: "kitchen.create", name }));
+    tool("kitchen_create", "Create a kitchen", "write", "Use this only when the admin asks for a new kitchen. Creates it with MCP access off. Enable access on the Kitchens page. Admin only.", { name: z.string() }, ({ name }) => applyKitchenAdminAction(store, who, { type: "kitchen.create", name }));
   }
 
-  tool("kitchen_week", "Shows the week plan, leftovers to use first, and what to buy for one week.", {
+  tool("kitchen_week", "Week overview", "read", "Use this for an overview of one week: the planned meals with their entryId, leftovers to use first, and what to buy.", {
     kitchen: kitchenRef,
     week: z.string().optional().describe("Any date in the week, as YYYY-MM-DD. Default: this week.")
   }, async ({ kitchen: ref, week }) => {
@@ -67,18 +68,18 @@ export function registerKitchenTools(server: McpServer, store: KitchenStore, pri
     const start = weekStart(week ?? today());
     const [plan, leftovers, shopping] = await Promise.all([scope.week(start), scope.leftovers(), scope.shopping(start)]);
     return { kitchen: scope.kitchen.name, week: start, meals: plan.entries, leftovers, toBuy: shopping.lines.filter((line) => line.toBuy > 0), extras: shopping.extras };
-  }, true);
+  });
 
-  tool("group_order_set", "Sets the order of the ingredient groups. The shopping list follows this order.", {
+  tool("group_order_set", "Order ingredient groups", "repeatable write", "Use this when the person wants the shopping list in a different order. Sets the order of the ingredient groups.", {
     kitchen: kitchenRef,
     groups: z.array(z.string()).describe("Group names, first to last.")
   }, async ({ kitchen: ref, groups }) => (await kitchen(ref)).setGroups(groups));
 
-  tool("ingredient_list", "Lists the ingredients of a kitchen with unit, group, and nutrition.", { kitchen: kitchenRef }, async ({ kitchen: ref }) => (await kitchen(ref)).ingredients(), true);
+  tool("ingredient_list", "List ingredients", "read", "Use this to find an ingredient and its unit, groups, and nutrition before you save or change it.", { kitchen: kitchenRef }, async ({ kitchen: ref }) => (await kitchen(ref)).ingredients());
 
-  tool("ingredient_save", "Creates an ingredient, or changes the ingredient with the same name or id. Fields you leave out keep their value.", {
+  tool("ingredient_save", "Save an ingredient", "repeatable write", "Use this to add an ingredient, or to change one with the same name or ingredientId. Fields you leave out keep their value.", {
     kitchen: kitchenRef,
-    id: z.string().optional().describe("Ingredient id, to rename an ingredient."),
+    ingredientId: z.string().optional().describe("From ingredient_list. Only to rename an ingredient."),
     name: z.string(),
     unit: z.enum(INGREDIENT_UNITS).optional().describe("Unit for amounts. Default for a new ingredient: g."),
     oldPerNew: z.number().positive().optional()
@@ -90,10 +91,10 @@ export function registerKitchenTools(server: McpServer, store: KitchenStore, pri
     carbs: nutrient("Carbohydrates in g"),
     fat: nutrient("Fat in g"),
     notes: z.string().optional()
-  }, async ({ kitchen: ref, id, name, ...fields }) => {
+  }, async ({ kitchen: ref, ingredientId, name, ...fields }) => {
     const scope = await kitchen(ref);
-    const existing = (await scope.ingredients()).find((one) => id ? one.id === id : one.name.toLowerCase() === name.trim().toLowerCase());
-    if (id && !existing) throw new KitchenError("This ingredient does not exist.", "not_found");
+    const existing = (await scope.ingredients()).find((one) => ingredientId ? one.id === ingredientId : one.name.toLowerCase() === name.trim().toLowerCase());
+    if (ingredientId && !existing) throw new KitchenError("This ingredient does not exist. Find its ingredientId with ingredient_list.", "not_found");
     const keep = <T>(value: T | undefined, current: T) => value === undefined ? current : value;
     const unit = fields.unit ?? existing?.unit ?? "g";
     const nutrition = existing && fields.oldPerNew && unit !== existing.unit
@@ -115,27 +116,27 @@ export function registerKitchenTools(server: McpServer, store: KitchenStore, pri
     });
   });
 
-  tool("ingredient_delete", "Deletes an ingredient that no recipe uses.", { kitchen: kitchenRef, ingredient: z.string().describe("Name or id.") }, async ({ kitchen: ref, ingredient }) => {
+  tool("ingredient_delete", "Delete an ingredient", "remove", "Use this only when the person asks to delete an ingredient. Works only when no recipe uses it.", { kitchen: kitchenRef, ingredient: z.string().describe("Name or id.") }, async ({ kitchen: ref, ingredient }) => {
     const scope = await kitchen(ref);
     return scope.deleteIngredient((await ingredientByRef(scope, ingredient)).id);
   });
 
-  tool("recipe_list", "Lists the recipes of a kitchen with calories and protein per serving.", { kitchen: kitchenRef }, async ({ kitchen: ref }) => {
+  tool("recipe_list", "List recipes", "read", "Use this to find recipes by name, with recipeId, servings, minutes, and calories and protein per serving.", { kitchen: kitchenRef }, async ({ kitchen: ref }) => {
     const scope = await kitchen(ref);
     const [recipes, ingredients] = await Promise.all([scope.recipes(), scope.ingredients()]);
     const byId = new Map(ingredients.map((one) => [one.id, one]));
-    return recipes.map((recipe) => ({ id: recipe.id, name: recipe.name, servings: recipe.servings, minutes: recipe.minutes, perServing: nutritionPerServing(recipe, byId) }));
-  }, true);
+    return recipes.map((recipe) => ({ recipeId: recipe.id, name: recipe.name, servings: recipe.servings, minutes: recipe.minutes, perServing: nutritionPerServing(recipe, byId) }));
+  });
 
-  tool("recipe_get", "Shows one recipe with its ingredients, steps, and nutrition per serving.", { kitchen: kitchenRef, recipe: z.string().describe("Name or id.") }, async ({ kitchen: ref, recipe }) => {
+  tool("recipe_get", "Show a recipe", "read", "Use this to read one recipe with its ingredients, steps, and nutrition per serving.", { kitchen: kitchenRef, recipe: z.string().describe("Name or id.") }, async ({ kitchen: ref, recipe }) => {
     const scope = await kitchen(ref);
     const found = await recipeByRef(scope, recipe);
     return { ...found, perServing: nutritionPerServing(found, new Map((await scope.ingredients()).map((one) => [one.id, one]))) };
-  }, true);
+  });
 
-  tool("recipe_save", "Creates a recipe, or replaces the recipe with the same name or id. Ingredients that do not exist yet are created.", {
+  tool("recipe_save", "Save a recipe", "repeatable write", "Use this to add a recipe, or to replace the recipe with the same name or recipeId. Give the full ingredient list, because it replaces the old one. Ingredients that do not exist yet are created.", {
     kitchen: kitchenRef,
-    id: z.string().optional().describe("Recipe id, to rename a recipe."),
+    recipeId: z.string().optional().describe("From recipe_list. Only to rename a recipe."),
     name: z.string(),
     servings: z.number().int().min(1),
     minutes: z.number().int().min(1).nullable().optional(),
@@ -146,10 +147,10 @@ export function registerKitchenTools(server: McpServer, store: KitchenStore, pri
       unit: z.enum(INGREDIENT_UNITS).optional().describe("Used only when the ingredient is new. Default: g."),
       note: z.string().optional()
     }))
-  }, async ({ kitchen: ref, id, name, servings, minutes, instructions, ingredients }) => {
+  }, async ({ kitchen: ref, recipeId, name, servings, minutes, instructions, ingredients }) => {
     const scope = await kitchen(ref);
-    const existing = (await scope.recipes()).find((one) => id ? one.id === id : one.name.toLowerCase() === name.trim().toLowerCase());
-    if (id && !existing) throw new KitchenError("This recipe does not exist.", "not_found");
+    const existing = (await scope.recipes()).find((one) => recipeId ? one.id === recipeId : one.name.toLowerCase() === name.trim().toLowerCase());
+    if (recipeId && !existing) throw new KitchenError("This recipe does not exist. Find its recipeId with recipe_list.", "not_found");
     const lines = [];
     for (const line of ingredients) {
       const ingredient = await scope.ingredientNamed(line.name, line.unit ?? "g");
@@ -158,12 +159,12 @@ export function registerKitchenTools(server: McpServer, store: KitchenStore, pri
     return scope.saveRecipe(existing?.id, { name, servings, minutes: minutes ?? existing?.minutes ?? null, instructions: instructions ?? existing?.instructions ?? "", lines });
   });
 
-  tool("recipe_delete", "Deletes a recipe and removes it from the week plan.", { kitchen: kitchenRef, recipe: z.string().describe("Name or id.") }, async ({ kitchen: ref, recipe }) => {
+  tool("recipe_delete", "Delete a recipe", "remove", "Use this only when the person asks to delete a recipe. It also leaves the week plan.", { kitchen: kitchenRef, recipe: z.string().describe("Name or id.") }, async ({ kitchen: ref, recipe }) => {
     const scope = await kitchen(ref);
     return scope.deleteRecipe((await recipeByRef(scope, recipe)).id);
   });
 
-  tool("recipe_copy", "Copies a recipe, with only the ingredients it uses, into another kitchen you can open.", {
+  tool("recipe_copy", "Copy a recipe to another kitchen", "write", "Use this to copy a recipe, with only the ingredients it uses, into another kitchen you can open.", {
     kitchen: kitchenRef,
     recipe: z.string().describe("Name or id."),
     toKitchen: z.string().describe("Name or id of the kitchen that gets the copy.")
@@ -172,7 +173,7 @@ export function registerKitchenTools(server: McpServer, store: KitchenStore, pri
     return store.copyRecipe(who, from.kitchen.id, (await recipeByRef(from, recipe)).id, to.kitchen.id);
   });
 
-  tool("plan_add", "Plans a recipe for a meal on a day.", {
+  tool("plan_add", "Plan a meal", "write", "Use this to put a recipe on the week plan for a meal on a day.", {
     kitchen: kitchenRef,
     day: z.string().describe("YYYY-MM-DD"),
     meal: z.enum(MEALS),
@@ -184,11 +185,11 @@ export function registerKitchenTools(server: McpServer, store: KitchenStore, pri
     return scope.plan({ day, meal, recipeId: found.id, servings: servings ?? found.servings });
   });
 
-  tool("plan_remove", "Removes a meal from the week plan.", { kitchen: kitchenRef, entryId: z.string() }, async ({ kitchen: ref, entryId }) => (await kitchen(ref)).removePlan(entryId));
+  tool("plan_remove", "Remove a planned meal", "remove", "Use this when a planned meal will not happen. Removes it from the week plan.", { kitchen: kitchenRef, entryId: z.string().describe("The meal's id from kitchen_week.") }, async ({ kitchen: ref, entryId }) => (await kitchen(ref)).removePlan(entryId));
 
-  tool("plan_cook", "Marks a planned meal as cooked. Its ingredients come out of stock, and leftover servings are kept.", {
+  tool("plan_cook", "Mark a meal cooked", "write", "Use this when a planned meal was cooked. Its ingredients come out of stock, and leftover servings are kept.", {
     kitchen: kitchenRef,
-    entryId: z.string(),
+    entryId: z.string().describe("The meal's id from kitchen_week."),
     leftoverServings: z.number().positive().optional(),
     leftoverUseBy: z.string().optional().describe("YYYY-MM-DD. Default: in 3 days.")
   }, async ({ kitchen: ref, entryId, leftoverServings, leftoverUseBy }) => {
@@ -197,20 +198,20 @@ export function registerKitchenTools(server: McpServer, store: KitchenStore, pri
     return scope.cook(entryId, leftoverServings ? { servings: leftoverServings, useBy } : undefined);
   });
 
-  tool("shopping_list", "Shows what to buy for the planned meals of a week, minus what is at home, plus extra items.", {
+  tool("shopping_list", "Shopping list", "read", "Use this to see what to buy for a week's planned meals, minus what is at home, plus extra items.", {
     kitchen: kitchenRef,
     week: z.string().optional().describe("Any date in the week, as YYYY-MM-DD. Default: this week.")
-  }, async ({ kitchen: ref, week }) => (await kitchen(ref)).shopping(weekStart(week ?? today())), true);
+  }, async ({ kitchen: ref, week }) => (await kitchen(ref)).shopping(weekStart(week ?? today())));
 
-  tool("shopping_add", "Adds an extra item to the shopping list, such as soap.", {
+  tool("shopping_add", "Add to the shopping list", "write", "Use this to add an item that no recipe needs, such as soap.", {
     kitchen: kitchenRef,
     item: z.string(),
     everyWeek: z.boolean().optional().describe("Put the item on every week's list, such as snacks or coffee. Default: once.")
   }, async ({ kitchen: ref, item, everyWeek }) => (await kitchen(ref)).addExtra(item, everyWeek));
 
-  tool("stock_list", "Shows the food at home.", { kitchen: kitchenRef }, async ({ kitchen: ref }) => (await kitchen(ref)).stock(), true);
+  tool("stock_list", "Food at home", "read", "Use this to see the food at home and how much of each.", { kitchen: kitchenRef }, async ({ kitchen: ref }) => (await kitchen(ref)).stock());
 
-  tool("stock_set", "Sets how much of an ingredient is at home. Use 0 when it is gone.", {
+  tool("stock_set", "Set food at home", "repeatable write", "Use this when the person says how much of an ingredient is at home. Use 0 when it is gone.", {
     kitchen: kitchenRef,
     ingredient: z.string().describe("Name or id."),
     amount: z.number().min(0).describe("In the ingredient's unit.")
@@ -219,16 +220,16 @@ export function registerKitchenTools(server: McpServer, store: KitchenStore, pri
     return scope.setStock((await ingredientByRef(scope, ingredient)).id, amount);
   });
 
-  tool("leftover_add", "Keeps a leftover to use first.", {
+  tool("leftover_add", "Keep a leftover", "write", "Use this to keep a leftover that should be eaten first.", {
     kitchen: kitchenRef,
     name: z.string(),
     servings: z.number().positive(),
     useBy: z.string().describe("YYYY-MM-DD")
   }, async ({ kitchen: ref, ...leftover }) => (await kitchen(ref)).addLeftover(leftover));
 
-  tool("leftover_eat", "Eats servings of a leftover. It goes away when none remain.", {
+  tool("leftover_eat", "Eat a leftover", "write", "Use this when servings of a leftover were eaten. It goes away when none remain.", {
     kitchen: kitchenRef,
-    leftoverId: z.string(),
+    leftoverId: z.string().describe("The leftover's id from kitchen_week."),
     servings: z.number().positive()
   }, async ({ kitchen: ref, leftoverId, servings }) => (await kitchen(ref)).eatLeftover(leftoverId, servings));
 }

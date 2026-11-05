@@ -254,17 +254,37 @@ describe.skipIf(!store)("Bodyshop logging", () => {
     const item = { food: "Butter", meal: "Breakfast", amount: 14 };
     const first = JSON.parse((await call(mine, "bodyshop_food_log", { items: [item], day: "2026-11-03" })).body);
     const second = JSON.parse((await call(mine, "bodyshop_food_log", { items: [item], day: "2026-11-03" })).body);
-    expect(second.entries[0].id).toBe(first.entries[0].id);
-    expect(second.alreadyLogged).toEqual([first.entries[0].id]);
+    expect(second.entries[0].entryId).toBe(first.entries[0].entryId);
+    expect(second.alreadyLogged).toEqual([first.entries[0].entryId]);
     expect(await call(mine, "bodyshop_food_log", { items: [{ food: "Ghee", meal: "Lunch", amount: 5 }] })).toMatchObject({ error: true });
 
-    const corrected = JSON.parse((await call(mine, "bodyshop_entry_correct", { id: first.entries[0].id, amount: 10 })).body);
+    const corrected = JSON.parse((await call(mine, "bodyshop_entry_correct", { entryId: first.entries[0].entryId, amount: 10 })).body);
     expect([corrected.amount, corrected.kcal]).toEqual([10, 71.6]);
     expect(JSON.parse((await call(mine, "bodyshop_today", { day: "2026-11-03" })).body).entries).toHaveLength(1);
 
+    await call(mine, "bodyshop_weight_log", { kg: 104.2, day: "2026-11-02", time: "07:00" });
+    await call(mine, "bodyshop_weight_log", { kg: 104.6, day: "2026-11-02", time: "21:00" });
+    await call(mine, "bodyshop_day_update", { day: "2026-11-02", training: "Upper body", trainingNotes: "Bench 5x5 at 80 kg", steps: 9000, sleep: 7.5, reported: "Partial" });
+    const range = { from: "2026-11-01", to: "2026-11-03", entries: true };
+    const history = JSON.parse((await call(mine, "bodyshop_history", range)).body);
+    expect(history.days.map((one: { day: string }) => one.day)).toEqual(["2026-11-02", "2026-11-03"]);
+    expect(history.days[0]).toEqual({ day: "2026-11-02", status: "Partial", basis: "Not complete: Partial", weightKg: 104.4, steps: 9000, training: "Upper body", trainingNotes: "Bench 5x5 at 80 kg", sleep: 7.5, log: [] });
+    expect(history.days[1]).toMatchObject({ status: "Unknown", food: { kcal: 71.6, entries: 1 }, log: [{ food: "Butter", amount: 10 }] });
+    expect(history.days[1]).not.toHaveProperty("weightKg");
+    expect(await call(mine, "bodyshop_history", { from: "2026-01-01", to: "2026-11-03" })).toMatchObject({ error: true });
+    expect(await call(mine, "bodyshop_history", { from: "2026-10-01", to: "2026-11-03", entries: true })).toMatchObject({ error: true, body: expect.stringContaining("from 2026-10-21 to 2026-11-03") });
+    expect(JSON.parse((await call(mine, "bodyshop_history", { from: "2026-10-01", to: "2026-11-03" })).body).days).toHaveLength(2);
+
+    const tools = new Map((await mine.listTools()).tools.map((one) => [one.name, one.annotations]));
+    expect(tools.get("bodyshop_history")).toMatchObject({ readOnlyHint: true, openWorldHint: false });
+    expect(tools.get("bodyshop_settings")).toMatchObject({ readOnlyHint: true });
+    expect(tools.get("bodyshop_food_log")).toMatchObject({ readOnlyHint: false, destructiveHint: false });
+    expect(tools.get("bodyshop_entry_remove")).toMatchObject({ readOnlyHint: false, destructiveHint: true });
+
     const theirs = await connect(store!, admin);
+    expect(JSON.parse((await call(theirs, "bodyshop_history", range)).body).days).toEqual([]);
     expect(JSON.parse((await call(theirs, "bodyshop_today", { day: "2026-11-03" })).body).entries).toEqual([]);
-    expect(await call(theirs, "bodyshop_entry_correct", { id: first.entries[0].id, amount: 99 })).toEqual({ error: true, body: "This food entry does not exist." });
+    expect(await call(theirs, "bodyshop_entry_remove", { entryId: first.entries[0].entryId })).toEqual({ error: true, body: "This record does not exist." });
     await mine.close();
     await theirs.close();
   });

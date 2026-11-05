@@ -6,6 +6,19 @@ import { GRANTABLE_PRODUCTS, grantedProducts } from "./product-access.js";
 export const MCP_PATH = "/api/mcp";
 export const MCP_RESOURCE_METADATA_PATH = `/.well-known/oauth-protected-resource${MCP_PATH}`;
 
+/**
+ * What a product tool can do, for the client's confirmation prompts. Product tools reach only the person's own
+ * records, so none is open-world. A repeatable write changes nothing more when the same call comes again.
+ */
+export type McpEffect = "read" | "write" | "repeatable write" | "remove";
+
+export const mcpAnnotations = {
+  read: { readOnlyHint: true, openWorldHint: false },
+  write: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  "repeatable write": { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  remove: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false }
+} as const satisfies Record<McpEffect, object>;
+
 type AccessTokenResolver = (request: Request) => Promise<PlatformPrincipal | undefined>;
 /** Adds the product tools that the person may use. */
 export type McpProductTools = (server: McpServer, principal: PlatformPrincipal) => void;
@@ -47,7 +60,7 @@ function mcpServerFor(principal: PlatformPrincipal) {
   server.registerTool("whoami", {
     title: "Who am I",
     description: "Returns the signed-in Tools account and the tools it can open.",
-    annotations: { readOnlyHint: true }
+    annotations: mcpAnnotations.read
   }, () => ({
     content: [{
       type: "text",
