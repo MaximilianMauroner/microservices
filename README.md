@@ -109,7 +109,8 @@ pnpm run local:stack /absolute/private/tools-local-run 3600
 
 Press Ctrl+C to stop the owned host process and run Compose `down` for this
 project. Cleanup retains its key and volumes. The `docker:up` and `docker:down`
-scripts address the default project and do not manage this stack. If a command
+scripts address the default project and do not manage this stack. They publish
+PostgreSQL, MinIO, and Tools on `127.0.0.1` only. If a command
 crashes and leaves `active.lock`, check that its recorded process and stack are
 stopped before you remove that lock. The command also retains the lock when
 process release is uncertain or Compose cleanup fails. Retain the run directory
