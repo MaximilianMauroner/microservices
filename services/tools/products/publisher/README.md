@@ -16,9 +16,11 @@ capabilities, while management routes use the Tools browser session or native be
 - `/publisher` and `/api/external-uploads` are available only through the unified
   platform's browser session boundary.
 - `/api/upload-links` creates and revokes time-limited guest upload capabilities.
-- `/drop/:token` lets a guest upload any number of temporary files without a
-  browser session. PostgreSQL stores only the token hash; the secret URL is
-  returned once, expires after 5 minutes to 30 days, and can be revoked early.
+- `/drop/:token` lets a guest upload temporary files without a browser
+  session. PostgreSQL stores only the token hash; the secret URL is returned
+  once, expires after 5 minutes to 30 days, and can be revoked early. One link
+  takes at most 200 files and 20 GB, counted over stored and pending uploads,
+  so a leaked link cannot fill the bucket.
 - Each artifact and upload link belongs to one person, by Google subject. A
   signed-in person lists and changes only their own. Uploads with the native
   upload token belong to the admin. A guest upload belongs to the owner of
