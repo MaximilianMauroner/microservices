@@ -4,7 +4,17 @@
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "moduleResolution": "bundler",
-    "customConditions": ["react-native"]
+    "customConditions": [
+      "react-native"
+    ],
+    "types": [
+      "node"
+    ]
   },
-  "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.ts", "expo-env.d.ts"]
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    ".expo/types/**/*.ts",
+    "expo-env.d.ts"
+  ]
 }
