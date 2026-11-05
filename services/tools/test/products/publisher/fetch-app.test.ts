@@ -199,12 +199,6 @@ describe("native artifact fetch handler", () => {
       { method: "POST", headers: origin }, friend))).status).toBe(201);
     expect(storage.owners).toEqual(["friend-subject"]);
     expect(uploadLinks.owners).toEqual(["friend-subject"]);
-
-    storage.owners.splice(0);
-    const guest = await app(new Request(`https://tools.example.test/api/drop/${uploadLinks.token}/uploads`,
-      { method: "POST", headers: origin, body: multipart("from-guest.txt", "hello", "text/plain") }));
-    expect(guest.status).toBe(201);
-    expect(storage.owners).toEqual(["friend-subject"]);
   });
 
   it("filters metadata before paging and binds size cursors to every criterion", async () => {
@@ -565,7 +559,7 @@ describe("native artifact fetch handler", () => {
     }
   });
 
-  it("creates an expiring guest upload link, accepts files, and revokes access", async () => {
+  it("creates an expiring guest upload link, serves its files to the owner, and revokes access", async () => {
     const storage = new MemoryUploadStorage();
     const uploadLinks = new MemoryUploadLinkRepository();
     const now = new Date("2026-09-15T12:00:00.000Z");
@@ -611,16 +605,18 @@ describe("native artifact fetch handler", () => {
     expect(page).toContain("credentials:'omit'");
 
 
-    const uploadResponse = await app(new Request(`https://tools.example.test/api/drop/${uploadLinks.token}/uploads`, {
+    const multipartUpload = await app(new Request(`https://tools.example.test/api/drop/${uploadLinks.token}/uploads`, {
       method: "POST",
       headers: { Origin: "https://tools.example.test" },
       body: multipart("from-guest.txt", "hello", "text/plain")
     }));
-    expect(uploadResponse.status).toBe(201);
-    const uploaded = await uploadResponse.json() as { id: string; filename: string; bytes: number; kind: string };
-    expect(uploaded).toMatchObject({ filename: "from-guest.txt", kind: "file" });
-    uploadLinks.files = [{ id: uploaded.id, filename: uploaded.filename, bytes: uploaded.bytes }];
-    expect(storage.files.size).toBe(1);
+    expect(multipartUpload.status).toBe(404);
+    expect(storage.files.size).toBe(0);
+
+    const received = "a".repeat(32);
+    storage.files.set(received, { body: Buffer.from("hello"), metadata: { bytes: 5, originalName: "from-guest.txt",
+      sha256: "a".repeat(64), contentType: "text/plain", expiresAt: new Date("2026-09-16T12:00:00.000Z") } });
+    uploadLinks.files = [{ id: received, filename: "from-guest.txt", bytes: 5 }];
 
     const downloadResponse = await app(signedIn(`https://tools.example.test/api/upload-links/${uploadLinks.id}/download`));
     expect(downloadResponse.status).toBe(200);
@@ -639,16 +635,6 @@ describe("native artifact fetch handler", () => {
     const downloadAfterRevoke = await app(signedIn(`https://tools.example.test/api/upload-links/${uploadLinks.id}/download`));
     expect(downloadAfterRevoke.status).toBe(200);
     expect(strFromU8(unzipSync(new Uint8Array(await downloadAfterRevoke.arrayBuffer()))["from-guest.txt"]!)).toBe("hello");
-    const unavailable = await app(new Request(`https://tools.example.test/api/drop/${uploadLinks.token}/uploads`, {
-      method: "POST",
-      headers: { Origin: "https://tools.example.test" },
-      body: multipart("blocked.txt", "no", "text/plain")
-    }));
-    expect(unavailable.status).toBe(404);
-    expect(await unavailable.json()).toEqual({
-      error: "upload_link_unavailable",
-      message: "This upload link has expired or was revoked."
-    });
   });
 
   it("logs a nested PostgreSQL code when upload-link creation fails", async () => {
@@ -803,36 +789,6 @@ describe("native artifact fetch handler", () => {
     expect(schema).toContain('index("upload_links_history_idx").on(table.ownerSubject, table.createdAt.desc(), table.id.desc())');
   });
 
-  it("revalidates a guest capability after staging and before storing", async () => {
-    class RevokedDuringUploadLinks extends MemoryUploadLinkRepository {
-      private activeChecks = 0;
-      override async findActive(token: string, now: Date) {
-        this.activeChecks += 1;
-        return this.activeChecks === 1 ? super.findActive(token, now) : null;
-      }
-    }
-    const storage = new MemoryUploadStorage();
-    const uploadLinks = new RevokedDuringUploadLinks();
-    await uploadLinks.create(new Date("2026-09-16T12:00:00.000Z"));
-    const app = createFetchApp({
-      storage,
-      uploadLinks,
-      uploadToken: "upload-token", adminSubject: "admin-subject",
-      publicBaseUrl: "https://tools.example.test",
-      now: () => new Date("2026-09-15T12:00:00.000Z")
-    });
-
-    const response = await app(new Request(`https://tools.example.test/api/drop/${uploadLinks.token}/uploads`, {
-      method: "POST",
-      headers: { Origin: "https://tools.example.test" },
-      body: multipart("revoked.txt", "must not persist", "text/plain")
-    }));
-
-    expect(response.status).toBe(404);
-    expect(await response.json()).toMatchObject({ error: "upload_link_unavailable" });
-    expect(storage.files.size).toBe(0);
-  });
-
   it("fails a bulk-download stream when a later object cannot be fetched", async () => {
     class FailingStorage extends MemoryUploadStorage {
       override async getTemporaryFile(id: string, options?: GetTemporaryFileOptions) {
@@ -873,48 +829,6 @@ describe("native artifact fetch handler", () => {
       errorLog.mockRestore();
     }
   });
-
-  it("times out stalled guest multipart bodies and releases upload capacity", async () => {
-    const storage = new MemoryUploadStorage();
-    const uploadLinks = new MemoryUploadLinkRepository();
-    await uploadLinks.create(new Date("2026-09-16T12:00:00.000Z"));
-    const boundary = "stalled-boundary";
-    const body = new ReadableStream<Uint8Array>({
-      start(controller) {
-        controller.enqueue(new TextEncoder().encode(
-          `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="slow.txt"\r\nContent-Type: text/plain\r\n\r\na`
-        ));
-      }
-    });
-    const app = createFetchApp({
-      storage,
-      uploadLinks,
-      uploadToken: "upload-token", adminSubject: "admin-subject",
-      publicBaseUrl: "https://tools.example.test",
-      maxConcurrentUploads: 1,
-      guestUploadBodyTimeoutMs: 20,
-      now: () => new Date("2026-09-15T12:00:00.000Z")
-    });
-    const stalled = await app(new Request(`https://tools.example.test/api/drop/${uploadLinks.token}/uploads`, {
-      method: "POST",
-      headers: {
-        Origin: "https://tools.example.test",
-        "Content-Type": `multipart/form-data; boundary=${boundary}`
-      },
-      body,
-      duplex: "half"
-    } as RequestInit));
-
-    expect(stalled.status).toBe(408);
-    expect(await stalled.json()).toMatchObject({ error: "upload_timeout" });
-    const retry = await app(new Request(`https://tools.example.test/api/drop/${uploadLinks.token}/uploads`, {
-      method: "POST",
-      headers: { Origin: "https://tools.example.test" },
-      body: multipart("retry.txt", "ok", "text/plain")
-    }));
-    expect(retry.status).toBe(201);
-  });
-
 
   it("deduplicates case-insensitive filenames in bulk-download archives", async () => {
     const storage = new MemoryUploadStorage();

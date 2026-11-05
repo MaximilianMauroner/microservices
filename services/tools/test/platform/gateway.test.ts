@@ -166,12 +166,11 @@ describe("platform fetch gateway", () => {
     subjects.splice(0);
     for (const [method, path] of [
       ["GET", "/artifacts/01234567890123456789012345678901"], ["GET", "/files/01234567890123456789012345678901/report.pdf"],
-      ["GET", "/drop/guest-upload-token"], ["POST", "/api/drop/guest-upload-token/uploads"],
-      ["POST", "/api/drop/guest-upload-token/uploads/sessions"]
+      ["GET", "/drop/guest-upload-token"], ["POST", "/api/drop/guest-upload-token/uploads/sessions"]
     ] as const) {
       expect((await request(platform, path, { method })).status, `${method} ${path} without a session`).toBe(200);
     }
-    expect(subjects).toEqual([undefined, undefined, undefined, undefined, undefined]);
+    expect(subjects).toEqual([undefined, undefined, undefined, undefined]);
 
     expect((await as("publisher", "/api/uploads", "POST")).status, "a session is not an upload token").toBe(401);
     expect((await request(platform, "/api/uploads", { method: "POST", headers: { Authorization: "Bearer upload-token" } })).status).toBe(200);
@@ -245,7 +244,7 @@ describe("platform fetch gateway", () => {
 
     expect((await request(platform, "/artifacts/id", { method: "POST" })).status).toBe(401);
     expect((await request(platform, "/files/id/index.html", { method: "DELETE" })).status).toBe(401);
-    expect((await request(platform, "/api/drop/guest-upload-token/uploads", { method: "POST" })).status).toBe(200);
+    expect((await request(platform, "/api/drop/guest-upload-token/uploads", { method: "POST" })).status).toBe(401);
     expect((await request(platform, "/api/upload-links", { method: "POST" })).status).toBe(401);
     expect((await request(platform, "/.well-known/oauth-protected-resource", { method: "POST" })).status).toBe(401);
   });
