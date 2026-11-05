@@ -18,6 +18,7 @@ type Deps = Readonly<{
   project: (snapshot: KitchenSync, outbox: readonly OutboxItem[]) => KitchenSync;
   newId: () => string;
   isSignedOut: (error: unknown) => boolean;
+  isOffline: (error: unknown) => boolean;
   now?: () => Date;
 }>;
 
@@ -27,7 +28,7 @@ const BATCH = 200;
  * Keeps the local copy and the server in step. A sync sends the outbox in order, then replaces the snapshot.
  * Only one sync runs at a time; a request during a sync runs one more sync after it.
  */
-export function createSyncEngine({ vault, api, project, newId, isSignedOut, now = () => new Date() }: Deps) {
+export function createSyncEngine({ vault, api, project, newId, isSignedOut, isOffline, now = () => new Date() }: Deps) {
   let state: SyncState = { view: null, pending: 0, notices: [], status: { kind: "idle", syncedAt: null }, signedOut: false };
   let snapshot: KitchenSync | null = null;
   let syncedAt: string | null = null;
@@ -54,7 +55,7 @@ export function createSyncEngine({ vault, api, project, newId, isSignedOut, now 
       await refresh({ status: { kind: "idle", syncedAt }, signedOut: false });
     } catch (error) {
       if (isSignedOut(error)) await refresh({ status: { kind: "idle", syncedAt }, signedOut: true });
-      else if (error instanceof TypeError) await refresh({ status: { kind: "offline", syncedAt } });
+      else if (isOffline(error)) await refresh({ status: { kind: "offline", syncedAt } });
       else await refresh({ status: { kind: "failed", message: error instanceof Error ? error.message : String(error) } });
     }
   }
