@@ -1,7 +1,9 @@
 .agent
+**/.agents
 .git
 .DS_Store
-.env
+**/.env
+**/.env.*
 .idea
 .next
 .turbo
