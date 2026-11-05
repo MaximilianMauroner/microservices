@@ -60,6 +60,8 @@ describe("central platform route policy", () => {
     expect(classifyRoute("/files/abc/index.html", "DELETE")).toEqual({ kind: "human-session" });
     expect(classifyRoute("/api/uploads", "POST")).toEqual({ kind: "machine", service: "uploads" });
     expect(classifyRoute("/api/status/heartbeats/tower", "POST")).toEqual({ kind: "machine", service: "heartbeat" });
+    expect(classifyRoute("/api/kitchen/sync", "GET"), "Kitchen app checks its own bearer token").toEqual({ kind: "machine", service: "kitchen-app" });
+    expect(classifyRoute("/api/kitchenette", "GET")).toEqual({ kind: "human-session" });
     expect(classifyRoute("/api/money/imports", "POST")).toEqual({ kind: "human-session" });
     expect(classifyRoute("/api/money/activity", "GET")).toEqual({ kind: "human-session" });
     expect(classifyRoute("/api/money/categories", "POST")).toEqual({ kind: "human-session" });

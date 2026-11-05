@@ -80,6 +80,8 @@ export type Leftover = Readonly<{ id: string; name: string; servings: number; us
  * An every-week item stays: `bought` says if it is bought for the week the list shows.
  */
 export type ExtraItem = Readonly<{ id: string; name: string; everyWeek: boolean; bought: boolean }>;
+/** An extra item as stored. `boughtWeek` is the start of the week an every-week item is bought for. */
+export type StoredExtra = Readonly<{ id: string; name: string; everyWeek: boolean; boughtWeek: string | null }>;
 
 export type ShoppingLine = Readonly<{
   ingredientId: string;

@@ -18,6 +18,6 @@ export default defineConfig({
     "auth_users", "auth_sessions", "auth_accounts", "auth_verifications", "people", "product_grants",
     "oauth_clients", "oauth_refresh_tokens", "oauth_access_tokens", "oauth_consents",
     "kitchens", "kitchen_person_settings", "kitchen_members", "kitchen_ingredients", "kitchen_recipes", "kitchen_recipe_lines",
-    "kitchen_plan_entries", "kitchen_plan_lines", "kitchen_stock", "kitchen_leftovers", "kitchen_extras", "dev_feedback", "bodyshop_records", "bodyshop_imports"
+    "kitchen_plan_entries", "kitchen_plan_lines", "kitchen_stock", "kitchen_leftovers", "kitchen_extras", "kitchen_applied_actions", "dev_feedback", "bodyshop_records", "bodyshop_imports"
   ],
 });

@@ -4,6 +4,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { DISPOSABLE_DATABASE_SENTINEL, withVerifiedDisposableDatabase } from "../../../platform/database/postgres-push-guard.js";
 import { createPlatformIdentity } from "../../../platform/auth/auth.js";
 import { handleMcpRequest } from "../../../platform/access/mcp.js";
+import { APP_CLIENTS, registerAppClients } from "../../../platform/auth/app-clients.js";
 import { requireLoopbackPostgres } from "../../harness/postgres.ts";
 
 const databaseUrl = process.env.TEST_DATABASE_URL ? requireLoopbackPostgres(process.env.TEST_DATABASE_URL) : undefined;
@@ -216,5 +217,84 @@ describe.skipIf(!admin)("MCP over OAuth as the signed-in person", () => {
       expect(response.status).toBe(401);
       expect(response.headers.get("www-authenticate")).toBe(`Bearer resource_metadata="${config.publicOrigin}/.well-known/oauth-protected-resource/api/mcp"`);
     }
+  });
+});
+
+function authorizeKitchenApp(cookie: string, verifier: string) {
+  const { clientId, redirectUri } = APP_CLIENTS.kitchen;
+  const authorize = new URL(`${config.publicOrigin}/api/auth/oauth2/authorize`);
+  for (const [key, value] of Object.entries({
+    response_type: "code", client_id: clientId, redirect_uri: redirectUri, scope: "openid profile email offline_access", state: "state-1",
+    code_challenge: createHash("sha256").update(verifier).digest("base64url"), code_challenge_method: "S256"
+  })) authorize.searchParams.set(key, value);
+  return identity!.auth.handler(new Request(authorize, { headers: { cookie, accept: "text/html" } }));
+}
+
+function refreshKitchenApp(refreshToken: string) {
+  return identity!.auth.handler(new Request(`${config.publicOrigin}/api/auth/oauth2/token`, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken, client_id: APP_CLIENTS.kitchen.clientId })
+  }));
+}
+
+async function connectKitchenApp(cookie: string) {
+  const auth = identity!.auth;
+  const { clientId, redirectUri } = APP_CLIENTS.kitchen;
+  const verifier = randomBytes(32).toString("base64url");
+  const redirect = await authorizeKitchenApp(cookie, verifier);
+  const callback = new URL(redirect.headers.get("location") ?? "", config.publicOrigin);
+  expect(`${callback.protocol}${callback.pathname}`, "first-party app skips the consent page").toBe(redirectUri);
+  const code = callback.searchParams.get("code");
+  expect(code, await redirect.clone().text()).toBeTruthy();
+
+  const token = await auth.handler(new Request(`${config.publicOrigin}/api/auth/oauth2/token`, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ grant_type: "authorization_code", code: code!, redirect_uri: redirectUri, client_id: clientId, code_verifier: verifier })
+  }));
+  const tokens = await token.json() as { access_token?: string; refresh_token?: string };
+  expect(tokens.access_token, JSON.stringify(tokens)).toBeTruthy();
+  expect(tokens.refresh_token, "the app stays signed in offline").toBeTruthy();
+  return { accessToken: tokens.access_token!, refreshToken: tokens.refresh_token! };
+}
+
+const bearer = (accessToken: string) => new Request(`${config.publicOrigin}/api/kitchen/sync`, { headers: { authorization: `Bearer ${accessToken}` } });
+
+describe.skipIf(!admin)("Kitchen app over OAuth", () => {
+  beforeEach(async () => { await registerAppClients(admin!); });
+
+  it("signs in through PKCE without consent and opens only the Kitchen app API", async () => {
+    const { cookie } = await signIn("admin-subject", config.allowedGoogleEmail);
+    const { accessToken } = await connectKitchenApp(cookie);
+    expect(await identity!.resolveAppToken(bearer(accessToken), "kitchen")).toEqual({ role: "admin", subject: "admin-subject", email: config.allowedGoogleEmail });
+    expect((await callWhoami({ authorization: `Bearer ${accessToken}` })).status, "MCP refuses an app token").toBe(401);
+  });
+
+  it("refuses an MCP token, a cookie, and a token of a disabled app", async () => {
+    const { cookie } = await signIn("admin-subject", config.allowedGoogleEmail);
+    expect(await identity!.resolveAppToken(bearer(await connectMcpClient(cookie)), "kitchen")).toBeUndefined();
+    expect(await identity!.resolveAppToken(new Request(`${config.publicOrigin}/api/kitchen/sync`, { headers: { cookie } }), "kitchen")).toBeUndefined();
+    const { accessToken, refreshToken } = await connectKitchenApp(cookie);
+    await admin!`update tools.oauth_clients set disabled = true where client_id = ${APP_CLIENTS.kitchen.clientId}`;
+    expect(await identity!.resolveAppToken(bearer(accessToken), "kitchen")).toBeUndefined();
+    const again = await authorizeKitchenApp(cookie, randomBytes(32).toString("base64url"));
+    expect(new URL(again.headers.get("location") ?? "about:blank", config.publicOrigin).searchParams.get("code"), "a disabled app gets no new sign-in").toBeNull();
+    expect((await refreshKitchenApp(refreshToken)).ok, "a disabled app cannot refresh").toBe(false);
+  });
+
+  it("refreshes an app token while the client is enabled", async () => {
+    const { cookie } = await signIn("admin-subject", config.allowedGoogleEmail);
+    const { refreshToken } = await connectKitchenApp(cookie);
+    const refreshed = await refreshKitchenApp(refreshToken);
+    expect(refreshed.status, await refreshed.clone().text()).toBe(200);
+    const { access_token: accessToken } = await refreshed.json() as { access_token: string };
+    expect(await identity!.resolveAppToken(bearer(accessToken), "kitchen")).toMatchObject({ subject: "admin-subject" });
+  });
+
+  it("keeps an operator's disable when the clients are registered again", async () => {
+    await admin!`update tools.oauth_clients set disabled = true where client_id = ${APP_CLIENTS.kitchen.clientId}`;
+    await registerAppClients(admin!);
+    expect(await admin!`select client_id from tools.oauth_clients where client_id = ${APP_CLIENTS.kitchen.clientId} and disabled`).toHaveLength(1);
   });
 });

@@ -1,0 +1,30 @@
+import type postgres from "postgres";
+
+/**
+ * First-party native apps. Each is a public OAuth client with PKCE and no consent screen.
+ * Their tokens open only their own API, and MCP refuses them, so each credential keeps one purpose.
+ */
+export const APP_CLIENTS = {
+  kitchen: { clientId: "com.lab4code.kitchen", name: "Kitchen", redirectUri: "com.lab4code.kitchen:/oauth" }
+} as const;
+
+export type AppClientId = keyof typeof APP_CLIENTS;
+
+export const APP_CLIENT_IDS: readonly string[] = Object.values(APP_CLIENTS).map((app) => app.clientId);
+
+const APP_SCOPES = ["openid", "profile", "email", "offline_access"];
+
+/** Writes each app client. A client that an operator disabled stays disabled. */
+export async function registerAppClients(sql: postgres.Sql) {
+  for (const app of Object.values(APP_CLIENTS)) {
+    await sql`
+      insert into tools.oauth_clients (id, client_id, name, redirect_uris, scopes, token_endpoint_auth_method, grant_types, response_types,
+        public, type, require_pkce, skip_consent, disabled, created_at, updated_at)
+      values (${app.clientId}, ${app.clientId}, ${app.name}, ${[app.redirectUri]}, ${APP_SCOPES}, 'none', ${["authorization_code", "refresh_token"]}, ${["code"]},
+        true, 'native', true, true, false, now(), now())
+      on conflict (client_id) do update set name = excluded.name, redirect_uris = excluded.redirect_uris, scopes = excluded.scopes,
+        token_endpoint_auth_method = excluded.token_endpoint_auth_method, grant_types = excluded.grant_types, response_types = excluded.response_types,
+        public = excluded.public, type = excluded.type, require_pkce = excluded.require_pkce, skip_consent = excluded.skip_consent, client_secret = null,
+        updated_at = now()`;
+  }
+}

@@ -1,0 +1,56 @@
+import type { PlatformPrincipal } from "#security";
+import { principalSeesProduct } from "../../platform/access/product-access.js";
+import { addDays, type Ingredient, type Kitchen, type Leftover, type PlanEntry, type Recipe, type StockItem, type StoredExtra, today, weekStart } from "./domain.js";
+import { applyAppActions, appActionBatch } from "./actions.js";
+import type { KitchenStore } from "./repository.js";
+
+/** The app keeps this many past weeks of the plan offline. Older weeks need a connection. */
+export const SYNC_WEEKS_BACK = 4;
+
+export type KitchenSnapshot = Readonly<{
+  kitchen: Kitchen;
+  ingredients: readonly Ingredient[];
+  recipes: readonly Recipe[];
+  plan: readonly PlanEntry[];
+  stock: readonly StockItem[];
+  leftovers: readonly Leftover[];
+  extras: readonly StoredExtra[];
+}>;
+
+/** Everything the app shows, for every kitchen the person can open. The app replaces its copy with this. */
+export type KitchenSync = Readonly<{ today: string; planFrom: string; kitchens: readonly KitchenSnapshot[] }>;
+
+export async function kitchenSync(store: KitchenStore, who: PlatformPrincipal, now = new Date()): Promise<KitchenSync> {
+  const day = today(now);
+  const planFrom = addDays(weekStart(day), -7 * SYNC_WEEKS_BACK);
+  const kitchens = await Promise.all((await store.list(who)).map(async (kitchen) => {
+    const scope = await store.open(who, kitchen.id);
+    const [ingredients, recipes, plan, stock, leftovers, extras] = await Promise.all([
+      scope.ingredients(), scope.recipes(), scope.planFrom(planFrom), scope.stock(), scope.leftovers(), scope.storedExtras()
+    ]);
+    return { kitchen: scope.kitchen, ingredients, recipes, plan, stock, leftovers, extras };
+  }));
+  return { today: day, planFrom, kitchens };
+}
+
+type AppTokenResolver = (request: Request) => Promise<PlatformPrincipal | undefined>;
+
+/** Only a Kitchen app token opens the app API; a cookie or an MCP token does not. */
+async function asKitchenApp(request: Request, resolveAppToken: AppTokenResolver, serve: (who: PlatformPrincipal) => Promise<Response>): Promise<Response> {
+  const principal = await resolveAppToken(request);
+  if (!principal) return Response.json({ error: "invalid_token" }, { status: 401, headers: { "Cache-Control": "no-store", "WWW-Authenticate": "Bearer" } });
+  if (!principalSeesProduct(principal, "kitchen")) return Response.json({ error: "forbidden" }, { status: 403, headers: { "Cache-Control": "no-store" } });
+  return serve(principal);
+}
+
+export function handleKitchenSync(request: Request, resolveAppToken: AppTokenResolver, store: KitchenStore): Promise<Response> {
+  return asKitchenApp(request, resolveAppToken, async (who) => Response.json(await kitchenSync(store, who), { headers: { "Cache-Control": "no-store" } }));
+}
+
+export function handleKitchenActions(request: Request, resolveAppToken: AppTokenResolver, store: KitchenStore): Promise<Response> {
+  return asKitchenApp(request, resolveAppToken, async (who) => {
+    const batch = appActionBatch.safeParse(await request.json().catch(() => undefined));
+    if (!batch.success) return Response.json({ error: "invalid_request" }, { status: 400, headers: { "Cache-Control": "no-store" } });
+    return Response.json({ results: await applyAppActions(store, who, batch.data) }, { headers: { "Cache-Control": "no-store" } });
+  });
+}
