@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { oauthProvider } from "@better-auth/oauth-provider";
 import { betterAuth } from "better-auth";
+import { createAuthMiddleware } from "better-auth/api";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import {
   verifyGoogleIdToken,
@@ -22,7 +23,7 @@ import {
 } from "../database/postgres-schema.js";
 import type { PlatformAuthConfig } from "../config.js";
 import { MCP_PATH } from "../access/mcp.js";
-import { APP_CLIENT_IDS, APP_CLIENTS, type AppClientId } from "./app-clients.js";
+import { APP_CLIENT_IDS, APP_CLIENTS, withAppConsentPrompt, type AppClientId } from "./app-clients.js";
 import { createPeopleRepository, type PeopleRepository } from "../access/people.js";
 
 const SESSION_SECONDS = 7 * 24 * 60 * 60;
@@ -132,8 +133,17 @@ function createPlatformAuth(config: PlatformAuthConfig, sql: postgres.Sql, peopl
       storeAccountCookie: false,
       encryptOAuthTokens: true
     },
+    hooks: {
+      before: createAuthMiddleware(async (ctx) => {
+        if (!ctx.request || !new URL(ctx.request.url).pathname.endsWith("/oauth2/authorize")) return;
+        const query = withAppConsentPrompt(ctx.query);
+        const body = withAppConsentPrompt(ctx.body);
+        if (query || body) return { context: { ...(query ? { query } : {}), ...(body ? { body } : {}) } };
+      })
+    },
     advanced: {
       cookiePrefix: "mauroner-tools",
+      ipAddress: { ipAddressHeaders: ["cf-connecting-ip"] },
       useSecureCookies: config.publicOrigin.startsWith("https://"),
       defaultCookieAttributes: {
         httpOnly: true,
