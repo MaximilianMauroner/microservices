@@ -1,4 +1,4 @@
-import { AuthRequest, exchangeCodeAsync, refreshAsync, ResponseError, revokeAsync, type DiscoveryDocument } from "expo-auth-session";
+import { AuthRequest, exchangeCodeAsync, refreshAsync, ResponseError, revokeAsync, TokenTypeHint, type DiscoveryDocument } from "expo-auth-session";
 import Constants from "expo-constants";
 import * as SecureStore from "expo-secure-store";
 
@@ -90,7 +90,7 @@ export async function signOut(): Promise<void> {
   const refreshToken = await SecureStore.getItemAsync(REFRESH, SECURE);
   access = undefined;
   await SecureStore.deleteItemAsync(REFRESH, SECURE);
-  if (refreshToken) await revokeAsync({ token: refreshToken, tokenTypeHint: "refresh_token" as never, clientId: CLIENT_ID }, discovery).catch(() => undefined);
+  if (refreshToken) await revokeAsync({ token: refreshToken, tokenTypeHint: TokenTypeHint.RefreshToken, clientId: CLIENT_ID }, discovery).catch(() => undefined);
 }
 
 function expiry(issuedAt: number, expiresIn: number | undefined): number {
