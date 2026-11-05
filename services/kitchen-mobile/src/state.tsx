@@ -3,7 +3,7 @@ import { type KitchenSnapshot, today as kitchenToday } from "@tools-platform/ser
 import * as Crypto from "expo-crypto";
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { AppState } from "react-native";
-import { currentAccount, isSignedIn, Offline, signIn as openSignIn, signOut as endSession, SignedOut } from "./auth/session";
+import { Offline, signIn as openSignIn, signOut as endSession, SignedOut, storedAccount } from "./auth/session";
 import { wipeVault, vault } from "./storage/vault";
 import { kitchenApi } from "./sync/api";
 import { createSyncEngine, type SyncEngine, type SyncState } from "./sync/engine";
@@ -32,7 +32,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [language, setLanguage] = useState<KitchenLanguage>(() => pickLanguage(null));
   const state = useSyncExternalStore(engine.subscribe, engine.getState);
 
+  /** Opens the stored account. A vault from any other account is deleted first, also after a crash during sign-in. */
   const start = useCallback(async () => {
+    const account = await storedAccount();
+    if (!account) {
+      setSession("signed-out");
+      return;
+    }
+    if ((await vault.setting("account")) !== account) {
+      await wipeVault();
+      await vault.saveSetting("account", account);
+    }
     const [saved, savedLanguage] = await Promise.all([vault.setting("kitchen"), vault.setting("language")]);
     setKitchenId(saved);
     setLanguage(pickLanguage(savedLanguage));
@@ -42,7 +52,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    void (async () => (await isSignedIn()) ? start() : setSession("signed-out"))();
+    void start();
   }, [start]);
 
   useEffect(() => {
@@ -64,20 +74,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     session,
     kitchenId,
     async signIn() {
-      if (!(await openSignIn())) return;
-      // The vault may hold another person's kitchens and unsent changes from an earlier sign-in. They must not reach this account.
-      let account: string;
-      try {
-        account = await currentAccount();
-      } catch (error) {
-        await endSession();
-        throw error;
-      }
-      if ((await vault.setting("account")) !== account) {
-        await engine.stop();
-        await wipeVault();
-      }
-      await vault.saveSetting("account", account);
+      const next = await openSignIn();
+      if (!next) return;
+      // The vault may hold another account's kitchens and unsent changes. They go before this account's token is stored.
+      await engine.stop();
+      if ((await vault.setting("account")) !== next.account) await wipeVault();
+      await vault.saveSetting("account", next.account);
+      await next.install();
       await start();
     },
     async signOut() {
@@ -86,7 +89,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       await wipeVault();
       setKitchenId(null);
       setSession("signed-out");
-      await engine.load().catch(() => undefined);
     },
     openKitchen(id) {
       setKitchenId(id);
@@ -133,11 +135,20 @@ export type OpenKitchen = Readonly<{
 export function useKitchen(): OpenKitchen | null {
   const { kitchenId } = useApp();
   const { view } = useSync();
+  const local = useToday();
   return useMemo(() => {
     if (!view?.kitchens.length) return null;
     const kitchen = view.kitchens.find((one) => one.kitchen.id === kitchenId) ?? view.kitchens[0]!;
-    // Offline, the snapshot's day gets old. The phone's own day, in the Tools time zone, keeps dates right.
-    const local = kitchenToday();
     return { kitchen, kitchens: view.kitchens, today: local > view.today ? local : view.today, planFrom: view.planFrom, change: (action) => void engine.change(kitchen.kitchen.id, action) };
-  }, [view, kitchenId]);
+  }, [view, kitchenId, local]);
+}
+
+/** The phone's day in the Tools time zone. Offline, the snapshot's day gets old, and a screen can stay open past midnight. */
+function useToday(): string {
+  const [day, setDay] = useState(kitchenToday);
+  useEffect(() => {
+    const timer = setInterval(() => setDay(kitchenToday()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+  return day;
 }

@@ -31,43 +31,52 @@ const INITIAL: SyncState = { view: null, pending: 0, notices: [], status: { kind
  * The sent changes leave the outbox only together with a snapshot that contains them; until then they are sent
  * again, and the server answers a repeat with its first outcome.
  * Only one sync runs at a time; a request during a sync runs one more sync after it.
+ *
+ * The engine serves one signed-in account at a time. `load` starts it for the stored account and `stop` ends it.
+ * Each start is a new epoch. Work from an earlier epoch never sends, stores, or shows anything, so one account's
+ * kitchens and changes cannot reach another account.
  */
 export function createSyncEngine({ vault, api, project, newId, isSignedOut, isOffline, now = () => new Date() }: Deps) {
   let state: SyncState = INITIAL;
   let snapshot: KitchenSync | null = null;
   let syncedAt: string | null = null;
-  let running: Promise<void> | undefined;
+  let running: { epoch: number; done: Promise<void> } | undefined;
   let again = false;
-  // Sign-out raises the epoch, so a sync that started before it never writes into the new, empty vault.
   let epoch = 0;
+  let stopped = true;
   let writing: Promise<void> | undefined;
   const listeners = new Set<() => void>();
 
-  async function refresh(patch: Partial<SyncState> = {}) {
+  async function refresh(mine: number, patch: Partial<SyncState> = {}) {
     const [outbox, notices] = await Promise.all([vault.outbox(), vault.notices()]);
+    if (mine !== epoch) return;
     state = { ...state, ...patch, view: snapshot && project(snapshot, outbox), pending: outbox.length, notices };
     for (const listener of listeners) listener();
   }
 
-  async function once() {
-    const mine = epoch;
-    await refresh({ status: { kind: "syncing" } });
+  async function once(mine: number) {
+    await refresh(mine, { status: { kind: "syncing" } });
     try {
       const outbox = await vault.outbox();
       const results: AppActionResult[] = [];
-      for (let start = 0; start < outbox.length; start += BATCH) results.push(...await api.push(outbox.slice(start, start + BATCH)));
+      for (let start = 0; start < outbox.length; start += BATCH) {
+        if (mine !== epoch) return;
+        results.push(...await api.push(outbox.slice(start, start + BATCH)));
+      }
+      if (mine !== epoch) return;
       const fresh = await api.pull();
       if (mine !== epoch) return;
       writing = vault.commit(fresh, results.map((one) => one.clientActionId), results.filter(isRejected).map(({ clientActionId, message }) => ({ clientActionId, message })));
       await writing;
+      if (mine !== epoch) return;
       snapshot = fresh;
       syncedAt = now().toISOString();
-      await refresh({ status: { kind: "idle", syncedAt }, signedOut: false });
+      await refresh(mine, { status: { kind: "idle", syncedAt }, signedOut: false });
     } catch (error) {
       if (mine !== epoch) return;
-      if (isSignedOut(error)) await refresh({ status: { kind: "idle", syncedAt }, signedOut: true });
-      else if (isOffline(error)) await refresh({ status: { kind: "offline", syncedAt } });
-      else await refresh({ status: { kind: "failed", message: error instanceof Error ? error.message : String(error) } });
+      if (isSignedOut(error)) await refresh(mine, { status: { kind: "idle", syncedAt }, signedOut: true });
+      else if (isOffline(error)) await refresh(mine, { status: { kind: "offline", syncedAt } });
+      else await refresh(mine, { status: { kind: "failed", message: error instanceof Error ? error.message : String(error) } });
     }
   }
 
@@ -77,27 +86,36 @@ export function createSyncEngine({ vault, api, project, newId, isSignedOut, isOf
       listeners.add(listener);
       return () => { listeners.delete(listener); };
     },
-    /** Shows what is on the phone at once, before the first sync answers. */
+    /** Starts the engine for the stored account and shows what is on the phone at once, before the first sync answers. */
     async load() {
-      snapshot = await vault.snapshot();
-      await refresh();
+      epoch += 1;
+      stopped = false;
+      const mine = epoch;
+      const saved = await vault.snapshot();
+      if (mine !== epoch) return;
+      snapshot = saved;
+      await refresh(mine);
     },
     sync(): Promise<void> {
-      if (running) {
+      if (stopped) return Promise.resolve();
+      if (running?.epoch === epoch) {
         again = true;
-        return running;
+        return running.done;
       }
-      running = (async () => {
+      const mine = epoch;
+      const done = (async () => {
         do {
           again = false;
-          await once();
-        } while (again && !state.signedOut);
-      })().finally(() => { running = undefined; });
-      return running;
+          await once(mine);
+        } while (again && !state.signedOut && mine === epoch);
+      })().finally(() => { if (running?.epoch === mine) running = undefined; });
+      running = { epoch: mine, done };
+      return done;
     },
-    /** Stops every running sync from writing, before sign-out deletes the vault. */
+    /** Ends the engine before sign-in or sign-out changes the vault. Waits for a vault write that already started. */
     async stop() {
       epoch += 1;
+      stopped = true;
       again = false;
       snapshot = null;
       syncedAt = null;
@@ -107,13 +125,23 @@ export function createSyncEngine({ vault, api, project, newId, isSignedOut, isOf
     },
     /** Queues a change, shows it at once, and sends it when the server can be reached. */
     async change(kitchenId: string, action: QueuedAction) {
-      await vault.enqueue({ clientActionId: newId(), kitchenId, queuedAt: now().toISOString(), action: withCreateId(action, newId) });
-      await refresh();
+      if (stopped) return;
+      const mine = epoch;
+      try {
+        await vault.enqueue({ clientActionId: newId(), kitchenId, queuedAt: now().toISOString(), action: withCreateId(action, newId) });
+      } catch (error) {
+        if (mine === epoch) throw error;
+        return;
+      }
+      if (mine !== epoch) return;
+      await refresh(mine);
       void engine.sync();
     },
     async dismiss(clientActionId: string) {
+      if (stopped) return;
+      const mine = epoch;
       await vault.dismiss(clientActionId);
-      await refresh();
+      await refresh(mine);
     }
   };
   return engine;
