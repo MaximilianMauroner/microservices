@@ -10,9 +10,6 @@ export async function submitPublicFeedback({ request, context, params }: Platfor
   const wantsJson = request.headers.get("accept")?.includes("application/json") ?? false;
   const contentType = request.headers.get("content-type")?.toLowerCase() ?? "";
   if (!contentType.startsWith("application/x-www-form-urlencoded")) return json({ error: "invalid_content_type" }, 415);
-  if (!allowSubmission(`${params.token}:${clientAddress(request)}`)) {
-    return wantsJson ? json({ error: "rate_limited" }, 429) : submissionResult(params.token, false, "rate_limited");
-  }
   try {
     const body = await readBoundedBody(request, MAXIMUM_BODY_BYTES);
     if (!body) throw new FeedbackValidationError("invalid_request", "The request body is missing.");
@@ -20,6 +17,9 @@ export async function submitPublicFeedback({ request, context, params }: Platfor
     if (fields.get("website")) return submissionResult(params.token, true, undefined, undefined, undefined, wantsJson);
     const form = await context.runtime.feedback.getPublicForm(params.token);
     if (!form) return notFound();
+    if (!allowSubmission(`${params.token}:${clientAddress(request)}`)) {
+      return wantsJson ? json({ error: "rate_limited" }, 429) : submissionResult(params.token, false, "rate_limited");
+    }
     const entries: Record<string, FormDataEntryValue> = {};
     const shareDays = parseFeedbackShareDays(fields.get("__share_days"));
     for (const [key, value] of fields) if (key !== "__share_days") entries[key] = value;

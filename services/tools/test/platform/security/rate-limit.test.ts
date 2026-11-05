@@ -9,11 +9,13 @@ describe("rate limit", () => {
     expect(allow("a", 1000)).toBe(true);
   });
 
-  it("keeps counting new clients after it tracks the most keys", () => {
+  it("keeps a blocked client blocked while many new keys fill the table", () => {
     const allow = createRateLimit({ limit: 1, windowMs: 60_000 });
-    for (let i = 0; i < 10_050; i++) allow(`client-${i}`, 0);
-    expect(allow("client-10049", 1)).toBe(false);
-    expect(allow("new-client", 1)).toBe(true);
+    allow("target", 0);
+    expect(allow("target", 1)).toBe(false);
+    for (let i = 0; i < 20_000; i++) allow(`noise-${i}`, 2);
+    expect(allow("target", 3), "new keys cannot reset an active count").toBe(false);
+    expect(allow("target", 60_000), "the window still ends").toBe(true);
   });
 
   it("reads the client address that Cloudflare sets", () => {
