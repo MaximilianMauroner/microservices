@@ -167,7 +167,7 @@ const reducers = {
     const entry = find(kitchen.plan, action.id);
     if (entry.cooked) throw new KitchenError("This meal is already cooked.");
     const leftover = action.leftover ? {
-      id: `local:leftover:${entry.id}`, name: requiredName(entry.recipe, "leftover"),
+      id: action.leftover.createId ?? `local:leftover:${entry.id}`, name: requiredName(entry.recipe, "leftover"),
       servings: parseLeftoverServings(action.leftover.servings), useBy: parseDay(action.leftover.useBy),
     } : undefined;
     const amounts = new Map(entry.lines.map((line) => [line.ingredientId, line.amount]));

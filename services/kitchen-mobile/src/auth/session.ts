@@ -29,6 +29,18 @@ export async function isSignedIn(): Promise<boolean> {
   return (await SecureStore.getItemAsync(REFRESH, SECURE)) !== null;
 }
 
+/** The Tools account of the signed-in person, so the app can tell whose data the vault holds. */
+export async function currentAccount(): Promise<string> {
+  const token = await accessToken();
+  const response = await fetch(`${TOOLS_ORIGIN}/api/auth/oauth2/userinfo`, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } })
+    .catch((cause: unknown) => { throw new Offline("Tools cannot be reached.", { cause }); });
+  if (response.status === 401 || response.status === 403) throw new SignedOut();
+  if (!response.ok) throw new Error(`Tools answered ${response.status} on the account check.`);
+  const { sub } = (await response.json()) as { sub?: unknown };
+  if (typeof sub !== "string" || !sub) throw new Error("Tools sent no account.");
+  return sub;
+}
+
 /** Opens the Tools sign-in page in the system browser. Returns false when the person cancels. */
 export async function signIn(): Promise<boolean> {
   const devToken = __DEV__ ? process.env.EXPO_PUBLIC_DEV_REFRESH_TOKEN : undefined;

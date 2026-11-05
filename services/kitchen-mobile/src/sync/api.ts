@@ -26,7 +26,7 @@ async function call(path: string, init: RequestInit = {}): Promise<Response> {
 export const kitchenApi: KitchenApi = {
   pull: async () => (await call("/api/kitchen/sync")).json(),
   async push(items) {
-    const body = JSON.stringify({ actions: items.map(({ clientActionId, kitchenId, action }) => ({ clientActionId, kitchenId, action })) });
+    const body = JSON.stringify({ actions: items.map(({ clientActionId, kitchenId, queuedAt, action }) => ({ clientActionId, kitchenId, queuedAt, action })) });
     const response = await call("/api/kitchen/actions", { method: "POST", headers: { "Content-Type": "application/json" }, body });
     return ((await response.json()) as { results: AppActionResult[] }).results;
   }

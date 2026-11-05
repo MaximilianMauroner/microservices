@@ -56,7 +56,7 @@ function apply(snapshot: KitchenSnapshot, actions: QueuedAction[]): KitchenSnaps
   const sync: KitchenSync = { today: "2026-11-05", planFrom: "2026-10-05", kitchens: [snapshot] };
   return project(
     sync,
-    actions.map((action, seq) => ({ seq, clientActionId: String(seq), kitchenId: "home", action })),
+    actions.map((action, seq) => ({ seq, clientActionId: String(seq), kitchenId: "home", queuedAt: "2026-11-05T09:00:00.000Z", action })),
   ).kitchens[0]!;
 }
 
