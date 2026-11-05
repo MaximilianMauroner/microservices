@@ -148,9 +148,8 @@ accounted for.
 
 Browser multipart and chunk endpoints are removed. The current React console
 and guest page use sessions for every new file. The old browser page and its
-JavaScript uploader are removed. `POST /api/drop/:token/uploads` remains
-available for guest multipart uploads. The native chunk tests cover the retained
-bearer-token API.
+JavaScript uploader are removed. Guest multipart upload is removed too. The
+native chunk tests cover the retained bearer-token API.
 
 Remove native creation and chunk compatibility only after external caller owners
 confirm migration and route observations confirm no calls. Keep the native

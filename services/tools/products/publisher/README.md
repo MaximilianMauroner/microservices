@@ -169,8 +169,9 @@ opaque keyset cursor, with older rows available on demand.
 
 The current browser and guest page use direct sessions for all file sizes.
 Browser multipart and chunk routes are removed. The native chunk protocol
-retains local staging and its two-hour session limit. The guest multipart
-`POST /api/drop/:token/uploads` route remains available.
+retains local staging and its two-hour session limit. Guest multipart upload
+is removed, so guest bytes never stage on the Tools disk or hold the native
+upload gate.
 
 `GET /api/external-uploads` accepts `kind=all|html|file`, a normalized
 case-insensitive filename `q`, `expiry=all|24h|7d|persistent`, and
