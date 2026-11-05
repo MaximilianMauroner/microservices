@@ -24,6 +24,10 @@ ID. Native credentials never travel to storage.
    `sessionId`, `partBytes`, `totalParts`, `uploaded`, `state`, and `expiresAt`.
    Repeat initialization with the same request ID and file description to
    recover a lost response or resume. File sessions expire after two hours.
+   A guest link takes at most three pending sessions (`429
+   upload_capacity_reached`) and at most 200 files and 20 GB over its stored
+   and pending uploads (`413 upload_link_quota_reached`). Initialization
+   checks both while it holds the link row lock that completion also takes.
 2. For each one-based part, calculate its SHA-256 over at most 20 MiB. POST
    `{ "number": 1, "sha256": "<64 lowercase hex characters>" }` to
    `/:sessionId/parts`. PUT that Blob/buffer to the returned signed URL. Its

@@ -10,6 +10,9 @@ export const DIRECT_PART_BYTES = 20 * 1024 * 1024;
 export const DIRECT_SESSION_MS = 2 * 60 * 60 * 1000;
 const SIGNED_PART_SECONDS = 300;
 const COMPLETION_TIMEOUT_MS = 15 * 60 * 1000;
+const DROP_LINK_MAX_PENDING_UPLOADS = 3;
+export const DROP_LINK_MAX_FILES = 200;
+export const DROP_LINK_MAX_BYTES = 20_000_000_000;
 
 /** `subject` is the person the upload belongs to. A drop upload belongs to the owner of its link. */
 export type DirectUploadOwner = { audience: "browser" | "native" | "drop"; subject: string; uploadLinkId?: string };
@@ -101,12 +104,7 @@ export function createDirectUploads(sql: Sql, bucket: ReturnType<typeof createMu
         const [count] = await tx<{ count: number }[]>`select count(*)::int count from artifacts.upload_sessions
           where expires_at > now() and state in ('creating', 'uploading', 'completing')`;
         if ((count?.count ?? 0) >= maxSessions) throw new DirectUploadError(503, "upload_capacity_reached", "Too many uploads are pending. Retry shortly.");
-        if (owner.uploadLinkId) {
-          const [linkCount] = await tx<{ count: number }[]>`select count(*)::int count from artifacts.upload_sessions
-            where upload_link_id = ${owner.uploadLinkId}::uuid and expires_at > now()
-            and state in ('creating', 'uploading', 'completing')`;
-          if ((linkCount?.count ?? 0) >= 3) throw new DirectUploadError(429, "upload_capacity_reached", "This link already has three pending uploads.");
-        }
+        if (owner.uploadLinkId) await reserveDropLinkQuota(tx, owner.uploadLinkId, description.totalBytes);
         const target = intent.kind === "replace" ? await lockHtmlVersion(tx, intent.targetId, owner.subject) : undefined;
         await tx`insert into artifacts.upload_sessions
           (session_id, owner_subject, artifact_id, target_id, expected_object_key, audience, upload_link_id, description, state, expires_at)
@@ -289,6 +287,28 @@ export function createDirectUploads(sql: Sql, bucket: ReturnType<typeof createMu
 }
 
 function unavailable() { return new DirectUploadError(404, "upload_not_found", "The upload was not found, expired, or revoked."); }
+
+/** Completion locks the same link row while it turns a pending session into a stored file,
+ * so one usage read here never misses or double-counts that file. */
+async function reserveDropLinkQuota(tx: TransactionSql, uploadLinkId: string, totalBytes: number) {
+  const links = await tx`select id from artifacts.upload_links where id = ${uploadLinkId}::uuid
+    and revoked_at is null and expires_at > clock_timestamp() for update`;
+  if (!links.length) throw unavailable();
+  const [usage] = await tx<{ pending: number; files: number; bytes: number }[]>`
+    select count(*) filter (where pending)::int pending, count(*)::int files, coalesce(sum(bytes), 0)::float8 bytes from (
+      select false pending, bytes from artifacts.objects where upload_link_id = ${uploadLinkId}::uuid and revoked_at is null
+      union all
+      select true, (description->>'totalBytes')::bigint from artifacts.upload_sessions
+        where upload_link_id = ${uploadLinkId}::uuid and expires_at > now() and state in ('creating', 'uploading', 'completing')
+    ) link_usage`;
+  if (usage!.pending >= DROP_LINK_MAX_PENDING_UPLOADS) {
+    throw new DirectUploadError(429, "upload_capacity_reached", `This link already has ${DROP_LINK_MAX_PENDING_UPLOADS} pending uploads.`);
+  }
+  if (usage!.files >= DROP_LINK_MAX_FILES || usage!.bytes + totalBytes > DROP_LINK_MAX_BYTES) {
+    throw new DirectUploadError(413, "upload_link_quota_reached", `This link takes at most ${DROP_LINK_MAX_FILES} files `
+      + `and ${DROP_LINK_MAX_BYTES / 1e9} GB in total. Ask the link owner for a new link.`);
+  }
+}
 
 async function completionSlot(tx: TransactionSql, maximum: number) {
   for (let slot = 0; slot < maximum; slot += 1) {
