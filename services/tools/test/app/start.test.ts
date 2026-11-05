@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
-import type { RequestServerNextFnOptions, RequestServerOptions, RequestServerResult } from "@tanstack/react-start";
-import { requestHandler } from "@tanstack/react-start/server";
+import type { RequestServerNextFnOptions, RequestServerResult } from "@tanstack/react-start";
+import { getResponseHeaders } from "@tanstack/react-start/server";
+import { createServerEntry } from "@tanstack/react-start/server-entry";
 import { requirePlatformSession } from "../../platform/auth/middleware.js";
 import { routerSsrOptions } from "../../app/router-options.js";
 import { documentContentSecurityPolicy } from "../../app/content-security-policy.js";
@@ -24,7 +25,6 @@ beforeAll(async () => {
   startModule = await import("../../app/start.js");
 });
 
-type RequestOptions = RequestServerOptions<{}, undefined>;
 type RequestResult<TContext = undefined> = RequestServerResult<{}, undefined, TContext>;
 
 async function handleThroughRequestMiddleware(
@@ -32,11 +32,10 @@ async function handleThroughRequestMiddleware(
   handlerType: "serverFn" | "router",
   handlerResponse: Response | (() => Response | Promise<Response>)
 ) {
-  const handle = requestHandler(async (request) => {
+  const entry = createServerEntry({ fetch: async (request, { context }) => {
     const { requestMiddleware = [] } = await startModule.startInstance.getOptions();
     const servers = requestMiddleware.map((middleware) => middleware.options.server);
     const pathname = new URL(request.url).pathname;
-    const context: RequestOptions["context"] = { runtime: await getPlatformRuntime(), request };
     let index = -1;
     const next = async <TContext = undefined>(options?: RequestServerNextFnOptions<TContext>): Promise<RequestResult<TContext>> => {
       Object.assign(context, options?.context);
@@ -52,9 +51,11 @@ async function handleThroughRequestMiddleware(
         response: result instanceof Response ? result : result.response
       };
     };
-    return (await next()).response;
-  });
-  return handle(request, {});
+    const { response } = await next();
+    getResponseHeaders().forEach((value, name) => response.headers.set(name, value));
+    return response;
+  } });
+  return entry.fetch(request, { context: { runtime: await getPlatformRuntime(), request } });
 }
 
 async function runSessionMiddleware(role: "admin" | "member" | undefined) {

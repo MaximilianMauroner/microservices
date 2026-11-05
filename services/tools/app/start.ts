@@ -1,5 +1,5 @@
 import { createCsrfMiddleware, createMiddleware, createStart } from "@tanstack/react-start";
-import { getResponse, setResponseHeader } from "@tanstack/react-start/server";
+import { setResponseHeader } from "@tanstack/react-start/server";
 import { classifyRoute, isMarkdownSharePath, type PlatformPrincipal } from "#security";
 import { authenticatePlatformRequest } from "../platform/gateway.js";
 import { getPlatformRuntime, type PlatformRuntime } from "./runtime.js";
@@ -17,7 +17,6 @@ const platformRequestMiddleware = createMiddleware().server(
   async ({ request, handlerType, next }) => {
     if (handlerType === "serverFn") {
       setResponseHeader("Cache-Control", "private, no-store");
-      getResponse().errHeaders.set("Cache-Control", "private, no-store");
     }
     const runtime = await getPlatformRuntime();
     if (
