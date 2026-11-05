@@ -1,6 +1,8 @@
+import { useLocalSearchParams } from "expo-router";
 import { KitchenScreen } from "../../../ui/page";
-import { Screen, T } from "../../../ui/kit";
+import { RecipePageContent } from "../../../ui/recipes/recipe-page";
 
 export default function RecipePage() {
-  return <KitchenScreen page="recipes">{({ kitchen }) => <Screen title="RecipePage"><T>{kitchen.kitchen.name}</T></Screen>}</KitchenScreen>;
+  const { recipeId } = useLocalSearchParams<{ recipeId: string }>();
+  return <KitchenScreen page="recipes">{(data) => <RecipePageContent key={`${data.kitchen.kitchen.id}/${recipeId}`} data={data} recipeId={recipeId} />}</KitchenScreen>;
 }
