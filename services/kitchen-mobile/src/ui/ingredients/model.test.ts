@@ -30,7 +30,7 @@ describe("ingredient form", () => {
     expect(result.action.oldPerNew).toBe(250);
     expect(kitchenAction.safeParse(result.action).success).toBe(true);
     const sync: KitchenSync = { today: "2026-11-05", planFrom: "2026-10-05", kitchens: [kitchen] };
-    const projected = project(sync, [{ kitchenId: "home", seq: 1, clientActionId: "change", action: result.action }]).kitchens[0]!;
+    const projected = project(sync, [{ kitchenId: "home", seq: 1, clientActionId: "change", queuedAt: "2026-11-05T09:00:00.000Z", action: result.action }]).kitchens[0]!;
 
     expect(projected.ingredients[0]).toMatchObject({ unit: "can", recipeCount: 2, nutrition: { kcal: 50, protein: 3, carbs: null, fat: 0 } });
     expect(projected.stock[0]).toMatchObject({ unit: "can", amount: 2 });

@@ -14,10 +14,10 @@ function fakeVault() {
   return {
     data,
     snapshot: async () => data.snapshot,
-    saveSnapshot: async (snapshot: KitchenSync) => { data.snapshot = snapshot; },
     outbox: async () => [...data.outbox],
     enqueue: async (item: Omit<OutboxItem, "seq">) => { data.outbox.push({ ...item, seq: ++seq }); },
-    settle: async (answered: readonly string[], refused: readonly Notice[]) => {
+    commit: async (snapshot: KitchenSync, answered: readonly string[], refused: readonly Notice[]) => {
+      data.snapshot = snapshot;
       data.outbox = data.outbox.filter((one) => !answered.includes(one.clientActionId));
       data.notices.push(...refused);
     },
@@ -86,6 +86,34 @@ describe("sync engine", () => {
     expect(engine.getState()).toMatchObject({ pending: 0, notices: [{ clientActionId: "change-1", message: "Gone." }] });
     await engine.dismiss("change-1");
     expect(engine.getState().notices).toEqual([]);
+  });
+
+  it("keeps a sent change until a snapshot that contains it is stored, and sends it again after a failed pull", async () => {
+    let reachable = false;
+    const { engine, vault, sent } = setup({ pull: async () => { if (!reachable) throw new Offline(); return empty; } });
+    vault.data.snapshot = empty;
+    await engine.load();
+    await engine.change("home", addMilk);
+    await engine.sync();
+    expect(engine.getState(), "the change stays visible while the old snapshot lacks it").toMatchObject({ pending: 1, status: { kind: "offline" }, view: { today: "2026-11-05+1" } });
+    reachable = true;
+    await engine.sync();
+    expect(sent.length, "the change was sent again").toBeGreaterThan(1);
+    expect(new Set(sent.flat()), "the server answers each repeat with its first outcome").toEqual(new Set(["change-1"]));
+    expect(engine.getState()).toMatchObject({ pending: 0, view: { today: "2026-11-05+0" } });
+  });
+
+  it("writes nothing from a sync that was running when the person signed out", async () => {
+    let release: () => void = () => undefined;
+    const old: KitchenSync = { ...empty, today: "old account" };
+    const { engine, vault } = setup({ pull: async () => { await new Promise<void>((resolve) => { release = resolve; }); return old; } });
+    const running = engine.sync();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await engine.stop();
+    release();
+    await running;
+    expect(vault.data.snapshot).toBeNull();
+    expect(engine.getState().view).toBeNull();
   });
 
   it("asks for sign-in again and keeps the queued changes", async () => {

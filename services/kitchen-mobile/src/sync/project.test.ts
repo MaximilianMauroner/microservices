@@ -21,7 +21,7 @@ function empty(): KitchenSync {
 }
 
 function queue(actions: readonly QueuedAction[]): OutboxItem[] {
-  return actions.map((action, index) => ({ seq: index + 1, clientActionId: id(index + 100), kitchenId: homeId, action }));
+  return actions.map((action, index) => ({ seq: index + 1, clientActionId: id(index + 100), kitchenId: homeId, queuedAt: "2026-11-05T09:00:00.000Z", action }));
 }
 
 function ingredient(overrides: Partial<Extract<QueuedAction, { type: "ingredient.save" }>> = {}): Extract<QueuedAction, { type: "ingredient.save" }> {
@@ -73,6 +73,16 @@ describe("offline Kitchen projection", () => {
     expect(result.plan[0]!.cooked).toBe(true);
     expect(result.stock).toEqual([]);
     expect(result.leftovers).toEqual([{ id: expect.any(String), name: "Rice bowl", servings: 1.5, useBy: "2026-11-07" }]);
+  });
+
+  it("gives a leftover from cooking the phone's ID, so a later offline change reaches the same leftover", () => {
+    const soupId = id(900);
+    const result = home(project(planned(), queue([
+      { type: "plan.cook", id: planId, leftover: { servings: 2, useBy: "2026-11-07", createId: soupId } },
+      { type: "leftover.eat", id: soupId, servings: 1 },
+    ])));
+
+    expect(result.leftovers).toEqual([{ id: soupId, name: "Rice bowl", servings: 1, useBy: "2026-11-07" }]);
   });
 
   it("uses the custom meal amounts when cooking and keeps the stock that remains", () => {

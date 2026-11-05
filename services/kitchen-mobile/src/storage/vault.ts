@@ -6,11 +6,13 @@ import type { KitchenSync, Notice, OutboxItem, QueuedAction } from "../sync/mode
 /** Everything the app keeps on the phone. It lives in one SQLCipher file whose key never leaves the Keychain or Keystore. */
 export type Vault = {
   snapshot(): Promise<KitchenSync | null>;
-  saveSnapshot(snapshot: KitchenSync): Promise<void>;
   outbox(): Promise<OutboxItem[]>;
   enqueue(item: Omit<OutboxItem, "seq">): Promise<void>;
-  /** Removes changes that the server answered, and keeps a notice for each change it refused. */
-  settle(answered: readonly string[], refused: readonly Notice[]): Promise<void>;
+  /**
+   * Stores a new snapshot, removes the changes the server answered, and keeps a notice for each change it refused.
+   * One transaction, so the phone never shows a snapshot without the changes it does not yet contain.
+   */
+  commit(snapshot: KitchenSync, answered: readonly string[], refused: readonly Notice[]): Promise<void>;
   notices(): Promise<Notice[]>;
   dismiss(clientActionId: string): Promise<void>;
   setting(key: string): Promise<string | null>;
@@ -57,7 +59,7 @@ function database(): Promise<SQLite.SQLiteDatabase> {
 
 const SCHEMA = `
   create table if not exists settings (key text primary key, value text not null);
-  create table if not exists outbox (seq integer primary key autoincrement, client_action_id text not null unique, kitchen_id text not null, action text not null);
+  create table if not exists outbox (seq integer primary key autoincrement, client_action_id text not null unique, kitchen_id text not null, queued_at text not null, action text not null);
   create table if not exists notices (client_action_id text primary key, message text not null);
 `;
 
@@ -66,17 +68,17 @@ export const vault: Vault = {
     const raw = await this.setting("snapshot");
     return raw ? JSON.parse(raw) as KitchenSync : null;
   },
-  saveSnapshot: (snapshot) => vault.saveSetting("snapshot", JSON.stringify(snapshot)),
   async outbox() {
-    const rows = await (await database()).getAllAsync<{ seq: number; client_action_id: string; kitchen_id: string; action: string }>("select * from outbox order by seq");
-    return rows.map((row) => ({ seq: row.seq, clientActionId: row.client_action_id, kitchenId: row.kitchen_id, action: JSON.parse(row.action) as QueuedAction }));
+    const rows = await (await database()).getAllAsync<{ seq: number; client_action_id: string; kitchen_id: string; queued_at: string; action: string }>("select * from outbox order by seq");
+    return rows.map((row) => ({ seq: row.seq, clientActionId: row.client_action_id, kitchenId: row.kitchen_id, queuedAt: row.queued_at, action: JSON.parse(row.action) as QueuedAction }));
   },
   async enqueue(item) {
-    await (await database()).runAsync("insert into outbox (client_action_id, kitchen_id, action) values (?, ?, ?)", item.clientActionId, item.kitchenId, JSON.stringify(item.action));
+    await (await database()).runAsync("insert into outbox (client_action_id, kitchen_id, queued_at, action) values (?, ?, ?, ?)", item.clientActionId, item.kitchenId, item.queuedAt, JSON.stringify(item.action));
   },
-  async settle(answered, refused) {
+  async commit(snapshot, answered, refused) {
     const db = await database();
     await db.withTransactionAsync(async () => {
+      await db.runAsync("insert or replace into settings (key, value) values ('snapshot', ?)", JSON.stringify(snapshot));
       for (const id of answered) await db.runAsync("delete from outbox where client_action_id = ?", id);
       for (const notice of refused) await db.runAsync("insert or replace into notices (client_action_id, message) values (?, ?)", notice.clientActionId, notice.message);
     });
