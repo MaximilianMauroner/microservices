@@ -16,6 +16,7 @@ const admin: PlatformPrincipal = { role: "admin", subject: "admin-subject", emai
 const friend: PlatformPrincipal = { role: "member", subject: "friend-subject", email: "friend@example.test", products: ["kitchen"] };
 const noNutrition = { kcal: null, protein: null, carbs: null, fat: null };
 const wednesday = new Date("2026-11-04T12:00:00Z");
+const queuedAt = "2026-11-04T09:00:00Z";
 
 beforeEach(async () => {
   if (!sql) return;
@@ -90,17 +91,17 @@ describe.skipIf(!sql)("Kitchen app sync", () => {
     const { store, kitchen } = await homeWithFriend();
     const [riceId, bowlId, planId] = [randomUUID(), randomUUID(), randomUUID()];
     const batch = { actions: [
-      { clientActionId: randomUUID(), kitchenId: kitchen.kitchen.id, action: { type: "ingredient.save", createId: riceId, name: "Rice", unit: "g", section: "Grains", kcal: null, protein: null, carbs: null, fat: null, notes: "" } },
-      { clientActionId: randomUUID(), kitchenId: kitchen.kitchen.id, action: { type: "recipe.save", createId: bowlId, name: "Rice bowl", servings: 2, minutes: 15, instructions: "", lines: [{ ingredientId: riceId, amount: 150, note: "" }] } },
-      { clientActionId: randomUUID(), kitchenId: kitchen.kitchen.id, action: { type: "plan.add", createId: planId, day: "2026-11-05", meal: "dinner", recipeId: bowlId, servings: 2 } },
-      { clientActionId: randomUUID(), kitchenId: kitchen.kitchen.id, action: { type: "stock.add", ingredientId: riceId, amount: 500 } },
-      { clientActionId: randomUUID(), kitchenId: kitchen.kitchen.id, action: { type: "plan.cook", id: planId } }
+      { clientActionId: randomUUID(), kitchenId: kitchen.kitchen.id, queuedAt, action: { type: "ingredient.save", createId: riceId, name: "Rice", unit: "g", section: "Grains", kcal: null, protein: null, carbs: null, fat: null, notes: "" } },
+      { clientActionId: randomUUID(), kitchenId: kitchen.kitchen.id, queuedAt, action: { type: "recipe.save", createId: bowlId, name: "Rice bowl", servings: 2, minutes: 15, instructions: "", lines: [{ ingredientId: riceId, amount: 150, note: "" }] } },
+      { clientActionId: randomUUID(), kitchenId: kitchen.kitchen.id, queuedAt, action: { type: "plan.add", createId: planId, day: "2026-11-05", meal: "dinner", recipeId: bowlId, servings: 2 } },
+      { clientActionId: randomUUID(), kitchenId: kitchen.kitchen.id, queuedAt, action: { type: "stock.add", ingredientId: riceId, amount: 500 } },
+      { clientActionId: randomUUID(), kitchenId: kitchen.kitchen.id, queuedAt, action: { type: "plan.cook", id: planId } }
     ] };
 
-    const first = await applyAppActions(store, friend, batch);
+    const first = await applyAppActions(store, friend, batch, wednesday);
     expect(first.map((one) => one.status)).toEqual(["applied", "applied", "applied", "applied", "applied"]);
     expect(first.slice(0, 3).map((one) => "id" in one && one.id)).toEqual([riceId, bowlId, planId]);
-    expect(await applyAppActions(store, friend, batch), "a resent batch returns the first outcomes").toEqual(first);
+    expect(await applyAppActions(store, friend, batch, wednesday), "a resent batch returns the first outcomes").toEqual(first);
 
     const [home] = (await kitchenSync(store, friend, wednesday)).kitchens;
     expect(home!.plan.map((entry) => [entry.id, entry.cooked])).toEqual([[planId, true]]);
@@ -112,24 +113,42 @@ describe.skipIf(!sql)("Kitchen app sync", () => {
     const office = (await store.list(admin)).find((one) => one.name === "Office")!;
     const takenId = (await (await store.open(admin, office.id)).addExtra("Coffee")).id;
     const results = await applyAppActions(store, friend, { actions: [
-      { clientActionId: randomUUID(), kitchenId: kitchen.kitchen.id, action: { type: "plan.cook", id: randomUUID() } },
-      { clientActionId: randomUUID(), kitchenId: kitchen.kitchen.id, action: { type: "nonsense" } },
-      { clientActionId: randomUUID(), kitchenId: office.id, action: { type: "extra.add", name: "Tea" } },
-      { clientActionId: randomUUID(), kitchenId: kitchen.kitchen.id, action: { type: "extra.add", createId: takenId, name: "Milk" } },
-      { clientActionId: randomUUID(), kitchenId: kitchen.kitchen.id, action: { type: "recipe.copy", id: randomUUID(), toKitchenId: office.id } },
-      { clientActionId: randomUUID(), kitchenId: kitchen.kitchen.id, action: { type: "extra.add", name: "Bread" } }
-    ] });
+      { clientActionId: randomUUID(), kitchenId: kitchen.kitchen.id, queuedAt, action: { type: "plan.cook", id: randomUUID() } },
+      { clientActionId: randomUUID(), kitchenId: kitchen.kitchen.id, queuedAt, action: { type: "nonsense" } },
+      { clientActionId: randomUUID(), kitchenId: office.id, queuedAt, action: { type: "extra.add", name: "Tea" } },
+      { clientActionId: randomUUID(), kitchenId: kitchen.kitchen.id, queuedAt, action: { type: "extra.add", createId: takenId, name: "Milk" } },
+      { clientActionId: randomUUID(), kitchenId: kitchen.kitchen.id, queuedAt, action: { type: "recipe.copy", id: randomUUID(), toKitchenId: office.id } },
+      { clientActionId: randomUUID(), kitchenId: kitchen.kitchen.id, queuedAt, action: { type: "extra.add", name: "Bread" } }
+    ] }, wednesday);
     expect(results.map((one) => one.status)).toEqual(["rejected", "rejected", "rejected", "rejected", "rejected", "applied"]);
     expect(results[2]).toMatchObject({ message: "This kitchen does not exist." });
     const [home] = (await kitchenSync(store, friend, wednesday)).kitchens;
     expect(home!.extras.map((one) => one.name), "a rejected change leaves no data").toEqual(["Bread"]);
   });
 
+  it("keeps the phone's ID for a cooked leftover, removes it when the last serving is eaten, and refuses a change queued too long ago", async () => {
+    const { store, kitchen } = await homeWithFriend();
+    const [riceId, bowlId, planId, soupId] = [randomUUID(), randomUUID(), randomUUID(), randomUUID()];
+    const change = (action: unknown, at = queuedAt) => ({ clientActionId: randomUUID(), kitchenId: kitchen.kitchen.id, queuedAt: at, action });
+    const results = await applyAppActions(store, friend, { actions: [
+      change({ type: "ingredient.save", createId: riceId, name: "Rice", unit: "g", section: "", kcal: null, protein: null, carbs: null, fat: null, notes: "" }),
+      change({ type: "recipe.save", createId: bowlId, name: "Rice bowl", servings: 2, minutes: null, instructions: "", lines: [{ ingredientId: riceId, amount: 150, note: "" }] }),
+      change({ type: "plan.add", createId: planId, day: "2026-11-04", meal: "dinner", recipeId: bowlId, servings: 2 }),
+      change({ type: "plan.cook", id: planId, leftover: { servings: 1, useBy: "2026-11-07", createId: soupId } }),
+      change({ type: "leftover.eat", id: soupId, servings: 1 }),
+      change({ type: "extra.add", name: "Old milk" }, "2026-09-30T09:00:00Z")
+    ] }, wednesday);
+    expect(results.map((one) => one.status)).toEqual(["applied", "applied", "applied", "applied", "applied", "rejected"]);
+    const [home] = (await kitchenSync(store, friend, wednesday)).kitchens;
+    expect(home!.leftovers, "eating the last serving removes the leftover").toEqual([]);
+    expect(home!.extras, "a change older than the answer the server keeps is not applied").toEqual([]);
+  });
+
   it("answers 400 for a malformed batch and applies a valid one over HTTP", async () => {
     const { store, kitchen } = await homeWithFriend();
     const post = (body: unknown) => handleKitchenActions(new Request("https://tools.example.test/api/kitchen/actions", { method: "POST", body: JSON.stringify(body) }), async () => friend, store);
     expect((await post({ actions: "no" })).status).toBe(400);
-    const ok = await post({ actions: [{ clientActionId: randomUUID(), kitchenId: kitchen.kitchen.id, action: { type: "leftover.add", name: "Soup", servings: 2, useBy: "2026-11-06" } }] });
+    const ok = await post({ actions: [{ clientActionId: randomUUID(), kitchenId: kitchen.kitchen.id, queuedAt, action: { type: "leftover.add", name: "Soup", servings: 2, useBy: "2026-11-06" } }] });
     expect(ok.status).toBe(200);
     expect(await ok.json()).toEqual({ results: [expect.objectContaining({ status: "applied" })] });
   });

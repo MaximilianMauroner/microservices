@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { INGREDIENT_UNITS, MEALS, weekStart } from "./domain.js";
+import { INGREDIENT_UNITS, KitchenError, MEALS, weekStart } from "./domain.js";
 import type { AppliedOutcome, KitchenScope, KitchenStore } from "./repository.js";
 import type { PlatformPrincipal } from "#security";
 
@@ -55,7 +55,7 @@ export const kitchenAction = z.discriminatedUnion("type", [
   z.object({ type: z.literal("plan.remove"), id }),
   z.object({ type: z.literal("plan.customize"), id, lines }),
   z.object({ type: z.literal("plan.reset"), id }),
-  z.object({ type: z.literal("plan.cook"), id, leftover: z.object({ servings: amount, useBy: day }).optional() }),
+  z.object({ type: z.literal("plan.cook"), id, leftover: z.object({ servings: amount, useBy: day, createId }).optional() }),
   z.object({ type: z.literal("stock.set"), ingredientId: id, amount }),
   z.object({ type: z.literal("stock.add"), ingredientId: id, amount }),
   z.object({ type: z.literal("leftover.add"), createId, name: z.string().max(200), servings: amount, useBy: day }),
@@ -114,7 +114,7 @@ function apply(kitchen: KitchenScope, action: Exclude<KitchenAction, { type: "re
     case "plan.remove": return kitchen.removePlan(action.id);
     case "plan.customize": return kitchen.customizePlan(action.id, action.lines);
     case "plan.reset": return kitchen.resetPlan(action.id);
-    case "plan.cook": return kitchen.cook(action.id, action.leftover);
+    case "plan.cook": return kitchen.cook(action.id, action.leftover && { servings: action.leftover.servings, useBy: action.leftover.useBy, newId: action.leftover.createId });
     case "stock.set": return kitchen.setStock(action.ingredientId, action.amount);
     case "stock.add": return kitchen.addStock(action.ingredientId, action.amount);
     case "leftover.add": return kitchen.addLeftover({ ...action, newId: action.createId });
@@ -129,22 +129,32 @@ function apply(kitchen: KitchenScope, action: Exclude<KitchenAction, { type: "re
 
 /** One change the app queued offline. `action` is parsed one by one, so one bad change cannot block the rest. */
 export const appActionBatch = z.object({
-  actions: z.array(z.object({ clientActionId: z.string().uuid(), kitchenId: id, action: z.unknown() })).max(200)
+  actions: z.array(z.object({ clientActionId: z.string().uuid(), kitchenId: id, queuedAt: z.string().datetime({ offset: true }), action: z.unknown() })).max(200)
 });
+
+/**
+ * The server keeps the answer to each app change for 30 days. A change queued earlier than this could be one whose
+ * answer is already forgotten, so it is refused rather than applied twice. The gap allows for a phone clock that is wrong.
+ */
+const MAX_QUEUE_AGE_MS = 28 * 24 * 60 * 60 * 1000;
 
 export type AppActionResult = Readonly<{ clientActionId: string } & AppliedOutcome>;
 
 /** Applies the app's queued changes in order. Each change applies at most once, also when the app sends the batch again. */
-export async function applyAppActions(store: KitchenStore, who: Who, batch: z.infer<typeof appActionBatch>): Promise<AppActionResult[]> {
+export async function applyAppActions(store: KitchenStore, who: Who, batch: z.infer<typeof appActionBatch>, now = new Date()): Promise<AppActionResult[]> {
   await store.forgetOldAppliedActions(who);
   const results: AppActionResult[] = [];
-  for (const { clientActionId, kitchenId, action: raw } of batch.actions) {
+  for (const { clientActionId, kitchenId, queuedAt, action: raw } of batch.actions) {
     const parsed = kitchenAction.safeParse(raw);
+    const tooOld = now.getTime() - Date.parse(queuedAt) > MAX_QUEUE_AGE_MS;
     const outcome: AppliedOutcome = !parsed.success
       ? { status: "rejected", message: "The app sent a change that the server does not understand. Update the app." }
       : parsed.data.type === "recipe.copy"
         ? { status: "rejected", message: "Copy recipes to another kitchen on the web." }
-        : await store.applyOnce(who, clientActionId, kitchenId, (kitchen) => apply(kitchen, parsed.data as Exclude<KitchenAction, { type: "recipe.copy" }>));
+        : await store.applyOnce(who, clientActionId, kitchenId, (kitchen) => {
+          if (tooOld) throw new KitchenError("This change waited on the phone for more than four weeks. Make it again if you still need it.");
+          return apply(kitchen, parsed.data as Exclude<KitchenAction, { type: "recipe.copy" }>);
+        });
     results.push({ clientActionId, ...outcome });
   }
   return results;
