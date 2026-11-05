@@ -18,6 +18,8 @@ it("hides disabled kitchens and denies reads, writes, and copies to them", async
     leave: vi.fn(),
     admin: vi.fn(),
     copyRecipe: vi.fn(),
+    applyOnce: vi.fn(),
+    forgetOldAppliedActions: vi.fn(),
     readiness: vi.fn(),
     close: vi.fn(),
   };
