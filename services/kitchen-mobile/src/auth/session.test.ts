@@ -57,6 +57,18 @@ describe("session", () => {
     expect(await session.storedAccount()).toBe("b");
   });
 
+  it("signs out at once while a refresh waits for the network, and that refresh stores nothing", async () => {
+    await signInAs("a");
+    let answer: () => void = () => undefined;
+    server.refresh = () => new Promise((resolve) => { answer = () => resolve({ accessToken: "late", refreshToken: "late", issuedAt: Date.now() / 1000, expiresIn: 3600 }); });
+    const refresh = session.accessToken(session.currentSession()).catch((error: unknown) => error);
+    await session.signOut();
+    expect(await session.storedAccount()).toBeNull();
+    answer();
+    expect(await refresh).toBeInstanceOf(session.SignedOut);
+    expect(await session.storedAccount()).toBeNull();
+  });
+
   it("refuses a token for a session that ended, so a retry cannot carry one account's changes with another's token", async () => {
     await signInAs("a");
     const before = session.currentSession();
