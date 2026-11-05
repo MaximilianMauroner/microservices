@@ -69,7 +69,8 @@ export function createMarkdownShareRepository(databaseUrl: string) {
       catch (error) { if (error instanceof ShareError && error.data.code === "DOCUMENT_UNAVAILABLE") return null; throw error; }
     },
     async updates(token: string, version: number): Promise<SyncUpdate> {
-      return sql.begin(async transaction => { const tx = transaction as unknown as Sql; return update(tx, await live(tx, token), version); });
+      // One snapshot for the row and its steps, so a concurrent submit cannot compact steps between the two reads.
+      return sql.begin("isolation level repeatable read read only", async transaction => { const tx = transaction as unknown as Sql; return update(tx, await live(tx, token), version); });
     },
     async submit(token: string, input: SubmitSteps) {
       validateVersion(input.version);

@@ -8,6 +8,7 @@ export function clientAddress(request: Request) {
 /**
  * Counts requests per key in fixed windows, in this process only.
  * Returns false once a key has used `limit` requests in its current window.
+ * A full table never drops an active count, so new keys cannot reset a blocked one; they pass uncounted instead.
  */
 export function createRateLimit({ limit, windowMs }: { limit: number; windowMs: number }) {
   const windows = new Map<string, { count: number; resetAt: number }>();
@@ -18,11 +19,8 @@ export function createRateLimit({ limit, windowMs }: { limit: number; windowMs: 
       return current.count <= limit;
     }
     windows.delete(key);
-    if (windows.size >= MAX_TRACKED_KEYS) {
-      for (const [tracked, window] of windows) if (window.resetAt <= now) windows.delete(tracked);
-      if (windows.size >= MAX_TRACKED_KEYS) windows.delete(windows.keys().next().value!);
-    }
-    windows.set(key, { count: 1, resetAt: now + windowMs });
+    if (windows.size >= MAX_TRACKED_KEYS) for (const [tracked, window] of windows) if (window.resetAt <= now) windows.delete(tracked);
+    if (windows.size < MAX_TRACKED_KEYS) windows.set(key, { count: 1, resetAt: now + windowMs });
     return true;
   };
 }
