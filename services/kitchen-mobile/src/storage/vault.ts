@@ -59,7 +59,10 @@ function database(): Promise<SQLite.SQLiteDatabase> {
   return opened;
 }
 
-/** Raise this when the tables change. The vault is a copy of the server, so an older layout is dropped and filled by the next sync. */
+/**
+ * Raise this when the tables change, and add the step from the old layout to `migrate`.
+ * The snapshot can be filled again by the next sync, but the outbox holds changes the server has not seen, so a step must keep them.
+ */
 const SCHEMA_VERSION = 1;
 const SCHEMA = `
   create table if not exists settings (key text primary key, value text not null);
@@ -105,7 +108,12 @@ export const vault: Vault = {
 async function migrate(db: SQLite.SQLiteDatabase): Promise<void> {
   const version = (await db.getFirstAsync<{ user_version: number }>("PRAGMA user_version"))?.user_version;
   if (version === SCHEMA_VERSION) return;
-  await db.execAsync(`drop table if exists settings; drop table if exists outbox; drop table if exists notices; ${SCHEMA} PRAGMA user_version = ${SCHEMA_VERSION};`);
+  // Version 0: the first builds had no queue time. A queued change gets the time of this upgrade.
+  const columns = await db.getAllAsync<{ name: string }>("PRAGMA table_info(outbox)");
+  const addQueuedAt = columns.length > 0 && !columns.some((column) => column.name === "queued_at")
+    ? `alter table outbox add column queued_at text not null default '${new Date().toISOString()}';`
+    : "";
+  await db.execAsync(`${addQueuedAt} ${SCHEMA} PRAGMA user_version = ${SCHEMA_VERSION};`);
 }
 
 /** Deletes the database and its key. Sign-out calls this, so nothing of the kitchen stays on the phone. A new open waits until it is done. */
