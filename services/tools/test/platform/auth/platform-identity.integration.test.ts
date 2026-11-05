@@ -242,11 +242,19 @@ async function connectKitchenApp(cookie: string) {
   const auth = identity!.auth;
   const { clientId, redirectUri } = APP_CLIENTS.kitchen;
   const verifier = randomBytes(32).toString("base64url");
-  const redirect = await authorizeKitchenApp(cookie, verifier);
-  const callback = new URL(redirect.headers.get("location") ?? "", config.publicOrigin);
-  expect(`${callback.protocol}${callback.pathname}`, "first-party app skips the consent page").toBe(redirectUri);
+  const toConsent = await authorizeKitchenApp(cookie, verifier);
+  const consentLocation = new URL(toConsent.headers.get("location") ?? "", config.publicOrigin);
+  expect(consentLocation.pathname, await toConsent.clone().text()).toBe("/consent");
+  const consent = await auth.handler(new Request(`${config.publicOrigin}/api/auth/oauth2/consent`, {
+    method: "POST",
+    headers: { cookie, "content-type": "application/json" },
+    body: JSON.stringify({ accept: true, oauth_query: consentLocation.search.slice(1) })
+  }));
+  const consentBody = await consent.json() as { url?: string; redirect_uri?: string };
+  const callback = new URL(consentBody.url ?? consentBody.redirect_uri ?? "");
+  expect(`${callback.protocol}${callback.pathname}`).toBe(redirectUri);
   const code = callback.searchParams.get("code");
-  expect(code, await redirect.clone().text()).toBeTruthy();
+  expect(code, JSON.stringify(consentBody)).toBeTruthy();
 
   const token = await auth.handler(new Request(`${config.publicOrigin}/api/auth/oauth2/token`, {
     method: "POST",
@@ -264,7 +272,7 @@ const bearer = (accessToken: string) => new Request(`${config.publicOrigin}/api/
 describe.skipIf(!admin)("Kitchen app over OAuth", () => {
   beforeEach(async () => { await registerAppClients(admin!); });
 
-  it("signs in through PKCE without consent and opens only the Kitchen app API", async () => {
+  it("signs in through PKCE and consent and opens only the Kitchen app API", async () => {
     const { cookie } = await signIn("admin-subject", config.allowedGoogleEmail);
     const { accessToken } = await connectKitchenApp(cookie);
     expect(await identity!.resolveAppToken(bearer(accessToken), "kitchen")).toEqual({ role: "admin", subject: "admin-subject", email: config.allowedGoogleEmail });
@@ -275,6 +283,15 @@ describe.skipIf(!admin)("Kitchen app over OAuth", () => {
     const [mine, theirs] = [(await userinfo.json() as { sub?: string }).sub, (await otherInfo.json() as { sub?: string }).sub];
     expect(mine, "the app learns whose data it may keep").toBeTruthy();
     expect(theirs, "another account has another ID").not.toBe(mine);
+  });
+
+  it("asks the person again after an earlier consent, so another app with the same URL scheme gets no silent code", async () => {
+    const { cookie } = await signIn("admin-subject", config.allowedGoogleEmail);
+    await connectKitchenApp(cookie);
+    const again = await authorizeKitchenApp(cookie, randomBytes(32).toString("base64url"));
+    const location = new URL(again.headers.get("location") ?? "about:blank", config.publicOrigin);
+    expect(location.pathname, await again.clone().text()).toBe("/consent");
+    expect(location.searchParams.get("code")).toBeNull();
   });
 
   it("refuses an MCP token, a cookie, and a token of a disabled app", async () => {
