@@ -1,5 +1,5 @@
 import type { AppActionResult, KitchenSync } from "@tools-platform/service/kitchen-contract";
-import { accessToken, SignedOut, TOOLS_ORIGIN } from "../auth/session";
+import { accessToken, Offline, SignedOut, TOOLS_ORIGIN } from "../auth/session";
 import type { OutboxItem } from "./model";
 
 /** The Kitchen app API on Tools. Every call carries the app's bearer token and retries once with a fresh token after a 401. */
@@ -11,7 +11,8 @@ export type KitchenApi = {
 async function call(path: string, init: RequestInit = {}): Promise<Response> {
   let token = await accessToken();
   for (let attempt = 0; ; attempt += 1) {
-    const response = await fetch(`${TOOLS_ORIGIN}${path}`, { ...init, headers: { ...init.headers, Authorization: `Bearer ${token}`, Accept: "application/json" } });
+    const response = await fetch(`${TOOLS_ORIGIN}${path}`, { ...init, headers: { ...init.headers, Authorization: `Bearer ${token}`, Accept: "application/json" } })
+      .catch((cause: unknown) => { throw new Offline("Tools cannot be reached.", { cause }); });
     if (response.status === 401 && attempt === 0) {
       token = await accessToken(token);
       continue;

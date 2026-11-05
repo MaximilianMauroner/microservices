@@ -4,6 +4,7 @@ import { createSyncEngine } from "./engine";
 import type { KitchenSync, Notice, OutboxItem } from "./model";
 
 class SignedOut extends Error {}
+class Offline extends Error {}
 
 const empty: KitchenSync = { today: "2026-11-05", planFrom: "2026-10-05", kitchens: [] };
 
@@ -41,6 +42,7 @@ function setup(server: { push?: (items: readonly OutboxItem[]) => Promise<AppAct
     project: (snapshot, outbox) => ({ ...snapshot, today: `${snapshot.today}+${outbox.length}` }),
     newId: () => `change-${++ids}`,
     isSignedOut: (error) => error instanceof SignedOut,
+    isOffline: (error) => error instanceof Offline,
     now: () => new Date("2026-11-05T10:00:00Z")
   });
   return { engine, vault, sent };
@@ -61,7 +63,7 @@ describe("sync engine", () => {
   });
 
   it("gives a new item its ID on the phone, so later changes can name it", async () => {
-    const { engine, vault } = setup({ push: async () => { throw new TypeError("Network request failed"); } });
+    const { engine, vault } = setup({ push: async () => { throw new Offline(); } });
     await engine.change("home", addMilk);
     await engine.change("home", { type: "extra.remove", id: "x" });
     await engine.sync();
@@ -69,7 +71,7 @@ describe("sync engine", () => {
   });
 
   it("keeps changes and the last snapshot when the phone is offline", async () => {
-    const { engine, vault } = setup({ pull: async () => { throw new TypeError("Network request failed"); }, push: async () => { throw new TypeError("Network request failed"); } });
+    const { engine, vault } = setup({ pull: async () => { throw new Offline(); }, push: async () => { throw new Offline(); } });
     vault.data.snapshot = empty;
     await engine.load();
     await engine.change("home", addMilk);

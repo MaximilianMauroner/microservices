@@ -1,4 +1,4 @@
-import { AuthRequest, exchangeCodeAsync, refreshAsync, revokeAsync, type DiscoveryDocument } from "expo-auth-session";
+import { AuthRequest, exchangeCodeAsync, refreshAsync, ResponseError, revokeAsync, type DiscoveryDocument } from "expo-auth-session";
 import Constants from "expo-constants";
 import * as SecureStore from "expo-secure-store";
 
@@ -17,6 +17,9 @@ const discovery: DiscoveryDocument = {
 
 /** The server refused the refresh token. The person must sign in again; queued changes stay on the phone. */
 export class SignedOut extends Error {}
+
+/** The request got no answer from Tools. Queued changes wait for the next sync. */
+export class Offline extends Error {}
 
 /** The access token lives only in memory. The refresh token is in the Keychain, readable only while the phone is unlocked. */
 let access: { token: string; expiresAt: number } | undefined;
@@ -60,7 +63,8 @@ export function accessToken(stale?: string): Promise<string> {
         await SecureStore.deleteItemAsync(REFRESH, SECURE);
         throw new SignedOut();
       }
-      throw error;
+      if (error instanceof ResponseError) throw error;
+      throw new Offline("Tools cannot be reached.", { cause: error });
     }
     if (tokens.refreshToken) await SecureStore.setItemAsync(REFRESH, tokens.refreshToken, SECURE);
     access = { token: tokens.accessToken, expiresAt: expiry(tokens.issuedAt, tokens.expiresIn) };

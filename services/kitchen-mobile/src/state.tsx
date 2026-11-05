@@ -3,7 +3,7 @@ import type { KitchenSnapshot } from "@tools-platform/service/kitchen-contract";
 import * as Crypto from "expo-crypto";
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { AppState } from "react-native";
-import { isSignedIn, signIn as openSignIn, signOut as endSession, SignedOut } from "./auth/session";
+import { isSignedIn, Offline, signIn as openSignIn, signOut as endSession, SignedOut } from "./auth/session";
 import { wipeVault, vault } from "./storage/vault";
 import { kitchenApi } from "./sync/api";
 import { createSyncEngine, type SyncEngine, type SyncState } from "./sync/engine";
@@ -11,7 +11,7 @@ import type { QueuedAction } from "./sync/model";
 import { project } from "./sync/project";
 import { type KitchenLanguage, LanguageContext, pickLanguage } from "./ui/language";
 
-const engine: SyncEngine = createSyncEngine({ vault, api: kitchenApi, project, newId: () => Crypto.randomUUID(), isSignedOut: (error) => error instanceof SignedOut });
+const engine: SyncEngine = createSyncEngine({ vault, api: kitchenApi, project, newId: () => Crypto.randomUUID(), isSignedOut: (error) => error instanceof SignedOut, isOffline: (error) => error instanceof Offline });
 
 type Session = "loading" | "signed-out" | "signed-in";
 
