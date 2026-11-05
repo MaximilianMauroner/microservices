@@ -18,6 +18,7 @@ import {
   type RecipeUse,
   type ShoppingLine,
   type StockItem,
+  type StoredExtra,
   ingredientGroups,
   parseIngredientInput,
   parseLines,
@@ -41,6 +42,7 @@ type Who = Pick<PlatformPrincipal, "role" | "subject">;
 export type KitchenWeek = Readonly<{ start: string; entries: readonly PlanEntry[] }>;
 export type KitchenShopping = Readonly<{ start: string; lines: readonly ShoppingLine[]; extras: readonly ExtraItem[] }>;
 export type KitchenPerson = Readonly<{ id: string; email: string }>;
+export type AppliedOutcome = Readonly<{ status: "applied"; id?: string } | { status: "rejected"; message: string }>;
 
 export interface KitchenStore {
   /** Kitchens the person can open: every kitchen for the admin, their own kitchens for a member. */
@@ -53,6 +55,13 @@ export interface KitchenStore {
   admin(who: Who): KitchenAdmin;
   /** Copies a recipe and the ingredients it uses into another kitchen the person can open. */
   copyRecipe(who: Who, fromKitchenId: string, recipeId: string, toKitchenId: string): Promise<Recipe>;
+  /**
+   * Runs one change from the app at most once for this person and client action ID. A repeat returns the first outcome.
+   * The change and its record commit together. A rejected change leaves no data change.
+   */
+  applyOnce(who: Who, clientActionId: string, kitchenId: string, work: (kitchen: KitchenScope) => Promise<unknown>): Promise<AppliedOutcome>;
+  /** Forgets app changes older than 30 days. The app never resends a change that old. */
+  forgetOldAppliedActions(who: Who): Promise<void>;
   readiness(): Promise<void>;
   close(): Promise<void>;
 }
@@ -79,16 +88,18 @@ export interface KitchenScope {
    * `oldPerNew`, how much of the old unit one new unit holds. Those amounts then change to the new unit.
    * `addToRecipes` puts the ingredient at the end of each of those recipes, with its amount in the saved unit.
    */
-  saveIngredient(id: string | undefined, input: IngredientInput, options?: { oldPerNew?: number; addToRecipes?: readonly RecipeUse[] }): Promise<Ingredient>;
+  saveIngredient(id: string | undefined, input: IngredientInput, options?: { oldPerNew?: number; addToRecipes?: readonly RecipeUse[]; newId?: string }): Promise<Ingredient>;
   /** Finds an ingredient by name, ignoring case, or creates it with the given unit. */
   ingredientNamed(name: string, unit: IngredientUnit): Promise<Ingredient>;
   deleteIngredient(id: string): Promise<void>;
   recipes(): Promise<readonly Recipe[]>;
   recipe(id: string): Promise<Recipe>;
-  saveRecipe(id: string | undefined, input: RecipeInput): Promise<Recipe>;
+  saveRecipe(id: string | undefined, input: RecipeInput, newId?: string): Promise<Recipe>;
   deleteRecipe(id: string): Promise<void>;
   week(start: string): Promise<KitchenWeek>;
-  plan(input: { day: string; meal: Meal; recipeId: string; servings: number }): Promise<PlanEntry>;
+  /** Every planned meal on this day or later. */
+  planFrom(day: string): Promise<readonly PlanEntry[]>;
+  plan(input: { day: string; meal: Meal; recipeId: string; servings: number; newId?: string }): Promise<PlanEntry>;
   updatePlan(id: string, input: { day: string; meal: Meal; servings: number }): Promise<PlanEntry>;
   removePlan(id: string): Promise<void>;
   /**
@@ -105,12 +116,14 @@ export interface KitchenScope {
   /** Adds a bought amount to what is at home. */
   addStock(ingredientId: string, amount: number): Promise<void>;
   leftovers(): Promise<readonly Leftover[]>;
-  addLeftover(input: { name: string; servings: number; useBy: string }): Promise<Leftover>;
+  addLeftover(input: { name: string; servings: number; useBy: string; newId?: string }): Promise<Leftover>;
   /** Eats some servings of a leftover. The leftover goes away when none remain. */
   eatLeftover(id: string, servings: number): Promise<void>;
   removeLeftover(id: string): Promise<void>;
   shopping(start: string): Promise<KitchenShopping>;
-  addExtra(name: string, everyWeek?: boolean): Promise<ExtraItem>;
+  /** Extra items with the week each every-week item is bought for, so a client can show any week. */
+  storedExtras(): Promise<readonly StoredExtra[]>;
+  addExtra(name: string, everyWeek?: boolean, newId?: string): Promise<ExtraItem>;
   /** Marks an every-week item as bought, or not bought, for the week that starts on `week`. */
   markExtra(id: string, week: string, bought: boolean): Promise<void>;
   removeExtra(id: string): Promise<void>;
@@ -269,6 +282,31 @@ export function kitchenStore(sql: Sql): KitchenStore {
         return into.saveRecipe(undefined, { ...recipe, name, lines });
       });
     },
+    async applyOnce(who, clientActionId, kitchenId, work) {
+      const stored = async (db: Db) => (await db<{ outcome: AppliedOutcome }[]>`select outcome from tools.kitchen_applied_actions
+        where subject = ${who.subject} and client_action_id = ${clientActionId}`)[0]?.outcome;
+      try {
+        return await sql.begin(async (tx) => {
+          const [claimed] = await tx`insert into tools.kitchen_applied_actions (subject, client_action_id, outcome, applied_at)
+            values (${who.subject}, ${clientActionId}, ${tx.json({ status: "applied" })}, now()) on conflict do nothing returning subject`;
+          if (!claimed) return (await stored(tx))!;
+          const result = await work(scope(tx, await openKitchen(who, kitchenId, tx)));
+          const outcome: AppliedOutcome = result && typeof result === "object" && "id" in result ? { status: "applied", id: String(result.id) } : { status: "applied" };
+          await tx`update tools.kitchen_applied_actions set outcome = ${tx.json(outcome)} where subject = ${who.subject} and client_action_id = ${clientActionId}`;
+          return outcome;
+        });
+      } catch (error) {
+        const message = error instanceof KitchenError ? error.message : clashMessage(error);
+        if (!message) throw error;
+        const outcome: AppliedOutcome = { status: "rejected", message };
+        await sql`insert into tools.kitchen_applied_actions (subject, client_action_id, outcome, applied_at)
+          values (${who.subject}, ${clientActionId}, ${sql.json(outcome)}, now()) on conflict do nothing`;
+        return (await stored(sql)) ?? outcome;
+      }
+    },
+    async forgetOldAppliedActions(who) {
+      await sql`delete from tools.kitchen_applied_actions where subject = ${who.subject} and applied_at < now() - interval '30 days'`;
+    },
     async readiness() {
       await sql`select 1 from tools.kitchen_extras limit 1`;
     },
@@ -403,7 +441,7 @@ function scope(sql: Db, kitchen: Kitchen): KitchenScope {
       const rows = await sql<IngredientRow[]>`${ingredientSelect(sql, k)} group by i.id order by lower(i.name)`;
       return rows.map(ingredientFromRow);
     },
-    async saveIngredient(id, raw, { oldPerNew, addToRecipes = [] } = {}) {
+    async saveIngredient(id, raw, { oldPerNew, addToRecipes = [], newId } = {}) {
       const input = parseIngredientInput(raw);
       const uses = parseRecipeUses(addToRecipes);
       return begin(async (tx) => {
@@ -419,7 +457,7 @@ function scope(sql: Db, kitchen: Kitchen): KitchenScope {
           await putInRecipes(tx, id, input.name, uses);
           return ingredient(tx, id);
         }
-        const created = randomUUID();
+        const created = newId ?? randomUUID();
         await tx`insert into tools.kitchen_ingredients (id, kitchen_id, name, unit, section, other_groups, kcal, protein, carbs, fat, notes, updated_at)
           values (${created}, ${k}, ${input.name}, ${input.unit}, ${input.section}, ${[...input.otherGroups]}::text[], ${n.kcal}, ${n.protein}, ${n.carbs}, ${n.fat}, ${input.notes}, now())`;
         for (const group of ingredientGroups(input)) await rememberGroup(tx, group);
@@ -441,13 +479,13 @@ function scope(sql: Db, kitchen: Kitchen): KitchenScope {
     },
     recipes: () => recipes(sql),
     recipe: (id) => recipe(sql, id),
-    async saveRecipe(id, raw) {
+    async saveRecipe(id, raw, newId) {
       const input = parseRecipeInput(raw);
       return begin(async (tx) => {
         const [clash] = await tx<{ id: string; name: string }[]>`select id, name from tools.kitchen_recipes where kitchen_id = ${k} and lower(name) = lower(${input.name})`;
         if (clash && clash.id !== id) throw new KitchenError(`${clash.name} already exists in this kitchen.`, "conflict");
         for (const line of input.lines) await ingredient(tx, line.ingredientId);
-        const recipeId = id ?? randomUUID();
+        const recipeId = id ?? newId ?? randomUUID();
         if (id) {
           await recipe(tx, id);
           await tx`update tools.kitchen_recipes set name = ${input.name}, servings = ${input.servings}, minutes = ${input.minutes}, instructions = ${input.instructions}, updated_at = now()
@@ -474,9 +512,14 @@ function scope(sql: Db, kitchen: Kitchen): KitchenScope {
         order by e.day, array_position(array['breakfast', 'lunch', 'dinner', 'snack'], e.meal), e.created_at`;
       return { start, entries: await withLines(sql, rows) };
     },
+    async planFrom(day) {
+      const rows = await sql<PlanRow[]>`${planSelect(sql, k)} and e.day >= ${parseDay(day)}
+        order by e.day, array_position(array['breakfast', 'lunch', 'dinner', 'snack'], e.meal), e.created_at`;
+      return withLines(sql, rows);
+    },
     async plan(input) {
       await recipe(sql, input.recipeId);
-      const id = randomUUID();
+      const id = input.newId ?? randomUUID();
       await sql`insert into tools.kitchen_plan_entries (id, kitchen_id, day, meal, recipe_id, servings, created_at)
         values (${id}, ${k}, ${parseDay(input.day)}, ${parseMeal(input.meal)}, ${input.recipeId}, ${parseServings(input.servings)}, now())`;
       return entry(sql, id);
@@ -544,7 +587,7 @@ function scope(sql: Db, kitchen: Kitchen): KitchenScope {
       return rows.map((row) => ({ id: row.id, name: row.name, servings: row.servings, useBy: row.use_by }));
     },
     async addLeftover(input) {
-      const id = randomUUID();
+      const id = input.newId ?? randomUUID();
       const name = requiredName(input.name, "leftover");
       const servings = parseLeftoverServings(input.servings);
       const useBy = parseDay(input.useBy);
@@ -577,8 +620,10 @@ function scope(sql: Db, kitchen: Kitchen): KitchenScope {
         extras: [...extras]
       };
     },
-    async addExtra(name, everyWeek = false) {
-      const id = randomUUID();
+    storedExtras: () => sql<StoredExtra[]>`select id, name, every_week "everyWeek", bought_week::text "boughtWeek"
+      from tools.kitchen_extras where kitchen_id = ${k} order by created_at`,
+    async addExtra(name, everyWeek = false, newId) {
+      const id = newId ?? randomUUID();
       const item = requiredName(name, "item");
       await sql`insert into tools.kitchen_extras (id, kitchen_id, name, every_week, created_at) values (${id}, ${k}, ${item}, ${everyWeek}, now())`;
       return { id, name: item, everyWeek, bought: false };
@@ -636,6 +681,12 @@ function ingredientFromRow(row: IngredientRow): Ingredient {
 
 function planFromRow(row: PlanRow): Omit<PlanEntry, "lines"> {
   return { id: row.id, day: row.day, meal: row.meal, recipeId: row.recipe_id, recipe: row.recipe, servings: row.servings, cooked: row.cooked_at !== null, custom: row.custom_servings !== null };
+}
+
+/** A change that met a newer change from someone else: a reused ID, or an item that is gone. The app shows it; it is not a server fault. */
+function clashMessage(error: unknown): string | undefined {
+  const code = (error as { code?: unknown } | null)?.code;
+  return code === "23505" || code === "23503" ? "This change no longer fits the kitchen. Someone else changed the same thing." : undefined;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

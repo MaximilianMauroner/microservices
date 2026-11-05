@@ -675,6 +675,14 @@ export const kitchenExtras = toolsSchema.table("kitchen_extras", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
 }, (table) => [index("kitchen_extras_kitchen_idx").on(table.kitchenId, table.createdAt)]);
 
+/** Each change the Kitchen app sent, so a resent batch applies it once. Rows older than 30 days are removed. */
+export const kitchenAppliedActions = toolsSchema.table("kitchen_applied_actions", {
+  subject: text("subject").notNull(),
+  clientActionId: uuid("client_action_id").notNull(),
+  outcome: jsonb("outcome").notNull(),
+  appliedAt: timestamp("applied_at", { withTimezone: true }).notNull(),
+}, (table) => [primaryKey({ columns: [table.subject, table.clientActionId] }), index("kitchen_applied_actions_applied_idx").on(table.appliedAt)]);
+
 /** Bug reports and feature requests about Tools itself, for the developer. Not the Feedback product. */
 export const devFeedback = toolsSchema.table("dev_feedback", {
   id: uuid("id").primaryKey(),
