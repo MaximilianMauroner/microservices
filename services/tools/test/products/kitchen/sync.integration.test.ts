@@ -159,6 +159,7 @@ describe.skipIf(!sql)("Kitchen app sync", () => {
     const { store, kitchen } = await homeWithFriend();
     const post = (body: unknown) => handleKitchenActions(new Request("https://tools.example.test/api/kitchen/actions", { method: "POST", body: JSON.stringify(body) }), async () => friend, store);
     expect((await post({ actions: "no" })).status).toBe(400);
+    expect((await post({ actions: [], padding: "x".repeat(1024 * 1024) })).status, "an oversized batch is refused before it is parsed").toBe(413);
     const ok = await post({ actions: [{ clientActionId: randomUUID(), kitchenId: kitchen.kitchen.id, queuedAt, action: { type: "leftover.add", name: "Soup", servings: 2, useBy: "2026-11-06" } }] });
     expect(ok.status).toBe(200);
     expect(await ok.json()).toEqual({ results: [expect.objectContaining({ status: "applied" })] });
