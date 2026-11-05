@@ -269,6 +269,12 @@ describe.skipIf(!admin)("Kitchen app over OAuth", () => {
     const { accessToken } = await connectKitchenApp(cookie);
     expect(await identity!.resolveAppToken(bearer(accessToken), "kitchen")).toEqual({ role: "admin", subject: "admin-subject", email: config.allowedGoogleEmail });
     expect((await callWhoami({ authorization: `Bearer ${accessToken}` })).status, "MCP refuses an app token").toBe(401);
+    const userinfo = await identity!.auth.handler(new Request(`${config.publicOrigin}/api/auth/oauth2/userinfo`, { headers: { authorization: `Bearer ${accessToken}` } }));
+    const other = await connectKitchenApp((await signIn("friend-subject", "friend@example.test")).cookie);
+    const otherInfo = await identity!.auth.handler(new Request(`${config.publicOrigin}/api/auth/oauth2/userinfo`, { headers: { authorization: `Bearer ${other.accessToken}` } }));
+    const [mine, theirs] = [(await userinfo.json() as { sub?: string }).sub, (await otherInfo.json() as { sub?: string }).sub];
+    expect(mine, "the app learns whose data it may keep").toBeTruthy();
+    expect(theirs, "another account has another ID").not.toBe(mine);
   });
 
   it("refuses an MCP token, a cookie, and a token of a disabled app", async () => {

@@ -110,7 +110,7 @@ export interface KitchenScope {
   /** Lets a planned meal use its recipe's ingredients again. */
   resetPlan(id: string): Promise<PlanEntry>;
   /** Marks a meal as cooked, takes its ingredients out of stock, and keeps any leftover servings. */
-  cook(id: string, leftover: { servings: number; useBy: string } | undefined): Promise<void>;
+  cook(id: string, leftover: { servings: number; useBy: string; newId?: string } | undefined): Promise<void>;
   stock(): Promise<readonly StockItem[]>;
   setStock(ingredientId: string, amount: number): Promise<void>;
   /** Adds a bought amount to what is at home. */
@@ -596,11 +596,15 @@ function scope(sql: Db, kitchen: Kitchen): KitchenScope {
     },
     async eatLeftover(id, servings) {
       const eaten = parseLeftoverServings(servings);
+      // One statement, because the servings check refuses a row that reaches zero before a later delete could run.
       const rows = isUuid(id)
-        ? await sql`update tools.kitchen_leftovers set servings = servings - ${eaten} where kitchen_id = ${k} and id = ${id} returning servings`
+        ? await sql`with gone as (
+            delete from tools.kitchen_leftovers where kitchen_id = ${k} and id = ${id} and servings - ${eaten} <= 0.001 returning id
+          ), kept as (
+            update tools.kitchen_leftovers set servings = servings - ${eaten} where kitchen_id = ${k} and id = ${id} and servings - ${eaten} > 0.001 returning id
+          ) select id from gone union all select id from kept`
         : [];
       if (!rows.length) throw new KitchenError("This leftover does not exist.", "not_found");
-      await sql`delete from tools.kitchen_leftovers where kitchen_id = ${k} and id = ${id} and servings <= 0.001`;
     },
     async removeLeftover(id) {
       if (isUuid(id)) await sql`delete from tools.kitchen_leftovers where kitchen_id = ${k} and id = ${id}`;
