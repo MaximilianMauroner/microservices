@@ -30,6 +30,9 @@ let access: { token: string; expiresAt: number } | undefined;
 let refreshing: Promise<string> | undefined;
 // Sign-in and sign-out raise the generation, so a refresh that started before them cannot store its old tokens.
 let generation = 0;
+// The last Keychain write of a refresh. A refresh checks the generation just before it starts the write, so a write that
+// started before a session change must land before that change writes or deletes the session.
+let writing: Promise<void> = Promise.resolve();
 
 async function stored(): Promise<Stored | null> {
   const raw = await SecureStore.getItemAsync(SESSION, SECURE);
@@ -97,7 +100,7 @@ export function accessToken(session: number, stale?: string): Promise<string> {
   if (session !== generation) return Promise.reject(new SignedOut());
   if (access && access.token !== stale && access.expiresAt > Date.now() + 60_000) return Promise.resolve(access.token);
   const mine = generation;
-  refreshing ??= (async () => {
+  const refresh: Promise<string> = refreshing ??= (async () => {
     const saved = await stored();
     if (!saved) throw new SignedOut();
     let tokens;
@@ -106,19 +109,19 @@ export function accessToken(session: number, stale?: string): Promise<string> {
     } catch (error) {
       if (mine !== generation) throw new SignedOut();
       if (isRefused(error)) {
-        await SecureStore.deleteItemAsync(SESSION, SECURE);
+        await track(SecureStore.deleteItemAsync(SESSION, SECURE));
         throw new SignedOut();
       }
       if (error instanceof ResponseError) throw error;
       throw new Offline("Tools cannot be reached.", { cause: error });
     }
     if (mine !== generation) throw new SignedOut();
-    if (tokens.refreshToken) await SecureStore.setItemAsync(SESSION, JSON.stringify({ account: saved.account, refreshToken: tokens.refreshToken } satisfies Stored), SECURE);
+    if (tokens.refreshToken) await track(SecureStore.setItemAsync(SESSION, JSON.stringify({ account: saved.account, refreshToken: tokens.refreshToken } satisfies Stored), SECURE));
     if (mine !== generation) throw new SignedOut();
     access = { token: tokens.accessToken, expiresAt: expiry(tokens.issuedAt, tokens.expiresIn) };
     return tokens.accessToken;
-  })().finally(() => { refreshing = undefined; });
-  return refreshing;
+  })().finally(() => { if (refreshing === refresh) refreshing = undefined; });
+  return refresh;
 }
 
 /** Revokes the refresh token when the server can be reached, and forgets both tokens. */
@@ -131,13 +134,18 @@ export async function signOut(): Promise<void> {
   if (session) await revokeAsync({ token: session.refreshToken, tokenTypeHint: TokenTypeHint.RefreshToken, clientId: CLIENT_ID }, discovery).catch(() => undefined);
 }
 
+function track(write: Promise<void>): Promise<void> {
+  writing = write.catch(() => undefined);
+  return write;
+}
+
 /**
- * Waits for a refresh that started before the generation changed. It can be inside a Keychain write, and its write must land
- * before the caller writes or deletes the session, or it would bring back the old session.
+ * Lets the next token request start a new refresh, and waits for a Keychain write of an older refresh. It does not wait for
+ * the older refresh's network request: after it, that refresh sees the new generation and writes nothing.
  */
 async function settled(): Promise<void> {
-  await refreshing?.catch(() => undefined);
   refreshing = undefined;
+  await writing;
 }
 
 function expiry(issuedAt: number, expiresIn: number | undefined): number {
