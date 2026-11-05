@@ -662,7 +662,7 @@ async function discoverWebsites(
       }
 
       return {
-        faviconUrl: buildWebsiteFaviconUrl(result.faviconPath, new URL(result.path, publicUrl).toString()),
+        faviconUrl: buildWebsiteFaviconUrl(result.faviconPath, onOrigin(result.path, publicUrl)),
         kind: result.kind,
         port,
         processes: uniqueProcesses(listeners.flatMap((listener) => listener.processes)),
@@ -671,7 +671,7 @@ async function discoverWebsites(
           : SCOPE_LABELS["tailscale-only"],
         status: result.status,
         title: result.title || `${result.kind === "api" ? "API" : "Website"} on port ${port}`,
-        url: new URL(result.path, publicUrl).toString()
+        url: onOrigin(result.path, publicUrl)
       };
     })
   );
@@ -697,7 +697,7 @@ async function discoverWebsites(
                 .filter((listener) => listener.protocol === "tcp" && listener.port === targetPort)
                 .flatMap((listener) => listener.processes)
             );
-        const websiteUrl = new URL(result.path, route.publicUrl).toString();
+        const websiteUrl = onOrigin(result.path, route.publicUrl);
         return {
           faviconUrl: buildWebsiteFaviconUrl(result.faviconPath, websiteUrl),
           kind: result.kind,
@@ -851,6 +851,15 @@ function getApiTitle(value: unknown) {
   }
 
   return "";
+}
+
+/** Puts a probed path on the listener's own origin. Resolving it as a URL would let "//other.example/" change the host. */
+function onOrigin(path: string, publicUrl: string) {
+  const url = new URL(publicUrl);
+  const query = path.indexOf("?");
+  url.pathname = query === -1 ? path : path.slice(0, query);
+  url.search = query === -1 ? "" : path.slice(query);
+  return url.toString();
 }
 
 function buildWebsiteFaviconUrl(faviconPath: string | undefined, websiteUrl: string) {
