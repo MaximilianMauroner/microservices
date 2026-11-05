@@ -1,6 +1,6 @@
 import { KitchenScreen } from "../../ui/page";
-import { Screen, T } from "../../ui/kit";
+import { Pantry } from "../../ui/home/page";
 
 export default function HomePage() {
-  return <KitchenScreen page="home">{({ kitchen }) => <Screen title="HomePage"><T>{kitchen.kitchen.name}</T></Screen>}</KitchenScreen>;
+  return <KitchenScreen page="home">{(data) => <Pantry key={data.kitchen.kitchen.id} {...data} />}</KitchenScreen>;
 }

@@ -1,6 +1,8 @@
 import { KitchenScreen } from "../../ui/page";
-import { Screen, T } from "../../ui/kit";
+import { Shopping } from "../../ui/shopping/page";
 
 export default function ShoppingPage() {
-  return <KitchenScreen page="shopping">{({ kitchen }) => <Screen title="ShoppingPage"><T>{kitchen.kitchen.name}</T></Screen>}</KitchenScreen>;
+  return (
+    <KitchenScreen page="shopping">{(data) => <Shopping key={data.kitchen.kitchen.id} {...data} />}</KitchenScreen>
+  );
 }

@@ -1,0 +1,144 @@
+import { describe, expect, it } from "vitest";
+import type { KitchenSnapshot, KitchenSync, PlanEntry } from "@tools-platform/service/kitchen-contract";
+import type { QueuedAction } from "../../sync/model";
+import { project } from "../../sync/project";
+import { shoppingView } from "./view";
+
+const start = "2026-11-02";
+const line = { ingredientId: "rice", ingredient: "Rice", unit: "g" as const, amount: 150, note: "" };
+function meal(day: string, overrides: Partial<PlanEntry> = {}): PlanEntry {
+  return {
+    id: day,
+    day,
+    meal: "dinner",
+    recipeId: "bowl",
+    recipe: "Rice bowl",
+    servings: 2,
+    cooked: false,
+    custom: false,
+    lines: [line],
+    ...overrides,
+  };
+}
+function kitchen(): KitchenSnapshot {
+  return {
+    kitchen: { id: "home", name: "Home", mcpEnabled: false, hidden: false, members: [], groups: ["Grains"] },
+    ingredients: [
+      {
+        id: "rice",
+        name: "Rice",
+        unit: "g",
+        section: "Grains",
+        otherGroups: [],
+        nutrition: { kcal: null, protein: null, carbs: null, fat: null },
+        notes: "",
+        recipeCount: 1,
+      },
+    ],
+    recipes: [
+      {
+        id: "bowl",
+        name: "Rice bowl",
+        servings: 2,
+        minutes: null,
+        instructions: "",
+        lines: [line],
+        updatedAt: "2026-11-02T00:00:00Z",
+      },
+    ],
+    plan: [meal("2026-11-05")],
+    stock: [],
+    leftovers: [],
+    extras: [],
+  };
+}
+function apply(snapshot: KitchenSnapshot, actions: QueuedAction[]): KitchenSnapshot {
+  const sync: KitchenSync = { today: "2026-11-05", planFrom: "2026-10-05", kitchens: [snapshot] };
+  return project(
+    sync,
+    actions.map((action, seq) => ({ seq, clientActionId: String(seq), kitchenId: "home", action })),
+  ).kitchens[0]!;
+}
+
+describe("the local shopping list", () => {
+  it("uses Monday through Sunday of the shown week and counts only meals still to cook", () => {
+    const snapshot = {
+      ...kitchen(),
+      plan: [
+        meal("2026-11-01"),
+        meal("2026-11-02"),
+        meal("2026-11-08"),
+        meal("2026-11-09"),
+        meal("2026-11-04", { cooked: true }),
+      ],
+    };
+    const view = shoppingView(snapshot, "2026-11-08");
+    expect(view.start).toBe(start);
+    expect(view.plannedMeals).toBe(2);
+    expect(view.toBuy).toMatchObject([{ ingredient: "Rice", needed: 300, toBuy: 300, recipes: ["Rice bowl"] }]);
+    expect(view.count).toBe(1);
+  });
+
+  it("buys only what is missing and moves it to Already at home after the queued purchase", () => {
+    const snapshot = {
+      ...kitchen(),
+      stock: [{ ingredientId: "rice", ingredient: "Rice", unit: "g" as const, section: "Grains", amount: 50 }],
+    };
+    const before = shoppingView(snapshot, start);
+    expect(before.toBuy).toMatchObject([{ inStock: 50, toBuy: 100 }]);
+    const bought = apply(snapshot, [{ type: "stock.add", ingredientId: "rice", amount: before.toBuy[0]!.toBuy }]);
+    const after = shoppingView(bought, start);
+    expect(after.toBuy).toEqual([]);
+    expect(after.covered).toMatchObject([{ ingredient: "Rice", inStock: 150, needed: 150 }]);
+    expect(after.count).toBe(0);
+    expect(
+      shoppingView(apply(bought, [{ type: "stock.set", ingredientId: "rice", amount: 50 }]), start).toBuy[0]?.toBuy,
+    ).toBe(100);
+  });
+
+  it("uses a meal's custom amounts and removes its demand after cooking", () => {
+    const snapshot = { ...kitchen(), plan: [meal("2026-11-05", { custom: true, lines: [{ ...line, amount: 240 }] })] };
+    expect(shoppingView(snapshot, start).toBuy[0]?.needed).toBe(240);
+    const cooked = apply(snapshot, [{ type: "plan.cook", id: "2026-11-05" }]);
+    expect(shoppingView(cooked, start)).toMatchObject({ toBuy: [], covered: [], count: 0, plannedMeals: 0 });
+  });
+
+  it("checks a weekly extra for the shown week and brings it back the next week", () => {
+    const snapshot = {
+      ...kitchen(),
+      plan: [],
+      extras: [
+        { id: "coffee", name: "Coffee", everyWeek: true, boughtWeek: start },
+        { id: "soap", name: "Soap", everyWeek: true, boughtWeek: "2026-10-26" },
+        { id: "paper", name: "Paper", everyWeek: false, boughtWeek: start },
+      ],
+    };
+    const view = shoppingView(snapshot, start);
+    expect(view.weekly).toMatchObject([
+      { name: "Coffee", bought: true },
+      { name: "Soap", bought: false },
+    ]);
+    expect(view.once).toMatchObject([{ name: "Paper", bought: false }]);
+    expect(view.count).toBe(2);
+    expect(shoppingView(snapshot, "2026-11-09").count).toBe(3);
+    const unchecked = apply(snapshot, [{ type: "extra.mark", id: "coffee", week: start, bought: false }]);
+    expect(shoppingView(unchecked, start).weekly[0]?.bought).toBe(false);
+    const checked = apply(unchecked, [{ type: "extra.mark", id: "coffee", week: start, bought: true }]);
+    expect(shoppingView(checked, start).weekly[0]?.bought).toBe(true);
+  });
+
+  it("removes one-time purchases and stops weekly extras through queued changes", () => {
+    const snapshot = {
+      ...kitchen(),
+      plan: [],
+      extras: [
+        { id: "paper", name: "Paper", everyWeek: false, boughtWeek: null },
+        { id: "coffee", name: "Coffee", everyWeek: true, boughtWeek: null },
+      ],
+    };
+    const bought = apply(snapshot, [{ type: "extra.remove", id: "paper" }]);
+    expect(shoppingView(bought, start)).toMatchObject({ once: [], count: 1 });
+    const stopped = apply(bought, [{ type: "extra.remove", id: "coffee" }]);
+    expect(shoppingView(stopped, "2026-11-09")).toMatchObject({ weekly: [], count: 0 });
+  });
+});
