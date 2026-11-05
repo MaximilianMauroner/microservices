@@ -67,7 +67,7 @@ export async function signIn(): Promise<NewSession | null> {
     account,
     async install() {
       generation += 1;
-      refreshing = undefined;
+      await settled();
       access = { token, expiresAt };
       await SecureStore.setItemAsync(SESSION, JSON.stringify({ account, refreshToken } satisfies Stored), SECURE);
     }
@@ -84,16 +84,25 @@ async function accountOf(token: string): Promise<string> {
   return sub;
 }
 
-/** A valid access token. It refreshes when the token is about to expire, or when `stale` names a token the server refused. */
-export function accessToken(stale?: string): Promise<string> {
+/** Names the current session. A caller passes it to `accessToken`, so it never gets a token of a later session. */
+export function currentSession(): number {
+  return generation;
+}
+
+/**
+ * A valid access token of `session`. It refreshes when the token is about to expire, or when `stale` names a token the server refused.
+ * It throws SignedOut when another session has started since `session`.
+ */
+export function accessToken(session: number, stale?: string): Promise<string> {
+  if (session !== generation) return Promise.reject(new SignedOut());
   if (access && access.token !== stale && access.expiresAt > Date.now() + 60_000) return Promise.resolve(access.token);
   const mine = generation;
   refreshing ??= (async () => {
-    const session = await stored();
-    if (!session) throw new SignedOut();
+    const saved = await stored();
+    if (!saved) throw new SignedOut();
     let tokens;
     try {
-      tokens = await refreshAsync({ clientId: CLIENT_ID, refreshToken: session.refreshToken }, discovery);
+      tokens = await refreshAsync({ clientId: CLIENT_ID, refreshToken: saved.refreshToken }, discovery);
     } catch (error) {
       if (mine !== generation) throw new SignedOut();
       if (isRefused(error)) {
@@ -104,7 +113,8 @@ export function accessToken(stale?: string): Promise<string> {
       throw new Offline("Tools cannot be reached.", { cause: error });
     }
     if (mine !== generation) throw new SignedOut();
-    if (tokens.refreshToken) await SecureStore.setItemAsync(SESSION, JSON.stringify({ account: session.account, refreshToken: tokens.refreshToken } satisfies Stored), SECURE);
+    if (tokens.refreshToken) await SecureStore.setItemAsync(SESSION, JSON.stringify({ account: saved.account, refreshToken: tokens.refreshToken } satisfies Stored), SECURE);
+    if (mine !== generation) throw new SignedOut();
     access = { token: tokens.accessToken, expiresAt: expiry(tokens.issuedAt, tokens.expiresIn) };
     return tokens.accessToken;
   })().finally(() => { refreshing = undefined; });
@@ -115,10 +125,19 @@ export function accessToken(stale?: string): Promise<string> {
 export async function signOut(): Promise<void> {
   generation += 1;
   access = undefined;
-  refreshing = undefined;
+  await settled();
   const session = await stored();
   await SecureStore.deleteItemAsync(SESSION, SECURE);
   if (session) await revokeAsync({ token: session.refreshToken, tokenTypeHint: TokenTypeHint.RefreshToken, clientId: CLIENT_ID }, discovery).catch(() => undefined);
+}
+
+/**
+ * Waits for a refresh that started before the generation changed. It can be inside a Keychain write, and its write must land
+ * before the caller writes or deletes the session, or it would bring back the old session.
+ */
+async function settled(): Promise<void> {
+  await refreshing?.catch(() => undefined);
+  refreshing = undefined;
 }
 
 function expiry(issuedAt: number, expiresIn: number | undefined): number {
