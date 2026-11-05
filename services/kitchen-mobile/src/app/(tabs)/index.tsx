@@ -1,6 +1,6 @@
 import { KitchenScreen } from "../../ui/page";
-import { Screen, T } from "../../ui/kit";
+import { Week } from "../../ui/week/page";
 
 export default function WeekPage() {
-  return <KitchenScreen page="week">{({ kitchen }) => <Screen title="WeekPage"><T>{kitchen.kitchen.name}</T></Screen>}</KitchenScreen>;
+  return <KitchenScreen page="week">{(data) => <Week key={data.kitchen.kitchen.id} data={data} />}</KitchenScreen>;
 }
