@@ -27,6 +27,10 @@ Use `BIND_HOST=0.0.0.0` only when LAN exposure is intentional.
 
 The dashboard has no application-level auth. It is intended to rely on binding to Tailscale plus tailnet ACLs as the access-control boundary. The page exposes hostname, Tailscale addresses, listening ports, and process names/PIDs when available.
 
+The service answers a request only when its `Host` names the bind host, a Tailscale address, the Tailscale DNS name, `127.0.0.1`, `localhost`, or `[::1]`, with no port or the listen port. Other `Host` values get `421`. This blocks DNS rebinding from web pages. With `BIND_HOST=0.0.0.0`, LAN addresses are not accepted as `Host` values.
+
+Requests share one snapshot for 5 seconds. Website probes follow redirects only within the probed origin, and a website favicon must be on that origin.
+
 Process details come from `ss -p`; some listeners may show no process owner unless the service has sufficient OS permissions.
 
 ## Systemd

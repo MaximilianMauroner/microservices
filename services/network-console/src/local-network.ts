@@ -98,6 +98,7 @@ export type NetworkSnapshot = {
 };
 
 export type LocalNetworkDashboardOptions = {
+  bindHost?: string;
   currentUser?: string;
   dashboardPort?: number;
   hostname?: string;
@@ -111,6 +112,9 @@ const COMMAND_MAX_BUFFER_BYTES = 1_000_000;
 const SS_ARGS = ["-H", "-lntup"] as const;
 const COMMON_HTTP_PORTS = new Set([80, 3000, 3001, 4173, 5000, 5173, 8000, 8080, 8787]);
 const WEBSITE_PROBE_TIMEOUT_MS = 2_500;
+const WEBSITE_PROBE_MAX_REDIRECTS = 5;
+const SNAPSHOT_TTL_MS = 5_000;
+const LOOPBACK_HOSTS = ["127.0.0.1", "localhost", "[::1]"];
 const WEBSITE_TITLE_READ_LIMIT = 64 * 1024;
 const TAILSCALE_IPV6_PREFIX = "fd7a:115c:a1e0:";
 const FAVICON_PATH = new URL("../assets/favicon.png", import.meta.url);
@@ -147,6 +151,17 @@ const SCOPE_LABELS: Record<PortScope, string> = {
 
 export function createLocalNetworkDashboardApp(options: LocalNetworkDashboardOptions = {}) {
   const app = new Hono();
+  const dashboardPort = options.dashboardPort ?? 80;
+  const getSnapshot = cacheSnapshot(options);
+
+  app.use(async (context, next) => {
+    const { hostname, port } = new URL(context.req.url);
+    const portMatches = port === "" || port === String(dashboardPort);
+    if (!portMatches || !(await isDashboardHost(hostname, options.bindHost, getSnapshot))) {
+      return context.text("Misdirected Request", 421);
+    }
+    await next();
+  });
 
   app.get("/health", (context) => context.json({ ok: true }));
 
@@ -157,14 +172,9 @@ export function createLocalNetworkDashboardApp(options: LocalNetworkDashboardOpt
     })
   );
 
-  app.get("/api/ports", async (context) =>
-    context.json(await collectNetworkSnapshot(options))
-  );
+  app.get("/api/ports", async (context) => context.json(await getSnapshot()));
 
-  app.get("/", async (context) => {
-    const snapshot = await collectNetworkSnapshot(options);
-    return context.html(renderDashboard(snapshot, options.dashboardPort ?? 80));
-  });
+  app.get("/", async (context) => context.html(renderDashboard(await getSnapshot(), dashboardPort)));
 
   app.onError((error, context) => {
     console.error(error);
@@ -172,6 +182,47 @@ export function createLocalNetworkDashboardApp(options: LocalNetworkDashboardOpt
   });
 
   return app;
+}
+
+function cacheSnapshot(options: LocalNetworkDashboardOptions) {
+  const now = options.now ?? (() => new Date());
+  let entry: { expiresAt: number; snapshot: Promise<NetworkSnapshot> } | undefined;
+
+  return () => {
+    if (entry && now().getTime() < entry.expiresAt) {
+      return entry.snapshot;
+    }
+
+    const current = { expiresAt: Infinity, snapshot: collectNetworkSnapshot(options) };
+    entry = current;
+    current.snapshot.then(
+      () => {
+        current.expiresAt = now().getTime() + SNAPSHOT_TTL_MS;
+      },
+      () => {
+        if (entry === current) {
+          entry = undefined;
+        }
+      }
+    );
+    return current.snapshot;
+  };
+}
+
+async function isDashboardHost(
+  hostname: string,
+  bindHost: string | undefined,
+  getSnapshot: () => Promise<NetworkSnapshot>
+) {
+  const toHostname = (host: string) => formatUrlHost(host).toLowerCase();
+  if ([...LOOPBACK_HOSTS, ...(bindHost ? [bindHost] : [])].map(toHostname).includes(hostname)) {
+    return true;
+  }
+
+  const { tailscale } = await getSnapshot();
+  return [...tailscale.ipv4, ...tailscale.ipv6, ...(tailscale.dnsName ? [tailscale.dnsName] : [])]
+    .map(toHostname)
+    .includes(hostname);
 }
 
 export async function collectNetworkSnapshot(
@@ -717,22 +768,20 @@ export async function probeWebsite(
   candidate: WebsiteProbeCandidate
 ): Promise<WebsiteProbeResult | null> {
   try {
-    const response = await fetch(candidate.probeUrl, {
-      headers: {
-        accept: "text/html,application/xhtml+xml,application/json"
-      },
-      redirect: "follow",
-      signal: AbortSignal.timeout(WEBSITE_PROBE_TIMEOUT_MS)
-    });
+    const fetched = await fetchWithinOrigin(candidate.probeUrl);
+    if (!fetched) {
+      return null;
+    }
+
+    const { finalUrl, response } = fetched;
     const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
-    if (response.status < 200 || response.status >= 400) {
+    if (response.status < 200 || response.status >= 300) {
       await response.body?.cancel();
       return null;
     }
 
     if (contentType.includes("json")) {
       const body = await response.json().catch(() => undefined);
-      const finalUrl = new URL(response.url || candidate.probeUrl);
       return {
         kind: "api",
         path: `${finalUrl.pathname}${finalUrl.search}`,
@@ -751,7 +800,6 @@ export async function probeWebsite(
       return null;
     }
 
-    const finalUrl = new URL(response.url || candidate.probeUrl);
     return {
       faviconPath: metadata.faviconPath,
       kind: "website",
@@ -761,6 +809,32 @@ export async function probeWebsite(
     };
   } catch {
     return null;
+  }
+}
+
+async function fetchWithinOrigin(probeUrl: string) {
+  const signal = AbortSignal.timeout(WEBSITE_PROBE_TIMEOUT_MS);
+  let finalUrl = new URL(probeUrl);
+
+  for (let redirects = 0; ; redirects += 1) {
+    const response = await fetch(finalUrl, {
+      headers: {
+        accept: "text/html,application/xhtml+xml,application/json"
+      },
+      redirect: "manual",
+      signal
+    });
+    const location = response.headers.get("location");
+    if (response.status < 300 || response.status >= 400 || !location) {
+      return { finalUrl, response };
+    }
+
+    await response.body?.cancel();
+    const nextUrl = URL.parse(location, finalUrl);
+    if (!nextUrl || nextUrl.origin !== finalUrl.origin || redirects >= WEBSITE_PROBE_MAX_REDIRECTS) {
+      return null;
+    }
+    finalUrl = nextUrl;
   }
 }
 
@@ -780,7 +854,9 @@ function getApiTitle(value: unknown) {
 }
 
 function buildWebsiteFaviconUrl(faviconPath: string | undefined, websiteUrl: string) {
-  return new URL(faviconPath || "/favicon.ico", websiteUrl).toString();
+  const fallback = new URL("/favicon.ico", websiteUrl);
+  const favicon = faviconPath ? URL.parse(faviconPath, websiteUrl) : null;
+  return (favicon?.origin === fallback.origin ? favicon : fallback).toString();
 }
 
 async function readWebsiteMetadata(response: Awaited<ReturnType<typeof fetch>>) {
