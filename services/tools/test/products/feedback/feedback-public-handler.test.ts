@@ -46,7 +46,7 @@ describe("public feedback submission", () => {
 
   it("rejects unsupported sharing periods before storing the response", async () => {
     const createSubmission = vi.fn();
-    const response = await submitPublicFeedback(input(new Request("https://tools.example.test/feedback/f/token", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: "comfort=Mixed&__share_days=365" }), { getPublicForm: vi.fn().mockResolvedValue(form), createSubmission }));
+    const response = await submitPublicFeedback(input(new Request("https://tools.example.test/feedback/f/token", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: "comfort=Mixed&__share_days=365" }), { getPublicForm: vi.fn().mockResolvedValue(form), createSubmission }, "token"));
     expect(response.headers.get("location")).toBe("/feedback/f/token?error=invalid_share_duration");
     expect(createSubmission).not.toHaveBeenCalled();
   });
@@ -79,9 +79,20 @@ describe("public feedback submission", () => {
     const response = await submitPublicFeedback(input(new Request("https://tools.example.test/feedback/f/token", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: "comfort=Mixed" }), {
       getPublicForm: vi.fn().mockResolvedValue(form),
       createSubmission: vi.fn().mockRejectedValue(new Error("database unavailable")),
-    }));
+    }, "token"));
     expect(response.status).toBe(303);
     expect(response.headers.get("location")).toBe("/feedback/f/token?error=submission_failed");
+  });
+
+  it("refuses more than 10 answers in 10 minutes from one network to one form", async () => {
+    const createSubmission = vi.fn().mockResolvedValue({ id: "submission-id" });
+    const submit = (address: string) => submitPublicFeedback(input(new Request("https://tools.example.test/feedback/f/limited", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json", "cf-connecting-ip": address }, body: "comfort=Mixed" }), { getPublicForm: vi.fn().mockResolvedValue(form), createSubmission }, "limited"));
+    for (let i = 0; i < 10; i++) expect((await submit("203.0.113.7")).status).toBe(200);
+    const refused = await submit("203.0.113.7");
+    expect(refused.status).toBe(429);
+    expect(await refused.json()).toEqual({ error: "rate_limited" });
+    expect((await submit("198.51.100.2")).status, "another network still answers").toBe(200);
+    expect(createSubmission).toHaveBeenCalledTimes(11);
   });
 
   it("does not insert honeypot submissions", async () => {
@@ -92,6 +103,7 @@ describe("public feedback submission", () => {
   });
 });
 
-function input(request: Request, feedback: { getPublicForm: ReturnType<typeof vi.fn>; createSubmission: ReturnType<typeof vi.fn> }) {
-  return { request, params: { token: "token" }, context: { runtime: { publicOrigin: "https://tools.example.test", feedback } } } as unknown as Parameters<typeof submitPublicFeedback>[0];
+let forms = 0;
+function input(request: Request, feedback: { getPublicForm: ReturnType<typeof vi.fn>; createSubmission: ReturnType<typeof vi.fn> }, token = `token-${++forms}`) {
+  return { request, params: { token }, context: { runtime: { publicOrigin: "https://tools.example.test", feedback } } } as unknown as Parameters<typeof submitPublicFeedback>[0];
 }

@@ -1,13 +1,18 @@
 import type { PlatformRouteInput } from "../../platform/route-handlers.js";
 import { FeedbackValidationError, parseFeedbackShareDays, validateFeedbackAnswers } from "./domain.js";
 import { readBoundedBody, RequestBodyTooLargeError } from "../../platform/request-body.js";
+import { clientAddress, createRateLimit } from "../../platform/security/rate-limit.js";
 
 const MAXIMUM_BODY_BYTES = 32 * 1024;
+const allowSubmission = createRateLimit({ limit: 10, windowMs: 10 * 60 * 1000 });
 
 export async function submitPublicFeedback({ request, context, params }: PlatformRouteInput) {
   const wantsJson = request.headers.get("accept")?.includes("application/json") ?? false;
   const contentType = request.headers.get("content-type")?.toLowerCase() ?? "";
   if (!contentType.startsWith("application/x-www-form-urlencoded")) return json({ error: "invalid_content_type" }, 415);
+  if (!allowSubmission(`${params.token}:${clientAddress(request)}`)) {
+    return wantsJson ? json({ error: "rate_limited" }, 429) : submissionResult(params.token, false, "rate_limited");
+  }
   try {
     const body = await readBoundedBody(request, MAXIMUM_BODY_BYTES);
     if (!body) throw new FeedbackValidationError("invalid_request", "The request body is missing.");
