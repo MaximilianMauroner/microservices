@@ -26,7 +26,10 @@ export type SyncUpdate = {
 export type SubmitSteps = { version: number; clientId: string; steps: unknown[] };
 export type SubmitResult = SyncUpdate & { status: "synced" | "rebase" };
 export type CreateDocument = { requestId: string; filename: string; format: DocumentFormat; markdown: string };
-export type ShareErrorCode = "DOCUMENT_UNAVAILABLE" | "DOCUMENT_TOO_LARGE" | "INVALID_EDITOR_PAYLOAD" | "INVALID_FILENAME" | "INVALID_CHECKPOINT" | "CHECKPOINT_LIMIT_REACHED" | "INVALID_DISPLAY_NAME" | "HISTORY_UNAVAILABLE";
+/** Owner of documents created while signed out. No account has this subject, so no one lists or manages them. */
+export const ANONYMOUS_DOCUMENT_OWNER = "anonymous";
+
+export type ShareErrorCode = "DOCUMENT_UNAVAILABLE" | "DOCUMENT_TOO_LARGE" | "INVALID_EDITOR_PAYLOAD" | "INVALID_FILENAME" | "INVALID_CHECKPOINT" | "CHECKPOINT_LIMIT_REACHED" | "INVALID_DISPLAY_NAME" | "HISTORY_UNAVAILABLE" | "RATE_LIMITED";
 export class ShareError extends Error {
   readonly data: { code: ShareErrorCode; message: string };
   constructor(code: ShareErrorCode, message: string) {
