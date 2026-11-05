@@ -1,6 +1,7 @@
 import type { PlatformRouteInput } from "../../platform/route-handlers.js";
 import { MoneyImportValidationError } from "./money-import-domain.js";
 import { assertMoneyImportFileSize } from "./money-import-service.js";
+import { readBoundedBody, RequestBodyTooLargeError } from "../../platform/request-body.js";
 
 export async function previewMoneyImport(input: PlatformRouteInput) {
   const rejected = validateMutationRequest(input);
@@ -271,28 +272,14 @@ async function jsonBody(request: Request): Promise<Record<string, unknown>> {
 }
 
 async function boundedBody(request: Request, maximumBytes: number) {
-  const reader = request.body?.getReader();
-  if (!reader) throw new MoneyImportValidationError("invalid_request", "The request body is missing.");
-  const chunks: Uint8Array[] = [];
-  let size = 0;
   try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      size += value.byteLength;
-      if (size > maximumBytes) {
-        await reader.cancel();
-        throw new MoneyImportValidationError("request_too_large", "The request is too large.");
-      }
-      chunks.push(value);
-    }
-  } finally {
-    reader.releaseLock();
+    const bytes = await readBoundedBody(request, maximumBytes);
+    if (!bytes) throw new MoneyImportValidationError("invalid_request", "The request body is missing.");
+    return bytes;
+  } catch (error) {
+    if (error instanceof RequestBodyTooLargeError) throw new MoneyImportValidationError("request_too_large", "The request is too large.");
+    throw error;
   }
-  const bytes = new Uint8Array(size);
-  let offset = 0;
-  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
-  return bytes;
 }
 
 function stringField(body: Record<string, unknown>, name: string) {

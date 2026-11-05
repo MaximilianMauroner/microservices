@@ -1,6 +1,7 @@
 import type { PlatformRouteInput } from "../../platform/route-handlers.js";
 import { BodyshopError } from "./domain.js";
 import { commitImport, previewImport } from "./service.js";
+import { readBoundedBody, RequestBodyTooLargeError } from "../../platform/request-body.js";
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 
@@ -60,28 +61,14 @@ async function multipart(request: Request): Promise<FormData> {
 }
 
 async function boundedBody(request: Request, maximumBytes: number): Promise<Uint8Array<ArrayBuffer>> {
-  const reader = request.body?.getReader();
-  if (!reader) throw new BodyshopError("The upload is empty.");
-  const chunks: Uint8Array[] = [];
-  let size = 0;
   try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      size += value.byteLength;
-      if (size > maximumBytes) {
-        await reader.cancel();
-        throw new BodyshopError("The workbook must be 10 MB or smaller.", "too_large");
-      }
-      chunks.push(value);
-    }
-  } finally {
-    reader.releaseLock();
+    const bytes = await readBoundedBody(request, maximumBytes);
+    if (!bytes) throw new BodyshopError("The upload is empty.");
+    return bytes;
+  } catch (error) {
+    if (error instanceof RequestBodyTooLargeError) throw new BodyshopError("The workbook must be 10 MB or smaller.", "too_large");
+    throw error;
   }
-  const bytes = new Uint8Array(size);
-  let offset = 0;
-  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
-  return bytes;
 }
 
 function singleFile(form: FormData): File {
