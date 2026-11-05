@@ -5,7 +5,7 @@ import {
 } from "./domain.js";
 import { IMPORT_SHEETS, type Note, planImport, reconcile, type Reconciliation, type SheetCount } from "./import/plan.js";
 import { readWorkbook } from "./import/workbook.js";
-import { daySummaries, entryCheck, entryNutrients } from "./model/day.js";
+import { dayStatus, daySummaries, entryCheck, entryNutrients } from "./model/day.js";
 import { stepEnergy, energyView } from "./model/energy.js";
 import { runModel } from "./model/engine.js";
 import { foodInsights, uncertainFoods } from "./model/insights.js";
@@ -394,6 +394,48 @@ export async function dayView(scope: BodyshopScope, day?: string, now = new Date
     day: wanted, today, entries: own, summary,
     targets: { kcal: settings.calorieTarget, protein: settings.proteinTarget, carbs: settings.carbTarget, fat: settings.fatTarget, fiber: settings.fiberTarget },
     weights, checkIn: checkIns[0] ?? null
+  };
+}
+
+/** The longest range one history read returns. */
+export const HISTORY_MAX_DAYS = 92;
+
+export type HistoryDay = Readonly<{
+  day: string;
+  status: DayStatus;
+  basis: string;
+  summary: ReturnType<typeof daySummaries>[number] | null;
+  entries: readonly FoodEntry[];
+  /** The mean of the day's readings. */
+  weightKg: number | null;
+  checkIn: CheckIn | null;
+}>;
+
+/** Every day from `from` to `to` with its food, completion, weight, and check-in. Days with no record are left out. */
+export async function historyRange(scope: BodyshopScope, input: { from?: string; to?: string }, now = new Date()): Promise<{ from: string; to: string; days: HistoryDay[] }> {
+  const to = input.to ? parseDay(input.to, "To") : await currentDay(scope, now);
+  const from = input.from ? parseDay(input.from, "From") : addDays(to, -13);
+  if (from > to) throw new BodyshopError("From must not be after To.");
+  if (addDays(from, HISTORY_MAX_DAYS - 1) < to) throw new BodyshopError(`Ask for at most ${HISTORY_MAX_DAYS} days at a time.`);
+  const range = { from, to };
+  const [checkIns, allocations, weights] = await Promise.all([scope.list("checkin", range), scope.list("allocation", range), scope.list("weight", range)]);
+  // A day split from a pooled log needs the food of the day it was split from, which can be before the range.
+  const start = [from, ...allocations.map((one) => one.sourceDay)].sort()[0]!;
+  const entries = await scope.list("entry", { from: start, to });
+  const summaries = new Map(daySummaries(entries, checkIns, allocations).map((one) => [one.day, one]));
+  const means = new Map(dailyMeanWeights(weights).map((one) => [one.day, one.kg]));
+  const checks = new Map(checkIns.map((one) => [one.day, one]));
+  const own = new Map<string, FoodEntry[]>();
+  for (const entry of entries) own.set(entry.day, [...(own.get(entry.day) ?? []), entry]);
+  const days = [...new Set([...summaries.keys(), ...means.keys(), ...checks.keys()])].filter((day) => day >= from && day <= to).sort();
+  return {
+    from, to,
+    days: days.map((day) => {
+      const summary = summaries.get(day) ?? null;
+      const checkIn = checks.get(day) ?? null;
+      const { status, basis } = summary ?? dayStatus([], checkIn ?? undefined);
+      return { day, status, basis, summary, entries: own.get(day) ?? [], weightKg: means.get(day) ?? null, checkIn };
+    })
   };
 }
 
