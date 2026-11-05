@@ -1,0 +1,16 @@
+{
+  "cli": { "version": ">= 24.8.0", "appVersionSource": "remote" },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal"
+    },
+    "production": {
+      "autoIncrement": true,
+      "env": { "TOOLS_ORIGIN": "https://tools.mauroner.net" }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}
