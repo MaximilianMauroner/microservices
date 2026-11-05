@@ -12,6 +12,9 @@
     "#status": "./products/status/index.ts",
     "#publisher": "./products/publisher/index.ts"
   },
+  "exports": {
+    "./kitchen-contract": "./products/kitchen/contract.ts"
+  },
   "scripts": {
     "build": "NODE_ENV=production vite build",
     "db:push-postgres": "tsx platform/database/push-postgres.ts production",
