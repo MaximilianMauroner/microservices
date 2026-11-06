@@ -6,10 +6,10 @@ import { Button, HueBadge, T } from "../ui/kit";
 import { type KitchenLanguage, useText } from "../ui/language";
 import { useColors } from "../ui/theme";
 
-const en = { title: "Kitchen", body: "Sign in with the Google account you use for Mauroner Tools. Your kitchens then stay on this phone, encrypted, and work offline.", signIn: "Sign in", failed: "Sign-in did not work. Try again." };
+const en = { title: "Pantrino", body: "Sign in with the Google account you use for Mauroner Tools. Your kitchens then stay on this phone, encrypted, and work offline.", signIn: "Sign in", failed: "Sign-in did not work. Try again." };
 const TEXT: Record<KitchenLanguage, typeof en> = {
   en,
-  de: { title: "Küche", body: "Melde dich mit dem Google-Konto an, das du für Mauroner Tools verwendest. Deine Küchen bleiben dann verschlüsselt auf diesem Telefon und funktionieren auch offline.", signIn: "Anmelden", failed: "Die Anmeldung hat nicht funktioniert. Versuche es erneut." }
+  de: { title: "Pantrino", body: "Melde dich mit dem Google-Konto an, das du für Mauroner Tools verwendest. Deine Küchen bleiben dann verschlüsselt auf diesem Telefon und funktionieren auch offline.", signIn: "Anmelden", failed: "Die Anmeldung hat nicht funktioniert. Versuche es erneut." }
 };
 
 export default function SignIn() {
