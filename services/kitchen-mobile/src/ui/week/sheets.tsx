@@ -77,6 +77,48 @@ export function PlanSheet({ day, data, week, onClose, notify }: SheetProps & { d
   );
 }
 
+/** The short menu a held meal opens. Each action runs at once. A cooked meal can only be removed. */
+export function MealMenu({ entry, data, week, onClose, notify }: SheetProps & { entry: PlanEntry }) {
+  const language = useLanguage();
+  const text = useText(TEXT);
+  const parts = dayParts(entry.day, language);
+  const update = (patch: Partial<Pick<PlanEntry, "day" | "servings">>) =>
+    data.change({ type: "plan.update", id: entry.id, day: entry.day, meal: entry.meal, servings: entry.servings, ...patch });
+
+  function move(day: string) {
+    update({ day });
+    notify({ message: text.movedTo(dayParts(day, language).weekdayLong), undo: { type: "plan.update", id: entry.id, day: entry.day, meal: entry.meal, servings: entry.servings } });
+    onClose();
+  }
+
+  return (
+    <Sheet open onClose={onClose} title={entry.recipe}
+      description={`${text.meals[entry.meal]}, ${parts.weekdayLong} ${parts.dayMonth}${entry.cooked ? text.cookedSuffix : ""}`}
+      footer={
+        <View style={styles.footer}>
+          <Button label={text.remove} tone="destructive" onPress={() => { removeMeal(entry, data, notify, text); onClose(); }} />
+          {!entry.cooked ? <Button label={text.markCooked} icon={ChefHat} onPress={() => { data.change({ type: "plan.cook", id: entry.id }); notify({ message: text.cookedTaken }); onClose(); }} /> : null}
+        </View>
+      }>
+      {entry.cooked ? <T muted>{text.cookedMeal}</T> : <>
+        <View style={styles.row}>
+          <T weight="medium">{text.servingsLabel}</T>
+          <Stepper label={text.servingsLabel} value={entry.servings} onValue={(servings) => update({ servings })} />
+        </View>
+        <View style={{ gap: 8 }}>
+          <T weight="medium">{text.moveTo}</T>
+          <DayStrip days={week.days.map((one) => one.day)} value={entry.day} onValue={(day) => { if (day !== entry.day) move(day); }} />
+        </View>
+      </>}
+    </Sheet>
+  );
+}
+
+function removeMeal(entry: PlanEntry, data: OpenKitchen, notify: (notice: Notice) => void, text: (typeof TEXT)[keyof typeof TEXT]) {
+  data.change({ type: "plan.remove", id: entry.id });
+  notify({ message: text.removedFromPlan(entry.recipe), undo: { type: "plan.add", day: entry.day, meal: entry.meal, recipeId: entry.recipeId, servings: entry.servings } });
+}
+
 export function EntrySheet({ entry, data, week, onClose, notify }: SheetProps & { entry: PlanEntry }) {
   const language = useLanguage();
   const text = useText(TEXT);
@@ -102,8 +144,7 @@ export function EntrySheet({ entry, data, week, onClose, notify }: SheetProps & 
   }
 
   function remove() {
-    data.change({ type: "plan.remove", id: entry.id });
-    notify({ message: text.removedFromPlan(entry.recipe), undo: { type: "plan.add", day: entry.day, meal: entry.meal, recipeId: entry.recipeId, servings: entry.servings } });
+    removeMeal(entry, data, notify, text);
     onClose();
   }
 
