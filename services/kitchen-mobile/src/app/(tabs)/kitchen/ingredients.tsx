@@ -9,7 +9,7 @@ import { GroupsSheet } from "../../../ui/ingredients/groups-sheet";
 import { TEXT } from "../../../ui/ingredients/text";
 import { TEXT as KITCHEN_TEXT } from "../../../ui/kitchen/text";
 import { KitchenScreen } from "../../../ui/page";
-import { Button, byGroup, Empty, groupLabel, GroupLabel, GroupList, Press, Screen, SearchField, T, ToolbarButton } from "../../../ui/kit";
+import { Button, byGroup, Empty, groupLabel, type ListGroup, Press, Screen, SearchField, T, ToolbarButton } from "../../../ui/kit";
 import { useLanguage, useText } from "../../../ui/language";
 import { groupColor, useColors } from "../../../ui/theme";
 import { compareText } from "../../../compare";
@@ -42,7 +42,21 @@ function Ingredients({ kitchen, change }: OpenKitchen) {
       toolbar={<>
         {ingredients.length ? <ToolbarButton tone="outline" icon={ListOrdered} label={text.arrangeGroups} onPress={() => setEditing({ kind: "groups" })} /> : null}
         <ToolbarButton icon={Plus} label={text.newIngredient} onPress={() => create("")} />
-      </>}>
+      </>}
+      groups={groups.map(([section, entries]): ListGroup => ({
+        key: section, label: groupLabel(section, language), color: groupColor(colors, kitchen.kitchen.groups, section), count: entries.length,
+        rows: entries.map(({ ingredient }) => ({ key: ingredient.id, node: (
+          <Press accessibilityRole="button" onPress={() => setEditing({ kind: "ingredient", id: ingredient.id, name: ingredient.name })}
+            style={({ pressed }) => ({ minHeight: 64, flexDirection: "row", alignItems: "center", gap: 12, paddingLeft: 16, paddingRight: 12, paddingVertical: 12, opacity: pressed ? 0.7 : 1 })}>
+            <View style={{ flex: 1, gap: 3 }}>
+              <T weight="medium">{ingredient.name}</T>
+              <NutritionSummary ingredient={ingredient} />
+            </View>
+            {ingredient.recipeCount ? <T muted style={{ fontSize: 13 }}>{text.inRecipes(ingredient.recipeCount)}</T> : null}
+            <ChevronRight size={18} color={colors.mutedForeground} />
+          </Press>
+        ) })),
+      }))}>
       <SearchField value={query} onValue={setQuery} label={text.findPlaceholder} />
       {typed && !ingredients.some((one) => one.name.toLowerCase() === typed.toLowerCase()) ? (
         <Press accessibilityRole="button" onPress={() => create(typed)} style={{ minHeight: 48, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 8 }}>
@@ -50,27 +64,6 @@ function Ingredients({ kitchen, change }: OpenKitchen) {
           <T style={{ color: colors.pageInk.kitchen, flexShrink: 1 }}>{text.addNew(typed)}</T>
         </Press>
       ) : null}
-      {groups.map(([section, entries]) => {
-        const color = groupColor(colors, kitchen.kitchen.groups, section);
-        return (
-          <View key={section} accessibilityLabel={groupLabel(section, language)}>
-            <GroupLabel color={color} count={entries.length}>{groupLabel(section, language)}</GroupLabel>
-            <GroupList color={color}>
-              {entries.map(({ ingredient }) => (
-                <Press key={ingredient.id} accessibilityRole="button" onPress={() => setEditing({ kind: "ingredient", id: ingredient.id, name: ingredient.name })}
-                  style={({ pressed }) => ({ minHeight: 64, flexDirection: "row", alignItems: "center", gap: 12, paddingLeft: 16, paddingRight: 12, paddingVertical: 12, opacity: pressed ? 0.7 : 1 })}>
-                  <View style={{ flex: 1, gap: 3 }}>
-                    <T weight="medium">{ingredient.name}</T>
-                    <NutritionSummary ingredient={ingredient} />
-                  </View>
-                  {ingredient.recipeCount ? <T muted style={{ fontSize: 13 }}>{text.inRecipes(ingredient.recipeCount)}</T> : null}
-                  <ChevronRight size={18} color={colors.mutedForeground} />
-                </Press>
-              ))}
-            </GroupList>
-          </View>
-        );
-      })}
       {!matches.length ? <Empty title={ingredients.length ? text.noMatch(query) : text.noIngredients} body={ingredients.length ? text.tryAnother : text.addHere} /> : null}
       {editing?.kind === "groups" ? <GroupsSheet kitchen={kitchen} change={change} onClose={close} /> : null}
       {editing?.kind === "ingredient" ? <IngredientSheet kitchen={kitchen} change={change} existing={ingredients.find((one) => one.id === editing.id)} newName={editing.name} onClose={close} /> : null}
