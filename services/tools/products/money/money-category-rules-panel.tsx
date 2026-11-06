@@ -289,7 +289,7 @@ function RuleList({ rules, editing, onEdit, onRemoved }: Readonly<{ rules: reado
   return (
     <div className="border-t">
       <div className="flex flex-wrap items-center gap-2 px-4 py-2.5">
-        <Input type="search" className="h-8 w-72 max-w-full" aria-label="Find rules" placeholder="Find text, code, category, or account" value={query} onChange={(event) => setQuery(event.currentTarget.value)} />
+        <Input type="search" className="h-8 w-full sm:w-72" aria-label="Find rules" placeholder="Find text, code, category, or account" value={query} onChange={(event) => setQuery(event.currentTarget.value)} />
         <NativeSelect size="sm" aria-label="Filter by category" value={category} onChange={(event) => setCategory(event.currentTarget.value as MoneyCategory | "")}>
           <NativeSelectOption value="">All categories</NativeSelectOption>
           {categories.map((item) => <NativeSelectOption key={item} value={item}>{moneyCategoryLabel(item)}</NativeSelectOption>)}
