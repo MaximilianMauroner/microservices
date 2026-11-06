@@ -103,13 +103,6 @@ export function classifyRoute(pathname: string, method: string): RouteAccess {
   }
 
   if (
-    /^\/api\/drop\/[^/]+\/uploads$/.test(pathname) &&
-    normalizedMethod === "POST"
-  ) {
-    return { kind: "public" };
-  }
-
-  if (
     (normalizedMethod === "GET" || normalizedMethod === "HEAD") &&
     matchesPrefix(pathname, ["/artifacts", "/files"])
   ) {

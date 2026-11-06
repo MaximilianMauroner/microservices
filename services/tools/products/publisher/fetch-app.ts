@@ -60,7 +60,6 @@ const CHUNKED_UPLOAD_INIT_MAX_BYTES = 4096;
 export const DEFAULT_MAX_CONCURRENT_UPLOADS = 1;
 export const DEFAULT_TEMPORARY_FILE_RETENTION_MS = 3 * 24 * 60 * 60 * 1000;
 export const MAX_TEMPORARY_FILE_RETENTION_MS = 100 * 365 * 24 * 60 * 60 * 1000;
-export const DEFAULT_GUEST_UPLOAD_BODY_TIMEOUT_MS = 5 * 60 * 1000;
 
 const PAGE_ID_PATTERN = /^[A-Za-z0-9_-]{32}$/;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -103,7 +102,6 @@ export type FetchArtifactAppOptions = {
   maxHtmlUploadBytes?: number;
   maxConcurrentUploads?: number;
   temporaryFileRetentionMs?: number;
-  guestUploadBodyTimeoutMs?: number;
   now?: () => Date;
 };
 
@@ -124,10 +122,6 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
   const temporaryFileRetentionMs = positiveIntegerOption(
     options.temporaryFileRetentionMs ?? DEFAULT_TEMPORARY_FILE_RETENTION_MS,
     "temporaryFileRetentionMs"
-  );
-  const guestUploadBodyTimeoutMs = positiveIntegerOption(
-    options.guestUploadBodyTimeoutMs ?? DEFAULT_GUEST_UPLOAD_BODY_TIMEOUT_MS,
-    "guestUploadBodyTimeoutMs"
   );
   const publisherFaviconUrl = options.publisherFaviconUrl ?? DEFAULT_PUBLISHER_FAVICON_URL;
   const publisherFavicon = publisherFaviconLink(publisherFaviconUrl);
@@ -251,35 +245,6 @@ export function createFetchApp(options: FetchArtifactAppOptions) {
           throw new ArtifactRequestError(404, "upload_link_not_found", "Upload link was not found.");
         }
         return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
-      }
-
-      const dropUploadToken = matchDropUpload(url.pathname);
-      if (request.method === "POST" && dropUploadToken) {
-        requireSameOrigin(request, url, options.publicBaseUrl);
-        requireMultipartUpload(request);
-        const link = await options.uploadLinks?.findActive(dropUploadToken, getNow(options));
-        if (!link) return dropLinkUnavailable();
-        return upload(
-          request,
-          url,
-          options,
-          options.storage.owner(link.ownerSubject),
-          {
-            kind: "create",
-            temporaryOnly: true,
-            uploadLinkId: link.id,
-            expiresAt: link.expiresAt,
-            ensureActive: async () => Boolean(
-              await options.uploadLinks?.findActive(dropUploadToken, getNow(options))
-            )
-          },
-          uploadGate,
-          maxUploadBytes,
-          maxHtmlUploadBytes,
-          temporaryFileRetentionMs,
-          activityTracker,
-          guestUploadBodyTimeoutMs
-        );
       }
 
       if (request.method === "GET" || request.method === "HEAD") {
@@ -623,8 +588,7 @@ async function upload(
   maxUploadBytes: number,
   maxHtmlUploadBytes: number,
   temporaryFileRetentionMs: number,
-  activityTracker: ActivityTracker,
-  guestUploadBodyTimeoutMs?: number
+  activityTracker: ActivityTracker
 ): Promise<Response> {
   const release = gate.tryAcquire();
   if (!release) {
@@ -645,31 +609,12 @@ async function upload(
       let cleanupId: string | undefined;
       let responseSent = false;
       try {
-        const guestBodySignal = guestUploadBodyTimeoutMs === undefined
-          ? request.signal
-          : AbortSignal.any([request.signal, AbortSignal.timeout(guestUploadBodyTimeoutMs)]);
-        try {
-          staged = await stageMultipart(request, {
-            maxUploadBytes,
-            maxHtmlUploadBytes,
-            temporaryOnly: mode.kind === "create" && mode.temporaryOnly === true,
-            signal: guestBodySignal
-          });
-        } catch (error) {
-          if (!request.signal.aborted && guestBodySignal.aborted) {
-            throw new ArtifactRequestError(
-              408,
-              "upload_timeout",
-              "The guest upload body was not received before the upload deadline."
-            );
-          }
-          throw error;
-        }
-        const uploadType = classifyUpload(
-          staged.originalName,
-          staged.contentType,
-          mode.kind === "create" && mode.temporaryOnly === true
-        );
+        staged = await stageMultipart(request, {
+          maxUploadBytes,
+          maxHtmlUploadBytes,
+          signal: request.signal
+        });
+        const uploadType = classifyUpload(staged.originalName, staged.contentType);
         if (mode.kind === "update" && uploadType.kind !== "html") {
           throw new ArtifactRequestError(
             400,
@@ -752,17 +697,8 @@ async function upload(
           );
         }
 
-        const expiresAt = mode.kind === "create" && mode.expiresAt
-          ? new Date(Math.max(mode.expiresAt.getTime(), getNow(options).getTime() + temporaryFileRetentionMs))
-          : new Date(getNow(options).getTime() + temporaryFileRetentionMs);
+        const expiresAt = new Date(getNow(options).getTime() + temporaryFileRetentionMs);
         cleanupId = id;
-        if (mode.kind === "create" && mode.ensureActive && !(await mode.ensureActive())) {
-          throw new ArtifactRequestError(
-            404,
-            "upload_link_unavailable",
-            "This upload link has expired or was revoked."
-          );
-        }
         await storage.putTemporaryFile(
           id,
           staged.filePath,
@@ -771,8 +707,7 @@ async function upload(
             contentType: uploadType.contentType,
             expiresAt,
             originalName,
-            sha256,
-            ...(mode.kind === "create" && mode.uploadLinkId ? { uploadLinkId: mode.uploadLinkId } : {})
+            sha256
           },
           { signal: request.signal }
         );
@@ -1311,15 +1246,7 @@ function requireNativeChunkSession(manifest: ChunkSessionManifest) {
   }
 }
 
-type UploadMode =
-  | {
-      kind: "create";
-      temporaryOnly?: boolean;
-      uploadLinkId?: string;
-      expiresAt?: Date;
-      ensureActive?: () => Promise<boolean>;
-    }
-  | { kind: "update"; id: string };
+type UploadMode = { kind: "create" } | { kind: "update"; id: string };
 
 type StagedUpload = {
   filePath: string;
@@ -1334,7 +1261,6 @@ async function stageMultipart(
   options: {
     maxUploadBytes: number;
     maxHtmlUploadBytes: number;
-    temporaryOnly: boolean;
     signal: AbortSignal;
   }
 ): Promise<StagedUpload> {
@@ -1386,7 +1312,7 @@ async function stageMultipart(
       );
       return;
     }
-    const classification = classifyUpload(info.filename, info.mimeType, options.temporaryOnly);
+    const classification = classifyUpload(info.filename, info.mimeType);
     const maxBytes =
       classification.kind === "html" ? options.maxHtmlUploadBytes : options.maxUploadBytes;
     filePromise = stageFile(stream, info.filename, info.mimeType, maxBytes, options.signal);
@@ -1621,14 +1547,10 @@ function injectPublisherFavicon(html: Buffer, favicon: Buffer) {
   ]);
 }
 
-function classifyUpload(
-  originalName: string,
-  mimeType: string,
-  temporaryOnly: boolean
-): UploadClassification {
+function classifyUpload(originalName: string, mimeType: string): UploadClassification {
   const extension = path.extname(originalName).toLowerCase();
   const normalizedMimeType = normalizeMimeType(mimeType);
-  if (!temporaryOnly && HTML_EXTENSIONS.has(extension) && HTML_MIME_TYPES.has(normalizedMimeType)) {
+  if (HTML_EXTENSIONS.has(extension) && HTML_MIME_TYPES.has(normalizedMimeType)) {
     return { kind: "html" };
   }
   return { kind: "temporary", contentType: normalizedMimeType };
@@ -1797,11 +1719,6 @@ function withDropUploadHeaders(response: Response, nonce?: string, uploadOrigins
 
 function matchDropPage(pathname: string) {
   const match = /^\/drop\/([^/]+)\/?$/.exec(pathname);
-  return match?.[1] && UPLOAD_LINK_TOKEN_PATTERN.test(match[1]) ? match[1] : undefined;
-}
-
-function matchDropUpload(pathname: string) {
-  const match = /^\/api\/drop\/([^/]+)\/uploads$/.exec(pathname);
   return match?.[1] && UPLOAD_LINK_TOKEN_PATTERN.test(match[1]) ? match[1] : undefined;
 }
 

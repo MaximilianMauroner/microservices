@@ -1,3 +1,6 @@
+import { request } from "node:http";
+import type { AddressInfo } from "node:net";
+import { serve } from "@hono/node-server";
 import { describe, expect, it, vi } from "vitest";
 import {
   collectNetworkSnapshot,
@@ -34,6 +37,27 @@ const WEBSITE_PROBE: WebsiteProbe = async (candidate) => {
     title: "Example App"
   };
 };
+
+function requestWithHost(port: number, host: string, path = "/health") {
+  return new Promise<number>((resolve, reject) => {
+    request({ headers: { host }, host: "127.0.0.1", path, port }, (response) => {
+      response.resume();
+      resolve(response.statusCode ?? 0);
+    })
+      .on("error", reject)
+      .end();
+  });
+}
+
+function mockFetch(responses: Record<string, Response>) {
+  return vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+    const response = responses[String(input)];
+    if (!response) {
+      throw new Error(`Unexpected fetch: ${String(input)}`);
+    }
+    return response;
+  });
+}
 
 function createFixtureRunner(): CommandRunner {
   const fixtures = new Map<string, string>([
@@ -374,5 +398,131 @@ describe("local network dashboard", () => {
     const snapshot = await collectNetworkSnapshot({ runner, websiteProbe: WEBSITE_PROBE });
 
     expect(snapshot.tailscale.warnings).toContain("tailscale status returned malformed JSON");
+  });
+
+  it("answers only requests whose Host names this dashboard", async () => {
+    let app: ReturnType<typeof createLocalNetworkDashboardApp> | undefined;
+    const server = serve({ fetch: (incoming) => app!.fetch(incoming), hostname: "127.0.0.1", port: 0 });
+    await new Promise((resolve) => server.once("listening", resolve));
+    const { port } = server.address() as AddressInfo;
+    app = createLocalNetworkDashboardApp({
+      bindHost: TEST_TAILSCALE_IPV4,
+      dashboardPort: port,
+      runner: createFixtureRunner(),
+      websiteProbe: WEBSITE_PROBE
+    });
+
+    try {
+      for (const host of [
+        `127.0.0.1:${port}`,
+        `localhost:${port}`,
+        `[::1]:${port}`,
+        `${TEST_TAILSCALE_IPV4}:${port}`,
+        `[${TEST_TAILSCALE_IPV6}]:${port}`,
+        `${TEST_TAILSCALE_DNS}:${port}`,
+        TEST_TAILSCALE_DNS
+      ]) {
+        expect(await requestWithHost(port, host), host).toBe(200);
+      }
+
+      for (const host of [`rebind.attacker.example:${port}`, "rebind.attacker.example", `127.0.0.1:${port + 1}`]) {
+        expect(await requestWithHost(port, host, "/api/ports"), host).toBe(421);
+      }
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+
+  it("shares one snapshot between concurrent requests and refreshes it after a few seconds", async () => {
+    let clock = new Date("2026-07-08T12:00:00.000Z").getTime();
+    const baseRunner = createFixtureRunner();
+    let listenerScans = 0;
+    const app = createLocalNetworkDashboardApp({
+      now: () => new Date(clock),
+      runner: async (command, args) => {
+        if (command === "ss") {
+          listenerScans += 1;
+        }
+        return baseRunner(command, args);
+      },
+      websiteProbe: WEBSITE_PROBE
+    });
+
+    const responses = await Promise.all([app.request("/api/ports"), app.request("/"), app.request("/api/ports")]);
+    expect(responses.map((response) => response.status)).toEqual([200, 200, 200]);
+    expect(listenerScans).toBe(1);
+
+    clock += 1_000;
+    await app.request("/api/ports");
+    expect(listenerScans).toBe(1);
+
+    clock += 5_000;
+    await app.request("/api/ports");
+    expect(listenerScans).toBe(2);
+  });
+
+  it("follows probe redirects only within the probed origin", async () => {
+    const fetchSpy = mockFetch({
+      "http://100.64.0.10:3000/": new Response(null, { headers: { location: "/login" }, status: 302 }),
+      "http://100.64.0.10:3000/login": new Response("<html><head><title>Sign in</title></head></html>", {
+        headers: { "content-type": "text/html" },
+        status: 200
+      }),
+      "http://100.64.0.10:4000/": new Response(null, {
+        headers: { location: "http://169.254.169.254/latest/meta-data/" },
+        status: 302
+      })
+    });
+
+    try {
+      await expect(
+        probeWebsite({ port: 3000, probeUrl: "http://100.64.0.10:3000/", publicUrl: "http://100.64.0.10:3000/" })
+      ).resolves.toMatchObject({ path: "/login", title: "Sign in" });
+      await expect(
+        probeWebsite({ port: 4000, probeUrl: "http://100.64.0.10:4000/", publicUrl: "http://100.64.0.10:4000/" })
+      ).resolves.toBeNull();
+      expect(fetchSpy.mock.calls.map(([input]) => String(input))).not.toContain(
+        "http://169.254.169.254/latest/meta-data/"
+      );
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("shows a website favicon only from the website's own origin", async () => {
+    const snapshotWithFavicon = async (faviconPath: string) => {
+      const snapshot = await collectNetworkSnapshot({
+        runner: createFixtureRunner(),
+        websiteProbe: async (candidate) => {
+          const result = await WEBSITE_PROBE(candidate);
+          return result && { ...result, faviconPath };
+        }
+      });
+      return snapshot.websites[0]?.faviconUrl;
+    };
+
+    await expect(snapshotWithFavicon("/static/icon.png")).resolves.toBe(
+      `http://${TEST_TAILSCALE_IPV4}:3000/static/icon.png`
+    );
+    await expect(snapshotWithFavicon("https://tracker.example/pixel.png")).resolves.toBe(
+      `http://${TEST_TAILSCALE_IPV4}:3000/favicon.ico`
+    );
+    await expect(snapshotWithFavicon("javascript:alert(1)")).resolves.toBe(
+      `http://${TEST_TAILSCALE_IPV4}:3000/favicon.ico`
+    );
+  });
+
+  it("keeps a website link and favicon on its origin when the probed path starts with two slashes", async () => {
+    const snapshot = await collectNetworkSnapshot({
+      runner: createFixtureRunner(),
+      websiteProbe: async (candidate) => {
+        const result = await WEBSITE_PROBE(candidate);
+        return result && { ...result, path: "//attacker.example/?next=1", faviconPath: "/icon.png" };
+      }
+    });
+    const [website] = snapshot.websites;
+    expect(new URL(website!.url).host).toBe(`${TEST_TAILSCALE_IPV4}:3000`);
+    expect(website!.url).toBe(`http://${TEST_TAILSCALE_IPV4}:3000//attacker.example/?next=1`);
+    expect(new URL(website!.faviconUrl!).host).toBe(`${TEST_TAILSCALE_IPV4}:3000`);
   });
 });

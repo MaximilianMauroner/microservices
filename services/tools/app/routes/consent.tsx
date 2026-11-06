@@ -6,7 +6,7 @@ import { favicons } from "../../platform/ui/favicons.js";
 import { Button } from "../../platform/ui/components/ui/button.js";
 import { authClient } from "../../platform/auth/auth-client.js";
 
-type ConsentSearch = { client_id?: string; scope?: string };
+type ConsentSearch = { client_id?: string; scope?: string; redirect_uri?: string };
 
 const SCOPE_TEXT: Readonly<Record<string, string>> = {
   openid: "Confirm that you are signed in",
@@ -14,6 +14,20 @@ const SCOPE_TEXT: Readonly<Record<string, string>> = {
   email: "See your email address",
   offline_access: "Stay connected without asking you again"
 };
+
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+/** The client name is chosen by whoever registered it, so the person also sees where the access goes. */
+export function consentDestination(redirectUri: string | undefined) {
+  if (!redirectUri) return undefined;
+  try {
+    const url = new URL(redirectUri);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return `the app ${url.protocol.slice(0, -1)}`;
+    return LOOPBACK_HOSTS.has(url.hostname) ? "an app on this computer" : url.host;
+  } catch {
+    return undefined;
+  }
+}
 
 export const Route = createFileRoute("/consent")({
   validateSearch: (search: Record<string, unknown>): ConsentSearch => search as ConsentSearch,
@@ -46,6 +60,7 @@ function ConsentPage() {
 
   const scopes = [...new Set((search.scope ?? "").split(" ").filter(Boolean))];
   const app = clientName ?? "This app";
+  const goesTo = consentDestination(search.redirect_uri);
 
   return (
     <main id="main" className="grid min-h-dvh place-items-center bg-background px-4 py-8">
@@ -56,7 +71,13 @@ function ConsentPage() {
           <span className="block text-muted-foreground">It acts as</span>
           <strong className="block truncate font-semibold" title={principal.email}>{principal.email}</strong>
         </p>
-        <p className="mt-3 text-sm text-muted-foreground">It can use only the tools and data that this account can open.</p>
+        {goesTo ? (
+          <p className="mt-3 rounded-lg bg-muted/60 px-3 py-2 text-sm">
+            <span className="block text-muted-foreground">Access goes to</span>
+            <strong className="block break-all font-semibold">{goesTo}</strong>
+          </p>
+        ) : null}
+        <p className="mt-3 text-sm text-muted-foreground">It can use only the tools and data that this account can open. Allow only if you started this connection.</p>
         {scopes.length ? (
           <ul className="mt-4 grid gap-2 text-sm" aria-label="Requested access">
             {scopes.map((scope) => (

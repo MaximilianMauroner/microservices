@@ -6,7 +6,7 @@ services:
       POSTGRES_USER: local
       POSTGRES_PASSWORD: local
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -24,8 +24,8 @@ services:
       MINIO_ROOT_USER: local-minio
       MINIO_ROOT_PASSWORD: local-minio-password
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
     volumes:
       - minio-data:/data
 
@@ -106,7 +106,7 @@ services:
       CHECKER_INTERVAL_MS: 300000
     command: ["pnpm", "--dir", "services/tools", "run", "start"]
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:3000/live').then((response) => { if (!response.ok) process.exit(1); }).catch(() => process.exit(1));"]
       interval: 5s

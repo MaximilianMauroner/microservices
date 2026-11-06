@@ -24,6 +24,10 @@ ID. Native credentials never travel to storage.
    `sessionId`, `partBytes`, `totalParts`, `uploaded`, `state`, and `expiresAt`.
    Repeat initialization with the same request ID and file description to
    recover a lost response or resume. File sessions expire after two hours.
+   A guest link takes at most three pending sessions (`429
+   upload_capacity_reached`) and at most 200 files and 20 GB over its stored
+   and pending uploads (`413 upload_link_quota_reached`). Initialization
+   checks both while it holds the link row lock that completion also takes.
 2. For each one-based part, calculate its SHA-256 over at most 20 MiB. POST
    `{ "number": 1, "sha256": "<64 lowercase hex characters>" }` to
    `/:sessionId/parts`. PUT that Blob/buffer to the returned signed URL. Its
@@ -148,9 +152,8 @@ accounted for.
 
 Browser multipart and chunk endpoints are removed. The current React console
 and guest page use sessions for every new file. The old browser page and its
-JavaScript uploader are removed. `POST /api/drop/:token/uploads` remains
-available for guest multipart uploads. The native chunk tests cover the retained
-bearer-token API.
+JavaScript uploader are removed. Guest multipart upload is removed too. The
+native chunk tests cover the retained bearer-token API.
 
 Remove native creation and chunk compatibility only after external caller owners
 confirm migration and route observations confirm no calls. Keep the native

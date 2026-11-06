@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createMarkdownShareRepository } from "../../../products/documents/repository";
+import { createMarkdownShareRepository, KEPT_STEPS } from "../../../products/documents/repository";
 import { applyMarkdownShareSchema } from "../../../products/documents/schema";
 
 const url = process.env.MARKDOWN_SHARE_TEST_DATABASE_URL;
@@ -96,6 +96,17 @@ describe.skipIf(!url)("PostgreSQL document aggregate", () => {
     await sql!`UPDATE tools.markdown_presence SET touched_at=${Date.now()-46000} WHERE token=${doc.token}`;
     expect((await repository!.updates(doc.token,0)).presence[0].online).toBe(false);
   });
+  it("drops steps older than the kept history, so a document edited for a long time stays bounded", async () => {
+    const { doc } = await create("");
+    await sql!`INSERT INTO tools.markdown_steps (token,version,step,client_id) SELECT ${doc.token}, v, '{}'::jsonb, 'old' FROM generate_series(1, ${KEPT_STEPS + 5}) v`;
+    await sql!`UPDATE tools.markdown_documents SET version=${KEPT_STEPS + 5} WHERE token=${doc.token}`;
+    await repository!.submit(doc.token, { version: KEPT_STEPS + 5, clientId: "a", steps: [insert("x")] });
+    const [{ kept }] = await sql!<{ kept: number }[]>`SELECT count(*)::int kept FROM tools.markdown_steps WHERE token=${doc.token}`;
+    expect(kept).toBe(KEPT_STEPS);
+    await expect(repository!.updates(doc.token, 5)).rejects.toMatchObject({ data: { code: "HISTORY_UNAVAILABLE" } });
+    expect((await repository!.updates(doc.token, 6)).steps.length).toBeGreaterThan(0);
+  });
+
   it("requires a snapshot reload below imported history and retains native version zero", async () => {
     const { doc } = await create();
     await sql!`UPDATE tools.markdown_documents SET version=17,history_floor=17 WHERE token=${doc.token}`;

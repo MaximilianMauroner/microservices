@@ -3,9 +3,13 @@ import { principalSeesProduct } from "../../platform/access/product-access.js";
 import { addDays, type Ingredient, type Kitchen, type Leftover, type PlanEntry, type Recipe, type StockItem, type StoredExtra, today, weekStart } from "./domain.js";
 import { applyAppActions, appActionBatch } from "./actions.js";
 import type { KitchenStore } from "./repository.js";
+import { readBoundedBody, RequestBodyTooLargeError } from "../../platform/request-body.js";
 
 /** The app keeps this many past weeks of the plan offline. Older weeks need a connection. */
 export const SYNC_WEEKS_BACK = 4;
+
+/** Far above a real offline queue, and low enough that one request cannot hold the database pool. */
+const MAX_ACTIONS_BODY_BYTES = 1024 * 1024;
 
 export type KitchenSnapshot = Readonly<{
   kitchen: Kitchen;
@@ -49,7 +53,14 @@ export function handleKitchenSync(request: Request, resolveAppToken: AppTokenRes
 
 export function handleKitchenActions(request: Request, resolveAppToken: AppTokenResolver, store: KitchenStore): Promise<Response> {
   return asKitchenApp(request, resolveAppToken, async (who) => {
-    const batch = appActionBatch.safeParse(await request.json().catch(() => undefined));
+    let body: unknown;
+    try {
+      const bytes = await readBoundedBody(request, MAX_ACTIONS_BODY_BYTES);
+      body = bytes ? JSON.parse(new TextDecoder().decode(bytes)) : undefined;
+    } catch (error) {
+      if (error instanceof RequestBodyTooLargeError) return Response.json({ error: "request_too_large" }, { status: 413, headers: { "Cache-Control": "no-store" } });
+    }
+    const batch = appActionBatch.safeParse(body);
     if (!batch.success) return Response.json({ error: "invalid_request" }, { status: 400, headers: { "Cache-Control": "no-store" } });
     return Response.json({ results: await applyAppActions(store, who, batch.data) }, { headers: { "Cache-Control": "no-store" } });
   });

@@ -1,4 +1,5 @@
 import { createDocumentShare } from "../products/documents/service.js";
+import { ANONYMOUS_DOCUMENT_OWNER } from "../products/documents/types.js";
 import { randomUUID } from "node:crypto";
 import { createFetchApp, createPostgresUploadLinkRepository, createPostgresUploadStorage, ActivityTracker } from "#publisher";
 import {
@@ -91,7 +92,7 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
     token: config.towerHeartbeatToken
   });
   const documentShare = createDocumentShare(config.databaseUrl, config.publicOrigin, config.readOnly,
-    async (request) => (await identity.resolvePrincipal(request))?.subject ?? config.auth.allowedGoogleSubject);
+    async (request) => (await identity.resolvePrincipal(request))?.subject ?? ANONYMOUS_DOCUMENT_OWNER);
   const artifactStorage = createPostgresUploadStorage(config.artifact.s3, config.databaseUrl);
   const uploadLinks = createPostgresUploadLinkRepository(config.databaseUrl);
   const activityTracker = new ActivityTracker();

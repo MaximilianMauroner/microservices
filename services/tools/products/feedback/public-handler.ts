@@ -1,18 +1,25 @@
 import type { PlatformRouteInput } from "../../platform/route-handlers.js";
 import { FeedbackValidationError, parseFeedbackShareDays, validateFeedbackAnswers } from "./domain.js";
+import { readBoundedBody, RequestBodyTooLargeError } from "../../platform/request-body.js";
+import { clientAddress, createRateLimit } from "../../platform/security/rate-limit.js";
 
 const MAXIMUM_BODY_BYTES = 32 * 1024;
+const allowSubmission = createRateLimit({ limit: 10, windowMs: 10 * 60 * 1000 });
 
 export async function submitPublicFeedback({ request, context, params }: PlatformRouteInput) {
   const wantsJson = request.headers.get("accept")?.includes("application/json") ?? false;
   const contentType = request.headers.get("content-type")?.toLowerCase() ?? "";
   if (!contentType.startsWith("application/x-www-form-urlencoded")) return json({ error: "invalid_content_type" }, 415);
   try {
-    const body = await boundedBody(request);
+    const body = await readBoundedBody(request, MAXIMUM_BODY_BYTES);
+    if (!body) throw new FeedbackValidationError("invalid_request", "The request body is missing.");
     const fields = new URLSearchParams(new TextDecoder("utf-8", { fatal: true }).decode(body));
     if (fields.get("website")) return submissionResult(params.token, true, undefined, undefined, undefined, wantsJson);
     const form = await context.runtime.feedback.getPublicForm(params.token);
     if (!form) return notFound();
+    if (!allowSubmission(`${params.token}:${clientAddress(request)}`)) {
+      return wantsJson ? json({ error: "rate_limited" }, 429) : submissionResult(params.token, false, "rate_limited");
+    }
     const entries: Record<string, FormDataEntryValue> = {};
     const shareDays = parseFeedbackShareDays(fields.get("__share_days"));
     for (const [key, value] of fields) if (key !== "__share_days") entries[key] = value;
@@ -21,7 +28,7 @@ export async function submitPublicFeedback({ request, context, params }: Platfor
     return submissionResult(params.token, true, undefined, created.shareToken, created.shareExpiresAt, wantsJson, form.language);
   } catch (error) {
     if (error instanceof FeedbackValidationError) return submissionResult(params.token, false, error.code, undefined, undefined, wantsJson);
-    if (error instanceof RequestTooLargeError) return json({ error: "request_too_large" }, 413);
+    if (error instanceof RequestBodyTooLargeError) return json({ error: "request_too_large" }, 413);
     return submissionResult(params.token, false, "submission_failed", undefined, undefined, wantsJson);
   }
 }
@@ -36,23 +43,3 @@ function submissionResult(token: string, submitted: boolean, error?: string, sha
 }
 function notFound() { return new Response("Feedback form not found.", { status: 404, headers: { "Cache-Control": "no-store", "Content-Type": "text/plain; charset=utf-8" } }); }
 function json(body: unknown, status: number) { return new Response(JSON.stringify(body), { status, headers: { "Cache-Control": "no-store", "Content-Type": "application/json; charset=utf-8" } }); }
-class RequestTooLargeError extends Error {}
-async function boundedBody(request: Request) {
-  const declared = request.headers.get("content-length");
-  if (declared && (!/^\d+$/.test(declared) || Number(declared) > MAXIMUM_BODY_BYTES)) throw new RequestTooLargeError();
-  const reader = request.body?.getReader();
-  if (!reader) throw new FeedbackValidationError("invalid_request", "The request body is missing.");
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    size += value.byteLength;
-    if (size > MAXIMUM_BODY_BYTES) { await reader.cancel(); throw new RequestTooLargeError(); }
-    chunks.push(value);
-  }
-  const body = new Uint8Array(size);
-  let offset = 0;
-  for (const chunk of chunks) { body.set(chunk, offset); offset += chunk.byteLength; }
-  return body;
-}
