@@ -1,6 +1,6 @@
 import {
   convertNutrition, fieldNumber, ingredientGroups, isCountedUnit, UNSORTED_SECTION,
-  type Ingredient, type IngredientUnit, type KitchenSnapshot, type Nutrition,
+  type CatalogProduct, type Ingredient, type IngredientUnit, type KitchenSnapshot, type Nutrition,
 } from "@tools-platform/service/kitchen-contract";
 import type { QueuedAction } from "../../sync/model";
 
@@ -81,6 +81,11 @@ export function ingredientSave(draft: IngredientDraft, existing: Ingredient | un
   if (addToRecipes.some((use) => !Number.isFinite(use.amount) || use.amount <= 0 || use.amount > 1_000_000)) return { issue: "amountsNeeded" };
   const [section = "", ...otherGroups] = groups;
   return { action: { type: "ingredient.save", id: existing?.id, name, unit: draft.unit, section, otherGroups, notes: draft.notes, ...nutrition, oldPerNew: factor, addToRecipes } };
+}
+
+/** The draft filled in from a packaged product: its name, its unit, and its nutrition per 100 g or 100 ml. */
+export function withProduct(draft: IngredientDraft, product: CatalogProduct, language: "en" | "de"): IngredientDraft {
+  return { ...withUnit(draft, product.unit, language), name: product.name, size: "", values: nutritionFields(product.nutrition, language) };
 }
 
 /** The amount a quick add to a recipe starts with, so one tap is enough for the usual case. */

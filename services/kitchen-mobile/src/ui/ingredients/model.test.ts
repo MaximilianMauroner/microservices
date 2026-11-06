@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { kitchenAction, type Ingredient, type KitchenSnapshot, type KitchenSync } from "@tools-platform/service/kitchen-contract";
 import { project } from "../../sync/project";
-import { changeSize, ingredientDraft, ingredientSave, oldPerNew, withGroup, withUnit } from "./model";
+import { changeSize, ingredientDraft, ingredientSave, oldPerNew, withGroup, withProduct, withUnit } from "./model";
 
 const ingredient: Ingredient = {
   id: "tomato", name: "Tomato", unit: "g", section: "Vegetables", otherGroups: ["Basics"],
@@ -103,5 +103,15 @@ describe("ingredient form", () => {
   it.each(["-1", "Infinity", "a", "10001"])("blocks invalid nutrition %j", (value) => {
     const draft = ingredientDraft(ingredient, "", "en");
     expect(ingredientSave({ ...draft, values: { ...draft.values, protein: value } }, ingredient, snapshot()).issue).toBe("nutritionNeeded");
+  });
+});
+
+describe("ingredient from a product", () => {
+  it("saves the product's name, unit, and nutrition, and moves a usual recipe amount to the new unit", () => {
+    const draft = { ...ingredientDraft(undefined, "hafer", "de"), unit: "piece" as const, uses: new Map([["salad", "1"]]) };
+    const oats = { code: "9001", name: "Haferdrink", brand: "Ja! Natürlich", quantity: "1 l", unit: "ml" as const, nutrition: { kcal: 46, protein: 0.4, carbs: 7.1, fat: null } };
+    const result = ingredientSave(withProduct(draft, oats, "de"), undefined, snapshot());
+    if (!result.action) throw new Error(result.issue);
+    expect(result.action).toMatchObject({ name: "Haferdrink", unit: "ml", kcal: 46, protein: 0.4, carbs: 7.1, fat: null, addToRecipes: [{ recipeId: "salad", amount: 100 }] });
   });
 });

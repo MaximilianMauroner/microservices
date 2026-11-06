@@ -1,4 +1,4 @@
-import type { AppActionResult, KitchenSync } from "@tools-platform/service/kitchen-contract";
+import type { AppActionResult, CatalogProduct, KitchenSync } from "@tools-platform/service/kitchen-contract";
 import { accessToken, currentSession, Offline, SignedOut, TOOLS_ORIGIN } from "../auth/session";
 import type { OutboxItem } from "./model";
 
@@ -35,3 +35,9 @@ export const kitchenApi: KitchenApi = {
     return ((await response.json()) as { results: AppActionResult[] }).results;
   }
 };
+
+/** Packaged foods from Open Food Facts that match a typed name. It needs a connection. */
+export async function searchCatalog(query: string): Promise<readonly CatalogProduct[]> {
+  const response = await call(`/api/kitchen/products?${new URLSearchParams({ q: query })}`);
+  return ((await response.json()) as { products: CatalogProduct[] }).products;
+}
