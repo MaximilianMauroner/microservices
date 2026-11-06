@@ -1,5 +1,5 @@
 import { addDays, formatAmount, weekStart } from "@tools-platform/service/kitchen-contract";
-import { Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Plus, X } from "lucide-react-native";
+import { Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Plus } from "lucide-react-native";
 import { useLocalSearchParams } from "expo-router";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Pressable, type ScrollViewInstance, StyleSheet, View } from "react-native";
@@ -8,11 +8,14 @@ import type { QueuedAction } from "../../sync/model";
 import {
   Button,
   Empty,
+  FloatingButton,
   GroupDot,
   GroupLabel,
   GroupList,
+  type Notice,
   PlateRing,
   Screen,
+  Snackbar,
   T,
   byGroup,
   groupLabel,
@@ -24,14 +27,8 @@ import { AddSheet } from "./sheet";
 import { TEXT } from "./text";
 import { shoppingView } from "./view";
 
-const NOTICE_TEXT = {
-  en: { undo: "Undo", dismiss: "Dismiss" },
-  de: { undo: "Rückgängig", dismiss: "Schließen" },
-};
-
 export function Shopping({ kitchen, today, planFrom, change }: OpenKitchen) {
   const text = useText(TEXT);
-  const noticeText = useText(NOTICE_TEXT);
   const language = useLanguage();
   const colors = useColors();
   const [week, setWeek] = useState(() => weekStart(today));
@@ -39,15 +36,15 @@ export function Shopping({ kitchen, today, planFrom, change }: OpenKitchen) {
   useEffect(() => { if (asked && asked >= planFrom) setWeek(weekStart(asked)); }, [asked, planFrom]);
   const [adding, setAdding] = useState(false);
   const [expanded, setExpanded] = useState(false);
-  const [notice, setNotice] = useState<{ title: string; undo?: QueuedAction }>();
+  const [notice, setNotice] = useState<Notice | null>(null);
   const scroll = useRef<ScrollViewInstance>(null);
   const positions = useRef(new Map<string, number>());
   const contentTop = useRef(0);
   const shopping = shoppingView(kitchen, week);
   const groups = byGroup(kitchen.kitchen.groups, shopping.toBuy, (line) => line.section);
-  function run(action: QueuedAction, title: string, undo?: QueuedAction) {
+  function run(action: QueuedAction, message: string, undo?: QueuedAction) {
     change(action);
-    setNotice({ title, undo });
+    setNotice({ message, undo });
   }
   const facts = `${weekLabel(week, today, language)}. ${shopping.count ? text.toBuy(shopping.count) : text.nothingToBuy}${shopping.plannedMeals ? ` ${text.plannedFor(shopping.plannedMeals)}` : ""}.`;
   return (
@@ -55,6 +52,12 @@ export function Shopping({ kitchen, today, planFrom, change }: OpenKitchen) {
       ref={scroll}
       title={text.title}
       facts={facts}
+      floating={
+        <>
+          <Snackbar notice={notice} onUndo={change} onDone={() => setNotice(null)} />
+          <FloatingButton icon={Plus} label={text.add} onPress={() => setAdding(true)} />
+        </>
+      }
       actions={
         <>
           <Button
@@ -70,7 +73,6 @@ export function Shopping({ kitchen, today, planFrom, change }: OpenKitchen) {
             accessibilityLabel={text.nextWeek}
             onPress={() => setWeek(addDays(week, 7))}
           />
-          <Button icon={Plus} label={text.addItem} onPress={() => setAdding(true)} />
         </>
       }
     >
@@ -80,29 +82,6 @@ export function Shopping({ kitchen, today, planFrom, change }: OpenKitchen) {
         }}
         style={{ gap: 24 }}
       >
-        {notice ? (
-          <View accessibilityLiveRegion="polite" style={[styles.notice, { backgroundColor: colors.muted }]}>
-            <T style={{ flex: 1, fontSize: 14 }}>{notice.title}</T>
-            {notice.undo ? (
-              <Button
-                compact
-                tone="outline"
-                label={noticeText.undo}
-                onPress={() => {
-                  change(notice.undo!);
-                  setNotice(undefined);
-                }}
-              />
-            ) : null}
-            <Button
-              compact
-              tone="ghost"
-              icon={X}
-              accessibilityLabel={noticeText.dismiss}
-              onPress={() => setNotice(undefined)}
-            />
-          </View>
-        ) : null}
         {groups.length ? (
           <View
             accessibilityLabel={text.groupsOnList}
@@ -357,7 +336,6 @@ function Row({
 }
 
 const styles = StyleSheet.create({
-  notice: { flexDirection: "row", alignItems: "center", gap: 8, padding: 10, borderRadius: 12 },
   balance: { flexDirection: "row", alignItems: "center", gap: 12, padding: 16, borderRadius: 16 },
   wrap: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   jump: { minHeight: 44, flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 6 },

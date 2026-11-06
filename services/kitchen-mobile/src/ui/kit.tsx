@@ -1,10 +1,11 @@
 import { byGroupOrder, addDays, UNSORTED_SECTION } from "@tools-platform/service/kitchen-contract";
 import { BookOpen, CalendarDays, CookingPot, type LucideIcon, Refrigerator, Search, ShoppingBasket, X } from "lucide-react-native";
-import { createContext, type ReactNode, type Ref, useContext, useState } from "react";
-import { KeyboardAvoidingView, Modal, Platform, Pressable, RefreshControl, type RefreshControlProps, ScrollView, type ScrollViewInstance, StyleSheet, Text, type TextProps, TextInput, type TextInputProps, View, type ViewStyle } from "react-native";
+import { createContext, type ReactNode, type Ref, useContext, useEffect, useRef, useState } from "react";
+import { AccessibilityInfo, KeyboardAvoidingView, Modal, Platform, Pressable, RefreshControl, type RefreshControlProps, ScrollView, type ScrollViewInstance, StyleSheet, Text, type TextProps, TextInput, type TextInputProps, View, type ViewStyle } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle } from "react-native-svg";
 import { useSync } from "../state";
+import type { QueuedAction } from "../sync/model";
 import { type KitchenLanguage, LOCALES, useText } from "./language";
 import { type Colors, FONT, groupColor, ink, type PageKey, RADIUS, tint, useColors } from "./theme";
 
@@ -31,7 +32,8 @@ const en = {
   useTomorrow: "Use by tomorrow",
   useBy: (day: string) => `Use by ${day}`,
   other: "Other",
-  clearSearch: "Clear search"
+  clearSearch: "Clear search",
+  undo: "Undo"
 };
 const TEXT: Record<KitchenLanguage, typeof en> = {
   en,
@@ -49,7 +51,8 @@ const TEXT: Record<KitchenLanguage, typeof en> = {
     useTomorrow: "Bis morgen verbrauchen",
     useBy: (day: string) => `Verbrauchen bis ${day}`,
     other: "Sonstiges",
-    clearSearch: "Suche löschen"
+    clearSearch: "Suche löschen",
+    undo: "Rückgängig"
   }
 };
 
@@ -72,20 +75,73 @@ export function T({ weight = "regular", muted, style, ...props }: TextProps & { 
   return <Text {...props} style={[{ fontFamily: FONT[weight], color: muted ? colors.mutedForeground : colors.foreground, fontSize: 15 }, style]} />;
 }
 
-/** One kitchen page: the title row and the page content, scrollable, with room for the tab bar. Pull down to sync. */
-export function Screen({ title, facts, actions, children, ref }: { title: ReactNode; facts?: ReactNode; actions?: ReactNode; children: ReactNode; ref?: Ref<ScrollViewInstance> }) {
+/**
+ * One kitchen page: the title row and the page content, scrollable, with room for the tab bar. Pull down to sync.
+ * `floating` sits in the thumb zone above the tab bar, for the page's main button and its snackbar.
+ */
+export function Screen({ title, facts, actions, floating, children, ref }: {
+  title: ReactNode; facts?: ReactNode; actions?: ReactNode; floating?: ReactNode; children: ReactNode; ref?: Ref<ScrollViewInstance>;
+}) {
   const colors = useColors();
   return (
-    <ScrollView ref={ref} style={{ backgroundColor: colors.background }} contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled" refreshControl={<SyncRefresh />}>
-      <View style={styles.header}>
-        <View style={{ flexShrink: 1 }}>
-          {typeof title === "string" ? <T weight="semibold" style={styles.title}>{title}</T> : title}
-          {facts ? (typeof facts === "string" ? <T muted style={{ marginTop: 6, fontSize: 14 }}>{facts}</T> : facts) : null}
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <ScrollView ref={ref} contentContainerStyle={[styles.page, floating ? { paddingBottom: FLOATING_ROOM } : null]} keyboardShouldPersistTaps="handled" refreshControl={<SyncRefresh />}>
+        <View style={styles.header}>
+          <View style={{ flexShrink: 1 }}>
+            {typeof title === "string" ? <T weight="semibold" style={styles.title}>{title}</T> : title}
+            {facts ? (typeof facts === "string" ? <T muted style={{ marginTop: 6, fontSize: 14 }}>{facts}</T> : facts) : null}
+          </View>
+          {actions ? <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>{actions}</View> : null}
         </View>
-        {actions ? <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>{actions}</View> : null}
-      </View>
-      {children}
-    </ScrollView>
+        {children}
+      </ScrollView>
+      {floating ? <View pointerEvents="box-none" style={styles.floating}>{floating}</View> : null}
+    </View>
+  );
+}
+
+const FLOATING_ROOM = 104;
+
+/** The main action of a page, in its color. */
+export function FloatingButton({ label, icon: Icon, onPress }: { label: string; icon: LucideIcon; onPress: () => void }) {
+  const { hue } = usePageColor();
+  return (
+    <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={({ pressed }) => [styles.fab, { backgroundColor: hue, opacity: pressed ? 0.85 : 1 }]}>
+      <Icon size={22} color="#ffffff" />
+      <T weight="semibold" style={{ color: "#ffffff", fontSize: 16 }}>{label}</T>
+    </Pressable>
+  );
+}
+
+/** What a change did, with the change that takes it back. */
+export type Notice = Readonly<{ message: string; undo?: QueuedAction }>;
+
+const SNACKBAR_MS = 6000;
+
+/** The last notice of a page, above its floating button. It closes after a few seconds, or later when the phone's accessibility settings ask for more time. */
+export function Snackbar({ notice, onUndo, onDone }: { notice: Notice | null; onUndo: (action: QueuedAction) => void; onDone: () => void }) {
+  const colors = useColors();
+  const text = useKitText();
+  const { ink: pageInk } = usePageColor();
+  const done = useRef(onDone);
+  done.current = onDone;
+  useEffect(() => {
+    if (!notice) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let live = true;
+    void AccessibilityInfo.getRecommendedTimeoutMillis(SNACKBAR_MS).then((ms) => { if (live) timer = setTimeout(() => done.current(), ms); });
+    return () => { live = false; clearTimeout(timer); };
+  }, [notice]);
+  if (!notice) return null;
+  return (
+    <View accessibilityLiveRegion="polite" style={[styles.snackbar, { backgroundColor: colors.muted, borderColor: colors.border }]}>
+      <T style={{ flex: 1, fontSize: 14 }}>{notice.message}</T>
+      {notice.undo ? (
+        <Pressable accessibilityRole="button" onPress={() => { onUndo(notice.undo!); onDone(); }} style={styles.snackAction}>
+          <T weight="semibold" style={{ color: pageInk }}>{text.undo}</T>
+        </Pressable>
+      ) : null}
+    </View>
   );
 }
 
@@ -345,5 +401,9 @@ const styles = StyleSheet.create({
   empty: { alignItems: "center", gap: 12, borderWidth: 1, borderStyle: "dashed", borderRadius: 16, paddingHorizontal: 24, paddingVertical: 40 },
   button: { height: 44, paddingHorizontal: 16, borderRadius: RADIUS, borderWidth: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
   sheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 16, paddingTop: 10 },
-  field: { minHeight: 44, borderWidth: 1, borderRadius: RADIUS, paddingHorizontal: 12, fontFamily: FONT.regular, fontSize: 16 }
+  field: { minHeight: 44, borderWidth: 1, borderRadius: RADIUS, paddingHorizontal: 12, fontFamily: FONT.regular, fontSize: 16 },
+  floating: { position: "absolute", left: 16, right: 16, bottom: 16, alignItems: "flex-end", gap: 10 },
+  fab: { height: 56, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 20, borderRadius: 16, elevation: 6, shadowColor: "#000000", shadowOpacity: 0.35, shadowRadius: 12, shadowOffset: { width: 0, height: 6 } },
+  snackbar: { alignSelf: "stretch", minHeight: 48, flexDirection: "row", alignItems: "center", gap: 8, paddingLeft: 14, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, elevation: 4, shadowColor: "#000000", shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 4 } },
+  snackAction: { minHeight: 48, minWidth: 64, alignItems: "center", justifyContent: "center", paddingHorizontal: 14 }
 });

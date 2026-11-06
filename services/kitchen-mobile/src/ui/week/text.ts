@@ -2,7 +2,6 @@ import type { KitchenLanguage } from "../language";
 
 const en = {
   historyLimit: "Earlier weeks are not stored on this phone.",
-  undo: "Undo",
   chooseRecipe: "Choose a recipe.",
   previousWeek: "Previous week",
   nextWeek: "Next week",
@@ -73,7 +72,6 @@ export const TEXT: Record<KitchenLanguage, typeof en> = {
   en,
   de: {
     historyLimit: "Frühere Wochen sind nicht auf diesem Telefon gespeichert.",
-    undo: "Rückgängig",
     chooseRecipe: "Wähle ein Rezept.",
     previousWeek: "Vorherige Woche",
     nextWeek: "Nächste Woche",
