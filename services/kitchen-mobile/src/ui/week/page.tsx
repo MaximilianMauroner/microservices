@@ -4,8 +4,7 @@ import { Check, ChevronLeft, ChevronRight, Plus, ShoppingBasket } from "lucide-r
 import { useMemo, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import type { OpenKitchen } from "../../state";
-import type { QueuedAction } from "../../sync/model";
-import { Button, dayParts, mainGroup, PlateRing, Screen, T, useByLabel, usePageColor, weekLabel, weekRange } from "../kit";
+import { Button, dayParts, mainGroup, type Notice, PlateRing, Screen, Snackbar, T, useByLabel, usePageColor, weekLabel, weekRange } from "../kit";
 import { useLanguage, useText } from "../language";
 import { groupColor, tint, useColors } from "../theme";
 import { buildWeek } from "./model";
@@ -13,7 +12,6 @@ import { EntrySheet, PlanSheet } from "./sheets";
 import { TEXT } from "./text";
 
 type Selection = { kind: "plan"; day: string } | { kind: "entry"; id: string };
-export type Notice = { message: string; undo?: QueuedAction };
 
 export function Week({ data }: { data: OpenKitchen }) {
   const { kitchen: snapshot, today, planFrom, change } = data;
@@ -35,18 +33,13 @@ export function Week({ data }: { data: OpenKitchen }) {
   return (
     <Screen title={title}
       facts={`${title === range ? "" : `${range} · `}${week.entries.length ? text.plannedFacts(week.entries.length, week.cooked) : text.nothingPlanned}`}
+      floating={<Snackbar notice={notice} onUndo={change} onDone={() => setNotice(null)} />}
       actions={<>
         <Button icon={ChevronLeft} tone="outline" accessibilityLabel={text.previousWeek} disabled={!week.canGoBack} onPress={() => setRequested(addDays(week.start, -7))} />
         <Button label={text.today} tone="outline" disabled={week.days.some((one) => one.day === today)} onPress={() => setRequested(weekStart(today))} />
         <Button icon={ChevronRight} tone="outline" accessibilityLabel={text.nextWeek} onPress={() => setRequested(addDays(week.start, 7))} />
       </>}>
       {week.canGoBack ? null : <T muted style={styles.small}>{text.historyLimit}</T>}
-      {notice ? (
-        <View style={[styles.notice, { backgroundColor: colors.muted }]}>
-          <T accessibilityLiveRegion="polite" style={{ flex: 1 }}>{notice.message}</T>
-          {notice.undo ? <Button label={text.undo} tone="ghost" onPress={() => { if (notice.undo) change(notice.undo); setNotice(null); }} /> : null}
-        </View>
-      ) : null}
       <View accessibilityLabel={text.daysOfWeek} style={{ borderTopWidth: StyleSheet.hairlineWidth, borderColor: colors.border }}>
         {week.days.map(({ day, entries }) => {
           const parts = dayParts(day, language);
@@ -120,7 +113,6 @@ export function Week({ data }: { data: OpenKitchen }) {
 
 const styles = StyleSheet.create({
   small: { fontSize: 12 },
-  notice: { flexDirection: "row", alignItems: "center", gap: 8, borderRadius: 12, padding: 12 },
   day: { flexDirection: "row", gap: 12, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth },
   date: { width: 52, alignItems: "center", gap: 4, paddingTop: 4 },
   number: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },

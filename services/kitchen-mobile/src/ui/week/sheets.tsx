@@ -4,12 +4,11 @@ import { ChefHat, Pencil, RotateCcw } from "lucide-react-native";
 import { useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import type { OpenKitchen } from "../../state";
-import { Button, dayParts, Pill, PlateRing, SearchField, Sheet, Stepper, T, usePageColor } from "../kit";
+import { Button, dayParts, type Notice, Pill, PlateRing, SearchField, Sheet, Stepper, T, usePageColor } from "../kit";
 import { useLanguage, useText } from "../language";
 import { type DraftLine, draftLines, LineEditor, useResolveLines } from "../lines";
 import { tint, useColors } from "../theme";
 import { defaultMeal, type WeekView } from "./model";
-import type { Notice } from "./page";
 import { TEXT } from "./text";
 
 type SheetProps = { data: OpenKitchen; week: WeekView; onClose: () => void; notify: (notice: Notice) => void };
