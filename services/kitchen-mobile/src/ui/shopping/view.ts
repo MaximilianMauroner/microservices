@@ -59,7 +59,6 @@ export function frequentItems(kitchen: Pick<KitchenSnapshot, "ingredients" | "pl
     .map((one) => one.name);
 }
 
-/** A row of the shopping list. */
 export type ShoppingRow =
   | { kind: "line"; line: ShoppingLine }
   | { kind: "weekly"; extra: ExtraItem; week: string }
