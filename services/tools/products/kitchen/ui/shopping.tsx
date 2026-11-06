@@ -173,11 +173,11 @@ export function KitchenShoppingPage(data: ShoppingData) {
             <summary className="cursor-pointer list-none text-sm font-medium text-muted-foreground marker:hidden">
               {text.alreadyAtHome(covered.length)}
             </summary>
-            <ul className="mt-2 grid gap-1">
+            <ul className="mt-2 grid grid-cols-1 gap-1">
               {covered.map((line) => (
                 <li key={line.ingredientId} className="flex justify-between gap-3 py-1 text-sm">
-                  <span className="flex items-center gap-2"><GroupDot groups={kitchen.groups} group={line.section} />{line.ingredient}</span>
-                  <span className="text-muted-foreground tabular-nums">{text.needs(formatAmount(line.needed, line.unit, language))}</span>
+                  <span className="flex min-w-0 items-center gap-2"><GroupDot groups={kitchen.groups} group={line.section} /><span className="min-w-0 wrap-anywhere">{line.ingredient}</span></span>
+                  <span className="shrink-0 text-muted-foreground tabular-nums">{text.needs(formatAmount(line.needed, line.unit, language))}</span>
                 </li>
               ))}
             </ul>
@@ -238,7 +238,7 @@ function Row({ name, amount, detail, color, onCheck, onUncheck, done = false, di
           {checked ? <CheckIcon className="size-4" strokeWidth={3} /> : null}
         </span>
         <span className="min-w-0 flex-1">
-          <span className={cn("block font-medium break-words", checked && "text-muted-foreground line-through")}>{name}</span>
+          <span className={cn("block font-medium wrap-anywhere", checked && "text-muted-foreground line-through")}>{name}</span>
           {detail ? <span className="line-clamp-2 text-xs text-muted-foreground">{detail}</span> : null}
         </span>
         {amount ? <span className="shrink-0 text-sm font-semibold tabular-nums" style={{ color: ink(color) }}>{amount}</span> : null}
@@ -300,7 +300,7 @@ function AddSheet({ open, onClose, data }: { open: boolean; onClose: () => void;
           </ul>
         </section>
       ) : null}
-      <div className="grid gap-4">
+      <div className="grid grid-cols-1 gap-4">
         {groups.map(([section, ingredients]) => (
           <section key={section}>
             <h3 className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-muted-foreground"><GroupDot groups={data.kitchen.groups} group={section} className="size-2" />{groupLabel(section, language)}</h3>
@@ -314,10 +314,10 @@ function AddSheet({ open, onClose, data }: { open: boolean; onClose: () => void;
                     aria-pressed={isOn}
                     disabled={isOn || pending}
                     onClick={() => void add(ingredient.name)}
-                    className="inline-flex h-9 items-center gap-1 rounded-full border border-control-border bg-control px-3 text-sm hover:border-control-border-hover aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground"
+                    className="inline-flex h-9 max-w-full items-center gap-1 rounded-full border border-control-border bg-control px-3 text-sm hover:border-control-border-hover aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground"
                   >
-                    {isOn ? <CheckIcon className="size-3.5" aria-hidden /> : null}
-                    {ingredient.name}
+                    {isOn ? <CheckIcon className="size-3.5 shrink-0" aria-hidden /> : null}
+                    <span className="truncate">{ingredient.name}</span>
                   </button>
                 );
               })}

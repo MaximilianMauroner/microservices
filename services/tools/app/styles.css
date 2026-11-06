@@ -244,6 +244,11 @@ html[data-theme="light"] {
   --control-border-hover: #a8a8a8;
 }
 
+/* A fixed bottom tab bar covers the page edge, so a focused control must scroll clear of it. */
+@media (max-width: 767px) {
+  html:has([data-bottom-tab-bar]) { scroll-padding-bottom: calc(5rem + env(safe-area-inset-bottom)); }
+}
+
 html:has([data-suite-accent="lime"]) {
   --primary: #bef264;
   --primary-foreground: #172106;
