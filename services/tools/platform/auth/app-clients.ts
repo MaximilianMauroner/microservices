@@ -5,7 +5,7 @@ import type postgres from "postgres";
  * Their tokens open only their own API, and MCP refuses them, so each credential keeps one purpose.
  */
 export const APP_CLIENTS = {
-  kitchen: { clientId: "com.lab4code.kitchen", name: "Kitchen", redirectUri: "com.lab4code.kitchen:/oauth" }
+  kitchen: { clientId: "com.lab4code.pantrino", name: "Pantrino", redirectUri: "com.lab4code.pantrino:/oauth" }
 } as const;
 
 export type AppClientId = keyof typeof APP_CLIENTS;

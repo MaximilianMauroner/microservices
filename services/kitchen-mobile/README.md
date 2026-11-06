@@ -1,13 +1,13 @@
-# Kitchen app
+# Pantrino
 
-The Kitchen product of Mauroner Tools as an iOS and Android app. A person
+Pantrino is the Kitchen product of Mauroner Tools as an iOS and Android app. A person
 signs in with their Tools account, and the app syncs. Every screen works
 offline.
 
 ## How it works
 
 - Sign-in uses OAuth with PKCE against Tools. The app is the public client
-  `com.lab4code.kitchen`. The refresh token is in the secure store. The
+  `com.lab4code.pantrino`. The refresh token is in the secure store. The
   access token stays in memory.
 - The app reads `GET /api/kitchen/sync` and sends changes to
   `POST /api/kitchen/actions`. These routes accept only this app's bearer
