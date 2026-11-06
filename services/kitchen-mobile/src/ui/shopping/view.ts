@@ -10,6 +10,7 @@ import {
 import type { QueuedAction } from "../../sync/model";
 import type { KitchenLanguage } from "../language";
 import type { TEXT } from "./text";
+import { compareText } from "../../compare";
 
 export function shoppingView(kitchen: KitchenSnapshot, day: string) {
   const start = weekStart(day);
@@ -54,7 +55,7 @@ export function frequentItems(kitchen: Pick<KitchenSnapshot, "ingredients" | "pl
   const query = typed.trim().toLowerCase();
   return kitchen.ingredients
     .filter((one) => !listed.has(one.name.toLowerCase()) && one.name.toLowerCase().includes(query))
-    .sort((a, b) => (uses.get(b.id) ?? 0) - (uses.get(a.id) ?? 0) || b.recipeCount - a.recipeCount || a.name.localeCompare(b.name))
+    .sort((a, b) => (uses.get(b.id) ?? 0) - (uses.get(a.id) ?? 0) || b.recipeCount - a.recipeCount || compareText(a.name, b.name))
     .slice(0, limit)
     .map((one) => one.name);
 }

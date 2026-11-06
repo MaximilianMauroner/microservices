@@ -13,6 +13,7 @@ import { RowMenu, type SwipeAction, SwipeRow } from "../swipe-row";
 import { AddLeftoverSheet, AddStockSheet, AmountSheet } from "./sheets";
 import { TEXT } from "./text";
 import { pantryShelves } from "./view";
+import { compareText } from "../../compare";
 
 type OpenSheet = { type: "stock" } | { type: "leftover" } | { type: "ingredient"; id: string } | { type: "amount"; id: string };
 type Run = (action: QueuedAction, title: string, undo?: QueuedAction) => void;
@@ -24,7 +25,7 @@ export function Pantry(data: OpenKitchen) {
   const colors = useColors();
   const [sheet, setSheet] = useState<OpenSheet>();
   const [notice, setNotice] = useState<Notice | null>(null);
-  const leftovers = [...kitchen.leftovers].sort((a, b) => a.useBy.localeCompare(b.useBy));
+  const leftovers = [...kitchen.leftovers].sort((a, b) => compareText(a.useBy, b.useBy));
   const run: Run = (action, title, undo) => {
     change(action);
     setNotice({ message: title, undo: undo && [undo] });
