@@ -188,9 +188,9 @@ describe("the gestures on a shopping row", () => {
     ...Object.fromEntries(view.once.map((extra) => [extra.name, { kind: "once", extra }])),
   });
   function run(before: KitchenSnapshot, name: string, gesture: RowGesture) {
-    const change = rowChanges(rows(shoppingView(before, start))[name]!, TEXT.en, "en")[gesture]!;
+    const change = rowChanges(rows(shoppingView(before, start))[name]!, TEXT.en, "en", () => "00000000-0000-4000-8000-000000000099")[gesture]!;
     const after = apply(before, [change.action]);
-    return { change, after: shoppingView(after, start), undone: change.undo ? shoppingView(apply(after, [change.undo]), start) : null };
+    return { change, after: shoppingView(after, start), undone: change.undo ? shoppingView(apply(after, [...change.undo]), start) : null };
   }
 
   it("buys an ingredient line into At home and gives it back on undo, but cannot remove it", () => {
@@ -198,7 +198,7 @@ describe("the gestures on a shopping row", () => {
     expect(change.message).toBe("150 g Rice added to At home");
     expect(after.covered).toMatchObject([{ ingredient: "Rice", inStock: 150 }]);
     expect(undone?.toBuy).toMatchObject([{ ingredient: "Rice", toBuy: 150 }]);
-    expect(rowChanges(rows(shoppingView(snapshot(), start)).Rice!, TEXT.en, "en").remove).toBeUndefined();
+    expect(rowChanges(rows(shoppingView(snapshot(), start)).Rice!, TEXT.en, "en", () => "unused").remove).toBeUndefined();
   });
 
   it("checks a weekly item for the week, and a second check puts it back on the list", () => {
@@ -216,6 +216,13 @@ describe("the gestures on a shopping row", () => {
     expect(change.message).toBe("Coffee is no longer on every week's list");
     expect(after.weekly).toEqual([]);
     expect(undone?.weekly).toMatchObject([{ name: "Coffee", everyWeek: true, bought: false }]);
+  });
+
+  it("brings a weekly item that was bought this week back as bought on undo", () => {
+    const bought = apply(snapshot(), [rowChanges(rows(shoppingView(snapshot(), start)).Coffee!, TEXT.en, "en", () => "unused").check!.action]);
+    const { after, undone } = run(bought, "Coffee", "remove");
+    expect(after.weekly).toEqual([]);
+    expect(undone?.weekly).toMatchObject([{ name: "Coffee", everyWeek: true, bought: true }]);
   });
 
   it("takes a one-time item off the list when it is bought or removed, and undo puts it back", () => {
