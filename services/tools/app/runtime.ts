@@ -26,6 +26,7 @@ import { MoneyMarketDataService } from "../products/money/money-market-data-serv
 import { createPostgresMoneyMarketDataRepository } from "../products/money/money-market-data-repository.js";
 import { createPostgresFeedbackRepository, type FeedbackRepository } from "../products/feedback/repository.js";
 import { createPostgresDevFeedbackRepository, type DevFeedbackRepository } from "../platform/dev-feedback/dev-feedback.js";
+import { createPostgresKitchenCatalog, type KitchenCatalog } from "../products/kitchen/catalog.js";
 import { createPostgresKitchenStore, type KitchenStore } from "../products/kitchen/repository.js";
 import { type BodyshopStore, createPostgresBodyshopStore } from "../products/bodyshop/repository.js";
 import { createPlatformIdentity, type PlatformIdentity } from "../platform/auth/auth.js";
@@ -48,6 +49,7 @@ export type PlatformRuntime = {
   feedback: FeedbackRepository;
   devFeedback: DevFeedbackRepository;
   kitchen: KitchenStore;
+  kitchenCatalog: KitchenCatalog;
   bodyshop: BodyshopStore;
   documentShare: ReturnType<typeof createDocumentShare>;
   stop: () => Promise<void>;
@@ -100,6 +102,7 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
   const moneyMarketData = new MoneyMarketDataService(createPostgresMoneyMarketDataRepository(config.databaseUrl, { readOnly: config.readOnly }));
   const feedback = createPostgresFeedbackRepository(config.databaseUrl, { readOnly: config.readOnly, encryptionKey: config.feedbackEncryptionKey });
   const kitchen = createPostgresKitchenStore(config.databaseUrl, { readOnly: config.readOnly });
+  const kitchenCatalog = createPostgresKitchenCatalog(config.databaseUrl, { readOnly: config.readOnly });
   const bodyshop = createPostgresBodyshopStore(config.databaseUrl, { readOnly: config.readOnly, encryptionKey: config.bodyshopEncryptionKey });
   const devFeedback = createPostgresDevFeedbackRepository(config.databaseUrl, { readOnly: config.readOnly });
   try {
@@ -150,6 +153,27 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
             error: (event, fields = {}) => console.error(JSON.stringify({ event, task: "money-market-data", ...fields }))
           }
         });
+    const catalogStop = new AbortController();
+    const catalogScheduler = config.readOnly
+      ? undefined
+      : startAlignedScheduler({
+          intervalMs: 3_600_000,
+          phaseOffsetMs: 40 * 60_000,
+          lease: {
+            repository: createPostgresScheduledTaskLeaseRepository(config.databaseUrl),
+            taskId: "kitchen-catalog:hourly",
+            ownerId: randomUUID(),
+            durationMs: 20 * 60_000
+          },
+          run: async () => {
+            const result = await kitchenCatalog.refresh({ signal: catalogStop.signal });
+            console.info(JSON.stringify({ event: "kitchen.catalog.refreshed", ...result }));
+          },
+          logger: {
+            info: (event, fields = {}) => console.info(JSON.stringify({ event, task: "kitchen-catalog", ...fields })),
+            error: (event, fields = {}) => console.error(JSON.stringify({ event, task: "kitchen-catalog", ...fields }))
+          }
+        });
     let stopped = false;
     const services: PlatformServices = {
       manage: {
@@ -174,8 +198,10 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
       if (stopped) return;
       stopped = true;
       cleanup?.stop();
+      catalogStop.abort();
       await Promise.all([
         marketDataScheduler?.close() ?? Promise.resolve(),
+        catalogScheduler?.close() ?? Promise.resolve(),
         cleanup?.wait() ?? Promise.resolve(),
         activityTracker.waitForIdle()
       ]);
@@ -187,6 +213,7 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
         feedback.close(),
         devFeedback.close(),
         kitchen.close(),
+        kitchenCatalog.close(),
         bodyshop.close(),
         documentShare.close(),
         identity.close()
@@ -217,6 +244,7 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
       feedback,
       devFeedback,
       kitchen,
+      kitchenCatalog,
       bodyshop,
       documentShare,
       health: async () => {
@@ -226,6 +254,7 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
           moneyMarketData.readiness(),
           feedback.readiness(),
           kitchen.readiness(),
+          kitchenCatalog.readiness(),
           bodyshop.readiness(),
           documentShare.readiness()
         ]);
@@ -240,6 +269,7 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
     await moneyMarketData.close();
     await feedback.close();
     await kitchen.close();
+    await kitchenCatalog.close();
     await bodyshop.close();
     await documentShare.close();
     await identity.close();

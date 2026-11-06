@@ -2,6 +2,7 @@ import type { PlatformPrincipal } from "#security";
 import { principalSeesProduct } from "../../platform/access/product-access.js";
 import { addDays, type Ingredient, type Kitchen, type Leftover, type PlanEntry, type Recipe, type StockItem, type StoredExtra, today, weekStart } from "./domain.js";
 import { applyAppActions, appActionBatch } from "./actions.js";
+import type { KitchenCatalog } from "./catalog.js";
 import type { KitchenStore } from "./repository.js";
 import { readBoundedBody, RequestBodyTooLargeError } from "../../platform/request-body.js";
 
@@ -49,6 +50,13 @@ async function asKitchenApp(request: Request, resolveAppToken: AppTokenResolver,
 
 export function handleKitchenSync(request: Request, resolveAppToken: AppTokenResolver, store: KitchenStore): Promise<Response> {
   return asKitchenApp(request, resolveAppToken, async (who) => Response.json(await kitchenSync(store, who), { headers: { "Cache-Control": "no-store" } }));
+}
+
+export function handleKitchenCatalog(request: Request, resolveAppToken: AppTokenResolver, catalog: KitchenCatalog): Promise<Response> {
+  return asKitchenApp(request, resolveAppToken, async () => {
+    const query = new URL(request.url).searchParams.get("q") ?? "";
+    return Response.json({ products: await catalog.search(query.slice(0, 100)) }, { headers: { "Cache-Control": "no-store" } });
+  });
 }
 
 export function handleKitchenActions(request: Request, resolveAppToken: AppTokenResolver, store: KitchenStore): Promise<Response> {

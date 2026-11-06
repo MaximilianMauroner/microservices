@@ -9,8 +9,9 @@ offline.
 - Sign-in uses OAuth with PKCE against Tools. The app is the public client
   `com.lab4code.pantrino`. The refresh token is in the secure store. The
   access token stays in memory.
-- The app reads `GET /api/kitchen/sync` and sends changes to
-  `POST /api/kitchen/actions`. These routes accept only this app's bearer
+- The app reads `GET /api/kitchen/sync`, sends changes to
+  `POST /api/kitchen/actions`, and finds packaged foods for a new ingredient
+  with `GET /api/kitchen/products`. These routes accept only this app's bearer
   tokens. Browser sessions and MCP tokens cannot use them.
 - Each change goes into a local queue with its own ID. The server applies
   each ID at most once, so the app can send a change again after a network
