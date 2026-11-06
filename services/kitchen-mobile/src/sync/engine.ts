@@ -47,6 +47,7 @@ export function createSyncEngine({ vault, api, project, newId, isSignedOut, isOf
   let state: SyncState = INITIAL;
   let snapshot: KitchenSync | null = null;
   let outbox: OutboxItem[] = [];
+  const storing = new Set<string>();
   let writes: Promise<unknown> = Promise.resolve();
   let syncedAt: string | null = null;
   let running: { epoch: number; done: Promise<void> } | undefined;
@@ -62,13 +63,18 @@ export function createSyncEngine({ vault, api, project, newId, isSignedOut, isOf
     for (const listener of listeners) listener();
   }
 
-  /** Reads the outbox again. A change the vault does not have yet stays, unless the server just answered it. */
+  /**
+   * Reads the outbox again. A change missing from the vault stays only if its write had not ended when the read began,
+   * or it came later. Any other missing change was answered by the server or rolled back, so it leaves the screen.
+   */
   async function reload(mine: number, patch: Partial<SyncState> = {}, answered: ReadonlySet<string> = new Set()) {
+    const before = new Set(outbox.map((item) => item.clientActionId));
+    const inFlight = new Set(storing);
     const [stored, notices] = await Promise.all([vault.outbox(), vault.notices()]);
     if (mine !== epoch) return;
     const known = new Set(stored.map((item) => item.clientActionId));
     const last = stored.at(-1)?.seq ?? 0;
-    const local = outbox.filter((item) => !known.has(item.clientActionId) && !answered.has(item.clientActionId));
+    const local = outbox.filter(({ clientActionId: id }) => !known.has(id) && !answered.has(id) && (inFlight.has(id) || !before.has(id)));
     outbox = [...stored, ...local.map((item, index) => ({ ...item, seq: last + index + 1 }))];
     publish({ ...patch, view: snapshot && project(snapshot, outbox), pending: outbox.length, notices });
   }
@@ -158,6 +164,7 @@ export function createSyncEngine({ vault, api, project, newId, isSignedOut, isOf
       cancelSettle();
       snapshot = null;
       outbox = [];
+      storing.clear();
       syncedAt = null;
       await Promise.all([writing?.catch(() => undefined), writes.catch(() => undefined)]);
       state = INITIAL;
@@ -172,6 +179,7 @@ export function createSyncEngine({ vault, api, project, newId, isSignedOut, isOf
       const mine = epoch;
       const item: OutboxItem = { seq: (outbox.at(-1)?.seq ?? 0) + 1, clientActionId: newId(), kitchenId, queuedAt: now().toISOString(), action: withCreateId(action, newId) };
       outbox = [...outbox, item];
+      storing.add(item.clientActionId);
       publish({ view: state.view && project(state.view, [item]), pending: outbox.length });
       const { seq: _, ...stored } = item;
       const written = writes.catch(() => undefined).then(() => vault.enqueue(stored));
@@ -179,11 +187,13 @@ export function createSyncEngine({ vault, api, project, newId, isSignedOut, isOf
       try {
         await written;
       } catch (error) {
+        storing.delete(item.clientActionId);
         if (mine !== epoch) return;
         outbox = outbox.filter((one) => one.clientActionId !== item.clientActionId);
         publish({ view: snapshot && project(snapshot, outbox), pending: outbox.length });
         throw error;
       }
+      storing.delete(item.clientActionId);
       if (mine !== epoch) return;
       syncWhenSettled();
     },
