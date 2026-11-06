@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { CreateBucketCommand, GetObjectCommand, HeadObjectCommand, ListMultipartUploadsCommand, PutObjectCommand, S3Client, UploadPartCommand } from "@aws-sdk/client-s3";
 import { attachPlatformPrincipal } from "#security";
 import { createFetchApp } from "../../../products/publisher/fetch-app.js";
-import { createDirectUploads, DIRECT_PART_BYTES } from "../../../products/publisher/direct-uploads.js";
+import { createDirectUploads, DIRECT_PART_BYTES, DROP_LINK_MAX_BYTES, DROP_LINK_MAX_FILES } from "../../../products/publisher/direct-uploads.js";
 import { createMultipartStorage } from "../../../products/publisher/multipart-storage.js";
 import { createMetadataBackedUploadStorage } from "../../../products/publisher/postgres-storage.js";
 import { createS3BodyStorage, type UploadBodyStorage, type UploadStorage } from "../../../products/publisher/storage.js";
@@ -878,6 +878,45 @@ describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", () => {
     expect((await request(session.path + "/parts", "POST", { number: 1, sha256: digest(Buffer.from("test")) })).status).toBe(404);
     await storage.directUploads!.cleanup();
     await links.owner(ADMIN).revoke(other.id, new Date());
+  });
+
+  it("refuses guest uploads past the link's file and byte quota, including concurrent requests", async () => {
+    const full = await links.owner(ADMIN).create(new Date(Date.now() + 60_000));
+    const crowded = await links.owner(ADMIN).create(new Date(Date.now() + 60_000));
+    const opened: string[] = [];
+    const create = (link: { token: string }, totalBytes: number) => {
+      const requestId = crypto.randomUUID();
+      const base = `/api/drop/${link.token}/uploads/sessions`;
+      sessions.push({ id: requestId, base });
+      opened.push(`${base}/${requestId}`);
+      return request(base, "POST", { requestId, filename: "guest.bin", contentType: "application/octet-stream", totalBytes });
+    };
+    const store = (link: { id: string }, count: number, bytes: number) => sql`insert into artifacts.objects
+      (id, owner_subject, kind, filename, content_type, bytes, object_key, created_at, updated_at, upload_link_id)
+      select md5(gen_random_uuid()::text), ${ADMIN}, 'file', 'stored.bin', 'application/octet-stream', ${bytes},
+        'quota-fixture/' || gen_random_uuid(), now(), now(), ${link.id}::uuid from generate_series(1, ${count})`;
+    try {
+      await store(full, 1, DROP_LINK_MAX_BYTES - 10);
+      const pending = await create(full, 4);
+      expect(pending.status).toBe(201);
+      const over = await create(full, 7);
+      expect(over.status).toBe(413);
+      expect(await over.json()).toMatchObject({ error: "upload_link_quota_reached" });
+      const { sessionId } = await pending.json() as { sessionId: string };
+      expect((await request(`/api/drop/${full.token}/uploads/sessions/${sessionId}`, "DELETE")).status).toBe(204);
+      expect((await create(full, 7)).status).toBe(201);
+
+      await store(crowded, DROP_LINK_MAX_FILES - 1, 1);
+      const racing = await Promise.all([1, 2, 3].map(() => create(crowded, 1)));
+      expect(racing.map(response => response.status).sort()).toEqual([201, 413, 413]);
+      await sql`update artifacts.objects set revoked_at = now() where upload_link_id = ${crowded.id}::uuid and object_key like 'quota-fixture/%'`;
+      expect((await create(crowded, 1)).status).toBe(201);
+    } finally {
+      for (const path of opened) await request(path, "DELETE");
+      await sql`delete from artifacts.objects where object_key like 'quota-fixture/%'`;
+      await links.owner(ADMIN).revoke(full.id, new Date());
+      await links.owner(ADMIN).revoke(crowded.id, new Date());
+    }
   });
 
   it("bounds completion concurrency and freezes parts until publication", async () => {

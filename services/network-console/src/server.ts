@@ -4,7 +4,7 @@ import { createLocalNetworkDashboardApp } from "./local-network.js";
 
 const port = parsePort(process.env.PORT ?? process.env.LOCAL_NETWORK_PORT, 80);
 const bindHost = process.env.BIND_HOST ?? (await getDefaultBindHost());
-const app = createLocalNetworkDashboardApp({ dashboardPort: port });
+const app = createLocalNetworkDashboardApp({ bindHost, dashboardPort: port });
 
 const server = serve({ fetch: app.fetch, hostname: bindHost, port }, (info) => {
   console.log(`network-console listening on ${info.address}:${info.port}`);

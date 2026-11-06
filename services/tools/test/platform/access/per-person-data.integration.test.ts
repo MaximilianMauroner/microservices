@@ -1,6 +1,8 @@
 import postgres from "postgres";
-import { randomBytes } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { createHash, randomBytes } from "node:crypto";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { Readable } from "node:stream";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { attachPlatformPrincipal, type PlatformPrincipal } from "#security";
@@ -251,10 +253,7 @@ describe.skipIf(!sql)("Publisher per person", () => {
       const plan = await json<{ id: string; url: string }>(app(new Request(origin + "/api/uploads", { method: "POST",
         headers: { Authorization: "Bearer native-token" }, body: form("plan.html", "<h1>Plan</h1>", "text/html") })));
       const link = await json<{ id: string; url: string }>(as(friend, "/api/upload-links?durationMs=86400000", { method: "POST" }));
-      const guest = await app(new Request(`${link.url.replace("/drop/", "/api/drop/")}/uploads`, { method: "POST",
-        headers: { Origin: origin }, body: form("from-guest.txt", "hello", "text/plain") }));
-      expect(guest.status).toBe(201);
-      const received = await guest.json() as { id: string; url: string };
+      const received = await receiveThroughLink(storage, friend.subject, link.id, origin);
       expect(await sql!`select id, owner_subject from artifacts.objects order by owner_subject`).toEqual([
         { id: plan.id, owner_subject: admin.subject },
         { id: received.id, owner_subject: friend.subject }
@@ -294,6 +293,18 @@ describe.skipIf(!sql)("Publisher per person", () => {
     }
   });
 });
+
+async function receiveThroughLink(storage: ReturnType<typeof createMetadataBackedUploadStorage>, owner: string, uploadLinkId: string, origin: string) {
+  const id = randomBytes(24).toString("base64url");
+  const directory = await mkdtemp(join(tmpdir(), "guest-upload-"));
+  try {
+    const filePath = join(directory, "from-guest.txt");
+    await writeFile(filePath, "hello");
+    await storage.owner(owner).putTemporaryFile(id, filePath, { bytes: 5, originalName: "from-guest.txt", contentType: "text/plain",
+      sha256: createHash("sha256").update("hello").digest("hex"), expiresAt: new Date(Date.now() + 86_400_000), uploadLinkId });
+  } finally { await rm(directory, { recursive: true, force: true }); }
+  return { id, url: `${origin}/files/${id}/from-guest.txt` };
+}
 
 function form(filename: string, content: string, type: string) {
   const body = new FormData();

@@ -23,7 +23,7 @@ the `#` subpath imports in `package.json`.
 | --- | --- |
 | Health routes and fixed public assets | Public |
 | `/artifacts/*` and `/files/*` `GET`/`HEAD` | Public unlisted capability URL |
-| `/drop/:token` `GET`/`HEAD` and `/api/drop/:token/uploads` `POST` | Public, expiring upload capability URL |
+| `/drop/:token` `GET`/`HEAD` and `/api/drop/:token/uploads/sessions` | Public, expiring upload capability URL |
 | `/sign-in` and `/api/auth/*` | Public authentication flow |
 | `/`, `/status`, `/money`, `/feedback`, `/publisher`, `/api/upload-links`, `/manage/*`, `/tools/private/*`, and their browser APIs | Better Auth Google session |
 | `/feedback/f/:token` `GET`/`HEAD`/`POST` | Public unlisted capability URL |

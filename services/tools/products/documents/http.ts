@@ -1,14 +1,18 @@
 import type { createMarkdownShareRepository } from "./repository.js";
 import type { createDocumentChanges } from "./changes.js";
 import { ShareError } from "./types.js";
+import { readBoundedBody, RequestBodyTooLargeError } from "../../platform/request-body.js";
+import { clientAddress, createRateLimit } from "../../platform/security/rate-limit.js";
 
 type Repository = ReturnType<typeof createMarkdownShareRepository>;
 type Changes = ReturnType<typeof createDocumentChanges>;
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
+const CREATES_PER_HOUR = 30;
 const TOKEN_PATTERN = /^(?:[a-z0-9]{20,64}|[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/;
 
 /** `creator` names the owner of a new document. Every other operation needs only the capability link. */
 export function createShareHandler(repository: Repository, changes: Changes, publicOrigin: string, creator: (request: Request) => Promise<string>) {
+  const allowCreate = createRateLimit({ limit: CREATES_PER_HOUR, windowMs: 60 * 60 * 1000 });
   return async (request: Request): Promise<Response> => {
     try {
       const url = new URL(request.url);
@@ -24,6 +28,9 @@ export function createShareHandler(repository: Repository, changes: Changes, pub
         }
       }
       if (!token && request.method === "POST") {
+        if (!allowCreate(clientAddress(request))) {
+          return json({ error: { code: "RATE_LIMITED", message: "Too many new documents from this network. Try again in an hour." } }, 429);
+        }
         const body = await readBody(request);
         const format = text(body, "format");
         if (format !== "markdown" && format !== "latex") throw invalid("Unknown document format.");
@@ -99,25 +106,14 @@ function integer(body: Record<string, unknown>, name: string): number {
   return value;
 }
 async function readBody(request: Request): Promise<Record<string, unknown>> {
-  const reader = request.body?.getReader();
-  if (!reader) throw invalid("A JSON body is required.");
-  const chunks: Uint8Array[] = [];
-  let size = 0;
+  let bytes: Uint8Array | undefined;
   try {
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      size += value.byteLength;
-      if (size > MAX_BODY_BYTES) {
-        await reader.cancel();
-        throw new ShareError("DOCUMENT_TOO_LARGE", "The save request exceeds the size limit.");
-      }
-      chunks.push(value);
-    }
-  } finally { reader.releaseLock(); }
-  const bytes = new Uint8Array(size);
-  let offset = 0;
-  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+    bytes = await readBoundedBody(request, MAX_BODY_BYTES);
+  } catch (error) {
+    if (error instanceof RequestBodyTooLargeError) throw new ShareError("DOCUMENT_TOO_LARGE", "The save request exceeds the size limit.");
+    throw error;
+  }
+  if (!bytes) throw invalid("A JSON body is required.");
   let value: unknown;
   try { value = JSON.parse(new TextDecoder().decode(bytes)); } catch { throw invalid("The request is not valid JSON."); }
   if (typeof value !== "object" || value === null || Array.isArray(value)) throw invalid("The request must be a JSON object.");

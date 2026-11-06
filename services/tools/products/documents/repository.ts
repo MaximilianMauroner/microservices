@@ -5,6 +5,8 @@ import { applySteps, sourceSnapshot } from "./protocol";
 import { ShareError, type CheckpointBody, type CheckpointSummary, type CreateDocument, type DocumentSnapshot, type EditorContent, type PresenceIdentity, type PublicDocument, type SubmitSteps, type SyncUpdate } from "./types";
 
 const DAY = 86_400_000;
+/** Steps kept for clients that catch up. A client further behind reloads the snapshot. */
+export const KEPT_STEPS = 10_000;
 type Row = { token: string; filename: string; format: "markdown" | "latex"; created_at: number; updated_at: number; expires_at: number; pinned: boolean; version: number; history_floor: number; content: EditorContent; source: string; request_hash: string };
 const unavailable = () => new ShareError("DOCUMENT_UNAVAILABLE", "This document does not exist or has expired.");
 const invalid = (message: string) => new ShareError("INVALID_EDITOR_PAYLOAD", message);
@@ -67,7 +69,8 @@ export function createMarkdownShareRepository(databaseUrl: string) {
       catch (error) { if (error instanceof ShareError && error.data.code === "DOCUMENT_UNAVAILABLE") return null; throw error; }
     },
     async updates(token: string, version: number): Promise<SyncUpdate> {
-      return sql.begin(async transaction => { const tx = transaction as unknown as Sql; return update(tx, await live(tx, token), version); });
+      // One snapshot for the row and its steps, so a concurrent submit cannot compact steps between the two reads.
+      return sql.begin("isolation level repeatable read read only", async transaction => { const tx = transaction as unknown as Sql; return update(tx, await live(tx, token), version); });
     },
     async submit(token: string, input: SubmitSteps) {
       validateVersion(input.version);
@@ -81,7 +84,9 @@ export function createMarkdownShareRepository(databaseUrl: string) {
           const accepted = applySteps(row.content, input.steps);
           for (let i=0; i<input.steps.length; i++) await tx`INSERT INTO tools.markdown_steps (token,version,step,client_id) VALUES (${token},${row.version+i+1},${tx.json(input.steps[i] as never)},${input.clientId})`;
           const now = Date.now();
-          const [saved] = await tx<Row[]>`UPDATE tools.markdown_documents SET version=${row.version+input.steps.length}, content=${tx.json(accepted.content as never)}, source=${accepted.markdown}, updated_at=${now}, expires_at=${now+(row.pinned?30:7)*DAY} WHERE token=${token} RETURNING *`;
+          const version = row.version+input.steps.length;
+          const [saved] = await tx<Row[]>`UPDATE tools.markdown_documents SET version=${version}, history_floor=GREATEST(history_floor, ${version-KEPT_STEPS}), content=${tx.json(accepted.content as never)}, source=${accepted.markdown}, updated_at=${now}, expires_at=${now+(row.pinned?30:7)*DAY} WHERE token=${token} RETURNING *`;
+          await tx`DELETE FROM tools.markdown_steps WHERE token=${token} AND version<=${saved.history_floor}`;
           row = saved;
           await notify(tx, token);
         }
