@@ -1,13 +1,13 @@
 import type { AppActionResult } from "@tools-platform/service/kitchen-contract";
 import type { KitchenApi } from "./api";
-import type { KitchenSync, Notice, OutboxItem, QueuedAction, SyncStatus } from "./model";
+import type { KitchenSync, OutboxItem, QueuedAction, SyncNotice, SyncStatus } from "./model";
 import type { Vault } from "../storage/vault";
 
 /** What the screens read: the server snapshot with the unconfirmed changes applied on top. */
 export type SyncState = Readonly<{
   view: KitchenSync | null;
   pending: number;
-  notices: readonly Notice[];
+  notices: readonly SyncNotice[];
   status: SyncStatus;
   signedOut: boolean;
 }>;
@@ -24,6 +24,12 @@ type Deps = Readonly<{
 
 const BATCH = 200;
 
+/** A change waits this long for the next one, so a run of taps goes to the server in one sync. */
+const SETTLE_MS = 1000;
+
+/** The longest a change waits while taps keep coming. */
+const MAX_WAIT_MS = 5000;
+
 const INITIAL: SyncState = { view: null, pending: 0, notices: [], status: { kind: "idle", syncedAt: null }, signedOut: false };
 
 /**
@@ -31,6 +37,7 @@ const INITIAL: SyncState = { view: null, pending: 0, notices: [], status: { kind
  * The sent changes leave the outbox only together with a snapshot that contains them; until then they are sent
  * again, and the server answers a repeat with its first outcome.
  * Only one sync runs at a time; a request during a sync runs one more sync after it.
+ * A change asks for a sync once the taps settle, so a run of changes costs one sync and not one per change.
  *
  * The engine serves one signed-in account at a time. `load` starts it for the stored account and `stop` ends it.
  * Each start is a new epoch. Work from an earlier epoch never sends, stores, or shows anything, so one account's
@@ -39,44 +46,79 @@ const INITIAL: SyncState = { view: null, pending: 0, notices: [], status: { kind
 export function createSyncEngine({ vault, api, project, newId, isSignedOut, isOffline, now = () => new Date() }: Deps) {
   let state: SyncState = INITIAL;
   let snapshot: KitchenSync | null = null;
+  let outbox: OutboxItem[] = [];
+  const storing = new Set<string>();
+  let writes: Promise<unknown> = Promise.resolve();
   let syncedAt: string | null = null;
   let running: { epoch: number; done: Promise<void> } | undefined;
   let again = false;
   let epoch = 0;
   let stopped = true;
-  let writing: Promise<void> | undefined;
+  let settle: { timer: ReturnType<typeof setTimeout>; since: number } | undefined;
   const listeners = new Set<() => void>();
 
-  async function refresh(mine: number, patch: Partial<SyncState> = {}) {
-    const [outbox, notices] = await Promise.all([vault.outbox(), vault.notices()]);
-    if (mine !== epoch) return;
-    state = { ...state, ...patch, view: snapshot && project(snapshot, outbox), pending: outbox.length, notices };
+  function publish(patch: Partial<SyncState>) {
+    state = { ...state, ...patch };
     for (const listener of listeners) listener();
   }
 
+  /**
+   * Reads the outbox again. A change missing from the vault stays only if its write had not ended when the read began,
+   * or it came later. Any other missing change was answered by the server or rolled back, so it leaves the screen.
+   */
+  async function reload(mine: number, patch: Partial<SyncState> = {}, answered: ReadonlySet<string> = new Set()) {
+    const before = new Set(outbox.map((item) => item.clientActionId));
+    const inFlight = new Set(storing);
+    const [stored, notices] = await Promise.all([vault.outbox(), vault.notices()]);
+    if (mine !== epoch) return;
+    const known = new Set(stored.map((item) => item.clientActionId));
+    const last = stored.at(-1)?.seq ?? 0;
+    const local = outbox.filter(({ clientActionId: id }) => !known.has(id) && !answered.has(id) && (inFlight.has(id) || !before.has(id)));
+    outbox = [...stored, ...local.map((item, index) => ({ ...item, seq: last + index + 1 }))];
+    publish({ ...patch, view: snapshot && project(snapshot, outbox), pending: outbox.length, notices: [...notices, ...state.notices.filter((one) => "unsaved" in one)] });
+  }
+
+  function cancelSettle() {
+    if (settle) clearTimeout(settle.timer);
+    settle = undefined;
+  }
+
+  function syncWhenSettled() {
+    if (running?.epoch === epoch) {
+      again = true;
+      return;
+    }
+    const since = settle?.since ?? Date.now();
+    cancelSettle();
+    const timer = setTimeout(() => { settle = undefined; void engine.sync(); }, Math.max(0, Math.min(SETTLE_MS, since + MAX_WAIT_MS - Date.now())));
+    settle = { timer, since };
+  }
+
   async function once(mine: number) {
-    await refresh(mine, { status: { kind: "syncing" } });
+    publish({ status: { kind: "syncing" } });
     try {
-      const outbox = await vault.outbox();
+      await writes.catch(() => undefined);
+      const sending = await vault.outbox();
       const results: AppActionResult[] = [];
-      for (let start = 0; start < outbox.length; start += BATCH) {
+      for (let start = 0; start < sending.length; start += BATCH) {
         if (mine !== epoch) return;
-        results.push(...await api.push(outbox.slice(start, start + BATCH)));
+        results.push(...await api.push(sending.slice(start, start + BATCH)));
       }
       if (mine !== epoch) return;
       const fresh = await api.pull();
       if (mine !== epoch) return;
-      writing = vault.commit(fresh, results.map((one) => one.clientActionId), results.filter(isRejected).map(({ clientActionId, message }) => ({ clientActionId, message })));
-      await writing;
+      const committed = writes.catch(() => undefined).then(() => vault.commit(fresh, results.map((one) => one.clientActionId), results.filter(isRejected).map(({ clientActionId, message }) => ({ clientActionId, message }))));
+      writes = committed;
+      await committed;
       if (mine !== epoch) return;
       snapshot = fresh;
       syncedAt = now().toISOString();
-      await refresh(mine, { status: { kind: "idle", syncedAt }, signedOut: false });
+      await reload(mine, { status: { kind: "idle", syncedAt }, signedOut: false }, new Set(results.map((one) => one.clientActionId)));
     } catch (error) {
       if (mine !== epoch) return;
-      if (isSignedOut(error)) await refresh(mine, { status: { kind: "idle", syncedAt }, signedOut: true });
-      else if (isOffline(error)) await refresh(mine, { status: { kind: "offline", syncedAt } });
-      else await refresh(mine, { status: { kind: "failed", message: error instanceof Error ? error.message : String(error) } });
+      if (isSignedOut(error)) publish({ status: { kind: "idle", syncedAt }, signedOut: true });
+      else if (isOffline(error)) publish({ status: { kind: "offline", syncedAt } });
+      else publish({ status: { kind: "failed", message: error instanceof Error ? error.message : String(error) } });
     }
   }
 
@@ -94,10 +136,12 @@ export function createSyncEngine({ vault, api, project, newId, isSignedOut, isOf
       const saved = await vault.snapshot();
       if (mine !== epoch) return;
       snapshot = saved;
-      await refresh(mine);
+      outbox = [];
+      await reload(mine);
     },
     sync(): Promise<void> {
       if (stopped) return Promise.resolve();
+      cancelSettle();
       if (running?.epoch === epoch) {
         again = true;
         return running.done;
@@ -117,31 +161,49 @@ export function createSyncEngine({ vault, api, project, newId, isSignedOut, isOf
       epoch += 1;
       stopped = true;
       again = false;
+      cancelSettle();
       snapshot = null;
+      outbox = [];
+      storing.clear();
       syncedAt = null;
-      await writing?.catch(() => undefined);
+      await writes.catch(() => undefined);
       state = INITIAL;
       for (const listener of listeners) listener();
     },
-    /** Queues a change, shows it at once, and sends it when the server can be reached. */
+    /**
+     * Queues a change and shows it at once: the change goes on top of the current view, so the screen does not wait for
+     * the vault or replay the whole outbox. Vault writes and commits run one at a time, in order. If the write fails, the
+     * change leaves the screen and an unsaved notice says so.
+     */
     async change(kitchenId: string, action: QueuedAction) {
       if (stopped) return;
       const mine = epoch;
+      const item: OutboxItem = { seq: (outbox.at(-1)?.seq ?? 0) + 1, clientActionId: newId(), kitchenId, queuedAt: now().toISOString(), action: withCreateId(action, newId) };
+      outbox = [...outbox, item];
+      storing.add(item.clientActionId);
+      publish({ view: state.view && project(state.view, [item]), pending: outbox.length });
+      const { seq: _, ...stored } = item;
+      const written = writes.catch(() => undefined).then(() => vault.enqueue(stored));
+      writes = written;
       try {
-        await vault.enqueue({ clientActionId: newId(), kitchenId, queuedAt: now().toISOString(), action: withCreateId(action, newId) });
-      } catch (error) {
-        if (mine === epoch) throw error;
+        await written;
+      } catch {
+        storing.delete(item.clientActionId);
+        if (mine !== epoch) return;
+        outbox = outbox.filter((one) => one.clientActionId !== item.clientActionId);
+        publish({ view: snapshot && project(snapshot, outbox), pending: outbox.length, notices: [...state.notices, { clientActionId: item.clientActionId, unsaved: true }] });
         return;
       }
+      storing.delete(item.clientActionId);
       if (mine !== epoch) return;
-      await refresh(mine);
-      void engine.sync();
+      syncWhenSettled();
     },
     async dismiss(clientActionId: string) {
       if (stopped) return;
       const mine = epoch;
-      await vault.dismiss(clientActionId);
-      await refresh(mine);
+      if (!state.notices.some((one) => one.clientActionId === clientActionId && "unsaved" in one)) await vault.dismiss(clientActionId);
+      if (mine !== epoch) return;
+      publish({ notices: state.notices.filter((one) => one.clientActionId !== clientActionId) });
     }
   };
   return engine;
