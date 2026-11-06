@@ -178,7 +178,7 @@ export function KitchenIngredientsPage(data: IngredientsData) {
         </>
       )}
     >
-      <div className="grid gap-5">
+      <div className="grid grid-cols-1 gap-5">
         <SearchField value={query} onValue={setQuery} label={text.findPlaceholder}
           add={typed && !data.ingredients.some((one) => one.name.toLowerCase() === typed.toLowerCase()) ? { label: text.addNew(typed), run: () => create(typed) } : undefined}>
         <div className="gap-5 lg:columns-2">
@@ -193,7 +193,7 @@ export function KitchenIngredientsPage(data: IngredientsData) {
                     <button type="button" onClick={() => setEditing(ingredient)}
                       className="flex min-h-14 w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-muted/40 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none focus-visible:ring-inset">
                       <span className="min-w-0 flex-1">
-                        <span className="block font-medium break-words">{ingredient.name}</span>
+                        <span className="block font-medium wrap-anywhere">{ingredient.name}</span>
                         {ingredient.nutrition.kcal !== null ? (
                           <span className="block text-xs text-muted-foreground tabular-nums">
                             <span className="font-semibold whitespace-nowrap text-foreground">{formatNumber(ingredient.nutrition.kcal, language)} {text.kcal}</span>
@@ -301,7 +301,7 @@ export function IngredientSheet({ ingredient, newName = "", onClose, data }: { i
       )}
     >
       <form className="grid gap-6 pb-2" onSubmit={(event) => { event.preventDefault(); void save(); }}>
-        <div className="grid gap-4">
+        <div className="grid grid-cols-1 gap-4">
           <div className="grid gap-1.5">
             <Label htmlFor="ingredient-name">{text.name}</Label>
             <Input id="ingredient-name" className="h-11 text-base font-medium" value={name} onChange={(event) => setName(event.target.value)} placeholder={text.namePlaceholder} />
@@ -449,7 +449,7 @@ function RecipeUses({ existing, unit, uses, onUses, data }: {
           {picked.map(({ recipe, amount }) => (
             <li key={recipe.id} className="flex items-center gap-3 py-2 pr-1.5 pl-3">
               <span className="min-w-0 flex-1">
-                <span className="block text-sm font-medium break-words">{recipe.name}</span>
+                <span className="block text-sm font-medium wrap-anywhere">{recipe.name}</span>
                 <span className="block text-xs text-muted-foreground">{text.forServings(recipe.servings)}</span>
               </span>
               <span className="relative shrink-0">
@@ -479,7 +479,7 @@ function RecipeUses({ existing, unit, uses, onUses, data }: {
                     <button type="button" onClick={() => pick(recipe.id)}
                       className="flex min-h-10 w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:outline-none">
                       <PlusIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-                      <span className="min-w-0 flex-1 break-words">{recipe.name}</span>
+                      <span className="min-w-0 flex-1 wrap-anywhere">{recipe.name}</span>
                     </button>
                   </li>
                 ))}
@@ -516,7 +516,7 @@ function GroupsSheet({ open, onClose, data }: { open: boolean; onClose: () => vo
         {order.map((group, index) => (
           <li key={group} className="flex items-center gap-3 rounded-xl border border-[color:var(--surface-border)] bg-card py-1.5 pr-1.5 pl-3">
             <GroupDot groups={order} group={group} />
-            <span className="min-w-0 flex-1 text-sm font-medium break-words">{groupLabel(group, language)} <span className="font-normal text-muted-foreground tabular-nums">{size.get(group)}</span></span>
+            <span className="min-w-0 flex-1 text-sm font-medium wrap-anywhere">{groupLabel(group, language)} <span className="font-normal text-muted-foreground tabular-nums">{size.get(group)}</span></span>
             <Button size="icon" variant="ghost" aria-label={text.moveUp(group)} disabled={index === 0} onClick={() => move(index, -1)}><ArrowUpIcon /></Button>
             <Button size="icon" variant="ghost" aria-label={text.moveDown(group)} disabled={index === order.length - 1} onClick={() => move(index, 1)}><ArrowDownIcon /></Button>
           </li>

@@ -214,7 +214,7 @@ export function KitchenWeekPage(data: WeekData) {
                             {text.meals[entry.meal]}
                             {entry.cooked ? <span className="inline-flex items-center gap-1 font-medium text-foreground"><CheckIcon className="size-3.5" aria-hidden />{text.cooked}</span> : null}
                           </span>
-                          <span className={cn("mt-0.5 block font-kitchen font-medium text-[1.0625rem] leading-snug break-words", entry.cooked && "text-muted-foreground")}>{entry.recipe}</span>
+                          <span className={cn("mt-0.5 block font-kitchen font-medium text-[1.0625rem] leading-snug wrap-anywhere", entry.cooked && "text-muted-foreground")}>{entry.recipe}</span>
                           <span className="mt-1 block text-xs text-muted-foreground tabular-nums">
                             {text.servings(entry.servings)}{recipe?.kcal ? text.kcalEach(recipe.kcal) : ""}
                           </span>
@@ -368,7 +368,7 @@ function PlanSheet({ day, onClose, data }: { day: string | undefined; onClose: (
                 >
                   <PlateRing groups={data.kitchen.groups} sections={recipe.sections} size={26} />
                   <span className="flex min-w-0 flex-1 items-baseline justify-between gap-3">
-                    <span className="min-w-0 font-kitchen font-medium text-base leading-snug break-words">{recipe.name}</span>
+                    <span className="min-w-0 font-kitchen font-medium text-base leading-snug wrap-anywhere">{recipe.name}</span>
                     <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
                       {recipe.ingredientCount ? [recipe.minutes ? text.minutes(recipe.minutes) : "", recipe.kcal ? `${recipe.kcal} kcal` : ""].filter(Boolean).join(", ") : text.idea}
                     </span>
@@ -500,7 +500,7 @@ function EntrySheet({ entry, onClose, data }: { entry: PlanEntry | undefined; on
             <ul className="grid gap-1.5 text-sm">
               {entry.lines.map((line) => (
                 <li key={line.ingredientId} className="flex items-baseline justify-between gap-3">
-                  <span className="min-w-0 break-words">{line.ingredient}{line.note ? <span className="text-muted-foreground">, {line.note}</span> : null}</span>
+                  <span className="min-w-0 wrap-anywhere">{line.ingredient}{line.note ? <span className="text-muted-foreground">, {line.note}</span> : null}</span>
                   <span className="shrink-0 text-muted-foreground tabular-nums">{formatAmount(line.amount, line.unit, language)}</span>
                 </li>
               ))}

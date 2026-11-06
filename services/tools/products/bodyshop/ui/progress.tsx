@@ -287,9 +287,9 @@ function FoodSection({ insights, uncertain }: { insights: Data["insights"]; unce
       <div className="mt-8 grid grid-cols-[minmax(0,1fr)] gap-10 lg:grid-cols-2">
         <div>
           <h3 className="bs-title text-[1.0625rem]">Most calories</h3>
-          <ol className="mt-3 grid gap-3">
+          <ol className="mt-3 grid grid-cols-1 gap-3">
             {top.map((food) => (
-              <li key={food.food} className="grid gap-1.5">
+              <li key={food.food} className="grid grid-cols-1 gap-1.5">
                 <div className="flex items-baseline justify-between gap-3 text-sm">
                   <span className="min-w-0 truncate">{food.food}</span>
                   <span className="bs-quiet shrink-0 text-xs"><span className="bs-figure text-[0.9375rem] text-foreground">{fmt(food.kcal)}</span> kcal in {food.occurrences} {food.occurrences === 1 ? "entry" : "entries"}</span>
