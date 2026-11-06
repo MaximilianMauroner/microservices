@@ -12,6 +12,7 @@ import { KitchenScreen } from "../../../ui/page";
 import { Button, byGroup, Empty, groupLabel, GroupLabel, GroupList, Press, Screen, SearchField, T, ToolbarButton } from "../../../ui/kit";
 import { useLanguage, useText } from "../../../ui/language";
 import { groupColor, useColors } from "../../../ui/theme";
+import { compareText } from "../../../compare";
 
 export default function IngredientsPage() {
   return <KitchenScreen page="kitchen">{(open) => <Ingredients key={open.kitchen.kitchen.id} {...open} />}</KitchenScreen>;
@@ -27,7 +28,7 @@ function Ingredients({ kitchen, change }: OpenKitchen) {
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState<Editing>(null);
   const typed = query.trim();
-  const ingredients = [...kitchen.ingredients].sort((a, b) => a.name.localeCompare(b.name));
+  const ingredients = [...kitchen.ingredients].sort((a, b) => compareText(a.name, b.name));
   const matches = ingredients.filter((one) => [one.name, ...ingredientGroups(one).map((group) => groupLabel(group, language))].join(" ").toLowerCase().includes(typed.toLowerCase()));
   const groups = byGroup(kitchen.kitchen.groups, matches.flatMap((ingredient) => ingredientGroups(ingredient).map((group) => ({ group, ingredient }))), (entry) => entry.group);
   const missing = ingredients.filter((one) => one.nutrition.kcal === null).length;

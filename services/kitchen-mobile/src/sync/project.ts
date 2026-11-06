@@ -5,6 +5,7 @@ import {
   type KitchenSnapshot, type KitchenSync, type RecipeLine, type RecipeLineInput,
 } from "@tools-platform/service/kitchen-contract";
 import type { OutboxItem, QueuedAction } from "./model";
+import { compareText } from "../compare";
 
 type Reducers = {
   [Type in QueuedAction["type"]]: (
@@ -215,8 +216,7 @@ function apply<Type extends QueuedAction["type"]>(kitchen: KitchenSnapshot, acti
   return derived(table[action.type](kitchen, action));
 }
 
-const compare = (a: string, b: string): number => a.localeCompare(b);
-const byName = (a: { name: string }, b: { name: string }): number => compare(a.name.toLowerCase(), b.name.toLowerCase());
+const byName = (a: { name: string }, b: { name: string }): number => compareText(a.name.toLowerCase(), b.name.toLowerCase());
 const createdItems = {
   "ingredient.save": (kitchen: KitchenSnapshot) => kitchen.ingredients,
   "recipe.save": (kitchen: KitchenSnapshot) => kitchen.recipes,
@@ -258,9 +258,9 @@ export function project(snapshot: KitchenSync, outbox: readonly OutboxItem[]): K
         ...recipe, updatedAt: recipe.updatedAt || `${snapshot.today}T00:00:00.000Z`,
       })).sort(byName),
       plan: kitchen.plan.filter((entry) => entry.day >= snapshot.planFrom).sort((a, b) =>
-        compare(a.day, b.day) || MEALS.indexOf(a.meal) - MEALS.indexOf(b.meal)),
-      stock: [...kitchen.stock].sort((a, b) => compare(a.section, b.section) || compare(a.ingredient.toLowerCase(), b.ingredient.toLowerCase())),
-      leftovers: [...kitchen.leftovers].sort((a, b) => compare(a.useBy, b.useBy)),
+        compareText(a.day, b.day) || MEALS.indexOf(a.meal) - MEALS.indexOf(b.meal)),
+      stock: [...kitchen.stock].sort((a, b) => compareText(a.section, b.section) || compareText(a.ingredient.toLowerCase(), b.ingredient.toLowerCase())),
+      leftovers: [...kitchen.leftovers].sort((a, b) => compareText(a.useBy, b.useBy)),
     })),
   };
 }

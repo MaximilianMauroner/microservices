@@ -1,4 +1,5 @@
 import { byGroupOrder, ingredientGroups, type KitchenSnapshot } from "@tools-platform/service/kitchen-contract";
+import { compareText } from "../../compare";
 
 export function pantryShelves(kitchen: KitchenSnapshot) {
   const sections = [
@@ -8,7 +9,7 @@ export function pantryShelves(kitchen: KitchenSnapshot) {
     section,
     items: kitchen.stock
       .filter((item) => item.section === section)
-      .sort((a, b) => a.ingredient.localeCompare(b.ingredient)),
+      .sort((a, b) => compareText(a.ingredient, b.ingredient)),
   }));
 }
 
