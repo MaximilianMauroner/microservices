@@ -57,6 +57,7 @@ import { Route as ApiBodyshopImportRouteImport } from './routes/api/bodyshop/imp
 import { Route as ApiDropSplatRouteImport } from './routes/api/drop/$'
 import { Route as ApiExternalUploadsSplatRouteImport } from './routes/api/external-uploads/$'
 import { Route as ApiKitchenActionsRouteImport } from './routes/api/kitchen/actions'
+import { Route as ApiKitchenProductsRouteImport } from './routes/api/kitchen/products'
 import { Route as ApiKitchenSyncRouteImport } from './routes/api/kitchen/sync'
 import { Route as ApiMoneyActivityRouteImport } from './routes/api/money/activity'
 import { Route as ApiMoneyBalancesRouteImport } from './routes/api/money/balances'
@@ -332,6 +333,11 @@ const ApiKitchenActionsRoute = ApiKitchenActionsRouteImport.update({
   path: '/api/kitchen/actions',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiKitchenProductsRoute = ApiKitchenProductsRouteImport.update({
+  id: '/api/kitchen/products',
+  path: '/api/kitchen/products',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiKitchenSyncRoute = ApiKitchenSyncRouteImport.update({
   id: '/api/kitchen/sync',
   path: '/api/kitchen/sync',
@@ -560,6 +566,7 @@ export interface FileRoutesByFullPath {
   '/api/drop/$': typeof ApiDropSplatRoute
   '/api/external-uploads/$': typeof ApiExternalUploadsSplatRoute
   '/api/kitchen/actions': typeof ApiKitchenActionsRoute
+  '/api/kitchen/products': typeof ApiKitchenProductsRoute
   '/api/kitchen/sync': typeof ApiKitchenSyncRoute
   '/api/money/activity': typeof ApiMoneyActivityRoute
   '/api/money/balances': typeof ApiMoneyBalancesRoute
@@ -637,6 +644,7 @@ export interface FileRoutesByTo {
   '/api/drop/$': typeof ApiDropSplatRoute
   '/api/external-uploads/$': typeof ApiExternalUploadsSplatRoute
   '/api/kitchen/actions': typeof ApiKitchenActionsRoute
+  '/api/kitchen/products': typeof ApiKitchenProductsRoute
   '/api/kitchen/sync': typeof ApiKitchenSyncRoute
   '/api/money/activity': typeof ApiMoneyActivityRoute
   '/api/money/balances': typeof ApiMoneyBalancesRoute
@@ -722,6 +730,7 @@ export interface FileRoutesById {
   '/api/drop/$': typeof ApiDropSplatRoute
   '/api/external-uploads/$': typeof ApiExternalUploadsSplatRoute
   '/api/kitchen/actions': typeof ApiKitchenActionsRoute
+  '/api/kitchen/products': typeof ApiKitchenProductsRoute
   '/api/kitchen/sync': typeof ApiKitchenSyncRoute
   '/api/money/activity': typeof ApiMoneyActivityRoute
   '/api/money/balances': typeof ApiMoneyBalancesRoute
@@ -808,6 +817,7 @@ export interface FileRouteTypes {
     | '/api/drop/$'
     | '/api/external-uploads/$'
     | '/api/kitchen/actions'
+    | '/api/kitchen/products'
     | '/api/kitchen/sync'
     | '/api/money/activity'
     | '/api/money/balances'
@@ -885,6 +895,7 @@ export interface FileRouteTypes {
     | '/api/drop/$'
     | '/api/external-uploads/$'
     | '/api/kitchen/actions'
+    | '/api/kitchen/products'
     | '/api/kitchen/sync'
     | '/api/money/activity'
     | '/api/money/balances'
@@ -969,6 +980,7 @@ export interface FileRouteTypes {
     | '/api/drop/$'
     | '/api/external-uploads/$'
     | '/api/kitchen/actions'
+    | '/api/kitchen/products'
     | '/api/kitchen/sync'
     | '/api/money/activity'
     | '/api/money/balances'
@@ -1038,6 +1050,7 @@ export interface RootRouteChildren {
   ApiBodyshopImportRoute: typeof ApiBodyshopImportRouteWithChildren
   ApiDropSplatRoute: typeof ApiDropSplatRoute
   ApiKitchenActionsRoute: typeof ApiKitchenActionsRoute
+  ApiKitchenProductsRoute: typeof ApiKitchenProductsRoute
   ApiKitchenSyncRoute: typeof ApiKitchenSyncRoute
   ApiMoneyActivityRoute: typeof ApiMoneyActivityRoute
   ApiMoneyBalancesRoute: typeof ApiMoneyBalancesRoute
@@ -1389,6 +1402,13 @@ declare module '@tanstack/react-router' {
       path: '/api/kitchen/actions'
       fullPath: '/api/kitchen/actions'
       preLoaderRoute: typeof ApiKitchenActionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/kitchen/products': {
+      id: '/api/kitchen/products'
+      path: '/api/kitchen/products'
+      fullPath: '/api/kitchen/products'
+      preLoaderRoute: typeof ApiKitchenProductsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/kitchen/sync': {
@@ -1882,6 +1902,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiBodyshopImportRoute: ApiBodyshopImportRouteWithChildren,
   ApiDropSplatRoute: ApiDropSplatRoute,
   ApiKitchenActionsRoute: ApiKitchenActionsRoute,
+  ApiKitchenProductsRoute: ApiKitchenProductsRoute,
   ApiKitchenSyncRoute: ApiKitchenSyncRoute,
   ApiMoneyActivityRoute: ApiMoneyActivityRoute,
   ApiMoneyBalancesRoute: ApiMoneyBalancesRoute,

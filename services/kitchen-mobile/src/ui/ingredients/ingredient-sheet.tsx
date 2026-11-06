@@ -6,7 +6,8 @@ import type { OpenKitchen } from "../../state";
 import { byGroup, Button, Field, GroupDot, groupLabel, Sheet, T, usePageColor } from "../kit";
 import { useLanguage, useText } from "../language";
 import { useColors } from "../theme";
-import { changeSize, conversionUnits, ingredientDraft, ingredientSave, NUTRIENTS, nutritionFields, withGroup, withUnit } from "./model";
+import { CatalogProducts } from "./catalog-products";
+import { changeSize, conversionUnits, ingredientDraft, ingredientSave, NUTRIENTS, nutritionFields, withGroup, withProduct, withUnit } from "./model";
 import { RecipeUses } from "./recipe-uses";
 import { TEXT } from "./text";
 
@@ -18,6 +19,8 @@ export function IngredientSheet({ existing, newName, kitchen, change, onClose }:
   const colors = useColors();
   const { hue } = usePageColor();
   const [draft, setDraft] = useState(() => ingredientDraft(existing, newName, language));
+  /** The name of the product the fields came from. The product list stays away until the name changes again. */
+  const [pickedName, setPickedName] = useState<string>();
   const result = ingredientSave(draft, existing, kitchen);
   const changingUnit = existing !== undefined && draft.unit !== existing.unit;
   const { larger, smaller } = conversionUnits(existing?.unit ?? draft.unit, draft.unit);
@@ -44,6 +47,8 @@ export function IngredientSheet({ existing, newName, kitchen, change, onClose }:
         <View style={styles.field}>
           <T weight="medium">{text.name}</T>
           <Field accessibilityLabel={text.name} value={draft.name} onChangeText={(name) => setDraft((current) => ({ ...current, name }))} placeholder={text.namePlaceholder} maxLength={200} />
+          {!existing && draft.name !== pickedName ? <CatalogProducts query={draft.name}
+            onPick={(product) => { setDraft((current) => withProduct(current, product, language)); setPickedName(product.name); }} /> : null}
         </View>
         <View style={styles.field}>
           <T weight="medium">{text.unit}</T>
