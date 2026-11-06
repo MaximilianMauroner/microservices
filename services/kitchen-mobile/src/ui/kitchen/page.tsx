@@ -52,7 +52,7 @@ export function KitchenHub() {
       {notices.map((notice) => (
         <View key={notice.clientActionId} style={{ padding: 12, borderRadius: 12, backgroundColor: tint(colors.destructive, 12, colors.card), gap: 8 }}>
           <T weight="semibold" style={{ color: colors.destructive }}>{text.refused}</T>
-          <T>{notice.message}</T>
+          <T>{"unsaved" in notice ? text.unsaved : notice.message}</T>
           <View style={{ flexDirection: "row" }}><Button tone="outline" compact label={text.dismiss} onPress={() => void dismiss(notice.clientActionId)} /></View>
         </View>
       ))}
