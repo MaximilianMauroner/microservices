@@ -139,7 +139,7 @@ export function MoneyActivityView({
       ) : null}
       <MoneyPanel>
         <div className="flex flex-wrap items-center gap-2 px-4 pt-3.5 pb-3">
-          <MoneyTableSearch value={query} onValue={setQuery} placeholder="Search description or account" className="min-w-52 flex-1 sm:max-w-sm" />
+          <MoneyTableSearch value={query} onValue={setQuery} placeholder="Search description or account" className="min-w-64 flex-1 sm:max-w-sm" />
           <NativeSelect size="sm" value={account} aria-label="Filter by account" onChange={(event) => setAccount(event.currentTarget.value)}>
             <NativeSelectOption value="all">All accounts</NativeSelectOption>
             {accounts.map((id) => <NativeSelectOption key={id} value={id}>{accountLabels[id] ?? id}</NativeSelectOption>)}
@@ -187,7 +187,7 @@ export function MoneyActivityView({
               </ul>
             ) : (
               <div className="overflow-x-auto">
-                <table className="money-table table-fixed" aria-label="Transaction detail table">
+                <table className="money-table min-w-[52rem] table-fixed" aria-label="Transaction detail table">
                   <colgroup>
                     <col style={{ width: "2.75rem" }} />
                     <col style={{ width: "6.5rem" }} />

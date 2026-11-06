@@ -80,7 +80,7 @@ export function TodayPage({ data }: { data: Data }) {
 /** The day's food by meal. Each meal card has the color of its arc on the day ring. */
 function MealList({ entries, meals, onAdd, onEdit }: { entries: readonly Entry[]; meals: readonly { meal: Meal; kcal: number }[]; onAdd: (meal: Meal) => void; onEdit: (entry: Entry) => void }) {
   return (
-    <div className="grid gap-2">
+    <div className="grid grid-cols-1 gap-2">
       {meals.map(({ meal, kcal }) => {
         const own = entries.filter((entry) => entry.meal === meal);
         if (!own.length && meal === "Other") return null;

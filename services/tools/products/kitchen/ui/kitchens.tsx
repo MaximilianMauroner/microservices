@@ -187,7 +187,7 @@ export function KitchensPage(data: KitchensData) {
                   <div className="flex items-start gap-3">
                     <span className="grid size-11 shrink-0 place-items-center rounded-full bg-muted font-kitchen font-semibold tracking-tight text-xl text-foreground" aria-hidden>{kitchen.name.slice(0, 1).toUpperCase()}</span>
                     <div className="min-w-0 flex-1">
-                      <h2 className="font-kitchen font-semibold tracking-tight text-lg leading-tight break-words">{kitchen.name}</h2>
+                      <h2 className="font-kitchen font-semibold tracking-tight text-lg leading-tight wrap-anywhere">{kitchen.name}</h2>
                       <p className="truncate text-xs text-muted-foreground">{memberLine(kitchen, language)}</p>
                     </div>
                     {data.isAdmin ? (

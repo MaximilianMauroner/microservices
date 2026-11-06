@@ -165,7 +165,7 @@ export function KitchenRecipesPage(data: Frame & { recipes: readonly RecipeSumma
       facts={recipes.length ? `${text.recipes(recipes.length)}${ideas ? text.stillIdeas(ideas) : ""}` : text.intro}
       actions={<Button nativeButton={false} render={<Link to="/kitchen/$kitchenId/recipes/$recipeId" params={{ kitchenId: kitchen.id, recipeId: "new" }} />}><PlusIcon aria-hidden /> {text.newRecipe}</Button>}
     >
-      <div className="grid gap-4">
+      <div className="grid grid-cols-1 gap-4">
         <SearchField value={query} onValue={setQuery} label={text.findRecipe} add={isNew ? { label: text.addIdea(idea), run: addIdea } : undefined}>
         {recipes.length ? <div className="mb-3 flex flex-wrap items-center gap-2">
           <button type="button" aria-pressed={fromHome} onClick={() => setFromHome((value) => !value)}
@@ -173,8 +173,8 @@ export function KitchenRecipesPage(data: Frame & { recipes: readonly RecipeSumma
             <RefrigeratorIcon className="size-4" aria-hidden /> {text.fromHome}
           </button>
           {wanted.map((one) => (
-            <span key={one.id} className="inline-flex h-9 items-center gap-1 rounded-full border border-primary bg-[color-mix(in_srgb,var(--kitchen-hue)_12%,transparent)] pr-1 pl-3 text-sm font-medium">
-              {one.name}
+            <span key={one.id} className="inline-flex h-9 max-w-full items-center gap-1 rounded-full border border-primary bg-[color-mix(in_srgb,var(--kitchen-hue)_12%,transparent)] pr-1 pl-3 text-sm font-medium">
+              <span className="truncate">{one.name}</span>
               <button type="button" aria-label={text.removeFilter(one.name)} onClick={() => setWanted((current) => current.filter((item) => item.id !== one.id))}
                 className="grid size-7 place-items-center rounded-full text-muted-foreground hover:text-foreground"><XIcon className="size-3.5" aria-hidden /></button>
             </span>
@@ -198,7 +198,7 @@ export function KitchenRecipesPage(data: Frame & { recipes: readonly RecipeSumma
                 >
                   <PlateRing groups={kitchen.groups} sections={recipe.sections} size={36} />
                   <span className="grid min-w-0 flex-1 gap-1.5">
-                  <span className="font-kitchen font-semibold tracking-tight text-lg leading-snug break-words">{recipe.name}</span>
+                  <span className="font-kitchen font-semibold tracking-tight text-lg leading-snug wrap-anywhere">{recipe.name}</span>
                     <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground tabular-nums">
                       {recipe.ingredientCount ? (
                         <>
@@ -261,8 +261,8 @@ function RecipeView({ data, recipe, onEdit }: { data: RecipeData; recipe: Recipe
         </>
       )}
     >
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
-        <section className="grid content-start gap-4 rounded-2xl border border-[color:var(--surface-border)] bg-card p-4 sm:p-5">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
+        <section className="grid grid-cols-1 content-start gap-4 rounded-2xl border border-[color:var(--surface-border)] bg-card p-4 sm:p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="font-kitchen font-semibold tracking-tight text-xl">{text.ingredients}</h2>
             <Stepper label={text.servingsLabel} value={servings} onValue={setServings} />
@@ -271,7 +271,7 @@ function RecipeView({ data, recipe, onEdit }: { data: RecipeData; recipe: Recipe
             <ul className="grid gap-2">
               {lines.map((line) => (
                 <li key={line.ingredientId} className="flex items-baseline justify-between gap-3 border-b border-dashed border-[color:var(--surface-border)] pb-2 text-sm last:border-0 last:pb-0">
-                  <span className="flex min-w-0 items-baseline gap-2 break-words">
+                  <span className="flex min-w-0 items-baseline gap-2 wrap-anywhere">
                     <GroupDot groups={data.kitchen.groups} group={sectionOf.get(line.ingredientId) ?? "Other"} className="size-2 translate-y-[-1px]" />
                     <span>{line.ingredient}{line.note ? <span className="text-muted-foreground">, {line.note}</span> : null}</span>
                   </span>
@@ -292,14 +292,14 @@ function RecipeView({ data, recipe, onEdit }: { data: RecipeData; recipe: Recipe
             </dl>
           ) : lines.length ? <p className="text-xs text-muted-foreground">{text.addNutrition}</p> : null}
         </section>
-        <section className="grid content-start gap-3">
+        <section className="grid grid-cols-1 content-start gap-3">
           <h2 className="font-kitchen font-semibold tracking-tight text-xl">{text.steps}</h2>
           {steps.length ? (
-            <ol className="grid gap-3">
+            <ol className="grid grid-cols-1 gap-3">
               {steps.map((step, index) => (
                 <li key={index} className="flex gap-3">
                   <span className="grid size-7 shrink-0 place-items-center rounded-full bg-muted text-xs font-semibold tabular-nums">{index + 1}</span>
-                  <p className="pt-0.5 text-[0.9375rem] leading-relaxed">{step}</p>
+                  <p className="min-w-0 pt-0.5 text-[0.9375rem] leading-relaxed wrap-anywhere">{step}</p>
                 </li>
               ))}
             </ol>
