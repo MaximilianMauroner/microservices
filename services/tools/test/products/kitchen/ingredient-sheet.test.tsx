@@ -6,7 +6,7 @@ import type { Ingredient, Kitchen } from "../../../products/kitchen/domain.js";
 
 const runKitchenAction = vi.hoisted(() => vi.fn(async () => ({ id: "new-ingredient" })));
 const searchKitchenCatalog = vi.hoisted(() => vi.fn(async ({ data }: { data: { query: string } }) => data.query.toLowerCase().startsWith("kicher")
-  ? [{ code: "9001", name: "Kichererbsen", brand: "Spar", quantity: "400 g", unit: "g" as const, nutrition: { kcal: 120, protein: 7.2, carbs: 15, fat: 2.6 } }]
+  ? [{ source: "open-food-facts" as const, code: "9001", name: "Kichererbsen", brand: "Spar", quantity: "400 g", unit: "g" as const, nutrition: { kcal: 120, protein: 7.2, carbs: 15, fat: 2.6 } }]
   : []));
 vi.mock("../../../products/kitchen/server-functions.js", () => ({ runKitchenAction, searchKitchenCatalog }));
 vi.mock("../../../platform/ui/components/ui/use-mobile.js", () => ({ useIsMobile: () => false }));
