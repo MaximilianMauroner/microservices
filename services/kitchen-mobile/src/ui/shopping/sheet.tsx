@@ -1,13 +1,15 @@
 import type { KitchenSnapshot, StoredExtra } from "@tools-platform/service/kitchen-contract";
-import { Check, Repeat, X } from "lucide-react-native";
+import { ArrowUp, Check, Repeat, X } from "lucide-react-native";
 import { useRef, useState } from "react";
-import { Pressable, StyleSheet, Switch, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 import type { OpenKitchen } from "../../state";
-import { Button, Field, GroupDot, Sheet, T, byGroup, groupLabel } from "../kit";
-import { useLanguage, useText } from "../language";
+import { Button, Field, Sheet, T } from "../kit";
+import { useText } from "../language";
 import { useColors } from "../theme";
 import { TEXT } from "./text";
+import { frequentItems } from "./view";
 
+/** A short sheet: quick picks above a field that sits on the keyboard. Each item goes on the list at once, and the sheet stays open for the next. */
 export function AddSheet({
   kitchen,
   change,
@@ -20,7 +22,6 @@ export function AddSheet({
   onClose: () => void;
 }) {
   const text = useText(TEXT);
-  const language = useLanguage();
   const colors = useColors();
   const [name, setName] = useState("");
   const [added, setAdded] = useState<string[]>([]);
@@ -30,9 +31,11 @@ export function AddSheet({
     ...kitchen.extras.map((extra) => extra.name.toLowerCase()),
     ...added.map((one) => one.toLowerCase()),
   ]);
+  const picks = frequentItems(kitchen, name).filter((one) => !onList.has(one.toLowerCase()));
   const weekly = kitchen.extras.filter((extra) => extra.everyWeek);
+  const typed = clean(name);
   function add(item: string) {
-    const trimmed = item.trim().replace(/\s+/g, " ");
+    const trimmed = clean(item);
     if (
       !trimmed ||
       trimmed.length > 120 ||
@@ -51,41 +54,64 @@ export function AddSheet({
       onClose={onClose}
       title={text.addTitle}
       description={text.addDescription}
-      footer={<Button label={added.length ? text.doneAdded(added.length) : text.done} onPress={onClose} />}
-    >
-      <View style={{ flexDirection: "row", gap: 8 }}>
-        <Field
-          style={{ flex: 1 }}
-          value={name}
-          onChangeText={setName}
-          maxLength={120}
-          accessibilityLabel={text.item}
-          placeholder={text.itemPlaceholder}
-          onSubmitEditing={() => add(name)}
-          returnKeyType="done"
-        />
-        <Button
-          label={text.add}
-          tone="outline"
-          disabled={!name.trim() || onList.has(name.trim().replace(/\s+/g, " ").toLowerCase())}
-          onPress={() => add(name)}
-        />
-      </View>
-      <View style={{ gap: 6 }}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-          <Switch
-            value={everyWeek}
-            onValueChange={setEveryWeek}
-            accessibilityLabel={text.addEveryWeek}
-            trackColor={{ true: colors.page.shopping }}
-          />
-          <Repeat color={colors.mutedForeground} size={16} />
-          <T weight="medium">{text.addEveryWeek}</T>
+      footer={
+        <View style={{ width: "100%", gap: 10 }}>
+          <Pressable
+            accessibilityRole="switch"
+            accessibilityState={{ checked: everyWeek }}
+            accessibilityHint={text.addEveryWeekHint}
+            onPress={() => setEveryWeek(!everyWeek)}
+            style={[
+              styles.chip,
+              {
+                alignSelf: "flex-start",
+                minHeight: 36,
+                paddingRight: 12,
+                backgroundColor: everyWeek ? colors.page.shopping : colors.control,
+                borderColor: everyWeek ? colors.page.shopping : colors.controlBorder,
+              },
+            ]}
+          >
+            <Repeat color={everyWeek ? "#ffffff" : colors.mutedForeground} size={16} />
+            <T weight="medium" style={{ fontSize: 14, color: everyWeek ? "#ffffff" : colors.foreground }}>
+              {text.addEveryWeek}
+            </T>
+          </Pressable>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <Field
+              style={{ flex: 1 }}
+              autoFocus
+              value={name}
+              onChangeText={setName}
+              maxLength={120}
+              accessibilityLabel={text.item}
+              placeholder={text.itemPlaceholder}
+              onSubmitEditing={() => add(name)}
+              submitBehavior="submit"
+              returnKeyType="send"
+            />
+            <Button
+              icon={ArrowUp}
+              accessibilityLabel={text.add}
+              disabled={!typed || onList.has(typed.toLowerCase())}
+              onPress={() => add(name)}
+            />
+          </View>
         </View>
-        <T muted style={{ fontSize: 12 }}>
-          {text.addEveryWeekHint}
-        </T>
-      </View>
+      }
+    >
+      {added.length || picks.length ? (
+        <View style={styles.wrap}>
+          {added.map((item) => (
+            <Chip key={item} label={item} on />
+          ))}
+          {picks.map((item) => (
+            <Chip key={item} label={item} onPress={() => add(item)} />
+          ))}
+        </View>
+      ) : !kitchen.ingredients.length ? (
+        <T muted>{text.quickPicks}</T>
+      ) : null}
       {weekly.length ? (
         <View style={{ gap: 8 }}>
           <T muted weight="semibold">
@@ -111,44 +137,35 @@ export function AddSheet({
           </View>
         </View>
       ) : null}
-      {byGroup(kitchen.kitchen.groups, kitchen.ingredients, (one) => one.section).map(([section, ingredients]) => (
-        <View key={section} style={{ gap: 8 }}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-            <GroupDot groups={kitchen.kitchen.groups} group={section} />
-            <T muted weight="semibold" style={{ fontSize: 12 }}>
-              {groupLabel(section, language)}
-            </T>
-          </View>
-          <View style={styles.wrap}>
-            {ingredients.map((ingredient) => {
-              const isOn = onList.has(ingredient.name.toLowerCase());
-              return (
-                <Pressable
-                  key={ingredient.id}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: isOn, disabled: isOn }}
-                  disabled={isOn}
-                  onPress={() => add(ingredient.name)}
-                  style={[
-                    styles.chip,
-                    {
-                      minHeight: 44,
-                      paddingHorizontal: 12,
-                      backgroundColor: isOn ? colors.page.shopping : colors.control,
-                      borderColor: isOn ? colors.page.shopping : colors.controlBorder,
-                    },
-                  ]}
-                >
-                  {isOn ? <Check color="#ffffff" size={16} /> : null}
-                  <T style={{ color: isOn ? "#ffffff" : colors.foreground, flexShrink: 1 }}>{ingredient.name}</T>
-                </Pressable>
-              );
-            })}
-          </View>
-        </View>
-      ))}
-      {!kitchen.ingredients.length ? <T muted>{text.quickPicks}</T> : null}
     </Sheet>
+  );
+}
+
+function clean(name: string): string {
+  return name.trim().replace(/\s+/g, " ");
+}
+
+function Chip({ label, on = false, onPress }: { label: string; on?: boolean; onPress?: () => void }) {
+  const colors = useColors();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ selected: on, disabled: on }}
+      disabled={on}
+      onPress={onPress}
+      style={[
+        styles.chip,
+        {
+          minHeight: 44,
+          paddingHorizontal: 12,
+          backgroundColor: on ? colors.page.shopping : colors.control,
+          borderColor: on ? colors.page.shopping : colors.controlBorder,
+        },
+      ]}
+    >
+      {on ? <Check color="#ffffff" size={16} /> : null}
+      <T style={{ color: on ? "#ffffff" : colors.foreground, flexShrink: 1 }}>{label}</T>
+    </Pressable>
   );
 }
 

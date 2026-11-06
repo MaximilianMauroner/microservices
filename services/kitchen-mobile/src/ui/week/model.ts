@@ -38,3 +38,15 @@ export function defaultMeal(entries: readonly PlanEntry[]): Meal {
   const taken = new Set(entries.map((entry) => entry.meal));
   return (["dinner", "lunch", "breakfast", "snack"] as const).find((meal) => !taken.has(meal)) ?? "dinner";
 }
+
+/**
+ * The days the Plan sheet offers and the day it selects. It offers seven days from today, or the shown week when that
+ * starts later, so a person can plan past Sunday. It selects the day the person picked, or else the first day without a meal.
+ */
+export function planStrip({ weekStart, today, plan, day }: { weekStart: string; today: string; plan: readonly Pick<PlanEntry, "day">[]; day?: string }) {
+  const soonest = weekStart > today ? weekStart : today;
+  const from = day && day < soonest ? day : soonest;
+  const days = Array.from({ length: 7 }, (_, index) => addDays(from, index));
+  const planned = new Set(plan.map((entry) => entry.day));
+  return { days, selected: day ?? days.find((one) => !planned.has(one)) ?? from };
+}

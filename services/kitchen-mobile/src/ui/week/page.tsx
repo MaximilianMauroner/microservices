@@ -4,14 +4,14 @@ import { Check, ChevronLeft, ChevronRight, Plus, ShoppingBasket } from "lucide-r
 import { useMemo, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import type { OpenKitchen } from "../../state";
-import { Button, dayParts, mainGroup, type Notice, PlateRing, Screen, Snackbar, T, useByLabel, usePageColor, weekLabel, weekRange } from "../kit";
+import { Button, dayParts, FloatingButton, mainGroup, type Notice, PlateRing, Screen, Snackbar, T, useByLabel, usePageColor, weekLabel, weekRange } from "../kit";
 import { useLanguage, useText } from "../language";
 import { groupColor, tint, useColors } from "../theme";
 import { buildWeek } from "./model";
 import { EntrySheet, PlanSheet } from "./sheets";
 import { TEXT } from "./text";
 
-type Selection = { kind: "plan"; day: string } | { kind: "entry"; id: string };
+type Selection = { kind: "plan"; day?: string } | { kind: "entry"; id: string };
 
 export function Week({ data }: { data: OpenKitchen }) {
   const { kitchen: snapshot, today, planFrom, change } = data;
@@ -33,7 +33,10 @@ export function Week({ data }: { data: OpenKitchen }) {
   return (
     <Screen title={title}
       facts={`${title === range ? "" : `${range} · `}${week.entries.length ? text.plannedFacts(week.entries.length, week.cooked) : text.nothingPlanned}`}
-      floating={<Snackbar notice={notice} onUndo={change} onDone={() => setNotice(null)} />}
+      floating={<>
+        <Snackbar notice={notice} onUndo={change} onDone={() => setNotice(null)} />
+        <FloatingButton icon={Plus} label={text.plan} onPress={() => setSelection({ kind: "plan" })} />
+      </>}
       actions={<>
         <Button icon={ChevronLeft} tone="outline" accessibilityLabel={text.previousWeek} disabled={!week.canGoBack} onPress={() => setRequested(addDays(week.start, -7))} />
         <Button label={text.today} tone="outline" disabled={week.days.some((one) => one.day === today)} onPress={() => setRequested(weekStart(today))} />
@@ -105,7 +108,7 @@ export function Week({ data }: { data: OpenKitchen }) {
           <Button label={text.openAtHome} tone="ghost" onPress={() => router.navigate("/home")} />
         </View>
       </View>
-      {selection?.kind === "plan" ? <PlanSheet key={selection.day} day={selection.day} data={data} week={week} onClose={close} notify={setNotice} /> : null}
+      {selection?.kind === "plan" ? <PlanSheet key={selection.day ?? "next"} day={selection.day} data={data} week={week} onClose={close} notify={setNotice} /> : null}
       {entry ? <EntrySheet key={entry.id} entry={entry} data={data} week={week} onClose={close} notify={setNotice} /> : null}
     </Screen>
   );
