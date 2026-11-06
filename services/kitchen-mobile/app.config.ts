@@ -17,7 +17,7 @@ const config: ExpoConfig = {
     package: "com.lab4code.pantrino",
     allowBackup: false,
     adaptiveIcon: {
-      backgroundColor: "#000000",
+      backgroundColor: "#11877C",
       foregroundImage: "./assets/android-icon-foreground.png",
       backgroundImage: "./assets/android-icon-background.png",
       monochromeImage: "./assets/android-icon-monochrome.png"
