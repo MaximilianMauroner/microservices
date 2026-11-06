@@ -1,4 +1,4 @@
-import { unitName, type Ingredient, type IngredientUnit, type KitchenSnapshot } from "@tools-platform/service/kitchen-contract";
+import { fieldNumber, unitName, type Ingredient, type IngredientUnit, type KitchenSnapshot } from "@tools-platform/service/kitchen-contract";
 import { router } from "expo-router";
 import { Plus, X } from "lucide-react-native";
 import { useState } from "react";
@@ -6,7 +6,7 @@ import { Pressable, View } from "react-native";
 import { Button, Field, SearchField, T } from "../kit";
 import { useLanguage, useText } from "../language";
 import { RADIUS, useColors } from "../theme";
-import { fieldValue } from "./model";
+import { fieldValue, USUAL_AMOUNT } from "./model";
 import { TEXT } from "./text";
 
 export function RecipeUses({ existing, unit, uses, onUses, kitchen, onClose }: {
@@ -16,12 +16,11 @@ export function RecipeUses({ existing, unit, uses, onUses, kitchen, onClose }: {
   const text = useText(TEXT);
   const colors = useColors();
   const [query, setQuery] = useState("");
-  const [focus, setFocus] = useState<string>();
   const recipes = kitchen.recipes.map((recipe) => ({ id: recipe.id, name: recipe.name, servings: recipe.servings, ingredientIds: recipe.lines.map((line) => line.ingredientId) }));
   const usedIn = existing ? recipes.filter((recipe) => recipe.ingredientIds.includes(existing.id)) : [];
   const open = recipes.filter((recipe) => !usedIn.includes(recipe) && !uses.has(recipe.id));
   const typed = query.trim().toLowerCase();
-  const matches = typed ? open.filter((recipe) => recipe.name.toLowerCase().includes(typed)).slice(0, 6) : [];
+  const matches = (typed ? open.filter((recipe) => recipe.name.toLowerCase().includes(typed)) : open).slice(0, 8);
   const picked = [...uses].flatMap(([id, amount]) => {
     const recipe = recipes.find((one) => one.id === id);
     return recipe ? [{ recipe, amount }] : [];
@@ -30,7 +29,7 @@ export function RecipeUses({ existing, unit, uses, onUses, kitchen, onClose }: {
     const value = fieldValue(amount);
     return value === null || !Number.isFinite(value) || value <= 0 || value > 1_000_000;
   });
-  const pick = (id: string) => { onUses(new Map(uses).set(id, "")); setQuery(""); setFocus(id); };
+  const pick = (id: string) => { onUses(new Map(uses).set(id, fieldNumber(USUAL_AMOUNT[unit], language))); setQuery(""); };
   if (!recipes.length) return null;
 
   return (
@@ -41,7 +40,7 @@ export function RecipeUses({ existing, unit, uses, onUses, kitchen, onClose }: {
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
           {usedIn.map((recipe) => (
             <Pressable key={recipe.id} accessibilityRole="link" onPress={() => { onClose(); router.push({ pathname: "/recipes/[recipeId]", params: { recipeId: recipe.id } }); }}
-              style={{ minHeight: 44, justifyContent: "center", maxWidth: "100%", paddingHorizontal: 12, borderWidth: 1, borderColor: colors.controlBorder, borderRadius: 22, backgroundColor: colors.control }}>
+              style={{ minHeight: 48, justifyContent: "center", maxWidth: "100%", paddingHorizontal: 12, borderWidth: 1, borderColor: colors.controlBorder, borderRadius: 22, backgroundColor: colors.control }}>
               <T style={{ fontSize: 14 }}>{recipe.name}</T>
             </Pressable>
           ))}
@@ -58,7 +57,7 @@ export function RecipeUses({ existing, unit, uses, onUses, kitchen, onClose }: {
               <Button tone="ghost" icon={X} accessibilityLabel={text.removeRecipe(recipe.name)} onPress={() => { const next = new Map(uses); next.delete(recipe.id); onUses(next); }} />
             </View>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              <Field accessibilityLabel={text.amountFor(recipe.name)} value={amount} inputMode="decimal" placeholder="–" autoFocus={focus === recipe.id}
+              <Field accessibilityLabel={text.amountFor(recipe.name)} value={amount} inputMode="decimal" placeholder="–"
                 onChangeText={(value) => onUses(new Map(uses).set(recipe.id, value))} style={{ flex: 1, fontVariant: ["tabular-nums"] }} />
               <T muted>{unitName(unit, language)}</T>
             </View>
@@ -68,13 +67,18 @@ export function RecipeUses({ existing, unit, uses, onUses, kitchen, onClose }: {
       {missing ? <T muted style={{ fontSize: 12 }}>{text.amountsNeeded}</T> : null}
       {open.length ? <View style={{ gap: 6 }}>
         <SearchField value={query} onValue={setQuery} label={usedIn.length || picked.length ? text.findAnotherRecipe : text.findRecipe} />
-        {typed ? matches.length ? matches.map((recipe) => (
-          <Pressable key={recipe.id} accessibilityRole="button" onPress={() => pick(recipe.id)}
-            style={{ flexDirection: "row", alignItems: "center", gap: 8, minHeight: 44, padding: 10, borderRadius: RADIUS, backgroundColor: colors.muted }}>
-            <Plus size={18} color={colors.mutedForeground} />
-            <T style={{ flex: 1, fontSize: 14 }}>{recipe.name}</T>
-          </Pressable>
-        )) : <T muted style={{ fontSize: 12 }}>{text.noRecipeMatch(query.trim())}</T> : null}
+        {matches.length ? <>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+            {matches.map((recipe) => (
+              <Pressable key={recipe.id} accessibilityRole="button" accessibilityLabel={text.addToRecipe(recipe.name)} onPress={() => pick(recipe.id)}
+                style={{ flexDirection: "row", alignItems: "center", gap: 4, minHeight: 48, maxWidth: "100%", paddingHorizontal: 12, borderWidth: 1, borderColor: colors.controlBorder, backgroundColor: colors.control, borderRadius: 22 }}>
+                <Plus size={16} color={colors.mutedForeground} />
+                <T style={{ flexShrink: 1, fontSize: 14 }}>{recipe.name}</T>
+              </Pressable>
+            ))}
+          </View>
+          {picked.length ? null : <T muted style={{ fontSize: 12 }}>{text.quickAdd}</T>}
+        </> : <T muted style={{ fontSize: 12 }}>{text.noRecipeMatch(query.trim())}</T>}
       </View> : null}
     </View>
   );
