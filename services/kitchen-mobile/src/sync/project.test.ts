@@ -349,4 +349,18 @@ describe("offline Kitchen projection", () => {
     expect(home(result).stock[0]!.amount).toBe(350);
     expect(home(result).extras[0]!.name).toBe("Bread");
   });
+  it("gives the same view when the changes are applied one at a time as when they are applied together", () => {
+    const outbox = queue([
+      ingredient(), ingredient({ createId: id(20), name: "Apple", section: "Fruit" }), ingredient({ createId: id(21), name: "apple", section: "Fruit" }),
+      recipe(), recipe({ createId: id(22), name: "Rice bowl", lines: [{ ingredientId: id(20), amount: 2, note: "" }] }),
+      meal(), meal({ createId: id(23), day: "2026-11-01" }), meal({ createId: id(24), day: "2026-10-01" }),
+      { type: "stock.set", ingredientId: riceId, amount: 400 }, { type: "stock.add", ingredientId: id(20), amount: 3 },
+      { type: "plan.cook", id: planId, leftover: { servings: 1, useBy: "2026-11-07", createId: id(25) } },
+      { type: "leftover.eat", id: id(25), servings: 1 }, { type: "extra.add", createId: id(26), name: "Bread" },
+      { type: "extra.add", createId: id(26), name: "Bread" }, { type: "ingredient.delete", id: id(21) }, { type: "plan.remove", id: id(99) },
+    ]);
+    const together = project(empty(), outbox);
+    const oneByOne = outbox.reduce((view, item) => project(view, [item]), empty());
+    expect(oneByOne).toEqual(together);
+  });
 });

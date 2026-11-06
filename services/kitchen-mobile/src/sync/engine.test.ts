@@ -39,7 +39,7 @@ function setup(server: { push?: (items: readonly OutboxItem[]) => Promise<AppAct
         return server.push ? server.push(items) : items.map((one) => ({ clientActionId: one.clientActionId, status: "applied" as const }));
       }
     },
-    project: (snapshot, outbox) => ({ ...snapshot, today: `${snapshot.today}+${outbox.length}` }),
+    project: (snapshot, outbox) => ({ ...snapshot, today: `${snapshot.today}${"+".repeat(outbox.length)}` }),
     newId: () => `change-${++ids}`,
     isSignedOut: (error) => error instanceof SignedOut,
     isOffline: (error) => error instanceof Offline,
@@ -66,7 +66,7 @@ describe("sync engine", () => {
     expect(engine.getState().pending, "queued before the sync answers").toBe(1);
     await engine.sync();
     expect(sent).toEqual([["change-1"]]);
-    expect(engine.getState()).toMatchObject({ pending: 0, status: { kind: "idle", syncedAt: "2026-11-05T10:00:00.000Z" }, view: { today: "2026-11-05+0" } });
+    expect(engine.getState()).toMatchObject({ pending: 0, status: { kind: "idle", syncedAt: "2026-11-05T10:00:00.000Z" }, view: { today: "2026-11-05" } });
   });
 
   it("gives a new item its ID on the phone, so later changes can name it", async () => {
@@ -83,7 +83,7 @@ describe("sync engine", () => {
     await engine.load();
     await engine.change("home", addMilk);
     await engine.sync();
-    expect(engine.getState()).toMatchObject({ pending: 1, status: { kind: "offline" }, view: { today: "2026-11-05+1" } });
+    expect(engine.getState()).toMatchObject({ pending: 1, status: { kind: "offline" }, view: { today: "2026-11-05+" } });
   });
 
   it("drops a refused change and keeps its message as a notice", async () => {
@@ -102,12 +102,12 @@ describe("sync engine", () => {
     await engine.load();
     await engine.change("home", addMilk);
     await engine.sync();
-    expect(engine.getState(), "the change stays visible while the old snapshot lacks it").toMatchObject({ pending: 1, status: { kind: "offline" }, view: { today: "2026-11-05+1" } });
+    expect(engine.getState(), "the change stays visible while the old snapshot lacks it").toMatchObject({ pending: 1, status: { kind: "offline" }, view: { today: "2026-11-05+" } });
     reachable = true;
     await engine.sync();
     expect(sent.length, "the change was sent again").toBeGreaterThan(1);
     expect(new Set(sent.flat()), "the server answers each repeat with its first outcome").toEqual(new Set(["change-1"]));
-    expect(engine.getState()).toMatchObject({ pending: 0, view: { today: "2026-11-05+0" } });
+    expect(engine.getState()).toMatchObject({ pending: 0, view: { today: "2026-11-05" } });
   });
 
   it("writes and shows nothing from a sync that was running when the person signed out", async () => {
@@ -167,5 +167,52 @@ describe("sync engine", () => {
     await first;
     expect(calls).toBe(2);
     expect(sent).toEqual([["change-1"]]);
+  });
+  it("shows a change before the vault has stored it", async () => {
+    const { engine, vault } = await started();
+    vault.data.snapshot = empty;
+    await engine.load();
+    let store: () => void = () => undefined;
+    const enqueue = vault.enqueue;
+    vault.enqueue = async (item) => { await new Promise<void>((resolve) => { store = resolve; }); await enqueue(item); };
+    const changing = engine.change("home", addMilk);
+    expect(engine.getState()).toMatchObject({ pending: 1, view: { today: "2026-11-05+" } });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(vault.data.outbox, "the write is still waiting").toHaveLength(0);
+    store();
+    await changing;
+    expect(vault.data.outbox).toHaveLength(1);
+  });
+
+  it("takes a change off the screen when the vault cannot store it", async () => {
+    const { engine, vault, sent } = await started();
+    vault.data.snapshot = empty;
+    await engine.load();
+    vault.enqueue = async () => { throw new Error("disk full"); };
+    await expect(engine.change("home", addMilk)).rejects.toThrow("disk full");
+    expect(engine.getState()).toMatchObject({ pending: 0, view: { today: "2026-11-05" } });
+    await engine.sync();
+    expect(sent.flat()).toEqual([]);
+  });
+
+  it("keeps a change on screen while a sync started before it finishes", async () => {
+    let release: () => void = () => undefined;
+    let calls = 0;
+    const { engine, vault } = await started({ pull: async () => { calls += 1; if (calls === 1) await new Promise<void>((resolve) => { release = resolve; }); return empty; } });
+    vault.data.snapshot = empty;
+    await engine.load();
+    const first = engine.sync();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    let store: () => void = () => undefined;
+    const enqueue = vault.enqueue;
+    vault.enqueue = async (item) => { await new Promise<void>((resolve) => { store = resolve; }); await enqueue(item); };
+    const changing = engine.change("home", addMilk);
+    release();
+    await first;
+    expect(engine.getState(), "the unstored change survives the reload after the first sync").toMatchObject({ pending: 1, view: { today: "2026-11-05+" } });
+    store();
+    await changing;
+    await engine.sync();
+    expect(engine.getState()).toMatchObject({ pending: 0, view: { today: "2026-11-05" } });
   });
 });
