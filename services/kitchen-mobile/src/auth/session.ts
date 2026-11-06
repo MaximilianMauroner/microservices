@@ -4,8 +4,8 @@ import * as SecureStore from "expo-secure-store";
 
 export const TOOLS_ORIGIN: string = Constants.expoConfig?.extra?.toolsOrigin;
 
-const CLIENT_ID = "com.lab4code.kitchen";
-const REDIRECT_URI = "com.lab4code.kitchen:/oauth";
+const CLIENT_ID = "com.lab4code.pantrino";
+const REDIRECT_URI = "com.lab4code.pantrino:/oauth";
 const SCOPES = ["openid", "profile", "email", "offline_access"];
 const SESSION = "kitchen.session";
 const SECURE = { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY };
