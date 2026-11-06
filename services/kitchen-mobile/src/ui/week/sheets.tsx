@@ -3,9 +3,9 @@ import * as Crypto from "expo-crypto";
 import { router } from "expo-router";
 import { ChefHat, Pencil, RotateCcw } from "lucide-react-native";
 import { useState } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import { type OpenKitchen, useKitchen } from "../../state";
-import { Button, dayParts, type Notice, Pill, PlateRing, SearchField, Sheet, Stepper, T, usePageColor } from "../kit";
+import { Button, dayParts, Pill, PlateRing, Press, SearchField, Sheet, Stepper, T, type Notice, usePageColor } from "../kit";
 import { useLanguage, useText } from "../language";
 import { type DraftLine, draftLines, LineEditor, useResolveLines } from "../lines";
 import { useColors } from "../theme";
@@ -52,20 +52,20 @@ export function PlanSheet({ day, data, week, onClose, notify }: SheetProps & { d
         <MealPicker value={meal} onValue={setMeal} />
         <SearchField value={query} onValue={setQuery} label={text.findRecipe} />
         {isNew ? (
-          <Pressable accessibilityRole="button" onPress={planIdea} style={[styles.idea, { borderColor: colors.controlBorder, backgroundColor: colors.control }]}>
+          <Press accessibilityRole="button" onPress={planIdea} style={[styles.idea, { borderColor: colors.controlBorder, backgroundColor: colors.control }]}>
             <T weight="medium">{text.planIdea(typed)}</T>
-          </Pressable>
+          </Press>
         ) : null}
         <View accessibilityLabel={text.recipes} style={{ gap: 4 }}>
           {matches.map((one) => (
-            <Pressable key={one.id} accessibilityRole="button" accessibilityHint={text.planHint(text.meals[meal], weekday)} onPress={() => plan(one)}
+            <Press key={one.id} accessibilityRole="button" accessibilityHint={text.planHint(text.meals[meal], weekday)} onPress={() => plan(one)}
               style={({ pressed }) => [styles.recipe, { backgroundColor: pressed ? colors.muted : "transparent" }]}>
               <PlateRing groups={data.kitchen.kitchen.groups} sections={one.sections} size={26} />
               <View style={{ flex: 1, gap: 4 }}>
                 <T weight="medium" style={{ fontSize: 16 }}>{one.name}</T>
                 <T muted style={styles.small}>{[one.lines.length ? "" : text.idea, one.minutes ? text.minutes(one.minutes) : "", text.servings(one.servings), one.kcal ? `${one.kcal} kcal` : ""].filter(Boolean).join(", ")}</T>
               </View>
-            </Pressable>
+            </Press>
           ))}
           {!matches.length ? <T muted style={{ padding: 16, textAlign: "center" }}>{text.noRecipeMatch(query)}</T> : null}
         </View>
@@ -263,12 +263,12 @@ function DayStrip({ days, value, onValue, planned }: { days: readonly string[]; 
         const date = dayParts(option, language);
         const selected = value === option;
         return (
-          <Pressable key={option} accessibilityRole="radio" accessibilityLabel={`${date.weekdayLong} ${date.dayMonth}`} accessibilityState={{ checked: selected }}
+          <Press key={option} accessibilityRole="radio" accessibilityLabel={`${date.weekdayLong} ${date.dayMonth}`} accessibilityState={{ checked: selected }}
             onPress={() => onValue(option)} style={[styles.dayChoice, { backgroundColor: selected ? page.hue : "transparent" }]}>
             <T weight={option === today ? "semibold" : "regular"} style={{ fontSize: 11, color: selected ? "#ffffff" : option === today ? page.ink : colors.mutedForeground }}>{option === today ? text.today : date.weekday}</T>
             <T weight="semibold" style={{ color: selected ? "#ffffff" : colors.foreground }}>{date.number}</T>
             <View style={[styles.planned, { backgroundColor: planned?.has(option) ? (selected ? "#ffffff" : page.ink) : "transparent" }]} />
-          </Pressable>
+          </Press>
         );
       })}
     </View>
@@ -282,10 +282,10 @@ function MealPicker({ value, onValue }: { value: Meal; onValue: (value: Meal) =>
   return (
     <View accessibilityRole="radiogroup" accessibilityLabel={text.meal} style={[styles.meals, { backgroundColor: colors.muted }]}>
       {MEALS.map((option) => (
-        <Pressable key={option} accessibilityRole="radio" accessibilityState={{ checked: value === option }} onPress={() => onValue(option)}
+        <Press key={option} accessibilityRole="radio" accessibilityState={{ checked: value === option }} onPress={() => onValue(option)}
           style={[styles.mealChoice, { backgroundColor: value === option ? page.hue : "transparent" }]}>
           <T weight="medium" style={{ fontSize: 12, textAlign: "center", color: value === option ? "#ffffff" : colors.mutedForeground }}>{text.meals[option]}</T>
-        </Pressable>
+        </Press>
       ))}
     </View>
   );

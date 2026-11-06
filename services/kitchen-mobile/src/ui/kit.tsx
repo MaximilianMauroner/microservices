@@ -2,10 +2,10 @@ import { byGroupOrder, addDays, UNSORTED_SECTION } from "@tools-platform/service
 import * as Haptics from "expo-haptics";
 import { BookOpen, CalendarDays, ChevronLeft, ChevronRight, CookingPot, type LucideIcon, Refrigerator, Search, ShoppingBasket, X } from "lucide-react-native";
 import { useFocusEffect } from "expo-router";
-import { createContext, type ReactNode, type Ref, useCallback, useContext, useEffect, useReducer, useRef, useState } from "react";
-import { AccessibilityInfo, KeyboardAvoidingView, Modal, Platform, Pressable, RefreshControl, type RefreshControlProps, ScrollView, type ScrollViewInstance, StyleSheet, Text, type TextProps, TextInput, type TextInputProps, View, type ViewStyle } from "react-native";
+import { Children, createContext, isValidElement, type ReactNode, type Ref, useCallback, useContext, useEffect, useReducer, useRef, useState } from "react";
+import { AccessibilityInfo, KeyboardAvoidingView, Modal, Platform, Pressable, type PressableProps, type PressableStateCallbackType, RefreshControl, type RefreshControlProps, ScrollView, type ScrollViewInstance, StyleSheet, Text, type TextProps, TextInput, type TextInputProps, View, type ViewStyle } from "react-native";
 import { GestureDetector, GestureHandlerRootView, usePanGesture } from "react-native-gesture-handler";
-import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming } from "react-native-reanimated";
+import Animated, { FadeIn, FadeOut, LinearTransition, useAnimatedStyle, useSharedValue, withSpring, withTiming } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { scheduleOnRN } from "react-native-worklets";
 import Svg, { Circle, Defs, LinearGradient, Rect, Stop } from "react-native-svg";
@@ -82,6 +82,19 @@ export function usePageColor(): { hue: string; ink: string } {
   return { hue: colors.page[page], ink: colors.pageInk[page] };
 }
 
+/**
+ * A tap target. Android shows the Material ripple and iOS fades the target, so `pressed` in a style function is true
+ * only on iOS. `ripple` sets the ripple color on a filled surface.
+ */
+export function Press({ style, ripple, ...props }: PressableProps & { ripple?: string }) {
+  const colors = useColors();
+  const fade = Platform.OS === "ios";
+  return (
+    <Pressable android_ripple={{ color: ripple ?? colors.ripple, foreground: true }}
+      style={typeof style === "function" ? (state: PressableStateCallbackType) => style({ ...state, pressed: fade && state.pressed }) : style} {...props} />
+  );
+}
+
 /** Text in Instrument Sans. `weight` picks the font file, because React Native has no variable font weight. */
 export function T({ weight = "regular", muted, style, ...props }: TextProps & { weight?: keyof typeof FONT; muted?: boolean }) {
   const colors = useColors();
@@ -104,11 +117,11 @@ export function Screen({ title, facts, actions, back, fab, toolbar, floating, ch
       <View style={{ flex: 1 }}>
         <ScrollView ref={ref} contentContainerStyle={[styles.page, fab ? { paddingBottom: FAB_ROOM } : null]} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" refreshControl={<SyncRefresh />}>
           {back ? (
-            <Pressable accessibilityRole="button" accessibilityLabel={back.label} onPress={back.onPress} hitSlop={8}
+            <Press accessibilityRole="button" accessibilityLabel={back.label} onPress={back.onPress} hitSlop={8}
               style={({ pressed }) => [styles.back, pressed && { opacity: 0.6 }]}>
               <ChevronLeft size={24} color={colors.foreground} />
               <T weight="medium" style={{ fontSize: 16 }}>{back.label}</T>
-            </Pressable>
+            </Press>
           ) : null}
           <View style={styles.header}>
             <View style={{ flexShrink: 1 }}>
@@ -132,6 +145,9 @@ export function Screen({ title, facts, actions, back, fab, toolbar, floating, ch
   );
 }
 
+/** The ripple on a button filled with a page color, whose content is white. */
+const ON_COLOR_RIPPLE = "rgba(255,255,255,0.24)";
+
 /** The height of the fade over the end of the visible content, above the toolbar. */
 const FADE = 40;
 
@@ -145,10 +161,10 @@ const FAB_ROOM = 96;
 export function FloatingButton({ label, icon: Icon, onPress }: { label: string; icon: LucideIcon; onPress: () => void }) {
   const { hue } = usePageColor();
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={({ pressed }) => [styles.fab, { backgroundColor: hue, opacity: pressed ? 0.85 : 1 }]}>
+    <Press accessibilityRole="button" accessibilityLabel={label} onPress={onPress} ripple={ON_COLOR_RIPPLE} style={({ pressed }) => [styles.fab, { backgroundColor: hue, opacity: pressed ? 0.85 : 1 }]}>
       <Icon size={22} color="#ffffff" />
       <T weight="semibold" style={{ color: "#ffffff", fontSize: 16 }}>{label}</T>
-    </Pressable>
+    </Press>
   );
 }
 
@@ -158,11 +174,11 @@ export function ToolbarButton({ label, icon: Icon, onPress, tone = "primary" }: 
   const { hue } = usePageColor();
   const look = buttonLook(tone, colors, hue);
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress}
+    <Press accessibilityRole="button" accessibilityLabel={label} onPress={onPress} ripple={tone === "primary" ? ON_COLOR_RIPPLE : undefined}
       style={({ pressed }) => [styles.toolbarButton, look, pressed && { opacity: 0.8 }]}>
       <Icon size={20} color={look.color} />
       <T weight="semibold" textBreakStrategy="simple" style={{ color: look.color, fontSize: 16 }}>{label}</T>
-    </Pressable>
+    </Press>
   );
 }
 
@@ -175,10 +191,10 @@ export function WeekNav({ canGoBack, onStep }: { canGoBack: boolean; onStep: (st
       {([[-1, ChevronLeft, text.previousWeek], [1, ChevronRight, text.nextWeek]] as const).map(([step, Icon, label]) => {
         const disabled = step === -1 && !canGoBack;
         return (
-          <Pressable key={step} accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled }} disabled={disabled} onPress={() => onStep(step)}
+          <Press key={step} accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled }} disabled={disabled} onPress={() => onStep(step)}
             style={({ pressed }) => [styles.weekStep, { opacity: disabled ? 0.35 : pressed ? 0.6 : 1 }]}>
             <Icon size={22} color={colors.foreground} />
-          </Pressable>
+          </Press>
         );
       })}
     </View>
@@ -226,11 +242,12 @@ export function Snackbar({ notice, onUndo, onDone }: { notice: Notice | null; on
     seenResults.add(result.clientActionId);
     seen();
   };
+  const closeNow = useCallback(() => close.current(), []);
   useEffect(() => {
     if (!shown || shown.undo) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let live = true;
-    void AccessibilityInfo.getRecommendedTimeoutMillis(SNACKBAR_MS).then((ms) => { if (live) timer = setTimeout(() => close.current(), ms); });
+    void AccessibilityInfo.getRecommendedTimeoutMillis(SNACKBAR_MS).then((ms) => { if (live) timer = setTimeout(closeNow, ms); });
     return () => { live = false; clearTimeout(timer); };
   }, [shown?.message, shown?.undo]);
   const shift = useSharedValue(0);
@@ -242,7 +259,7 @@ export function Snackbar({ notice, onUndo, onDone }: { notice: Notice | null; on
     onDeactivate: (event) => {
       if (!event.canceled && (Math.abs(event.translationX) > SNACKBAR_AWAY.distance || Math.abs(event.velocityX) > SNACKBAR_AWAY.velocity)) {
         shift.value = withTiming(Math.sign(event.translationX || event.velocityX) * 600, { duration: 160 });
-        scheduleOnRN(() => close.current());
+        scheduleOnRN(closeNow);
       } else shift.value = withSpring(0, { damping: 20, stiffness: 240 });
     },
   });
@@ -253,9 +270,9 @@ export function Snackbar({ notice, onUndo, onDone }: { notice: Notice | null; on
       <Animated.View accessibilityLiveRegion="polite" style={[styles.snackbar, { backgroundColor: result ? tint(colors.destructive, 14, colors.card) : colors.muted, borderColor: result ? colors.destructive : colors.border }, slide]}>
         <T style={{ flex: 1, fontSize: 14, paddingVertical: 10 }}>{shown.message}</T>
         {shown.undo ? (
-          <Pressable accessibilityRole="button" onPress={() => { shown.undo!.forEach(onUndo); onDone(); }} style={styles.snackAction}>
+          <Press accessibilityRole="button" onPress={() => { shown.undo!.forEach(onUndo); onDone(); }} style={styles.snackAction}>
             <T weight="semibold" style={{ color: pageInk }}>{text.undo}</T>
-          </Pressable>
+          </Press>
         ) : null}
       </Animated.View>
     </GestureDetector>
@@ -315,18 +332,19 @@ export function Button({ label, onPress, tone = "primary", icon: Icon, disabled,
   const { hue } = usePageColor();
   const look = disabled ? disabledLook(tone, colors, hue) : buttonLook(tone, colors, hue);
   return (
-    <Pressable
+    <Press
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
       disabled={disabled}
       accessibilityState={{ disabled }}
       hitSlop={compact ? 4 : undefined}
       onPress={onPress}
+      ripple={tone === "primary" && !disabled ? ON_COLOR_RIPPLE : undefined}
       style={({ pressed }) => [styles.button, wide && styles.wide, compact && { height: 40, paddingHorizontal: label ? 12 : 0, width: label ? undefined : 40 }, look, pressed && { opacity: 0.8 }]}
     >
       {Icon ? <Icon size={18} color={look.color} /> : null}
       {label ? <T weight="medium" style={{ color: look.color, fontSize: 15 }}>{label}</T> : null}
-    </Pressable>
+    </Press>
   );
 }
 
@@ -371,18 +389,25 @@ export function GroupLabel({ color, children, count }: { color: string; children
   );
 }
 
-/** A list of one food group: a light panel of its color, with lines in its color between the rows. */
+/**
+ * A list of one food group: a light panel of its color, with lines in its color between the rows. Give each row a
+ * stable key: a row that leaves fades out and the rows below slide up, instead of jumping.
+ */
 export function GroupList({ color, children }: { color: string; children: ReactNode }) {
   const colors = useColors();
-  const rows = Array.isArray(children) ? children.flat().filter(Boolean) : [children];
+  const rows = Children.toArray(children);
   return (
-    <View style={{ borderRadius: 16, overflow: "hidden", backgroundColor: tint(color, 11, colors.card) }}>
+    <Animated.View layout={LIST_MOTION} style={{ borderRadius: 16, overflow: "hidden", backgroundColor: tint(color, 11, colors.card) }}>
       {rows.map((row, index) => (
-        <View key={index} style={index ? { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: tint(color, 22, colors.card) } : undefined}>{row}</View>
+        <Animated.View key={isValidElement(row) ? row.key : index} layout={LIST_MOTION} entering={FadeIn.duration(180)} exiting={FadeOut.duration(140)}
+          style={index ? { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: tint(color, 22, colors.card) } : undefined}>{row}</Animated.View>
       ))}
-    </View>
+    </Animated.View>
   );
 }
+
+/** How rows and groups move when a list changes. */
+export const LIST_MOTION = LinearTransition.duration(200);
 
 export function GroupDot({ groups, group, size = 10 }: { groups: readonly string[]; group: string; size?: number }) {
   const colors = useColors();
@@ -412,34 +437,46 @@ export function PlateRing({ groups, sections, size = 32 }: { groups: readonly st
 const SHEET_CLOSE = { distance: 120, velocity: 900 };
 
 /**
- * A bottom sheet in the color of the open page, like the web Kitchen sheets on a phone. A drag down on its handle
- * and title closes it. The drag starts only there, so it never fights the scroll of the sheet content.
+ * A bottom sheet in the color of the open page, like the web Kitchen sheets on a phone. The dim backdrop fades in and
+ * only the sheet slides up, as native sheets do. A drag down on its handle and title, a tap on the backdrop, the close
+ * button, and Android back slide it down before it closes. The drag starts only on the top, so it never fights the
+ * scroll of the sheet content.
  */
 /** `onDismiss` runs on iOS once the sheet has fully closed, so a following sheet can open. */
 export function Sheet({ open, onClose, onDismiss, title, description, children, footer }: { open: boolean; onClose: () => void; onDismiss?: () => void; title: string; description?: string; children: ReactNode; footer?: ReactNode }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const text = useKitText();
-  const drop = useSharedValue(0);
-  useEffect(() => { if (open) drop.value = 0; }, [open, drop]);
+  const height = useSharedValue(800);
+  const drop = useSharedValue(800);
+  useEffect(() => {
+    if (!open) return;
+    drop.value = height.value;
+    drop.value = withTiming(0, { duration: 260 });
+  }, [open, drop, height]);
+  const dismiss = useCallback(() => {
+    drop.value = withTiming(height.value, { duration: 200 }, (finished) => { if (finished) scheduleOnRN(onClose); });
+  }, [drop, height, onClose]);
   const drag = usePanGesture({
     activeOffsetY: 8,
     failOffsetX: [-24, 24],
     onUpdate: (event) => { drop.value = Math.max(0, event.translationY); },
     onDeactivate: (event) => {
-      if (!event.canceled && (event.translationY > SHEET_CLOSE.distance || event.velocityY > SHEET_CLOSE.velocity)) scheduleOnRN(onClose);
+      if (!event.canceled && (event.translationY > SHEET_CLOSE.distance || event.velocityY > SHEET_CLOSE.velocity)) scheduleOnRN(dismiss);
       else drop.value = withSpring(0, { damping: 20, stiffness: 240 });
     },
   });
   const follow = useAnimatedStyle(() => ({ transform: [{ translateY: drop.value }] }));
+  const dim = useAnimatedStyle(() => ({ opacity: 1 - Math.min(drop.value / height.value, 1) }));
   return (
-    <Modal visible={open} transparent animationType="slide" onRequestClose={onClose} onDismiss={onDismiss}>
+    <Modal visible={open} transparent animationType="fade" statusBarTranslucent navigationBarTranslucent onRequestClose={dismiss} onDismiss={onDismiss}>
       <GestureHandlerRootView style={{ flex: 1 }}>
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1, justifyContent: "flex-end" }}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel={text.close}>
-            <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.6)" }} />
-          </Pressable>
-          <Animated.View style={[styles.sheet, { backgroundColor: colors.card, borderColor: colors.border, paddingBottom: insets.bottom + 16 }, follow]}>
+          <Animated.View style={[StyleSheet.absoluteFill, dim]}>
+            <Pressable style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.6)" }} onPress={dismiss} accessibilityLabel={text.close} />
+          </Animated.View>
+          <Animated.View onLayout={(event) => { height.value = event.nativeEvent.layout.height; }}
+            style={[styles.sheet, { backgroundColor: colors.card, borderColor: colors.border, paddingBottom: insets.bottom + 16 }, follow]}>
             <GestureDetector gesture={drag}>
               <View style={{ paddingTop: 10 }}>
                 <View style={{ alignSelf: "center", width: 40, height: 4, borderRadius: 2, backgroundColor: colors.controlBorder, marginBottom: 12 }} />
@@ -448,7 +485,7 @@ export function Sheet({ open, onClose, onDismiss, title, description, children, 
                     <T weight="semibold" style={{ fontSize: 20 }}>{title}</T>
                     {description ? <T muted textBreakStrategy="simple" style={{ fontSize: 14, marginTop: 4 }}>{description}</T> : null}
                   </View>
-                  <Button tone="ghost" compact icon={X} onPress={onClose} accessibilityLabel={text.close} />
+                  <Button tone="ghost" compact icon={X} onPress={dismiss} accessibilityLabel={text.close} />
                 </View>
               </View>
             </GestureDetector>
@@ -473,9 +510,9 @@ export function Stepper({ value, onValue, min = 1, max = 100, label, unit }: { v
   const colors = useColors();
   const text = useKitText();
   const step = (next: number, disabled: boolean, sign: string, a11y: string) => (
-    <Pressable accessibilityRole="button" accessibilityLabel={a11y} disabled={disabled} onPress={() => onValue(next)} style={{ width: 48, height: 48, alignItems: "center", justifyContent: "center", opacity: disabled ? 0.4 : 1 }}>
+    <Press accessibilityRole="button" accessibilityLabel={a11y} disabled={disabled} onPress={() => onValue(next)} style={{ width: 48, height: 48, alignItems: "center", justifyContent: "center", opacity: disabled ? 0.4 : 1 }}>
       <T style={{ fontSize: 20 }}>{sign}</T>
-    </Pressable>
+    </Press>
   );
   return (
     <View accessibilityLabel={label} style={{ flexDirection: "row", alignItems: "center", alignSelf: "flex-start", borderRadius: 24, borderWidth: 1, borderColor: colors.controlBorder, backgroundColor: colors.control }}>

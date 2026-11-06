@@ -2,8 +2,8 @@ import { fieldNumber, unitName, type Ingredient, type IngredientUnit, type Kitch
 import { router } from "expo-router";
 import { Plus, X } from "lucide-react-native";
 import { useState } from "react";
-import { Pressable, View } from "react-native";
-import { Button, Field, SearchField, T } from "../kit";
+import { View } from "react-native";
+import { Button, Field, Press, SearchField, T } from "../kit";
 import { useLanguage, useText } from "../language";
 import { RADIUS, useColors } from "../theme";
 import { fieldValue, USUAL_AMOUNT } from "./model";
@@ -39,10 +39,10 @@ export function RecipeUses({ existing, unit, uses, onUses, kitchen, onClose }: {
         <T muted style={{ fontSize: 12 }}>{text.alreadyIn}</T>
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
           {usedIn.map((recipe) => (
-            <Pressable key={recipe.id} accessibilityRole="link" onPress={() => { onClose(); router.push({ pathname: "/recipes/[recipeId]", params: { recipeId: recipe.id } }); }}
+            <Press key={recipe.id} accessibilityRole="link" onPress={() => { onClose(); router.push({ pathname: "/recipes/[recipeId]", params: { recipeId: recipe.id } }); }}
               style={{ minHeight: 48, justifyContent: "center", maxWidth: "100%", paddingHorizontal: 12, borderWidth: 1, borderColor: colors.controlBorder, borderRadius: 22, backgroundColor: colors.control }}>
               <T style={{ fontSize: 14 }}>{recipe.name}</T>
-            </Pressable>
+            </Press>
           ))}
         </View>
       </View> : null}
@@ -70,11 +70,11 @@ export function RecipeUses({ existing, unit, uses, onUses, kitchen, onClose }: {
         {matches.length ? <>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
             {matches.map((recipe) => (
-              <Pressable key={recipe.id} accessibilityRole="button" accessibilityLabel={text.addToRecipe(recipe.name)} onPress={() => pick(recipe.id)}
+              <Press key={recipe.id} accessibilityRole="button" accessibilityLabel={text.addToRecipe(recipe.name)} onPress={() => pick(recipe.id)}
                 style={{ flexDirection: "row", alignItems: "center", gap: 4, minHeight: 48, maxWidth: "100%", paddingHorizontal: 12, borderWidth: 1, borderColor: colors.controlBorder, backgroundColor: colors.control, borderRadius: 22 }}>
                 <Plus size={16} color={colors.mutedForeground} />
                 <T style={{ flexShrink: 1, fontSize: 14 }}>{recipe.name}</T>
-              </Pressable>
+              </Press>
             ))}
           </View>
           {picked.length ? null : <T muted style={{ fontSize: 12 }}>{text.quickAdd}</T>}

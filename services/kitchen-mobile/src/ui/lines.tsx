@@ -1,9 +1,9 @@
 import { fieldNumber, type Ingredient, INGREDIENT_UNITS, type IngredientUnit, type RecipeLine, type RecipeLineInput, unitName } from "@tools-platform/service/kitchen-contract";
 import * as Crypto from "expo-crypto";
 import { Plus, X } from "lucide-react-native";
-import { Pressable, View } from "react-native";
+import { View } from "react-native";
 import type { QueuedAction } from "../sync/model";
-import { Button, Field, T } from "./kit";
+import { Button, Field, Press, T } from "./kit";
 import { type KitchenLanguage, useLanguage, useText } from "./language";
 import { useColors } from "./theme";
 
@@ -70,10 +70,10 @@ export function LineEditor({ lines, onLines, ingredients }: { lines: readonly Dr
             {suggestions.length ? (
               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
                 {suggestions.map((one) => (
-                  <Pressable key={one.id} accessibilityRole="button" hitSlop={8} onPress={() => update(line.key, { name: one.name, ingredientId: one.id, unit: one.unit })}
+                  <Press key={one.id} accessibilityRole="button" hitSlop={8} onPress={() => update(line.key, { name: one.name, ingredientId: one.id, unit: one.unit })}
                     style={{ paddingHorizontal: 10, height: 32, justifyContent: "center", borderRadius: 16, backgroundColor: colors.muted }}>
                     <T style={{ fontSize: 14 }}>{one.name}</T>
-                  </Pressable>
+                  </Press>
                 ))}
               </View>
             ) : null}
@@ -82,10 +82,10 @@ export function LineEditor({ lines, onLines, ingredients }: { lines: readonly Dr
               {known ? <T muted>{unitName(known.unit, language, Number(line.amount.replace(",", ".")))}</T> : (
                 <View accessibilityLabel={text.unitOf(called)} style={{ flexDirection: "row", gap: 4 }}>
                   {INGREDIENT_UNITS.map((unit) => (
-                    <Pressable key={unit} accessibilityRole="button" accessibilityState={{ selected: unit === line.unit }} hitSlop={8} onPress={() => update(line.key, { unit })}
+                    <Press key={unit} accessibilityRole="button" accessibilityState={{ selected: unit === line.unit }} hitSlop={8} onPress={() => update(line.key, { unit })}
                       style={{ height: 32, paddingHorizontal: 8, justifyContent: "center", borderRadius: 8, borderWidth: 1, borderColor: unit === line.unit ? colors.foreground : colors.controlBorder }}>
                       <T style={{ fontSize: 13 }}>{unitName(unit, language)}</T>
-                    </Pressable>
+                    </Press>
                   ))}
                 </View>
               )}

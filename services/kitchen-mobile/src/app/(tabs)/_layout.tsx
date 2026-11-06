@@ -1,9 +1,9 @@
 import { Tabs, useSegments } from "expo-router";
 import type { ComponentProps } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useSyncAlert } from "../../ui/kitchen/page";
-import { PAGES, T, useKitText } from "../../ui/kit";
+import { PAGES, Press, T, useKitText } from "../../ui/kit";
 import { tint, useColors } from "../../ui/theme";
 
 type TabBarProps = Parameters<NonNullable<ComponentProps<typeof Tabs>["tabBar"]>>[0];
@@ -38,7 +38,7 @@ function TabBar({ state, navigateToTab }: TabBarProps) {
         const ink = colors.pageInk[page.key];
         const marked = page.key === "kitchen" ? alert : null;
         return (
-          <Pressable
+          <Press
             key={page.key}
             accessibilityRole="tab"
             accessibilityState={{ selected: active }}
@@ -53,7 +53,7 @@ function TabBar({ state, navigateToTab }: TabBarProps) {
               {marked ? <View style={[styles.dot, { backgroundColor: marked.warn ? colors.destructive : colors.mutedForeground, borderColor: colors.background }]} /> : null}
             </View>
             <T weight="medium" muted={!active} style={{ fontSize: 11 }}>{text.tabs[page.key][1]}</T>
-          </Pressable>
+          </Press>
         );
       })}
     </View>

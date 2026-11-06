@@ -2,9 +2,9 @@ import * as Crypto from "expo-crypto";
 import { router } from "expo-router";
 import { Carrot, Clock, Plus, Refrigerator, X } from "lucide-react-native";
 import { useMemo, useState } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import type { OpenKitchen } from "../../../state";
-import { Button, Empty, FloatingButton, Field, haptic, mainGroup, type Notice, PlateRing, Screen, SearchField, Snackbar, T, usePageColor } from "../../../ui/kit";
+import { Button, Empty, Field, FloatingButton, haptic, mainGroup, PlateRing, Press, Screen, SearchField, Snackbar, T, type Notice, usePageColor } from "../../../ui/kit";
 import { type KitchenLanguage, useText } from "../../../ui/language";
 import { KitchenScreen } from "../../../ui/page";
 import { filterRecipes, recipeSummaries } from "../../../ui/recipes/model";
@@ -108,16 +108,16 @@ function Recipes({ data }: { data: OpenKitchen }) {
       {recipes.length ? (
         <View style={{ gap: 8 }}>
           <View style={{ flexDirection: "row", gap: 8 }}>
-            <Pressable accessibilityRole="button" accessibilityState={{ selected: fromHome }} onPress={() => setFromHome((value) => !value)}
+            <Press accessibilityRole="button" accessibilityState={{ selected: fromHome }} onPress={() => setFromHome((value) => !value)}
               style={[styles.filter, { borderColor: fromHome ? hue : colors.controlBorder, backgroundColor: fromHome ? hue : colors.control }]}>
               <Refrigerator size={16} color={fromHome ? "#ffffff" : colors.mutedForeground} />
               <T weight="medium" textBreakStrategy="simple" style={{ fontSize: 14, color: fromHome ? "#ffffff" : colors.foreground }}>{text.fromHome}</T>
-            </Pressable>
+            </Press>
             {picking ? null : (
-              <Pressable accessibilityRole="button" onPress={() => setPicking(true)} style={[styles.filter, { borderColor: colors.controlBorder, backgroundColor: colors.control }]}>
+              <Press accessibilityRole="button" onPress={() => setPicking(true)} style={[styles.filter, { borderColor: colors.controlBorder, backgroundColor: colors.control }]}>
                 <Carrot size={16} color={colors.mutedForeground} />
                 <T weight="medium" textBreakStrategy="simple" style={{ fontSize: 14, color: colors.foreground }}>{text.withIngredient}</T>
-              </Pressable>
+              </Press>
             )}
           </View>
           {selected.length ? <View style={styles.wrap}>
@@ -145,7 +145,7 @@ function Recipes({ data }: { data: OpenKitchen }) {
       {matches.length ? <View style={{ gap: 8 }}>{matches.map((recipe) => {
         const group = mainGroup(kitchen.kitchen.groups, recipe.sections);
         return (
-          <Pressable key={recipe.id} accessibilityRole="button" onPress={() => router.push({ pathname: "/recipes/[recipeId]", params: { recipeId: recipe.id } })}
+          <Press key={recipe.id} accessibilityRole="button" onPress={() => router.push({ pathname: "/recipes/[recipeId]", params: { recipeId: recipe.id } })}
             onLongPress={() => hold(recipe.id)} accessibilityActions={[{ name: "longpress", label: text.recipeActions }]}
             onAccessibilityAction={(event) => { if (event.nativeEvent.actionName === "longpress") setHeld(recipe.id); }} style={({ pressed }) => [styles.recipe, { backgroundColor: group ? tint(groupColor(colors, kitchen.kitchen.groups, group), 11, colors.card) : colors.muted, opacity: pressed ? 0.8 : 1 }]}>
               <PlateRing groups={kitchen.kitchen.groups} sections={recipe.sections} size={36} />
@@ -161,7 +161,7 @@ function Recipes({ data }: { data: OpenKitchen }) {
                   : <View style={styles.inline}><Refrigerator size={14} color={colors.pageInk.home} /><T weight="medium" style={[styles.small, { color: colors.pageInk.home }]}>{text.allAtHome}</T></View>
                   : null}
               </View>
-          </Pressable>
+          </Press>
         );
       })}</View> : <Empty title={!recipes.length ? text.noRecipes : filtered ? text.noFit : text.noMatch(query)} body={!recipes.length ? text.addIdeaHint : filtered ? text.removeAFilter : text.tryAnother} />}
       {menuRecipe ? <RecipeMenu key={menuRecipe.id} recipe={menuRecipe} data={data} onClose={() => setHeld(undefined)} notify={setNotice} /> : null}

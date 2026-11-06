@@ -2,14 +2,14 @@ import { formatNumber, ingredientGroups, isCountedUnit, unitName, type Ingredien
 import { router } from "expo-router";
 import { ChevronRight, ListOrdered, Plus } from "lucide-react-native";
 import { useState } from "react";
-import { Pressable, View } from "react-native";
+import { View } from "react-native";
 import type { OpenKitchen } from "../../../state";
 import { IngredientSheet } from "../../../ui/ingredients/ingredient-sheet";
 import { GroupsSheet } from "../../../ui/ingredients/groups-sheet";
 import { TEXT } from "../../../ui/ingredients/text";
 import { TEXT as KITCHEN_TEXT } from "../../../ui/kitchen/text";
 import { KitchenScreen } from "../../../ui/page";
-import { byGroup, Button, Empty, GroupLabel, GroupList, groupLabel, Screen, SearchField, T, ToolbarButton } from "../../../ui/kit";
+import { Button, byGroup, Empty, groupLabel, GroupLabel, GroupList, Press, Screen, SearchField, T, ToolbarButton } from "../../../ui/kit";
 import { useLanguage, useText } from "../../../ui/language";
 import { groupColor, useColors } from "../../../ui/theme";
 
@@ -44,10 +44,10 @@ function Ingredients({ kitchen, change }: OpenKitchen) {
       </>}>
       <SearchField value={query} onValue={setQuery} label={text.findPlaceholder} />
       {typed && !ingredients.some((one) => one.name.toLowerCase() === typed.toLowerCase()) ? (
-        <Pressable accessibilityRole="button" onPress={() => create(typed)} style={{ minHeight: 48, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 8 }}>
+        <Press accessibilityRole="button" onPress={() => create(typed)} style={{ minHeight: 48, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 8 }}>
           <Plus size={18} color={colors.pageInk.kitchen} />
           <T style={{ color: colors.pageInk.kitchen, flexShrink: 1 }}>{text.addNew(typed)}</T>
-        </Pressable>
+        </Press>
       ) : null}
       {groups.map(([section, entries]) => {
         const color = groupColor(colors, kitchen.kitchen.groups, section);
@@ -56,7 +56,7 @@ function Ingredients({ kitchen, change }: OpenKitchen) {
             <GroupLabel color={color} count={entries.length}>{groupLabel(section, language)}</GroupLabel>
             <GroupList color={color}>
               {entries.map(({ ingredient }) => (
-                <Pressable key={ingredient.id} accessibilityRole="button" onPress={() => setEditing({ kind: "ingredient", id: ingredient.id, name: ingredient.name })}
+                <Press key={ingredient.id} accessibilityRole="button" onPress={() => setEditing({ kind: "ingredient", id: ingredient.id, name: ingredient.name })}
                   style={({ pressed }) => ({ minHeight: 64, flexDirection: "row", alignItems: "center", gap: 12, paddingLeft: 16, paddingRight: 12, paddingVertical: 12, opacity: pressed ? 0.7 : 1 })}>
                   <View style={{ flex: 1, gap: 3 }}>
                     <T weight="medium">{ingredient.name}</T>
@@ -64,7 +64,7 @@ function Ingredients({ kitchen, change }: OpenKitchen) {
                   </View>
                   {ingredient.recipeCount ? <T muted style={{ fontSize: 13 }}>{text.inRecipes(ingredient.recipeCount)}</T> : null}
                   <ChevronRight size={18} color={colors.mutedForeground} />
-                </Pressable>
+                </Press>
               ))}
             </GroupList>
           </View>

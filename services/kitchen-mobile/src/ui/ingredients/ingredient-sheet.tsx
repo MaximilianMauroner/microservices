@@ -1,9 +1,9 @@
 import { ingredientGroups, INGREDIENT_UNITS, isCountedUnit, unitName, UNSORTED_SECTION, type Ingredient, type KitchenSnapshot } from "@tools-platform/service/kitchen-contract";
 import { Plus, X } from "lucide-react-native";
 import { useState } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import type { OpenKitchen } from "../../state";
-import { byGroup, Button, Field, GroupDot, groupLabel, Sheet, T, usePageColor } from "../kit";
+import { Button, byGroup, Field, GroupDot, groupLabel, Press, Sheet, T, usePageColor } from "../kit";
 import { useLanguage, useText } from "../language";
 import { useColors } from "../theme";
 import { CatalogProducts } from "./catalog-products";
@@ -54,11 +54,11 @@ export function IngredientSheet({ existing, newName, kitchen, change, onClose }:
           <T weight="medium">{text.unit}</T>
           <View accessibilityRole="radiogroup" accessibilityLabel={text.unit} style={[styles.units, { backgroundColor: colors.muted }]}>
             {INGREDIENT_UNITS.map((unit) => (
-              <Pressable key={unit} accessibilityRole="radio" accessibilityState={{ checked: draft.unit === unit }}
+              <Press key={unit} accessibilityRole="radio" accessibilityState={{ checked: draft.unit === unit }}
                 onPress={() => setDraft((current) => ({ ...withUnit(current, unit, language), size: "", values: nutritionFields(existing?.nutrition, language) }))}
                 style={{ minHeight: 48, flex: 1, alignItems: "center", justifyContent: "center", borderRadius: 24, backgroundColor: draft.unit === unit ? hue : "transparent" }}>
                 <T weight={draft.unit === unit ? "semibold" : "medium"} style={{ color: draft.unit === unit ? "#ffffff" : colors.mutedForeground }}>{unitName(unit, language)}</T>
-              </Pressable>
+              </Press>
             ))}
           </View>
         </View>
@@ -113,12 +113,12 @@ function GroupField({ kitchen, groups, onGroups, typed, onTyped }: {
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
         {groups.map((group, index) => (
           <View key={group} style={{ flexDirection: "row", alignItems: "center", maxWidth: "100%", borderRadius: 24, borderWidth: 1, borderColor: colors.controlBorder, backgroundColor: colors.control }}>
-            <Pressable accessibilityRole="button" accessibilityLabel={index ? text.makeMain(groupLabel(group, language)) : groupLabel(group, language)} disabled={index === 0}
+            <Press accessibilityRole="button" accessibilityLabel={index ? text.makeMain(groupLabel(group, language)) : groupLabel(group, language)} disabled={index === 0}
               onPress={() => onGroups([group, ...groups.filter((one) => one !== group)])}
               style={{ flexDirection: "row", alignItems: "center", gap: 6, minHeight: 48, paddingLeft: 12, flexShrink: 1 }}>
               <GroupDot groups={kitchen.kitchen.groups} group={group} size={8} />
               <T style={{ flexShrink: 1, fontSize: 14 }}>{groupLabel(group, language)}{index === 0 && groups.length > 1 ? <T muted style={styles.hint}> {text.mainGroup}</T> : null}</T>
-            </Pressable>
+            </Press>
             <Button tone="ghost" icon={X} accessibilityLabel={text.removeGroup(group)} onPress={() => onGroups(groups.filter((one) => one !== group))} />
           </View>
         ))}
@@ -132,11 +132,11 @@ function GroupField({ kitchen, groups, onGroups, typed, onTyped }: {
       </View>
       {suggestions.length ? <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
         {suggestions.map((group) => (
-          <Pressable key={group} accessibilityRole="button" accessibilityLabel={text.addGroupNamed(groupLabel(group, language))} onPress={() => add(group)}
+          <Press key={group} accessibilityRole="button" accessibilityLabel={text.addGroupNamed(groupLabel(group, language))} onPress={() => add(group)}
             style={{ flexDirection: "row", alignItems: "center", gap: 4, minHeight: 48, maxWidth: "100%", borderWidth: 1, borderColor: colors.controlBorder, backgroundColor: colors.control, borderRadius: 22, paddingHorizontal: 12 }}>
             <Plus size={16} color={colors.mutedForeground} />
             <T style={{ flexShrink: 1, fontSize: 14 }}>{groupLabel(group, language)}</T>
-          </Pressable>
+          </Press>
         ))}
       </View> : null}
       {groups.length ? <T muted style={styles.hint}>{text.groupsHint}</T> : null}

@@ -11,9 +11,9 @@ import {
 } from "@tools-platform/service/kitchen-contract";
 import { Plus } from "lucide-react-native";
 import { useEffect, useRef, useState } from "react";
-import { Pressable, View } from "react-native";
+import { View } from "react-native";
 import type { OpenKitchen } from "../../state";
-import { Button, Field, GroupDot, SearchField, Sheet, Stepper, T, byGroup } from "../kit";
+import { Button, byGroup, Field, GroupDot, Press, SearchField, Sheet, Stepper, T } from "../kit";
 import { useLanguage, useText } from "../language";
 import { useColors } from "../theme";
 import { TEXT } from "./text";
@@ -106,7 +106,7 @@ export function AddStockSheet({
     >
       <SearchField value={query} onValue={setQuery} label={text.findIngredient} />
       {isNew ? (
-        <Pressable
+        <Press
           accessibilityRole="button"
           disabled={Boolean(creating)}
           onPress={() =>
@@ -128,13 +128,13 @@ export function AddStockSheet({
           <T weight="medium" style={{ flex: 1 }}>
             {text.addNew(typed)}
           </T>
-        </Pressable>
+        </Press>
       ) : null}
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
         {matches.map((one) => {
           const chosen = selection?.type === "existing" && selection.id === one.id;
           return (
-            <Pressable
+            <Press
               key={one.id}
               accessibilityRole="button"
               accessibilityState={{ selected: chosen, disabled: Boolean(creating) }}
@@ -160,7 +160,7 @@ export function AddStockSheet({
                   {formatAmount(home.get(one.id)!, one.unit, language)}
                 </T>
               ) : null}
-            </Pressable>
+            </Press>
           );
         })}
       </View>
@@ -192,7 +192,7 @@ export function AddStockSheet({
               style={{ flexDirection: "row", flexWrap: "wrap", gap: 4 }}
             >
               {INGREDIENT_UNITS.map((unit) => (
-                <Pressable
+                <Press
                   key={unit}
                   accessibilityRole="radio"
                   accessibilityState={{ checked: selection.unit === unit }}
@@ -209,7 +209,7 @@ export function AddStockSheet({
                   <T style={{ color: selection.unit === unit ? "#ffffff" : colors.foreground }}>
                     {unitName(unit, language)}
                   </T>
-                </Pressable>
+                </Press>
               ))}
             </View>
           ) : null}
