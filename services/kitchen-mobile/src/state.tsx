@@ -57,7 +57,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (session !== "signed-in") return;
-    const app = AppState.addEventListener("change", (next) => { if (next === "active") void engine.sync(); });
+    const app = AppState.addEventListener("change", (next) => { if (next === "active" || (next === "background" && engine.getState().pending)) void engine.sync(); });
     let online: boolean | null = null;
     const net = NetInfo.addEventListener(({ isConnected }) => {
       if (isConnected && online === false) void engine.sync();

@@ -2,7 +2,7 @@ import { byGroupOrder, addDays, UNSORTED_SECTION } from "@tools-platform/service
 import * as Haptics from "expo-haptics";
 import { BookOpen, CalendarDays, ChevronLeft, ChevronRight, CookingPot, type LucideIcon, Refrigerator, Search, ShoppingBasket, X } from "lucide-react-native";
 import { useFocusEffect } from "expo-router";
-import { createContext, type ReactNode, type Ref, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { createContext, type ReactNode, type Ref, useCallback, useContext, useEffect, useReducer, useRef, useState } from "react";
 import { AccessibilityInfo, KeyboardAvoidingView, Modal, Platform, Pressable, RefreshControl, type RefreshControlProps, ScrollView, type ScrollViewInstance, StyleSheet, Text, type TextProps, TextInput, type TextInputProps, View, type ViewStyle } from "react-native";
 import { GestureDetector, GestureHandlerRootView, usePanGesture } from "react-native-gesture-handler";
 import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming } from "react-native-reanimated";
@@ -40,7 +40,9 @@ const en = {
   other: "Other",
   clearSearch: "Clear search",
   actionsFor: (name: string) => `Actions for ${name}`,
-  undo: "Undo"
+  undo: "Undo",
+  refused: (message: string) => `Not saved: ${message}`,
+  unsaved: "Not saved. The phone could not store this change. Try it again."
 };
 const TEXT: Record<KitchenLanguage, typeof en> = {
   en,
@@ -61,7 +63,9 @@ const TEXT: Record<KitchenLanguage, typeof en> = {
     other: "Sonstiges",
     clearSearch: "Suche löschen",
     actionsFor: (name: string) => `Aktionen für ${name}`,
-    undo: "Rückgängig"
+    undo: "Rückgängig",
+    refused: (message: string) => `Nicht gespeichert: ${message}`,
+    unsaved: "Nicht gespeichert. Das Telefon konnte diese Änderung nicht speichern. Versuch es noch einmal."
   }
 };
 
@@ -190,27 +194,47 @@ export type Notice = Readonly<{ message: string; undo?: readonly QueuedAction[] 
 
 const SNACKBAR_MS = 6000;
 
+/** Results the person has seen in a snackbar on some page. The Kitchen tab keeps the full list until dismissed. */
+const seenResults = new Set<string>();
+
 /**
  * The last notice of a page, above its floating button. A notice with Undo stays until the user acts, swipes it away,
  * makes the next change, or leaves the page (Material 3: snackbars with actions do not close by themselves). A notice
  * without an action closes after a few seconds, or later when the phone's accessibility settings ask for more time.
+ * A change that did not happen (the server refused it, or the phone could not store it) shows here once, on the open
+ * page, and replaces the page's own notice, whose Undo would no longer be true.
  */
 export function Snackbar({ notice, onUndo, onDone }: { notice: Notice | null; onUndo: (action: QueuedAction) => void; onDone: () => void }) {
   const colors = useColors();
   const text = useKitText();
   const { ink: pageInk } = usePageColor();
+  const { notices } = useSync();
+  const [focused, setFocused] = useState(false);
+  const [, seen] = useReducer((count: number) => count + 1, 0);
   const done = useRef(onDone);
   done.current = onDone;
-  useFocusEffect(useCallback(() => () => done.current(), []));
+  useFocusEffect(useCallback(() => {
+    setFocused(true);
+    return () => { setFocused(false); done.current(); };
+  }, []));
+  const result = focused ? [...notices].reverse().find((one) => !seenResults.has(one.clientActionId)) : undefined;
+  useEffect(() => { if (result) done.current(); }, [result?.clientActionId]);
+  const shown: Notice | null = result ? { message: "unsaved" in result ? text.unsaved : text.refused(result.message) } : notice;
+  const close = useRef(() => undefined as void);
+  close.current = () => {
+    if (!result) return done.current();
+    seenResults.add(result.clientActionId);
+    seen();
+  };
   useEffect(() => {
-    if (!notice || notice.undo) return;
+    if (!shown || shown.undo) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let live = true;
-    void AccessibilityInfo.getRecommendedTimeoutMillis(SNACKBAR_MS).then((ms) => { if (live) timer = setTimeout(() => done.current(), ms); });
+    void AccessibilityInfo.getRecommendedTimeoutMillis(SNACKBAR_MS).then((ms) => { if (live) timer = setTimeout(() => close.current(), ms); });
     return () => { live = false; clearTimeout(timer); };
-  }, [notice]);
+  }, [shown?.message, shown?.undo]);
   const shift = useSharedValue(0);
-  useEffect(() => { shift.value = 0; }, [notice, shift]);
+  useEffect(() => { shift.value = 0; }, [shown?.message, shift]);
   const away = usePanGesture({
     activeOffsetX: [-12, 12],
     failOffsetY: [-12, 12],
@@ -218,18 +242,18 @@ export function Snackbar({ notice, onUndo, onDone }: { notice: Notice | null; on
     onDeactivate: (event) => {
       if (!event.canceled && (Math.abs(event.translationX) > SNACKBAR_AWAY.distance || Math.abs(event.velocityX) > SNACKBAR_AWAY.velocity)) {
         shift.value = withTiming(Math.sign(event.translationX || event.velocityX) * 600, { duration: 160 });
-        scheduleOnRN(onDone);
+        scheduleOnRN(() => close.current());
       } else shift.value = withSpring(0, { damping: 20, stiffness: 240 });
     },
   });
   const slide = useAnimatedStyle(() => ({ transform: [{ translateX: shift.value }], opacity: 1 - Math.min(Math.abs(shift.value) / 400, 0.6) }));
-  if (!notice) return null;
+  if (!shown) return null;
   return (
     <GestureDetector gesture={away}>
-      <Animated.View accessibilityLiveRegion="polite" style={[styles.snackbar, { backgroundColor: colors.muted, borderColor: colors.border }, slide]}>
-        <T style={{ flex: 1, fontSize: 14 }}>{notice.message}</T>
-        {notice.undo ? (
-          <Pressable accessibilityRole="button" onPress={() => { notice.undo!.forEach(onUndo); onDone(); }} style={styles.snackAction}>
+      <Animated.View accessibilityLiveRegion="polite" style={[styles.snackbar, { backgroundColor: result ? tint(colors.destructive, 14, colors.card) : colors.muted, borderColor: result ? colors.destructive : colors.border }, slide]}>
+        <T style={{ flex: 1, fontSize: 14, paddingVertical: 10 }}>{shown.message}</T>
+        {shown.undo ? (
+          <Pressable accessibilityRole="button" onPress={() => { shown.undo!.forEach(onUndo); onDone(); }} style={styles.snackAction}>
             <T weight="semibold" style={{ color: pageInk }}>{text.undo}</T>
           </Pressable>
         ) : null}
