@@ -215,4 +215,14 @@ describe("sync engine", () => {
     await engine.sync();
     expect(engine.getState()).toMatchObject({ pending: 0, view: { today: "2026-11-05" } });
   });
+  it("sends a run of changes in one sync once the taps settle", async () => {
+    const { engine, sent } = await started();
+    for (let tap = 0; tap < 3; tap += 1) {
+      await engine.change("home", addMilk);
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+    expect(sent, "nothing goes out while the taps continue").toEqual([]);
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    expect(sent, "one push with all three changes").toEqual([["change-1", "change-3", "change-5"]]);
+  });
 });
