@@ -32,7 +32,10 @@ export function ListRow({ row, color, onChange }: { row: ShoppingRow; color: str
   const removable = Boolean(changes.remove);
   function run(gesture: RowGesture) {
     const change = changes[gesture];
-    if (!change || used.current) return swipe.current?.close();
+    if (!change || used.current) {
+      swipe.current?.close();
+      return;
+    }
     used.current = true;
     if (gesture === "check") setChecked(!checked);
     onChange(change);

@@ -38,13 +38,14 @@ export function Week({ data }: { data: OpenKitchen }) {
   const turn = (step: -1 | 0 | 1) => {
     if (step === 1 || (step === -1 && week.canGoBack)) setRequested(addDays(week.start, 7 * step));
   };
+  const release = (translationX: number, velocityX: number) => turn(swipeStep(translationX, velocityX));
   const shift = useSharedValue(0);
   const swipe = usePanGesture({
     activeOffsetX: [-24, 24],
     failOffsetY: [-12, 12],
     hitSlop: { left: -EDGE, right: -EDGE },
     onUpdate: (event) => { shift.value = Math.max(-48, Math.min(48, event.translationX / 4)); },
-    onDeactivate: (event) => { if (!event.canceled) scheduleOnRN(turn, swipeStep(event.translationX, event.velocityX)); },
+    onDeactivate: (event) => { if (!event.canceled) scheduleOnRN(release, event.translationX, event.velocityX); },
     onFinalize: () => { shift.value = withTiming(0, { duration: 160 }); },
   });
   const slide = useAnimatedStyle(() => ({ transform: [{ translateX: shift.value }] }));
