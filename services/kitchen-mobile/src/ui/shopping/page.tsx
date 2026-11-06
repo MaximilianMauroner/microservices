@@ -3,24 +3,10 @@ import { addDays, formatAmount, weekStart } from "@tools-platform/service/kitche
 import { ChevronDown, ChevronUp, Plus } from "lucide-react-native";
 import { useLocalSearchParams } from "expo-router";
 import { type ReactNode, useEffect, useState } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
+import { StyleSheet, View } from "react-native";
 import type { OpenKitchen } from "../../state";
-import {
-  Button,
-  Empty,
-  FloatingButton,
-  GroupDot,
-  GroupLabel,
-  GroupList,
-  type Notice,
-  Screen,
-  Snackbar,
-  T,
-  byGroup,
-  groupLabel,
-  weekLabel,
-  WeekNav,
-} from "../kit";
+import { Button, byGroup, Empty, FloatingButton, GroupDot, groupLabel, GroupLabel, GroupList, LIST_MOTION, Press, Screen, Snackbar, T, type Notice, weekLabel, WeekNav } from "../kit";
 import { useLanguage, useText } from "../language";
 import { groupColor, useColors } from "../theme";
 import { ListRow } from "./row";
@@ -70,7 +56,7 @@ export function Shopping({ kitchen, today, planFrom, change }: OpenKitchen) {
           >
             {shopping.weekly.map((extra) => (
               <ListRow
-                key={`${week}:${extra.id}:${extra.bought}`}
+                key={extra.id}
                 row={{ kind: "weekly", extra, week: shopping.start }}
                 color={colors.pageInk.home}
                 onChange={run}
@@ -86,7 +72,7 @@ export function Shopping({ kitchen, today, planFrom, change }: OpenKitchen) {
           </Group>
         ) : null}
         {groups.map(([section, lines]) => (
-          <View key={section}>
+          <Animated.View key={section} layout={LIST_MOTION} entering={FadeIn.duration(180)} exiting={FadeOut.duration(140)}>
             <Group
               title={groupLabel(section, language)}
               color={groupColor(colors, kitchen.kitchen.groups, section)}
@@ -94,18 +80,18 @@ export function Shopping({ kitchen, today, planFrom, change }: OpenKitchen) {
             >
               {lines.map((line) => (
                 <ListRow
-                  key={`${line.ingredientId}:${line.inStock}:${line.toBuy}`}
+                  key={line.ingredientId}
                   row={{ kind: "line", line }}
                   color={groupColor(colors, kitchen.kitchen.groups, section)}
                   onChange={run}
                 />
               ))}
             </Group>
-          </View>
+          </Animated.View>
         ))}
         {shopping.covered.length ? (
           <View style={{ borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 2 }}>
-            <Pressable
+            <Press
               accessibilityRole="button"
               accessibilityState={{ expanded }}
               onPress={() => setExpanded(!expanded)}
@@ -119,7 +105,7 @@ export function Shopping({ kitchen, today, planFrom, change }: OpenKitchen) {
               ) : (
                 <ChevronDown color={colors.mutedForeground} size={18} />
               )}
-            </Pressable>
+            </Press>
             {expanded
               ? shopping.covered.map((line) => (
                   <View key={line.ingredientId} style={styles.covered}>

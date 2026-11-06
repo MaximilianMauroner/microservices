@@ -2,16 +2,27 @@ import * as Crypto from "expo-crypto";
 import { formatAmount } from "@tools-platform/service/kitchen-contract";
 import { Check, Trash2 } from "lucide-react-native";
 import { useRef, useState } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
-import { T } from "../kit";
+import { StyleSheet, View } from "react-native";
+import { Press, T } from "../kit";
 import { RowMenu, type SwipeAction, SwipeRow } from "../swipe-row";
 import { useLanguage, useText } from "../language";
 import { ink, tint, useColors } from "../theme";
 import { TEXT } from "./text";
 import { type RowChange, type RowGesture, rowChanges, type ShoppingRow, SWIPE } from "./view";
 
-/** A shopping row. A tap or a swipe right checks it. A swipe left removes it when the row allows that. Its more button offers the same actions. */
-export function ListRow({ row, color, onChange }: { row: ShoppingRow; color: string; onChange: (change: RowChange, tapped: boolean) => void }) {
+type RowProps = { row: ShoppingRow; color: string; onChange: (change: RowChange, tapped: boolean) => void };
+
+/**
+ * A shopping row. A tap or a swipe right checks it. A swipe left removes it when the row allows that. Its more button
+ * offers the same actions. Give it a key by item, so the list can animate it; it starts fresh when its amounts change.
+ */
+export function ListRow(props: RowProps) {
+  const { row } = props;
+  const version = row.kind === "line" ? `${row.line.inStock}:${row.line.toBuy}` : row.kind === "weekly" ? `${row.week}:${row.extra.bought}` : "";
+  return <RowBody key={version} {...props} />;
+}
+
+function RowBody({ row, color, onChange }: RowProps) {
   const text = useText(TEXT);
   const language = useLanguage();
   const colors = useColors();
@@ -39,7 +50,7 @@ export function ListRow({ row, color, onChange }: { row: ShoppingRow; color: str
   return (
     <SwipeRow right={buy} left={remove}>
       <View style={[styles.line, { backgroundColor: background }]}>
-        <Pressable
+        <Press
           accessibilityRole="checkbox"
           accessibilityLabel={text.boughtAria(name, amount)}
           accessibilityState={{ checked }}
@@ -56,7 +67,7 @@ export function ListRow({ row, color, onChange }: { row: ShoppingRow; color: str
             {detail ? <T muted style={{ fontSize: 12, marginTop: 2 }}>{detail}</T> : null}
           </View>
           {amount ? <T weight="semibold" style={{ color: ink(color, colors), fontSize: 14 }}>{amount}</T> : null}
-        </Pressable>
+        </Press>
         {actions.length ? <RowMenu name={name} actions={actions} /> : null}
       </View>
     </SwipeRow>

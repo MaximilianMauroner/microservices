@@ -2,12 +2,12 @@ import { addDays, weekStart } from "@tools-platform/service/kitchen-contract";
 import { router } from "expo-router";
 import { Check, Plus, ShoppingBasket } from "lucide-react-native";
 import { useMemo, useState } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import { GestureDetector, usePanGesture } from "react-native-gesture-handler";
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import { scheduleOnRN } from "react-native-worklets";
 import type { OpenKitchen } from "../../state";
-import { Button, dayParts, FloatingButton, haptic, mainGroup, type Notice, PlateRing, Screen, Snackbar, T, useByLabel, WeekNav, usePageColor, weekLabel, weekRange } from "../kit";
+import { Button, dayParts, FloatingButton, haptic, mainGroup, PlateRing, Press, Screen, Snackbar, T, type Notice, useByLabel, usePageColor, weekLabel, WeekNav, weekRange } from "../kit";
 import { useLanguage, useText } from "../language";
 import { groupColor, tint, useColors } from "../theme";
 import { buildWeek, swipeStep } from "./model";
@@ -96,7 +96,7 @@ export function Week({ data }: { data: OpenKitchen }) {
                     const group = mainGroup(kitchen.groups, recipe?.sections ?? []);
                     const background = group ? tint(groupColor(colors, kitchen.groups, group), 16, colors.card) : colors.muted;
                     return (
-                      <Pressable key={one.id} accessibilityRole="button" onPress={() => setSelection({ kind: "entry", id: one.id })}
+                      <Press key={one.id} accessibilityRole="button" onPress={() => setSelection({ kind: "entry", id: one.id })}
                         onLongPress={() => { haptic("hold"); setSelection({ kind: "menu", id: one.id }); }}
                         accessibilityActions={[{ name: "longpress", label: text.mealActions }]}
                         onAccessibilityAction={(event) => { if (event.nativeEvent.actionName === "longpress") setSelection({ kind: "menu", id: one.id }); }}
@@ -110,14 +110,14 @@ export function Week({ data }: { data: OpenKitchen }) {
                           <T weight="medium" muted={one.cooked} style={{ fontSize: 17 }}>{one.recipe}</T>
                           <T muted style={styles.small}>{text.servings(one.servings)}{recipe?.kcal ? text.kcalEach(recipe.kcal) : ""}</T>
                         </View>
-                      </Pressable>
+                      </Press>
                     );
                   })}
                   {entries.length ? null : (
-                    <Pressable accessibilityRole="button" accessibilityLabel={text.planMeal(parts.weekdayLong, parts.dayMonth)}
+                    <Press accessibilityRole="button" accessibilityLabel={text.planMeal(parts.weekdayLong, parts.dayMonth)}
                       onPress={() => setSelection({ kind: "plan", day })} style={[styles.add, { borderColor: colors.border }]}>
                       <Plus size={16} color={colors.mutedForeground} /><T muted style={{ fontSize: 14 }}>{text.planAMeal}</T>
-                    </Pressable>
+                    </Press>
                   )}
                 </View>
               </View>
@@ -126,7 +126,7 @@ export function Week({ data }: { data: OpenKitchen }) {
         </Animated.View>
       </GestureDetector>
       <View accessibilityLabel={text.glance} style={{ gap: 12 }}>
-        <Pressable accessibilityRole="button" onPress={() => router.navigate({ pathname: "/shopping", params: { week: week.start } })}
+        <Press accessibilityRole="button" onPress={() => router.navigate({ pathname: "/shopping", params: { week: week.start } })}
           style={[styles.shopping, { backgroundColor: tint(colors.pageInk.shopping, 10, colors.background) }]}>
           {week.buySections.length ? <PlateRing groups={kitchen.groups} sections={week.buySections} size={60} /> : (
             <View style={[styles.basket, { backgroundColor: tint(colors.pageInk.shopping, 16, colors.background) }]}><ShoppingBasket size={24} color={colors.pageInk.shopping} /></View>
@@ -135,7 +135,7 @@ export function Week({ data }: { data: OpenKitchen }) {
             <T weight="semibold" style={{ fontSize: 18, color: colors.pageInk.shopping }}>{week.toBuy ? text.toBuy(week.toBuy) : text.nothingToBuy}</T>
             <T muted style={styles.small}>{text.notCookedYet}</T>
           </View>
-        </Pressable>
+        </Press>
         <View style={[styles.leftovers, { backgroundColor: week.leftovers.some((one) => useByLabel(one.useBy, today, language).urgent) ? tint(colors.destructive, 7, colors.background) : colors.muted }]}>
           <T weight="semibold" style={{ fontSize: 18 }}>{text.useFirst}</T>
           {week.leftovers.length ? week.leftovers.slice(0, 5).map((one) => {

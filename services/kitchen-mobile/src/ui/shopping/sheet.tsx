@@ -1,9 +1,9 @@
 import type { KitchenSnapshot, StoredExtra } from "@tools-platform/service/kitchen-contract";
 import { ArrowUp, Check, Repeat, X } from "lucide-react-native";
 import { useRef, useState } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import type { OpenKitchen } from "../../state";
-import { Button, Field, Sheet, T } from "../kit";
+import { Button, Field, Press, Sheet, T } from "../kit";
 import { useText } from "../language";
 import { useColors } from "../theme";
 import { TEXT } from "./text";
@@ -56,7 +56,7 @@ export function AddSheet({
       description={text.addDescription}
       footer={
         <View style={{ width: "100%", gap: 10 }}>
-          <Pressable
+          <Press
             accessibilityRole="switch"
             accessibilityState={{ checked: everyWeek }}
             accessibilityHint={text.addEveryWeekHint}
@@ -76,7 +76,7 @@ export function AddSheet({
             <T weight="medium" style={{ fontSize: 14, color: everyWeek ? "#ffffff" : colors.foreground }}>
               {text.addEveryWeek}
             </T>
-          </Pressable>
+          </Press>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
             <Field
               style={{ flex: 1 }}
@@ -148,7 +148,7 @@ function clean(name: string): string {
 function Chip({ label, on = false, onPress }: { label: string; on?: boolean; onPress?: () => void }) {
   const colors = useColors();
   return (
-    <Pressable
+    <Press
       accessibilityRole="button"
       accessibilityState={{ selected: on, disabled: on }}
       disabled={on}
@@ -165,7 +165,7 @@ function Chip({ label, on = false, onPress }: { label: string; on?: boolean; onP
     >
       {on ? <Check color="#ffffff" size={16} /> : null}
       <T style={{ color: on ? "#ffffff" : colors.foreground, flexShrink: 1 }}>{label}</T>
-    </Pressable>
+    </Press>
   );
 }
 

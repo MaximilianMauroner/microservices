@@ -1,10 +1,10 @@
 import { router } from "expo-router";
 import { ChevronRight, Leaf, LogOut, type LucideIcon, RefreshCw, Users } from "lucide-react-native";
 import { type ReactNode, useContext, useState } from "react";
-import { ActivityIndicator, Alert, Pressable, StyleSheet, View } from "react-native";
+import { ActivityIndicator, Alert, StyleSheet, View } from "react-native";
 import { useApp, useKitchen, useSync } from "../../state";
 import type { SyncStatus } from "../../sync/model";
-import { Button, HueBadge, Screen, Sheet, T, usePageColor } from "../kit";
+import { Button, HueBadge, Press, Screen, Sheet, T, usePageColor } from "../kit";
 import { KITCHEN_LANGUAGES, type KitchenLanguage, LANGUAGE_NAMES, LanguageContext, LOCALES, useText } from "../language";
 import { tint, useColors } from "../theme";
 import { TEXT } from "./text";
@@ -34,10 +34,10 @@ export function KitchenHub() {
           <T weight="semibold" numberOfLines={1} style={{ fontSize: 18 }}>{open && kitchen ? kitchen.kitchen.name : text.noKitchen}</T>
           <T muted style={styles.small}>{[state, pending ? text.unsent(pending) : ""].filter(Boolean).join(" · ")}</T>
         </View>
-        <Pressable accessibilityRole="button" accessibilityLabel={text.syncNow} accessibilityState={{ busy: status.kind === "syncing" }} onPress={() => void sync()}
+        <Press accessibilityRole="button" accessibilityLabel={text.syncNow} accessibilityState={{ busy: status.kind === "syncing" }} onPress={() => void sync()}
           style={({ pressed }) => [styles.sync, { borderColor: colors.controlBorder, backgroundColor: colors.control, opacity: pressed ? 0.7 : 1 }]}>
           {status.kind === "syncing" ? <ActivityIndicator color={colors.mutedForeground} /> : <RefreshCw size={20} color={colors.foreground} />}
-        </Pressable>
+        </Press>
       </View>
       {open && open.kitchens.length > 1 ? <Button tone="outline" label={text.switchKitchen} onPress={() => setSwitching(true)} /> : null}
       {kitchen ? <>
@@ -62,29 +62,29 @@ export function KitchenHub() {
           {KITCHEN_LANGUAGES.map((one) => {
             const selected = one === language;
             return (
-              <Pressable key={one} accessibilityRole="radio" accessibilityState={{ selected }} onPress={() => setLanguage(one)}
+              <Press key={one} accessibilityRole="radio" accessibilityState={{ selected }} onPress={() => setLanguage(one)}
                 style={[styles.segment, selected && { backgroundColor: hue }]}>
                 <T weight={selected ? "semibold" : "medium"} style={{ color: selected ? "#ffffff" : colors.foreground }}>{LANGUAGE_NAMES[one]}</T>
-              </Pressable>
+              </Press>
             );
           })}
         </View>
       </View>
       <List>
-        <Pressable accessibilityRole="button" onPress={confirmSignOut} style={({ pressed }) => [styles.row, { justifyContent: "center", opacity: pressed ? 0.7 : 1 }]}>
+        <Press accessibilityRole="button" onPress={confirmSignOut} style={({ pressed }) => [styles.row, { justifyContent: "center", opacity: pressed ? 0.7 : 1 }]}>
           <LogOut size={18} color={colors.destructive} />
           <T weight="medium" style={{ color: colors.destructive }}>{text.signOut}</T>
-        </Pressable>
+        </Press>
       </List>
       <Sheet open={switching} onClose={() => setSwitching(false)} title={text.kitchens}>
         {open?.kitchens.map(({ kitchen: one }) => {
           const active = one.id === kitchen?.kitchen.id;
           return (
-            <Pressable key={one.id} accessibilityRole="button" accessibilityState={{ selected: active }} onPress={() => { openKitchen(one.id); setSwitching(false); }}
+            <Press key={one.id} accessibilityRole="button" accessibilityState={{ selected: active }} onPress={() => { openKitchen(one.id); setSwitching(false); }}
               style={{ padding: 14, borderRadius: 14, borderWidth: 1, borderColor: active ? colors.foreground : colors.border, backgroundColor: colors.control }}>
               <T weight="semibold">{one.name}</T>
               <T muted style={{ fontSize: 13, marginTop: 2 }}>{one.members.length ? one.members.map((member) => member.email).join(", ") : text.noMembers}</T>
-            </Pressable>
+            </Press>
           );
         })}
       </Sheet>
@@ -132,7 +132,7 @@ function Row({ icon: Icon, title, detail, onPress, trailing }: { icon?: LucideIc
     {trailing ?? (onPress ? <ChevronRight size={18} color={colors.mutedForeground} /> : null)}
   </>;
   if (!onPress) return <View style={styles.row}>{body}</View>;
-  return <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [styles.row, pressed && { opacity: 0.7 }]}>{body}</Pressable>;
+  return <Press accessibilityRole="button" onPress={onPress} style={({ pressed }) => [styles.row, pressed && { opacity: 0.7 }]}>{body}</Press>;
 }
 
 const styles = StyleSheet.create({

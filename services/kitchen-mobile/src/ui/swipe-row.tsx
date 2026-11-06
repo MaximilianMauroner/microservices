@@ -1,11 +1,11 @@
 import { type LucideIcon, MoreVertical } from "lucide-react-native";
 import * as SecureStore from "expo-secure-store";
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import { Platform, Pressable, StyleSheet, View } from "react-native";
+import { Platform, StyleSheet, View } from "react-native";
 import ReanimatedSwipeable, { type SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 import Animated, { interpolate, type SharedValue, useAnimatedReaction, useAnimatedStyle } from "react-native-reanimated";
 import { scheduleOnRN } from "react-native-worklets";
-import { haptic, Sheet, T, useKitText } from "./kit";
+import { haptic, Press, Sheet, T, useKitText } from "./kit";
 import { useColors } from "./theme";
 
 const REACH = 96;
@@ -72,17 +72,17 @@ export function RowMenu({ name, actions }: { name: string; actions: readonly Swi
   }
   return (
     <>
-      <Pressable accessibilityRole="button" accessibilityLabel={text.actionsFor(name)} onPress={() => setOpen(true)}
+      <Press accessibilityRole="button" accessibilityLabel={text.actionsFor(name)} onPress={() => setOpen(true)}
         style={({ pressed }) => [styles.more, pressed && { backgroundColor: colors.muted }]}>
         <MoreVertical size={20} color={colors.mutedForeground} />
-      </Pressable>
+      </Press>
       <Sheet open={open} onClose={() => setOpen(false)} onDismiss={() => { chosen.current?.(); chosen.current = undefined; }} title={name}>
         {actions.map(({ label, icon: Icon, color, run }) => (
-          <Pressable key={label} accessibilityRole="button" onPress={() => choose(run)}
+          <Press key={label} accessibilityRole="button" onPress={() => choose(run)}
             style={({ pressed }) => [styles.menuItem, { backgroundColor: pressed ? colors.muted : colors.control, borderColor: colors.controlBorder }]}>
             <Icon size={20} color={color} />
             <T weight="medium" style={{ color }}>{label}</T>
-          </Pressable>
+          </Press>
         ))}
       </Sheet>
     </>

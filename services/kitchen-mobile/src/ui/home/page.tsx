@@ -1,10 +1,11 @@
 import { formatAmount, type StockItem } from "@tools-platform/service/kitchen-contract";
 import { Check, Info, Plus, Trash2, Utensils } from "lucide-react-native";
 import { useRef, useState } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import Animated, { FadeOut } from "react-native-reanimated";
+import { StyleSheet, View } from "react-native";
 import type { OpenKitchen } from "../../state";
 import type { QueuedAction } from "../../sync/model";
-import { Button, Empty, FloatingButton, GroupLabel, GroupList, type Notice, Screen, Snackbar, T, groupLabel, useByLabel } from "../kit";
+import { Button, Empty, FloatingButton, groupLabel, GroupLabel, GroupList, LIST_MOTION, Press, Screen, Snackbar, T, type Notice, useByLabel } from "../kit";
 import { useLanguage, useText } from "../language";
 import { groupColor, tint, useColors } from "../theme";
 import { IngredientSheet } from "../ingredients/ingredient-sheet";
@@ -51,8 +52,8 @@ export function Pantry(data: OpenKitchen) {
             const eat = () => run({ type: "leftover.eat", id: leftover.id, servings: Math.min(1, leftover.servings) }, text.ate(leftover.name), leftover.servings <= 1 ? back : undefined);
             const remove = () => run({ type: "leftover.remove", id: leftover.id }, text.thrownAway(leftover.name), back);
             return (
-              <View key={`${leftover.id}:${leftover.servings}`} style={{ borderRadius: 16, overflow: "hidden" }}>
-                <SwipeRow
+              <Animated.View key={leftover.id} layout={LIST_MOTION} exiting={FadeOut.duration(140)} style={{ borderRadius: 16, overflow: "hidden" }}>
+                <SwipeRow key={leftover.servings}
                   right={{ label: text.ateOne, icon: Check, color: colors.pageInk.home, run: eat }}
                   left={{ label: text.throwAway, icon: Trash2, color: colors.destructive, run: remove }}
                 >
@@ -65,7 +66,7 @@ export function Pantry(data: OpenKitchen) {
                     <RowMenu name={leftover.name} actions={[{ label: text.throwAway, icon: Trash2, color: colors.destructive, run: remove }]} />
                   </View>
                 </SwipeRow>
-              </View>
+              </Animated.View>
             );
           })
         ) : (
@@ -147,7 +148,7 @@ function StockRow({ item, background, run, onAmount, onOpen }: { item: StockItem
   return (
     <SwipeRow right={used}>
       <View style={[styles.line, { backgroundColor: background }]}>
-        <Pressable
+        <Press
           accessibilityRole="button"
           accessibilityLabel={`${item.ingredient}, ${formatAmount(item.amount, item.unit, language)}`}
           accessibilityHint={text.amountOf(item.ingredient)}
@@ -158,7 +159,7 @@ function StockRow({ item, background, run, onAmount, onOpen }: { item: StockItem
         >
           <T weight="medium" style={{ flex: 1 }}>{item.ingredient}</T>
           <T weight="semibold" style={{ fontSize: 15 }}>{formatAmount(item.amount, item.unit, language)}</T>
-        </Pressable>
+        </Press>
         <RowMenu name={item.ingredient} actions={[used, details]} />
       </View>
     </SwipeRow>
