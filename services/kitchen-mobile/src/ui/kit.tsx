@@ -2,8 +2,8 @@ import { byGroupOrder, addDays, UNSORTED_SECTION } from "@tools-platform/service
 import * as Haptics from "expo-haptics";
 import { BookOpen, CalendarDays, ChevronLeft, ChevronRight, CookingPot, type LucideIcon, Refrigerator, Search, ShoppingBasket, X } from "lucide-react-native";
 import { useFocusEffect } from "expo-router";
-import { Children, createContext, isValidElement, type ReactNode, type Ref, useCallback, useContext, useEffect, useReducer, useRef, useState } from "react";
-import { AccessibilityInfo, KeyboardAvoidingView, Modal, Platform, Pressable, type PressableProps, type PressableStateCallbackType, RefreshControl, type RefreshControlProps, ScrollView, type ScrollViewInstance, StyleSheet, Text, type TextProps, TextInput, type TextInputProps, View, type ViewStyle } from "react-native";
+import { Children, createContext, isValidElement, type ReactNode, useCallback, useContext, useEffect, useReducer, useRef, useState } from "react";
+import { AccessibilityInfo, KeyboardAvoidingView, Modal, Platform, Pressable, type PressableProps, type PressableStateCallbackType, FlatList, RefreshControl, type RefreshControlProps, ScrollView, StyleSheet, Text, type TextProps, TextInput, type TextInputProps, View, type ViewStyle } from "react-native";
 import { GestureDetector, GestureHandlerRootView, usePanGesture } from "react-native-gesture-handler";
 import Animated, { FadeIn, FadeOut, LinearTransition, useAnimatedStyle, useSharedValue, withSpring, withTiming } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -101,37 +101,55 @@ export function T({ weight = "regular", muted, style, ...props }: TextProps & { 
   return <Text textBreakStrategy="balanced" {...props} style={[{ fontFamily: FONT[weight], color: muted ? colors.mutedForeground : colors.foreground, fontSize: 15 }, style]} />;
 }
 
+/** A food group on a page: its label, then its rows in one panel of its color. */
+export type ListGroup = Readonly<{ key: string; label: string; color: string; count?: number; rows: readonly Readonly<{ key: string; node: ReactNode }>[] }>;
+
 /**
  * One kitchen page: the title row and the page content, scrollable, with room for the tab bar. Pull down to sync.
  * `back` puts the way back above the title, where phone apps keep it. A tab page puts its one main action in `fab`,
  * a floating button above the tab bar. A page opened from a tab hides the tab bar and puts its actions in `toolbar`,
  * docked at the bottom (Material 3 shows a toolbar and the tab bar never together). `floating` holds the snackbar.
+ * A page with a long list passes it as `groups`, after `children`. Only the rows near the screen exist, so the page
+ * opens fast, but a change to the list costs more than on a plain page, and its rows do not move when the list changes.
  */
-export function Screen({ title, facts, actions, back, fab, toolbar, floating, children, ref }: {
-  title: ReactNode; facts?: ReactNode; actions?: ReactNode; back?: { label: string; onPress: () => void }; fab?: ReactNode; toolbar?: ReactNode; floating?: ReactNode; children: ReactNode; ref?: Ref<ScrollViewInstance>;
+export function Screen({ title, facts, actions, back, fab, toolbar, floating, groups, children }: {
+  title: ReactNode; facts?: ReactNode; actions?: ReactNode; back?: { label: string; onPress: () => void }; fab?: ReactNode; toolbar?: ReactNode; floating?: ReactNode;
+  groups?: readonly ListGroup[]; children?: ReactNode;
 }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const header = (
+    <View style={styles.page}>
+      {back ? (
+        <Press accessibilityRole="button" accessibilityLabel={back.label} onPress={back.onPress} hitSlop={8}
+          style={({ pressed }) => [styles.back, pressed && { opacity: 0.6 }]}>
+          <ChevronLeft size={24} color={colors.foreground} />
+          <T weight="medium" style={{ fontSize: 16 }}>{back.label}</T>
+        </Press>
+      ) : null}
+      <View style={styles.header}>
+        <View style={{ flexShrink: 1 }}>
+          {typeof title === "string" ? <T weight="semibold" style={styles.title}>{title}</T> : title}
+          {facts ? (typeof facts === "string" ? <T muted style={{ marginTop: 6, fontSize: 14 }}>{facts}</T> : facts) : null}
+        </View>
+        {actions ? <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>{actions}</View> : null}
+      </View>
+      {children}
+    </View>
+  );
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <View style={{ flex: 1 }}>
-        <ScrollView ref={ref} contentContainerStyle={[styles.page, fab ? { paddingBottom: FAB_ROOM } : null]} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" refreshControl={<SyncRefresh />}>
-          {back ? (
-            <Press accessibilityRole="button" accessibilityLabel={back.label} onPress={back.onPress} hitSlop={8}
-              style={({ pressed }) => [styles.back, pressed && { opacity: 0.6 }]}>
-              <ChevronLeft size={24} color={colors.foreground} />
-              <T weight="medium" style={{ fontSize: 16 }}>{back.label}</T>
-            </Press>
-          ) : null}
-          <View style={styles.header}>
-            <View style={{ flexShrink: 1 }}>
-              {typeof title === "string" ? <T weight="semibold" style={styles.title}>{title}</T> : title}
-              {facts ? (typeof facts === "string" ? <T muted style={{ marginTop: 6, fontSize: 14 }}>{facts}</T> : facts) : null}
-            </View>
-            {actions ? <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>{actions}</View> : null}
-          </View>
-          {children}
-        </ScrollView>
+        {groups ? (
+          <FlatList data={listItems(groups)} keyExtractor={(item) => item.key} renderItem={({ item }) => <ListCell item={item} />}
+            windowSize={5} ListHeaderComponent={header}
+            contentContainerStyle={[styles.scroll, fab ? { paddingBottom: FAB_ROOM } : null]}
+            showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" refreshControl={<SyncRefresh />} />
+        ) : (
+          <ScrollView contentContainerStyle={[styles.scroll, fab ? { paddingBottom: FAB_ROOM } : null]} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" refreshControl={<SyncRefresh />}>
+            {header}
+          </ScrollView>
+        )}
         {toolbar ? (
           <Svg pointerEvents="none" width="100%" height={FADE} style={styles.fade}>
             <Defs><LinearGradient id="fade" x1="0" y1="0" x2="0" y2="1"><Stop offset="0" stopColor={colors.background} stopOpacity={0} /><Stop offset="1" stopColor={colors.background} stopOpacity={1} /></LinearGradient></Defs>
@@ -406,6 +424,30 @@ export function GroupList({ color, children }: { color: string; children: ReactN
   );
 }
 
+type ListItem = Readonly<{ key: string; color: string }> &
+  ({ kind: "label"; label: string; count?: number } | { kind: "row"; node: ReactNode; first: boolean; last: boolean });
+
+function listItems(groups: readonly ListGroup[]): ListItem[] {
+  return groups.flatMap((group): ListItem[] => [
+    { kind: "label", key: `${group.key}:`, color: group.color, label: group.label, count: group.count },
+    ...group.rows.map((row, index): ListItem => ({ kind: "row", key: `${group.key}:${row.key}`, color: group.color, node: row.node, first: index === 0, last: index === group.rows.length - 1 })),
+  ]);
+}
+
+function ListCell({ item }: { item: ListItem }) {
+  const colors = useColors();
+  if (item.kind === "label") return <View style={{ paddingTop: 16 }}><GroupLabel color={item.color} count={item.count}>{item.label}</GroupLabel></View>;
+  const corner = 16;
+  return (
+    <View style={{
+      overflow: "hidden", backgroundColor: tint(item.color, 11, colors.card),
+      borderTopLeftRadius: item.first ? corner : 0, borderTopRightRadius: item.first ? corner : 0,
+      borderBottomLeftRadius: item.last ? corner : 0, borderBottomRightRadius: item.last ? corner : 0,
+      borderTopWidth: item.first ? 0 : StyleSheet.hairlineWidth, borderTopColor: tint(item.color, 22, colors.card),
+    }}>{item.node}</View>
+  );
+}
+
 /** How rows and groups move when a list changes. */
 export const LIST_MOTION = LinearTransition.duration(200);
 
@@ -595,7 +637,8 @@ export function mainGroup(groups: readonly string[], sections: readonly string[]
 }
 
 const styles = StyleSheet.create({
-  page: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 32, gap: 16 },
+  scroll: { paddingHorizontal: 16, paddingBottom: 32 },
+  page: { paddingTop: 8, gap: 16 },
   header: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", flexWrap: "wrap", gap: 12 },
   title: { fontSize: 32, lineHeight: 34, letterSpacing: -0.6 },
   empty: { alignItems: "center", gap: 12, borderWidth: 1, borderStyle: "dashed", borderRadius: 16, paddingHorizontal: 24, paddingVertical: 40 },
