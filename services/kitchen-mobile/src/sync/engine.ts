@@ -39,6 +39,9 @@ const INITIAL: SyncState = { view: null, pending: 0, notices: [], status: { kind
 export function createSyncEngine({ vault, api, project, newId, isSignedOut, isOffline, now = () => new Date() }: Deps) {
   let state: SyncState = INITIAL;
   let snapshot: KitchenSync | null = null;
+  let outbox: OutboxItem[] = [];
+  const unwritten = new Set<string>();
+  let writes: Promise<unknown> = Promise.resolve();
   let syncedAt: string | null = null;
   let running: { epoch: number; done: Promise<void> } | undefined;
   let again = false;
@@ -47,21 +50,28 @@ export function createSyncEngine({ vault, api, project, newId, isSignedOut, isOf
   let writing: Promise<void> | undefined;
   const listeners = new Set<() => void>();
 
-  async function refresh(mine: number, patch: Partial<SyncState> = {}) {
-    const [outbox, notices] = await Promise.all([vault.outbox(), vault.notices()]);
-    if (mine !== epoch) return;
-    state = { ...state, ...patch, view: snapshot && project(snapshot, outbox), pending: outbox.length, notices };
+  function publish(patch: Partial<SyncState>) {
+    state = { ...state, ...patch };
     for (const listener of listeners) listener();
   }
 
+  async function reload(mine: number, patch: Partial<SyncState> = {}) {
+    const [stored, notices] = await Promise.all([vault.outbox(), vault.notices()]);
+    if (mine !== epoch) return;
+    const last = stored.at(-1)?.seq ?? 0;
+    outbox = [...stored, ...outbox.filter((item) => unwritten.has(item.clientActionId)).map((item, index) => ({ ...item, seq: last + index + 1 }))];
+    publish({ ...patch, view: snapshot && project(snapshot, outbox), pending: outbox.length, notices });
+  }
+
   async function once(mine: number) {
-    await refresh(mine, { status: { kind: "syncing" } });
+    publish({ status: { kind: "syncing" } });
     try {
-      const outbox = await vault.outbox();
+      await writes.catch(() => undefined);
+      const sending = await vault.outbox();
       const results: AppActionResult[] = [];
-      for (let start = 0; start < outbox.length; start += BATCH) {
+      for (let start = 0; start < sending.length; start += BATCH) {
         if (mine !== epoch) return;
-        results.push(...await api.push(outbox.slice(start, start + BATCH)));
+        results.push(...await api.push(sending.slice(start, start + BATCH)));
       }
       if (mine !== epoch) return;
       const fresh = await api.pull();
@@ -71,12 +81,12 @@ export function createSyncEngine({ vault, api, project, newId, isSignedOut, isOf
       if (mine !== epoch) return;
       snapshot = fresh;
       syncedAt = now().toISOString();
-      await refresh(mine, { status: { kind: "idle", syncedAt }, signedOut: false });
+      await reload(mine, { status: { kind: "idle", syncedAt }, signedOut: false });
     } catch (error) {
       if (mine !== epoch) return;
-      if (isSignedOut(error)) await refresh(mine, { status: { kind: "idle", syncedAt }, signedOut: true });
-      else if (isOffline(error)) await refresh(mine, { status: { kind: "offline", syncedAt } });
-      else await refresh(mine, { status: { kind: "failed", message: error instanceof Error ? error.message : String(error) } });
+      if (isSignedOut(error)) publish({ status: { kind: "idle", syncedAt }, signedOut: true });
+      else if (isOffline(error)) publish({ status: { kind: "offline", syncedAt } });
+      else publish({ status: { kind: "failed", message: error instanceof Error ? error.message : String(error) } });
     }
   }
 
@@ -94,7 +104,8 @@ export function createSyncEngine({ vault, api, project, newId, isSignedOut, isOf
       const saved = await vault.snapshot();
       if (mine !== epoch) return;
       snapshot = saved;
-      await refresh(mine);
+      outbox = [];
+      await reload(mine);
     },
     sync(): Promise<void> {
       if (stopped) return Promise.resolve();
@@ -118,30 +129,46 @@ export function createSyncEngine({ vault, api, project, newId, isSignedOut, isOf
       stopped = true;
       again = false;
       snapshot = null;
+      outbox = [];
+      unwritten.clear();
       syncedAt = null;
-      await writing?.catch(() => undefined);
+      await Promise.all([writing?.catch(() => undefined), writes.catch(() => undefined)]);
       state = INITIAL;
       for (const listener of listeners) listener();
     },
-    /** Queues a change, shows it at once, and sends it when the server can be reached. */
+    /**
+     * Queues a change and shows it at once: the change goes on top of the current view, so the screen does not wait for
+     * the vault or replay the whole outbox. The vault write follows in order. If it fails, the change leaves the screen.
+     */
     async change(kitchenId: string, action: QueuedAction) {
       if (stopped) return;
       const mine = epoch;
+      const item: OutboxItem = { seq: (outbox.at(-1)?.seq ?? 0) + 1, clientActionId: newId(), kitchenId, queuedAt: now().toISOString(), action: withCreateId(action, newId) };
+      outbox = [...outbox, item];
+      unwritten.add(item.clientActionId);
+      publish({ view: state.view && project(state.view, [item]), pending: outbox.length });
+      const { seq: _, ...stored } = item;
+      const written = writes.catch(() => undefined).then(() => vault.enqueue(stored));
+      writes = written;
       try {
-        await vault.enqueue({ clientActionId: newId(), kitchenId, queuedAt: now().toISOString(), action: withCreateId(action, newId) });
+        await written;
       } catch (error) {
-        if (mine === epoch) throw error;
-        return;
+        if (mine !== epoch) return;
+        unwritten.delete(item.clientActionId);
+        outbox = outbox.filter((one) => one.clientActionId !== item.clientActionId);
+        publish({ view: snapshot && project(snapshot, outbox), pending: outbox.length });
+        throw error;
       }
       if (mine !== epoch) return;
-      await refresh(mine);
+      unwritten.delete(item.clientActionId);
       void engine.sync();
     },
     async dismiss(clientActionId: string) {
       if (stopped) return;
       const mine = epoch;
       await vault.dismiss(clientActionId);
-      await refresh(mine);
+      if (mine !== epoch) return;
+      publish({ notices: state.notices.filter((one) => one.clientActionId !== clientActionId) });
     }
   };
   return engine;
