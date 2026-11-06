@@ -1,18 +1,20 @@
 import { formatNumber, ingredientGroups, isCountedUnit, unitName, type Ingredient } from "@tools-platform/service/kitchen-contract";
-import { ListOrdered, Plus } from "lucide-react-native";
+import { router } from "expo-router";
+import { ChevronLeft, ListOrdered, Plus } from "lucide-react-native";
 import { useState } from "react";
 import { Pressable, View } from "react-native";
-import type { OpenKitchen } from "../../state";
-import { IngredientSheet } from "../../ui/ingredients/ingredient-sheet";
-import { GroupsSheet } from "../../ui/ingredients/groups-sheet";
-import { TEXT } from "../../ui/ingredients/text";
-import { KitchenScreen } from "../../ui/page";
-import { byGroup, Button, Empty, GroupLabel, GroupList, groupLabel, Screen, SearchField, T } from "../../ui/kit";
-import { useLanguage, useText } from "../../ui/language";
-import { groupColor, useColors } from "../../ui/theme";
+import type { OpenKitchen } from "../../../state";
+import { IngredientSheet } from "../../../ui/ingredients/ingredient-sheet";
+import { GroupsSheet } from "../../../ui/ingredients/groups-sheet";
+import { TEXT } from "../../../ui/ingredients/text";
+import { TEXT as KITCHEN_TEXT } from "../../../ui/kitchen/text";
+import { KitchenScreen } from "../../../ui/page";
+import { byGroup, Button, Empty, GroupLabel, GroupList, groupLabel, Screen, SearchField, T } from "../../../ui/kit";
+import { useLanguage, useText } from "../../../ui/language";
+import { groupColor, useColors } from "../../../ui/theme";
 
 export default function IngredientsPage() {
-  return <KitchenScreen page="ingredients">{(open) => <Ingredients key={open.kitchen.kitchen.id} {...open} />}</KitchenScreen>;
+  return <KitchenScreen page="kitchen">{(open) => <Ingredients key={open.kitchen.kitchen.id} {...open} />}</KitchenScreen>;
 }
 
 type Editing = { kind: "ingredient"; id?: string; name: string } | { kind: "groups" } | null;
@@ -20,6 +22,7 @@ type Editing = { kind: "ingredient"; id?: string; name: string } | { kind: "grou
 function Ingredients({ kitchen, change }: OpenKitchen) {
   const language = useLanguage();
   const text = useText(TEXT);
+  const kitchenText = useText(KITCHEN_TEXT);
   const colors = useColors();
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState<Editing>(null);
@@ -39,11 +42,12 @@ function Ingredients({ kitchen, change }: OpenKitchen) {
         {ingredients.length ? <Button tone="outline" icon={ListOrdered} label={text.arrangeGroups} onPress={() => setEditing({ kind: "groups" })} /> : null}
         <Button icon={Plus} label={text.newIngredient} onPress={() => create("")} />
       </>}>
+      <View style={{ alignSelf: "flex-start" }}><Button tone="ghost" icon={ChevronLeft} label={kitchenText.title} onPress={() => router.navigate("/kitchen")} /></View>
       <SearchField value={query} onValue={setQuery} label={text.findPlaceholder} />
       {typed && !ingredients.some((one) => one.name.toLowerCase() === typed.toLowerCase()) ? (
         <Pressable accessibilityRole="button" onPress={() => create(typed)} style={{ minHeight: 44, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 8 }}>
-          <Plus size={18} color={colors.pageInk.ingredients} />
-          <T style={{ color: colors.pageInk.ingredients, flexShrink: 1 }}>{text.addNew(typed)}</T>
+          <Plus size={18} color={colors.pageInk.kitchen} />
+          <T style={{ color: colors.pageInk.kitchen, flexShrink: 1 }}>{text.addNew(typed)}</T>
         </Pressable>
       ) : null}
       {groups.map(([section, entries]) => {

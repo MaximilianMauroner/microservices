@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
-import { ActivityIndicator, View } from "react-native";
+import { ActivityIndicator, ScrollView } from "react-native";
 import { type OpenKitchen, useKitchen, useSync } from "../state";
-import { Empty, PageContext } from "./kit";
+import { Empty, PageContext, SyncRefresh } from "./kit";
 import { type KitchenLanguage, useText } from "./language";
 import type { PageKey } from "./theme";
 
@@ -19,11 +19,11 @@ export function KitchenScreen({ page, children }: { page: PageKey; children: (ki
   return (
     <PageContext.Provider value={page}>
       {kitchen ? children(kitchen) : (
-        <View style={{ padding: 16 }}>
+        <ScrollView contentContainerStyle={{ padding: 16 }} refreshControl={<SyncRefresh />}>
           {view ? <Empty title={text.none} body={text.noneBody} />
             : status.kind === "offline" ? <Empty title={text.offline} body={text.offlineBody} />
             : <Empty title={text.loading}><ActivityIndicator /></Empty>}
-        </View>
+        </ScrollView>
       )}
     </PageContext.Provider>
   );
