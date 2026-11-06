@@ -1,4 +1,4 @@
-import { formatNumber, type CatalogProduct } from "@tools-platform/service/kitchen-contract";
+import { CATALOG_SOURCE_NAMES, formatNumber, type CatalogProduct } from "@tools-platform/service/kitchen-contract";
 import { useEffect, useState } from "react";
 import { Linking, Pressable, View } from "react-native";
 import { searchCatalog } from "../../sync/api";
@@ -33,7 +33,7 @@ export function CatalogProducts({ query, onPick }: { query: string; onPick: (pro
             style={({ pressed }) => ({ minHeight: 48, justifyContent: "center", gap: 2, paddingHorizontal: 12, paddingVertical: 8, borderTopWidth: index ? 1 : 0, borderTopColor: colors.controlBorder, backgroundColor: pressed ? colors.muted : "transparent" })}>
             <T weight="medium" style={{ fontSize: 14 }}>{product.name}</T>
             <T muted style={{ fontSize: 12 }}>
-              {[product.brand, product.quantity, product.nutrition.kcal !== null ? `${formatNumber(product.nutrition.kcal, language)} ${text.kcal} ${text.per100(product.unit)}` : ""].filter(Boolean).join(" · ")}
+              {[product.brand, product.quantity, product.nutrition.kcal !== null ? `${formatNumber(product.nutrition.kcal, language)} ${text.kcal} ${text.per100(product.unit)}` : "", CATALOG_SOURCE_NAMES[product.source]].filter(Boolean).join(" · ")}
             </T>
           </Pressable>
         ))}
