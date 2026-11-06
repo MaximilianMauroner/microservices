@@ -1,12 +1,12 @@
 import { ArrowDownIcon, ArrowUpIcon, ListOrderedIcon, PlusIcon, SearchIcon, XIcon } from "lucide-react";
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "../../../platform/ui/components/ui/button.js";
 import { Input } from "../../../platform/ui/components/ui/input.js";
 import { Label } from "../../../platform/ui/components/ui/label.js";
 import { Textarea } from "../../../platform/ui/components/ui/textarea.js";
-import type { RecipeChoice } from "../server-functions.js";
-import { convertNutrition, fieldNumber, formatNumber, type Ingredient, ingredientGroups, INGREDIENT_UNITS, isCountedUnit, type IngredientUnit, unitName, UNSORTED_SECTION } from "../domain.js";
+import { type RecipeChoice, searchKitchenCatalog } from "../server-functions.js";
+import { type CatalogProduct, convertNutrition, fieldNumber, formatNumber, type Ingredient, ingredientGroups, INGREDIENT_UNITS, isCountedUnit, type IngredientUnit, unitName, UNSORTED_SECTION } from "../domain.js";
 import { byGroup, type Frame, GROUP_LIST, GroupDot, groupColor, GroupLabel, groupLabel, groupListStyle, KitchenEmpty, KitchenPage, KitchenSheet, SearchField, SheetAction, useKitchenAction } from "./kit.js";
 import { type KitchenLanguage, useLanguage, useText } from "./language.js";
 
@@ -78,7 +78,9 @@ const en = {
   saveOrder: "Save order",
   orderSaved: "Group order saved",
   moveUp: (group: string) => `Move ${group} up`,
-  moveDown: (group: string) => `Move ${group} down`
+  moveDown: (group: string) => `Move ${group} down`,
+  fromProduct: "Fill in from a product",
+  catalogSource: "Product data from Open Food Facts, under the Open Database License."
 };
 type KitText = typeof en;
 const TEXT: Record<KitchenLanguage, KitText> = {
@@ -147,7 +149,9 @@ const TEXT: Record<KitchenLanguage, KitText> = {
     saveOrder: "Reihenfolge speichern",
     orderSaved: "Gruppenreihenfolge gespeichert",
     moveUp: (group: string) => `${group} nach oben`,
-    moveDown: (group: string) => `${group} nach unten`
+    moveDown: (group: string) => `${group} nach unten`,
+    fromProduct: "Aus einem Produkt übernehmen",
+    catalogSource: "Produktdaten von Open Food Facts, unter der Open Database License."
   }
 };
 
@@ -243,6 +247,8 @@ export function IngredientSheet({ ingredient, newName = "", onClose, data }: { i
   });
   const [values, setValues] = useState<Record<(typeof NUTRIENTS)[number][0], string>>(shown(existing?.nutrition));
   const [size, setSize] = useState("");
+  /** The name of the product the fields came from. The product list stays away until the name changes again. */
+  const [pickedName, setPickedName] = useState<string>();
   /** The recipes that get this ingredient on save, in the order they were picked, each with the amount as typed. */
   const [uses, setUses] = useState<ReadonlyMap<string, string>>(new Map());
   const number = (value: string) => value.trim() === "" ? null : Number(value.replace(",", "."));
@@ -262,6 +268,14 @@ export function IngredientSheet({ ingredient, newName = "", onClose, data }: { i
     setUnit(next);
     setSize("");
     setValues(shown(existing?.nutrition));
+  }
+
+  function pick(product: CatalogProduct) {
+    setName(product.name);
+    setUnit(product.unit);
+    setSize("");
+    setValues(shown(product.nutrition));
+    setPickedName(product.name);
   }
 
   function changeSize(input: string) {
@@ -305,6 +319,7 @@ export function IngredientSheet({ ingredient, newName = "", onClose, data }: { i
           <div className="grid gap-1.5">
             <Label htmlFor="ingredient-name">{text.name}</Label>
             <Input id="ingredient-name" className="h-11 text-base font-medium" value={name} onChange={(event) => setName(event.target.value)} placeholder={text.namePlaceholder} />
+            {!existing && name !== pickedName ? <CatalogProducts query={name} onPick={pick} /> : null}
           </div>
           <div className="grid gap-1.5">
             <Label>{text.unit}</Label>
@@ -348,6 +363,44 @@ export function IngredientSheet({ ingredient, newName = "", onClose, data }: { i
         </div>
       </form>
     </KitchenSheet>
+  );
+}
+
+/** Packaged foods that match the typed name. Picking one fills in the name, the unit, and the nutrition. */
+function CatalogProducts({ query, onPick }: { query: string; onPick: (product: CatalogProduct) => void }) {
+  const language = useLanguage();
+  const text = useText(TEXT);
+  const [products, setProducts] = useState<readonly CatalogProduct[]>([]);
+  useEffect(() => {
+    const typed = query.trim();
+    let current = true;
+    const timer = setTimeout(() => {
+      if (typed.length < 2) return setProducts([]);
+      searchKitchenCatalog({ data: { query: typed } }).then((found) => { if (current) setProducts(found); }, () => { if (current) setProducts([]); });
+    }, 250);
+    return () => { current = false; clearTimeout(timer); };
+  }, [query]);
+  if (!products.length) return null;
+
+  return (
+    <div className="grid gap-1 pt-1">
+      <p className="text-xs font-medium text-muted-foreground">{text.fromProduct}</p>
+      <ul className="grid overflow-hidden rounded-xl border bg-background">
+        {products.map((product) => (
+          <li key={product.code} className="border-b last:border-b-0">
+            <button type="button" onClick={() => onPick(product)} className="grid w-full gap-0.5 px-3 py-2 text-left hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:outline-none">
+              <span className="text-sm font-medium">{product.name}</span>
+              <span className="text-xs text-muted-foreground">
+                {[product.brand, product.quantity, product.nutrition.kcal !== null ? `${formatNumber(product.nutrition.kcal, language)} ${text.kcal} ${text.per100(product.unit)}` : ""].filter(Boolean).join(" · ")}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      <p className="text-xs text-muted-foreground">
+        <a className="underline underline-offset-2" href="https://world.openfoodfacts.org" target="_blank" rel="noreferrer">{text.catalogSource}</a>
+      </p>
+    </div>
   );
 }
 

@@ -683,6 +683,30 @@ export const kitchenAppliedActions = toolsSchema.table("kitchen_applied_actions"
   appliedAt: timestamp("applied_at", { withTimezone: true }).notNull(),
 }, (table) => [primaryKey({ columns: [table.subject, table.clientActionId] }), index("kitchen_applied_actions_applied_idx").on(table.appliedAt)]);
 
+/** Packaged foods from Open Food Facts that a new ingredient can start from. Nutrition is per 100 g or 100 ml. */
+export const kitchenCatalogProducts = toolsSchema.table("kitchen_catalog_products", {
+  code: text("code").primaryKey(),
+  name: text("name").notNull(),
+  brand: text("brand").notNull(),
+  quantity: text("quantity").notNull(),
+  unit: text("unit").notNull(),
+  kcal: doublePrecision("kcal"),
+  protein: doublePrecision("protein"),
+  carbs: doublePrecision("carbs"),
+  fat: doublePrecision("fat"),
+  /** Name and brand in lower case, for search. */
+  search: text("search").notNull(),
+  refreshedAt: timestamp("refreshed_at", { withTimezone: true }).notNull(),
+}, (table) => [check("kitchen_catalog_products_unit_check", sql`${table.unit} in ('g', 'ml')`)]);
+
+/** Where the catalog refresh is. `nextPage` is set while a refresh runs, so a restart goes on from that page. */
+export const kitchenCatalogRefresh = toolsSchema.table("kitchen_catalog_refresh", {
+  source: text("source").primaryKey(),
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+  nextPage: integer("next_page"),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+});
+
 /** Bug reports and feature requests about Tools itself, for the developer. Not the Feedback product. */
 export const devFeedback = toolsSchema.table("dev_feedback", {
   id: uuid("id").primaryKey(),

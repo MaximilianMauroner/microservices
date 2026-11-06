@@ -30,6 +30,9 @@ export const MEAL_LABELS: Record<Meal, string> = { breakfast: "Breakfast", lunch
 /** Nutrition per 100 g or 100 ml, or per counted item. A missing value is unknown, not zero. */
 export type Nutrition = Readonly<{ kcal: number | null; protein: number | null; carbs: number | null; fat: number | null }>;
 
+/** A packaged food from Open Food Facts that a new ingredient can start from. Its nutrition is per 100 g or 100 ml. */
+export type CatalogProduct = Readonly<{ code: string; name: string; brand: string; quantity: string; unit: "g" | "ml"; nutrition: Nutrition }>;
+
 export type KitchenMember = Readonly<{ personId: string; email: string }>;
 /** `groups` is the kitchen's order of ingredient groups, such as the order of a shop or of a food list. */
 export type Kitchen = Readonly<{ id: string; name: string; mcpEnabled: boolean; hidden: boolean; members: readonly KitchenMember[]; groups: readonly string[] }>;

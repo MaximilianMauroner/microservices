@@ -157,3 +157,13 @@ export const runKitchenPersonalAction = createServerFn({ method: "POST" })
     await applyKitchenPersonalAction(store(), context.principal, data);
     return {};
   });
+
+/** Packaged foods from Open Food Facts that match what the person types as a new ingredient's name. */
+export const searchKitchenCatalog = createServerFn({ method: "GET" })
+  .middleware([kitchenSession])
+  .validator((input: { query: string }) => ({ query: String(input.query).slice(0, 100) }))
+  .handler(async ({ data }) => {
+    const catalog = getGlobalStartContext()?.runtime?.kitchenCatalog;
+    if (!catalog) throw new Error("Kitchen runtime is unavailable.");
+    return catalog.search(data.query);
+  });

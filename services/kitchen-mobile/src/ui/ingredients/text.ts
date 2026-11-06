@@ -70,7 +70,9 @@ const en = {
   duplicateName: "An ingredient with this name already exists.",
   nutritionNeeded: "Enter nutrition values from 0 to 10,000, or leave them empty.",
   conversionNeeded: "Enter a size greater than 0 to change the unit.",
-  groupLimit: "An ingredient can be in at most 11 groups."
+  groupLimit: "An ingredient can be in at most 11 groups.",
+  fromProduct: "Fill in from a product",
+  catalogSource: "Product data from Open Food Facts, under the Open Database License."
 };
 type KitText = typeof en;
 export const TEXT: Record<KitchenLanguage, KitText> = {
@@ -145,7 +147,9 @@ export const TEXT: Record<KitchenLanguage, KitText> = {
     duplicateName: "Eine Zutat mit diesem Namen gibt es bereits.",
     nutritionNeeded: "Gib Nährwerte von 0 bis 10.000 ein oder lass sie leer.",
     conversionNeeded: "Gib eine Größe größer als 0 ein, um die Einheit zu ändern.",
-    groupLimit: "Eine Zutat kann in höchstens 11 Gruppen sein."
+    groupLimit: "Eine Zutat kann in höchstens 11 Gruppen sein.",
+    fromProduct: "Aus einem Produkt übernehmen",
+    catalogSource: "Produktdaten von Open Food Facts, unter der Open Database License."
   }
 };
 

@@ -5,7 +5,10 @@ import { expect, it, vi } from "vitest";
 import type { Ingredient, Kitchen } from "../../../products/kitchen/domain.js";
 
 const runKitchenAction = vi.hoisted(() => vi.fn(async () => ({ id: "new-ingredient" })));
-vi.mock("../../../products/kitchen/server-functions.js", () => ({ runKitchenAction }));
+const searchKitchenCatalog = vi.hoisted(() => vi.fn(async ({ data }: { data: { query: string } }) => data.query.toLowerCase().startsWith("kicher")
+  ? [{ code: "9001", name: "Kichererbsen", brand: "Spar", quantity: "400 g", unit: "g" as const, nutrition: { kcal: 120, protein: 7.2, carbs: 15, fat: 2.6 } }]
+  : []));
+vi.mock("../../../products/kitchen/server-functions.js", () => ({ runKitchenAction, searchKitchenCatalog }));
 vi.mock("../../../platform/ui/components/ui/use-mobile.js", () => ({ useIsMobile: () => false }));
 vi.mock("@tanstack/react-router", () => ({
   useRouter: () => ({ invalidate: async () => undefined, preloadRoute: async () => undefined }),
@@ -71,5 +74,29 @@ it("offers an existing ingredient only to the recipes that do not have it yet", 
     expect(document.querySelector('ul[aria-label="Recipes with this ingredient"]')!.textContent).toContain("Chili");
     await act(async () => { type(search(), "chili"); });
     expect(document.body.textContent).toContain("No other recipe matches “chili”");
+  }
+));
+
+it("fills a new ingredient from a product that matches its typed name", () => show(
+  <IngredientSheet ingredient="new" newName="" onClose={() => undefined} data={data} />,
+  async () => {
+    vi.useFakeTimers();
+    try {
+      const name = document.querySelector<HTMLInputElement>("#ingredient-name")!;
+      await act(async () => { type(name, "kicher"); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(300); });
+      expect(searchKitchenCatalog).toHaveBeenCalledWith({ data: { query: "kicher" } });
+      await act(async () => { [...document.querySelectorAll("button")].find((one) => one.textContent?.startsWith("Kichererbsen"))!.click(); });
+
+      expect(name.value).toBe("Kichererbsen");
+      expect(document.querySelector('[role="radio"][aria-checked="true"]')!.textContent).toBe("g");
+      expect(document.body.textContent, "the list goes away after a pick").not.toContain("Fill in from a product");
+      await act(async () => { button("Save").click(); });
+      expect(runKitchenAction).toHaveBeenLastCalledWith({ data: { kitchenId: "kitchen", action: expect.objectContaining({
+        type: "ingredient.save", name: "Kichererbsen", unit: "g", kcal: 120, protein: 7.2, carbs: 15, fat: 2.6
+      }) } });
+    } finally {
+      vi.useRealTimers();
+    }
   }
 ));
