@@ -29,7 +29,7 @@ export const CATALOG_READERS: readonly CatalogSourceReader[] = [
 export type CatalogRefresh = Readonly<{ status: "fresh" } | { status: "stopped"; nextPage: number } | { status: "finished"; products: number }>;
 
 export interface KitchenCatalog {
-  /** Products whose name or brand holds every typed word, best match first. */
+  /** Products whose name or brand holds every typed word, best match first. A product in both sources shows once, from Billa. */
   search(query: string): Promise<readonly CatalogProduct[]>;
   /**
    * Goes on with the copy of each source. A source stops after some pages, on an error, or when `signal` aborts. The next
@@ -54,11 +54,12 @@ export function kitchenCatalog(sql: Sql, sources: readonly CatalogSourceReader[]
     const rows = unique.map((product) => ({
       source, code: product.code, name: product.name, brand: product.brand, quantity: product.quantity, unit: product.unit,
       kcal: product.nutrition.kcal, protein: product.nutrition.protein, carbs: product.nutrition.carbs, fat: product.nutrition.fat,
-      search: `${product.name} ${product.brand}`.toLowerCase(), refreshed_at: at
+      search: `${product.name} ${product.brand}`.toLowerCase(), match_key: matchKey(product), refreshed_at: at
     }));
     await sql`insert into tools.kitchen_catalog_products ${sql(rows)}
       on conflict (source, code) do update set name = excluded.name, brand = excluded.brand, quantity = excluded.quantity, unit = excluded.unit,
-        kcal = excluded.kcal, protein = excluded.protein, carbs = excluded.carbs, fat = excluded.fat, search = excluded.search, refreshed_at = excluded.refreshed_at`;
+        kcal = excluded.kcal, protein = excluded.protein, carbs = excluded.carbs, fat = excluded.fat, search = excluded.search, match_key = excluded.match_key,
+        refreshed_at = excluded.refreshed_at`;
   }
 
   async function refreshSource(source: CatalogSourceReader, signal: AbortSignal, now: () => Date): Promise<CatalogRefresh> {
@@ -95,8 +96,11 @@ export function kitchenCatalog(sql: Sql, sources: readonly CatalogSourceReader[]
       if (words.join("").length < 2) return [];
       const patterns = words.map((word) => `%${word.replace(/[\\%_]/g, (character) => `\\${character}`)}%`);
       const rows = await sql<ProductRow[]>`
-        select source, code, name, brand, quantity, unit, kcal, protein, carbs, fat from tools.kitchen_catalog_products
-        where search like all(${patterns}::text[])
+        select source, code, name, brand, quantity, unit, kcal, protein, carbs, fat from (
+          select distinct on (match_key) * from tools.kitchen_catalog_products
+          where search like all(${patterns}::text[])
+          order by match_key, source = 'billa' desc
+        ) found
         order by starts_with(search, ${words[0]!}) desc, length(name), name, source
         limit ${SEARCH_LIMIT}`;
       return rows.map(({ kcal, protein, carbs, fat, ...product }) => ({ ...product, nutrition: { kcal, protein, carbs, fat } }));
@@ -122,6 +126,14 @@ export function kitchenCatalog(sql: Sql, sources: readonly CatalogSourceReader[]
     },
     close: () => sql.end()
   };
+}
+
+/** Brand and name without case, accents, or punctuation, and without the brand at the start of the name, as Billa writes it. */
+export function matchKey(product: Pick<CatalogProduct, "name" | "brand">): string {
+  const plain = (value: string) => value.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/ß/g, "ss").replace(/[^a-z0-9%]+/g, " ").replace(/ %/g, "%").trim();
+  const brand = plain(product.brand);
+  const name = plain(product.name);
+  return `${brand}|${brand && name.startsWith(`${brand} `) ? name.slice(brand.length + 1) : name}`;
 }
 
 async function pause(ms: number, signal: AbortSignal): Promise<boolean> {

@@ -697,6 +697,8 @@ export const kitchenCatalogProducts = toolsSchema.table("kitchen_catalog_product
   fat: doublePrecision("fat"),
   /** Name and brand in lower case, for search. */
   search: text("search").notNull(),
+  /** The same for one product in every source, so search shows it once. */
+  matchKey: text("match_key").notNull(),
   refreshedAt: timestamp("refreshed_at", { withTimezone: true }).notNull(),
 }, (table) => [
   primaryKey({ columns: [table.source, table.code] }),
