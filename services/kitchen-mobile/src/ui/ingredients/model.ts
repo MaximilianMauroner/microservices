@@ -82,3 +82,13 @@ export function ingredientSave(draft: IngredientDraft, existing: Ingredient | un
   const [section = "", ...otherGroups] = groups;
   return { action: { type: "ingredient.save", id: existing?.id, name, unit: draft.unit, section, otherGroups, notes: draft.notes, ...nutrition, oldPerNew: factor, addToRecipes } };
 }
+
+/** The amount a quick add to a recipe starts with, so one tap is enough for the usual case. */
+export const USUAL_AMOUNT: Readonly<Record<IngredientUnit, number>> = { g: 100, ml: 100, piece: 1, can: 1 };
+
+/** The draft in another unit. A recipe amount that is still the usual amount of the old unit takes the usual amount of the new one. */
+export function withUnit(draft: IngredientDraft, unit: IngredientUnit, language: "en" | "de"): IngredientDraft {
+  const before = fieldNumber(USUAL_AMOUNT[draft.unit], language);
+  const after = fieldNumber(USUAL_AMOUNT[unit], language);
+  return { ...draft, unit, uses: new Map([...draft.uses].map(([id, amount]) => [id, amount === before ? after : amount])) };
+}

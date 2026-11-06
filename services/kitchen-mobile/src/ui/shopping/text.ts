@@ -2,12 +2,10 @@ import type { KitchenLanguage } from "../language";
 
 const en = {
   title: "Shopping list",
-  previousWeek: "Previous week",
-  nextWeek: "Next week",
+  thisWeek: "This week",
   toBuy: (count: number) => (count === 1 ? "1 thing to buy" : `${count} things to buy`),
   nothingToBuy: "Nothing to buy",
   plannedFor: (count: number) => (count === 1 ? "for 1 planned meal" : `for ${count} planned meals`),
-  groupsOnList: "Groups on the list",
   emptyTitle: "Your list is empty",
   emptyBody: "Plan meals for this week, and their ingredients show up here. Add anything else with the Add button.",
   alsoBuy: "Also buy",
@@ -18,6 +16,7 @@ const en = {
   stopped: (name: string) => `${name} is no longer on every week's list`,
   notBought: (name: string) => `${name} back on the list`,
   bought: (name: string) => `${name} bought`,
+  swipeTip: "Tip: swipe a row right to check it off.",
   removed: (name: string) => `${name} removed`,
   remove: "Remove",
   markBought: "Bought",
@@ -40,12 +39,10 @@ export const TEXT: Record<KitchenLanguage, typeof en> = {
   en,
   de: {
     title: "Einkaufsliste",
-    previousWeek: "Vorherige Woche",
-    nextWeek: "Nächste Woche",
+    thisWeek: "Diese Woche",
     toBuy: (count: number) => `${count} Artikel zu kaufen`,
     nothingToBuy: "Nichts zu kaufen",
     plannedFor: (count: number) => (count === 1 ? "für 1 geplante Mahlzeit" : `für ${count} geplante Mahlzeiten`),
-    groupsOnList: "Gruppen auf der Liste",
     emptyTitle: "Deine Liste ist leer",
     emptyBody:
       "Plane Mahlzeiten für diese Woche, dann erscheinen hier ihre Zutaten. Alles andere fügst du mit „Hinzufügen“ hinzu.",
@@ -58,6 +55,7 @@ export const TEXT: Record<KitchenLanguage, typeof en> = {
     stopped: (name: string) => `${name} ist nicht mehr auf der Wochenliste`,
     notBought: (name: string) => `${name} wieder auf der Liste`,
     bought: (name: string) => `${name} gekauft`,
+    swipeTip: "Tipp: Wische eine Zeile nach rechts, um sie abzuhaken.",
     removed: (name: string) => `${name} entfernt`,
     remove: "Entfernen",
     markBought: "Gekauft",

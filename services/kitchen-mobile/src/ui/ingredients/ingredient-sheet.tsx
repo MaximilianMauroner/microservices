@@ -3,10 +3,10 @@ import { Plus, X } from "lucide-react-native";
 import { useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import type { OpenKitchen } from "../../state";
-import { byGroup, Button, Field, GroupDot, groupLabel, Sheet, T } from "../kit";
+import { byGroup, Button, Field, GroupDot, groupLabel, Sheet, T, usePageColor } from "../kit";
 import { useLanguage, useText } from "../language";
-import { RADIUS, useColors } from "../theme";
-import { changeSize, conversionUnits, ingredientDraft, ingredientSave, NUTRIENTS, nutritionFields, withGroup } from "./model";
+import { useColors } from "../theme";
+import { changeSize, conversionUnits, ingredientDraft, ingredientSave, NUTRIENTS, nutritionFields, withGroup, withUnit } from "./model";
 import { RecipeUses } from "./recipe-uses";
 import { TEXT } from "./text";
 
@@ -16,6 +16,7 @@ export function IngredientSheet({ existing, newName, kitchen, change, onClose }:
   const language = useLanguage();
   const text = useText(TEXT);
   const colors = useColors();
+  const { hue } = usePageColor();
   const [draft, setDraft] = useState(() => ingredientDraft(existing, newName, language));
   const result = ingredientSave(draft, existing, kitchen);
   const changingUnit = existing !== undefined && draft.unit !== existing.unit;
@@ -35,8 +36,8 @@ export function IngredientSheet({ existing, newName, kitchen, change, onClose }:
         {result.issue ? <T accessibilityRole="alert" muted style={{ fontSize: 12 }}>{text[result.issue]}</T> : null}
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
           {existing?.recipeCount ? <T muted style={{ flex: 1, fontSize: 12 }}>{text.usedInRecipes}</T>
-            : existing ? <Button tone="destructive" label={text.delete} onPress={() => { change({ type: "ingredient.delete", id: existing.id }); onClose(); }} /> : <View />}
-          <Button label={text.save} disabled={!result.action} onPress={save} />
+            : existing ? <Button tone="destructive" label={text.delete} onPress={() => { change({ type: "ingredient.delete", id: existing.id }); onClose(); }} /> : null}
+          <Button wide label={text.save} disabled={!result.action} onPress={save} />
         </View>
       </View>}>
       <View style={styles.section}>
@@ -49,9 +50,9 @@ export function IngredientSheet({ existing, newName, kitchen, change, onClose }:
           <View accessibilityRole="radiogroup" accessibilityLabel={text.unit} style={[styles.units, { backgroundColor: colors.muted }]}>
             {INGREDIENT_UNITS.map((unit) => (
               <Pressable key={unit} accessibilityRole="radio" accessibilityState={{ checked: draft.unit === unit }}
-                onPress={() => setDraft((current) => ({ ...current, unit, size: "", values: nutritionFields(existing?.nutrition, language) }))}
-                style={{ minHeight: 44, flex: 1, alignItems: "center", justifyContent: "center", borderRadius: 24, backgroundColor: draft.unit === unit ? colors.control : "transparent" }}>
-                <T weight="medium" style={{ color: draft.unit === unit ? colors.foreground : colors.mutedForeground }}>{unitName(unit, language)}</T>
+                onPress={() => setDraft((current) => ({ ...withUnit(current, unit, language), size: "", values: nutritionFields(existing?.nutrition, language) }))}
+                style={{ minHeight: 48, flex: 1, alignItems: "center", justifyContent: "center", borderRadius: 24, backgroundColor: draft.unit === unit ? hue : "transparent" }}>
+                <T weight={draft.unit === unit ? "semibold" : "medium"} style={{ color: draft.unit === unit ? "#ffffff" : colors.mutedForeground }}>{unitName(unit, language)}</T>
               </Pressable>
             ))}
           </View>
@@ -109,7 +110,7 @@ function GroupField({ kitchen, groups, onGroups, typed, onTyped }: {
           <View key={group} style={{ flexDirection: "row", alignItems: "center", maxWidth: "100%", borderRadius: 24, borderWidth: 1, borderColor: colors.controlBorder, backgroundColor: colors.control }}>
             <Pressable accessibilityRole="button" accessibilityLabel={index ? text.makeMain(groupLabel(group, language)) : groupLabel(group, language)} disabled={index === 0}
               onPress={() => onGroups([group, ...groups.filter((one) => one !== group)])}
-              style={{ flexDirection: "row", alignItems: "center", gap: 6, minHeight: 44, paddingLeft: 12, flexShrink: 1 }}>
+              style={{ flexDirection: "row", alignItems: "center", gap: 6, minHeight: 48, paddingLeft: 12, flexShrink: 1 }}>
               <GroupDot groups={kitchen.kitchen.groups} group={group} size={8} />
               <T style={{ flexShrink: 1, fontSize: 14 }}>{groupLabel(group, language)}{index === 0 && groups.length > 1 ? <T muted style={styles.hint}> {text.mainGroup}</T> : null}</T>
             </Pressable>
@@ -122,18 +123,18 @@ function GroupField({ kitchen, groups, onGroups, typed, onTyped }: {
           onChangeText={(value) => value.endsWith(",") ? add(value.slice(0, -1)) : onTyped(value)}
           onSubmitEditing={() => add(typed)} submitBehavior="submit"
           onKeyPress={({ nativeEvent }) => { if (nativeEvent.key === "Backspace" && !typed && groups.length) onGroups(groups.slice(0, -1)); }} />
-        <Button tone="outline" icon={Plus} disabled={!typed.trim()} accessibilityLabel={text.addGroupNamed(typed.trim())} onPress={() => add(typed)} />
+        {typed.trim() ? <Button tone="outline" icon={Plus} accessibilityLabel={text.addGroupNamed(typed.trim())} onPress={() => add(typed)} /> : null}
       </View>
       {suggestions.length ? <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
         {suggestions.map((group) => (
           <Pressable key={group} accessibilityRole="button" accessibilityLabel={text.addGroupNamed(groupLabel(group, language))} onPress={() => add(group)}
-            style={{ flexDirection: "row", alignItems: "center", gap: 4, minHeight: 44, maxWidth: "100%", borderWidth: 1, borderStyle: "dashed", borderColor: colors.controlBorder, borderRadius: RADIUS, paddingHorizontal: 10 }}>
-            <Plus size={14} color={colors.mutedForeground} />
-            <T muted style={{ flexShrink: 1, fontSize: 12 }}>{groupLabel(group, language)}</T>
+            style={{ flexDirection: "row", alignItems: "center", gap: 4, minHeight: 48, maxWidth: "100%", borderWidth: 1, borderColor: colors.controlBorder, backgroundColor: colors.control, borderRadius: 22, paddingHorizontal: 12 }}>
+            <Plus size={16} color={colors.mutedForeground} />
+            <T style={{ flexShrink: 1, fontSize: 14 }}>{groupLabel(group, language)}</T>
           </Pressable>
         ))}
       </View> : null}
-      <T muted style={styles.hint}>{text.groupsHint}</T>
+      {groups.length ? <T muted style={styles.hint}>{text.groupsHint}</T> : null}
     </View>
   );
 }

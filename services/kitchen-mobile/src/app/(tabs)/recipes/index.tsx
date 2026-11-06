@@ -1,14 +1,15 @@
 import * as Crypto from "expo-crypto";
 import { router } from "expo-router";
-import { Clock, Plus, Refrigerator, X } from "lucide-react-native";
+import { Carrot, Clock, Plus, Refrigerator, X } from "lucide-react-native";
 import { useMemo, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import type { OpenKitchen } from "../../../state";
-import { Button, Empty, Field, mainGroup, PlateRing, Screen, SearchField, T, usePageColor } from "../../../ui/kit";
+import { Button, Empty, FloatingButton, Field, haptic, mainGroup, type Notice, PlateRing, Screen, SearchField, Snackbar, T, usePageColor } from "../../../ui/kit";
 import { type KitchenLanguage, useText } from "../../../ui/language";
 import { KitchenScreen } from "../../../ui/page";
 import { filterRecipes, recipeSummaries } from "../../../ui/recipes/model";
 import { groupColor, tint, useColors } from "../../../ui/theme";
+import { RecipeMenu } from "../../../ui/week/sheets";
 
 const en = {
   title: "Recipes",
@@ -16,9 +17,9 @@ const en = {
   stillIdeas: (count: number) => count === 1 ? ", 1 still an idea without ingredients" : `, ${count} still ideas without ingredients`,
   intro: "Collect the dishes you cook. A name is enough to start.",
   newRecipe: "New recipe",
-  findRecipe: "Find or add a recipe",
-  fromHome: "Cook from home",
-  withIngredient: "With an ingredient",
+  findRecipe: "Search recipes",
+  fromHome: "Ready to cook",
+  withIngredient: "By ingredient",
   removeFilter: (name: string) => `Remove ${name}`,
   allAtHome: "All at home",
   missing: (names: readonly string[]) => `${names.length} missing: ${names.slice(0, 3).join(", ")}${names.length > 3 ? ", …" : ""}`,
@@ -32,6 +33,7 @@ const en = {
   noMatch: (query: string) => `No recipe matches “${query}”`,
   noRecipes: "No recipes yet",
   tryAnother: "Try another word, or select + to keep it as an idea.",
+  recipeActions: "Recipe actions",
   addIdeaHint: "Select “New recipe” to write one down. Or type a name in the search and select the + to keep it as an idea for later."
 };
 const TEXT: Record<KitchenLanguage, typeof en> = {
@@ -42,9 +44,9 @@ const TEXT: Record<KitchenLanguage, typeof en> = {
     stillIdeas: (count: number) => count === 1 ? ", 1 noch eine Idee ohne Zutaten" : `, ${count} noch Ideen ohne Zutaten`,
     intro: "Sammle die Gerichte, die du kochst. Ein Name reicht zum Start.",
     newRecipe: "Neues Rezept",
-    findRecipe: "Rezept suchen oder hinzufügen",
-    fromHome: "Mit dem Vorrat kochen",
-    withIngredient: "Mit einer Zutat",
+    findRecipe: "Rezepte suchen",
+    fromHome: "Kochbereit",
+    withIngredient: "Nach Zutat",
     removeFilter: (name: string) => `${name} entfernen`,
     allAtHome: "Alles im Vorrat",
     missing: (names: readonly string[]) => `${names.length} ${names.length === 1 ? "fehlt" : "fehlen"}: ${names.slice(0, 3).join(", ")}${names.length > 3 ? ", …" : ""}`,
@@ -58,6 +60,7 @@ const TEXT: Record<KitchenLanguage, typeof en> = {
     noMatch: (query: string) => `Kein Rezept passt zu „${query}“`,
     noRecipes: "Noch keine Rezepte",
     tryAnother: "Probier ein anderes Wort, oder tippe auf +, um es als Idee zu behalten.",
+    recipeActions: "Rezeptaktionen",
     addIdeaHint: "Mit „Neues Rezept“ schreibst du eins auf. Oder tippe einen Namen in die Suche und behalte ihn mit dem + als Idee für später."
   }
 };
@@ -66,7 +69,8 @@ export default function RecipesPage() {
   return <KitchenScreen page="recipes">{(data) => <Recipes key={data.kitchen.kitchen.id} data={data} />}</KitchenScreen>;
 }
 
-function Recipes({ data: { kitchen, change } }: { data: OpenKitchen }) {
+function Recipes({ data }: { data: OpenKitchen }) {
+  const { kitchen, change } = data;
   const text = useText(TEXT);
   const colors = useColors();
   const { hue } = usePageColor();
@@ -74,6 +78,11 @@ function Recipes({ data: { kitchen, change } }: { data: OpenKitchen }) {
   const [fromHome, setFromHome] = useState(false);
   const [wanted, setWanted] = useState<string[]>([]);
   const [pick, setPick] = useState("");
+  const [picking, setPicking] = useState(false);
+  const [held, setHeld] = useState<string>();
+  const [notice, setNotice] = useState<Notice | null>(null);
+  const menuRecipe = kitchen.recipes.find((one) => one.id === held);
+  const hold = (id: string) => { haptic("hold"); setHeld(id); };
   const recipes = useMemo(() => recipeSummaries(kitchen), [kitchen]);
   const selected = kitchen.ingredients.filter((one) => wanted.includes(one.id));
   const matches = filterRecipes(recipes, query, selected.map((one) => one.id), fromHome);
@@ -85,31 +94,42 @@ function Recipes({ data: { kitchen, change } }: { data: OpenKitchen }) {
   function addWanted(id: string) {
     setWanted((current) => current.includes(id) ? current : [...current, id]);
     setPick("");
+    setPicking(false);
   }
 
   return (
     <Screen title={text.title} facts={recipes.length ? `${text.recipes(recipes.length)}${ideas ? text.stillIdeas(ideas) : ""}` : text.intro}
-      actions={<Button icon={Plus} label={text.newRecipe} onPress={() => router.push("/recipes/new")} />}>
+      fab={<FloatingButton icon={Plus} label={text.newRecipe} onPress={() => router.push("/recipes/new")} />}
+      floating={<Snackbar notice={notice} onUndo={change} onDone={() => setNotice(null)} />}>
       <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
         <View style={{ flex: 1 }}><SearchField value={query} onValue={setQuery} label={text.findRecipe} /></View>
         {isNew ? <Button icon={Plus} accessibilityLabel={text.addIdea(idea)} onPress={() => change({ type: "recipe.save", createId: Crypto.randomUUID(), name: idea, servings: 2, minutes: null, instructions: "", lines: [] })} /> : null}
       </View>
       {recipes.length ? (
         <View style={{ gap: 8 }}>
-          <View style={styles.wrap}>
+          <View style={{ flexDirection: "row", gap: 8 }}>
             <Pressable accessibilityRole="button" accessibilityState={{ selected: fromHome }} onPress={() => setFromHome((value) => !value)}
               style={[styles.filter, { borderColor: fromHome ? hue : colors.controlBorder, backgroundColor: fromHome ? hue : colors.control }]}>
               <Refrigerator size={16} color={fromHome ? "#ffffff" : colors.mutedForeground} />
-              <T weight="medium" style={{ fontSize: 14, color: fromHome ? "#ffffff" : colors.mutedForeground }}>{text.fromHome}</T>
+              <T weight="medium" textBreakStrategy="simple" style={{ fontSize: 14, color: fromHome ? "#ffffff" : colors.foreground }}>{text.fromHome}</T>
             </Pressable>
+            {picking ? null : (
+              <Pressable accessibilityRole="button" onPress={() => setPicking(true)} style={[styles.filter, { borderColor: colors.controlBorder, backgroundColor: colors.control }]}>
+                <Carrot size={16} color={colors.mutedForeground} />
+                <T weight="medium" textBreakStrategy="simple" style={{ fontSize: 14, color: colors.foreground }}>{text.withIngredient}</T>
+              </Pressable>
+            )}
+          </View>
+          {selected.length ? <View style={styles.wrap}>
             {selected.map((one) => (
               <View key={one.id} style={[styles.filter, { paddingRight: 0, borderColor: hue, backgroundColor: tint(hue, 12, colors.background) }]}>
                 <T style={{ fontSize: 14 }}>{one.name}</T>
                 <Button tone="ghost" compact icon={X} accessibilityLabel={text.removeFilter(one.name)} onPress={() => setWanted((current) => current.filter((id) => id !== one.id))} />
               </View>
             ))}
-          </View>
-          <Field value={pick} placeholder={text.withIngredient} accessibilityLabel={text.withIngredient}
+          </View> : null}
+          {picking ? <Field autoFocus value={pick} placeholder={text.withIngredient} accessibilityLabel={text.withIngredient}
+            onBlur={() => { if (!pick.trim()) setPicking(false); }}
             onChangeText={(value) => {
               setPick(value);
               const found = kitchen.ingredients.find((one) => one.name.toLowerCase() === value.trim().toLowerCase());
@@ -118,14 +138,16 @@ function Recipes({ data: { kitchen, change } }: { data: OpenKitchen }) {
             onSubmitEditing={() => {
               const found = kitchen.ingredients.find((one) => one.name.toLowerCase() === pick.trim().toLowerCase());
               if (found) addWanted(found.id);
-            }} />
+            }} /> : null}
           {choices.length ? <View style={styles.wrap}>{choices.map((one) => <Button key={one.id} tone="outline" label={one.name} onPress={() => addWanted(one.id)} />)}</View> : null}
         </View>
       ) : null}
       {matches.length ? <View style={{ gap: 8 }}>{matches.map((recipe) => {
         const group = mainGroup(kitchen.kitchen.groups, recipe.sections);
         return (
-          <Pressable key={recipe.id} accessibilityRole="link" onPress={() => router.push({ pathname: "/recipes/[recipeId]", params: { recipeId: recipe.id } })} style={({ pressed }) => [styles.recipe, { backgroundColor: group ? tint(groupColor(colors, kitchen.kitchen.groups, group), 11, colors.card) : colors.muted, opacity: pressed ? 0.8 : 1 }]}>
+          <Pressable key={recipe.id} accessibilityRole="button" onPress={() => router.push({ pathname: "/recipes/[recipeId]", params: { recipeId: recipe.id } })}
+            onLongPress={() => hold(recipe.id)} accessibilityActions={[{ name: "longpress", label: text.recipeActions }]}
+            onAccessibilityAction={(event) => { if (event.nativeEvent.actionName === "longpress") setHeld(recipe.id); }} style={({ pressed }) => [styles.recipe, { backgroundColor: group ? tint(groupColor(colors, kitchen.kitchen.groups, group), 11, colors.card) : colors.muted, opacity: pressed ? 0.8 : 1 }]}>
               <PlateRing groups={kitchen.kitchen.groups} sections={recipe.sections} size={36} />
               <View style={{ flex: 1, gap: 6 }}>
                 <T weight="semibold" style={{ fontSize: 18, lineHeight: 23 }}>{recipe.name}</T>
@@ -142,13 +164,14 @@ function Recipes({ data: { kitchen, change } }: { data: OpenKitchen }) {
           </Pressable>
         );
       })}</View> : <Empty title={!recipes.length ? text.noRecipes : filtered ? text.noFit : text.noMatch(query)} body={!recipes.length ? text.addIdeaHint : filtered ? text.removeAFilter : text.tryAnother} />}
+      {menuRecipe ? <RecipeMenu key={menuRecipe.id} recipe={menuRecipe} data={data} onClose={() => setHeld(undefined)} notify={setNotice} /> : null}
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
   wrap: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8 },
-  filter: { minHeight: 36, borderRadius: 22, borderWidth: 1, flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12 },
+  filter: { minHeight: 48, borderRadius: 22, borderWidth: 1, flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12 },
   recipe: { flexDirection: "row", alignItems: "flex-start", gap: 12, padding: 16, borderRadius: 16 },
   small: { fontSize: 12 },
   inline: { flexDirection: "row", alignItems: "center", gap: 4 }
