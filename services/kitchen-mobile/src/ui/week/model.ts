@@ -38,3 +38,25 @@ export function defaultMeal(entries: readonly PlanEntry[]): Meal {
   const taken = new Set(entries.map((entry) => entry.meal));
   return (["dinner", "lunch", "breakfast", "snack"] as const).find((meal) => !taken.has(meal)) ?? "dinner";
 }
+
+/**
+ * The days the Plan sheet offers and the day it selects. It offers seven days from today, or the shown week when that
+ * starts later, so a person can plan past Sunday. It selects the day the person picked, or else the first day without a meal.
+ */
+export function planStrip({ weekStart, today, plan, day }: { weekStart: string; today: string; plan: readonly Pick<PlanEntry, "day">[]; day?: string }) {
+  const soonest = weekStart > today ? weekStart : today;
+  const from = day && day < soonest ? day : soonest;
+  const days = Array.from({ length: 7 }, (_, index) => addDays(from, index));
+  const planned = new Set(plan.map((entry) => entry.day));
+  return { days, selected: day ?? days.find((one) => !planned.has(one)) ?? from };
+}
+
+/**
+ * The week change a released horizontal swipe asks for: 1 for the next week, -1 for the previous one, 0 for none.
+ * A swipe to the left shows the next week, like turning a page. A short fast flick counts as much as a long slow drag.
+ */
+export function swipeStep(translationX: number, velocityX: number): -1 | 0 | 1 {
+  const reach = translationX + velocityX * 0.15;
+  if (Math.abs(translationX) < 24 || Math.abs(reach) < 96) return 0;
+  return reach < 0 ? 1 : -1;
+}

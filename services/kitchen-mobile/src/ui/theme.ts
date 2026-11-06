@@ -1,7 +1,7 @@
 import { useColorScheme } from "react-native";
 
-/** The tab of a kitchen page. Each page takes its produce color, as on the web. */
-export type PageKey = "week" | "shopping" | "recipes" | "home" | "ingredients";
+/** The tab of a kitchen page. Each page takes its produce color, as on the web. The Kitchen tab keeps the color of Ingredients, which it holds. */
+export type PageKey = "week" | "shopping" | "recipes" | "home" | "kitchen";
 
 /** Colors copied from services/tools/app/styles.css, so the app looks like the web Kitchen in both themes. */
 const dark = {
@@ -16,8 +16,8 @@ const dark = {
   destructive: "#ff7474",
   positive: "#6ee7b7",
   warning: "#fcd34d",
-  page: { week: "#c4402b", shopping: "#1f7d47", recipes: "#7343b5", home: "#2366ad", ingredients: "#b4521a" },
-  pageInk: { week: "#ff8a73", shopping: "#5fd08f", recipes: "#c3a2f5", home: "#7db7f2", ingredients: "#f5a066" },
+  page: { week: "#c4402b", shopping: "#1f7d47", recipes: "#7343b5", home: "#2366ad", kitchen: "#b4521a" },
+  pageInk: { week: "#ff8a73", shopping: "#5fd08f", recipes: "#c3a2f5", home: "#7db7f2", kitchen: "#f5a066" },
   groups: ["#ef7d6b", "#aebf55", "#d8a46c", "#5cbf8a", "#a8a29e", "#b38be0", "#63aee0", "#e47ba6"]
 };
 

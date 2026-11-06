@@ -315,6 +315,16 @@ describe.skipIf(!admin)("Kitchen app over OAuth", () => {
     expect(await identity!.resolveAppToken(bearer(accessToken), "kitchen")).toMatchObject({ subject: "admin-subject" });
   });
 
+  it("disables a client ID that an app used before, so its old tokens open nothing", async () => {
+    const retired = "com.lab4code.kitchen";
+    await admin!`
+      insert into tools.oauth_clients (id, client_id, name, redirect_uris, public, type, disabled, created_at, updated_at)
+      values (${retired}, ${retired}, 'Kitchen', ${[`${retired}:/oauth`]}, true, 'native', false, now(), now())
+      on conflict (client_id) do update set disabled = false`;
+    await registerAppClients(admin!);
+    expect(await admin!`select client_id from tools.oauth_clients where client_id = ${retired} and disabled`).toHaveLength(1);
+  });
+
   it("keeps an operator's disable when the clients are registered again", async () => {
     await admin!`update tools.oauth_clients set disabled = true where client_id = ${APP_CLIENTS.kitchen.clientId}`;
     await registerAppClients(admin!);

@@ -5,12 +5,15 @@ import type postgres from "postgres";
  * Their tokens open only their own API, and MCP refuses them, so each credential keeps one purpose.
  */
 export const APP_CLIENTS = {
-  kitchen: { clientId: "com.lab4code.kitchen", name: "Kitchen", redirectUri: "com.lab4code.kitchen:/oauth" }
+  kitchen: { clientId: "com.lab4code.pantrino", name: "Pantrino", redirectUri: "com.lab4code.pantrino:/oauth" }
 } as const;
 
 export type AppClientId = keyof typeof APP_CLIENTS;
 
-export const APP_CLIENT_IDS: readonly string[] = Object.values(APP_CLIENTS).map((app) => app.clientId);
+/** Client IDs that first-party apps used before. Their rows stay in the database with tokens that are still valid, so they stay app clients and are disabled at registration. */
+const RETIRED_APP_CLIENT_IDS = ["com.lab4code.kitchen"];
+
+export const APP_CLIENT_IDS: readonly string[] = [...Object.values(APP_CLIENTS).map((app) => app.clientId), ...RETIRED_APP_CLIENT_IDS];
 
 const APP_SCOPES = ["openid", "profile", "email", "offline_access"];
 
@@ -24,7 +27,7 @@ export function withAppConsentPrompt<T extends Record<string, unknown>>(params: 
   return prompt.includes("consent") ? undefined : { ...params, prompt: [...prompt, "consent"].join(" ") };
 }
 
-/** Writes each app client. A client that an operator disabled stays disabled. */
+/** Writes each app client and disables each retired one. A client that an operator disabled stays disabled. */
 export async function registerAppClients(sql: postgres.Sql) {
   for (const app of Object.values(APP_CLIENTS)) {
     await sql`
@@ -37,4 +40,5 @@ export async function registerAppClients(sql: postgres.Sql) {
         public = excluded.public, type = excluded.type, require_pkce = excluded.require_pkce, skip_consent = excluded.skip_consent, client_secret = null,
         updated_at = now()`;
   }
+  await sql`update tools.oauth_clients set disabled = true, updated_at = now() where client_id in ${sql(RETIRED_APP_CLIENT_IDS)} and disabled is not true`;
 }
