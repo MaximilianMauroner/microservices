@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { KitchenSnapshot, KitchenSync, PlanEntry } from "@tools-platform/service/kitchen-contract";
 import type { QueuedAction } from "../../sync/model";
 import { project } from "../../sync/project";
-import { frequentItems, shoppingView } from "./view";
+import { TEXT } from "./text";
+import { frequentItems, rowChanges, shoppingView, type RowGesture, type ShoppingRow } from "./view";
 
 const start = "2026-11-02";
 const line = { ingredientId: "rice", ingredient: "Rice", unit: "g" as const, amount: 150, note: "" };
@@ -170,5 +171,59 @@ describe("the quick picks of the Add sheet", () => {
   it("shows at most eight", () => {
     const many = snapshot({ ingredients: Array.from({ length: 12 }, (_, index) => ingredient(`i${index}`, `Item ${index}`, index)), plan: [] });
     expect(frequentItems(many, "")).toEqual(["Item 11", "Item 10", "Item 9", "Item 8", "Item 7", "Item 6", "Item 5", "Item 4"]);
+  });
+});
+
+describe("the gestures on a shopping row", () => {
+  const snapshot = (): KitchenSnapshot => ({
+    ...kitchen(),
+    extras: [
+      { id: "coffee", name: "Coffee", everyWeek: true, boughtWeek: null },
+      { id: "paper", name: "Paper", everyWeek: false, boughtWeek: null },
+    ],
+  });
+  const rows = (view: ReturnType<typeof shoppingView>): Record<string, ShoppingRow> => ({
+    ...Object.fromEntries(view.toBuy.map((line) => [line.ingredient, { kind: "line", line }])),
+    ...Object.fromEntries(view.weekly.map((extra) => [extra.name, { kind: "weekly", extra, week: view.start }])),
+    ...Object.fromEntries(view.once.map((extra) => [extra.name, { kind: "once", extra }])),
+  });
+  function run(before: KitchenSnapshot, name: string, gesture: RowGesture) {
+    const change = rowChanges(rows(shoppingView(before, start))[name]!, TEXT.en, "en")[gesture]!;
+    const after = apply(before, [change.action]);
+    return { change, after: shoppingView(after, start), undone: change.undo ? shoppingView(apply(after, [change.undo]), start) : null };
+  }
+
+  it("buys an ingredient line into At home and gives it back on undo, but cannot remove it", () => {
+    const { change, after, undone } = run(snapshot(), "Rice", "check");
+    expect(change.message).toBe("150 g Rice added to At home");
+    expect(after.covered).toMatchObject([{ ingredient: "Rice", inStock: 150 }]);
+    expect(undone?.toBuy).toMatchObject([{ ingredient: "Rice", toBuy: 150 }]);
+    expect(rowChanges(rows(shoppingView(snapshot(), start)).Rice!, TEXT.en, "en").remove).toBeUndefined();
+  });
+
+  it("checks a weekly item for the week, and a second check puts it back on the list", () => {
+    const bought = run(snapshot(), "Coffee", "check");
+    expect(bought.after.weekly).toMatchObject([{ name: "Coffee", bought: true }]);
+    expect(bought.undone?.weekly).toMatchObject([{ name: "Coffee", bought: false }]);
+    const kitchenAfter = apply(snapshot(), [bought.change.action]);
+    const back = run(kitchenAfter, "Coffee", "check");
+    expect(back.change.message).toBe("Coffee back on the list");
+    expect(back.after.weekly).toMatchObject([{ name: "Coffee", bought: false }]);
+  });
+
+  it("stops a weekly item on remove and brings it back as a weekly item on undo", () => {
+    const { change, after, undone } = run(snapshot(), "Coffee", "remove");
+    expect(change.message).toBe("Coffee is no longer on every week's list");
+    expect(after.weekly).toEqual([]);
+    expect(undone?.weekly).toMatchObject([{ name: "Coffee", everyWeek: true, bought: false }]);
+  });
+
+  it("takes a one-time item off the list when it is bought or removed, and undo puts it back", () => {
+    for (const [gesture, message] of [["check", "Paper bought"], ["remove", "Paper removed"]] as const) {
+      const { change, after, undone } = run(snapshot(), "Paper", gesture);
+      expect(change.message).toBe(message);
+      expect(after.once).toEqual([]);
+      expect(undone?.once).toMatchObject([{ name: "Paper", everyWeek: false }]);
+    }
   });
 });

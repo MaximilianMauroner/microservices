@@ -1,10 +1,15 @@
 import {
   addDays,
+  formatAmount,
   shoppingList,
   weekStart,
   type ExtraItem,
   type KitchenSnapshot,
+  type ShoppingLine,
 } from "@tools-platform/service/kitchen-contract";
+import type { QueuedAction } from "../../sync/model";
+import type { KitchenLanguage } from "../language";
+import type { TEXT } from "./text";
 
 export function shoppingView(kitchen: KitchenSnapshot, day: string) {
   const start = weekStart(day);
@@ -52,4 +57,55 @@ export function frequentItems(kitchen: Pick<KitchenSnapshot, "ingredients" | "pl
     .sort((a, b) => (uses.get(b.id) ?? 0) - (uses.get(a.id) ?? 0) || b.recipeCount - a.recipeCount || a.name.localeCompare(b.name))
     .slice(0, limit)
     .map((one) => one.name);
+}
+
+/** A row of the shopping list. */
+export type ShoppingRow =
+  | { kind: "line"; line: ShoppingLine }
+  | { kind: "weekly"; extra: ExtraItem; week: string }
+  | { kind: "once"; extra: ExtraItem };
+
+/** The gesture each swipe direction runs. A swipe right does what a tap does. */
+export const SWIPE = { right: "check", left: "remove" } as const;
+export type RowGesture = (typeof SWIPE)[keyof typeof SWIPE];
+export type RowChange = Readonly<{ action: QueuedAction; message: string; undo?: QueuedAction }>;
+
+/**
+ * What each gesture changes on a row. A missing gesture means the row does not have it: no change removes an
+ * ingredient line, because the planned meals need it. A one-time item has no bought state, so buying it removes it.
+ */
+export function rowChanges(
+  row: ShoppingRow,
+  text: (typeof TEXT)[KitchenLanguage],
+  language: KitchenLanguage,
+): Partial<Record<RowGesture, RowChange>> {
+  if (row.kind === "line") {
+    const { line } = row;
+    return {
+      check: {
+        action: { type: "stock.add", ingredientId: line.ingredientId, amount: line.toBuy },
+        message: text.addedToHome(formatAmount(line.toBuy, line.unit, language), line.ingredient),
+        undo: { type: "stock.set", ingredientId: line.ingredientId, amount: line.inStock },
+      },
+    };
+  }
+  const { id, name } = row.extra;
+  if (row.kind === "once") {
+    const undo: QueuedAction = { type: "extra.add", name };
+    return {
+      check: { action: { type: "extra.remove", id }, message: text.bought(name), undo },
+      remove: { action: { type: "extra.remove", id }, message: text.removed(name), undo },
+    };
+  }
+  const mark = (bought: boolean): QueuedAction => ({ type: "extra.mark", id, week: row.week, bought });
+  return {
+    check: row.extra.bought
+      ? { action: mark(false), message: text.notBought(name) }
+      : { action: mark(true), message: text.bought(name), undo: mark(false) },
+    remove: {
+      action: { type: "extra.remove", id },
+      message: text.stopped(name),
+      undo: { type: "extra.add", name, everyWeek: true },
+    },
+  };
 }

@@ -1,4 +1,5 @@
 import { byGroupOrder, addDays, UNSORTED_SECTION } from "@tools-platform/service/kitchen-contract";
+import * as Haptics from "expo-haptics";
 import { BookOpen, CalendarDays, CookingPot, type LucideIcon, Refrigerator, Search, ShoppingBasket, X } from "lucide-react-native";
 import { createContext, type ReactNode, type Ref, useContext, useEffect, useRef, useState } from "react";
 import { AccessibilityInfo, KeyboardAvoidingView, Modal, Platform, Pressable, RefreshControl, type RefreshControlProps, ScrollView, type ScrollViewInstance, StyleSheet, Text, type TextProps, TextInput, type TextInputProps, View, type ViewStyle } from "react-native";
@@ -114,6 +115,12 @@ export function FloatingButton({ label, icon: Icon, onPress }: { label: string; 
 }
 
 /** What a change did, with the change that takes it back. */
+/** A short haptic for a swipe that passes its threshold, or a touch that becomes a hold. */
+export function haptic(kind: "threshold" | "hold") {
+  if (Platform.OS === "android") void Haptics.performAndroidHapticsAsync(kind === "hold" ? Haptics.AndroidHaptics.Long_Press : Haptics.AndroidHaptics.Segment_Tick);
+  else void (kind === "hold" ? Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium) : Haptics.selectionAsync());
+}
+
 export type Notice = Readonly<{ message: string; undo?: QueuedAction }>;
 
 const SNACKBAR_MS = 6000;
