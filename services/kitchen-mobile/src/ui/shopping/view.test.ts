@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { KitchenSnapshot, KitchenSync, PlanEntry } from "@tools-platform/service/kitchen-contract";
 import type { QueuedAction } from "../../sync/model";
 import { project } from "../../sync/project";
-import { shoppingView } from "./view";
+import { frequentItems, shoppingView } from "./view";
 
 const start = "2026-11-02";
 const line = { ingredientId: "rice", ingredient: "Rice", unit: "g" as const, amount: 150, note: "" };
@@ -140,5 +140,35 @@ describe("the local shopping list", () => {
     expect(shoppingView(bought, start)).toMatchObject({ once: [], count: 1 });
     const stopped = apply(bought, [{ type: "extra.remove", id: "coffee" }]);
     expect(shoppingView(stopped, "2026-11-09")).toMatchObject({ weekly: [], count: 0 });
+  });
+});
+
+describe("the quick picks of the Add sheet", () => {
+  const ingredient = (id: string, name: string, recipeCount: number) => ({ ...kitchen().ingredients[0]!, id, name, recipeCount });
+  const uses = (day: string, ...ids: string[]) => meal(day, { id: `${day}:${ids.join()}`, lines: ids.map((id) => ({ ...line, ingredientId: id })) });
+  const snapshot = (patch: Partial<KitchenSnapshot> = {}): KitchenSnapshot => ({
+    ...kitchen(),
+    ingredients: [ingredient("rice", "Rice", 1), ingredient("milk", "Milk", 3), ingredient("eggs", "Eggs", 5), ingredient("salt", "Salt", 0)],
+    plan: [uses("2026-10-12", "rice", "milk"), uses("2026-10-20", "rice"), uses("2026-11-05", "rice", "rice")],
+    ...patch,
+  });
+
+  it("puts the ingredients that stored meals use most first, then those in the most recipes", () => {
+    expect(frequentItems(snapshot(), "")).toEqual(["Rice", "Milk", "Eggs", "Salt"]);
+  });
+
+  it("leaves out what is already on the list, in any case", () => {
+    const listed = snapshot({ extras: [{ id: "x", name: "rice", everyWeek: false, boughtWeek: null }] });
+    expect(frequentItems(listed, "")).toEqual(["Milk", "Eggs", "Salt"]);
+  });
+
+  it("suggests only matching ingredients while the person types", () => {
+    expect(frequentItems(snapshot(), "  i ")).toEqual(["Rice", "Milk"]);
+    expect(frequentItems(snapshot(), "coffee")).toEqual([]);
+  });
+
+  it("shows at most eight", () => {
+    const many = snapshot({ ingredients: Array.from({ length: 12 }, (_, index) => ingredient(`i${index}`, `Item ${index}`, index)), plan: [] });
+    expect(frequentItems(many, "")).toEqual(["Item 11", "Item 10", "Item 9", "Item 8", "Item 7", "Item 6", "Item 5", "Item 4"]);
   });
 });
