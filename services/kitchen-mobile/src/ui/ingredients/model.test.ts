@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { kitchenAction, type Ingredient, type KitchenSnapshot, type KitchenSync } from "@tools-platform/service/kitchen-contract";
 import { project } from "../../sync/project";
-import { changeSize, ingredientDraft, ingredientSave, oldPerNew, withGroup } from "./model";
+import { changeSize, ingredientDraft, ingredientSave, oldPerNew, withGroup, withUnit } from "./model";
 
 const ingredient: Ingredient = {
   id: "tomato", name: "Tomato", unit: "g", section: "Vegetables", otherGroups: ["Basics"],
@@ -87,6 +87,12 @@ describe("ingredient form", () => {
     expect(ingredientSave(ingredientDraft(undefined, " ", "en"), undefined, snapshot()).issue).toBe("nameIngredient");
     expect(ingredientSave(ingredientDraft(undefined, " tomato ", "en"), undefined, snapshot()).issue).toBe("duplicateName");
     expect(ingredientSave(ingredientDraft(ingredient, "", "en"), ingredient, snapshot()).action?.id).toBe(ingredient.id);
+  });
+
+  it("moves a quick-picked recipe amount to the new unit and keeps a typed one", () => {
+    const draft = { ...ingredientDraft(undefined, "Beans", "en"), uses: new Map([["soup", "100"], ["salad", "250"]]) };
+    const result = ingredientSave(withUnit(draft, "can", "en"), undefined, snapshot());
+    expect(result.action?.addToRecipes).toEqual([{ recipeId: "soup", amount: 1 }, { recipeId: "salad", amount: 250 }]);
   });
 
   it.each(["", "0", "-2", "Infinity", "1e309", "1000001", "a"])("blocks invalid recipe amount %j", (amount) => {

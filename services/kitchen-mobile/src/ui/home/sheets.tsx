@@ -1,7 +1,9 @@
 import {
   addDays,
+  fieldNumber,
   formatAmount,
-  ingredientGroups,
+  type StockItem,
+  
   INGREDIENT_UNITS,
   type IngredientUnit,
   requiredName,
@@ -11,7 +13,7 @@ import { Plus } from "lucide-react-native";
 import { useEffect, useRef, useState } from "react";
 import { Pressable, View } from "react-native";
 import type { OpenKitchen } from "../../state";
-import { Button, Field, GroupDot, SearchField, Sheet, Stepper, T, byGroup, groupLabel } from "../kit";
+import { Button, Field, GroupDot, SearchField, Sheet, Stepper, T, byGroup } from "../kit";
 import { useLanguage, useText } from "../language";
 import { useColors } from "../theme";
 import { TEXT } from "./text";
@@ -22,9 +24,8 @@ type Selection = { type: "existing"; id: string } | { type: "new"; name: string;
 export function AddStockSheet({
   kitchen,
   change,
-  group,
   onClose,
-}: OpenKitchen & { group?: string; onClose: () => void }) {
+}: OpenKitchen & { onClose: () => void }) {
   const language = useLanguage();
   const text = useText(TEXT);
   const colors = useColors();
@@ -50,7 +51,6 @@ export function AddStockSheet({
     kitchen.kitchen.groups,
     kitchen.ingredients.filter(
       (one) =>
-        (!group || ingredientGroups(one).includes(group)) &&
         one.name.toLowerCase().includes(query.trim().toLowerCase()),
     ),
     (one) => one.section,
@@ -77,7 +77,7 @@ export function AddStockSheet({
         type: "ingredient.save",
         name,
         unit: selection.unit,
-        section: group ?? "",
+        section: "",
         kcal: null,
         protein: null,
         carbs: null,
@@ -100,9 +100,9 @@ export function AddStockSheet({
       onClose={() => {
         if (!creating) onClose();
       }}
-      title={group ? text.addToGroup(groupLabel(group, language)) : text.addStockTitle}
+      title={text.addStockTitle}
       description={text.addStockDescription}
-      footer={<Button label={text.addToStock} disabled={Boolean(missing) || Boolean(creating)} onPress={add} />}
+      footer={<Button wide label={text.addToStock} disabled={Boolean(missing) || Boolean(creating)} onPress={add} />}
     >
       <SearchField value={query} onValue={setQuery} label={text.findIngredient} />
       {isNew ? (
@@ -113,7 +113,7 @@ export function AddStockSheet({
             setSelection({ type: "new", name: typed, unit: selection?.type === "new" ? selection.unit : "g" })
           }
           style={{
-            minHeight: 44,
+            minHeight: 48,
             padding: 12,
             borderRadius: 12,
             borderWidth: 1,
@@ -141,7 +141,7 @@ export function AddStockSheet({
               disabled={Boolean(creating)}
               onPress={() => setSelection({ type: "existing", id: one.id })}
               style={{
-                minHeight: 44,
+                minHeight: 48,
                 borderRadius: 22,
                 borderWidth: 1,
                 borderColor: chosen ? colors.page.home : colors.controlBorder,
@@ -199,7 +199,7 @@ export function AddStockSheet({
                   disabled={Boolean(creating)}
                   onPress={() => setSelection({ ...selection, unit })}
                   style={{
-                    minHeight: 44,
+                    minHeight: 48,
                     borderRadius: 22,
                     paddingHorizontal: 14,
                     justifyContent: "center",
@@ -225,6 +225,38 @@ export function AddStockSheet({
   );
 }
 
+/** Sets how much of one ingredient is at home. */
+export function AmountSheet({ item, onSave, onClose }: { item: StockItem; onSave: (amount: number) => void; onClose: () => void }) {
+  const language = useLanguage();
+  const text = useText(TEXT);
+  const [value, setValue] = useState(fieldNumber(item.amount, language));
+  const amount = stockAmount(value);
+  function save() {
+    if (amount === undefined) return;
+    if (amount !== item.amount) onSave(amount);
+    onClose();
+  }
+  return (
+    <Sheet open onClose={onClose} title={item.ingredient} footer={<Button wide label={text.save} disabled={amount === undefined} onPress={save} />}>
+      <T weight="medium">{text.amountAtHome}</T>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+        <Field
+          autoFocus
+          selectTextOnFocus
+          style={{ width: 120 }}
+          value={value}
+          onChangeText={setValue}
+          keyboardType="decimal-pad"
+          accessibilityLabel={text.amountOf(item.ingredient)}
+          onSubmitEditing={save}
+          returnKeyType="done"
+        />
+        <T muted>{unitName(item.unit, language, amount ?? item.amount)}</T>
+      </View>
+    </Sheet>
+  );
+}
+
 export function AddLeftoverSheet({ today, change, onClose }: OpenKitchen & { onClose: () => void }) {
   const text = useText(TEXT);
   const [name, setName] = useState("");
@@ -238,6 +270,7 @@ export function AddLeftoverSheet({ today, change, onClose }: OpenKitchen & { onC
       title={text.addLeftoverTitle}
       footer={
         <Button
+          wide
           label={text.keepIt}
           disabled={!name.trim()}
           onPress={() => {
