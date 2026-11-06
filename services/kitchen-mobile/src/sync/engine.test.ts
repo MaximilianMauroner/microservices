@@ -189,32 +189,15 @@ describe("sync engine", () => {
     vault.data.snapshot = empty;
     await engine.load();
     vault.enqueue = async () => { throw new Error("disk full"); };
-    await expect(engine.change("home", addMilk)).rejects.toThrow("disk full");
-    expect(engine.getState()).toMatchObject({ pending: 0, view: { today: "2026-11-05" } });
+    await engine.change("home", addMilk);
+    expect(engine.getState()).toMatchObject({ pending: 0, view: { today: "2026-11-05" }, notices: [{ clientActionId: "change-1", unsaved: true }] });
     await engine.sync();
     expect(sent.flat()).toEqual([]);
+    expect(engine.getState().notices, "the unsaved notice stays after a sync").toEqual([{ clientActionId: "change-1", unsaved: true }]);
+    await engine.dismiss("change-1");
+    expect(engine.getState().notices).toEqual([]);
   });
 
-  it("keeps a change on screen while a sync started before it finishes", async () => {
-    let release: () => void = () => undefined;
-    let calls = 0;
-    const { engine, vault } = await started({ pull: async () => { calls += 1; if (calls === 1) await new Promise<void>((resolve) => { release = resolve; }); return empty; } });
-    vault.data.snapshot = empty;
-    await engine.load();
-    const first = engine.sync();
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    let store: () => void = () => undefined;
-    const enqueue = vault.enqueue;
-    vault.enqueue = async (item) => { await new Promise<void>((resolve) => { store = resolve; }); await enqueue(item); };
-    const changing = engine.change("home", addMilk);
-    release();
-    await first;
-    expect(engine.getState(), "the unstored change survives the reload after the first sync").toMatchObject({ pending: 1, view: { today: "2026-11-05+" } });
-    store();
-    await changing;
-    await engine.sync();
-    expect(engine.getState()).toMatchObject({ pending: 0, view: { today: "2026-11-05" } });
-  });
   it("sends a run of changes in one sync once the taps settle", async () => {
     const { engine, sent } = await started();
     for (let tap = 0; tap < 3; tap += 1) {
@@ -267,5 +250,21 @@ describe("sync engine", () => {
     await engine.sync();
     expect(engine.getState(), "the screen matches the vault again").toMatchObject({ pending: 0, view: { today: "2026-11-05" } });
     expect(sent.flat()).toEqual(["change-1"]);
+  });
+  it("stores a change made during a commit only after the commit ends", async () => {
+    const { engine, vault } = await started();
+    const order: string[] = [];
+    let finish: () => void = () => undefined;
+    const commit = vault.commit;
+    vault.commit = async (...args) => { order.push("commit starts"); await new Promise<void>((resolve) => { finish = resolve; }); await commit(...args); order.push("commit ends"); };
+    const enqueue = vault.enqueue;
+    vault.enqueue = async (item) => { order.push("write"); await enqueue(item); };
+    const syncing = engine.sync();
+    while (!order.length) await new Promise((resolve) => setTimeout(resolve, 0));
+    const changing = engine.change("home", addMilk);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    finish();
+    await Promise.all([syncing, changing]);
+    expect(order).toEqual(["commit starts", "commit ends", "write"]);
   });
 });

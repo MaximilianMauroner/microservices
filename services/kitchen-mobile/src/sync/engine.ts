@@ -1,13 +1,13 @@
 import type { AppActionResult } from "@tools-platform/service/kitchen-contract";
 import type { KitchenApi } from "./api";
-import type { KitchenSync, Notice, OutboxItem, QueuedAction, SyncStatus } from "./model";
+import type { KitchenSync, OutboxItem, QueuedAction, SyncNotice, SyncStatus } from "./model";
 import type { Vault } from "../storage/vault";
 
 /** What the screens read: the server snapshot with the unconfirmed changes applied on top. */
 export type SyncState = Readonly<{
   view: KitchenSync | null;
   pending: number;
-  notices: readonly Notice[];
+  notices: readonly SyncNotice[];
   status: SyncStatus;
   signedOut: boolean;
 }>;
@@ -54,7 +54,6 @@ export function createSyncEngine({ vault, api, project, newId, isSignedOut, isOf
   let again = false;
   let epoch = 0;
   let stopped = true;
-  let writing: Promise<void> | undefined;
   let settle: { timer: ReturnType<typeof setTimeout>; since: number } | undefined;
   const listeners = new Set<() => void>();
 
@@ -76,7 +75,7 @@ export function createSyncEngine({ vault, api, project, newId, isSignedOut, isOf
     const last = stored.at(-1)?.seq ?? 0;
     const local = outbox.filter(({ clientActionId: id }) => !known.has(id) && !answered.has(id) && (inFlight.has(id) || !before.has(id)));
     outbox = [...stored, ...local.map((item, index) => ({ ...item, seq: last + index + 1 }))];
-    publish({ ...patch, view: snapshot && project(snapshot, outbox), pending: outbox.length, notices });
+    publish({ ...patch, view: snapshot && project(snapshot, outbox), pending: outbox.length, notices: [...notices, ...state.notices.filter((one) => "unsaved" in one)] });
   }
 
   function cancelSettle() {
@@ -108,8 +107,9 @@ export function createSyncEngine({ vault, api, project, newId, isSignedOut, isOf
       if (mine !== epoch) return;
       const fresh = await api.pull();
       if (mine !== epoch) return;
-      writing = vault.commit(fresh, results.map((one) => one.clientActionId), results.filter(isRejected).map(({ clientActionId, message }) => ({ clientActionId, message })));
-      await writing;
+      const committed = writes.catch(() => undefined).then(() => vault.commit(fresh, results.map((one) => one.clientActionId), results.filter(isRejected).map(({ clientActionId, message }) => ({ clientActionId, message }))));
+      writes = committed;
+      await committed;
       if (mine !== epoch) return;
       snapshot = fresh;
       syncedAt = now().toISOString();
@@ -166,13 +166,14 @@ export function createSyncEngine({ vault, api, project, newId, isSignedOut, isOf
       outbox = [];
       storing.clear();
       syncedAt = null;
-      await Promise.all([writing?.catch(() => undefined), writes.catch(() => undefined)]);
+      await writes.catch(() => undefined);
       state = INITIAL;
       for (const listener of listeners) listener();
     },
     /**
      * Queues a change and shows it at once: the change goes on top of the current view, so the screen does not wait for
-     * the vault or replay the whole outbox. The vault write follows in order. If it fails, the change leaves the screen.
+     * the vault or replay the whole outbox. Vault writes and commits run one at a time, in order. If the write fails, the
+     * change leaves the screen and an unsaved notice says so.
      */
     async change(kitchenId: string, action: QueuedAction) {
       if (stopped) return;
@@ -186,12 +187,12 @@ export function createSyncEngine({ vault, api, project, newId, isSignedOut, isOf
       writes = written;
       try {
         await written;
-      } catch (error) {
+      } catch {
         storing.delete(item.clientActionId);
         if (mine !== epoch) return;
         outbox = outbox.filter((one) => one.clientActionId !== item.clientActionId);
-        publish({ view: snapshot && project(snapshot, outbox), pending: outbox.length });
-        throw error;
+        publish({ view: snapshot && project(snapshot, outbox), pending: outbox.length, notices: [...state.notices, { clientActionId: item.clientActionId, unsaved: true }] });
+        return;
       }
       storing.delete(item.clientActionId);
       if (mine !== epoch) return;
@@ -200,7 +201,7 @@ export function createSyncEngine({ vault, api, project, newId, isSignedOut, isOf
     async dismiss(clientActionId: string) {
       if (stopped) return;
       const mine = epoch;
-      await vault.dismiss(clientActionId);
+      if (!state.notices.some((one) => one.clientActionId === clientActionId && "unsaved" in one)) await vault.dismiss(clientActionId);
       if (mine !== epoch) return;
       publish({ notices: state.notices.filter((one) => one.clientActionId !== clientActionId) });
     }
