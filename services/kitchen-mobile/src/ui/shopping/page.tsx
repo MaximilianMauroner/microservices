@@ -1,3 +1,4 @@
+import * as Crypto from "expo-crypto";
 import { addDays, formatAmount, weekStart } from "@tools-platform/service/kitchen-contract";
 import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Plus } from "lucide-react-native";
 import { useLocalSearchParams } from "expo-router";
@@ -200,7 +201,7 @@ export function Shopping({ kitchen, today, planFrom, change }: OpenKitchen) {
           kitchen={kitchen}
           change={change}
           onRemove={(extra) =>
-            run(rowChanges({ kind: "weekly", extra: { ...extra, bought: false }, week: shopping.start }, text, language).remove!)
+            run(rowChanges({ kind: "weekly", extra: { ...extra, bought: extra.boughtWeek === shopping.start }, week: shopping.start }, text, language, Crypto.randomUUID).remove!)
           }
           onClose={() => setAdding(false)}
         />

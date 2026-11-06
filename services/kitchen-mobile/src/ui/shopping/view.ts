@@ -67,7 +67,7 @@ export type ShoppingRow =
 /** The gesture each swipe direction runs. A swipe right does what a tap does. */
 export const SWIPE = { right: "check", left: "remove" } as const;
 export type RowGesture = (typeof SWIPE)[keyof typeof SWIPE];
-export type RowChange = Readonly<{ action: QueuedAction; message: string; undo?: QueuedAction }>;
+export type RowChange = Readonly<{ action: QueuedAction; message: string; undo?: readonly QueuedAction[] }>;
 
 /**
  * What each gesture changes on a row. A missing gesture means the row does not have it: no change removes an
@@ -77,6 +77,7 @@ export function rowChanges(
   row: ShoppingRow,
   text: (typeof TEXT)[KitchenLanguage],
   language: KitchenLanguage,
+  newId: () => string,
 ): Partial<Record<RowGesture, RowChange>> {
   if (row.kind === "line") {
     const { line } = row;
@@ -84,27 +85,30 @@ export function rowChanges(
       check: {
         action: { type: "stock.add", ingredientId: line.ingredientId, amount: line.toBuy },
         message: text.addedToHome(formatAmount(line.toBuy, line.unit, language), line.ingredient),
-        undo: { type: "stock.set", ingredientId: line.ingredientId, amount: line.inStock },
+        undo: [{ type: "stock.set", ingredientId: line.ingredientId, amount: line.inStock }],
       },
     };
   }
   const { id, name } = row.extra;
   if (row.kind === "once") {
-    const undo: QueuedAction = { type: "extra.add", name };
+    const undo: QueuedAction[] = [{ type: "extra.add", name }];
     return {
       check: { action: { type: "extra.remove", id }, message: text.bought(name), undo },
       remove: { action: { type: "extra.remove", id }, message: text.removed(name), undo },
     };
   }
-  const mark = (bought: boolean): QueuedAction => ({ type: "extra.mark", id, week: row.week, bought });
+  const { week } = row;
+  const mark = (bought: boolean, itemId = id): QueuedAction => ({ type: "extra.mark", id: itemId, week, bought });
+  const createId = newId();
+  const addAgain: QueuedAction = { type: "extra.add", createId, name, everyWeek: true };
   return {
     check: row.extra.bought
       ? { action: mark(false), message: text.notBought(name) }
-      : { action: mark(true), message: text.bought(name), undo: mark(false) },
+      : { action: mark(true), message: text.bought(name), undo: [mark(false)] },
     remove: {
       action: { type: "extra.remove", id },
       message: text.stopped(name),
-      undo: { type: "extra.add", name, everyWeek: true },
+      undo: row.extra.bought ? [addAgain, mark(true, createId)] : [addAgain],
     },
   };
 }

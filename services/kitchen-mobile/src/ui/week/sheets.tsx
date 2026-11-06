@@ -35,7 +35,7 @@ export function PlanSheet({ day, data, week, onClose, notify }: SheetProps & { d
   function plan(recipe: Pick<Recipe, "id" | "name" | "servings">) {
     const id = Crypto.randomUUID();
     data.change({ type: "plan.add", createId: id, day: selected, meal, recipeId: recipe.id, servings: recipe.servings });
-    notify({ message: text.planned(recipe.name, weekday), undo: { type: "plan.remove", id } });
+    notify({ message: text.planned(recipe.name, weekday), undo: [{ type: "plan.remove", id }] });
     onClose();
   }
 
@@ -87,7 +87,7 @@ export function MealMenu({ entry, data, week, onClose, notify }: SheetProps & { 
 
   function move(day: string) {
     update({ day });
-    notify({ message: text.movedTo(dayParts(day, language).weekdayLong), undo: { type: "plan.update", id: entry.id, day: entry.day, meal: entry.meal, servings: entry.servings } });
+    notify({ message: text.movedTo(dayParts(day, language).weekdayLong), undo: [{ type: "plan.update", id: entry.id, day: entry.day, meal: entry.meal, servings: entry.servings }] });
     onClose();
   }
 
@@ -116,7 +116,7 @@ export function MealMenu({ entry, data, week, onClose, notify }: SheetProps & { 
 
 function removeMeal(entry: PlanEntry, data: OpenKitchen, notify: (notice: Notice) => void, text: (typeof TEXT)[keyof typeof TEXT]) {
   data.change({ type: "plan.remove", id: entry.id });
-  notify({ message: text.removedFromPlan(entry.recipe), undo: { type: "plan.add", day: entry.day, meal: entry.meal, recipeId: entry.recipeId, servings: entry.servings } });
+  notify({ message: text.removedFromPlan(entry.recipe), undo: [{ type: "plan.add", day: entry.day, meal: entry.meal, recipeId: entry.recipeId, servings: entry.servings }] });
 }
 
 export function EntrySheet({ entry, data, week, onClose, notify }: SheetProps & { entry: PlanEntry }) {
@@ -139,7 +139,7 @@ export function EntrySheet({ entry, data, week, onClose, notify }: SheetProps & 
     const lines = resolveLines(edit.lines, data.kitchen.ingredients, data.change);
     if (typeof lines === "string") { setEditing({ ...edit, error: lines }); return; }
     data.change({ type: "plan.customize", id: entry.id, lines });
-    notify({ message: text.changedForMeal, undo: entry.custom ? { type: "plan.customize", id: entry.id, lines: current } : { type: "plan.reset", id: entry.id } });
+    notify({ message: text.changedForMeal, undo: [entry.custom ? { type: "plan.customize", id: entry.id, lines: current } : { type: "plan.reset", id: entry.id }] });
     setEditing(null);
   }
 
@@ -209,7 +209,7 @@ export function EntrySheet({ entry, data, week, onClose, notify }: SheetProps & 
               <Button label={text.changeThisMeal} tone="outline" icon={Pencil} disabled={changed} onPress={() => setEditing({ lines: draftLines(entry.lines, language) })} />
               {entry.custom ? <Button label={text.useRecipeAgain} tone="ghost" icon={RotateCcw} onPress={() => {
                 data.change({ type: "plan.reset", id: entry.id });
-                notify({ message: text.backToRecipe, undo: { type: "plan.customize", id: entry.id, lines: current } });
+                notify({ message: text.backToRecipe, undo: [{ type: "plan.customize", id: entry.id, lines: current }] });
               }} /> : null}
             </View>
             {changed ? <T muted style={styles.small}>{text.saveFirst}</T> : null}

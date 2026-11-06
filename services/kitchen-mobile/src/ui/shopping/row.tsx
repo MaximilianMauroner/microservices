@@ -1,3 +1,4 @@
+import * as Crypto from "expo-crypto";
 import { formatAmount } from "@tools-platform/service/kitchen-contract";
 import { Check, type LucideIcon, Trash2 } from "lucide-react-native";
 import { useRef, useState } from "react";
@@ -19,7 +20,7 @@ export function ListRow({ row, color, onChange }: { row: ShoppingRow; color: str
   const text = useText(TEXT);
   const language = useLanguage();
   const colors = useColors();
-  const changes = rowChanges(row, text, language);
+  const changes = rowChanges(row, text, language, Crypto.randomUUID);
   const [checked, setChecked] = useState(row.kind === "weekly" && row.extra.bought);
   const used = useRef(false);
   const swipe = useRef<SwipeableMethods>(null);

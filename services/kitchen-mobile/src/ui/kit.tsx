@@ -121,7 +121,7 @@ export function haptic(kind: "threshold" | "hold") {
   else void (kind === "hold" ? Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium) : Haptics.selectionAsync());
 }
 
-export type Notice = Readonly<{ message: string; undo?: QueuedAction }>;
+export type Notice = Readonly<{ message: string; undo?: readonly QueuedAction[] }>;
 
 const SNACKBAR_MS = 6000;
 
@@ -144,7 +144,7 @@ export function Snackbar({ notice, onUndo, onDone }: { notice: Notice | null; on
     <View accessibilityLiveRegion="polite" style={[styles.snackbar, { backgroundColor: colors.muted, borderColor: colors.border }]}>
       <T style={{ flex: 1, fontSize: 14 }}>{notice.message}</T>
       {notice.undo ? (
-        <Pressable accessibilityRole="button" onPress={() => { onUndo(notice.undo!); onDone(); }} style={styles.snackAction}>
+        <Pressable accessibilityRole="button" onPress={() => { notice.undo!.forEach(onUndo); onDone(); }} style={styles.snackAction}>
           <T weight="semibold" style={{ color: pageInk }}>{text.undo}</T>
         </Pressable>
       ) : null}
