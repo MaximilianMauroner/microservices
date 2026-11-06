@@ -1,6 +1,6 @@
 import type { Ingredient, KitchenSnapshot, PlanEntry, Recipe } from "@tools-platform/service/kitchen-contract";
 import { describe, expect, it } from "vitest";
-import { buildWeek, defaultMeal, planStrip } from "./model";
+import { buildWeek, defaultMeal, planStrip, swipeStep } from "./model";
 
 const rice: Ingredient = {
   id: "rice", name: "Rice", unit: "g", section: "Grains", otherGroups: ["Pantry"],
@@ -128,5 +128,22 @@ describe("the Plan sheet days", () => {
     const past = planStrip({ weekStart: "2026-11-02", today: "2026-11-05", plan: [planned("2026-11-03")], day: "2026-11-03" });
     expect(past.days[0]).toBe("2026-11-03");
     expect(past.selected).toBe("2026-11-03");
+  });
+});
+
+describe("the week swipe", () => {
+  it("shows the next week after a swipe to the left and the previous week after a swipe to the right", () => {
+    expect(swipeStep(-120, 0)).toBe(1);
+    expect(swipeStep(120, 0)).toBe(-1);
+  });
+
+  it("counts a short fast flick, but not a short slow drag", () => {
+    expect(swipeStep(-40, -800)).toBe(1);
+    expect(swipeStep(-40, -100)).toBe(0);
+  });
+
+  it("ignores a tiny move even when it is fast, and a drag that comes back", () => {
+    expect(swipeStep(10, 2000)).toBe(0);
+    expect(swipeStep(-60, 600)).toBe(0);
   });
 });
