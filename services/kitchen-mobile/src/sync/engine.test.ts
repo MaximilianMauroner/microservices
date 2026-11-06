@@ -225,4 +225,29 @@ describe("sync engine", () => {
     await new Promise((resolve) => setTimeout(resolve, 1200));
     expect(sent, "one push with all three changes").toEqual([["change-1", "change-3", "change-5"]]);
   });
+  it("keeps a change on screen when its vault write ends while a sync reads the outbox", async () => {
+    const { engine, vault } = await started();
+    vault.data.snapshot = empty;
+    await engine.load();
+    const read = vault.outbox;
+    let stale: OutboxItem[] = [];
+    let answer: () => void = () => undefined;
+    let reads = 0;
+    vault.outbox = async () => {
+      reads += 1;
+      if (reads !== 2) return read();
+      stale = await read();
+      await new Promise<void>((resolve) => { answer = resolve; });
+      return stale;
+    };
+    const afterReload: { pending: number; today: string | undefined }[] = [];
+    engine.subscribe(() => { const state = engine.getState(); if (state.status.kind === "idle") afterReload.push({ pending: state.pending, today: state.view?.today }); });
+    const syncing = engine.sync();
+    while (reads < 2) await new Promise((resolve) => setTimeout(resolve, 0));
+    await engine.change("home", addMilk);
+    answer();
+    await syncing;
+    expect(afterReload[0], "the stored change is still shown after the first reload").toEqual({ pending: 1, today: "2026-11-05+" });
+    expect(engine.getState(), "the follow-up sync sends it").toMatchObject({ pending: 0, view: { today: "2026-11-05" } });
+  });
 });
