@@ -1,14 +1,15 @@
 import { formatAmount, nutritionPerServing, scaledLines, type Recipe } from "@tools-platform/service/kitchen-contract";
 import * as Crypto from "expo-crypto";
 import { router } from "expo-router";
-import { ChevronLeft, Pencil, Trash2 } from "lucide-react-native";
+import { CalendarPlus, Pencil, Trash2 } from "lucide-react-native";
 import { useEffect, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import type { OpenKitchen } from "../../state";
-import { Button, byGroup, Empty, Field, GroupDot, Screen, Sheet, Stepper, T } from "../kit";
+import { Button, byGroup, Empty, Field, GroupDot, type Notice, Screen, Sheet, Snackbar, Stepper, T, ToolbarButton } from "../kit";
 import { type KitchenLanguage, useLanguage, useText } from "../language";
 import { type DraftLine, draftLines, LineEditor, useResolveLines } from "../lines";
 import { useColors } from "../theme";
+import { RecipeMenu } from "../week/sheets";
 import { recipeDraftError } from "./model";
 
 const en = {
@@ -24,6 +25,7 @@ const en = {
   servingsLabel: "Servings",
   allRecipes: "All recipes",
   edit: "Edit",
+  plan: "Plan",
   ingredients: "Ingredients",
   perServing: "per serving",
   addNutrition: "Add nutrition to every ingredient to see values per serving.",
@@ -63,6 +65,7 @@ const TEXT: Record<KitchenLanguage, typeof en> = {
     servingsLabel: "Portionen",
     allRecipes: "Alle Rezepte",
     edit: "Bearbeiten",
+    plan: "Planen",
     ingredients: "Zutaten",
     perServing: "pro Portion",
     addNutrition: "Füge jeder Zutat Nährwerte hinzu, um die Werte pro Portion zu sehen.",
@@ -103,12 +106,15 @@ export function RecipePageContent({ data, recipeId }: { data: OpenKitchen; recip
   return <RecipeView data={data} recipe={recipe} onEdit={() => setMode("edit")} />;
 }
 
-function RecipeView({ data: { kitchen, change }, recipe, onEdit }: { data: OpenKitchen; recipe: Recipe; onEdit: () => void }) {
+function RecipeView({ data, recipe, onEdit }: { data: OpenKitchen; recipe: Recipe; onEdit: () => void }) {
+  const { kitchen, change } = data;
   const language = useLanguage();
   const text = useText(TEXT);
   const colors = useColors();
   const [servings, setServings] = useState(recipe.servings);
   const [deleting, setDeleting] = useState(false);
+  const [planning, setPlanning] = useState(false);
+  const [notice, setNotice] = useState<Notice | null>(null);
   const ingredients = new Map(kitchen.ingredients.map((one) => [one.id, one]));
   const groupOf = (id: string) => ingredients.get(id)?.section ?? "Other";
   const lines = byGroup(kitchen.kitchen.groups, scaledLines(recipe, servings), (line) => groupOf(line.ingredientId)).flatMap(([, group]) => group);
@@ -117,12 +123,19 @@ function RecipeView({ data: { kitchen, change }, recipe, onEdit }: { data: OpenK
 
   return (
     <Screen title={recipe.name} facts={[recipe.minutes ? text.minutes(recipe.minutes) : "", text.servings(recipe.servings)].filter(Boolean).join(", ")}
-      actions={<Button tone="outline" icon={Pencil} label={text.edit} onPress={onEdit} />}>
-      <View style={{ alignSelf: "flex-start" }}><Button tone="ghost" icon={ChevronLeft} label={text.allRecipes} onPress={allRecipes} /></View>
+      back={{ label: text.allRecipes, onPress: allRecipes }}
+      floating={<Snackbar notice={notice} onUndo={change} onDone={() => setNotice(null)} />}
+      toolbar={<>
+        <ToolbarButton tone="outline" icon={Pencil} label={text.edit} onPress={onEdit} />
+        <ToolbarButton icon={CalendarPlus} label={text.plan} onPress={() => setPlanning(true)} />
+      </>}>
       <View style={[styles.panel, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <View style={styles.row}>
           <T weight="semibold" style={styles.heading}>{text.ingredients}</T>
-          <Stepper label={text.servingsLabel} value={servings} onValue={setServings} />
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <T muted style={{ fontSize: 13 }}>{text.servingsLabel}</T>
+            <Stepper label={text.servingsLabel} value={servings} onValue={setServings} />
+          </View>
         </View>
         {lines.length ? <View style={{ gap: 8 }}>{lines.map((line, index) => (
           <View key={line.ingredientId} style={[styles.line, index < lines.length - 1 && { borderBottomWidth: 1, borderStyle: "dashed", borderBottomColor: colors.border, paddingBottom: 8 }]}>
@@ -152,9 +165,10 @@ function RecipeView({ data: { kitchen, change }, recipe, onEdit }: { data: OpenK
           <T style={{ flex: 1, lineHeight: 24 }}>{step}</T>
         </View>) : <T muted style={styles.body}>{text.noSteps}</T>}
       </View>
-      <View style={{ borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 16, marginTop: 24, alignItems: "flex-start" }}>
+      <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, paddingTop: 8, alignItems: "flex-start" }}>
         <Button tone="destructive" icon={Trash2} label={text.deleteRecipe} onPress={() => setDeleting(true)} />
       </View>
+      {planning ? <RecipeMenu recipe={recipe} data={data} onClose={() => setPlanning(false)} notify={setNotice} onRecipe /> : null}
       <Sheet open={deleting} onClose={() => setDeleting(false)} title={text.deleteRecipe} description={text.deleteConfirm(recipe.name)}
         footer={<><Button tone="ghost" label={text.cancel} onPress={() => setDeleting(false)} /><Button tone="destructive" label={text.deleteRecipe} onPress={() => {
           setDeleting(false);

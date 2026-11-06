@@ -65,7 +65,7 @@ export function AddSheet({
               styles.chip,
               {
                 alignSelf: "flex-start",
-                minHeight: 36,
+                minHeight: 48,
                 paddingRight: 12,
                 backgroundColor: everyWeek ? colors.page.shopping : colors.control,
                 borderColor: everyWeek ? colors.page.shopping : colors.controlBorder,
@@ -156,7 +156,7 @@ function Chip({ label, on = false, onPress }: { label: string; on?: boolean; onP
       style={[
         styles.chip,
         {
-          minHeight: 44,
+          minHeight: 48,
           paddingHorizontal: 12,
           backgroundColor: on ? colors.page.shopping : colors.control,
           borderColor: on ? colors.page.shopping : colors.controlBorder,
