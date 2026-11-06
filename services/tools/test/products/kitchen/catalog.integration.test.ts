@@ -162,6 +162,16 @@ describe.skipIf(!sql)("Kitchen catalog", () => {
     expect(await catalog.search("haferflocken")).toEqual([product("00-1", "Haferflocken", "Clever", "billa")]);
   });
 
+  it("shows a product that both sources list once, from Billa, and keeps other brands", async () => {
+    const catalog = kitchenCatalog(sql!, [
+      source("open-food-facts", [[product("9001", "Joghurt Natur 1 %", "Ja! Natürlich"), product("9002", "Joghurt Natur 1%", "Spar")]]).reader,
+      source("billa", [[product("00-1", "Ja! Natürlich Joghurt Natur 1%", "Ja! Natürlich", "billa")]]).reader
+    ]);
+    await catalog.refresh();
+
+    expect((await catalog.search("joghurt natur")).map((one) => `${one.source} ${one.brand}`).sort()).toEqual(["billa Ja! Natürlich", "open-food-facts Spar"]);
+  });
+
   it("stops between pages when the server shuts down, and the next run goes on from there", async () => {
     const stop = new AbortController();
     const pages = source("open-food-facts", [[product("1", "Reis")], [product("2", "Nudeln")]], { pauseMs: 60_000 });
