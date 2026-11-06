@@ -1,22 +1,24 @@
 import { byGroupOrder, addDays, UNSORTED_SECTION } from "@tools-platform/service/kitchen-contract";
-import { BookOpen, CalendarDays, Leaf, type LucideIcon, Refrigerator, Search, ShoppingBasket, X } from "lucide-react-native";
-import { createContext, type ReactNode, useContext } from "react";
-import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, type TextProps, TextInput, type TextInputProps, View, type ViewStyle } from "react-native";
+import { BookOpen, CalendarDays, CookingPot, type LucideIcon, Refrigerator, Search, ShoppingBasket, X } from "lucide-react-native";
+import { createContext, type ReactNode, type Ref, useContext, useState } from "react";
+import { KeyboardAvoidingView, Modal, Platform, Pressable, RefreshControl, type RefreshControlProps, ScrollView, type ScrollViewInstance, StyleSheet, Text, type TextProps, TextInput, type TextInputProps, View, type ViewStyle } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle } from "react-native-svg";
+import { useSync } from "../state";
 import { type KitchenLanguage, LOCALES, useText } from "./language";
 import { type Colors, FONT, groupColor, ink, type PageKey, RADIUS, tint, useColors } from "./theme";
 
-export const PAGES: readonly { key: PageKey; icon: LucideIcon }[] = [
-  { key: "week", icon: CalendarDays },
-  { key: "shopping", icon: ShoppingBasket },
-  { key: "recipes", icon: BookOpen },
-  { key: "home", icon: Refrigerator },
-  { key: "ingredients", icon: Leaf }
+/** The bottom tabs in their order. `route` is the screen name under `app/(tabs)`. */
+export const PAGES: readonly { key: PageKey; route: string; icon: LucideIcon }[] = [
+  { key: "week", route: "index", icon: CalendarDays },
+  { key: "shopping", route: "shopping", icon: ShoppingBasket },
+  { key: "recipes", route: "recipes", icon: BookOpen },
+  { key: "home", route: "home", icon: Refrigerator },
+  { key: "kitchen", route: "kitchen", icon: CookingPot }
 ];
 
 const en = {
-  tabs: { week: ["Week", "Week"], shopping: ["Shopping list", "Shop"], recipes: ["Recipes", "Recipes"], home: ["At home", "At home"], ingredients: ["Ingredients", "Ingredients"] } as Record<PageKey, [string, string]>,
+  tabs: { week: ["Week", "Week"], shopping: ["Shopping list", "Shop"], recipes: ["Recipes", "Recipes"], home: ["At home", "At home"], kitchen: ["Kitchen", "Kitchen"] } as Record<PageKey, [string, string]>,
   close: "Close",
   fewer: (label: string) => `Fewer ${label.toLowerCase()}`,
   more: (label: string) => `More ${label.toLowerCase()}`,
@@ -34,7 +36,7 @@ const en = {
 const TEXT: Record<KitchenLanguage, typeof en> = {
   en,
   de: {
-    tabs: { week: ["Woche", "Woche"], shopping: ["Einkaufsliste", "Einkauf"], recipes: ["Rezepte", "Rezepte"], home: ["Vorrat", "Vorrat"], ingredients: ["Zutaten", "Zutaten"] },
+    tabs: { week: ["Woche", "Woche"], shopping: ["Einkaufsliste", "Einkauf"], recipes: ["Rezepte", "Rezepte"], home: ["Vorrat", "Vorrat"], kitchen: ["Küche", "Küche"] },
     close: "Schließen",
     fewer: (label: string) => `Weniger ${label}`,
     more: (label: string) => `Mehr ${label}`,
@@ -70,24 +72,35 @@ export function T({ weight = "regular", muted, style, ...props }: TextProps & { 
   return <Text {...props} style={[{ fontFamily: FONT[weight], color: muted ? colors.mutedForeground : colors.foreground, fontSize: 15 }, style]} />;
 }
 
-/** One kitchen page: the title row and the page content, scrollable, with room for the tab bar. */
-export function Screen({ title, facts, actions, children, scroll = true }: { title: ReactNode; facts?: ReactNode; actions?: ReactNode; children: ReactNode; scroll?: boolean }) {
+/** One kitchen page: the title row and the page content, scrollable, with room for the tab bar. Pull down to sync. */
+export function Screen({ title, facts, actions, children, ref }: { title: ReactNode; facts?: ReactNode; actions?: ReactNode; children: ReactNode; ref?: Ref<ScrollViewInstance> }) {
   const colors = useColors();
-  const header = (
-    <View style={styles.header}>
-      <View style={{ flexShrink: 1 }}>
-        {typeof title === "string" ? <T weight="semibold" style={styles.title}>{title}</T> : title}
-        {facts ? (typeof facts === "string" ? <T muted style={{ marginTop: 6, fontSize: 14 }}>{facts}</T> : facts) : null}
-      </View>
-      {actions ? <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>{actions}</View> : null}
-    </View>
-  );
-  if (!scroll) return <View style={[styles.page, { backgroundColor: colors.background }]}>{header}{children}</View>;
   return (
-    <ScrollView style={{ backgroundColor: colors.background }} contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
-      {header}
+    <ScrollView ref={ref} style={{ backgroundColor: colors.background }} contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled" refreshControl={<SyncRefresh />}>
+      <View style={styles.header}>
+        <View style={{ flexShrink: 1 }}>
+          {typeof title === "string" ? <T weight="semibold" style={styles.title}>{title}</T> : title}
+          {facts ? (typeof facts === "string" ? <T muted style={{ marginTop: 6, fontSize: 14 }}>{facts}</T> : facts) : null}
+        </View>
+        {actions ? <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>{actions}</View> : null}
+      </View>
       {children}
     </ScrollView>
+  );
+}
+
+/**
+ * Pull to sync, for the `refreshControl` of a scroll view. Only a pull shows the spinner, because a sync also runs
+ * after every change. Android puts the scroll view inside this control, so the props it gets go on to RefreshControl.
+ */
+export function SyncRefresh(props: Omit<RefreshControlProps, "refreshing" | "onRefresh">) {
+  const { sync } = useSync();
+  const colors = useColors();
+  const { ink: pageInk } = usePageColor();
+  const [pulled, setPulled] = useState(false);
+  return (
+    <RefreshControl {...props} refreshing={pulled} tintColor={pageInk} colors={[pageInk]} progressBackgroundColor={colors.card}
+      onRefresh={() => { setPulled(true); void sync().finally(() => setPulled(false)); }} />
   );
 }
 
