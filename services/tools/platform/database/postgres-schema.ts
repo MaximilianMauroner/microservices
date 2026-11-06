@@ -683,9 +683,10 @@ export const kitchenAppliedActions = toolsSchema.table("kitchen_applied_actions"
   appliedAt: timestamp("applied_at", { withTimezone: true }).notNull(),
 }, (table) => [primaryKey({ columns: [table.subject, table.clientActionId] }), index("kitchen_applied_actions_applied_idx").on(table.appliedAt)]);
 
-/** Packaged foods from Open Food Facts that a new ingredient can start from. Nutrition is per 100 g or 100 ml. */
+/** Packaged foods from Open Food Facts and Billa that a new ingredient can start from. Nutrition is per 100 g or 100 ml. */
 export const kitchenCatalogProducts = toolsSchema.table("kitchen_catalog_products", {
-  code: text("code").primaryKey(),
+  source: text("source").notNull(),
+  code: text("code").notNull(),
   name: text("name").notNull(),
   brand: text("brand").notNull(),
   quantity: text("quantity").notNull(),
@@ -696,8 +697,14 @@ export const kitchenCatalogProducts = toolsSchema.table("kitchen_catalog_product
   fat: doublePrecision("fat"),
   /** Name and brand in lower case, for search. */
   search: text("search").notNull(),
+  /** The same for one product in every source, so search shows it once. */
+  matchKey: text("match_key").notNull(),
   refreshedAt: timestamp("refreshed_at", { withTimezone: true }).notNull(),
-}, (table) => [check("kitchen_catalog_products_unit_check", sql`${table.unit} in ('g', 'ml')`)]);
+}, (table) => [
+  primaryKey({ columns: [table.source, table.code] }),
+  check("kitchen_catalog_products_source_check", sql`${table.source} in ('open-food-facts', 'billa')`),
+  check("kitchen_catalog_products_unit_check", sql`${table.unit} in ('g', 'ml')`),
+]);
 
 /** Where the catalog refresh is. `nextPage` is set while a refresh runs, so a restart goes on from that page. */
 export const kitchenCatalogRefresh = toolsSchema.table("kitchen_catalog_refresh", {

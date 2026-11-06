@@ -1,4 +1,5 @@
 import postgres from "postgres";
+import { migrateKitchenCatalogSources } from "../../products/kitchen/migrate-catalog-sources.js";
 import { migrateKitchenPersonSettings } from "../../products/kitchen/migrate-person-settings.js";
 import { applyMarkdownShareSchema } from "../../products/documents/schema.js";
 import { assignExistingRowsToAdmin } from "./assign-existing-owner.js";
@@ -42,6 +43,7 @@ const owners = postgres(url, { max: 1 });
 try {
   await assignExistingRowsToAdmin(owners, process.env.AUTH_ALLOWED_GOOGLE_SUBJECT);
   await migrateKitchenPersonSettings(owners, process.env.AUTH_ALLOWED_GOOGLE_SUBJECT);
+  await migrateKitchenCatalogSources(owners);
 } finally {
   await owners.end();
 }
