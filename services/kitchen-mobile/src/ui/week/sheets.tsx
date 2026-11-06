@@ -1,10 +1,10 @@
-import { addDays, formatAmount, type Meal, MEALS, type PlanEntry, type Recipe } from "@tools-platform/service/kitchen-contract";
+import { addDays, formatAmount, type Meal, MEALS, type PlanEntry, type Recipe, weekStart } from "@tools-platform/service/kitchen-contract";
 import * as Crypto from "expo-crypto";
 import { router } from "expo-router";
 import { ChefHat, Pencil, RotateCcw } from "lucide-react-native";
 import { useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
-import type { OpenKitchen } from "../../state";
+import { type OpenKitchen, useKitchen } from "../../state";
 import { Button, dayParts, type Notice, Pill, PlateRing, SearchField, Sheet, Stepper, T, usePageColor } from "../kit";
 import { useLanguage, useText } from "../language";
 import { type DraftLine, draftLines, LineEditor, useResolveLines } from "../lines";
@@ -73,6 +73,35 @@ export function PlanSheet({ day, data, week, onClose, notify }: SheetProps & { d
         <T muted>{text.plansUseRecipes}</T>
         <Button label={text.addARecipe} onPress={() => { onClose(); router.navigate("/recipes"); }} />
       </>}
+    </Sheet>
+  );
+}
+
+/** The short menu a held recipe opens: plan it on a day of the coming week, or open it. */
+export function RecipeMenu({ recipe, data, onClose, notify, onRecipe }: { recipe: Pick<Recipe, "id" | "name" | "servings">; data: OpenKitchen; onClose: () => void; notify: (notice: Notice) => void; onRecipe?: boolean }) {
+  const language = useLanguage();
+  const text = useText(TEXT);
+  const [strip] = useState(() => planStrip({ weekStart: weekStart(data.today), today: data.today, plan: data.kitchen.plan }));
+  const [selected, setSelected] = useState(strip.selected);
+  const mealFor = (one: string) => defaultMeal(data.kitchen.plan.filter((entry) => entry.day === one));
+  const [meal, setMeal] = useState<Meal>(() => mealFor(strip.selected));
+  const weekday = dayParts(selected, language).weekdayLong;
+
+  function plan() {
+    const id = Crypto.randomUUID();
+    data.change({ type: "plan.add", createId: id, day: selected, meal, recipeId: recipe.id, servings: recipe.servings });
+    notify({ message: text.planned(recipe.name, weekday), undo: [{ type: "plan.remove", id }] });
+    onClose();
+  }
+
+  return (
+    <Sheet open onClose={onClose} title={recipe.name}
+      footer={<View style={styles.footer}>
+        {onRecipe ? null : <Button tone="outline" label={text.openRecipe} onPress={() => { onClose(); router.push({ pathname: "/recipes/[recipeId]", params: { recipeId: recipe.id } }); }} />}
+        <Button wide label={text.plan} accessibilityLabel={text.planOn(text.meals[meal], weekday)} onPress={plan} />
+      </View>}>
+      <DayStrip days={strip.days} value={selected} planned={new Set(data.kitchen.plan.map((entry) => entry.day))} onValue={(one) => { setSelected(one); setMeal(mealFor(one)); }} />
+      <MealPicker value={meal} onValue={setMeal} />
     </Sheet>
   );
 }
@@ -227,6 +256,7 @@ function DayStrip({ days, value, onValue, planned }: { days: readonly string[]; 
   const text = useText(TEXT);
   const colors = useColors();
   const page = usePageColor();
+  const today = useKitchen()?.today;
   return (
     <View accessibilityRole="radiogroup" accessibilityLabel={text.day} style={{ flexDirection: "row", gap: 2 }}>
       {days.map((option) => {
@@ -235,7 +265,7 @@ function DayStrip({ days, value, onValue, planned }: { days: readonly string[]; 
         return (
           <Pressable key={option} accessibilityRole="radio" accessibilityLabel={`${date.weekdayLong} ${date.dayMonth}`} accessibilityState={{ checked: selected }}
             onPress={() => onValue(option)} style={[styles.dayChoice, { backgroundColor: selected ? page.hue : "transparent" }]}>
-            <T style={{ fontSize: 11, color: selected ? "#ffffff" : colors.mutedForeground }}>{date.weekday}</T>
+            <T weight={option === today ? "semibold" : "regular"} style={{ fontSize: 11, color: selected ? "#ffffff" : option === today ? page.ink : colors.mutedForeground }}>{option === today ? text.today : date.weekday}</T>
             <T weight="semibold" style={{ color: selected ? "#ffffff" : colors.foreground }}>{date.number}</T>
             <View style={[styles.planned, { backgroundColor: planned?.has(option) ? (selected ? "#ffffff" : page.ink) : "transparent" }]} />
           </Pressable>
@@ -265,12 +295,12 @@ const styles = StyleSheet.create({
   small: { fontSize: 12 },
   row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 },
   recipe: { flexDirection: "row", alignItems: "center", gap: 12, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10 },
-  idea: { minHeight: 44, justifyContent: "center", borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10 },
+  idea: { minHeight: 48, justifyContent: "center", borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10 },
   footer: { width: "100%", flexDirection: "row", alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end", gap: 8 },
   dayChoice: { flex: 1, minHeight: 48, alignItems: "center", justifyContent: "center", borderRadius: 12, gap: 3 },
   planned: { width: 4, height: 4, borderRadius: 2 },
   meals: { flexDirection: "row", gap: 2, padding: 4, borderRadius: 24 },
-  mealChoice: { flex: 1, minHeight: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", paddingHorizontal: 2 },
+  mealChoice: { flex: 1, minHeight: 48, borderRadius: 20, alignItems: "center", justifyContent: "center", paddingHorizontal: 2 },
   leftover: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12, padding: 12, borderRadius: 12 },
   line: { flexDirection: "row", alignItems: "baseline", justifyContent: "space-between", gap: 12 },
 });

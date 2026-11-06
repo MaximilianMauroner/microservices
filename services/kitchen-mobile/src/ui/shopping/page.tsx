@@ -1,9 +1,9 @@
 import * as Crypto from "expo-crypto";
 import { addDays, formatAmount, weekStart } from "@tools-platform/service/kitchen-contract";
-import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Plus } from "lucide-react-native";
+import { ChevronDown, ChevronUp, Plus } from "lucide-react-native";
 import { useLocalSearchParams } from "expo-router";
-import { type ReactNode, useEffect, useRef, useState } from "react";
-import { Pressable, type ScrollViewInstance, StyleSheet, View } from "react-native";
+import { type ReactNode, useEffect, useState } from "react";
+import { Pressable, StyleSheet, View } from "react-native";
 import type { OpenKitchen } from "../../state";
 import {
   Button,
@@ -13,17 +13,18 @@ import {
   GroupLabel,
   GroupList,
   type Notice,
-  PlateRing,
   Screen,
   Snackbar,
   T,
   byGroup,
   groupLabel,
   weekLabel,
+  WeekNav,
 } from "../kit";
 import { useLanguage, useText } from "../language";
-import { groupColor, ink, tint, useColors } from "../theme";
+import { groupColor, useColors } from "../theme";
 import { ListRow } from "./row";
+import { useSwipeTip } from "../swipe-row";
 import { AddSheet } from "./sheet";
 import { TEXT } from "./text";
 import { type RowChange, rowChanges, shoppingView } from "./view";
@@ -38,86 +39,28 @@ export function Shopping({ kitchen, today, planFrom, change }: OpenKitchen) {
   const [adding, setAdding] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
-  const scroll = useRef<ScrollViewInstance>(null);
-  const positions = useRef(new Map<string, number>());
-  const contentTop = useRef(0);
   const shopping = shoppingView(kitchen, week);
   const groups = byGroup(kitchen.kitchen.groups, shopping.toBuy, (line) => line.section);
-  function run({ action, ...notice }: RowChange) {
+  const tip = useSwipeTip();
+  function run({ action, ...notice }: RowChange, tapped = false) {
     change(action);
-    setNotice(notice);
+    setNotice(tapped && tip.due() ? { ...notice, message: `${notice.message}. ${text.swipeTip}` } : notice);
   }
   const facts = `${weekLabel(week, today, language)}. ${shopping.count ? text.toBuy(shopping.count) : text.nothingToBuy}${shopping.plannedMeals ? ` ${text.plannedFor(shopping.plannedMeals)}` : ""}.`;
   return (
     <Screen
-      ref={scroll}
       title={text.title}
       facts={facts}
-      floating={
-        <>
-          <Snackbar notice={notice} onUndo={change} onDone={() => setNotice(null)} />
-          <FloatingButton icon={Plus} label={text.add} onPress={() => setAdding(true)} />
-        </>
-      }
+      floating={<Snackbar notice={notice} onUndo={change} onDone={() => setNotice(null)} />}
+      fab={<FloatingButton icon={Plus} label={text.add} onPress={() => setAdding(true)} />}
       actions={
         <>
-          <Button
-            icon={ChevronLeft}
-            tone="outline"
-            accessibilityLabel={text.previousWeek}
-            disabled={addDays(week, -7) < planFrom}
-            onPress={() => setWeek(addDays(week, -7))}
-          />
-          <Button
-            icon={ChevronRight}
-            tone="outline"
-            accessibilityLabel={text.nextWeek}
-            onPress={() => setWeek(addDays(week, 7))}
-          />
+          {week === weekStart(today) ? null : <Button label={text.thisWeek} tone="outline" onPress={() => setWeek(weekStart(today))} />}
+          <WeekNav canGoBack={addDays(week, -7) >= planFrom} onStep={(step) => setWeek(addDays(week, 7 * step))} />
         </>
       }
     >
-      <View
-        onLayout={(event) => {
-          contentTop.current = event.nativeEvent.layout.y;
-        }}
-        style={{ gap: 24 }}
-      >
-        {groups.length ? (
-          <View
-            accessibilityLabel={text.groupsOnList}
-            style={[styles.balance, { backgroundColor: tint(colors.pageInk.shopping, 10, colors.card) }]}
-          >
-            <PlateRing
-              groups={kitchen.kitchen.groups}
-              sections={shopping.toBuy.map((line) => line.section)}
-              size={64}
-            />
-            <View style={[styles.wrap, { flex: 1 }]}>
-              {groups.map(([section, lines]) => (
-                <Pressable
-                  key={section}
-                  accessibilityRole="button"
-                  onPress={() =>
-                    scroll.current?.scrollTo({
-                      y: contentTop.current + (positions.current.get(section) ?? 0),
-                      animated: true,
-                    })
-                  }
-                  style={styles.jump}
-                >
-                  <GroupDot groups={kitchen.kitchen.groups} group={section} />
-                  <T
-                    weight="semibold"
-                    style={{ color: ink(groupColor(colors, kitchen.kitchen.groups, section), colors), flexShrink: 1 }}
-                  >
-                    {groupLabel(section, language)} {lines.length}
-                  </T>
-                </Pressable>
-              ))}
-            </View>
-          </View>
-        ) : null}
+      <View style={{ gap: 24 }}>
         {!shopping.count && !shopping.covered.length ? <Empty title={text.emptyTitle} body={text.emptyBody} /> : null}
         {shopping.weekly.length ? (
           <Group
@@ -136,19 +79,14 @@ export function Shopping({ kitchen, today, planFrom, change }: OpenKitchen) {
           </Group>
         ) : null}
         {shopping.once.length ? (
-          <Group title={text.alsoBuy} color={colors.pageInk.shopping}>
+          <Group title={text.alsoBuy} color={colors.pageInk.shopping} count={shopping.once.length}>
             {shopping.once.map((extra) => (
               <ListRow key={extra.id} row={{ kind: "once", extra }} color={colors.pageInk.shopping} onChange={run} />
             ))}
           </Group>
         ) : null}
         {groups.map(([section, lines]) => (
-          <View
-            key={section}
-            onLayout={(event) => {
-              positions.current.set(section, event.nativeEvent.layout.y);
-            }}
-          >
+          <View key={section}>
             <Group
               title={groupLabel(section, language)}
               color={groupColor(colors, kitchen.kitchen.groups, section)}
@@ -166,7 +104,7 @@ export function Shopping({ kitchen, today, planFrom, change }: OpenKitchen) {
           </View>
         ))}
         {shopping.covered.length ? (
-          <View style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 16, padding: 12, gap: 8 }}>
+          <View style={{ borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 2 }}>
             <Pressable
               accessibilityRole="button"
               accessibilityState={{ expanded }}
@@ -232,8 +170,5 @@ function Group({
 }
 
 const styles = StyleSheet.create({
-  balance: { flexDirection: "row", alignItems: "center", gap: 12, padding: 16, borderRadius: 16 },
-  wrap: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
-  jump: { minHeight: 44, flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 6 },
-  covered: { minHeight: 44, flexDirection: "row", alignItems: "center", gap: 8 },
+  covered: { minHeight: 48, flexDirection: "row", alignItems: "center", gap: 8 },
 });

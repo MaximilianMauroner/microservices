@@ -1,6 +1,6 @@
 import { formatNumber, ingredientGroups, isCountedUnit, unitName, type Ingredient } from "@tools-platform/service/kitchen-contract";
 import { router } from "expo-router";
-import { ChevronLeft, ListOrdered, Plus } from "lucide-react-native";
+import { ChevronRight, ListOrdered, Plus } from "lucide-react-native";
 import { useState } from "react";
 import { Pressable, View } from "react-native";
 import type { OpenKitchen } from "../../../state";
@@ -9,7 +9,7 @@ import { GroupsSheet } from "../../../ui/ingredients/groups-sheet";
 import { TEXT } from "../../../ui/ingredients/text";
 import { TEXT as KITCHEN_TEXT } from "../../../ui/kitchen/text";
 import { KitchenScreen } from "../../../ui/page";
-import { byGroup, Button, Empty, GroupLabel, GroupList, groupLabel, Screen, SearchField, T } from "../../../ui/kit";
+import { byGroup, Button, Empty, GroupLabel, GroupList, groupLabel, Screen, SearchField, T, ToolbarButton } from "../../../ui/kit";
 import { useLanguage, useText } from "../../../ui/language";
 import { groupColor, useColors } from "../../../ui/theme";
 
@@ -36,16 +36,15 @@ function Ingredients({ kitchen, change }: OpenKitchen) {
   const create = (name: string) => setEditing({ kind: "ingredient", name });
 
   return (
-    <Screen title={text.title}
+    <Screen title={text.title} back={{ label: kitchenText.title, onPress: () => router.navigate("/kitchen") }}
       facts={ingredients.length ? `${text.inKitchen(ingredients.length)}${shared ? text.inTwoGroups(shared) : ""}${missing ? text.withoutNutrition(missing) : ""}` : text.intro}
-      actions={<>
-        {ingredients.length ? <Button tone="outline" icon={ListOrdered} label={text.arrangeGroups} onPress={() => setEditing({ kind: "groups" })} /> : null}
-        <Button icon={Plus} label={text.newIngredient} onPress={() => create("")} />
+      toolbar={<>
+        {ingredients.length ? <ToolbarButton tone="outline" icon={ListOrdered} label={text.arrangeGroups} onPress={() => setEditing({ kind: "groups" })} /> : null}
+        <ToolbarButton icon={Plus} label={text.newIngredient} onPress={() => create("")} />
       </>}>
-      <View style={{ alignSelf: "flex-start" }}><Button tone="ghost" icon={ChevronLeft} label={kitchenText.title} onPress={() => router.navigate("/kitchen")} /></View>
       <SearchField value={query} onValue={setQuery} label={text.findPlaceholder} />
       {typed && !ingredients.some((one) => one.name.toLowerCase() === typed.toLowerCase()) ? (
-        <Pressable accessibilityRole="button" onPress={() => create(typed)} style={{ minHeight: 44, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 8 }}>
+        <Pressable accessibilityRole="button" onPress={() => create(typed)} style={{ minHeight: 48, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 8 }}>
           <Plus size={18} color={colors.pageInk.kitchen} />
           <T style={{ color: colors.pageInk.kitchen, flexShrink: 1 }}>{text.addNew(typed)}</T>
         </Pressable>
@@ -58,15 +57,13 @@ function Ingredients({ kitchen, change }: OpenKitchen) {
             <GroupList color={color}>
               {entries.map(({ ingredient }) => (
                 <Pressable key={ingredient.id} accessibilityRole="button" onPress={() => setEditing({ kind: "ingredient", id: ingredient.id, name: ingredient.name })}
-                  style={({ pressed }) => ({ minHeight: 64, flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 12, opacity: pressed ? 0.7 : 1 })}>
+                  style={({ pressed }) => ({ minHeight: 64, flexDirection: "row", alignItems: "center", gap: 12, paddingLeft: 16, paddingRight: 12, paddingVertical: 12, opacity: pressed ? 0.7 : 1 })}>
                   <View style={{ flex: 1, gap: 3 }}>
                     <T weight="medium">{ingredient.name}</T>
                     <NutritionSummary ingredient={ingredient} />
                   </View>
-                  <View style={{ maxWidth: "35%", gap: 3 }}>
-                    <T muted style={{ fontSize: 12, textAlign: "right" }}>{isCountedUnit(ingredient.unit) ? text.perOne(unitName(ingredient.unit, language, 1)) : text.per100(ingredient.unit)}</T>
-                    {ingredient.recipeCount ? <T muted style={{ fontSize: 12, textAlign: "right" }}>{text.inRecipes(ingredient.recipeCount)}</T> : null}
-                  </View>
+                  {ingredient.recipeCount ? <T muted style={{ fontSize: 13 }}>{text.inRecipes(ingredient.recipeCount)}</T> : null}
+                  <ChevronRight size={18} color={colors.mutedForeground} />
                 </Pressable>
               ))}
             </GroupList>
@@ -84,13 +81,15 @@ function NutritionSummary({ ingredient }: { ingredient: Ingredient }) {
   const text = useText(TEXT);
   const language = useLanguage();
   const { nutrition } = ingredient;
-  if (nutrition.kcal === null) return <T muted style={{ fontSize: 12 }}>{text.noNutrition}</T>;
+  if (nutrition.kcal === null) return null;
+  const per = isCountedUnit(ingredient.unit) ? text.perOne(unitName(ingredient.unit, language, 1)) : text.per100(ingredient.unit);
   return (
     <T muted style={{ fontSize: 12, fontVariant: ["tabular-nums"] }}>
       <T weight="semibold" style={{ fontSize: 12 }}>{formatNumber(nutrition.kcal, language)} {text.kcal}</T>
       {nutrition.protein !== null ? `, ${text.protein} ${formatNumber(nutrition.protein, language)} g` : ""}
       {nutrition.carbs !== null ? `, ${text.carbs} ${formatNumber(nutrition.carbs, language)} g` : ""}
       {nutrition.fat !== null ? `, ${text.fat} ${formatNumber(nutrition.fat, language)} g` : ""}
+      {`, ${per}`}
     </T>
   );
 }

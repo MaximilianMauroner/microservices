@@ -1,10 +1,10 @@
 import { router } from "expo-router";
-import { ChevronRight, Leaf, type LucideIcon, RefreshCw, Users } from "lucide-react-native";
+import { ChevronRight, Leaf, LogOut, type LucideIcon, RefreshCw, Users } from "lucide-react-native";
 import { type ReactNode, useContext, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, StyleSheet, View } from "react-native";
 import { useApp, useKitchen, useSync } from "../../state";
 import type { SyncStatus } from "../../sync/model";
-import { Button, HueBadge, Screen, Sheet, T } from "../kit";
+import { Button, HueBadge, Screen, Sheet, T, usePageColor } from "../kit";
 import { KITCHEN_LANGUAGES, type KitchenLanguage, LANGUAGE_NAMES, LanguageContext, LOCALES, useText } from "../language";
 import { tint, useColors } from "../theme";
 import { TEXT } from "./text";
@@ -17,6 +17,7 @@ export function KitchenHub() {
   const { language, setLanguage } = useContext(LanguageContext);
   const text = useText(TEXT);
   const colors = useColors();
+  const { hue } = usePageColor();
   const [switching, setSwitching] = useState(false);
   const kitchen = open?.kitchen;
   const state = syncLine(status, language);
@@ -27,26 +28,27 @@ export function KitchenHub() {
 
   return (
     <Screen title={text.title}>
-      {open && kitchen ? (
-        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <HueBadge size={44} />
-          <View style={{ flex: 1, gap: 2 }}>
-            <T weight="semibold" numberOfLines={1} style={{ fontSize: 18 }}>{kitchen.kitchen.name}</T>
-            <T muted style={styles.small}>{text.members(kitchen.kitchen.members.length)} · {state}</T>
-          </View>
-          {open.kitchens.length > 1 ? <Button tone="outline" compact label={text.switchKitchen} onPress={() => setSwitching(true)} /> : null}
+      <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <HueBadge size={44} />
+        <View style={{ flex: 1, gap: 2 }}>
+          <T weight="semibold" numberOfLines={1} style={{ fontSize: 18 }}>{open && kitchen ? kitchen.kitchen.name : text.noKitchen}</T>
+          <T muted style={styles.small}>{[state, pending ? text.unsent(pending) : ""].filter(Boolean).join(" · ")}</T>
         </View>
-      ) : <T muted>{text.noKitchen}</T>}
-      {kitchen ? (
+        <Pressable accessibilityRole="button" accessibilityLabel={text.syncNow} accessibilityState={{ busy: status.kind === "syncing" }} onPress={() => void sync()}
+          style={({ pressed }) => [styles.sync, { borderColor: colors.controlBorder, backgroundColor: colors.control, opacity: pressed ? 0.7 : 1 }]}>
+          {status.kind === "syncing" ? <ActivityIndicator color={colors.mutedForeground} /> : <RefreshCw size={20} color={colors.foreground} />}
+        </Pressable>
+      </View>
+      {open && open.kitchens.length > 1 ? <Button tone="outline" label={text.switchKitchen} onPress={() => setSwitching(true)} /> : null}
+      {kitchen ? <>
         <List>
           <Row icon={Leaf} title={text.ingredients} detail={text.ingredientsDetail(kitchen.ingredients.length, kitchen.kitchen.groups.length)} onPress={() => router.push("/kitchen/ingredients")} />
-          <Row icon={Users} title={text.membersTitle} detail={`${kitchen.kitchen.members.map((member) => member.email).join(", ") || text.noMembers}. ${text.membersHint}`} />
         </List>
-      ) : null}
-      <List>
-        <Row icon={RefreshCw} title={text.syncNow} detail={[state, pending ? text.unsent(pending) : ""].filter(Boolean).join(" · ")} onPress={() => void sync()}
-          trailing={status.kind === "syncing" ? <ActivityIndicator color={colors.mutedForeground} /> : undefined} />
-      </List>
+        <View style={styles.note}>
+          <Users size={18} color={colors.mutedForeground} />
+          <T muted style={[styles.small, { flex: 1 }]}>{`${kitchen.kitchen.members.map((member) => member.email).join(", ") || text.noMembers}. ${text.membersHint}`}</T>
+        </View>
+      </> : null}
       {notices.map((notice) => (
         <View key={notice.clientActionId} style={{ padding: 12, borderRadius: 12, backgroundColor: tint(colors.destructive, 12, colors.card), gap: 8 }}>
           <T weight="semibold" style={{ color: colors.destructive }}>{text.refused}</T>
@@ -54,14 +56,26 @@ export function KitchenHub() {
           <View style={{ flexDirection: "row" }}><Button tone="outline" compact label={text.dismiss} onPress={() => void dismiss(notice.clientActionId)} /></View>
         </View>
       ))}
+      <View style={{ gap: 8 }}>
+        <T weight="medium" style={{ fontSize: 14 }} muted>{text.language}</T>
+        <View accessibilityRole="radiogroup" style={[styles.segments, { backgroundColor: colors.muted }]}>
+          {KITCHEN_LANGUAGES.map((one) => {
+            const selected = one === language;
+            return (
+              <Pressable key={one} accessibilityRole="radio" accessibilityState={{ selected }} onPress={() => setLanguage(one)}
+                style={[styles.segment, selected && { backgroundColor: hue }]}>
+                <T weight={selected ? "semibold" : "medium"} style={{ color: selected ? "#ffffff" : colors.foreground }}>{LANGUAGE_NAMES[one]}</T>
+              </Pressable>
+            );
+          })}
+        </View>
+      </View>
       <List>
-        <Row title={text.language} trailing={
-          <View style={{ flexDirection: "row", gap: 8 }}>
-            {KITCHEN_LANGUAGES.map((one) => <Button key={one} tone={one === language ? "primary" : "outline"} compact label={LANGUAGE_NAMES[one]} onPress={() => setLanguage(one)} />)}
-          </View>
-        } />
+        <Pressable accessibilityRole="button" onPress={confirmSignOut} style={({ pressed }) => [styles.row, { justifyContent: "center", opacity: pressed ? 0.7 : 1 }]}>
+          <LogOut size={18} color={colors.destructive} />
+          <T weight="medium" style={{ color: colors.destructive }}>{text.signOut}</T>
+        </Pressable>
       </List>
-      <View style={{ flexDirection: "row" }}><Button tone="destructive" label={text.signOut} onPress={confirmSignOut} /></View>
       <Sheet open={switching} onClose={() => setSwitching(false)} title={text.kitchens}>
         {open?.kitchens.map(({ kitchen: one }) => {
           const active = one.id === kitchen?.kitchen.id;
@@ -125,5 +139,9 @@ const styles = StyleSheet.create({
   small: { fontSize: 13 },
   card: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth },
   list: { borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, overflow: "hidden" },
+  sync: { width: 48, height: 48, borderRadius: 24, borderWidth: 1, alignItems: "center", justifyContent: "center" },
+  note: { flexDirection: "row", alignItems: "flex-start", gap: 12, paddingHorizontal: 14 },
+  segments: { flexDirection: "row", borderRadius: 14, padding: 4, gap: 4 },
+  segment: { flex: 1, minHeight: 48, borderRadius: 10, alignItems: "center", justifyContent: "center" },
   row: { minHeight: 56, flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 14, paddingVertical: 10 }
 });

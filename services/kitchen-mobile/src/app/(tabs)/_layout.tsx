@@ -1,4 +1,4 @@
-import { Tabs } from "expo-router";
+import { Tabs, useSegments } from "expo-router";
 import type { ComponentProps } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -19,17 +19,22 @@ export default function KitchenTabs() {
   );
 }
 
-/** The bottom tabs of the web Kitchen on a phone: five pages, each in its produce color. The Kitchen tab shows when sync needs a look. */
+/**
+ * The bottom tabs of the web Kitchen on a phone: five pages, each in its produce color. The Kitchen tab shows when sync
+ * needs a look. A page opened from a tab, such as a recipe, hides the tabs for its own toolbar.
+ */
 function TabBar({ state, navigateToTab }: TabBarProps) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const text = useKitText();
   const alert = useSyncAlert();
-  const current = state.routes[state.index]?.name;
+  const segments = useSegments();
+  const current = state.routes[state.index];
+  if (segments.length > 2) return null;
   return (
     <View style={[styles.bar, { borderTopColor: colors.border, backgroundColor: colors.background, paddingBottom: insets.bottom }]}>
       {PAGES.map((page) => {
-        const active = page.route === current;
+        const active = page.route === current?.name;
         const ink = colors.pageInk[page.key];
         const marked = page.key === "kitchen" ? alert : null;
         return (
