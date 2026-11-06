@@ -162,7 +162,7 @@ export function KitchenLayout({ frame, children }: { frame: Frame; children: Rea
         </div>
         <OpenTab.Provider value={open}>{children}</OpenTab.Provider>
       </main>
-      <nav aria-label={text.pages} lang={language} className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">
+      <nav aria-label={text.pages} lang={language} data-bottom-tab-bar className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">
         <ul className="grid grid-cols-5">
           {TABS.map((tab) => (
             <li key={tab.path}>
@@ -203,7 +203,7 @@ export function KitchenPage({ title, facts, actions, back, children }: { title: 
       {back ? <div className="-mt-2 mb-1">{back}</div> : null}
       <header className="mb-5 flex flex-wrap items-end justify-between gap-x-4 gap-y-3">
         <div className="min-w-0">
-          <h1 className="font-kitchen font-semibold tracking-tight text-[2rem] leading-[1.05] break-words sm:text-[2.5rem]">{title}</h1>
+          <h1 className="font-kitchen font-semibold tracking-tight text-[2rem] leading-[1.05] wrap-anywhere sm:text-[2.5rem]">{title}</h1>
           {facts ? <p className="mt-1.5 text-sm text-muted-foreground">{facts}</p> : null}
         </div>
         {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
@@ -382,7 +382,7 @@ export function KitchenSheet({ open, onOpenChange, title, description, children,
       <Drawer open={open} onOpenChange={onOpenChange} showSwipeHandle>
         <DrawerContent style={keyboard.open ? { ...hue, marginBottom: keyboard.inset, maxHeight: keyboard.height - 8 } : hue} className="kitchen-hue max-h-[92dvh]">
           <DrawerHeader className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2 border-b border-[color:var(--surface-border)] pb-3 text-left group-data-[swipe-axis=y]/drawer-popup:text-left">
-            <DrawerTitle className="font-kitchen font-semibold tracking-tight text-xl">{title}</DrawerTitle>
+            <DrawerTitle className="min-w-0 font-kitchen font-semibold tracking-tight text-xl wrap-anywhere">{title}</DrawerTitle>
             <DrawerClose render={<Button variant="ghost" size="icon" className="-mt-1.5 -mr-2 size-11 text-muted-foreground" aria-label={text.close} />}><XIcon className="size-5" aria-hidden /></DrawerClose>
             {description ? <DrawerDescription className="col-span-2">{description}</DrawerDescription> : null}
           </DrawerHeader>
@@ -396,7 +396,7 @@ export function KitchenSheet({ open, onOpenChange, title, description, children,
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent style={hue} className="kitchen-hue max-h-[88dvh] grid-rows-[auto_minmax(0,1fr)_auto] sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle className="font-kitchen font-semibold tracking-tight text-xl">{title}</DialogTitle>
+          <DialogTitle className="font-kitchen font-semibold tracking-tight text-xl wrap-anywhere">{title}</DialogTitle>
           {description ? <DialogDescription>{description}</DialogDescription> : null}
         </DialogHeader>
         <div key={view} className="-mx-1 min-h-0 overflow-y-auto px-1">{children}</div>
@@ -464,7 +464,7 @@ export function SearchField({ value, onValue, label, inSheet = false, add, child
   // The keyboard opens after the focus, so the field moves up once it is there.
   const toTop = () => setTimeout(() => field.current?.scrollIntoView({ block: "start", behavior: "smooth" }), 300);
   return (
-    <div data-kitchen-search className="grid gap-3">
+    <div data-kitchen-search className="grid grid-cols-1 gap-3">
       <div ref={field} className={cn("relative z-10 max-md:sticky max-md:-mx-3 max-md:px-3 max-md:py-2",
         inSheet ? "max-md:top-0 max-md:bg-popover" : "max-md:top-13 max-md:scroll-mt-13 max-md:bg-background/95 max-md:backdrop-blur")}>
         <SearchIcon className={cn("pointer-events-none absolute top-1/2 size-4 -translate-y-1/2 text-muted-foreground", "left-3 max-md:left-6")} aria-hidden />

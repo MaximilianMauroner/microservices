@@ -393,7 +393,7 @@ export function PublishPage() {
                   </div>
                 </div>
 
-                <ul className="mt-4 grid gap-2" aria-label="Upload progress">
+                <ul className="mt-4 grid grid-cols-1 gap-2" aria-label="Upload progress">
                   {items.map((item) => (
                     <li key={item.key} className="rounded-lg border p-3 text-left">
                       <div className="flex items-center justify-between gap-2">
