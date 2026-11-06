@@ -6,7 +6,7 @@ import { Input } from "../../../platform/ui/components/ui/input.js";
 import { Label } from "../../../platform/ui/components/ui/label.js";
 import { Textarea } from "../../../platform/ui/components/ui/textarea.js";
 import { type RecipeChoice, searchKitchenCatalog } from "../server-functions.js";
-import { type CatalogProduct, convertNutrition, fieldNumber, formatNumber, type Ingredient, ingredientGroups, INGREDIENT_UNITS, isCountedUnit, type IngredientUnit, unitName, UNSORTED_SECTION } from "../domain.js";
+import { CATALOG_SOURCE_NAMES, type CatalogProduct, convertNutrition, fieldNumber, formatNumber, type Ingredient, ingredientGroups, INGREDIENT_UNITS, isCountedUnit, type IngredientUnit, unitName, UNSORTED_SECTION } from "../domain.js";
 import { byGroup, type Frame, GROUP_LIST, GroupDot, groupColor, GroupLabel, groupLabel, groupListStyle, KitchenEmpty, KitchenPage, KitchenSheet, SearchField, SheetAction, useKitchenAction } from "./kit.js";
 import { type KitchenLanguage, useLanguage, useText } from "./language.js";
 
@@ -80,7 +80,7 @@ const en = {
   moveUp: (group: string) => `Move ${group} up`,
   moveDown: (group: string) => `Move ${group} down`,
   fromProduct: "Fill in from a product",
-  catalogSource: "Product data from Open Food Facts, under the Open Database License."
+  catalogSource: "Product data from Billa and from Open Food Facts, under the Open Database License."
 };
 type KitText = typeof en;
 const TEXT: Record<KitchenLanguage, KitText> = {
@@ -151,7 +151,7 @@ const TEXT: Record<KitchenLanguage, KitText> = {
     moveUp: (group: string) => `${group} nach oben`,
     moveDown: (group: string) => `${group} nach unten`,
     fromProduct: "Aus einem Produkt übernehmen",
-    catalogSource: "Produktdaten von Open Food Facts, unter der Open Database License."
+    catalogSource: "Produktdaten von Billa und von Open Food Facts, unter der Open Database License."
   }
 };
 
@@ -391,7 +391,7 @@ function CatalogProducts({ query, onPick }: { query: string; onPick: (product: C
             <button type="button" onClick={() => onPick(product)} className="grid w-full gap-0.5 px-3 py-2 text-left hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:outline-none">
               <span className="text-sm font-medium">{product.name}</span>
               <span className="text-xs text-muted-foreground">
-                {[product.brand, product.quantity, product.nutrition.kcal !== null ? `${formatNumber(product.nutrition.kcal, language)} ${text.kcal} ${text.per100(product.unit)}` : ""].filter(Boolean).join(" · ")}
+                {[product.brand, product.quantity, product.nutrition.kcal !== null ? `${formatNumber(product.nutrition.kcal, language)} ${text.kcal} ${text.per100(product.unit)}` : "", CATALOG_SOURCE_NAMES[product.source]].filter(Boolean).join(" · ")}
               </span>
             </button>
           </li>
