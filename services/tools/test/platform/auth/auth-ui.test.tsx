@@ -21,7 +21,7 @@ describe("consent destination", () => {
     ["https://evil.example/callback", "evil.example"],
     ["https://claude.ai/api/mcp/auth_callback", "claude.ai"],
     ["http://127.0.0.1:43123/callback", "an app on this computer"],
-    ["com.lab4code.kitchen:/oauth", "the app com.lab4code.kitchen"],
+    ["com.lab4code.pantrino:/oauth", "the app com.lab4code.pantrino"],
     ["not a url", undefined]
   ] as const)("names where %s sends the access", (redirectUri, shown) => {
     expect(consentDestination(redirectUri)).toBe(shown);

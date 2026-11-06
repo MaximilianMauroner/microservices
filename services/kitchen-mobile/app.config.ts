@@ -5,16 +5,16 @@ const toolsOrigin = process.env.TOOLS_ORIGIN;
 if (!toolsOrigin) throw new Error("Set TOOLS_ORIGIN to the Tools server for this build.");
 
 const config: ExpoConfig = {
-  name: "Kitchen",
-  slug: "kitchen",
-  scheme: "com.lab4code.kitchen",
+  name: "Pantrino",
+  slug: "pantrino",
+  scheme: "com.lab4code.pantrino",
   version: "1.0.0",
   orientation: "portrait",
   icon: "./assets/icon.png",
   userInterfaceStyle: "automatic",
-  ios: { bundleIdentifier: "com.lab4code.kitchen", supportsTablet: false },
+  ios: { bundleIdentifier: "com.lab4code.pantrino", supportsTablet: false },
   android: {
-    package: "com.lab4code.kitchen",
+    package: "com.lab4code.pantrino",
     allowBackup: false,
     adaptiveIcon: {
       backgroundColor: "#000000",

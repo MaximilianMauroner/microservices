@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { KitchenSnapshot, KitchenSync, PlanEntry } from "@tools-platform/service/kitchen-contract";
 import type { QueuedAction } from "../../sync/model";
 import { project } from "../../sync/project";
-import { shoppingView } from "./view";
+import { TEXT } from "./text";
+import { frequentItems, rowChanges, shoppingView, type RowGesture, type ShoppingRow } from "./view";
 
 const start = "2026-11-02";
 const line = { ingredientId: "rice", ingredient: "Rice", unit: "g" as const, amount: 150, note: "" };
@@ -140,5 +141,96 @@ describe("the local shopping list", () => {
     expect(shoppingView(bought, start)).toMatchObject({ once: [], count: 1 });
     const stopped = apply(bought, [{ type: "extra.remove", id: "coffee" }]);
     expect(shoppingView(stopped, "2026-11-09")).toMatchObject({ weekly: [], count: 0 });
+  });
+});
+
+describe("the quick picks of the Add sheet", () => {
+  const ingredient = (id: string, name: string, recipeCount: number) => ({ ...kitchen().ingredients[0]!, id, name, recipeCount });
+  const uses = (day: string, ...ids: string[]) => meal(day, { id: `${day}:${ids.join()}`, lines: ids.map((id) => ({ ...line, ingredientId: id })) });
+  const snapshot = (patch: Partial<KitchenSnapshot> = {}): KitchenSnapshot => ({
+    ...kitchen(),
+    ingredients: [ingredient("rice", "Rice", 1), ingredient("milk", "Milk", 3), ingredient("eggs", "Eggs", 5), ingredient("salt", "Salt", 0)],
+    plan: [uses("2026-10-12", "rice", "milk"), uses("2026-10-20", "rice"), uses("2026-11-05", "rice", "rice")],
+    ...patch,
+  });
+
+  it("puts the ingredients that stored meals use most first, then those in the most recipes", () => {
+    expect(frequentItems(snapshot(), "")).toEqual(["Rice", "Milk", "Eggs", "Salt"]);
+  });
+
+  it("leaves out what is already on the list, in any case", () => {
+    const listed = snapshot({ extras: [{ id: "x", name: "rice", everyWeek: false, boughtWeek: null }] });
+    expect(frequentItems(listed, "")).toEqual(["Milk", "Eggs", "Salt"]);
+  });
+
+  it("suggests only matching ingredients while the person types", () => {
+    expect(frequentItems(snapshot(), "  i ")).toEqual(["Rice", "Milk"]);
+    expect(frequentItems(snapshot(), "coffee")).toEqual([]);
+  });
+
+  it("shows at most eight", () => {
+    const many = snapshot({ ingredients: Array.from({ length: 12 }, (_, index) => ingredient(`i${index}`, `Item ${index}`, index)), plan: [] });
+    expect(frequentItems(many, "")).toEqual(["Item 11", "Item 10", "Item 9", "Item 8", "Item 7", "Item 6", "Item 5", "Item 4"]);
+  });
+});
+
+describe("the gestures on a shopping row", () => {
+  const snapshot = (): KitchenSnapshot => ({
+    ...kitchen(),
+    extras: [
+      { id: "coffee", name: "Coffee", everyWeek: true, boughtWeek: null },
+      { id: "paper", name: "Paper", everyWeek: false, boughtWeek: null },
+    ],
+  });
+  const rows = (view: ReturnType<typeof shoppingView>): Record<string, ShoppingRow> => ({
+    ...Object.fromEntries(view.toBuy.map((line) => [line.ingredient, { kind: "line", line }])),
+    ...Object.fromEntries(view.weekly.map((extra) => [extra.name, { kind: "weekly", extra, week: view.start }])),
+    ...Object.fromEntries(view.once.map((extra) => [extra.name, { kind: "once", extra }])),
+  });
+  function run(before: KitchenSnapshot, name: string, gesture: RowGesture) {
+    const change = rowChanges(rows(shoppingView(before, start))[name]!, TEXT.en, "en", () => "00000000-0000-4000-8000-000000000099")[gesture]!;
+    const after = apply(before, [change.action]);
+    return { change, after: shoppingView(after, start), undone: change.undo ? shoppingView(apply(after, [...change.undo]), start) : null };
+  }
+
+  it("buys an ingredient line into At home and gives it back on undo, but cannot remove it", () => {
+    const { change, after, undone } = run(snapshot(), "Rice", "check");
+    expect(change.message).toBe("150 g Rice added to At home");
+    expect(after.covered).toMatchObject([{ ingredient: "Rice", inStock: 150 }]);
+    expect(undone?.toBuy).toMatchObject([{ ingredient: "Rice", toBuy: 150 }]);
+    expect(rowChanges(rows(shoppingView(snapshot(), start)).Rice!, TEXT.en, "en", () => "unused").remove).toBeUndefined();
+  });
+
+  it("checks a weekly item for the week, and a second check puts it back on the list", () => {
+    const bought = run(snapshot(), "Coffee", "check");
+    expect(bought.after.weekly).toMatchObject([{ name: "Coffee", bought: true }]);
+    expect(bought.undone?.weekly).toMatchObject([{ name: "Coffee", bought: false }]);
+    const kitchenAfter = apply(snapshot(), [bought.change.action]);
+    const back = run(kitchenAfter, "Coffee", "check");
+    expect(back.change.message).toBe("Coffee back on the list");
+    expect(back.after.weekly).toMatchObject([{ name: "Coffee", bought: false }]);
+  });
+
+  it("stops a weekly item on remove and brings it back as a weekly item on undo", () => {
+    const { change, after, undone } = run(snapshot(), "Coffee", "remove");
+    expect(change.message).toBe("Coffee is no longer on every week's list");
+    expect(after.weekly).toEqual([]);
+    expect(undone?.weekly).toMatchObject([{ name: "Coffee", everyWeek: true, bought: false }]);
+  });
+
+  it("brings a weekly item that was bought this week back as bought on undo", () => {
+    const bought = apply(snapshot(), [rowChanges(rows(shoppingView(snapshot(), start)).Coffee!, TEXT.en, "en", () => "unused").check!.action]);
+    const { after, undone } = run(bought, "Coffee", "remove");
+    expect(after.weekly).toEqual([]);
+    expect(undone?.weekly).toMatchObject([{ name: "Coffee", everyWeek: true, bought: true }]);
+  });
+
+  it("takes a one-time item off the list when it is bought or removed, and undo puts it back", () => {
+    for (const [gesture, message] of [["check", "Paper bought"], ["remove", "Paper removed"]] as const) {
+      const { change, after, undone } = run(snapshot(), "Paper", gesture);
+      expect(change.message).toBe(message);
+      expect(after.once).toEqual([]);
+      expect(undone?.once).toMatchObject([{ name: "Paper", everyWeek: false }]);
+    }
   });
 });

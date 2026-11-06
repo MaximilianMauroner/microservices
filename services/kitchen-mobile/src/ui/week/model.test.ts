@@ -1,6 +1,6 @@
 import type { Ingredient, KitchenSnapshot, PlanEntry, Recipe } from "@tools-platform/service/kitchen-contract";
 import { describe, expect, it } from "vitest";
-import { buildWeek, defaultMeal } from "./model";
+import { buildWeek, defaultMeal, planStrip, swipeStep } from "./model";
 
 const rice: Ingredient = {
   id: "rice", name: "Rice", unit: "g", section: "Grains", otherGroups: ["Pantry"],
@@ -95,5 +95,55 @@ describe("the local Week page", () => {
     expect(defaultMeal([dinner, lunch])).toBe("breakfast");
     expect(defaultMeal([dinner, lunch, breakfast])).toBe("snack");
     expect(defaultMeal([dinner, lunch, breakfast, meal("snack", "2026-11-05", { meal: "snack" })])).toBe("dinner");
+  });
+});
+
+describe("the Plan sheet days", () => {
+  const planned = (day: string) => meal(day, day);
+
+  it("offers a week from today and selects the first day without a meal", () => {
+    const strip = planStrip({ weekStart: "2026-11-02", today: "2026-11-05", plan: [planned("2026-11-05"), planned("2026-11-07")] });
+    expect(strip.days).toEqual(["2026-11-05", "2026-11-06", "2026-11-07", "2026-11-08", "2026-11-09", "2026-11-10", "2026-11-11"]);
+    expect(strip.selected).toBe("2026-11-06");
+  });
+
+  it("offers the shown week when it starts after today", () => {
+    const strip = planStrip({ weekStart: "2026-11-09", today: "2026-11-05", plan: [planned("2026-11-09")] });
+    expect(strip.days[0]).toBe("2026-11-09");
+    expect(strip.days[6]).toBe("2026-11-15");
+    expect(strip.selected).toBe("2026-11-10");
+  });
+
+  it("starts at today when the shown week is in the past", () => {
+    expect(planStrip({ weekStart: "2026-10-26", today: "2026-11-05", plan: [] }).days[0]).toBe("2026-11-05");
+  });
+
+  it("selects today when every offered day has a meal", () => {
+    const days = ["2026-11-05", "2026-11-06", "2026-11-07", "2026-11-08", "2026-11-09", "2026-11-10", "2026-11-11"];
+    expect(planStrip({ weekStart: "2026-11-02", today: "2026-11-05", plan: days.map(planned) }).selected).toBe("2026-11-05");
+  });
+
+  it("selects the day a person picked, also a past day that already has meals", () => {
+    expect(planStrip({ weekStart: "2026-11-02", today: "2026-11-05", plan: [], day: "2026-11-07" }).selected).toBe("2026-11-07");
+    const past = planStrip({ weekStart: "2026-11-02", today: "2026-11-05", plan: [planned("2026-11-03")], day: "2026-11-03" });
+    expect(past.days[0]).toBe("2026-11-03");
+    expect(past.selected).toBe("2026-11-03");
+  });
+});
+
+describe("the week swipe", () => {
+  it("shows the next week after a swipe to the left and the previous week after a swipe to the right", () => {
+    expect(swipeStep(-120, 0)).toBe(1);
+    expect(swipeStep(120, 0)).toBe(-1);
+  });
+
+  it("counts a short fast flick, but not a short slow drag", () => {
+    expect(swipeStep(-40, -800)).toBe(1);
+    expect(swipeStep(-40, -100)).toBe(0);
+  });
+
+  it("ignores a tiny move even when it is fast, and a drag that comes back", () => {
+    expect(swipeStep(10, 2000)).toBe(0);
+    expect(swipeStep(-60, 600)).toBe(0);
   });
 });

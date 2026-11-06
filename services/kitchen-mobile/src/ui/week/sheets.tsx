@@ -1,86 +1,72 @@
-import { addDays, formatAmount, type Meal, MEALS, type PlanEntry } from "@tools-platform/service/kitchen-contract";
+import { addDays, formatAmount, type Meal, MEALS, type PlanEntry, type Recipe } from "@tools-platform/service/kitchen-contract";
+import * as Crypto from "expo-crypto";
 import { router } from "expo-router";
 import { ChefHat, Pencil, RotateCcw } from "lucide-react-native";
 import { useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import type { OpenKitchen } from "../../state";
-import { Button, dayParts, Pill, PlateRing, SearchField, Sheet, Stepper, T, usePageColor } from "../kit";
+import { Button, dayParts, type Notice, Pill, PlateRing, SearchField, Sheet, Stepper, T, usePageColor } from "../kit";
 import { useLanguage, useText } from "../language";
 import { type DraftLine, draftLines, LineEditor, useResolveLines } from "../lines";
-import { tint, useColors } from "../theme";
-import { defaultMeal, type WeekView } from "./model";
-import type { Notice } from "./page";
+import { useColors } from "../theme";
+import { defaultMeal, planStrip, type WeekView } from "./model";
 import { TEXT } from "./text";
 
 type SheetProps = { data: OpenKitchen; week: WeekView; onClose: () => void; notify: (notice: Notice) => void };
-type RecipePick = { kind: "recipe"; id: string } | { kind: "idea"; name: string };
 
-export function PlanSheet({ day, data, week, onClose, notify }: SheetProps & { day: string }) {
+/** Day, meal, and recipe in one short sheet. A tap on a recipe plans it with the recipe's servings. */
+export function PlanSheet({ day, data, week, onClose, notify }: SheetProps & { day?: string }) {
   const language = useLanguage();
   const text = useText(TEXT);
   const colors = useColors();
-  const page = usePageColor();
-  const [meal, setMeal] = useState<Meal>(() => defaultMeal(week.entries.filter((entry) => entry.day === day)));
+  const [strip] = useState(() => planStrip({ weekStart: week.start, today: data.today, plan: data.kitchen.plan, day }));
+  const [selected, setSelected] = useState(strip.selected);
+  const [meal, setMeal] = useState<Meal>(() => mealFor(strip.selected));
   const [query, setQuery] = useState("");
-  const [pick, setPick] = useState<RecipePick | null>(null);
-  const [servings, setServings] = useState(2);
   const typed = query.trim();
   const matches = week.recipes.filter((recipe) => recipe.name.toLowerCase().includes(typed.toLowerCase()));
-  const recipe = week.recipes.find((one) => pick?.kind === "recipe" ? one.id === pick.id : pick?.kind === "idea" && one.name.toLowerCase() === pick.name.toLowerCase());
-  const isNew = Boolean(typed) && !week.recipes.some((one) => one.name.toLowerCase() === typed.toLowerCase());
-  const addingIdea = pick?.kind === "idea" && !recipe;
-  const parts = dayParts(day, language);
+  const isNew = typed.length > 0 && typed.length <= 200 && !week.recipes.some((one) => one.name.toLowerCase() === typed.toLowerCase());
+  const weekday = dayParts(selected, language).weekdayLong;
 
-  function addIdea() {
-    if (!isNew || addingIdea) return;
-    setPick({ kind: "idea", name: typed });
-    setServings(2);
-    data.change({ type: "recipe.save", name: typed, servings: 2, minutes: null, instructions: "", lines: [] });
-    notify({ message: text.ideaAdded(typed) });
+  function mealFor(one: string): Meal {
+    return defaultMeal(data.kitchen.plan.filter((entry) => entry.day === one));
   }
 
-  function plan() {
-    if (!recipe) return;
-    data.change({ type: "plan.add", day, meal, recipeId: recipe.id, servings });
-    notify({ message: text.planned(recipe.name, parts.weekdayLong) });
+  function plan(recipe: Pick<Recipe, "id" | "name" | "servings">) {
+    const id = Crypto.randomUUID();
+    data.change({ type: "plan.add", createId: id, day: selected, meal, recipeId: recipe.id, servings: recipe.servings });
+    notify({ message: text.planned(recipe.name, weekday), undo: [{ type: "plan.remove", id }] });
     onClose();
   }
 
+  function planIdea() {
+    const id = Crypto.randomUUID();
+    data.change({ type: "recipe.save", createId: id, name: typed, servings: 2, minutes: null, instructions: "", lines: [] });
+    plan({ id, name: typed, servings: 2 });
+  }
+
   return (
-    <Sheet open onClose={onClose} title={text.planTitle(parts.weekdayLong, parts.dayMonth)}
-      footer={week.recipes.length ? (
-        <View style={{ width: "100%", gap: 12 }}>
-          <MealPicker value={meal} onValue={setMeal} />
-          <View style={styles.row}>
-            <Stepper label={text.servingsLabel} value={servings} onValue={setServings} unit={text.servingUnit(servings)} />
-            <Button label={text.addToPlan} disabled={!recipe} onPress={plan} />
-          </View>
-          {!recipe ? <T muted style={styles.small}>{text.chooseRecipe}</T> : null}
-        </View>
-      ) : undefined}>
+    <Sheet open onClose={onClose} title={text.planAMeal}>
       {week.recipes.length ? <>
+        <DayStrip days={strip.days} value={selected} planned={new Set(data.kitchen.plan.map((entry) => entry.day))} onValue={(one) => { setSelected(one); setMeal(mealFor(one)); }} />
+        <MealPicker value={meal} onValue={setMeal} />
         <SearchField value={query} onValue={setQuery} label={text.findRecipe} />
         {isNew ? (
-          <Pressable accessibilityRole="button" accessibilityState={{ disabled: addingIdea || typed.length > 200 }} disabled={addingIdea || typed.length > 200} onPress={addIdea}
-            style={[styles.idea, { borderColor: colors.controlBorder, backgroundColor: colors.control, opacity: addingIdea || typed.length > 200 ? 0.4 : 1 }]}>
-            <T weight="medium">{text.addIdea(typed)}</T>
+          <Pressable accessibilityRole="button" onPress={planIdea} style={[styles.idea, { borderColor: colors.controlBorder, backgroundColor: colors.control }]}>
+            <T weight="medium">{text.planIdea(typed)}</T>
           </Pressable>
         ) : null}
         <View accessibilityLabel={text.recipes} style={{ gap: 4 }}>
-          {matches.map((one) => {
-            const selected = recipe?.id === one.id;
-            return (
-              <Pressable key={one.id} accessibilityRole="radio" accessibilityState={{ checked: selected }}
-                onPress={() => { setPick({ kind: "recipe", id: one.id }); setServings(one.servings); }}
-                style={[styles.recipe, { borderColor: selected ? page.hue : "transparent", backgroundColor: selected ? tint(page.hue, 12, colors.card) : "transparent" }]}>
-                <PlateRing groups={data.kitchen.kitchen.groups} sections={one.sections} size={26} />
-                <View style={{ flex: 1, gap: 4 }}>
-                  <T weight="medium" style={{ fontSize: 16 }}>{one.name}</T>
-                  <T muted style={styles.small}>{one.lines.length ? [one.minutes ? text.minutes(one.minutes) : "", one.kcal ? `${one.kcal} kcal` : ""].filter(Boolean).join(", ") : text.idea}</T>
-                </View>
-              </Pressable>
-            );
-          })}
+          {matches.map((one) => (
+            <Pressable key={one.id} accessibilityRole="button" accessibilityHint={text.planHint(text.meals[meal], weekday)} onPress={() => plan(one)}
+              style={({ pressed }) => [styles.recipe, { backgroundColor: pressed ? colors.muted : "transparent" }]}>
+              <PlateRing groups={data.kitchen.kitchen.groups} sections={one.sections} size={26} />
+              <View style={{ flex: 1, gap: 4 }}>
+                <T weight="medium" style={{ fontSize: 16 }}>{one.name}</T>
+                <T muted style={styles.small}>{[one.lines.length ? "" : text.idea, one.minutes ? text.minutes(one.minutes) : "", text.servings(one.servings), one.kcal ? `${one.kcal} kcal` : ""].filter(Boolean).join(", ")}</T>
+              </View>
+            </Pressable>
+          ))}
           {!matches.length ? <T muted style={{ padding: 16, textAlign: "center" }}>{text.noRecipeMatch(query)}</T> : null}
         </View>
       </> : <>
@@ -91,11 +77,52 @@ export function PlanSheet({ day, data, week, onClose, notify }: SheetProps & { d
   );
 }
 
+/** The short menu a held meal opens. Each action runs at once. A cooked meal can only be removed. */
+export function MealMenu({ entry, data, week, onClose, notify }: SheetProps & { entry: PlanEntry }) {
+  const language = useLanguage();
+  const text = useText(TEXT);
+  const parts = dayParts(entry.day, language);
+  const update = (patch: Partial<Pick<PlanEntry, "day" | "servings">>) =>
+    data.change({ type: "plan.update", id: entry.id, day: entry.day, meal: entry.meal, servings: entry.servings, ...patch });
+
+  function move(day: string) {
+    update({ day });
+    notify({ message: text.movedTo(dayParts(day, language).weekdayLong), undo: [{ type: "plan.update", id: entry.id, day: entry.day, meal: entry.meal, servings: entry.servings }] });
+    onClose();
+  }
+
+  return (
+    <Sheet open onClose={onClose} title={entry.recipe}
+      description={`${text.meals[entry.meal]}, ${parts.weekdayLong} ${parts.dayMonth}${entry.cooked ? text.cookedSuffix : ""}`}
+      footer={
+        <View style={styles.footer}>
+          <Button label={text.remove} tone="destructive" onPress={() => { removeMeal(entry, data, notify, text); onClose(); }} />
+          {!entry.cooked ? <Button label={text.markCooked} icon={ChefHat} onPress={() => { data.change({ type: "plan.cook", id: entry.id }); notify({ message: text.cookedTaken }); onClose(); }} /> : null}
+        </View>
+      }>
+      {entry.cooked ? <T muted>{text.cookedMeal}</T> : <>
+        <View style={styles.row}>
+          <T weight="medium">{text.servingsLabel}</T>
+          <Stepper label={text.servingsLabel} value={entry.servings} onValue={(servings) => update({ servings })} />
+        </View>
+        <View style={{ gap: 8 }}>
+          <T weight="medium">{text.moveTo}</T>
+          <DayStrip days={week.days.map((one) => one.day)} value={entry.day} onValue={(day) => { if (day !== entry.day) move(day); }} />
+        </View>
+      </>}
+    </Sheet>
+  );
+}
+
+function removeMeal(entry: PlanEntry, data: OpenKitchen, notify: (notice: Notice) => void, text: (typeof TEXT)[keyof typeof TEXT]) {
+  data.change({ type: "plan.remove", id: entry.id });
+  notify({ message: text.removedFromPlan(entry.recipe), undo: [{ type: "plan.add", day: entry.day, meal: entry.meal, recipeId: entry.recipeId, servings: entry.servings }] });
+}
+
 export function EntrySheet({ entry, data, week, onClose, notify }: SheetProps & { entry: PlanEntry }) {
   const language = useLanguage();
   const text = useText(TEXT);
   const colors = useColors();
-  const page = usePageColor();
   const [servings, setServings] = useState(entry.servings);
   const [day, setDay] = useState(entry.day);
   const [meal, setMeal] = useState(entry.meal);
@@ -112,13 +139,12 @@ export function EntrySheet({ entry, data, week, onClose, notify }: SheetProps & 
     const lines = resolveLines(edit.lines, data.kitchen.ingredients, data.change);
     if (typeof lines === "string") { setEditing({ ...edit, error: lines }); return; }
     data.change({ type: "plan.customize", id: entry.id, lines });
-    notify({ message: text.changedForMeal, undo: entry.custom ? { type: "plan.customize", id: entry.id, lines: current } : { type: "plan.reset", id: entry.id } });
+    notify({ message: text.changedForMeal, undo: [entry.custom ? { type: "plan.customize", id: entry.id, lines: current } : { type: "plan.reset", id: entry.id }] });
     setEditing(null);
   }
 
   function remove() {
-    data.change({ type: "plan.remove", id: entry.id });
-    notify({ message: text.removedFromPlan(entry.recipe), undo: { type: "plan.add", day: entry.day, meal: entry.meal, recipeId: entry.recipeId, servings: entry.servings } });
+    removeMeal(entry, data, notify, text);
     onClose();
   }
 
@@ -162,19 +188,7 @@ export function EntrySheet({ entry, data, week, onClose, notify }: SheetProps & 
           </View>
           <View style={{ gap: 8 }}>
             <T weight="medium">{text.day}</T>
-            <View style={{ flexDirection: "row", gap: 2 }}>
-              {week.days.map(({ day: option }) => {
-                const date = dayParts(option, language);
-                const selected = day === option;
-                return (
-                  <Pressable key={option} accessibilityRole="button" accessibilityLabel={`${date.weekdayLong} ${date.dayMonth}`} accessibilityState={{ selected }}
-                    onPress={() => setDay(option)} style={[styles.dayChoice, { backgroundColor: selected ? page.hue : "transparent" }]}>
-                    <T style={{ fontSize: 11, color: selected ? "#ffffff" : colors.mutedForeground }}>{date.weekday}</T>
-                    <T weight="semibold" style={{ color: selected ? "#ffffff" : colors.foreground }}>{date.number}</T>
-                  </Pressable>
-                );
-              })}
-            </View>
+            <DayStrip days={week.days.map((one) => one.day)} value={day} onValue={setDay} />
           </View>
           <MealPicker value={meal} onValue={setMeal} />
           <View style={[styles.leftover, { backgroundColor: colors.muted }]}>
@@ -195,7 +209,7 @@ export function EntrySheet({ entry, data, week, onClose, notify }: SheetProps & 
               <Button label={text.changeThisMeal} tone="outline" icon={Pencil} disabled={changed} onPress={() => setEditing({ lines: draftLines(entry.lines, language) })} />
               {entry.custom ? <Button label={text.useRecipeAgain} tone="ghost" icon={RotateCcw} onPress={() => {
                 data.change({ type: "plan.reset", id: entry.id });
-                notify({ message: text.backToRecipe, undo: { type: "plan.customize", id: entry.id, lines: current } });
+                notify({ message: text.backToRecipe, undo: [{ type: "plan.customize", id: entry.id, lines: current }] });
               }} /> : null}
             </View>
             {changed ? <T muted style={styles.small}>{text.saveFirst}</T> : null}
@@ -204,6 +218,30 @@ export function EntrySheet({ entry, data, week, onClose, notify }: SheetProps & 
         <Button label={text.openRecipe} tone="ghost" onPress={() => { onClose(); router.navigate({ pathname: "/recipes/[recipeId]", params: { recipeId: entry.recipeId } }); }} />
       </View>}
     </Sheet>
+  );
+}
+
+/** Seven days to pick from. A dot marks a day that has a meal already. */
+function DayStrip({ days, value, onValue, planned }: { days: readonly string[]; value: string; onValue: (day: string) => void; planned?: ReadonlySet<string> }) {
+  const language = useLanguage();
+  const text = useText(TEXT);
+  const colors = useColors();
+  const page = usePageColor();
+  return (
+    <View accessibilityRole="radiogroup" accessibilityLabel={text.day} style={{ flexDirection: "row", gap: 2 }}>
+      {days.map((option) => {
+        const date = dayParts(option, language);
+        const selected = value === option;
+        return (
+          <Pressable key={option} accessibilityRole="radio" accessibilityLabel={`${date.weekdayLong} ${date.dayMonth}`} accessibilityState={{ checked: selected }}
+            onPress={() => onValue(option)} style={[styles.dayChoice, { backgroundColor: selected ? page.hue : "transparent" }]}>
+            <T style={{ fontSize: 11, color: selected ? "#ffffff" : colors.mutedForeground }}>{date.weekday}</T>
+            <T weight="semibold" style={{ color: selected ? "#ffffff" : colors.foreground }}>{date.number}</T>
+            <View style={[styles.planned, { backgroundColor: planned?.has(option) ? (selected ? "#ffffff" : page.ink) : "transparent" }]} />
+          </Pressable>
+        );
+      })}
+    </View>
   );
 }
 
@@ -230,6 +268,7 @@ const styles = StyleSheet.create({
   idea: { minHeight: 44, justifyContent: "center", borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10 },
   footer: { width: "100%", flexDirection: "row", alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end", gap: 8 },
   dayChoice: { flex: 1, minHeight: 48, alignItems: "center", justifyContent: "center", borderRadius: 12, gap: 3 },
+  planned: { width: 4, height: 4, borderRadius: 2 },
   meals: { flexDirection: "row", gap: 2, padding: 4, borderRadius: 24 },
   mealChoice: { flex: 1, minHeight: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", paddingHorizontal: 2 },
   leftover: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12, padding: 12, borderRadius: 12 },

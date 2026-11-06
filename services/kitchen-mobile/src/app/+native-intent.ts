@@ -1,5 +1,5 @@
 /**
- * The Tools sign-in page sends the browser back to `com.lab4code.kitchen:/oauth?code=…`. The sign-in session reads that link
+ * The Tools sign-in page sends the browser back to `com.lab4code.pantrino:/oauth?code=…`. The sign-in session reads that link
  * through its own listener. The app has no `/oauth` page, so the router must not open it: a link that arrives while the app
  * runs is dropped, and a link that starts the app opens the start page.
  */
