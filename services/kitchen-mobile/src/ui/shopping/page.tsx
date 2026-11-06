@@ -1,10 +1,9 @@
 import { addDays, formatAmount, weekStart } from "@tools-platform/service/kitchen-contract";
-import { Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Plus } from "lucide-react-native";
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Plus } from "lucide-react-native";
 import { useLocalSearchParams } from "expo-router";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Pressable, type ScrollViewInstance, StyleSheet, View } from "react-native";
 import type { OpenKitchen } from "../../state";
-import type { QueuedAction } from "../../sync/model";
 import {
   Button,
   Empty,
@@ -23,9 +22,10 @@ import {
 } from "../kit";
 import { useLanguage, useText } from "../language";
 import { groupColor, ink, tint, useColors } from "../theme";
+import { ListRow } from "./row";
 import { AddSheet } from "./sheet";
 import { TEXT } from "./text";
-import { shoppingView } from "./view";
+import { type RowChange, rowChanges, shoppingView } from "./view";
 
 export function Shopping({ kitchen, today, planFrom, change }: OpenKitchen) {
   const text = useText(TEXT);
@@ -42,9 +42,9 @@ export function Shopping({ kitchen, today, planFrom, change }: OpenKitchen) {
   const contentTop = useRef(0);
   const shopping = shoppingView(kitchen, week);
   const groups = byGroup(kitchen.kitchen.groups, shopping.toBuy, (line) => line.section);
-  function run(action: QueuedAction, message: string, undo?: QueuedAction) {
+  function run({ action, ...notice }: RowChange) {
     change(action);
-    setNotice({ message, undo });
+    setNotice(notice);
   }
   const facts = `${weekLabel(week, today, language)}. ${shopping.count ? text.toBuy(shopping.count) : text.nothingToBuy}${shopping.plannedMeals ? ` ${text.plannedFor(shopping.plannedMeals)}` : ""}.`;
   return (
@@ -125,22 +125,11 @@ export function Shopping({ kitchen, today, planFrom, change }: OpenKitchen) {
             count={shopping.weekly.filter((extra) => !extra.bought).length}
           >
             {shopping.weekly.map((extra) => (
-              <Row
+              <ListRow
                 key={`${week}:${extra.id}:${extra.bought}`}
-                name={extra.name}
+                row={{ kind: "weekly", extra, week: shopping.start }}
                 color={colors.pageInk.home}
-                done={extra.bought}
-                onCheck={() =>
-                  run({ type: "extra.mark", id: extra.id, week, bought: true }, text.bought(extra.name), {
-                    type: "extra.mark",
-                    id: extra.id,
-                    week,
-                    bought: false,
-                  })
-                }
-                onUncheck={() =>
-                  run({ type: "extra.mark", id: extra.id, week, bought: false }, text.notBought(extra.name))
-                }
+                onChange={run}
               />
             ))}
           </Group>
@@ -148,17 +137,7 @@ export function Shopping({ kitchen, today, planFrom, change }: OpenKitchen) {
         {shopping.once.length ? (
           <Group title={text.alsoBuy} color={colors.pageInk.shopping}>
             {shopping.once.map((extra) => (
-              <Row
-                key={extra.id}
-                name={extra.name}
-                color={colors.pageInk.shopping}
-                onCheck={() =>
-                  run({ type: "extra.remove", id: extra.id }, text.bought(extra.name), {
-                    type: "extra.add",
-                    name: extra.name,
-                  })
-                }
-              />
+              <ListRow key={extra.id} row={{ kind: "once", extra }} color={colors.pageInk.shopping} onChange={run} />
             ))}
           </Group>
         ) : null}
@@ -175,19 +154,11 @@ export function Shopping({ kitchen, today, planFrom, change }: OpenKitchen) {
               count={lines.length}
             >
               {lines.map((line) => (
-                <Row
+                <ListRow
                   key={`${line.ingredientId}:${line.inStock}:${line.toBuy}`}
-                  name={line.ingredient}
+                  row={{ kind: "line", line }}
                   color={groupColor(colors, kitchen.kitchen.groups, section)}
-                  amount={formatAmount(line.toBuy, line.unit, language)}
-                  detail={`${line.inStock ? `${text.inStock(formatAmount(line.inStock, line.unit, language))}. ` : ""}${text.forRecipes(line.recipes.join(", "))}`}
-                  onCheck={() =>
-                    run(
-                      { type: "stock.add", ingredientId: line.ingredientId, amount: line.toBuy },
-                      text.addedToHome(formatAmount(line.toBuy, line.unit, language), line.ingredient),
-                      { type: "stock.set", ingredientId: line.ingredientId, amount: line.inStock },
-                    )
-                  }
+                  onChange={run}
                 />
               ))}
             </Group>
@@ -229,11 +200,7 @@ export function Shopping({ kitchen, today, planFrom, change }: OpenKitchen) {
           kitchen={kitchen}
           change={change}
           onRemove={(extra) =>
-            run({ type: "extra.remove", id: extra.id }, text.stopped(extra.name), {
-              type: "extra.add",
-              name: extra.name,
-              everyWeek: true,
-            })
+            run(rowChanges({ kind: "weekly", extra: { ...extra, bought: false }, week: shopping.start }, text, language).remove!)
           }
           onClose={() => setAdding(false)}
         />
@@ -263,89 +230,9 @@ function Group({
   );
 }
 
-function Row({
-  name,
-  amount,
-  detail,
-  color,
-  done = false,
-  onCheck,
-  onUncheck,
-}: {
-  name: string;
-  amount?: string;
-  detail?: string;
-  color: string;
-  done?: boolean;
-  onCheck: () => void;
-  onUncheck?: () => void;
-}) {
-  const text = useText(TEXT);
-  const colors = useColors();
-  const [checked, setChecked] = useState(done);
-  const tapped = useRef(false);
-  return (
-    <Pressable
-      accessibilityRole="checkbox"
-      accessibilityLabel={text.boughtAria(name, amount)}
-      accessibilityState={{ checked, disabled: checked && !onUncheck }}
-      disabled={checked && !onUncheck}
-      onPress={() => {
-        if (tapped.current) return;
-        tapped.current = true;
-        setChecked(!checked);
-        if (checked) onUncheck?.();
-        else onCheck();
-      }}
-      style={({ pressed }) => [styles.row, pressed && { opacity: 0.7 }]}
-    >
-      <View
-        style={{
-          width: 28,
-          height: 28,
-          borderRadius: 14,
-          borderWidth: 2,
-          borderColor: color,
-          backgroundColor: checked ? color : colors.card,
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        {checked ? <Check size={17} strokeWidth={3} color={colors.background} /> : null}
-      </View>
-      <View style={{ flex: 1 }}>
-        <T
-          weight="medium"
-          style={checked ? { textDecorationLine: "line-through", color: colors.mutedForeground } : undefined}
-        >
-          {name}
-        </T>
-        {detail ? (
-          <T muted style={{ fontSize: 12, marginTop: 2 }}>
-            {detail}
-          </T>
-        ) : null}
-      </View>
-      {amount ? (
-        <T weight="semibold" style={{ color: ink(color, colors), fontSize: 14 }}>
-          {amount}
-        </T>
-      ) : null}
-    </Pressable>
-  );
-}
-
 const styles = StyleSheet.create({
   balance: { flexDirection: "row", alignItems: "center", gap: 12, padding: 16, borderRadius: 16 },
   wrap: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   jump: { minHeight: 44, flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 6 },
-  row: {
-    minHeight: 56,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
   covered: { minHeight: 44, flexDirection: "row", alignItems: "center", gap: 8 },
 });
