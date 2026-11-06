@@ -136,7 +136,7 @@ export function KitchenPantryPage(data: PantryData) {
                   <li key={leftover.id} className="rounded-2xl p-3.5" style={{ background: tint(label.urgent ? "var(--destructive)" : "var(--kitchen-home-ink)", 11) }}>
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="font-medium break-words">{leftover.name}</p>
+                        <p className="font-medium wrap-anywhere">{leftover.name}</p>
                         <p className={cn("text-xs", label.urgent ? "text-destructive" : "text-muted-foreground")}>{label.text}</p>
                       </div>
                       <span className="shrink-0 text-sm font-semibold tabular-nums">{text.servings(leftover.servings)}</span>
@@ -205,7 +205,7 @@ function StockRow({ item, run, pending, onOpen }: { item: StockItem; run: Return
   return (
     <li className="flex min-h-14 items-center gap-3 px-3 py-2 sm:px-4">
       <button type="button" onClick={onOpen} aria-label={text.showIngredient(item.ingredient)}
-        className="min-w-0 flex-1 self-stretch text-left font-medium break-words underline-offset-4 hover:underline focus-visible:rounded-md focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none">{item.ingredient}</button>
+        className="min-w-0 flex-1 self-stretch text-left font-medium wrap-anywhere underline-offset-4 hover:underline focus-visible:rounded-md focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none">{item.ingredient}</button>
       <label className="flex items-center gap-1.5">
         <span className="sr-only">{text.amountOf(item.ingredient)}</span>
         <Input className="h-9 w-20 text-right tabular-nums" inputMode="decimal" value={value} onChange={(event) => setValue(event.target.value)}
@@ -251,15 +251,15 @@ function AddStockSheet({ open, group, onClose, data }: { open: boolean; group?: 
   return (
     <KitchenSheet open={open} onOpenChange={(next) => { if (!next) close(); }} title={group ? text.addToGroup(groupLabel(group, language)) : text.addStockTitle} description={text.addStockDescription}
       footer={<SheetAction pending={pending} missing={!selected ? text.chooseIngredientFirst : !(value > 0) ? text.enterAmount : undefined} onClick={() => void add()}>{text.addToStock}</SheetAction>}>
-      <div className="grid gap-4">
+      <div className="grid grid-cols-1 gap-4">
           <SearchField value={query} onValue={setQuery} label={text.findIngredient} inSheet
             add={isNew ? { label: text.addNew(typed), run: () => { setDraft({ name: typed, unit: draft?.unit ?? "g" }); setIngredientId(""); } } : undefined}>
           <div className="flex flex-wrap gap-1.5">
             {matches.map((one) => (
               <button key={one.id} type="button" aria-pressed={!draft && one.id === ingredientId} onClick={() => { setIngredientId(one.id); setDraft(undefined); }}
-                className="inline-flex h-9 items-center gap-1.5 rounded-full border border-control-border bg-control px-3 text-sm aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground">
-                <GroupDot groups={data.kitchen.groups} group={one.section} className="size-2" />
-                {one.name}
+                className="inline-flex h-9 max-w-full items-center gap-1.5 rounded-full border border-control-border bg-control px-3 text-sm aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground">
+                <GroupDot groups={data.kitchen.groups} group={one.section} className="size-2 shrink-0" />
+                <span className="truncate">{one.name}</span>
                 {home.get(one.id) ? <span className="text-xs tabular-nums opacity-70">{formatAmount(home.get(one.id) ?? 0, one.unit, language)}</span> : null}
               </button>
             ))}

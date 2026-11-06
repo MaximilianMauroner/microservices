@@ -349,7 +349,7 @@
 
 .tools-return { color: var(--markdown-share-muted); font-size: 0.78rem; text-decoration: none; }
 .tools-return:hover, .tools-return:focus-visible { color: var(--markdown-share-accent); text-decoration: underline; }
-.tools-return-compact { flex: none; white-space: nowrap; }
+.tools-return-compact { display: inline-flex; flex: none; align-items: center; justify-content: center; min-width: 1.5rem; min-height: 2rem; white-space: nowrap; }
 .tools-return-label { margin-left: 0.25em; }
 
 .wordmark {

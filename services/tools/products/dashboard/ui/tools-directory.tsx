@@ -72,15 +72,15 @@ export function ToolsDirectory({ snapshot, attention = {}, facts = {} }: { snaps
             <Link className="block px-1 py-3 transition-colors hover:bg-accent" to={product.to} preload="intent">
               <span className="flex min-w-0 items-center gap-2.5">
                 <img className="size-8 shrink-0 rounded-lg" src={product.icon} alt="" width={32} height={32} />
-                <span className="min-w-0 flex-1"><strong className="block truncate text-sm font-semibold">{product.label}</strong><span className="block truncate text-xs text-muted-foreground">{metadata ? toolFacts(metadata.id, { attention, facts, statuses, operational, total: monitorIds.size, now, monitorId: metadata.monitorId }) : product.description ?? "Open tool"}</span></span>
+                <span className="min-w-0 flex-1"><strong className="block truncate text-sm font-semibold">{product.label}</strong><span className="block truncate text-xs text-muted-foreground [&>span+span]:before:content-['_·_']">{metadata ? toolFacts(metadata.id, { attention, facts, statuses, operational, total: monitorIds.size, now, monitorId: metadata.monitorId }) : product.description ?? "Open tool"}</span></span>
                 <ChevronRight className="size-4 text-muted-foreground" aria-hidden="true" />
               </span>
             </Link>
-            {product.pages?.some((page) => page.to !== product.to) || product.id === "money" ? <nav aria-label={`${product.label} pages`} className="flex flex-wrap gap-x-3 gap-y-1 px-1 pb-3 text-xs text-muted-foreground">
+            {product.pages?.some((page) => page.to !== product.to) || product.id === "money" ? <nav aria-label={`${product.label} pages`} className="flex flex-wrap gap-x-3 px-1 pb-2 text-xs text-muted-foreground">
               {product.pages?.filter((page) => page.to !== product.to).map((page) => page.external
-                ? <a key={page.to} className="hover:text-foreground hover:underline" href={page.to} target="_blank" rel="noreferrer">{page.label} <span className="sr-only">(opens in a new tab)</span></a>
-                : <Link key={page.to} className="hover:text-foreground hover:underline" to={page.to} preload="intent">{page.label}</Link>)}
-              {product.id === "money" ? MONEY_VIEWS.filter((view) => view !== "overview").map((view) => <Link key={view} className="hover:text-foreground hover:underline" to="/money" search={{ view }} preload="intent">{moneyViewTitle(view)}</Link>) : null}
+                ? <a key={page.to} className="py-1 hover:text-foreground hover:underline" href={page.to} target="_blank" rel="noreferrer">{page.label} <span className="sr-only">(opens in a new tab)</span></a>
+                : <Link key={page.to} className="py-1 hover:text-foreground hover:underline" to={page.to} preload="intent">{page.label}</Link>)}
+              {product.id === "money" ? MONEY_VIEWS.filter((view) => view !== "overview").map((view) => <Link key={view} className="py-1 hover:text-foreground hover:underline" to="/money" search={{ view }} preload="intent">{moneyViewTitle(view)}</Link>) : null}
             </nav> : null}
             </div>;
           })}
@@ -89,7 +89,7 @@ export function ToolsDirectory({ snapshot, attention = {}, facts = {} }: { snaps
             return <a key={product.id} className="block min-w-0 border-b border-border/60 px-1 py-3 transition-colors hover:bg-accent" href={product.to} target="_blank" rel="noreferrer">
               <span className="flex min-w-0 items-center gap-2.5">
                 <img className="size-8 shrink-0 rounded-lg" src={product.icon} alt="" width={32} height={32} />
-                <span className="min-w-0 flex-1"><strong className="block truncate text-sm font-semibold">{product.label}</strong><span className="block truncate text-xs text-muted-foreground">{metadata ? toolFacts(metadata.id, { attention, facts, statuses, operational, total: monitorIds.size, now, monitorId: metadata.monitorId }) : "External tool"}</span></span>
+                <span className="min-w-0 flex-1"><strong className="block truncate text-sm font-semibold">{product.label}</strong><span className="block truncate text-xs text-muted-foreground [&>span+span]:before:content-['_·_']">{metadata ? toolFacts(metadata.id, { attention, facts, statuses, operational, total: monitorIds.size, now, monitorId: metadata.monitorId }) : "External tool"}</span></span>
                 <ArrowUpRight className="size-4 text-muted-foreground" aria-hidden="true" />
               </span>
             </a>;
@@ -99,7 +99,7 @@ export function ToolsDirectory({ snapshot, attention = {}, facts = {} }: { snaps
         {infrastructure.length > 0 ? (
           <details className="rounded-xl bg-card ring-1 ring-[color:var(--surface-border)]" aria-labelledby="infrastructure-title">
             <summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-3 marker:hidden"><ChevronRight className="size-4 transition-transform [[open]>&]:rotate-90" aria-hidden="true" /><h2 id="infrastructure-title" className="text-sm font-semibold">Infrastructure</h2><span className="text-xs text-muted-foreground">{operational} of {monitorIds.size} checks passing</span></summary>
-            <ul className="grid gap-x-6 px-4 pb-2 pt-1 md:grid-cols-2" role="list">
+            <ul className="grid grid-cols-1 gap-x-6 px-4 pb-2 pt-1 md:grid-cols-2" role="list">
               {infrastructure.map((product) => {
                 const status = product.monitorId ? statuses[product.monitorId] : undefined;
                 return <li key={product.id} className="border-t border-border/60">

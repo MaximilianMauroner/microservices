@@ -1,29 +1,23 @@
 import * as Crypto from "expo-crypto";
 import { formatAmount } from "@tools-platform/service/kitchen-contract";
-import { Check, type LucideIcon, Trash2 } from "lucide-react-native";
+import { Check, Trash2 } from "lucide-react-native";
 import { useRef, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
-import ReanimatedSwipeable, { type SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
-import Animated, { interpolate, type SharedValue, useAnimatedReaction, useAnimatedStyle } from "react-native-reanimated";
-import { scheduleOnRN } from "react-native-worklets";
-import { haptic, T } from "../kit";
+import { T } from "../kit";
+import { RowMenu, type SwipeAction, SwipeRow } from "../swipe-row";
 import { useLanguage, useText } from "../language";
 import { ink, tint, useColors } from "../theme";
 import { TEXT } from "./text";
 import { type RowChange, type RowGesture, rowChanges, type ShoppingRow, SWIPE } from "./view";
 
-const REACH = 96;
-const THRESHOLD = 72;
-
-/** A shopping row. A tap or a swipe right checks it, a swipe left removes it when the row allows that. */
-export function ListRow({ row, color, onChange }: { row: ShoppingRow; color: string; onChange: (change: RowChange) => void }) {
+/** A shopping row. A tap or a swipe right checks it. A swipe left removes it when the row allows that. Its more button offers the same actions. */
+export function ListRow({ row, color, onChange }: { row: ShoppingRow; color: string; onChange: (change: RowChange, tapped: boolean) => void }) {
   const text = useText(TEXT);
   const language = useLanguage();
   const colors = useColors();
   const changes = rowChanges(row, text, language, Crypto.randomUUID);
   const [checked, setChecked] = useState(row.kind === "weekly" && row.extra.bought);
   const used = useRef(false);
-  const swipe = useRef<SwipeableMethods>(null);
   const name = row.kind === "line" ? row.line.ingredient : row.extra.name;
   const amount = row.kind === "line" ? formatAmount(row.line.toBuy, row.line.unit, language) : undefined;
   const detail =
@@ -31,72 +25,46 @@ export function ListRow({ row, color, onChange }: { row: ShoppingRow; color: str
       ? `${row.line.inStock ? `${text.inStock(formatAmount(row.line.inStock, row.line.unit, language))}. ` : ""}${text.forRecipes(row.line.recipes.join(", "))}`
       : undefined;
   const removable = Boolean(changes.remove);
-  function run(gesture: RowGesture) {
+  function run(gesture: RowGesture, tapped = false) {
     const change = changes[gesture];
-    if (!change || used.current) {
-      swipe.current?.close();
-      return;
-    }
+    if (!change || used.current) return;
     used.current = true;
     if (gesture === "check") setChecked(!checked);
-    onChange(change);
+    onChange(change, tapped);
   }
   const background = tint(color, 11, colors.card);
+  const remove: SwipeAction | undefined = removable ? { label: text.remove, icon: Trash2, color: colors.destructive, run: () => run(SWIPE.left) } : undefined;
+  const buy: SwipeAction | undefined = checked ? undefined : { label: text.markBought, icon: Check, color: ink(color, colors), run: () => run(SWIPE.right) };
+  const actions = [buy, remove].filter((one): one is SwipeAction => Boolean(one));
   return (
-    <ReanimatedSwipeable
-      ref={swipe}
-      friction={1}
-      leftThreshold={THRESHOLD}
-      rightThreshold={THRESHOLD}
-      overshootLeft={false}
-      overshootRight={false}
-      renderLeftActions={checked ? undefined : (_, translation) => <Action side="left" translation={translation} color={color} icon={Check} label={text.markBought} />}
-      renderRightActions={removable ? (_, translation) => <Action side="right" translation={translation} color={colors.destructive} icon={Trash2} label={text.remove} /> : undefined}
-      onSwipeableWillOpen={(direction) => run(SWIPE[direction])}
-    >
-      <Pressable
-        accessibilityRole="checkbox"
-        accessibilityLabel={text.boughtAria(name, amount)}
-        accessibilityState={{ checked }}
-        accessibilityActions={removable ? [{ name: "remove", label: text.remove }] : undefined}
-        onAccessibilityAction={(event) => { if (event.nativeEvent.actionName === "remove") run("remove"); }}
-        onPress={() => run("check")}
-        style={({ pressed }) => [styles.row, { backgroundColor: background }, pressed && { opacity: 0.7 }]}
-      >
-        <View style={[styles.box, { borderColor: color, backgroundColor: checked ? color : colors.card }]}>
-          {checked ? <Check size={17} strokeWidth={3} color={colors.background} /> : null}
-        </View>
-        <View style={{ flex: 1 }}>
-          <T weight="medium" style={checked ? { textDecorationLine: "line-through", color: colors.mutedForeground } : undefined}>{name}</T>
-          {detail ? <T muted style={{ fontSize: 12, marginTop: 2 }}>{detail}</T> : null}
-        </View>
-        {amount ? <T weight="semibold" style={{ color: ink(color, colors), fontSize: 14 }}>{amount}</T> : null}
-      </Pressable>
-    </ReanimatedSwipeable>
-  );
-}
-
-/** The panel under a swiped row. It gets bright and ticks once the swipe passes the point where release runs it. */
-function Action({ side, translation, color, icon: Icon, label }: { side: "left" | "right"; translation: SharedValue<number>; color: string; icon: LucideIcon; label: string }) {
-  const sign = side === "left" ? 1 : -1;
-  useAnimatedReaction(
-    () => translation.value * sign >= THRESHOLD,
-    (past, before) => { if (past && before === false) scheduleOnRN(haptic, "threshold"); },
-  );
-  const content = useAnimatedStyle(() => ({ opacity: interpolate(translation.value * sign, [0, THRESHOLD], [0.35, 1], "clamp") }));
-  return (
-    <View style={[styles.action, { backgroundColor: color }]}>
-      <Animated.View style={[styles.actionBody, content]}>
-        <Icon size={20} color="#ffffff" />
-        <T weight="semibold" style={{ color: "#ffffff", fontSize: 12 }}>{label}</T>
-      </Animated.View>
-    </View>
+    <SwipeRow right={buy} left={remove}>
+      <View style={[styles.line, { backgroundColor: background }]}>
+        <Pressable
+          accessibilityRole="checkbox"
+          accessibilityLabel={text.boughtAria(name, amount)}
+          accessibilityState={{ checked }}
+          accessibilityActions={removable ? [{ name: "remove", label: text.remove }] : undefined}
+          onAccessibilityAction={(event) => { if (event.nativeEvent.actionName === "remove") run("remove"); }}
+          onPress={() => run("check", true)}
+          style={({ pressed }) => [styles.row, actions.length > 0 && { paddingRight: 0 }, pressed && { opacity: 0.7 }]}
+        >
+          <View style={[styles.box, { borderColor: color, backgroundColor: checked ? color : colors.card }]}>
+            {checked ? <Check size={17} strokeWidth={3} color={colors.background} /> : null}
+          </View>
+          <View style={{ flex: 1 }}>
+            <T weight="medium" style={checked ? { textDecorationLine: "line-through", color: colors.mutedForeground } : undefined}>{name}</T>
+            {detail ? <T muted style={{ fontSize: 12, marginTop: 2 }}>{detail}</T> : null}
+          </View>
+          {amount ? <T weight="semibold" style={{ color: ink(color, colors), fontSize: 14 }}>{amount}</T> : null}
+        </Pressable>
+        {actions.length ? <RowMenu name={name} actions={actions} /> : null}
+      </View>
+    </SwipeRow>
   );
 }
 
 const styles = StyleSheet.create({
-  row: { minHeight: 56, flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 12, paddingVertical: 10 },
+  line: { flexDirection: "row", alignItems: "center", paddingRight: 4 },
+  row: { flex: 1, minHeight: 56, flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 12, paddingVertical: 10 },
   box: { width: 28, height: 28, borderRadius: 14, borderWidth: 2, alignItems: "center", justifyContent: "center" },
-  action: { width: REACH, alignItems: "center", justifyContent: "center" },
-  actionBody: { alignItems: "center", gap: 2 },
 });
