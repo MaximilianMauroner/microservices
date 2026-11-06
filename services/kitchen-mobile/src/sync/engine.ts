@@ -24,6 +24,12 @@ type Deps = Readonly<{
 
 const BATCH = 200;
 
+/** A change waits this long for the next one, so a run of taps goes to the server in one sync. */
+const SETTLE_MS = 1000;
+
+/** The longest a change waits while taps keep coming. */
+const MAX_WAIT_MS = 5000;
+
 const INITIAL: SyncState = { view: null, pending: 0, notices: [], status: { kind: "idle", syncedAt: null }, signedOut: false };
 
 /**
@@ -31,6 +37,7 @@ const INITIAL: SyncState = { view: null, pending: 0, notices: [], status: { kind
  * The sent changes leave the outbox only together with a snapshot that contains them; until then they are sent
  * again, and the server answers a repeat with its first outcome.
  * Only one sync runs at a time; a request during a sync runs one more sync after it.
+ * A change asks for a sync once the taps settle, so a run of changes costs one sync and not one per change.
  *
  * The engine serves one signed-in account at a time. `load` starts it for the stored account and `stop` ends it.
  * Each start is a new epoch. Work from an earlier epoch never sends, stores, or shows anything, so one account's
@@ -48,6 +55,7 @@ export function createSyncEngine({ vault, api, project, newId, isSignedOut, isOf
   let epoch = 0;
   let stopped = true;
   let writing: Promise<void> | undefined;
+  let settle: { timer: ReturnType<typeof setTimeout>; since: number } | undefined;
   const listeners = new Set<() => void>();
 
   function publish(patch: Partial<SyncState>) {
@@ -61,6 +69,22 @@ export function createSyncEngine({ vault, api, project, newId, isSignedOut, isOf
     const last = stored.at(-1)?.seq ?? 0;
     outbox = [...stored, ...outbox.filter((item) => unwritten.has(item.clientActionId)).map((item, index) => ({ ...item, seq: last + index + 1 }))];
     publish({ ...patch, view: snapshot && project(snapshot, outbox), pending: outbox.length, notices });
+  }
+
+  function cancelSettle() {
+    if (settle) clearTimeout(settle.timer);
+    settle = undefined;
+  }
+
+  function syncWhenSettled() {
+    if (running?.epoch === epoch) {
+      again = true;
+      return;
+    }
+    const since = settle?.since ?? Date.now();
+    cancelSettle();
+    const timer = setTimeout(() => { settle = undefined; void engine.sync(); }, Math.max(0, Math.min(SETTLE_MS, since + MAX_WAIT_MS - Date.now())));
+    settle = { timer, since };
   }
 
   async function once(mine: number) {
@@ -109,6 +133,7 @@ export function createSyncEngine({ vault, api, project, newId, isSignedOut, isOf
     },
     sync(): Promise<void> {
       if (stopped) return Promise.resolve();
+      cancelSettle();
       if (running?.epoch === epoch) {
         again = true;
         return running.done;
@@ -128,6 +153,7 @@ export function createSyncEngine({ vault, api, project, newId, isSignedOut, isOf
       epoch += 1;
       stopped = true;
       again = false;
+      cancelSettle();
       snapshot = null;
       outbox = [];
       unwritten.clear();
@@ -161,7 +187,7 @@ export function createSyncEngine({ vault, api, project, newId, isSignedOut, isOf
       }
       if (mine !== epoch) return;
       unwritten.delete(item.clientActionId);
-      void engine.sync();
+      syncWhenSettled();
     },
     async dismiss(clientActionId: string) {
       if (stopped) return;
