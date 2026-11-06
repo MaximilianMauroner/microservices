@@ -39,7 +39,7 @@ function setup(server: { push?: (items: readonly OutboxItem[]) => Promise<AppAct
         return server.push ? server.push(items) : items.map((one) => ({ clientActionId: one.clientActionId, status: "applied" as const }));
       }
     },
-    project: (snapshot, outbox) => ({ ...snapshot, today: `${snapshot.today}+${outbox.length}` }),
+    project: (snapshot, outbox) => ({ ...snapshot, today: `${snapshot.today}${"+".repeat(outbox.length)}` }),
     newId: () => `change-${++ids}`,
     isSignedOut: (error) => error instanceof SignedOut,
     isOffline: (error) => error instanceof Offline,
@@ -66,7 +66,7 @@ describe("sync engine", () => {
     expect(engine.getState().pending, "queued before the sync answers").toBe(1);
     await engine.sync();
     expect(sent).toEqual([["change-1"]]);
-    expect(engine.getState()).toMatchObject({ pending: 0, status: { kind: "idle", syncedAt: "2026-11-05T10:00:00.000Z" }, view: { today: "2026-11-05+0" } });
+    expect(engine.getState()).toMatchObject({ pending: 0, status: { kind: "idle", syncedAt: "2026-11-05T10:00:00.000Z" }, view: { today: "2026-11-05" } });
   });
 
   it("gives a new item its ID on the phone, so later changes can name it", async () => {
@@ -83,7 +83,7 @@ describe("sync engine", () => {
     await engine.load();
     await engine.change("home", addMilk);
     await engine.sync();
-    expect(engine.getState()).toMatchObject({ pending: 1, status: { kind: "offline" }, view: { today: "2026-11-05+1" } });
+    expect(engine.getState()).toMatchObject({ pending: 1, status: { kind: "offline" }, view: { today: "2026-11-05+" } });
   });
 
   it("drops a refused change and keeps its message as a notice", async () => {
@@ -102,12 +102,12 @@ describe("sync engine", () => {
     await engine.load();
     await engine.change("home", addMilk);
     await engine.sync();
-    expect(engine.getState(), "the change stays visible while the old snapshot lacks it").toMatchObject({ pending: 1, status: { kind: "offline" }, view: { today: "2026-11-05+1" } });
+    expect(engine.getState(), "the change stays visible while the old snapshot lacks it").toMatchObject({ pending: 1, status: { kind: "offline" }, view: { today: "2026-11-05+" } });
     reachable = true;
     await engine.sync();
     expect(sent.length, "the change was sent again").toBeGreaterThan(1);
     expect(new Set(sent.flat()), "the server answers each repeat with its first outcome").toEqual(new Set(["change-1"]));
-    expect(engine.getState()).toMatchObject({ pending: 0, view: { today: "2026-11-05+0" } });
+    expect(engine.getState()).toMatchObject({ pending: 0, view: { today: "2026-11-05" } });
   });
 
   it("writes and shows nothing from a sync that was running when the person signed out", async () => {
@@ -167,5 +167,104 @@ describe("sync engine", () => {
     await first;
     expect(calls).toBe(2);
     expect(sent).toEqual([["change-1"]]);
+  });
+  it("shows a change before the vault has stored it", async () => {
+    const { engine, vault } = await started();
+    vault.data.snapshot = empty;
+    await engine.load();
+    let store: () => void = () => undefined;
+    const enqueue = vault.enqueue;
+    vault.enqueue = async (item) => { await new Promise<void>((resolve) => { store = resolve; }); await enqueue(item); };
+    const changing = engine.change("home", addMilk);
+    expect(engine.getState()).toMatchObject({ pending: 1, view: { today: "2026-11-05+" } });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(vault.data.outbox, "the write is still waiting").toHaveLength(0);
+    store();
+    await changing;
+    expect(vault.data.outbox).toHaveLength(1);
+  });
+
+  it("takes a change off the screen when the vault cannot store it", async () => {
+    const { engine, vault, sent } = await started();
+    vault.data.snapshot = empty;
+    await engine.load();
+    vault.enqueue = async () => { throw new Error("disk full"); };
+    await engine.change("home", addMilk);
+    expect(engine.getState()).toMatchObject({ pending: 0, view: { today: "2026-11-05" }, notices: [{ clientActionId: "change-1", unsaved: true }] });
+    await engine.sync();
+    expect(sent.flat()).toEqual([]);
+    expect(engine.getState().notices, "the unsaved notice stays after a sync").toEqual([{ clientActionId: "change-1", unsaved: true }]);
+    await engine.dismiss("change-1");
+    expect(engine.getState().notices).toEqual([]);
+  });
+
+  it("sends a run of changes in one sync once the taps settle", async () => {
+    const { engine, sent } = await started();
+    for (let tap = 0; tap < 3; tap += 1) {
+      await engine.change("home", addMilk);
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+    expect(sent, "nothing goes out while the taps continue").toEqual([]);
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    expect(sent, "one push with all three changes").toEqual([["change-1", "change-3", "change-5"]]);
+  });
+  it("keeps a change on screen when its vault write ends while a sync reads the outbox", async () => {
+    const { engine, vault } = await started();
+    vault.data.snapshot = empty;
+    await engine.load();
+    const read = vault.outbox;
+    let stale: OutboxItem[] = [];
+    let answer: () => void = () => undefined;
+    let reads = 0;
+    vault.outbox = async () => {
+      reads += 1;
+      if (reads !== 2) return read();
+      stale = await read();
+      await new Promise<void>((resolve) => { answer = resolve; });
+      return stale;
+    };
+    const afterReload: { pending: number; today: string | undefined }[] = [];
+    engine.subscribe(() => { const state = engine.getState(); if (state.status.kind === "idle") afterReload.push({ pending: state.pending, today: state.view?.today }); });
+    const syncing = engine.sync();
+    while (reads < 2) await new Promise((resolve) => setTimeout(resolve, 0));
+    await engine.change("home", addMilk);
+    answer();
+    await syncing;
+    expect(afterReload[0], "the stored change is still shown after the first reload").toEqual({ pending: 1, today: "2026-11-05+" });
+    expect(engine.getState(), "the follow-up sync sends it").toMatchObject({ pending: 0, view: { today: "2026-11-05" } });
+  });
+  it("takes a change off the screen when a failed commit rolled back its vault write", async () => {
+    let commits = 0;
+    const { engine, vault, sent } = await started();
+    vault.data.snapshot = empty;
+    await engine.load();
+    const commit = vault.commit;
+    vault.commit = async (...args) => {
+      commits += 1;
+      if (commits === 1) { vault.data.outbox = []; throw new Error("disk full"); }
+      return commit(...args);
+    };
+    await engine.change("home", addMilk);
+    await engine.sync();
+    expect(engine.getState().status).toMatchObject({ kind: "failed" });
+    await engine.sync();
+    expect(engine.getState(), "the screen matches the vault again").toMatchObject({ pending: 0, view: { today: "2026-11-05" } });
+    expect(sent.flat()).toEqual(["change-1"]);
+  });
+  it("stores a change made during a commit only after the commit ends", async () => {
+    const { engine, vault } = await started();
+    const order: string[] = [];
+    let finish: () => void = () => undefined;
+    const commit = vault.commit;
+    vault.commit = async (...args) => { order.push("commit starts"); await new Promise<void>((resolve) => { finish = resolve; }); await commit(...args); order.push("commit ends"); };
+    const enqueue = vault.enqueue;
+    vault.enqueue = async (item) => { order.push("write"); await enqueue(item); };
+    const syncing = engine.sync();
+    while (!order.length) await new Promise((resolve) => setTimeout(resolve, 0));
+    const changing = engine.change("home", addMilk);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    finish();
+    await Promise.all([syncing, changing]);
+    expect(order).toEqual(["commit starts", "commit ends", "write"]);
   });
 });

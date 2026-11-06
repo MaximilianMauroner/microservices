@@ -23,7 +23,7 @@ export function GroupsSheet({ kitchen, change, onClose }: { kitchen: KitchenSnap
   });
   return (
     <Sheet open onClose={onClose} title={text.arrangeGroups} description={text.arrangeDescription}
-      footer={<Button label={text.saveOrder} onPress={() => { change({ type: "groups.set", groups: order }); onClose(); }} />}>
+      footer={<Button wide label={text.saveOrder} onPress={() => { change({ type: "groups.set", groups: order }); onClose(); }} />}>
       {order.map((group, index) => (
         <View key={group} style={{ flexDirection: "row", alignItems: "center", gap: 8, borderRadius: RADIUS, borderWidth: 1, borderColor: colors.border, paddingLeft: 12, paddingRight: 4, paddingVertical: 4 }}>
           <GroupDot groups={order} group={group} />

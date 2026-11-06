@@ -9,6 +9,9 @@ export type QueuedAction = Exclude<KitchenAction, { type: "recipe.copy" }>;
 /** A change the server refused. The app shows it until the person dismisses it. */
 export type Notice = Readonly<{ clientActionId: string; message: string }>;
 
+/** What the app shows about a change that did not happen: the server refused it, or the phone could not store it. */
+export type SyncNotice = Notice | Readonly<{ clientActionId: string; unsaved: true }>;
+
 export type SyncStatus =
   | Readonly<{ kind: "idle"; syncedAt: string | null }>
   | Readonly<{ kind: "syncing" }>

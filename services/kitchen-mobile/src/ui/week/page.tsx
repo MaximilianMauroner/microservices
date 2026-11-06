@@ -1,13 +1,13 @@
 import { addDays, weekStart } from "@tools-platform/service/kitchen-contract";
 import { router } from "expo-router";
-import { Check, ChevronLeft, ChevronRight, Plus, ShoppingBasket } from "lucide-react-native";
+import { Check, Plus, ShoppingBasket } from "lucide-react-native";
 import { useMemo, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { GestureDetector, usePanGesture } from "react-native-gesture-handler";
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import { scheduleOnRN } from "react-native-worklets";
 import type { OpenKitchen } from "../../state";
-import { Button, dayParts, FloatingButton, haptic, mainGroup, type Notice, PlateRing, Screen, Snackbar, T, useByLabel, usePageColor, weekLabel, weekRange } from "../kit";
+import { Button, dayParts, FloatingButton, haptic, mainGroup, type Notice, PlateRing, Screen, Snackbar, T, useByLabel, WeekNav, usePageColor, weekLabel, weekRange } from "../kit";
 import { useLanguage, useText } from "../language";
 import { groupColor, tint, useColors } from "../theme";
 import { buildWeek, swipeStep } from "./model";
@@ -53,14 +53,11 @@ export function Week({ data }: { data: OpenKitchen }) {
   return (
     <Screen title={title}
       facts={`${title === range ? "" : `${range} · `}${week.entries.length ? text.plannedFacts(week.entries.length, week.cooked) : text.nothingPlanned}`}
-      floating={<>
-        <Snackbar notice={notice} onUndo={change} onDone={() => setNotice(null)} />
-        <FloatingButton icon={Plus} label={text.plan} onPress={() => setSelection({ kind: "plan" })} />
-      </>}
+      floating={<Snackbar notice={notice} onUndo={change} onDone={() => setNotice(null)} />}
+      fab={<FloatingButton icon={Plus} label={text.plan} onPress={() => setSelection({ kind: "plan" })} />}
       actions={<>
-        <Button icon={ChevronLeft} tone="outline" accessibilityLabel={text.previousWeek} disabled={!week.canGoBack} onPress={() => setRequested(addDays(week.start, -7))} />
-        <Button label={text.today} tone="outline" disabled={week.days.some((one) => one.day === today)} onPress={() => setRequested(weekStart(today))} />
-        <Button icon={ChevronRight} tone="outline" accessibilityLabel={text.nextWeek} onPress={() => setRequested(addDays(week.start, 7))} />
+        {week.days.some((one) => one.day === today) ? null : <Button label={text.today} tone="outline" onPress={() => setRequested(weekStart(today))} />}
+        <WeekNav canGoBack={week.canGoBack} onStep={turn} />
       </>}>
       {week.canGoBack ? null : <T muted style={styles.small}>{text.historyLimit}</T>}
       <GestureDetector gesture={swipe}>
@@ -68,12 +65,25 @@ export function Week({ data }: { data: OpenKitchen }) {
           accessibilityActions={[{ name: "next", label: text.nextWeek }, ...(week.canGoBack ? [{ name: "previous", label: text.previousWeek }] : [])]}
           onAccessibilityAction={(event) => turn(event.nativeEvent.actionName === "next" ? 1 : -1)}
           style={[{ borderTopWidth: StyleSheet.hairlineWidth, borderColor: colors.border }, slide]}>
-          {week.days.map(({ day, entries }) => {
+          {week.days.map(({ day, entries }, index) => {
             const parts = dayParts(day, language);
             const isToday = day === today;
             const past = day < today;
+            const quiet = (at: number) => { const one = week.days[at]; return one !== undefined && one.day < today && !one.entries.length; };
+            if (quiet(index)) {
+              if (quiet(index - 1)) return null;
+              let last = index;
+              while (quiet(last + 1)) last += 1;
+              const end = dayParts(week.days[last]!.day, language);
+              return (
+                <View key={day} style={[styles.pastDay, { borderBottomColor: colors.border }]}>
+                  <T muted style={{ fontSize: 14 }}>{last === index ? `${parts.weekday} ${parts.number}` : text.pastDays(`${parts.weekday} ${parts.number}`, `${end.weekday} ${end.number}`)}</T>
+                  <T muted style={{ fontSize: 14 }}>{text.nothingPlannedDay}</T>
+                </View>
+              );
+            }
             return (
-              <View key={day} style={[styles.day, { borderBottomColor: colors.border }, isToday && { backgroundColor: tint(page.hue, 7, colors.background), borderRadius: 16 }]}>
+              <View key={day} style={[styles.day, { borderBottomColor: colors.border }]}>
                 <View style={styles.date}>
                   <T weight={isToday ? "semibold" : "medium"} style={[styles.small, { color: isToday ? page.ink : colors.mutedForeground }]}>{isToday ? text.today : parts.weekday}</T>
                   <View style={[styles.number, isToday && { backgroundColor: page.hue }]}>
@@ -103,11 +113,10 @@ export function Week({ data }: { data: OpenKitchen }) {
                       </Pressable>
                     );
                   })}
-                  {past && !entries.length ? <T muted style={{ minHeight: 64, paddingTop: 22 }}>{text.nothingPlannedDay}</T> : (
-                    <Pressable accessibilityRole="button" accessibilityLabel={entries.length ? text.planAnother(parts.weekdayLong, parts.dayMonth) : text.planMeal(parts.weekdayLong, parts.dayMonth)}
-                      onPress={() => setSelection({ kind: "plan", day })}
-                      style={[styles.add, { borderColor: entries.length ? "transparent" : colors.border, alignSelf: entries.length ? "flex-start" : "stretch" }]}>
-                      <Plus size={16} color={colors.mutedForeground} /><T muted style={{ fontSize: 14 }}>{entries.length ? text.add : text.planAMeal}</T>
+                  {entries.length ? null : (
+                    <Pressable accessibilityRole="button" accessibilityLabel={text.planMeal(parts.weekdayLong, parts.dayMonth)}
+                      onPress={() => setSelection({ kind: "plan", day })} style={[styles.add, { borderColor: colors.border }]}>
+                      <Plus size={16} color={colors.mutedForeground} /><T muted style={{ fontSize: 14 }}>{text.planAMeal}</T>
                     </Pressable>
                   )}
                 </View>
@@ -146,6 +155,7 @@ export function Week({ data }: { data: OpenKitchen }) {
 const styles = StyleSheet.create({
   small: { fontSize: 12 },
   day: { flexDirection: "row", gap: 12, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth },
+  pastDay: { minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, paddingHorizontal: 4, borderBottomWidth: StyleSheet.hairlineWidth },
   date: { width: 52, alignItems: "center", gap: 4, paddingTop: 4 },
   number: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
   meal: { minHeight: 64, flexDirection: "row", alignItems: "flex-start", gap: 12, borderWidth: 1, borderRadius: 12, padding: 10 },
