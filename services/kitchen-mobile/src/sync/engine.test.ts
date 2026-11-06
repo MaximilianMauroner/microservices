@@ -250,4 +250,22 @@ describe("sync engine", () => {
     expect(afterReload[0], "the stored change is still shown after the first reload").toEqual({ pending: 1, today: "2026-11-05+" });
     expect(engine.getState(), "the follow-up sync sends it").toMatchObject({ pending: 0, view: { today: "2026-11-05" } });
   });
+  it("takes a change off the screen when a failed commit rolled back its vault write", async () => {
+    let commits = 0;
+    const { engine, vault, sent } = await started();
+    vault.data.snapshot = empty;
+    await engine.load();
+    const commit = vault.commit;
+    vault.commit = async (...args) => {
+      commits += 1;
+      if (commits === 1) { vault.data.outbox = []; throw new Error("disk full"); }
+      return commit(...args);
+    };
+    await engine.change("home", addMilk);
+    await engine.sync();
+    expect(engine.getState().status).toMatchObject({ kind: "failed" });
+    await engine.sync();
+    expect(engine.getState(), "the screen matches the vault again").toMatchObject({ pending: 0, view: { today: "2026-11-05" } });
+    expect(sent.flat()).toEqual(["change-1"]);
+  });
 });
