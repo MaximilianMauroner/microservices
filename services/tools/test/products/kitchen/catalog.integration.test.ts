@@ -2,8 +2,8 @@ import postgres from "postgres";
 import type { PlatformPrincipal } from "#security";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { DISPOSABLE_DATABASE_SENTINEL, withVerifiedDisposableDatabase } from "../../../platform/database/postgres-push-guard.js";
-import { type CatalogPage, kitchenCatalog, parseOpenFoodFactsPage } from "../../../products/kitchen/catalog.js";
-import type { CatalogProduct } from "../../../products/kitchen/domain.js";
+import { type CatalogSourceReader, kitchenCatalog, parseBillaList, parseBillaProduct, parseOpenFoodFactsPage } from "../../../products/kitchen/catalog.js";
+import type { CatalogProduct, CatalogSource } from "../../../products/kitchen/domain.js";
 import { handleKitchenCatalog } from "../../../products/kitchen/sync.js";
 import { requireLoopbackPostgres } from "../../harness/postgres.ts";
 
@@ -12,6 +12,7 @@ const confirmed = process.env.MONEY_TEST_DATABASE_CONFIRM === "money-repository-
 const sql = databaseUrl && confirmed ? postgres(databaseUrl, { max: 2 }) : undefined;
 
 const friend: PlatformPrincipal = { role: "member", subject: "friend-subject", email: "friend@example.test", products: ["kitchen"] };
+const WEEK = 7 * 86_400_000;
 
 beforeEach(async () => {
   if (!sql) return;
@@ -29,25 +30,30 @@ beforeEach(async () => {
 
 afterAll(async () => { await sql?.end(); });
 
-const product = (code: string, name: string, brand = "Spar"): CatalogProduct =>
-  ({ code, name, brand, quantity: "400 g", unit: "g", nutrition: { kcal: 100, protein: 5, carbs: 10, fat: 1 } });
+const product = (code: string, name: string, brand = "Spar", source: CatalogSource = "open-food-facts"): CatalogProduct =>
+  ({ source, code, name, brand, quantity: "400 g", unit: "g", nutrition: { kcal: 100, protein: 5, carbs: 10, fat: 1 } });
 
-/** Pages as Open Food Facts would send them. A page in `failOn` fails once, like a 503. */
-function source(pages: readonly (readonly CatalogProduct[])[], failOn: number[] = []) {
+/** A source that sends `pages`. A page in `failOn` fails once, like a 503. */
+function source(id: CatalogSource, pages: readonly (readonly CatalogProduct[])[], options: { failOn?: number[]; refreshEveryMs?: number; pauseMs?: number } = {}) {
+  const failOn = [...options.failOn ?? []];
   const asked: number[] = [];
-  const fetchPage = async (page: number): Promise<CatalogPage> => {
-    asked.push(page);
-    if (failOn.includes(page)) {
-      failOn.splice(failOn.indexOf(page), 1);
-      throw new Error("Open Food Facts answered 503.");
+  const state = { pages };
+  const reader: CatalogSourceReader = {
+    id, refreshEveryMs: options.refreshEveryMs ?? WEEK, pagesPerRun: 50, pauseMs: options.pauseMs ?? 0,
+    async fetchPage(page) {
+      asked.push(page);
+      if (failOn.includes(page)) {
+        failOn.splice(failOn.indexOf(page), 1);
+        throw new Error(`${id} answered 503.`);
+      }
+      return { products: state.pages[page - 1] ?? [], last: page >= state.pages.length };
     }
-    return { products: pages[page - 1] ?? [], last: page >= pages.length };
   };
-  return { asked, fetchPage };
+  return { reader, asked, send: (next: readonly (readonly CatalogProduct[])[]) => { state.pages = next; } };
 }
 
-describe("Open Food Facts pages", () => {
-  it("keeps products with a name and calories, and reads the German name, the first brand, and ml", () => {
+describe("source pages", () => {
+  it("keeps Open Food Facts products with a name and calories, and reads the German name, the first brand, and ml", () => {
     const page = parseOpenFoodFactsPage({
       count: 3,
       products: [
@@ -62,21 +68,50 @@ describe("Open Food Facts pages", () => {
     expect(page).toEqual({
       last: true,
       products: [
-        { code: "9000295871454", name: "Tomatenketchup", brand: "Felix", quantity: "1kg", unit: "g", nutrition: { kcal: 101, protein: 1.2, carbs: 22, fat: 0.5 } },
-        { code: "90457494", name: "Red Bull", brand: "Red Bull", quantity: "250 ml", unit: "ml", nutrition: { kcal: 46, protein: 0, carbs: 11, fat: null } }
+        { source: "open-food-facts", code: "9000295871454", name: "Tomatenketchup", brand: "Felix", quantity: "1kg", unit: "g", nutrition: { kcal: 101, protein: 1.2, carbs: 22, fat: 0.5 } },
+        { source: "open-food-facts", code: "90457494", name: "Red Bull", brand: "Red Bull", quantity: "250 ml", unit: "ml", nutrition: { kcal: 46, protein: 0, carbs: 11, fat: null } }
       ]
     });
     expect(() => parseOpenFoodFactsPage("<html>busy</html>", 4)).toThrow(/unexpected page 4/);
+  });
+
+  it("asks Billa only for food, and reads the newest unprepared table per 100 g or 100 ml", () => {
+    const category = (name: string) => [[{ name }]];
+    expect(parseBillaList({ total: 120, results: [
+      { sku: "00-15865", parentCategories: category("Vorratsschrank") },
+      { sku: "00-1", parentCategories: category("Drogerie & Kosmetik") },
+      { sku: "00-2", parentCategories: category("Haustier") }
+    ] }, 1)).toEqual({ skus: ["00-15865"], last: true });
+
+    const nutrient = (nutrientId: string, value: number, symbol: string) => ({ nutrientId, value, unit: { symbol } });
+    const table = (preparationGrade: string, kcal: number) => ({ preparationGrade, relationValue: 100, unit: { symbol: "g" }, nutrients: [
+      nutrient("ENER-", kcal * 4.2, "kJ"), nutrient("ENER-", kcal, "kcal"), nutrient("FAT", 1.3, "g"), nutrient("FASAT", 0.34, "g"),
+      nutrient("CHOAVL", 70, "g"), nutrient("SUGAR-", 0.2, "g"), nutrient("PRO-", 12, "g")
+    ] });
+    const flour = {
+      sku: "00-15865", name: "Rauch Weizenmehl extra für Kuchen", brand: { name: "Rauch" },
+      additionalInformation: [
+        { validFrom: "2022-01-01", foodInformation: { nutritionInfos: [table("Unzubereitet", 300)] } },
+        { validFrom: "2024-02-20", foodInformation: { nutritionInfos: [table("Zubereitet", 200), table("Unzubereitet", 346)] } }
+      ]
+    };
+    expect(parseBillaProduct(flour)).toEqual({
+      source: "billa", code: "00-15865", name: "Rauch Weizenmehl extra für Kuchen", brand: "Rauch", quantity: "", unit: "g",
+      nutrition: { kcal: 346, protein: 12, carbs: 70, fat: 1.3 }
+    });
+    const onlyKilojoules = { ...flour, additionalInformation: [{ foodInformation: { nutritionInfos: [{ relationValue: 100, unit: { symbol: "ml" }, nutrients: [nutrient("ENER-", 418.4, "kJ")] }] } }] };
+    expect(parseBillaProduct(onlyKilojoules)).toMatchObject({ unit: "ml", nutrition: { kcal: 100, protein: null } });
+    expect(parseBillaProduct({ sku: "00-402489", name: "Bananen", additionalInformation: [] }), "no nutrition, no product").toBeUndefined();
   });
 });
 
 describe.skipIf(!sql)("Kitchen catalog", () => {
   it("finds products by every typed word in name or brand, names that start with the first word first", async () => {
-    const catalog = kitchenCatalog(sql!);
-    await catalog.refresh({ pauseMs: 0, fetchPage: source([[
+    const catalog = kitchenCatalog(sql!, [source("open-food-facts", [[
       product("1001", "Bio Kichererbsen"), product("1002", "Kichererbsen", "Billa"), product("1003", "Hummus mit Kichererbsen", "Billa"),
       product("1004", "Linsen", "Kichererbsen GmbH"), product("1005", "100% Erbsen_mix")
-    ]]).fetchPage });
+    ]]).reader]);
+    await catalog.refresh();
 
     expect((await catalog.search("kichererbsen")).map((one) => one.name)).toEqual(["Kichererbsen", "Linsen", "Bio Kichererbsen", "Hummus mit Kichererbsen"]);
     expect((await catalog.search("KICHERERBSEN billa")).map((one) => one.code)).toEqual(["1002", "1003"]);
@@ -88,41 +123,70 @@ describe.skipIf(!sql)("Kitchen catalog", () => {
   });
 
   it("goes on from the page that failed, and at the end removes products the source no longer lists", async () => {
-    const catalog = kitchenCatalog(sql!);
+    const off = source("open-food-facts", [[product("1", "Milch"), product("2", "Gone")]]);
+    const catalog = kitchenCatalog(sql!, [off.reader]);
     let clock = new Date("2026-11-01T04:40:00Z");
     const now = () => clock;
-    await catalog.refresh({ pauseMs: 0, now, fetchPage: source([[product("1", "Milch"), product("2", "Gone")]]).fetchPage });
+    await catalog.refresh({ now });
 
     clock = new Date("2026-11-03T04:40:00Z");
-    expect(await catalog.refresh({ pauseMs: 0, now, fetchPage: source([[product("1", "Milch")]]).fetchPage }), "a refresh waits a week").toEqual({ status: "fresh" });
+    expect(await catalog.refresh({ now }), "a refresh waits a week").toEqual({ "open-food-facts": { status: "fresh" } });
 
     clock = new Date("2026-11-08T04:40:00Z");
-    const week = source([[product("1", "Vollmilch")], [product("3", "Butter")], [product("4", "Topfen")]], [2]);
-    await expect(catalog.refresh({ pauseMs: 0, now, fetchPage: week.fetchPage })).rejects.toThrow(/503/);
-    expect((await catalog.search("gone")).map((one) => one.code), "nothing goes away before the refresh ends").toEqual(["2"]);
+    const week = source("open-food-facts", [[product("1", "Vollmilch")], [product("3", "Butter")], [product("4", "Topfen")]], { failOn: [2] });
+    const weekly = kitchenCatalog(sql!, [week.reader]);
+    await expect(weekly.refresh({ now })).rejects.toThrow(/failed for 1 source/);
+    expect((await weekly.search("gone")).map((one) => one.code), "nothing goes away before the refresh ends").toEqual(["2"]);
 
     clock = new Date("2026-11-08T05:40:00Z");
-    expect(await catalog.refresh({ pauseMs: 0, now, fetchPage: week.fetchPage })).toEqual({ status: "finished", products: 3 });
+    expect(await weekly.refresh({ now })).toEqual({ "open-food-facts": { status: "finished", products: 3 } });
     expect(week.asked, "page 1 is not fetched again").toEqual([1, 2, 2, 3]);
-    expect(await catalog.search("gone")).toEqual([]);
-    expect((await catalog.search("milch")).map((one) => one.name)).toEqual(["Vollmilch"]);
+    expect(await weekly.search("gone")).toEqual([]);
+    expect((await weekly.search("milch")).map((one) => one.name)).toEqual(["Vollmilch"]);
+  });
+
+  it("copies Billa once, keeps its products through the weekly Open Food Facts refresh, and goes on when the other source fails", async () => {
+    const off = source("open-food-facts", [[product("9001", "Haferflocken", "Spar")]], { failOn: [1] });
+    const billa = source("billa", [[product("00-1", "Haferflocken", "Clever", "billa")]], { refreshEveryMs: Number.POSITIVE_INFINITY });
+    const catalog = kitchenCatalog(sql!, [off.reader, billa.reader]);
+    let clock = new Date("2026-11-01T04:40:00Z");
+    const now = () => clock;
+
+    await expect(catalog.refresh({ now }), "the failure is still reported").rejects.toThrow(/failed for 1 source/);
+    expect((await catalog.search("hafer")).map((one) => one.source), "Billa ran although Open Food Facts failed").toEqual(["billa"]);
+
+    off.send([[]]);
+    clock = new Date("2027-03-01T04:40:00Z");
+    expect(await catalog.refresh({ now })).toEqual({ "open-food-facts": { status: "finished", products: 0 }, billa: { status: "fresh" } });
+    expect(billa.asked, "Billa is copied once").toEqual([1]);
+    expect(await catalog.search("haferflocken")).toEqual([product("00-1", "Haferflocken", "Clever", "billa")]);
+  });
+
+  it("shows a product that both sources list once, from Billa, and keeps other brands", async () => {
+    const catalog = kitchenCatalog(sql!, [
+      source("open-food-facts", [[product("9001", "Joghurt Natur 1 %", "Ja! Natürlich"), product("9002", "Joghurt Natur 1%", "Spar")]]).reader,
+      source("billa", [[product("00-1", "Ja! Natürlich Joghurt Natur 1%", "Ja! Natürlich", "billa")]]).reader
+    ]);
+    await catalog.refresh();
+
+    expect((await catalog.search("joghurt natur")).map((one) => `${one.source} ${one.brand}`).sort()).toEqual(["billa Ja! Natürlich", "open-food-facts Spar"]);
   });
 
   it("stops between pages when the server shuts down, and the next run goes on from there", async () => {
-    const catalog = kitchenCatalog(sql!);
     const stop = new AbortController();
-    const pages = source([[product("1", "Reis")], [product("2", "Nudeln")]]);
-    const first = catalog.refresh({ pauseMs: 60_000, signal: stop.signal, fetchPage: pages.fetchPage });
+    const pages = source("open-food-facts", [[product("1", "Reis")], [product("2", "Nudeln")]], { pauseMs: 60_000 });
+    const catalog = kitchenCatalog(sql!, [pages.reader]);
+    const first = catalog.refresh({ signal: stop.signal });
     await new Promise((resolve) => setTimeout(resolve, 50));
     stop.abort();
-    expect(await first).toEqual({ status: "stopped", nextPage: 2 });
-    expect(await catalog.refresh({ pauseMs: 0, fetchPage: pages.fetchPage })).toEqual({ status: "finished", products: 2 });
+    expect(await first).toEqual({ "open-food-facts": { status: "stopped", nextPage: 2 } });
+    expect(await kitchenCatalog(sql!, [{ ...pages.reader, pauseMs: 0 }]).refresh()).toEqual({ "open-food-facts": { status: "finished", products: 2 } });
     expect(pages.asked).toEqual([1, 2]);
   });
 
   it("answers the app only with a Kitchen app token", async () => {
-    const catalog = kitchenCatalog(sql!);
-    await catalog.refresh({ pauseMs: 0, fetchPage: source([[product("1", "Haferflocken")]]).fetchPage });
+    const catalog = kitchenCatalog(sql!, [source("open-food-facts", [[product("1", "Haferflocken")]]).reader]);
+    await catalog.refresh();
     const request = new Request("https://tools.example.test/api/kitchen/products?q=hafer");
 
     expect((await handleKitchenCatalog(request, async () => undefined, catalog)).status).toBe(401);

@@ -163,11 +163,11 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
             repository: createPostgresScheduledTaskLeaseRepository(config.databaseUrl),
             taskId: "kitchen-catalog:hourly",
             ownerId: randomUUID(),
-            durationMs: 20 * 60_000
+            durationMs: 30 * 60_000
           },
           run: async () => {
             const result = await kitchenCatalog.refresh({ signal: catalogStop.signal });
-            console.info(JSON.stringify({ event: "kitchen.catalog.refreshed", ...result }));
+            console.info(JSON.stringify({ event: "kitchen.catalog.refreshed", sources: result }));
           },
           logger: {
             info: (event, fields = {}) => console.info(JSON.stringify({ event, task: "kitchen-catalog", ...fields })),
