@@ -13,6 +13,7 @@ import { type Feel, haptic } from "./haptics";
 import type { QueuedAction } from "../sync/model";
 import { type KitchenLanguage, LOCALES, useText } from "./language";
 import { type Colors, FONT, groupColor, ink, type PageKey, RADIUS, tint, useColors } from "./theme";
+import { useContentLayout, useWindowLayout } from "./responsive";
 
 /** The bottom tabs in their order. `route` is the screen name under `app/(tabs)`. */
 export const PAGES: readonly { key: PageKey; route: string; icon: LucideIcon }[] = [
@@ -121,6 +122,12 @@ export function Screen({ title, facts, actions, back, fab, toolbar, floating, gr
 }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const layout = useContentLayout();
+  const contentWidth = groups ? Math.min(800, layout.contentWidth) : layout.contentWidth;
+  const contentStyle: ViewStyle = {
+    width: "100%", maxWidth: contentWidth + 2 * layout.gutter, alignSelf: "center", paddingHorizontal: layout.gutter,
+    paddingBottom: (fab ? FAB_ROOM : 32) + (toolbar ? 0 : layout.bottomInset),
+  };
   const header = (
     <View style={styles.page}>
       {back ? (
@@ -146,10 +153,10 @@ export function Screen({ title, facts, actions, back, fab, toolbar, floating, gr
         {groups ? (
           <FlatList data={listItems(groups)} keyExtractor={(item) => item.key} renderItem={({ item }) => <ListCell item={item} />}
             windowSize={5} ListHeaderComponent={header}
-            contentContainerStyle={[styles.scroll, fab ? { paddingBottom: FAB_ROOM } : null]}
+            contentContainerStyle={contentStyle}
             showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" refreshControl={<SyncRefresh />} />
         ) : (
-          <ScrollView contentContainerStyle={[styles.scroll, fab ? { paddingBottom: FAB_ROOM } : null]} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" refreshControl={<SyncRefresh />}>
+          <ScrollView contentContainerStyle={contentStyle} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" refreshControl={<SyncRefresh />}>
             {header}
           </ScrollView>
         )}
@@ -159,9 +166,13 @@ export function Screen({ title, facts, actions, back, fab, toolbar, floating, gr
             <Rect width="100%" height={FADE} fill="url(#fade)" />
           </Svg>
         ) : null}
-        {floating || fab ? <View pointerEvents="box-none" style={styles.floating}>{floating}{fab}</View> : null}
+        {floating || fab ? <View pointerEvents="box-none" style={[styles.floating, { left: layout.gutter, right: layout.gutter, bottom: 16 + (toolbar ? 0 : layout.bottomInset) }]}>
+          <View pointerEvents="box-none" style={{ width: "100%", maxWidth: 560, alignItems: "flex-end", gap: 12 }}>{floating}{fab}</View>
+        </View> : null}
       </View>
-      {toolbar ? <View style={[styles.toolbar, { borderTopColor: colors.border, backgroundColor: colors.card, paddingBottom: 12 + insets.bottom }]}>{toolbar}</View> : null}
+      {toolbar ? <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, backgroundColor: colors.card }}>
+        <View style={[styles.toolbar, { width: "100%", maxWidth: 640, alignSelf: "center", paddingBottom: 12 + insets.bottom }]}>{toolbar}</View>
+      </View> : null}
     </View>
   );
 }
@@ -487,6 +498,7 @@ const SHEET_CLOSE = { distance: 120, velocity: 900 };
 export function Sheet({ open, onClose, onDismiss, title, description, children, footer }: { open: boolean; onClose: () => void; onDismiss?: () => void; title: string; description?: string; children: ReactNode; footer?: ReactNode }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const layout = useWindowLayout();
   const text = useKitText();
   const height = useSharedValue(800);
   const drop = useSharedValue(800);
@@ -510,14 +522,22 @@ export function Sheet({ open, onClose, onDismiss, title, description, children, 
   const follow = useAnimatedStyle(() => ({ transform: [{ translateY: drop.value }] }));
   const dim = useAnimatedStyle(() => ({ opacity: 1 - Math.min(drop.value / height.value, 1) }));
   return (
-    <Modal visible={open} transparent animationType="fade" statusBarTranslucent navigationBarTranslucent onRequestClose={dismiss} onDismiss={onDismiss}>
+    <Modal visible={open} transparent animationType="fade" statusBarTranslucent navigationBarTranslucent onRequestClose={dismiss} onDismiss={onDismiss}
+      supportedOrientations={["portrait", "portrait-upside-down", "landscape-left", "landscape-right"]}>
       <GestureHandlerRootView style={{ flex: 1 }}>
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1, justifyContent: "flex-end" }}>
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}
+          style={{ flex: 1, justifyContent: "flex-end", paddingTop: insets.top + 12 }}>
           <Animated.View style={[StyleSheet.absoluteFill, dim]}>
             <Pressable style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.6)" }} onPress={dismiss} accessibilityLabel={text.close} />
           </Animated.View>
           <Animated.View onLayout={(event) => { height.value = event.nativeEvent.layout.height; }}
-            style={[styles.sheet, { backgroundColor: colors.card, borderColor: colors.border, paddingBottom: insets.bottom + 16 }, follow]}>
+            style={[styles.sheet, {
+              backgroundColor: colors.card, borderColor: colors.border, width: layout.sheetWidth,
+              alignSelf: "center", marginLeft: insets.left, marginRight: insets.right,
+              marginBottom: layout.sheetGap ? insets.bottom + layout.sheetGap : 0,
+              borderRadius: layout.sheetGap ? 24 : undefined,
+              paddingBottom: layout.sheetGap ? 16 : insets.bottom + 16,
+            }, follow]}>
             <GestureDetector gesture={drag}>
               <View style={{ paddingTop: 10 }}>
                 <View style={{ alignSelf: "center", width: 40, height: 4, borderRadius: 2, backgroundColor: colors.controlBorder, marginBottom: 12 }} />
@@ -636,22 +656,21 @@ export function mainGroup(groups: readonly string[], sections: readonly string[]
 }
 
 const styles = StyleSheet.create({
-  scroll: { paddingHorizontal: 16, paddingBottom: 32 },
   page: { paddingTop: 8, gap: 16 },
   header: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", flexWrap: "wrap", gap: 12 },
   title: { fontSize: 32, lineHeight: 34, letterSpacing: -0.6 },
   empty: { alignItems: "center", gap: 12, borderWidth: 1, borderStyle: "dashed", borderRadius: 16, paddingHorizontal: 24, paddingVertical: 40 },
   wide: { flexGrow: 1, height: 52 },
   button: { height: 48, paddingHorizontal: 16, borderRadius: RADIUS, borderWidth: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
-  sheet: { maxHeight: "92%", borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 16 },
-  sheetFooter: { flexDirection: "row", gap: 8, justifyContent: "flex-end", marginHorizontal: -16, paddingHorizontal: 16, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth },
+  sheet: { maxHeight: "100%", flexShrink: 1, borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 16 },
+  sheetFooter: { flexDirection: "row", flexWrap: "wrap", gap: 8, justifyContent: "flex-end", marginHorizontal: -16, paddingHorizontal: 16, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth },
   back: { flexDirection: "row", alignItems: "center", gap: 4, alignSelf: "flex-start", minHeight: 48, marginLeft: -6, marginBottom: -8 },
   field: { minHeight: 48, borderWidth: 1, borderRadius: RADIUS, paddingHorizontal: 12, fontFamily: FONT.regular, fontSize: 16 },
   fade: { position: "absolute", left: 0, right: 0, bottom: 0 },
   floating: { position: "absolute", left: 16, right: 16, bottom: 16, alignItems: "flex-end", gap: 12 },
   fab: { height: 56, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 20, borderRadius: 16, elevation: 6, shadowColor: "#000000", shadowOpacity: 0.35, shadowRadius: 12, shadowOffset: { width: 0, height: 6 } },
-  toolbar: { flexDirection: "row", gap: 8, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 12, borderTopWidth: StyleSheet.hairlineWidth },
-  toolbarButton: { flex: 1, height: 52, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 12, borderRadius: RADIUS, borderWidth: 1 },
+  toolbar: { flexDirection: "row", gap: 8, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 12 },
+  toolbarButton: { flex: 1, minHeight: 52, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 12, paddingVertical: 10, borderRadius: RADIUS, borderWidth: 1 },
   weekNav: { height: 48, flexDirection: "row", borderRadius: RADIUS, borderWidth: 1, overflow: "hidden" },
   weekStep: { width: 48, alignItems: "center", justifyContent: "center" },
   snackbar: { alignSelf: "stretch", minHeight: 48, flexDirection: "row", alignItems: "center", gap: 8, paddingLeft: 14, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, elevation: 4, shadowColor: "#000000", shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 4 } },
