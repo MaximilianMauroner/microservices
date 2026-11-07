@@ -40,16 +40,28 @@ export function defaultMeal(entries: readonly PlanEntry[]): Meal {
   return (["dinner", "lunch", "breakfast", "snack"] as const).find((meal) => !taken.has(meal)) ?? "dinner";
 }
 
+/** How many days a day strip offers. Seven show at once and the rest scroll in, so a meal can go weeks ahead. */
+export const STRIP_DAYS = 28;
+
 /**
- * The days the Plan sheet offers and the day it selects. It offers seven days from today, or the shown week when that
- * starts later, so a person can plan past Sunday. It selects the day the person picked, or else the first day without a meal.
+ * The days the Plan sheet offers and the day it selects. It offers four weeks from today, or from the shown week when that
+ * starts later. It selects the day the person picked, or else the first day without a meal.
  */
 export function planStrip({ weekStart, today, plan, day }: { weekStart: string; today: string; plan: readonly Pick<PlanEntry, "day">[]; day?: string }) {
   const soonest = weekStart > today ? weekStart : today;
   const from = day && day < soonest ? day : soonest;
-  const days = Array.from({ length: 7 }, (_, index) => addDays(from, index));
+  const days = Array.from({ length: STRIP_DAYS }, (_, index) => addDays(from, index));
   const planned = new Set(plan.map((entry) => entry.day));
   return { days, selected: day ?? days.find((one) => !planned.has(one)) ?? from };
+}
+
+/**
+ * The days a planned meal can move to: its own week and the weeks after it. Past days of its week stay, so a person can
+ * record a meal on the day it was really eaten.
+ */
+export function moveStrip(day: string): string[] {
+  const start = weekStart(day);
+  return Array.from({ length: STRIP_DAYS }, (_, index) => addDays(start, index));
 }
 
 /**

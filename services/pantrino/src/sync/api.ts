@@ -44,6 +44,12 @@ export async function searchCatalog(query: string): Promise<readonly CatalogProd
   return ((await response.json()) as { products: CatalogProduct[] }).products;
 }
 
+/** The packaged food with this barcode, or undefined when no product with calories has it. It needs a connection. */
+export async function lookupBarcode(code: string): Promise<CatalogProduct | undefined> {
+  const response = await call(`/api/kitchen/products?${new URLSearchParams({ code })}`);
+  return ((await response.json()) as { products: CatalogProduct[] }).products[0];
+}
+
 export type Report = Readonly<{ kind: "bug" | "feature"; message: string; details?: string; page: string; contactEmail?: string }>;
 /** Why Tools refused a report. The app shows its own text for each reason. */
 export type ReportRejection = "unknown_app" | "invalid_kind" | "empty_message" | "message_too_long" | "details_too_long" | "invalid_email";

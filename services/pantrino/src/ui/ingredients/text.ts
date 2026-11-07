@@ -72,7 +72,26 @@ const en = {
   conversionNeeded: "Enter a size greater than 0 to change the unit.",
   groupLimit: "An ingredient can be in at most 11 groups.",
   fromProduct: "Fill in from a product",
-  catalogSource: "Product data from Billa and from Open Food Facts, under the Open Database License."
+  catalogSource: "Product data from Billa and from Open Food Facts, under the Open Database License.",
+  showAllRecipes: (count: number) => `Show all ${count} recipes`,
+  showAllMatches: (count: number) => `Show all ${count} matches`,
+  pickRecipes: "Add to recipes",
+  addToRecipes: (count: number) => count === 1 ? "Add to 1 recipe" : count ? `Add to ${count} recipes` : "Add",
+  scanBarcode: "Scan barcode",
+  scanTitle: "Scan a barcode",
+  scanHint: "Hold the barcode on the package inside the frame.",
+  scanLooking: "Looking up the product…",
+  scanNotFound: (code: string) => `No product with nutrition has the barcode ${code}. Type the values from the package.`,
+  scanOffline: "Scanning needs a connection. Type the values from the package.",
+  scanFailed: "Tools could not look up the product. Try again.",
+  scanAgain: "Scan again",
+  cancel: "Cancel",
+  cameraNeeded: "Pantrino needs the camera to read barcodes.",
+  allowCamera: "Allow camera",
+  cameraBlocked: "Camera access is off. Turn it on for Pantrino in the system settings.",
+  openSettings: "Open settings",
+  scanFilled: (name: string) => `Filled in from ${name}. Check the values against the package.`,
+  scanOtherUnit: (unit: string) => `This product counts per 100 ${unit}. Change the unit to ${unit} to use its values.`
 };
 type KitText = typeof en;
 export const TEXT: Record<KitchenLanguage, KitText> = {
@@ -149,7 +168,26 @@ export const TEXT: Record<KitchenLanguage, KitText> = {
     conversionNeeded: "Gib eine Größe größer als 0 ein, um die Einheit zu ändern.",
     groupLimit: "Eine Zutat kann in höchstens 11 Gruppen sein.",
     fromProduct: "Aus einem Produkt übernehmen",
-    catalogSource: "Produktdaten von Billa und von Open Food Facts, unter der Open Database License."
+    catalogSource: "Produktdaten von Billa und von Open Food Facts, unter der Open Database License.",
+    showAllRecipes: (count: number) => `Alle ${count} Rezepte zeigen`,
+    showAllMatches: (count: number) => `Alle ${count} Treffer zeigen`,
+    pickRecipes: "Zu Rezepten hinzufügen",
+    addToRecipes: (count: number) => count === 1 ? "Zu 1 Rezept hinzufügen" : count ? `Zu ${count} Rezepten hinzufügen` : "Hinzufügen",
+    scanBarcode: "Barcode scannen",
+    scanTitle: "Barcode scannen",
+    scanHint: "Halte den Barcode der Packung in den Rahmen.",
+    scanLooking: "Produkt wird gesucht …",
+    scanNotFound: (code: string) => `Kein Produkt mit Nährwerten hat den Barcode ${code}. Gib die Werte von der Packung ein.`,
+    scanOffline: "Scannen braucht eine Verbindung. Gib die Werte von der Packung ein.",
+    scanFailed: "Tools konnte das Produkt nicht suchen. Versuch es nochmal.",
+    scanAgain: "Nochmal scannen",
+    cancel: "Abbrechen",
+    cameraNeeded: "Pantrino braucht die Kamera, um Barcodes zu lesen.",
+    allowCamera: "Kamera erlauben",
+    cameraBlocked: "Der Kamerazugriff ist aus. Schalte ihn in den Systemeinstellungen für Pantrino ein.",
+    openSettings: "Einstellungen öffnen",
+    scanFilled: (name: string) => `Von ${name} übernommen. Vergleiche die Werte mit der Packung.`,
+    scanOtherUnit: (unit: string) => `Dieses Produkt zählt pro 100 ${unit}. Wechsle die Einheit zu ${unit}, um seine Werte zu übernehmen.`
   }
 };
 

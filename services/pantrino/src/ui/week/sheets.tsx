@@ -1,16 +1,26 @@
 import { addDays, formatAmount, type Meal, MEALS, type PlanEntry, type Recipe, weekStart } from "@tools-platform/service/kitchen-contract";
 import * as Crypto from "expo-crypto";
 import { router } from "expo-router";
-import { ChefHat, Pencil, RotateCcw } from "lucide-react-native";
+import { AlarmClock, ChefHat, Pencil, RotateCcw } from "lucide-react-native";
 import { useState } from "react";
-import { StyleSheet, View } from "react-native";
+import { ScrollView, StyleSheet, View } from "react-native";
 import { type OpenKitchen, useKitchen } from "../../state";
 import { Button, dayParts, Pill, PlateRing, Press, SearchField, Sheet, Stepper, T, type Notice, usePageColor } from "../kit";
 import { useLanguage, useText } from "../language";
 import { type DraftLine, draftLines, LineEditor, useResolveLines } from "../lines";
 import { useColors } from "../theme";
-import { defaultMeal, planStrip, type WeekView } from "./model";
+import { defaultMeal, moveStrip, planStrip, type WeekView } from "./model";
 import { TEXT } from "./text";
+
+/** The weekday for a day in the coming week. A later day also gets its date, so "Tuesday" never means two days. */
+function useDayName() {
+  const language = useLanguage();
+  const today = useKitchen()?.today;
+  return (day: string) => {
+    const parts = dayParts(day, language);
+    return today && day >= today && day < addDays(today, 7) ? parts.weekdayLong : `${parts.weekdayLong} ${parts.dayMonth}`;
+  };
+}
 
 type SheetProps = { data: OpenKitchen; week: WeekView; onClose: () => void; notify: (notice: Notice) => void };
 
@@ -26,7 +36,7 @@ export function PlanSheet({ day, data, week, onClose, notify }: SheetProps & { d
   const typed = query.trim();
   const matches = week.recipes.filter((recipe) => recipe.name.toLowerCase().includes(typed.toLowerCase()));
   const isNew = typed.length > 0 && typed.length <= 200 && !week.recipes.some((one) => one.name.toLowerCase() === typed.toLowerCase());
-  const weekday = dayParts(selected, language).weekdayLong;
+  const weekday = useDayName()(selected);
 
   function mealFor(one: string): Meal {
     return defaultMeal(data.kitchen.plan.filter((entry) => entry.day === one));
@@ -85,7 +95,7 @@ export function RecipeMenu({ recipe, data, onClose, notify, onRecipe }: { recipe
   const [selected, setSelected] = useState(strip.selected);
   const mealFor = (one: string) => defaultMeal(data.kitchen.plan.filter((entry) => entry.day === one));
   const [meal, setMeal] = useState<Meal>(() => mealFor(strip.selected));
-  const weekday = dayParts(selected, language).weekdayLong;
+  const weekday = useDayName()(selected);
 
   function plan() {
     const id = Crypto.randomUUID();
@@ -111,12 +121,13 @@ export function MealMenu({ entry, data, week, onClose, notify }: SheetProps & { 
   const language = useLanguage();
   const text = useText(TEXT);
   const parts = dayParts(entry.day, language);
+  const dayName = useDayName();
   const update = (patch: Partial<Pick<PlanEntry, "day" | "servings">>) =>
     data.change({ type: "plan.update", id: entry.id, day: entry.day, meal: entry.meal, servings: entry.servings, ...patch });
 
   function move(day: string) {
     update({ day });
-    notify({ message: text.movedTo(dayParts(day, language).weekdayLong), undo: [{ type: "plan.update", id: entry.id, day: entry.day, meal: entry.meal, servings: entry.servings }] });
+    notify({ message: text.movedTo(dayName(day)), undo: [{ type: "plan.update", id: entry.id, day: entry.day, meal: entry.meal, servings: entry.servings }] });
     onClose();
   }
 
@@ -126,6 +137,7 @@ export function MealMenu({ entry, data, week, onClose, notify }: SheetProps & { 
       footer={
         <View style={styles.footer}>
           <Button label={text.remove} tone="destructive" onPress={() => { removeMeal(entry, data, notify, text); onClose(); }} />
+          {!entry.cooked ? <Button label={text.nextWeek} tone="outline" icon={AlarmClock} accessibilityLabel={text.snoozeTo(dayName(addDays(entry.day, 7)))} onPress={() => move(addDays(entry.day, 7))} /> : null}
           {!entry.cooked ? <Button label={text.markCooked} icon={ChefHat} onPress={() => { data.change({ type: "plan.cook", id: entry.id }); notify({ message: text.cookedTaken }); onClose(); }} /> : null}
         </View>
       }>
@@ -136,7 +148,7 @@ export function MealMenu({ entry, data, week, onClose, notify }: SheetProps & { 
         </View>
         <View style={{ gap: 8 }}>
           <T weight="medium">{text.moveTo}</T>
-          <DayStrip days={week.days.map((one) => one.day)} value={entry.day} onValue={(day) => { if (day !== entry.day) move(day); }} />
+          <DayStrip days={moveStrip(entry.day)} value={entry.day} onValue={(day) => { if (day !== entry.day) move(day); }} />
         </View>
       </>}
     </Sheet>
@@ -207,7 +219,7 @@ export function EntrySheet({ entry, data, week, onClose, notify }: SheetProps & 
       )}>
       {edit ? <>
         <T muted>{text.editHint}</T>
-        <LineEditor lines={edit.lines} onLines={(update) => setEditing((value) => value ? { lines: update(value.lines) } : value)} ingredients={data.kitchen.ingredients} />
+        <LineEditor lines={edit.lines} onLines={(update) => setEditing((value) => value ? { lines: update(value.lines) } : value)} ingredients={data.kitchen.ingredients} groups={data.kitchen.kitchen.groups} />
         {edit.error ? <T accessibilityRole="alert" style={{ color: colors.destructive }}>{edit.error}</T> : null}
       </> : <View style={{ gap: 20 }}>
         {!entry.cooked ? <>
@@ -217,7 +229,7 @@ export function EntrySheet({ entry, data, week, onClose, notify }: SheetProps & 
           </View>
           <View style={{ gap: 8 }}>
             <T weight="medium">{text.day}</T>
-            <DayStrip days={week.days.map((one) => one.day)} value={day} onValue={setDay} />
+            <DayStrip days={moveStrip(entry.day)} value={day} onValue={setDay} />
           </View>
           <MealPicker value={meal} onValue={setMeal} />
           <View style={[styles.leftover, { backgroundColor: colors.muted }]}>
@@ -250,27 +262,35 @@ export function EntrySheet({ entry, data, week, onClose, notify }: SheetProps & 
   );
 }
 
-/** Seven days to pick from. A dot marks a day that has a meal already. */
+/** Days to pick from. Seven fit the width, and more scroll in sideways. A line marks each new week, and a dot marks a day that has a meal already. */
 function DayStrip({ days, value, onValue, planned }: { days: readonly string[]; value: string; onValue: (day: string) => void; planned?: ReadonlySet<string> }) {
   const language = useLanguage();
   const text = useText(TEXT);
   const colors = useColors();
   const page = usePageColor();
   const today = useKitchen()?.today;
+  const [width, setWidth] = useState(0);
+  const chip = width / 7;
+  const shownWeek = Math.floor(Math.max(0, days.indexOf(value)) / 7);
   return (
-    <View accessibilityRole="radiogroup" accessibilityLabel={text.day} style={{ flexDirection: "row", gap: 2 }}>
-      {days.map((option) => {
-        const date = dayParts(option, language);
-        const selected = value === option;
-        return (
-          <Press key={option} accessibilityRole="radio" accessibilityLabel={`${date.weekdayLong} ${date.dayMonth}`} accessibilityState={{ checked: selected }}
-            onPress={() => onValue(option)} style={[styles.dayChoice, { backgroundColor: selected ? page.hue : "transparent" }]}>
-            <T weight={option === today ? "semibold" : "regular"} style={{ fontSize: 11, color: selected ? "#ffffff" : option === today ? page.ink : colors.mutedForeground }}>{option === today ? text.today : date.weekday}</T>
-            <T weight="semibold" style={{ color: selected ? "#ffffff" : colors.foreground }}>{date.number}</T>
-            <View style={[styles.planned, { backgroundColor: planned?.has(option) ? (selected ? "#ffffff" : page.ink) : "transparent" }]} />
-          </Press>
-        );
-      })}
+    <View onLayout={(event) => setWidth(event.nativeEvent.layout.width)} style={{ minHeight: 48 }}>
+      {chip ? <ScrollView horizontal contentOffset={{ x: shownWeek * 7 * chip, y: 0 }} showsHorizontalScrollIndicator={false} snapToInterval={chip * 7 || undefined} decelerationRate="fast" scrollEnabled={days.length > 7}
+        accessibilityRole="radiogroup" accessibilityLabel={text.day}>
+        {days.map((option, index) => {
+          const date = dayParts(option, language);
+          const selected = value === option;
+          const monday = index > 0 && option === weekStart(option);
+          return (
+            <Press key={option} accessibilityRole="radio" accessibilityLabel={`${date.weekdayLong} ${date.dayMonth}`} accessibilityState={{ checked: selected }}
+              onPress={() => onValue(option)} style={[styles.dayChoice, { width: chip, backgroundColor: selected ? page.hue : "transparent", borderLeftWidth: monday ? StyleSheet.hairlineWidth : 0, borderLeftColor: colors.border }]}>
+              <T weight={option === today ? "semibold" : "regular"} style={{ fontSize: 11, color: selected ? "#ffffff" : option === today ? page.ink : colors.mutedForeground }}>{option === today ? text.today : date.weekday}</T>
+              <T weight="semibold" style={{ color: selected ? "#ffffff" : colors.foreground }}>{date.number}</T>
+              <View style={[styles.planned, { backgroundColor: planned?.has(option) ? (selected ? "#ffffff" : page.ink) : "transparent" }]} />
+            </Press>
+          );
+        })}
+      </ScrollView> : null}
+      {days.length > 7 ? <T muted style={{ fontSize: 11, textAlign: "right", paddingTop: 4 }}>{text.swipeForWeeks}</T> : null}
     </View>
   );
 }
@@ -297,7 +317,7 @@ const styles = StyleSheet.create({
   recipe: { flexDirection: "row", alignItems: "center", gap: 12, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10 },
   idea: { minHeight: 48, justifyContent: "center", borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10 },
   footer: { width: "100%", flexDirection: "row", alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end", gap: 8 },
-  dayChoice: { flex: 1, minHeight: 48, alignItems: "center", justifyContent: "center", borderRadius: 12, gap: 3 },
+  dayChoice: { minHeight: 48, alignItems: "center", justifyContent: "center", borderRadius: 12, gap: 3 },
   planned: { width: 4, height: 4, borderRadius: 2 },
   meals: { flexDirection: "row", gap: 2, padding: 4, borderRadius: 24 },
   mealChoice: { flex: 1, minHeight: 48, borderRadius: 20, alignItems: "center", justifyContent: "center", paddingHorizontal: 2 },
