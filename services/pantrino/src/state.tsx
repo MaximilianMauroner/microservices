@@ -58,7 +58,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setProductState(null);
     void Promise.all([kitchenSession.setting("language"), kitchenSession.setting("haptics"), kitchenSession.setting("product")]).then(([savedLanguage, savedStrength, savedProduct]) => {
       if (!current) return;
-      setProductState(state.session === "signed-in" && savedProduct === "bodyshop" ? "bodyshop" : "kitchen");
+      if (state.session === "signed-in" || state.session === "local") {
+        setProductState(state.session === "signed-in" && savedProduct === "bodyshop" ? "bodyshop" : "kitchen");
+      }
       setLanguage(pickLanguage(savedLanguage));
       setStrength(parseStrength(savedStrength));
       setStrengthState(parseStrength(savedStrength));
