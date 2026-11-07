@@ -19,19 +19,34 @@ export type DevFeedback = Readonly<{
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+/** Why a report was refused. Apps show their own translated text for each reason, so the code is the contract, not the message. */
+export const REPORT_REJECTIONS = {
+  unknown_app: "This app does not take reports.",
+  invalid_kind: "Choose a bug report or a feature request.",
+  empty_message: "Write what happened or what you would like.",
+  message_too_long: "Keep the message under 4000 characters.",
+  details_too_long: "Keep the details under 4000 characters.",
+  invalid_email: "Enter a valid email address, or leave it empty."
+} as const;
+export type ReportRejection = keyof typeof REPORT_REJECTIONS;
+
+export class ReportRejected extends Error {
+  constructor(readonly reason: ReportRejection) { super(REPORT_REJECTIONS[reason]); }
+}
+
 export function parseDevFeedback(input: { app?: unknown; kind: unknown; message: unknown; details?: unknown; page: unknown; context?: unknown; contactEmail?: unknown }): DevFeedbackInput {
   const app = input.app ?? "tools";
-  if (typeof app !== "string" || !Object.hasOwn(REPORT_APPS, app)) throw new Error("This app does not take reports.");
-  if (!DEV_FEEDBACK_KINDS.includes(input.kind as DevFeedbackKind)) throw new Error("Choose a bug report or a feature request.");
+  if (typeof app !== "string" || !Object.hasOwn(REPORT_APPS, app)) throw new ReportRejected("unknown_app");
+  if (!DEV_FEEDBACK_KINDS.includes(input.kind as DevFeedbackKind)) throw new ReportRejected("invalid_kind");
   const message = typeof input.message === "string" ? input.message.trim() : "";
-  if (!message) throw new Error("Write what happened or what you would like.");
-  if (message.length > 4000) throw new Error("Keep the message under 4000 characters.");
+  if (!message) throw new ReportRejected("empty_message");
+  if (message.length > 4000) throw new ReportRejected("message_too_long");
   const details = typeof input.details === "string" ? input.details.trim() : "";
-  if (details.length > 4000) throw new Error("Keep the details under 4000 characters.");
+  if (details.length > 4000) throw new ReportRejected("details_too_long");
   const page = typeof input.page === "string" && /^\/(?![/\\])/.test(input.page) ? input.page.slice(0, 500) : "/";
   const context = typeof input.context === "string" && input.context.trim() ? input.context.trim().slice(0, 500) : undefined;
   const contactEmail = typeof input.contactEmail === "string" ? input.contactEmail.trim() : "";
-  if (contactEmail && (contactEmail.length > 320 || !EMAIL.test(contactEmail))) throw new Error("Enter a valid email address, or leave it empty.");
+  if (contactEmail && (contactEmail.length > 320 || !EMAIL.test(contactEmail))) throw new ReportRejected("invalid_email");
   return { app: app as ReportApp, kind: input.kind as DevFeedbackKind, message, ...(details ? { details } : {}), page, ...(context ? { context } : {}), ...(contactEmail ? { contactEmail } : {}) };
 }
 

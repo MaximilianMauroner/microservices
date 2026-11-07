@@ -110,10 +110,11 @@ describe("report intake for apps", () => {
     expect(response.status).toBe(415);
   });
 
-  it("rejects an invalid report with a message the app can show", async () => {
-    const response = await post({ ...report, message: " " }, { "cf-connecting-ip": "203.0.113.2" });
-    expect(response.status).toBe(400);
-    expect(await response.json()).toMatchObject({ message: "Write what happened or what you would like." });
+  it("rejects an invalid report with a reason code the app translates", async () => {
+    const empty = await post({ ...report, message: " " }, { "cf-connecting-ip": "203.0.113.2" });
+    expect([empty.status, await empty.json()]).toEqual([400, { error: "invalid_request", reason: "empty_message" }]);
+    const email = await post({ ...report, contactEmail: "nope" }, { "cf-connecting-ip": "203.0.113.2" });
+    expect(await email.json()).toEqual({ error: "invalid_request", reason: "invalid_email" });
   });
 
   it("limits anonymous reports per address", async () => {
