@@ -29,10 +29,10 @@ it to production for a development build.
 
 ```sh
 pnpm install                                            # at the repository root
-TOOLS_ORIGIN=http://localhost:3000 pnpm --dir services/kitchen-mobile start
-TOOLS_ORIGIN=http://localhost:3000 pnpm --dir services/kitchen-mobile android
-pnpm --dir services/kitchen-mobile typecheck
-pnpm --dir services/kitchen-mobile test
+TOOLS_ORIGIN=http://localhost:3000 pnpm --dir services/pantrino start
+TOOLS_ORIGIN=http://localhost:3000 pnpm --dir services/pantrino android
+pnpm --dir services/pantrino typecheck
+pnpm --dir services/pantrino test
 ```
 
 An Android emulator reaches a local Tools server through
