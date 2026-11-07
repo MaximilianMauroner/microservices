@@ -44,19 +44,45 @@ export async function searchCatalog(query: string): Promise<readonly CatalogProd
   return ((await response.json()) as { products: CatalogProduct[] }).products;
 }
 
-/** Tools refused a report and said why, for example an invalid email. */
-export class ReportRefused extends Error {}
-
 export type Report = Readonly<{ kind: "bug" | "feature"; message: string; details?: string; page: string; contactEmail?: string }>;
+/** Why Tools refused a report. The app shows its own text for each reason. */
+export type ReportRejection = "unknown_app" | "invalid_kind" | "empty_message" | "message_too_long" | "details_too_long" | "invalid_email";
+export type ReportOutcome = { kind: "sent" } | { kind: "offline" } | { kind: "timeout" } | { kind: "rate-limited" } | { kind: "rejected"; reason: ReportRejection | "unknown" } | { kind: "failed" };
+
+const REPORT_TIMEOUT_MS = 15_000;
 
 /** Sends a bug report or an idea to the developer. Signed in, it names the account. Signed out, it is anonymous and may carry an email for a reply. */
-export async function sendReport(report: Report, signedIn: boolean): Promise<void> {
+export async function sendReport(report: Report, signedIn: boolean): Promise<ReportOutcome> {
   const body = JSON.stringify({ app: "pantrino", ...report, context: `Pantrino ${Constants.expoConfig?.version ?? "?"} · ${Platform.OS} ${Platform.Version}` });
-  const init = { method: "POST", headers: { "Content-Type": "application/json" }, body };
-  if (signedIn) { await call("/api/reports", init); return; }
-  const response = await fetch(`${TOOLS_ORIGIN}/api/reports`, { ...init, headers: { ...init.headers, Accept: "application/json" } })
-    .catch((cause: unknown) => { throw new Offline("Tools cannot be reached.", { cause }); });
-  if (response.ok) return;
-  const reason = ((await response.json().catch(() => ({}))) as { message?: string }).message;
-  throw reason ? new ReportRefused(reason) : new Error(`Tools answered ${response.status} on /api/reports.`);
+  const session = currentSession();
+  let token = signedIn ? await accessToken(session).catch(() => undefined) : undefined;
+  for (let attempt = 0; ; attempt += 1) {
+    const abort = new AbortController();
+    const timer = setTimeout(() => abort.abort(), REPORT_TIMEOUT_MS);
+    const signal = abort.signal;
+    let response: Response;
+    try {
+      response = await fetch(`${TOOLS_ORIGIN}/api/reports`, {
+        method: "POST", body, signal,
+        headers: { "Content-Type": "application/json", Accept: "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }
+      });
+    } catch {
+      return { kind: signal.aborted ? "timeout" : "offline" };
+    } finally {
+      clearTimeout(timer);
+    }
+    if (response.status === 401 && token && attempt === 0) {
+      token = await accessToken(session, token).catch(() => undefined);
+      continue;
+    }
+    if (response.ok) return { kind: "sent" };
+    if (response.status === 429) return { kind: "rate-limited" };
+    if (response.status === 400) {
+      const reason = ((await response.json().catch(() => ({}))) as { reason?: string }).reason;
+      return { kind: "rejected", reason: REJECTIONS.includes(reason as ReportRejection) ? reason as ReportRejection : "unknown" };
+    }
+    return { kind: "failed" };
+  }
 }
+
+const REJECTIONS: readonly string[] = ["unknown_app", "invalid_kind", "empty_message", "message_too_long", "details_too_long", "invalid_email"];
