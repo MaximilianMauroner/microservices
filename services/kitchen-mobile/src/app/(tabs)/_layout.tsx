@@ -35,7 +35,7 @@ function TabBar({ state, navigateToTab }: TabBarProps) {
   const current = state.routes[state.index];
   if (segments.length > 2) return null;
   return (
-    <ScrollView horizontal={!rail} scrollEnabled={rail} showsVerticalScrollIndicator={false}
+    <ScrollView horizontal={!rail} scrollEnabled={rail} scrollsToTop={false} showsVerticalScrollIndicator={false}
       style={rail ? { width: layout.railWidth, flexGrow: 0, borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: colors.border } : { flexGrow: 0 }}
       contentContainerStyle={[styles.bar, rail && styles.rail, { borderTopColor: colors.border, backgroundColor: colors.background, paddingBottom: insets.bottom }]}>
       {PAGES.map((page) => {
