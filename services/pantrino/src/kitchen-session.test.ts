@@ -144,4 +144,36 @@ describe("kitchen session modes", () => {
     expect(app.pull).not.toHaveBeenCalled();
     expect(app.allowNetwork.mock.calls.every(([allowed]) => allowed === false)).toBe(true);
   });
+
+  it("opens account kitchens when the separate local vault cannot be read or written", async () => {
+    const app = fixture();
+    const local = freshLocalKitchen(() => "local", "2026-11-07");
+    await app.localVault.saveSnapshot(local);
+    app.localVault.snapshot = async () => { throw new Error("missing local key"); };
+    app.localVault.setting = async () => { throw new Error("missing local key"); };
+    app.localVault.saveSetting = async () => { throw new Error("missing local key"); };
+    app.storedAccount.mockResolvedValue("account-a");
+    const { session } = app.mount();
+    await session.start();
+    await session.sync();
+    expect(session.getState().session).toBe("signed-in");
+    expect(session.getSyncState().view).toEqual(app.server);
+    await session.signOut();
+    await session.signIn();
+    await session.sync();
+    expect(session.getState().session).toBe("signed-in");
+    expect(JSON.parse(app.localVault.settings.get("snapshot")!)).toEqual(local);
+    await session.showSignIn();
+    await expect(session.openLocal()).rejects.toThrow("missing local key");
+    expect(session.getState()).toMatchObject({ session: "signed-out", error: true });
+  });
+
+  it("does not mark a sign-in failure as a local storage failure", async () => {
+    const app = fixture();
+    app.signIn.mockRejectedValue(new Error("network unavailable"));
+    const { session } = app.mount();
+    await session.start();
+    await expect(session.signIn()).rejects.toThrow("network unavailable");
+    expect(session.getState()).toMatchObject({ session: "signed-out", error: false });
+  });
 });
