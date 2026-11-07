@@ -8,7 +8,7 @@ importers:
 
   .: {}
 
-  services/kitchen-mobile:
+  services/pantrino:
     dependencies:
       '@expo-google-fonts/instrument-sans':
         specifier: ^0.4.2
