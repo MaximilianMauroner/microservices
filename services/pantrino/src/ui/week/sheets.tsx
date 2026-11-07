@@ -10,6 +10,10 @@ import { useLanguage, useText } from "../language";
 import { type DraftLine, draftLines, LineEditor, useResolveLines } from "../lines";
 import { useColors } from "../theme";
 import { defaultMeal, moveStrip, planStrip, type WeekView } from "./model";
+import { bodyMeal, fromRecipe } from "../../body/model";
+import { useBody } from "../../body/store";
+import { LogSheet } from "../body/log-sheet";
+import { TEXT as BODY_TEXT } from "../body/text";
 import { TEXT } from "./text";
 
 /** The weekday for a day in the coming week. A later day also gets its date, so "Tuesday" never means two days. */
@@ -169,6 +173,10 @@ export function EntrySheet({ entry, data, week, onClose, notify }: SheetProps & 
   const [meal, setMeal] = useState(entry.meal);
   const [leftover, setLeftover] = useState(0);
   const [editing, setEditing] = useState<{ lines: DraftLine[]; error?: string } | null>(null);
+  const [logging, setLogging] = useState(false);
+  const body = useBody();
+  const bodyText = useText(BODY_TEXT);
+  const bodyToday = body.status !== "no-access" ? body.snapshot?.today : undefined;
   const resolveLines = useResolveLines();
   const changed = servings !== entry.servings || day !== entry.day || meal !== entry.meal;
   const parts = dayParts(entry.day, language);
@@ -256,7 +264,12 @@ export function EntrySheet({ entry, data, week, onClose, notify }: SheetProps & 
             {changed ? <T muted style={styles.small}>{text.saveFirst}</T> : null}
           </> : null}
         </View>
-        <Button label={text.openRecipe} tone="ghost" onPress={() => { onClose(); router.navigate({ pathname: "/recipes/[recipeId]", params: { recipeId: entry.recipeId } }); }} />
+        <View style={styles.footer}>
+          {bodyToday && entry.day <= bodyToday ? <Button label={bodyText.logInBodyshop} tone="outline" onPress={() => setLogging(true)} /> : null}
+          <Button label={text.openRecipe} tone="ghost" onPress={() => { onClose(); router.navigate({ pathname: "/recipes/[recipeId]", params: { recipeId: entry.recipeId } }); }} />
+        </View>
+        {logging ? <LogSheet initial={fromRecipe({ name: entry.recipe, servings: entry.servings, lines: entry.lines }, new Map(data.kitchen.ingredients.map((one) => [one.id, one])))}
+          meal={bodyMeal(entry.meal)} day={entry.day} onClose={() => setLogging(false)} notify={notify} /> : null}
       </View>}
     </Sheet>
   );

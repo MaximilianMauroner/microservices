@@ -1,7 +1,10 @@
 import { useColorScheme } from "react-native";
 
-/** The tab of a kitchen page. Each page takes its produce color, as on the web. The Kitchen tab keeps the color of Ingredients, which it holds. */
-export type PageKey = "week" | "shopping" | "recipes" | "home" | "kitchen";
+/**
+ * The tab of a page. Each Kitchen page takes its produce color, as on the web. The Kitchen tab keeps the color of
+ * Ingredients, which it holds. `today` and `foods` are the Bodyshop pages in the web Bodyshop colors. Search is neutral.
+ */
+export type PageKey = "week" | "shopping" | "recipes" | "home" | "kitchen" | "today" | "foods" | "search";
 
 /** Colors copied from services/tools/app/styles.css, so the app looks like the web Kitchen in both themes. */
 const dark = {
@@ -17,8 +20,10 @@ const dark = {
   positive: "#6ee7b7",
   ripple: "rgba(255,255,255,0.14)",
   warning: "#fcd34d",
-  page: { week: "#c4402b", shopping: "#1f7d47", recipes: "#7343b5", home: "#2366ad", kitchen: "#b4521a" },
-  pageInk: { week: "#ff8a73", shopping: "#5fd08f", recipes: "#c3a2f5", home: "#7db7f2", kitchen: "#f5a066" },
+  page: { week: "#c4402b", shopping: "#1f7d47", recipes: "#7343b5", home: "#2366ad", kitchen: "#b4521a", today: "#b8452f", foods: "#1d7a50", search: "#525252" },
+  pageInk: { week: "#ff8a73", shopping: "#5fd08f", recipes: "#c3a2f5", home: "#7db7f2", kitchen: "#f5a066", today: "#ef7d6b", foods: "#5cbf8a", search: "#d4d4d4" },
+  /** Bodyshop nutrient colors from services/tools/app/styles.css. */
+  nutrient: { kcal: "#f2b85a", protein: "#6fb0f0", carbs: "#f2b85a", fat: "#e47ba6", fiber: "#5cbf8a" },
   groups: ["#ef7d6b", "#aebf55", "#d8a46c", "#5cbf8a", "#a8a29e", "#b38be0", "#63aee0", "#e47ba6"]
 };
 
@@ -37,6 +42,7 @@ const light: typeof dark = {
   warning: "#b45309",
   page: dark.page,
   pageInk: dark.page,
+  nutrient: { kcal: "#dc9415", protein: "#2a6fbd", carbs: "#dc9415", fat: "#c2477d", fiber: "#23935d" },
   groups: ["#d4503b", "#74841a", "#b0712c", "#23935d", "#78716c", "#8655c4", "#2a7fbd", "#c24a7d"]
 };
 
