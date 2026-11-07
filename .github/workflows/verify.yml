@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - Dockerfile.minio.local
+      - services/tools/test/harness/minio-image.ts
       - .github/workflows/verify.yml
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
@@ -25,7 +26,7 @@ jobs:
         id: minio-cache
         with:
           path: ${{ runner.temp }}/tools-verify-minio-cache
-          key: tools-verify-minio-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Dockerfile.minio.local') }}
+          key: tools-verify-minio-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Dockerfile.minio.local', 'services/tools/test/harness/minio-image.ts') }}
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: '22'
@@ -34,11 +35,23 @@ jobs:
       - run: pnpm run verify
         env:
           TOOLS_VERIFY_CACHE_DIR: ${{ runner.temp }}/tools-verify-minio-cache
+      - id: minio-cache-ready
+        if: ${{ !cancelled() && steps.minio-cache.outputs.cache-hit != 'true' }}
+        shell: bash
+        env:
+          TOOLS_VERIFY_CACHE_DIR: ${{ runner.temp }}/tools-verify-minio-cache
+        run: |
+          for archive in "$TOOLS_VERIFY_CACHE_DIR"/minio-*.tar; do
+            if [ -s "$archive" ]; then
+              echo "ready=true" >> "$GITHUB_OUTPUT"
+              break
+            fi
+          done
       - uses: actions/cache/save@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
-        if: always() && steps.minio-cache.outputs.cache-hit != 'true'
+        if: ${{ !cancelled() && steps.minio-cache-ready.outputs.ready == 'true' }}
         with:
           path: ${{ runner.temp }}/tools-verify-minio-cache
-          key: tools-verify-minio-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Dockerfile.minio.local') }}
+          key: tools-verify-minio-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Dockerfile.minio.local', 'services/tools/test/harness/minio-image.ts') }}
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
