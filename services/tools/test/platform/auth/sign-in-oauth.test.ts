@@ -69,11 +69,13 @@ it("returns a wildcard Google callback through consent to the native app with PK
   }));
   expect(callback.status).toBe(302);
   const continuation = new URL(callback.headers.get("location")!, origin);
+  expect(continuation.pathname).not.toBe("/");
   expect(continuation.pathname).toBe("/api/auth/oauth2/authorize");
   const sessionCookie = cookies(callback);
   const consent = await auth.handler(new Request(continuation, {
-    headers: { cookie: sessionCookie, accept: "text/html", "sec-fetch-mode": "navigate" }
+    headers: { cookie: sessionCookie, accept: "*/*" }
   }));
+  expect(consent.status).toBe(302);
   const consentLocation = new URL(consent.headers.get("location")!, origin);
   expect(consentLocation.pathname).toBe("/consent");
   const accepted = await auth.handler(new Request(`${origin}/api/auth/oauth2/consent`, {
