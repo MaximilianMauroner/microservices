@@ -36,6 +36,7 @@ describe("sending a report", () => {
     expect(calls[0]!.url).toBe("https://tools.test/api/reports");
     expect(JSON.parse(calls[0]!.init.body as string)).toEqual({ app: "pantrino", ...report, context: "Pantrino 1.2.0 · ios 26.1" });
     expect(calls[0]!.init.headers).not.toHaveProperty("Authorization");
+    expect(calls[0]!.init.credentials).toBe("omit");
   });
 
   it("retries once with a fresh token after Tools refuses a stale one", async () => {
@@ -119,5 +120,20 @@ describe("a report with the sender's name", () => {
     refreshed("token-late");
     await vi.advanceTimersByTimeAsync(20_000);
     expect(calls).toHaveLength(1);
+  });
+});
+
+describe("reading a refusal", () => {
+  it("treats a refusal with a null body as an unknown reason, not a timeout", async () => {
+    answer(new Response("null", { status: 400 }));
+    expect(await sendReport(report, false)).toEqual({ kind: "rejected", reason: "unknown" });
+  });
+
+  it("keeps the deadline when the reply body never finishes", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", async () => ({ ok: false, status: 400, json: () => new Promise(() => undefined) }));
+    const pending = sendReport(report, false);
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(await pending).toEqual({ kind: "timeout" });
   });
 });
