@@ -61,6 +61,21 @@ try {
     case "config":
       process.stdout.write("config\n");
       break;
+    case "minio-ready": {
+      const deadline = AbortSignal.timeout(30_000);
+      for (;;) {
+        try {
+          const response = await fetch(new URL("/minio/health/ready", config.tools.bucket.endpoint), {
+            signal: AbortSignal.any([deadline, AbortSignal.timeout(2_000)]), redirect: "error",
+          });
+          await response.body?.cancel();
+          if (response.status === 200) break;
+        } catch { deadline.throwIfAborted(); }
+        await delay(250, undefined, { signal: deadline });
+      }
+      process.stdout.write("minio-ready\n");
+      break;
+    }
     case "health": {
       const deadline = AbortSignal.timeout(60_000);
       for (;;) {
@@ -106,7 +121,7 @@ try {
       }
       break;
     default:
-      throw new Error("Usage: local-stack-check.ts config|health|markdown|storage");
+      throw new Error("Usage: local-stack-check.ts config|minio-ready|health|markdown|storage");
   }
 } catch (error) {
   console.error(error instanceof Error ? error.message : "Local prerequisite failed.");

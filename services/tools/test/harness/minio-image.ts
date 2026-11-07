@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import { lstat, mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { CommandExecutor, CommandOutcome } from "./commands.ts";
 import { VerificationBlocked } from "./receipt.ts";
@@ -101,7 +100,7 @@ async function outsideCheckout(root: string, directory: string): Promise<string>
 export async function resolveMinioImage(options: Readonly<{
   commands: CommandExecutor;
   root: string;
-  cacheDirectory?: string;
+  cacheDirectory: string;
   signal: AbortSignal;
   log: (step: string) => string;
 }>): Promise<MinioImage> {
@@ -135,7 +134,7 @@ export async function resolveMinioImage(options: Readonly<{
   const stored = await inspect(reference, "store-inspect");
   if (stored) return image(stored, "store");
 
-  const cache = await outsideCheckout(root, options.cacheDirectory ?? join(process.env.XDG_CACHE_HOME || join(homedir(), ".cache"), "tools-verify"));
+  const cache = await outsideCheckout(root, options.cacheDirectory);
   await mkdir(cache, { recursive: true, mode: 0o700 });
   const archive = join(cache, `minio-${inputDigest}.tar`);
   let archived = false;
