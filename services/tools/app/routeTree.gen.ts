@@ -85,6 +85,8 @@ import { Route as KitchenKitchenIdIngredientsRouteImport } from './routes/kitche
 import { Route as KitchenKitchenIdShoppingRouteImport } from './routes/kitchen/$kitchenId/shopping'
 import { Route as MarkdownDSlugRouteImport } from './routes/markdown/d/$slug'
 import { Route as ShareDSlugRouteImport } from './routes/share/d/$slug'
+import { Route as ApiBodyshopAppActionsRouteImport } from './routes/api/bodyshop/app/actions'
+import { Route as ApiBodyshopAppTodayRouteImport } from './routes/api/bodyshop/app/today'
 import { Route as ApiBodyshopImportPreviewRouteImport } from './routes/api/bodyshop/import/preview'
 import { Route as ApiMoneyImportsImportIdRouteImport } from './routes/api/money/imports/$importId'
 import { Route as ApiMoneyImportsPreviewRouteImport } from './routes/api/money/imports/preview'
@@ -478,6 +480,16 @@ const ShareDSlugRoute = ShareDSlugRouteImport.update({
   path: '/d/$slug',
   getParentRoute: () => ShareRoute,
 } as any)
+const ApiBodyshopAppActionsRoute = ApiBodyshopAppActionsRouteImport.update({
+  id: '/api/bodyshop/app/actions',
+  path: '/api/bodyshop/app/actions',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiBodyshopAppTodayRoute = ApiBodyshopAppTodayRouteImport.update({
+  id: '/api/bodyshop/app/today',
+  path: '/api/bodyshop/app/today',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiBodyshopImportPreviewRoute =
   ApiBodyshopImportPreviewRouteImport.update({
     id: '/preview',
@@ -606,6 +618,8 @@ export interface FileRoutesByFullPath {
   '/share/d/$slug': typeof ShareDSlugRoute
   '/feedback/forms/': typeof FeedbackFormsIndexRoute
   '/kitchen/$kitchenId/': typeof KitchenKitchenIdIndexRoute
+  '/api/bodyshop/app/actions': typeof ApiBodyshopAppActionsRoute
+  '/api/bodyshop/app/today': typeof ApiBodyshopAppTodayRoute
   '/api/bodyshop/import/preview': typeof ApiBodyshopImportPreviewRoute
   '/api/money/imports/$importId': typeof ApiMoneyImportsImportIdRoute
   '/api/money/imports/preview': typeof ApiMoneyImportsPreviewRoute
@@ -686,6 +700,8 @@ export interface FileRoutesByTo {
   '/share/d/$slug': typeof ShareDSlugRoute
   '/feedback/forms': typeof FeedbackFormsIndexRoute
   '/kitchen/$kitchenId': typeof KitchenKitchenIdIndexRoute
+  '/api/bodyshop/app/actions': typeof ApiBodyshopAppActionsRoute
+  '/api/bodyshop/app/today': typeof ApiBodyshopAppTodayRoute
   '/api/bodyshop/import/preview': typeof ApiBodyshopImportPreviewRoute
   '/api/money/imports/$importId': typeof ApiMoneyImportsImportIdRoute
   '/api/money/imports/preview': typeof ApiMoneyImportsPreviewRoute
@@ -774,6 +790,8 @@ export interface FileRoutesById {
   '/share/d/$slug': typeof ShareDSlugRoute
   '/feedback/forms/': typeof FeedbackFormsIndexRoute
   '/kitchen/$kitchenId/': typeof KitchenKitchenIdIndexRoute
+  '/api/bodyshop/app/actions': typeof ApiBodyshopAppActionsRoute
+  '/api/bodyshop/app/today': typeof ApiBodyshopAppTodayRoute
   '/api/bodyshop/import/preview': typeof ApiBodyshopImportPreviewRoute
   '/api/money/imports/$importId': typeof ApiMoneyImportsImportIdRoute
   '/api/money/imports/preview': typeof ApiMoneyImportsPreviewRoute
@@ -863,6 +881,8 @@ export interface FileRouteTypes {
     | '/share/d/$slug'
     | '/feedback/forms/'
     | '/kitchen/$kitchenId/'
+    | '/api/bodyshop/app/actions'
+    | '/api/bodyshop/app/today'
     | '/api/bodyshop/import/preview'
     | '/api/money/imports/$importId'
     | '/api/money/imports/preview'
@@ -943,6 +963,8 @@ export interface FileRouteTypes {
     | '/share/d/$slug'
     | '/feedback/forms'
     | '/kitchen/$kitchenId'
+    | '/api/bodyshop/app/actions'
+    | '/api/bodyshop/app/today'
     | '/api/bodyshop/import/preview'
     | '/api/money/imports/$importId'
     | '/api/money/imports/preview'
@@ -1030,6 +1052,8 @@ export interface FileRouteTypes {
     | '/share/d/$slug'
     | '/feedback/forms/'
     | '/kitchen/$kitchenId/'
+    | '/api/bodyshop/app/actions'
+    | '/api/bodyshop/app/today'
     | '/api/bodyshop/import/preview'
     | '/api/money/imports/$importId'
     | '/api/money/imports/preview'
@@ -1088,6 +1112,8 @@ export interface RootRouteChildren {
   ApiOpsSplatRoute: typeof ApiOpsSplatRoute
   ApiPublicCatalogRoute: typeof ApiPublicCatalogRoute
   ApiShareDocumentsRoute: typeof ApiShareDocumentsRouteWithChildren
+  ApiBodyshopAppActionsRoute: typeof ApiBodyshopAppActionsRoute
+  ApiBodyshopAppTodayRoute: typeof ApiBodyshopAppTodayRoute
   ApiStatusHeartbeatsMonitorIdRoute: typeof ApiStatusHeartbeatsMonitorIdRoute
   ApiFeedbackFormsFormIdExportRoute: typeof ApiFeedbackFormsFormIdExportRoute
 }
@@ -1626,6 +1652,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShareDSlugRouteImport
       parentRoute: typeof ShareRoute
     }
+    '/api/bodyshop/app/actions': {
+      id: '/api/bodyshop/app/actions'
+      path: '/api/bodyshop/app/actions'
+      fullPath: '/api/bodyshop/app/actions'
+      preLoaderRoute: typeof ApiBodyshopAppActionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/bodyshop/app/today': {
+      id: '/api/bodyshop/app/today'
+      path: '/api/bodyshop/app/today'
+      fullPath: '/api/bodyshop/app/today'
+      preLoaderRoute: typeof ApiBodyshopAppTodayRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/bodyshop/import/preview': {
       id: '/api/bodyshop/import/preview'
       path: '/preview'
@@ -1956,6 +1996,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiOpsSplatRoute: ApiOpsSplatRoute,
   ApiPublicCatalogRoute: ApiPublicCatalogRoute,
   ApiShareDocumentsRoute: ApiShareDocumentsRouteWithChildren,
+  ApiBodyshopAppActionsRoute: ApiBodyshopAppActionsRoute,
+  ApiBodyshopAppTodayRoute: ApiBodyshopAppTodayRoute,
   ApiStatusHeartbeatsMonitorIdRoute: ApiStatusHeartbeatsMonitorIdRoute,
   ApiFeedbackFormsFormIdExportRoute: ApiFeedbackFormsFormIdExportRoute,
 }

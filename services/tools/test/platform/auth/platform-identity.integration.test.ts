@@ -221,7 +221,7 @@ describe.skipIf(!admin)("MCP over OAuth as the signed-in person", () => {
 });
 
 function authorizeKitchenApp(cookie: string, verifier: string) {
-  const { clientId, redirectUri } = APP_CLIENTS.kitchen;
+  const { clientId, redirectUri } = APP_CLIENTS.pantrino;
   const authorize = new URL(`${config.publicOrigin}/api/auth/oauth2/authorize`);
   for (const [key, value] of Object.entries({
     response_type: "code", client_id: clientId, redirect_uri: redirectUri, scope: "openid profile email offline_access", state: "state-1",
@@ -234,13 +234,13 @@ function refreshKitchenApp(refreshToken: string) {
   return identity!.auth.handler(new Request(`${config.publicOrigin}/api/auth/oauth2/token`, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken, client_id: APP_CLIENTS.kitchen.clientId })
+    body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken, client_id: APP_CLIENTS.pantrino.clientId })
   }));
 }
 
 async function connectKitchenApp(cookie: string) {
   const auth = identity!.auth;
-  const { clientId, redirectUri } = APP_CLIENTS.kitchen;
+  const { clientId, redirectUri } = APP_CLIENTS.pantrino;
   const verifier = randomBytes(32).toString("base64url");
   const toConsent = await authorizeKitchenApp(cookie, verifier);
   const consentLocation = new URL(toConsent.headers.get("location") ?? "", config.publicOrigin);
@@ -275,7 +275,7 @@ describe.skipIf(!admin)("Kitchen app over OAuth", () => {
   it("signs in through PKCE and consent and opens only the Kitchen app API", async () => {
     const { cookie } = await signIn("admin-subject", config.allowedGoogleEmail);
     const { accessToken } = await connectKitchenApp(cookie);
-    expect(await identity!.resolveAppToken(bearer(accessToken), "kitchen")).toEqual({ role: "admin", subject: "admin-subject", email: config.allowedGoogleEmail });
+    expect(await identity!.resolveAppToken(bearer(accessToken), "pantrino")).toEqual({ role: "admin", subject: "admin-subject", email: config.allowedGoogleEmail });
     expect((await callWhoami({ authorization: `Bearer ${accessToken}` })).status, "MCP refuses an app token").toBe(401);
     const userinfo = await identity!.auth.handler(new Request(`${config.publicOrigin}/api/auth/oauth2/userinfo`, { headers: { authorization: `Bearer ${accessToken}` } }));
     const other = await connectKitchenApp((await signIn("friend-subject", "friend@example.test")).cookie);
@@ -296,11 +296,11 @@ describe.skipIf(!admin)("Kitchen app over OAuth", () => {
 
   it("refuses an MCP token, a cookie, and a token of a disabled app", async () => {
     const { cookie } = await signIn("admin-subject", config.allowedGoogleEmail);
-    expect(await identity!.resolveAppToken(bearer(await connectMcpClient(cookie)), "kitchen")).toBeUndefined();
-    expect(await identity!.resolveAppToken(new Request(`${config.publicOrigin}/api/kitchen/sync`, { headers: { cookie } }), "kitchen")).toBeUndefined();
+    expect(await identity!.resolveAppToken(bearer(await connectMcpClient(cookie)), "pantrino")).toBeUndefined();
+    expect(await identity!.resolveAppToken(new Request(`${config.publicOrigin}/api/kitchen/sync`, { headers: { cookie } }), "pantrino")).toBeUndefined();
     const { accessToken, refreshToken } = await connectKitchenApp(cookie);
-    await admin!`update tools.oauth_clients set disabled = true where client_id = ${APP_CLIENTS.kitchen.clientId}`;
-    expect(await identity!.resolveAppToken(bearer(accessToken), "kitchen")).toBeUndefined();
+    await admin!`update tools.oauth_clients set disabled = true where client_id = ${APP_CLIENTS.pantrino.clientId}`;
+    expect(await identity!.resolveAppToken(bearer(accessToken), "pantrino")).toBeUndefined();
     const again = await authorizeKitchenApp(cookie, randomBytes(32).toString("base64url"));
     expect(new URL(again.headers.get("location") ?? "about:blank", config.publicOrigin).searchParams.get("code"), "a disabled app gets no new sign-in").toBeNull();
     expect((await refreshKitchenApp(refreshToken)).ok, "a disabled app cannot refresh").toBe(false);
@@ -312,7 +312,7 @@ describe.skipIf(!admin)("Kitchen app over OAuth", () => {
     const refreshed = await refreshKitchenApp(refreshToken);
     expect(refreshed.status, await refreshed.clone().text()).toBe(200);
     const { access_token: accessToken } = await refreshed.json() as { access_token: string };
-    expect(await identity!.resolveAppToken(bearer(accessToken), "kitchen")).toMatchObject({ subject: "admin-subject" });
+    expect(await identity!.resolveAppToken(bearer(accessToken), "pantrino")).toMatchObject({ subject: "admin-subject" });
   });
 
   it("disables a client ID that an app used before, so its old tokens open nothing", async () => {
@@ -326,8 +326,8 @@ describe.skipIf(!admin)("Kitchen app over OAuth", () => {
   });
 
   it("keeps an operator's disable when the clients are registered again", async () => {
-    await admin!`update tools.oauth_clients set disabled = true where client_id = ${APP_CLIENTS.kitchen.clientId}`;
+    await admin!`update tools.oauth_clients set disabled = true where client_id = ${APP_CLIENTS.pantrino.clientId}`;
     await registerAppClients(admin!);
-    expect(await admin!`select client_id from tools.oauth_clients where client_id = ${APP_CLIENTS.kitchen.clientId} and disabled`).toHaveLength(1);
+    expect(await admin!`select client_id from tools.oauth_clients where client_id = ${APP_CLIENTS.pantrino.clientId} and disabled`).toHaveLength(1);
   });
 });
