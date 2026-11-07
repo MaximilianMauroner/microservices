@@ -8,6 +8,7 @@ import { createFeedbackEncryption, parseFeedbackEncryptionKey } from "../../prod
 import type { CommandExecutor, CommandOutcome, CommandSpec } from "./commands.ts";
 import { withOwnedCommands } from "./commands.ts";
 import { withLocalStack, withVerificationStack, type LocalStackOptions } from "./local-stack.ts";
+import type { MinioImage } from "./minio-image.ts";
 import { redactFixture } from "./receipt.ts";
 
 const artifactRoot = fileURLToPath(new URL("../../../../.agents/artifacts/r2-local-stack-2026-10-17/", import.meta.url));
@@ -38,14 +39,15 @@ async function fixture() {
   const root = join(directory, "checkout");
   await mkdir(root);
   const calls: CommandSpec[] = [];
+  const configurations: Awaited<ReturnType<typeof composeConfig>>[] = [];
   let response: (spec: CommandSpec) => Promise<CommandOutcome | undefined> = async () => undefined;
   const base: {
-    services: Record<string, { ports?: { target: number; published: string; host_ip?: string; protocol?: string }[]; environment?: Record<string, string>; build?: { context?: string; args?: Record<string, string>; tags?: string[] }; image?: string }>;
+    services: Record<string, { ports?: { target: number; published: string; host_ip?: string; protocol?: string }[]; volumes?: { type?: string; source?: string; target?: string }[]; environment?: Record<string, string>; build?: { context?: string; args?: Record<string, string>; tags?: string[] }; image?: string; pull_policy?: string }>;
     volumes: Record<string, { name?: string; external?: boolean }>;
   } = {
     services: {
-      postgres: { image: "postgres:16-alpine", environment: { POSTGRES_PASSWORD: "local" }, ports: [{ target: 5432, published: "5432" }] },
-      minio: { build: {}, ports: [{ target: 9000, published: "9000" }, { target: 9001, published: "9001" }] },
+      postgres: { image: "postgres:16-alpine", environment: { POSTGRES_PASSWORD: "local" }, ports: [{ target: 5432, published: "5432" }], volumes: [{ type: "volume", source: "postgres-data", target: "/var/lib/postgresql/data" }] },
+      minio: { build: {}, ports: [{ target: 9000, published: "9000" }, { target: 9001, published: "9001" }], volumes: [{ type: "volume", source: "minio-data", target: "/data" }] },
       "postgres-migrate": { build: {}, environment: { DATABASE_URL: platform.DATABASE_URL } }, "minio-seed": { build: {} },
       platform: { build: {}, environment: platform, ports: [{ target: 3000, published: "3000" }] },
     },
@@ -62,6 +64,11 @@ async function fixture() {
           service = JSON.parse(line.trim().slice(0, -1)) as string;
           config.services[service]!.ports = [];
         }
+        if (line === "    build: !reset null") delete config.services[service]!.build;
+        const image = /^    image: (.+)$/.exec(line);
+        if (image) config.services[service]!.image = JSON.parse(image[1]!);
+        const pullPolicy = /^    pull_policy: (.+)$/.exec(line);
+        if (pullPolicy) config.services[service]!.pull_policy = JSON.parse(pullPolicy[1]!);
         if (/^      - \{/.test(line)) {
           config.services[service]!.ports!.push(JSON.parse(line.trim().slice(2)));
         }
@@ -80,7 +87,9 @@ async function fixture() {
     if (supplied) return supplied;
     let stdout = "";
     if (spec.args.includes("config") && spec.command === "docker") {
-      stdout = JSON.stringify(await composeConfig(spec));
+      const config = await composeConfig(spec);
+      configurations.push(config);
+      stdout = JSON.stringify(config);
     } else if (spec.args.includes("version")) stdout = "2.24.4\n";
     else if (spec.args.at(-1) === "config") {
       loadPlatformConfig(spec.env);
@@ -101,7 +110,7 @@ async function fixture() {
   const options: LocalStackOptions = { directory: join(directory, "private"), repository: root,
     environment: { PATH: process.env.PATH, FEEDBACK_ENCRYPTION_KEY: "ignored-shell-key", GOOGLE_CLIENT_SECRET: "ignored-shell-oauth" },
     commands: { work: execute, cleanup: execute }, lifetimeMs: 30_000 };
-  return { directory, options, calls, base, composeConfig, respond(handler: typeof response) { response = handler; } };
+  return { directory, options, calls, configurations, base, composeConfig, respond(handler: typeof response) { response = handler; } };
 }
 
 async function retainedFiles(directory: string) {
@@ -173,7 +182,7 @@ describe("owned local stack", () => {
     });
     expect(result).toMatchObject({ kind: cleanup === "disposed" ? "completed" : "failed", cleanup });
     expect(password).toMatch(/^[a-f0-9]{64}$/);
-    expect(configurations).toHaveLength(4);
+    expect(configurations).toHaveLength(2);
     for (const config of configurations) {
       expect(config.services.postgres!.environment!.POSTGRES_PASSWORD).toBe(password);
       for (const name of ["postgres-migrate", "platform"]) {
@@ -242,7 +251,7 @@ describe("owned local stack", () => {
       : await withLocalStack(setup.options, use);
     expect(result).toMatchObject({ kind: "completed", cleanup: lifetime === "verification" ? "disposed" : "stopped" });
     expect(mutations).toEqual(lifetime === "verification" ? ["after-validation", "before-stop", "before-disposal"] : ["after-validation", "before-stop"]);
-    expect(selected).toHaveLength(lifetime === "verification" ? 5 : 4);
+    expect(selected).toHaveLength(lifetime === "verification" ? 3 : 4);
     for (const resources of selected) {
       expect(resources.volumes).toEqual(result.manifest!.volumes);
       expect(resources.images).toEqual(["minio", "postgres-migrate", "minio-seed", "platform"].map((name) => `${result.manifest!.project}-${name}`));
@@ -378,6 +387,133 @@ describe("owned local stack", () => {
     expect(setup.calls[copy]!.args).toEqual(["-R", join(await realpath(setup.options.repository!), "services/tools/.output"), join(await realpath(setup.options.directory), "output")]);
     expect(setup.calls.find((spec) => spec.args[0]?.endsWith("index.mjs"))!.args[0]).toBe(join(setup.calls[copy]!.args[2]!, "server/index.mjs"));
     await expect(stat(join(setup.options.directory, "output"))).rejects.toThrow();
+  });
+
+  it("snapshots the verified workspace build before Docker and overlaps host setup", async () => {
+    const setup = await fixture();
+    const toolsDirectory = join(setup.options.repository!, "services/tools");
+    const workspaceOutput = join(toolsDirectory, ".output");
+    await mkdir(join(workspaceOutput, "server"), { recursive: true });
+    await writeFile(join(workspaceOutput, "server/index.mjs"), "fixture build");
+    let releaseSetup!: () => void;
+    const setupReady = new Promise<void>((resolve) => { releaseSetup = resolve; });
+    const started = new Set<string>();
+    setup.respond(async (spec) => {
+      if (spec.command === "cp") await mkdir(join(spec.args[2]!, "server"), { recursive: true });
+      const setupStep = spec.log.endsWith("-postgres-migrate.log") ? "postgres-migrate"
+        : spec.log.endsWith("-minio-seed.log") ? "minio-seed" : undefined;
+      if (setupStep) {
+        started.add(setupStep);
+        if (started.size === 2) releaseSetup();
+        await setupReady;
+      }
+      return undefined;
+    });
+
+    const result = await withVerificationStack(setup.options, async ({ manifest, environment }) => {
+      directories.push(manifest.directory);
+      expect(environment.DATABASE_URL).toContain("127.0.0.1:");
+      expect(environment.TOOLS_S3_ENDPOINT).toContain("127.0.0.1:");
+    }, { kind: "journeys", workspaceBuild: { outputDirectory: workspaceOutput } });
+
+    expect(result).toMatchObject({ kind: "completed", cleanup: "disposed" });
+    const migration = setup.calls.find((spec) => spec.log.endsWith("-postgres-migrate.log"))!;
+    const seed = setup.calls.find((spec) => spec.log.endsWith("-minio-seed.log"))!;
+    const copy = setup.calls.find((spec) => spec.command === "cp")!;
+    const startup = setup.calls.find((spec) => spec.command === "docker" && spec.args.includes("up"))!;
+    expect(setup.calls.indexOf(copy)).toBeLessThan(setup.calls.indexOf(startup));
+    expect(started).toEqual(new Set(["postgres-migrate", "minio-seed"]));
+    expect(migration.command).toBe(process.execPath);
+    expect(migration.args).toEqual(["--import", "tsx", "platform/database/push-postgres.ts", "development"]);
+    expect(migration.cwd).toBe(toolsDirectory);
+    expect(migration.env).toMatchObject({
+      TOOLS_ENVIRONMENT: "development",
+      TOOLS_DEVELOPMENT_SCHEMA_PUSH_CONFIRM: "tools-platform-development",
+    });
+    expect(migration.env!.DATABASE_URL).toContain("127.0.0.1:");
+    expect(seed.command).toBe(process.execPath);
+    expect(seed.args).toEqual(["--import", "tsx", "products/status/local-seed.ts"]);
+    expect(seed.cwd).toBe(toolsDirectory);
+    expect(seed.env).toMatchObject({ LOCAL_PLATFORM_BROWSER_ORIGIN: result.manifest!.origins.tools, SEED_RETRY_ATTEMPTS: "30" });
+    expect(seed.env!.TOOLS_S3_ENDPOINT).toContain("127.0.0.1:");
+    expect(setup.calls.some((spec) => spec.command === "pnpm" || spec.command === "docker" && spec.args.includes("run"))).toBe(false);
+    expect(copy.args).toEqual(["-R", workspaceOutput, join(result.directory, "output")]);
+    expect(setup.calls.find((spec) => spec.args[0]?.endsWith("index.mjs"))!.args[0]).toBe(join(result.directory, "output/server/index.mjs"));
+  });
+
+  it("uses only owned MinIO with the existing PostgreSQL fixture for identity contracts", async () => {
+    const setup = await fixture();
+    const postgresFixture = {
+      name: "tools-runtime-12345678-1234-4234-8234-123456789abc",
+      url: "postgres://tools_runtime:fixture-password@127.0.0.1:41002/tools_runtime_test",
+    };
+    let manifestText = "";
+    let origin = "";
+    const result = await withVerificationStack(setup.options, async ({ manifest, environment }) => {
+      directories.push(manifest.directory);
+      origin = manifest.origins.test;
+      manifestText = await readFile(join(manifest.directory, "manifest.json"), "utf8");
+      expect(manifest).toMatchObject({ profile: "identity-contracts", startedServices: ["minio"], postgresFixture: postgresFixture.name,
+        volumes: [`${manifest.project}_minio-data`] });
+      expect(environment.DATABASE_URL).toBe(postgresFixture.url);
+      expect(manifestText).not.toContain(postgresFixture.url);
+      expect(manifestText).not.toContain("fixture-password");
+    }, { kind: "identity-contracts", postgresFixture });
+
+    expect(result).toMatchObject({ kind: "completed", cleanup: "disposed", manifest: { profile: "identity-contracts" } });
+    const startup = setup.calls.find((spec) => spec.command === "docker" && spec.args.includes("up"))!;
+    expect(startup.args.slice(startup.args.indexOf("up") + 1)).toEqual(["--detach", "--build", "--wait", "--wait-timeout", "90", "minio"]);
+    expect(setup.calls.some((spec) => spec.log.endsWith("-postgres-migrate.log"))).toBe(false);
+    expect(setup.calls.some((spec) => spec.args.includes("health") || spec.args.includes("markdown"))).toBe(false);
+    expect(setup.calls.some((spec) => spec.command === "pnpm" || spec.command === "cp" || spec.args[0]?.endsWith("index.mjs"))).toBe(false);
+    const seed = setup.calls.find((spec) => spec.log.endsWith("-minio-seed.log"))!;
+    const storage = setup.calls.find((spec) => spec.args.at(-1) === "storage")!;
+    expect(seed.command).toBe(process.execPath);
+    expect(seed.args).toEqual(["--import", "tsx", "products/status/local-seed.ts"]);
+    expect(seed.env).toMatchObject({ LOCAL_PLATFORM_BROWSER_ORIGIN: origin, SEED_RETRY_ATTEMPTS: "30" });
+    expect(seed.env!.DATABASE_URL).toBe(postgresFixture.url);
+    expect(setup.calls.indexOf(seed)).toBeLessThan(setup.calls.indexOf(storage));
+    expect(manifestText).toContain(origin);
+  });
+
+  it("uses the resolved MinIO image without rebuilding or pulling it", async () => {
+    const setup = await fixture();
+    const minio: MinioImage = {
+      reference: `tools-verify-minio:${"a".repeat(32)}` as MinioImage["reference"],
+      inputDigest: "a".repeat(64),
+      platform: "linux/amd64",
+      imageId: `sha256:${"b".repeat(64)}` as MinioImage["imageId"],
+      source: "archive" as const,
+    };
+    const result = await withVerificationStack(setup.options, async ({ manifest }) => {
+      directories.push(manifest.directory);
+      expect(manifest.startedServices).toEqual(["minio"]);
+    }, { kind: "identity-contracts", postgresFixture: {
+      name: "tools-runtime-12345678-1234-4234-8234-123456789abc",
+      url: "postgres://tools_runtime:fixture-password@127.0.0.1:41002/tools_runtime_test",
+    }, minio });
+
+    expect(result).toMatchObject({ kind: "completed", cleanup: "disposed" });
+    const resolved = setup.configurations.at(-1)!;
+    expect(resolved.services.minio).toMatchObject({ image: minio.reference, pull_policy: "never" });
+    expect(resolved.services.minio!.build).toBeUndefined();
+    const startup = setup.calls.find((spec) => spec.command === "docker" && spec.args.includes("up"))!;
+    expect(startup.args.slice(startup.args.indexOf("up") + 1)).toEqual(["--detach", "--wait", "--wait-timeout", "90", "minio"]);
+  });
+
+  it("retains the identity MinIO fixture when its required contract callback fails", async () => {
+    const setup = await fixture();
+    const result = await withVerificationStack(setup.options, async ({ manifest }) => {
+      directories.push(manifest.directory);
+      throw new Error("identity contract failed");
+    }, { kind: "identity-contracts", postgresFixture: {
+      name: "tools-runtime-12345678-1234-4234-8234-123456789abc",
+      url: "postgres://tools_runtime:fixture-password@127.0.0.1:41002/tools_runtime_test",
+    } });
+
+    expect(result).toMatchObject({ kind: "failed", cleanup: "retained", reason: "Local setup failed. Check the owned private logs and run directory." });
+    expect(setup.calls.some((spec) => spec.args.includes("down"))).toBe(true);
+    expect(setup.calls.some((spec) => spec.args.includes("--volumes"))).toBe(false);
   });
 
   it.each(["health", "storage"])("retains the lock when the cancelled %s probe cannot prove release", async (phase) => {

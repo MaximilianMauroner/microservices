@@ -1,23 +1,26 @@
 import { randomUUID } from "node:crypto";
+import { performance } from "node:perf_hooks";
 import { renameSync, unlinkSync, writeFileSync, writeSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { withOwnedCommands, type CommandExecutor, type CommandOutcome, type CommandSpec } from "./commands.ts";
+import { resolveMinioImage, type MinioImage } from "./minio-image.ts";
 import { createOwnedPostgres, rejectInheritedDataEndpoints } from "./postgres.ts";
-import { withVerificationStack, type LocalStackManifest } from "./local-stack.ts";
+import { withVerificationStack, type VerificationStackManifest } from "./local-stack.ts";
 import { decodeReport, redactDatabase, redactFixture, manualAcceptance, requiredCaseReceipt, VerificationBlocked, type ChildReport, journeyReceipts, requiredJourneyCases, type CheckReceipt } from "./receipt.ts";
 import type { StopSignal } from "./command-types.ts";
 
 export type VerificationMode = "workspace" | "money-postgres";
 type Requirement =
-  | Readonly<{ kind: "prerequisites" | "discover" | "fixture" | "schema" | "contracts" | "identity-discover" | "identity-contracts" | "journey-discover" | "journey-contracts" | "cleanup" }>
+  | Readonly<{ kind: "prerequisites" | "discover" | "fixture" | "schema" | "contracts" | "identity-discover" | "identity-contracts" | "journey-discover" | "journey-contracts" | "minio-image" | "cleanup" }>
   | Readonly<{ kind: "workspace-command"; command: "typecheck" | "test" | "build" }>;
 type StepResult =
   | Readonly<{ kind: "pending" }>
   | Readonly<{ kind: "passed"; evidence: readonly string[] }>
   | Readonly<{ kind: "failed" | "blocked" | "not-run"; reasons: readonly string[]; evidence: readonly string[]; command?: CommandOutcome }>;
-type Cell = { readonly requirement: Requirement; result: StepResult };
+type Cell = { readonly requirement: Requirement; result: StepResult; durationMs: number };
 type Interruption = Readonly<{ kind: "none" }> | Readonly<{ kind: "received"; first: StopSignal }>;
 type Decision = Readonly<{ kind: "passed" }> | Readonly<{ kind: "failed" | "blocked"; reasons: readonly string[] }> | Readonly<{ kind: "interrupted"; first: StopSignal }>;
 type RunRecord = Readonly<{
@@ -27,7 +30,8 @@ type RunRecord = Readonly<{
   cells: readonly Readonly<Cell>[];
   required: readonly string[];
   contracts: ReturnType<typeof requiredCaseReceipt> | undefined;
-  identity: Readonly<{ required: readonly string[]; contracts?: ReturnType<typeof requiredCaseReceipt>; fixture?: LocalStackManifest }>;
+  identity: Readonly<{ required: readonly string[]; contracts?: ReturnType<typeof requiredCaseReceipt>; fixture?: VerificationStackManifest }>;
+  minio?: MinioImage;
   journeys: readonly CheckReceipt[];
   interruption: Interruption;
   automatedDecision: Decision;
@@ -37,14 +41,21 @@ type Completion = Readonly<{ kind: "published"; path: string }> | Readonly<{ kin
 const toolsRoot = fileURLToPath(new URL("../../", import.meta.url));
 const root = resolve(toolsRoot, "../..");
 const vitestChild = fileURLToPath(new URL("./vitest-child.ts", import.meta.url));
+const tsxLoader = process.features.typescript ? undefined : fileURLToPath(import.meta.resolve("tsx"));
 const interruptedExit = { SIGINT: 130, SIGTERM: 143 } as const;
+
+function typescriptArgs(entry: string, args: readonly string[]) {
+  return process.features.typescript
+    ? ["--experimental-strip-types", entry, ...args]
+    : ["--import", tsxLoader!, entry, ...args];
+}
 
 function planFor(mode: VerificationMode): Cell[] {
   const workspace: Requirement[] = mode === "workspace"
     ? (["typecheck", "test", "build"] as const).map((command) => ({ kind: "workspace-command", command })) : [];
-  const identity: Requirement[] = mode === "workspace" ? [{ kind: "identity-discover" }, { kind: "journey-discover" }, { kind: "identity-contracts" }, { kind: "journey-contracts" }] : [];
+  const identity: Requirement[] = mode === "workspace" ? [{ kind: "identity-discover" }, { kind: "journey-discover" }, { kind: "minio-image" }, { kind: "identity-contracts" }, { kind: "journey-contracts" }] : [];
   const requirements: Requirement[] = [{ kind: "prerequisites" }, { kind: "discover" }, { kind: "fixture" }, ...workspace, { kind: "schema" }, { kind: "contracts" }, ...identity, { kind: "cleanup" }];
-  return requirements.map((requirement) => ({ requirement, result: { kind: "pending" } }));
+  return requirements.map((requirement) => ({ requirement, result: { kind: "pending" }, durationMs: 0 }));
 }
 
 function label(requirement: Requirement) {
@@ -76,7 +87,7 @@ async function childReport<Phase extends ChildReport["phase"]>(phase: Phase, com
   const name = suite === "postgres" ? phase : `${suite}-${phase}`;
   const path = join(directory, `${name}-report.json`);
   const outcome = await commands.execute({
-    command: process.execPath, args: ["--experimental-strip-types", vitestChild, phase, path, suite],
+    command: process.execPath, args: typescriptArgs(vitestChild, [phase, path, suite]),
     cwd: toolsRoot, env, signal, redact, deadlineMs: phase === "discover" ? 120_000 : suite === "journeys" ? 180_000 : 600_000,
     log: join(directory, `${name}.log`),
   });
@@ -114,13 +125,15 @@ export async function runVerification(mode: VerificationMode, paths?: Readonly<{
   let identityRequired: readonly string[] = [];
   let journeyRequired: readonly string[] = [];
   let identityContracts: ReturnType<typeof requiredCaseReceipt> | undefined;
-  let identityFixture: LocalStackManifest | undefined;
+  let identityFixture: VerificationStackManifest | undefined;
+  let minioImage: MinioImage | undefined;
   let journeys: readonly CheckReceipt[] | undefined;
   let fixture: Extract<Awaited<ReturnType<typeof createOwnedPostgres>>, { kind: "ready" }>["fixture"] | undefined;
   let fixtureState = "none";
   let failure: { stage: string; reason: string } | undefined;
   let current = cells[0]!;
   const fixtureEnvironments: Readonly<Record<string, string | undefined>>[] = [];
+  let currentStageStarted: number | undefined;
   const redact = (text: string) => fixtureEnvironments.reduce((value, environment) => redactFixture(value, environment), redactDatabase(text, fixture?.url));
   try {
     await mkdir(directory, { recursive: true, mode: 0o700 });
@@ -129,10 +142,16 @@ export async function runVerification(mode: VerificationMode, paths?: Readonly<{
         try {
           for (const cell of cells) {
             current = cell;
+            currentStageStarted = performance.now();
             const { requirement } = cell;
-            if (requirement.kind === "cleanup") continue;
+            if (requirement.kind === "cleanup") {
+              currentStageStarted = undefined;
+              continue;
+            }
             if (work.signal.aborted || cells.some((other) => other.result.kind === "failed" || other.result.kind === "blocked" || other.result.kind === "not-run")) {
               cell.result = { kind: "not-run", reasons: [work.signal.aborted ? "Interrupted before admission." : "Earlier step did not pass."], evidence: [] };
+              cell.durationMs = Math.round(performance.now() - currentStageStarted);
+              currentStageStarted = undefined;
               continue;
             }
             const spec = (command: string, args: readonly string[], name: string, deadlineMs: number, env = process.env, cwd = root): CommandSpec => ({
@@ -190,6 +209,18 @@ export async function runVerification(mode: VerificationMode, paths?: Readonly<{
                 }
                 break;
               }
+              case "minio-image": {
+                const cacheBase = process.env.XDG_CACHE_HOME ?? join(process.env.HOME ?? homedir(), ".cache");
+                minioImage = await resolveMinioImage({
+                  commands,
+                  root,
+                  cacheDirectory: process.env.TOOLS_VERIFY_CACHE_DIR ?? join(cacheBase, "tools-verify"),
+                  signal: work.signal,
+                  log: (step) => join(directory, `${step}.log`),
+                });
+                cell.result = { kind: "passed", evidence: [`${minioImage.source} ${minioImage.reference} ${minioImage.imageId}`] };
+                break;
+              }
               case "workspace-command":
                 cell.result = commandResult(await commands.execute(spec("pnpm", ["run", requirement.command], requirement.command, 600_000)));
                 break;
@@ -209,6 +240,7 @@ export async function runVerification(mode: VerificationMode, paths?: Readonly<{
                 break;
               }
               case "journey-contracts": {
+                if (!minioImage) throw new Error("No verified MinIO image.");
                 const local = await withVerificationStack({
                   commands: { work: commands, cleanup: cleanupCommands },
                   environment: process.env, signal: work.signal, lifetimeMs: 300_000,
@@ -244,7 +276,7 @@ export async function runVerification(mode: VerificationMode, paths?: Readonly<{
                     cell.result = { kind: "failed", reasons: receipt.evidence, evidence: [reportPath] };
                   }
                   if (cell.result.kind !== "passed") throw new Error("Required journey contracts did not pass.");
-                });
+                }, { kind: "journeys", workspaceBuild: { outputDirectory: join(toolsRoot, ".output") }, minio: minioImage });
                 if (!journeys) journeys = journeyReceipts(revision, local.manifest?.project ?? "unavailable");
                 if (local.kind !== "completed" || local.cleanup !== "disposed") {
                   cell.result = { kind: local.kind === "blocked" ? "blocked" : "failed", reasons: [local.reason ?? "Journey fixture did not complete cleanup."], evidence: [local.directory] };
@@ -253,6 +285,7 @@ export async function runVerification(mode: VerificationMode, paths?: Readonly<{
               }
               case "identity-contracts": {
                 if (!fixture) throw new Error("No verified PostgreSQL fixture.");
+                if (!minioImage) throw new Error("No verified MinIO image.");
                 const databaseUrl = fixture.url;
                 let identityResult: StepResult = { kind: "pending" };
                 const local = await withVerificationStack({
@@ -268,7 +301,7 @@ export async function runVerification(mode: VerificationMode, paths?: Readonly<{
                     ...process.env, TEST_DATABASE_URL: databaseUrl, MONEY_TEST_DATABASE_CONFIRM: "money-repository-test",
                     PUBLISHER_TRANSFER_TEST_DATABASE_URL: databaseUrl,
                     PUBLISHER_TRANSFER_TEST_S3_ENDPOINT: stack.environment.ARTIFACT_S3_ENDPOINT,
-                    PUBLISHER_TRANSFER_TEST_ORIGIN: stack.manifest.origins.tools,
+                    PUBLISHER_TRANSFER_TEST_ORIGIN: stack.manifest.origins.test,
                     PUBLISHER_TRANSFER_TEST_S3_ACCESS_KEY_ID: stack.environment.ARTIFACT_S3_ACCESS_KEY_ID,
                     PUBLISHER_TRANSFER_TEST_S3_SECRET_ACCESS_KEY: stack.environment.ARTIFACT_S3_SECRET_ACCESS_KEY,
                   };
@@ -277,7 +310,7 @@ export async function runVerification(mode: VerificationMode, paths?: Readonly<{
                   identityResult = commandResult(result.outcome);
                   if (result.outcome.kind === "succeeded" && identityContracts.result !== "passed") identityResult = { kind: "failed", reasons: identityContracts.evidence, evidence: [join(directory, "identity-run-report.json")] };
                   if (identityResult.kind !== "passed") throw new Error("Required identity contracts did not pass.");
-                });
+                }, { kind: "identity-contracts", postgresFixture: fixture, minio: minioImage });
                 identityFixture ??= local.manifest;
                 cell.result = identityResult;
                 if (local.kind !== "completed" || local.cleanup !== "disposed") {
@@ -286,11 +319,18 @@ export async function runVerification(mode: VerificationMode, paths?: Readonly<{
                 break;
               }
             }
+            cell.durationMs = Math.round(performance.now() - currentStageStarted);
+            currentStageStarted = undefined;
           }
         } catch (error) {
           current.result = { kind: error instanceof VerificationBlocked ? "blocked" : "failed", reasons: [redact((error as Error).message)], evidence: [] };
+          if (currentStageStarted !== undefined) {
+            current.durationMs = Math.round(performance.now() - currentStageStarted);
+            currentStageStarted = undefined;
+          }
         } finally {
           const cleanup = cells.find((cell) => cell.requirement.kind === "cleanup")!;
+          const cleanupStarted = performance.now();
           try {
             if (fixture) {
               const closed = await fixture.close();
@@ -300,20 +340,23 @@ export async function runVerification(mode: VerificationMode, paths?: Readonly<{
             } else cleanup.result = { kind: "passed", evidence: ["No verified fixture lease to close."] };
           } catch (error) {
             cleanup.result = { kind: "failed", reasons: [redact((error as Error).message)], evidence: [fixtureState] };
+          } finally {
+            cleanup.durationMs = Math.round(performance.now() - cleanupStarted);
           }
         }
       });
     });
   } catch (error) {
     current.result = { kind: "failed", reasons: [redact((error as Error).message)], evidence: [] };
+    if (currentStageStarted !== undefined) current.durationMs = Math.round(performance.now() - currentStageStarted);
   }
   for (const cell of cells) {
     if (cell.result.kind === "pending") cell.result = { kind: "not-run", reasons: ["Execution stopped before this step."], evidence: [] };
   }
   const snapshot = (): RunRecord => ({
     mode, revision, fixture: fixtureState,
-    cells: cells.map((cell) => ({ requirement: cell.requirement, result: cell.result })),
-    required, contracts, identity: { required: identityRequired, contracts: identityContracts, fixture: identityFixture },
+    cells: cells.map((cell) => ({ requirement: cell.requirement, result: cell.result, durationMs: cell.durationMs })),
+    required, contracts, identity: { required: identityRequired, contracts: identityContracts, fixture: identityFixture }, minio: minioImage,
     journeys: journeys ?? (mode === "workspace" ? journeyReceipts(revision, "unavailable") : []),
     interruption, automatedDecision: decide(cells, interruption), manualAcceptance: manualAcceptance(revision),
   });

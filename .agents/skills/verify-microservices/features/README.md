@@ -17,6 +17,7 @@ execution status for each journey in the private audit evidence.
 | [Operations](operations.md) | O1 | Partial: live evidence required |
 
 Authenticated Tools journeys need disposable PostgreSQL, storage, encryption,
-and authorized local OAuth. Public Document Share uses the same owned PostgreSQL fixture
-and needs no OAuth. Retention needs a bounded local clock. Record unavailable setup as
+and authorized local OAuth. Public Document Share uses the same owned PostgreSQL
+fixture and needs no OAuth. Retention checks need an owned document row with a
+past expiry timestamp. Do not alter system time. Record unavailable setup as
 blocked and unselected journeys as unrun.

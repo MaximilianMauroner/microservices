@@ -7,7 +7,14 @@ import { withOwnedCommands } from "./commands.ts";
 import { decodeReport } from "./receipt.ts";
 
 const tools = fileURLToPath(new URL("../../", import.meta.url));
+const tsxLoader = process.features.typescript ? undefined : fileURLToPath(import.meta.resolve("tsx"));
 let scratch: string;
+
+function typescriptArgs(entry: string, args: readonly string[]) {
+  return process.features.typescript
+    ? ["--experimental-strip-types", entry, ...args]
+    : ["--import", tsxLoader!, entry, ...args];
+}
 
 beforeAll(async () => {
   scratch = await mkdtemp(join(tmpdir(), "runtime-vitest-child-"));
@@ -42,7 +49,7 @@ async function runChild(phase: "discover" | "run", environment: NodeJS.ProcessEn
   const reportPath = join(scratch, `${phase}-report.json`);
   const outcome = await withOwnedCommands({ graceMs: 1_000 }, (commands) => commands.execute({
     command: process.execPath,
-    args: ["--experimental-strip-types", join(scratch, "test/harness/vitest-child.ts"), phase, reportPath, suite],
+    args: typescriptArgs(join(scratch, "test/harness/vitest-child.ts"), [phase, reportPath, suite]),
     cwd: scratch, env: { ...process.env, ...environment },
     deadlineMs: 50_000, log: join(scratch, `${phase}.log`),
   }));

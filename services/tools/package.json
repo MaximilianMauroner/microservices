@@ -26,7 +26,7 @@
     "start": "node .output/server/index.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run && node --test test/products/publisher/release-paired-backup.test.mjs",
-    "test:money-postgres": "node --experimental-strip-types test/harness/run.ts money-postgres",
+    "test:money-postgres": "tsx test/harness/run.ts money-postgres",
     "status:start": "tsx products/status/cli.ts",
     "status:seed-local": "tsx products/status/local-seed.ts",
     "publisher:upload-direct": "tsx products/publisher/scripts/upload-direct.ts",
