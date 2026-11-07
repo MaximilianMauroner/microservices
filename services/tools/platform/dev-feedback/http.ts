@@ -4,7 +4,8 @@ import { clientAddress, createRateLimit } from "../security/rate-limit.js";
 import type { DevFeedbackRepository } from "./dev-feedback.js";
 import { parseDevFeedback } from "./report.js";
 
-const MAX_BODY_BYTES = 16 * 1024;
+/** Fits every field at its character limit, even when each character is escaped in JSON. */
+const MAX_BODY_BYTES = 64 * 1024;
 const TEN_MINUTES = 10 * 60 * 1000;
 const allowSignedIn = createRateLimit({ limit: 20, windowMs: TEN_MINUTES });
 const allowAnonymous = createRateLimit({ limit: 5, windowMs: TEN_MINUTES });
