@@ -1,4 +1,4 @@
-import { chmod, mkdtemp, mkdir, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, readFile, readdir, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { createServer as createHttpServer } from "node:http";
 import { createServer } from "node:net";
 import { dirname, join, relative, resolve } from "node:path";
@@ -410,6 +410,32 @@ describe("owned local stack", () => {
     });
     const options = { ...setup.options, environment: { PATH: relative(process.cwd(), bin) } };
     const result = await withVerificationStack(options, async () => {});
+    expect(result).toMatchObject({ kind: "completed", cleanup: "disposed" });
+    expect(output).toBe("path probe passed\n");
+  });
+
+  it("preserves absolute executable paths that traverse symlinks", async () => {
+    const setup = await fixture();
+    const bin = join(setup.directory, "bin");
+    const target = join(setup.directory, "target");
+    await mkdir(bin);
+    await mkdir(join(target, "nested"), { recursive: true });
+    await symlink(join(target, "nested"), join(setup.directory, "link"), "dir");
+    await symlink(bin, join(target, "bin"), "dir");
+    const executable = join(bin, "verify-path-probe");
+    await writeFile(executable, "#!/bin/sh\nprintf 'path probe passed\\n'\n");
+    await chmod(executable, 0o700);
+    let output = "";
+    setup.respond(async (spec) => {
+      if (!spec.log.endsWith("-postgres-migrate.log")) return undefined;
+      const outcome = await withOwnedCommands({ graceMs: 1_000 }, (commands) => commands.execute({
+        ...spec, command: "verify-path-probe", args: [], cwd: setup.options.repository!,
+        log: join(setup.directory, "path-probe.log"),
+      }));
+      if (outcome.kind === "succeeded") output = outcome.stdout;
+      return outcome;
+    });
+    const result = await withVerificationStack({ ...setup.options, environment: { PATH: `${setup.directory}/link/../bin` } }, async () => {});
     expect(result).toMatchObject({ kind: "completed", cleanup: "disposed" });
     expect(output).toBe("path probe passed\n");
   });

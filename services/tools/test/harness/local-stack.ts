@@ -332,7 +332,7 @@ async function runLocalStack<P extends VerificationStackProfile>(
     if (databasePassword) sensitive.push(databasePassword);
     for (const binding of owner.bindings ?? []) await unusedPort(new Set(), binding.port);
     const commandEnv: Record<string, string | undefined> = {
-      PATH: options.environment.PATH?.split(delimiter).map((entry) => resolve(entry)).join(delimiter), HOME: options.environment.HOME,
+      PATH: options.environment.PATH?.split(delimiter).map((entry) => isAbsolute(entry) ? entry : resolve(entry)).join(delimiter), HOME: options.environment.HOME,
       TMPDIR: options.environment.TMPDIR, NODE_ENV: "development",
     };
     const envFile = join(directory, "compose.env");
