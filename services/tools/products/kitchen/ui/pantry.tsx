@@ -197,10 +197,12 @@ function StockRow({ item, run, pending, onOpen }: { item: StockItem; run: Return
   const [value, setValue] = useState(fieldNumber(item.amount, language));
   const [last, setLast] = useState(item.amount);
   if (item.amount !== last) { setLast(item.amount); setValue(fieldNumber(item.amount, language)); }
-  const commit = () => {
+  const commit = async () => {
     const amount = Number(value.replace(",", "."));
-    if (!Number.isFinite(amount) || amount < 0) return setValue(fieldNumber(item.amount, language));
-    if (amount !== item.amount) void run({ type: "stock.set", ingredientId: item.ingredientId, amount }, { title: text.updated(item.ingredient), undo: { type: "stock.set", ingredientId: item.ingredientId, amount: item.amount } });
+    if (!value.trim() || !Number.isFinite(amount) || amount < 0) return setValue(fieldNumber(item.amount, language));
+    if (amount !== item.amount && !await run({ type: "stock.set", ingredientId: item.ingredientId, amount }, { title: text.updated(item.ingredient), undo: { type: "stock.set", ingredientId: item.ingredientId, amount: item.amount } })) {
+      setValue(fieldNumber(item.amount, language));
+    }
   };
   return (
     <li className="flex min-h-14 items-center gap-3 px-3 py-2 sm:px-4">
@@ -208,7 +210,7 @@ function StockRow({ item, run, pending, onOpen }: { item: StockItem; run: Return
         className="min-w-0 flex-1 self-stretch text-left font-medium wrap-anywhere underline-offset-4 hover:underline focus-visible:rounded-md focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none">{item.ingredient}</button>
       <label className="flex items-center gap-1.5">
         <span className="sr-only">{text.amountOf(item.ingredient)}</span>
-        <Input className="h-9 w-20 text-right tabular-nums" inputMode="decimal" value={value} onChange={(event) => setValue(event.target.value)}
+        <Input className="h-9 w-20 text-right tabular-nums" inputMode="decimal" value={value} disabled={pending} onChange={(event) => setValue(event.target.value)}
           onBlur={commit} onKeyDown={(event) => { if (event.key === "Enter") (event.target as HTMLInputElement).blur(); }} />
         <span className="w-12 text-sm text-muted-foreground">{unitName(item.unit, language, item.amount)}</span>
       </label>

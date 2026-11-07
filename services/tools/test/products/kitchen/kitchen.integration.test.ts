@@ -6,6 +6,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import type { PlatformPrincipal } from "#security";
 import { handleMcpRequest } from "../../../platform/access/mcp.js";
 import { migrateKitchenPersonSettings } from "../../../products/kitchen/migrate-person-settings.js";
+import { applyKitchenAction, kitchenAction } from "../../../products/kitchen/actions.js";
 import { registerKitchenTools } from "../../../products/kitchen/mcp-tools.js";
 import { DISPOSABLE_DATABASE_SENTINEL, withVerifiedDisposableDatabase } from "../../../platform/database/postgres-push-guard.js";
 import { kitchenStore, type KitchenScope, type KitchenStore } from "../../../products/kitchen/repository.js";
@@ -53,6 +54,62 @@ async function pasta(kitchen: KitchenScope) {
 }
 
 describe.skipIf(!sql)("Kitchen", () => {
+  it.each([false, true])("restores a removed custom meal without changing stock or leftovers, cooked=%s", async (cooked) => {
+    const store = kitchenStore(sql!);
+    const home = await store.open(admin, (await store.admin(admin).create("Home")).id);
+    const { spaghetti, tomato, recipe } = await pasta(home);
+    const planned = await home.plan({ day: "2026-11-02", meal: "dinner", recipeId: recipe.id, servings: 4 });
+    await home.customizePlan(planned.id, [{ ingredientId: spaghetti.id, amount: 300, note: "less pasta" }]);
+    await home.updatePlan(planned.id, { day: planned.day, meal: planned.meal, servings: 2 });
+    await home.setStock(spaghetti.id, 1000);
+    await home.setStock(tomato.id, 10);
+    if (cooked) await home.cook(planned.id, { servings: 1, useBy: "2026-11-05" });
+    const snapshot = (await home.week("2026-11-02")).entries[0]!;
+    expect(snapshot.lines).toEqual([expect.objectContaining({ amount: 150, note: "less pasta" })]);
+    const stock = await home.stock();
+    const leftovers = await home.leftovers();
+    const storedCooking = await sql!`select cooked_at::text from tools.kitchen_plan_entries where id = ${snapshot.id}`;
+    await home.removePlan(planned.id);
+    await applyKitchenAction(store, admin, home.kitchen.id, kitchenAction.parse({
+      type: "plan.add", createId: snapshot.id, day: snapshot.day, meal: snapshot.meal, recipeId: snapshot.recipeId, servings: snapshot.servings,
+      restore: { cookedAt: snapshot.cookedAt, lines: snapshot.lines }
+    }));
+    expect((await home.week("2026-11-02")).entries).toEqual([snapshot]);
+    expect(await sql!`select cooked_at::text from tools.kitchen_plan_entries where id = ${snapshot.id}`).toEqual(storedCooking);
+    expect(await home.stock()).toEqual(stock);
+    expect(await home.leftovers()).toEqual(leftovers);
+    if (cooked) await expect(home.cook(snapshot.id, undefined)).rejects.toMatchObject({ code: "not_found" });
+  });
+
+  it("restores an empty custom meal and rejects another kitchen's ingredients atomically", async () => {
+    const store = kitchenStore(sql!);
+    const home = await store.open(admin, (await store.admin(admin).create("Home")).id);
+    const other = await store.open(admin, (await store.admin(admin).create("Office")).id);
+    const { recipe } = await pasta(home);
+    const foreign = await other.saveIngredient(undefined, { name: "Rice", unit: "g", section: "Pasta", nutrition: noNutrition, notes: "" });
+    const newId = randomUUID();
+    const input = { day: "2026-11-02", meal: "dinner" as const, recipeId: recipe.id, servings: 2, newId };
+    await expect(home.plan({ ...input, restore: { cookedAt: null, lines: [{ ingredientId: foreign.id, amount: 100, note: "" }] } })).rejects.toMatchObject({ code: "not_found" });
+    expect((await home.week(input.day)).entries).toEqual([]);
+    const restored = await home.plan({ ...input, restore: { cookedAt: null, lines: [] } });
+    expect(restored).toMatchObject({ id: newId, custom: true, cooked: false, lines: [] });
+  });
+
+  it("restores the bought week of an extra removed while viewing another week", async () => {
+    const store = kitchenStore(sql!);
+    const home = await store.open(admin, (await store.admin(admin).create("Home")).id);
+    const snacks = await home.addExtra("Snacks", true);
+    await home.markExtra(snacks.id, "2026-11-02", true);
+    const snapshot = (await home.shopping("2026-11-09")).extras[0]!;
+    expect(snapshot).toMatchObject({ bought: false, boughtWeek: "2026-11-02" });
+    await home.removeExtra(snacks.id);
+    await applyKitchenAction(store, admin, home.kitchen.id, kitchenAction.parse({
+      type: "extra.add", createId: snapshot.id, name: snapshot.name, everyWeek: snapshot.everyWeek, boughtWeek: snapshot.boughtWeek
+    }));
+    expect((await home.shopping("2026-11-02")).extras).toEqual([expect.objectContaining({ id: snacks.id, bought: true, boughtWeek: "2026-11-02" })]);
+    expect((await home.shopping("2026-11-09")).extras).toEqual([snapshot]);
+  });
+
   it("opens a kitchen only for the admin and its members", async () => {
     const store = kitchenStore(sql!);
     const friendId = await person(friend.subject);
