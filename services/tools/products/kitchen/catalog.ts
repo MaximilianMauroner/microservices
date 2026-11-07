@@ -31,6 +31,8 @@ export type CatalogRefresh = Readonly<{ status: "fresh" } | { status: "stopped";
 export interface KitchenCatalog {
   /** Products whose name or brand holds every typed word, best match first. A product in both sources shows once, from Billa. */
   search(query: string): Promise<readonly CatalogProduct[]>;
+  /** The product with this barcode. It reads the copy first and then asks Open Food Facts, so a product the copy does not hold yet still shows. */
+  lookup(barcode: string): Promise<CatalogProduct | undefined>;
   /**
    * Goes on with the copy of each source. A source stops after some pages, on an error, or when `signal` aborts. The next
    * call goes on from the page after the last one it saved. At the end of a source, it removes the products of that source
@@ -47,7 +49,7 @@ export function createPostgresKitchenCatalog(databaseUrl: string, options: { rea
 
 type ProductRow = { source: CatalogSource; code: string; name: string; brand: string; quantity: string; unit: "g" | "ml"; kcal: number | null; protein: number | null; carbs: number | null; fat: number | null };
 
-export function kitchenCatalog(sql: Sql, sources: readonly CatalogSourceReader[] = CATALOG_READERS): KitchenCatalog {
+export function kitchenCatalog(sql: Sql, sources: readonly CatalogSourceReader[] = CATALOG_READERS, fetcher: typeof fetch = fetch): KitchenCatalog {
   async function save(source: CatalogSource, products: readonly CatalogProduct[], at: Date) {
     if (!products.length) return;
     const unique = [...new Map(products.map((product) => [product.code, product])).values()];
@@ -103,7 +105,15 @@ export function kitchenCatalog(sql: Sql, sources: readonly CatalogSourceReader[]
         ) found
         order by starts_with(search, ${words[0]!}) desc, length(name), name, source
         limit ${SEARCH_LIMIT}`;
-      return rows.map(({ kcal, protein, carbs, fat, ...product }) => ({ ...product, nutrition: { kcal, protein, carbs, fat } }));
+      return rows.map(fromRow);
+    },
+
+    async lookup(barcode) {
+      if (!BARCODE.test(barcode)) return undefined;
+      const [row] = await sql<ProductRow[]>`
+        select source, code, name, brand, quantity, unit, kcal, protein, carbs, fat from tools.kitchen_catalog_products
+        where code = ${barcode} order by source = 'billa' desc limit 1`;
+      return row ? fromRow(row) : fetchOpenFoodFactsProduct(barcode, fetcher);
     },
 
     async refresh({ signal = new AbortController().signal, now = () => new Date() } = {}) {
@@ -127,6 +137,13 @@ export function kitchenCatalog(sql: Sql, sources: readonly CatalogSourceReader[]
     close: () => sql.end()
   };
 }
+
+function fromRow({ kcal, protein, carbs, fat, ...product }: ProductRow): CatalogProduct {
+  return { ...product, nutrition: { kcal, protein, carbs, fat } };
+}
+
+/** EAN-8, UPC-A, EAN-13, and GTIN-14 codes, as a camera reads them from a package. */
+const BARCODE = /^\d{8,14}$/;
 
 /** Brand and name without case, accents, or punctuation, and without the brand at the start of the name, as Billa writes it. */
 export function matchKey(product: Pick<CatalogProduct, "name" | "brand">): string {
@@ -158,6 +175,17 @@ export async function fetchOpenFoodFactsPage(page: number, signal: AbortSignal, 
   const response = await getJson(url, signal, fetcher);
   if (!response.ok) throw new Error(`Open Food Facts answered ${response.status} for page ${page}.`);
   return parseOpenFoodFactsPage(await response.json(), page);
+}
+
+/** One product by its barcode. A product Open Food Facts does not know, or that has no calories, is undefined. */
+export async function fetchOpenFoodFactsProduct(barcode: string, fetcher: typeof fetch = fetch): Promise<CatalogProduct | undefined> {
+  const url = new URL(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(barcode)}`);
+  url.search = new URLSearchParams({ fields: OFF_FIELDS }).toString();
+  const response = await fetcher(url, { headers: { Accept: "application/json", "User-Agent": USER_AGENT }, signal: AbortSignal.timeout(10_000) });
+  if (response.status === 404) return undefined;
+  if (!response.ok) throw new Error(`Open Food Facts answered ${response.status} for a barcode.`);
+  const product = object(object(await response.json())?.product);
+  return product ? parseOpenFoodFactsProduct({ ...product, code: barcode }) : undefined;
 }
 
 /** Reads one search page. A product needs a code, a name, and its calories to be useful for a new ingredient. */
