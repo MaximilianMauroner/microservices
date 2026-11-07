@@ -1,7 +1,7 @@
 import { favicons } from "../../../platform/ui/favicons.js";
 import { Link, useRouter } from "@tanstack/react-router";
 import { PencilIcon, PlusIcon, Trash2Icon, UserPlusIcon, XIcon } from "lucide-react";
-import { type CSSProperties, useState } from "react";
+import { type CSSProperties, useRef, useState } from "react";
 import { AppShell } from "../../../platform/ui/components/app-shell.js";
 import { Button } from "../../../platform/ui/components/ui/button.js";
 import { Checkbox } from "../../../platform/ui/components/ui/checkbox.js";
@@ -15,6 +15,7 @@ import type { KitchenPerson } from "../repository.js";
 import { runKitchenAdminAction, runKitchenPersonalAction } from "../server-functions.js";
 import { KitchenSheet, LanguageMenu, memberLine, messageOf, SheetAction } from "./kit.js";
 import { type KitchenLanguage, useLanguage, useText } from "./language.js";
+import { kitchenToast } from "./action-toast.js";
 
 type KitchensData = { kitchens: readonly Kitchen[]; hiddenKitchens: readonly Kitchen[]; isAdmin: boolean; people: readonly KitchenPerson[] };
 
@@ -26,6 +27,7 @@ const en = {
   introMember: "The kitchens you cook in.",
   newKitchen: "New kitchen",
   failed: "That did not work",
+  refreshFailed: "Saved, but the page could not refresh",
   retry: "Try again",
   rename: (name: string) => `Rename ${name}`,
   membersOf: (name: string) => `Members of ${name}`,
@@ -84,6 +86,7 @@ const TEXT: Record<KitchenLanguage, KitText> = {
     introMember: "Die Küchen, in denen du kochst.",
     newKitchen: "Neue Küche",
     failed: "Das hat nicht funktioniert",
+    refreshFailed: "Gespeichert, aber die Seite konnte nicht aktualisiert werden",
     retry: "Erneut versuchen",
     rename: (name: string) => `${name} umbenennen`,
     membersOf: (name: string) => `Mitglieder von ${name}`,
@@ -138,6 +141,7 @@ export function KitchensPage(data: KitchensData) {
   const language = useLanguage();
   const text = useText(TEXT);
   const [pending, setPending] = useState(false);
+  const retryToast = useRef<string | undefined>(undefined);
   const [creating, setCreating] = useState(false);
   const [renaming, setRenaming] = useState<Kitchen | undefined>();
   const [moving, setMoving] = useState<Kitchen | undefined>();
@@ -145,17 +149,29 @@ export function KitchensPage(data: KitchensData) {
   const [recipient, setRecipient] = useState("");
   const [name, setName] = useState("");
 
+  async function refresh() {
+    try {
+      await router.invalidate();
+    } catch (error) {
+      kitchenToast({ title: text.refreshFailed, description: messageOf(error), type: "error", actionProps: { children: text.retry, onClick: () => void refresh() } });
+    }
+  }
+
   async function run(action: KitchenAdminAction | KitchenPersonalAction, title: string) {
+    if (retryToast.current) {
+      toast.close(retryToast.current);
+      retryToast.current = undefined;
+    }
     setPending(true);
     try {
       const result = action.type === "kitchen.mcp" || action.type === "kitchen.leave"
         ? await runKitchenPersonalAction({ data: action })
         : await runKitchenAdminAction({ data: action });
-      await router.invalidate();
-      toast.add({ title, type: "success" });
+      await refresh();
+      kitchenToast({ title, type: "success" });
       return result;
     } catch (error) {
-      toast.add({ title: text.failed, description: messageOf(error), type: "error", actionProps: { children: text.retry, onClick: () => void run(action, title) } });
+      retryToast.current = kitchenToast({ title: text.failed, description: messageOf(error), type: "error", actionProps: { children: text.retry, onClick: () => void run(action, title) } });
       return undefined;
     } finally {
       setPending(false);

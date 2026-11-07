@@ -74,6 +74,7 @@ export type PlanEntry = Readonly<{
   recipe: string;
   servings: number;
   cooked: boolean;
+  cookedAt?: string | null;
   /** True when this one meal has its own ingredients. Its recipe stays as it is. */
   custom: boolean;
   /** What this meal uses for its servings: its own ingredients, or else the recipe's, scaled. */
@@ -86,7 +87,7 @@ export type Leftover = Readonly<{ id: string; name: string; servings: number; us
  * An item on the shopping list that no meal needs. A one-time item leaves the list when you buy it.
  * An every-week item stays: `bought` says if it is bought for the week the list shows.
  */
-export type ExtraItem = Readonly<{ id: string; name: string; everyWeek: boolean; bought: boolean }>;
+export type ExtraItem = Readonly<{ id: string; name: string; everyWeek: boolean; bought: boolean; boughtWeek?: string | null }>;
 /** An extra item as stored. `boughtWeek` is the start of the week an every-week item is bought for. */
 export type StoredExtra = Readonly<{ id: string; name: string; everyWeek: boolean; boughtWeek: string | null }>;
 
