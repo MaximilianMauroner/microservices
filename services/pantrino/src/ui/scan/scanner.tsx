@@ -1,9 +1,10 @@
 import { recognizeText } from "@infinitered/react-native-mlkit-text-recognition";
 import type { CatalogProduct } from "@tools-platform/service/kitchen-contract";
 import { CameraView, useCameraPermissions } from "expo-camera";
+import { File } from "expo-file-system";
 import { Image } from "expo-image";
 import { Camera, X } from "lucide-react-native";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Linking, Modal, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Offline } from "../../auth/session";
@@ -108,6 +109,13 @@ export function Scanner({ onResult, onClose }: { onResult: (result: ScanResult) 
   const camera = useRef<CameraView>(null);
   /** The camera reports one code many times a second. Only the first read of a scan counts. */
   const busy = useRef(false);
+  const mounted = useRef(true);
+  const photo = step.kind === "review" ? step.photo : undefined;
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+  useEffect(() => () => { if (photo) discardPhoto(photo); }, [photo]);
 
   async function look(code: string) {
     if (busy.current) return;
@@ -126,11 +134,13 @@ export function Scanner({ onResult, onClose }: { onResult: (result: ScanResult) 
   async function photograph() {
     const shot = await camera.current?.takePictureAsync({ quality: 0.85 }).catch(() => undefined);
     if (!shot) return;
+    if (!mounted.current) { discardPhoto(shot.uri); return; }
     haptic("tap");
     setStep({ kind: "reading" });
     const reading = await recognizeText(shot.uri)
       .then((found) => readLabel(found.blocks.flatMap((block) => block.lines)))
       .catch(() => readLabel([]));
+    if (!mounted.current) { discardPhoto(shot.uri); return; }
     const fields = Object.fromEntries(LABEL_NUTRIENTS.map((key) => [key, reading.values[key] === null ? "" : String(reading.values[key]).replace(".", ",")])) as Record<keyof LabelValues, string>;
     setStep({ kind: "review", photo: shot.uri, fields, unit: reading.unit ?? "g", found: reading.found });
   }
@@ -195,6 +205,10 @@ export function Scanner({ onResult, onClose }: { onResult: (result: ScanResult) 
       )}
     </Modal>
   );
+}
+
+function discardPhoto(uri: string) {
+  try { new File(uri).delete(); } catch {}
 }
 
 /** The photo next to the values read from it. Every value can be corrected, and calories are needed to go on. */
