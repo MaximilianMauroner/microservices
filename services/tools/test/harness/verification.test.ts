@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { chmod, copyFile, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, relative } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -140,11 +140,12 @@ async function waitFile(path: string) {
   throw new Error("The fixture barrier did not open.");
 }
 
-async function run(environment: NodeJS.ProcessEnv = {}, observe?: (send: (signal: NodeJS.Signals) => void) => Promise<void>) {
+async function run(environment: NodeJS.ProcessEnv = {}, observe?: (send: (signal: NodeJS.Signals) => void) => Promise<void>, cwd?: string) {
   await writeFile(join(directory, "fixture-controls.json"), JSON.stringify(environment));
   const entry = join(directory, "services/tools/test/harness/entry.ts");
   const child = spawn(process.execPath, ["--import", join(directory, "hook.mjs"), ...typescriptArgs(entry)], {
     env: { PATH: `${join(directory, "bin")}:${process.env.PATH}`, HOME: process.env.HOME, FIXTURE_DIRECTORY: directory, FIXTURE_TRACE: join(directory, "trace"), ...environment },
+    cwd,
     stdio: ["ignore", "pipe", "pipe"],
   });
   let stdout = "";
@@ -175,15 +176,27 @@ async function run(environment: NodeJS.ProcessEnv = {}, observe?: (send: (signal
 
 describe("terminal verification CLI", () => {
   it("resolves inherited relative executable paths before changing directories", async () => {
-    const scratch = await mkdtemp(join(process.cwd(), ".verification-path-"));
-    try {
-      await symlink(join(directory, "bin"), join(scratch, "bin"), "dir");
-      const result = await run({ FIXTURE_MODE: "workspace", PATH: relative(process.cwd(), join(scratch, "bin")) });
-      expect(result.code).toBe(0);
-      expect(result.record.automatedDecision.kind).toBe("passed");
-    } finally {
-      await rm(scratch, { recursive: true, force: true });
+    const caller = join(directory, "caller");
+    await mkdir(caller);
+    await symlink(join(directory, "bin"), join(caller, "bin"), "dir");
+    const result = await run({ FIXTURE_MODE: "workspace", PATH: "bin" }, undefined, caller);
+    expect(result.code).toBe(0);
+    expect(result.record.automatedDecision.kind).toBe("passed");
+  }, 15_000);
+
+  it("preserves absolute executable paths that traverse symlinks", async () => {
+    const caller = join(directory, "caller");
+    const target = join(directory, "target");
+    await mkdir(caller);
+    await mkdir(join(target, "nested"), { recursive: true });
+    await symlink(join(target, "nested"), join(caller, "link"), "dir");
+    await symlink(join(directory, "bin"), join(target, "bin"), "dir");
+    for (const command of ["git", "pnpm"]) {
+      await writeFile(join(directory, "bin", command), "#!/bin/sh\nif [ \"$1\" = rev-parse ]; then printf 'fixture-revision\\n'; fi\nexit 0\n");
     }
+    const result = await run({ FIXTURE_MODE: "workspace", PATH: `${caller}/link/../bin` });
+    expect(result.code).toBe(0);
+    expect(result.record.automatedDecision.kind).toBe("passed");
   }, 15_000);
 
   it("publishes one complete plan and succeeds only when every required case runs", async () => {
