@@ -11,6 +11,7 @@ import { type DraftLine, draftLines, LineEditor, useResolveLines } from "../line
 import { useColors } from "../theme";
 import { RecipeMenu } from "../week/sheets";
 import { recipeDraftError } from "./model";
+import { useContentLayout } from "../responsive";
 
 const en = {
   namePlaceholder: "e.g. lentil and chickpea curry",
@@ -111,6 +112,8 @@ function RecipeView({ data, recipe, onEdit }: { data: OpenKitchen; recipe: Recip
   const language = useLanguage();
   const text = useText(TEXT);
   const colors = useColors();
+  const layout = useContentLayout();
+  const wide = layout.detailColumns === 2;
   const [servings, setServings] = useState(recipe.servings);
   const [deleting, setDeleting] = useState(false);
   const [planning, setPlanning] = useState(false);
@@ -129,41 +132,43 @@ function RecipeView({ data, recipe, onEdit }: { data: OpenKitchen; recipe: Recip
         <ToolbarButton tone="outline" icon={Pencil} label={text.edit} onPress={onEdit} />
         <ToolbarButton icon={CalendarPlus} label={text.plan} onPress={() => setPlanning(true)} />
       </>}>
-      <View style={[styles.panel, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <View style={styles.row}>
-          <T weight="semibold" style={styles.heading}>{text.ingredients}</T>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-            <T muted style={{ fontSize: 13 }}>{text.servingsLabel}</T>
-            <Stepper label={text.servingsLabel} value={servings} onValue={setServings} />
-          </View>
-        </View>
-        {lines.length ? <View style={{ gap: 8 }}>{lines.map((line, index) => (
-          <View key={line.ingredientId} style={[styles.line, index < lines.length - 1 && { borderBottomWidth: 1, borderStyle: "dashed", borderBottomColor: colors.border, paddingBottom: 8 }]}>
-            <View style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 8 }}>
-              <GroupDot groups={kitchen.kitchen.groups} group={groupOf(line.ingredientId)} size={8} />
-              <T style={{ flex: 1, fontSize: 14 }}>{line.ingredient}{line.note ? <T muted style={{ fontSize: 14 }}>, {line.note}</T> : null}</T>
+      <View style={{ flexDirection: wide ? "row" : "column", gap: wide ? 24 : 16, alignItems: "flex-start" }}>
+        <View style={[styles.panel, { backgroundColor: colors.card, borderColor: colors.border, width: wide ? (layout.contentWidth - 24) / 2 : "100%" }]}>
+          <View style={styles.row}>
+            <T weight="semibold" style={styles.heading}>{text.ingredients}</T>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <T muted style={{ fontSize: 13 }}>{text.servingsLabel}</T>
+              <Stepper label={text.servingsLabel} value={servings} onValue={setServings} />
             </View>
-            <T weight="semibold" style={{ fontSize: 14 }}>{formatAmount(line.amount, line.unit, language)}</T>
           </View>
-        ))}</View> : <T muted style={styles.body}>{text.noIngredients}</T>}
-        {nutrition.kcal !== null ? <View style={{ backgroundColor: colors.muted, borderRadius: 12, padding: 12, gap: 8 }}>
-          <View style={{ flexDirection: "row", gap: 4 }}>
-            {([[text.kcal, nutrition.kcal, ""], [text.protein, nutrition.protein, " g"], [text.carbs, nutrition.carbs, " g"], [text.fat, nutrition.fat, " g"]] as const).map(([label, value, unit]) => (
-              <View key={label} style={{ flex: 1, alignItems: "center", gap: 2 }}>
-                <T muted style={{ fontSize: 12, textAlign: "center" }}>{label}</T>
-                <T weight="semibold" style={{ fontSize: 18 }}>{value === null ? "?" : `${value}${unit}`}</T>
+          {lines.length ? <View style={{ gap: 8 }}>{lines.map((line, index) => (
+            <View key={line.ingredientId} style={[styles.line, index < lines.length - 1 && { borderBottomWidth: 1, borderStyle: "dashed", borderBottomColor: colors.border, paddingBottom: 8 }]}>
+              <View style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <GroupDot groups={kitchen.kitchen.groups} group={groupOf(line.ingredientId)} size={8} />
+                <T style={{ flex: 1, fontSize: 14 }}>{line.ingredient}{line.note ? <T muted style={{ fontSize: 14 }}>, {line.note}</T> : null}</T>
               </View>
-            ))}
-          </View>
-          <T muted style={{ fontSize: 12, textAlign: "center" }}>{text.perServing}</T>
-        </View> : lines.length ? <T muted style={{ fontSize: 12 }}>{text.addNutrition}</T> : null}
-      </View>
-      <View style={{ gap: 12 }}>
-        <T weight="semibold" style={styles.heading}>{text.steps}</T>
-        {steps.length ? steps.map((step, index) => <View key={index} style={{ flexDirection: "row", gap: 12 }}>
-          <View style={{ width: 28, height: 28, alignItems: "center", justifyContent: "center", borderRadius: 14, backgroundColor: colors.muted }}><T weight="semibold" style={{ fontSize: 12 }}>{index + 1}</T></View>
-          <T style={{ flex: 1, lineHeight: 24 }}>{step}</T>
-        </View>) : <T muted style={styles.body}>{text.noSteps}</T>}
+              <T weight="semibold" style={{ fontSize: 14 }}>{formatAmount(line.amount, line.unit, language)}</T>
+            </View>
+          ))}</View> : <T muted style={styles.body}>{text.noIngredients}</T>}
+          {nutrition.kcal !== null ? <View style={{ backgroundColor: colors.muted, borderRadius: 12, padding: 12, gap: 8 }}>
+            <View style={{ flexDirection: "row", gap: 4 }}>
+              {([[text.kcal, nutrition.kcal, ""], [text.protein, nutrition.protein, " g"], [text.carbs, nutrition.carbs, " g"], [text.fat, nutrition.fat, " g"]] as const).map(([label, value, unit]) => (
+                <View key={label} style={{ flex: 1, alignItems: "center", gap: 2 }}>
+                  <T muted style={{ fontSize: 12, textAlign: "center" }}>{label}</T>
+                  <T weight="semibold" style={{ fontSize: 18 }}>{value === null ? "?" : `${value}${unit}`}</T>
+                </View>
+              ))}
+            </View>
+            <T muted style={{ fontSize: 12, textAlign: "center" }}>{text.perServing}</T>
+          </View> : lines.length ? <T muted style={{ fontSize: 12 }}>{text.addNutrition}</T> : null}
+        </View>
+        <View style={[{ gap: 12 }, wide ? { flex: 1 } : { width: "100%" }]}>
+          <T weight="semibold" style={styles.heading}>{text.steps}</T>
+          {steps.length ? steps.map((step, index) => <View key={index} style={{ flexDirection: "row", gap: 12 }}>
+            <View style={{ width: 28, height: 28, alignItems: "center", justifyContent: "center", borderRadius: 14, backgroundColor: colors.muted }}><T weight="semibold" style={{ fontSize: 12 }}>{index + 1}</T></View>
+            <T style={{ flex: 1, lineHeight: 24 }}>{step}</T>
+          </View>) : <T muted style={styles.body}>{text.noSteps}</T>}
+        </View>
       </View>
       <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, paddingTop: 8, alignItems: "flex-start" }}>
         <Button tone="destructive" icon={Trash2} label={text.deleteRecipe} onPress={() => setDeleting(true)} />
