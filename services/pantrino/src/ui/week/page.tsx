@@ -14,6 +14,7 @@ import { groupColor, tint, useColors } from "../theme";
 import { buildWeek, swipeStep } from "./model";
 import { EntrySheet, MealMenu, PlanSheet } from "./sheets";
 import { TEXT } from "./text";
+import { useContentLayout } from "../responsive";
 
 type Selection = { kind: "plan"; day?: string } | { kind: "entry" | "menu"; id: string };
 
@@ -27,6 +28,9 @@ export function Week({ data }: { data: OpenKitchen }) {
   const text = useText(TEXT);
   const colors = useColors();
   const page = usePageColor();
+  const layout = useContentLayout();
+  const wide = layout.columns > 1;
+  const dayWidth = (layout.contentWidth - 16 * (layout.columns - 1)) / layout.columns;
   const [requested, setRequested] = useState(() => weekStart(today));
   const [selection, setSelection] = useState<Selection | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
@@ -65,13 +69,13 @@ export function Week({ data }: { data: OpenKitchen }) {
         <Animated.View accessibilityLabel={text.daysOfWeek}
           accessibilityActions={[{ name: "next", label: text.nextWeek }, ...(week.canGoBack ? [{ name: "previous", label: text.previousWeek }] : [])]}
           onAccessibilityAction={(event) => turn(event.nativeEvent.actionName === "next" ? 1 : -1)}
-          style={[{ borderTopWidth: StyleSheet.hairlineWidth, borderColor: colors.border }, slide]}>
+          style={[{ borderTopWidth: wide ? 0 : StyleSheet.hairlineWidth, borderColor: colors.border }, wide && styles.daysGrid, slide]}>
           {week.days.map(({ day, entries }, index) => {
             const parts = dayParts(day, language);
             const isToday = day === today;
             const past = day < today;
             const quiet = (at: number) => { const one = week.days[at]; return one !== undefined && one.day < today && !one.entries.length; };
-            if (quiet(index)) {
+            if (!wide && quiet(index)) {
               if (quiet(index - 1)) return null;
               let last = index;
               while (quiet(last + 1)) last += 1;
@@ -84,14 +88,14 @@ export function Week({ data }: { data: OpenKitchen }) {
               );
             }
             return (
-              <View key={day} style={[styles.day, { borderBottomColor: colors.border }]}>
-                <View style={styles.date}>
+              <View key={day} style={[styles.day, { borderBottomColor: colors.border }, wide && { width: dayWidth, flexDirection: "column", padding: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, borderRadius: 16, backgroundColor: colors.card }]}>
+                <View style={[styles.date, wide && { width: "auto", flexDirection: "row", alignSelf: "flex-start", gap: 8, paddingTop: 0 }]}>
                   <T weight={isToday ? "semibold" : "medium"} style={[styles.small, { color: isToday ? page.ink : colors.mutedForeground }]}>{isToday ? text.today : parts.weekday}</T>
                   <View style={[styles.number, isToday && { backgroundColor: page.hue }]}>
                     <T weight="medium" style={{ fontSize: 26, color: isToday ? "#ffffff" : past ? colors.mutedForeground : colors.foreground }}>{parts.number}</T>
                   </View>
                 </View>
-                <View style={{ flex: 1, gap: 8 }}>
+                <View style={[{ gap: 8 }, !wide && { flex: 1 }]}>
                   {entries.map((one) => {
                     const recipe = recipes.get(one.recipeId);
                     const group = mainGroup(kitchen.groups, recipe?.sections ?? []);
@@ -126,9 +130,9 @@ export function Week({ data }: { data: OpenKitchen }) {
           })}
         </Animated.View>
       </GestureDetector>
-      <View accessibilityLabel={text.glance} style={{ gap: 12 }}>
+      <View accessibilityLabel={text.glance} style={{ gap: 12, flexDirection: wide ? "row" : "column", alignItems: "stretch" }}>
         <Press accessibilityRole="button" onPress={() => router.navigate({ pathname: "/shopping", params: { week: week.start } })}
-          style={[styles.shopping, { backgroundColor: tint(colors.pageInk.shopping, 10, colors.background) }]}>
+          style={[styles.shopping, { backgroundColor: tint(colors.pageInk.shopping, 10, colors.background) }, wide && { flex: 1 }]}>
           {week.buySections.length ? <PlateRing groups={kitchen.groups} sections={week.buySections} size={60} /> : (
             <View style={[styles.basket, { backgroundColor: tint(colors.pageInk.shopping, 16, colors.background) }]}><ShoppingBasket size={24} color={colors.pageInk.shopping} /></View>
           )}
@@ -137,7 +141,7 @@ export function Week({ data }: { data: OpenKitchen }) {
             <T muted style={styles.small}>{text.notCookedYet}</T>
           </View>
         </Press>
-        <View style={[styles.leftovers, { backgroundColor: week.leftovers.some((one) => useByLabel(one.useBy, today, language).urgent) ? tint(colors.destructive, 7, colors.background) : colors.muted }]}>
+        <View style={[styles.leftovers, { backgroundColor: week.leftovers.some((one) => useByLabel(one.useBy, today, language).urgent) ? tint(colors.destructive, 7, colors.background) : colors.muted }, wide && { flex: 1 }]}>
           <T weight="semibold" style={{ fontSize: 18 }}>{text.useFirst}</T>
           {week.leftovers.length ? week.leftovers.slice(0, 5).map((one) => {
             const label = useByLabel(one.useBy, today, language);
@@ -155,6 +159,7 @@ export function Week({ data }: { data: OpenKitchen }) {
 
 const styles = StyleSheet.create({
   small: { fontSize: 12 },
+  daysGrid: { flexDirection: "row", flexWrap: "wrap", alignItems: "flex-start", gap: 16 },
   day: { flexDirection: "row", gap: 12, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth },
   pastDay: { minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, paddingHorizontal: 4, borderBottomWidth: StyleSheet.hairlineWidth },
   date: { width: 52, alignItems: "center", gap: 4, paddingTop: 4 },
