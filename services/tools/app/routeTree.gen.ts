@@ -23,6 +23,7 @@ import { Route as LiveRouteImport } from './routes/live'
 import { Route as MarkdownRouteImport } from './routes/markdown'
 import { Route as MoneyRouteImport } from './routes/money'
 import { Route as PublisherRouteImport } from './routes/publisher'
+import { Route as ReportsRouteImport } from './routes/reports'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ShareRouteImport } from './routes/share'
 import { Route as SignInRouteImport } from './routes/sign-in'
@@ -30,6 +31,7 @@ import { Route as StatusRouteImport } from './routes/status'
 import { Route as DotwellKnownSplatRouteImport } from './routes/[.]well-known/$'
 import { Route as ApiExternalUploadsRouteImport } from './routes/api/external-uploads'
 import { Route as ApiMcpRouteImport } from './routes/api/mcp'
+import { Route as ApiReportsRouteImport } from './routes/api/reports'
 import { Route as ApiUploadLinksRouteImport } from './routes/api/upload-links'
 import { Route as ApiUploadsRouteImport } from './routes/api/uploads'
 import { Route as ArtifactsSplatRouteImport } from './routes/artifacts/$'
@@ -163,6 +165,11 @@ const PublisherRoute = PublisherRouteImport.update({
   path: '/publisher',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ReportsRoute = ReportsRouteImport.update({
+  id: '/reports',
+  path: '/reports',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -196,6 +203,11 @@ const ApiExternalUploadsRoute = ApiExternalUploadsRouteImport.update({
 const ApiMcpRoute = ApiMcpRouteImport.update({
   id: '/api/mcp',
   path: '/api/mcp',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiReportsRoute = ApiReportsRouteImport.update({
+  id: '/api/reports',
+  path: '/api/reports',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiUploadLinksRoute = ApiUploadLinksRouteImport.update({
@@ -532,6 +544,7 @@ export interface FileRoutesByFullPath {
   '/markdown': typeof MarkdownRouteWithChildren
   '/money': typeof MoneyRoute
   '/publisher': typeof PublisherRouteWithChildren
+  '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/share': typeof ShareRouteWithChildren
   '/sign-in': typeof SignInRoute
@@ -540,6 +553,7 @@ export interface FileRoutesByFullPath {
   '/.well-known/$': typeof DotwellKnownSplatRoute
   '/api/external-uploads': typeof ApiExternalUploadsRouteWithChildren
   '/api/mcp': typeof ApiMcpRoute
+  '/api/reports': typeof ApiReportsRoute
   '/api/upload-links': typeof ApiUploadLinksRouteWithChildren
   '/api/uploads': typeof ApiUploadsRouteWithChildren
   '/artifacts/$': typeof ArtifactsSplatRoute
@@ -612,12 +626,14 @@ export interface FileRoutesByTo {
   '/health': typeof HealthRouteWithChildren
   '/live': typeof LiveRoute
   '/money': typeof MoneyRoute
+  '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/sign-in': typeof SignInRoute
   '/status': typeof StatusRoute
   '/.well-known/$': typeof DotwellKnownSplatRoute
   '/api/external-uploads': typeof ApiExternalUploadsRouteWithChildren
   '/api/mcp': typeof ApiMcpRoute
+  '/api/reports': typeof ApiReportsRoute
   '/api/upload-links': typeof ApiUploadLinksRouteWithChildren
   '/api/uploads': typeof ApiUploadsRouteWithChildren
   '/artifacts/$': typeof ArtifactsSplatRoute
@@ -696,6 +712,7 @@ export interface FileRoutesById {
   '/markdown': typeof MarkdownRouteWithChildren
   '/money': typeof MoneyRoute
   '/publisher': typeof PublisherRouteWithChildren
+  '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/share': typeof ShareRouteWithChildren
   '/sign-in': typeof SignInRoute
@@ -704,6 +721,7 @@ export interface FileRoutesById {
   '/.well-known/$': typeof DotwellKnownSplatRoute
   '/api/external-uploads': typeof ApiExternalUploadsRouteWithChildren
   '/api/mcp': typeof ApiMcpRoute
+  '/api/reports': typeof ApiReportsRoute
   '/api/upload-links': typeof ApiUploadLinksRouteWithChildren
   '/api/uploads': typeof ApiUploadsRouteWithChildren
   '/artifacts/$': typeof ArtifactsSplatRoute
@@ -783,6 +801,7 @@ export interface FileRouteTypes {
     | '/markdown'
     | '/money'
     | '/publisher'
+    | '/reports'
     | '/settings'
     | '/share'
     | '/sign-in'
@@ -791,6 +810,7 @@ export interface FileRouteTypes {
     | '/.well-known/$'
     | '/api/external-uploads'
     | '/api/mcp'
+    | '/api/reports'
     | '/api/upload-links'
     | '/api/uploads'
     | '/artifacts/$'
@@ -863,12 +883,14 @@ export interface FileRouteTypes {
     | '/health'
     | '/live'
     | '/money'
+    | '/reports'
     | '/settings'
     | '/sign-in'
     | '/status'
     | '/.well-known/$'
     | '/api/external-uploads'
     | '/api/mcp'
+    | '/api/reports'
     | '/api/upload-links'
     | '/api/uploads'
     | '/artifacts/$'
@@ -946,6 +968,7 @@ export interface FileRouteTypes {
     | '/markdown'
     | '/money'
     | '/publisher'
+    | '/reports'
     | '/settings'
     | '/share'
     | '/sign-in'
@@ -954,6 +977,7 @@ export interface FileRouteTypes {
     | '/.well-known/$'
     | '/api/external-uploads'
     | '/api/mcp'
+    | '/api/reports'
     | '/api/upload-links'
     | '/api/uploads'
     | '/artifacts/$'
@@ -1032,6 +1056,7 @@ export interface RootRouteChildren {
   MarkdownRoute: typeof MarkdownRouteWithChildren
   MoneyRoute: typeof MoneyRoute
   PublisherRoute: typeof PublisherRouteWithChildren
+  ReportsRoute: typeof ReportsRoute
   SettingsRoute: typeof SettingsRoute
   ShareRoute: typeof ShareRouteWithChildren
   SignInRoute: typeof SignInRoute
@@ -1039,6 +1064,7 @@ export interface RootRouteChildren {
   DotwellKnownSplatRoute: typeof DotwellKnownSplatRoute
   ApiExternalUploadsRoute: typeof ApiExternalUploadsRouteWithChildren
   ApiMcpRoute: typeof ApiMcpRoute
+  ApiReportsRoute: typeof ApiReportsRoute
   ApiUploadLinksRoute: typeof ApiUploadLinksRouteWithChildren
   ApiUploadsRoute: typeof ApiUploadsRouteWithChildren
   ArtifactsSplatRoute: typeof ArtifactsSplatRoute
@@ -1166,6 +1192,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PublisherRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/reports': {
+      id: '/reports'
+      path: '/reports'
+      fullPath: '/reports'
+      preLoaderRoute: typeof ReportsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/settings': {
       id: '/settings'
       path: '/settings'
@@ -1213,6 +1246,13 @@ declare module '@tanstack/react-router' {
       path: '/api/mcp'
       fullPath: '/api/mcp'
       preLoaderRoute: typeof ApiMcpRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/reports': {
+      id: '/api/reports'
+      path: '/api/reports'
+      fullPath: '/api/reports'
+      preLoaderRoute: typeof ApiReportsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/upload-links': {
@@ -1884,6 +1924,7 @@ const rootRouteChildren: RootRouteChildren = {
   MarkdownRoute: MarkdownRouteWithChildren,
   MoneyRoute: MoneyRoute,
   PublisherRoute: PublisherRouteWithChildren,
+  ReportsRoute: ReportsRoute,
   SettingsRoute: SettingsRoute,
   ShareRoute: ShareRouteWithChildren,
   SignInRoute: SignInRoute,
@@ -1891,6 +1932,7 @@ const rootRouteChildren: RootRouteChildren = {
   DotwellKnownSplatRoute: DotwellKnownSplatRoute,
   ApiExternalUploadsRoute: ApiExternalUploadsRouteWithChildren,
   ApiMcpRoute: ApiMcpRoute,
+  ApiReportsRoute: ApiReportsRoute,
   ApiUploadLinksRoute: ApiUploadLinksRouteWithChildren,
   ApiUploadsRoute: ApiUploadsRouteWithChildren,
   ArtifactsSplatRoute: ArtifactsSplatRoute,

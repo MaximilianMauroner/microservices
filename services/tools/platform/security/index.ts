@@ -73,6 +73,8 @@ export function classifyRoute(pathname: string, method: string): RouteAccess {
 
   if (matchesPrefix(pathname, ["/api/kitchen"])) return { kind: "machine", service: "kitchen-app" };
 
+  if (pathname === "/api/reports" && normalizedMethod === "POST") return { kind: "public" };
+
   if (/^\/feedback\/f\/[^/]+$/.test(pathname) && (normalizedMethod === "GET" || normalizedMethod === "HEAD" || normalizedMethod === "POST")) {
     return { kind: "public" };
   }
