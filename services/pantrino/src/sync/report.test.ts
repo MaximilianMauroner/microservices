@@ -124,6 +124,11 @@ describe("a report with the sender's name", () => {
 });
 
 describe("reading a refusal", () => {
+  it("treats a refusal with a null body as an unknown reason, not a timeout", async () => {
+    answer(new Response("null", { status: 400 }));
+    expect(await sendReport(report, false)).toEqual({ kind: "rejected", reason: "unknown" });
+  });
+
   it("keeps the deadline when the reply body never finishes", async () => {
     vi.useFakeTimers();
     vi.stubGlobal("fetch", async () => ({ ok: false, status: 400, json: () => new Promise(() => undefined) }));

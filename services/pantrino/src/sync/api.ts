@@ -108,10 +108,10 @@ async function sendBefore(report: Report, named: boolean, signal: AbortSignal): 
     if (response.ok) return { kind: "sent" };
     if (response.status === 429) return { kind: "rate-limited" };
     if (response.status === 400) {
-      let reason: string | undefined;
-      try { reason = ((await beforeDeadline(response.json(), signal).catch((error: unknown) => { if (signal.aborted) throw error; return {}; })) as { reason?: string }).reason; }
-      catch { return { kind: "timeout" }; }
-      return { kind: "rejected", reason: REJECTIONS.includes(reason as ReportRejection) ? reason as ReportRejection : "unknown" };
+      const json: unknown = await beforeDeadline(response.json(), signal).catch(() => undefined);
+      if (signal.aborted) return { kind: "timeout" };
+      const reason = (json as { reason?: unknown } | null | undefined)?.reason;
+      return { kind: "rejected", reason: typeof reason === "string" && REJECTIONS.includes(reason) ? reason as ReportRejection : "unknown" };
     }
     return { kind: "failed" };
   }
