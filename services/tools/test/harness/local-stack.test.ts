@@ -1,6 +1,7 @@
 import { chmod, mkdtemp, mkdir, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { createServer as createHttpServer } from "node:http";
 import { createServer } from "node:net";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { loadPlatformConfig } from "../../platform/config.ts";
@@ -94,7 +95,8 @@ async function fixture() {
     else if (spec.args.at(-1) === "config") {
       loadPlatformConfig(spec.env);
       stdout = "config\n";
-    } else if (spec.args.at(-1) === "health") stdout = "health\n";
+    } else if (spec.args.at(-1) === "minio-ready") stdout = "minio-ready\n";
+    else if (spec.args.at(-1) === "health") stdout = "health\n";
     else if (spec.args.at(-1) === "markdown") stdout = "markdown-http\n";
     else if (spec.args.at(-1) === "storage") stdout = "storage-http\n";
     else if (spec.args[0]?.endsWith("index.mjs")) {
@@ -387,6 +389,29 @@ describe("owned local stack", () => {
     expect(setup.calls[copy]!.args).toEqual(["-R", join(await realpath(setup.options.repository!), "services/tools/.output"), join(await realpath(setup.options.directory), "output")]);
     expect(setup.calls.find((spec) => spec.args[0]?.endsWith("index.mjs"))!.args[0]).toBe(join(setup.calls[copy]!.args[2]!, "server/index.mjs"));
     await expect(stat(join(setup.options.directory, "output"))).rejects.toThrow();
+  });
+
+  it("keeps relative executable paths usable when migration changes directory", async () => {
+    const setup = await fixture();
+    const bin = join(setup.directory, "bin");
+    await mkdir(bin);
+    const executable = join(bin, "verify-path-probe");
+    await writeFile(executable, "#!/bin/sh\nprintf 'path probe passed\\n'\n");
+    await chmod(executable, 0o700);
+    let output = "";
+    setup.respond(async (spec) => {
+      if (!spec.log.endsWith("-postgres-migrate.log")) return undefined;
+      const outcome = await withOwnedCommands({ graceMs: 1_000 }, (commands) => commands.execute({
+        ...spec, command: "verify-path-probe", args: [], cwd: setup.options.repository!,
+        log: join(setup.directory, "path-probe.log"),
+      }));
+      if (outcome.kind === "succeeded") output = outcome.stdout;
+      return outcome;
+    });
+    const options = { ...setup.options, environment: { PATH: relative(process.cwd(), bin) } };
+    const result = await withVerificationStack(options, async () => {});
+    expect(result).toMatchObject({ kind: "completed", cleanup: "disposed" });
+    expect(output).toBe("path probe passed\n");
   });
 
   it("snapshots the verified workspace build before Docker and overlaps host setup", async () => {
@@ -728,6 +753,35 @@ describe("owned local stack", () => {
     expect(setup.calls.filter((spec) => spec.args.includes("down"))).toHaveLength(1);
   });
 
+  it("includes a bounded, redacted PostgreSQL migration excerpt in failed verification results", async () => {
+    const setup = await fixture();
+    const workspaceOutput = join(setup.options.repository!, "services/tools/.output");
+    await mkdir(join(workspaceOutput, "server"), { recursive: true });
+    await writeFile(join(workspaceOutput, "server/index.mjs"), "fixture build");
+    let password = "";
+    setup.respond(async (spec) => {
+      if (spec.command === "cp") await mkdir(join(spec.args[2]!, "server"), { recursive: true });
+      if (!spec.log.endsWith("-postgres-migrate.log")) return undefined;
+      password = new URL(spec.env!.DATABASE_URL!).password;
+      const output = `migration prelude ${"x".repeat(8_500)} END_NEAR_TAIL_MARKER\nMigration failure detail contains ${password}\n`;
+      expect(Buffer.byteLength(output)).toBeGreaterThan(8_192);
+      await writeFile(spec.log, output);
+      return failed(spec);
+    });
+
+    const result = await withVerificationStack(setup.options, async () => {}, {
+      kind: "journeys", workspaceBuild: { outputDirectory: workspaceOutput },
+    });
+    directories.push(result.directory);
+
+    expect(result).toMatchObject({ kind: "failed", cleanup: "retained" });
+    expect(result.reason).toContain("PostgreSQL migration output (redacted)");
+    expect(result.reason).toContain("Migration failure detail contains [redacted]");
+    expect(result.reason).not.toContain("END_NEAR_TAIL_MARKER");
+    expect(result.reason).not.toContain(password);
+    expect(result.reason!.length).toBeLessThan(1_700);
+  });
+
   it("reports browser storage prerequisites blocked when signed PUT or ETag checks fail", async () => {
     const setup = await fixture();
     setup.respond(async (spec) => spec.args.at(-1) === "storage" ? { kind: "succeeded", stdout: "storage-blocked\n", log: spec.log } : undefined);
@@ -815,4 +869,44 @@ describe("owned local stack", () => {
     expect(result).toMatchObject({ kind: "failed", exit: { kind: "exited", code: 1 } });
     expect(await readFile(log, "utf8")).toContain("ARTIFACT_S3_ENDPOINT must be an owned loopback origin");
   }, 40_000);
+
+  it("waits for the owned MinIO endpoint to become ready before seeding", async () => {
+    const setup = await fixture();
+    let environment: CommandSpec["env"];
+    await withLocalStack(setup.options, async (stack) => { environment = stack.environment; });
+    const calls: string[] = [];
+    const server = createHttpServer((request, response) => {
+      calls.push(request.url!);
+      response.writeHead(calls.length === 1 ? 503 : 200).end();
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const address = server.address();
+      if (!address || typeof address === "string") throw new Error("Missing loopback address");
+      const endpoint = `http://127.0.0.1:${address.port}`;
+      const result = await withOwnedCommands({ graceMs: 1_000 }, (commands) => commands.execute({
+        command: process.execPath,
+        args: ["--import", "tsx", fileURLToPath(new URL("./local-stack-check.ts", import.meta.url)), "minio-ready"],
+        cwd: fileURLToPath(new URL("../../", import.meta.url)),
+        env: { PATH: process.env.PATH, ...environment, TOOLS_S3_ENDPOINT: endpoint, ARTIFACT_S3_ENDPOINT: endpoint },
+        deadlineMs: 10_000, log: join(setup.directory, "minio-ready.log"),
+      }));
+      expect(result).toMatchObject({ kind: "succeeded", stdout: "minio-ready\n" });
+      expect(calls).toEqual(["/minio/health/ready", "/minio/health/ready"]);
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+  }, 15_000);
+
+  it("does not seed when the MinIO readiness check fails", async () => {
+    const setup = await fixture();
+    setup.respond(async (spec) => spec.args.at(-1) === "minio-ready" ? failed(spec) : undefined);
+    const result = await withVerificationStack(setup.options, async () => { throw new Error("must not run"); }, {
+      kind: "identity-contracts", postgresFixture: { name: "tools-runtime-00000000-0000-0000-0000-000000000000", url: "postgres://tools_runtime:local@127.0.0.1:5432/tools_runtime_test" },
+    });
+    directories.push(result.directory);
+    expect(result).toMatchObject({ kind: "failed", cleanup: "retained" });
+    expect(setup.calls.some((spec) => spec.log.endsWith("-minio-seed.log"))).toBe(false);
+    expect(setup.calls.some((spec) => spec.args.includes("down"))).toBe(true);
+  });
 });

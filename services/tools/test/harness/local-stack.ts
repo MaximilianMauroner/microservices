@@ -2,12 +2,12 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { chmod, mkdir, mkdtemp, open, readFile, readdir, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { delimiter, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { CommandExecutor, CommandOutcome } from "./commands.ts";
 import type { MinioImage } from "./minio-image.ts";
 import { rejectInheritedDataEndpoints } from "./postgres.ts";
-import { VerificationBlocked } from "./receipt.ts";
+import { redactFixture, VerificationBlocked } from "./receipt.ts";
 
 type Environment = Readonly<Record<string, string | undefined>>;
 type ComposePort = { target: number; published?: string; host_ip?: string; protocol?: string };
@@ -219,6 +219,33 @@ function secrets(env: Environment): string[] {
   return Object.entries(env).filter(([name, value]) => value && /KEY|SECRET|TOKEN|PASSWORD|DATABASE_URL/.test(name)).map(([, value]) => value!).sort((a, b) => b.length - a.length);
 }
 
+async function commandFailureExcerpt(path: string, redact: (text: string) => string, env: Environment) {
+  try {
+    const size = (await stat(path)).size;
+    const length = Math.min(size, 8_192);
+    const handle = await open(path, "r");
+    let excerpt: string;
+    try {
+      const buffer = Buffer.alloc(length);
+      await handle.read(buffer, 0, length, size - length);
+      excerpt = buffer.toString("utf8");
+    } finally {
+      await handle.close();
+    }
+    if (size > length) {
+      const boundary = excerpt.indexOf("\n");
+      excerpt = boundary < 0 ? "" : excerpt.slice(boundary + 1);
+    }
+    excerpt = redactFixture(redact(excerpt), env)
+      .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "")
+      .replace(/\b(Bearer\s+)[^\s,;]+/gi, "$1[redacted]")
+      .replace(/\b(password|secret|token|api[_-]?key)(\s*[:=]\s*)([^\s,;]+)/gi, "$1$2[redacted]");
+    return excerpt.split(/\r?\n/).filter((line) => line.trim()).slice(-12).join("\n").slice(-1_500) || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export type LocalStackResult = Readonly<{
   kind: "completed" | "blocked" | "failed";
   manifest?: VerificationStackManifest;
@@ -305,7 +332,7 @@ async function runLocalStack<P extends VerificationStackProfile>(
     if (databasePassword) sensitive.push(databasePassword);
     for (const binding of owner.bindings ?? []) await unusedPort(new Set(), binding.port);
     const commandEnv: Record<string, string | undefined> = {
-      PATH: options.environment.PATH, HOME: options.environment.HOME,
+      PATH: options.environment.PATH?.split(delimiter).map((entry) => resolve(entry)).join(delimiter), HOME: options.environment.HOME,
       TMPDIR: options.environment.TMPDIR, NODE_ENV: "development",
     };
     const envFile = join(directory, "compose.env");
@@ -314,17 +341,23 @@ async function runLocalStack<P extends VerificationStackProfile>(
     await writeFile(composePath, await readFile(join(root, "compose.yaml")), { mode: 0o600 });
     let sequence = 0;
     async function command(executor: CommandExecutor, command: string, args: readonly string[], step: string, deadlineMs: number, env: Environment = commandEnv, commandSignal?: AbortSignal, cwd = root) {
+      const log = join(directory!, `${++sequence}-${step}.log`);
       let outcome: CommandOutcome;
       try {
         outcome = await executor.execute({
           command, args, cwd, env, deadlineMs, signal: commandSignal,
-          log: join(directory!, `${++sequence}-${step}.log`), redact,
+          log, redact,
         });
       } catch (error) { ownershipUncertain = true; throw error; }
       if (outcome.kind !== "succeeded") {
         if (outcome.kind !== "not-started" && outcome.ownership === "uncertain") ownershipUncertain = true;
+        let message = `${step} did not succeed. See its private command log.`;
+        if (step === "postgres-migrate" && outcome.kind !== "not-started" && outcome.log.kind === "written") {
+          const excerpt = await commandFailureExcerpt(outcome.log.path, redact, env);
+          if (excerpt) message += `\nPostgreSQL migration output (redacted):\n${excerpt}`;
+        }
         throw new SetupError(step === "compose-version" || outcome.kind === "blocked" ? "blocked" : "failed",
-          `${step} did not succeed. See its private command log.`);
+          message);
       }
       return outcome.stdout;
     }
@@ -456,11 +489,17 @@ async function runLocalStack<P extends VerificationStackProfile>(
       await command(options.commands.work, "cp", ["-R", toolsOutput, output], "copy-build", 60_000, commandEnv, signal);
     }
     await compose(options.commands.work, ["up", "--detach", ...(minioImage ? [] : ["--build"]), "--wait", "--wait-timeout", "90", ...services], "dependencies", 600_000, signal);
+    const minioReady = async () => {
+      if (await check("minio-ready", 35_000) !== "minio-ready\n") throw new SetupError("failed", "MinIO did not confirm readiness.");
+    };
     if (lifetime === "verification") {
       const toolsCwd = join(root, "services/tools");
-      const seed = () => command(options.commands.work, process.execPath,
-        ["--import", "tsx", "products/status/local-seed.ts"], "minio-seed", 600_000,
-        { ...hostEnv, LOCAL_PLATFORM_BROWSER_ORIGIN: hostEnv.PUBLIC_ORIGIN, SEED_RETRY_ATTEMPTS: "30" }, signal, toolsCwd);
+      const seed = async () => {
+        await minioReady();
+        return command(options.commands.work, process.execPath,
+          ["--import", "tsx", "products/status/local-seed.ts"], "minio-seed", 600_000,
+          { ...hostEnv, LOCAL_PLATFORM_BROWSER_ORIGIN: hostEnv.PUBLIC_ORIGIN, SEED_RETRY_ATTEMPTS: "30" }, signal, toolsCwd);
+      };
       if (profile.kind === "identity-contracts") await seed();
       else {
         const setup = await Promise.allSettled([
@@ -474,6 +513,7 @@ async function runLocalStack<P extends VerificationStackProfile>(
       }
     } else {
       for (const service of ["postgres-migrate", "minio-seed"]) {
+        if (service === "minio-seed") await minioReady();
         await compose(options.commands.work, ["run", "--build", "--no-deps", "--rm", service], service, 600_000, signal);
       }
     }
