@@ -55,9 +55,9 @@ export async function reconcileRuntimeSchema(database: postgres.Sql) {
       await transaction`alter table tools.dev_feedback drop constraint if exists dev_feedback_state_check`;
       await transaction`alter table tools.dev_feedback add constraint dev_feedback_state_check check (state in ('open', 'tracked', 'done'))`;
     }
-    if (!reportChecks.get("dev_feedback_app_check")?.includes("'dotally'")) {
+    if (!reportChecks.get("dev_feedback_app_check")?.includes("'moodinator'")) {
       await transaction`alter table tools.dev_feedback drop constraint if exists dev_feedback_app_check`;
-      await transaction`alter table tools.dev_feedback add constraint dev_feedback_app_check check (app in ('tools', 'pantrino', 'dotally'))`;
+      await transaction`alter table tools.dev_feedback add constraint dev_feedback_app_check check (app in ('tools', 'pantrino', 'dotally', 'zen-mode', 'moodinator'))`;
     }
     await transaction`insert into tools.money_import_transactions (import_id, transaction_id)
       select import_id, id from tools.money_transactions on conflict do nothing`;
