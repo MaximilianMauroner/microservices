@@ -54,8 +54,10 @@ export function handleKitchenSync(request: Request, resolveAppToken: AppTokenRes
 
 export function handleKitchenCatalog(request: Request, resolveAppToken: AppTokenResolver, catalog: KitchenCatalog): Promise<Response> {
   return asKitchenApp(request, resolveAppToken, async () => {
-    const query = new URL(request.url).searchParams.get("q") ?? "";
-    return Response.json({ products: await catalog.search(query.slice(0, 100)) }, { headers: { "Cache-Control": "no-store" } });
+    const params = new URL(request.url).searchParams;
+    const barcode = params.get("code");
+    const products = barcode === null ? await catalog.search((params.get("q") ?? "").slice(0, 100)) : [await catalog.lookup(barcode)].filter((one) => one !== undefined);
+    return Response.json({ products }, { headers: { "Cache-Control": "no-store" } });
   });
 }
 
