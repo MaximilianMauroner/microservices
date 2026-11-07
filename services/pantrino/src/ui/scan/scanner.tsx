@@ -7,6 +7,7 @@ import { useRef, useState } from "react";
 import { ActivityIndicator, Linking, Modal, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Offline } from "../../auth/session";
+import { useApp } from "../../state";
 import { lookupBarcode } from "../../sync/api";
 import { haptic } from "../haptics";
 import { Button, Field, Press, T } from "../kit";
@@ -25,6 +26,7 @@ const en = {
   notFound: (code: string) => `No product with nutrition has the barcode ${code}.`,
   offline: "The barcode needs a connection to look up.",
   failed: "Tools could not look up the product.",
+  needsAccount: "Product lookup by barcode needs an account. Pantrino reads the table on this phone.",
   readTable: "Read the nutrition table",
   scanAgain: "Scan again",
   takePhoto: "Take photo",
@@ -56,6 +58,7 @@ const TEXT: Record<KitchenLanguage, typeof en> = {
     notFound: (code: string) => `Kein Produkt mit Nährwerten hat den Barcode ${code}.`,
     offline: "Für den Barcode braucht es eine Verbindung.",
     failed: "Tools konnte das Produkt nicht suchen.",
+    needsAccount: "Die Produktsuche per Barcode braucht ein Konto. Pantrino liest die Tabelle auf diesem Telefon.",
     readTable: "Nährwerttabelle lesen",
     scanAgain: "Nochmal scannen",
     takePhoto: "Foto machen",
@@ -94,12 +97,14 @@ const BARCODES = ["ean13", "ean8", "upc_a", "upc_e"] as const;
 /**
  * A full-screen camera. It reads the barcode on a package and looks up the product. When no product has the code, it
  * photographs the nutrition table and reads it on the phone, and the person checks the values next to the photo.
+ * Without an account there is no lookup, so it starts at the table.
  */
 export function Scanner({ onResult, onClose }: { onResult: (result: ScanResult) => void; onClose: () => void }) {
   const text = useText(TEXT);
   const insets = useSafeAreaInsets();
   const [permission, requestPermission] = useCameraPermissions();
-  const [step, setStep] = useState<Step>({ kind: "barcode" });
+  const lookup = useApp().session === "signed-in";
+  const [step, setStep] = useState<Step>(lookup ? { kind: "barcode" } : { kind: "aiming" });
   const camera = useRef<CameraView>(null);
   /** The camera reports one code many times a second. Only the first read of a scan counts. */
   const busy = useRef(false);
@@ -173,6 +178,7 @@ export function Scanner({ onResult, onClose }: { onResult: (result: ScanResult) 
                 </View>
               </>
               : step.kind === "aiming" ? <>
+                {lookup ? null : <T style={styles.light}>{text.needsAccount}</T>}
                 <T style={styles.light}>{text.labelHint}</T>
                 <Press accessibilityRole="button" accessibilityLabel={text.takePhoto} onPress={() => void photograph()} style={styles.shutter}>
                   <Camera size={28} color="#000000" />
