@@ -1,5 +1,5 @@
 import { formatNumber, ingredientGroups, isCountedUnit, unitName, type Ingredient } from "@tools-platform/service/kitchen-contract";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { ChevronRight, ListOrdered, Plus } from "lucide-react-native";
 import { useState } from "react";
 import { View } from "react-native";
@@ -26,7 +26,9 @@ function Ingredients({ kitchen, change }: OpenKitchen) {
   const kitchenText = useText(KITCHEN_TEXT);
   const colors = useColors();
   const [query, setQuery] = useState("");
-  const [editing, setEditing] = useState<Editing>(null);
+  /** Search opens an ingredient by its id. */
+  const asked = useLocalSearchParams<{ open?: string }>().open;
+  const [editing, setEditing] = useState<Editing>(() => asked && kitchen.ingredients.some((one) => one.id === asked) ? { kind: "ingredient", id: asked, name: "" } : null);
   const typed = query.trim();
   const ingredients = [...kitchen.ingredients].sort((a, b) => compareText(a.name, b.name));
   const matches = ingredients.filter((one) => [one.name, ...ingredientGroups(one).map((group) => groupLabel(group, language))].join(" ").toLowerCase().includes(typed.toLowerCase()));

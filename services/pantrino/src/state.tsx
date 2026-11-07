@@ -3,6 +3,7 @@ import { type KitchenSnapshot, today as kitchenToday } from "@tools-platform/ser
 import * as Crypto from "expo-crypto";
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { AppState } from "react-native";
+import { bodyStore } from "./body/store";
 import { Offline, signIn as openSignIn, signOut as endSession, SignedOut, storedAccount } from "./auth/session";
 import { wipeVault, vault } from "./storage/vault";
 import { kitchenApi } from "./sync/api";
@@ -15,6 +16,8 @@ import { type KitchenLanguage, LanguageContext, pickLanguage } from "./ui/langua
 const engine: SyncEngine = createSyncEngine({ vault, api: kitchenApi, project, newId: () => Crypto.randomUUID(), isSignedOut: (error) => error instanceof SignedOut, isOffline: (error) => error instanceof Offline });
 
 type Session = "loading" | "signed-out" | "signed-in";
+/** Which product the tabs show. Search and the links between them work in both. */
+export type Mode = "kitchen" | "bodyshop";
 
 type AppContextValue = {
   session: Session;
@@ -23,6 +26,8 @@ type AppContextValue = {
   signOut: () => Promise<void>;
   kitchenId: string | null;
   openKitchen: (kitchenId: string) => void;
+  mode: Mode;
+  setMode: (mode: Mode) => void;
 };
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -30,6 +35,7 @@ const AppContext = createContext<AppContextValue | null>(null);
 export function AppProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session>("loading");
   const [kitchenId, setKitchenId] = useState<string | null>(null);
+  const [mode, setModeState] = useState<Mode>("kitchen");
   const [language, setLanguage] = useState<KitchenLanguage>(() => pickLanguage(null));
   const [strength, setStrengthState] = useState<Strength>("light");
   const state = useSyncExternalStore(engine.subscribe, engine.getState);
@@ -45,14 +51,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
       await wipeVault();
       await vault.saveSetting("account", account);
     }
-    const [saved, savedLanguage, savedStrength] = await Promise.all([vault.setting("kitchen"), vault.setting("language"), vault.setting("haptics")]);
+    const [saved, savedLanguage, savedStrength, savedMode] = await Promise.all([vault.setting("kitchen"), vault.setting("language"), vault.setting("haptics"), vault.setting("mode")]);
     setKitchenId(saved);
+    setModeState(savedMode === "bodyshop" ? "bodyshop" : "kitchen");
     setLanguage(pickLanguage(savedLanguage));
     setStrength(parseStrength(savedStrength));
     setStrengthState(parseStrength(savedStrength));
     await engine.load();
     setSession("signed-in");
     void engine.sync();
+    void bodyStore.load();
   }, []);
 
   useEffect(() => {
@@ -61,10 +69,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (session !== "signed-in") return;
-    const app = AppState.addEventListener("change", (next) => { if (next === "active" || (next === "background" && engine.getState().pending)) void engine.sync(); });
+    const app = AppState.addEventListener("change", (next) => {
+      if (next === "active" || (next === "background" && engine.getState().pending)) void engine.sync();
+      if (next === "active") void bodyStore.refresh();
+    });
     let online: boolean | null = null;
     const net = NetInfo.addEventListener(({ isConnected }) => {
-      if (isConnected && online === false) void engine.sync();
+      if (isConnected && online === false) { void engine.sync(); void bodyStore.refresh(); }
       online = isConnected;
     });
     return () => { app.remove(); net(); };
@@ -82,6 +93,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (!next) return;
       // The vault may hold another account's kitchens and unsent changes. They go before this account's token is stored.
       await engine.stop();
+      bodyStore.reset();
       if ((await vault.setting("account")) !== next.account) await wipeVault();
       await vault.saveSetting("account", next.account);
       await next.install();
@@ -91,14 +103,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
       await engine.stop();
       await endSession();
       await wipeVault();
+      bodyStore.reset();
       setKitchenId(null);
       setSession("signed-out");
     },
     openKitchen(id) {
       setKitchenId(id);
       void vault.saveSetting("kitchen", id);
+    },
+    mode,
+    setMode(next) {
+      setModeState(next);
+      void vault.saveSetting("mode", next);
     }
-  }), [session, kitchenId, start]);
+  }), [session, kitchenId, mode, start]);
 
   const languageValue = useMemo(() => ({
     language,

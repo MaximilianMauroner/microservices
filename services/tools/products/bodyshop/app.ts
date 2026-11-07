@@ -1,12 +1,10 @@
 import { asAppProduct, type AppTokenResolver } from "../../platform/app-api.js";
 import { readBoundedBody, RequestBodyTooLargeError } from "../../platform/request-body.js";
 import { bodyshopAction } from "./actions.js";
-import { BodyshopError, parseDay, type SavedFood } from "./domain.js";
+import { BodyshopError, parseDay } from "./domain.js";
 import type { BodyshopStore } from "./repository.js";
 import { applyAction, dayPanel } from "./service.js";
-
-/** One day as the app shows it, with every saved food in full so the app can search and preview without a request. */
-export type BodyshopAppSnapshot = Readonly<Omit<Awaited<ReturnType<typeof dayPanel>>, "foods"> & { foods: readonly SavedFood[] }>;
+import type { BodyshopAppSnapshot } from "./snapshot.js";
 
 const NO_STORE = { "Cache-Control": "no-store" };
 const MAX_ACTION_BYTES = 64 * 1024;
