@@ -714,19 +714,26 @@ export const kitchenCatalogRefresh = toolsSchema.table("kitchen_catalog_refresh"
   finishedAt: timestamp("finished_at", { withTimezone: true }),
 });
 
-/** Bug reports and feature requests about Tools itself, for the developer. Not the Feedback product. */
+/** Bug reports and ideas about each app, for the developer. Not the Feedback product. An anonymous report has no author. */
 export const devFeedback = toolsSchema.table("dev_feedback", {
   id: uuid("id").primaryKey(),
-  authorSubject: text("author_subject").notNull(),
-  authorEmail: text("author_email").notNull(),
+  app: text("app").notNull().default("tools"),
+  authorSubject: text("author_subject"),
+  authorEmail: text("author_email"),
+  contactEmail: text("contact_email"),
   kind: text("kind").notNull(),
   page: text("page").notNull(),
+  /** The app version and device that sent the report. */
+  context: text("context"),
   message: text("message").notNull(),
+  /** How to make a bug happen again, or why an idea helps. Optional. */
+  details: text("details"),
   state: text("state").notNull().default("open"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
 }, (table) => [
+  check("dev_feedback_app_check", sql`${table.app} in ('tools', 'pantrino', 'dotally')`),
   check("dev_feedback_kind_check", sql`${table.kind} in ('bug', 'feature')`),
-  check("dev_feedback_state_check", sql`${table.state} in ('open', 'done')`),
+  check("dev_feedback_state_check", sql`${table.state} in ('open', 'tracked', 'done')`),
   index("dev_feedback_created_idx").on(table.createdAt),
 ]);
 

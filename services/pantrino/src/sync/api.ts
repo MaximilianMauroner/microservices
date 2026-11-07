@@ -1,5 +1,7 @@
 import type { AppActionResult, CatalogProduct, KitchenSync } from "@tools-platform/service/kitchen-contract";
 import { accessToken, currentSession, Offline, SignedOut, TOOLS_ORIGIN } from "../auth/session";
+import { Platform } from "react-native";
+import Constants from "expo-constants";
 import type { OutboxItem } from "./model";
 
 /**
@@ -40,4 +42,21 @@ export const kitchenApi: KitchenApi = {
 export async function searchCatalog(query: string): Promise<readonly CatalogProduct[]> {
   const response = await call(`/api/kitchen/products?${new URLSearchParams({ q: query })}`);
   return ((await response.json()) as { products: CatalogProduct[] }).products;
+}
+
+/** Tools refused a report and said why, for example an invalid email. */
+export class ReportRefused extends Error {}
+
+export type Report = Readonly<{ kind: "bug" | "feature"; message: string; details?: string; page: string; contactEmail?: string }>;
+
+/** Sends a bug report or an idea to the developer. Signed in, it names the account. Signed out, it is anonymous and may carry an email for a reply. */
+export async function sendReport(report: Report, signedIn: boolean): Promise<void> {
+  const body = JSON.stringify({ app: "pantrino", ...report, context: `Pantrino ${Constants.expoConfig?.version ?? "?"} · ${Platform.OS} ${Platform.Version}` });
+  const init = { method: "POST", headers: { "Content-Type": "application/json" }, body };
+  if (signedIn) { await call("/api/reports", init); return; }
+  const response = await fetch(`${TOOLS_ORIGIN}/api/reports`, { ...init, headers: { ...init.headers, Accept: "application/json" } })
+    .catch((cause: unknown) => { throw new Offline("Tools cannot be reached.", { cause }); });
+  if (response.ok) return;
+  const reason = ((await response.json().catch(() => ({}))) as { message?: string }).message;
+  throw reason ? new ReportRefused(reason) : new Error(`Tools answered ${response.status} on /api/reports.`);
 }
