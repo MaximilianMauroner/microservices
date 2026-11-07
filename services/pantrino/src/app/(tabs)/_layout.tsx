@@ -1,6 +1,6 @@
 import { router, Tabs, useSegments } from "expo-router";
 import { Search } from "lucide-react-native";
-import { type ComponentProps, useEffect } from "react";
+import { type ComponentProps, useEffect, useRef } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useBody } from "../../body/store";
@@ -87,9 +87,15 @@ function TabBar({ state, navigateToTab }: TabBarProps) {
   const { mode, setMode } = useApp();
   const body = useBody();
   const shown = modeOf(current?.name);
+  const launched = useRef(false);
   useEffect(() => {
+    // The app starts on the Week tab. A person who left it in Bodyshop gets Bodyshop back instead of losing the mode.
+    if (!launched.current) {
+      launched.current = true;
+      if (current?.name === PAGES[0]!.route && mode !== "kitchen") { router.replace(FIRST_PATH[mode]); return; }
+    }
     if (shown && shown !== mode) setMode(shown);
-  }, [shown, mode, setMode]);
+  }, [shown, mode, setMode, current?.name]);
   useEffect(() => {
     if (body.status === "no-access" && mode === "bodyshop") router.navigate(FIRST_PATH.kitchen);
   }, [body.status, mode]);
