@@ -8,13 +8,14 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Drawer, DrawerClose, DrawerContent, DrawerDescription, DrawerFooter, DrawerHeader, DrawerTitle } from "../../../platform/ui/components/ui/drawer.js";
 import { Input } from "../../../platform/ui/components/ui/input.js";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "../../../platform/ui/components/ui/dropdown-menu.js";
-import { toast } from "../../../platform/ui/components/ui/toast.js";
 import { useIsMobile } from "../../../platform/ui/components/ui/use-mobile.js";
+import { toast } from "../../../platform/ui/components/ui/toast.js";
 import { cn } from "../../../platform/ui/lib/utils.js";
 import type { KitchenAction } from "../actions.js";
 import { addDays, byGroupOrder, type Kitchen, UNSORTED_SECTION } from "../domain.js";
 import { runKitchenAction } from "../server-functions.js";
 import { KITCHEN_LANGUAGES, type KitchenLanguage, LANGUAGE_NAMES, LOCALES, useLanguage, useSetLanguage, useText } from "./language.js";
+import { kitchenToast } from "./action-toast.js";
 
 export type Frame = Readonly<{ kitchen: Kitchen; kitchens: readonly Kitchen[]; isAdmin: boolean; today: string }>;
 
@@ -67,6 +68,7 @@ const en = {
   language: "Language",
   undo: "Undo",
   failed: "That did not work",
+  refreshFailed: "Saved, but the page could not refresh",
   retry: "Try again",
   close: "Close",
   fewer: (label: string) => `Fewer ${label.toLowerCase()}`,
@@ -95,6 +97,7 @@ const TEXT: Record<KitchenLanguage, KitText> = {
     language: "Sprache",
     undo: "Rückgängig",
     failed: "Das hat nicht funktioniert",
+    refreshFailed: "Gespeichert, aber die Seite konnte nicht aktualisiert werden",
     retry: "Erneut versuchen",
     close: "Schließen",
     fewer: (label: string) => `Weniger ${label}`,
@@ -321,16 +324,27 @@ export function useKitchenAction(kitchenId: string) {
   const router = useRouter();
   const text = useText(TEXT);
   const [pending, setPending] = useState(false);
+  const retryToast = useRef<string | undefined>(undefined);
+  async function refresh() {
+    try {
+      await router.invalidate({ filter: (match) => !UNCHANGED_BY_ACTIONS.has(match.routeId) });
+      preloadTabs(router, kitchenId);
+    } catch (error) {
+      kitchenToast({ title: text.refreshFailed, description: messageOf(error), type: "error", actionProps: { children: text.retry, onClick: () => void refresh() } });
+    }
+  }
   async function run(action: KitchenAction, done?: { title: string; undo?: KitchenAction }): Promise<{ id?: string } | undefined> {
+    if (retryToast.current) {
+      toast.close(retryToast.current);
+      retryToast.current = undefined;
+    }
     setPending(true);
     try {
       const result = await runKitchenAction({ data: { kitchenId, action } });
-      await router.invalidate({ filter: (match) => !UNCHANGED_BY_ACTIONS.has(match.routeId) });
-      // A change on one tab changes the others too, for example a new meal changes the shopping list.
-      preloadTabs(router, kitchenId);
+      await refresh();
       if (done) {
         const undo = done.undo;
-        toast.add({
+        kitchenToast({
           title: done.title,
           type: "success",
           actionProps: undo ? { children: text.undo, onClick: () => void run(undo) } : undefined
@@ -338,7 +352,7 @@ export function useKitchenAction(kitchenId: string) {
       }
       return result;
     } catch (error) {
-      toast.add({ title: text.failed, description: messageOf(error), type: "error", actionProps: { children: text.retry, onClick: () => void run(action, done) } });
+      retryToast.current = kitchenToast({ title: text.failed, description: messageOf(error), type: "error", actionProps: { children: text.retry, onClick: () => void run(action, done) } });
       return undefined;
     } finally {
       setPending(false);

@@ -50,7 +50,7 @@ export const kitchenAction = z.discriminatedUnion("type", [
   }),
   z.object({ type: z.literal("recipe.delete"), id }),
   z.object({ type: z.literal("recipe.copy"), id, toKitchenId: id }),
-  z.object({ type: z.literal("plan.add"), createId, day, meal: z.enum(MEALS), recipeId: id, servings: z.number().int() }),
+  z.object({ type: z.literal("plan.add"), createId, day, meal: z.enum(MEALS), recipeId: id, servings: z.number().int(), restore: z.object({ cookedAt: z.string().datetime().nullable(), lines: lines.optional() }).optional() }),
   z.object({ type: z.literal("plan.update"), id, day, meal: z.enum(MEALS), servings: z.number().int() }),
   z.object({ type: z.literal("plan.remove"), id }),
   z.object({ type: z.literal("plan.customize"), id, lines }),
@@ -61,7 +61,7 @@ export const kitchenAction = z.discriminatedUnion("type", [
   z.object({ type: z.literal("leftover.add"), createId, name: z.string().max(200), servings: amount, useBy: day }),
   z.object({ type: z.literal("leftover.eat"), id, servings: amount }),
   z.object({ type: z.literal("leftover.remove"), id }),
-  z.object({ type: z.literal("extra.add"), createId, name: z.string().max(200), everyWeek: z.boolean().optional() }),
+  z.object({ type: z.literal("extra.add"), createId, name: z.string().max(200), everyWeek: z.boolean().optional(), boughtWeek: day.nullable().optional() }),
   z.object({ type: z.literal("extra.mark"), id, week: day, bought: z.boolean() }),
   z.object({ type: z.literal("extra.remove"), id }),
   z.object({ type: z.literal("groups.set"), groups: z.array(z.string().max(100)).max(100) })
@@ -120,7 +120,7 @@ function apply(kitchen: KitchenScope, action: Exclude<KitchenAction, { type: "re
     case "leftover.add": return kitchen.addLeftover({ ...action, newId: action.createId });
     case "leftover.eat": return kitchen.eatLeftover(action.id, action.servings);
     case "leftover.remove": return kitchen.removeLeftover(action.id);
-    case "extra.add": return kitchen.addExtra(action.name, action.everyWeek, action.createId);
+    case "extra.add": return kitchen.addExtra(action.name, action.everyWeek, action.createId, action.boughtWeek);
     case "extra.mark": return kitchen.markExtra(action.id, weekStart(action.week), action.bought);
     case "extra.remove": return kitchen.removeExtra(action.id);
     case "groups.set": return kitchen.setGroups(action.groups);

@@ -435,7 +435,10 @@ function EntrySheet({ entry, onClose, data }: { entry: PlanEntry | undefined; on
       ) : (
         <div className="flex w-full flex-wrap items-center justify-between gap-2">
           <Button variant="destructive-outline" disabled={pending} onClick={async () => {
-            if (await run({ type: "plan.remove", id: entry.id }, { title: text.removedFromPlan(entry.recipe), undo: { type: "plan.add", day: entry.day, meal: entry.meal, recipeId: entry.recipeId, servings: entry.servings } })) onClose();
+            if (await run({ type: "plan.remove", id: entry.id }, { title: text.removedFromPlan(entry.recipe), undo: {
+              type: "plan.add", createId: entry.id, day: entry.day, meal: entry.meal, recipeId: entry.recipeId, servings: entry.servings,
+              restore: { cookedAt: entry.cookedAt ?? null, lines: entry.custom ? current : undefined }
+            } })) onClose();
           }}>{text.remove}</Button>
           <div className="flex gap-2">
             {changed ? <Button variant="outline" disabled={pending} onClick={async () => { if (await run({ type: "plan.update", id: entry.id, day, meal, servings }, { title: text.planChanged })) onClose(); }}>{text.saveChanges}</Button> : null}
