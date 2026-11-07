@@ -1,5 +1,4 @@
 import { byGroupOrder, addDays, UNSORTED_SECTION } from "@tools-platform/service/kitchen-contract";
-import * as Haptics from "expo-haptics";
 import { BookOpen, CalendarDays, ChevronLeft, ChevronRight, CookingPot, type LucideIcon, Refrigerator, Search, ShoppingBasket, X } from "lucide-react-native";
 import { useFocusEffect } from "expo-router";
 import { Children, createContext, isValidElement, type ReactNode, useCallback, useContext, useEffect, useReducer, useRef, useState } from "react";
@@ -10,6 +9,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { scheduleOnRN } from "react-native-worklets";
 import Svg, { Circle, Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 import { useSync } from "../state";
+import { type Feel, haptic } from "./haptics";
 import type { QueuedAction } from "../sync/model";
 import { type KitchenLanguage, LOCALES, useText } from "./language";
 import { type Colors, FONT, groupColor, ink, type PageKey, RADIUS, tint, useColors } from "./theme";
@@ -84,14 +84,17 @@ export function usePageColor(): { hue: string; ink: string } {
 
 /**
  * A tap target. Android shows the Material ripple and iOS fades the target, so `pressed` in a style function is true
- * only on iOS. `ripple` sets the ripple color on a filled surface.
+ * only on iOS. `ripple` sets the ripple color on a filled surface. Each press vibrates as firm as its `feel`: a checkbox,
+ * radio, or switch toggles, and anything else taps. A `feel` of null does not vibrate.
  */
-export function Press({ style, ripple, ...props }: PressableProps & { ripple?: string }) {
+export function Press({ style, ripple, feel, onPress, ...props }: PressableProps & { ripple?: string; feel?: Feel | null }) {
   const colors = useColors();
   const fade = Platform.OS === "ios";
+  const toggles = props.accessibilityRole === "checkbox" || props.accessibilityRole === "radio" || props.accessibilityRole === "switch";
   return (
     <Pressable android_ripple={{ color: ripple ?? colors.ripple, foreground: true }}
-      style={typeof style === "function" ? (state: PressableStateCallbackType) => style({ ...state, pressed: fade && state.pressed }) : style} {...props} />
+      style={typeof style === "function" ? (state: PressableStateCallbackType) => style({ ...state, pressed: fade && state.pressed }) : style} {...props}
+      onPress={onPress && ((event) => { if (feel !== null) haptic(feel ?? (toggles ? "toggle" : "tap")); onPress(event); })} />
   );
 }
 
@@ -179,7 +182,7 @@ const FAB_ROOM = 96;
 export function FloatingButton({ label, icon: Icon, onPress }: { label: string; icon: LucideIcon; onPress: () => void }) {
   const { hue } = usePageColor();
   return (
-    <Press accessibilityRole="button" accessibilityLabel={label} onPress={onPress} ripple={ON_COLOR_RIPPLE} style={({ pressed }) => [styles.fab, { backgroundColor: hue, opacity: pressed ? 0.85 : 1 }]}>
+    <Press accessibilityRole="button" accessibilityLabel={label} onPress={onPress} feel="firm" ripple={ON_COLOR_RIPPLE} style={({ pressed }) => [styles.fab, { backgroundColor: hue, opacity: pressed ? 0.85 : 1 }]}>
       <Icon size={22} color="#ffffff" />
       <T weight="semibold" style={{ color: "#ffffff", fontSize: 16 }}>{label}</T>
     </Press>
@@ -192,7 +195,7 @@ export function ToolbarButton({ label, icon: Icon, onPress, tone = "primary" }: 
   const { hue } = usePageColor();
   const look = buttonLook(tone, colors, hue);
   return (
-    <Press accessibilityRole="button" accessibilityLabel={label} onPress={onPress} ripple={tone === "primary" ? ON_COLOR_RIPPLE : undefined}
+    <Press accessibilityRole="button" accessibilityLabel={label} onPress={onPress} feel={tone === "primary" ? "firm" : "tap"} ripple={tone === "primary" ? ON_COLOR_RIPPLE : undefined}
       style={({ pressed }) => [styles.toolbarButton, look, pressed && { opacity: 0.8 }]}>
       <Icon size={20} color={look.color} />
       <T weight="semibold" textBreakStrategy="simple" style={{ color: look.color, fontSize: 16 }}>{label}</T>
@@ -217,11 +220,6 @@ export function WeekNav({ canGoBack, onStep }: { canGoBack: boolean; onStep: (st
       })}
     </View>
   );
-}
-
-export function haptic(kind: "threshold" | "hold") {
-  if (Platform.OS === "android") void Haptics.performAndroidHapticsAsync(kind === "hold" ? Haptics.AndroidHaptics.Long_Press : Haptics.AndroidHaptics.Segment_Tick);
-  else void (kind === "hold" ? Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium) : Haptics.selectionAsync());
 }
 
 export type Notice = Readonly<{ message: string; undo?: readonly QueuedAction[] }>;
@@ -358,6 +356,7 @@ export function Button({ label, onPress, tone = "primary", icon: Icon, disabled,
       hitSlop={compact ? 4 : undefined}
       onPress={onPress}
       ripple={tone === "primary" && !disabled ? ON_COLOR_RIPPLE : undefined}
+      feel={tone === "primary" ? "firm" : tone === "destructive" ? "warn" : "tap"}
       style={({ pressed }) => [styles.button, wide && styles.wide, compact && { height: 40, paddingHorizontal: label ? 12 : 0, width: label ? undefined : 40 }, look, pressed && { opacity: 0.8 }]}
     >
       {Icon ? <Icon size={18} color={look.color} /> : null}

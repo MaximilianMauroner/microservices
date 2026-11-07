@@ -9,6 +9,7 @@ import { kitchenApi } from "./sync/api";
 import { createSyncEngine, type SyncEngine, type SyncState } from "./sync/engine";
 import type { QueuedAction } from "./sync/model";
 import { project } from "./sync/project";
+import { HapticsContext, parseStrength, setStrength, type Strength } from "./ui/haptics";
 import { type KitchenLanguage, LanguageContext, pickLanguage } from "./ui/language";
 
 const engine: SyncEngine = createSyncEngine({ vault, api: kitchenApi, project, newId: () => Crypto.randomUUID(), isSignedOut: (error) => error instanceof SignedOut, isOffline: (error) => error instanceof Offline });
@@ -30,6 +31,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session>("loading");
   const [kitchenId, setKitchenId] = useState<string | null>(null);
   const [language, setLanguage] = useState<KitchenLanguage>(() => pickLanguage(null));
+  const [strength, setStrengthState] = useState<Strength>("light");
   const state = useSyncExternalStore(engine.subscribe, engine.getState);
 
   /** Opens the stored account. A vault from any other account is deleted first, also after a crash during sign-in. */
@@ -43,9 +45,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       await wipeVault();
       await vault.saveSetting("account", account);
     }
-    const [saved, savedLanguage] = await Promise.all([vault.setting("kitchen"), vault.setting("language")]);
+    const [saved, savedLanguage, savedStrength] = await Promise.all([vault.setting("kitchen"), vault.setting("language"), vault.setting("haptics")]);
     setKitchenId(saved);
     setLanguage(pickLanguage(savedLanguage));
+    setStrength(parseStrength(savedStrength));
+    setStrengthState(parseStrength(savedStrength));
     await engine.load();
     setSession("signed-in");
     void engine.sync();
@@ -104,9 +108,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }), [language]);
 
+  const hapticsValue = useMemo(() => ({
+    strength,
+    setStrength(next: Strength) {
+      setStrength(next);
+      setStrengthState(next);
+      void vault.saveSetting("haptics", next);
+    }
+  }), [strength]);
+
   return (
     <AppContext.Provider value={value}>
-      <LanguageContext.Provider value={languageValue}>{children}</LanguageContext.Provider>
+      <LanguageContext.Provider value={languageValue}><HapticsContext.Provider value={hapticsValue}>{children}</HapticsContext.Provider></LanguageContext.Provider>
     </AppContext.Provider>
   );
 }
