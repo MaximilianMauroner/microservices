@@ -231,7 +231,7 @@ function RecipeEditor({ data: { kitchen, change }, recipe, onDone }: { data: Ope
       <View style={{ gap: 8 }}>
         <T weight="semibold" style={styles.heading}>{text.ingredients}</T>
         <T muted style={{ fontSize: 12 }}>{text.newNames}</T>
-        <LineEditor lines={lines} onLines={setLines} ingredients={kitchen.ingredients} />
+        <LineEditor lines={lines} onLines={setLines} ingredients={kitchen.ingredients} groups={kitchen.kitchen.groups} />
       </View>
       <View style={styles.field}>
         <T weight="semibold">{text.steps}</T>
