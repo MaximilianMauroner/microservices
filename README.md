@@ -9,6 +9,7 @@ TanStack Start monolith whose products live directly beneath `services/tools`.
 | Service | Path | Runtime | Purpose |
 | --- | --- | --- | --- |
 | Tools | `services/tools` | Railway, Node.js | Authenticated product monolith and product-owned scheduled work. |
+| Pantrino | `services/pantrino` | iOS and Android, Expo EAS | iOS and Android app for the Kitchen product. It syncs with Tools through its own bearer-token API. |
 | Network Console | `services/network-console` | Local VM, Node.js | Private network and listening-port dashboard. |
 
 Tools contains the Dashboard, Status, Publisher, Money, Feedback, Kitchen, and
