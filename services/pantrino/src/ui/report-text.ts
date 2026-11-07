@@ -21,6 +21,7 @@ const en = {
   offline: "You are offline. Connect to the internet and send it again.",
   failed: "The report could not be sent. Try again.",
   timeout: "Tools did not answer. Try again in a moment.",
+  authFailed: "Your sign-in has expired. Sign in again, or send it anonymously.",
   rateLimited: "You sent many reports in a short time. Wait 10 minutes and send it again.",
   rejections: {
     unknown_app: "This version of Pantrino cannot send reports. Update the app.",
@@ -51,6 +52,7 @@ export const TEXT: Record<KitchenLanguage, typeof en> = {
     offline: "Du bist offline. Verbinde dich mit dem Internet und sende sie noch einmal.",
     failed: "Die Meldung konnte nicht gesendet werden. Versuche es erneut.",
     timeout: "Tools hat nicht geantwortet. Versuche es gleich noch einmal.",
+    authFailed: "Deine Anmeldung ist abgelaufen. Melde dich erneut an oder sende die Meldung anonym.",
     rateLimited: "Du hast in kurzer Zeit viele Meldungen gesendet. Warte 10 Minuten und sende sie dann noch einmal.",
     rejections: {
       unknown_app: "Diese Pantrino-Version kann keine Meldungen senden. Aktualisiere die App.",
@@ -78,6 +80,7 @@ export function outcomeMessage(outcome: Exclude<ReportOutcome, { kind: "sent" }>
   switch (outcome.kind) {
     case "offline": return text.offline;
     case "timeout": return text.timeout;
+    case "auth-failed": return text.authFailed;
     case "rate-limited": return text.rateLimited;
     case "rejected": return text.rejections[outcome.reason];
     case "failed": return text.failed;

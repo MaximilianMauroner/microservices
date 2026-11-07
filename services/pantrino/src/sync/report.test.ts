@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const tokens = { current: "token-1", refreshed: "token-2" };
+const tokens = { current: "token-1", refreshed: "token-2", next: undefined as undefined | (() => Promise<string>) };
 vi.mock("react-native", () => ({ Platform: { OS: "ios", Version: "26.1" } }));
 vi.mock("expo-constants", () => ({ default: { expoConfig: { version: "1.2.0" } } }));
 vi.mock("../auth/session", () => ({
   TOOLS_ORIGIN: "https://tools.test",
   currentSession: () => 1,
-  accessToken: async (_session: number, stale?: string) => (stale ? tokens.refreshed : tokens.current),
+  accessToken: async (_session: number, stale?: string) => (tokens.next ? tokens.next() : stale ? tokens.refreshed : tokens.current),
   Offline: class extends Error {},
   SignedOut: class extends Error {}
 }));
@@ -26,7 +26,7 @@ function answer(...responses: (Response | Error | "hang")[]) {
 }
 const report = { kind: "bug" as const, message: "Sync hangs", page: "/kitchen", contactEmail: "guest@example.com" };
 
-beforeEach(() => { calls = []; });
+beforeEach(() => { calls = []; tokens.next = undefined; });
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 describe("sending a report", () => {
@@ -75,5 +75,49 @@ describe("checking a report before it is sent", () => {
     expect(checkReport({ ...report, message: "  " })).toBe("empty_message");
     expect(checkReport({ ...report, details: "x".repeat(4001) })).toBe("details_too_long");
     expect(checkReport({ ...report, contactEmail: "not-an-email" })).toBe("invalid_email");
+  });
+});
+
+describe("a report with the sender's name", () => {
+  const hang = () => new Promise<string>(() => undefined);
+
+  it("is not sent at all when no token can be had, never sent anonymously instead", async () => {
+    answer(new Response("{}", { status: 201 }));
+    tokens.next = () => Promise.reject(new Error("refresh token revoked"));
+    expect(await sendReport(report, true)).toEqual({ kind: "auth-failed" });
+    expect(calls).toEqual([]);
+    expect(outcomeMessage({ kind: "auth-failed" }, TEXT.de)).toBe("Deine Anmeldung ist abgelaufen. Melde dich erneut an oder sende die Meldung anonym.");
+  });
+
+  it("gives up when Tools refuses the fresh token too", async () => {
+    answer(new Response("{}", { status: 401 }), new Response("{}", { status: 401 }));
+    expect(await sendReport(report, true)).toEqual({ kind: "auth-failed" });
+    expect(calls).toHaveLength(2);
+  });
+
+  it("times out when getting the token hangs", async () => {
+    vi.useFakeTimers();
+    answer(new Response("{}", { status: 201 }));
+    tokens.next = hang;
+    const pending = sendReport(report, true);
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(await pending).toEqual({ kind: "timeout" });
+    expect(calls).toEqual([]);
+  });
+
+  it("keeps one 15-second deadline across a refresh after a 401", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", (url: string, init: RequestInit) => {
+      calls.push({ url, init });
+      return new Promise((resolve) => setTimeout(() => resolve(new Response("{}", { status: 401 })), 10_000));
+    });
+    let refreshed: (token: string) => void = () => undefined;
+    tokens.next = () => (calls.length ? new Promise<string>((resolve) => { refreshed = resolve; }) : Promise.resolve("token-1"));
+    const pending = sendReport(report, true);
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(await pending).toEqual({ kind: "timeout" });
+    refreshed("token-late");
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(calls).toHaveLength(1);
   });
 });
