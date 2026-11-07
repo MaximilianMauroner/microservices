@@ -6,7 +6,8 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const en = {
   title: "Report a problem or idea",
-  description: "The developer reads every report. The app version and phone type are sent with it.",
+  description: "The developer reads every report. The app version and system version are sent with it.",
+  anonymous: "Send anonymously, without your name and email",
   bug: "Problem",
   feature: "Idea",
   bugPrompt: "What went wrong? What did you expect?",
@@ -35,7 +36,8 @@ export const TEXT: Record<KitchenLanguage, typeof en> = {
   en,
   de: {
     title: "Problem oder Idee melden",
-    description: "Der Entwickler liest jede Meldung. Die App-Version und der Telefontyp werden mitgesendet.",
+    description: "Der Entwickler liest jede Meldung. Die App-Version und die Systemversion werden mitgesendet.",
+    anonymous: "Anonym senden, ohne deinen Namen und deine E-Mail",
     bug: "Problem",
     feature: "Idee",
     bugPrompt: "Was ist schiefgegangen? Was hast du erwartet?",

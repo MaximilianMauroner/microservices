@@ -1,4 +1,4 @@
-export const REPORT_APPS = { tools: "Tools", pantrino: "Pantrino", dotally: "Dotally" } as const;
+export const REPORT_APPS = { tools: "Tools", pantrino: "Pantrino", dotally: "Dotally", "zen-mode": "Zen Mode", moodinator: "Moodinator" } as const;
 export type ReportApp = keyof typeof REPORT_APPS;
 export const DEV_FEEDBACK_KINDS = ["bug", "feature"] as const;
 export type DevFeedbackKind = (typeof DEV_FEEDBACK_KINDS)[number];
