@@ -10,6 +10,7 @@ import { createSealer } from "../../../platform/security/sealed.js";
 import type { FoodEntry, WeightReading } from "../../../products/bodyshop/domain.js";
 import { entryNutrients } from "../../../products/bodyshop/model/day.js";
 import { registerBodyshopTools } from "../../../products/bodyshop/mcp-tools.js";
+import { handleBodyshopActions, handleBodyshopToday } from "../../../products/bodyshop/app.js";
 import { type BodyshopStore, bodyshopStore } from "../../../products/bodyshop/repository.js";
 import { commitImport, correctEntry, dayView, logFood, logMeal, logWeight, previewImport, progress, removeRecord, saveFood, updateProfile, updateSettings } from "../../../products/bodyshop/service.js";
 import { requireLoopbackPostgres } from "../../harness/postgres.ts";
@@ -297,3 +298,27 @@ async function connect(store: BodyshopStore, principal: PlatformPrincipal) {
   }));
   return client;
 }
+
+describe.skipIf(!store)("Bodyshop app API", () => {
+  const person: PlatformPrincipal = { role: "member", subject: "app-person", email: "app@example.test", products: ["bodyshop"] };
+  const act = (body: unknown) => handleBodyshopActions(new Request("https://tools.example.test/api/bodyshop/app/actions", { method: "POST", body: JSON.stringify(body) }), async () => person, store!);
+
+  it("logs a food estimate from the app and answers with the day after it, once also when the app sends it again", async () => {
+    const action = { type: "food.log", day: "2026-11-03", items: [{ food: "Linsencurry", meal: "Dinner", amount: 1, unit: "serving", nutrients: { kcal: 520, protein: 24 } }] };
+    const first = await act({ action, day: "2026-11-03" });
+    expect(first.status).toBe(200);
+    const { snapshot } = await first.json();
+    expect(snapshot.day).toBe("2026-11-03");
+    expect(snapshot.entries.map((one: FoodEntry) => one.food)).toEqual(["Linsencurry"]);
+    expect((await (await act({ action, day: "2026-11-03" })).json()).result.repeated, "a retry after a lost answer logs nothing twice").toBe(1);
+  });
+
+  it("answers a Bodyshop rule with its message, and reads a day with every saved food", async () => {
+    const missing = await act({ action: { type: "food.log", day: "2026-11-03", items: [{ food: "Unbekannt", meal: "Lunch", amount: 100 }] } });
+    expect(missing.status).toBe(404);
+    expect((await missing.json()).message).toContain("No saved food");
+    await saveFood(store!.owner(person.subject), { name: "Skyr", amount: 100, unit: "g", nutrients: { kcal: 63, protein: 11 } });
+    const today = await handleBodyshopToday(new Request("https://tools.example.test/api/bodyshop/app/today?day=2026-11-03"), async () => person, store!);
+    expect((await today.json()).foods).toMatchObject([{ name: "Skyr", nutrients: { kcal: 63, protein: 11 } }]);
+  });
+});

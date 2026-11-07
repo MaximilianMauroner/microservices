@@ -1,5 +1,5 @@
 import type { PlatformPrincipal } from "#security";
-import { principalSeesProduct } from "../../platform/access/product-access.js";
+import { asAppProduct, type AppTokenResolver } from "../../platform/app-api.js";
 import { addDays, type Ingredient, type Kitchen, type Leftover, type PlanEntry, type Recipe, type StockItem, type StoredExtra, today, weekStart } from "./domain.js";
 import { applyAppActions, appActionBatch } from "./actions.js";
 import type { KitchenCatalog } from "./catalog.js";
@@ -38,22 +38,12 @@ export async function kitchenSync(store: KitchenStore, who: PlatformPrincipal, n
   return { today: day, planFrom, kitchens };
 }
 
-type AppTokenResolver = (request: Request) => Promise<PlatformPrincipal | undefined>;
-
-/** Only a Kitchen app token opens the app API; a cookie or an MCP token does not. */
-async function asKitchenApp(request: Request, resolveAppToken: AppTokenResolver, serve: (who: PlatformPrincipal) => Promise<Response>): Promise<Response> {
-  const principal = await resolveAppToken(request);
-  if (!principal) return Response.json({ error: "invalid_token" }, { status: 401, headers: { "Cache-Control": "no-store", "WWW-Authenticate": "Bearer" } });
-  if (!principalSeesProduct(principal, "kitchen")) return Response.json({ error: "forbidden" }, { status: 403, headers: { "Cache-Control": "no-store" } });
-  return serve(principal);
-}
-
 export function handleKitchenSync(request: Request, resolveAppToken: AppTokenResolver, store: KitchenStore): Promise<Response> {
-  return asKitchenApp(request, resolveAppToken, async (who) => Response.json(await kitchenSync(store, who), { headers: { "Cache-Control": "no-store" } }));
+  return asAppProduct(request, resolveAppToken, "kitchen", async (who) => Response.json(await kitchenSync(store, who), { headers: { "Cache-Control": "no-store" } }));
 }
 
 export function handleKitchenCatalog(request: Request, resolveAppToken: AppTokenResolver, catalog: KitchenCatalog): Promise<Response> {
-  return asKitchenApp(request, resolveAppToken, async () => {
+  return asAppProduct(request, resolveAppToken, "kitchen", async () => {
     const params = new URL(request.url).searchParams;
     const barcode = params.get("code");
     const products = barcode === null ? await catalog.search((params.get("q") ?? "").slice(0, 100)) : [await catalog.lookup(barcode)].filter((one) => one !== undefined);
@@ -62,7 +52,7 @@ export function handleKitchenCatalog(request: Request, resolveAppToken: AppToken
 }
 
 export function handleKitchenActions(request: Request, resolveAppToken: AppTokenResolver, store: KitchenStore): Promise<Response> {
-  return asKitchenApp(request, resolveAppToken, async (who) => {
+  return asAppProduct(request, resolveAppToken, "kitchen", async (who) => {
     let body: unknown;
     try {
       const bytes = await readBoundedBody(request, MAX_ACTIONS_BODY_BYTES);
