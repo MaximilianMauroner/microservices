@@ -2,7 +2,7 @@
 
 Tools is one TanStack Start monolith deployed as a single Railway service. Its
 products live under `services/tools/products`: Dashboard, Status, Publisher,
-Money, Feedback, Document Share, and Kitchen. They share authentication,
+Money, Forms, Document Share, and Kitchen. They share authentication,
 configuration, lifecycle, health checks, and deployment.
 
 Status work runs in a dedicated bounded Railway cron process. The main Tools
