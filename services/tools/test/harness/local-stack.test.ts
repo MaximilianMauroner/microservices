@@ -763,7 +763,8 @@ describe("owned local stack", () => {
       if (spec.command === "cp") await mkdir(join(spec.args[2]!, "server"), { recursive: true });
       if (!spec.log.endsWith("-postgres-migrate.log")) return undefined;
       password = new URL(spec.env!.DATABASE_URL!).password;
-      const output = `migration prelude ${"x".repeat(8_500)} END_NEAR_TAIL_MARKER\nMigration failure detail contains ${password}\n`;
+      const coloredPassword = `${password.slice(0, 16)}\u001b[31m${password.slice(16)}\u001b[0m`;
+      const output = `migration prelude ${"x".repeat(8_500)} END_NEAR_TAIL_MARKER\nMigration failure detail contains ${coloredPassword}\n`;
       expect(Buffer.byteLength(output)).toBeGreaterThan(8_192);
       await writeFile(spec.log, output);
       return failed(spec);

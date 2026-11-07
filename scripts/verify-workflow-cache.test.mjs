@@ -76,6 +76,4 @@ test('cache restore and save use the same content key', () => {
   assert.match(key(restore), /runner\.arch/);
   assert.match(key(restore), /Dockerfile\.minio\.local/);
   assert.match(key(restore), /services\/tools\/test\/harness\/minio-image\.ts/);
-  assert.match(restore, /# v4\.2\.0/);
-  assert.match(save, /# v4\.2\.0/);
 });

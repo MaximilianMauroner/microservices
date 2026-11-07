@@ -236,8 +236,8 @@ async function commandFailureExcerpt(path: string, redact: (text: string) => str
       const boundary = excerpt.indexOf("\n");
       excerpt = boundary < 0 ? "" : excerpt.slice(boundary + 1);
     }
+    excerpt = excerpt.replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "");
     excerpt = redactFixture(redact(excerpt), env)
-      .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "")
       .replace(/\b(Bearer\s+)[^\s,;]+/gi, "$1[redacted]")
       .replace(/\b(password|secret|token|api[_-]?key)(\s*[:=]\s*)([^\s,;]+)/gi, "$1$2[redacted]");
     return excerpt.split(/\r?\n/).filter((line) => line.trim()).slice(-12).join("\n").slice(-1_500) || undefined;
