@@ -5,6 +5,7 @@ import type { Vault } from "../storage/vault";
 
 /** What the screens read: the server snapshot with the unconfirmed changes applied on top. */
 export type SyncState = Readonly<{
+  mode: "inactive" | "account" | "local";
   view: KitchenSync | null;
   pending: number;
   notices: readonly SyncNotice[];
@@ -30,7 +31,7 @@ const SETTLE_MS = 1000;
 /** The longest a change waits while taps keep coming. */
 const MAX_WAIT_MS = 5000;
 
-const INITIAL: SyncState = { view: null, pending: 0, notices: [], status: { kind: "idle", syncedAt: null }, signedOut: false };
+export const INITIAL: SyncState = { mode: "inactive", view: null, pending: 0, notices: [], status: { kind: "idle", syncedAt: null }, signedOut: false };
 
 /**
  * Keeps the local copy and the server in step. A sync sends the outbox in order, then replaces the snapshot.
@@ -137,7 +138,7 @@ export function createSyncEngine({ vault, api, project, newId, isSignedOut, isOf
       if (mine !== epoch) return;
       snapshot = saved;
       outbox = [];
-      await reload(mine);
+      await reload(mine, { mode: "account" });
     },
     sync(): Promise<void> {
       if (stopped) return Promise.resolve();
@@ -212,7 +213,7 @@ export function createSyncEngine({ vault, api, project, newId, isSignedOut, isOf
 export type SyncEngine = ReturnType<typeof createSyncEngine>;
 
 /** A new item gets its ID on the phone, so later offline changes can name it and the server keeps the same ID. */
-function withCreateId(action: QueuedAction, newId: () => string): QueuedAction {
+export function withCreateId(action: QueuedAction, newId: () => string): QueuedAction {
   if (action.type === "plan.cook") return action.leftover && !action.leftover.createId ? { ...action, leftover: { ...action.leftover, createId: newId() } } : action;
   const creates = action.type === "plan.add" || action.type === "leftover.add" || action.type === "extra.add"
     || ((action.type === "ingredient.save" || action.type === "recipe.save") && !action.id);
