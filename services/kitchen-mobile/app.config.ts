@@ -12,7 +12,7 @@ const config: ExpoConfig = {
   orientation: "portrait",
   icon: "./assets/icon.png",
   userInterfaceStyle: "automatic",
-  ios: { bundleIdentifier: "com.lab4code.pantrino", supportsTablet: false, config: { usesNonExemptEncryption: false } },
+  ios: { bundleIdentifier: "com.lab4code.pantrino", supportsTablet: true, config: { usesNonExemptEncryption: false } },
   android: {
     package: "com.lab4code.pantrino",
     allowBackup: false,
