@@ -24,6 +24,7 @@ export function SendFeedbackButton() {
   const [kind, setKind] = useState<DevFeedbackKind>("bug");
   const [message, setMessage] = useState("");
   const [details, setDetails] = useState("");
+  const [anonymous, setAnonymous] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
 
@@ -31,7 +32,7 @@ export function SendFeedbackButton() {
     event.preventDefault();
     setBusy(true); setError(undefined);
     try {
-      await sendDevFeedback({ data: { kind, message, details, page } });
+      await sendDevFeedback({ data: { kind, message, details, page, anonymous } });
       setOpen(false); setMessage(""); setDetails(""); sidebar.setOpenMobile(false);
       toast.add({ title: "Report sent", description: "Thanks. The developer reads every report.", type: "success" });
     } catch (caught) { setError(caught instanceof Error ? caught.message : "The report could not be sent. Try again."); }
@@ -60,6 +61,7 @@ export function SendFeedbackButton() {
           </div>
           <Textarea aria-label="Message" value={message} onChange={(event) => setMessage(event.target.value)} placeholder={current.prompt} maxLength={4000} rows={5} className="min-h-28" required autoFocus />
           <Textarea aria-label={current.details} value={details} onChange={(event) => setDetails(event.target.value)} placeholder={current.details} maxLength={4000} rows={3} />
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="size-4 accent-primary" checked={anonymous} onChange={(event) => setAnonymous(event.target.checked)} />Send anonymously, without your name and email</label>
           <p className="truncate text-xs text-muted-foreground">Page: <span className="font-mono">{page}</span></p>
           {error ? <p className="text-sm text-destructive" role="alert">{error}</p> : null}
           <DialogFooter>

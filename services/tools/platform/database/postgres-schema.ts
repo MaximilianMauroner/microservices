@@ -731,7 +731,7 @@ export const devFeedback = toolsSchema.table("dev_feedback", {
   state: text("state").notNull().default("open"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
 }, (table) => [
-  check("dev_feedback_app_check", sql`${table.app} in ('tools', 'pantrino', 'dotally')`),
+  check("dev_feedback_app_check", sql`${table.app} in ('tools', 'pantrino', 'dotally', 'zen-mode', 'moodinator')`),
   check("dev_feedback_kind_check", sql`${table.kind} in ('bug', 'feature')`),
   check("dev_feedback_state_check", sql`${table.state} in ('open', 'tracked', 'done')`),
   index("dev_feedback_created_idx").on(table.createdAt),

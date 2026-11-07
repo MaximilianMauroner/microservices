@@ -2,7 +2,7 @@ import type { PlatformPrincipal } from "#security";
 import { readBoundedBody, RequestBodyTooLargeError } from "../request-body.js";
 import { clientAddress, createRateLimit } from "../security/rate-limit.js";
 import type { DevFeedbackRepository } from "./dev-feedback.js";
-import { parseDevFeedback } from "./report.js";
+import { parseDevFeedback, ReportRejected } from "./report.js";
 
 /** Fits every field at its character limit, even when each character is escaped in JSON. */
 const MAX_BODY_BYTES = 64 * 1024;
@@ -38,7 +38,8 @@ export async function handleReportSubmission(request: Request, resolveAppToken: 
   try {
     input = parseDevFeedback({ app: body.app, kind: body.kind, message: body.message, details: body.details, page: body.page, context: body.context, contactEmail: principal ? undefined : body.contactEmail });
   } catch (error) {
-    return reply(400, { error: "invalid_request", message: error instanceof Error ? error.message : "Invalid report." });
+    if (error instanceof ReportRejected) return reply(400, { error: "invalid_request", reason: error.reason });
+    throw error;
   }
   await reports.send(input, principal ? { subject: principal.subject, email: principal.email } : undefined);
   return reply(201, { ok: true });
