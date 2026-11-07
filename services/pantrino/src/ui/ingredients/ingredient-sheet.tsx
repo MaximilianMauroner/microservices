@@ -1,4 +1,4 @@
-import { ingredientGroups, INGREDIENT_UNITS, isCountedUnit, unitName, UNSORTED_SECTION, type CatalogProduct, type Ingredient, type KitchenSnapshot } from "@tools-platform/service/kitchen-contract";
+import { ingredientGroups, INGREDIENT_UNITS, isCountedUnit, unitName, UNSORTED_SECTION, type Ingredient, type KitchenSnapshot } from "@tools-platform/service/kitchen-contract";
 import { Plus, ScanBarcode, X } from "lucide-react-native";
 import { useState } from "react";
 import { StyleSheet, View } from "react-native";
@@ -6,7 +6,7 @@ import type { OpenKitchen } from "../../state";
 import { Button, byGroup, Field, GroupDot, groupLabel, Press, Sheet, T, usePageColor } from "../kit";
 import { useLanguage, useText } from "../language";
 import { useColors } from "../theme";
-import { BarcodeScanner } from "./barcode-scanner";
+import { type ScanResult, Scanner } from "../scan/scanner";
 import { CatalogProducts } from "./catalog-products";
 import { changeSize, conversionUnits, ingredientDraft, ingredientSave, NUTRIENTS, nutritionFields, withGroup, withProduct, withScan, withUnit } from "./model";
 import { RecipeUses } from "./recipe-uses";
@@ -31,11 +31,13 @@ export function IngredientSheet({ existing, newName, kitchen, change, onClose }:
   const nutrientLabel = { kcal: text.calories, protein: text.protein, carbs: text.carbs, fat: text.fat };
   const per = isCountedUnit(draft.unit) ? text.perOne(unitName(draft.unit, language, 1)) : text.per100(draft.unit);
 
-  function fillFrom(product: CatalogProduct) {
-    const scan = withScan(draft, existing, product, language);
+  function fillFrom(found: ScanResult) {
+    const scanned = found.kind === "product" ? found.product : { unit: found.unit, nutrition: found.values };
+    const scan = withScan(draft, existing, scanned, language);
     setDraft(scan.draft);
-    if (!existing) setPickedName(product.name);
-    setScanned(scan.result === "filled" ? text.scanFilled(product.brand ? `${product.brand} ${product.name}` : product.name) : text.scanOtherUnit(product.unit));
+    if (!existing && found.kind === "product") setPickedName(found.product.name);
+    const from = found.kind === "product" ? text.scanFilled(found.product.brand ? `${found.product.brand} ${found.product.name}` : found.product.name) : text.labelFilled;
+    setScanned(scan.result === "filled" ? from : text.scanOtherUnit(scanned.unit));
   }
 
   function save() {
@@ -104,7 +106,7 @@ export function IngredientSheet({ existing, newName, kitchen, change, onClose }:
         {scanned ? <T accessibilityRole="alert" style={[styles.hint, { color: colors.foreground }]}>{scanned}</T> : null}
         <T muted style={styles.hint}>{text.leaveEmpty}</T>
       </View>
-      {scanning ? <BarcodeScanner onProduct={fillFrom} onClose={() => setScanning(false)} /> : null}
+      {scanning ? <Scanner onResult={fillFrom} onClose={() => setScanning(false)} /> : null}
       <View style={styles.field}>
         <T weight="medium">{text.notes}</T>
         <Field accessibilityLabel={text.notes} multiline value={draft.notes} onChangeText={(notes) => setDraft((current) => ({ ...current, notes }))} placeholder={text.notesPlaceholder} maxLength={4000} style={{ minHeight: 88, paddingVertical: 12, textAlignVertical: "top" }} />

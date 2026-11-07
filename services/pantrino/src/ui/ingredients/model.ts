@@ -85,19 +85,21 @@ export function ingredientSave(draft: IngredientDraft, existing: Ingredient | un
 
 /** The draft filled in from a packaged product: its name, its unit, and its nutrition per 100 g or 100 ml. */
 export function withProduct(draft: IngredientDraft, product: CatalogProduct, language: "en" | "de"): IngredientDraft {
-  return { ...withUnit(draft, product.unit, language), name: product.name, size: "", values: nutritionFields(product.nutrition, language) };
+  return withScan(draft, undefined, product, language).draft;
 }
 
+/** Nutrition per 100 g or 100 ml from a scan: a catalog product has a name, a photographed table does not. */
+export type Scanned = Readonly<{ name?: string; unit: "g" | "ml"; nutrition: Nutrition }>;
+
 /**
- * The draft after a scanned product. A new ingredient takes the product's name, unit, and nutrition. A saved ingredient
- * keeps its name and takes only the nutrition, and only when it counts in the product's unit, because the product's
- * values are per 100 g or 100 ml.
+ * The draft after a scan. A new ingredient takes the unit and the nutrition, and the name only from a catalog product.
+ * A saved ingredient keeps its name and takes only the nutrition, and only when it counts in the scanned unit.
  */
-export function withScan(draft: IngredientDraft, existing: Ingredient | undefined, product: CatalogProduct, language: "en" | "de"):
+export function withScan(draft: IngredientDraft, existing: Ingredient | undefined, scanned: Scanned, language: "en" | "de"):
   { draft: IngredientDraft; result: "filled" | "otherUnit" } {
-  if (!existing) return { draft: withProduct(draft, product, language), result: "filled" };
-  if (draft.unit !== product.unit) return { draft, result: "otherUnit" };
-  return { draft: { ...draft, values: nutritionFields(product.nutrition, language) }, result: "filled" };
+  if (!existing) return { draft: { ...withUnit(draft, scanned.unit, language), name: scanned.name ?? draft.name, size: "", values: nutritionFields(scanned.nutrition, language) }, result: "filled" };
+  if (draft.unit !== scanned.unit) return { draft, result: "otherUnit" };
+  return { draft: { ...draft, values: nutritionFields(scanned.nutrition, language) }, result: "filled" };
 }
 
 /** The amount a quick add to a recipe starts with, so one tap is enough for the usual case. */
