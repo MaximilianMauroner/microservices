@@ -1,8 +1,8 @@
 import { CATALOG_SOURCE_NAMES, formatNumber, type CatalogProduct } from "@tools-platform/service/kitchen-contract";
 import { useEffect, useState } from "react";
-import { Linking, Pressable, View } from "react-native";
+import { Linking, View } from "react-native";
 import { searchCatalog } from "../../sync/api";
-import { T } from "../kit";
+import { Press, T } from "../kit";
 import { useLanguage, useText } from "../language";
 import { useColors } from "../theme";
 import { TEXT } from "./text";
@@ -29,18 +29,18 @@ export function CatalogProducts({ query, onPick }: { query: string; onPick: (pro
       <T muted weight="medium" style={{ fontSize: 12 }}>{text.fromProduct}</T>
       <View style={{ borderRadius: 16, borderWidth: 1, borderColor: colors.controlBorder, backgroundColor: colors.control, overflow: "hidden" }}>
         {products.map((product, index) => (
-          <Pressable key={product.code} accessibilityRole="button" onPress={() => onPick(product)}
+          <Press key={product.code} accessibilityRole="button" onPress={() => onPick(product)}
             style={({ pressed }) => ({ minHeight: 48, justifyContent: "center", gap: 2, paddingHorizontal: 12, paddingVertical: 8, borderTopWidth: index ? 1 : 0, borderTopColor: colors.controlBorder, backgroundColor: pressed ? colors.muted : "transparent" })}>
             <T weight="medium" style={{ fontSize: 14 }}>{product.name}</T>
             <T muted style={{ fontSize: 12 }}>
               {[product.brand, product.quantity, product.nutrition.kcal !== null ? `${formatNumber(product.nutrition.kcal, language)} ${text.kcal} ${text.per100(product.unit)}` : "", CATALOG_SOURCE_NAMES[product.source]].filter(Boolean).join(" · ")}
             </T>
-          </Pressable>
+          </Press>
         ))}
       </View>
-      <Pressable accessibilityRole="link" onPress={() => void Linking.openURL("https://world.openfoodfacts.org")}>
+      <Press accessibilityRole="link" onPress={() => void Linking.openURL("https://world.openfoodfacts.org")}>
         <T muted style={{ fontSize: 12, textDecorationLine: "underline" }}>{text.catalogSource}</T>
-      </Pressable>
+      </Press>
     </View>
   );
 }
