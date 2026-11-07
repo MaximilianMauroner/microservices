@@ -31,7 +31,8 @@ const config: ExpoConfig = {
     "expo-font"
   ],
   experiments: { typedRoutes: true },
-  extra: { toolsOrigin }
+  owner: "thearizztokrat",
+  extra: { toolsOrigin, eas: { projectId: "4553acd7-e463-4e83-845d-287fd515b542" } }
 };
 
 export default config;
