@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute, redirect, useLocation } from "@tanstack/react-router";
 import { getCurrentPrincipal } from "../../platform/auth/session.js";
 import { favicons } from "../../platform/ui/favicons.js";
 import { Button } from "../../platform/ui/components/ui/button.js";
 import { authClient } from "../../platform/auth/auth-client.js";
 import { safeReturnPath, type SignInReason } from "../../platform/auth/return-path.js";
+import { signInFlow } from "../../platform/auth/sign-in-flow.js";
 
 type SignInSearch = {
   returnTo: string;
@@ -12,7 +13,6 @@ type SignInSearch = {
   error?: string;
 };
 
-/** An OAuth authorize redirect signs its query, and the auth client sends it back with the sign-in. */
 function oauthQuery(search: Record<string, unknown>) {
   if (typeof search.sig !== "string") return {};
   return Object.fromEntries(Object.entries(search).filter(([, value]) => typeof value === "string" || Array.isArray(value)));
@@ -27,9 +27,10 @@ export const Route = createFileRoute("/sign-in")({
       : {}),
     ...(typeof search.error === "string" ? { error: search.error } : {})
   }),
-  beforeLoad: async ({ search }) => {
-    if (await getCurrentPrincipal()) {
-      throw redirect({ href: search.returnTo });
+  beforeLoad: async ({ location }) => {
+    const { authenticatedRedirect } = signInFlow(location.searchStr);
+    if (authenticatedRedirect && await getCurrentPrincipal()) {
+      throw redirect({ href: authenticatedRedirect });
     }
   },
   head: () => ({
@@ -44,6 +45,7 @@ export const Route = createFileRoute("/sign-in")({
 
 function SignInRoute() {
   const search = Route.useSearch();
+  const searchStr = useLocation({ select: (location) => location.searchStr });
   const [submitting, setSubmitting] = useState(false);
   const unauthorized = search.error?.toLowerCase().includes("account_not_allowed") ||
     search.error?.toLowerCase().includes("forbidden") ||
@@ -52,10 +54,11 @@ function SignInRoute() {
 
   async function signIn() {
     setSubmitting(true);
+    const { callbackURL, errorCallbackURL } = signInFlow(searchStr);
     const result = await authClient.signIn.social({
       provider: "google",
-      callbackURL: search.returnTo,
-      errorCallbackURL: `/sign-in?returnTo=${encodeURIComponent(search.returnTo)}`
+      callbackURL,
+      errorCallbackURL
     });
     if (result.error) setSubmitting(false);
   }
