@@ -131,6 +131,11 @@ describe("ingredient from a scanned barcode", () => {
     expect(result.action).toMatchObject({ id: "tomato", name: "Tomato", unit: "g", kcal: 36, protein: 1.6, carbs: 5.4, fat: 0.2 });
   });
 
+  it("takes the unit and nutrition of a photographed table but keeps the typed name, since a table is not a product", () => {
+    const scan = withScan(ingredientDraft(undefined, "Hafermilch", "de"), undefined, { unit: "ml", nutrition: { kcal: 46, protein: 1, carbs: 6.7, fat: 1.5 } }, "de");
+    expect(scan.draft).toMatchObject({ name: "Hafermilch", unit: "ml", values: { kcal: "46", carbs: "6,7" } });
+  });
+
   it("leaves a saved ingredient in another unit as it was, since values per 100 g do not fit a can", () => {
     const can = ingredientDraft({ ...ingredient, unit: "can" }, "", "en");
     expect(withScan(can, { ...ingredient, unit: "can" }, passata, "en")).toEqual({ draft: can, result: "otherUnit" });
