@@ -5,24 +5,43 @@ import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { CommandExecutor, CommandOutcome } from "./commands.ts";
+import type { MinioImage } from "./minio-image.ts";
 import { rejectInheritedDataEndpoints } from "./postgres.ts";
 import { VerificationBlocked } from "./receipt.ts";
 
 type Environment = Readonly<Record<string, string | undefined>>;
 type ComposePort = { target: number; published?: string; host_ip?: string; protocol?: string };
-type ComposeService = { environment?: Record<string, string>; ports?: ComposePort[]; container_name?: string; image?: string; build?: { tags?: string[] } };
+type ComposeMount = { type?: string; source?: string; target?: string };
+type ComposeService = { environment?: Record<string, string>; ports?: ComposePort[]; volumes?: ComposeMount[]; container_name?: string; image?: string; pull_policy?: string; build?: { tags?: string[] } };
 type ComposeConfig = { services: Record<string, ComposeService>; volumes?: Record<string, { name?: string; external?: boolean }> };
 type Binding = Readonly<{ service: string; target: number; port: number }>;
 type Identity = { version: 1; project: string; feedbackKey: string; bindings?: readonly Binding[] };
 export type LocalPrerequisite = Readonly<{ kind: "passed" | "blocked"; reason: string }>;
 export type LocalStackManifest = Readonly<{
+  profile: "journeys";
   project: string;
   directory: string;
   origins: Readonly<{ tools: string; storage: string; storageConsole: string }>;
+  startedServices: readonly ["postgres", "minio"];
   bindings: readonly Binding[];
   volumes: readonly string[];
   prerequisites: Readonly<Record<"config" | "storageHttp" | "publisherBrowser" | "privateOAuth" | "markdownBrowser" | "statusPublication", LocalPrerequisite>>;
 }>;
+export type IdentityStackManifest = Readonly<{
+  profile: "identity-contracts";
+  project: string;
+  directory: string;
+  origins: Readonly<{ test: string; storage: string; storageConsole: string }>;
+  startedServices: readonly ["minio"];
+  postgresFixture: string;
+  bindings: readonly Binding[];
+  volumes: readonly string[];
+  prerequisites: Readonly<Record<"config" | "storageHttp", LocalPrerequisite>>;
+}>;
+export type VerificationStackManifest = LocalStackManifest | IdentityStackManifest;
+export type VerificationStackProfile =
+  | Readonly<{ kind: "journeys"; workspaceBuild?: WorkspaceToolsBuild; minio?: MinioImage }>
+  | Readonly<{ kind: "identity-contracts"; postgresFixture: Readonly<{ name: string; url: string }>; minio?: MinioImage }>;
 export type LocalStackOptions = Readonly<{
   directory: string;
   commands: { work: CommandExecutor; cleanup: CommandExecutor };
@@ -31,6 +50,22 @@ export type LocalStackOptions = Readonly<{
   lifetimeMs: number;
   repository?: string;
 }>;
+
+export type WorkspaceToolsBuild = Readonly<{ outputDirectory: string }>;
+
+type IdentityStackContext = Readonly<{
+  manifest: IdentityStackManifest;
+  environment: Environment;
+  signal: AbortSignal;
+  expiresAt: number;
+}>;
+type JourneysProfile = Extract<VerificationStackProfile, { kind: "journeys" }>;
+type IdentityProfile = Extract<VerificationStackProfile, { kind: "identity-contracts" }>;
+type StackContext<P extends VerificationStackProfile> = P extends { kind: "identity-contracts" }
+  ? IdentityStackContext
+  : Readonly<{ manifest: LocalStackManifest; environment: Environment; signal: AbortSignal; expiresAt: number }>;
+type StackUse<P extends VerificationStackProfile> = (stack: StackContext<P>) => Promise<void>;
+type IdentityStackUse = StackUse<IdentityProfile>;
 
 const repository = fileURLToPath(new URL("../../../../", import.meta.url));
 const checkEntry = fileURLToPath(new URL("./local-stack-check.ts", import.meta.url));
@@ -127,6 +162,14 @@ function decodeCompose(raw: string): ComposeConfig {
   return config;
 }
 
+function referencedVolumes(config: ComposeConfig, services: readonly string[]) {
+  const sources = new Set(services.flatMap((name) => (config.services[name]?.volumes ?? [])
+    .filter((mount) => mount.type === "volume" && mount.source).map((mount) => mount.source!)));
+  return Object.entries(config.volumes ?? {})
+    .filter(([name, volume]) => sources.has(name) || Boolean(volume.name && sources.has(volume.name)))
+    .map(([, volume]) => volume.name ?? "");
+}
+
 function loopbackOrigin(value: string | undefined, name: string) {
   const url = new URL(value ?? "");
   if (url.protocol !== "http:" || url.hostname !== "127.0.0.1" || !url.port
@@ -136,7 +179,21 @@ function loopbackOrigin(value: string | undefined, name: string) {
   return url.origin;
 }
 
-function hostSettings(base: ComposeConfig, bindings: LocalStackManifest["bindings"], key: string, databasePassword = "local"): Environment {
+function requireIdentityPostgres(fixture: IdentityProfile["postgresFixture"]) {
+  let url: URL;
+  try { url = new URL(fixture.url); }
+  catch { throw new SetupError("blocked", "The identity contracts need the owned loopback PostgreSQL fixture."); }
+  if (!/^tools-runtime-[a-f0-9-]{36}$/.test(fixture.name)
+    || !["postgres:", "postgresql:"].includes(url.protocol) || url.hostname !== "127.0.0.1"
+    || !url.port || url.username !== "tools_runtime" || !url.password
+    || url.pathname !== "/tools_runtime_test" || url.search || url.hash) {
+    throw new SetupError("blocked", "The identity contracts need the owned loopback PostgreSQL fixture.");
+  }
+  return fixture.url;
+}
+
+function hostSettings(base: ComposeConfig, bindings: LocalStackManifest["bindings"], key: string,
+  database: Readonly<{ url?: string; password?: string }> = {}): Environment {
   const port = (service: string, target: number) => {
     const value = bindings.find((binding) => binding.service === service && binding.target === target)?.port;
     if (!value) throw new SetupError("blocked", `Compose must publish ${service} port ${target}.`);
@@ -147,7 +204,7 @@ function hostSettings(base: ComposeConfig, bindings: LocalStackManifest["binding
     NODE_ENV: "development", HOST: "127.0.0.1", NITRO_HOST: "127.0.0.1",
     PORT: String(port("platform", 3000)),
     PUBLIC_ORIGIN: `http://127.0.0.1:${port("platform", 3000)}`,
-    DATABASE_URL: `postgres://local:${databasePassword}@127.0.0.1:${port("postgres", 5432)}/postgres`,
+    DATABASE_URL: database.url ?? `postgres://local:${database.password ?? "local"}@127.0.0.1:${port("postgres", 5432)}/postgres`,
     TOOLS_S3_ENDPOINT: `http://127.0.0.1:${port("minio", 9000)}`,
     ARTIFACT_S3_ENDPOINT: `http://127.0.0.1:${port("minio", 9000)}`,
     FEEDBACK_ENCRYPTION_KEY: key,
@@ -164,7 +221,7 @@ function secrets(env: Environment): string[] {
 
 export type LocalStackResult = Readonly<{
   kind: "completed" | "blocked" | "failed";
-  manifest?: LocalStackManifest;
+  manifest?: VerificationStackManifest;
   reason?: string;
   cleanup: "not-needed" | "stopped" | "disposed" | "retained";
 }>;
@@ -172,25 +229,53 @@ export type LocalStackResult = Readonly<{
 type LocalStackUse = (stack: Readonly<{ manifest: LocalStackManifest; environment: Environment; signal: AbortSignal; expiresAt: number }>) => Promise<void>;
 
 export function withLocalStack(options: LocalStackOptions, use: LocalStackUse): Promise<LocalStackResult> {
-  return runLocalStack(options, use, "persistent");
+  return runLocalStack(options, use, "persistent", { kind: "journeys" });
 }
 
-export async function withVerificationStack(options: Omit<LocalStackOptions, "directory">, use: LocalStackUse) {
+export function withVerificationStack(
+  options: Omit<LocalStackOptions, "directory">,
+  use: LocalStackUse,
+  profile?: JourneysProfile,
+): Promise<LocalStackResult & Readonly<{ manifest?: LocalStackManifest; directory: string }>>;
+export function withVerificationStack(
+  options: Omit<LocalStackOptions, "directory">,
+  use: IdentityStackUse,
+  profile: IdentityProfile,
+): Promise<LocalStackResult & Readonly<{ manifest?: IdentityStackManifest; directory: string }>>;
+export async function withVerificationStack(
+  options: Omit<LocalStackOptions, "directory">,
+  use: LocalStackUse | IdentityStackUse,
+  profile: VerificationStackProfile = { kind: "journeys" },
+) {
+  if (profile.kind === "identity-contracts") requireIdentityPostgres(profile.postgresFixture);
+  if (profile.kind === "journeys" && profile.workspaceBuild) {
+    const root = await realpath(options.repository ?? repository);
+    const toolsOutput = join(root, "services/tools/.output");
+    if (resolve(profile.workspaceBuild.outputDirectory) !== toolsOutput) {
+      throw new SetupError("blocked", "Only the verified Tools workspace build can be reused by a verification stack.");
+    }
+    const serverEntry = await stat(join(toolsOutput, "server/index.mjs")).catch(() => undefined);
+    if (!serverEntry?.isFile()) throw new SetupError("failed", "The verified Tools workspace build is missing its server entry.");
+  }
   const directory = await mkdtemp(join(tmpdir(), "tools-identity-"));
-  const result = await runLocalStack({ ...options, directory }, use, "verification");
+  const result = profile.kind === "identity-contracts"
+    ? await runLocalStack({ ...options, directory }, use as IdentityStackUse, "verification", profile)
+    : await runLocalStack({ ...options, directory }, use as LocalStackUse, "verification", profile);
   return { ...result, directory };
 }
 
-async function runLocalStack(
+async function runLocalStack<P extends VerificationStackProfile>(
   options: LocalStackOptions,
-  use: LocalStackUse,
+  use: StackUse<P>,
   lifetime: "persistent" | "verification",
+  profile: P,
 ): Promise<LocalStackResult> {
   let directory: string | undefined;
   let lock: Awaited<ReturnType<typeof open>> | undefined;
-  let manifest: LocalStackManifest | undefined;
+  let manifest: VerificationStackManifest | undefined;
   let down: (() => Promise<void>) | undefined;
   let host: Promise<CommandOutcome> | undefined;
+  let exited: Promise<never> | undefined;
   let operation: Promise<void> | undefined;
   let probe: Promise<string> | undefined;
   let ownershipUncertain = false;
@@ -209,13 +294,14 @@ async function runLocalStack(
     }
     signal.throwIfAborted();
     const root = await realpath(options.repository ?? repository);
+    const toolsOutput = join(root, "services/tools/.output");
     directory = await privateDirectory(options.directory, root);
     try { lock = await open(join(directory, "active.lock"), "wx", 0o600); }
     catch { throw new SetupError("blocked", "The run directory is locked. Check its owner before removing active.lock."); }
     await lock.writeFile(String(process.pid));
     const owner = await identity(directory);
     sensitive = [owner.feedbackKey];
-    const databasePassword = lifetime === "verification" ? randomBytes(32).toString("hex") : undefined;
+    const databasePassword = lifetime === "verification" && profile.kind === "journeys" ? randomBytes(32).toString("hex") : undefined;
     if (databasePassword) sensitive.push(databasePassword);
     for (const binding of owner.bindings ?? []) await unusedPort(new Set(), binding.port);
     const commandEnv: Record<string, string | undefined> = {
@@ -268,7 +354,8 @@ async function runLocalStack(
       }
     }
     if (owner.bindings && owner.bindings.length !== bindings.length) throw new SetupError("blocked", "Compose published ports differ from the retained identity. Retain the directory for recovery.");
-    const settings = hostSettings(base, bindings, owner.feedbackKey, databasePassword);
+    const databaseUrl = profile.kind === "identity-contracts" ? requireIdentityPostgres(profile.postgresFixture) : undefined;
+    const settings = hostSettings(base, bindings, owner.feedbackKey, { password: databasePassword, url: databaseUrl });
     if (databasePassword) {
       const databaseUrl = `postgres://local:${databasePassword}@postgres:5432/postgres`;
       const databaseEnvironment = {
@@ -282,7 +369,11 @@ async function runLocalStack(
       }
     }
     const minio = override.indexOf('  "minio":');
-    override.splice(minio + 1, 0, "    environment:", `      MINIO_API_CORS_ALLOW_ORIGIN: ${JSON.stringify(`${settings.PUBLIC_ORIGIN},null`)}`);
+    const minioImage = lifetime === "verification" ? profile.minio : undefined;
+    if (minioImage) {
+      override.splice(minio + 1, 0, "    build: !reset null", `    image: ${JSON.stringify(minioImage.reference)}`, `    pull_policy: ${JSON.stringify("never")}`);
+    }
+    override.splice(minio + 1 + (minioImage ? 3 : 0), 0, "    environment:", `      MINIO_API_CORS_ALLOW_ORIGIN: ${JSON.stringify(`${settings.PUBLIC_ORIGIN},null`)}`);
     sensitive = secrets({ ...settings, POSTGRES_PASSWORD: databasePassword });
     await writeFile(join(directory, "identity.next.json"), JSON.stringify({ ...owner, bindings }), { mode: 0o600 });
     await rename(join(directory, "identity.next.json"), join(directory, "identity.json"));
@@ -297,7 +388,12 @@ async function runLocalStack(
       ? service.image !== undefined || Boolean(service.build.tags?.length) : !service.image?.split("/").at(-1)?.includes(":"))) {
       throw new SetupError("blocked", "Verification requires project-generated build tags and explicitly tagged dependency images.");
     }
-    const volumes = Object.values(resolved.volumes ?? {}).map((volume) => volume.name ?? "");
+    if (minioImage && (resolved.services.minio?.image !== minioImage.reference || resolved.services.minio.build
+      || resolved.services.minio.pull_policy !== "never")) {
+      throw new SetupError("blocked", "Compose did not select the verified MinIO image without a rebuild or pull.");
+    }
+    const services = profile.kind === "identity-contracts" ? ["minio"] : dependencies;
+    const volumes = referencedVolumes(resolved, services);
     if (volumes.some((name) => !name.startsWith(`${owner.project}_`))) throw new SetupError("blocked", "Compose volumes are not owned by this project.");
     const resolvedPorts = Object.entries(resolved.services).flatMap(([service, value]) => (value.ports ?? []).map((port) => ({ service, ...port })));
     if (resolvedPorts.length !== bindings.length || resolvedPorts.some((port) => port.host_ip !== "127.0.0.1"
@@ -309,20 +405,29 @@ async function runLocalStack(
     const check = (operation: string, deadlineMs: number) => command(options.commands.work, process.execPath,
       ["--import", "tsx", checkEntry, operation], operation, deadlineMs, hostEnv, signal, join(root, "services/tools"));
     if (await check("config", 30_000) !== "config\n") throw new SetupError("failed", "The actual runtime config parser did not confirm the host environment.");
-    manifest = {
-      project: owner.project, directory,
-      origins: { tools: settings.PUBLIC_ORIGIN!, storage: settings.ARTIFACT_S3_ENDPOINT!,
-        storageConsole: `http://127.0.0.1:${bindings.find((binding) => binding.service === "minio" && binding.target === 9001)!.port}` },
-      bindings, volumes,
-      prerequisites: {
-        config: { kind: "passed", reason: "The actual loadPlatformConfig accepted the exact host environment." },
-        storageHttp: blocked("Signed storage checks have not run."),
-        publisherBrowser: blocked("A real browser must confirm signed PUT and readable ETag before Publisher journeys."),
-        privateOAuth: blocked("Local placeholders start public routes. Private OAuth acceptance requires a real local Google client and subject."),
-        markdownBrowser: blocked("The public document backend check has not run."),
-        statusPublication: blocked("No bounded local checker, canonical fixture pause state, or disabled notification contract is supplied. No monitors are started."),
-      },
-    };
+    const storageConsole = `http://127.0.0.1:${bindings.find((binding) => binding.service === "minio" && binding.target === 9001)!.port}`;
+    const configPrerequisite = { kind: "passed" as const, reason: "The actual loadPlatformConfig accepted the exact host environment." };
+    const storagePrerequisite = blocked("Signed storage checks have not run.");
+    manifest = profile.kind === "identity-contracts"
+      ? {
+        profile: "identity-contracts", project: owner.project, directory,
+        origins: { test: settings.PUBLIC_ORIGIN!, storage: settings.ARTIFACT_S3_ENDPOINT!, storageConsole },
+        startedServices: ["minio"], postgresFixture: profile.postgresFixture.name, bindings, volumes,
+        prerequisites: { config: configPrerequisite, storageHttp: storagePrerequisite },
+      }
+      : {
+        profile: "journeys", project: owner.project, directory,
+        origins: { tools: settings.PUBLIC_ORIGIN!, storage: settings.ARTIFACT_S3_ENDPOINT!, storageConsole },
+        startedServices: ["postgres", "minio"], bindings, volumes,
+        prerequisites: {
+          config: configPrerequisite,
+          storageHttp: storagePrerequisite,
+          publisherBrowser: blocked("A real browser must confirm signed PUT and readable ETag before Publisher journeys."),
+          privateOAuth: blocked("Local placeholders start public routes. Private OAuth acceptance requires a real local Google client and subject."),
+          markdownBrowser: blocked("The public document backend check has not run."),
+          statusPublication: blocked("No bounded local checker, canonical fixture pause state, or disabled notification contract is supplied. No monitors are started."),
+        },
+      };
     const publish = async () => {
       await writeFile(join(directory!, "manifest.next.json"), JSON.stringify(manifest, null, 2) + "\n", { mode: 0o600 });
       await rename(join(directory!, "manifest.next.json"), join(directory!, "manifest.json"));
@@ -345,37 +450,70 @@ async function runLocalStack(
         result = { ...result, cleanup: "disposed" };
       }
     };
-    await compose(options.commands.work, ["up", "--detach", "--build", "--wait", "--wait-timeout", "90", ...dependencies], "dependencies", 600_000, signal);
-    for (const service of ["postgres-migrate", "minio-seed"]) await compose(options.commands.work, ["run", "--build", "--no-deps", "--rm", service], service, 600_000, signal);
-    await command(options.commands.work, "pnpm", ["--dir", "services/tools", "run", "build"], "build", 600_000, hostEnv, signal);
     const output = join(directory, "output");
-    await rm(output, { recursive: true, force: true });
-    await command(options.commands.work, "cp", ["-R", join(root, "services/tools/.output"), output], "copy-build", 60_000, commandEnv, signal);
+    const workspaceBuild = profile.kind === "journeys" ? profile.workspaceBuild : undefined;
+    if (workspaceBuild) {
+      await command(options.commands.work, "cp", ["-R", toolsOutput, output], "copy-build", 60_000, commandEnv, signal);
+    }
+    await compose(options.commands.work, ["up", "--detach", ...(minioImage ? [] : ["--build"]), "--wait", "--wait-timeout", "90", ...services], "dependencies", 600_000, signal);
+    if (lifetime === "verification") {
+      const toolsCwd = join(root, "services/tools");
+      const seed = () => command(options.commands.work, process.execPath,
+        ["--import", "tsx", "products/status/local-seed.ts"], "minio-seed", 600_000,
+        { ...hostEnv, LOCAL_PLATFORM_BROWSER_ORIGIN: hostEnv.PUBLIC_ORIGIN, SEED_RETRY_ATTEMPTS: "30" }, signal, toolsCwd);
+      if (profile.kind === "identity-contracts") await seed();
+      else {
+        const setup = await Promise.allSettled([
+          command(options.commands.work, process.execPath,
+            ["--import", "tsx", "platform/database/push-postgres.ts", "development"], "postgres-migrate", 600_000,
+            { ...hostEnv, TOOLS_ENVIRONMENT: "development", TOOLS_DEVELOPMENT_SCHEMA_PUSH_CONFIRM: "tools-platform-development" }, signal, toolsCwd),
+          seed(),
+        ]);
+        const failed = setup.find((item): item is PromiseRejectedResult => item.status === "rejected");
+        if (failed) throw failed.reason;
+      }
+    } else {
+      for (const service of ["postgres-migrate", "minio-seed"]) {
+        await compose(options.commands.work, ["run", "--build", "--no-deps", "--rm", service], service, 600_000, signal);
+      }
+    }
+    if (profile.kind === "journeys" && !workspaceBuild) {
+      await rm(output, { recursive: true, force: true });
+      await command(options.commands.work, "pnpm", ["--dir", "services/tools", "run", "build"], "build", 600_000, hostEnv, signal);
+      await command(options.commands.work, "cp", ["-R", toolsOutput, output], "copy-build", 60_000, commandEnv, signal);
+    }
     const expiresAt = Date.now() + options.lifetimeMs;
-    try {
-      host = options.commands.work.execute({
-        command: process.execPath, args: [join(output, "server/index.mjs")], cwd: root,
-        env: hostEnv, deadlineMs: options.lifetimeMs, signal, redact, log: join(directory, "host.log"),
-      });
-    } catch (error) { ownershipUncertain = true; throw error; }
-    const exited = host.then(() => { throw new SetupError("failed", "The owned Tools host process ended before the local operation completed."); });
-    void exited.catch(() => {});
-    probe = check("health", 75_000);
-    if (await Promise.race([probe, exited]) !== "health\n") throw new SetupError("failed", "The owned Tools host did not confirm both health routes.");
-    probe = check("markdown", 30_000);
-    if (await Promise.race([probe, exited]) !== "markdown-http\n") throw new SetupError("failed", "The public document backend did not confirm creation and content retrieval.");
-    manifest = { ...manifest, prerequisites: { ...manifest.prerequisites,
-      markdownBrowser: { kind: "passed", reason: "Public document creation and content retrieval passed over HTTP with local PostgreSQL. Browser acceptance has not run." } } };
+    if (profile.kind === "journeys") {
+      try {
+        host = options.commands.work.execute({
+          command: process.execPath, args: [join(output, "server/index.mjs")], cwd: root,
+          env: hostEnv, deadlineMs: options.lifetimeMs, signal, redact, log: join(directory, "host.log"),
+        });
+      } catch (error) { ownershipUncertain = true; throw error; }
+      exited = host.then(() => { throw new SetupError("failed", "The owned Tools host process ended before the local operation completed."); });
+      void exited.catch(() => {});
+      probe = check("health", 75_000);
+      if (await Promise.race([probe, exited]) !== "health\n") throw new SetupError("failed", "The owned Tools host did not confirm both health routes.");
+      probe = check("markdown", 30_000);
+      if (await Promise.race([probe, exited]) !== "markdown-http\n") throw new SetupError("failed", "The public document backend did not confirm creation and content retrieval.");
+      const fullManifest = manifest as LocalStackManifest;
+      manifest = { ...fullManifest, prerequisites: { ...fullManifest.prerequisites,
+        markdownBrowser: { kind: "passed", reason: "Public document creation and content retrieval passed over HTTP with local PostgreSQL. Browser acceptance has not run." } } };
+    }
     probe = check("storage", 60_000);
-    const storage = await Promise.race([probe, exited]);
-    if (storage === "storage-http\n") manifest = { ...manifest, prerequisites: { ...manifest.prerequisites,
-      storageHttp: { kind: "passed", reason: "Signed multipart PUT, exact-origin preflight, and ETag exposure headers passed over HTTP. Browser acceptance remains blocked." } } };
-    else if (storage === "storage-blocked\n") manifest = { ...manifest, prerequisites: { ...manifest.prerequisites,
-      storageHttp: blocked("The signed PUT, preflight, or exposed ETag prerequisite did not pass. Publisher journeys remain blocked.") } };
+    const storage = exited ? await Promise.race([probe, exited]) : await probe;
+    const storageHttp = storage === "storage-http\n"
+      ? { kind: "passed" as const, reason: "Signed multipart PUT, exact-origin preflight, and ETag exposure headers passed over HTTP." }
+      : storage === "storage-blocked\n"
+        ? blocked("The signed PUT, preflight, or exposed ETag prerequisite did not pass.")
+        : undefined;
+    if (storageHttp && manifest?.profile === "journeys") manifest = { ...manifest, prerequisites: { ...manifest.prerequisites, storageHttp } };
+    else if (storageHttp && manifest?.profile === "identity-contracts") manifest = { ...manifest, prerequisites: { ...manifest.prerequisites, storageHttp } };
     else throw new SetupError("failed", "Storage prerequisite check returned an invalid result.");
     await publish();
-    operation = use({ manifest, environment: settings, signal, expiresAt });
-    await Promise.race([operation, exited]);
+    operation = use({ manifest: manifest as StackContext<P>["manifest"], environment: settings, signal, expiresAt } as StackContext<P>);
+    if (exited) await Promise.race([operation, exited]);
+    else await operation;
     result = { kind: "completed", manifest, cleanup: "not-needed" };
   } catch (error) {
     result = { kind: error instanceof SetupError ? error.kind : error instanceof VerificationBlocked ? "blocked" : "failed", manifest,

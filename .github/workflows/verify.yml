@@ -1,6 +1,11 @@
 name: Verify
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - Dockerfile.minio.local
+      - .github/workflows/verify.yml
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
 
@@ -16,12 +21,24 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+      - uses: actions/cache/restore@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+        id: minio-cache
+        with:
+          path: ${{ runner.temp }}/tools-verify-minio-cache
+          key: tools-verify-minio-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Dockerfile.minio.local') }}
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: '22'
       - run: corepack enable
       - run: pnpm install --frozen-lockfile
       - run: pnpm run verify
+        env:
+          TOOLS_VERIFY_CACHE_DIR: ${{ runner.temp }}/tools-verify-minio-cache
+      - uses: actions/cache/save@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+        if: always() && steps.minio-cache.outputs.cache-hit != 'true'
+        with:
+          path: ${{ runner.temp }}/tools-verify-minio-cache
+          key: tools-verify-minio-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Dockerfile.minio.local') }}
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:

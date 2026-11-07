@@ -56,8 +56,9 @@ URLs private. Use snapshot locators to interact with the real loaded page.
    control; do not claim checkpoint restoration.
 5. Replace `/share/d/` with `/markdown/d/` in each capability URL. The alias must
    open the same source and format without a session. Open `/markdown` and
-   verify it still reaches public creation. Check an invalid capability shows
-   unavailable access rather than a private document.
+   verify it still reaches public creation. Check that a well-formed,
+   nonexistent capability shows the unavailable view. A malformed token
+   returns to creation.
 6. For Markdown, verify the live preview renders the fixture and **Export PDF**
    uses browser printing. Record whether the browser can open the print flow;
    a visible button alone does not prove export. For LaTeX, verify the source
@@ -99,12 +100,12 @@ otherwise record it unrun. Do not change network, TLS, or shared proxy settings.
 
 ## M2: private inventory and retention
 
-1. In an anonymous session, open `/documents`. Expect sign-in rather than the
-   inventory. An anonymous `GET /api/ops/documents` must return
-   `401 {"error":"authentication_required"}`. Record the actual response.
+1. In an anonymous session, open `/documents`. Expect a redirect to sign-in.
+   Do not use `/api/ops/documents`; that inventory API is retired.
 2. Sign in through the real local Google OAuth flow with the allowed test
-   subject. Open `/documents`; expect the **Documents** title. Locate both
-   created filenames with Markdown/LaTeX badges, checkpoint counts, latest-edit
+   subject and `markdown` product access. Create one Markdown and one LaTeX
+   document while signed in. Open `/documents`; expect the **Documents** title
+   and both owned filenames with format badges, checkpoint counts, latest-edit
    times, expiry, and public capability links. Reload and verify stable records.
 3. Set **Document format** to Markdown, LaTeX, and All formats. Each filter must
    include only its expected owned records. Search each filename. Use **Sort
@@ -115,7 +116,9 @@ otherwise record it unrun. Do not change network, TLS, or shared proxy settings.
 4. Sign out. Verify private inventory access is removed while the unlisted
    capability pages still work anonymously. A backend administration response
    is useful state evidence, but does not prove this private browser journey.
-5. Use only the owned fixture for retention. Set `expires_at` on one synthetic
+5. A malformed token format returns to creation. A well-formed nonexistent
+   capability shows the unavailable view. Use the owned fixture for retention.
+   Set `expires_at` on one synthetic
    document to a past timestamp through its verified loopback database. Confirm
    expired capability denial and preservation of unsent source in an open
    offline browser after reconnect. Verify cleanup and cascades through the
@@ -142,6 +145,6 @@ retained. Sign out any owned authenticated session and restore its preferences.
 
 | ID | Public actions and observable result | Source and existing checks | Prerequisites and reset |
 | --- | --- | --- | --- |
-| M1 | At /share create Markdown and LaTeX documents; verify .md/.tex filenames, acknowledged source edits, reload persistence, second-session synchronization, presence, two checkpoints and comparison. Verify /markdown capability aliases, Markdown preview/PDF control, and exact LaTeX source download. Use the detailed journeys above. | services/tools/README.md; markdown-share/App.tsx; markdown-share/collaborative-workspace.tsx; markdown-share/document-history.tsx; backend and workspace tests | Owned local PostgreSQL, browser-reachable origin, two independent sessions and download access. Record owned PostgreSQL fixture cleanup before creation. History supports comparison, not restoration. |
-| M2 | Anonymous /documents and its inventory API deny access. After local sign-in, verify Documents title, filenames, format badges/filters, expiry, checkpoints, and capability links for both formats. Check invalid capability denial and bounded retention separately. Use the detailed journeys above. | src/routes/documents.tsx; src/routes/api/ops/$.ts; dashboard/ui/documents-page.tsx; test/documents-page.test.tsx; markdown-share/repository.ts | Isolated Tools dependencies and authorized local OAuth. Use one owned expiry row fixture and verify cleanup separately. Never alter system time. |
-| M3 | Paste bounded multiline source with escapes and Unicode in each real editor. Confirm acknowledgement and reload. Reject source above the character or encoded-byte budget without replacing saved content; a smaller paste then saves. Use the detailed journeys above. | markdown-share/source-limits.ts; markdown-share/live-document-session.ts; markdown-share/collaborative-workspace.test.tsx; markdown-share/repository.test.ts | M1 setup and synthetic clipboard payloads. Record payload sizes and each result. Offline multi-step batches beyond the budget need separate evidence. |
+| M1 | At /share create Markdown and LaTeX documents; verify .md/.tex filenames, acknowledged source edits, reload persistence, second-session synchronization, presence, two checkpoints and comparison. Verify /markdown aliases, Markdown preview/PDF control, and exact LaTeX source download. Use the detailed journeys above. | services/tools/products/documents/App.tsx; services/tools/products/documents/collaborative-workspace.tsx; services/tools/products/documents/document-history.tsx; services/tools/products/documents/http.ts; services/tools/test/products/documents | Owned local PostgreSQL, browser-reachable origin, two independent sessions and download access. Record owned PostgreSQL fixture cleanup before creation. History supports comparison, not restoration. |
+| M2 | Anonymous /documents redirects to sign-in. With `markdown` access, create documents while signed in and verify only those records appear in inventory. Check filters, expiry, checkpoints, and public capability links. Check malformed and nonexistent capabilities separately. | services/tools/app/routes/documents.tsx; services/tools/platform/protected-data.ts; services/tools/products/dashboard/ui/documents-page.tsx; services/tools/products/documents/repository.ts; services/tools/test/products/documents | Isolated Tools dependencies and authorized local OAuth with `markdown` access. Use one owned expiry row fixture and verify cleanup separately. Never alter system time. |
+| M3 | Paste bounded multiline source with escapes and Unicode in each real editor. Confirm acknowledgement and reload. Reject source above the character or encoded-byte budget without replacing saved content; a smaller paste then saves. Use the detailed journeys above. | services/tools/products/documents/source-limits.ts; services/tools/products/documents/live-document-session.ts; services/tools/test/products/documents | M1 setup and synthetic clipboard payloads. Record payload sizes and each result. Offline multi-step batches beyond the budget need separate evidence. |

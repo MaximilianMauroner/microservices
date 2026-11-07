@@ -1,20 +1,32 @@
 import { spawn } from "node:child_process";
-import { chmod, copyFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { chmod, copyFile, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 const runtime = fileURLToPath(new URL("./", import.meta.url));
+const tsxLoader = process.features.typescript ? undefined : fileURLToPath(import.meta.resolve("tsx"));
 let directory: string;
+
+function typescriptArgs(entry: string) {
+  return process.features.typescript
+    ? ["--experimental-strip-types", entry]
+    : ["--import", tsxLoader!, entry];
+}
 
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), "verification-cli-"));
   const target = join(directory, "services/tools/test/harness");
   await mkdir(target, { recursive: true });
   await mkdir(join(directory, "bin"));
+  await symlink(join(runtime, "../../node_modules"), join(directory, "node_modules"), "dir");
   await writeFile(join(directory, "bin/package.json"), '{"type":"commonjs"}');
   for (const file of ["verification.ts", "commands.ts", "command-types.ts", "command-anchor.cjs", "receipt.ts"]) await copyFile(join(runtime, file), join(target, file));
+  await writeFile(join(target, "minio-image.ts"), `export async function resolveMinioImage() {
+  return {reference:'tools-verify-minio:0123456789abcdef0123456789abcdef',inputDigest:'0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+    platform:'linux/amd64',imageId:'sha256:abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd',source:'store'};
+}`);
   await writeFile(join(directory, "package.json"), '{"type":"module"}');
   await writeFile(join(target, "entry.ts"), `import { runVerification } from './verification.ts';
 setTimeout(() => process.exit(99), 10_000);
@@ -31,14 +43,18 @@ export async function createOwnedPostgres() {
 }`);
   await writeFile(join(target, "local-stack.ts"), `import {appendFileSync} from 'node:fs';
   let calls = 0;
-  export async function withVerificationStack(options,use) {
-    const journey=++calls===2;
+  export async function withVerificationStack(options,use,profile) {
+    const journey=profile?.kind!=='identity-contracts';
+    calls++;
     const name=journey?'journey':'identity';
     const directory=process.env.FIXTURE_DIRECTORY;
     if(process.env.FIXTURE_LOCAL_BLOCKED) return {kind:'blocked',reason:'local fixture unavailable',cleanup:'retained',directory};
     const controller = new AbortController();
-    const pending = use({manifest:{project:name+'-project',origins:{tools:'http://127.0.0.1:9'},prerequisites:{storageHttp:{kind:'passed',reason:'fixture'}}},
-      environment:{UPLOAD_TOKEN:'local-upload-token',TOWER_HEARTBEAT_TOKEN:'local-heartbeat-token',DATABASE_URL:'postgres://local:local-password@127.0.0.1:9/postgres',
+    const manifest=journey
+      ? {profile:'journeys',project:name+'-project',origins:{tools:'http://127.0.0.1:9'},startedServices:['postgres','minio'],prerequisites:{storageHttp:{kind:'passed',reason:'fixture'}}}
+      : {profile:'identity-contracts',project:name+'-project',origins:{test:'http://127.0.0.1:9'},startedServices:['minio'],postgresFixture:profile.postgresFixture.name,prerequisites:{storageHttp:{kind:'passed',reason:'fixture'}}};
+    const pending = use({manifest,
+      environment:{UPLOAD_TOKEN:'local-upload-token',TOWER_HEARTBEAT_TOKEN:'local-heartbeat-token',DATABASE_URL:journey?'postgres://local:local-password@127.0.0.1:9/postgres':profile.postgresFixture.url,
         ARTIFACT_S3_ENDPOINT:'http://127.0.0.1:9',ARTIFACT_S3_ACCESS_KEY_ID:'storage-access',ARTIFACT_S3_SECRET_ACCESS_KEY:'storage-secret'},
       signal:controller.signal});
     if(process.env.FIXTURE_LOCAL_HOST_FAIL || journey && process.env.FIXTURE_JOURNEY_HOST_FAIL) {
@@ -126,7 +142,8 @@ async function waitFile(path: string) {
 
 async function run(environment: NodeJS.ProcessEnv = {}, observe?: (send: (signal: NodeJS.Signals) => void) => Promise<void>) {
   await writeFile(join(directory, "fixture-controls.json"), JSON.stringify(environment));
-  const child = spawn(process.execPath, ["--import", join(directory, "hook.mjs"), "--experimental-strip-types", join(directory, "services/tools/test/harness/entry.ts")], {
+  const entry = join(directory, "services/tools/test/harness/entry.ts");
+  const child = spawn(process.execPath, ["--import", join(directory, "hook.mjs"), ...typescriptArgs(entry)], {
     env: { PATH: `${join(directory, "bin")}:${process.env.PATH}`, HOME: process.env.HOME, FIXTURE_DIRECTORY: directory, FIXTURE_TRACE: join(directory, "trace"), ...environment },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -161,7 +178,9 @@ describe("terminal verification CLI", () => {
     const result = await run();
     expect(result.code).toBe(0);
     expect(result.record.automatedDecision).toEqual({ kind: "passed" });
-    expect(result.record.cells.map((cell: { requirement: { kind: string } }) => cell.requirement.kind)).toEqual(["prerequisites", "discover", "fixture", "schema", "contracts", "cleanup"]);
+    expect(result.record.cells.map((cell: { requirement: { kind: string } }) => cell.requirement.kind)).toEqual([
+      "prerequisites", "discover", "fixture", "schema", "contracts", "cleanup",
+    ]);
     expect(result.record.contracts).toMatchObject({ required: ["required case"], executed: ["required case"], skipped: [] });
     expect(result.trace.match(/cleanup/g)).toHaveLength(1);
   });
@@ -186,6 +205,9 @@ describe("terminal verification CLI", () => {
   it("requires identity, built Tools, and mounted Status receipts before workspace success", async () => {
     const result = await run({ FIXTURE_MODE: "workspace" });
     expect(result.code).toBe(0);
+    expect(result.record.cells.every((cell: { durationMs: number }) => Number.isFinite(cell.durationMs) && cell.durationMs >= 0)).toBe(true);
+    expect(result.record.minio).toMatchObject({ source: "store", platform: "linux/amd64" });
+    expect(result.record.cells.find((cell: { requirement: { kind: string } }) => cell.requirement.kind === "minio-image").result.kind).toBe("passed");
     expect(result.record.journeys.some((receipt: { suite: string; result: string }) => receipt.suite === "mounted-status" && receipt.result === "passed")).toBe(true);
     expect(result.record.identity).toMatchObject({ required: ["required case"], contracts: { executed: ["required case"], skipped: [] } });
     expect(result.record.cells.filter((cell: { requirement: { kind: string } }) => cell.requirement.kind.startsWith("identity-")).map((cell: { result: { kind: string } }) => cell.result.kind)).toEqual(["passed", "passed"]);
@@ -235,6 +257,7 @@ describe("terminal verification CLI", () => {
     expect(result.record.identity.contracts.result).toBe("failed");
     const identity = result.record.cells.find((cell: { requirement: { kind: string } }) => cell.requirement.kind === "identity-contracts");
     expect(identity.result).toMatchObject({ kind: "failed", reasons: ["owned host failed"] });
+    expect(identity.durationMs).toBeGreaterThanOrEqual(100);
   });
 
   it("cancels and settles journey work before a failed host can dispose its fixture", async () => {

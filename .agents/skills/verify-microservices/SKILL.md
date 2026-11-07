@@ -8,6 +8,33 @@ description: Verify Network Console, the Tools products, and Markdown Share thro
 Use [the feature index](features/README.md) to select journeys and record gaps.
 Use each extension for its feature-specific setup, actions, and cleanup.
 
+## Automated workspace verification
+
+Run `pnpm run verify` for the automated workspace checks. The command validates
+tracked files, checks that inherited database and storage settings are absent,
+discovers the required cases, and creates an owned loopback PostgreSQL fixture.
+It then runs Tools typecheck, tests, and build, pushes the test schema, and runs
+the required PostgreSQL contracts.
+
+Next, it discovers and runs the required identity and journey cases. Identity
+contracts start an owned MinIO container and reuse the PostgreSQL fixture. The
+stage seeds its buckets, checks a signed upload, CORS, and readable `ETag`, then
+runs the identity suite.
+
+Journeys use a separate Compose project with PostgreSQL and MinIO. The runner
+seeds both services, starts the Tools server from the build above, checks
+readiness and Document Share HTTP access, checks signed storage, and runs the
+required public journeys. Each receipt cell records its elapsed time in
+`durationMs`. Use those times to find the slow stage before changing tools or
+removing checks.
+
+The runner stops after a failed or blocked stage. It records results and
+fixture cleanup in `.agents/artifacts/verify/runtime-<id>/receipts.json`.
+
+A passed automated receipt means every required automated check and fixture
+cleanup passed. It does not prove local Google OAuth or browser upload. Read
+`manualAcceptance` in the receipt and report each manual gate separately.
+
 Read repository `AGENTS.md`, each service README, and
 `docs/tools-platform/runtime-boundaries.md`. Record the commit, worktree, Node
 and pnpm versions, selected journeys, instance ports, and evidence directory.
@@ -18,7 +45,8 @@ a live journey.
 ## Isolated setup
 
 Use a clean worktree. Check memory, load, free disk, and listeners before
-installing or building. Use Node >=22.12 and pnpm 11.16.0.
+installing or building. Use Node >=22.12 and pnpm 11.16.0. The verification
+CLI uses the Tools package's `tsx` runner for TypeScript files.
 Run `pnpm install --frozen-lockfile`. Keep captures under ignored
 `.agents/artifacts/<run-id>/`; keep credentials out of evidence.
 
