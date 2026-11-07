@@ -1,0 +1,91 @@
+{
+  "configVersion": 0,
+  "apple": {
+    "version": "1.0",
+    "release": {
+      "automaticRelease": false
+    },
+    "info": {
+      "en-US": {
+        "title": "Pantrino",
+        "subtitle": "Meals, groceries & your pantry",
+        "promoText": "Plan your meals, shop for what is missing, and keep track of food at home. Your kitchen stays with you, even offline.",
+        "description": "Bring your meal plan, recipes, shopping list, and pantry together in Pantrino.\n\nPLAN YOUR WEEK\nChoose meals for the week, set the number of servings, and keep your recipes close at hand.\n\nSHOP FOR WHAT YOU NEED\nTurn planned meals into a shopping list. Pantrino takes the food already in your pantry into account, groups ingredients, and lets you add regular shopping items.\n\nCOOK FROM YOUR OWN RECIPES\nSave ingredients and cooking steps. Adjust servings, see nutrition when ingredient values are available, and find recipes using ingredients you have at home.\n\nKEEP TRACK OF YOUR FOOD\nCheck pantry amounts, save leftovers, and see what to use first.\n\nTAKE YOUR KITCHEN OFFLINE\nAfter the first sync, your kitchen is available without a connection. Changes sync when you are online again. Choose English or German, with light and dark appearances.\n\nPantrino requires an existing Mauroner Tools account with Kitchen access. Contact support.pantrino@lab4code.com for help.",
+        "keywords": [
+          "meal planner",
+          "grocery list",
+          "pantry",
+          "recipes",
+          "leftovers",
+          "weekly menu",
+          "offline",
+          "cooking",
+          "ingredients"
+        ],
+        "releaseNotes": "The first Pantrino release brings meal planning, recipes, shopping lists, pantry stock, and leftovers to your phone.",
+        "privacyPolicyUrl": "https://lab4code.com/projects/pantrino/privacy/",
+        "supportUrl": "https://lab4code.com/projects/pantrino/support/",
+        "marketingUrl": "https://lab4code.com/projects/pantrino/",
+        "screenshots": {
+          "APP_IPHONE_67": [
+            "./store-assets/screenshots/en-US/01-week.png",
+            "./store-assets/screenshots/en-US/02-shopping.png",
+            "./store-assets/screenshots/en-US/03-recipes.png",
+            "./store-assets/screenshots/en-US/04-recipe.png",
+            "./store-assets/screenshots/en-US/05-pantry.png",
+            "./store-assets/screenshots/en-US/06-ingredients.png"
+          ]
+        },
+        "previews": {
+          "IPHONE_67": {
+            "path": "./store-assets/previews/en-US.mp4",
+            "previewFrameTimeCode": "00:00:01.000"
+          }
+        }
+      },
+      "de-DE": {
+        "title": "Pantrino",
+        "subtitle": "Wochenplan, Einkauf & Vorrat",
+        "promoText": "Plane deine Mahlzeiten, kaufe fehlende Zutaten ein und behalte deine Vorräte im Blick. Deine Küche ist auch offline dabei.",
+        "description": "Dein Wochenplan, deine Rezepte, deine Einkaufsliste und dein Vorrat. Alles zusammen in Pantrino.\n\nPLANE DEINE WOCHE\nWähle Mahlzeiten für die Woche, passe Portionen an und behalte deine Rezepte im Blick.\n\nKAUFE, WAS NOCH FEHLT\nAus geplanten Mahlzeiten wird eine Einkaufsliste. Pantrino berücksichtigt deinen Vorrat, gruppiert Zutaten und lässt dich regelmäßige Einkäufe ergänzen.\n\nKOCHE DEINE EIGENEN REZEPTE\nSpeichere Zutaten und Zubereitungsschritte. Passe Portionen an, sieh Nährwerte, wenn die Zutatenwerte vorhanden sind, und finde Rezepte für Zutaten, die du zu Hause hast.\n\nBEHALTE DEIN ESSEN IM BLICK\nVerwalte Vorratsmengen, bewahre Reste auf und sieh, was du zuerst verbrauchen solltest.\n\nNIMM DEINE KÜCHE OFFLINE MIT\nNach der ersten Synchronisierung bleibt deine Küche auch ohne Verbindung verfügbar. Änderungen werden übertragen, sobald du wieder online bist. Mit Deutsch und Englisch sowie heller und dunkler Darstellung.\n\nPantrino benötigt ein bestehendes Mauroner-Tools-Konto mit Zugriff auf Kitchen. Hilfe erhältst du unter support.pantrino@lab4code.com.",
+        "keywords": [
+          "Wochenplan",
+          "Einkaufsliste",
+          "Vorrat",
+          "Rezepte",
+          "Essensplan",
+          "Reste",
+          "Kochen",
+          "Zutaten",
+          "offline",
+          "Speiseplan"
+        ],
+        "releaseNotes": "Die erste Pantrino-Version bringt Wochenplan, Rezepte, Einkaufsliste, Vorrat und Reste auf dein Smartphone.",
+        "privacyPolicyUrl": "https://lab4code.com/projects/pantrino/privacy/",
+        "supportUrl": "https://lab4code.com/projects/pantrino/support/",
+        "marketingUrl": "https://lab4code.com/projects/pantrino/",
+        "screenshots": {
+          "APP_IPHONE_67": [
+            "./store-assets/screenshots/de-DE/01-week.png",
+            "./store-assets/screenshots/de-DE/02-shopping.png",
+            "./store-assets/screenshots/de-DE/03-recipes.png",
+            "./store-assets/screenshots/de-DE/04-recipe.png",
+            "./store-assets/screenshots/de-DE/05-pantry.png",
+            "./store-assets/screenshots/de-DE/06-ingredients.png"
+          ]
+        },
+        "previews": {
+          "IPHONE_67": {
+            "path": "./store-assets/previews/de-DE.mp4",
+            "previewFrameTimeCode": "00:00:01.000"
+          }
+        }
+      }
+    },
+    "copyright": "2026 Maximilian Mauroner",
+    "categories": [
+      "FOOD_AND_DRINK",
+      "PRODUCTIVITY"
+    ]
+  }
+}
