@@ -6,6 +6,7 @@ import { useApp, useKitchen, useSync } from "../../state";
 import type { SyncStatus } from "../../sync/model";
 import { Button, HueBadge, Press, Screen, Sheet, T, usePageColor } from "../kit";
 import { KITCHEN_LANGUAGES, type KitchenLanguage, LANGUAGE_NAMES, LanguageContext, LOCALES, useText } from "../language";
+import { haptic, STRENGTHS, useHaptics } from "../haptics";
 import { tint, useColors } from "../theme";
 import { TEXT } from "./text";
 
@@ -15,9 +16,9 @@ export function KitchenHub() {
   const { signOut, openKitchen } = useApp();
   const { status, pending, notices, sync, dismiss } = useSync();
   const { language, setLanguage } = useContext(LanguageContext);
+  const { strength, setStrength } = useHaptics();
   const text = useText(TEXT);
   const colors = useColors();
-  const { hue } = usePageColor();
   const [switching, setSwitching] = useState(false);
   const kitchen = open?.kitchen;
   const state = syncLine(status, language);
@@ -56,20 +57,8 @@ export function KitchenHub() {
           <View style={{ flexDirection: "row" }}><Button tone="outline" compact label={text.dismiss} onPress={() => void dismiss(notice.clientActionId)} /></View>
         </View>
       ))}
-      <View style={{ gap: 8 }}>
-        <T weight="medium" style={{ fontSize: 14 }} muted>{text.language}</T>
-        <View accessibilityRole="radiogroup" style={[styles.segments, { backgroundColor: colors.muted }]}>
-          {KITCHEN_LANGUAGES.map((one) => {
-            const selected = one === language;
-            return (
-              <Press key={one} accessibilityRole="radio" accessibilityState={{ selected }} onPress={() => setLanguage(one)}
-                style={[styles.segment, selected && { backgroundColor: hue }]}>
-                <T weight={selected ? "semibold" : "medium"} style={{ color: selected ? "#ffffff" : colors.foreground }}>{LANGUAGE_NAMES[one]}</T>
-              </Press>
-            );
-          })}
-        </View>
-      </View>
+      <Choice label={text.language} options={KITCHEN_LANGUAGES} names={LANGUAGE_NAMES} value={language} onValue={setLanguage} />
+      <Choice label={text.vibration} options={STRENGTHS} names={text.strengths} value={strength} silent onValue={(next) => { setStrength(next); haptic("toggle"); }} />
       <List>
         <Press accessibilityRole="button" onPress={confirmSignOut} style={({ pressed }) => [styles.row, { justifyContent: "center", opacity: pressed ? 0.7 : 1 }]}>
           <LogOut size={18} color={colors.destructive} />
@@ -100,6 +89,28 @@ export function useSyncAlert(): { label: string; warn: boolean } | null {
   if (status.kind === "offline") return { label: text.offline, warn: false };
   if (pending && status.kind !== "syncing") return { label: text.unsent(pending), warn: false };
   return null;
+}
+
+/** One setting as a row of segments, one per option. A `silent` choice does not vibrate on its own, so the vibration choice can vibrate at the strength just picked. */
+function Choice<Option extends string>({ label, options, names, value, onValue, silent }: { label: string; options: readonly Option[]; names: Record<Option, string>; value: Option; onValue: (option: Option) => void; silent?: boolean }) {
+  const colors = useColors();
+  const { hue } = usePageColor();
+  return (
+    <View style={{ gap: 8 }}>
+      <T weight="medium" style={{ fontSize: 14 }} muted>{label}</T>
+      <View accessibilityRole="radiogroup" style={[styles.segments, { backgroundColor: colors.muted }]}>
+        {options.map((one) => {
+          const selected = one === value;
+          return (
+            <Press key={one} accessibilityRole="radio" accessibilityState={{ selected }} onPress={() => onValue(one)} feel={silent ? null : undefined}
+              style={[styles.segment, selected && { backgroundColor: hue }]}>
+              <T weight={selected ? "semibold" : "medium"} style={{ color: selected ? "#ffffff" : colors.foreground }}>{names[one]}</T>
+            </Press>
+          );
+        })}
+      </View>
+    </View>
+  );
 }
 
 function syncLine(status: SyncStatus, language: KitchenLanguage): string {

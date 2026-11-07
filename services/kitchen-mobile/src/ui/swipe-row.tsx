@@ -5,7 +5,8 @@ import { Platform, StyleSheet, View } from "react-native";
 import ReanimatedSwipeable, { type SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 import Animated, { interpolate, type SharedValue, useAnimatedReaction, useAnimatedStyle } from "react-native-reanimated";
 import { scheduleOnRN } from "react-native-worklets";
-import { haptic, Press, Sheet, T, useKitText } from "./kit";
+import { Press, Sheet, T, useKitText } from "./kit";
+import { haptic } from "./haptics";
 import { useColors } from "./theme";
 
 const REACH = 96;
