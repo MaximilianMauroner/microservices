@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { isWorkspacePath } from "../../../app/routes/__root.js";
 
 describe("workspace layout", () => {
-  it.each(["/", "/documents", "/feedback", "/feedback/forms/form-1", "/money", "/publisher", "/publisher/artifacts", "/settings", "/status"])("adds workspace navigation to %s", (pathname) => {
+  it.each(["/", "/documents", "/feedback", "/feedback/forms/form-1", "/money", "/publisher", "/publisher/artifacts", "/reports", "/settings", "/status"])("adds workspace navigation to %s", (pathname) => {
     expect(isWorkspacePath(pathname)).toBe(true);
   });
 
