@@ -14,7 +14,9 @@ const en = {
   title: "Search",
   label: "Recipes, ingredients, and foods",
   hint: "One search finds your Kitchen recipes and ingredients and your Bodyshop foods and meals.",
+  kitchenHint: "Search finds your recipes and ingredients.",
   noMatch: (query: string) => `Nothing in Kitchen or Bodyshop matches “${query}”`,
+  noKitchenMatch: (query: string) => `No recipe or ingredient matches “${query}”`,
   log: "Log",
   logNamed: (name: string) => `Log ${name} in Bodyshop`,
 };
@@ -24,14 +26,16 @@ const TEXT: Record<KitchenLanguage, typeof en> = {
     title: "Suche",
     label: "Rezepte, Zutaten und Lebensmittel",
     hint: "Eine Suche findet deine Rezepte und Zutaten aus der Küche und deine Lebensmittel und Mahlzeiten aus Bodyshop.",
+    kitchenHint: "Die Suche findet deine Rezepte und Zutaten.",
     noMatch: (query: string) => `Nichts in Küche oder Bodyshop passt zu „${query}“`,
+    noKitchenMatch: (query: string) => `Kein Rezept und keine Zutat passt zu „${query}“`,
     log: "Eintragen",
     logNamed: (name: string) => `${name} in Bodyshop eintragen`,
   },
 };
 
 /**
- * Searches Kitchen and Bodyshop at once, whichever mode is open. A tap opens the hit where it lives. A Kitchen recipe or
+ * Searches Kitchen and Bodyshop at once, whichever product is open. Without Bodyshop it searches the kitchen only. A tap opens the hit where it lives. A Kitchen recipe or
  * ingredient can also go straight into the Bodyshop log.
  */
 export function SearchPage() {
@@ -59,15 +63,15 @@ export function SearchPage() {
     <PageContext.Provider value="search">
       <Screen title={text.title} floating={<Snackbar notice={notice} onUndo={() => undefined} onDone={() => setNotice(null)} />}>
         <SearchField value={query} onValue={setQuery} label={text.label} />
-        {!query.trim() ? <T muted>{text.hint}</T> : null}
+        {!query.trim() ? <T muted>{bodyshop ? text.hint : text.kitchenHint}</T> : null}
         <View style={{ gap: 2 }}>
           {hits.map((hit) => (
             <HitRow key={hit.key} hit={hit} onPress={() => void open(hit)}
-              action={hit.mode === "kitchen" && bodyshop && hit.loggable
+              action={hit.product === "kitchen" && bodyshop && hit.loggable
                 ? <Button tone="outline" compact label={text.log} accessibilityLabel={text.logNamed(hit.label)} onPress={() => setLogging(hit.loggable)} />
                 : undefined} />
           ))}
-          {query.trim() && !hits.length ? <T muted style={{ padding: 16, textAlign: "center" }}>{text.noMatch(query.trim())}</T> : null}
+          {query.trim() && !hits.length ? <T muted style={{ padding: 16, textAlign: "center" }}>{bodyshop ? text.noMatch(query.trim()) : text.noKitchenMatch(query.trim())}</T> : null}
         </View>
         {logging ? <LogSheet initial={logging} onClose={() => setLogging(undefined)} notify={setNotice} /> : null}
       </Screen>

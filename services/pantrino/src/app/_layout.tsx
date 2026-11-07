@@ -21,7 +21,7 @@ export default function RootLayout() {
   );
 }
 
-/** Sign-in is the only screen before the first sign-in. After it, the kitchen opens at once from the phone's copy. */
+/** Both account and local kitchens open through the same tab routes. */
 function Gate() {
   const { session } = useApp();
   const colors = useColors();
@@ -33,7 +33,7 @@ function Gate() {
     <>
       <StatusBar style="auto" />
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }}>
-        <Stack.Protected guard={session === "signed-in"}>
+        <Stack.Protected guard={(session === "signed-in" || session === "local")}>
           <Stack.Screen name="(tabs)" />
         </Stack.Protected>
         <Stack.Protected guard={session === "signed-out"}>

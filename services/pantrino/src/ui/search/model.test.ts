@@ -15,9 +15,9 @@ const body = {
 } as unknown as BodyshopAppSnapshot;
 
 describe("search across Kitchen and Bodyshop", () => {
-  it("finds matches in both products in one list, whichever mode is open", () => {
+  it("finds matches in both products in one list, whichever product is open", () => {
     const hits = search(searchIndex(kitchen, body), "oat");
-    expect(hits.map((hit) => `${hit.mode} ${hit.kind} ${hit.label}`)).toEqual([
+    expect(hits.map((hit) => `${hit.product} ${hit.kind} ${hit.label}`)).toEqual([
       "bodyshop meal Oat breakfast", "bodyshop food Oat drink", "kitchen ingredient Oats", "kitchen recipe Porridge with oats",
     ]);
   });
@@ -30,7 +30,7 @@ describe("search across Kitchen and Bodyshop", () => {
   });
 
   it("still searches the other product when one is not on the phone", () => {
-    expect(search(searchIndex(null, body), "oat").every((hit) => hit.mode === "bodyshop")).toBe(true);
+    expect(search(searchIndex(null, body), "oat").every((hit) => hit.product === "bodyshop")).toBe(true);
     expect(search(searchIndex(kitchen, null), "oat")).toHaveLength(2);
   });
 
