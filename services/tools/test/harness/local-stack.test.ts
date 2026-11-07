@@ -416,7 +416,7 @@ describe("owned local stack", () => {
 
   it("preserves absolute executable paths that traverse symlinks", async () => {
     const setup = await fixture();
-    const bin = join(setup.directory, "bin");
+    const bin = join(setup.directory, "probe-bin");
     const target = join(setup.directory, "target");
     await mkdir(bin);
     await mkdir(join(target, "nested"), { recursive: true });
