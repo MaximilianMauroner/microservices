@@ -122,3 +122,12 @@ describe("report intake for apps", () => {
     expect(statuses).toEqual([201, 201, 201, 201, 201, 429]);
   });
 });
+
+describe("report intake size", () => {
+  it("accepts a report with every field at its character limit", async () => {
+    const reports = { send: async () => undefined } as unknown as DevFeedbackRepository;
+    const body = JSON.stringify({ app: "pantrino", kind: "bug", message: "界".repeat(4000), details: "界".repeat(4000), page: `/${"p".repeat(499)}`, context: "c".repeat(500), contactEmail: `${"a".repeat(300)}@example.com` });
+    const response = await handleReportSubmission(new Request("https://tools.example/api/reports", { method: "POST", headers: { "content-type": "application/json", "cf-connecting-ip": "203.0.113.50" }, body }), async () => undefined, reports);
+    expect(response.status).toBe(201);
+  });
+});

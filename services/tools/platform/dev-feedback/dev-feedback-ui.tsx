@@ -1,6 +1,6 @@
 import { useRouter, useRouterState } from "@tanstack/react-router";
 import { BugIcon, CheckIcon, ExternalLinkIcon, LightbulbIcon, MessageSquareWarningIcon, RotateCcwIcon } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Button, buttonVariants } from "../ui/components/ui/button.js";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../ui/components/ui/dialog.js";
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar } from "../ui/components/ui/sidebar.js";
@@ -84,6 +84,14 @@ export function ReportsInbox({ items, reportsUrl }: { items: readonly DevFeedbac
   const ofApp = items.filter((item) => app === "all" || item.app === app);
   const visible = ofApp.filter((item) => item.state === state);
   const count = (value: DevFeedbackState) => ofApp.filter((item) => item.state === value).length;
+
+  useEffect(() => {
+    const linked = items.find((item) => `#${item.id}` === window.location.hash);
+    if (!linked) return;
+    setState(linked.state);
+    setApp("all");
+    requestAnimationFrame(() => document.getElementById(linked.id)?.scrollIntoView({ block: "center" }));
+  }, []);
 
   async function move(item: DevFeedback, next: DevFeedbackState) {
     setBusyId(item.id);
