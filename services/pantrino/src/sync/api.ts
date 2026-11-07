@@ -19,13 +19,27 @@ export class NoAccess extends Error {}
 /** Tools refused a change by one of its rules. `message` says why, in words for the person. */
 export class Refused extends Error {}
 
+let networkAllowed = false;
+let networkEpoch = 0;
+
+/** Opens or closes every account call: Kitchen sync, product lookup, and Bodyshop. A call that started before a close fails. */
+export function allowKitchenNetwork(allowed: boolean): void {
+  networkAllowed = allowed;
+  networkEpoch += 1;
+}
+
 /** A 403 signs the app out for Kitchen, the app's own product. For another product it only means no access to it. */
 async function call(path: string, init: RequestInit = {}, forbidden: "signed-out" | "no-access" = "signed-out"): Promise<Response> {
+  const epoch = networkEpoch;
+  const requireAccount = () => { if (!networkAllowed || epoch !== networkEpoch) throw new SignedOut(); };
+  requireAccount();
   const session = currentSession();
   let token = await accessToken(session);
   for (let attempt = 0; ; attempt += 1) {
+    requireAccount();
     const response = await fetch(`${TOOLS_ORIGIN}${path}`, { ...init, headers: { ...init.headers, Authorization: `Bearer ${token}`, Accept: "application/json" } })
       .catch((cause: unknown) => { throw new Offline("Tools cannot be reached.", { cause }); });
+    requireAccount();
     if (response.status === 401 && attempt === 0) {
       token = await accessToken(session, token);
       continue;

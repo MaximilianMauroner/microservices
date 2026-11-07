@@ -1,6 +1,8 @@
 import { CATALOG_SOURCE_NAMES, formatNumber, type CatalogProduct } from "@tools-platform/service/kitchen-contract";
 import { useEffect, useState } from "react";
 import { Linking, View } from "react-native";
+import { useApp } from "../../state";
+import { useLocalText } from "../local-mode";
 import { searchCatalog } from "../../sync/api";
 import { Press, T } from "../kit";
 import { useLanguage, useText } from "../language";
@@ -9,11 +11,14 @@ import { TEXT } from "./text";
 
 /** Packaged foods that match the typed name. Picking one fills in the name, the unit, and the nutrition. Offline, the list stays away. */
 export function CatalogProducts({ query, onPick }: { query: string; onPick: (product: CatalogProduct) => void }) {
+  const { session } = useApp();
+  const localText = useLocalText();
   const language = useLanguage();
   const text = useText(TEXT);
   const colors = useColors();
   const [products, setProducts] = useState<readonly CatalogProduct[]>([]);
   useEffect(() => {
+    if (session !== "signed-in") return;
     const typed = query.trim();
     let current = true;
     const timer = setTimeout(() => {
@@ -21,7 +26,9 @@ export function CatalogProducts({ query, onPick }: { query: string; onPick: (pro
       searchCatalog(typed).then((found) => { if (current) setProducts(found); }, () => { if (current) setProducts([]); });
     }, 250);
     return () => { current = false; clearTimeout(timer); };
-  }, [query]);
+  }, [query, session]);
+  if (session === "local") return <T muted style={{ fontSize: 12 }}>{localText.catalogue}</T>;
+  if (session !== "signed-in") return null;
   if (!products.length) return null;
 
   return (

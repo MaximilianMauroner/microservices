@@ -2,7 +2,7 @@ import { byGroupOrder, addDays, UNSORTED_SECTION } from "@tools-platform/service
 import { Apple, BookOpen, CalendarDays, ChevronLeft, ChevronRight, CookingPot, type LucideIcon, Refrigerator, Search, ShoppingBasket, Utensils, X } from "lucide-react-native";
 import { useFocusEffect } from "expo-router";
 import { Children, createContext, isValidElement, type ReactNode, useCallback, useContext, useEffect, useReducer, useRef, useState } from "react";
-import { AccessibilityInfo, KeyboardAvoidingView, Modal, Platform, Pressable, type PressableProps, type PressableStateCallbackType, FlatList, RefreshControl, type RefreshControlProps, ScrollView, StyleSheet, Text, type TextProps, TextInput, type TextInputProps, View, type ViewStyle } from "react-native";
+import { AccessibilityInfo, Alert, KeyboardAvoidingView, Modal, Platform, Pressable, type PressableProps, type PressableStateCallbackType, FlatList, RefreshControl, type RefreshControlProps, ScrollView, StyleSheet, Text, type TextProps, TextInput, type TextInputProps, View, type ViewStyle } from "react-native";
 import { GestureDetector, GestureHandlerRootView, usePanGesture } from "react-native-gesture-handler";
 import Animated, { FadeIn, FadeOut, LinearTransition, useAnimatedStyle, useSharedValue, withSpring, withTiming } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -10,6 +10,7 @@ import { scheduleOnRN } from "react-native-worklets";
 import Svg, { Circle, Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 import { bodyStore } from "../body/store";
 import { useSync } from "../state";
+import { useLocalText } from "./local-mode";
 import { type Feel, haptic } from "./haptics";
 import type { QueuedAction } from "../sync/model";
 import { type KitchenLanguage, LOCALES, useText } from "./language";
@@ -322,13 +323,14 @@ const SNACKBAR_AWAY = { distance: 80, velocity: 800 };
  * after every change. Android puts the scroll view inside this control, so the props it gets go on to RefreshControl.
  */
 export function SyncRefresh(props: Omit<RefreshControlProps, "refreshing" | "onRefresh">) {
-  const { sync } = useSync();
+  const { sync, mode } = useSync();
+  const localText = useLocalText();
   const colors = useColors();
   const { ink: pageInk } = usePageColor();
   const [pulled, setPulled] = useState(false);
   return (
     <RefreshControl {...props} refreshing={pulled} tintColor={pageInk} colors={[pageInk]} progressBackgroundColor={colors.card}
-      onRefresh={() => { setPulled(true); void Promise.all([sync(), bodyStore.refresh()]).finally(() => setPulled(false)); }} />
+      onRefresh={() => { if (mode === "local") { Alert.alert(localText.title, localText.limits); return; } setPulled(true); void Promise.all([sync(), bodyStore.refresh()]).finally(() => setPulled(false)); }} />
   );
 }
 

@@ -1,8 +1,14 @@
 # Pantrino
 
-Pantrino is the Kitchen product of Mauroner Tools as an iOS and Android app. A person
-signs in with their Tools account, and the app syncs. Every screen works
-offline.
+Pantrino is the Kitchen product of Mauroner Tools as an iOS and Android app.
+Use it without an account for a local kitchen, or sign in with a Tools account
+to sync account kitchens. Every screen works offline after its kitchen opens.
+
+Local mode starts with an empty kitchen. Recipes, meal plans, shopping lists,
+and manual ingredients stay on this device. It has no sync, cloud backup,
+online ingredient catalogue, or product search. Uninstalling the app loses
+the local data. Sign-in opens separate account kitchens. It does not upload
+or merge the local kitchen. Return to the local kitchen from the sign-in screen.
 
 ## How it works
 
@@ -16,9 +22,11 @@ offline.
 - Each change goes into a local queue with its own ID. The server applies
   each ID at most once, so the app can send a change again after a network
   failure. Screens show the last snapshot with the queued changes applied.
-- Local data is in an SQLCipher database. Its key is random, and it is in
-  the secure store for this device only. The app does not start without
-  SQLCipher. Sign-out deletes the database and the key.
+- Local data is in encrypted SQLCipher databases. Each database has a random
+  key in the secure store for this device only. The app needs SQLCipher.
+  Account and local kitchens have separate databases and keys. Sign-out
+  deletes only the account database and key. Local edits save a compact
+  snapshot instead of an unsent queue.
 - The phone keeps the meal plan from four weeks back. Older weeks stay on
   the web.
 

@@ -26,8 +26,8 @@ const en = {
   reportDetail: "Goes straight to the developer",
   signOut: "Sign out",
   signOutTitle: "Sign out?",
-  signOutLoses: (count: number) => `${count === 1 ? "1 change was" : `${count} changes were`} not sent yet. Signing out deletes ${count === 1 ? "it" : "them"} and every kitchen on this phone.`,
-  signOutBody: "This deletes every kitchen on this phone. Sign in again to download them.",
+  signOutLoses: (count: number) => `${count === 1 ? "1 change was" : `${count} changes were`} not sent yet. Signing out deletes ${count === 1 ? "it" : "them"} and the account kitchens on this phone. Your local kitchen stays.`,
+  signOutBody: "This deletes the account kitchens on this phone. Your local kitchen stays. Sign in again to download them.",
   cancel: "Cancel"
 };
 
@@ -58,8 +58,8 @@ export const TEXT: Record<KitchenLanguage, typeof en> = {
     reportDetail: "Geht direkt an den Entwickler",
     signOut: "Abmelden",
     signOutTitle: "Abmelden?",
-    signOutLoses: (count: number) => `${count === 1 ? "1 Änderung wurde" : `${count} Änderungen wurden`} noch nicht gesendet. Abmelden löscht sie und alle Küchen auf diesem Telefon.`,
-    signOutBody: "Das löscht alle Küchen auf diesem Telefon. Melde dich wieder an, um sie zu laden.",
+    signOutLoses: (count: number) => `${count === 1 ? "1 Änderung wurde" : `${count} Änderungen wurden`} noch nicht gesendet. Abmelden löscht sie und die Kontoküchen auf diesem Telefon. Deine lokale Küche bleibt.`,
+    signOutBody: "Das löscht die Kontoküchen auf diesem Telefon. Deine lokale Küche bleibt. Melde dich wieder an, um sie zu laden.",
     cancel: "Abbrechen"
   }
 };
