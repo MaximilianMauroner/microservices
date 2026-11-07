@@ -27,7 +27,7 @@ describe("Feedback A3 views", () => {
   it("shows forms as a compact selectable table", () => {
     const html = renderToStaticMarkup(<FeedbackHome forms={[form]} />);
     expect(html).toContain(">Forms</h1>");
-    expect(html).toContain('aria-label="Feedback forms"');
+    expect(html).toContain('aria-label="Forms"');
     expect(html).toContain('aria-label="Select all forms"');
     expect(html).toContain("Workshop");
     expect(html).toContain("New form");

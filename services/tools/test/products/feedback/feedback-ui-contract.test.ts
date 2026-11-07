@@ -17,7 +17,7 @@ describe("feedback copy UI", () => {
   it("renders the action-first mobile overview", async () => {
     const feedbackUi = await readFile(new URL("../../../products/feedback/ui.tsx", import.meta.url), "utf8");
 
-    expect(feedbackUi).toContain('aria-label="Feedback overview"');
+    expect(feedbackUi).toContain('aria-label="Form overview"');
     expect(feedbackUi).toContain("Preview form");
     expect(feedbackUi).toContain("Total responses");
     expect(feedbackUi).toContain("Recent responses");

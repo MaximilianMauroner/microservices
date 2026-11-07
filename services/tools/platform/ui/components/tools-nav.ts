@@ -27,7 +27,7 @@ export const TOOLS_PRODUCTS: readonly ToolsProduct[] = [
   },
   { id: "money", label: "Money", to: "/money", icon: favicons.money, match: (path) => path.startsWith("/money") },
   {
-    id: "feedback", label: "Feedback", to: "/feedback", icon: favicons.feedback, match: (path) => path.startsWith("/feedback"),
+    id: "feedback", label: "Forms", to: "/feedback", icon: favicons.feedback, match: (path) => path.startsWith("/feedback"),
     pages: [
       { label: "Responses", to: "/feedback", match: (path) => exact("/feedback")(path) || path.startsWith("/feedback/responses") },
       { label: "Forms", to: "/feedback/forms", match: (path) => path.startsWith("/feedback/forms") }
