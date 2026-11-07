@@ -92,7 +92,7 @@ async function sendBefore(report: Report, named: boolean, signal: AbortSignal): 
     let response: Response;
     try {
       response = await fetch(`${TOOLS_ORIGIN}/api/reports`, {
-        method: "POST", body, signal,
+        method: "POST", body, signal, credentials: "omit",
         headers: { "Content-Type": "application/json", Accept: "application/json", ...(bearer ? { Authorization: `Bearer ${bearer}` } : {}) }
       });
     } catch {
@@ -108,7 +108,9 @@ async function sendBefore(report: Report, named: boolean, signal: AbortSignal): 
     if (response.ok) return { kind: "sent" };
     if (response.status === 429) return { kind: "rate-limited" };
     if (response.status === 400) {
-      const reason = ((await response.json().catch(() => ({}))) as { reason?: string }).reason;
+      let reason: string | undefined;
+      try { reason = ((await beforeDeadline(response.json(), signal).catch((error: unknown) => { if (signal.aborted) throw error; return {}; })) as { reason?: string }).reason; }
+      catch { return { kind: "timeout" }; }
       return { kind: "rejected", reason: REJECTIONS.includes(reason as ReportRejection) ? reason as ReportRejection : "unknown" };
     }
     return { kind: "failed" };
