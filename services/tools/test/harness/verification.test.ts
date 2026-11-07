@@ -178,8 +178,8 @@ describe("terminal verification CLI", () => {
   it("resolves inherited relative executable paths before changing directories", async () => {
     const caller = join(directory, "caller");
     await mkdir(caller);
-    await symlink(join(directory, "bin"), join(caller, "bin"), "dir");
-    const result = await run({ FIXTURE_MODE: "workspace", PATH: "bin" }, undefined, caller);
+    await symlink(join(directory, "bin"), join(caller, "tools-bin"), "dir");
+    const result = await run({ FIXTURE_MODE: "workspace", PATH: "tools-bin" }, undefined, caller);
     expect(result.code).toBe(0);
     expect(result.record.automatedDecision.kind).toBe("passed");
   }, 15_000);
@@ -195,6 +195,21 @@ describe("terminal verification CLI", () => {
       await writeFile(join(directory, "bin", command), "#!/bin/sh\nif [ \"$1\" = rev-parse ]; then printf 'fixture-revision\\n'; fi\nexit 0\n");
     }
     const result = await run({ FIXTURE_MODE: "workspace", PATH: `${caller}/link/../bin` });
+    expect(result.code).toBe(0);
+    expect(result.record.automatedDecision.kind).toBe("passed");
+  }, 15_000);
+
+  it("preserves relative executable paths that traverse symlinks", async () => {
+    const caller = join(directory, "caller");
+    const target = join(directory, "target");
+    await mkdir(caller);
+    await mkdir(join(target, "nested"), { recursive: true });
+    await symlink(join(target, "nested"), join(caller, "link"), "dir");
+    await symlink(join(directory, "bin"), join(target, "bin"), "dir");
+    for (const command of ["git", "pnpm"]) {
+      await writeFile(join(directory, "bin", command), "#!/bin/sh\nif [ \"$1\" = rev-parse ]; then printf 'fixture-revision\\n'; fi\nexit 0\n");
+    }
+    const result = await run({ FIXTURE_MODE: "workspace", PATH: "link/../bin" }, undefined, caller);
     expect(result.code).toBe(0);
     expect(result.record.automatedDecision.kind).toBe("passed");
   }, 15_000);
