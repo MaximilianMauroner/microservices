@@ -12,6 +12,7 @@ const DAY_MS = 86_400_000;
 export type AttentionSummary = Readonly<{
   moneyReview?: number;
   feedbackUnread?: number;
+  reportsOpen?: number;
   documentsExpiring?: ReadonlyArray<Readonly<{ filename: string; expiresAt: number }>>;
   servicesDown?: ReadonlyArray<Readonly<{ name: string; since: string | null }>>;
 }>;
@@ -29,13 +30,17 @@ export const getAttentionSummary = createServerFn({ method: "GET" })
   .middleware([requirePlatformSession])
   .handler(async ({ context: { principal } }): Promise<AttentionSummary> => {
     const { context } = internalPlatformRequest("/api/ops/snapshot");
-    const [money, forms, documents, snapshot] = await Promise.allSettled([
+    const [money, forms, documents, snapshot, reports] = await Promise.allSettled([
       context.runtime.moneyImports.owner(principal.subject).readReviewCounts(),
       context.runtime.feedback.owner(principal.subject).listForms(),
       context.runtime.documentShare.owner(principal.subject).list(),
-      readSnapshot(context)
+      readSnapshot(context),
+      context.runtime.devFeedback.countOpen()
     ]);
-    return attentionFrom({ money: settled(money), forms: settled(forms), documents: settled(documents), snapshot: settled(snapshot) }, Date.now());
+    return {
+      ...attentionFrom({ money: settled(money), forms: settled(forms), documents: settled(documents), snapshot: settled(snapshot) }, Date.now()),
+      ...(reports.status === "fulfilled" ? { reportsOpen: reports.value } : {})
+    };
   });
 
 export const getDashboardData = createServerFn({ method: "GET" })

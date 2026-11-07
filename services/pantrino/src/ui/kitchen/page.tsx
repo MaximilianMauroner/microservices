@@ -1,5 +1,5 @@
 import { router } from "expo-router";
-import { ChevronRight, Leaf, LogOut, type LucideIcon, RefreshCw, Users } from "lucide-react-native";
+import { ChevronRight, Leaf, LogOut, MessageSquareWarning, type LucideIcon, RefreshCw, Users } from "lucide-react-native";
 import { type ReactNode, useContext, useState } from "react";
 import { ActivityIndicator, Alert, StyleSheet, View } from "react-native";
 import { useApp, useKitchen, useSync } from "../../state";
@@ -8,6 +8,7 @@ import { Button, HueBadge, Press, Screen, Sheet, T, usePageColor } from "../kit"
 import { KITCHEN_LANGUAGES, type KitchenLanguage, LANGUAGE_NAMES, LanguageContext, LOCALES, useText } from "../language";
 import { haptic, STRENGTHS, useHaptics } from "../haptics";
 import { tint, useColors } from "../theme";
+import { ReportSheet } from "../report-sheet";
 import { TEXT } from "./text";
 
 /** The Kitchen tab: the open kitchen, its ingredients and members, sync, language, and sign-out. It works before the first kitchen arrives. */
@@ -20,6 +21,7 @@ export function KitchenHub() {
   const text = useText(TEXT);
   const colors = useColors();
   const [switching, setSwitching] = useState(false);
+  const [reporting, setReporting] = useState(false);
   const kitchen = open?.kitchen;
   const state = syncLine(status, language);
   const confirmSignOut = () => Alert.alert(text.signOutTitle, pending ? text.signOutLoses(pending) : text.signOutBody, [
@@ -60,11 +62,15 @@ export function KitchenHub() {
       <Choice label={text.language} options={KITCHEN_LANGUAGES} names={LANGUAGE_NAMES} value={language} onValue={setLanguage} />
       <Choice label={text.vibration} options={STRENGTHS} names={text.strengths} value={strength} silent onValue={(next) => { setStrength(next); haptic("toggle"); }} />
       <List>
+        <Row icon={MessageSquareWarning} title={text.report} detail={text.reportDetail} onPress={() => setReporting(true)} />
+      </List>
+      <List>
         <Press accessibilityRole="button" onPress={confirmSignOut} style={({ pressed }) => [styles.row, { justifyContent: "center", opacity: pressed ? 0.7 : 1 }]}>
           <LogOut size={18} color={colors.destructive} />
           <T weight="medium" style={{ color: colors.destructive }}>{text.signOut}</T>
         </Press>
       </List>
+      <ReportSheet open={reporting} onClose={() => setReporting(false)} signedIn page="/kitchen" />
       <Sheet open={switching} onClose={() => setSwitching(false)} title={text.kitchens}>
         {open?.kitchens.map(({ kitchen: one }) => {
           const active = one.id === kitchen?.kitchen.id;
