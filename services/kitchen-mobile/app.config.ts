@@ -9,7 +9,7 @@ const config: ExpoConfig = {
   slug: "pantrino",
   scheme: "com.lab4code.pantrino",
   version: "1.0.0",
-  orientation: "portrait",
+  orientation: "default",
   icon: "./assets/icon.png",
   userInterfaceStyle: "automatic",
   ios: { bundleIdentifier: "com.lab4code.pantrino", supportsTablet: true, config: { usesNonExemptEncryption: false } },
