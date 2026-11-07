@@ -45,10 +45,10 @@ export function createKitchenSession({ accountEngine, localEngine, accountVault,
     await Promise.all([accountEngine.stop(), localEngine.stop()]);
   }
 
-  function transition(work: () => Promise<void>) {
+  function transition(work: () => Promise<void>, localError = true) {
     const next = transitions.then(work).catch(async (error: unknown) => {
       await stop();
-      publish({ session: "signed-out", error: true });
+      publish({ session: "signed-out", error: localError });
       throw error;
     });
     transitions = next.catch(() => undefined);
@@ -62,7 +62,7 @@ export function createKitchenSession({ accountEngine, localEngine, accountVault,
     }
     await accountEngine.load();
     const kitchenId = await accountVault.setting("kitchen");
-    await localVault.saveSetting("mode", "account");
+    await rememberAccountMode("account");
     publish({ session: "signed-in", kitchenId, error: false });
     allowNetwork(true);
     void accountEngine.sync();
@@ -74,6 +74,11 @@ export function createKitchenSession({ accountEngine, localEngine, accountVault,
     publish({ session: "local", kitchenId: null, error: false, hasLocal: true });
   }
 
+  async function rememberAccountMode(mode: "account" | "signed-out") {
+    // A local file without its device key must not block a separate account kitchen.
+    await localVault.saveSetting("mode", mode).catch(() => undefined);
+  }
+
   const controller = {
     getState: () => state,
     getSyncState: () => active()?.getState() ?? INITIAL,
@@ -83,8 +88,8 @@ export function createKitchenSession({ accountEngine, localEngine, accountVault,
     },
     start: () => transition(async () => {
       await stop();
-      publish({ hasLocal: (await localVault.snapshot()) !== null });
-      const mode = await localVault.setting("mode");
+      publish({ hasLocal: (await localVault.snapshot().catch(() => null)) !== null });
+      const mode = await localVault.setting("mode").catch(() => null);
       if (mode === "local") return loadLocal();
       const account = mode === "signed-out" ? null : await auth.storedAccount();
       if (account) await loadAccount(account);
@@ -96,7 +101,7 @@ export function createKitchenSession({ accountEngine, localEngine, accountVault,
     }),
     showSignIn: () => transition(async () => {
       await stop();
-      await localVault.saveSetting("mode", "signed-out");
+      await rememberAccountMode("signed-out");
       publish({ session: "signed-out" });
     }),
     signIn: () => transition(async () => {
@@ -107,13 +112,13 @@ export function createKitchenSession({ accountEngine, localEngine, accountVault,
       await accountVault.saveSetting("account", next.account);
       await next.install();
       await loadAccount(next.account);
-    }),
+    }, false),
     signOut: () => transition(async () => {
       if (state.session !== "signed-in") return;
       await stop();
       await auth.signOut();
       await wipeAccount();
-      await localVault.saveSetting("mode", "signed-out");
+      await rememberAccountMode("signed-out");
       publish({ session: "signed-out" });
     }),
     openKitchen(kitchenId: string) {
