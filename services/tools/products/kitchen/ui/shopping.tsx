@@ -28,6 +28,8 @@ const en = {
   stopped: (name: string) => `${name} is no longer on every week's list`,
   notBought: (name: string) => `${name} back on the list`,
   bought: (name: string) => `${name} bought`,
+  remove: (name: string) => `Remove ${name}`,
+  removed: (name: string) => `${name} removed`,
   addedToHome: (amount: string, name: string) => `${amount} ${name} added to At home`,
   forRecipes: (recipes: string) => `For ${recipes}`,
   inStock: (amount: string) => `${amount} at home`,
@@ -65,6 +67,8 @@ const TEXT: Record<KitchenLanguage, typeof en> = {
     stopped: (name: string) => `${name} ist nicht mehr auf der Wochenliste`,
     notBought: (name: string) => `${name} wieder auf der Liste`,
     bought: (name: string) => `${name} gekauft`,
+    remove: (name: string) => `${name} entfernen`,
+    removed: (name: string) => `${name} entfernt`,
     addedToHome: (amount: string, name: string) => `${amount} ${name} in den Vorrat gelegt`,
     forRecipes: (recipes: string) => `Für ${recipes}`,
     inStock: (amount: string) => `${amount} zu Hause`,
@@ -136,7 +140,8 @@ export function KitchenShoppingPage(data: ShoppingData) {
         {weekly.length ? (
           <Group id="shopping-every-week" title={text.everyWeek} color="var(--kitchen-home-ink)" count={weekly.filter((extra) => !extra.bought).length}>
             {weekly.map((extra) => (
-              <Row key={extra.id} name={extra.name} disabled={pending} color="var(--kitchen-home-ink)" done={extra.bought}
+              <Row key={extra.id} source={extra} name={extra.name} disabled={pending} color="var(--kitchen-home-ink)" done={extra.bought}
+                onRemove={() => run({ type: "extra.remove", id: extra.id }, { title: text.removed(extra.name), undo: { type: "extra.add", createId: extra.id, name: extra.name, everyWeek: true, boughtWeek: extra.boughtWeek ?? (extra.bought ? shopping.start : undefined) } })}
                 onCheck={() => run({ type: "extra.mark", id: extra.id, week: shopping.start, bought: true }, { title: text.bought(extra.name), undo: { type: "extra.mark", id: extra.id, week: shopping.start, bought: false } })}
                 onUncheck={() => run({ type: "extra.mark", id: extra.id, week: shopping.start, bought: false }, { title: text.notBought(extra.name) })} />
             ))}
@@ -145,8 +150,9 @@ export function KitchenShoppingPage(data: ShoppingData) {
         {once.length ? (
           <Group id="shopping-extras" title={text.alsoBuy} color="var(--kitchen-shopping-ink)">
             {once.map((extra) => (
-              <Row key={extra.id} name={extra.name} disabled={pending} color="var(--kitchen-shopping-ink)"
-                onCheck={() => run({ type: "extra.remove", id: extra.id }, { title: text.bought(extra.name), undo: { type: "extra.add", name: extra.name } })} />
+              <Row key={extra.id} source={extra} name={extra.name} disabled={pending} color="var(--kitchen-shopping-ink)"
+                onRemove={() => run({ type: "extra.remove", id: extra.id }, { title: text.removed(extra.name), undo: { type: "extra.add", createId: extra.id, name: extra.name, everyWeek: false } })}
+                onCheck={() => run({ type: "extra.remove", id: extra.id }, { title: text.bought(extra.name), undo: { type: "extra.add", createId: extra.id, name: extra.name } })} />
             ))}
           </Group>
         ) : null}
@@ -155,6 +161,7 @@ export function KitchenShoppingPage(data: ShoppingData) {
             {lines.map((line) => (
               <Row
                 key={line.ingredientId}
+                source={line}
                 color={groupColor(kitchen.groups, section)}
                 name={line.ingredient}
                 amount={formatAmount(line.toBuy, line.unit, language)}
@@ -208,27 +215,28 @@ function Group({ id, title, color, count, children }: { id: string; title: strin
  * One item to tick off. Without `onUncheck`, a ticked row stays ticked until the list drops it.
  * With it, as for every-week items, a second tap unticks it.
  */
-function Row({ name, amount, detail, color, onCheck, onUncheck, done = false, disabled }: {
+function Row({ source, name, amount, detail, color, onCheck, onUncheck, onRemove, done = false, disabled }: {
+  source: ExtraItem | ShoppingLine;
   name: string; amount?: string; detail?: string; color: string; done?: boolean; disabled: boolean;
   onCheck: () => Promise<unknown>; onUncheck?: () => Promise<unknown>;
+  onRemove?: () => Promise<unknown>;
 }) {
   const text = useText(TEXT);
-  const [optimistic, setOptimistic] = useState<boolean>();
-  const checked = optimistic ?? done;
+  const [optimistic, setOptimistic] = useState<{ source: ExtraItem | ShoppingLine; checked: boolean }>();
+  const checked = optimistic?.source === source ? optimistic.checked : done;
   async function toggle() {
     const next = !checked;
-    setOptimistic(next);
-    const ok = await (next ? onCheck() : onUncheck?.());
-    setOptimistic(ok ? next : undefined);
+    setOptimistic({ source, checked: next });
+    if (!await (next ? onCheck() : onUncheck?.())) setOptimistic(undefined);
   }
   return (
-    <li>
+    <li className="flex items-center">
       <button
         type="button"
         disabled={disabled || (checked && !onUncheck)}
         aria-pressed={onUncheck ? checked : undefined}
         onClick={() => void toggle()}
-        className="flex min-h-14 w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-background/40 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none focus-visible:ring-inset sm:px-4"
+        className="flex min-h-14 min-w-0 flex-1 items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-background/40 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none focus-visible:ring-inset sm:px-4"
         aria-label={text.boughtAria(name, amount)}
       >
         <span className={cn(
@@ -243,6 +251,11 @@ function Row({ name, amount, detail, color, onCheck, onUncheck, done = false, di
         </span>
         {amount ? <span className="shrink-0 text-sm font-semibold tabular-nums" style={{ color: ink(color) }}>{amount}</span> : null}
       </button>
+      {onRemove ? (
+        <Button variant="ghost" size="icon" className="mr-2 size-11 shrink-0" disabled={disabled} aria-label={text.remove(name)} onClick={() => void onRemove()}>
+          <XIcon aria-hidden />
+        </Button>
+      ) : null}
     </li>
   );
 }
@@ -260,8 +273,10 @@ function AddSheet({ open, onClose, data }: { open: boolean; onClose: () => void;
 
   async function add(item: string) {
     const trimmed = item.trim();
-    if (!trimmed || onList.has(trimmed.toLowerCase())) return;
-    if (await run({ type: "extra.add", name: trimmed, everyWeek })) setAdded((current) => [...current, trimmed]);
+    if (pending || !trimmed || onList.has(trimmed.toLowerCase())) return false;
+    if (!await run({ type: "extra.add", name: trimmed, everyWeek })) return false;
+    setAdded((current) => [...current, trimmed]);
+    return true;
   }
 
   return (
@@ -272,8 +287,8 @@ function AddSheet({ open, onClose, data }: { open: boolean; onClose: () => void;
       description={text.addDescription}
       footer={<Button size="lg" className="px-5" onClick={() => { onClose(); setAdded([]); }}>{added.length ? text.doneAdded(added.length) : text.done}</Button>}
     >
-      <form className="mb-2 flex gap-2" onSubmit={(event) => { event.preventDefault(); void add(name).then(() => setName("")); }}>
-        <Input className="h-10" placeholder={text.itemPlaceholder} value={name} onChange={(event) => setName(event.target.value)} aria-label={text.item} />
+      <form className="mb-2 flex gap-2" onSubmit={(event) => { event.preventDefault(); void add(name).then((ok) => { if (ok) setName(""); }); }}>
+        <Input className="h-10" placeholder={text.itemPlaceholder} value={name} disabled={pending} onChange={(event) => setName(event.target.value)} aria-label={text.item} />
         <Button type="submit" variant="outline" className="h-10" disabled={!name.trim() || pending}>{text.add}</Button>
       </form>
       <div className="mb-4 flex items-start gap-3">
@@ -291,7 +306,7 @@ function AddSheet({ open, onClose, data }: { open: boolean; onClose: () => void;
               <li key={extra.id} className="inline-flex h-9 items-center gap-1 rounded-full border border-control-border pr-1 pl-3 text-sm">
                 {extra.name}
                 <button type="button" disabled={pending} aria-label={text.stopEveryWeek(extra.name)}
-                  onClick={() => void run({ type: "extra.remove", id: extra.id }, { title: text.stopped(extra.name), undo: { type: "extra.add", name: extra.name, everyWeek: true } })}
+                  onClick={() => void run({ type: "extra.remove", id: extra.id }, { title: text.stopped(extra.name), undo: { type: "extra.add", createId: extra.id, name: extra.name, everyWeek: true, boughtWeek: extra.boughtWeek ?? (extra.bought ? data.shopping.start : undefined) } })}
                   className="grid size-7 place-items-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground">
                   <XIcon className="size-3.5" aria-hidden />
                 </button>

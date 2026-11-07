@@ -99,7 +99,7 @@ export interface KitchenScope {
   week(start: string): Promise<KitchenWeek>;
   /** Every planned meal on this day or later. */
   planFrom(day: string): Promise<readonly PlanEntry[]>;
-  plan(input: { day: string; meal: Meal; recipeId: string; servings: number; newId?: string }): Promise<PlanEntry>;
+  plan(input: { day: string; meal: Meal; recipeId: string; servings: number; newId?: string; restore?: { cookedAt: string | null; lines?: readonly RecipeLineInput[] } }): Promise<PlanEntry>;
   updatePlan(id: string, input: { day: string; meal: Meal; servings: number }): Promise<PlanEntry>;
   removePlan(id: string): Promise<void>;
   /**
@@ -123,7 +123,7 @@ export interface KitchenScope {
   shopping(start: string): Promise<KitchenShopping>;
   /** Extra items with the week each every-week item is bought for, so a client can show any week. */
   storedExtras(): Promise<readonly StoredExtra[]>;
-  addExtra(name: string, everyWeek?: boolean, newId?: string): Promise<ExtraItem>;
+  addExtra(name: string, everyWeek?: boolean, newId?: string, boughtWeek?: string | null): Promise<ExtraItem>;
   /** Marks an every-week item as bought, or not bought, for the week that starts on `week`. */
   markExtra(id: string, week: string, bought: boolean): Promise<void>;
   removeExtra(id: string): Promise<void>;
@@ -132,7 +132,7 @@ export interface KitchenScope {
 type IngredientRow = { id: string; name: string; unit: IngredientUnit; section: string; other_groups: string[]; kcal: number | null; protein: number | null; carbs: number | null; fat: number | null; notes: string; recipe_count: number };
 type RecipeRow = { id: string; name: string; servings: number; minutes: number | null; instructions: string; updated_at: Date };
 type LineRow = { recipe_id: string; ingredient_id: string; ingredient: string; unit: IngredientUnit; amount: number; note: string };
-type PlanRow = { id: string; day: string; meal: Meal; recipe_id: string; recipe: string; servings: number; custom_servings: number | null; cooked_at: Date | null };
+type PlanRow = { id: string; day: string; meal: Meal; recipe_id: string; recipe: string; servings: number; custom_servings: number | null; cooked_at: string | null };
 type PlanLineRow = { entry_id: string; ingredient_id: string; ingredient: string; unit: IngredientUnit; amount: number; note: string; base: number; servings: number };
 
 export function createPostgresKitchenStore(databaseUrl: string, options: { readOnly?: boolean } = {}): KitchenStore {
@@ -518,11 +518,20 @@ function scope(sql: Db, kitchen: Kitchen): KitchenScope {
       return withLines(sql, rows);
     },
     async plan(input) {
-      await recipe(sql, input.recipeId);
       const id = input.newId ?? randomUUID();
-      await sql`insert into tools.kitchen_plan_entries (id, kitchen_id, day, meal, recipe_id, servings, created_at)
-        values (${id}, ${k}, ${parseDay(input.day)}, ${parseMeal(input.meal)}, ${input.recipeId}, ${parseServings(input.servings)}, now())`;
-      return entry(sql, id);
+      const servings = parseServings(input.servings);
+      const lines = input.restore?.lines === undefined ? undefined : parseLines(input.restore.lines);
+      return begin(async (tx) => {
+        await recipe(tx, input.recipeId);
+        for (const line of lines ?? []) await ingredient(tx, line.ingredientId);
+        await tx`insert into tools.kitchen_plan_entries (id, kitchen_id, day, meal, recipe_id, servings, custom_servings, cooked_at, created_at)
+          values (${id}, ${k}, ${parseDay(input.day)}, ${parseMeal(input.meal)}, ${input.recipeId}, ${servings}, ${lines === undefined ? null : servings}, ${input.restore?.cookedAt ?? null}::text::timestamptz, now())`;
+        for (const [position, line] of (lines ?? []).entries()) {
+          await tx`insert into tools.kitchen_plan_lines (kitchen_id, entry_id, ingredient_id, position, amount, note)
+            values (${k}, ${id}, ${line.ingredientId}, ${position}, ${line.amount}, ${line.note})`;
+        }
+        return entry(tx, id);
+      });
     },
     async updatePlan(id, input) {
       await entry(sql, id);
@@ -614,7 +623,7 @@ function scope(sql: Db, kitchen: Kitchen): KitchenScope {
         this.week(start),
         stock(sql),
         sql<{ id: string; section: string }[]>`select id, section from tools.kitchen_ingredients where kitchen_id = ${k}`,
-        sql<ExtraItem[]>`select id, name, every_week "everyWeek", (every_week and bought_week is not distinct from ${start}::date) bought
+        sql<ExtraItem[]>`select id, name, every_week "everyWeek", bought_week::text "boughtWeek", (every_week and bought_week is not distinct from ${start}::date) bought
           from tools.kitchen_extras where kitchen_id = ${k} order by created_at`,
         sql<{ groups: string[] }[]>`select groups from tools.kitchens where id = ${k}`
       ]);
@@ -626,11 +635,12 @@ function scope(sql: Db, kitchen: Kitchen): KitchenScope {
     },
     storedExtras: () => sql<StoredExtra[]>`select id, name, every_week "everyWeek", bought_week::text "boughtWeek"
       from tools.kitchen_extras where kitchen_id = ${k} order by created_at`,
-    async addExtra(name, everyWeek = false, newId) {
+    async addExtra(name, everyWeek = false, newId, boughtWeek) {
       const id = newId ?? randomUUID();
       const item = requiredName(name, "item");
-      await sql`insert into tools.kitchen_extras (id, kitchen_id, name, every_week, created_at) values (${id}, ${k}, ${item}, ${everyWeek}, now())`;
-      return { id, name: item, everyWeek, bought: false };
+      const bought = boughtWeek == null ? null : parseDay(boughtWeek);
+      await sql`insert into tools.kitchen_extras (id, kitchen_id, name, every_week, bought_week, created_at) values (${id}, ${k}, ${item}, ${everyWeek}, ${bought}, now())`;
+      return { id, name: item, everyWeek, bought: false, boughtWeek: bought };
     },
     async markExtra(id, week, bought) {
       const rows = isUuid(id)
@@ -652,7 +662,8 @@ function ingredientSelect(db: Db, kitchenId: string) {
 }
 
 function planSelect(db: Db, kitchenId: string) {
-  return db`select e.id, e.day::text, e.meal, e.recipe_id, r.name recipe, e.servings, e.custom_servings, e.cooked_at from tools.kitchen_plan_entries e
+  return db`select e.id, e.day::text, e.meal, e.recipe_id, r.name recipe, e.servings, e.custom_servings,
+    to_char(e.cooked_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') cooked_at from tools.kitchen_plan_entries e
     join tools.kitchen_recipes r on r.kitchen_id = e.kitchen_id and r.id = e.recipe_id where e.kitchen_id = ${kitchenId}`;
 }
 
@@ -684,7 +695,7 @@ function ingredientFromRow(row: IngredientRow): Ingredient {
 }
 
 function planFromRow(row: PlanRow): Omit<PlanEntry, "lines"> {
-  return { id: row.id, day: row.day, meal: row.meal, recipeId: row.recipe_id, recipe: row.recipe, servings: row.servings, cooked: row.cooked_at !== null, custom: row.custom_servings !== null };
+  return { id: row.id, day: row.day, meal: row.meal, recipeId: row.recipe_id, recipe: row.recipe, servings: row.servings, cooked: row.cooked_at !== null, cookedAt: row.cooked_at, custom: row.custom_servings !== null };
 }
 
 /** A change that met a newer change from someone else: a reused ID, or an item that is gone. The app shows it; it is not a server fault. */
