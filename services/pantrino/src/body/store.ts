@@ -10,12 +10,13 @@ import { bodyshopApi, NoAccess, Refused } from "../sync/api";
  */
 export type BodyStatus = "unknown" | "ready" | "loading" | "offline" | "no-access" | "failed";
 export type BodyState = Readonly<{ snapshot: BodyshopAppSnapshot | null; status: BodyStatus }>;
-export type BodyResult = { ok: true; repeated: boolean } | { ok: false; reason: "offline" | "refused" | "failed"; message?: string };
+export type BodyResult = { ok: true; repeated: boolean } | { ok: false; reason: "offline" | "refused" | "failed" | "cancelled"; message?: string };
 
 const CACHE = "bodyshop";
 let state: BodyState = { snapshot: null, status: "unknown" };
 /** Goes up at each reset. An answer that arrives after a sign-out or an account change is dropped. */
 let epoch = 0;
+let readVersion = 0;
 const listeners = new Set<() => void>();
 
 function set(next: Partial<BodyState>) {
@@ -49,30 +50,39 @@ export const bodyStore = {
   /** Reads `day`, or the shown day, or today. A signed-out error is left to the Kitchen sync, which owns the session. */
   async refresh(day = state.snapshot?.day) {
     const mine = epoch;
+    const version = ++readVersion;
     set({ status: "loading" });
     try {
       const snapshot = await bodyshopApi.today(day);
-      if (mine === epoch) set({ snapshot, status: "ready" });
+      if (mine === epoch && version === readVersion) set({ snapshot, status: "ready" });
     } catch (error) {
-      if (mine !== epoch) return;
+      if (mine !== epoch || version !== readVersion) return;
       if (error instanceof SignedOut) return set({ status: "failed" });
       set({ status: failed(error) });
     }
   },
 
   /** Sends one change and shows the day Tools answers with. Nothing is queued: an offline change says so and stays in its form. */
-  async act(action: BodyshopAction): Promise<BodyResult> {
-    const mine = epoch;
+  async act(action: BodyshopAction, mine = epoch): Promise<BodyResult> {
+    if (mine !== epoch) return { ok: false, reason: "cancelled" };
     try {
       const { result, snapshot } = await bodyshopApi.act(action, state.snapshot?.day);
-      if (mine === epoch) set({ snapshot, status: "ready" });
+      if (mine !== epoch) return { ok: false, reason: "cancelled" };
+      readVersion += 1;
+      set({ snapshot, status: "ready" });
       return { ok: true, repeated: Boolean(result.repeated) };
     } catch (error) {
+      if (mine !== epoch) return { ok: false, reason: "cancelled" };
       if (error instanceof Refused) return { ok: false, reason: "refused", message: error.message };
       const status = failed(error);
       if (status === "no-access" && mine === epoch) set({ status });
       return { ok: false, reason: status === "offline" ? "offline" : "failed" };
     }
+  },
+
+  actionSender() {
+    const mine = epoch;
+    return (action: BodyshopAction) => bodyStore.act(action, mine);
   },
 
   reset() {

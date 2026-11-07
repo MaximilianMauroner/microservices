@@ -126,14 +126,15 @@ function Amount({ food, meal: startMeal, day, onBack, onClose, notify }: {
     if (!ready || busy) return;
     setBusy(true);
     setError(undefined);
+    const act = bodyStore.actionSender();
     let target = food;
     if (save && canSave) {
-      const saved = await bodyStore.act({ type: "food.save", name: name.trim(), amount: food.per, unit: food.unit, nutrients: { ...food.nutrients, kcal: food.nutrients.kcal! }, source: origin(food) });
+      const saved = await act({ type: "food.save", name: name.trim(), amount: food.per, unit: food.unit, nutrients: { ...food.nutrients, kcal: food.nutrients.kcal! }, source: origin(food) });
       if (!saved.ok) { setBusy(false); setError(saved.reason === "refused" ? saved.message : saved.reason === "offline" ? text.needsConnection : text.failed); return; }
       const stored = bodyStore.getState().snapshot?.foods.find((one) => one.name.toLowerCase() === name.trim().toLowerCase());
       if (stored) target = { ...food, savedId: stored.id };
     }
-    const result = await bodyStore.act(logAction(target, { name, amount: value, meal, day, kcal: typedKcal }));
+    const result = await act(logAction(target, { name, amount: value, meal, day, kcal: typedKcal }));
     setBusy(false);
     if (result.ok) {
       notify({ message: result.repeated ? text.alreadyLogged(name.trim()) : text.logged(name.trim()) });
