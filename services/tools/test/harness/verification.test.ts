@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { chmod, copyFile, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -174,6 +174,18 @@ async function run(environment: NodeJS.ProcessEnv = {}, observe?: (send: (signal
 }
 
 describe("terminal verification CLI", () => {
+  it("resolves inherited relative executable paths before changing directories", async () => {
+    const scratch = await mkdtemp(join(process.cwd(), ".verification-path-"));
+    try {
+      await symlink(join(directory, "bin"), join(scratch, "bin"), "dir");
+      const result = await run({ FIXTURE_MODE: "workspace", PATH: relative(process.cwd(), join(scratch, "bin")) });
+      expect(result.code).toBe(0);
+      expect(result.record.automatedDecision.kind).toBe("passed");
+    } finally {
+      await rm(scratch, { recursive: true, force: true });
+    }
+  }, 15_000);
+
   it("publishes one complete plan and succeeds only when every required case runs", async () => {
     const result = await run();
     expect(result.code).toBe(0);

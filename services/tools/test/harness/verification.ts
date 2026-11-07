@@ -3,7 +3,7 @@ import { performance } from "node:perf_hooks";
 import { renameSync, unlinkSync, writeFileSync, writeSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { delimiter, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { withOwnedCommands, type CommandExecutor, type CommandOutcome, type CommandSpec } from "./commands.ts";
 import { resolveMinioImage, type MinioImage } from "./minio-image.ts";
@@ -103,6 +103,7 @@ async function childReport<Phase extends ChildReport["phase"]>(phase: Phase, com
 }
 
 export async function runVerification(mode: VerificationMode, paths?: Readonly<{ artifactParent: string }>): Promise<never> {
+  if (process.env.PATH !== undefined) process.env.PATH = process.env.PATH.split(delimiter).map((entry) => resolve(entry)).join(delimiter);
   let interruption: Interruption = { kind: "none" };
   let sealed = false;
   const work = new AbortController();

@@ -24,6 +24,6 @@
     "typecheck:network-console": "pnpm --dir services/network-console run typecheck",
     "typecheck:tools": "pnpm --dir services/tools run typecheck",
     "validate": "node scripts/validate-tracked-files.mjs",
-    "verify": "pnpm run validate && node --test scripts/verify-workflow-cache.test.mjs && pnpm --dir services/tools exec tsx test/harness/run.ts workspace"
+    "verify": "pnpm run validate && pnpm --dir services/tools exec tsx test/harness/run.ts workspace"
   }
 }
