@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { kitchenAction, type Ingredient, type KitchenSnapshot, type KitchenSync } from "@tools-platform/service/kitchen-contract";
 import { project } from "../../sync/project";
-import { changeSize, ingredientDraft, ingredientSave, oldPerNew, withGroup, withProduct, withUnit } from "./model";
+import { changeSize, ingredientDraft, ingredientSave, oldPerNew, withGroup, withProduct, withScan, withUnit } from "./model";
 
 const ingredient: Ingredient = {
   id: "tomato", name: "Tomato", unit: "g", section: "Vegetables", otherGroups: ["Basics"],
@@ -113,5 +113,31 @@ describe("ingredient from a product", () => {
     const result = ingredientSave(withProduct(draft, oats, "de"), undefined, snapshot());
     if (!result.action) throw new Error(result.issue);
     expect(result.action).toMatchObject({ name: "Haferdrink", unit: "ml", kcal: 46, protein: 0.4, carbs: 7.1, fat: null, addToRecipes: [{ recipeId: "salad", amount: 100 }] });
+  });
+});
+
+describe("ingredient from a scanned barcode", () => {
+  const passata = { source: "open-food-facts" as const, code: "8076809513388", name: "Passata", brand: "Mutti", quantity: "700 g", unit: "g" as const, nutrition: { kcal: 36, protein: 1.6, carbs: 5.4, fat: 0.2 } };
+
+  it("fills a new ingredient with the product's name, unit, and nutrition", () => {
+    const scan = withScan(ingredientDraft(undefined, "", "en"), undefined, { ...passata, unit: "ml" }, "en");
+    expect(scan.result).toBe("filled");
+    expect(scan.draft).toMatchObject({ name: "Passata", unit: "ml", values: { kcal: "36", protein: "1.6" } });
+  });
+
+  it("gives a saved ingredient only the nutrition and keeps its name", () => {
+    const result = ingredientSave(withScan(ingredientDraft(ingredient, "", "de"), ingredient, passata, "de").draft, ingredient, snapshot());
+    if (!result.action) throw new Error(result.issue);
+    expect(result.action).toMatchObject({ id: "tomato", name: "Tomato", unit: "g", kcal: 36, protein: 1.6, carbs: 5.4, fat: 0.2 });
+  });
+
+  it("takes the unit and nutrition of a photographed table but keeps the typed name, since a table is not a product", () => {
+    const scan = withScan(ingredientDraft(undefined, "Hafermilch", "de"), undefined, { unit: "ml", nutrition: { kcal: 46, protein: 1, carbs: 6.7, fat: 1.5 } }, "de");
+    expect(scan.draft).toMatchObject({ name: "Hafermilch", unit: "ml", values: { kcal: "46", carbs: "6,7" } });
+  });
+
+  it("leaves a saved ingredient in another unit as it was, since values per 100 g do not fit a can", () => {
+    const can = ingredientDraft({ ...ingredient, unit: "can" }, "", "en");
+    expect(withScan(can, { ...ingredient, unit: "can" }, passata, "en")).toEqual({ draft: can, result: "otherUnit" });
   });
 });

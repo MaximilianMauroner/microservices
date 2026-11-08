@@ -1,3 +1,4 @@
+import type { BodyshopAction, BodyshopAppSnapshot } from "@tools-platform/service/bodyshop-contract";
 import type { AppActionResult, CatalogProduct, KitchenSync } from "@tools-platform/service/kitchen-contract";
 import { accessToken, currentSession, Offline, SignedOut, TOOLS_ORIGIN } from "../auth/session";
 import { Platform } from "react-native";
@@ -13,17 +14,42 @@ export type KitchenApi = {
   push(items: readonly OutboxItem[]): Promise<AppActionResult[]>;
 };
 
-async function call(path: string, init: RequestInit = {}): Promise<Response> {
+/** The person has no access to this product. The account stays signed in. */
+export class NoAccess extends Error {}
+/** Tools refused a change by one of its rules. `message` says why, in words for the person. */
+export class Refused extends Error {}
+
+let networkAllowed = false;
+let networkEpoch = 0;
+
+/** Opens or closes every account call: Kitchen sync, product lookup, and Bodyshop. A call that started before a close fails. */
+export function allowKitchenNetwork(allowed: boolean): void {
+  networkAllowed = allowed;
+  networkEpoch += 1;
+}
+
+/** A 403 signs the app out for Kitchen, the app's own product. For another product it only means no access to it. */
+async function call(path: string, init: RequestInit = {}, forbidden: "signed-out" | "no-access" = "signed-out"): Promise<Response> {
+  const epoch = networkEpoch;
+  const requireAccount = () => { if (!networkAllowed || epoch !== networkEpoch) throw new SignedOut(); };
+  requireAccount();
   const session = currentSession();
   let token = await accessToken(session);
   for (let attempt = 0; ; attempt += 1) {
+    requireAccount();
     const response = await fetch(`${TOOLS_ORIGIN}${path}`, { ...init, headers: { ...init.headers, Authorization: `Bearer ${token}`, Accept: "application/json" } })
       .catch((cause: unknown) => { throw new Offline("Tools cannot be reached.", { cause }); });
+    requireAccount();
     if (response.status === 401 && attempt === 0) {
       token = await accessToken(session, token);
       continue;
     }
+    if (response.status === 403 && forbidden === "no-access") throw new NoAccess();
     if (response.status === 401 || response.status === 403) throw new SignedOut();
+    if ([400, 404, 409].includes(response.status) && forbidden === "no-access") {
+      const body = await response.json().catch(() => undefined) as { message?: unknown } | undefined;
+      if (typeof body?.message === "string") throw new Refused(body.message);
+    }
     if (!response.ok) throw new Error(`Tools answered ${response.status} on ${path}.`);
     return response;
   }
@@ -38,10 +64,27 @@ export const kitchenApi: KitchenApi = {
   }
 };
 
+/** Bodyshop through the same app token. It needs a connection; the app keeps the last day it read for offline use. */
+export const bodyshopApi = {
+  async today(day?: string): Promise<BodyshopAppSnapshot> {
+    return (await call(`/api/bodyshop/app/today${day ? `?${new URLSearchParams({ day })}` : ""}`, {}, "no-access")).json();
+  },
+  async act(action: BodyshopAction, day?: string): Promise<{ result: { id?: string; repeated?: number }; snapshot: BodyshopAppSnapshot }> {
+    const response = await call("/api/bodyshop/app/actions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, day }) }, "no-access");
+    return response.json();
+  }
+};
+
 /** Packaged foods from Open Food Facts that match a typed name. It needs a connection. */
 export async function searchCatalog(query: string): Promise<readonly CatalogProduct[]> {
   const response = await call(`/api/kitchen/products?${new URLSearchParams({ q: query })}`);
   return ((await response.json()) as { products: CatalogProduct[] }).products;
+}
+
+/** The packaged food with this barcode, or undefined when no product with calories has it. It needs a connection. */
+export async function lookupBarcode(code: string): Promise<CatalogProduct | undefined> {
+  const response = await call(`/api/kitchen/products?${new URLSearchParams({ code })}`);
+  return ((await response.json()) as { products: CatalogProduct[] }).products[0];
 }
 
 export type Report = Readonly<{ kind: "bug" | "feature"; message: string; details?: string; page: string; contactEmail?: string }>;

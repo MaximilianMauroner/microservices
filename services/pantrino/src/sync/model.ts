@@ -13,6 +13,7 @@ export type Notice = Readonly<{ clientActionId: string; message: string }>;
 export type SyncNotice = Notice | Readonly<{ clientActionId: string; unsaved: true }>;
 
 export type SyncStatus =
+  | Readonly<{ kind: "local"; persistence: "saved" | "saving" | "failed" }>
   | Readonly<{ kind: "idle"; syncedAt: string | null }>
   | Readonly<{ kind: "syncing" }>
   | Readonly<{ kind: "offline"; syncedAt: string | null }>

@@ -6,13 +6,14 @@ import { StyleSheet, View } from "react-native";
 import { GestureDetector, usePanGesture } from "react-native-gesture-handler";
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import { scheduleOnRN } from "react-native-worklets";
-import type { OpenKitchen } from "../../state";
+import { useSync, type OpenKitchen } from "../../state";
 import { Button, dayParts, FloatingButton, mainGroup, PlateRing, Press, Screen, Snackbar, T, type Notice, useByLabel, usePageColor, weekLabel, WeekNav, weekRange } from "../kit";
 import { haptic } from "../haptics";
 import { useLanguage, useText } from "../language";
 import { groupColor, tint, useColors } from "../theme";
 import { buildWeek, swipeStep } from "./model";
 import { EntrySheet, MealMenu, PlanSheet } from "./sheets";
+import { useLocalText } from "../local-mode";
 import { TEXT } from "./text";
 import { useContentLayout } from "../responsive";
 
@@ -26,6 +27,8 @@ export function Week({ data }: { data: OpenKitchen }) {
   const { kitchen } = snapshot;
   const language = useLanguage();
   const text = useText(TEXT);
+  const localText = useLocalText();
+  const { mode } = useSync();
   const colors = useColors();
   const page = usePageColor();
   const layout = useContentLayout();
@@ -64,7 +67,7 @@ export function Week({ data }: { data: OpenKitchen }) {
         {week.days.some((one) => one.day === today) ? null : <Button label={text.today} tone="outline" onPress={() => setRequested(weekStart(today))} />}
         <WeekNav canGoBack={week.canGoBack} onStep={turn} />
       </>}>
-      {week.canGoBack ? null : <T muted style={styles.small}>{text.historyLimit}</T>}
+      {week.canGoBack ? null : <T muted style={styles.small}>{mode === "local" ? localText.history : text.historyLimit}</T>}
       <GestureDetector gesture={swipe}>
         <Animated.View accessibilityLabel={text.daysOfWeek}
           accessibilityActions={[{ name: "next", label: text.nextWeek }, ...(week.canGoBack ? [{ name: "previous", label: text.previousWeek }] : [])]}

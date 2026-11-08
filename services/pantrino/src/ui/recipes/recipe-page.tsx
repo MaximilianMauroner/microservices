@@ -1,7 +1,7 @@
 import { formatAmount, nutritionPerServing, scaledLines, type Recipe } from "@tools-platform/service/kitchen-contract";
 import * as Crypto from "expo-crypto";
 import { router } from "expo-router";
-import { CalendarPlus, Pencil, Trash2 } from "lucide-react-native";
+import { CalendarPlus, Pencil, Trash2, Utensils } from "lucide-react-native";
 import { useEffect, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import type { OpenKitchen } from "../../state";
@@ -10,6 +10,9 @@ import { type KitchenLanguage, useLanguage, useText } from "../language";
 import { type DraftLine, draftLines, LineEditor, useResolveLines } from "../lines";
 import { useColors } from "../theme";
 import { RecipeMenu } from "../week/sheets";
+import { fromRecipe } from "../../body/model";
+import { useBody } from "../../body/store";
+import { LogSheet } from "../body/log-sheet";
 import { recipeDraftError } from "./model";
 import { useContentLayout } from "../responsive";
 
@@ -27,6 +30,7 @@ const en = {
   allRecipes: "All recipes",
   edit: "Edit",
   plan: "Plan",
+  log: "Log",
   ingredients: "Ingredients",
   perServing: "per serving",
   addNutrition: "Add nutrition to every ingredient to see values per serving.",
@@ -67,6 +71,7 @@ const TEXT: Record<KitchenLanguage, typeof en> = {
     allRecipes: "Alle Rezepte",
     edit: "Bearbeiten",
     plan: "Planen",
+    log: "Eintragen",
     ingredients: "Zutaten",
     perServing: "pro Portion",
     addNutrition: "Füge jeder Zutat Nährwerte hinzu, um die Werte pro Portion zu sehen.",
@@ -117,7 +122,10 @@ function RecipeView({ data, recipe, onEdit }: { data: OpenKitchen; recipe: Recip
   const [servings, setServings] = useState(recipe.servings);
   const [deleting, setDeleting] = useState(false);
   const [planning, setPlanning] = useState(false);
+  const [logging, setLogging] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
+  const body = useBody();
+  const canLog = Boolean(body.snapshot) && body.status !== "no-access";
   const ingredients = new Map(kitchen.ingredients.map((one) => [one.id, one]));
   const groupOf = (id: string) => ingredients.get(id)?.section ?? "Other";
   const lines = byGroup(kitchen.kitchen.groups, scaledLines(recipe, servings), (line) => groupOf(line.ingredientId)).flatMap(([, group]) => group);
@@ -130,6 +138,7 @@ function RecipeView({ data, recipe, onEdit }: { data: OpenKitchen; recipe: Recip
       floating={<Snackbar notice={notice} onUndo={change} onDone={() => setNotice(null)} />}
       toolbar={<>
         <ToolbarButton tone="outline" icon={Pencil} label={text.edit} onPress={onEdit} />
+        {canLog ? <ToolbarButton tone="outline" icon={Utensils} label={text.log} onPress={() => setLogging(true)} /> : null}
         <ToolbarButton icon={CalendarPlus} label={text.plan} onPress={() => setPlanning(true)} />
       </>}>
       <View style={{ flexDirection: wide ? "row" : "column", gap: wide ? 24 : 16, alignItems: "flex-start" }}>
@@ -173,6 +182,7 @@ function RecipeView({ data, recipe, onEdit }: { data: OpenKitchen; recipe: Recip
       <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, paddingTop: 8, alignItems: "flex-start" }}>
         <Button tone="destructive" icon={Trash2} label={text.deleteRecipe} onPress={() => setDeleting(true)} />
       </View>
+      {logging ? <LogSheet initial={fromRecipe(recipe, ingredients)} onClose={() => setLogging(false)} notify={setNotice} /> : null}
       {planning ? <RecipeMenu recipe={recipe} data={data} onClose={() => setPlanning(false)} notify={setNotice} onRecipe /> : null}
       <Sheet open={deleting} onClose={() => setDeleting(false)} title={text.deleteRecipe} description={text.deleteConfirm(recipe.name)}
         footer={<><Button tone="ghost" label={text.cancel} onPress={() => setDeleting(false)} /><Button tone="destructive" label={text.deleteRecipe} onPress={() => {
@@ -231,7 +241,7 @@ function RecipeEditor({ data: { kitchen, change }, recipe, onDone }: { data: Ope
       <View style={{ gap: 8 }}>
         <T weight="semibold" style={styles.heading}>{text.ingredients}</T>
         <T muted style={{ fontSize: 12 }}>{text.newNames}</T>
-        <LineEditor lines={lines} onLines={setLines} ingredients={kitchen.ingredients} />
+        <LineEditor lines={lines} onLines={setLines} ingredients={kitchen.ingredients} groups={kitchen.kitchen.groups} />
       </View>
       <View style={styles.field}>
         <T weight="semibold">{text.steps}</T>

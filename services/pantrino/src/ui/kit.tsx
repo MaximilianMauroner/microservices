@@ -1,14 +1,16 @@
 import { byGroupOrder, addDays, UNSORTED_SECTION } from "@tools-platform/service/kitchen-contract";
-import { BookOpen, CalendarDays, ChevronLeft, ChevronRight, CookingPot, type LucideIcon, Refrigerator, Search, ShoppingBasket, X } from "lucide-react-native";
+import { Apple, BookOpen, CalendarDays, ChevronLeft, ChevronRight, CookingPot, type LucideIcon, Refrigerator, Search, ShoppingBasket, Utensils, X } from "lucide-react-native";
 import { useFocusEffect } from "expo-router";
 import { Children, createContext, isValidElement, type ReactNode, useCallback, useContext, useEffect, useReducer, useRef, useState } from "react";
-import { AccessibilityInfo, KeyboardAvoidingView, Modal, Platform, Pressable, type PressableProps, type PressableStateCallbackType, FlatList, RefreshControl, type RefreshControlProps, ScrollView, StyleSheet, Text, type TextProps, TextInput, type TextInputProps, View, type ViewStyle } from "react-native";
+import { AccessibilityInfo, Alert, KeyboardAvoidingView, Modal, Platform, Pressable, type PressableProps, type PressableStateCallbackType, FlatList, RefreshControl, type RefreshControlProps, ScrollView, StyleSheet, Text, type TextProps, TextInput, type TextInputProps, View, type ViewStyle } from "react-native";
 import { GestureDetector, GestureHandlerRootView, usePanGesture } from "react-native-gesture-handler";
 import Animated, { FadeIn, FadeOut, LinearTransition, useAnimatedStyle, useSharedValue, withSpring, withTiming } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { scheduleOnRN } from "react-native-worklets";
 import Svg, { Circle, Defs, LinearGradient, Rect, Stop } from "react-native-svg";
+import { bodyStore } from "../body/store";
 import { useSync } from "../state";
+import { useLocalText } from "./local-mode";
 import { type Feel, haptic } from "./haptics";
 import type { QueuedAction } from "../sync/model";
 import { type KitchenLanguage, LOCALES, useText } from "./language";
@@ -24,8 +26,15 @@ export const PAGES: readonly { key: PageKey; route: string; icon: LucideIcon }[]
   { key: "kitchen", route: "kitchen", icon: CookingPot }
 ];
 
+/** The Bodyshop tabs. Search is a tab screen too, but it opens from the top bar in both modes. */
+export const BODY_PAGES: readonly { key: PageKey; route: string; icon: LucideIcon }[] = [
+  { key: "today", route: "bodyshop", icon: Utensils },
+  { key: "foods", route: "foods", icon: Apple }
+];
+export const SEARCH_PAGE: { key: PageKey; route: string; icon: LucideIcon } = { key: "search", route: "search", icon: Search };
+
 const en = {
-  tabs: { week: ["Week", "Week"], shopping: ["Shopping list", "Shop"], recipes: ["Recipes", "Recipes"], home: ["At home", "At home"], kitchen: ["Kitchen", "Kitchen"] } as Record<PageKey, [string, string]>,
+  tabs: { week: ["Week", "Week"], shopping: ["Shopping list", "Shop"], recipes: ["Recipes", "Recipes"], home: ["At home", "At home"], kitchen: ["Kitchen", "Kitchen"], today: ["Today", "Today"], foods: ["Foods", "Foods"], search: ["Search", "Search"] } as Record<PageKey, [string, string]>,
   close: "Close",
   fewer: (label: string) => `Fewer ${label.toLowerCase()}`,
   more: (label: string) => `More ${label.toLowerCase()}`,
@@ -48,7 +57,7 @@ const en = {
 const TEXT: Record<KitchenLanguage, typeof en> = {
   en,
   de: {
-    tabs: { week: ["Woche", "Woche"], shopping: ["Einkaufsliste", "Einkauf"], recipes: ["Rezepte", "Rezepte"], home: ["Vorrat", "Vorrat"], kitchen: ["Küche", "Küche"] },
+    tabs: { week: ["Woche", "Woche"], shopping: ["Einkaufsliste", "Einkauf"], recipes: ["Rezepte", "Rezepte"], home: ["Vorrat", "Vorrat"], kitchen: ["Küche", "Küche"], today: ["Heute", "Heute"], foods: ["Lebensmittel", "Essen"], search: ["Suche", "Suche"] },
     close: "Schließen",
     fewer: (label: string) => `Weniger ${label}`,
     more: (label: string) => `Mehr ${label}`,
@@ -314,20 +323,21 @@ const SNACKBAR_AWAY = { distance: 80, velocity: 800 };
  * after every change. Android puts the scroll view inside this control, so the props it gets go on to RefreshControl.
  */
 export function SyncRefresh(props: Omit<RefreshControlProps, "refreshing" | "onRefresh">) {
-  const { sync } = useSync();
+  const { sync, mode } = useSync();
+  const localText = useLocalText();
   const colors = useColors();
   const { ink: pageInk } = usePageColor();
   const [pulled, setPulled] = useState(false);
   return (
     <RefreshControl {...props} refreshing={pulled} tintColor={pageInk} colors={[pageInk]} progressBackgroundColor={colors.card}
-      onRefresh={() => { setPulled(true); void sync().finally(() => setPulled(false)); }} />
+      onRefresh={() => { if (mode === "local") { Alert.alert(localText.title, localText.limits); return; } setPulled(true); void Promise.all([sync(), bodyStore.refresh()]).finally(() => setPulled(false)); }} />
   );
 }
 
 /** The page icon on a tint of the page color. */
 export function HueBadge({ size = 56 }: { size?: number }) {
   const page = useContext(PageContext);
-  const Icon = PAGES.find((one) => one.key === page)!.icon;
+  const Icon = [...PAGES, ...BODY_PAGES, SEARCH_PAGE].find((one) => one.key === page)!.icon;
   const colors = useColors();
   const { ink: pageInk } = usePageColor();
   return (

@@ -72,7 +72,15 @@ const en = {
   conversionNeeded: "Enter a size greater than 0 to change the unit.",
   groupLimit: "An ingredient can be in at most 11 groups.",
   fromProduct: "Fill in from a product",
-  catalogSource: "Product data from Billa and from Open Food Facts, under the Open Database License."
+  catalogSource: "Product data from Billa and from Open Food Facts, under the Open Database License.",
+  showAllRecipes: (count: number) => `Show all ${count} recipes`,
+  showAllMatches: (count: number) => `Show all ${count} matches`,
+  pickRecipes: "Add to recipes",
+  addToRecipes: (count: number) => count === 1 ? "Add to 1 recipe" : count ? `Add to ${count} recipes` : "Add",
+  scanBarcode: "Scan barcode",
+  scanFilled: (name: string) => `Filled in from ${name}. Check the values against the package.`,
+  labelFilled: "Filled in from the photo of the nutrition table.",
+  scanOtherUnit: (unit: string) => `This product counts per 100 ${unit}. Change the unit to ${unit} to use its values.`
 };
 type KitText = typeof en;
 export const TEXT: Record<KitchenLanguage, KitText> = {
@@ -149,7 +157,15 @@ export const TEXT: Record<KitchenLanguage, KitText> = {
     conversionNeeded: "Gib eine Größe größer als 0 ein, um die Einheit zu ändern.",
     groupLimit: "Eine Zutat kann in höchstens 11 Gruppen sein.",
     fromProduct: "Aus einem Produkt übernehmen",
-    catalogSource: "Produktdaten von Billa und von Open Food Facts, unter der Open Database License."
+    catalogSource: "Produktdaten von Billa und von Open Food Facts, unter der Open Database License.",
+    showAllRecipes: (count: number) => `Alle ${count} Rezepte zeigen`,
+    showAllMatches: (count: number) => `Alle ${count} Treffer zeigen`,
+    pickRecipes: "Zu Rezepten hinzufügen",
+    addToRecipes: (count: number) => count === 1 ? "Zu 1 Rezept hinzufügen" : count ? `Zu ${count} Rezepten hinzufügen` : "Hinzufügen",
+    scanBarcode: "Barcode scannen",
+    scanFilled: (name: string) => `Von ${name} übernommen. Vergleiche die Werte mit der Packung.`,
+    labelFilled: "Aus dem Foto der Nährwerttabelle übernommen.",
+    scanOtherUnit: (unit: string) => `Dieses Produkt zählt pro 100 ${unit}. Wechsle die Einheit zu ${unit}, um seine Werte zu übernehmen.`
   }
 };
 

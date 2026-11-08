@@ -13,7 +13,8 @@
     "#publisher": "./products/publisher/index.ts"
   },
   "exports": {
-    "./kitchen-contract": "./products/kitchen/contract.ts"
+    "./kitchen-contract": "./products/kitchen/contract.ts",
+    "./bodyshop-contract": "./products/bodyshop/contract.ts"
   },
   "scripts": {
     "build": "NODE_ENV=production vite build",

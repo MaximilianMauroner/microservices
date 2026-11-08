@@ -1,6 +1,6 @@
-import type { Ingredient, KitchenSnapshot, PlanEntry, Recipe } from "@tools-platform/service/kitchen-contract";
+import { addDays, type Ingredient, type KitchenSnapshot, type PlanEntry, type Recipe } from "@tools-platform/service/kitchen-contract";
 import { describe, expect, it } from "vitest";
-import { buildWeek, defaultMeal, planStrip, swipeStep } from "./model";
+import { buildWeek, defaultMeal, moveStrip, planStrip, swipeStep } from "./model";
 
 const rice: Ingredient = {
   id: "rice", name: "Rice", unit: "g", section: "Grains", otherGroups: ["Pantry"],
@@ -103,7 +103,8 @@ describe("the Plan sheet days", () => {
 
   it("offers a week from today and selects the first day without a meal", () => {
     const strip = planStrip({ weekStart: "2026-11-02", today: "2026-11-05", plan: [planned("2026-11-05"), planned("2026-11-07")] });
-    expect(strip.days).toEqual(["2026-11-05", "2026-11-06", "2026-11-07", "2026-11-08", "2026-11-09", "2026-11-10", "2026-11-11"]);
+    expect(strip.days.slice(0, 7)).toEqual(["2026-11-05", "2026-11-06", "2026-11-07", "2026-11-08", "2026-11-09", "2026-11-10", "2026-11-11"]);
+    expect(strip.days.at(-1), "four weeks scroll in, so a meal can go weeks ahead").toBe("2026-12-02");
     expect(strip.selected).toBe("2026-11-06");
   });
 
@@ -119,7 +120,7 @@ describe("the Plan sheet days", () => {
   });
 
   it("selects today when every offered day has a meal", () => {
-    const days = ["2026-11-05", "2026-11-06", "2026-11-07", "2026-11-08", "2026-11-09", "2026-11-10", "2026-11-11"];
+    const days = Array.from({ length: 28 }, (_, index) => addDays("2026-11-05", index));
     expect(planStrip({ weekStart: "2026-11-02", today: "2026-11-05", plan: days.map(planned) }).selected).toBe("2026-11-05");
   });
 
@@ -128,6 +129,15 @@ describe("the Plan sheet days", () => {
     const past = planStrip({ weekStart: "2026-11-02", today: "2026-11-05", plan: [planned("2026-11-03")], day: "2026-11-03" });
     expect(past.days[0]).toBe("2026-11-03");
     expect(past.selected).toBe("2026-11-03");
+  });
+});
+
+describe("the days a meal can move to", () => {
+  it("starts on the Monday of the meal's week and reaches three weeks past it", () => {
+    const days = moveStrip("2026-11-05");
+    expect(days[0]).toBe("2026-11-02");
+    expect(days).toContain("2026-11-12");
+    expect(days.at(-1)).toBe("2026-11-29");
   });
 });
 
