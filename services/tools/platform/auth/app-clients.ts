@@ -3,9 +3,10 @@ import type postgres from "postgres";
 /**
  * First-party native apps. Each is a public OAuth client with PKCE.
  * Their tokens open only their own API, and MCP refuses them, so each credential keeps one purpose.
+ * Pantrino's API covers the Kitchen and Bodyshop app routes, and each route still checks the person's product access.
  */
 export const APP_CLIENTS = {
-  kitchen: { clientId: "com.lab4code.pantrino", name: "Pantrino", redirectUri: "com.lab4code.pantrino:/oauth" }
+  pantrino: { clientId: "com.lab4code.pantrino", name: "Pantrino", redirectUri: "com.lab4code.pantrino:/oauth" }
 } as const;
 
 export type AppClientId = keyof typeof APP_CLIENTS;

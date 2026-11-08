@@ -28,7 +28,8 @@ const config: ExpoConfig = {
     ["expo-sqlite", { useSQLCipher: true }],
     "expo-secure-store",
     "expo-web-browser",
-    "expo-font"
+    "expo-font",
+    ["expo-camera", { cameraPermission: "Pantrino reads the barcode on a food package to fill in its nutrition.", microphonePermission: false, recordAudioAndroid: false }]
   ],
   experiments: { typedRoutes: true },
   owner: "thearizztokrat",

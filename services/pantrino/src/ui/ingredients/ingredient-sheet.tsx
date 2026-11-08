@@ -1,13 +1,14 @@
 import { ingredientGroups, INGREDIENT_UNITS, isCountedUnit, unitName, UNSORTED_SECTION, type Ingredient, type KitchenSnapshot } from "@tools-platform/service/kitchen-contract";
-import { Plus, X } from "lucide-react-native";
+import { Plus, ScanBarcode, X } from "lucide-react-native";
 import { useState } from "react";
 import { StyleSheet, View } from "react-native";
 import type { OpenKitchen } from "../../state";
 import { Button, byGroup, Field, GroupDot, groupLabel, Press, Sheet, T, usePageColor } from "../kit";
 import { useLanguage, useText } from "../language";
 import { useColors } from "../theme";
+import { type ScanResult, Scanner } from "../scan/scanner";
 import { CatalogProducts } from "./catalog-products";
-import { changeSize, conversionUnits, ingredientDraft, ingredientSave, NUTRIENTS, nutritionFields, withGroup, withProduct, withUnit } from "./model";
+import { changeSize, conversionUnits, ingredientDraft, ingredientSave, NUTRIENTS, nutritionFields, withGroup, withProduct, withScan, withUnit } from "./model";
 import { RecipeUses } from "./recipe-uses";
 import { TEXT } from "./text";
 
@@ -21,11 +22,23 @@ export function IngredientSheet({ existing, newName, kitchen, change, onClose }:
   const [draft, setDraft] = useState(() => ingredientDraft(existing, newName, language));
   /** The name of the product the fields came from. The product list stays away until the name changes again. */
   const [pickedName, setPickedName] = useState<string>();
+  const [scanning, setScanning] = useState(false);
+  /** What the last scan did, shown under the nutrition so a person checks the values against the package. */
+  const [scanned, setScanned] = useState<string>();
   const result = ingredientSave(draft, existing, kitchen);
   const changingUnit = existing !== undefined && draft.unit !== existing.unit;
   const { larger, smaller } = conversionUnits(existing?.unit ?? draft.unit, draft.unit);
   const nutrientLabel = { kcal: text.calories, protein: text.protein, carbs: text.carbs, fat: text.fat };
   const per = isCountedUnit(draft.unit) ? text.perOne(unitName(draft.unit, language, 1)) : text.per100(draft.unit);
+
+  function fillFrom(found: ScanResult) {
+    const scanned = found.kind === "product" ? found.product : { unit: found.unit, nutrition: found.values };
+    const scan = withScan(draft, existing, scanned, language);
+    setDraft(scan.draft);
+    if (!existing && found.kind === "product") setPickedName(found.product.name);
+    const from = found.kind === "product" ? text.scanFilled(found.product.brand ? `${found.product.brand} ${found.product.name}` : found.product.name) : text.labelFilled;
+    setScanned(scan.result === "filled" ? from : text.scanOtherUnit(scanned.unit));
+  }
 
   function save() {
     if (!result.action) return;
@@ -46,7 +59,10 @@ export function IngredientSheet({ existing, newName, kitchen, change, onClose }:
       <View style={styles.section}>
         <View style={styles.field}>
           <T weight="medium">{text.name}</T>
-          <Field accessibilityLabel={text.name} value={draft.name} onChangeText={(name) => setDraft((current) => ({ ...current, name }))} placeholder={text.namePlaceholder} maxLength={200} />
+          <View style={{ flexDirection: "row", gap: 6 }}>
+            <Field accessibilityLabel={text.name} value={draft.name} onChangeText={(name) => setDraft((current) => ({ ...current, name }))} placeholder={text.namePlaceholder} maxLength={200} style={{ flex: 1 }} />
+            <Button tone="outline" icon={ScanBarcode} accessibilityLabel={text.scanBarcode} onPress={() => setScanning(true)} />
+          </View>
           {!existing && draft.name !== pickedName ? <CatalogProducts query={draft.name}
             onPick={(product) => { setDraft((current) => withProduct(current, product, language)); setPickedName(product.name); }} /> : null}
         </View>
@@ -87,8 +103,10 @@ export function IngredientSheet({ existing, newName, kitchen, change, onClose }:
             </View>
           ))}
         </View>
+        {scanned ? <T accessibilityRole="alert" style={[styles.hint, { color: colors.foreground }]}>{scanned}</T> : null}
         <T muted style={styles.hint}>{text.leaveEmpty}</T>
       </View>
+      {scanning ? <Scanner onResult={fillFrom} onClose={() => setScanning(false)} /> : null}
       <View style={styles.field}>
         <T weight="medium">{text.notes}</T>
         <Field accessibilityLabel={text.notes} multiline value={draft.notes} onChangeText={(notes) => setDraft((current) => ({ ...current, notes }))} placeholder={text.notesPlaceholder} maxLength={4000} style={{ minHeight: 88, paddingVertical: 12, textAlignVertical: "top" }} />

@@ -11,6 +11,7 @@ import { groupColor, tint, useColors } from "../theme";
 import { IngredientSheet } from "../ingredients/ingredient-sheet";
 import { RowMenu, type SwipeAction, SwipeRow } from "../swipe-row";
 import { AddLeftoverSheet, AddStockSheet, AmountSheet } from "./sheets";
+import { LocalModeNotice } from "../local-mode-notice";
 import { TEXT } from "./text";
 import { pantryShelves } from "./view";
 import { compareText } from "../../compare";
@@ -39,6 +40,7 @@ export function Pantry(data: OpenKitchen) {
       floating={<Snackbar notice={notice} onUndo={change} onDone={() => setNotice(null)} />}
       fab={<FloatingButton icon={Plus} label={text.addToStock} onPress={() => setSheet({ type: "stock" })} />}
     >
+      <LocalModeNotice />
       <View style={{ gap: 8 }}>
         <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
           <T weight="semibold" accessibilityRole="header" style={{ fontSize: 18 }}>

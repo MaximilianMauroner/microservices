@@ -61,6 +61,8 @@ describe("central platform route policy", () => {
     expect(classifyRoute("/api/uploads", "POST")).toEqual({ kind: "machine", service: "uploads" });
     expect(classifyRoute("/api/status/heartbeats/tower", "POST")).toEqual({ kind: "machine", service: "heartbeat" });
     expect(classifyRoute("/api/kitchen/sync", "GET"), "Kitchen app checks its own bearer token").toEqual({ kind: "machine", service: "kitchen-app" });
+    expect(classifyRoute("/api/bodyshop/app/today", "GET"), "The app checks its own bearer token for Bodyshop too").toEqual({ kind: "machine", service: "bodyshop-app" });
+    expect(classifyRoute("/api/bodyshop/import", "POST"), "the workbook import stays a browser route").toEqual({ kind: "human-session" });
     expect(classifyRoute("/api/reports", "POST"), "Apps send reports with or without a token").toEqual({ kind: "public" });
     expect(classifyRoute("/api/reports", "GET"), "Only the admin reads reports").not.toEqual({ kind: "public" });
     expect(classifyRoute("/api/kitchenette", "GET")).toEqual({ kind: "human-session" });

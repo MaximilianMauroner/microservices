@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { View } from "react-native";
+import { ScrollView, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useApp } from "../state";
 import { Button, HueBadge, T } from "../ui/kit";
 import { ReportSheet } from "../ui/report-sheet";
 import { type KitchenLanguage, useText } from "../ui/language";
+import { useLocalText } from "../ui/local-mode";
 import { useColors } from "../ui/theme";
 
 const en = { title: "Pantrino", body: "Sign in with the Google account you use for Mauroner Tools. Your kitchens then stay on this phone, encrypted, and work offline.", signIn: "Sign in", failed: "Sign-in did not work. Try again.", report: "Report a problem" };
@@ -14,26 +15,41 @@ const TEXT: Record<KitchenLanguage, typeof en> = {
 };
 
 export default function SignIn() {
-  const { signIn } = useApp();
+  const { signIn, openLocal, error, hasLocal } = useApp();
+  const localText = useLocalText();
   const text = useText(TEXT);
   const colors = useColors();
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
   const [reporting, setReporting] = useState(false);
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background, justifyContent: "center", padding: 24 }}>
-      <View style={{ alignItems: "center", gap: 16 }}>
-        <HueBadge size={72} />
-        <T weight="semibold" style={{ fontSize: 34, letterSpacing: -0.6 }}>{text.title}</T>
-        <T muted style={{ textAlign: "center", maxWidth: 320 }}>{text.body}</T>
-        <Button label={text.signIn} disabled={busy} onPress={async () => {
-          setBusy(true);
-          setFailed(false);
-          try { await signIn(); } catch { setFailed(true); } finally { setBusy(false); }
-        }} />
-        {failed ? <T style={{ color: colors.destructive }}>{text.failed}</T> : null}
-        <Button tone="ghost" compact label={text.report} onPress={() => setReporting(true)} />
-      </View>
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+      <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: "center", padding: 24 }}>
+        <View style={{ alignItems: "center", gap: 16 }}>
+          <HueBadge size={72} />
+          <T weight="semibold" style={{ fontSize: 34, letterSpacing: -0.6 }}>{text.title}</T>
+          <T muted style={{ textAlign: "center", maxWidth: 320 }}>{text.body}</T>
+          <Button label={text.signIn} disabled={busy} onPress={async () => {
+            setBusy(true);
+            setFailed(false);
+            try { await signIn(); } catch { setFailed(true); } finally { setBusy(false); }
+          }} />
+          {failed ? <T style={{ color: colors.destructive }}>{text.failed}</T> : null}
+          <View style={{ gap: 12, marginTop: 12, width: "100%", maxWidth: 380 }}>
+            <T weight="semibold">{localText.title}</T>
+            <T muted>{localText.limits}</T>
+            <T muted>{localText.separate}</T>
+            <Button tone="outline" label={hasLocal ? localText.returnLocal : localText.useLocal} disabled={busy} onPress={async () => {
+              setBusy(true);
+              setFailed(false);
+              await openLocal().catch(() => undefined);
+              setBusy(false);
+            }} />
+            {error ? <T accessibilityRole="alert" style={{ color: colors.destructive }}>{localText.openFailed}</T> : null}
+          </View>
+          <Button tone="ghost" compact label={text.report} onPress={() => setReporting(true)} />
+        </View>
+      </ScrollView>
       <ReportSheet open={reporting} onClose={() => setReporting(false)} signedIn={false} page="/sign-in" />
     </SafeAreaView>
   );
