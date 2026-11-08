@@ -65,7 +65,7 @@ export function KitchenHub() {
       ))}
       <Choice label={text.language} options={KITCHEN_LANGUAGES} names={LANGUAGE_NAMES} value={language} onValue={setLanguage} />
       <Choice label={text.vibration} options={STRENGTHS} names={text.strengths} value={strength} silent onValue={(next) => { setStrength(next); haptic("toggle"); }} />
-      {session === "local" ? <T muted style={styles.small}>{localText.separate}</T> : <Button tone="outline" label={hasLocal ? localText.returnLocal : localText.useLocal} onPress={() => Alert.alert(localText.title, localText.limits, [
+      {session === "local" ? <T muted style={styles.small}>{localText.separate}</T> : <Button tone="outline" label={hasLocal ? localText.returnLocal : localText.useLocal} onPress={() => Alert.alert(localText.title, `${localText.limits}\n\n${localText.accountWarning}`, [
         { text: text.cancel, style: "cancel" },
         { text: hasLocal ? localText.returnLocal : localText.useLocal, onPress: () => void openLocal().catch(() => undefined) },
       ])} />}
