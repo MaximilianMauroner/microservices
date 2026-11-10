@@ -9,7 +9,7 @@ export const REVIEW_ACCOUNT = {
   subject: "urn:mauroner:pantrino:apple-review",
   personId: "19d6483f-57f7-4198-91e6-b66224399e66",
   kitchenId: "954b4f65-766e-43b9-8b36-94ab4b3695d9",
-  clientId: APP_CLIENTS.kitchen.clientId
+  clientId: APP_CLIENTS.pantrino.clientId
 } as const;
 
 export type ReviewAccount = typeof REVIEW_ACCOUNT;

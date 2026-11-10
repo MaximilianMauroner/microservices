@@ -106,9 +106,9 @@ describe("TanStack Start public pages", () => {
     for (const product of EXTERNAL_TOOLS) expect(html).toContain(`href="${product.to}"`);
     for (const page of TOOLS_PRODUCTS.flatMap((product) => product.pages ?? [])) expect(html).toContain(`href="${page.to}"`);
     expect(html).toContain('href="/money?view=review"');
-    expect(html.indexOf("Publisher")).toBeLessThan(html.indexOf("Feedback"));
-    expect(html.indexOf("Money")).toBeLessThan(html.indexOf("Feedback"));
-    expect(html.indexOf("Feedback")).toBeLessThan(html.indexOf(">Status<"));
+    expect(html.indexOf("Publisher")).toBeLessThan(html.indexOf("Forms"));
+    expect(html.indexOf("Money")).toBeLessThan(html.indexOf("Forms"));
+    expect(html.indexOf("Forms")).toBeLessThan(html.indexOf(">Status<"));
     for (const product of ["publisher", "money", "status", "markdown-share", "network-console"]) {
       expect(html).toContain(`/assets/icons/${product}.png`);
     }

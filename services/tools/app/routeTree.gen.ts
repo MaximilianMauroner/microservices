@@ -24,6 +24,7 @@ import { Route as LiveRouteImport } from './routes/live'
 import { Route as MarkdownRouteImport } from './routes/markdown'
 import { Route as MoneyRouteImport } from './routes/money'
 import { Route as PublisherRouteImport } from './routes/publisher'
+import { Route as ReportsRouteImport } from './routes/reports'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ShareRouteImport } from './routes/share'
 import { Route as SignInRouteImport } from './routes/sign-in'
@@ -31,6 +32,7 @@ import { Route as StatusRouteImport } from './routes/status'
 import { Route as DotwellKnownSplatRouteImport } from './routes/[.]well-known/$'
 import { Route as ApiExternalUploadsRouteImport } from './routes/api/external-uploads'
 import { Route as ApiMcpRouteImport } from './routes/api/mcp'
+import { Route as ApiReportsRouteImport } from './routes/api/reports'
 import { Route as ApiUploadLinksRouteImport } from './routes/api/upload-links'
 import { Route as ApiUploadsRouteImport } from './routes/api/uploads'
 import { Route as ArtifactsSplatRouteImport } from './routes/artifacts/$'
@@ -84,6 +86,8 @@ import { Route as KitchenKitchenIdIngredientsRouteImport } from './routes/kitche
 import { Route as KitchenKitchenIdShoppingRouteImport } from './routes/kitchen/$kitchenId/shopping'
 import { Route as MarkdownDSlugRouteImport } from './routes/markdown/d/$slug'
 import { Route as ShareDSlugRouteImport } from './routes/share/d/$slug'
+import { Route as ApiBodyshopAppActionsRouteImport } from './routes/api/bodyshop/app/actions'
+import { Route as ApiBodyshopAppTodayRouteImport } from './routes/api/bodyshop/app/today'
 import { Route as ApiBodyshopImportPreviewRouteImport } from './routes/api/bodyshop/import/preview'
 import { Route as ApiMoneyImportsImportIdRouteImport } from './routes/api/money/imports/$importId'
 import { Route as ApiMoneyImportsPreviewRouteImport } from './routes/api/money/imports/preview'
@@ -169,6 +173,11 @@ const PublisherRoute = PublisherRouteImport.update({
   path: '/publisher',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ReportsRoute = ReportsRouteImport.update({
+  id: '/reports',
+  path: '/reports',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -202,6 +211,11 @@ const ApiExternalUploadsRoute = ApiExternalUploadsRouteImport.update({
 const ApiMcpRoute = ApiMcpRouteImport.update({
   id: '/api/mcp',
   path: '/api/mcp',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiReportsRoute = ApiReportsRouteImport.update({
+  id: '/api/reports',
+  path: '/api/reports',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiUploadLinksRoute = ApiUploadLinksRouteImport.update({
@@ -472,6 +486,16 @@ const ShareDSlugRoute = ShareDSlugRouteImport.update({
   path: '/d/$slug',
   getParentRoute: () => ShareRoute,
 } as any)
+const ApiBodyshopAppActionsRoute = ApiBodyshopAppActionsRouteImport.update({
+  id: '/api/bodyshop/app/actions',
+  path: '/api/bodyshop/app/actions',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiBodyshopAppTodayRoute = ApiBodyshopAppTodayRouteImport.update({
+  id: '/api/bodyshop/app/today',
+  path: '/api/bodyshop/app/today',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiBodyshopImportPreviewRoute =
   ApiBodyshopImportPreviewRouteImport.update({
     id: '/preview',
@@ -539,6 +563,7 @@ export interface FileRoutesByFullPath {
   '/markdown': typeof MarkdownRouteWithChildren
   '/money': typeof MoneyRoute
   '/publisher': typeof PublisherRouteWithChildren
+  '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/share': typeof ShareRouteWithChildren
   '/sign-in': typeof SignInRoute
@@ -547,6 +572,7 @@ export interface FileRoutesByFullPath {
   '/.well-known/$': typeof DotwellKnownSplatRoute
   '/api/external-uploads': typeof ApiExternalUploadsRouteWithChildren
   '/api/mcp': typeof ApiMcpRoute
+  '/api/reports': typeof ApiReportsRoute
   '/api/upload-links': typeof ApiUploadLinksRouteWithChildren
   '/api/uploads': typeof ApiUploadsRouteWithChildren
   '/artifacts/$': typeof ArtifactsSplatRoute
@@ -599,6 +625,8 @@ export interface FileRoutesByFullPath {
   '/share/d/$slug': typeof ShareDSlugRoute
   '/feedback/forms/': typeof FeedbackFormsIndexRoute
   '/kitchen/$kitchenId/': typeof KitchenKitchenIdIndexRoute
+  '/api/bodyshop/app/actions': typeof ApiBodyshopAppActionsRoute
+  '/api/bodyshop/app/today': typeof ApiBodyshopAppTodayRoute
   '/api/bodyshop/import/preview': typeof ApiBodyshopImportPreviewRoute
   '/api/money/imports/$importId': typeof ApiMoneyImportsImportIdRoute
   '/api/money/imports/preview': typeof ApiMoneyImportsPreviewRoute
@@ -620,12 +648,14 @@ export interface FileRoutesByTo {
   '/health': typeof HealthRouteWithChildren
   '/live': typeof LiveRoute
   '/money': typeof MoneyRoute
+  '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/sign-in': typeof SignInRoute
   '/status': typeof StatusRoute
   '/.well-known/$': typeof DotwellKnownSplatRoute
   '/api/external-uploads': typeof ApiExternalUploadsRouteWithChildren
   '/api/mcp': typeof ApiMcpRoute
+  '/api/reports': typeof ApiReportsRoute
   '/api/upload-links': typeof ApiUploadLinksRouteWithChildren
   '/api/uploads': typeof ApiUploadsRouteWithChildren
   '/artifacts/$': typeof ArtifactsSplatRoute
@@ -678,6 +708,8 @@ export interface FileRoutesByTo {
   '/share/d/$slug': typeof ShareDSlugRoute
   '/feedback/forms': typeof FeedbackFormsIndexRoute
   '/kitchen/$kitchenId': typeof KitchenKitchenIdIndexRoute
+  '/api/bodyshop/app/actions': typeof ApiBodyshopAppActionsRoute
+  '/api/bodyshop/app/today': typeof ApiBodyshopAppTodayRoute
   '/api/bodyshop/import/preview': typeof ApiBodyshopImportPreviewRoute
   '/api/money/imports/$importId': typeof ApiMoneyImportsImportIdRoute
   '/api/money/imports/preview': typeof ApiMoneyImportsPreviewRoute
@@ -705,6 +737,7 @@ export interface FileRoutesById {
   '/markdown': typeof MarkdownRouteWithChildren
   '/money': typeof MoneyRoute
   '/publisher': typeof PublisherRouteWithChildren
+  '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/share': typeof ShareRouteWithChildren
   '/sign-in': typeof SignInRoute
@@ -713,6 +746,7 @@ export interface FileRoutesById {
   '/.well-known/$': typeof DotwellKnownSplatRoute
   '/api/external-uploads': typeof ApiExternalUploadsRouteWithChildren
   '/api/mcp': typeof ApiMcpRoute
+  '/api/reports': typeof ApiReportsRoute
   '/api/upload-links': typeof ApiUploadLinksRouteWithChildren
   '/api/uploads': typeof ApiUploadsRouteWithChildren
   '/artifacts/$': typeof ArtifactsSplatRoute
@@ -765,6 +799,8 @@ export interface FileRoutesById {
   '/share/d/$slug': typeof ShareDSlugRoute
   '/feedback/forms/': typeof FeedbackFormsIndexRoute
   '/kitchen/$kitchenId/': typeof KitchenKitchenIdIndexRoute
+  '/api/bodyshop/app/actions': typeof ApiBodyshopAppActionsRoute
+  '/api/bodyshop/app/today': typeof ApiBodyshopAppTodayRoute
   '/api/bodyshop/import/preview': typeof ApiBodyshopImportPreviewRoute
   '/api/money/imports/$importId': typeof ApiMoneyImportsImportIdRoute
   '/api/money/imports/preview': typeof ApiMoneyImportsPreviewRoute
@@ -793,6 +829,7 @@ export interface FileRouteTypes {
     | '/markdown'
     | '/money'
     | '/publisher'
+    | '/reports'
     | '/settings'
     | '/share'
     | '/sign-in'
@@ -801,6 +838,7 @@ export interface FileRouteTypes {
     | '/.well-known/$'
     | '/api/external-uploads'
     | '/api/mcp'
+    | '/api/reports'
     | '/api/upload-links'
     | '/api/uploads'
     | '/artifacts/$'
@@ -853,6 +891,8 @@ export interface FileRouteTypes {
     | '/share/d/$slug'
     | '/feedback/forms/'
     | '/kitchen/$kitchenId/'
+    | '/api/bodyshop/app/actions'
+    | '/api/bodyshop/app/today'
     | '/api/bodyshop/import/preview'
     | '/api/money/imports/$importId'
     | '/api/money/imports/preview'
@@ -874,12 +914,14 @@ export interface FileRouteTypes {
     | '/health'
     | '/live'
     | '/money'
+    | '/reports'
     | '/settings'
     | '/sign-in'
     | '/status'
     | '/.well-known/$'
     | '/api/external-uploads'
     | '/api/mcp'
+    | '/api/reports'
     | '/api/upload-links'
     | '/api/uploads'
     | '/artifacts/$'
@@ -932,6 +974,8 @@ export interface FileRouteTypes {
     | '/share/d/$slug'
     | '/feedback/forms'
     | '/kitchen/$kitchenId'
+    | '/api/bodyshop/app/actions'
+    | '/api/bodyshop/app/today'
     | '/api/bodyshop/import/preview'
     | '/api/money/imports/$importId'
     | '/api/money/imports/preview'
@@ -958,6 +1002,7 @@ export interface FileRouteTypes {
     | '/markdown'
     | '/money'
     | '/publisher'
+    | '/reports'
     | '/settings'
     | '/share'
     | '/sign-in'
@@ -966,6 +1011,7 @@ export interface FileRouteTypes {
     | '/.well-known/$'
     | '/api/external-uploads'
     | '/api/mcp'
+    | '/api/reports'
     | '/api/upload-links'
     | '/api/uploads'
     | '/artifacts/$'
@@ -1018,6 +1064,8 @@ export interface FileRouteTypes {
     | '/share/d/$slug'
     | '/feedback/forms/'
     | '/kitchen/$kitchenId/'
+    | '/api/bodyshop/app/actions'
+    | '/api/bodyshop/app/today'
     | '/api/bodyshop/import/preview'
     | '/api/money/imports/$importId'
     | '/api/money/imports/preview'
@@ -1045,6 +1093,7 @@ export interface RootRouteChildren {
   MarkdownRoute: typeof MarkdownRouteWithChildren
   MoneyRoute: typeof MoneyRoute
   PublisherRoute: typeof PublisherRouteWithChildren
+  ReportsRoute: typeof ReportsRoute
   SettingsRoute: typeof SettingsRoute
   ShareRoute: typeof ShareRouteWithChildren
   SignInRoute: typeof SignInRoute
@@ -1052,6 +1101,7 @@ export interface RootRouteChildren {
   DotwellKnownSplatRoute: typeof DotwellKnownSplatRoute
   ApiExternalUploadsRoute: typeof ApiExternalUploadsRouteWithChildren
   ApiMcpRoute: typeof ApiMcpRoute
+  ApiReportsRoute: typeof ApiReportsRoute
   ApiUploadLinksRoute: typeof ApiUploadLinksRouteWithChildren
   ApiUploadsRoute: typeof ApiUploadsRouteWithChildren
   ArtifactsSplatRoute: typeof ArtifactsSplatRoute
@@ -1075,6 +1125,8 @@ export interface RootRouteChildren {
   ApiOpsSplatRoute: typeof ApiOpsSplatRoute
   ApiPublicCatalogRoute: typeof ApiPublicCatalogRoute
   ApiShareDocumentsRoute: typeof ApiShareDocumentsRouteWithChildren
+  ApiBodyshopAppActionsRoute: typeof ApiBodyshopAppActionsRoute
+  ApiBodyshopAppTodayRoute: typeof ApiBodyshopAppTodayRoute
   ApiStatusHeartbeatsMonitorIdRoute: typeof ApiStatusHeartbeatsMonitorIdRoute
   ApiFeedbackFormsFormIdExportRoute: typeof ApiFeedbackFormsFormIdExportRoute
 }
@@ -1186,6 +1238,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PublisherRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/reports': {
+      id: '/reports'
+      path: '/reports'
+      fullPath: '/reports'
+      preLoaderRoute: typeof ReportsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/settings': {
       id: '/settings'
       path: '/settings'
@@ -1233,6 +1292,13 @@ declare module '@tanstack/react-router' {
       path: '/api/mcp'
       fullPath: '/api/mcp'
       preLoaderRoute: typeof ApiMcpRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/reports': {
+      id: '/api/reports'
+      path: '/api/reports'
+      fullPath: '/api/reports'
+      preLoaderRoute: typeof ApiReportsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/upload-links': {
@@ -1606,6 +1672,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShareDSlugRouteImport
       parentRoute: typeof ShareRoute
     }
+    '/api/bodyshop/app/actions': {
+      id: '/api/bodyshop/app/actions'
+      path: '/api/bodyshop/app/actions'
+      fullPath: '/api/bodyshop/app/actions'
+      preLoaderRoute: typeof ApiBodyshopAppActionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/bodyshop/app/today': {
+      id: '/api/bodyshop/app/today'
+      path: '/api/bodyshop/app/today'
+      fullPath: '/api/bodyshop/app/today'
+      preLoaderRoute: typeof ApiBodyshopAppTodayRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/bodyshop/import/preview': {
       id: '/api/bodyshop/import/preview'
       path: '/preview'
@@ -1905,6 +1985,7 @@ const rootRouteChildren: RootRouteChildren = {
   MarkdownRoute: MarkdownRouteWithChildren,
   MoneyRoute: MoneyRoute,
   PublisherRoute: PublisherRouteWithChildren,
+  ReportsRoute: ReportsRoute,
   SettingsRoute: SettingsRoute,
   ShareRoute: ShareRouteWithChildren,
   SignInRoute: SignInRoute,
@@ -1912,6 +1993,7 @@ const rootRouteChildren: RootRouteChildren = {
   DotwellKnownSplatRoute: DotwellKnownSplatRoute,
   ApiExternalUploadsRoute: ApiExternalUploadsRouteWithChildren,
   ApiMcpRoute: ApiMcpRoute,
+  ApiReportsRoute: ApiReportsRoute,
   ApiUploadLinksRoute: ApiUploadLinksRouteWithChildren,
   ApiUploadsRoute: ApiUploadsRouteWithChildren,
   ArtifactsSplatRoute: ArtifactsSplatRoute,
@@ -1935,6 +2017,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiOpsSplatRoute: ApiOpsSplatRoute,
   ApiPublicCatalogRoute: ApiPublicCatalogRoute,
   ApiShareDocumentsRoute: ApiShareDocumentsRouteWithChildren,
+  ApiBodyshopAppActionsRoute: ApiBodyshopAppActionsRoute,
+  ApiBodyshopAppTodayRoute: ApiBodyshopAppTodayRoute,
   ApiStatusHeartbeatsMonitorIdRoute: ApiStatusHeartbeatsMonitorIdRoute,
   ApiFeedbackFormsFormIdExportRoute: ApiFeedbackFormsFormIdExportRoute,
 }

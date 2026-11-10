@@ -5,3 +5,9 @@ allowBuilds:
   '@parcel/watcher': true
   esbuild: true
   workerd: true
+
+# The ML Kit core package lists its test tools as runtime dependencies. They would pull React 17 test packages into the app.
+overrides:
+  '@infinitered/react-native-mlkit-core>@testing-library/jest-native': '-'
+  '@infinitered/react-native-mlkit-core>@testing-library/react-hooks': '-'
+  '@infinitered/react-native-mlkit-core>@types/jest': '-'

@@ -1,5 +1,5 @@
 import { Link, useLoaderData, useRouterState } from "@tanstack/react-router";
-import { ExternalLinkIcon, LaptopIcon, LogOutIcon, MoonIcon, MoreVerticalIcon, PlugIcon, SettingsIcon, SunIcon } from "lucide-react";
+import { ExternalLinkIcon, InboxIcon, LaptopIcon, LogOutIcon, MoonIcon, MoreVerticalIcon, PlugIcon, SettingsIcon, SunIcon } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { favicons } from "../favicons.js";
 import { getAttentionSummary, type AttentionSummary } from "../../../products/dashboard/attention.js";
@@ -135,6 +135,15 @@ export function ToolsSidebar() {
         ) : null}
       </SidebarContent>
       <SidebarFooter className="border-t border-sidebar-border p-2">
+        {isAdmin ? <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton className="h-9 px-2.5 text-sm" tooltip="Reports" isActive={pathname === "/reports"} render={<Link to="/reports" preload="intent" />}>
+              <InboxIcon />
+              <span>Reports</span>
+            </SidebarMenuButton>
+            {attention?.reportsOpen ? <SidebarMenuBadge className="top-2 right-2">{countBadge(attention.reportsOpen)}</SidebarMenuBadge> : null}
+          </SidebarMenuItem>
+        </SidebarMenu> : null}
         <SendFeedbackButton />
         <AccountMenu />
       </SidebarFooter>

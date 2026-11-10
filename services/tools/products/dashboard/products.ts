@@ -17,7 +17,7 @@ export type ProductDefinition = Readonly<{
 export const products = [
   { id: "publisher", name: "Publisher", description: "Publish durable plans and expiring file links.", href: "/publisher", access: "private", accent: "violet", monitorId: "artifact-publisher", external: false },
   { id: "money", name: "Money", description: "Track accounts, changes, and net worth.", href: "/money", access: "private", accent: "lime", monitorId: "tools-directory", external: false },
-  { id: "feedback", name: "Feedback", description: "Collect private feedback through unlisted forms.", href: "/feedback", access: "private", accent: "rose", monitorId: "tools-directory", external: false },
+  { id: "feedback", name: "Forms", description: "Create forms, share private links, and review responses.", href: "/feedback", access: "private", accent: "rose", monitorId: "tools-directory", external: false },
   { id: "markdown-share", name: "Document Share", description: "Write and share Markdown or LaTeX source together.", href: "/share", access: "public", accent: "rose", monitorId: "markdown-share", external: false },
   { id: "status", name: "Status", description: "Availability, incidents, and heartbeats.", href: "/status", access: "private", accent: "cyan", monitorId: "tools-directory", external: false },
   { id: "network-console", name: "Network Console", description: "Inspect private network services.", href: "https://coding.tailbc92d.ts.net", access: "tailnet", accent: "blue", monitorId: "network-console", external: true }

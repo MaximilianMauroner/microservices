@@ -1,6 +1,6 @@
-# Feedback
+# Forms
 
-Feedback is a product inside the Mauroner Tools runtime. The owner manages forms
+Forms is a product inside the Mauroner Tools runtime. The owner manages forms
 and responses through the existing Better Auth Google session at `/feedback`.
 Respondents use an unlisted capability URL at `/feedback/f/:token` without an
 account.

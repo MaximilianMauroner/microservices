@@ -17,7 +17,7 @@
     "start:tools": "pnpm --dir services/tools run start",
     "start:status": "pnpm --dir services/tools run status:start",
     "test": "pnpm run test:scripts && pnpm run test:network-console && pnpm run test:tools",
-    "test:scripts": "node --test scripts/validate-tracked-files.test.mjs",
+    "test:scripts": "node --test scripts/validate-tracked-files.test.mjs scripts/verify-workflow-cache.test.mjs",
     "test:network-console": "pnpm --dir services/network-console run test",
     "test:tools": "pnpm --dir services/tools run test",
     "typecheck": "pnpm run typecheck:network-console && pnpm run typecheck:tools",

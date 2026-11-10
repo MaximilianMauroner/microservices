@@ -4,7 +4,7 @@ import { getPlatformRuntime } from "../../../runtime.js";
 
 async function products({ request }: { request: Request }) {
   const runtime = await getPlatformRuntime();
-  return handleKitchenCatalog(request, (one) => runtime.resolveAppToken(one, "kitchen"), runtime.kitchenCatalog);
+  return handleKitchenCatalog(request, (one) => runtime.resolveAppToken(one, "pantrino"), runtime.kitchenCatalog);
 }
 
 export const Route = createFileRoute("/api/kitchen/products")({
