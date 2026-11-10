@@ -2,7 +2,7 @@ import postgres from "postgres";
 import type { PlatformPrincipal } from "#security";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { DISPOSABLE_DATABASE_SENTINEL, withVerifiedDisposableDatabase } from "../../../platform/database/postgres-push-guard.js";
-import { type CatalogSourceReader, kitchenCatalog, parseBillaList, parseBillaProduct, parseOpenFoodFactsPage } from "../../../products/kitchen/catalog.js";
+import { type CatalogSourceReader, fetchOpenFoodFactsProduct, kitchenCatalog, parseBillaList, parseBillaProduct, parseOpenFoodFactsPage } from "../../../products/kitchen/catalog.js";
 import type { CatalogProduct, CatalogSource } from "../../../products/kitchen/domain.js";
 import { handleKitchenCatalog } from "../../../products/kitchen/sync.js";
 import { requireLoopbackPostgres } from "../../harness/postgres.ts";
@@ -105,7 +105,43 @@ describe("source pages", () => {
   });
 });
 
+/** A fetch that answers every request with `body` and `status`, and keeps the URLs it was asked for. */
+function answer(status: number, body: unknown = {}) {
+  const asked: string[] = [];
+  const fetcher = (async (url: URL | RequestInfo) => { asked.push(String(url)); return Response.json(body, { status }); }) as typeof fetch;
+  return { fetcher, asked };
+}
+
+describe("barcode lookup on Open Food Facts", () => {
+  it("reads the product with the scanned code", async () => {
+    const off = answer(200, { status: 1, product: { product_name: "Haferdrink", brands: "Oatly", quantity: "1 l", product_quantity_unit: "ml", nutriments: { "energy-kcal_100g": 46, proteins_100g: 1 } } });
+    expect(await fetchOpenFoodFactsProduct("7394376616501", off.fetcher)).toEqual({
+      source: "open-food-facts", code: "7394376616501", name: "Haferdrink", brand: "Oatly", quantity: "1 l", unit: "ml", nutrition: { kcal: 46, protein: 1, carbs: null, fat: null }
+    });
+    expect(off.asked[0]).toMatch(/^https:\/\/world\.openfoodfacts\.org\/api\/v2\/product\/7394376616501\?fields=/);
+  });
+
+  it("finds nothing for an unknown code or a product without calories, and fails on a server error", async () => {
+    expect(await fetchOpenFoodFactsProduct("4000000000000", answer(404, { status: 0 }).fetcher)).toBeUndefined();
+    expect(await fetchOpenFoodFactsProduct("4000000000000", answer(200, { status: 1, product: { product_name: "Wasser", nutriments: {} } }).fetcher)).toBeUndefined();
+    await expect(fetchOpenFoodFactsProduct("4000000000000", answer(503).fetcher)).rejects.toThrow("503");
+  });
+});
+
 describe.skipIf(!sql)("Kitchen catalog", () => {
+  it("finds a scanned barcode in the copy first, then on Open Food Facts", async () => {
+    const off = answer(200, { status: 1, product: { product_name: "Linsen rot", nutriments: { "energy-kcal_100g": 340 } } });
+    const catalog = kitchenCatalog(sql!, [source("open-food-facts", [[product("90012345", "Haferflocken")]]).reader], off.fetcher);
+    await catalog.refresh();
+    const scan = (code: string) => handleKitchenCatalog(new Request(`https://tools.example.test/api/kitchen/products?code=${code}`), async () => friend, catalog).then((response) => response.json());
+
+    expect(await scan("90012345")).toEqual({ products: [product("90012345", "Haferflocken")] });
+    expect(off.asked, "a product in the copy needs no request").toEqual([]);
+    expect((await scan("4006040123456")).products.map((one: CatalogProduct) => one.name)).toEqual(["Linsen rot"]);
+    expect(await scan("12"), "too short for a barcode").toEqual({ products: [] });
+    expect(off.asked).toHaveLength(1);
+  });
+
   it("finds products by every typed word in name or brand, names that start with the first word first", async () => {
     const catalog = kitchenCatalog(sql!, [source("open-food-facts", [[
       product("1001", "Bio Kichererbsen"), product("1002", "Kichererbsen", "Billa"), product("1003", "Hummus mit Kichererbsen", "Billa"),

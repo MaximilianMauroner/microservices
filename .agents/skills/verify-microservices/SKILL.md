@@ -28,6 +28,17 @@ required public journeys. Each receipt cell records its elapsed time in
 `durationMs`. Use those times to find the slow stage before changing tools or
 removing checks.
 
+The runner resolves MinIO from a verified local image, a saved archive, or a
+Docker build. The default archive directory is `$XDG_CACHE_HOME/tools-verify`
+or `$HOME/.cache/tools-verify`. Set `TOOLS_VERIFY_CACHE_DIR` to use another
+directory. GitHub Actions stores this directory under the runner temp directory.
+It can save an archive after a failed verification run unless the run is
+cancelled, but only when a nonempty `minio-*.tar` archive exists. The resolver
+publishes the archive by atomic rename after Docker saves the image. This keeps
+a completed MinIO build when a later verification stage fails. The cache key
+includes the runner OS and architecture and hashes the Dockerfile and resolver
+source. The shared MinIO image and archive remain after Compose cleanup.
+
 The runner stops after a failed or blocked stage. It records results and
 fixture cleanup in `.agents/artifacts/verify/runtime-<id>/receipts.json`.
 

@@ -129,7 +129,7 @@ function needsItems(attention: AttentionSummary, now: number): NeedsItem[] {
     items.push({ key: `document:${document.filename}`, icon: favicons.markdownShare, tool: "Markdown Share", text: `${document.filename} expires in ${timeLeft(document.expiresAt - now)}`, link: open("Review document", <Link to="/documents" preload="intent" />), urgent: true });
   }
   if (attention.moneyReview) items.push({ key: "money", icon: favicons.money, tool: "Money", text: `${countLabel(attention.moneyReview, "row")} need${attention.moneyReview === 1 ? "s" : ""} review before the totals are exact`, link: open("Review", <Link to="/money" search={{ view: "review" }} preload="intent" />), urgent: false });
-  if (attention.feedbackUnread) items.push({ key: "feedback", icon: favicons.feedback, tool: "Feedback", text: countLabel(attention.feedbackUnread, "unread response"), link: open("Read", <Link to="/feedback" preload="intent" />), urgent: false });
+  if (attention.feedbackUnread) items.push({ key: "feedback", icon: favicons.feedback, tool: "Forms", text: countLabel(attention.feedbackUnread, "unread response"), link: open("Read", <Link to="/feedback" preload="intent" />), urgent: false });
   return items;
 }
 

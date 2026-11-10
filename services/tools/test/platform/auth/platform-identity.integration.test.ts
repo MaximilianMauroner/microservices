@@ -236,7 +236,7 @@ describe.skipIf(!admin)("MCP over OAuth as the signed-in person", () => {
 });
 
 function authorizeKitchenApp(cookie: string, verifier: string) {
-  const { clientId, redirectUri } = APP_CLIENTS.kitchen;
+  const { clientId, redirectUri } = APP_CLIENTS.pantrino;
   const authorize = new URL(`${config.publicOrigin}/api/auth/oauth2/authorize`);
   for (const [key, value] of Object.entries({
     response_type: "code", client_id: clientId, redirect_uri: redirectUri, scope: "openid profile email offline_access", state: "state-1",
@@ -249,13 +249,13 @@ function refreshKitchenApp(refreshToken: string) {
   return identity!.auth.handler(new Request(`${config.publicOrigin}/api/auth/oauth2/token`, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken, client_id: APP_CLIENTS.kitchen.clientId })
+    body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken, client_id: APP_CLIENTS.pantrino.clientId })
   }));
 }
 
 async function connectKitchenApp(cookie: string) {
   const auth = identity!.auth;
-  const { clientId, redirectUri } = APP_CLIENTS.kitchen;
+  const { clientId, redirectUri } = APP_CLIENTS.pantrino;
   const verifier = randomBytes(32).toString("base64url");
   const toConsent = await authorizeKitchenApp(cookie, verifier);
   const consentLocation = new URL(toConsent.headers.get("location") ?? "", config.publicOrigin);
@@ -292,7 +292,7 @@ describe.skipIf(!admin)("Kitchen app over OAuth", () => {
   it("signs in through PKCE and consent and opens only the Kitchen app API", async () => {
     const { cookie } = await signIn("admin-subject", config.allowedGoogleEmail);
     const { accessToken } = await connectKitchenApp(cookie);
-    expect(await identity!.resolveAppToken(bearer(accessToken), "kitchen")).toEqual({ role: "admin", subject: "admin-subject", email: config.allowedGoogleEmail });
+    expect(await identity!.resolveAppToken(bearer(accessToken), "pantrino")).toEqual({ role: "admin", subject: "admin-subject", email: config.allowedGoogleEmail });
     expect((await callWhoami({ authorization: `Bearer ${accessToken}` })).status, "MCP refuses an app token").toBe(401);
     const userinfo = await identity!.auth.handler(new Request(`${config.publicOrigin}/api/auth/oauth2/userinfo`, { headers: { authorization: `Bearer ${accessToken}` } }));
     const other = await connectKitchenApp((await signIn("friend-subject", "friend@example.test")).cookie);
@@ -313,11 +313,11 @@ describe.skipIf(!admin)("Kitchen app over OAuth", () => {
 
   it("refuses an MCP token, a cookie, and a token of a disabled app", async () => {
     const { cookie } = await signIn("admin-subject", config.allowedGoogleEmail);
-    expect(await identity!.resolveAppToken(bearer(await connectMcpClient(cookie)), "kitchen")).toBeUndefined();
-    expect(await identity!.resolveAppToken(new Request(`${config.publicOrigin}/api/kitchen/sync`, { headers: { cookie } }), "kitchen")).toBeUndefined();
+    expect(await identity!.resolveAppToken(bearer(await connectMcpClient(cookie)), "pantrino")).toBeUndefined();
+    expect(await identity!.resolveAppToken(new Request(`${config.publicOrigin}/api/kitchen/sync`, { headers: { cookie } }), "pantrino")).toBeUndefined();
     const { accessToken, refreshToken } = await connectKitchenApp(cookie);
-    await admin!`update tools.oauth_clients set disabled = true where client_id = ${APP_CLIENTS.kitchen.clientId}`;
-    expect(await identity!.resolveAppToken(bearer(accessToken), "kitchen")).toBeUndefined();
+    await admin!`update tools.oauth_clients set disabled = true where client_id = ${APP_CLIENTS.pantrino.clientId}`;
+    expect(await identity!.resolveAppToken(bearer(accessToken), "pantrino")).toBeUndefined();
     const again = await authorizeKitchenApp(cookie, randomBytes(32).toString("base64url"));
     expect(new URL(again.headers.get("location") ?? "about:blank", config.publicOrigin).searchParams.get("code"), "a disabled app gets no new sign-in").toBeNull();
     expect((await refreshKitchenApp(refreshToken)).ok, "a disabled app cannot refresh").toBe(false);
@@ -329,7 +329,7 @@ describe.skipIf(!admin)("Kitchen app over OAuth", () => {
     const refreshed = await refreshKitchenApp(refreshToken);
     expect(refreshed.status, await refreshed.clone().text()).toBe(200);
     const { access_token: accessToken } = await refreshed.json() as { access_token: string };
-    expect(await identity!.resolveAppToken(bearer(accessToken), "kitchen")).toMatchObject({ subject: "admin-subject" });
+    expect(await identity!.resolveAppToken(bearer(accessToken), "pantrino")).toMatchObject({ subject: "admin-subject" });
   });
 
   it("disables a client ID that an app used before, so its old tokens open nothing", async () => {
@@ -343,9 +343,9 @@ describe.skipIf(!admin)("Kitchen app over OAuth", () => {
   });
 
   it("keeps an operator's disable when the clients are registered again", async () => {
-    await admin!`update tools.oauth_clients set disabled = true where client_id = ${APP_CLIENTS.kitchen.clientId}`;
+    await admin!`update tools.oauth_clients set disabled = true where client_id = ${APP_CLIENTS.pantrino.clientId}`;
     await registerAppClients(admin!);
-    expect(await admin!`select client_id from tools.oauth_clients where client_id = ${APP_CLIENTS.kitchen.clientId} and disabled`).toHaveLength(1);
+    expect(await admin!`select client_id from tools.oauth_clients where client_id = ${APP_CLIENTS.pantrino.clientId} and disabled`).toHaveLength(1);
   });
 });
 
@@ -384,7 +384,7 @@ async function pendingReviewCode(cookie: string) {
 function exchangeReviewCode(auth: NonNullable<typeof identity>["auth"], code: string, verifier: string, clientId: string = REVIEW_ACCOUNT.clientId) {
   return auth.handler(new Request(`${config.publicOrigin}/api/auth/oauth2/token`, {
     method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ grant_type: "authorization_code", client_id: clientId, redirect_uri: APP_CLIENTS.kitchen.redirectUri, code, code_verifier: verifier })
+    body: new URLSearchParams({ grant_type: "authorization_code", client_id: clientId, redirect_uri: APP_CLIENTS.pantrino.redirectUri, code, code_verifier: verifier })
   }));
 }
 
@@ -420,18 +420,18 @@ describe.skipIf(!admin)("Apple App Review password and native OAuth", () => {
       body: JSON.stringify({ accept: true, oauth_query: consentLocation.search.slice(1) })
     }));
     const callback = new URL((await consent.json() as { url: string }).url);
-    expect(`${callback.protocol}${callback.pathname}`).toBe(APP_CLIENTS.kitchen.redirectUri);
+    expect(`${callback.protocol}${callback.pathname}`).toBe(APP_CLIENTS.pantrino.redirectUri);
     expect(callback.searchParams.get("state")).toBe("state-1");
     const token = await exchangeReviewCode(identity!.auth, callback.searchParams.get("code")!, verifier);
     expect(token.status).toBe(200);
     const tokens = await token.json() as { access_token: string; refresh_token: string };
     expect(tokens.refresh_token).toBeTruthy();
-    const principal = await identity!.resolveAppToken(bearer(tokens.access_token), "kitchen");
+    const principal = await identity!.resolveAppToken(bearer(tokens.access_token), "pantrino");
     expect(principal).toEqual({ role: "member", subject: REVIEW_ACCOUNT.subject, email: REVIEW_ACCOUNT.email, products: ["kitchen"] });
     expect(await identity!.resolveAccessToken(bearer(tokens.access_token))).toBeUndefined();
     const refresh = await refreshKitchenApp(tokens.refresh_token);
     expect(refresh.status).toBe(200);
-    expect(await identity!.resolveAppToken(bearer((await refresh.json() as { access_token: string }).access_token), "kitchen")).toEqual(principal);
+    expect(await identity!.resolveAppToken(bearer((await refresh.json() as { access_token: string }).access_token), "pantrino")).toEqual(principal);
   });
 
   it("rejects a wrong password, an unknown username, the internal email, and a Google user's credential", async () => {
@@ -470,7 +470,7 @@ describe.skipIf(!admin)("Apple App Review password and native OAuth", () => {
     const disabled = createPlatformIdentity({ ...config, reviewAccount: undefined }, databaseUrl!);
     try {
       expect(await disabled.resolvePrincipal(new Request(`${config.publicOrigin}/kitchen`, { headers: { cookie } }))).toBeUndefined();
-      expect(await disabled.resolveAppToken(bearer(tokens.accessToken), "kitchen")).toBeUndefined();
+      expect(await disabled.resolveAppToken(bearer(tokens.accessToken), "pantrino")).toBeUndefined();
       expect((await reviewLogin("apple-review", password, disabled.auth)).ok).toBe(false);
       expect((await exchangeReviewCode(disabled.auth, pending.code, pending.verifier)).ok).toBe(false);
       for (const [path, init] of [
@@ -489,9 +489,9 @@ describe.skipIf(!admin)("Apple App Review password and native OAuth", () => {
     const store = kitchenStore(admin!);
     const privateKitchen = await store.admin({ role: "admin", subject: "admin-subject" }).create("Private family kitchen");
     await admin!`insert into tools.product_grants (person_id, product_id, granted_at) values (${REVIEW_ACCOUNT.personId}, 'money', now())`;
-    const principal = (await identity!.resolveAppToken(bearer(tokens.accessToken), "kitchen"))!;
+    const principal = (await identity!.resolveAppToken(bearer(tokens.accessToken), "pantrino"))!;
     for (const path of ["/money", "/publisher", "/feedback", "/bodyshop", "/documents", "/"]) expect(principalMayOpen(principal, path), path).toBe(false);
-    const response = await handleKitchenSync(bearer(tokens.accessToken), (request) => identity!.resolveAppToken(request, "kitchen"), store);
+    const response = await handleKitchenSync(bearer(tokens.accessToken), (request) => identity!.resolveAppToken(request, "pantrino"), store);
     const snapshot = await response.json() as { kitchens: { kitchen: { id: string }; recipes: { name: string }[]; ingredients: unknown[] }[] };
     expect(snapshot.kitchens.map((k) => k.kitchen.id)).toEqual([REVIEW_ACCOUNT.kitchenId]);
     expect(snapshot.kitchens[0]!.recipes.map((r) => r.name)).toEqual(["Tomato pasta"]);
@@ -499,18 +499,18 @@ describe.skipIf(!admin)("Apple App Review password and native OAuth", () => {
     await expect(store.open(principal, privateKitchen.id)).rejects.toMatchObject({ code: "not_found" });
     expect(() => store.admin(principal)).toThrow();
     await admin!`insert into tools.kitchen_members (kitchen_id, person_id, added_at) values (${privateKitchen.id}, ${REVIEW_ACCOUNT.personId}, now())`;
-    expect(await identity!.resolveAppToken(bearer(tokens.accessToken), "kitchen")).toBeUndefined();
+    expect(await identity!.resolveAppToken(bearer(tokens.accessToken), "pantrino")).toBeUndefined();
   });
 
   it("rejects MCP and other clients at authorization, consent, token exchange, refresh, and bearer resolution", async () => {
     const { cookie } = await reviewSession();
     const registered = await identity!.auth.handler(new Request(`${config.publicOrigin}/api/auth/oauth2/register`, {
       method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ client_name: "Other client", redirect_uris: [APP_CLIENTS.kitchen.redirectUri], token_endpoint_auth_method: "none", grant_types: ["authorization_code", "refresh_token"], response_types: ["code"] })
+      body: JSON.stringify({ client_name: "Other client", redirect_uris: [APP_CLIENTS.pantrino.redirectUri], token_endpoint_auth_method: "none", grant_types: ["authorization_code", "refresh_token"], response_types: ["code"] })
     }));
     const clientId = (await registered.json() as { client_id: string }).client_id;
     const verifier = randomBytes(32).toString("base64url");
-    const query = new URLSearchParams({ client_id: clientId, response_type: "code", redirect_uri: APP_CLIENTS.kitchen.redirectUri, scope: "openid profile email offline_access", code_challenge: createHash("sha256").update(verifier).digest("base64url"), code_challenge_method: "S256" });
+    const query = new URLSearchParams({ client_id: clientId, response_type: "code", redirect_uri: APP_CLIENTS.pantrino.redirectUri, scope: "openid profile email offline_access", code_challenge: createHash("sha256").update(verifier).digest("base64url"), code_challenge_method: "S256" });
     const denied = await identity!.auth.handler(new Request(`${config.publicOrigin}/api/auth/oauth2/authorize?${query}`, { headers: { cookie } }));
     expect(denied.status).toBe(403);
     const consent = await identity!.auth.handler(new Request(`${config.publicOrigin}/api/auth/oauth2/consent`, {
@@ -524,7 +524,7 @@ describe.skipIf(!admin)("Apple App Review password and native OAuth", () => {
     const resourceCode = await pendingReviewCode(cookie);
     const resourceToken = await identity!.auth.handler(new Request(`${config.publicOrigin}/api/auth/oauth2/token`, {
       method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ grant_type: "authorization_code", client_id: REVIEW_ACCOUNT.clientId, code: resourceCode.code, code_verifier: resourceCode.verifier, redirect_uri: APP_CLIENTS.kitchen.redirectUri, resource: `${config.publicOrigin}/api/mcp` })
+      body: new URLSearchParams({ grant_type: "authorization_code", client_id: REVIEW_ACCOUNT.clientId, code: resourceCode.code, code_verifier: resourceCode.verifier, redirect_uri: APP_CLIENTS.pantrino.redirectUri, resource: `${config.publicOrigin}/api/mcp` })
     }));
     expect(resourceToken.status).toBe(403);
     expect(await admin!`select id from tools.oauth_access_tokens where user_id = ${REVIEW_ACCOUNT.userId}`).toHaveLength(0);
@@ -554,14 +554,14 @@ describe.skipIf(!admin)("Apple App Review password and native OAuth", () => {
     expect(await admin!`select id from tools.kitchen_ingredients where kitchen_id = ${REVIEW_ACCOUNT.kitchenId}`).toHaveLength(2);
     expect((await admin!`select name from tools.kitchens where id = ${REVIEW_ACCOUNT.kitchenId}`)[0]!.name).toBe("Reviewer edits");
     expect(await identity!.resolvePrincipal(new Request(config.publicOrigin, { headers: { cookie } }))).toBeUndefined();
-    expect(await identity!.resolveAppToken(bearer(tokens.accessToken), "kitchen")).toBeUndefined();
+    expect(await identity!.resolveAppToken(bearer(tokens.accessToken), "pantrino")).toBeUndefined();
     expect((await refreshKitchenApp(tokens.refreshToken)).ok).toBe(false);
     expect((await reviewLogin("apple-review", password)).ok).toBe(false);
     expect((await reviewLogin("apple-review", replacement)).ok).toBe(true);
     await provisionReviewAccount(admin!, { kind: "revoke" });
     expect((await reviewLogin("apple-review", replacement)).ok).toBe(false);
     expect(await identity!.resolvePrincipal(google.request())).toMatchObject({ role: "admin" });
-    expect(await identity!.resolveAppToken(bearer(googleTokens.accessToken), "kitchen")).toMatchObject({ role: "admin" });
+    expect(await identity!.resolveAppToken(bearer(googleTokens.accessToken), "pantrino")).toMatchObject({ role: "admin" });
     expect((await refreshKitchenApp(googleTokens.refreshToken)).ok).toBe(true);
   });
 

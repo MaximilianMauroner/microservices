@@ -12,6 +12,7 @@ import { foodInsights, uncertainFoods } from "./model/insights.js";
 import { projectWeight } from "./model/projection.js";
 import { weeklyReview } from "./model/review.js";
 import { dailyMeanWeights } from "./model/weight.js";
+import type { BodyshopAction } from "./actions.js";
 import type { BodyshopChange, BodyshopKind, BodyshopScope } from "./repository.js";
 import { ageOn, PROFILE_LABELS, type Profile, readProfile, readSettings, SETTING_LABELS, SEXES, type SettingKey, type Settings } from "./settings.js";
 
@@ -563,3 +564,33 @@ export async function commitImport(scope: BodyshopScope, bytes: Uint8Array, file
 }
 
 export type { DayStatus };
+
+/** Runs one change. The web page and the app send the same changes, so both get the same rules. */
+export async function applyAction(scope: BodyshopScope, data: BodyshopAction): Promise<{ id?: string; repeated?: number }> {
+  switch (data.type) {
+    case "food.log": { const result = await logFood(scope, data); return { id: result.entries[0]?.id, repeated: result.repeated.length }; }
+    case "meal.log": { const result = await logMeal(scope, data); return { repeated: result.repeated.length }; }
+    case "entry.correct": { const { type: _, id: entryId, ...patch } = data; return { id: (await correctEntry(scope, entryId, patch)).id }; }
+    case "remove": await removeRecord(scope, data.kind, data.id); return {};
+    case "weight.log": return { id: (await logWeight(scope, data)).id };
+    case "day.update": { const { type: _, ...input } = data; return { id: (await updateDay(scope, input)).id }; }
+    case "food.save": { const { type: _, ...input } = data; return { id: (await saveFood(scope, input)).id }; }
+    case "settings.update": await updateSettings(scope, data.values); return {};
+    case "profile.update": await updateProfile(scope, { birthday: data.birthday, sex: data.sex }); return {};
+  }
+}
+
+/** One day with every saved food and the recurring meals that apply on it, as the Today page shows it. */
+export async function dayPanel(scope: BodyshopScope, day?: string) {
+  const [view, foods, templates] = await Promise.all([dayView(scope, day), scope.list("food"), scope.list("template")]);
+  const names = [...new Set(templates.map((one) => one.template))];
+  const meals = await Promise.all(names.map(async (name) => {
+    const { parts } = await templateParts(scope, name, view.day);
+    return { name, meal: parts[0]?.meal ?? "Other", parts: parts.map((part) => ({ part: part.food, amount: part.amount, unit: part.unit, saved: Boolean(part.saved), variable: part.quantity === "Variable" })) };
+  }));
+  return {
+    ...view,
+    foods: foods.map((food) => ({ id: food.id, name: food.name, brand: food.brand, amount: food.amount, unit: food.unit, kcal: food.nutrients.kcal, protein: food.nutrients.protein, container: food.container, fullSize: food.fullSize })).sort((a, b) => a.name.localeCompare(b.name)),
+    templates: meals.filter((meal) => meal.parts.length && findTemplate(templates, meal.name))
+  };
+}
