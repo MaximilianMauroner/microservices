@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AppReviewRouteImport } from './routes/app-review'
 import { Route as BodyshopRouteImport } from './routes/bodyshop'
 import { Route as ConnectRouteImport } from './routes/connect'
 import { Route as ConsentRouteImport } from './routes/consent'
@@ -100,6 +101,11 @@ import { Route as ApiFeedbackFormsFormIdExportRouteImport } from './routes/api/f
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AppReviewRoute = AppReviewRouteImport.update({
+  id: '/app-review',
+  path: '/app-review',
   getParentRoute: () => rootRouteImport,
 } as any)
 const BodyshopRoute = BodyshopRouteImport.update({
@@ -543,6 +549,7 @@ const ApiFeedbackFormsFormIdExportRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/app-review': typeof AppReviewRoute
   '/bodyshop': typeof BodyshopRouteWithChildren
   '/connect': typeof ConnectRoute
   '/consent': typeof ConsentRoute
@@ -632,6 +639,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/app-review': typeof AppReviewRoute
   '/connect': typeof ConnectRoute
   '/consent': typeof ConsentRoute
   '/documents': typeof DocumentsRoute
@@ -715,6 +723,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/app-review': typeof AppReviewRoute
   '/bodyshop': typeof BodyshopRouteWithChildren
   '/connect': typeof ConnectRoute
   '/consent': typeof ConsentRoute
@@ -806,6 +815,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/app-review'
     | '/bodyshop'
     | '/connect'
     | '/consent'
@@ -895,6 +905,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/app-review'
     | '/connect'
     | '/consent'
     | '/documents'
@@ -977,6 +988,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/app-review'
     | '/bodyshop'
     | '/connect'
     | '/consent'
@@ -1067,6 +1079,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AppReviewRoute: typeof AppReviewRoute
   BodyshopRoute: typeof BodyshopRouteWithChildren
   ConnectRoute: typeof ConnectRoute
   ConsentRoute: typeof ConsentRoute
@@ -1125,6 +1138,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/app-review': {
+      id: '/app-review'
+      path: '/app-review'
+      fullPath: '/app-review'
+      preLoaderRoute: typeof AppReviewRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/bodyshop': {
@@ -1951,6 +1971,7 @@ const ApiShareDocumentsRouteWithChildren =
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AppReviewRoute: AppReviewRoute,
   BodyshopRoute: BodyshopRouteWithChildren,
   ConnectRoute: ConnectRoute,
   ConsentRoute: ConsentRoute,

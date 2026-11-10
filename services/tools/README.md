@@ -40,8 +40,12 @@ are private and non-cacheable.
 ## Browser authentication
 
 Better Auth stores sessions in PostgreSQL. A session lasts seven days in a
-secure, HTTP-only, same-site cookie. Google is the only provider and requests
-only the default OpenID, email, and profile scopes.
+secure, HTTP-only, same-site cookie. Google sign-in requests only the default
+OpenID, email, and profile scopes. A fixed Apple App Review account can use a
+username and password when explicitly enabled and provisioned. It has only
+Kitchen member access to a separate sample kitchen. Its OAuth access is limited
+to the Pantrino native client. General password sign-in, signup, account linking,
+and password changes remain unavailable.
 
 The admin is the Google account whose verified `sub` matches
 `AUTH_ALLOWED_GOOGLE_SUBJECT`. The admin can invite other people by Google email

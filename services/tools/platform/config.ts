@@ -1,6 +1,7 @@
 import { loadConfig as loadArtifactConfig } from "#publisher";
 import { loadConfig as loadToolsConfig } from "#dashboard";
 import { parseFeedbackEncryptionKey } from "../products/feedback/encryption.js";
+import { loadReviewAccount, type ReviewAccount } from "./auth/review-account.js";
 import { parseEncryptionKey } from "./security/sealed.js";
 
 type Environment = Readonly<Record<string, string | undefined>>;
@@ -50,7 +51,7 @@ export function loadPlatformConfig(env: Environment = process.env) {
   };
 }
 
-export type PlatformAuthConfig = ReturnType<typeof loadPlatformAuthConfig>;
+export type PlatformAuthConfig = Omit<ReturnType<typeof loadPlatformAuthConfig>, "reviewAccount"> & { reviewAccount?: ReviewAccount };
 
 export function loadPlatformAuthConfig(
   env: Environment,
@@ -58,6 +59,7 @@ export function loadPlatformAuthConfig(
 ) {
   return {
     publicOrigin,
+    reviewAccount: loadReviewAccount(env),
     googleClientId: required(env, "GOOGLE_CLIENT_ID"),
     googleClientSecret: required(env, "GOOGLE_CLIENT_SECRET"),
     secret: secret(required(env, "BETTER_AUTH_SECRET"), "BETTER_AUTH_SECRET"),
