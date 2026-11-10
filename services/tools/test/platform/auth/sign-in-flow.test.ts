@@ -77,7 +77,7 @@ describe("sign-in continuation", () => {
     });
   });
 
-  it.each(["https://evil.example/", "//evil.example/", "/api/auth/oauth2/authorize", "/sign-in"])(
+  it.each(["https://evil.example/", "//evil.example/", "/api/auth/oauth2/authorize", "/sign-in", "/app-review"])(
     "rejects unsafe website destination %s",
     (returnTo) => {
       const flow = signInFlow(new URLSearchParams({ returnTo }).toString());
