@@ -22,6 +22,8 @@ describe("central platform route policy", () => {
   it("keeps public reads, human sessions, and machine APIs distinct", () => {
     expect(classifyRoute("/", "GET")).toEqual({ kind: "human-session" });
     expect(classifyRoute("/sign-in", "GET")).toEqual({ kind: "public" });
+    expect(classifyRoute("/app-review", "GET")).toEqual({ kind: "public" });
+    expect(classifyRoute("/app-review/other", "GET")).toEqual({ kind: "human-session" });
     expect(classifyRoute("/api/auth/callback/google", "GET")).toEqual({ kind: "public" });
     expect(classifyRoute("/feedback/f/token", "GET")).toEqual({ kind: "public" });
     expect(classifyRoute("/feedback/f/token", "POST")).toEqual({ kind: "public" });

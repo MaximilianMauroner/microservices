@@ -9,11 +9,12 @@ const valid = {
 };
 
 describe("platform authentication configuration", () => {
-  it("loads the Google-only stateless auth contract", () => {
+  it("keeps review login disabled by default", () => {
     expect(
       loadPlatformAuthConfig(valid, "https://tools.example.test")
     ).toEqual({
       publicOrigin: "https://tools.example.test",
+      reviewAccount: undefined,
       googleClientId: valid.GOOGLE_CLIENT_ID,
       googleClientSecret: valid.GOOGLE_CLIENT_SECRET,
       secret: valid.BETTER_AUTH_SECRET,
