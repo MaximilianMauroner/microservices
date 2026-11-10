@@ -11,3 +11,6 @@ overrides:
   '@infinitered/react-native-mlkit-core>@testing-library/jest-native': '-'
   '@infinitered/react-native-mlkit-core>@testing-library/react-hooks': '-'
   '@infinitered/react-native-mlkit-core>@types/jest': '-'
+
+patchedDependencies:
+  '@infinitered/react-native-mlkit-text-recognition@5.0.1': patches/@infinitered__react-native-mlkit-text-recognition@5.0.1.patch
