@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { createFileRoute, redirect, useLocation } from "@tanstack/react-router";
 import { getCurrentPrincipal } from "../../platform/auth/session.js";
 import { favicons } from "../../platform/ui/favicons.js";
@@ -69,6 +69,7 @@ function SignInRoute() {
         state={unauthorized ? "unauthorized" : expired ? "expired" : "sign-in"}
         submitting={submitting}
         onSignIn={() => void signIn()}
+        onReviewEntry={() => window.location.assign(`/app-review${searchStr}`)}
       />
     </main>
   );
@@ -77,15 +78,26 @@ function SignInRoute() {
 export function SignInPanel({
   state,
   submitting = false,
-  onSignIn
+  onSignIn,
+  onReviewEntry
 }: {
   state: "sign-in" | "unauthorized" | "expired";
   submitting?: boolean;
   onSignIn?: () => void;
+  onReviewEntry?: () => void;
 }) {
+  const reviewTaps = useRef(0);
   return (
     <section className="grid w-full max-w-[22.5rem] gap-3.5 rounded-2xl border bg-card px-6 py-7 text-center" aria-labelledby="sign-in-title">
-      <img className="mx-auto size-10 rounded-xl" src={favicons.directory} alt="" width={40} height={40} />
+      <button type="button" className="mx-auto rounded-xl" aria-label="Mauroner Tools" disabled={submitting} onClick={() => {
+        reviewTaps.current += 1;
+        if (reviewTaps.current === 5) {
+          reviewTaps.current = 0;
+          onReviewEntry?.();
+        }
+      }}>
+        <img className="size-10 rounded-xl" src={favicons.directory} alt="" width={40} height={40} />
+      </button>
       <h1 id="sign-in-title" className="text-xl font-semibold tracking-[-0.01em]">
         {state === "unauthorized" ? "This account has no access" : state === "expired" ? "Session expired" : "Sign in to Tools"}
       </h1>
@@ -98,7 +110,7 @@ export function SignInPanel({
       </p>
       <Button className="h-10 w-full" type="button" disabled={submitting} onClick={onSignIn}>
         <GoogleMark />
-        {submitting ? "Opening Google…" : state === "unauthorized" ? "Use another Google account" : "Continue with Google"}
+        {submitting ? "Signing in…" : state === "unauthorized" ? "Use another Google account" : "Continue with Google"}
       </Button>
       <p className="text-xs text-muted-foreground">The session lasts 7 days on this device.</p>
     </section>

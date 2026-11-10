@@ -44,6 +44,7 @@ export const SERVER_FUNCTION_BASE_PATH = "/_serverFn";
 
 const PUBLIC_PATHS = new Set([
   "/sign-in",
+  "/app-review",
   "/favicon.ico",
   "/favicon.svg",
   "/live",

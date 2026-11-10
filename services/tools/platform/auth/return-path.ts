@@ -9,7 +9,7 @@ export function safeReturnPath(value: unknown): string {
     if (url.origin !== "https://return-path.invalid" || url.pathname.startsWith("//")) {
       return "/";
     }
-    if (url.pathname === "/sign-in" || url.pathname.startsWith("/api/auth")) {
+    if (url.pathname === "/sign-in" || url.pathname === "/app-review" || url.pathname.startsWith("/api/auth")) {
       return "/";
     }
     return `${url.pathname}${url.search}${url.hash}`;

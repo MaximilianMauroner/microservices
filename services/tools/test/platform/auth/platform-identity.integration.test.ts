@@ -1,17 +1,30 @@
 import postgres from "postgres";
 import { createHash, createHmac, randomBytes } from "node:crypto";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { verifyGoogleIdToken } from "better-auth/social-providers";
 import { DISPOSABLE_DATABASE_SENTINEL, withVerifiedDisposableDatabase } from "../../../platform/database/postgres-push-guard.js";
+import { REVIEW_ACCOUNT } from "../../../platform/auth/review-account.js";
+import { provisionReviewAccount } from "../../../platform/auth/provision-review-account.js";
+import { kitchenStore } from "../../../products/kitchen/repository.js";
+import { handleKitchenSync } from "../../../products/kitchen/sync.js";
+import { principalMayOpen } from "../../../platform/access/product-access.js";
+import { signInFlow } from "../../../platform/auth/sign-in-flow.js";
 import { createPlatformIdentity } from "../../../platform/auth/auth.js";
 import { handleMcpRequest } from "../../../platform/access/mcp.js";
 import { APP_CLIENTS, registerAppClients } from "../../../platform/auth/app-clients.js";
 import { requireLoopbackPostgres } from "../../harness/postgres.ts";
 
+vi.mock("better-auth/social-providers", async (original) => ({
+  ...await original<typeof import("better-auth/social-providers")>(),
+  verifyGoogleIdToken: vi.fn()
+}));
+
 const databaseUrl = process.env.TEST_DATABASE_URL ? requireLoopbackPostgres(process.env.TEST_DATABASE_URL) : undefined;
 const confirmed = process.env.MONEY_TEST_DATABASE_CONFIRM === "money-repository-test";
-const admin = databaseUrl && confirmed ? postgres(databaseUrl, { max: 1 }) : undefined;
+const admin = databaseUrl && confirmed ? postgres(databaseUrl, { max: 1, onnotice: () => {} }) : undefined;
 
 const config = {
+  reviewAccount: REVIEW_ACCOUNT,
   publicOrigin: "http://tools.example.test",
   googleClientId: "test-client",
   googleClientSecret: "test-client-secret",
@@ -31,7 +44,7 @@ beforeEach(async () => {
       select sentinel_value value from public.tools_runtime_test_sentinel
       where sentinel_key = ${DISPOSABLE_DATABASE_SENTINEL.key}`)[0]?.value,
   }, async () => {
-    await admin`truncate tools.auth_users, tools.auth_sessions, tools.auth_accounts, tools.auth_verifications, tools.people, tools.product_grants, tools.oauth_clients, tools.oauth_refresh_tokens, tools.oauth_access_tokens, tools.oauth_consents cascade`;
+    await admin`truncate tools.kitchens, tools.auth_users, tools.auth_sessions, tools.auth_accounts, tools.auth_verifications, tools.people, tools.product_grants, tools.oauth_clients, tools.oauth_refresh_tokens, tools.oauth_access_tokens, tools.oauth_consents cascade`;
   });
 });
 
@@ -162,7 +175,9 @@ async function connectMcpClient(cookie: string) {
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ accept: true, oauth_query: consentLocation.search.slice(1) })
   }));
+  expect(consent.status, await consent.clone().text()).toBe(200);
   const consentBody = await consent.json() as { url?: string; redirect_uri?: string };
+  expect(consentBody).toHaveProperty("url");
   const callback = new URL(consentBody.url ?? consentBody.redirect_uri ?? "");
   const code = callback.searchParams.get("code");
   expect(code, JSON.stringify(consentBody)).toBeTruthy();
@@ -250,7 +265,9 @@ async function connectKitchenApp(cookie: string) {
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ accept: true, oauth_query: consentLocation.search.slice(1) })
   }));
+  expect(consent.status, await consent.clone().text()).toBe(200);
   const consentBody = await consent.json() as { url?: string; redirect_uri?: string };
+  expect(consentBody).toHaveProperty("url");
   const callback = new URL(consentBody.url ?? consentBody.redirect_uri ?? "");
   expect(`${callback.protocol}${callback.pathname}`).toBe(redirectUri);
   const code = callback.searchParams.get("code");
@@ -329,5 +346,262 @@ describe.skipIf(!admin)("Kitchen app over OAuth", () => {
     await admin!`update tools.oauth_clients set disabled = true where client_id = ${APP_CLIENTS.kitchen.clientId}`;
     await registerAppClients(admin!);
     expect(await admin!`select client_id from tools.oauth_clients where client_id = ${APP_CLIENTS.kitchen.clientId} and disabled`).toHaveLength(1);
+  });
+});
+
+function reviewLogin(username: string, password: string, auth = identity!.auth, extra: Record<string, unknown> = {}) {
+  return auth.handler(new Request(`${config.publicOrigin}/api/auth/sign-in/email`, {
+    method: "POST", headers: { "content-type": "application/json", origin: config.publicOrigin },
+    body: JSON.stringify({ email: username, password, ...extra })
+  }));
+}
+
+function responseCookies(response: Response) {
+  return response.headers.getSetCookie().map((value) => value.split(";")[0]).join("; ");
+}
+
+async function reviewSession() {
+  const password = randomBytes(32).toString("base64url");
+  await provisionReviewAccount(admin!, { kind: "provision", password });
+  const login = await reviewLogin("apple-review", password);
+  expect(login.status, "the built-in password handler signs in the reviewer").toBe(200);
+  return { cookie: responseCookies(login), password };
+}
+
+async function pendingReviewCode(cookie: string) {
+  const verifier = randomBytes(32).toString("base64url");
+  const response = await authorizeKitchenApp(cookie, verifier);
+  const consentLocation = new URL(response.headers.get("location")!, config.publicOrigin);
+  expect(consentLocation.pathname).toBe("/consent");
+  const consent = await identity!.auth.handler(new Request(`${config.publicOrigin}/api/auth/oauth2/consent`, {
+    method: "POST", headers: { cookie, "content-type": "application/json", origin: config.publicOrigin },
+    body: JSON.stringify({ accept: true, oauth_query: consentLocation.search.slice(1) })
+  }));
+  const body = await consent.json() as { url: string };
+  return { verifier, code: new URL(body.url).searchParams.get("code")! };
+}
+
+function exchangeReviewCode(auth: NonNullable<typeof identity>["auth"], code: string, verifier: string, clientId: string = REVIEW_ACCOUNT.clientId) {
+  return auth.handler(new Request(`${config.publicOrigin}/api/auth/oauth2/token`, {
+    method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ grant_type: "authorization_code", client_id: clientId, redirect_uri: APP_CLIENTS.kitchen.redirectUri, code, code_verifier: verifier })
+  }));
+}
+
+describe.skipIf(!admin)("Apple App Review password and native OAuth", () => {
+  beforeEach(async () => { await registerAppClients(admin!); });
+
+  it("refuses review sign-in until the account is provisioned", async () => {
+    expect((await reviewLogin("apple-review", randomBytes(32).toString("base64url"))).ok).toBe(false);
+  });
+
+  it("completes password sign-in from the native signed login continuation, consent, PKCE, and refresh", async () => {
+    const password = randomBytes(32).toString("base64url");
+    await provisionReviewAccount(admin!, { kind: "provision", password });
+    const verifier = randomBytes(32).toString("base64url");
+    const toLogin = await authorizeKitchenApp("", verifier);
+    const loginLocation = new URL(toLogin.headers.get("location")!, config.publicOrigin);
+    expect(loginLocation.pathname).toBe("/sign-in");
+    const flow = signInFlow(loginLocation.search);
+    const login = await reviewLogin("apple-review", password, identity!.auth, { callbackURL: flow.callbackURL, oauth_query: loginLocation.search.slice(1) });
+    expect(login.status).toBe(200);
+    const cookie = responseCookies(login);
+    expect(cookie).toContain("session_token=");
+    const continuation = await login.json() as { url: string };
+    let consentLocation = new URL(continuation.url, config.publicOrigin);
+    if (consentLocation.pathname === "/api/auth/oauth2/authorize") {
+      const toConsent = await identity!.auth.handler(new Request(consentLocation, { headers: { cookie } }));
+      expect(toConsent.status).toBe(302);
+      consentLocation = new URL(toConsent.headers.get("location")!, config.publicOrigin);
+    }
+    expect(consentLocation.pathname).toBe("/consent");
+    const consent = await identity!.auth.handler(new Request(`${config.publicOrigin}/api/auth/oauth2/consent`, {
+      method: "POST", headers: { cookie, "content-type": "application/json", origin: config.publicOrigin },
+      body: JSON.stringify({ accept: true, oauth_query: consentLocation.search.slice(1) })
+    }));
+    const callback = new URL((await consent.json() as { url: string }).url);
+    expect(`${callback.protocol}${callback.pathname}`).toBe(APP_CLIENTS.kitchen.redirectUri);
+    expect(callback.searchParams.get("state")).toBe("state-1");
+    const token = await exchangeReviewCode(identity!.auth, callback.searchParams.get("code")!, verifier);
+    expect(token.status).toBe(200);
+    const tokens = await token.json() as { access_token: string; refresh_token: string };
+    expect(tokens.refresh_token).toBeTruthy();
+    const principal = await identity!.resolveAppToken(bearer(tokens.access_token), "kitchen");
+    expect(principal).toEqual({ role: "member", subject: REVIEW_ACCOUNT.subject, email: REVIEW_ACCOUNT.email, products: ["kitchen"] });
+    expect(await identity!.resolveAccessToken(bearer(tokens.access_token))).toBeUndefined();
+    const refresh = await refreshKitchenApp(tokens.refresh_token);
+    expect(refresh.status).toBe(200);
+    expect(await identity!.resolveAppToken(bearer((await refresh.json() as { access_token: string }).access_token), "kitchen")).toEqual(principal);
+  });
+
+  it("rejects a wrong password, an unknown username, the internal email, and a Google user's credential", async () => {
+    const { password } = await reviewSession();
+    const google = await signIn("admin-subject", config.allowedGoogleEmail);
+    const context = await identity!.auth.$context;
+    const user = (await identity!.auth.api.getSession({ headers: google.request().headers }))!.user;
+    await context.internalAdapter.createAccount({ userId: user.id, accountId: user.id, providerId: "credential", password: await context.password.hash(password) });
+    for (const [username, candidate] of [["apple-review", "wrong-password"], ["unknown", password], [REVIEW_ACCOUNT.email, password], [config.allowedGoogleEmail, password]]) {
+      const response = await reviewLogin(username!, candidate!);
+      expect(response.ok).toBe(false);
+      expect(responseCookies(response)).not.toContain("session_token=");
+    }
+  });
+
+  it("rejects signup, password mutation, linking, and changes to the review identity", async () => {
+    const { cookie, password } = await reviewSession();
+    const before = await admin!`select email from tools.auth_users where id = ${REVIEW_ACCOUNT.userId}`;
+    for (const path of ["sign-up/email", "request-password-reset", "reset-password", "change-password", "set-password", "verify-password", "link-social", "unlink-account", "update-user", "change-email", "delete-user"]) {
+      const response = await identity!.auth.handler(new Request(`${config.publicOrigin}/api/auth/${path}`, {
+        method: "POST", headers: { cookie, origin: config.publicOrigin, "content-type": "application/json" },
+        body: JSON.stringify({ email: "changed@example.test", name: "Changed", password, newPassword: password, currentPassword: password, token: "fake", provider: "google", callbackURL: "/" })
+      }));
+      expect(response.ok, path).toBe(false);
+    }
+    expect(await admin!`select email from tools.auth_users where id = ${REVIEW_ACCOUNT.userId}`).toEqual(before);
+  });
+
+  it("fails closed for existing sessions, pending codes, access tokens, refresh, and userinfo when disabled", async () => {
+    const { cookie, password } = await reviewSession();
+    const tokens = await connectKitchenApp(cookie);
+    const pending = await pendingReviewCode(cookie);
+    const enabledUserinfo = await identity!.auth.handler(new Request(`${config.publicOrigin}/api/auth/oauth2/userinfo`, { headers: { authorization: `Bearer ${tokens.accessToken}` } }));
+    expect(enabledUserinfo.status).toBe(200);
+    expect(await enabledUserinfo.json()).toMatchObject({ sub: REVIEW_ACCOUNT.userId, email: REVIEW_ACCOUNT.email });
+    const disabled = createPlatformIdentity({ ...config, reviewAccount: undefined }, databaseUrl!);
+    try {
+      expect(await disabled.resolvePrincipal(new Request(`${config.publicOrigin}/kitchen`, { headers: { cookie } }))).toBeUndefined();
+      expect(await disabled.resolveAppToken(bearer(tokens.accessToken), "kitchen")).toBeUndefined();
+      expect((await reviewLogin("apple-review", password, disabled.auth)).ok).toBe(false);
+      expect((await exchangeReviewCode(disabled.auth, pending.code, pending.verifier)).ok).toBe(false);
+      for (const [path, init] of [
+        ["get-session", { headers: { cookie } }],
+        ["oauth2/userinfo", { headers: { authorization: `Bearer ${tokens.accessToken}` } }],
+        ["oauth2/token", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ grant_type: "refresh_token", client_id: REVIEW_ACCOUNT.clientId, refresh_token: tokens.refreshToken }) }]
+      ] as const) expect((await disabled.auth.handler(new Request(`${config.publicOrigin}/api/auth/${path}`, init))).ok, path).toBe(false);
+      const google = await signIn("admin-subject", config.allowedGoogleEmail);
+      expect(await disabled.resolvePrincipal(google.request())).toMatchObject({ role: "admin" });
+    } finally { await disabled.close(); }
+  });
+
+  it("seeds only a separate sample kitchen and never grants other products, even if extra grants are stored", async () => {
+    const { cookie } = await reviewSession();
+    const tokens = await connectKitchenApp(cookie);
+    const store = kitchenStore(admin!);
+    const privateKitchen = await store.admin({ role: "admin", subject: "admin-subject" }).create("Private family kitchen");
+    await admin!`insert into tools.product_grants (person_id, product_id, granted_at) values (${REVIEW_ACCOUNT.personId}, 'money', now())`;
+    const principal = (await identity!.resolveAppToken(bearer(tokens.accessToken), "kitchen"))!;
+    for (const path of ["/money", "/publisher", "/feedback", "/bodyshop", "/documents", "/"]) expect(principalMayOpen(principal, path), path).toBe(false);
+    const response = await handleKitchenSync(bearer(tokens.accessToken), (request) => identity!.resolveAppToken(request, "kitchen"), store);
+    const snapshot = await response.json() as { kitchens: { kitchen: { id: string }; recipes: { name: string }[]; ingredients: unknown[] }[] };
+    expect(snapshot.kitchens.map((k) => k.kitchen.id)).toEqual([REVIEW_ACCOUNT.kitchenId]);
+    expect(snapshot.kitchens[0]!.recipes.map((r) => r.name)).toEqual(["Tomato pasta"]);
+    expect(snapshot.kitchens[0]!.ingredients).toHaveLength(2);
+    await expect(store.open(principal, privateKitchen.id)).rejects.toMatchObject({ code: "not_found" });
+    expect(() => store.admin(principal)).toThrow();
+    await admin!`insert into tools.kitchen_members (kitchen_id, person_id, added_at) values (${privateKitchen.id}, ${REVIEW_ACCOUNT.personId}, now())`;
+    expect(await identity!.resolveAppToken(bearer(tokens.accessToken), "kitchen")).toBeUndefined();
+  });
+
+  it("rejects MCP and other clients at authorization, consent, token exchange, refresh, and bearer resolution", async () => {
+    const { cookie } = await reviewSession();
+    const registered = await identity!.auth.handler(new Request(`${config.publicOrigin}/api/auth/oauth2/register`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ client_name: "Other client", redirect_uris: [APP_CLIENTS.kitchen.redirectUri], token_endpoint_auth_method: "none", grant_types: ["authorization_code", "refresh_token"], response_types: ["code"] })
+    }));
+    const clientId = (await registered.json() as { client_id: string }).client_id;
+    const verifier = randomBytes(32).toString("base64url");
+    const query = new URLSearchParams({ client_id: clientId, response_type: "code", redirect_uri: APP_CLIENTS.kitchen.redirectUri, scope: "openid profile email offline_access", code_challenge: createHash("sha256").update(verifier).digest("base64url"), code_challenge_method: "S256" });
+    const denied = await identity!.auth.handler(new Request(`${config.publicOrigin}/api/auth/oauth2/authorize?${query}`, { headers: { cookie } }));
+    expect(denied.status).toBe(403);
+    const consent = await identity!.auth.handler(new Request(`${config.publicOrigin}/api/auth/oauth2/consent`, {
+      method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ accept: true, oauth_query: query.toString() })
+    }));
+    expect(consent.status).toBe(403);
+    const resourceRequest = new URLSearchParams(query);
+    resourceRequest.set("client_id", REVIEW_ACCOUNT.clientId);
+    resourceRequest.set("resource", `${config.publicOrigin}/api/mcp`);
+    expect((await identity!.auth.handler(new Request(`${config.publicOrigin}/api/auth/oauth2/authorize?${resourceRequest}`, { headers: { cookie } }))).status).toBe(403);
+    const resourceCode = await pendingReviewCode(cookie);
+    const resourceToken = await identity!.auth.handler(new Request(`${config.publicOrigin}/api/auth/oauth2/token`, {
+      method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ grant_type: "authorization_code", client_id: REVIEW_ACCOUNT.clientId, code: resourceCode.code, code_verifier: resourceCode.verifier, redirect_uri: APP_CLIENTS.kitchen.redirectUri, resource: `${config.publicOrigin}/api/mcp` })
+    }));
+    expect(resourceToken.status).toBe(403);
+    expect(await admin!`select id from tools.oauth_access_tokens where user_id = ${REVIEW_ACCOUNT.userId}`).toHaveLength(0);
+    const pending = await pendingReviewCode(cookie);
+    const codeHash = createHash("sha256").update(pending.code).digest("base64url");
+    await admin!`update tools.auth_verifications set value = jsonb_set(value::jsonb, '{query,client_id}', to_jsonb(${clientId}::text))::text where identifier = ${codeHash}`;
+    expect((await exchangeReviewCode(identity!.auth, pending.code, pending.verifier, clientId)).status).toBe(403);
+    const tokens = await connectKitchenApp(cookie);
+    await admin!`update tools.oauth_refresh_tokens set client_id = ${clientId} where user_id = ${REVIEW_ACCOUNT.userId}`;
+    await admin!`update tools.oauth_access_tokens set client_id = ${clientId} where user_id = ${REVIEW_ACCOUNT.userId}`;
+    expect(await identity!.resolveAccessToken(bearer(tokens.accessToken))).toBeUndefined();
+    const refresh = await identity!.auth.handler(new Request(`${config.publicOrigin}/api/auth/oauth2/token`, {
+      method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ grant_type: "refresh_token", client_id: clientId, refresh_token: tokens.refreshToken })
+    }));
+    expect(refresh.status).toBe(403);
+  });
+
+  it("rotates the password and revokes access without changing sample edits or Google sessions", async () => {
+    const { cookie, password } = await reviewSession();
+    const tokens = await connectKitchenApp(cookie);
+    const google = await signIn("admin-subject", config.allowedGoogleEmail);
+    const googleTokens = await connectKitchenApp(google.cookie);
+    await admin!`update tools.kitchens set name = 'Reviewer edits' where id = ${REVIEW_ACCOUNT.kitchenId}`;
+    const replacement = randomBytes(32).toString("base64url");
+    await provisionReviewAccount(admin!, { kind: "provision", password: replacement });
+    expect(await admin!`select id from tools.kitchen_ingredients where kitchen_id = ${REVIEW_ACCOUNT.kitchenId}`).toHaveLength(2);
+    expect((await admin!`select name from tools.kitchens where id = ${REVIEW_ACCOUNT.kitchenId}`)[0]!.name).toBe("Reviewer edits");
+    expect(await identity!.resolvePrincipal(new Request(config.publicOrigin, { headers: { cookie } }))).toBeUndefined();
+    expect(await identity!.resolveAppToken(bearer(tokens.accessToken), "kitchen")).toBeUndefined();
+    expect((await refreshKitchenApp(tokens.refreshToken)).ok).toBe(false);
+    expect((await reviewLogin("apple-review", password)).ok).toBe(false);
+    expect((await reviewLogin("apple-review", replacement)).ok).toBe(true);
+    await provisionReviewAccount(admin!, { kind: "revoke" });
+    expect((await reviewLogin("apple-review", replacement)).ok).toBe(false);
+    expect(await identity!.resolvePrincipal(google.request())).toMatchObject({ role: "admin" });
+    expect(await identity!.resolveAppToken(bearer(googleTokens.accessToken), "kitchen")).toMatchObject({ role: "admin" });
+    expect((await refreshKitchenApp(googleTokens.refreshToken)).ok).toBe(true);
+  });
+
+  it("refuses conflicting reserved identities without creating a credential or changing other data", async () => {
+    await admin!`insert into tools.auth_users (id, name, email, email_verified, created_at, updated_at) values ('unrelated-user', 'Other', ${REVIEW_ACCOUNT.email}, true, now(), now())`;
+    await expect(provisionReviewAccount(admin!, { kind: "provision", password: randomBytes(32).toString("base64url") })).rejects.toThrow(/conflicts/);
+    expect(await admin!`select id from tools.auth_accounts`).toHaveLength(0);
+    expect(await admin!`select id from tools.people`).toHaveLength(0);
+    expect((await admin!`select id from tools.auth_users`)[0]!.id).toBe("unrelated-user");
+  });
+});
+
+
+describe.skipIf(!admin)("Google sign-in handler regression", () => {
+  it("keeps Google sign-in for the admin and invited members and refuses the reserved review identity", async () => {
+    const context = await identity!.auth.$context;
+    const provider = context.socialProviders.find((item) => item.id === "google")!;
+    const validate = vi.spyOn(provider, "validateAuthorizationCode").mockResolvedValue({ accessToken: "fake-google-access", idToken: "fake-google-id-token" });
+    const invited = await identity!.people.invite("invited@example.test");
+    await identity!.people.setGrant(invited.id, "kitchen", true);
+    try {
+      for (const [sub, email, role] of [
+        [config.allowedGoogleSubject, config.allowedGoogleEmail, "admin"],
+        ["invited-subject", "invited@example.test", "member"],
+        ["reserved-subject", REVIEW_ACCOUNT.email, undefined]
+      ] as const) {
+        vi.mocked(verifyGoogleIdToken).mockResolvedValue({ sub, email, email_verified: true, name: "Person", picture: "https://example.test/avatar.png" });
+        const started = await identity!.auth.handler(new Request(`${config.publicOrigin}/api/auth/sign-in/social`, {
+          method: "POST", headers: { "content-type": "application/json", origin: config.publicOrigin },
+          body: JSON.stringify({ provider: "google", callbackURL: "/kitchen", errorCallbackURL: "/sign-in" })
+        }));
+        const state = new URL((await started.json() as { url: string }).url).searchParams.get("state")!;
+        const callback = await identity!.auth.handler(new Request(`${config.publicOrigin}/api/auth/callback/google?code=fake-code&state=${state}`, { headers: { cookie: responseCookies(started) } }));
+        const principal = await identity!.resolvePrincipal(new Request(`${config.publicOrigin}/kitchen`, { headers: { cookie: responseCookies(callback) } }));
+        if (role) expect(principal).toMatchObject({ role, subject: sub, email });
+        else expect(principal).toBeUndefined();
+      }
+    } finally {
+      validate.mockRestore();
+      vi.mocked(verifyGoogleIdToken).mockReset();
+    }
   });
 });
