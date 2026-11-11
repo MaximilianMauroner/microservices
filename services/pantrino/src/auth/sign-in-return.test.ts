@@ -10,7 +10,7 @@ describe("incoming links", () => {
   });
 
   it("passes every other link through", () => {
-    for (const path of ["com.lab4code.pantrino:/recipes/abc", "/shopping?week=2026-11-02", "/oauthish"]) {
+    for (const path of ["com.lab4code.pantrino:/kitchen/abc", "/shopping?week=2026-11-02", "/oauthish"]) {
       expect(redirectSystemPath({ path, initial: false })).toBe(path);
     }
   });

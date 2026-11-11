@@ -1,77 +1,79 @@
 import { describe, expect, it } from "vitest";
-import { windowLayout } from "./layout";
+import { paneWidths, windowLayout } from "./layout";
 
 const noInsets = { top: 0, left: 0, right: 0, bottom: 0 };
-const window = (width: number, height: number, fontScale = 1) => ({ width, height, fontScale });
+const window = (width: number, height = 844, fontScale = 1) => ({ width, height, fontScale });
 
 describe("Pantrino's available window", () => {
-  it("keeps phone and narrow split-screen content in one column above bottom tabs", () => {
-    for (const width of [320, 390, 507]) {
-      const layout = windowLayout(window(width, 844), { ...noInsets, top: 59, bottom: 34 });
-      expect(layout.navigation).toBe("bottom");
-      expect(layout.columns).toBe(1);
-      expect(layout.railWidth).toBe(0);
-      expect(layout.bottomInset).toBe(0);
-      expect(layout.contentWidth + 2 * layout.gutter).toBe(width);
+  it.each([
+    [320, "compact", "bottom", 1],
+    [360, "compact", "bottom", 1],
+    [599, "compact", "bottom", 1],
+    [600, "medium", "rail", 2],
+    [690, "medium", "rail", 2],
+    [839, "medium", "rail", 2],
+    [840, "expanded", "rail", 2],
+    [1180, "expanded", "rail", 2],
+    [1200, "expanded", "rail", 3],
+    [1280, "expanded", "rail", 3],
+  ] as const)("shows the right navigation and panes at %i dp", (width, windowClass, navigation, panes) => {
+    expect(windowLayout(window(width), noInsets)).toMatchObject({ windowClass, navigation, panes });
+  });
+
+  it("gives a 914 dp landscape phone two panes, not three narrow columns", () => {
+    expect(windowLayout(window(914, 411), noInsets)).toMatchObject({ windowClass: "expanded", panes: 2, short: true });
+  });
+
+  it("keeps the rail and two panes in an 800 by 400 landscape window", () => {
+    expect(windowLayout(window(800, 400), noInsets)).toMatchObject({ navigation: "rail", windowClass: "medium", panes: 2, sheetGap: 0, short: true });
+  });
+
+  it("chooses its class from usable width after horizontal safe areas", () => {
+    const layout = windowLayout(window(690), { ...noInsets, left: 48, right: 48 });
+    expect(layout).toMatchObject({ usableWidth: 594, windowClass: "compact", navigation: "bottom", panes: 1 });
+  });
+
+  it("splits the space after the rail evenly so the list pane can hold a header on a foldable", () => {
+    for (const width of [600, 690, 800, 840, 1180]) {
+      const layout = windowLayout(window(width), noInsets);
+      const [left, right] = paneWidths(layout);
+      expect(left).toBe(right);
+      expect(left + right + layout.railWidth).toBe(width);
+      expect(left).toBeGreaterThanOrEqual(260);
     }
   });
 
-  it("uses more columns as a window unfolds or expands and returns to the phone layout", () => {
-    const layouts = [390, 768, 1024, 390].map((width) => windowLayout(window(width, 900), noInsets));
-    expect(layouts.map((layout) => layout.columns)).toEqual([1, 2, 3, 1]);
-    expect(layouts.map((layout) => layout.navigation)).toEqual(["bottom", "rail", "rail", "bottom"]);
-    expect(layouts[3]).toEqual(layouts[0]);
+  it("returns to the same phone layout after folding and rotating", () => {
+    const layouts = [360, 690, 1280, 360].map((width) => windowLayout(window(width), noInsets));
+    expect(layouts.map((one) => one.panes)).toEqual([1, 2, 3, 1]);
+    expect(layouts[0]).toEqual(layouts[3]);
   });
 
-  it("chooses navigation from usable width after horizontal safe areas", () => {
-    const layout = windowLayout(window(800, 600), { ...noInsets, left: 48, right: 48 });
-    expect(layout.navigation).toBe("bottom");
-    expect(layout.usableWidth).toBe(704);
-    expect(layout.contentWidth + 2 * layout.gutter).toBe(704);
+  it("keeps window classes stable with 160 percent text so the same open panes can reflow", () => {
+    for (const width of [320, 360, 600, 690, 840, 1180]) {
+      expect(windowLayout(window(width, 844, 1.6), noInsets)).toEqual(windowLayout(window(width), noInsets));
+    }
   });
 
-  it("gives detail routes the rail's space and protects their bottom controls", () => {
+  it("gives standalone screens the rail's space and protects their bottom controls", () => {
     const insets = { ...noInsets, bottom: 24 };
-    const list = windowLayout(window(768, 1024), insets);
-    const detail = windowLayout(window(768, 1024), insets, false);
-    expect(detail.contentWidth - list.contentWidth).toBe(list.railWidth);
+    const tab = windowLayout(window(690), insets);
+    const detail = windowLayout(window(690), insets, false);
+    expect(detail.contentWidth - tab.contentWidth).toBe(tab.railWidth);
     expect(detail.railWidth).toBe(0);
-    expect(detail.detailColumns).toBe(2);
     expect(detail.bottomInset).toBe(24);
-    expect(windowLayout(window(390, 844), insets, false).bottomInset).toBe(24);
+    expect(windowLayout(window(360), insets).bottomInset).toBe(0);
   });
 
-  it("reduces columns when larger text needs more room", () => {
-    const normal = windowLayout(window(1024, 768), noInsets);
-    const enlarged = windowLayout(window(1024, 768, 1.6), noInsets);
-    expect(normal.columns).toBe(3);
-    expect(enlarged.columns).toBe(1);
-    expect(normal.detailColumns).toBe(2);
-    expect(enlarged.detailColumns).toBe(1);
-  });
-
-  it("keeps sheets bounded and removes extra bottom spacing in short landscape windows", () => {
-    const portrait = windowLayout(window(768, 1024), { ...noInsets, top: 24, bottom: 20 });
-    const landscape = windowLayout(window(844, 390), { top: 0, left: 59, right: 59, bottom: 21 });
-    expect(portrait.sheetWidth).toBe(640);
-    expect(portrait.sheetGap).toBe(16);
-    expect(landscape.sheetWidth).toBeLessThanOrEqual(landscape.usableWidth);
-    expect(landscape.sheetGap).toBe(0);
-    expect(landscape.usableHeight).toBe(369);
-  });
-
-  it("keeps content, columns, and sheets inside the safe window across window sizes", () => {
-    for (const width of [320, 375, 600, 719, 720, 768, 834, 1024, 1366, 2560]) {
-      for (const height of [320, 600, 1024]) {
-        for (const fontScale of [1, 1.3, 2]) {
-          const layout = windowLayout(window(width, height, fontScale), { top: 24, left: 30, right: 10, bottom: 20 });
-          expect(layout.contentWidth + 2 * layout.gutter + layout.railWidth).toBeLessThanOrEqual(width - 40);
-          expect(layout.sheetWidth + 2 * layout.sheetGap).toBeLessThanOrEqual(width - 40);
-          if (layout.columns > 1) {
-            expect((layout.contentWidth - 16 * (layout.columns - 1)) / layout.columns).toBeGreaterThanOrEqual(280 * fontScale);
-          }
-        }
+  it("keeps content and sheets inside the safe window at every size", () => {
+    for (const width of [320, 360, 600, 690, 840, 1180, 2560]) {
+      for (const height of [400, 844]) {
+        const layout = windowLayout(window(width, height), { top: 24, left: 30, right: 10, bottom: 20 });
+        expect(layout.contentWidth + 2 * layout.gutter + layout.railWidth).toBeLessThanOrEqual(width - 40);
+        expect(layout.sheetWidth + 2 * layout.sheetGap).toBeLessThanOrEqual(width - 40);
+        expect(layout.contentWidth).toBeLessThanOrEqual(layout.panes * 720 + (layout.panes - 1) * 32);
       }
     }
+    expect(windowLayout(window(690), noInsets).sheetGap).toBe(16);
   });
 });

@@ -49,7 +49,7 @@ export function RecipeUses({ existing, unit, uses, onUses, kitchen, onClose }: {
         <T muted style={{ fontSize: 12 }}>{text.alreadyIn}</T>
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
           {usedIn.map((recipe) => (
-            <Press key={recipe.id} accessibilityRole="link" onPress={() => { onClose(); router.push({ pathname: "/recipes/[recipeId]", params: { recipeId: recipe.id } }); }}
+            <Press key={recipe.id} accessibilityRole="link" onPress={() => { onClose(); router.push({ pathname: "/kitchen/[recipeId]", params: { recipeId: recipe.id } }); }}
               style={{ minHeight: 48, justifyContent: "center", maxWidth: "100%", paddingHorizontal: 12, borderWidth: 1, borderColor: colors.controlBorder, borderRadius: 22, backgroundColor: colors.control }}>
               <T style={{ fontSize: 14 }}>{recipe.name}</T>
             </Press>

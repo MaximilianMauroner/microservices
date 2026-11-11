@@ -1,10 +1,10 @@
 import { byGroupOrder, addDays, UNSORTED_SECTION } from "@tools-platform/service/kitchen-contract";
-import { Apple, BookOpen, CalendarDays, ChevronLeft, ChevronRight, CookingPot, type LucideIcon, Refrigerator, Search, ShoppingBasket, Utensils, X } from "lucide-react-native";
-import { useFocusEffect } from "expo-router";
-import { Children, createContext, isValidElement, type ReactNode, useCallback, useContext, useEffect, useReducer, useRef, useState } from "react";
-import { AccessibilityInfo, Alert, KeyboardAvoidingView, Modal, Platform, Pressable, type PressableProps, type PressableStateCallbackType, FlatList, RefreshControl, type RefreshControlProps, ScrollView, StyleSheet, Text, type TextProps, TextInput, type TextInputProps, View, type ViewStyle } from "react-native";
+import { CalendarDays, ChevronLeft, ChevronRight, CookingPot, type LucideIcon, Search, ShoppingBasket, Sun, UserRound, X } from "lucide-react-native";
+import { router, useFocusEffect } from "expo-router";
+import { Children, createContext, isValidElement, type ReactNode, type RefObject, useCallback, useContext, useEffect, useReducer, useRef, useState } from "react";
+import { AccessibilityInfo, Alert, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, type PressableProps, type PressableStateCallbackType, FlatList, RefreshControl, type RefreshControlProps, ScrollView, type ScrollViewInstance, StyleSheet, Text, type TextProps, TextInput, type TextInputProps, View, type ViewStyle } from "react-native";
 import { GestureDetector, GestureHandlerRootView, usePanGesture } from "react-native-gesture-handler";
-import Animated, { FadeIn, FadeOut, LinearTransition, useAnimatedStyle, useSharedValue, withSpring, withTiming } from "react-native-reanimated";
+import Animated, { FadeIn, FadeOut, LinearTransition, ReduceMotion, useReducedMotion, useAnimatedStyle, useSharedValue, withSpring, withTiming } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { scheduleOnRN } from "react-native-worklets";
 import Svg, { Circle, Defs, LinearGradient, Rect, Stop } from "react-native-svg";
@@ -15,26 +15,22 @@ import { type Feel, haptic } from "./haptics";
 import type { QueuedAction } from "../sync/model";
 import { type KitchenLanguage, LOCALES, useText } from "./language";
 import { type Colors, FONT, groupColor, ink, type PageKey, RADIUS, tint, useColors } from "./theme";
+import { useByStatus } from "./use-by";
+import { useSyncAlert } from "./kitchen/sync-alert";
 import { useContentLayout, useWindowLayout } from "./responsive";
 
-/** The bottom tabs in their order. `route` is the screen name under `app/(tabs)`. */
-export const PAGES: readonly { key: PageKey; route: string; icon: LucideIcon }[] = [
-  { key: "week", route: "index", icon: CalendarDays },
+export const TABS = [
+  { key: "today", route: "index", icon: Sun },
+  { key: "week", route: "week", icon: CalendarDays },
   { key: "shopping", route: "shopping", icon: ShoppingBasket },
-  { key: "recipes", route: "recipes", icon: BookOpen },
-  { key: "home", route: "home", icon: Refrigerator },
-  { key: "kitchen", route: "kitchen", icon: CookingPot }
-];
-
-/** The Bodyshop tabs. Search is a tab screen too, but it opens from the top bar in both modes. */
-export const BODY_PAGES: readonly { key: PageKey; route: string; icon: LucideIcon }[] = [
-  { key: "today", route: "bodyshop", icon: Utensils },
-  { key: "foods", route: "foods", icon: Apple }
-];
-export const SEARCH_PAGE: { key: PageKey; route: string; icon: LucideIcon } = { key: "search", route: "search", icon: Search };
+  { key: "kitchen", route: "kitchen", icon: CookingPot },
+] as const;
 
 const en = {
-  tabs: { week: ["Week", "Week"], shopping: ["Shopping list", "Shop"], recipes: ["Recipes", "Recipes"], home: ["At home", "At home"], kitchen: ["Kitchen", "Kitchen"], today: ["Today", "Today"], foods: ["Foods", "Foods"], search: ["Search", "Search"] } as Record<PageKey, [string, string]>,
+  tabs: { week: ["Week", "Week"], shopping: ["Shopping list", "Shop"], kitchen: ["Kitchen", "Kitchen"], today: ["Today", "Today"] } as Record<PageKey, [string, string]>,
+  profile: "Profile",
+  search: "Search",
+  back: "Back",
   close: "Close",
   fewer: (label: string) => `Fewer ${label.toLowerCase()}`,
   more: (label: string) => `More ${label.toLowerCase()}`,
@@ -57,7 +53,10 @@ const en = {
 const TEXT: Record<KitchenLanguage, typeof en> = {
   en,
   de: {
-    tabs: { week: ["Woche", "Woche"], shopping: ["Einkaufsliste", "Einkauf"], recipes: ["Rezepte", "Rezepte"], home: ["Vorrat", "Vorrat"], kitchen: ["Küche", "Küche"], today: ["Heute", "Heute"], foods: ["Lebensmittel", "Essen"], search: ["Suche", "Suche"] },
+    tabs: { week: ["Woche", "Woche"], shopping: ["Einkaufsliste", "Einkauf"], kitchen: ["Küche", "Küche"], today: ["Heute", "Heute"] },
+    profile: "Profil",
+    search: "Suche",
+    back: "Zurück",
     close: "Schließen",
     fewer: (label: string) => `Weniger ${label}`,
     more: (label: string) => `Mehr ${label}`,
@@ -103,7 +102,7 @@ export function Press({ style, ripple, feel, onPress, ...props }: PressableProps
   const toggles = props.accessibilityRole === "checkbox" || props.accessibilityRole === "radio" || props.accessibilityRole === "switch";
   return (
     <Pressable android_ripple={{ color: ripple ?? colors.ripple, foreground: true }}
-      style={typeof style === "function" ? (state: PressableStateCallbackType) => style({ ...state, pressed: fade && state.pressed }) : style} {...props}
+      style={typeof style === "function" ? (state: PressableStateCallbackType) => [{ minHeight: 48, minWidth: 48 }, style({ ...state, pressed: fade && state.pressed })] : [{ minHeight: 48, minWidth: 48 }, style]} {...props}
       onPress={onPress && ((event) => { if (feel !== null) haptic(feel ?? (toggles ? "toggle" : "tap")); onPress(event); })} />
   );
 }
@@ -117,22 +116,16 @@ export function T({ weight = "regular", muted, style, ...props }: TextProps & { 
 /** A food group on a page: its label, then its rows in one panel of its color. */
 export type ListGroup = Readonly<{ key: string; label: string; color: string; count?: number; rows: readonly Readonly<{ key: string; node: ReactNode }>[] }>;
 
-/**
- * One kitchen page: the title row and the page content, scrollable, with room for the tab bar. Pull down to sync.
- * `back` puts the way back above the title, where phone apps keep it. A tab page puts its one main action in `fab`,
- * a floating button above the tab bar. A page opened from a tab hides the tab bar and puts its actions in `toolbar`,
- * docked at the bottom (Material 3 shows a toolbar and the tab bar never together). `floating` holds the snackbar.
- * A page with a long list passes it as `groups`, after `children`. Only the rows near the screen exist, so the page
- * opens fast, but a change to the list costs more than on a plain page, and its rows do not move when the list changes.
- */
-export function Screen({ title, facts, actions, back, fab, toolbar, floating, groups, children }: {
-  title: ReactNode; facts?: ReactNode; actions?: ReactNode; back?: { label: string; onPress: () => void }; fab?: ReactNode; toolbar?: ReactNode; floating?: ReactNode;
-  groups?: readonly ListGroup[]; children?: ReactNode;
+/** `aside` sits beside the title on a page with a back link, where tab pages show Search and Profile. */
+export function Screen({ title, facts, actions, aside, back, fab, toolbar, floating, groups, children, top, fullWidth = false }: {
+  title: ReactNode; facts?: ReactNode; actions?: ReactNode; aside?: ReactNode; back?: { label: string; onPress: () => void }; fab?: ReactNode; toolbar?: ReactNode; floating?: ReactNode;
+  groups?: readonly ListGroup[]; children?: ReactNode; top?: ReactNode; fullWidth?: boolean;
 }) {
   const colors = useColors();
+  const typing = useKeyboardOpen();
   const insets = useSafeAreaInsets();
   const layout = useContentLayout();
-  const contentWidth = groups ? Math.min(800, layout.contentWidth) : layout.contentWidth;
+  const contentWidth = fullWidth ? layout.contentWidth : Math.min(720, layout.contentWidth);
   const contentStyle: ViewStyle = {
     width: "100%", maxWidth: contentWidth + 2 * layout.gutter, alignSelf: "center", paddingHorizontal: layout.gutter,
     paddingBottom: (fab ? FAB_ROOM : 32) + (toolbar ? 0 : layout.bottomInset),
@@ -147,17 +140,22 @@ export function Screen({ title, facts, actions, back, fab, toolbar, floating, gr
         </Press>
       ) : null}
       <View style={styles.header}>
-        <View style={{ flexShrink: 1 }}>
-          {typeof title === "string" ? <T weight="semibold" style={styles.title}>{title}</T> : title}
-          {facts ? (typeof facts === "string" ? <T muted style={{ marginTop: 6, fontSize: 14 }}>{facts}</T> : facts) : null}
+        <View style={{ flex: 1, minWidth: 0 }}>
+          {typeof title === "string" ? <T weight="semibold" accessibilityRole="header" numberOfLines={1} adjustsFontSizeToFit
+            style={[styles.title, layout.short && { fontSize: 26 }]}>{title}</T> : title}
         </View>
-        {actions ? <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>{actions}</View> : null}
+        {back ? aside : <HeaderActions />}
       </View>
+      {facts || actions ? <View style={[styles.actions, { marginTop: -8 }]}>
+        {facts ? <View style={{ flexGrow: 1, flexBasis: 200 }}>{typeof facts === "string" ? <T muted style={{ fontSize: 14 }}>{facts}</T> : facts}</View> : null}
+        {actions}
+      </View> : null}
+      {top}
       {children}
     </View>
   );
   return (
-    <View style={{ flex: 1, backgroundColor: colors.background }}>
+    <KeyboardAvoidingView behavior="padding" style={{ flex: 1, backgroundColor: colors.background }}>
       <View style={{ flex: 1 }}>
         {groups ? (
           <FlatList data={listItems(groups)} keyExtractor={(item) => item.key} renderItem={({ item }) => <ListCell item={item} />}
@@ -176,14 +174,38 @@ export function Screen({ title, facts, actions, back, fab, toolbar, floating, gr
           </Svg>
         ) : null}
         {floating || fab ? <View pointerEvents="box-none" style={[styles.floating, { left: layout.gutter, right: layout.gutter, bottom: 16 + (toolbar ? 0 : layout.bottomInset) }]}>
-          <View pointerEvents="box-none" style={{ width: "100%", maxWidth: 560, alignItems: "flex-end", gap: 12 }}>{floating}{fab}</View>
+          <View pointerEvents="box-none" style={{ width: "100%", maxWidth: 560, alignItems: "flex-end", gap: 12 }}>{floating}{typing ? null : fab}</View>
         </View> : null}
       </View>
       {toolbar ? <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, backgroundColor: colors.card }}>
         <View style={[styles.toolbar, { width: "100%", maxWidth: 640, alignSelf: "center", paddingBottom: 12 + insets.bottom }]}>{toolbar}</View>
       </View> : null}
-    </View>
+    </KeyboardAvoidingView>
   );
+}
+
+/** While the keyboard is open, a floating action would cover the field above it. */
+function useKeyboardOpen() {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const shown = Keyboard.addListener("keyboardDidShow", () => setOpen(true));
+    const hidden = Keyboard.addListener("keyboardDidHide", () => setOpen(false));
+    return () => { shown.remove(); hidden.remove(); };
+  }, []);
+  return open;
+}
+
+function HeaderActions() {
+  const text = useKitText();
+  const alert = useSyncAlert();
+  const colors = useColors();
+  return <View style={{ flexDirection: "row", gap: 8 }}>
+    <Button tone="ghost" icon={Search} accessibilityLabel={text.search} onPress={() => router.navigate("/search")} />
+    <View>
+      <Button tone="ghost" icon={UserRound} accessibilityLabel={alert ? `${text.profile}, ${alert.label}` : text.profile} onPress={() => router.navigate("/settings")} />
+      {alert ? <View pointerEvents="none" style={{ position: "absolute", right: 8, top: 8, width: 10, height: 10, borderRadius: 5, borderWidth: 2, borderColor: colors.background, backgroundColor: alert.warn ? colors.destructive : colors.mutedForeground }} /> : null}
+    </View>
+  </View>;
 }
 
 /** The ripple on a button filled with a page color, whose content is white. */
@@ -218,22 +240,26 @@ export function ToolbarButton({ label, icon: Icon, onPress, tone = "primary" }: 
     <Press accessibilityRole="button" accessibilityLabel={label} onPress={onPress} feel={tone === "primary" ? "firm" : "tap"} ripple={tone === "primary" ? ON_COLOR_RIPPLE : undefined}
       style={({ pressed }) => [styles.toolbarButton, look, pressed && { opacity: 0.8 }]}>
       <Icon size={20} color={look.color} />
-      <T weight="semibold" textBreakStrategy="simple" style={{ color: look.color, fontSize: 16 }}>{label}</T>
+      <T weight="semibold" textBreakStrategy="simple" style={{ color: look.color, fontSize: 16, flexShrink: 1, textAlign: "center" }}>{label}</T>
     </Press>
   );
 }
 
 /** The previous and next week arrows, for the title row of a week page. */
-export function WeekNav({ canGoBack, onStep }: { canGoBack: boolean; onStep: (step: -1 | 1) => void }) {
+/** Previous and next arrows for a stepped page, such as a week or a day. */
+export function StepNav({ canGoBack = true, canGoForward = true, labels, onStep }: {
+  canGoBack?: boolean; canGoForward?: boolean; labels?: readonly [string, string]; onStep: (step: -1 | 1) => void;
+}) {
   const colors = useColors();
   const text = useKitText();
+  const [back, forward] = labels ?? [text.previousWeek, text.nextWeek];
   return (
-    <View style={[styles.weekNav, { borderColor: colors.controlBorder, backgroundColor: colors.control }]}>
-      {([[-1, ChevronLeft, text.previousWeek], [1, ChevronRight, text.nextWeek]] as const).map(([step, Icon, label]) => {
-        const disabled = step === -1 && !canGoBack;
+    <View style={[styles.stepNav, { borderColor: colors.controlBorder, backgroundColor: colors.control }]}>
+      {([[-1, ChevronLeft, back], [1, ChevronRight, forward]] as const).map(([step, Icon, label]) => {
+        const disabled = step === -1 ? !canGoBack : !canGoForward;
         return (
           <Press key={step} accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled }} disabled={disabled} onPress={() => onStep(step)}
-            style={({ pressed }) => [styles.weekStep, { opacity: disabled ? 0.35 : pressed ? 0.6 : 1 }]}>
+            style={({ pressed }) => [styles.step, { opacity: disabled ? 0.35 : pressed ? 0.6 : 1 }]}>
             <Icon size={22} color={colors.foreground} />
           </Press>
         );
@@ -242,7 +268,7 @@ export function WeekNav({ canGoBack, onStep }: { canGoBack: boolean; onStep: (st
   );
 }
 
-export type Notice = Readonly<{ message: string; undo?: readonly QueuedAction[] }>;
+export type Notice = Readonly<{ message: string; undo?: readonly QueuedAction[]; action?: { label: string; run: () => void } }>;
 
 const SNACKBAR_MS = 6000;
 
@@ -280,12 +306,12 @@ export function Snackbar({ notice, onUndo, onDone }: { notice: Notice | null; on
   };
   const closeNow = useCallback(() => close.current(), []);
   useEffect(() => {
-    if (!shown || shown.undo) return;
+    if (!shown || shown.undo || shown.action) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let live = true;
     void AccessibilityInfo.getRecommendedTimeoutMillis(SNACKBAR_MS).then((ms) => { if (live) timer = setTimeout(closeNow, ms); });
     return () => { live = false; clearTimeout(timer); };
-  }, [shown?.message, shown?.undo]);
+  }, [shown?.message, shown?.undo, shown?.action]);
   const shift = useSharedValue(0);
   useEffect(() => { shift.value = 0; }, [shown?.message, shift]);
   const away = usePanGesture({
@@ -304,12 +330,13 @@ export function Snackbar({ notice, onUndo, onDone }: { notice: Notice | null; on
   return (
     <GestureDetector gesture={away}>
       <Animated.View accessibilityLiveRegion="polite" style={[styles.snackbar, { backgroundColor: result ? tint(colors.destructive, 14, colors.card) : colors.muted, borderColor: result ? colors.destructive : colors.border }, slide]}>
-        <T style={{ flex: 1, fontSize: 14, paddingVertical: 10 }}>{shown.message}</T>
+        <T style={{ flexGrow: 1, flexBasis: 180, fontSize: 14, paddingVertical: 10 }}>{shown.message}</T>
         {shown.undo ? (
           <Press accessibilityRole="button" onPress={() => { shown.undo!.forEach(onUndo); onDone(); }} style={styles.snackAction}>
             <T weight="semibold" style={{ color: pageInk }}>{text.undo}</T>
           </Press>
         ) : null}
+        {shown.action ? <Press accessibilityRole="button" onPress={() => { onDone(); shown.action!.run(); }} style={styles.snackAction}><T weight="semibold" style={{ color: pageInk }}>{shown.action.label}</T></Press> : null}
       </Animated.View>
     </GestureDetector>
   );
@@ -337,7 +364,7 @@ export function SyncRefresh(props: Omit<RefreshControlProps, "refreshing" | "onR
 /** The page icon on a tint of the page color. */
 export function HueBadge({ size = 56 }: { size?: number }) {
   const page = useContext(PageContext);
-  const Icon = [...PAGES, ...BODY_PAGES, SEARCH_PAGE].find((one) => one.key === page)!.icon;
+  const Icon = TABS.find((one) => one.key === page)!.icon;
   const colors = useColors();
   const { ink: pageInk } = usePageColor();
   return (
@@ -367,27 +394,26 @@ export function Button({ label, onPress, tone = "primary", icon: Icon, disabled,
 }) {
   const colors = useColors();
   const { hue } = usePageColor();
-  const look = disabled ? disabledLook(tone, colors, hue) : buttonLook(tone, colors, hue);
+  const look = disabled ? disabledLook(tone, colors) : buttonLook(tone, colors, hue);
   return (
     <Press
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
       disabled={disabled}
       accessibilityState={{ disabled }}
-      hitSlop={compact ? 4 : undefined}
       onPress={onPress}
       ripple={tone === "primary" && !disabled ? ON_COLOR_RIPPLE : undefined}
       feel={tone === "primary" ? "firm" : tone === "destructive" ? "warn" : "tap"}
-      style={({ pressed }) => [styles.button, wide && styles.wide, compact && { height: 40, paddingHorizontal: label ? 12 : 0, width: label ? undefined : 40 }, look, pressed && { opacity: 0.8 }]}
+      style={({ pressed }) => [styles.button, wide && styles.wide, compact && { paddingHorizontal: label ? 12 : 0, minWidth: 48 }, look, pressed && { opacity: 0.8 }]}
     >
       {Icon ? <Icon size={18} color={look.color} /> : null}
-      {label ? <T weight="medium" style={{ color: look.color, fontSize: 15 }}>{label}</T> : null}
+      {label ? <T weight="medium" style={{ color: look.color, fontSize: 15, flexShrink: 1, textAlign: "center" }}>{label}</T> : null}
     </Press>
   );
 }
 
 /** A disabled button in the Material 3 colors: the text at 38 percent and a filled button's container at 12 percent of the text color. */
-function disabledLook(tone: ButtonTone, colors: Colors, hue: string): ViewStyle & { color: string } {
+function disabledLook(tone: ButtonTone, colors: Colors): ViewStyle & { color: string } {
   const container = tint(colors.foreground, 12, colors.background);
   const content = tint(colors.foreground, 38, colors.background);
   if (tone === "primary") return { backgroundColor: container, borderColor: container, color: content };
@@ -421,7 +447,7 @@ export function GroupLabel({ color, children, count }: { color: string; children
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 4, marginBottom: 8 }}>
       <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: color }} />
-      <T weight="semibold" numberOfLines={1} style={{ color: text, flexShrink: 1 }}>{children}</T>
+      <T weight="semibold" style={{ color: text, flexShrink: 1 }}>{children}</T>
       {count ? <T weight="medium" style={{ color: text, opacity: 0.75, fontSize: 14 }}>{count}</T> : null}
     </View>
   );
@@ -479,18 +505,19 @@ export function GroupDot({ groups, group, size = 10 }: { groups: readonly string
 /** A plate ring: one circle split into the food groups of a dish, a week, or a list. Each group gets an arc as long as its share. */
 export function PlateRing({ groups, sections, size = 32 }: { groups: readonly string[]; sections: readonly string[]; size?: number }) {
   const colors = useColors();
+  if (!sections.length) return null;
   const parts = byGroup(groups, sections, (section) => section);
   const circumference = 2 * Math.PI * 14.5;
   let offset = 0;
   return (
     <Svg width={size} height={size} viewBox="0 0 36 36">
       <Circle r={14.5} cx={18} cy={18} fill="none" strokeWidth={6} stroke={colors.muted} />
-      {sections.length ? parts.map(([group, items]) => {
+      {parts.map(([group, items]) => {
         const length = (items.length / sections.length) * circumference;
         const arc = <Circle key={group} r={14.5} cx={18} cy={18} fill="none" strokeWidth={6} stroke={groupColor(colors, groups, group)} strokeDasharray={`${length} ${circumference - length}`} strokeDashoffset={-offset} rotation={-90} origin="18, 18" />;
         offset += length;
         return arc;
-      }) : null}
+      })}
     </Svg>
   );
 }
@@ -498,27 +525,58 @@ export function PlateRing({ groups, sections, size = 32 }: { groups: readonly st
 /** How far down, or how fast, a drag on the sheet top must go for the release to close the sheet. */
 const SHEET_CLOSE = { distance: 120, velocity: 900 };
 
-/**
- * A bottom sheet in the color of the open page, like the web Kitchen sheets on a phone. The dim backdrop fades in and
- * only the sheet slides up, as native sheets do. A drag down on its handle and title, a tap on the backdrop, the close
- * button, and Android back slide it down before it closes. The drag starts only on the top, so it never fights the
- * scroll of the sheet content.
- */
-/** `onDismiss` runs on iOS once the sheet has fully closed, so a following sheet can open. */
-export function Sheet({ open, onClose, onDismiss, title, description, children, footer }: { open: boolean; onClose: () => void; onDismiss?: () => void; title: string; description?: string; children: ReactNode; footer?: ReactNode }) {
+/** iOS must finish dismissing a modal before it can open the next one through `onDismiss`. */
+type SheetProps = { open: boolean; onClose: () => void; onDismiss?: () => void; title: string; description?: string; children: ReactNode; footer?: ReactNode };
+
+export function Sheet({ presentation = "sheet", ...props }: SheetProps & { presentation?: "sheet" | "pane" }) {
+  const scrollOffset = useRef(0);
+  return presentation === "pane" ? (props.open ? <Pane {...props} scrollOffset={scrollOffset} /> : null) : <ModalSheet {...props} scrollOffset={scrollOffset} />;
+}
+
+export function Pane({ title, description, children, footer, onClose, scrollOffset }: Omit<SheetProps, "open" | "onClose"> & { onClose?: () => void; scrollOffset?: RefObject<number> }) {
+  const colors = useColors();
+  const text = useKitText();
+  return <View style={{ flex: 1, backgroundColor: colors.card, borderLeftWidth: StyleSheet.hairlineWidth, borderLeftColor: colors.border }}>
+    <ScrollView keyboardShouldPersistTaps="handled" contentOffset={{ x: 0, y: scrollOffset?.current ?? 0 }} scrollEventThrottle={16}
+      onScroll={(event) => { if (scrollOffset) scrollOffset.current = event.nativeEvent.contentOffset.y; }}
+      contentContainerStyle={{ padding: 16, gap: 12, maxWidth: 752, alignSelf: "center", width: "100%" }}>
+      <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
+        <View style={{ flex: 1, gap: 4 }}><T weight="semibold" style={{ fontSize: 22 }}>{title}</T>{description ? <T muted>{description}</T> : null}</View>
+        {onClose ? <Button tone="ghost" icon={X} accessibilityLabel={text.close} onPress={onClose} /> : null}
+      </View>
+      {children}
+    </ScrollView>
+    {footer ? <View style={{ padding: 16, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>{footer}</View> : null}
+  </View>;
+}
+
+function ModalSheet({ open, onClose, onDismiss, title, description, children, footer, scrollOffset }: SheetProps & { scrollOffset: RefObject<number> }) {
+  const reducedMotion = useReducedMotion();
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const layout = useWindowLayout();
   const text = useKitText();
+  const scroll = useRef<ScrollViewInstance>(null);
+  /** The keyboard makes the sheet shorter. Keep the focused field inside what is left. */
+  const keepFocusedInView = (visible: number) => {
+    const input = TextInput.State.currentlyFocusedInput();
+    const inner = scroll.current?.getInnerViewRef();
+    if (!input || !inner) return;
+    input.measureLayout(inner, (_x, y, _width, fieldHeight) => {
+      const top = scrollOffset.current;
+      if (y + fieldHeight + 12 > top + visible) scroll.current?.scrollTo({ y: y + fieldHeight + 12 - visible });
+      else if (y - 12 < top) scroll.current?.scrollTo({ y: Math.max(0, y - 12) });
+    }, () => undefined);
+  };
   const height = useSharedValue(800);
   const drop = useSharedValue(800);
   useEffect(() => {
     if (!open) return;
     drop.value = height.value;
-    drop.value = withTiming(0, { duration: 260 });
-  }, [open, drop, height]);
+    drop.value = withTiming(0, { duration: reducedMotion ? 200 : 260, reduceMotion: ReduceMotion.Never });
+  }, [open, drop, height, reducedMotion]);
   const dismiss = useCallback(() => {
-    drop.value = withTiming(height.value, { duration: 200 }, (finished) => { if (finished) scheduleOnRN(onClose); });
+    drop.value = withTiming(height.value, { duration: 200, reduceMotion: ReduceMotion.Never }, (finished) => { if (finished) scheduleOnRN(onClose); });
   }, [drop, height, onClose]);
   const drag = usePanGesture({
     activeOffsetY: 8,
@@ -529,20 +587,20 @@ export function Sheet({ open, onClose, onDismiss, title, description, children, 
       else drop.value = withSpring(0, { damping: 20, stiffness: 240 });
     },
   });
-  const follow = useAnimatedStyle(() => ({ transform: [{ translateY: drop.value }] }));
+  const follow = useAnimatedStyle(() => reducedMotion ? { opacity: 1 - Math.min(drop.value / height.value, 1) } : { transform: [{ translateY: drop.value }] });
   const dim = useAnimatedStyle(() => ({ opacity: 1 - Math.min(drop.value / height.value, 1) }));
   return (
     <Modal visible={open} transparent animationType="fade" statusBarTranslucent navigationBarTranslucent onRequestClose={dismiss} onDismiss={onDismiss}
       supportedOrientations={["portrait", "portrait-upside-down", "landscape-left", "landscape-right"]}>
       <GestureHandlerRootView style={{ flex: 1 }}>
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}
+        <KeyboardAvoidingView behavior="padding"
           style={{ flex: 1, justifyContent: "flex-end", paddingTop: insets.top + 12 }}>
           <Animated.View style={[StyleSheet.absoluteFill, dim]}>
             <Pressable style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.6)" }} onPress={dismiss} accessibilityLabel={text.close} />
           </Animated.View>
           <Animated.View onLayout={(event) => { height.value = event.nativeEvent.layout.height; }}
             style={[styles.sheet, {
-              backgroundColor: colors.card, borderColor: colors.border, width: layout.sheetWidth,
+              backgroundColor: colors.card, borderColor: colors.border, width: layout.sheetWidth, height: layout.usableWidth < 360 ? "100%" : undefined,
               alignSelf: "center", marginLeft: insets.left, marginRight: insets.right,
               marginBottom: layout.sheetGap ? insets.bottom + layout.sheetGap : 0,
               borderRadius: layout.sheetGap ? 24 : undefined,
@@ -560,8 +618,8 @@ export function Sheet({ open, onClose, onDismiss, title, description, children, 
                 </View>
               </View>
             </GestureDetector>
-            <View style={{ flexShrink: 1 }}>
-              <ScrollView contentContainerStyle={{ gap: 12, paddingTop: 12, paddingBottom: footer ? 28 : 12 }} keyboardShouldPersistTaps="handled">{children}</ScrollView>
+            <View style={{ flexShrink: 1, flexGrow: layout.usableWidth < 360 ? 1 : 0 }}>
+              <ScrollView ref={scroll} onLayout={(event) => keepFocusedInView(event.nativeEvent.layout.height)} contentOffset={{ x: 0, y: scrollOffset.current }} scrollEventThrottle={16} onScroll={(event) => { scrollOffset.current = event.nativeEvent.contentOffset.y; }} contentContainerStyle={{ gap: 12, paddingTop: 12, paddingBottom: footer ? 28 : 12 }} keyboardShouldPersistTaps="handled">{children}</ScrollView>
               {footer ? (
                 <Svg pointerEvents="none" width="100%" height={SHEET_FADE} style={styles.fade}>
                   <Defs><LinearGradient id="sheetFade" x1="0" y1="0" x2="0" y2="1"><Stop offset="0" stopColor={colors.card} stopOpacity={0} /><Stop offset="1" stopColor={colors.card} stopOpacity={1} /></LinearGradient></Defs>
@@ -640,10 +698,10 @@ export function weekLabel(start: string, today: string, language: KitchenLanguag
 export function useByLabel(useBy: string, today: string, language: KitchenLanguage): { text: string; urgent: boolean } {
   const text = TEXT[language];
   const parts = dayParts(useBy, language);
-  const days = Math.round((Date.parse(`${useBy}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86_400_000);
-  if (days < 0) return { text: text.pastUseBy(parts.dayMonth), urgent: true };
-  if (days === 0) return { text: text.useToday, urgent: true };
-  if (days === 1) return { text: text.useTomorrow, urgent: true };
+  const status = useByStatus(useBy, today);
+  if (status === "past") return { text: text.pastUseBy(parts.dayMonth), urgent: true };
+  if (status === "today") return { text: text.useToday, urgent: true };
+  if (status === "tomorrow") return { text: text.useTomorrow, urgent: true };
   return { text: text.useBy(`${parts.weekday} ${parts.dayMonth}`), urgent: false };
 }
 
@@ -667,22 +725,23 @@ export function mainGroup(groups: readonly string[], sections: readonly string[]
 
 const styles = StyleSheet.create({
   page: { paddingTop: 8, gap: 16 },
-  header: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", flexWrap: "wrap", gap: 12 },
-  title: { fontSize: 32, lineHeight: 34, letterSpacing: -0.6 },
+  header: { flexDirection: "row", alignItems: "center", gap: 8 },
+  actions: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8 },
+  title: { fontSize: 32, letterSpacing: -0.6 },
   empty: { alignItems: "center", gap: 12, borderWidth: 1, borderStyle: "dashed", borderRadius: 16, paddingHorizontal: 24, paddingVertical: 40 },
-  wide: { flexGrow: 1, height: 52 },
-  button: { height: 48, paddingHorizontal: 16, borderRadius: RADIUS, borderWidth: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
+  wide: { flexGrow: 1, minHeight: 52 },
+  button: { minHeight: 48, minWidth: 48, paddingVertical: 10, maxWidth: "100%", paddingHorizontal: 16, borderRadius: RADIUS, borderWidth: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
   sheet: { maxHeight: "100%", flexShrink: 1, borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 16 },
   sheetFooter: { flexDirection: "row", flexWrap: "wrap", gap: 8, justifyContent: "flex-end", marginHorizontal: -16, paddingHorizontal: 16, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth },
   back: { flexDirection: "row", alignItems: "center", gap: 4, alignSelf: "flex-start", minHeight: 48, marginLeft: -6, marginBottom: -8 },
   field: { minHeight: 48, borderWidth: 1, borderRadius: RADIUS, paddingHorizontal: 12, fontFamily: FONT.regular, fontSize: 16 },
   fade: { position: "absolute", left: 0, right: 0, bottom: 0 },
   floating: { position: "absolute", left: 16, right: 16, bottom: 16, alignItems: "flex-end", gap: 12 },
-  fab: { height: 56, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 20, borderRadius: 16, elevation: 6, shadowColor: "#000000", shadowOpacity: 0.35, shadowRadius: 12, shadowOffset: { width: 0, height: 6 } },
-  toolbar: { flexDirection: "row", gap: 8, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 12 },
-  toolbarButton: { flex: 1, minHeight: 52, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 12, paddingVertical: 10, borderRadius: RADIUS, borderWidth: 1 },
-  weekNav: { height: 48, flexDirection: "row", borderRadius: RADIUS, borderWidth: 1, overflow: "hidden" },
-  weekStep: { width: 48, alignItems: "center", justifyContent: "center" },
-  snackbar: { alignSelf: "stretch", minHeight: 48, flexDirection: "row", alignItems: "center", gap: 8, paddingLeft: 14, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, elevation: 4, shadowColor: "#000000", shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 4 } },
+  fab: { minHeight: 56, paddingVertical: 12, maxWidth: "100%", flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 20, borderRadius: 16, elevation: 6, shadowColor: "#000000", shadowOpacity: 0.35, shadowRadius: 12, shadowOffset: { width: 0, height: 6 } },
+  toolbar: { flexDirection: "row", flexWrap: "wrap", gap: 8, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 12 },
+  toolbarButton: { flexGrow: 1, flexBasis: "auto", minHeight: 52, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 12, paddingVertical: 10, borderRadius: RADIUS, borderWidth: 1 },
+  stepNav: { minHeight: 48, gap: 8, flexDirection: "row", borderRadius: RADIUS, borderWidth: 1, overflow: "hidden" },
+  step: { width: 48, alignItems: "center", justifyContent: "center" },
+  snackbar: { alignSelf: "stretch", minHeight: 48, flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8, paddingLeft: 14, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, elevation: 4, shadowColor: "#000000", shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 4 } },
   snackAction: { minHeight: 48, minWidth: 64, alignItems: "center", justifyContent: "center", paddingHorizontal: 14 }
 });

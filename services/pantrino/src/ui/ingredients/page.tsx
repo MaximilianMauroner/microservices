@@ -3,27 +3,24 @@ import { router, useLocalSearchParams } from "expo-router";
 import { ChevronRight, ListOrdered, Plus } from "lucide-react-native";
 import { useEffect, useState } from "react";
 import { View } from "react-native";
-import type { OpenKitchen } from "../../../state";
-import { IngredientSheet } from "../../../ui/ingredients/ingredient-sheet";
-import { GroupsSheet } from "../../../ui/ingredients/groups-sheet";
-import { TEXT } from "../../../ui/ingredients/text";
-import { TEXT as KITCHEN_TEXT } from "../../../ui/kitchen/text";
-import { KitchenScreen } from "../../../ui/page";
-import { Button, byGroup, Empty, groupLabel, type ListGroup, Press, Screen, SearchField, T, ToolbarButton } from "../../../ui/kit";
-import { useLanguage, useText } from "../../../ui/language";
-import { groupColor, useColors } from "../../../ui/theme";
-import { compareText } from "../../../compare";
+import type { OpenKitchen } from "../../state";
+import { IngredientSheet } from "../ingredients/ingredient-sheet";
+import { GroupsSheet } from "../ingredients/groups-sheet";
+import { TEXT } from "../ingredients/text";
+import { byGroup, Empty, groupLabel, type ListGroup, Press, Screen, SearchField, T, ToolbarButton, useKitText } from "../kit";
+import { useLanguage, useText } from "../language";
+import { groupColor, useColors } from "../theme";
+import { compareText } from "../../compare";
 
-export default function IngredientsPage() {
-  return <KitchenScreen page="kitchen">{(open) => <Ingredients key={open.kitchen.kitchen.id} {...open} />}</KitchenScreen>;
-}
+
 
 type Editing = { kind: "ingredient"; id?: string; name: string } | { kind: "groups" } | null;
 
-function Ingredients({ kitchen, change }: OpenKitchen) {
+export function Ingredients({ data, top }: { data: OpenKitchen; top?: React.ReactNode }) {
+  const { kitchen, change } = data;
   const language = useLanguage();
   const text = useText(TEXT);
-  const kitchenText = useText(KITCHEN_TEXT);
+  const kitText = useKitText();
   const colors = useColors();
   const [query, setQuery] = useState("");
   /** Search opens an ingredient by its id. */
@@ -39,11 +36,14 @@ function Ingredients({ kitchen, change }: OpenKitchen) {
   const groups = byGroup(kitchen.kitchen.groups, matches.flatMap((ingredient) => ingredientGroups(ingredient).map((group) => ({ group, ingredient }))), (entry) => entry.group);
   const missing = ingredients.filter((one) => one.nutrition.kcal === null).length;
   const shared = ingredients.filter((one) => one.otherGroups.length > 0).length;
-  const close = () => setEditing(null);
+  const close = () => {
+    setEditing(null);
+    if (asked) router.setParams({ open: undefined });
+  };
   const create = (name: string) => setEditing({ kind: "ingredient", name });
 
   return (
-    <Screen title={text.title} back={{ label: kitchenText.title, onPress: () => router.navigate("/kitchen") }}
+    <Screen title={kitText.tabs.kitchen[0]} top={top}
       facts={ingredients.length ? `${text.inKitchen(ingredients.length)}${shared ? text.inTwoGroups(shared) : ""}${missing ? text.withoutNutrition(missing) : ""}` : text.intro}
       toolbar={<>
         {ingredients.length ? <ToolbarButton tone="outline" icon={ListOrdered} label={text.arrangeGroups} onPress={() => setEditing({ kind: "groups" })} /> : null}
@@ -53,8 +53,8 @@ function Ingredients({ kitchen, change }: OpenKitchen) {
         key: section, label: groupLabel(section, language), color: groupColor(colors, kitchen.kitchen.groups, section), count: entries.length,
         rows: entries.map(({ ingredient }) => ({ key: ingredient.id, node: (
           <Press accessibilityRole="button" onPress={() => setEditing({ kind: "ingredient", id: ingredient.id, name: ingredient.name })}
-            style={({ pressed }) => ({ minHeight: 64, flexDirection: "row", alignItems: "center", gap: 12, paddingLeft: 16, paddingRight: 12, paddingVertical: 12, opacity: pressed ? 0.7 : 1 })}>
-            <View style={{ flex: 1, gap: 3 }}>
+            style={({ pressed }) => ({ minHeight: 64, flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 12, paddingLeft: 16, paddingRight: 12, paddingVertical: 12, opacity: pressed ? 0.7 : 1 })}>
+            <View style={{ flexGrow: 1, flexBasis: 150, gap: 3 }}>
               <T weight="medium">{ingredient.name}</T>
               <NutritionSummary ingredient={ingredient} />
             </View>

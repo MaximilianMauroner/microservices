@@ -1,12 +1,11 @@
 import type { BodyshopAppSnapshot } from "@tools-platform/service/bodyshop-contract";
 import type { KitchenSnapshot } from "@tools-platform/service/kitchen-contract";
 import { fromIngredient, fromRecipe, fromSaved, type Loggable } from "../../body/model";
-import type { Product } from "../../state";
 
 /** One thing a search finds, in Kitchen or in Bodyshop. `loggable` is set when Bodyshop can log it. */
 export type SearchHit = Readonly<{
   key: string;
-  product: Product;
+  product: "kitchen" | "bodyshop";
   kind: "recipe" | "ingredient" | "food" | "meal";
   id: string;
   label: string;

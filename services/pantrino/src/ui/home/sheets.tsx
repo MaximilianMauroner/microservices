@@ -3,7 +3,7 @@ import {
   fieldNumber,
   formatAmount,
   type StockItem,
-  
+
   INGREDIENT_UNITS,
   type IngredientUnit,
   requiredName,
@@ -144,8 +144,8 @@ export function AddStockSheet({
                 minHeight: 48,
                 borderRadius: 22,
                 borderWidth: 1,
-                borderColor: chosen ? colors.page.home : colors.controlBorder,
-                backgroundColor: chosen ? colors.page.home : colors.control,
+                borderColor: chosen ? colors.page.kitchen : colors.controlBorder,
+                backgroundColor: chosen ? colors.page.kitchen : colors.control,
                 paddingHorizontal: 12,
                 flexDirection: "row",
                 alignItems: "center",
@@ -203,7 +203,7 @@ export function AddStockSheet({
                     borderRadius: 22,
                     paddingHorizontal: 14,
                     justifyContent: "center",
-                    backgroundColor: selection.unit === unit ? colors.page.home : colors.muted,
+                    backgroundColor: selection.unit === unit ? colors.page.kitchen : colors.muted,
                   }}
                 >
                   <T style={{ color: selection.unit === unit ? "#ffffff" : colors.foreground }}>
@@ -257,9 +257,9 @@ export function AmountSheet({ item, onSave, onClose }: { item: StockItem; onSave
   );
 }
 
-export function AddLeftoverSheet({ today, change, onClose }: OpenKitchen & { onClose: () => void }) {
+export function AddLeftoverSheet({ today, change, onClose, initialName = "" }: OpenKitchen & { onClose: () => void; initialName?: string }) {
   const text = useText(TEXT);
-  const [name, setName] = useState("");
+  const [name, setName] = useState(initialName);
   const [servings, setServings] = useState(2);
   const [days, setDays] = useState(3);
   const submitted = useRef(false);

@@ -23,14 +23,7 @@ const kitchenSession = createKitchenSession({
   allowNetwork: allowKitchenNetwork,
 });
 
-/** Which product the tabs show. Search and the links between them work in both. Bodyshop needs an account. */
-export type Product = "kitchen" | "bodyshop";
-
-type AppContextValue = ReturnType<typeof kitchenSession.getState> & Pick<typeof kitchenSession, "signIn" | "signOut" | "openLocal" | "showSignIn" | "openKitchen"> & {
-  /** `null` until the saved choice is read, so the tabs can bring back Bodyshop at launch. */
-  product: Product | null;
-  setProduct: (product: Product) => void;
-};
+type AppContextValue = ReturnType<typeof kitchenSession.getState> & Pick<typeof kitchenSession, "signIn" | "signOut" | "openLocal" | "showSignIn" | "openKitchen">;
 
 // Bodyshop belongs to the signed-in account. The session publishes every step, also the short `loading` between two
 // accounts, so the last account's day is gone before the next one opens.
@@ -47,7 +40,6 @@ const AppContext = createContext<AppContextValue | null>(null);
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const state = useSyncExternalStore(kitchenSession.subscribe, kitchenSession.getState);
-  const [product, setProductState] = useState<Product | null>(null);
   const [language, setLanguage] = useState<KitchenLanguage>(() => pickLanguage(null));
   const [strength, setStrengthState] = useState<Strength>("light");
 
@@ -55,12 +47,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let current = true;
-    setProductState(null);
-    void Promise.all([kitchenSession.setting("language"), kitchenSession.setting("haptics"), kitchenSession.setting("product")]).then(([savedLanguage, savedStrength, savedProduct]) => {
+    void Promise.all([kitchenSession.setting("language"), kitchenSession.setting("haptics")]).then(([savedLanguage, savedStrength]) => {
       if (!current) return;
-      if (state.session === "signed-in" || state.session === "local") {
-        setProductState(state.session === "signed-in" && savedProduct === "bodyshop" ? "bodyshop" : "kitchen");
-      }
       setLanguage(pickLanguage(savedLanguage));
       setStrength(parseStrength(savedStrength));
       setStrengthState(parseStrength(savedStrength));
@@ -90,12 +78,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     openLocal: kitchenSession.openLocal,
     showSignIn: kitchenSession.showSignIn,
     openKitchen: kitchenSession.openKitchen,
-    product,
-    setProduct(next) {
-      setProductState(next);
-      void kitchenSession.saveSetting("product", next);
-    },
-  }), [state, product]);
+  }), [state]);
 
   const languageValue = useMemo(() => ({
     language,
