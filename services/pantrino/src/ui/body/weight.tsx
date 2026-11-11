@@ -1,5 +1,4 @@
 import { addDays, type BodyshopAppSnapshot, daysBetween, type WeightReading } from "@tools-platform/service/bodyshop-contract";
-import { formatNumber } from "@tools-platform/service/kitchen-contract";
 import { useState } from "react";
 import { StyleSheet, View } from "react-native";
 import Svg, { Circle, Polyline } from "react-native-svg";
@@ -12,7 +11,7 @@ import { useColors } from "../theme";
 import { TEXT } from "./text";
 
 const CHART_DAYS = 90;
-const kg = (value: number, language: KitchenLanguage) => formatNumber(Math.round(value * 10) / 10, language);
+const kg = (value: number, language: KitchenLanguage) => value.toFixed(1).replace(".", language === "de" ? "," : ".");
 
 /** Weigh-ins of the last 90 days: today's weight, the line, and each reading. A weight is logged for today. */
 export function WeightPage({ snapshot }: { snapshot: BodyshopAppSnapshot }) {

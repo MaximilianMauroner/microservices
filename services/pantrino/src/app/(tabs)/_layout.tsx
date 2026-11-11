@@ -68,11 +68,11 @@ function TabBar({ state, navigateToTab }: TabBarProps) {
       {canSwitch ? <>
         <Press accessibilityRole="switch" accessibilityLabel={text.bodyMode} accessibilityState={{ checked: mode === "body" }}
           onPress={() => go(last.current[mode === "body" ? "kitchen" : "body"])} style={[styles.tab, rail ? styles.railTab : styles.switch]}>
-          <View style={[styles.capsule, { backgroundColor: colors.muted }]}>
+          <View style={[styles.capsule, rail && { flexDirection: "column" }, { backgroundColor: colors.muted }]}>
             {(["kitchen", "body"] as const).map((one) => {
               const Icon = MODE_ICONS[one];
               const on = one === mode;
-              return <View key={one} style={[styles.segment, on && { backgroundColor: colors.foreground }]}><Icon size={16} color={on ? colors.background : colors.mutedForeground} /></View>;
+              return <View key={one} style={[styles.segment, { backgroundColor: on ? colors.foreground : colors.muted }]}><Icon size={16} color={on ? colors.background : colors.mutedForeground} /></View>;
             })}
           </View>
         </Press>
@@ -101,9 +101,9 @@ const styles = StyleSheet.create({
   rail: { flexDirection: "column", borderTopWidth: 0, paddingTop: 12, gap: 8 },
   railTab: { flex: 0, minHeight: 72, paddingVertical: 8, paddingHorizontal: 4 },
   tab: { flex: 1, minHeight: 64, paddingVertical: 6, alignItems: "center", justifyContent: "center", gap: 4 },
-  switch: { flex: 0, width: 76, paddingHorizontal: 6 },
+  switch: { flex: 0, width: 92, paddingLeft: 12, paddingRight: 8 },
   capsule: { flexDirection: "row", borderRadius: 18, padding: 3, gap: 2 },
-  segment: { width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center" },
+  segment: { width: 32, height: 32, borderRadius: 16, flexShrink: 0, alignItems: "center", justifyContent: "center" },
   divider: { width: StyleSheet.hairlineWidth, marginVertical: 14 },
   railDivider: { height: StyleSheet.hairlineWidth, marginHorizontal: 16 },
   icon: { height: 28, width: 48, alignItems: "center", justifyContent: "center" },
