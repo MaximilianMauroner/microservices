@@ -1,4 +1,7 @@
 import type { ReactNode } from "react";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { ContentLayoutContext, useWindowLayout } from "./responsive";
+import { useColors } from "./theme";
 import { ActivityIndicator, ScrollView } from "react-native";
 import { type OpenKitchen, useKitchen, useSync } from "../state";
 import { Empty, PageContext, SyncRefresh } from "./kit";
@@ -27,4 +30,10 @@ export function KitchenScreen({ page, children }: { page: PageKey; children: (ki
       )}
     </PageContext.Provider>
   );
+}
+
+export function Standalone({ page, children }: { page: PageKey; children: ReactNode }) {
+  const layout = useWindowLayout();
+  const colors = useColors();
+  return <ContentLayoutContext value={layout}><PageContext value={page}><SafeAreaView edges={["top", "left", "right"]} style={{ flex: 1, backgroundColor: colors.background }}>{children}</SafeAreaView></PageContext></ContentLayoutContext>;
 }

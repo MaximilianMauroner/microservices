@@ -3,14 +3,13 @@ import { router } from "expo-router";
 import { Carrot, Clock, Plus, Refrigerator, X } from "lucide-react-native";
 import { useMemo, useState } from "react";
 import { StyleSheet, View } from "react-native";
-import type { OpenKitchen } from "../../../state";
-import { Button, Empty, Field, FloatingButton, mainGroup, PlateRing, Press, Screen, SearchField, Snackbar, T, type Notice, usePageColor } from "../../../ui/kit";
-import { haptic } from "../../../ui/haptics";
-import { type KitchenLanguage, useText } from "../../../ui/language";
-import { KitchenScreen } from "../../../ui/page";
-import { filterRecipes, recipeSummaries } from "../../../ui/recipes/model";
-import { groupColor, tint, useColors } from "../../../ui/theme";
-import { RecipeMenu } from "../../../ui/week/sheets";
+import type { OpenKitchen } from "../../state";
+import { Button, Empty, Field, FloatingButton, mainGroup, PlateRing, Press, Screen, SearchField, Snackbar, T, type Notice, usePageColor } from "../kit";
+import { haptic } from "../haptics";
+import { type KitchenLanguage, useText } from "../language";
+import { filterRecipes, recipeSummaries } from "../recipes/model";
+import { groupColor, tint, useColors } from "../theme";
+import { RecipeMenu } from "../week/sheets";
 
 const en = {
   title: "Recipes",
@@ -66,11 +65,9 @@ const TEXT: Record<KitchenLanguage, typeof en> = {
   }
 };
 
-export default function RecipesPage() {
-  return <KitchenScreen page="recipes">{(data) => <Recipes key={data.kitchen.kitchen.id} data={data} />}</KitchenScreen>;
-}
 
-function Recipes({ data }: { data: OpenKitchen }) {
+
+export function Recipes({ data, top }: { data: OpenKitchen; top?: React.ReactNode }) {
   const { kitchen, change } = data;
   const text = useText(TEXT);
   const colors = useColors();
@@ -99,8 +96,8 @@ function Recipes({ data }: { data: OpenKitchen }) {
   }
 
   return (
-    <Screen title={text.title} facts={recipes.length ? `${text.recipes(recipes.length)}${ideas ? text.stillIdeas(ideas) : ""}` : text.intro}
-      fab={<FloatingButton icon={Plus} label={text.newRecipe} onPress={() => router.push("/recipes/new")} />}
+    <Screen title={text.title} top={top} facts={recipes.length ? `${text.recipes(recipes.length)}${ideas ? text.stillIdeas(ideas) : ""}` : text.intro}
+      fab={<FloatingButton icon={Plus} label={text.newRecipe} onPress={() => router.push("/kitchen/new")} />}
       floating={<Snackbar notice={notice} onUndo={change} onDone={() => setNotice(null)} />}>
       <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
         <View style={{ flex: 1 }}><SearchField value={query} onValue={setQuery} label={text.findRecipe} /></View>
@@ -146,7 +143,7 @@ function Recipes({ data }: { data: OpenKitchen }) {
       {matches.length ? <View style={{ gap: 8 }}>{matches.map((recipe) => {
         const group = mainGroup(kitchen.kitchen.groups, recipe.sections);
         return (
-          <Press key={recipe.id} accessibilityRole="button" onPress={() => router.push({ pathname: "/recipes/[recipeId]", params: { recipeId: recipe.id } })}
+          <Press key={recipe.id} accessibilityRole="button" onPress={() => router.push({ pathname: "/kitchen/[recipeId]", params: { recipeId: recipe.id } })}
             onLongPress={() => hold(recipe.id)} accessibilityActions={[{ name: "longpress", label: text.recipeActions }]}
             onAccessibilityAction={(event) => { if (event.nativeEvent.actionName === "longpress") setHeld(recipe.id); }} style={({ pressed }) => [styles.recipe, { backgroundColor: group ? tint(groupColor(colors, kitchen.kitchen.groups, group), 11, colors.card) : colors.muted, opacity: pressed ? 0.8 : 1 }]}>
               <PlateRing groups={kitchen.kitchen.groups} sections={recipe.sections} size={36} />
@@ -159,7 +156,7 @@ function Recipes({ data }: { data: OpenKitchen }) {
                 </View> : <T muted style={styles.small}>{text.idea}</T>}
                 {recipe.ingredientCount ? recipe.missing.length
                   ? fromHome ? <T muted style={styles.small}>{text.missing(recipe.missing)}</T> : null
-                  : <View style={styles.inline}><Refrigerator size={14} color={colors.pageInk.home} /><T weight="medium" style={[styles.small, { color: colors.pageInk.home }]}>{text.allAtHome}</T></View>
+                  : <View style={styles.inline}><Refrigerator size={14} color={colors.pageInk.kitchen} /><T weight="medium" style={[styles.small, { color: colors.pageInk.kitchen }]}>{text.allAtHome}</T></View>
                   : null}
               </View>
           </Press>

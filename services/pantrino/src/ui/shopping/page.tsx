@@ -51,14 +51,14 @@ export function Shopping({ kitchen, today, planFrom, change }: OpenKitchen) {
         {shopping.weekly.length ? (
           <Group
             title={text.everyWeek}
-            color={colors.pageInk.home}
+            color={colors.pageInk.kitchen}
             count={shopping.weekly.filter((extra) => !extra.bought).length}
           >
             {shopping.weekly.map((extra) => (
               <ListRow
                 key={extra.id}
                 row={{ kind: "weekly", extra, week: shopping.start }}
-                color={colors.pageInk.home}
+                color={colors.pageInk.kitchen}
                 onChange={run}
               />
             ))}

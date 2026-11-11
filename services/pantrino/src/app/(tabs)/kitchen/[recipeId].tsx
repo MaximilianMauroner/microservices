@@ -4,5 +4,5 @@ import { RecipePageContent } from "../../../ui/recipes/recipe-page";
 
 export default function RecipePage() {
   const { recipeId } = useLocalSearchParams<{ recipeId: string }>();
-  return <KitchenScreen page="recipes">{(data) => <RecipePageContent key={`${data.kitchen.kitchen.id}/${recipeId}`} data={data} recipeId={recipeId} />}</KitchenScreen>;
+  return <KitchenScreen page="kitchen">{(data) => <RecipePageContent key={`${data.kitchen.kitchen.id}/${recipeId}`} data={data} recipeId={recipeId} />}</KitchenScreen>;
 }

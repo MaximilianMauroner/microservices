@@ -150,7 +150,7 @@ export function Week({ data }: { data: OpenKitchen }) {
             const label = useByLabel(one.useBy, today, language);
             return <View key={one.id} style={{ gap: 3 }}><T weight="medium">{one.name}</T><T style={[styles.small, { color: label.urgent ? colors.destructive : colors.mutedForeground }]}>{text.servings(one.servings)}. {label.text}</T></View>;
           }) : <T muted style={styles.small}>{text.noLeftovers}</T>}
-          <Button label={text.openAtHome} tone="ghost" onPress={() => router.navigate("/home")} />
+          <Button label={text.openAtHome} tone="ghost" onPress={() => router.navigate({ pathname: "/kitchen", params: { list: "home" } })} />
         </View>
       </View>
       {selection?.kind === "plan" ? <PlanSheet key={selection.day ?? "next"} day={selection.day} data={data} week={week} onClose={close} notify={setNotice} /> : null}
