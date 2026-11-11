@@ -10,7 +10,6 @@ import { TEXT as BODY_TEXT } from "../body/text";
 import { LeftoverRow } from "../home/leftover-row";
 import { AddLeftoverSheet } from "../home/sheets";
 import { NutrientBar } from "../body/today";
-import { paneWidths } from "../layout";
 import { useContentLayout } from "../responsive";
 import { haptic } from "../haptics";
 import { ListRow } from "../shopping/row";
@@ -35,7 +34,6 @@ export function Today({ data }: { data: OpenKitchen }) {
   const colors = useColors();
   const layout = useContentLayout();
   const expanded = layout.panes === 3;
-  const [leftPane] = paneWidths(layout);
   const { session } = useApp();
   const body = useBody();
   const [selection, setSelection] = useState<Selection | null>(null);
@@ -87,7 +85,6 @@ export function Today({ data }: { data: OpenKitchen }) {
     </View>
   );
   const useFirst = (
-
     <View style={{ gap: 8 }}>
       <T weight="semibold" style={{ fontSize: 18 }}>{text.useFirst}</T>
       {view.leftovers.length ? view.leftovers.map((one) => <LeftoverRow key={`${one.id}:${one.servings}`} leftover={one} today={data.today} change={data.change} notify={setNotice} />) : <T muted>{text.noLeftovers}</T>}
@@ -95,20 +92,18 @@ export function Today({ data }: { data: OpenKitchen }) {
   );
   const shoppingCard = (
     <View style={{ gap: 8 }}>
-
-    <Press accessibilityRole="button" onPress={() => router.navigate({ pathname: "/shopping", params: { week: view.shopping.start } })}
-      style={[styles.card, styles.row, { backgroundColor: tint(colors.pageInk.shopping, 10, colors.background) }]}>
-      <PlateRing groups={data.kitchen.kitchen.groups} sections={view.shopping.toBuy.map((one) => one.section)} size={36} />
-      <View style={{ flex: 1, gap: 4 }}><T weight="semibold" style={{ color: colors.pageInk.shopping, fontSize: 18 }}>{text.toBuy(view.shopping.count)}</T><T muted>{view.shopping.count ? text.more(view.buyNames, view.shopping.count) : text.allBought}</T></View>
-      <ChevronRight size={20} color={colors.mutedForeground} />
-    </Press>
+      <Press accessibilityRole="button" onPress={() => router.navigate({ pathname: "/shopping", params: { week: view.shopping.start } })}
+        style={[styles.card, styles.row, { backgroundColor: tint(colors.pageInk.shopping, 10, colors.background) }]}>
+        <PlateRing groups={data.kitchen.kitchen.groups} sections={view.shopping.toBuy.map((one) => one.section)} size={36} />
+        <View style={{ flex: 1, gap: 4 }}><T weight="semibold" style={{ color: colors.pageInk.shopping, fontSize: 18 }}>{text.toBuy(view.shopping.count)}</T><T muted>{view.shopping.count ? text.more(view.buyNames, view.shopping.count) : text.allBought}</T></View>
+        <ChevronRight size={20} color={colors.mutedForeground} />
+      </Press>
       {expanded ? buyRows.map((row) => <ListRow key={row.kind === "line" ? row.line.ingredientId : row.extra.id} row={row} color={colors.pageInk.shopping}
         onChange={({ action, message, undo }) => { data.change(action); setNotice({ message, undo }); }} />) : null}
     </View>
   );
   const bodyCard = bodySnapshot ? (
-
-<View style={[styles.card, { backgroundColor: tint(colors.nutrient.kcal, 10, colors.background) }]}>
+    <View style={[styles.card, { backgroundColor: tint(colors.nutrient.kcal, 10, colors.background) }]}>
       <Press accessibilityRole="button" onPress={() => { void bodyStore.refresh(data.today); router.push("/bodyshop"); }} style={styles.row}>
         <Flame size={28} color={colors.nutrient.kcal} />
         <View style={{ flex: 1, gap: 4 }}><T weight="semibold" style={{ fontSize: 18 }}>{bodyToday ? bodyText.ofTarget(kcal, bodyToday.targets.kcal) : bodyText.loading}</T><T muted>Bodyshop</T></View>
@@ -124,9 +119,8 @@ export function Today({ data }: { data: OpenKitchen }) {
     </View>
   ) : null;
   const tomorrowSection = (
-
     <View style={{ gap: 8 }}>
-      <View style={[styles.row, { justifyContent: "space-between", flexWrap: "wrap" }]}><T weight="semibold" style={{ fontSize: 18 }}>{text.tomorrow}</T><T muted>{`${tomorrow.weekday} ${tomorrow.number}`}</T></View>
+      <View style={styles.heading}><T weight="semibold" style={{ fontSize: 18 }}>{text.tomorrow}</T><T muted>{`${tomorrow.weekday} ${tomorrow.number}`}</T></View>
       {view.tomorrow.length ? view.tomorrow.map((one) => <Press key={one.entry.id} accessibilityRole="button" onPress={() => setSelection({ kind: "entry", id: one.entry.id })} style={[styles.card, styles.row, { backgroundColor: colors.card }]}>
         <PlateRing groups={data.kitchen.kitchen.groups} sections={one.sections} size={30} />
         <View style={{ flex: 1, gap: 3 }}><T muted style={{ fontSize: 13 }}>{weekText.meals[one.entry.meal]}</T><T weight="medium">{one.entry.recipe}</T></View>
@@ -147,7 +141,7 @@ export function Today({ data }: { data: OpenKitchen }) {
   return <Screen fullWidth title={text.title} facts={`${date.weekdayLong} ${date.dayMonth}`}
     floating={<Snackbar notice={notice} onUndo={data.change} onDone={() => setNotice(null)} />}>
     <View style={{ flexDirection: layout.panes === 1 ? "column" : "row", gap: layout.panes === 1 ? 16 : 32, alignItems: "flex-start" }}>
-      <View style={[styles.column, layout.panes === 2 ? { width: leftPane - 2 * layout.gutter } : layout.panes === 3 ? { flex: 1 } : { width: "100%" }]}>
+      <View style={[styles.column, layout.panes === 1 ? { width: "100%" } : { flex: 1 }]}>
         {tonightCard}
         {layout.panes === 1 ? <>{useFirst}{shoppingCard}{bodyCard}</> : null}
         {tomorrowSection}
@@ -168,4 +162,5 @@ const styles = StyleSheet.create({
   card: { padding: 16, gap: 12, borderRadius: 16, minHeight: 48 },
   row: { flexDirection: "row", gap: 12, alignItems: "center", minHeight: 48 },
   actions: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  heading: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", alignItems: "baseline", gap: 8 },
 });

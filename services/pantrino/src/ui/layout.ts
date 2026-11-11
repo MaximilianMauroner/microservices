@@ -20,7 +20,7 @@ export function windowLayout(window: WindowSize, insets: Insets, tabsVisible = t
   const windowClass = usableWidth < 600 ? "compact" : usableWidth < 840 ? "medium" : "expanded";
   const panes = windowClass === "compact" ? 1 : windowClass === "medium" ? 2 : 3;
   const navigation = windowClass === "compact" ? "bottom" : "rail";
-  const railWidth = navigation === "rail" && tabsVisible ? 96 : 0;
+  const railWidth = navigation === "rail" && tabsVisible ? 80 : 0;
   const gutter = 16;
   const contentWidth = Math.max(0, Math.min(panes * 720 + (panes - 1) * 32, usableWidth - railWidth - 2 * gutter));
   const sheetGap = usableWidth >= 600 && usableHeight >= 480 ? 16 : 0;
@@ -32,5 +32,6 @@ export function windowLayout(window: WindowSize, insets: Insets, tabsVisible = t
 }
 
 export function paneWidths(layout: WindowLayout): readonly [number, number] {
-  return [layout.usableWidth / 2 - layout.railWidth, layout.usableWidth / 2];
+  const half = (layout.usableWidth - layout.railWidth) / 2;
+  return [half, half];
 }

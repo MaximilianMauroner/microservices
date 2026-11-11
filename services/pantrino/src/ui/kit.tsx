@@ -138,12 +138,13 @@ export function Screen({ title, facts, actions, back, fab, toolbar, floating, gr
         </Press>
       ) : null}
       <View style={styles.header}>
-        <View style={{ flexGrow: 1, flexBasis: 120, minWidth: 0 }}>
+        <View style={{ flex: 1, minWidth: 0 }}>
           {typeof title === "string" ? <T weight="semibold" style={styles.title}>{title}</T> : title}
           {facts ? (typeof facts === "string" ? <T muted style={{ marginTop: 6, fontSize: 14 }}>{facts}</T> : facts) : null}
         </View>
-        <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap", alignItems: "center" }}>{actions}{back ? null : <HeaderActions />}</View>
+        {back ? null : <HeaderActions />}
       </View>
+      {actions ? <View style={styles.actions}>{actions}</View> : null}
       {top}
       {children}
     </View>
@@ -691,7 +692,8 @@ export function mainGroup(groups: readonly string[], sections: readonly string[]
 
 const styles = StyleSheet.create({
   page: { paddingTop: 8, gap: 16 },
-  header: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", flexWrap: "wrap", gap: 12 },
+  header: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
+  actions: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8 },
   title: { fontSize: 32, letterSpacing: -0.6 },
   empty: { alignItems: "center", gap: 12, borderWidth: 1, borderStyle: "dashed", borderRadius: 16, paddingHorizontal: 24, paddingVertical: 40 },
   wide: { flexGrow: 1, minHeight: 52 },

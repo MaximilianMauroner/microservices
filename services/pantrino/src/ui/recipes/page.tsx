@@ -14,7 +14,6 @@ import { useContentLayout, Workspace } from "../responsive";
 import { RecipeMenu } from "../week/sheets";
 
 const en = {
-  title: "Recipes",
   selectRecipe: "Select a recipe to see its ingredients and steps.",
   recipes: (count: number) => count === 1 ? "1 recipe" : `${count} recipes`,
   stillIdeas: (count: number) => count === 1 ? ", 1 still an idea without ingredients" : `, ${count} still ideas without ingredients`,
@@ -42,7 +41,6 @@ const en = {
 const TEXT: Record<KitchenLanguage, typeof en> = {
   en,
   de: {
-    title: "Rezepte",
     selectRecipe: "Wähle ein Rezept für Zutaten und Zubereitung.",
     recipes: (count: number) => count === 1 ? "1 Rezept" : `${count} Rezepte`,
     stillIdeas: (count: number) => count === 1 ? ", 1 noch eine Idee ohne Zutaten" : `, ${count} noch Ideen ohne Zutaten`,
@@ -108,10 +106,10 @@ export function Recipes({ data, top, initialRecipeId }: { data: OpenKitchen; top
   }
 
   const detail = selectedRecipeId ? <RecipePageContent key={selectedRecipeId} data={data} recipeId={selectedRecipeId} onClose={closeRecipe} onSelect={setSelectedRecipeId} />
-    : wide ? <Pane title={kitText.tabs.kitchen[0]} onClose={closeRecipe}><T muted>{text.selectRecipe}</T></Pane> : null;
+    : wide ? <Pane title={kitText.tabs.kitchen[0]}><T muted>{text.selectRecipe}</T></Pane> : null;
   return (
-    <Workspace detail={detail} replace selected={Boolean(selectedRecipeId)}>
-      <Screen title={text.title} top={top} facts={recipes.length ? `${text.recipes(recipes.length)}${ideas ? text.stillIdeas(ideas) : ""}` : text.intro}
+    <Workspace detail={detail} replace selected={Boolean(selectedRecipeId)} onBack={selectedRecipeId ? closeRecipe : undefined}>
+      <Screen title={kitText.tabs.kitchen[0]} top={top} facts={recipes.length ? `${text.recipes(recipes.length)}${ideas ? text.stillIdeas(ideas) : ""}` : text.intro}
         fab={<FloatingButton icon={Plus} label={text.newRecipe} onPress={() => select("new")} />}
         floating={<Snackbar notice={notice} onUndo={change} onDone={() => setNotice(null)} />}>
         <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>

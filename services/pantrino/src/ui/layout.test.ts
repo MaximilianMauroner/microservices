@@ -27,12 +27,13 @@ describe("Pantrino's available window", () => {
     expect(layout).toMatchObject({ usableWidth: 594, windowClass: "compact", navigation: "bottom", panes: 1 });
   });
 
-  it("puts the pane boundary at the middle of an unfolded window, with the rail in the left half", () => {
+  it("splits the space after the rail evenly so the list pane can hold a header on a foldable", () => {
     for (const width of [600, 690, 800, 840, 1180]) {
       const layout = windowLayout(window(width), noInsets);
       const [left, right] = paneWidths(layout);
-      expect(layout.railWidth + left).toBe(width / 2);
+      expect(left).toBe(right);
       expect(left + right + layout.railWidth).toBe(width);
+      expect(left).toBeGreaterThanOrEqual(260);
     }
   });
 
