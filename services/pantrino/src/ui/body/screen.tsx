@@ -1,4 +1,3 @@
-import { router } from "expo-router";
 import type { BodyshopAppSnapshot } from "@tools-platform/service/bodyshop-contract";
 import type { ReactNode } from "react";
 import { ActivityIndicator } from "react-native";
@@ -18,7 +17,7 @@ export function BodyScreen({ page, children }: { page: PageKey; children: (snaps
   return (
     <PageContext.Provider value={page}>
       {session === "signed-in" && snapshot && status !== "no-access" ? children(snapshot) : (
-        <Screen title="Bodyshop" back={{ label: kitText.back, onPress: () => router.back() }}>
+        <Screen title={kitText.tabs[page][0]}>
           {session !== "signed-in" || status === "no-access" ? <Empty title={text.noAccess} body={text.noAccessBody} />
             : status === "offline" ? <Empty title={text.offline} body={text.offlineBody} />
             : status === "failed" ? <Empty title={text.notLoaded}><Button label={text.tryAgain} onPress={() => void bodyStore.refresh()} /></Empty>
