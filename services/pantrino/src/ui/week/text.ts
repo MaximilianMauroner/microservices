@@ -1,7 +1,6 @@
 import type { KitchenLanguage } from "../language";
 
 const en = {
-  historyLimit: "Earlier weeks are not stored on this phone.",
   previousWeek: "Previous week",
   nextWeek: "Next week",
   today: "Today",
@@ -21,13 +20,6 @@ const en = {
   plan: "Plan",
   planIdea: (name: string) => `Plan “${name}” as a new recipe idea`,
   planHint: (meal: string, weekday: string) => `Plans it as ${meal.toLowerCase()} on ${weekday}`,
-  glance: "This week at a glance",
-  toBuy: (count: number) => (count === 1 ? "1 thing to buy" : `${count} things to buy`),
-  nothingToBuy: "Nothing to buy",
-  notCookedYet: "for the meals not cooked yet",
-  useFirst: "Use first",
-  noLeftovers: "No leftovers. When you cook more than you eat, keep the rest here.",
-  openAtHome: "Open At home",
   findRecipe: "Find or add a recipe",
   meal: "Meal",
   servingsLabel: "Servings",
@@ -73,7 +65,6 @@ const en = {
 export const TEXT: Record<KitchenLanguage, typeof en> = {
   en,
   de: {
-    historyLimit: "Frühere Wochen sind nicht auf diesem Telefon gespeichert.",
     previousWeek: "Vorherige Woche",
     nextWeek: "Nächste Woche",
     today: "Heute",
@@ -93,13 +84,6 @@ export const TEXT: Record<KitchenLanguage, typeof en> = {
     plan: "Planen",
     planIdea: (name: string) => `„${name}“ als neue Rezeptidee planen`,
     planHint: (meal: string, weekday: string) => `Plant es als ${meal} am ${weekday}`,
-    glance: "Diese Woche auf einen Blick",
-    toBuy: (count: number) => `${count} Artikel zu kaufen`,
-    nothingToBuy: "Nichts zu kaufen",
-    notCookedYet: "für die Mahlzeiten, die noch nicht gekocht sind",
-    useFirst: "Zuerst verbrauchen",
-    noLeftovers: "Keine Reste. Wenn du mehr kochst, als du isst, bewahre den Rest hier auf.",
-    openAtHome: "Vorrat öffnen",
     findRecipe: "Rezept suchen oder hinzufügen",
     meal: "Mahlzeit",
     servingsLabel: "Portionen",
