@@ -257,9 +257,9 @@ export function AmountSheet({ item, onSave, onClose }: { item: StockItem; onSave
   );
 }
 
-export function AddLeftoverSheet({ today, change, onClose }: OpenKitchen & { onClose: () => void }) {
+export function AddLeftoverSheet({ today, change, onClose, initialName = "" }: OpenKitchen & { onClose: () => void; initialName?: string }) {
   const text = useText(TEXT);
-  const [name, setName] = useState("");
+  const [name, setName] = useState(initialName);
   const [servings, setServings] = useState(2);
   const [days, setDays] = useState(3);
   const submitted = useRef(false);

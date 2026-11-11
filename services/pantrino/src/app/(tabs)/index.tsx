@@ -1,7 +1,6 @@
 import { KitchenScreen } from "../../ui/page";
-import { Empty, Screen, useKitText } from "../../ui/kit";
+import { Today } from "../../ui/today/page";
 
 export default function TodayPage() {
-  const text = useKitText();
-  return <KitchenScreen page="today">{() => <Screen title={text.tabs.today[0]}><Empty title={text.tabs.today[0]} /></Screen>}</KitchenScreen>;
+  return <KitchenScreen page="today">{(data) => <Today key={data.kitchen.kitchen.id} data={data} />}</KitchenScreen>;
 }

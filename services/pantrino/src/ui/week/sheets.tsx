@@ -9,6 +9,7 @@ import { Button, dayParts, Pill, PlateRing, Press, SearchField, Sheet, Stepper, 
 import { useLanguage, useText } from "../language";
 import { type DraftLine, draftLines, LineEditor, useResolveLines } from "../lines";
 import { useColors } from "../theme";
+import { cookUndo } from "./cook";
 import { defaultMeal, moveStrip, planStrip, type WeekView } from "./model";
 import { bodyMeal, fromRecipe } from "../../body/model";
 import { useBody } from "../../body/store";
@@ -29,13 +30,13 @@ function useDayName() {
 type SheetProps = { data: OpenKitchen; week: WeekView; onClose: () => void; notify: (notice: Notice) => void };
 
 /** Day, meal, and recipe in one short sheet. A tap on a recipe plans it with the recipe's servings. */
-export function PlanSheet({ day, data, week, onClose, notify }: SheetProps & { day?: string }) {
+export function PlanSheet({ day, meal: presetMeal, data, week, onClose, notify }: SheetProps & { day?: string; meal?: Meal }) {
   const language = useLanguage();
   const text = useText(TEXT);
   const colors = useColors();
   const [strip] = useState(() => planStrip({ weekStart: week.start, today: data.today, plan: data.kitchen.plan, day }));
   const [selected, setSelected] = useState(strip.selected);
-  const [meal, setMeal] = useState<Meal>(() => mealFor(strip.selected));
+  const [meal, setMeal] = useState<Meal>(() => presetMeal ?? mealFor(strip.selected));
   const [query, setQuery] = useState("");
   const typed = query.trim();
   const matches = week.recipes.filter((recipe) => recipe.name.toLowerCase().includes(typed.toLowerCase()));
@@ -121,7 +122,7 @@ export function RecipeMenu({ recipe, data, onClose, notify, onRecipe }: { recipe
 }
 
 /** The short menu a held meal opens. Each action runs at once. A cooked meal can only be removed. */
-export function MealMenu({ entry, data, week, onClose, notify }: SheetProps & { entry: PlanEntry }) {
+export function MealMenu({ entry, data, week, onClose, notify, onLeftovers }: SheetProps & { entry: PlanEntry; onLeftovers: (name: string) => void }) {
   const language = useLanguage();
   const text = useText(TEXT);
   const parts = dayParts(entry.day, language);
@@ -142,7 +143,7 @@ export function MealMenu({ entry, data, week, onClose, notify }: SheetProps & { 
         <View style={styles.footer}>
           <Button label={text.remove} tone="destructive" onPress={() => { removeMeal(entry, data, notify, text); onClose(); }} />
           {!entry.cooked ? <Button label={text.nextWeek} tone="outline" icon={AlarmClock} accessibilityLabel={text.snoozeTo(dayName(addDays(entry.day, 7)))} onPress={() => move(addDays(entry.day, 7))} /> : null}
-          {!entry.cooked ? <Button label={text.markCooked} icon={ChefHat} onPress={() => { data.change({ type: "plan.cook", id: entry.id }); notify({ message: text.cookedTaken }); onClose(); }} /> : null}
+          {!entry.cooked ? <Button label={text.markCooked} icon={ChefHat} onPress={() => { data.change({ type: "plan.cook", id: entry.id }); notify({ message: text.cookedTaken, undo: cookUndo(data.kitchen, entry), action: { label: text.leftovers, run: () => onLeftovers(entry.recipe) } }); onClose(); }} /> : null}
         </View>
       }>
       {entry.cooked ? <T muted>{text.cookedMeal}</T> : <>

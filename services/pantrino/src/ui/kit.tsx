@@ -15,6 +15,7 @@ import { type Feel, haptic } from "./haptics";
 import type { QueuedAction } from "../sync/model";
 import { type KitchenLanguage, LOCALES, useText } from "./language";
 import { type Colors, FONT, groupColor, ink, type PageKey, RADIUS, tint, useColors } from "./theme";
+import { useByStatus } from "./use-by";
 import { useSyncAlert } from "./kitchen/sync-alert";
 import { useContentLayout, useWindowLayout } from "./responsive";
 
@@ -254,7 +255,7 @@ export function WeekNav({ canGoBack, onStep }: { canGoBack: boolean; onStep: (st
   );
 }
 
-export type Notice = Readonly<{ message: string; undo?: readonly QueuedAction[] }>;
+export type Notice = Readonly<{ message: string; undo?: readonly QueuedAction[]; action?: { label: string; run: () => void } }>;
 
 const SNACKBAR_MS = 6000;
 
@@ -292,12 +293,12 @@ export function Snackbar({ notice, onUndo, onDone }: { notice: Notice | null; on
   };
   const closeNow = useCallback(() => close.current(), []);
   useEffect(() => {
-    if (!shown || shown.undo) return;
+    if (!shown || shown.undo || shown.action) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let live = true;
     void AccessibilityInfo.getRecommendedTimeoutMillis(SNACKBAR_MS).then((ms) => { if (live) timer = setTimeout(closeNow, ms); });
     return () => { live = false; clearTimeout(timer); };
-  }, [shown?.message, shown?.undo]);
+  }, [shown?.message, shown?.undo, shown?.action]);
   const shift = useSharedValue(0);
   useEffect(() => { shift.value = 0; }, [shown?.message, shift]);
   const away = usePanGesture({
@@ -317,6 +318,7 @@ export function Snackbar({ notice, onUndo, onDone }: { notice: Notice | null; on
     <GestureDetector gesture={away}>
       <Animated.View accessibilityLiveRegion="polite" style={[styles.snackbar, { backgroundColor: result ? tint(colors.destructive, 14, colors.card) : colors.muted, borderColor: result ? colors.destructive : colors.border }, slide]}>
         <T style={{ flex: 1, fontSize: 14, paddingVertical: 10 }}>{shown.message}</T>
+        {shown.action ? <Press accessibilityRole="button" onPress={() => { onDone(); shown.action!.run(); }} style={styles.snackAction}><T weight="semibold" style={{ color: pageInk }}>{shown.action.label}</T></Press> : null}
         {shown.undo ? (
           <Press accessibilityRole="button" onPress={() => { shown.undo!.forEach(onUndo); onDone(); }} style={styles.snackAction}>
             <T weight="semibold" style={{ color: pageInk }}>{text.undo}</T>
@@ -652,10 +654,10 @@ export function weekLabel(start: string, today: string, language: KitchenLanguag
 export function useByLabel(useBy: string, today: string, language: KitchenLanguage): { text: string; urgent: boolean } {
   const text = TEXT[language];
   const parts = dayParts(useBy, language);
-  const days = Math.round((Date.parse(`${useBy}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86_400_000);
-  if (days < 0) return { text: text.pastUseBy(parts.dayMonth), urgent: true };
-  if (days === 0) return { text: text.useToday, urgent: true };
-  if (days === 1) return { text: text.useTomorrow, urgent: true };
+  const status = useByStatus(useBy, today);
+  if (status === "past") return { text: text.pastUseBy(parts.dayMonth), urgent: true };
+  if (status === "today") return { text: text.useToday, urgent: true };
+  if (status === "tomorrow") return { text: text.useTomorrow, urgent: true };
   return { text: text.useBy(`${parts.weekday} ${parts.dayMonth}`), urgent: false };
 }
 

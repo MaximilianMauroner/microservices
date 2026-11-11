@@ -12,6 +12,7 @@ import { haptic } from "../haptics";
 import { useLanguage, useText } from "../language";
 import { groupColor, tint, useColors } from "../theme";
 import { buildWeek, swipeStep } from "./model";
+import { AddLeftoverSheet } from "../home/sheets";
 import { EntrySheet, MealMenu, PlanSheet } from "./sheets";
 import { useLocalText } from "../local-mode";
 import { TEXT } from "./text";
@@ -36,6 +37,7 @@ export function Week({ data }: { data: OpenKitchen }) {
   const dayWidth = (layout.contentWidth - 16 * (layout.columns - 1)) / layout.columns;
   const [requested, setRequested] = useState(() => weekStart(today));
   const [selection, setSelection] = useState<Selection | null>(null);
+  const [leftoverName, setLeftoverName] = useState<string>();
   const [notice, setNotice] = useState<Notice | null>(null);
   const week = useMemo(() => buildWeek(snapshot, requested, planFrom), [snapshot, requested, planFrom]);
   const recipes = new Map(week.recipes.map((recipe) => [recipe.id, recipe]));
@@ -153,9 +155,10 @@ export function Week({ data }: { data: OpenKitchen }) {
           <Button label={text.openAtHome} tone="ghost" onPress={() => router.navigate({ pathname: "/kitchen", params: { list: "home" } })} />
         </View>
       </View>
+      {leftoverName !== undefined ? <AddLeftoverSheet {...data} initialName={leftoverName} onClose={() => setLeftoverName(undefined)} /> : null}
       {selection?.kind === "plan" ? <PlanSheet key={selection.day ?? "next"} day={selection.day} data={data} week={week} onClose={close} notify={setNotice} /> : null}
       {entry && selection?.kind === "entry" ? <EntrySheet key={entry.id} entry={entry} data={data} week={week} onClose={close} notify={setNotice} /> : null}
-      {entry && selection?.kind === "menu" ? <MealMenu key={entry.id} entry={entry} data={data} week={week} onClose={close} notify={setNotice} /> : null}
+      {entry && selection?.kind === "menu" ? <MealMenu onLeftovers={setLeftoverName} key={entry.id} entry={entry} data={data} week={week} onClose={close} notify={setNotice} /> : null}
     </Screen>
   );
 }
