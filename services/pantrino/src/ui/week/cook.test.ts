@@ -30,3 +30,11 @@ it("restores a regular meal's servings without turning it into a custom meal", (
   expect(result.kitchens[0]!.plan).toEqual(original.plan);
   expect(result.kitchens[0]!.stock).toEqual(original.stock);
 });
+
+it("removes the leftover that cooking created", () => {
+  const entry = snapshot.plan[0]!;
+  const leftover = { servings: 1, useBy: "2026-11-14", createId: id(5) };
+  const result = project({ today: entry.day, planFrom: "2026-10-12", kitchens: [snapshot] }, queue([{ type: "plan.cook", id: entry.id, leftover }, ...cookUndo(snapshot, entry, leftover.createId)]));
+  expect(result.kitchens[0]!.leftovers).toEqual([]);
+  expect(result.kitchens[0]!.plan).toEqual(snapshot.plan);
+});

@@ -38,8 +38,12 @@ export function Week({ data }: { data: OpenKitchen }) {
   const range = weekRange(week.start, language);
   const entry = selection?.kind === "entry" || selection?.kind === "menu" ? week.entries.find((one) => one.id === selection.id) : undefined;
   const close = () => setSelection(null);
+  const show = (start: string) => {
+    setRequested(start);
+    setSelection((open) => open?.kind === "plan" ? { kind: "plan" } : open);
+  };
   const turn = (step: -1 | 0 | 1) => {
-    if (step === 1 || (step === -1 && week.canGoBack)) setRequested(addDays(week.start, 7 * step));
+    if (step === 1 || (step === -1 && week.canGoBack)) show(addDays(week.start, 7 * step));
   };
   const release = (translationX: number, velocityX: number) => turn(swipeStep(translationX, velocityX));
   const shift = useSharedValue(0);
@@ -53,7 +57,7 @@ export function Week({ data }: { data: OpenKitchen }) {
   });
   const slide = useAnimatedStyle(() => ({ transform: [{ translateX: shift.value }] }));
 
-  const detail = selection?.kind === "plan" ? <PlanSheet key={`${selection.day ?? "next"}/${selection.meal ?? "auto"}`} presentation={wide ? "pane" : "sheet"} day={selection.day} meal={selection.meal} data={data} week={week} onClose={close} notify={setNotice} />
+  const detail = selection?.kind === "plan" ? <PlanSheet key={`${week.start}/${selection.day ?? "next"}/${selection.meal ?? "auto"}`} presentation={wide ? "pane" : "sheet"} day={selection.day} meal={selection.meal} data={data} week={week} onClose={close} notify={setNotice} />
     : entry && selection?.kind === "entry" ? <EntrySheet key={entry.id} presentation={wide ? "pane" : "sheet"} entry={entry} data={data} onClose={close} notify={setNotice} />
     : wide ? <Pane title={text.planAMeal}><T muted>{text.pickDay}</T></Pane> : null;
   return (
@@ -63,7 +67,7 @@ export function Week({ data }: { data: OpenKitchen }) {
         floating={<Snackbar notice={notice} onUndo={change} onDone={() => setNotice(null)} />}
         fab={<FloatingButton icon={Plus} label={text.plan} onPress={() => setSelection({ kind: "plan" })} />}
         actions={<>
-          {week.days.some((one) => one.day === today) ? null : <Button label={text.today} tone="outline" onPress={() => setRequested(weekStart(today))} />}
+          {week.days.some((one) => one.day === today) ? null : <Button label={text.today} tone="outline" onPress={() => show(weekStart(today))} />}
           <StepNav canGoBack={week.canGoBack} onStep={turn} />
         </>}>
         <GestureDetector gesture={swipe}>
