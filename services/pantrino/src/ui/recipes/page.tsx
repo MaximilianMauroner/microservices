@@ -183,7 +183,7 @@ export function Recipes({ data, top, initialRecipeId }: { data: OpenKitchen; top
 
 const styles = StyleSheet.create({
   wrap: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8 },
-  filter: { minHeight: 48, maxWidth: "100%", borderRadius: 22, borderWidth: 1, flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12 },
+  filter: { flexGrow: 1, minHeight: 48, maxWidth: "100%", justifyContent: "center", borderRadius: 22, borderWidth: 1, flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12 },
   recipe: { flexDirection: "row", alignItems: "flex-start", gap: 12, padding: 16, borderRadius: 16 },
   small: { fontSize: 12 },
   inline: { flexDirection: "row", alignItems: "center", gap: 4 }
