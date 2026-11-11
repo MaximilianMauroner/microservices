@@ -12,14 +12,20 @@ describe("Pantrino's available window", () => {
     [600, "medium", "rail", 2],
     [690, "medium", "rail", 2],
     [839, "medium", "rail", 2],
-    [840, "expanded", "rail", 3],
-    [1180, "expanded", "rail", 3],
+    [840, "expanded", "rail", 2],
+    [1180, "expanded", "rail", 2],
+    [1200, "expanded", "rail", 3],
+    [1280, "expanded", "rail", 3],
   ] as const)("shows the right navigation and panes at %i dp", (width, windowClass, navigation, panes) => {
     expect(windowLayout(window(width), noInsets)).toMatchObject({ windowClass, navigation, panes });
   });
 
+  it("gives a 914 dp landscape phone two panes, not three narrow columns", () => {
+    expect(windowLayout(window(914, 411), noInsets)).toMatchObject({ windowClass: "expanded", panes: 2, short: true });
+  });
+
   it("keeps the rail and two panes in an 800 by 400 landscape window", () => {
-    expect(windowLayout(window(800, 400), noInsets)).toMatchObject({ navigation: "rail", windowClass: "medium", panes: 2, sheetGap: 0 });
+    expect(windowLayout(window(800, 400), noInsets)).toMatchObject({ navigation: "rail", windowClass: "medium", panes: 2, sheetGap: 0, short: true });
   });
 
   it("chooses its class from usable width after horizontal safe areas", () => {
@@ -38,7 +44,7 @@ describe("Pantrino's available window", () => {
   });
 
   it("returns to the same phone layout after folding and rotating", () => {
-    const layouts = [360, 690, 1180, 360].map((width) => windowLayout(window(width), noInsets));
+    const layouts = [360, 690, 1280, 360].map((width) => windowLayout(window(width), noInsets));
     expect(layouts.map((one) => one.panes)).toEqual([1, 2, 3, 1]);
     expect(layouts[0]).toEqual(layouts[3]);
   });

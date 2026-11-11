@@ -139,12 +139,15 @@ export function Screen({ title, facts, actions, back, fab, toolbar, floating, gr
       ) : null}
       <View style={styles.header}>
         <View style={{ flex: 1, minWidth: 0 }}>
-          {typeof title === "string" ? <T weight="semibold" style={styles.title}>{title}</T> : title}
-          {facts ? (typeof facts === "string" ? <T muted style={{ marginTop: 6, fontSize: 14 }}>{facts}</T> : facts) : null}
+          {typeof title === "string" ? <T weight="semibold" accessibilityRole="header" numberOfLines={1} adjustsFontSizeToFit
+            style={[styles.title, layout.short && { fontSize: 26 }]}>{title}</T> : title}
         </View>
         {back ? null : <HeaderActions />}
       </View>
-      {actions ? <View style={styles.actions}>{actions}</View> : null}
+      {facts || actions ? <View style={[styles.actions, { marginTop: -8 }]}>
+        {facts ? <View style={{ flexGrow: 1, flexBasis: 200 }}>{typeof facts === "string" ? <T muted style={{ fontSize: 14 }}>{facts}</T> : facts}</View> : null}
+        {actions}
+      </View> : null}
       {top}
       {children}
     </View>
@@ -485,18 +488,19 @@ export function GroupDot({ groups, group, size = 10 }: { groups: readonly string
 /** A plate ring: one circle split into the food groups of a dish, a week, or a list. Each group gets an arc as long as its share. */
 export function PlateRing({ groups, sections, size = 32 }: { groups: readonly string[]; sections: readonly string[]; size?: number }) {
   const colors = useColors();
+  if (!sections.length) return null;
   const parts = byGroup(groups, sections, (section) => section);
   const circumference = 2 * Math.PI * 14.5;
   let offset = 0;
   return (
     <Svg width={size} height={size} viewBox="0 0 36 36">
       <Circle r={14.5} cx={18} cy={18} fill="none" strokeWidth={6} stroke={colors.muted} />
-      {sections.length ? parts.map(([group, items]) => {
+      {parts.map(([group, items]) => {
         const length = (items.length / sections.length) * circumference;
         const arc = <Circle key={group} r={14.5} cx={18} cy={18} fill="none" strokeWidth={6} stroke={groupColor(colors, groups, group)} strokeDasharray={`${length} ${circumference - length}`} strokeDashoffset={-offset} rotation={-90} origin="18, 18" />;
         offset += length;
         return arc;
-      }) : null}
+      })}
     </Svg>
   );
 }
@@ -692,7 +696,7 @@ export function mainGroup(groups: readonly string[], sections: readonly string[]
 
 const styles = StyleSheet.create({
   page: { paddingTop: 8, gap: 16 },
-  header: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
+  header: { flexDirection: "row", alignItems: "center", gap: 8 },
   actions: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8 },
   title: { fontSize: 32, letterSpacing: -0.6 },
   empty: { alignItems: "center", gap: 12, borderWidth: 1, borderStyle: "dashed", borderRadius: 16, paddingHorizontal: 24, paddingVertical: 40 },
@@ -706,7 +710,7 @@ const styles = StyleSheet.create({
   floating: { position: "absolute", left: 16, right: 16, bottom: 16, alignItems: "flex-end", gap: 12 },
   fab: { minHeight: 56, paddingVertical: 12, maxWidth: "100%", flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 20, borderRadius: 16, elevation: 6, shadowColor: "#000000", shadowOpacity: 0.35, shadowRadius: 12, shadowOffset: { width: 0, height: 6 } },
   toolbar: { flexDirection: "row", flexWrap: "wrap", gap: 8, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 12 },
-  toolbarButton: { flexGrow: 1, flexBasis: 120, minHeight: 52, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 12, paddingVertical: 10, borderRadius: RADIUS, borderWidth: 1 },
+  toolbarButton: { flexGrow: 1, flexBasis: "auto", minHeight: 52, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 12, paddingVertical: 10, borderRadius: RADIUS, borderWidth: 1 },
   weekNav: { minHeight: 48, gap: 8, flexDirection: "row", borderRadius: RADIUS, borderWidth: 1, overflow: "hidden" },
   weekStep: { width: 48, alignItems: "center", justifyContent: "center" },
   snackbar: { alignSelf: "stretch", minHeight: 48, flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8, paddingLeft: 14, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, elevation: 4, shadowColor: "#000000", shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 4 } },

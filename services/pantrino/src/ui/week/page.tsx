@@ -59,7 +59,7 @@ export function Week({ data }: { data: OpenKitchen }) {
   return (
     <Workspace detail={detail} onBack={selection?.kind === "plan" || selection?.kind === "entry" ? close : undefined}>
       <Screen title={title}
-        facts={`${title === range ? "" : `${range} · `}${week.entries.length ? text.plannedFacts(week.entries.length, week.cooked) : text.nothingPlanned}`}
+        facts={`${title === range ? "" : `${range}\u00a0· `}${week.entries.length ? text.plannedFacts(week.entries.length, week.cooked) : text.nothingPlanned}`}
         floating={<Snackbar notice={notice} onUndo={change} onDone={() => setNotice(null)} />}
         fab={<FloatingButton icon={Plus} label={text.plan} onPress={() => setSelection({ kind: "plan" })} />}
         actions={<>

@@ -76,10 +76,10 @@ export function Today({ data }: { data: OpenKitchen }) {
           </View>
         </Press>
         {expanded ? tonight.steps.map((step, index) => <T key={index} style={{ lineHeight: 22 }}>{`${index + 1}. ${step}`}</T>) : null}
+        <Button label={text.cooked} icon={Check} onPress={cook} />
         <View style={styles.actions}>
-          <Button label={text.cooked} icon={Check} onPress={cook} />
-          <Button label={text.recipe} tone="outline" onPress={() => router.push({ pathname: "/kitchen/[recipeId]", params: { recipeId: tonight.entry.recipeId } })} />
-          <Button label={text.change} tone="outline" onPress={() => setSelection({ kind: "entry", id: tonight.entry.id })} />
+          <Button wide label={text.recipe} tone="outline" onPress={() => router.push({ pathname: "/kitchen/[recipeId]", params: { recipeId: tonight.entry.recipeId } })} />
+          <Button wide label={text.change} tone="outline" onPress={() => setSelection({ kind: "entry", id: tonight.entry.id })} />
         </View>
       </> : <><T muted>{text.noDinner}</T><Button label={text.planDinner} onPress={() => setSelection({ kind: "plan", day: data.today, meal: "dinner" })} /></>}
     </View>
