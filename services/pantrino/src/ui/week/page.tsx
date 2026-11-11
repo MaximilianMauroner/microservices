@@ -6,7 +6,7 @@ import { GestureDetector, usePanGesture } from "react-native-gesture-handler";
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import { scheduleOnRN } from "react-native-worklets";
 import { type OpenKitchen } from "../../state";
-import { Button, dayParts, FloatingButton, mainGroup, PlateRing, Pane, Press, Screen, Snackbar, T, type Notice, usePageColor, weekLabel, WeekNav, weekRange } from "../kit";
+import { Button, dayParts, FloatingButton, mainGroup, PlateRing, Pane, Press, Screen, Snackbar, T, type Notice, usePageColor, weekLabel, StepNav, weekRange } from "../kit";
 import { haptic } from "../haptics";
 import { useLanguage, useText } from "../language";
 import { groupColor, tint, useColors } from "../theme";
@@ -64,7 +64,7 @@ export function Week({ data }: { data: OpenKitchen }) {
         fab={<FloatingButton icon={Plus} label={text.plan} onPress={() => setSelection({ kind: "plan" })} />}
         actions={<>
           {week.days.some((one) => one.day === today) ? null : <Button label={text.today} tone="outline" onPress={() => setRequested(weekStart(today))} />}
-          <WeekNav canGoBack={week.canGoBack} onStep={turn} />
+          <StepNav canGoBack={week.canGoBack} onStep={turn} />
         </>}>
         <GestureDetector gesture={swipe}>
           <Animated.View accessibilityLabel={text.daysOfWeek}

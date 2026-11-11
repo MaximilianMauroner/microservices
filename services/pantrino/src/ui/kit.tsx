@@ -2,7 +2,7 @@ import { byGroupOrder, addDays, UNSORTED_SECTION } from "@tools-platform/service
 import { CalendarDays, ChevronLeft, ChevronRight, CookingPot, type LucideIcon, Search, ShoppingBasket, Sun, UserRound, X } from "lucide-react-native";
 import { router, useFocusEffect } from "expo-router";
 import { Children, createContext, isValidElement, type ReactNode, type RefObject, useCallback, useContext, useEffect, useReducer, useRef, useState } from "react";
-import { AccessibilityInfo, Alert, KeyboardAvoidingView, Modal, Platform, Pressable, type PressableProps, type PressableStateCallbackType, FlatList, RefreshControl, type RefreshControlProps, ScrollView, StyleSheet, Text, type TextProps, TextInput, type TextInputProps, View, type ViewStyle } from "react-native";
+import { AccessibilityInfo, Alert, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, type PressableProps, type PressableStateCallbackType, FlatList, RefreshControl, type RefreshControlProps, ScrollView, type ScrollViewInstance, StyleSheet, Text, type TextProps, TextInput, type TextInputProps, View, type ViewStyle } from "react-native";
 import { GestureDetector, GestureHandlerRootView, usePanGesture } from "react-native-gesture-handler";
 import Animated, { FadeIn, FadeOut, LinearTransition, ReduceMotion, useReducedMotion, useAnimatedStyle, useSharedValue, withSpring, withTiming } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -116,11 +116,13 @@ export function T({ weight = "regular", muted, style, ...props }: TextProps & { 
 /** A food group on a page: its label, then its rows in one panel of its color. */
 export type ListGroup = Readonly<{ key: string; label: string; color: string; count?: number; rows: readonly Readonly<{ key: string; node: ReactNode }>[] }>;
 
-export function Screen({ title, facts, actions, back, fab, toolbar, floating, groups, children, top, fullWidth = false }: {
-  title: ReactNode; facts?: ReactNode; actions?: ReactNode; back?: { label: string; onPress: () => void }; fab?: ReactNode; toolbar?: ReactNode; floating?: ReactNode;
+/** `aside` sits beside the title on a page with a back link, where tab pages show Search and Profile. */
+export function Screen({ title, facts, actions, aside, back, fab, toolbar, floating, groups, children, top, fullWidth = false }: {
+  title: ReactNode; facts?: ReactNode; actions?: ReactNode; aside?: ReactNode; back?: { label: string; onPress: () => void }; fab?: ReactNode; toolbar?: ReactNode; floating?: ReactNode;
   groups?: readonly ListGroup[]; children?: ReactNode; top?: ReactNode; fullWidth?: boolean;
 }) {
   const colors = useColors();
+  const typing = useKeyboardOpen();
   const insets = useSafeAreaInsets();
   const layout = useContentLayout();
   const contentWidth = fullWidth ? layout.contentWidth : Math.min(720, layout.contentWidth);
@@ -142,7 +144,7 @@ export function Screen({ title, facts, actions, back, fab, toolbar, floating, gr
           {typeof title === "string" ? <T weight="semibold" accessibilityRole="header" numberOfLines={1} adjustsFontSizeToFit
             style={[styles.title, layout.short && { fontSize: 26 }]}>{title}</T> : title}
         </View>
-        {back ? null : <HeaderActions />}
+        {back ? aside : <HeaderActions />}
       </View>
       {facts || actions ? <View style={[styles.actions, { marginTop: -8 }]}>
         {facts ? <View style={{ flexGrow: 1, flexBasis: 200 }}>{typeof facts === "string" ? <T muted style={{ fontSize: 14 }}>{facts}</T> : facts}</View> : null}
@@ -153,7 +155,7 @@ export function Screen({ title, facts, actions, back, fab, toolbar, floating, gr
     </View>
   );
   return (
-    <View style={{ flex: 1, backgroundColor: colors.background }}>
+    <KeyboardAvoidingView behavior="padding" style={{ flex: 1, backgroundColor: colors.background }}>
       <View style={{ flex: 1 }}>
         {groups ? (
           <FlatList data={listItems(groups)} keyExtractor={(item) => item.key} renderItem={({ item }) => <ListCell item={item} />}
@@ -172,14 +174,25 @@ export function Screen({ title, facts, actions, back, fab, toolbar, floating, gr
           </Svg>
         ) : null}
         {floating || fab ? <View pointerEvents="box-none" style={[styles.floating, { left: layout.gutter, right: layout.gutter, bottom: 16 + (toolbar ? 0 : layout.bottomInset) }]}>
-          <View pointerEvents="box-none" style={{ width: "100%", maxWidth: 560, alignItems: "flex-end", gap: 12 }}>{floating}{fab}</View>
+          <View pointerEvents="box-none" style={{ width: "100%", maxWidth: 560, alignItems: "flex-end", gap: 12 }}>{floating}{typing ? null : fab}</View>
         </View> : null}
       </View>
       {toolbar ? <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, backgroundColor: colors.card }}>
         <View style={[styles.toolbar, { width: "100%", maxWidth: 640, alignSelf: "center", paddingBottom: 12 + insets.bottom }]}>{toolbar}</View>
       </View> : null}
-    </View>
+    </KeyboardAvoidingView>
   );
+}
+
+/** While the keyboard is open, a floating action would cover the field above it. */
+function useKeyboardOpen() {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const shown = Keyboard.addListener("keyboardDidShow", () => setOpen(true));
+    const hidden = Keyboard.addListener("keyboardDidHide", () => setOpen(false));
+    return () => { shown.remove(); hidden.remove(); };
+  }, []);
+  return open;
 }
 
 function HeaderActions() {
@@ -233,16 +246,20 @@ export function ToolbarButton({ label, icon: Icon, onPress, tone = "primary" }: 
 }
 
 /** The previous and next week arrows, for the title row of a week page. */
-export function WeekNav({ canGoBack, onStep }: { canGoBack: boolean; onStep: (step: -1 | 1) => void }) {
+/** Previous and next arrows for a stepped page, such as a week or a day. */
+export function StepNav({ canGoBack = true, canGoForward = true, labels, onStep }: {
+  canGoBack?: boolean; canGoForward?: boolean; labels?: readonly [string, string]; onStep: (step: -1 | 1) => void;
+}) {
   const colors = useColors();
   const text = useKitText();
+  const [back, forward] = labels ?? [text.previousWeek, text.nextWeek];
   return (
-    <View style={[styles.weekNav, { borderColor: colors.controlBorder, backgroundColor: colors.control }]}>
-      {([[-1, ChevronLeft, text.previousWeek], [1, ChevronRight, text.nextWeek]] as const).map(([step, Icon, label]) => {
-        const disabled = step === -1 && !canGoBack;
+    <View style={[styles.stepNav, { borderColor: colors.controlBorder, backgroundColor: colors.control }]}>
+      {([[-1, ChevronLeft, back], [1, ChevronRight, forward]] as const).map(([step, Icon, label]) => {
+        const disabled = step === -1 ? !canGoBack : !canGoForward;
         return (
           <Press key={step} accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled }} disabled={disabled} onPress={() => onStep(step)}
-            style={({ pressed }) => [styles.weekStep, { opacity: disabled ? 0.35 : pressed ? 0.6 : 1 }]}>
+            style={({ pressed }) => [styles.step, { opacity: disabled ? 0.35 : pressed ? 0.6 : 1 }]}>
             <Icon size={22} color={colors.foreground} />
           </Press>
         );
@@ -539,6 +556,18 @@ function ModalSheet({ open, onClose, onDismiss, title, description, children, fo
   const insets = useSafeAreaInsets();
   const layout = useWindowLayout();
   const text = useKitText();
+  const scroll = useRef<ScrollViewInstance>(null);
+  /** The keyboard makes the sheet shorter. Keep the focused field inside what is left. */
+  const keepFocusedInView = (visible: number) => {
+    const input = TextInput.State.currentlyFocusedInput();
+    const inner = scroll.current?.getInnerViewRef();
+    if (!input || !inner) return;
+    input.measureLayout(inner, (_x, y, _width, fieldHeight) => {
+      const top = scrollOffset.current;
+      if (y + fieldHeight + 12 > top + visible) scroll.current?.scrollTo({ y: y + fieldHeight + 12 - visible });
+      else if (y - 12 < top) scroll.current?.scrollTo({ y: Math.max(0, y - 12) });
+    }, () => undefined);
+  };
   const height = useSharedValue(800);
   const drop = useSharedValue(800);
   useEffect(() => {
@@ -564,7 +593,7 @@ function ModalSheet({ open, onClose, onDismiss, title, description, children, fo
     <Modal visible={open} transparent animationType="fade" statusBarTranslucent navigationBarTranslucent onRequestClose={dismiss} onDismiss={onDismiss}
       supportedOrientations={["portrait", "portrait-upside-down", "landscape-left", "landscape-right"]}>
       <GestureHandlerRootView style={{ flex: 1 }}>
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}
+        <KeyboardAvoidingView behavior="padding"
           style={{ flex: 1, justifyContent: "flex-end", paddingTop: insets.top + 12 }}>
           <Animated.View style={[StyleSheet.absoluteFill, dim]}>
             <Pressable style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.6)" }} onPress={dismiss} accessibilityLabel={text.close} />
@@ -590,7 +619,7 @@ function ModalSheet({ open, onClose, onDismiss, title, description, children, fo
               </View>
             </GestureDetector>
             <View style={{ flexShrink: 1, flexGrow: layout.usableWidth < 360 ? 1 : 0 }}>
-              <ScrollView contentOffset={{ x: 0, y: scrollOffset.current }} scrollEventThrottle={16} onScroll={(event) => { scrollOffset.current = event.nativeEvent.contentOffset.y; }} contentContainerStyle={{ gap: 12, paddingTop: 12, paddingBottom: footer ? 28 : 12 }} keyboardShouldPersistTaps="handled">{children}</ScrollView>
+              <ScrollView ref={scroll} onLayout={(event) => keepFocusedInView(event.nativeEvent.layout.height)} contentOffset={{ x: 0, y: scrollOffset.current }} scrollEventThrottle={16} onScroll={(event) => { scrollOffset.current = event.nativeEvent.contentOffset.y; }} contentContainerStyle={{ gap: 12, paddingTop: 12, paddingBottom: footer ? 28 : 12 }} keyboardShouldPersistTaps="handled">{children}</ScrollView>
               {footer ? (
                 <Svg pointerEvents="none" width="100%" height={SHEET_FADE} style={styles.fade}>
                   <Defs><LinearGradient id="sheetFade" x1="0" y1="0" x2="0" y2="1"><Stop offset="0" stopColor={colors.card} stopOpacity={0} /><Stop offset="1" stopColor={colors.card} stopOpacity={1} /></LinearGradient></Defs>
@@ -711,8 +740,8 @@ const styles = StyleSheet.create({
   fab: { minHeight: 56, paddingVertical: 12, maxWidth: "100%", flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 20, borderRadius: 16, elevation: 6, shadowColor: "#000000", shadowOpacity: 0.35, shadowRadius: 12, shadowOffset: { width: 0, height: 6 } },
   toolbar: { flexDirection: "row", flexWrap: "wrap", gap: 8, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 12 },
   toolbarButton: { flexGrow: 1, flexBasis: "auto", minHeight: 52, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 12, paddingVertical: 10, borderRadius: RADIUS, borderWidth: 1 },
-  weekNav: { minHeight: 48, gap: 8, flexDirection: "row", borderRadius: RADIUS, borderWidth: 1, overflow: "hidden" },
-  weekStep: { width: 48, alignItems: "center", justifyContent: "center" },
+  stepNav: { minHeight: 48, gap: 8, flexDirection: "row", borderRadius: RADIUS, borderWidth: 1, overflow: "hidden" },
+  step: { width: 48, alignItems: "center", justifyContent: "center" },
   snackbar: { alignSelf: "stretch", minHeight: 48, flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8, paddingLeft: 14, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, elevation: 4, shadowColor: "#000000", shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 4 } },
   snackAction: { minHeight: 48, minWidth: 64, alignItems: "center", justifyContent: "center", paddingHorizontal: 14 }
 });

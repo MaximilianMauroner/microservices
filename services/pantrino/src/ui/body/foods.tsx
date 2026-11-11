@@ -102,7 +102,7 @@ function FoodSheet({ onClose, notify }: { onClose: () => void; notify: (notice: 
         <T weight="medium">{text.brand}</T>
         <Field accessibilityLabel={text.brand} value={brand} onChangeText={setBrand} maxLength={200} />
       </View>
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
         <T weight="medium">{text.perAmount}</T>
         <Field accessibilityLabel={text.amount} value={per} onChangeText={setPer} inputMode="decimal" style={{ width: 90 }} />
         <Field accessibilityLabel={text.unit} value={unit} onChangeText={setUnit} maxLength={40} style={{ width: 90 }} />
