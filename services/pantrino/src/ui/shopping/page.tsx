@@ -6,7 +6,7 @@ import { type ReactNode, useEffect, useState } from "react";
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import { StyleSheet, View } from "react-native";
 import type { OpenKitchen } from "../../state";
-import { Button, byGroup, Empty, FloatingButton, GroupDot, groupLabel, GroupLabel, GroupList, LIST_MOTION, Press, Screen, Snackbar, T, type Notice, weekLabel, WeekNav } from "../kit";
+import { Button, byGroup, Empty, FloatingButton, GroupDot, groupLabel, GroupLabel, GroupList, LIST_MOTION, Press, Screen, Snackbar, T, type Notice, weekLabel, StepNav } from "../kit";
 import { useLanguage, useText } from "../language";
 import { groupColor, useColors } from "../theme";
 import { ListRow } from "./row";
@@ -42,7 +42,7 @@ export function Shopping({ kitchen, today, planFrom, change }: OpenKitchen) {
       actions={
         <>
           {week === weekStart(today) ? null : <Button label={text.thisWeek} tone="outline" onPress={() => setWeek(weekStart(today))} />}
-          <WeekNav canGoBack={addDays(week, -7) >= planFrom} onStep={(step) => setWeek(addDays(week, 7 * step))} />
+          <StepNav canGoBack={addDays(week, -7) >= planFrom} onStep={(step) => setWeek(addDays(week, 7 * step))} />
         </>
       }
     >
