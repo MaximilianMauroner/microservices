@@ -72,7 +72,7 @@ export function IngredientSheet({ existing, newName, kitchen, change, onClose }:
             {INGREDIENT_UNITS.map((unit) => (
               <Press key={unit} accessibilityRole="radio" accessibilityState={{ checked: draft.unit === unit }}
                 onPress={() => setDraft((current) => ({ ...withUnit(current, unit, language), size: "", values: nutritionFields(existing?.nutrition, language) }))}
-                style={{ minHeight: 48, flex: 1, alignItems: "center", justifyContent: "center", borderRadius: 24, backgroundColor: draft.unit === unit ? hue : "transparent" }}>
+                style={{ minHeight: 48, flexGrow: 1, flexBasis: 80, alignItems: "center", justifyContent: "center", borderRadius: 24, backgroundColor: draft.unit === unit ? hue : "transparent" }}>
                 <T weight={draft.unit === unit ? "semibold" : "medium"} style={{ color: draft.unit === unit ? "#ffffff" : colors.mutedForeground }}>{unitName(unit, language)}</T>
               </Press>
             ))}
@@ -166,5 +166,5 @@ const styles = StyleSheet.create({
   section: { gap: 12, marginBottom: 12 },
   field: { gap: 6 },
   hint: { fontSize: 12 },
-  units: { flexDirection: "row", borderRadius: 26, padding: 4 },
+  units: { flexDirection: "row", flexWrap: "wrap", gap: 8, borderRadius: 26, padding: 4 },
 });

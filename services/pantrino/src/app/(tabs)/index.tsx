@@ -1,6 +1,6 @@
 import { KitchenScreen } from "../../ui/page";
-import { Week } from "../../ui/week/page";
+import { Today } from "../../ui/today/page";
 
-export default function WeekPage() {
-  return <KitchenScreen page="week">{(data) => <Week key={data.kitchen.kitchen.id} data={data} />}</KitchenScreen>;
+export default function TodayPage() {
+  return <KitchenScreen page="today">{(data) => <Today key={data.kitchen.kitchen.id} data={data} />}</KitchenScreen>;
 }

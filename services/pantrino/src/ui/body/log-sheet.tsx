@@ -89,9 +89,9 @@ export function HitRow({ hit, onPress, action }: { hit: SearchHit; onPress: () =
   const kcal = food?.nutrients.kcal;
   const detail = [hit.brand, kind, kcal != null && food ? `${formatNumber(kcal, language)} ${text.kcal} ${text.per(formatNumber(food.per, language), unitLabel(food.unit, language, food.per))}` : ""].filter(Boolean).join(" · ");
   return (
-    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+    <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
       <Press accessibilityRole="button" onPress={onPress}
-        style={({ pressed }) => ({ flex: 1, minHeight: 52, justifyContent: "center", gap: 2, paddingHorizontal: 8, paddingVertical: 6, borderRadius: 12, backgroundColor: pressed ? colors.muted : "transparent" })}>
+        style={({ pressed }) => ({ flexGrow: 1, flexBasis: 160, minHeight: 52, justifyContent: "center", gap: 2, paddingHorizontal: 8, paddingVertical: 6, borderRadius: 12, backgroundColor: pressed ? colors.muted : "transparent" })}>
         <T weight="medium">{hit.label}</T>
         <T muted style={{ fontSize: 12 }}>{detail}</T>
       </Press>
@@ -160,7 +160,7 @@ function Amount({ food, meal: startMeal, day, onBack, onClose, notify }: {
       <View accessibilityRole="radiogroup" accessibilityLabel={text.meal} style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
         {MEALS.map((one) => (
           <Press key={one} accessibilityRole="radio" accessibilityState={{ checked: meal === one }} onPress={() => setMeal(one)}
-            style={{ minHeight: 44, paddingHorizontal: 14, justifyContent: "center", borderRadius: 22, backgroundColor: meal === one ? hue : colors.muted }}>
+            style={{ minHeight: 48, paddingHorizontal: 14, justifyContent: "center", borderRadius: 22, backgroundColor: meal === one ? hue : colors.muted }}>
             <T weight="medium" style={{ fontSize: 14, color: meal === one ? "#ffffff" : colors.foreground }}>{text.meals[one]}</T>
           </Press>
         ))}
@@ -184,7 +184,7 @@ function Amount({ food, meal: startMeal, day, onBack, onClose, notify }: {
         })}
       </View> : null}
       {canSave ? (
-        <Press accessibilityRole="checkbox" accessibilityState={{ checked: save }} onPress={() => setSave(!save)} style={{ flexDirection: "row", alignItems: "center", gap: 10, minHeight: 44 }}>
+        <Press accessibilityRole="checkbox" accessibilityState={{ checked: save }} onPress={() => setSave(!save)} style={{ flexDirection: "row", alignItems: "center", gap: 10, minHeight: 48 }}>
           <View style={{ width: 22, height: 22, borderRadius: 6, borderWidth: save ? 0 : 1.5, borderColor: colors.controlBorder, backgroundColor: save ? hue : "transparent" }} />
           <T style={{ flex: 1 }}>{text.saveToFoods}</T>
         </Press>

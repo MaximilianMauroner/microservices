@@ -1,16 +1,16 @@
 import { formatAmount, type StockItem } from "@tools-platform/service/kitchen-contract";
-import { Check, Info, Plus, Trash2, Utensils } from "lucide-react-native";
-import { useRef, useState } from "react";
-import Animated, { FadeOut } from "react-native-reanimated";
+import { Check, Info, Plus, Utensils } from "lucide-react-native";
+import { useState } from "react";
 import { StyleSheet, View } from "react-native";
 import type { OpenKitchen } from "../../state";
 import type { QueuedAction } from "../../sync/model";
-import { Button, Empty, FloatingButton, groupLabel, GroupLabel, GroupList, LIST_MOTION, Press, Screen, Snackbar, T, type Notice, useByLabel } from "../kit";
+import { Button, Empty, FloatingButton, groupLabel, GroupLabel, GroupList, Press, Screen, Snackbar, T, type Notice, useKitText } from "../kit";
 import { useLanguage, useText } from "../language";
 import { groupColor, tint, useColors } from "../theme";
 import { IngredientSheet } from "../ingredients/ingredient-sheet";
 import { RowMenu, type SwipeAction, SwipeRow } from "../swipe-row";
 import { AddLeftoverSheet, AddStockSheet, AmountSheet } from "./sheets";
+import { LeftoverRow } from "./leftover-row";
 import { LocalModeNotice } from "../local-mode-notice";
 import { TEXT } from "./text";
 import { pantryShelves } from "./view";
@@ -19,9 +19,10 @@ import { compareText } from "../../compare";
 type OpenSheet = { type: "stock" } | { type: "leftover" } | { type: "ingredient"; id: string } | { type: "amount"; id: string };
 type Run = (action: QueuedAction, title: string, undo?: QueuedAction) => void;
 
-export function Pantry(data: OpenKitchen) {
+export function Pantry(data: OpenKitchen & { top?: React.ReactNode }) {
   const { kitchen, today, change } = data;
   const text = useText(TEXT);
+  const kitText = useKitText();
   const language = useLanguage();
   const colors = useColors();
   const [sheet, setSheet] = useState<OpenSheet>();
@@ -34,44 +35,22 @@ export function Pantry(data: OpenKitchen) {
   const viewing = sheet?.type === "ingredient" ? kitchen.ingredients.find((one) => one.id === sheet.id) : undefined;
   const sizing = sheet?.type === "amount" ? kitchen.stock.find((one) => one.ingredientId === sheet.id) : undefined;
   return (
-    <Screen
-      title={text.title}
+    <Screen top={data.top}
+      title={kitText.tabs.kitchen[0]}
       facts={`${text.inStock(kitchen.stock.length)}${leftovers.length ? text.toUseFirst(leftovers.length) : ""}`}
       floating={<Snackbar notice={notice} onUndo={change} onDone={() => setNotice(null)} />}
       fab={<FloatingButton icon={Plus} label={text.addToStock} onPress={() => setSheet({ type: "stock" })} />}
     >
       <LocalModeNotice />
       <View style={{ gap: 8 }}>
-        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
           <T weight="semibold" accessibilityRole="header" style={{ fontSize: 18 }}>
             {text.useFirst}
           </T>
           <Button tone="outline" icon={Utensils} label={text.addLeftover} onPress={() => setSheet({ type: "leftover" })} />
         </View>
         {leftovers.length ? (
-          leftovers.map((leftover) => {
-            const label = useByLabel(leftover.useBy, today, language);
-            const back: QueuedAction = { type: "leftover.add", name: leftover.name, servings: leftover.servings, useBy: leftover.useBy };
-            const eat = () => run({ type: "leftover.eat", id: leftover.id, servings: Math.min(1, leftover.servings) }, text.ate(leftover.name), leftover.servings <= 1 ? back : undefined);
-            const remove = () => run({ type: "leftover.remove", id: leftover.id }, text.thrownAway(leftover.name), back);
-            return (
-              <Animated.View key={leftover.id} layout={LIST_MOTION} exiting={FadeOut.duration(140)} style={{ borderRadius: 16, overflow: "hidden" }}>
-                <SwipeRow key={leftover.servings}
-                  right={{ label: text.ateOne, icon: Check, color: colors.pageInk.home, run: eat }}
-                  left={{ label: text.throwAway, icon: Trash2, color: colors.destructive, run: remove }}
-                >
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 10, paddingLeft: 14, paddingRight: 4, backgroundColor: colors.card }}>
-                    <View style={{ flex: 1, gap: 2 }}>
-                      <T weight="medium">{leftover.name}<T muted style={{ fontSize: 13 }}>{`  ${text.servings(leftover.servings)}`}</T></T>
-                      <T style={{ fontSize: 13, color: label.urgent ? colors.destructive : colors.mutedForeground }}>{label.text}</T>
-                    </View>
-                    <EatButton onEat={eat} />
-                    <RowMenu name={leftover.name} actions={[{ label: text.throwAway, icon: Trash2, color: colors.destructive, run: remove }]} />
-                  </View>
-                </SwipeRow>
-              </Animated.View>
-            );
-          })
+          leftovers.map((leftover) => <LeftoverRow key={`${leftover.id}:${leftover.servings}`} leftover={leftover} today={today} change={change} notify={setNotice} />)
         ) : (
           <View
             style={{ borderWidth: 1, borderStyle: "dashed", borderColor: colors.border, borderRadius: 16, padding: 20 }}
@@ -122,20 +101,6 @@ export function Pantry(data: OpenKitchen) {
   );
 }
 
-function EatButton({ onEat }: { onEat: () => void }) {
-  const text = useText(TEXT);
-  const [pending, setPending] = useState(false);
-  const acted = useRef(false);
-  return (
-    <Button tone="outline" icon={Check} label={text.ateOne} disabled={pending} onPress={() => {
-      if (acted.current) return;
-      acted.current = true;
-      setPending(true);
-      onEat();
-    }} />
-  );
-}
-
 function StockRow({ item, background, run, onAmount, onOpen }: { item: StockItem; background: string; run: Run; onAmount: () => void; onOpen: () => void }) {
   const language = useLanguage();
   const colors = useColors();
@@ -146,7 +111,7 @@ function StockRow({ item, background, run, onAmount, onOpen }: { item: StockItem
       ingredientId: item.ingredientId,
       amount: item.amount,
     });
-  const used: SwipeAction = { label: text.usedUp, icon: Check, color: colors.pageInk.home, run: usedUp };
+  const used: SwipeAction = { label: text.usedUp, icon: Check, color: colors.pageInk.kitchen, run: usedUp };
   const details: SwipeAction = { label: text.details, icon: Info, color: colors.foreground, run: onOpen };
   return (
     <SwipeRow right={used}>
@@ -160,7 +125,7 @@ function StockRow({ item, background, run, onAmount, onOpen }: { item: StockItem
           onPress={onAmount}
           style={({ pressed }) => [styles.row, pressed && { opacity: 0.7 }]}
         >
-          <T weight="medium" style={{ flex: 1 }}>{item.ingredient}</T>
+          <T weight="medium" style={{ flexGrow: 1, flexBasis: 150 }}>{item.ingredient}</T>
           <T weight="semibold" style={{ fontSize: 15 }}>{formatAmount(item.amount, item.unit, language)}</T>
         </Press>
         <RowMenu name={item.ingredient} actions={[used, details]} />
@@ -171,5 +136,5 @@ function StockRow({ item, background, run, onAmount, onOpen }: { item: StockItem
 
 const styles = StyleSheet.create({
   line: { flexDirection: "row", alignItems: "center", paddingRight: 4 },
-  row: { flex: 1, minHeight: 56, flexDirection: "row", alignItems: "center", gap: 12, paddingLeft: 14, paddingVertical: 8 },
+  row: { flex: 1, minHeight: 56, flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 12, paddingLeft: 14, paddingVertical: 8 },
 });

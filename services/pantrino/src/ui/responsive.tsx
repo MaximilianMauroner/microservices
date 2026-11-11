@@ -1,7 +1,9 @@
-import { createContext, useContext, useMemo } from "react";
-import { useWindowDimensions } from "react-native";
+import { useFocusEffect } from "expo-router";
+import { createContext, isValidElement, useCallback, useContext, useEffect, useMemo } from "react";
+import { BackHandler, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { windowLayout, type WindowLayout } from "./layout";
+import Animated, { ReduceMotion, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
+import { paneWidths, windowLayout, type WindowLayout } from "./layout";
 
 export const ContentLayoutContext = createContext<WindowLayout | null>(null);
 
@@ -16,4 +18,38 @@ export function useContentLayout(): WindowLayout {
   const layout = useContext(ContentLayoutContext);
   if (!layout) throw new Error("useContentLayout needs ContentLayoutContext.");
   return layout;
+}
+
+/**
+ * `onBack` closes the open detail pane. A compact window shows the detail as a modal or a route, which handle Back already,
+ * except for a `replace` detail that was picked in a wide window, because it stays in place when the window gets narrow.
+ */
+export function Workspace({ children, detail, replace = false, selected = false, onBack }: {
+  children: React.ReactNode; detail: React.ReactNode; replace?: boolean; selected?: boolean; onBack?: () => void;
+}) {
+  const layout = useContentLayout();
+  const wide = layout.panes > 1;
+  const inPlace = wide || (replace && selected);
+  useFocusEffect(useCallback(() => {
+    if (!inPlace || !onBack) return;
+    const subscription = BackHandler.addEventListener("hardwareBackPress", () => { onBack(); return true; });
+    return () => subscription.remove();
+  }, [inPlace, onBack]));
+  const [left, right] = paneWidths(layout);
+  const opacity = useSharedValue(1);
+  const detailKey = isValidElement(detail) ? detail.key : null;
+  useEffect(() => {
+    opacity.value = 0;
+    opacity.value = withTiming(1, { duration: 200, reduceMotion: ReduceMotion.Never });
+  }, [wide, detailKey, opacity]);
+  const fade = useAnimatedStyle(() => ({ opacity: opacity.value }));
+  const inPane = (width: number): WindowLayout => ({ ...layout, panes: 1, railWidth: 0, contentWidth: Math.max(0, Math.min(720, width - 2 * layout.gutter)) });
+  return <View style={{ flex: 1, flexDirection: "row" }}>
+    <View style={wide ? { width: left } : { flex: 1, display: replace && selected ? "none" : "flex" }}>
+      <ContentLayoutContext value={wide ? inPane(left) : layout}>{children}</ContentLayoutContext>
+    </View>
+    <Animated.View style={[wide ? { width: right } : replace && selected ? { flex: 1 } : { position: "absolute", width: 0, height: 0 }, fade]}>
+      <ContentLayoutContext value={wide ? inPane(right) : layout}>{detail}</ContentLayoutContext>
+    </Animated.View>
+  </View>;
 }
