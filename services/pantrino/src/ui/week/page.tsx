@@ -16,7 +16,7 @@ import { AddLeftoverSheet } from "../home/sheets";
 import { EntrySheet, MealMenu, PlanSheet } from "./sheets";
 import { TEXT } from "./text";
 
-type Selection = { kind: "plan"; day?: string; meal?: Meal } | { kind: "entry" | "menu"; id: string };
+type Selection = { kind: "plan"; day?: string; meal?: Meal } | { kind: "entry" | "menu"; id: string } | { kind: "leftover"; name: string };
 
 /** Touches this close to the side of the day list do not start a week swipe, so the system back gesture keeps working. */
 const EDGE = 24;
@@ -31,13 +31,12 @@ export function Week({ data }: { data: OpenKitchen }) {
   const wide = useContentLayout().panes > 1;
   const [requested, setRequested] = useState(() => weekStart(today));
   const [selection, setSelection] = useState<Selection | null>(null);
-  const [leftoverName, setLeftoverName] = useState<string>();
   const [notice, setNotice] = useState<Notice | null>(null);
   const week = useMemo(() => buildWeek(snapshot, requested, planFrom), [snapshot, requested, planFrom]);
   const recipes = new Map(week.recipes.map((recipe) => [recipe.id, recipe]));
   const title = weekLabel(week.start, today, language);
   const range = weekRange(week.start, language);
-  const entry = selection && selection.kind !== "plan" ? week.entries.find((one) => one.id === selection.id) : undefined;
+  const entry = selection?.kind === "entry" || selection?.kind === "menu" ? week.entries.find((one) => one.id === selection.id) : undefined;
   const close = () => setSelection(null);
   const turn = (step: -1 | 0 | 1) => {
     if (step === 1 || (step === -1 && week.canGoBack)) setRequested(addDays(week.start, 7 * step));
@@ -58,7 +57,7 @@ export function Week({ data }: { data: OpenKitchen }) {
     : entry && selection?.kind === "entry" ? <EntrySheet key={entry.id} presentation={wide ? "pane" : "sheet"} entry={entry} data={data} onClose={close} notify={setNotice} />
     : wide ? <Pane title={text.planAMeal}><T muted>{text.pickDay}</T></Pane> : null;
   return (
-    <Workspace detail={detail}>
+    <Workspace detail={detail} onBack={selection?.kind === "plan" || selection?.kind === "entry" ? close : undefined}>
       <Screen title={title}
         facts={`${title === range ? "" : `${range} · `}${week.entries.length ? text.plannedFacts(week.entries.length, week.cooked) : text.nothingPlanned}`}
         floating={<Snackbar notice={notice} onUndo={change} onDone={() => setNotice(null)} />}
@@ -93,7 +92,7 @@ export function Week({ data }: { data: OpenKitchen }) {
                 <View key={day} style={[styles.day, { borderBottomColor: colors.border, paddingVertical: past ? 0 : 12 }]}>
                   <View style={[styles.date, past && { minHeight: 48, justifyContent: "center", paddingTop: 0 }]}>
                     {past ? <T muted style={{ fontSize: 13 }}>{`${parts.weekday} ${parts.number}`}</T> : <>
-                    <T weight={isToday ? "semibold" : "medium"} style={[styles.small, { color: isToday ? page.ink : colors.mutedForeground }]}>{isToday ? text.today : parts.weekday}</T>
+                    <T weight={isToday ? "semibold" : "medium"} numberOfLines={1} adjustsFontSizeToFit style={[styles.small, { color: isToday ? page.ink : colors.mutedForeground }]}>{isToday ? text.today : parts.weekday}</T>
                     <View style={[styles.number, isToday && { backgroundColor: page.hue }]}>
                       <T weight="medium" style={{ fontSize: 26, color: isToday ? "#ffffff" : past ? colors.mutedForeground : colors.foreground }}>{parts.number}</T>
                     </View>
@@ -131,7 +130,7 @@ export function Week({ data }: { data: OpenKitchen }) {
                       );
                     })}
                     {!entries.length && !past ? <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-                      {(["lunch", "dinner"] as const).map((meal) => <Button key={meal} tone="outline" icon={Plus} label={text.meals[meal]}
+                      {(["lunch", "dinner"] as const).map((meal) => <Button key={meal} tone="outline" compact icon={Plus} label={text.meals[meal]}
                         accessibilityLabel={`${text.planMeal(parts.weekdayLong, parts.dayMonth)}, ${text.meals[meal]}`}
                         onPress={() => setSelection({ kind: "plan", day, meal })} />)}
                     </View> : null}
@@ -141,8 +140,8 @@ export function Week({ data }: { data: OpenKitchen }) {
             })}
           </Animated.View>
         </GestureDetector>
-        {leftoverName !== undefined ? <AddLeftoverSheet {...data} initialName={leftoverName} onClose={() => setLeftoverName(undefined)} /> : null}
-        {entry && selection?.kind === "menu" ? <MealMenu onLeftovers={setLeftoverName} key={entry.id} entry={entry} data={data} onClose={close} notify={setNotice} /> : null}
+        {selection?.kind === "leftover" ? <AddLeftoverSheet {...data} initialName={selection.name} onClose={close} /> : null}
+        {entry && selection?.kind === "menu" ? <MealMenu onLeftovers={(name) => setSelection({ kind: "leftover", name })} key={entry.id} entry={entry} data={data} onClose={close} notify={setNotice} /> : null}
       </Screen>
     </Workspace>
   );

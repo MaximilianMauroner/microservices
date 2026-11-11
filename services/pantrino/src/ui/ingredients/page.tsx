@@ -1,5 +1,5 @@
 import { formatNumber, ingredientGroups, isCountedUnit, unitName, type Ingredient } from "@tools-platform/service/kitchen-contract";
-import { useLocalSearchParams } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { ChevronRight, ListOrdered, Plus } from "lucide-react-native";
 import { useEffect, useState } from "react";
 import { View } from "react-native";
@@ -36,7 +36,10 @@ export function Ingredients({ data, top }: { data: OpenKitchen; top?: React.Reac
   const groups = byGroup(kitchen.kitchen.groups, matches.flatMap((ingredient) => ingredientGroups(ingredient).map((group) => ({ group, ingredient }))), (entry) => entry.group);
   const missing = ingredients.filter((one) => one.nutrition.kcal === null).length;
   const shared = ingredients.filter((one) => one.otherGroups.length > 0).length;
-  const close = () => setEditing(null);
+  const close = () => {
+    setEditing(null);
+    if (asked) router.setParams({ open: undefined });
+  };
   const create = (name: string) => setEditing({ kind: "ingredient", name });
 
   return (

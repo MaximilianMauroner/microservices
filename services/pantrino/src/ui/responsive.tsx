@@ -1,5 +1,6 @@
-import { createContext, isValidElement, useContext, useEffect, useMemo } from "react";
-import { View, useWindowDimensions } from "react-native";
+import { useFocusEffect } from "expo-router";
+import { createContext, isValidElement, useCallback, useContext, useEffect, useMemo } from "react";
+import { BackHandler, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, { ReduceMotion, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import { paneWidths, windowLayout, type WindowLayout } from "./layout";
@@ -19,11 +20,17 @@ export function useContentLayout(): WindowLayout {
   return layout;
 }
 
-export function Workspace({ children, detail, replace = false, selected = false }: {
-  children: React.ReactNode; detail: React.ReactNode; replace?: boolean; selected?: boolean;
+/** `onBack` closes the open detail pane. A compact window shows the detail as a modal or a route, which handle Back already. */
+export function Workspace({ children, detail, replace = false, selected = false, onBack }: {
+  children: React.ReactNode; detail: React.ReactNode; replace?: boolean; selected?: boolean; onBack?: () => void;
 }) {
   const layout = useContentLayout();
   const wide = layout.panes > 1;
+  useFocusEffect(useCallback(() => {
+    if (!wide || !onBack) return;
+    const subscription = BackHandler.addEventListener("hardwareBackPress", () => { onBack(); return true; });
+    return () => subscription.remove();
+  }, [wide, onBack]));
   const [left, right] = paneWidths(layout);
   const opacity = useSharedValue(1);
   const detailKey = isValidElement(detail) ? detail.key : null;
