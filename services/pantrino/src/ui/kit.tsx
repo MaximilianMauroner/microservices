@@ -1,10 +1,10 @@
 import { byGroupOrder, addDays, UNSORTED_SECTION } from "@tools-platform/service/kitchen-contract";
 import { CalendarDays, ChevronLeft, ChevronRight, CookingPot, type LucideIcon, Search, ShoppingBasket, Sun, UserRound, X } from "lucide-react-native";
 import { router, useFocusEffect } from "expo-router";
-import { Children, createContext, isValidElement, type ReactNode, useCallback, useContext, useEffect, useReducer, useRef, useState } from "react";
+import { Children, createContext, isValidElement, type ReactNode, type RefObject, useCallback, useContext, useEffect, useReducer, useRef, useState } from "react";
 import { AccessibilityInfo, Alert, KeyboardAvoidingView, Modal, Platform, Pressable, type PressableProps, type PressableStateCallbackType, FlatList, RefreshControl, type RefreshControlProps, ScrollView, StyleSheet, Text, type TextProps, TextInput, type TextInputProps, View, type ViewStyle } from "react-native";
 import { GestureDetector, GestureHandlerRootView, usePanGesture } from "react-native-gesture-handler";
-import Animated, { FadeIn, FadeOut, LinearTransition, useAnimatedStyle, useSharedValue, withSpring, withTiming } from "react-native-reanimated";
+import Animated, { FadeIn, FadeOut, LinearTransition, ReduceMotion, useReducedMotion, useAnimatedStyle, useSharedValue, withSpring, withTiming } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { scheduleOnRN } from "react-native-worklets";
 import Svg, { Circle, Defs, LinearGradient, Rect, Stop } from "react-native-svg";
@@ -102,7 +102,7 @@ export function Press({ style, ripple, feel, onPress, ...props }: PressableProps
   const toggles = props.accessibilityRole === "checkbox" || props.accessibilityRole === "radio" || props.accessibilityRole === "switch";
   return (
     <Pressable android_ripple={{ color: ripple ?? colors.ripple, foreground: true }}
-      style={typeof style === "function" ? (state: PressableStateCallbackType) => style({ ...state, pressed: fade && state.pressed }) : style} {...props}
+      style={typeof style === "function" ? (state: PressableStateCallbackType) => [{ minHeight: 48, minWidth: 48 }, style({ ...state, pressed: fade && state.pressed })] : [{ minHeight: 48, minWidth: 48 }, style]} {...props}
       onPress={onPress && ((event) => { if (feel !== null) haptic(feel ?? (toggles ? "toggle" : "tap")); onPress(event); })} />
   );
 }
@@ -116,22 +116,14 @@ export function T({ weight = "regular", muted, style, ...props }: TextProps & { 
 /** A food group on a page: its label, then its rows in one panel of its color. */
 export type ListGroup = Readonly<{ key: string; label: string; color: string; count?: number; rows: readonly Readonly<{ key: string; node: ReactNode }>[] }>;
 
-/**
- * One kitchen page: the title row and the page content, scrollable, with room for the tab bar. Pull down to sync.
- * `back` puts the way back above the title, where phone apps keep it. A tab page puts its one main action in `fab`,
- * a floating button above the tab bar. A page opened from a tab hides the tab bar and puts its actions in `toolbar`,
- * docked at the bottom (Material 3 shows a toolbar and the tab bar never together). `floating` holds the snackbar.
- * A page with a long list passes it as `groups`, after `children`. Only the rows near the screen exist, so the page
- * opens fast, but a change to the list costs more than on a plain page, and its rows do not move when the list changes.
- */
-export function Screen({ title, facts, actions, back, fab, toolbar, floating, groups, children, top }: {
+export function Screen({ title, facts, actions, back, fab, toolbar, floating, groups, children, top, fullWidth = false }: {
   title: ReactNode; facts?: ReactNode; actions?: ReactNode; back?: { label: string; onPress: () => void }; fab?: ReactNode; toolbar?: ReactNode; floating?: ReactNode;
-  groups?: readonly ListGroup[]; children?: ReactNode; top?: ReactNode;
+  groups?: readonly ListGroup[]; children?: ReactNode; top?: ReactNode; fullWidth?: boolean;
 }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const layout = useContentLayout();
-  const contentWidth = groups ? Math.min(800, layout.contentWidth) : layout.contentWidth;
+  const contentWidth = fullWidth ? layout.contentWidth : Math.min(720, layout.contentWidth);
   const contentStyle: ViewStyle = {
     width: "100%", maxWidth: contentWidth + 2 * layout.gutter, alignSelf: "center", paddingHorizontal: layout.gutter,
     paddingBottom: (fab ? FAB_ROOM : 32) + (toolbar ? 0 : layout.bottomInset),
@@ -146,7 +138,7 @@ export function Screen({ title, facts, actions, back, fab, toolbar, floating, gr
         </Press>
       ) : null}
       <View style={styles.header}>
-        <View style={{ flexShrink: 1 }}>
+        <View style={{ flexGrow: 1, flexBasis: 120, minWidth: 0 }}>
           {typeof title === "string" ? <T weight="semibold" style={styles.title}>{title}</T> : title}
           {facts ? (typeof facts === "string" ? <T muted style={{ marginTop: 6, fontSize: 14 }}>{facts}</T> : facts) : null}
         </View>
@@ -231,7 +223,7 @@ export function ToolbarButton({ label, icon: Icon, onPress, tone = "primary" }: 
     <Press accessibilityRole="button" accessibilityLabel={label} onPress={onPress} feel={tone === "primary" ? "firm" : "tap"} ripple={tone === "primary" ? ON_COLOR_RIPPLE : undefined}
       style={({ pressed }) => [styles.toolbarButton, look, pressed && { opacity: 0.8 }]}>
       <Icon size={20} color={look.color} />
-      <T weight="semibold" textBreakStrategy="simple" style={{ color: look.color, fontSize: 16 }}>{label}</T>
+      <T weight="semibold" textBreakStrategy="simple" style={{ color: look.color, fontSize: 16, flexShrink: 1, textAlign: "center" }}>{label}</T>
     </Press>
   );
 }
@@ -317,13 +309,13 @@ export function Snackbar({ notice, onUndo, onDone }: { notice: Notice | null; on
   return (
     <GestureDetector gesture={away}>
       <Animated.View accessibilityLiveRegion="polite" style={[styles.snackbar, { backgroundColor: result ? tint(colors.destructive, 14, colors.card) : colors.muted, borderColor: result ? colors.destructive : colors.border }, slide]}>
-        <T style={{ flex: 1, fontSize: 14, paddingVertical: 10 }}>{shown.message}</T>
-        {shown.action ? <Press accessibilityRole="button" onPress={() => { onDone(); shown.action!.run(); }} style={styles.snackAction}><T weight="semibold" style={{ color: pageInk }}>{shown.action.label}</T></Press> : null}
+        <T style={{ flexGrow: 1, flexBasis: 180, fontSize: 14, paddingVertical: 10 }}>{shown.message}</T>
         {shown.undo ? (
           <Press accessibilityRole="button" onPress={() => { shown.undo!.forEach(onUndo); onDone(); }} style={styles.snackAction}>
             <T weight="semibold" style={{ color: pageInk }}>{text.undo}</T>
           </Press>
         ) : null}
+        {shown.action ? <Press accessibilityRole="button" onPress={() => { onDone(); shown.action!.run(); }} style={styles.snackAction}><T weight="semibold" style={{ color: pageInk }}>{shown.action.label}</T></Press> : null}
       </Animated.View>
     </GestureDetector>
   );
@@ -381,27 +373,26 @@ export function Button({ label, onPress, tone = "primary", icon: Icon, disabled,
 }) {
   const colors = useColors();
   const { hue } = usePageColor();
-  const look = disabled ? disabledLook(tone, colors, hue) : buttonLook(tone, colors, hue);
+  const look = disabled ? disabledLook(tone, colors) : buttonLook(tone, colors, hue);
   return (
     <Press
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
       disabled={disabled}
       accessibilityState={{ disabled }}
-      hitSlop={compact ? 4 : undefined}
       onPress={onPress}
       ripple={tone === "primary" && !disabled ? ON_COLOR_RIPPLE : undefined}
       feel={tone === "primary" ? "firm" : tone === "destructive" ? "warn" : "tap"}
-      style={({ pressed }) => [styles.button, wide && styles.wide, compact && { height: 40, paddingHorizontal: label ? 12 : 0, width: label ? undefined : 40 }, look, pressed && { opacity: 0.8 }]}
+      style={({ pressed }) => [styles.button, wide && styles.wide, compact && { paddingHorizontal: label ? 12 : 0, minWidth: 48 }, look, pressed && { opacity: 0.8 }]}
     >
       {Icon ? <Icon size={18} color={look.color} /> : null}
-      {label ? <T weight="medium" style={{ color: look.color, fontSize: 15 }}>{label}</T> : null}
+      {label ? <T weight="medium" style={{ color: look.color, fontSize: 15, flexShrink: 1, textAlign: "center" }}>{label}</T> : null}
     </Press>
   );
 }
 
 /** A disabled button in the Material 3 colors: the text at 38 percent and a filled button's container at 12 percent of the text color. */
-function disabledLook(tone: ButtonTone, colors: Colors, hue: string): ViewStyle & { color: string } {
+function disabledLook(tone: ButtonTone, colors: Colors): ViewStyle & { color: string } {
   const container = tint(colors.foreground, 12, colors.background);
   const content = tint(colors.foreground, 38, colors.background);
   if (tone === "primary") return { backgroundColor: container, borderColor: container, color: content };
@@ -435,7 +426,7 @@ export function GroupLabel({ color, children, count }: { color: string; children
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 4, marginBottom: 8 }}>
       <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: color }} />
-      <T weight="semibold" numberOfLines={1} style={{ color: text, flexShrink: 1 }}>{children}</T>
+      <T weight="semibold" style={{ color: text, flexShrink: 1 }}>{children}</T>
       {count ? <T weight="medium" style={{ color: text, opacity: 0.75, fontSize: 14 }}>{count}</T> : null}
     </View>
   );
@@ -512,14 +503,33 @@ export function PlateRing({ groups, sections, size = 32 }: { groups: readonly st
 /** How far down, or how fast, a drag on the sheet top must go for the release to close the sheet. */
 const SHEET_CLOSE = { distance: 120, velocity: 900 };
 
-/**
- * A bottom sheet in the color of the open page, like the web Kitchen sheets on a phone. The dim backdrop fades in and
- * only the sheet slides up, as native sheets do. A drag down on its handle and title, a tap on the backdrop, the close
- * button, and Android back slide it down before it closes. The drag starts only on the top, so it never fights the
- * scroll of the sheet content.
- */
-/** `onDismiss` runs on iOS once the sheet has fully closed, so a following sheet can open. */
-export function Sheet({ open, onClose, onDismiss, title, description, children, footer }: { open: boolean; onClose: () => void; onDismiss?: () => void; title: string; description?: string; children: ReactNode; footer?: ReactNode }) {
+/** iOS must finish dismissing a modal before it can open the next one through `onDismiss`. */
+type SheetProps = { open: boolean; onClose: () => void; onDismiss?: () => void; title: string; description?: string; children: ReactNode; footer?: ReactNode };
+
+export function Sheet({ presentation = "sheet", ...props }: SheetProps & { presentation?: "sheet" | "pane" }) {
+  const scrollOffset = useRef(0);
+  return presentation === "pane" ? (props.open ? <Pane {...props} scrollOffset={scrollOffset} /> : null) : <ModalSheet {...props} scrollOffset={scrollOffset} />;
+}
+
+export function Pane({ title, description, children, footer, onClose, scrollOffset }: Omit<SheetProps, "open" | "onClose"> & { onClose?: () => void; scrollOffset?: RefObject<number> }) {
+  const colors = useColors();
+  const text = useKitText();
+  return <View style={{ flex: 1, backgroundColor: colors.card, borderLeftWidth: StyleSheet.hairlineWidth, borderLeftColor: colors.border }}>
+    <ScrollView keyboardShouldPersistTaps="handled" contentOffset={{ x: 0, y: scrollOffset?.current ?? 0 }} scrollEventThrottle={16}
+      onScroll={(event) => { if (scrollOffset) scrollOffset.current = event.nativeEvent.contentOffset.y; }}
+      contentContainerStyle={{ padding: 16, gap: 12, maxWidth: 752, alignSelf: "center", width: "100%" }}>
+      <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
+        <View style={{ flex: 1, gap: 4 }}><T weight="semibold" style={{ fontSize: 22 }}>{title}</T>{description ? <T muted>{description}</T> : null}</View>
+        {onClose ? <Button tone="ghost" icon={X} accessibilityLabel={text.close} onPress={onClose} /> : null}
+      </View>
+      {children}
+    </ScrollView>
+    {footer ? <View style={{ padding: 16, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>{footer}</View> : null}
+  </View>;
+}
+
+function ModalSheet({ open, onClose, onDismiss, title, description, children, footer, scrollOffset }: SheetProps & { scrollOffset: RefObject<number> }) {
+  const reducedMotion = useReducedMotion();
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const layout = useWindowLayout();
@@ -529,10 +539,10 @@ export function Sheet({ open, onClose, onDismiss, title, description, children, 
   useEffect(() => {
     if (!open) return;
     drop.value = height.value;
-    drop.value = withTiming(0, { duration: 260 });
-  }, [open, drop, height]);
+    drop.value = withTiming(0, { duration: reducedMotion ? 200 : 260, reduceMotion: ReduceMotion.Never });
+  }, [open, drop, height, reducedMotion]);
   const dismiss = useCallback(() => {
-    drop.value = withTiming(height.value, { duration: 200 }, (finished) => { if (finished) scheduleOnRN(onClose); });
+    drop.value = withTiming(height.value, { duration: 200, reduceMotion: ReduceMotion.Never }, (finished) => { if (finished) scheduleOnRN(onClose); });
   }, [drop, height, onClose]);
   const drag = usePanGesture({
     activeOffsetY: 8,
@@ -543,7 +553,7 @@ export function Sheet({ open, onClose, onDismiss, title, description, children, 
       else drop.value = withSpring(0, { damping: 20, stiffness: 240 });
     },
   });
-  const follow = useAnimatedStyle(() => ({ transform: [{ translateY: drop.value }] }));
+  const follow = useAnimatedStyle(() => reducedMotion ? { opacity: 1 - Math.min(drop.value / height.value, 1) } : { transform: [{ translateY: drop.value }] });
   const dim = useAnimatedStyle(() => ({ opacity: 1 - Math.min(drop.value / height.value, 1) }));
   return (
     <Modal visible={open} transparent animationType="fade" statusBarTranslucent navigationBarTranslucent onRequestClose={dismiss} onDismiss={onDismiss}
@@ -556,7 +566,7 @@ export function Sheet({ open, onClose, onDismiss, title, description, children, 
           </Animated.View>
           <Animated.View onLayout={(event) => { height.value = event.nativeEvent.layout.height; }}
             style={[styles.sheet, {
-              backgroundColor: colors.card, borderColor: colors.border, width: layout.sheetWidth,
+              backgroundColor: colors.card, borderColor: colors.border, width: layout.sheetWidth, height: layout.usableWidth < 360 ? "100%" : undefined,
               alignSelf: "center", marginLeft: insets.left, marginRight: insets.right,
               marginBottom: layout.sheetGap ? insets.bottom + layout.sheetGap : 0,
               borderRadius: layout.sheetGap ? 24 : undefined,
@@ -574,8 +584,8 @@ export function Sheet({ open, onClose, onDismiss, title, description, children, 
                 </View>
               </View>
             </GestureDetector>
-            <View style={{ flexShrink: 1 }}>
-              <ScrollView contentContainerStyle={{ gap: 12, paddingTop: 12, paddingBottom: footer ? 28 : 12 }} keyboardShouldPersistTaps="handled">{children}</ScrollView>
+            <View style={{ flexShrink: 1, flexGrow: layout.usableWidth < 360 ? 1 : 0 }}>
+              <ScrollView contentOffset={{ x: 0, y: scrollOffset.current }} scrollEventThrottle={16} onScroll={(event) => { scrollOffset.current = event.nativeEvent.contentOffset.y; }} contentContainerStyle={{ gap: 12, paddingTop: 12, paddingBottom: footer ? 28 : 12 }} keyboardShouldPersistTaps="handled">{children}</ScrollView>
               {footer ? (
                 <Svg pointerEvents="none" width="100%" height={SHEET_FADE} style={styles.fade}>
                   <Defs><LinearGradient id="sheetFade" x1="0" y1="0" x2="0" y2="1"><Stop offset="0" stopColor={colors.card} stopOpacity={0} /><Stop offset="1" stopColor={colors.card} stopOpacity={1} /></LinearGradient></Defs>
@@ -682,21 +692,21 @@ export function mainGroup(groups: readonly string[], sections: readonly string[]
 const styles = StyleSheet.create({
   page: { paddingTop: 8, gap: 16 },
   header: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", flexWrap: "wrap", gap: 12 },
-  title: { fontSize: 32, lineHeight: 34, letterSpacing: -0.6 },
+  title: { fontSize: 32, letterSpacing: -0.6 },
   empty: { alignItems: "center", gap: 12, borderWidth: 1, borderStyle: "dashed", borderRadius: 16, paddingHorizontal: 24, paddingVertical: 40 },
-  wide: { flexGrow: 1, height: 52 },
-  button: { height: 48, paddingHorizontal: 16, borderRadius: RADIUS, borderWidth: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
+  wide: { flexGrow: 1, minHeight: 52 },
+  button: { minHeight: 48, minWidth: 48, paddingVertical: 10, maxWidth: "100%", paddingHorizontal: 16, borderRadius: RADIUS, borderWidth: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
   sheet: { maxHeight: "100%", flexShrink: 1, borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 16 },
   sheetFooter: { flexDirection: "row", flexWrap: "wrap", gap: 8, justifyContent: "flex-end", marginHorizontal: -16, paddingHorizontal: 16, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth },
   back: { flexDirection: "row", alignItems: "center", gap: 4, alignSelf: "flex-start", minHeight: 48, marginLeft: -6, marginBottom: -8 },
   field: { minHeight: 48, borderWidth: 1, borderRadius: RADIUS, paddingHorizontal: 12, fontFamily: FONT.regular, fontSize: 16 },
   fade: { position: "absolute", left: 0, right: 0, bottom: 0 },
   floating: { position: "absolute", left: 16, right: 16, bottom: 16, alignItems: "flex-end", gap: 12 },
-  fab: { height: 56, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 20, borderRadius: 16, elevation: 6, shadowColor: "#000000", shadowOpacity: 0.35, shadowRadius: 12, shadowOffset: { width: 0, height: 6 } },
-  toolbar: { flexDirection: "row", gap: 8, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 12 },
-  toolbarButton: { flex: 1, minHeight: 52, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 12, paddingVertical: 10, borderRadius: RADIUS, borderWidth: 1 },
-  weekNav: { height: 48, flexDirection: "row", borderRadius: RADIUS, borderWidth: 1, overflow: "hidden" },
+  fab: { minHeight: 56, paddingVertical: 12, maxWidth: "100%", flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 20, borderRadius: 16, elevation: 6, shadowColor: "#000000", shadowOpacity: 0.35, shadowRadius: 12, shadowOffset: { width: 0, height: 6 } },
+  toolbar: { flexDirection: "row", flexWrap: "wrap", gap: 8, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 12 },
+  toolbarButton: { flexGrow: 1, flexBasis: 120, minHeight: 52, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 12, paddingVertical: 10, borderRadius: RADIUS, borderWidth: 1 },
+  weekNav: { minHeight: 48, gap: 8, flexDirection: "row", borderRadius: RADIUS, borderWidth: 1, overflow: "hidden" },
   weekStep: { width: 48, alignItems: "center", justifyContent: "center" },
-  snackbar: { alignSelf: "stretch", minHeight: 48, flexDirection: "row", alignItems: "center", gap: 8, paddingLeft: 14, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, elevation: 4, shadowColor: "#000000", shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 4 } },
+  snackbar: { alignSelf: "stretch", minHeight: 48, flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8, paddingLeft: 14, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, elevation: 4, shadowColor: "#000000", shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 4 } },
   snackAction: { minHeight: 48, minWidth: 64, alignItems: "center", justifyContent: "center", paddingHorizontal: 14 }
 });

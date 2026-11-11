@@ -13,4 +13,3 @@ export function useSyncAlert(): { label: string; warn: boolean } | null {
   if (pending && status.kind !== "syncing") return { label: text.unsent(pending), warn: false };
   return null;
 }
-

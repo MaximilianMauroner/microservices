@@ -1,5 +1,5 @@
 import { formatNumber, ingredientGroups, isCountedUnit, unitName, type Ingredient } from "@tools-platform/service/kitchen-contract";
-import { router, useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
 import { ChevronRight, ListOrdered, Plus } from "lucide-react-native";
 import { useEffect, useState } from "react";
 import { View } from "react-native";
@@ -7,7 +7,7 @@ import type { OpenKitchen } from "../../state";
 import { IngredientSheet } from "../ingredients/ingredient-sheet";
 import { GroupsSheet } from "../ingredients/groups-sheet";
 import { TEXT } from "../ingredients/text";
-import { Button, byGroup, Empty, groupLabel, type ListGroup, Press, Screen, SearchField, T, ToolbarButton } from "../kit";
+import { byGroup, Empty, groupLabel, type ListGroup, Press, Screen, SearchField, T, ToolbarButton, useKitText } from "../kit";
 import { useLanguage, useText } from "../language";
 import { groupColor, useColors } from "../theme";
 import { compareText } from "../../compare";
@@ -20,6 +20,7 @@ export function Ingredients({ data, top }: { data: OpenKitchen; top?: React.Reac
   const { kitchen, change } = data;
   const language = useLanguage();
   const text = useText(TEXT);
+  const kitText = useKitText();
   const colors = useColors();
   const [query, setQuery] = useState("");
   /** Search opens an ingredient by its id. */
@@ -39,7 +40,7 @@ export function Ingredients({ data, top }: { data: OpenKitchen; top?: React.Reac
   const create = (name: string) => setEditing({ kind: "ingredient", name });
 
   return (
-    <Screen title={text.title} top={top}
+    <Screen title={kitText.tabs.kitchen[0]} top={top}
       facts={ingredients.length ? `${text.inKitchen(ingredients.length)}${shared ? text.inTwoGroups(shared) : ""}${missing ? text.withoutNutrition(missing) : ""}` : text.intro}
       toolbar={<>
         {ingredients.length ? <ToolbarButton tone="outline" icon={ListOrdered} label={text.arrangeGroups} onPress={() => setEditing({ kind: "groups" })} /> : null}
@@ -49,8 +50,8 @@ export function Ingredients({ data, top }: { data: OpenKitchen; top?: React.Reac
         key: section, label: groupLabel(section, language), color: groupColor(colors, kitchen.kitchen.groups, section), count: entries.length,
         rows: entries.map(({ ingredient }) => ({ key: ingredient.id, node: (
           <Press accessibilityRole="button" onPress={() => setEditing({ kind: "ingredient", id: ingredient.id, name: ingredient.name })}
-            style={({ pressed }) => ({ minHeight: 64, flexDirection: "row", alignItems: "center", gap: 12, paddingLeft: 16, paddingRight: 12, paddingVertical: 12, opacity: pressed ? 0.7 : 1 })}>
-            <View style={{ flex: 1, gap: 3 }}>
+            style={({ pressed }) => ({ minHeight: 64, flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 12, paddingLeft: 16, paddingRight: 12, paddingVertical: 12, opacity: pressed ? 0.7 : 1 })}>
+            <View style={{ flexGrow: 1, flexBasis: 150, gap: 3 }}>
               <T weight="medium">{ingredient.name}</T>
               <NutritionSummary ingredient={ingredient} />
             </View>

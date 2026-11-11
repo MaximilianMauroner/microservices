@@ -27,11 +27,10 @@ function useDayName() {
   };
 }
 
-type SheetProps = { data: OpenKitchen; week: WeekView; onClose: () => void; notify: (notice: Notice) => void };
+type SheetProps = { presentation?: "sheet" | "pane"; data: OpenKitchen; onClose: () => void; notify: (notice: Notice) => void };
 
 /** Day, meal, and recipe in one short sheet. A tap on a recipe plans it with the recipe's servings. */
-export function PlanSheet({ day, meal: presetMeal, data, week, onClose, notify }: SheetProps & { day?: string; meal?: Meal }) {
-  const language = useLanguage();
+export function PlanSheet({ day, meal: presetMeal, data, week, onClose, notify, presentation = "sheet" }: SheetProps & { week: WeekView; day?: string; meal?: Meal }) {
   const text = useText(TEXT);
   const colors = useColors();
   const [strip] = useState(() => planStrip({ weekStart: week.start, today: data.today, plan: data.kitchen.plan, day }));
@@ -40,7 +39,7 @@ export function PlanSheet({ day, meal: presetMeal, data, week, onClose, notify }
   const [query, setQuery] = useState("");
   const typed = query.trim();
   const matches = week.recipes.filter((recipe) => recipe.name.toLowerCase().includes(typed.toLowerCase()));
-  const isNew = typed.length > 0 && typed.length <= 200 && !week.recipes.some((one) => one.name.toLowerCase() === typed.toLowerCase());
+  const isNew = typed.length > 0 && typed.length <= 120 && !week.recipes.some((one) => one.name.toLowerCase() === typed.toLowerCase());
   const weekday = useDayName()(selected);
 
   function mealFor(one: string): Meal {
@@ -51,7 +50,7 @@ export function PlanSheet({ day, meal: presetMeal, data, week, onClose, notify }
     const id = Crypto.randomUUID();
     data.change({ type: "plan.add", createId: id, day: selected, meal, recipeId: recipe.id, servings: recipe.servings });
     notify({ message: text.planned(recipe.name, weekday), undo: [{ type: "plan.remove", id }] });
-    onClose();
+    if (presentation === "sheet") onClose();
   }
 
   function planIdea() {
@@ -61,7 +60,7 @@ export function PlanSheet({ day, meal: presetMeal, data, week, onClose, notify }
   }
 
   return (
-    <Sheet open onClose={onClose} title={text.planAMeal}>
+    <Sheet presentation={presentation} open onClose={onClose} title={text.planAMeal}>
       {week.recipes.length ? <>
         <DayStrip days={strip.days} value={selected} planned={new Set(data.kitchen.plan.map((entry) => entry.day))} onValue={(one) => { setSelected(one); setMeal(mealFor(one)); }} />
         <MealPicker value={meal} onValue={setMeal} />
@@ -94,7 +93,6 @@ export function PlanSheet({ day, meal: presetMeal, data, week, onClose, notify }
 
 /** The short menu a held recipe opens: plan it on a day of the coming week, or open it. */
 export function RecipeMenu({ recipe, data, onClose, notify, onRecipe }: { recipe: Pick<Recipe, "id" | "name" | "servings">; data: OpenKitchen; onClose: () => void; notify: (notice: Notice) => void; onRecipe?: boolean }) {
-  const language = useLanguage();
   const text = useText(TEXT);
   const [strip] = useState(() => planStrip({ weekStart: weekStart(data.today), today: data.today, plan: data.kitchen.plan }));
   const [selected, setSelected] = useState(strip.selected);
@@ -122,7 +120,7 @@ export function RecipeMenu({ recipe, data, onClose, notify, onRecipe }: { recipe
 }
 
 /** The short menu a held meal opens. Each action runs at once. A cooked meal can only be removed. */
-export function MealMenu({ entry, data, week, onClose, notify, onLeftovers }: SheetProps & { entry: PlanEntry; onLeftovers: (name: string) => void }) {
+export function MealMenu({ entry, data, onClose, notify, onLeftovers }: SheetProps & { entry: PlanEntry; onLeftovers: (name: string) => void }) {
   const language = useLanguage();
   const text = useText(TEXT);
   const parts = dayParts(entry.day, language);
@@ -165,7 +163,7 @@ function removeMeal(entry: PlanEntry, data: OpenKitchen, notify: (notice: Notice
   notify({ message: text.removedFromPlan(entry.recipe), undo: [{ type: "plan.add", day: entry.day, meal: entry.meal, recipeId: entry.recipeId, servings: entry.servings }] });
 }
 
-export function EntrySheet({ entry, data, week, onClose, notify }: SheetProps & { entry: PlanEntry }) {
+export function EntrySheet({ entry, data, onClose, notify, presentation = "sheet" }: SheetProps & { entry: PlanEntry }) {
   const language = useLanguage();
   const text = useText(TEXT);
   const colors = useColors();
@@ -212,7 +210,7 @@ export function EntrySheet({ entry, data, week, onClose, notify }: SheetProps & 
   }
 
   return (
-    <Sheet open onClose={onClose} title={entry.recipe}
+    <Sheet presentation={presentation} open onClose={onClose} title={entry.recipe}
       description={`${text.meals[entry.meal]}, ${parts.weekdayLong} ${parts.dayMonth}${entry.cooked ? text.cookedSuffix : ""}`}
       footer={edit ? (
         <View style={styles.footer}>
@@ -284,11 +282,11 @@ function DayStrip({ days, value, onValue, planned }: { days: readonly string[]; 
   const page = usePageColor();
   const today = useKitchen()?.today;
   const [width, setWidth] = useState(0);
-  const chip = width / 7;
+  const chip = Math.max(48, width / 7);
   const shownWeek = Math.floor(Math.max(0, days.indexOf(value)) / 7);
   return (
     <View onLayout={(event) => setWidth(event.nativeEvent.layout.width)} style={{ minHeight: 48 }}>
-      {chip ? <ScrollView horizontal contentOffset={{ x: shownWeek * 7 * chip, y: 0 }} showsHorizontalScrollIndicator={false} snapToInterval={chip * 7 || undefined} decelerationRate="fast" scrollEnabled={days.length > 7}
+      {chip ? <ScrollView horizontal contentOffset={{ x: shownWeek * 7 * chip, y: 0 }} showsHorizontalScrollIndicator={false} snapToInterval={chip * 7 || undefined} decelerationRate="fast" scrollEnabled={days.length * chip > width}
         accessibilityRole="radiogroup" accessibilityLabel={text.day}>
         {days.map((option, index) => {
           const date = dayParts(option, language);
@@ -333,8 +331,8 @@ const styles = StyleSheet.create({
   footer: { width: "100%", flexDirection: "row", alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end", gap: 8 },
   dayChoice: { minHeight: 48, alignItems: "center", justifyContent: "center", borderRadius: 12, gap: 3 },
   planned: { width: 4, height: 4, borderRadius: 2 },
-  meals: { flexDirection: "row", gap: 2, padding: 4, borderRadius: 24 },
-  mealChoice: { flex: 1, minHeight: 48, borderRadius: 20, alignItems: "center", justifyContent: "center", paddingHorizontal: 2 },
+  meals: { flexDirection: "row", flexWrap: "wrap", gap: 8, padding: 4, borderRadius: 24 },
+  mealChoice: { flexGrow: 1, flexBasis: 90, minHeight: 48, borderRadius: 20, alignItems: "center", justifyContent: "center", paddingHorizontal: 2 },
   leftover: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12, padding: 12, borderRadius: 12 },
-  line: { flexDirection: "row", alignItems: "baseline", justifyContent: "space-between", gap: 12 },
+  line: { flexDirection: "row", flexWrap: "wrap", alignItems: "baseline", justifyContent: "space-between", gap: 12 },
 });

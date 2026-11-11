@@ -1,5 +1,5 @@
 import { router } from "expo-router";
-import { ChevronRight, Info, Leaf, LogIn, LogOut, MessageSquareWarning, type LucideIcon, RefreshCw, Users } from "lucide-react-native";
+import { ChevronRight, Info, LogIn, LogOut, MessageSquareWarning, type LucideIcon, RefreshCw, Users } from "lucide-react-native";
 import { type ReactNode, useContext, useState } from "react";
 import { ActivityIndicator, Alert, StyleSheet, View } from "react-native";
 import { useApp, useKitchen, useSync } from "../../state";
@@ -38,7 +38,7 @@ export function KitchenHub() {
       <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <HueBadge size={44} />
         <View style={{ flex: 1, gap: 2 }}>
-          <T weight="semibold" numberOfLines={1} style={{ fontSize: 18 }}>{open && kitchen ? kitchen.kitchen.name : text.noKitchen}</T>
+          <T weight="semibold" style={{ fontSize: 18 }}>{open && kitchen ? kitchen.kitchen.name : text.noKitchen}</T>
           <T muted style={styles.small}>{[state, pending ? text.unsent(pending) : ""].filter(Boolean).join(" · ")}</T>
         </View>
         <Press accessibilityRole="button" accessibilityLabel={session === "local" ? localText.title : text.syncNow} accessibilityState={{ busy: status.kind === "syncing" }} onPress={() => session === "local" ? Alert.alert(localText.title, localText.limits) : void sync()}

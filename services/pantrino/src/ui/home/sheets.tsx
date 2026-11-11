@@ -3,7 +3,7 @@ import {
   fieldNumber,
   formatAmount,
   type StockItem,
-  
+
   INGREDIENT_UNITS,
   type IngredientUnit,
   requiredName,
