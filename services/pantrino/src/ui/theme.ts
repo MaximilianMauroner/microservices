@@ -1,6 +1,6 @@
 import { useColorScheme } from "react-native";
 
-export type PageKey = "today" | "week" | "shopping" | "kitchen";
+export type PageKey = "today" | "week" | "shopping" | "kitchen" | "day" | "foods" | "weight";
 
 /** Colors copied from services/tools/app/styles.css, so the app looks like the web Kitchen in both themes. */
 const dark = {
@@ -16,8 +16,9 @@ const dark = {
   positive: "#6ee7b7",
   ripple: "rgba(255,255,255,0.14)",
   warning: "#fcd34d",
-  page: { week: "#c4402b", shopping: "#1f7d47", kitchen: "#7343b5", today: "#c4402b" },
-  pageInk: { week: "#ff8a73", shopping: "#5fd08f", kitchen: "#c3a2f5", today: "#ff8a73" },
+  /** Bodyshop pages use the Bodyshop hues from services/tools/app/styles.css. */
+  page: { week: "#c4402b", shopping: "#1f7d47", kitchen: "#7343b5", today: "#c4402b", day: "#d4503b", foods: "#23935d", weight: "#2a6fbd" },
+  pageInk: { week: "#ff8a73", shopping: "#5fd08f", kitchen: "#c3a2f5", today: "#ff8a73", day: "#ef7d6b", foods: "#5cbf8a", weight: "#6fb0f0" },
   /** Bodyshop nutrient colors from services/tools/app/styles.css. */
   nutrient: { kcal: "#f2b85a", protein: "#6fb0f0", carbs: "#f2b85a", fat: "#e47ba6", fiber: "#5cbf8a" },
   groups: ["#ef7d6b", "#aebf55", "#d8a46c", "#5cbf8a", "#a8a29e", "#b38be0", "#63aee0", "#e47ba6"]

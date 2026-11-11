@@ -1,11 +1,10 @@
-import { router } from "expo-router";
 import { addDays, type BodyshopAppSnapshot, MEALS } from "@tools-platform/service/bodyshop-contract";
 import { formatNumber } from "@tools-platform/service/kitchen-contract";
 import { Plus } from "lucide-react-native";
 import { useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { bodyStore } from "../../body/store";
-import { Button, useKitText, dayParts, Empty, Field, FloatingButton, type Notice, Press, Screen, Sheet, Snackbar, StepNav, T } from "../kit";
+import { Button, dayParts, Empty, FloatingButton, type Notice, Press, Screen, Sheet, Snackbar, StepNav, T } from "../kit";
 import { useContentLayout } from "../responsive";
 import { useLanguage, useText } from "../language";
 import { tint, useColors } from "../theme";
@@ -14,11 +13,10 @@ import { TEXT } from "./text";
 
 type Entry = BodyshopAppSnapshot["entries"][number];
 
-/** One Bodyshop day: what is eaten against the targets, the food by meal, and the weight. */
+/** One Bodyshop day: what is eaten against the targets, and the food by meal. */
 export function Today({ snapshot }: { snapshot: BodyshopAppSnapshot }) {
   const language = useLanguage();
   const text = useText(TEXT);
-  const kitText = useKitText();
   const colors = useColors();
   const wide = useContentLayout().panes > 1;
   const [logging, setLogging] = useState(false);
@@ -31,14 +29,13 @@ export function Today({ snapshot }: { snapshot: BodyshopAppSnapshot }) {
   const go = (step: -1 | 1) => void bodyStore.refresh(addDays(day, step));
 
   return (
-    <Screen fullWidth={wide} title={title} back={{ label: kitText.back, onPress: () => router.back() }} facts={text.ofTarget(kcal, targets.kcal)}
+    <Screen fullWidth={wide} title={title} facts={text.ofTarget(kcal, targets.kcal)}
       floating={<Snackbar notice={notice} onUndo={() => undefined} onDone={() => setNotice(null)} />}
       fab={<FloatingButton icon={Plus} label={text.logFood} onPress={() => setLogging(true)} />}
       actions={<>
         {day === today ? null : <Button tone="outline" label={text.today} onPress={() => void bodyStore.refresh(today)} />}
         <StepNav labels={[text.previousDay, text.nextDay]} canGoForward={day < today} onStep={go} />
-      </>}
-      aside={<Button tone="outline" label={text.foods} onPress={() => router.push("/bodyshop/foods")} />}>
+      </>}>
       <View style={{ flexDirection: wide ? "row" : "column", gap: wide ? 32 : 16, alignItems: "flex-start" }}>
         <View style={[styles.column, wide ? { flex: 1 } : { width: "100%" }]}>
           <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -57,7 +54,6 @@ export function Today({ snapshot }: { snapshot: BodyshopAppSnapshot }) {
             </View>
             {entries.some((one) => one.check !== "Ready") ? <T muted style={{ fontSize: 12 }}>{text.checks}</T> : null}
           </View>
-          {wide ? <Weight snapshot={snapshot} notify={setNotice} /> : null}
         </View>
         <View style={[styles.column, wide ? { flex: 1 } : { width: "100%" }]}>
           {entries.length ? MEALS.filter((meal) => entries.some((one) => one.meal === meal)).map((meal) => {
@@ -81,7 +77,6 @@ export function Today({ snapshot }: { snapshot: BodyshopAppSnapshot }) {
               </View>
             );
           }) : <Empty title={text.nothingLogged} body={text.nothingLoggedBody} />}
-          {wide ? null : <Weight snapshot={snapshot} notify={setNotice} />}
         </View>
       </View>
       {logging ? <LogSheet day={day} onClose={() => setLogging(false)} notify={setNotice} /> : null}
@@ -95,35 +90,6 @@ export function NutrientBar({ share, color }: { share: number; color: string }) 
   return (
     <View style={{ height: 8, borderRadius: 4, backgroundColor: tint(color, 18, colors.background), overflow: "hidden" }}>
       <View style={{ width: `${Math.max(0, Math.min(1, Number.isFinite(share) ? share : 0)) * 100}%`, height: "100%", borderRadius: 4, backgroundColor: color }} />
-    </View>
-  );
-}
-
-function Weight({ snapshot, notify }: { snapshot: BodyshopAppSnapshot; notify: (notice: Notice) => void }) {
-  const language = useLanguage();
-  const text = useText(TEXT);
-  const colors = useColors();
-  const [kg, setKg] = useState("");
-  const [error, setError] = useState<string>();
-  const latest = snapshot.weights.at(-1);
-  const value = Number(kg.replace(",", "."));
-
-  async function save() {
-    const result = await bodyStore.act({ type: "weight.log", day: snapshot.day, kg: value });
-    if (result.ok) { setKg(""); setError(undefined); notify({ message: text.weightSaved }); return; }
-    setError(result.reason === "refused" ? result.message : result.reason === "offline" ? text.needsConnection : text.failed);
-  }
-
-  return (
-    <View style={[styles.card, { backgroundColor: colors.muted, borderColor: "transparent" }]}>
-      <T weight="semibold" style={{ fontSize: 18 }}>{text.weight}</T>
-      {latest ? <T weight="medium" style={{ fontSize: 22, color: colors.nutrient.protein }}>{text.weightToday(formatNumber(latest.kg, language))}</T> : <T muted>{text.noWeight}</T>}
-      <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
-        <Field accessibilityLabel={text.weight} value={kg} onChangeText={setKg} inputMode="decimal" placeholder={text.weightPlaceholder} style={{ width: 120 }} />
-        <T muted>kg</T>
-        <Button tone="outline" label={text.saveWeight} disabled={!(value >= 20 && value <= 400)} onPress={() => void save()} />
-      </View>
-      {error ? <T accessibilityRole="alert" style={{ color: colors.destructive }}>{error}</T> : null}
     </View>
   );
 }
