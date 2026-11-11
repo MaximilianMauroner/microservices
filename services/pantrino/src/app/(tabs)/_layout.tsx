@@ -27,7 +27,7 @@ export default function KitchenTabs() {
   return (
     <ContentLayoutContext value={layout}>
       <SafeAreaView edges={["top", "left", "right"]} style={{ flex: 1, backgroundColor: colors.background }}>
-        <Tabs backBehavior="history" screenOptions={{ headerShown: false, tabBarPosition: layout.navigation === "rail" ? "left" : "bottom", sceneStyle: { backgroundColor: colors.background } }} tabBar={(props) => <TabBar {...props} />}>
+        <Tabs screenOptions={{ headerShown: false, tabBarPosition: layout.navigation === "rail" ? "left" : "bottom", sceneStyle: { backgroundColor: colors.background } }} tabBar={(props) => <TabBar {...props} />}>
           {TABS.map((one) => <Tabs.Screen key={one.key} name={one.route} />)}
         </Tabs>
       </SafeAreaView>
