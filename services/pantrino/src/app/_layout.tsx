@@ -35,6 +35,9 @@ function Gate() {
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }}>
         <Stack.Protected guard={(session === "signed-in" || session === "local")}>
           <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="settings" />
+          <Stack.Screen name="search" />
+          <Stack.Screen name="bodyshop" />
         </Stack.Protected>
         <Stack.Protected guard={session === "signed-out"}>
           <Stack.Screen name="sign-in" />

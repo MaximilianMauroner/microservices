@@ -99,7 +99,7 @@ const TEXT: Record<KitchenLanguage, typeof en> = {
 };
 
 function allRecipes() {
-  router.navigate("/recipes");
+  router.navigate("/kitchen");
 }
 
 export function RecipePageContent({ data, recipeId }: { data: OpenKitchen; recipeId: string }) {
@@ -208,7 +208,7 @@ function RecipeEditor({ data: { kitchen, change }, recipe, onDone }: { data: Ope
   const resolveLines = useResolveLines();
 
   useEffect(() => {
-    if (createdId && kitchen.recipes.some((one) => one.id === createdId)) router.replace({ pathname: "/recipes/[recipeId]", params: { recipeId: createdId } });
+    if (createdId && kitchen.recipes.some((one) => one.id === createdId)) router.replace({ pathname: "/kitchen/[recipeId]", params: { recipeId: createdId } });
   }, [createdId, kitchen.recipes]);
 
   function save() {

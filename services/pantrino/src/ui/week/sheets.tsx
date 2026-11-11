@@ -85,7 +85,7 @@ export function PlanSheet({ day, data, week, onClose, notify }: SheetProps & { d
         </View>
       </> : <>
         <T muted>{text.plansUseRecipes}</T>
-        <Button label={text.addARecipe} onPress={() => { onClose(); router.navigate("/recipes"); }} />
+        <Button label={text.addARecipe} onPress={() => { onClose(); router.navigate("/kitchen"); }} />
       </>}
     </Sheet>
   );
@@ -111,7 +111,7 @@ export function RecipeMenu({ recipe, data, onClose, notify, onRecipe }: { recipe
   return (
     <Sheet open onClose={onClose} title={recipe.name}
       footer={<View style={styles.footer}>
-        {onRecipe ? null : <Button tone="outline" label={text.openRecipe} onPress={() => { onClose(); router.push({ pathname: "/recipes/[recipeId]", params: { recipeId: recipe.id } }); }} />}
+        {onRecipe ? null : <Button tone="outline" label={text.openRecipe} onPress={() => { onClose(); router.push({ pathname: "/kitchen/[recipeId]", params: { recipeId: recipe.id } }); }} />}
         <Button wide label={text.plan} accessibilityLabel={text.planOn(text.meals[meal], weekday)} onPress={plan} />
       </View>}>
       <DayStrip days={strip.days} value={selected} planned={new Set(data.kitchen.plan.map((entry) => entry.day))} onValue={(one) => { setSelected(one); setMeal(mealFor(one)); }} />
@@ -266,7 +266,7 @@ export function EntrySheet({ entry, data, week, onClose, notify }: SheetProps & 
         </View>
         <View style={styles.footer}>
           {bodyToday && entry.day <= bodyToday ? <Button label={bodyText.logInBodyshop} tone="outline" onPress={() => setLogging(true)} /> : null}
-          <Button label={text.openRecipe} tone="ghost" onPress={() => { onClose(); router.navigate({ pathname: "/recipes/[recipeId]", params: { recipeId: entry.recipeId } }); }} />
+          <Button label={text.openRecipe} tone="ghost" onPress={() => { onClose(); router.navigate({ pathname: "/kitchen/[recipeId]", params: { recipeId: entry.recipeId } }); }} />
         </View>
         {logging ? <LogSheet initial={fromRecipe({ name: entry.recipe, servings: entry.servings, lines: entry.lines }, new Map(data.kitchen.ingredients.map((one) => [one.id, one])))}
           meal={bodyMeal(entry.meal)} day={entry.day} onClose={() => setLogging(false)} notify={notify} /> : null}

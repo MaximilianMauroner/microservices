@@ -3,27 +3,23 @@ import { router, useLocalSearchParams } from "expo-router";
 import { ChevronRight, ListOrdered, Plus } from "lucide-react-native";
 import { useEffect, useState } from "react";
 import { View } from "react-native";
-import type { OpenKitchen } from "../../../state";
-import { IngredientSheet } from "../../../ui/ingredients/ingredient-sheet";
-import { GroupsSheet } from "../../../ui/ingredients/groups-sheet";
-import { TEXT } from "../../../ui/ingredients/text";
-import { TEXT as KITCHEN_TEXT } from "../../../ui/kitchen/text";
-import { KitchenScreen } from "../../../ui/page";
-import { Button, byGroup, Empty, groupLabel, type ListGroup, Press, Screen, SearchField, T, ToolbarButton } from "../../../ui/kit";
-import { useLanguage, useText } from "../../../ui/language";
-import { groupColor, useColors } from "../../../ui/theme";
-import { compareText } from "../../../compare";
+import type { OpenKitchen } from "../../state";
+import { IngredientSheet } from "../ingredients/ingredient-sheet";
+import { GroupsSheet } from "../ingredients/groups-sheet";
+import { TEXT } from "../ingredients/text";
+import { Button, byGroup, Empty, groupLabel, type ListGroup, Press, Screen, SearchField, T, ToolbarButton } from "../kit";
+import { useLanguage, useText } from "../language";
+import { groupColor, useColors } from "../theme";
+import { compareText } from "../../compare";
 
-export default function IngredientsPage() {
-  return <KitchenScreen page="kitchen">{(open) => <Ingredients key={open.kitchen.kitchen.id} {...open} />}</KitchenScreen>;
-}
+
 
 type Editing = { kind: "ingredient"; id?: string; name: string } | { kind: "groups" } | null;
 
-function Ingredients({ kitchen, change }: OpenKitchen) {
+export function Ingredients({ data, top }: { data: OpenKitchen; top?: React.ReactNode }) {
+  const { kitchen, change } = data;
   const language = useLanguage();
   const text = useText(TEXT);
-  const kitchenText = useText(KITCHEN_TEXT);
   const colors = useColors();
   const [query, setQuery] = useState("");
   /** Search opens an ingredient by its id. */
@@ -43,7 +39,7 @@ function Ingredients({ kitchen, change }: OpenKitchen) {
   const create = (name: string) => setEditing({ kind: "ingredient", name });
 
   return (
-    <Screen title={text.title} back={{ label: kitchenText.title, onPress: () => router.navigate("/kitchen") }}
+    <Screen title={text.title} top={top}
       facts={ingredients.length ? `${text.inKitchen(ingredients.length)}${shared ? text.inTwoGroups(shared) : ""}${missing ? text.withoutNutrition(missing) : ""}` : text.intro}
       toolbar={<>
         {ingredients.length ? <ToolbarButton tone="outline" icon={ListOrdered} label={text.arrangeGroups} onPress={() => setEditing({ kind: "groups" })} /> : null}

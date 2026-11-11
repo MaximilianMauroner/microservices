@@ -1,10 +1,11 @@
+import { router } from "expo-router";
 import { addDays, type BodyshopAppSnapshot, MEALS } from "@tools-platform/service/bodyshop-contract";
 import { formatNumber } from "@tools-platform/service/kitchen-contract";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react-native";
 import { useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { bodyStore } from "../../body/store";
-import { Button, dayParts, Empty, Field, FloatingButton, type Notice, Press, Screen, Sheet, Snackbar, T } from "../kit";
+import { Button, useKitText, dayParts, Empty, Field, FloatingButton, type Notice, Press, Screen, Sheet, Snackbar, T } from "../kit";
 import { useLanguage, useText } from "../language";
 import { tint, useColors } from "../theme";
 import { LogSheet, unitLabel } from "./log-sheet";
@@ -16,6 +17,7 @@ type Entry = BodyshopAppSnapshot["entries"][number];
 export function Today({ snapshot }: { snapshot: BodyshopAppSnapshot }) {
   const language = useLanguage();
   const text = useText(TEXT);
+  const kitText = useKitText();
   const colors = useColors();
   const [logging, setLogging] = useState(false);
   const [entry, setEntry] = useState<Entry>();
@@ -27,7 +29,7 @@ export function Today({ snapshot }: { snapshot: BodyshopAppSnapshot }) {
   const go = (step: -1 | 1) => void bodyStore.refresh(addDays(day, step));
 
   return (
-    <Screen title={title} facts={text.ofTarget(kcal, targets.kcal)}
+    <Screen title={title} back={{ label: kitText.back, onPress: () => router.back() }} facts={text.ofTarget(kcal, targets.kcal)}
       floating={<Snackbar notice={notice} onUndo={() => undefined} onDone={() => setNotice(null)} />}
       fab={<FloatingButton icon={Plus} label={text.logFood} onPress={() => setLogging(true)} />}
       actions={<>
@@ -35,6 +37,7 @@ export function Today({ snapshot }: { snapshot: BodyshopAppSnapshot }) {
         <Button tone="ghost" icon={ChevronLeft} accessibilityLabel={text.previousDay} onPress={() => go(-1)} />
         <Button tone="ghost" icon={ChevronRight} accessibilityLabel={text.nextDay} disabled={day >= today} onPress={() => go(1)} />
       </>}>
+      <Button tone="outline" label={text.foods} onPress={() => router.push("/bodyshop/foods")} />
       <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <T weight="semibold" style={{ fontSize: 28, color: kcal > targets.kcal ? colors.destructive : colors.foreground }}>
           {kcal > targets.kcal ? text.over(kcal - targets.kcal) : text.left(targets.kcal - kcal)}

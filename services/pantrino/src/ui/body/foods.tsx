@@ -1,3 +1,4 @@
+import { router } from "expo-router";
 import type { BodyshopAppSnapshot } from "@tools-platform/service/bodyshop-contract";
 import { formatNumber } from "@tools-platform/service/kitchen-contract";
 import { Plus, ScanBarcode } from "lucide-react-native";
@@ -5,7 +6,7 @@ import { useState } from "react";
 import { View } from "react-native";
 import { fromSaved, type Loggable } from "../../body/model";
 import { bodyStore } from "../../body/store";
-import { Button, Empty, Field, FloatingButton, type Notice, Press, Screen, SearchField, Sheet, Snackbar, T } from "../kit";
+import { Button, useKitText, Empty, Field, FloatingButton, type Notice, Press, Screen, SearchField, Sheet, Snackbar, T } from "../kit";
 import { useLanguage, useText } from "../language";
 import { type ScanResult, Scanner } from "../scan/scanner";
 import { useColors } from "../theme";
@@ -16,6 +17,7 @@ import { TEXT } from "./text";
 export function Foods({ snapshot }: { snapshot: BodyshopAppSnapshot }) {
   const language = useLanguage();
   const text = useText(TEXT);
+  const kitText = useKitText();
   const colors = useColors();
   const [query, setQuery] = useState("");
   const [logging, setLogging] = useState<Loggable>();
@@ -25,7 +27,7 @@ export function Foods({ snapshot }: { snapshot: BodyshopAppSnapshot }) {
   const foods = snapshot.foods.filter((food) => words.every((word) => `${food.name} ${food.brand}`.toLowerCase().includes(word)));
 
   return (
-    <Screen title={text.foods} facts={text.foodsFacts(snapshot.foods.length)}
+    <Screen title={text.foods} back={{ label: kitText.back, onPress: () => router.back() }} facts={text.foodsFacts(snapshot.foods.length)}
       floating={<Snackbar notice={notice} onUndo={() => undefined} onDone={() => setNotice(null)} />}
       fab={<FloatingButton icon={Plus} label={text.newFood} onPress={() => setCreating(true)} />}>
       {snapshot.foods.length ? <SearchField value={query} onValue={setQuery} label={text.search} /> : null}

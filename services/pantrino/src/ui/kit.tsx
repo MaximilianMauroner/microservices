@@ -1,6 +1,6 @@
 import { byGroupOrder, addDays, UNSORTED_SECTION } from "@tools-platform/service/kitchen-contract";
-import { Apple, BookOpen, CalendarDays, ChevronLeft, ChevronRight, CookingPot, type LucideIcon, Refrigerator, Search, ShoppingBasket, Utensils, X } from "lucide-react-native";
-import { useFocusEffect } from "expo-router";
+import { CalendarDays, ChevronLeft, ChevronRight, CookingPot, type LucideIcon, Search, ShoppingBasket, Sun, UserRound, X } from "lucide-react-native";
+import { router, useFocusEffect } from "expo-router";
 import { Children, createContext, isValidElement, type ReactNode, useCallback, useContext, useEffect, useReducer, useRef, useState } from "react";
 import { AccessibilityInfo, Alert, KeyboardAvoidingView, Modal, Platform, Pressable, type PressableProps, type PressableStateCallbackType, FlatList, RefreshControl, type RefreshControlProps, ScrollView, StyleSheet, Text, type TextProps, TextInput, type TextInputProps, View, type ViewStyle } from "react-native";
 import { GestureDetector, GestureHandlerRootView, usePanGesture } from "react-native-gesture-handler";
@@ -15,26 +15,21 @@ import { type Feel, haptic } from "./haptics";
 import type { QueuedAction } from "../sync/model";
 import { type KitchenLanguage, LOCALES, useText } from "./language";
 import { type Colors, FONT, groupColor, ink, type PageKey, RADIUS, tint, useColors } from "./theme";
+import { useSyncAlert } from "./kitchen/sync-alert";
 import { useContentLayout, useWindowLayout } from "./responsive";
 
-/** The bottom tabs in their order. `route` is the screen name under `app/(tabs)`. */
-export const PAGES: readonly { key: PageKey; route: string; icon: LucideIcon }[] = [
-  { key: "week", route: "index", icon: CalendarDays },
+export const TABS = [
+  { key: "today", route: "index", icon: Sun },
+  { key: "week", route: "week", icon: CalendarDays },
   { key: "shopping", route: "shopping", icon: ShoppingBasket },
-  { key: "recipes", route: "recipes", icon: BookOpen },
-  { key: "home", route: "home", icon: Refrigerator },
-  { key: "kitchen", route: "kitchen", icon: CookingPot }
-];
-
-/** The Bodyshop tabs. Search is a tab screen too, but it opens from the top bar in both modes. */
-export const BODY_PAGES: readonly { key: PageKey; route: string; icon: LucideIcon }[] = [
-  { key: "today", route: "bodyshop", icon: Utensils },
-  { key: "foods", route: "foods", icon: Apple }
-];
-export const SEARCH_PAGE: { key: PageKey; route: string; icon: LucideIcon } = { key: "search", route: "search", icon: Search };
+  { key: "kitchen", route: "kitchen", icon: CookingPot },
+] as const;
 
 const en = {
-  tabs: { week: ["Week", "Week"], shopping: ["Shopping list", "Shop"], recipes: ["Recipes", "Recipes"], home: ["At home", "At home"], kitchen: ["Kitchen", "Kitchen"], today: ["Today", "Today"], foods: ["Foods", "Foods"], search: ["Search", "Search"] } as Record<PageKey, [string, string]>,
+  tabs: { week: ["Week", "Week"], shopping: ["Shopping list", "Shop"], kitchen: ["Kitchen", "Kitchen"], today: ["Today", "Today"] } as Record<PageKey, [string, string]>,
+  profile: "Profile",
+  search: "Search",
+  back: "Back",
   close: "Close",
   fewer: (label: string) => `Fewer ${label.toLowerCase()}`,
   more: (label: string) => `More ${label.toLowerCase()}`,
@@ -57,7 +52,10 @@ const en = {
 const TEXT: Record<KitchenLanguage, typeof en> = {
   en,
   de: {
-    tabs: { week: ["Woche", "Woche"], shopping: ["Einkaufsliste", "Einkauf"], recipes: ["Rezepte", "Rezepte"], home: ["Vorrat", "Vorrat"], kitchen: ["Küche", "Küche"], today: ["Heute", "Heute"], foods: ["Lebensmittel", "Essen"], search: ["Suche", "Suche"] },
+    tabs: { week: ["Woche", "Woche"], shopping: ["Einkaufsliste", "Einkauf"], kitchen: ["Küche", "Küche"], today: ["Heute", "Heute"] },
+    profile: "Profil",
+    search: "Suche",
+    back: "Zurück",
     close: "Schließen",
     fewer: (label: string) => `Weniger ${label}`,
     more: (label: string) => `Mehr ${label}`,
@@ -125,9 +123,9 @@ export type ListGroup = Readonly<{ key: string; label: string; color: string; co
  * A page with a long list passes it as `groups`, after `children`. Only the rows near the screen exist, so the page
  * opens fast, but a change to the list costs more than on a plain page, and its rows do not move when the list changes.
  */
-export function Screen({ title, facts, actions, back, fab, toolbar, floating, groups, children }: {
+export function Screen({ title, facts, actions, back, fab, toolbar, floating, groups, children, top }: {
   title: ReactNode; facts?: ReactNode; actions?: ReactNode; back?: { label: string; onPress: () => void }; fab?: ReactNode; toolbar?: ReactNode; floating?: ReactNode;
-  groups?: readonly ListGroup[]; children?: ReactNode;
+  groups?: readonly ListGroup[]; children?: ReactNode; top?: ReactNode;
 }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -151,8 +149,9 @@ export function Screen({ title, facts, actions, back, fab, toolbar, floating, gr
           {typeof title === "string" ? <T weight="semibold" style={styles.title}>{title}</T> : title}
           {facts ? (typeof facts === "string" ? <T muted style={{ marginTop: 6, fontSize: 14 }}>{facts}</T> : facts) : null}
         </View>
-        {actions ? <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>{actions}</View> : null}
+        <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap", alignItems: "center" }}>{actions}{back ? null : <HeaderActions />}</View>
       </View>
+      {top}
       {children}
     </View>
   );
@@ -184,6 +183,19 @@ export function Screen({ title, facts, actions, back, fab, toolbar, floating, gr
       </View> : null}
     </View>
   );
+}
+
+function HeaderActions() {
+  const text = useKitText();
+  const alert = useSyncAlert();
+  const colors = useColors();
+  return <View style={{ flexDirection: "row", gap: 8 }}>
+    <Button tone="ghost" icon={Search} accessibilityLabel={text.search} onPress={() => router.navigate("/search")} />
+    <View>
+      <Button tone="ghost" icon={UserRound} accessibilityLabel={alert ? `${text.profile}, ${alert.label}` : text.profile} onPress={() => router.navigate("/settings")} />
+      {alert ? <View pointerEvents="none" style={{ position: "absolute", right: 8, top: 8, width: 10, height: 10, borderRadius: 5, borderWidth: 2, borderColor: colors.background, backgroundColor: alert.warn ? colors.destructive : colors.mutedForeground }} /> : null}
+    </View>
+  </View>;
 }
 
 /** The ripple on a button filled with a page color, whose content is white. */
@@ -337,7 +349,7 @@ export function SyncRefresh(props: Omit<RefreshControlProps, "refreshing" | "onR
 /** The page icon on a tint of the page color. */
 export function HueBadge({ size = 56 }: { size?: number }) {
   const page = useContext(PageContext);
-  const Icon = [...PAGES, ...BODY_PAGES, SEARCH_PAGE].find((one) => one.key === page)!.icon;
+  const Icon = TABS.find((one) => one.key === page)!.icon;
   const colors = useColors();
   const { ink: pageInk } = usePageColor();
   return (

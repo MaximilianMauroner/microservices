@@ -6,7 +6,7 @@ import { bodyStore, useBody } from "../../body/store";
 import { useKitchen } from "../../state";
 import { HitRow, LogSheet } from "../body/log-sheet";
 import { TEXT as BODY_TEXT } from "../body/text";
-import { Button, type Notice, PageContext, Screen, SearchField, Snackbar, T } from "../kit";
+import { Button, useKitText, type Notice, PageContext, Screen, SearchField, Snackbar, T } from "../kit";
 import { type KitchenLanguage, useText } from "../language";
 import { search, type SearchHit, searchIndex } from "./model";
 
@@ -40,6 +40,7 @@ const TEXT: Record<KitchenLanguage, typeof en> = {
  */
 export function SearchPage() {
   const text = useText(TEXT);
+  const kitText = useKitText();
   const bodyText = useText(BODY_TEXT);
   const kitchen = useKitchen();
   const body = useBody();
@@ -50,8 +51,8 @@ export function SearchPage() {
   const hits = search(searchIndex(kitchen?.kitchen ?? null, bodyshop), query);
 
   async function open(hit: SearchHit) {
-    if (hit.kind === "recipe") router.navigate({ pathname: "/recipes/[recipeId]", params: { recipeId: hit.id } });
-    else if (hit.kind === "ingredient") router.navigate({ pathname: "/kitchen/ingredients", params: { open: hit.id } });
+    if (hit.kind === "recipe") router.navigate({ pathname: "/kitchen/[recipeId]", params: { recipeId: hit.id } });
+    else if (hit.kind === "ingredient") router.navigate({ pathname: "/kitchen", params: { list: "ingredients", open: hit.id } });
     else if (hit.loggable) setLogging(hit.loggable);
     else if (bodyshop) {
       const result = await bodyStore.act({ type: "meal.log", day: bodyshop.day, template: hit.id });
@@ -60,8 +61,8 @@ export function SearchPage() {
   }
 
   return (
-    <PageContext.Provider value="search">
-      <Screen title={text.title} floating={<Snackbar notice={notice} onUndo={() => undefined} onDone={() => setNotice(null)} />}>
+    <PageContext.Provider value="today">
+      <Screen title={text.title} back={{ label: kitText.back, onPress: () => router.back() }} floating={<Snackbar notice={notice} onUndo={() => undefined} onDone={() => setNotice(null)} />}>
         <SearchField value={query} onValue={setQuery} label={text.label} />
         {!query.trim() ? <T muted>{bodyshop ? text.hint : text.kitchenHint}</T> : null}
         <View style={{ gap: 2 }}>

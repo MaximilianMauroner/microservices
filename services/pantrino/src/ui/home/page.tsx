@@ -19,7 +19,7 @@ import { compareText } from "../../compare";
 type OpenSheet = { type: "stock" } | { type: "leftover" } | { type: "ingredient"; id: string } | { type: "amount"; id: string };
 type Run = (action: QueuedAction, title: string, undo?: QueuedAction) => void;
 
-export function Pantry(data: OpenKitchen) {
+export function Pantry(data: OpenKitchen & { top?: React.ReactNode }) {
   const { kitchen, today, change } = data;
   const text = useText(TEXT);
   const language = useLanguage();
@@ -34,7 +34,7 @@ export function Pantry(data: OpenKitchen) {
   const viewing = sheet?.type === "ingredient" ? kitchen.ingredients.find((one) => one.id === sheet.id) : undefined;
   const sizing = sheet?.type === "amount" ? kitchen.stock.find((one) => one.ingredientId === sheet.id) : undefined;
   return (
-    <Screen
+    <Screen top={data.top}
       title={text.title}
       facts={`${text.inStock(kitchen.stock.length)}${leftovers.length ? text.toUseFirst(leftovers.length) : ""}`}
       floating={<Snackbar notice={notice} onUndo={change} onDone={() => setNotice(null)} />}
@@ -57,7 +57,7 @@ export function Pantry(data: OpenKitchen) {
             return (
               <Animated.View key={leftover.id} layout={LIST_MOTION} exiting={FadeOut.duration(140)} style={{ borderRadius: 16, overflow: "hidden" }}>
                 <SwipeRow key={leftover.servings}
-                  right={{ label: text.ateOne, icon: Check, color: colors.pageInk.home, run: eat }}
+                  right={{ label: text.ateOne, icon: Check, color: colors.pageInk.kitchen, run: eat }}
                   left={{ label: text.throwAway, icon: Trash2, color: colors.destructive, run: remove }}
                 >
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 10, paddingLeft: 14, paddingRight: 4, backgroundColor: colors.card }}>
@@ -146,7 +146,7 @@ function StockRow({ item, background, run, onAmount, onOpen }: { item: StockItem
       ingredientId: item.ingredientId,
       amount: item.amount,
     });
-  const used: SwipeAction = { label: text.usedUp, icon: Check, color: colors.pageInk.home, run: usedUp };
+  const used: SwipeAction = { label: text.usedUp, icon: Check, color: colors.pageInk.kitchen, run: usedUp };
   const details: SwipeAction = { label: text.details, icon: Info, color: colors.foreground, run: onOpen };
   return (
     <SwipeRow right={used}>
