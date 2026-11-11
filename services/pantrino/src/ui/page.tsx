@@ -2,9 +2,9 @@ import type { ReactNode } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ContentLayoutContext, useWindowLayout } from "./responsive";
 import { useColors } from "./theme";
-import { ActivityIndicator, ScrollView } from "react-native";
+import { ActivityIndicator } from "react-native";
 import { type OpenKitchen, useKitchen, useSync } from "../state";
-import { Empty, PageContext, SyncRefresh } from "./kit";
+import { Empty, PageContext, Screen, useKitText } from "./kit";
 import { type KitchenLanguage, useText } from "./language";
 import type { PageKey } from "./theme";
 
@@ -19,14 +19,15 @@ export function KitchenScreen({ page, children }: { page: PageKey; children: (ki
   const kitchen = useKitchen();
   const { view, status } = useSync();
   const text = useText(TEXT);
+  const kitText = useKitText();
   return (
     <PageContext.Provider value={page}>
       {kitchen ? children(kitchen) : (
-        <ScrollView contentContainerStyle={{ padding: 16 }} refreshControl={<SyncRefresh />}>
+        <Screen title={kitText.tabs[page][0]}>
           {view ? <Empty title={text.none} body={text.noneBody} />
             : status.kind === "offline" ? <Empty title={text.offline} body={text.offlineBody} />
             : <Empty title={text.loading}><ActivityIndicator /></Empty>}
-        </ScrollView>
+        </Screen>
       )}
     </PageContext.Provider>
   );

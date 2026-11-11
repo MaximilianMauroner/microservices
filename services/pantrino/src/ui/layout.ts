@@ -3,13 +3,12 @@ type Insets = Readonly<{ top: number; right: number; bottom: number; left: numbe
 
 export type WindowLayout = Readonly<{
   usableWidth: number;
-  usableHeight: number;
+  windowClass: "compact" | "medium" | "expanded";
+  panes: 1 | 2 | 3;
   navigation: "bottom" | "rail";
   railWidth: number;
   gutter: number;
   contentWidth: number;
-  columns: 1 | 2 | 3;
-  detailColumns: 1 | 2;
   bottomInset: number;
   sheetWidth: number;
   sheetGap: number;
@@ -18,18 +17,20 @@ export type WindowLayout = Readonly<{
 export function windowLayout(window: WindowSize, insets: Insets, tabsVisible = true): WindowLayout {
   const usableWidth = Math.max(0, window.width - insets.left - insets.right);
   const usableHeight = Math.max(0, window.height - insets.top - insets.bottom);
-  const scale = Math.max(1, window.fontScale);
-  const navigation = usableWidth >= 720 ? "rail" : "bottom";
+  const windowClass = usableWidth < 600 ? "compact" : usableWidth < 840 ? "medium" : "expanded";
+  const panes = windowClass === "compact" ? 1 : windowClass === "medium" ? 2 : 3;
+  const navigation = windowClass === "compact" ? "bottom" : "rail";
   const railWidth = navigation === "rail" && tabsVisible ? 96 : 0;
-  const pageWidth = usableWidth - railWidth;
-  const gutter = pageWidth >= 600 ? 24 : 16;
-  const contentWidth = Math.max(0, Math.min(1200, pageWidth - 2 * gutter));
-  const columns = contentWidth >= 3 * 280 * scale + 32 ? 3 : contentWidth >= 2 * 280 * scale + 16 ? 2 : 1;
+  const gutter = 16;
+  const contentWidth = Math.max(0, Math.min(panes * 720 + (panes - 1) * 32, usableWidth - railWidth - 2 * gutter));
   const sheetGap = usableWidth >= 600 && usableHeight >= 480 ? 16 : 0;
   return {
-    usableWidth, usableHeight, navigation, railWidth, gutter, contentWidth, columns,
-    detailColumns: contentWidth >= 680 * scale ? 2 : 1,
+    usableWidth, windowClass, panes, navigation, railWidth, gutter, contentWidth,
     bottomInset: tabsVisible && navigation === "bottom" ? 0 : insets.bottom,
     sheetWidth: Math.min(640, usableWidth - 2 * sheetGap), sheetGap,
   };
+}
+
+export function paneWidths(layout: WindowLayout): readonly [number, number] {
+  return [layout.usableWidth / 2 - layout.railWidth, layout.usableWidth / 2];
 }

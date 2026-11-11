@@ -237,7 +237,7 @@ function Review({ step, onStep, onRetake, onUse, onClose }: {
             <T weight="medium">{text.per100}</T>
             {(["g", "ml"] as const).map((unit) => (
               <Press key={unit} accessibilityRole="radio" accessibilityState={{ checked: step.unit === unit }} onPress={() => onStep({ ...step, unit })}
-                style={{ minHeight: 40, minWidth: 56, alignItems: "center", justifyContent: "center", borderRadius: 20, borderWidth: 1, borderColor: step.unit === unit ? colors.foreground : colors.controlBorder }}>
+                style={{ minHeight: 48, minWidth: 56, alignItems: "center", justifyContent: "center", borderRadius: 20, borderWidth: 1, borderColor: step.unit === unit ? colors.foreground : colors.controlBorder }}>
                 <T weight={step.unit === unit ? "semibold" : "regular"}>{unit}</T>
               </Press>
             ))}

@@ -42,13 +42,13 @@ export function Today({ snapshot }: { snapshot: BodyshopAppSnapshot }) {
         <T weight="semibold" style={{ fontSize: 28, color: kcal > targets.kcal ? colors.destructive : colors.foreground }}>
           {kcal > targets.kcal ? text.over(kcal - targets.kcal) : text.left(targets.kcal - kcal)}
         </T>
-        <Bar share={kcal / targets.kcal} color={colors.nutrient.kcal} />
+        <NutrientBar share={kcal / targets.kcal} color={colors.nutrient.kcal} />
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
           {(["protein", "carbs", "fat", "fiber"] as const).map((key) => (
             <View key={key} style={{ flexGrow: 1, flexBasis: 130, gap: 4 }}>
               <T muted style={{ fontSize: 12 }}>{text.nutrients[key]}</T>
               <T weight="medium">{formatNumber(Math.round(eaten(key)), language)} / {targets[key]} g</T>
-              <Bar share={eaten(key) / targets[key]} color={colors.nutrient[key]} />
+              <NutrientBar share={eaten(key) / targets[key]} color={colors.nutrient[key]} />
             </View>
           ))}
         </View>
@@ -82,7 +82,7 @@ export function Today({ snapshot }: { snapshot: BodyshopAppSnapshot }) {
   );
 }
 
-function Bar({ share, color }: { share: number; color: string }) {
+export function NutrientBar({ share, color }: { share: number; color: string }) {
   const colors = useColors();
   return (
     <View style={{ height: 8, borderRadius: 4, backgroundColor: tint(color, 18, colors.background), overflow: "hidden" }}>

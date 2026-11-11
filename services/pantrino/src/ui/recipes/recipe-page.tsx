@@ -102,23 +102,23 @@ function allRecipes() {
   router.navigate("/kitchen");
 }
 
-export function RecipePageContent({ data, recipeId }: { data: OpenKitchen; recipeId: string }) {
+export function RecipePageContent({ data, recipeId, onClose = allRecipes, onSelect }: { data: OpenKitchen; recipeId: string; onClose?: () => void; onSelect?: (id: string) => void }) {
   const text = useText(TEXT);
   const [mode, setMode] = useState<"view" | "edit">("view");
   const recipe = data.kitchen.recipes.find((one) => one.id === recipeId);
-  if (recipeId === "new") return <RecipeEditor data={data} onDone={allRecipes} />;
-  if (!recipe) return <Screen title={text.allRecipes} actions={<Button label={text.allRecipes} onPress={allRecipes} />}><Empty title={text.missingRecipe} /></Screen>;
+  if (recipeId === "new") return <RecipeEditor data={data} onDone={onClose} onCreated={onSelect} />;
+  if (!recipe) return <Screen title={text.allRecipes} actions={<Button label={text.allRecipes} onPress={onClose} />}><Empty title={text.missingRecipe} /></Screen>;
   if (mode === "edit") return <RecipeEditor data={data} recipe={recipe} onDone={() => setMode("view")} />;
-  return <RecipeView data={data} recipe={recipe} onEdit={() => setMode("edit")} />;
+  return <RecipeView data={data} recipe={recipe} onEdit={() => setMode("edit")} onClose={onClose} />;
 }
 
-function RecipeView({ data, recipe, onEdit }: { data: OpenKitchen; recipe: Recipe; onEdit: () => void }) {
+function RecipeView({ data, recipe, onEdit, onClose }: { data: OpenKitchen; recipe: Recipe; onEdit: () => void; onClose: () => void }) {
   const { kitchen, change } = data;
   const language = useLanguage();
   const text = useText(TEXT);
   const colors = useColors();
   const layout = useContentLayout();
-  const wide = layout.detailColumns === 2;
+  const wide = layout.contentWidth >= 680;
   const [servings, setServings] = useState(recipe.servings);
   const [deleting, setDeleting] = useState(false);
   const [planning, setPlanning] = useState(false);
@@ -134,7 +134,7 @@ function RecipeView({ data, recipe, onEdit }: { data: OpenKitchen; recipe: Recip
 
   return (
     <Screen title={recipe.name} facts={[recipe.minutes ? text.minutes(recipe.minutes) : "", text.servings(recipe.servings)].filter(Boolean).join(", ")}
-      back={{ label: text.allRecipes, onPress: allRecipes }}
+      back={{ label: text.allRecipes, onPress: onClose }}
       floating={<Snackbar notice={notice} onUndo={change} onDone={() => setNotice(null)} />}
       toolbar={<>
         <ToolbarButton tone="outline" icon={Pencil} label={text.edit} onPress={onEdit} />
@@ -152,7 +152,7 @@ function RecipeView({ data, recipe, onEdit }: { data: OpenKitchen; recipe: Recip
           </View>
           {lines.length ? <View style={{ gap: 8 }}>{lines.map((line, index) => (
             <View key={line.ingredientId} style={[styles.line, index < lines.length - 1 && { borderBottomWidth: 1, borderStyle: "dashed", borderBottomColor: colors.border, paddingBottom: 8 }]}>
-              <View style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <View style={{ flexGrow: 1, flexBasis: 140, flexDirection: "row", alignItems: "center", gap: 8 }}>
                 <GroupDot groups={kitchen.kitchen.groups} group={groupOf(line.ingredientId)} size={8} />
                 <T style={{ flex: 1, fontSize: 14 }}>{line.ingredient}{line.note ? <T muted style={{ fontSize: 14 }}>, {line.note}</T> : null}</T>
               </View>
@@ -160,9 +160,9 @@ function RecipeView({ data, recipe, onEdit }: { data: OpenKitchen; recipe: Recip
             </View>
           ))}</View> : <T muted style={styles.body}>{text.noIngredients}</T>}
           {nutrition.kcal !== null ? <View style={{ backgroundColor: colors.muted, borderRadius: 12, padding: 12, gap: 8 }}>
-            <View style={{ flexDirection: "row", gap: 4 }}>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
               {([[text.kcal, nutrition.kcal, ""], [text.protein, nutrition.protein, " g"], [text.carbs, nutrition.carbs, " g"], [text.fat, nutrition.fat, " g"]] as const).map(([label, value, unit]) => (
-                <View key={label} style={{ flex: 1, alignItems: "center", gap: 2 }}>
+                <View key={label} style={{ flexGrow: 1, flexBasis: 100, alignItems: "center", gap: 2 }}>
                   <T muted style={{ fontSize: 12, textAlign: "center" }}>{label}</T>
                   <T weight="semibold" style={{ fontSize: 18 }}>{value === null ? "?" : `${value}${unit}`}</T>
                 </View>
@@ -188,13 +188,13 @@ function RecipeView({ data, recipe, onEdit }: { data: OpenKitchen; recipe: Recip
         footer={<><Button tone="ghost" label={text.cancel} onPress={() => setDeleting(false)} /><Button tone="destructive" label={text.deleteRecipe} onPress={() => {
           setDeleting(false);
           change({ type: "recipe.delete", id: recipe.id });
-          allRecipes();
+          onClose();
         }} /></>}><View /></Sheet>
     </Screen>
   );
 }
 
-function RecipeEditor({ data: { kitchen, change }, recipe, onDone }: { data: OpenKitchen; recipe?: Recipe; onDone: () => void }) {
+function RecipeEditor({ data: { kitchen, change }, recipe, onDone, onCreated }: { data: OpenKitchen; recipe?: Recipe; onDone: () => void; onCreated?: (id: string) => void }) {
   const language = useLanguage();
   const text = useText(TEXT);
   const colors = useColors();
@@ -208,8 +208,11 @@ function RecipeEditor({ data: { kitchen, change }, recipe, onDone }: { data: Ope
   const resolveLines = useResolveLines();
 
   useEffect(() => {
-    if (createdId && kitchen.recipes.some((one) => one.id === createdId)) router.replace({ pathname: "/kitchen/[recipeId]", params: { recipeId: createdId } });
-  }, [createdId, kitchen.recipes]);
+    if (createdId && kitchen.recipes.some((one) => one.id === createdId)) {
+      if (onCreated) onCreated(createdId);
+      else router.replace({ pathname: "/kitchen/[recipeId]", params: { recipeId: createdId } });
+    }
+  }, [createdId, kitchen.recipes, onCreated]);
 
   function save() {
     if (createdId) return;
@@ -226,7 +229,7 @@ function RecipeEditor({ data: { kitchen, change }, recipe, onDone }: { data: Ope
   }
 
   return (
-    <Screen title={recipe ? text.editTitle(recipe.name) : text.newRecipe} facts={text.amountsHint}
+    <Screen title={recipe ? text.editTitle(recipe.name) : text.newRecipe} facts={text.amountsHint} back={{ label: text.allRecipes, onPress: onDone }}
       actions={<><Button tone="ghost" label={text.cancel} onPress={onDone} disabled={Boolean(createdId)} /><Button label={text.saveRecipe} onPress={save} disabled={Boolean(createdId)} /></>}>
       <View style={{ gap: 16 }}>
         <View style={styles.field}>
@@ -257,7 +260,7 @@ const styles = StyleSheet.create({
   heading: { fontSize: 20, letterSpacing: -0.3 },
   panel: { borderWidth: 1, borderRadius: 16, padding: 16, gap: 16 },
   row: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 12 },
-  line: { flexDirection: "row", alignItems: "baseline", justifyContent: "space-between", gap: 12 },
+  line: { flexDirection: "row", flexWrap: "wrap", alignItems: "baseline", justifyContent: "space-between", gap: 12 },
   body: { fontSize: 14 },
   field: { gap: 6 }
 });

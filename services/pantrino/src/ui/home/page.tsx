@@ -1,10 +1,10 @@
 import { formatAmount, type StockItem } from "@tools-platform/service/kitchen-contract";
-import { Check, Info, Plus, Trash2, Utensils } from "lucide-react-native";
+import { Check, Info, Plus, Utensils } from "lucide-react-native";
 import { useState } from "react";
 import { StyleSheet, View } from "react-native";
 import type { OpenKitchen } from "../../state";
 import type { QueuedAction } from "../../sync/model";
-import { Button, Empty, FloatingButton, groupLabel, GroupLabel, GroupList, Press, Screen, Snackbar, T, type Notice } from "../kit";
+import { Button, Empty, FloatingButton, groupLabel, GroupLabel, GroupList, Press, Screen, Snackbar, T, type Notice, useKitText } from "../kit";
 import { useLanguage, useText } from "../language";
 import { groupColor, tint, useColors } from "../theme";
 import { IngredientSheet } from "../ingredients/ingredient-sheet";
@@ -22,6 +22,7 @@ type Run = (action: QueuedAction, title: string, undo?: QueuedAction) => void;
 export function Pantry(data: OpenKitchen & { top?: React.ReactNode }) {
   const { kitchen, today, change } = data;
   const text = useText(TEXT);
+  const kitText = useKitText();
   const language = useLanguage();
   const colors = useColors();
   const [sheet, setSheet] = useState<OpenSheet>();
@@ -35,14 +36,14 @@ export function Pantry(data: OpenKitchen & { top?: React.ReactNode }) {
   const sizing = sheet?.type === "amount" ? kitchen.stock.find((one) => one.ingredientId === sheet.id) : undefined;
   return (
     <Screen top={data.top}
-      title={text.title}
+      title={kitText.tabs.kitchen[0]}
       facts={`${text.inStock(kitchen.stock.length)}${leftovers.length ? text.toUseFirst(leftovers.length) : ""}`}
       floating={<Snackbar notice={notice} onUndo={change} onDone={() => setNotice(null)} />}
       fab={<FloatingButton icon={Plus} label={text.addToStock} onPress={() => setSheet({ type: "stock" })} />}
     >
       <LocalModeNotice />
       <View style={{ gap: 8 }}>
-        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
           <T weight="semibold" accessibilityRole="header" style={{ fontSize: 18 }}>
             {text.useFirst}
           </T>
@@ -124,7 +125,7 @@ function StockRow({ item, background, run, onAmount, onOpen }: { item: StockItem
           onPress={onAmount}
           style={({ pressed }) => [styles.row, pressed && { opacity: 0.7 }]}
         >
-          <T weight="medium" style={{ flex: 1 }}>{item.ingredient}</T>
+          <T weight="medium" style={{ flexGrow: 1, flexBasis: 150 }}>{item.ingredient}</T>
           <T weight="semibold" style={{ fontSize: 15 }}>{formatAmount(item.amount, item.unit, language)}</T>
         </Press>
         <RowMenu name={item.ingredient} actions={[used, details]} />
@@ -135,5 +136,5 @@ function StockRow({ item, background, run, onAmount, onOpen }: { item: StockItem
 
 const styles = StyleSheet.create({
   line: { flexDirection: "row", alignItems: "center", paddingRight: 4 },
-  row: { flex: 1, minHeight: 56, flexDirection: "row", alignItems: "center", gap: 12, paddingLeft: 14, paddingVertical: 8 },
+  row: { flex: 1, minHeight: 56, flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 12, paddingLeft: 14, paddingVertical: 8 },
 });

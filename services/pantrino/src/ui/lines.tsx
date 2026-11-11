@@ -73,7 +73,7 @@ export function LineEditor({ lines, onLines, ingredients, groups }: { lines: rea
         const suggestions = typed && !known ? ingredients.filter((one) => one.name.toLowerCase().includes(typed)).slice(0, 5) : [];
         return (
           <View key={line.key} style={{ gap: 8, padding: 8, borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card }}>
-            <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
               <Field style={{ flex: 1 }} accessibilityLabel={text.ingredientNumber(index + 1)} value={line.name} placeholder={text.ingredient}
                 onChangeText={(value) => {
                   const match = byName.get(value.trim().toLowerCase());
@@ -85,19 +85,19 @@ export function LineEditor({ lines, onLines, ingredients, groups }: { lines: rea
               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
                 {suggestions.map((one) => (
                   <Press key={one.id} accessibilityRole="button" hitSlop={8} onPress={() => update(line.key, { name: one.name, ingredientId: one.id, unit: one.unit })}
-                    style={{ paddingHorizontal: 10, height: 32, justifyContent: "center", borderRadius: 16, backgroundColor: colors.muted }}>
+                    style={{ paddingHorizontal: 10, minHeight: 48, minWidth: 48, justifyContent: "center", borderRadius: 16, backgroundColor: colors.muted }}>
                     <T style={{ fontSize: 14 }}>{one.name}</T>
                   </Press>
                 ))}
               </View>
             ) : null}
-            <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
               <Field style={{ width: 110 }} accessibilityLabel={text.amountOf(called)} keyboardType="decimal-pad" value={line.amount} placeholder={text.amountPlaceholder} onChangeText={(value) => update(line.key, { amount: value })} />
               {known ? <T muted>{unitName(known.unit, language, Number(line.amount.replace(",", ".")))}</T> : (
-                <View accessibilityLabel={text.unitOf(called)} style={{ flexDirection: "row", gap: 4 }}>
+                <View accessibilityLabel={text.unitOf(called)} style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
                   {INGREDIENT_UNITS.map((unit) => (
                     <Press key={unit} accessibilityRole="button" accessibilityState={{ selected: unit === line.unit }} hitSlop={8} onPress={() => update(line.key, { unit })}
-                      style={{ height: 32, paddingHorizontal: 8, justifyContent: "center", borderRadius: 8, borderWidth: 1, borderColor: unit === line.unit ? colors.foreground : colors.controlBorder }}>
+                      style={{ minHeight: 48, minWidth: 48, paddingHorizontal: 8, justifyContent: "center", borderRadius: 8, borderWidth: 1, borderColor: unit === line.unit ? colors.foreground : colors.controlBorder }}>
                       <T style={{ fontSize: 13 }}>{unitName(unit, language)}</T>
                     </Press>
                   ))}
