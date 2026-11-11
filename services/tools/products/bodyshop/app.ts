@@ -1,18 +1,20 @@
 import { asAppProduct, type AppTokenResolver } from "../../platform/app-api.js";
 import { readBoundedBody, RequestBodyTooLargeError } from "../../platform/request-body.js";
 import { bodyshopAction } from "./actions.js";
-import { BodyshopError, parseDay } from "./domain.js";
+import { addDays, BodyshopError, parseDay } from "./domain.js";
 import type { BodyshopStore } from "./repository.js";
 import { applyAction, dayPanel } from "./service.js";
 import type { BodyshopAppSnapshot } from "./snapshot.js";
 
 const NO_STORE = { "Cache-Control": "no-store" };
 const MAX_ACTION_BYTES = 64 * 1024;
+const HISTORY_DAYS = 90;
 
 async function snapshot(store: BodyshopStore, subject: string, day: string | undefined): Promise<BodyshopAppSnapshot> {
   const scope = store.owner(subject);
   const [panel, foods] = await Promise.all([dayPanel(scope, day), scope.list("food")]);
-  return { ...panel, foods: foods.sort((a, b) => a.name.localeCompare(b.name)) };
+  const history = await scope.list("weight", { from: addDays(panel.today, 1 - HISTORY_DAYS), to: panel.today });
+  return { ...panel, foods: foods.sort((a, b) => a.name.localeCompare(b.name)), history };
 }
 
 function failure(error: unknown): Response {
