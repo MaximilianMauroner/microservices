@@ -1,8 +1,9 @@
 import type { KitchenSnapshot, PlanEntry } from "@tools-platform/service/kitchen-contract";
 import type { QueuedAction } from "../../sync/model";
 
-export function cookUndo(snapshot: KitchenSnapshot, entry: PlanEntry): QueuedAction[] {
+export function cookUndo(snapshot: KitchenSnapshot, entry: PlanEntry, leftoverId?: string): QueuedAction[] {
   const undo: QueuedAction[] = [
+    ...(leftoverId ? [{ type: "leftover.remove", id: leftoverId } as const] : []),
     { type: "plan.remove", id: entry.id },
     { type: "plan.add", createId: entry.id, day: entry.day, meal: entry.meal, recipeId: entry.recipeId, servings: entry.servings },
   ];

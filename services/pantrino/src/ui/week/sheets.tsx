@@ -204,8 +204,9 @@ export function EntrySheet({ entry, data, onClose, notify, presentation = "sheet
 
   function cook() {
     if (changed || entry.cooked) return;
-    data.change({ type: "plan.cook", id: entry.id, leftover: leftover ? { servings: leftover, useBy: addDays(data.today, 3) } : undefined });
-    notify({ message: leftover ? text.cookedLeftover(leftover) : text.cookedTaken });
+    const leftoverId = leftover ? Crypto.randomUUID() : undefined;
+    data.change({ type: "plan.cook", id: entry.id, leftover: leftoverId ? { servings: leftover, useBy: addDays(data.today, 3), createId: leftoverId } : undefined });
+    notify({ message: leftover ? text.cookedLeftover(leftover) : text.cookedTaken, undo: cookUndo(data.kitchen, entry, leftoverId) });
     onClose();
   }
 

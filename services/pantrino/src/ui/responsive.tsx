@@ -20,17 +20,21 @@ export function useContentLayout(): WindowLayout {
   return layout;
 }
 
-/** `onBack` closes the open detail pane. A compact window shows the detail as a modal or a route, which handle Back already. */
+/**
+ * `onBack` closes the open detail pane. A compact window shows the detail as a modal or a route, which handle Back already,
+ * except for a `replace` detail that was picked in a wide window, because it stays in place when the window gets narrow.
+ */
 export function Workspace({ children, detail, replace = false, selected = false, onBack }: {
   children: React.ReactNode; detail: React.ReactNode; replace?: boolean; selected?: boolean; onBack?: () => void;
 }) {
   const layout = useContentLayout();
   const wide = layout.panes > 1;
+  const inPlace = wide || (replace && selected);
   useFocusEffect(useCallback(() => {
-    if (!wide || !onBack) return;
+    if (!inPlace || !onBack) return;
     const subscription = BackHandler.addEventListener("hardwareBackPress", () => { onBack(); return true; });
     return () => subscription.remove();
-  }, [wide, onBack]));
+  }, [inPlace, onBack]));
   const [left, right] = paneWidths(layout);
   const opacity = useSharedValue(1);
   const detailKey = isValidElement(detail) ? detail.key : null;
