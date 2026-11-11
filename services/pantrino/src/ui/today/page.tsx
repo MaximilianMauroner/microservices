@@ -104,7 +104,7 @@ export function Today({ data }: { data: OpenKitchen }) {
   );
   const bodyCard = bodySnapshot ? (
     <View style={[styles.card, { backgroundColor: tint(colors.nutrient.kcal, 10, colors.background) }]}>
-      <Press accessibilityRole="button" onPress={() => { void bodyStore.refresh(data.today); router.push("/bodyshop"); }} style={styles.row}>
+      <Press accessibilityRole="button" onPress={() => { void bodyStore.refresh(data.today); router.navigate("/body"); }} style={styles.row}>
         <Flame size={28} color={colors.nutrient.kcal} />
         <View style={{ flex: 1, gap: 4 }}><T weight="semibold" style={{ fontSize: 18 }}>{bodyToday ? bodyText.ofTarget(kcal, bodyToday.targets.kcal) : bodyText.loading}</T><T muted>Bodyshop</T></View>
       </Press>

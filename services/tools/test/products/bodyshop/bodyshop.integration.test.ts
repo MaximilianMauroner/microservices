@@ -7,7 +7,7 @@ import type { PlatformPrincipal } from "#security";
 import { handleMcpRequest } from "../../../platform/access/mcp.js";
 import { DISPOSABLE_DATABASE_SENTINEL, withVerifiedDisposableDatabase } from "../../../platform/database/postgres-push-guard.js";
 import { createSealer } from "../../../platform/security/sealed.js";
-import type { FoodEntry, WeightReading } from "../../../products/bodyshop/domain.js";
+import { addDays, type FoodEntry, type WeightReading } from "../../../products/bodyshop/domain.js";
 import { entryNutrients } from "../../../products/bodyshop/model/day.js";
 import { registerBodyshopTools } from "../../../products/bodyshop/mcp-tools.js";
 import { handleBodyshopActions, handleBodyshopToday } from "../../../products/bodyshop/app.js";
@@ -320,5 +320,15 @@ describe.skipIf(!store)("Bodyshop app API", () => {
     await saveFood(store!.owner(person.subject), { name: "Skyr", amount: 100, unit: "g", nutrients: { kcal: 63, protein: 11 } });
     const today = await handleBodyshopToday(new Request("https://tools.example.test/api/bodyshop/app/today?day=2026-11-03"), async () => person, store!);
     expect((await today.json()).foods).toMatchObject([{ name: "Skyr", nutrients: { kcal: 63, protein: 11 } }]);
+  });
+
+  it("sends the weigh-ins of the last 90 days with any day, so the app can draw the weight page", async () => {
+    const read = async (day?: string) => (await handleBodyshopToday(new Request(`https://tools.example.test/api/bodyshop/app/today${day ? `?day=${day}` : ""}`), async () => person, store!)).json();
+    const { today } = await read();
+    const scope = store!.owner(person.subject);
+    for (const [back, kg] of [[90, 99], [89, 98.4], [30, 97.6], [0, 96.8]] as const) await logWeight(scope, { kg, day: addDays(today, -back) });
+    const shown = await read(addDays(today, -60));
+    expect(shown.weights, "the shown day keeps its own weigh-ins").toEqual([]);
+    expect(shown.history.map((one: WeightReading) => one.kg)).toEqual([98.4, 97.6, 96.8]);
   });
 });
