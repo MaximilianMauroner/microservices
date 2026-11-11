@@ -1,8 +1,7 @@
 import {
   addDays, ingredientGroups, type KitchenSnapshot, type Meal, MEALS,
-  nutritionPerServing, type PlanEntry, shoppingList, UNSORTED_SECTION, weekDays, weekStart,
+  nutritionPerServing, type PlanEntry, UNSORTED_SECTION, weekDays, weekStart,
 } from "@tools-platform/service/kitchen-contract";
-import { compareText } from "../../compare";
 
 export function buildWeek(snapshot: KitchenSnapshot, requested: string, planFrom: string) {
   const start = weekStart(requested < planFrom ? planFrom : requested);
@@ -21,15 +20,11 @@ export function buildWeek(snapshot: KitchenSnapshot, requested: string, planFrom
       return ingredient ? ingredientGroups(ingredient) : [UNSORTED_SECTION];
     }),
   }));
-  const shopping = shoppingList(entries, snapshot.stock, new Map(snapshot.ingredients.map((one) => [one.id, one.section])), snapshot.kitchen.groups);
-  const missing = shopping.filter((line) => line.toBuy > 0);
   return {
     start, entries, days, recipes,
     canGoBack: addDays(start, -7) >= planFrom,
     cooked: entries.filter((entry) => entry.cooked).length,
-    leftovers: [...snapshot.leftovers].sort((a, b) => compareText(a.useBy, b.useBy) || compareText(a.name, b.name)),
-    toBuy: missing.length + snapshot.extras.filter((extra) => !extra.everyWeek || extra.boughtWeek !== start).length,
-    buySections: missing.map((line) => line.section),
+
   };
 }
 

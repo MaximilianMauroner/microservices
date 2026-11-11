@@ -37,28 +37,7 @@ describe("the local Week page", () => {
     expect(snapshot.plan[2]!.id).toBe("dinner");
   });
 
-  it("counts missing ingredients and extras for this week, using custom meals and stock", () => {
-    const snapshot = kitchen({
-      plan: [
-        meal("custom", "2026-11-05", { custom: true, lines: [{ ...line, amount: 100 }, { ingredientId: beans.id, ingredient: beans.name, unit: beans.unit, amount: 1, note: "" }] }),
-        meal("cooked", "2026-11-06", { cooked: true }),
-        meal("other-week", "2026-11-09"),
-      ],
-      stock: [{ ingredientId: rice.id, ingredient: rice.name, unit: rice.unit, section: rice.section, amount: 100 }],
-      extras: [
-        { id: "bought", name: "Milk", everyWeek: true, boughtWeek: "2026-11-02" },
-        { id: "last-week", name: "Tea", everyWeek: true, boughtWeek: "2026-10-26" },
-        { id: "not-bought", name: "Coffee", everyWeek: true, boughtWeek: null },
-        { id: "once", name: "Soap", everyWeek: false, boughtWeek: null },
-      ],
-    });
-    const week = buildWeek(snapshot, "2026-11-05", "2026-10-05");
-    expect(week.toBuy).toBe(4);
-    expect(week.buySections).toEqual(["Proteins"]);
-    const next = buildWeek(snapshot, "2026-11-09", "2026-10-05");
-    expect(next.toBuy).toBe(5);
-    expect(next.buySections).toEqual(["Grains"]);
-  });
+
 
   it("computes calories per serving and preserves all ingredient groups for the plate", () => {
     const week = buildWeek(kitchen(), "2026-11-05", "2026-10-05");
@@ -77,14 +56,7 @@ describe("the local Week page", () => {
     expect(newYear.days[6]!.day).toBe("2027-01-03");
   });
 
-  it("shows the leftovers with the first use-by dates first without changing the snapshot", () => {
-    const snapshot = kitchen({ leftovers: [
-      { id: "later", name: "Rice", servings: 2, useBy: "2026-11-08" },
-      { id: "first", name: "Soup", servings: 1, useBy: "2026-11-05" },
-    ] });
-    expect(buildWeek(snapshot, "2026-11-05", "2026-10-05").leftovers.map((one) => one.id)).toEqual(["first", "later"]);
-    expect(snapshot.leftovers[0]!.id).toBe("later");
-  });
+
 
   it("starts with dinner, then suggests the next meal that is not planned", () => {
     expect(defaultMeal([])).toBe("dinner");
