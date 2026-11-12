@@ -1,6 +1,6 @@
 import { byGroupOrder, addDays, UNSORTED_SECTION } from "@tools-platform/service/kitchen-contract";
 import { Apple, CalendarDays, ChevronLeft, ChevronRight, CookingPot, type LucideIcon, Search, ShoppingBasket, Sun, UserRound, Utensils, Weight, X } from "lucide-react-native";
-import { router, useFocusEffect } from "expo-router";
+import { router, useFocusEffect, useIsFocused } from "expo-router";
 import { Children, createContext, isValidElement, type ReactNode, type RefObject, useCallback, useContext, useEffect, useReducer, useRef, useState } from "react";
 import { AccessibilityInfo, Alert, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, type PressableProps, type PressableStateCallbackType, FlatList, RefreshControl, type RefreshControlProps, ScrollView, type ScrollViewInstance, StyleSheet, Text, type TextProps, TextInput, type TextInputProps, View, type ViewStyle } from "react-native";
 import { GestureDetector, GestureHandlerRootView, usePanGesture } from "react-native-gesture-handler";
@@ -34,7 +34,6 @@ export const TABS = [
 
 const en = {
   tabs: { week: ["Week", "Week"], shopping: ["Shopping list", "Shop"], kitchen: ["Kitchen", "Kitchen"], today: ["Today", "Today"], day: ["Day", "Day"], foods: ["Foods", "Foods"], weight: ["Weight", "Weight"] } as Record<PageKey, [string, string]>,
-  bodyMode: "Bodyshop",
   profile: "Profile",
   search: "Search",
   back: "Back",
@@ -61,7 +60,6 @@ const TEXT: Record<KitchenLanguage, typeof en> = {
   en,
   de: {
     tabs: { week: ["Woche", "Woche"], shopping: ["Einkaufsliste", "Einkauf"], kitchen: ["Küche", "Küche"], today: ["Heute", "Heute"], day: ["Tag", "Tag"], foods: ["Lebensmittel", "Essen"], weight: ["Gewicht", "Gewicht"] },
-    bodyMode: "Bodyshop",
     profile: "Profil",
     search: "Suche",
     back: "Zurück",
@@ -124,6 +122,10 @@ export function T({ weight = "regular", muted, style, ...props }: TextProps & { 
 /** A food group on a page: its label, then its rows in one panel of its color. */
 export type ListGroup = Readonly<{ key: string; label: string; color: string; count?: number; rows: readonly Readonly<{ key: string; node: ReactNode }>[] }>;
 
+/** The tab navigator gives each tab page the mode pill and the notice that the pill raised. */
+export type TabChrome = Readonly<{ pill: ReactNode; notice: Notice | null; clearNotice: () => void }>;
+export const TabChromeContext = createContext<TabChrome | null>(null);
+
 /** `aside` sits beside the title on a page with a back link, where tab pages show Search and Profile. */
 export function Screen({ title, facts, actions, aside, back, fab, toolbar, floating, groups, children, top, fullWidth = false }: {
   title: ReactNode; facts?: ReactNode; actions?: ReactNode; aside?: ReactNode; back?: { label: string; onPress: () => void }; fab?: ReactNode; toolbar?: ReactNode; floating?: ReactNode;
@@ -134,6 +136,9 @@ export function Screen({ title, facts, actions, aside, back, fab, toolbar, float
   const insets = useSafeAreaInsets();
   const layout = useContentLayout();
   const contentWidth = fullWidth ? layout.contentWidth : Math.min(720, layout.contentWidth);
+  const chrome = useContext(TabChromeContext);
+  const focused = useIsFocused();
+  const notice = chrome?.notice && focused ? <Snackbar notice={chrome.notice} onUndo={() => undefined} onDone={chrome.clearNotice} /> : floating;
   const contentStyle: ViewStyle = {
     width: "100%", maxWidth: contentWidth + 2 * layout.gutter, alignSelf: "center", paddingHorizontal: layout.gutter,
     paddingBottom: (fab ? FAB_ROOM : 32) + (toolbar ? 0 : layout.bottomInset),
@@ -148,11 +153,11 @@ export function Screen({ title, facts, actions, aside, back, fab, toolbar, float
         </Press>
       ) : null}
       <View style={styles.header}>
-        <View style={{ flex: 1, minWidth: 0 }}>
+        <View style={{ flexGrow: 1, flexShrink: 1, minWidth: 0 }}>
           {typeof title === "string" ? <T weight="semibold" accessibilityRole="header" numberOfLines={1} adjustsFontSizeToFit
             style={[styles.title, layout.short && { fontSize: 26 }]}>{title}</T> : title}
         </View>
-        {back ? aside : <HeaderActions />}
+        {back ? aside : <>{chrome?.pill}<HeaderActions /></>}
       </View>
       {facts || actions ? <View style={[styles.actions, { marginTop: -8 }]}>
         {facts ? <View style={{ flexGrow: 1, flexBasis: 200 }}>{typeof facts === "string" ? <T muted style={{ fontSize: 14 }}>{facts}</T> : facts}</View> : null}
@@ -181,8 +186,8 @@ export function Screen({ title, facts, actions, aside, back, fab, toolbar, float
             <Rect width="100%" height={FADE} fill="url(#fade)" />
           </Svg>
         ) : null}
-        {floating || fab ? <View pointerEvents="box-none" style={[styles.floating, { left: layout.gutter, right: layout.gutter, bottom: 16 + (toolbar ? 0 : layout.bottomInset) }]}>
-          <View pointerEvents="box-none" style={{ width: "100%", maxWidth: 560, alignItems: "flex-end", gap: 12 }}>{floating}{typing ? null : fab}</View>
+        {notice || fab ? <View pointerEvents="box-none" style={[styles.floating, { left: layout.gutter, right: layout.gutter, bottom: 16 + (toolbar ? 0 : layout.bottomInset) }]}>
+          <View pointerEvents="box-none" style={{ width: "100%", maxWidth: 560, alignItems: "flex-end", gap: 12 }}>{notice}{typing ? null : fab}</View>
         </View> : null}
       </View>
       {toolbar ? <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, backgroundColor: colors.card }}>
@@ -207,7 +212,7 @@ function HeaderActions() {
   const text = useKitText();
   const alert = useSyncAlert();
   const colors = useColors();
-  return <View style={{ flexDirection: "row", gap: 8 }}>
+  return <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
     <Button tone="ghost" icon={Search} accessibilityLabel={text.search} onPress={() => router.navigate("/search")} />
     <View>
       <Button tone="ghost" icon={UserRound} accessibilityLabel={alert ? `${text.profile}, ${alert.label}` : text.profile} onPress={() => router.navigate("/settings")} />

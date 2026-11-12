@@ -3,7 +3,8 @@ import { type KitchenSnapshot, today as kitchenToday } from "@tools-platform/ser
 import * as Crypto from "expo-crypto";
 import { createContext, type ReactNode, useContext, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { AppState } from "react-native";
-import { bodyStore } from "./body/store";
+import type { BodyshopAppSnapshot } from "@tools-platform/service/bodyshop-contract";
+import { bodyStore, useBody } from "./body/store";
 import { Offline, signIn as openSignIn, signOut as endSession, SignedOut, storedAccount } from "./auth/session";
 import { localVault, wipeVault, vault } from "./storage/vault";
 import { allowKitchenNetwork, kitchenApi } from "./sync/api";
@@ -42,14 +43,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const state = useSyncExternalStore(kitchenSession.subscribe, kitchenSession.getState);
   const [language, setLanguage] = useState<KitchenLanguage>(() => pickLanguage(null));
   const [vibration, setVibrationState] = useState<Vibration>("on");
+  const [bodyshopShown, setBodyshopShown] = useState(true);
 
   useEffect(() => { void kitchenSession.start().catch(() => undefined); }, []);
 
   useEffect(() => {
     let current = true;
-    void Promise.all([kitchenSession.setting("language"), kitchenSession.setting("haptics")]).then(([savedLanguage, savedVibration]) => {
+    void Promise.all([kitchenSession.setting("language"), kitchenSession.setting("haptics"), kitchenSession.setting(BODYSHOP_SHOWN)]).then(([savedLanguage, savedVibration, savedBodyshop]) => {
       if (!current) return;
       setLanguage(pickLanguage(savedLanguage));
+      setBodyshopShown(savedBodyshop !== "hidden");
       setVibration(parseVibration(savedVibration));
       setVibrationState(parseVibration(savedVibration));
     }).catch(() => undefined);
@@ -97,9 +100,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }), [vibration]);
 
+  const bodyshopValue = useMemo(() => ({
+    shown: bodyshopShown,
+    setShown(next: boolean) {
+      setBodyshopShown(next);
+      void kitchenSession.saveSetting(BODYSHOP_SHOWN, next ? "shown" : "hidden");
+    }
+  }), [bodyshopShown]);
+
   return (
     <AppContext.Provider value={value}>
-      <LanguageContext.Provider value={languageValue}><HapticsContext.Provider value={hapticsValue}>{children}</HapticsContext.Provider></LanguageContext.Provider>
+      <LanguageContext.Provider value={languageValue}><HapticsContext.Provider value={hapticsValue}><BodyshopContext.Provider value={bodyshopValue}>{children}</BodyshopContext.Provider></HapticsContext.Provider></LanguageContext.Provider>
     </AppContext.Provider>
   );
 }
@@ -108,6 +119,22 @@ export function useApp(): AppContextValue {
   const value = useContext(AppContext);
   if (!value) throw new Error("useApp needs AppProvider.");
   return value;
+}
+
+/** Separate from the Body store, which caches its snapshot under `bodyshop`. */
+const BODYSHOP_SHOWN = "bodyshop-shown";
+const BodyshopContext = createContext<{ shown: boolean; setShown: (shown: boolean) => void }>({ shown: true, setShown: () => undefined });
+
+/** Bodyshop is `none` without an account that has it, and `hidden` when the person turned it off in Profile. */
+export type BodyshopAccess = "none" | "hidden" | "shown";
+
+/** Whether Bodyshop shows, and its day only while it does. Every Kitchen page that offers Bodyshop reads it here. */
+export function useBodyshop(): Readonly<{ access: BodyshopAccess; snapshot: BodyshopAppSnapshot | null; setShown: (shown: boolean) => void }> {
+  const { session } = useApp();
+  const { snapshot, status } = useBody();
+  const { shown, setShown } = useContext(BodyshopContext);
+  const access: BodyshopAccess = session !== "signed-in" || status === "no-access" ? "none" : shown ? "shown" : "hidden";
+  return { access, snapshot: access === "shown" && status !== "unknown" ? snapshot : null, setShown };
 }
 
 export function useSync(): SyncState & { sync: () => Promise<void>; dismiss: (clientActionId: string) => Promise<void> } {
