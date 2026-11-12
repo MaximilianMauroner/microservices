@@ -644,17 +644,23 @@ async function discoverWebsites(
     listenersByPort.set(listener.port, listeners);
   }
 
+  const directCandidates = [...listenersByPort.entries()].flatMap(([port, listeners]) => {
+    const paths = listeners.some((listener) =>
+      listener.processes.some((processRef) => processRef.name === "cli-proxy-api")
+    ) ? ["/", "/management.html"] : ["/"];
+    return paths.map((path) => ({ port, listeners, path }));
+  });
   const directWebsites = await Promise.all(
-    [...listenersByPort.entries()].map(async ([port, listeners]): Promise<Website | null> => {
+    directCandidates.map(async ({ port, listeners, path }): Promise<Website | null> => {
       const probeHost = getWebsiteProbeHost(listeners, tailscale);
       if (!probeHost) {
         return null;
       }
 
-      const publicUrl = buildHttpUrl(publicHost, port);
+      const publicUrl = onOrigin(path, buildHttpUrl(publicHost, port));
       const result = await probe({
         port,
-        probeUrl: buildHttpUrl(probeHost, port),
+        probeUrl: onOrigin(path, buildHttpUrl(probeHost, port)),
         publicUrl
       });
       if (!result) {

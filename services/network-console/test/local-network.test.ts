@@ -230,6 +230,14 @@ describe("local network dashboard", () => {
       return baseRunner(command, args);
     };
     const websiteProbe: WebsiteProbe = async (candidate) => {
+      if (candidate.port === 8317 && new URL(candidate.probeUrl).pathname === "/management.html") {
+        return {
+          kind: "website",
+          path: "/management.html",
+          status: 200,
+          title: "CLI Proxy API Management"
+        };
+      }
       if (candidate.port === 8317) {
         return {
           kind: "api",
@@ -248,8 +256,17 @@ describe("local network dashboard", () => {
     expect(html).toContain("CLI Proxy API Server");
     expect(html).toContain(`href="http://${TEST_TAILSCALE_IPV4}:8317/"`);
     expect(html).toContain("cli-proxy-api");
+    expect(html).toContain("CLI Proxy API Management");
+    expect(html).toContain(`href="http://${TEST_TAILSCALE_IPV4}:8317/management.html"`);
 
     const snapshot = await (await app.request("/api/ports")).json();
+    expect(snapshot.websites).toContainEqual(
+      expect.objectContaining({
+        kind: "website",
+        port: 8317,
+        url: `http://${TEST_TAILSCALE_IPV4}:8317/management.html`
+      })
+    );
     expect(snapshot.websites).toContainEqual(
       expect.objectContaining({
         kind: "api",
@@ -257,6 +274,29 @@ describe("local network dashboard", () => {
         title: "CLI Proxy API Server"
       })
     );
+  });
+
+  it("keeps the API when CLI Proxy management is unavailable", async () => {
+    const baseRunner = createFixtureRunner();
+    const runner: CommandRunner = async (command, args) => {
+      if (command === "ss") {
+        return {
+          stdout: `tcp LISTEN 0 4096 ${TEST_TAILSCALE_IPV4}:8317 0.0.0.0:* users:(("cli-proxy-api",pid=1137,fd=3))`,
+          stderr: ""
+        };
+      }
+      return baseRunner(command, args);
+    };
+    const websiteProbe: WebsiteProbe = async (candidate) => {
+      if (new URL(candidate.probeUrl).pathname === "/management.html") {
+        return null;
+      }
+      return { kind: "api", path: "/", status: 200, title: "CLI Proxy API Server" };
+    };
+    const snapshot = await collectNetworkSnapshot({ runner, websiteProbe });
+    expect(snapshot.websites).toEqual([
+      expect.objectContaining({ kind: "api", port: 8317 })
+    ]);
   });
 
   it("discovers HTTPS and path-mounted websites from Tailscale Serve", async () => {
