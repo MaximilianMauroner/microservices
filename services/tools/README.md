@@ -58,6 +58,7 @@ endpoint accepts only its OAuth bearer token.
 Required variables:
 
 - `PUBLIC_ORIGIN`
+- `AUTH_ALLOWED_GOOGLE_EMAIL`, the private Google account email. Set it only in the server environment.
 - `GOOGLE_CLIENT_ID`
 - `GOOGLE_CLIENT_SECRET`
 - `BETTER_AUTH_SECRET`, at least 32 non-whitespace characters

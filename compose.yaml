@@ -87,6 +87,7 @@ services:
       GOOGLE_CLIENT_ID: local-client.apps.googleusercontent.com
       GOOGLE_CLIENT_SECRET: local-google-client-secret
       BETTER_AUTH_SECRET: local-better-auth-secret-000000000000000000
+      AUTH_ALLOWED_GOOGLE_EMAIL: owner@example.com
       AUTH_ALLOWED_GOOGLE_SUBJECT: local-google-subject
       TOOLS_S3_BUCKET: tools
       TOOLS_S3_ENDPOINT: http://minio:9000

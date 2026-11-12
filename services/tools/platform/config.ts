@@ -6,8 +6,6 @@ import { parseEncryptionKey } from "./security/sealed.js";
 
 type Environment = Readonly<Record<string, string | undefined>>;
 
-const AUTHORIZED_GOOGLE_EMAIL = "microservices@lab4code.com";
-
 export function loadPlatformConfig(env: Environment = process.env) {
   const publicOrigin = required(env, "PUBLIC_ORIGIN");
   const databaseUrl = required(env, "DATABASE_URL");
@@ -63,7 +61,7 @@ export function loadPlatformAuthConfig(
     googleClientId: required(env, "GOOGLE_CLIENT_ID"),
     googleClientSecret: required(env, "GOOGLE_CLIENT_SECRET"),
     secret: secret(required(env, "BETTER_AUTH_SECRET"), "BETTER_AUTH_SECRET"),
-    allowedGoogleEmail: AUTHORIZED_GOOGLE_EMAIL,
+    allowedGoogleEmail: required(env, "AUTH_ALLOWED_GOOGLE_EMAIL").toLowerCase(),
     allowedGoogleSubject: googleSubject(
       required(env, "AUTH_ALLOWED_GOOGLE_SUBJECT")
     )

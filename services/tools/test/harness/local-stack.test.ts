@@ -19,7 +19,7 @@ afterEach(async () => { await Promise.all(directories.splice(0).map((directory) 
 const platform = {
   NODE_ENV: "development", PORT: "3000", PUBLIC_ORIGIN: "http://localhost:3000", PLATFORM_READ_ONLY: "false",
   DATABASE_URL: "postgres://local:local@postgres:5432/postgres",
-  GOOGLE_CLIENT_ID: "local-client", GOOGLE_CLIENT_SECRET: "local-secret", AUTH_ALLOWED_GOOGLE_SUBJECT: "local-subject",
+  GOOGLE_CLIENT_ID: "local-client", GOOGLE_CLIENT_SECRET: "local-secret", AUTH_ALLOWED_GOOGLE_SUBJECT: "local-subject", AUTH_ALLOWED_GOOGLE_EMAIL: "owner@example.com",
   BETTER_AUTH_SECRET: "local-auth-secret-00000000000000000000", TOWER_HEARTBEAT_TOKEN: "local-heartbeat-0000000000000000000000",
   UPLOAD_TOKEN: "local-upload-0000000000000000000000000",
   TOOLS_S3_BUCKET: "tools", TOOLS_S3_ENDPOINT: "http://minio:9000", TOOLS_S3_REGION: "us-east-1",

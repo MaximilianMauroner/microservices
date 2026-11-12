@@ -5,6 +5,7 @@ const valid = {
   GOOGLE_CLIENT_ID: "google-client-id.apps.googleusercontent.com",
   GOOGLE_CLIENT_SECRET: "google-client-secret",
   BETTER_AUTH_SECRET: "a".repeat(32),
+  AUTH_ALLOWED_GOOGLE_EMAIL: "owner@example.com",
   AUTH_ALLOWED_GOOGLE_SUBJECT: "108123456789012345678"
 };
 
@@ -18,7 +19,7 @@ describe("platform authentication configuration", () => {
       googleClientId: valid.GOOGLE_CLIENT_ID,
       googleClientSecret: valid.GOOGLE_CLIENT_SECRET,
       secret: valid.BETTER_AUTH_SECRET,
-      allowedGoogleEmail: "owner@example.com",
+      allowedGoogleEmail: valid.AUTH_ALLOWED_GOOGLE_EMAIL,
       allowedGoogleSubject: valid.AUTH_ALLOWED_GOOGLE_SUBJECT
     });
   });
@@ -27,11 +28,16 @@ describe("platform authentication configuration", () => {
     "GOOGLE_CLIENT_ID",
     "GOOGLE_CLIENT_SECRET",
     "BETTER_AUTH_SECRET",
+    "AUTH_ALLOWED_GOOGLE_EMAIL",
     "AUTH_ALLOWED_GOOGLE_SUBJECT"
   ] as const)("fails closed when %s is missing", (name) => {
     expect(() =>
       loadPlatformAuthConfig({ ...valid, [name]: undefined }, "https://tools.example.test")
     ).toThrow(`Missing required environment variable: ${name}`);
+  });
+
+  it("uses the configured identity instead of a hardcoded email", () => {
+    expect(loadPlatformAuthConfig({ ...valid, AUTH_ALLOWED_GOOGLE_EMAIL: " Other@Example.com " }, "https://tools.example.test").allowedGoogleEmail).toBe("other@example.com");
   });
 
   it("rejects weak secrets and malformed subject identifiers", () => {
