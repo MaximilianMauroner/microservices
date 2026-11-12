@@ -529,40 +529,106 @@ describe("local network dashboard", () => {
     }
   });
 
-  it("shows a website favicon only from the website's own origin", async () => {
-    const snapshotWithFavicon = async (faviconPath: string) => {
-      const snapshot = await collectNetworkSnapshot({
-        runner: createFixtureRunner(),
-        websiteProbe: async (candidate) => {
-          const result = await WEBSITE_PROBE(candidate);
-          return result && { ...result, faviconPath };
-        }
-      });
-      return snapshot.websites[0]?.faviconUrl;
-    };
-
-    await expect(snapshotWithFavicon("/static/icon.png")).resolves.toBe(
-      `http://${TEST_TAILSCALE_IPV4}:3000/static/icon.png`
-    );
-    await expect(snapshotWithFavicon("https://tracker.example/pixel.png")).resolves.toBe(
-      `http://${TEST_TAILSCALE_IPV4}:3000/favicon.ico`
-    );
-    await expect(snapshotWithFavicon("javascript:alert(1)")).resolves.toBe(
-      `http://${TEST_TAILSCALE_IPV4}:3000/favicon.ico`
-    );
+  it("ignores title and icon text in scripts and comments", async () => {
+    const icon = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E";
+    const fetchSpy = mockFetch({
+      "http://127.0.0.1:3000/": new Response(`
+        <script> // Set the <title> below before render.
+          const fake = '<link rel="icon" href="https://tracker.example/icon">';
+        </script>
+        <!-- <title>Wrong</title><link rel="icon" href="/wrong"> -->
+        <title>T3 Code (Beta)</title><link rel="icon" href="${icon}"></head>`,
+        { headers: { "content-type": "text/html" } })
+    });
+    try {
+      const result = await probeWebsite({ port: 3000, probeUrl: "http://127.0.0.1:3000/", publicUrl: "http://example.ts.net:3000/" });
+      expect(result?.title).toBe("T3 Code (Beta)");
+      expect(result?.faviconUrl).toMatch(/^data:image\/svg\+xml;base64,/);
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      fetchSpy.mockRestore();
+    }
   });
 
-  it("keeps a website link and favicon on its origin when the probed path starts with two slashes", async () => {
+  it("embeds a same-origin ICO served as application/octet-stream for HTTPS dashboards", async () => {
+    const ico = new Uint8Array([0, 0, 1, 0, 1, 0]);
+    const fetchSpy = mockFetch({
+      "http://127.0.0.1:3000/": new Response("<title>T3 Code</title></head>", { headers: { "content-type": "text/html" } }),
+      "http://127.0.0.1:3000/favicon.ico": new Response(ico, { headers: { "content-type": "application/octet-stream" } })
+    });
+    try {
+      const app = createLocalNetworkDashboardApp({ runner: createFixtureRunner() });
+      const html = await (await app.request("https://localhost/")).text();
+      expect(html).toContain('src="data:image/x-icon;base64,AAABAAEA"');
+      expect(html).not.toContain('src="http:');
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it.each([
+    ["https://tracker.example/icon.png", "external"],
+    ["//169.254.169.254/latest/meta-data/", "external"],
+    ["javascript:alert(1)", "external"],
+    ["data:text/html,%3Ch1%3Enot%20an%20image%3C/h1%3E", "external"],
+    ["data:image/svg+xml,%ZZ", "external"],
+    ["/redirect.ico", "redirect"],
+    ["/large.ico", "oversize"],
+    ["/error.ico", "error"],
+    ["/page.ico", "html"]
+  ])("omits unsafe or unavailable favicon without losing the website %#", async (href, kind) => {
+    const cancel = vi.fn();
+    const fetchSpy = mockFetch({
+      "http://127.0.0.1:3000/": new Response(`<title>App</title><link rel="icon" href="${href}"></head>`, { headers: { "content-type": "text/html" } }),
+      [`http://127.0.0.1:3000${href}`]: kind === "redirect"
+        ? new Response(null, { status: 302, headers: { location: "http://169.254.169.254/latest/meta-data/" } })
+        : kind === "oversize"
+          ? new Response(new ReadableStream({
+              pull(controller) { controller.enqueue(new Uint8Array(262_145)); },
+              cancel
+            }), { headers: { "content-type": "image/png" } })
+          : new Response("not an image", { status: kind === "error" ? 404 : 200, headers: { "content-type": "text/html" } })
+    });
+    try {
+      const result = await probeWebsite({ port: 3000, probeUrl: "http://127.0.0.1:3000/", publicUrl: "https://example.ts.net/" });
+      expect(result).toMatchObject({ title: "App", kind: "website" });
+      expect(result?.faviconUrl).toBeUndefined();
+      expect(fetchSpy.mock.calls.map(([input]) => String(input))).toEqual(
+        kind === "external" ? ["http://127.0.0.1:3000/"] : ["http://127.0.0.1:3000/", `http://127.0.0.1:3000${href}`]
+      );
+      if (kind === "oversize") {
+        expect(cancel).toHaveBeenCalled();
+      }
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("follows same-origin favicon redirects and retains image data in snapshots", async () => {
+    const icon = "data:image/svg+xml;base64,PHN2Zy8+";
+    const fetchSpy = mockFetch({
+      "http://127.0.0.1:3000/": new Response('<title>App</title><link rel="icon" href="/icon.svg"></head>', { headers: { "content-type": "text/html" } }),
+      "http://127.0.0.1:3000/icon.svg": new Response(null, { status: 302, headers: { location: "/assets/icon.svg" } }),
+      "http://127.0.0.1:3000/assets/icon.svg": new Response("<svg/>", { headers: { "content-type": "image/svg+xml" } })
+    });
+    try {
+      const snapshot = await collectNetworkSnapshot({ runner: createFixtureRunner() });
+      expect(snapshot.websites[0]?.faviconUrl).toBe(icon);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("keeps a website link on its origin when the probed path starts with two slashes", async () => {
     const snapshot = await collectNetworkSnapshot({
       runner: createFixtureRunner(),
       websiteProbe: async (candidate) => {
         const result = await WEBSITE_PROBE(candidate);
-        return result && { ...result, path: "//attacker.example/?next=1", faviconPath: "/icon.png" };
+        return result && { ...result, path: "//attacker.example/?next=1" };
       }
     });
     const [website] = snapshot.websites;
     expect(new URL(website!.url).host).toBe(`${TEST_TAILSCALE_IPV4}:3000`);
     expect(website!.url).toBe(`http://${TEST_TAILSCALE_IPV4}:3000//attacker.example/?next=1`);
-    expect(new URL(website!.faviconUrl!).host).toBe(`${TEST_TAILSCALE_IPV4}:3000`);
   });
 });
