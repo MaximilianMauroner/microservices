@@ -29,7 +29,7 @@ The dashboard has no application-level auth. It is intended to rely on binding t
 
 The service answers a request only when its `Host` names the bind host, a Tailscale address, the Tailscale DNS name, `127.0.0.1`, `localhost`, or `[::1]`, with no port or the listen port. Other `Host` values get `421`. This blocks DNS rebinding from web pages. With `BIND_HOST=0.0.0.0`, LAN addresses are not accepted as `Host` values.
 
-Requests share one snapshot for 5 seconds. Website probes follow redirects only within the probed origin, and a website favicon must be on that origin.
+Requests share one snapshot for 5 seconds. Website probes follow redirects only within the probed origin. Favicons come from image data URLs or that same origin. The probe embeds images up to 256 KiB in the snapshot so HTTPS dashboards can show icons from HTTP services. Missing or rejected icons use the dashboard icon.
 
 Process details come from `ss -p`; some listeners may show no process owner unless the service has sufficient OS permissions.
 
