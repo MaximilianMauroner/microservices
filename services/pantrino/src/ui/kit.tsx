@@ -329,6 +329,7 @@ export function Snackbar({ notice, onUndo, onDone }: { notice: Notice | null; on
     onDeactivate: (event) => {
       if (!event.canceled && (Math.abs(event.translationX) > SNACKBAR_AWAY.distance || Math.abs(event.velocityX) > SNACKBAR_AWAY.velocity)) {
         shift.value = withTiming(Math.sign(event.translationX || event.velocityX) * 600, { duration: 160 });
+        scheduleOnRN(haptic, "tap");
         scheduleOnRN(closeNow);
       } else shift.value = withSpring(0, { damping: 20, stiffness: 240 });
     },
@@ -591,7 +592,10 @@ function ModalSheet({ open, onClose, onDismiss, title, description, children, fo
     failOffsetX: [-24, 24],
     onUpdate: (event) => { drop.value = Math.max(0, event.translationY); },
     onDeactivate: (event) => {
-      if (!event.canceled && (event.translationY > SHEET_CLOSE.distance || event.velocityY > SHEET_CLOSE.velocity)) scheduleOnRN(dismiss);
+      if (!event.canceled && (event.translationY > SHEET_CLOSE.distance || event.velocityY > SHEET_CLOSE.velocity)) {
+        scheduleOnRN(haptic, "tap");
+        scheduleOnRN(dismiss);
+      }
       else drop.value = withSpring(0, { damping: 20, stiffness: 240 });
     },
   });
