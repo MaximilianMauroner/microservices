@@ -529,6 +529,43 @@ describe("local network dashboard", () => {
     }
   });
 
+  it("ignores title and icon text in scripts and comments", async () => {
+    const icon = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E";
+    const fetchSpy = mockFetch({
+      "http://127.0.0.1:3000/": new Response(`
+        <script> // Set the <title> below before render.
+          const fake = '<link rel="icon" href="https://tracker.example/icon">';
+        </script>
+        <!-- <title>Wrong</title><link rel="icon" href="/wrong"> -->
+        <title>T3 Code (Beta)</title><link rel="icon" href="${icon}"></head>`,
+        { headers: { "content-type": "text/html" } })
+    });
+    try {
+      const result = await probeWebsite({ port: 3000, probeUrl: "http://127.0.0.1:3000/", publicUrl: "http://example.ts.net:3000/" });
+      expect(result?.title).toBe("T3 Code (Beta)");
+      expect(result?.faviconPath).toMatch(/^data:image\/svg\+xml;base64,/);
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("embeds a same-origin ICO served as application/octet-stream for HTTPS dashboards", async () => {
+    const ico = new Uint8Array([0, 0, 1, 0, 1, 0]);
+    const fetchSpy = mockFetch({
+      "http://127.0.0.1:3000/": new Response("<title>T3 Code</title></head>", { headers: { "content-type": "text/html" } }),
+      "http://127.0.0.1:3000/favicon.ico": new Response(ico, { headers: { "content-type": "application/octet-stream" } })
+    });
+    try {
+      const app = createLocalNetworkDashboardApp({ runner: createFixtureRunner() });
+      const html = await (await app.request("https://localhost/")).text();
+      expect(html).toContain('src="data:image/x-icon;base64,AAABAAEA"');
+      expect(html).not.toContain('src="http:');
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
   it("shows a website favicon only from the website's own origin", async () => {
     const snapshotWithFavicon = async (faviconPath: string) => {
       const snapshot = await collectNetworkSnapshot({
