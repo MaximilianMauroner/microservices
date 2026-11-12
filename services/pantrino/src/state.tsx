@@ -12,7 +12,7 @@ import type { QueuedAction } from "./sync/model";
 import { project } from "./sync/project";
 import { createLocalEngine } from "./sync/local";
 import { createKitchenSession } from "./kitchen-session";
-import { HapticsContext, parseStrength, setStrength, type Strength } from "./ui/haptics";
+import { HapticsContext, parseVibration, setVibration, type Vibration } from "./ui/haptics";
 import { type KitchenLanguage, LanguageContext, pickLanguage } from "./ui/language";
 
 const kitchenSession = createKitchenSession({
@@ -41,17 +41,17 @@ const AppContext = createContext<AppContextValue | null>(null);
 export function AppProvider({ children }: { children: ReactNode }) {
   const state = useSyncExternalStore(kitchenSession.subscribe, kitchenSession.getState);
   const [language, setLanguage] = useState<KitchenLanguage>(() => pickLanguage(null));
-  const [strength, setStrengthState] = useState<Strength>("light");
+  const [vibration, setVibrationState] = useState<Vibration>("on");
 
   useEffect(() => { void kitchenSession.start().catch(() => undefined); }, []);
 
   useEffect(() => {
     let current = true;
-    void Promise.all([kitchenSession.setting("language"), kitchenSession.setting("haptics")]).then(([savedLanguage, savedStrength]) => {
+    void Promise.all([kitchenSession.setting("language"), kitchenSession.setting("haptics")]).then(([savedLanguage, savedVibration]) => {
       if (!current) return;
       setLanguage(pickLanguage(savedLanguage));
-      setStrength(parseStrength(savedStrength));
-      setStrengthState(parseStrength(savedStrength));
+      setVibration(parseVibration(savedVibration));
+      setVibrationState(parseVibration(savedVibration));
     }).catch(() => undefined);
     return () => { current = false; };
   }, [state.session]);
@@ -89,13 +89,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }), [language]);
 
   const hapticsValue = useMemo(() => ({
-    strength,
-    setStrength(next: Strength) {
-      setStrength(next);
-      setStrengthState(next);
+    vibration,
+    setVibration(next: Vibration) {
+      setVibration(next);
+      setVibrationState(next);
       void kitchenSession.saveSetting("haptics", next);
     }
-  }), [strength]);
+  }), [vibration]);
 
   return (
     <AppContext.Provider value={value}>

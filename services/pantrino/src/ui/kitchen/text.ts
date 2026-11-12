@@ -1,4 +1,4 @@
-import type { Strength } from "../haptics";
+import type { Vibration } from "../haptics";
 import type { KitchenLanguage } from "../language";
 
 const en = {
@@ -12,7 +12,7 @@ const en = {
   ingredientsDetail: (count: number, groups: number) => `${count === 1 ? "1 ingredient" : `${count} ingredients`} in ${groups === 1 ? "1 group" : `${groups} groups`}`,
   language: "Language",
   vibration: "Vibration",
-  strengths: { off: "Off", light: "Light", strong: "Strong" } as Record<Strength, string>,
+  vibrations: { off: "Off", on: "On" } as Record<Vibration, string>,
   syncing: "Syncing",
   offline: "Offline",
   failed: "Sync failed",
@@ -44,7 +44,7 @@ export const TEXT: Record<KitchenLanguage, typeof en> = {
     ingredientsDetail: (count: number, groups: number) => `${count === 1 ? "1 Zutat" : `${count} Zutaten`} in ${groups === 1 ? "1 Gruppe" : `${groups} Gruppen`}`,
     language: "Sprache",
     vibration: "Vibration",
-    strengths: { off: "Aus", light: "Leicht", strong: "Stark" },
+    vibrations: { off: "Aus", on: "An" },
     syncing: "Synchronisiert",
     offline: "Offline",
     failed: "Synchronisierung fehlgeschlagen",
