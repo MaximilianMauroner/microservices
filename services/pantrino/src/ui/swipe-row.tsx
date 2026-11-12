@@ -32,6 +32,7 @@ export function SwipeRow({ right, left, children }: { right?: SwipeAction; left?
       renderLeftActions={right ? (_, translation) => <Panel side="left" translation={translation} action={right} /> : undefined}
       renderRightActions={left ? (_, translation) => <Panel side="right" translation={translation} action={left} /> : undefined}
       onSwipeableWillOpen={(direction) => {
+        haptic("firm");
         (direction === "right" ? right : left)?.run();
         swipe.current?.close();
       }}

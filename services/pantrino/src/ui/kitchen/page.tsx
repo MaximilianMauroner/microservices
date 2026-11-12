@@ -2,11 +2,11 @@ import { router } from "expo-router";
 import { ChevronRight, Info, LogIn, LogOut, MessageSquareWarning, type LucideIcon, RefreshCw, Users } from "lucide-react-native";
 import { type ReactNode, useContext, useState } from "react";
 import { ActivityIndicator, Alert, StyleSheet, View } from "react-native";
-import { useApp, useKitchen, useSync } from "../../state";
+import { useApp, useBodyshop, useKitchen, useSync } from "../../state";
 import type { SyncStatus } from "../../sync/model";
 import { Button, useKitText, HueBadge, Press, Screen, Sheet, T, usePageColor } from "../kit";
 import { KITCHEN_LANGUAGES, type KitchenLanguage, LANGUAGE_NAMES, LanguageContext, LOCALES, useText } from "../language";
-import { haptic, STRENGTHS, useHaptics } from "../haptics";
+import { haptic, useHaptics, VIBRATION } from "../haptics";
 import { tint, useColors } from "../theme";
 import { LocalModeNotice } from "../local-mode-notice";
 import { useLocalText } from "../local-mode";
@@ -19,7 +19,8 @@ export function KitchenHub() {
   const { signOut, openKitchen, openLocal, showSignIn, session, hasLocal } = useApp();
   const { status, pending, notices, sync, dismiss } = useSync();
   const { language, setLanguage } = useContext(LanguageContext);
-  const { strength, setStrength } = useHaptics();
+  const { vibration, setVibration } = useHaptics();
+  const bodyshop = useBodyshop();
   const text = useText(TEXT);
   const kitText = useKitText();
   const localText = useLocalText();
@@ -62,7 +63,8 @@ export function KitchenHub() {
         </View>
       ))}
       <Choice label={text.language} options={KITCHEN_LANGUAGES} names={LANGUAGE_NAMES} value={language} onValue={setLanguage} />
-      <Choice label={text.vibration} options={STRENGTHS} names={text.strengths} value={strength} silent onValue={(next) => { setStrength(next); haptic("toggle"); }} />
+      <Choice label={text.vibration} options={VIBRATION} names={text.vibrations} value={vibration} silent onValue={(next) => { setVibration(next); haptic("toggle"); }} />
+      {bodyshop.access !== "none" ? <Choice label={text.bodyshop} options={BODYSHOP} names={text.bodyshopStates} value={bodyshop.access} onValue={(next) => bodyshop.setShown(next === "shown")} /> : null}
       {session === "local" ? <T muted style={styles.small}>{localText.separate}</T> : <Button tone="outline" label={hasLocal ? localText.returnLocal : localText.useLocal} onPress={() => Alert.alert(localText.title, `${localText.limits}\n\n${localText.accountWarning}`, [
         { text: text.cancel, style: "cancel" },
         { text: hasLocal ? localText.returnLocal : localText.useLocal, onPress: () => void openLocal().catch(() => undefined) },
@@ -93,7 +95,9 @@ export function KitchenHub() {
   );
 }
 
-/** One setting as a row of segments, one per option. A `silent` choice does not vibrate on its own, so the vibration choice can vibrate at the strength just picked. */
+const BODYSHOP = ["hidden", "shown"] as const;
+
+/** One setting as a row of segments, one per option. A `silent` choice does not vibrate on its own, so turning vibration on vibrates and turning it off does not. */
 function Choice<Option extends string>({ label, options, names, value, onValue, silent }: { label: string; options: readonly Option[]; names: Record<Option, string>; value: Option; onValue: (option: Option) => void; silent?: boolean }) {
   const colors = useColors();
   const { hue } = usePageColor();

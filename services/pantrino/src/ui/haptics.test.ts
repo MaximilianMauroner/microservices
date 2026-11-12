@@ -1,28 +1,31 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("expo-haptics", () => ({ selectionAsync: vi.fn(), impactAsync: vi.fn(), ImpactFeedbackStyle: {}, AndroidHaptics: {}, performAndroidHapticsAsync: vi.fn() }));
+const performAndroidHapticsAsync = vi.fn(async () => undefined);
+vi.mock("expo-haptics", () => ({ impactAsync: vi.fn(), ImpactFeedbackStyle: {}, AndroidHaptics: { Virtual_Key: "click", Long_Press: "heavy" }, performAndroidHapticsAsync }));
 vi.mock("react-native", () => ({ Platform: { OS: "android" } }));
-const { parseStrength, step } = await import("./haptics");
-
-const FEELS = ["tap", "toggle", "threshold", "firm", "hold", "warn"] as const;
+const { haptic, parseVibration, setVibration } = await import("./haptics");
 
 describe("haptics", () => {
+  beforeEach(() => performAndroidHapticsAsync.mockClear());
+
   it("does not vibrate when vibration is off", () => {
-    for (const feel of FEELS) expect(step(feel, "off")).toBeNull();
+    setVibration("off");
+    haptic("tap");
+    haptic("warn");
+    expect(performAndroidHapticsAsync).not.toHaveBeenCalled();
   });
 
-  it("vibrates each press at least as firm at strong as at light", () => {
-    for (const feel of FEELS) expect(step(feel, "strong")!).toBeGreaterThanOrEqual(step(feel, "light")!);
-    expect(step("tap", "strong")).toBeGreaterThan(step("tap", "light")!);
+  it("vibrates once per press when it is on, firmer for a warning than for a tap", () => {
+    setVibration("on");
+    haptic("tap");
+    haptic("warn");
+    expect(performAndroidHapticsAsync.mock.calls).toEqual([["click"], ["heavy"]]);
   });
 
-  it("taps softer than it warns", () => {
-    expect(step("tap", "light")!).toBeLessThan(step("warn", "light")!);
-  });
-
-  it("falls back to light for a missing or unknown saved strength", () => {
-    expect(parseStrength(null)).toBe("light");
-    expect(parseStrength("loud")).toBe("light");
-    expect(parseStrength("strong")).toBe("strong");
+  it("keeps vibration on for a saved light or strong strength and for no saved choice", () => {
+    expect(parseVibration(null)).toBe("on");
+    expect(parseVibration("light")).toBe("on");
+    expect(parseVibration("strong")).toBe("on");
+    expect(parseVibration("off")).toBe("off");
   });
 });
