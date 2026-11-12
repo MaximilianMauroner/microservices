@@ -71,7 +71,7 @@ export type WebsiteProbeCandidate = {
 };
 
 export type WebsiteProbeResult = {
-  faviconPath?: string;
+  faviconUrl?: string;
   kind: "api" | "website";
   path: string;
   status: number;
@@ -116,6 +116,11 @@ const WEBSITE_PROBE_MAX_REDIRECTS = 5;
 const SNAPSHOT_TTL_MS = 5_000;
 const LOOPBACK_HOSTS = ["127.0.0.1", "localhost", "[::1]"];
 const WEBSITE_TITLE_READ_LIMIT = 64 * 1024;
+const FAVICON_READ_LIMIT = 256 * 1024;
+const FAVICON_TYPES = new Set([
+  "image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml",
+  "image/x-icon", "image/vnd.microsoft.icon"
+]);
 const TAILSCALE_IPV6_PREFIX = "fd7a:115c:a1e0:";
 const FAVICON_PATH = new URL("../assets/favicon.png", import.meta.url);
 const PORT_USAGE = new Map<string, string>([
@@ -668,7 +673,7 @@ async function discoverWebsites(
       }
 
       return {
-        faviconUrl: buildWebsiteFaviconUrl(result.faviconPath, onOrigin(result.path, publicUrl)),
+        faviconUrl: result.faviconUrl,
         kind: result.kind,
         port,
         processes: uniqueProcesses(listeners.flatMap((listener) => listener.processes)),
@@ -705,7 +710,7 @@ async function discoverWebsites(
             );
         const websiteUrl = onOrigin(result.path, route.publicUrl);
         return {
-          faviconUrl: buildWebsiteFaviconUrl(result.faviconPath, websiteUrl),
+          faviconUrl: result.faviconUrl,
           kind: result.kind,
           port: route.port,
           processes,
@@ -807,7 +812,7 @@ export async function probeWebsite(
     }
 
     return {
-      faviconPath: metadata.faviconPath,
+      faviconUrl: await readWebsiteFavicon(metadata.faviconPath, finalUrl),
       kind: "website",
       path: `${finalUrl.pathname}${finalUrl.search}`,
       status: response.status,
@@ -868,10 +873,78 @@ function onOrigin(path: string, publicUrl: string) {
   return url.toString();
 }
 
-function buildWebsiteFaviconUrl(faviconPath: string | undefined, websiteUrl: string) {
-  const fallback = new URL("/favicon.ico", websiteUrl);
-  const favicon = faviconPath ? URL.parse(faviconPath, websiteUrl) : null;
-  return (favicon?.origin === fallback.origin ? favicon : fallback).toString();
+async function readWebsiteFavicon(href: string | undefined, websiteUrl: URL) {
+  try {
+    const url = new URL(href ?? "/favicon.ico", websiteUrl);
+    if (url.protocol === "data:") {
+      if (url.href.length > FAVICON_READ_LIMIT * 4) {
+        return undefined;
+      }
+      const match = url.href.match(/^data:([^;,]+)(?:;charset=[^;,]+)?(;base64)?,([\s\S]*)$/i);
+      if (!match) {
+        return undefined;
+      }
+      const bytes = match[2]
+        ? Buffer.from(match[3], "base64")
+        : Buffer.from(decodeURIComponent(match[3]));
+      return faviconDataUrl(bytes, match[1].toLowerCase());
+    }
+    if (url.origin !== websiteUrl.origin) {
+      return undefined;
+    }
+
+    const fetched = await fetchWithinOrigin(url.toString());
+    if (!fetched) {
+      return undefined;
+    }
+    const { response } = fetched;
+    const reader = response.body?.getReader();
+    if (!reader) {
+      return undefined;
+    }
+    try {
+      if (!response.ok) {
+        return undefined;
+      }
+      const chunks: Uint8Array[] = [];
+      let size = 0;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
+        }
+        size += value.byteLength;
+        if (size > FAVICON_READ_LIMIT) {
+          return undefined;
+        }
+        chunks.push(value);
+      }
+      return faviconDataUrl(
+        Buffer.concat(chunks),
+        response.headers.get("content-type")?.split(";")[0].trim().toLowerCase() ?? ""
+      );
+    } finally {
+      await reader.cancel().catch(() => undefined);
+    }
+  } catch {
+    return undefined;
+  }
+}
+
+function faviconDataUrl(bytes: Buffer, contentType: string) {
+  if (bytes.length === 0 || bytes.length > FAVICON_READ_LIMIT) {
+    return undefined;
+  }
+  if (contentType === "application/octet-stream" && bytes.subarray(0, 4).equals(Buffer.from([0, 0, 1, 0]))) {
+    contentType = "image/x-icon";
+  }
+  return FAVICON_TYPES.has(contentType)
+    ? `data:${contentType};base64,${bytes.toString("base64")}`
+    : undefined;
+}
+
+function htmlMetadataMarkup(html: string) {
+  return html.replace(/<!--[\s\S]*?(?:-->|$)|<(script|style)\b[^>]*>[\s\S]*?(?:<\/\1\s*>|$)/gi, "");
 }
 
 async function readWebsiteMetadata(response: Awaited<ReturnType<typeof fetch>>) {
@@ -890,15 +963,16 @@ async function readWebsiteMetadata(response: Awaited<ReturnType<typeof fetch>>) 
         break;
       }
 
-      html += decoder.decode(chunk.value, { stream: true });
-      if (html.length >= WEBSITE_TITLE_READ_LIMIT || /<\/head\s*>/i.test(html)) {
+      html += decoder.decode(chunk.value, { stream: true }).slice(0, WEBSITE_TITLE_READ_LIMIT - html.length);
+      if (html.length >= WEBSITE_TITLE_READ_LIMIT || /<\/head\s*>/i.test(htmlMetadataMarkup(html))) {
         break;
       }
     }
 
+    const markup = htmlMetadataMarkup(html);
     return {
-      faviconPath: extractHtmlFaviconHref(html),
-      title: extractHtmlTitle(html)
+      faviconPath: extractHtmlFaviconHref(markup),
+      title: extractHtmlTitle(markup)
     };
   } finally {
     await reader.cancel().catch(() => undefined);
@@ -1551,7 +1625,7 @@ function renderDashboard(snapshot: NetworkSnapshot, dashboardPort: number) {
 function renderWebsiteCard(website: Website, generatedAt: string) {
   const processNames = unique(website.processes.map((processRef) => processRef.name));
   const processLabel = processNames.length > 0 ? processNames.join(", ") : "Process unavailable";
-  const faviconUrl = website.faviconUrl ?? new URL("/favicon.ico", website.url).toString();
+  const faviconUrl = website.faviconUrl ?? "/favicon.png";
   const onlineStatus = website.onlineSince
     ? `<span><span class="online-dot"></span>Online since <time class="online-since" datetime="${escapeAttribute(website.onlineSince)}">${formatOnlineDuration(website.onlineSince, generatedAt)}</time></span>`
     : `<span><span class="online-dot"></span>Online</span>`;
