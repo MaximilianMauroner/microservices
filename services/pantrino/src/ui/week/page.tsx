@@ -43,9 +43,11 @@ export function Week({ data }: { data: OpenKitchen }) {
     setSelection((open) => open?.kind === "plan" ? { kind: "plan" } : open);
   };
   const turn = (step: -1 | 0 | 1) => {
-    if (step === 1 || (step === -1 && week.canGoBack)) show(addDays(week.start, 7 * step));
+    const moves = step === 1 || (step === -1 && week.canGoBack);
+    if (moves) show(addDays(week.start, 7 * step));
+    return moves;
   };
-  const release = (translationX: number, velocityX: number) => turn(swipeStep(translationX, velocityX));
+  const release = (translationX: number, velocityX: number) => { if (turn(swipeStep(translationX, velocityX))) haptic("toggle"); };
   const shift = useSharedValue(0);
   const swipe = usePanGesture({
     activeOffsetX: [-24, 24],

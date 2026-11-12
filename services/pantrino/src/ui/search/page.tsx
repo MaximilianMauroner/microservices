@@ -2,8 +2,8 @@ import { router } from "expo-router";
 import { useState } from "react";
 import { View } from "react-native";
 import type { Loggable } from "../../body/model";
-import { bodyStore, useBody } from "../../body/store";
-import { useKitchen } from "../../state";
+import { bodyStore } from "../../body/store";
+import { useBodyshop, useKitchen } from "../../state";
 import { HitRow, LogSheet } from "../body/log-sheet";
 import { TEXT as BODY_TEXT } from "../body/text";
 import { Button, useKitText, type Notice, PageContext, Screen, SearchField, Snackbar, T } from "../kit";
@@ -43,11 +43,10 @@ export function SearchPage() {
   const kitText = useKitText();
   const bodyText = useText(BODY_TEXT);
   const kitchen = useKitchen();
-  const body = useBody();
   const [query, setQuery] = useState("");
   const [logging, setLogging] = useState<Loggable>();
   const [notice, setNotice] = useState<Notice | null>(null);
-  const bodyshop = body.status !== "no-access" ? body.snapshot : null;
+  const bodyshop = useBodyshop().snapshot;
   const hits = search(searchIndex(kitchen?.kitchen ?? null, bodyshop), query);
 
   async function open(hit: SearchHit) {

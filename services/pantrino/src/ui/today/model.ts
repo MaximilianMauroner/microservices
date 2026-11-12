@@ -4,11 +4,17 @@ import { shoppingView } from "../shopping/view";
 import { useByStatus } from "../use-by";
 import { buildWeek } from "../week/model";
 
+const entriesOn = (snapshot: KitchenSnapshot, day: string) => snapshot.plan.filter((one) => one.day === day)
+  .sort((a, b) => MEALS.indexOf(a.meal) - MEALS.indexOf(b.meal));
+
+/** The first meal of today that is not cooked yet. Today calls it Tonight. */
+export function nextMealToday(snapshot: KitchenSnapshot, today: string): PlanEntry | undefined {
+  return entriesOn(snapshot, today).find((one) => !one.cooked);
+}
+
 export function todayView(snapshot: KitchenSnapshot, today: string) {
   const ingredients = new Map(snapshot.ingredients.map((one) => [one.id, one]));
   const recipes = new Map(snapshot.recipes.map((one) => [one.id, one]));
-  const entriesOn = (day: string) => snapshot.plan.filter((one) => one.day === day)
-    .sort((a, b) => MEALS.indexOf(a.meal) - MEALS.indexOf(b.meal));
   const describe = (entry: PlanEntry) => {
     const recipe = recipes.get(entry.recipeId);
     return {
@@ -22,7 +28,7 @@ export function todayView(snapshot: KitchenSnapshot, today: string) {
       steps: (recipe?.instructions ?? "").split(/\n+/).map((line) => line.trim()).filter(Boolean).slice(0, 3),
     };
   };
-  const tonight = entriesOn(today).find((one) => !one.cooked);
+  const tonight = nextMealToday(snapshot, today);
   const shopping = shoppingView(snapshot, today);
   return {
     tonight: tonight ? describe(tonight) : null,
@@ -30,7 +36,7 @@ export function todayView(snapshot: KitchenSnapshot, today: string) {
       .map((one) => ({ ...one, urgent: useByStatus(one.useBy, today) !== "later" })),
     shopping,
     buyNames: [...shopping.toBuy.map((one) => one.ingredient), ...shopping.once.map((one) => one.name), ...shopping.weekly.filter((one) => !one.bought).map((one) => one.name)].slice(0, 3),
-    tomorrow: entriesOn(addDays(today, 1)).map(describe),
+    tomorrow: entriesOn(snapshot, addDays(today, 1)).map(describe),
     week: buildWeek(snapshot, today, weekStart(today)),
   };
 }
