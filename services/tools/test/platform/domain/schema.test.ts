@@ -4,7 +4,6 @@ import {
   CHECKER_STATE_SCHEMA_VERSION,
   HISTORY_SCHEMA_VERSION,
   SchemaDecodeError,
-  decodeAdminAuditRecord,
   decodeCatalogDocument,
   decodeCheckerStateDocument,
   decodeHistoryPartitionDocument,
@@ -276,24 +275,4 @@ describe("schema decoding and migration", () => {
       ).toThrow(/public HTTP\(S\) URL/);
     }
   );
-
-  it("decodes safe audit metadata without authentication material", () => {
-    expect(
-      decodeAdminAuditRecord({
-        schemaVersion: 1,
-        id: "audit-1",
-        actor: "owner@example.com",
-        occurredAt: NOW,
-        action: "entry.update",
-        targetType: "entry",
-        targetId: "public-tool",
-        catalogRevisionBefore: "catalog-1",
-        catalogRevisionAfter: "catalog-2"
-      })
-    ).toMatchObject({
-      actor: "owner@example.com",
-      action: "entry.update",
-      targetId: "public-tool"
-    });
-  });
 });

@@ -59,13 +59,6 @@ async function runSeed() {
   await ensureBucket(toolsClient, toolsBucket.name);
   await ensureBucket(artifactClient, artifactBucket.name);
 
-  await putSeedObject(
-    toolsClient,
-    toolsBucket.name,
-    BUCKET_KEYS.catalog,
-    JSON.stringify(catalog, null, 2)
-  );
-
   const initialState: CheckerStateDocument = {
     schemaVersion: CHECKER_STATE_SCHEMA_VERSION,
     revision: "seed-local",

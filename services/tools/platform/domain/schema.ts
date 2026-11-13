@@ -1,12 +1,10 @@
 import { SchemaDecodeError } from "./errors.js";
 import { validatedMonitorUrl } from "./url.js";
 import {
-  AUDIT_SCHEMA_VERSION,
   CATALOG_SCHEMA_VERSION,
   CHECKER_STATE_SCHEMA_VERSION,
   HISTORY_SCHEMA_VERSION,
   SNAPSHOT_SCHEMA_VERSION,
-  type AdminAuditRecord,
   type CatalogDocument,
   type CatalogEntry,
   type CatalogGroup,
@@ -196,35 +194,6 @@ export function migrateHistoryPartitionDocument(input: unknown): unknown {
       }
     ),
     incidents: root.incidents ?? []
-  };
-}
-
-export function decodeAdminAuditRecord(input: unknown): AdminAuditRecord {
-  const root = record(input, "$");
-  literal(root.schemaVersion, AUDIT_SCHEMA_VERSION, "$.schemaVersion");
-  return {
-    schemaVersion: AUDIT_SCHEMA_VERSION,
-    id: identifier(root.id, "$.id"),
-    actor: nonempty(root.actor, "$.actor"),
-    occurredAt: timestamp(root.occurredAt, "$.occurredAt"),
-    action: nonempty(root.action, "$.action"),
-    targetType: enumeration(
-      root.targetType,
-      ["catalog", "group", "entry", "monitor"],
-      "$.targetType"
-    ),
-    targetId:
-      root.targetId === null
-        ? null
-        : identifier(root.targetId, "$.targetId"),
-    catalogRevisionBefore: identifier(
-      root.catalogRevisionBefore,
-      "$.catalogRevisionBefore"
-    ),
-    catalogRevisionAfter: identifier(
-      root.catalogRevisionAfter,
-      "$.catalogRevisionAfter"
-    )
   };
 }
 
