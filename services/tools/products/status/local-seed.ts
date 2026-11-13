@@ -226,14 +226,12 @@ async function bucketExists(client: S3Client, bucket: string) {
 
 async function withRetry(message: string, task: () => Promise<void>) {
   let attempt = 0;
-  let lastError: unknown;
   while (attempt < retryAttempts) {
     attempt += 1;
     try {
       await task();
       return;
     } catch (error) {
-      lastError = error;
       if (attempt >= retryAttempts) {
         throw new Error(
           `Failed to ${message} after ${retryAttempts} attempts: ${String(error)}`,
@@ -245,10 +243,6 @@ async function withRetry(message: string, task: () => Promise<void>) {
       });
     }
   }
-  throw new Error(
-    `Failed to ${message} unexpectedly: ${String(lastError)}`,
-    { cause: lastError }
-  );
 }
 
 function integer(value: string | undefined, fallback: number): number {

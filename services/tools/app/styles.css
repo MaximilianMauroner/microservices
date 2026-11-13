@@ -673,7 +673,6 @@ html[data-theme="light"]:has([data-suite-accent]) {
   .downtime-history li { display: grid; grid-template-columns: 7rem 1fr auto; gap: .75rem; color: var(--muted-foreground); font-size: .75rem; }.downtime-history li strong { color: var(--foreground); }.downtime-history li span { display: block; }
   .private-status-callout { display: grid; grid-template-columns: auto 1fr auto; gap: 1rem; align-items: center; margin-top: 1rem; padding: 1.25rem; border-radius: calc(var(--radius) + 4px); background: var(--card); box-shadow: 0 0 0 1px var(--surface-border); }
   .private-status-callout__icon { display: grid; width: 2.25rem; height: 2.25rem; place-items: center; border: 1px solid var(--border); border-radius: 999px; color: var(--muted-foreground); }.private-status-callout h2 { font-weight: 650; }.private-status-callout p { color: var(--muted-foreground); font-size: .8rem; }
-  .private-status-identity { display: flex; justify-content: space-between; margin-top: 1rem; color: var(--muted-foreground); font-size: .75rem; }
   .status-footer { border-top: 1px solid var(--border); }.status-footer > div { display: flex; align-items: center; gap: .5rem; padding-block: 1.25rem; color: var(--muted-foreground); font-size: .75rem; }
   .footer-mark { display: inline-grid; width: 1.25rem; height: 1.25rem; place-items: center; border: 1px solid var(--border); border-radius: .3rem; color: var(--foreground); font-weight: 700; }
 
