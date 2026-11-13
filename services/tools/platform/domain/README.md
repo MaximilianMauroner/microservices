@@ -23,5 +23,5 @@ Snapshot and audit readers use
 `decodeAdminAuditRecord`.
 
 Canonical fixed projection keys are exported as `BUCKET_KEYS`. PostgreSQL is
-the authority for current checker state and history; object-storage documents
-are compatibility-free output projections and recovery exports only.
+the authority for current checker state and history. Object storage holds the
+catalog and the public and private snapshot projections.
