@@ -4,7 +4,7 @@ Pure contracts used by Dashboard and Status inside the Tools monolith. This
 runtime module has multiple product consumers, but it is not a repository-wide
 shared package or an independent service. It owns:
 
-- schema-versioned catalog, checker state, public/private snapshot, and audit
+- schema-versioned catalog, checker state, and public/private snapshot
   contracts;
 - explicit forward migration and decoding entrypoints;
 - incident and monitor state transitions;
@@ -18,9 +18,8 @@ logging, timers, or Railway-specific behavior.
 Mutable object decoders are `decodeCatalogDocument`,
 `decodeCheckerStateDocument`, and `decodeHistoryPartitionDocument`; their
 corresponding `migrate*` functions perform explicit v0-to-v1 forward migration.
-Snapshot and audit readers use
-`decodePublicSnapshotDocument`, `decodePrivateSnapshotDocument`, and
-`decodeAdminAuditRecord`.
+Snapshot readers use `decodePublicSnapshotDocument` and
+`decodePrivateSnapshotDocument`.
 
 Canonical fixed projection keys are exported as `BUCKET_KEYS`. PostgreSQL is
 the authority for current checker state and history. Object storage holds the

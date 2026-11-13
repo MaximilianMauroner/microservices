@@ -2,7 +2,6 @@ export const CATALOG_SCHEMA_VERSION = 1 as const;
 export const CHECKER_STATE_SCHEMA_VERSION = 2 as const;
 export const SNAPSHOT_SCHEMA_VERSION = 1 as const;
 export const HISTORY_SCHEMA_VERSION = 2 as const;
-export const AUDIT_SCHEMA_VERSION = 1 as const;
 
 export type RunId = string;
 export type Visibility = "public" | "private";
@@ -198,18 +197,6 @@ export interface HistoryPartitionDocument {
 
 export interface HistoryObservation extends CheckObservation {
   monitorId: string | null;
-}
-
-export interface AdminAuditRecord {
-  schemaVersion: typeof AUDIT_SCHEMA_VERSION;
-  id: string;
-  actor: string;
-  occurredAt: string;
-  action: string;
-  targetType: "catalog" | "group" | "entry" | "monitor";
-  targetId: string | null;
-  catalogRevisionBefore: string;
-  catalogRevisionAfter: string;
 }
 
 export interface ObservationTransition {
