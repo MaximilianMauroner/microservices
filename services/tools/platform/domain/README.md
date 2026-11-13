@@ -23,4 +23,4 @@ Snapshot readers use `decodePublicSnapshotDocument` and
 
 Canonical fixed projection keys are exported as `BUCKET_KEYS`. PostgreSQL is
 the authority for current checker state and history. Object storage holds the
-catalog and the public and private snapshot projections.
+public and private snapshot projections.
