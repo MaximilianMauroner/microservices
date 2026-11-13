@@ -5,10 +5,9 @@ import type {
 } from "#domain";
 
 /** Projects the authenticated catalog into the shared directory/status view model. */
-export function projectPrivateCatalog(snapshot: PrivateSnapshotDocument, visibility: "all" | "private"): PublicSnapshotDocument {
-  const groupVisibility = new Map(snapshot.catalog.groups.map((group) => [group.id, group.visibility]));
+export function projectPrivateCatalog(snapshot: PrivateSnapshotDocument): PublicSnapshotDocument {
   const entries = snapshot.catalog.entries
-    .filter((entry) => entry.lifecycle === "active" && (visibility === "all" || !(entry.visibility === "public" && groupVisibility.get(entry.groupId) === "public")))
+    .filter((entry) => entry.lifecycle === "active")
     .map((entry) => ({
       id: entry.id,
       groupId: entry.groupId,

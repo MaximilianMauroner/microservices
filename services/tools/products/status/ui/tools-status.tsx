@@ -20,7 +20,7 @@ type OverallState = "operational" | "attention" | "outage" | "unknown";
 
 export function ToolsStatus({ snapshot, publicOrigin }: { snapshot: PublicSnapshotDocument | PrivateSnapshotDocument; publicOrigin: string }) {
   if ("catalog" in snapshot) {
-    return <ToolsStatusView snapshot={projectPrivateCatalog(snapshot, "all")} publicOrigin={publicOrigin} view="combined" />;
+    return <ToolsStatusView snapshot={projectPrivateCatalog(snapshot)} publicOrigin={publicOrigin} view="combined" />;
   }
   return <ToolsStatusView snapshot={snapshot} publicOrigin={publicOrigin} view="public" />;
 }
