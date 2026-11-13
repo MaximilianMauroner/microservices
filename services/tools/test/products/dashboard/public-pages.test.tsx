@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { PrivateSnapshotDocument, PublicSnapshotDocument } from "#domain";
 import { EXTERNAL_TOOLS, TOOLS_PRODUCTS } from "../../../platform/ui/components/tools-nav.js";
 import { ToolsDirectory } from "../../../products/dashboard/ui/tools-directory.js";
-import { PrivateToolsStatus, ToolsStatus } from "../../../products/status/ui/tools-status.js";
+import { ToolsStatus } from "../../../products/status/ui/tools-status.js";
 
 const snapshot: PublicSnapshotDocument = {
   schemaVersion: 1,
@@ -162,17 +162,6 @@ describe("TanStack Start public pages", () => {
     expect(html).toContain("Checked every 30 minutes");
     expect(html).not.toContain("Five-minute checks");
     expect(html.match(/class="uptime-day /g)).toHaveLength(90);
-  });
-
-  it("renders the private status view from the same status surface", () => {
-    const html = renderToStaticMarkup(
-      <PrivateToolsStatus snapshot={privateSnapshot} actor="operator@example.test" publicOrigin="https://tools.mauroner.net" />
-    );
-
-    expect(html).toContain("Signed in as operator@example.test");
-    expect(html).toContain("Private console");
-    expect(html).not.toContain("Public console");
-    expect(html).toContain('href="/status"');
   });
 
   it("includes public and private services in the authenticated status view", () => {

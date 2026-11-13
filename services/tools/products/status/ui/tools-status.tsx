@@ -25,11 +25,7 @@ export function ToolsStatus({ snapshot, publicOrigin }: { snapshot: PublicSnapsh
   return <ToolsStatusView snapshot={snapshot} publicOrigin={publicOrigin} view="public" />;
 }
 
-export function PrivateToolsStatus({ snapshot, actor, publicOrigin }: { snapshot: PrivateSnapshotDocument; actor: string; publicOrigin: string }) {
-  return <ToolsStatusView snapshot={projectPrivateCatalog(snapshot, "private")} publicOrigin={publicOrigin} view="private" actor={actor} />;
-}
-
-function ToolsStatusView({ snapshot, publicOrigin, view, actor }: { snapshot: PublicSnapshotDocument; publicOrigin: string; view: "public" | "combined" | "private"; actor?: string }) {
+function ToolsStatusView({ snapshot, publicOrigin, view }: { snapshot: PublicSnapshotDocument; publicOrigin: string; view: "public" | "combined" }) {
   const entries = [...snapshot.entries].sort(byOrderThenId);
   const overall = overallState(entries, snapshot.statuses);
   const up = entries.filter(({ id }) => snapshot.statuses[id]?.status === "up").length;
@@ -60,7 +56,7 @@ function ToolsStatusView({ snapshot, publicOrigin, view, actor }: { snapshot: Pu
           {recentIncidents.length ? <ol className="divide-y">{recentIncidents.map(({ entry, record }) => <li key={`${entry.id}:${record.startedAt}`} className="grid grid-cols-[5rem_minmax(0,1fr)_auto] items-center gap-3 px-4 py-2.5 text-sm"><LocalDate value={record.startedAt} fallback={formatShortDate(new Date(record.startedAt))} /><span className="min-w-0"><strong className="block truncate font-medium">{entry.name}</strong><span className="block text-xs text-muted-foreground"><LocalTimeRange start={record.startedAt} end={record.resolvedAt} fallback={record.resolvedAt ? `${formatClock(new Date(record.startedAt))}–${formatClock(new Date(record.resolvedAt))} UTC` : `${formatClock(new Date(record.startedAt))}–ongoing UTC`} /></span></span><span className={`text-xs tabular-nums ${record.resolvedAt ? "text-muted-foreground" : "text-negative"}`}>{formatDuration(downtimeDuration(record, new Date(snapshot.generatedAt).getTime()))}</span></li>)}</ol> : <p className="px-4 py-5 text-sm text-muted-foreground">No recorded incidents in the last 30 days.</p>}
         </section>
       </div>
-      {view === "private" ? <div className="private-status-identity"><Link to="/status" preload="intent">← All services</Link><span>Signed in as {actor}</span></div> : view === "public" ? <section className="private-status-callout" aria-labelledby="private-status-title"><div className="private-status-callout__icon" aria-hidden="true"><LockKeyhole className="size-4" /></div><div><h2 id="private-status-title">Private service status</h2><p>Sign in with Google to view availability for internal services.</p></div><Button nativeButton={false} variant="outline" className="private-status-link" render={<Link to="/" preload="intent" />}>Open Tools <ChevronRight aria-hidden="true" /></Button></section> : null}
+      {view === "public" ? <section className="private-status-callout" aria-labelledby="private-status-title"><div className="private-status-callout__icon" aria-hidden="true"><LockKeyhole className="size-4" /></div><div><h2 id="private-status-title">Private service status</h2><p>Sign in with Google to view availability for internal services.</p></div><Button nativeButton={false} variant="outline" className="private-status-link" render={<Link to="/" preload="intent" />}>Open Tools <ChevronRight aria-hidden="true" /></Button></section> : null}
     </main>
   </>;
 }
@@ -166,10 +162,10 @@ function StatusDetails({ status }: { status: PublicMonitorStatus | undefined }) 
   return <>Latest check <LocalTimestamp value={status.checkedAt} fallback={formatTimestamp(status.checkedAt)} />{metrics.length ? ` · ${metrics.join(" · ")}` : ""}</>;
 }
 
-function StatusMark({ state, large = false }: { state: OverallState; large?: boolean }) {
+function StatusMark({ state }: { state: OverallState }) {
   const symbol = state === "operational" ? "✓" : state === "outage" ? "!" : state === "attention" ? "?" : "·";
   const label = state === "operational" ? "Operational" : state === "outage" ? "Service interruption" : state === "attention" ? "Inconclusive" : "Limited visibility";
-  return <span className={`status-mark status-mark--${state}${large ? " status-mark--large" : ""}`} role="img" aria-label={label}>{symbol}</span>;
+  return <span className={`status-mark status-mark--${state}`} role="img" aria-label={label}>{symbol}</span>;
 }
 
 function serviceState(status: PublicMonitorStatus | undefined): OverallState {
@@ -190,17 +186,10 @@ function overallState(entries: PublicCatalogEntry[], statuses: PublicSnapshotDoc
 
 function overallSummary(state: OverallState, count: number) {
   const coverage = count === 0 ? "" : `${count} ${count === 1 ? "service" : "services"} not measured`;
-  if (state === "outage") return { title: "Some services are unavailable", detail: "The monitor has detected an active service interruption.", badge: "Service interruption", coverage };
-  if (state === "attention") return { title: "Some service results are inconclusive", detail: "Review the latest recorded check for each service. The next scheduled check may update this status.", badge: "Review checks", coverage };
-  if (state === "operational") return { title: "All monitored services operational", detail: "No service interruptions have been detected.", badge: "Operational", coverage };
-  return { title: "Monitoring visibility is limited", detail: "No service currently has a measured availability result.", badge: "Limited visibility", coverage };
-}
-
-function overallBadgeVariant(state: OverallState) {
-  if (state === "operational") return "positive" as const;
-  if (state === "outage") return "destructive" as const;
-  if (state === "attention") return "warning" as const;
-  return "outline" as const;
+  if (state === "outage") return { title: "Some services are unavailable", detail: "The monitor has detected an active service interruption.", coverage };
+  if (state === "attention") return { title: "Some service results are inconclusive", detail: "Review the latest recorded check for each service. The next scheduled check may update this status.", coverage };
+  if (state === "operational") return { title: "All monitored services operational", detail: "No service interruptions have been detected.", coverage };
+  return { title: "Monitoring visibility is limited", detail: "No service currently has a measured availability result.", coverage };
 }
 
 interface UptimeSummary { label: string; percentage: number | null; totalChecks: number; firstObservedDay: string | null; recordedDays: number; noDataDays: number }
