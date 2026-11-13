@@ -11,8 +11,7 @@ import {
   type HistoryObservation,
   type HistoryPartitionDocument,
   type Incident,
-  type MonitorState,
-  type NotificationDelivery
+  type MonitorState
 } from "#domain";
 import type { CheckerConfig } from "./config.js";
 import type { CheckerStore } from "./bucket.js";
@@ -217,7 +216,7 @@ export async function runChecker(
   };
 }
 
-export function createRunId(environment: string, invokedAt: Date): string {
+function createRunId(environment: string, invokedAt: Date): string {
   const slotMs = 5 * 60 * 1000;
   const slot = new Date(
     Math.floor(invokedAt.getTime() / slotMs) * slotMs
@@ -727,5 +726,3 @@ async function publishSnapshots(
     )
   ]);
 }
-
-export type { NotificationDelivery };
