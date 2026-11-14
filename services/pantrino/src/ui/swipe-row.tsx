@@ -2,8 +2,8 @@ import { type LucideIcon, MoreVertical } from "lucide-react-native";
 import * as SecureStore from "expo-secure-store";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Platform, StyleSheet, View } from "react-native";
-import ReanimatedSwipeable, { type SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
-import Animated, { interpolate, type SharedValue, useAnimatedReaction, useAnimatedStyle } from "react-native-reanimated";
+import { GestureDetector, usePanGesture } from "react-native-gesture-handler";
+import Animated, { cancelAnimation, interpolate, type SharedValue, useAnimatedReaction, useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
 import { scheduleOnRN } from "react-native-worklets";
 import { Press, Sheet, T, useKitText } from "./kit";
 import { haptic } from "./haptics";
@@ -20,25 +20,38 @@ export type SwipeAction = Readonly<{ label: string; icon: LucideIcon; color: str
  * cannot be seen and some people cannot swipe.
  */
 export function SwipeRow({ right, left, children }: { right?: SwipeAction; left?: SwipeAction; children: ReactNode }) {
-  const swipe = useRef<SwipeableMethods>(null);
+  const translation = useSharedValue(0);
+  const canSwipeRight = right !== undefined;
+  const canSwipeLeft = left !== undefined;
+  function run(direction: "right" | "left") {
+    haptic("firm");
+    (direction === "right" ? right : left)?.run();
+  }
+  const swipe = usePanGesture({
+    enabled: canSwipeRight || canSwipeLeft,
+    activeOffsetX: [-24, 24],
+    failOffsetY: [-12, 12],
+    onActivate: () => { cancelAnimation(translation); },
+    onUpdate: (event) => {
+      translation.value = Math.max(canSwipeLeft ? -REACH : 0, Math.min(canSwipeRight ? REACH : 0, event.translationX));
+    },
+    onDeactivate: (event) => {
+      if (event.canceled) return;
+      const projected = event.translationX + event.velocityX * 0.05;
+      if (canSwipeRight && projected > THRESHOLD) scheduleOnRN(run, "right");
+      else if (canSwipeLeft && projected < -THRESHOLD) scheduleOnRN(run, "left");
+    },
+    onFinalize: () => { translation.value = withSpring(0, { damping: 20, stiffness: 240 }); },
+  });
+  const slide = useAnimatedStyle(() => ({ transform: [{ translateX: translation.value }] }));
   return (
-    <ReanimatedSwipeable
-      ref={swipe}
-      friction={1}
-      leftThreshold={THRESHOLD}
-      rightThreshold={THRESHOLD}
-      overshootLeft={false}
-      overshootRight={false}
-      renderLeftActions={right ? (_, translation) => <Panel side="left" translation={translation} action={right} /> : undefined}
-      renderRightActions={left ? (_, translation) => <Panel side="right" translation={translation} action={left} /> : undefined}
-      onSwipeableWillOpen={(direction) => {
-        haptic("firm");
-        (direction === "right" ? right : left)?.run();
-        swipe.current?.close();
-      }}
-    >
-      {children}
-    </ReanimatedSwipeable>
+    <GestureDetector gesture={swipe}>
+      <View style={{ overflow: "hidden" }}>
+        {right ? <Panel side="left" translation={translation} action={right} /> : null}
+        {left ? <Panel side="right" translation={translation} action={left} /> : null}
+        <Animated.View style={slide}>{children}</Animated.View>
+      </View>
+    </GestureDetector>
   );
 }
 
@@ -51,7 +64,7 @@ function Panel({ side, translation, action: { color, icon: Icon, label } }: { si
   );
   const content = useAnimatedStyle(() => ({ opacity: interpolate(translation.value * sign, [0, THRESHOLD], [0.35, 1], "clamp") }));
   return (
-    <View style={[styles.action, { backgroundColor: color }]}>
+    <View style={[styles.action, { [side]: 0, backgroundColor: color }]}>
       <Animated.View style={[styles.actionBody, content]}>
         <Icon size={20} color="#ffffff" />
         <T weight="semibold" style={{ color: "#ffffff", fontSize: 12 }}>{label}</T>
@@ -113,7 +126,7 @@ export function useSwipeTip() {
 }
 
 const styles = StyleSheet.create({
-  action: { width: REACH, alignItems: "center", justifyContent: "center" },
+  action: { position: "absolute", top: 0, bottom: 0, width: REACH, alignItems: "center", justifyContent: "center" },
   actionBody: { alignItems: "center", gap: 2 },
   more: { width: 48, height: 48, borderRadius: 24, alignItems: "center", justifyContent: "center" },
   menuItem: { minHeight: 56, flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, borderRadius: 12, borderWidth: 1 },
