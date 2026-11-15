@@ -62,6 +62,7 @@ import { Route as ApiExternalUploadsSplatRouteImport } from './routes/api/extern
 import { Route as ApiKitchenActionsRouteImport } from './routes/api/kitchen/actions'
 import { Route as ApiKitchenProductsRouteImport } from './routes/api/kitchen/products'
 import { Route as ApiKitchenSyncRouteImport } from './routes/api/kitchen/sync'
+import { Route as ApiMoneyAccountsRouteImport } from './routes/api/money/accounts'
 import { Route as ApiMoneyActivityRouteImport } from './routes/api/money/activity'
 import { Route as ApiMoneyBalancesRouteImport } from './routes/api/money/balances'
 import { Route as ApiMoneyCategoriesRouteImport } from './routes/api/money/categories'
@@ -363,6 +364,11 @@ const ApiKitchenSyncRoute = ApiKitchenSyncRouteImport.update({
   path: '/api/kitchen/sync',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiMoneyAccountsRoute = ApiMoneyAccountsRouteImport.update({
+  id: '/api/money/accounts',
+  path: '/api/money/accounts',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiMoneyActivityRoute = ApiMoneyActivityRouteImport.update({
   id: '/api/money/activity',
   path: '/api/money/activity',
@@ -601,6 +607,7 @@ export interface FileRoutesByFullPath {
   '/api/kitchen/actions': typeof ApiKitchenActionsRoute
   '/api/kitchen/products': typeof ApiKitchenProductsRoute
   '/api/kitchen/sync': typeof ApiKitchenSyncRoute
+  '/api/money/accounts': typeof ApiMoneyAccountsRoute
   '/api/money/activity': typeof ApiMoneyActivityRoute
   '/api/money/balances': typeof ApiMoneyBalancesRoute
   '/api/money/categories': typeof ApiMoneyCategoriesRoute
@@ -684,6 +691,7 @@ export interface FileRoutesByTo {
   '/api/kitchen/actions': typeof ApiKitchenActionsRoute
   '/api/kitchen/products': typeof ApiKitchenProductsRoute
   '/api/kitchen/sync': typeof ApiKitchenSyncRoute
+  '/api/money/accounts': typeof ApiMoneyAccountsRoute
   '/api/money/activity': typeof ApiMoneyActivityRoute
   '/api/money/balances': typeof ApiMoneyBalancesRoute
   '/api/money/categories': typeof ApiMoneyCategoriesRoute
@@ -775,6 +783,7 @@ export interface FileRoutesById {
   '/api/kitchen/actions': typeof ApiKitchenActionsRoute
   '/api/kitchen/products': typeof ApiKitchenProductsRoute
   '/api/kitchen/sync': typeof ApiKitchenSyncRoute
+  '/api/money/accounts': typeof ApiMoneyAccountsRoute
   '/api/money/activity': typeof ApiMoneyActivityRoute
   '/api/money/balances': typeof ApiMoneyBalancesRoute
   '/api/money/categories': typeof ApiMoneyCategoriesRoute
@@ -867,6 +876,7 @@ export interface FileRouteTypes {
     | '/api/kitchen/actions'
     | '/api/kitchen/products'
     | '/api/kitchen/sync'
+    | '/api/money/accounts'
     | '/api/money/activity'
     | '/api/money/balances'
     | '/api/money/categories'
@@ -950,6 +960,7 @@ export interface FileRouteTypes {
     | '/api/kitchen/actions'
     | '/api/kitchen/products'
     | '/api/kitchen/sync'
+    | '/api/money/accounts'
     | '/api/money/activity'
     | '/api/money/balances'
     | '/api/money/categories'
@@ -1040,6 +1051,7 @@ export interface FileRouteTypes {
     | '/api/kitchen/actions'
     | '/api/kitchen/products'
     | '/api/kitchen/sync'
+    | '/api/money/accounts'
     | '/api/money/activity'
     | '/api/money/balances'
     | '/api/money/categories'
@@ -1115,6 +1127,7 @@ export interface RootRouteChildren {
   ApiKitchenActionsRoute: typeof ApiKitchenActionsRoute
   ApiKitchenProductsRoute: typeof ApiKitchenProductsRoute
   ApiKitchenSyncRoute: typeof ApiKitchenSyncRoute
+  ApiMoneyAccountsRoute: typeof ApiMoneyAccountsRoute
   ApiMoneyActivityRoute: typeof ApiMoneyActivityRoute
   ApiMoneyBalancesRoute: typeof ApiMoneyBalancesRoute
   ApiMoneyCategoriesRoute: typeof ApiMoneyCategoriesRoute
@@ -1502,6 +1515,13 @@ declare module '@tanstack/react-router' {
       path: '/api/kitchen/sync'
       fullPath: '/api/kitchen/sync'
       preLoaderRoute: typeof ApiKitchenSyncRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/money/accounts': {
+      id: '/api/money/accounts'
+      path: '/api/money/accounts'
+      fullPath: '/api/money/accounts'
+      preLoaderRoute: typeof ApiMoneyAccountsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/money/activity': {
@@ -2007,6 +2027,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiKitchenActionsRoute: ApiKitchenActionsRoute,
   ApiKitchenProductsRoute: ApiKitchenProductsRoute,
   ApiKitchenSyncRoute: ApiKitchenSyncRoute,
+  ApiMoneyAccountsRoute: ApiMoneyAccountsRoute,
   ApiMoneyActivityRoute: ApiMoneyActivityRoute,
   ApiMoneyBalancesRoute: ApiMoneyBalancesRoute,
   ApiMoneyCategoriesRoute: ApiMoneyCategoriesRoute,

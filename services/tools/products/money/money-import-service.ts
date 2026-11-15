@@ -200,6 +200,11 @@ export class MoneyLedger {
     return this.repository.setTransferDispositions({ transactionIds, disposition: input.disposition as MoneyTransferDisposition });
   }
 
+  setAccountDeprecated(input: Readonly<{ accountId: string; deprecated: boolean }>) {
+    assertUuid(input.accountId, "invalid_account", "The selected cash account is invalid.");
+    return this.repository.setAccountDeprecated(input);
+  }
+
   addManualBalance(input: Readonly<{ accountId?: string; accountName?: string; date: string; value: string; currency: string }>) {
     const accountId = input.accountId?.trim();
     const accountName = input.accountName?.trim();
