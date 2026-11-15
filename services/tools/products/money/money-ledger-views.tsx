@@ -270,6 +270,13 @@ export function MoneyImportHistory({ imports }: Pick<MoneyTrackerPageData, "impo
       setReimportResult(undefined);
     }
   };
+  const importsByDate = new Map<string, Array<(typeof imports)[number]>>();
+  for (const item of imports) {
+    const date = formatDate(item.committedAt);
+    const group = importsByDate.get(date) ?? [];
+    group.push(item);
+    importsByDate.set(date, group);
+  }
   return (
     <MoneyPanel
       title="Import history"
@@ -299,43 +306,45 @@ export function MoneyImportHistory({ imports }: Pick<MoneyTrackerPageData, "impo
         {imports.length ? (
           <table className="money-table" aria-label="Imports">
             <thead>
-              <tr><th>File</th><th className="hide-sm">Imported</th><th className="num">New rows</th><th className="num hide-sm">Duplicates</th><th className="num"><span className="sr-only">Actions</span></th></tr>
+              <tr><th>File</th><th className="num">New rows</th><th className="num hide-sm">Duplicates</th><th className="num"><span className="sr-only">Actions</span></th></tr>
             </thead>
-            <tbody>
-              {imports.map((item) => (
-                <tr key={item.id}>
-                  <td className="max-w-80">
-                    <span className="block truncate font-medium" title={item.filename}>{item.filename}</span>
-                    <span className="sub">{formatLabel(item.format)} · {formatBytes(item.bytes)}<span className="md:hidden"> · {formatDate(item.committedAt)}</span></span>
-                  </td>
-                  <td className="hide-sm whitespace-nowrap text-muted-foreground">{formatDate(item.committedAt)}</td>
-                  <td className="num">{item.insertedCount.toLocaleString("en-GB")}</td>
-                  <td className="num hide-sm text-muted-foreground">{item.duplicateCount.toLocaleString("en-GB")}</td>
-                  <td className="num">
-                    <AlertDialog>
-                      <AlertDialogTrigger aria-label={`Delete ${item.filename}`} render={<Button type="button" variant="destructive-subtle" size="icon-sm" disabled={deleting !== undefined || reimporting} />}>
-                        <Trash2 />
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>Delete {item.filename}?</AlertDialogTitle>
-                          <AlertDialogDescription>
-                            This cannot be undone. The raw file is already discarded. {item.insertedCount.toLocaleString("en-GB")} transaction{item.insertedCount === 1 ? "" : "s"} and all derived investment events,
-                            balance snapshots, and analytics owned by this import will be removed. Data from other imports will stay.
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel disabled={deleting === item.id}>Cancel</AlertDialogCancel>
-                          <AlertDialogAction variant="destructive" disabled={deleting === item.id} onClick={() => void deleteImport(item.id)}>
-                            {deleting === item.id ? "Deleting…" : "Delete import data"}
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
+            {[...importsByDate].map(([date, items]) => (
+              <tbody key={date}>
+                <tr><th scope="rowgroup" colSpan={4} className="bg-muted/60 font-semibold text-foreground">{date}</th></tr>
+                {items.map((item) => (
+                  <tr key={item.id}>
+                    <td className="max-w-80">
+                      <span className="block truncate font-medium" title={item.filename}>{item.filename}</span>
+                      <span className="sub">{formatLabel(item.format)} · {formatBytes(item.bytes)}</span>
+                    </td>
+                    <td className="num">{item.insertedCount.toLocaleString("en-GB")}</td>
+                    <td className="num hide-sm text-muted-foreground">{item.duplicateCount.toLocaleString("en-GB")}</td>
+                    <td className="num">
+                      <AlertDialog>
+                        <AlertDialogTrigger aria-label={`Delete ${item.filename}`} render={<Button type="button" variant="destructive-subtle" size="icon-sm" disabled={deleting !== undefined || reimporting} />}>
+                          <Trash2 />
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Delete {item.filename}?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              This cannot be undone. The raw file is already discarded. {item.insertedCount.toLocaleString("en-GB")} transaction{item.insertedCount === 1 ? "" : "s"} and all derived investment events,
+                              balance snapshots, and analytics owned by this import will be removed. Data from other imports will stay.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel disabled={deleting === item.id}>Cancel</AlertDialogCancel>
+                            <AlertDialogAction variant="destructive" disabled={deleting === item.id} onClick={() => void deleteImport(item.id)}>
+                              {deleting === item.id ? "Deleting…" : "Delete import data"}
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            ))}
           </table>
         ) : (
           <EmptyState title="No imports yet">Completed imports appear here with their row counts.</EmptyState>

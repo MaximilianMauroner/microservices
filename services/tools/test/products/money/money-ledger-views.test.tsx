@@ -205,6 +205,31 @@ describe("Money rules and imports", () => {
     expect(html).toContain("revolut cash statement · 1.2 KB");
   });
 
+  it("groups imports by their Berlin calendar date", () => {
+    const files = [
+      { filename: "cash.csv", committedAt: "2026-10-12T20:00:00.000Z" },
+      { filename: "older.csv", committedAt: "2026-10-11T21:00:00.000Z" },
+      { filename: "savings.csv", committedAt: "2026-10-11T22:30:00.000Z" }
+    ];
+    const imports = files.map((file, index) => ({
+      ...file, id: `import-${index}`, digest: `digest-${index}`, format: "revolut_cash_statement_v1" as const,
+      bytes: 1200, rowCount: 100, insertedCount: 90, duplicateCount: 10, actor: "operator@example.test"
+    }));
+    const html = renderToStaticMarkup(<MoneyImportHistory imports={imports} />);
+    const groups = [...html.matchAll(/<tbody>(.*?)<\/tbody>/gs)].map((match) => match[1]!);
+
+    expect(groups).toHaveLength(2);
+    expect(groups[0]).toContain("12 Oct 2026");
+    expect(groups[0]).toContain("cash.csv");
+    expect(groups[0]).toContain("savings.csv");
+    expect(groups[0]).not.toContain("older.csv");
+    expect(groups[1]).toContain("11 Oct 2026");
+    expect(groups[1]).toContain("older.csv");
+    expect(groups[1]).not.toContain("savings.csv");
+    expect(html.match(/12 Oct 2026/g)).toHaveLength(1);
+    expect(html).toContain('aria-label="Delete savings.csv"');
+  });
+
   it("uses persisted account roles instead of label suffixes for allocation", () => {
     const grouped = groupMonth({ date: "2026-08-01", values: { cash: 10, investment: 20 }, observedAccounts: ["cash", "investment"], total: 30 }, { cash: "cash", investment: "investment" });
     expect(grouped).toMatchObject({ money: 10, stocks: 20 });
