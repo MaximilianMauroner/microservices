@@ -959,7 +959,7 @@ function balanceSnapshot(rows: SnapshotRow[]): MoneyTrackerSnapshot {
     const values = { ...carried };
     return { date, values, observedAccounts: Object.keys(updates), total: Object.values(values).reduce((sum, value) => sum + value, 0) };
   });
-  return { accounts: [...accounts].sort((left, right) => labels[left]!.localeCompare(labels[right]!)), accountLabels: labels, accountRoles: roles, accountLastObserved, months, latestDate: months.at(-1)?.date };
+  return { accounts: [...accounts].sort((left, right) => labels[left]!.localeCompare(labels[right]!)), accountLabels: labels, accountRoles: roles, accountLastObserved, deprecatedAccountIds: [], months, latestDate: months.at(-1)?.date };
 }
 
 function accountDisplayName(row: Pick<SnapshotRow, "display_name" | "provider" | "role">) {

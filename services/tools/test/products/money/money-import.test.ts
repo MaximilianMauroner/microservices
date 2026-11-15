@@ -505,6 +505,7 @@ class MemoryMoneyRepository implements MoneyOwnerRepository {
       investments: { positions: [], trades: [], totals: { eventCount: 0, boughtMinor: 0, soldMinor: 0, incomeMinor: 0, feesMinor: 0, taxesMinor: 0 }, realized: { positions: [], totals: { saleCount: 0, proceedsMinor: 0, costBasisMinor: 0, gainMinor: 0, unmatchedSaleCount: 0 } } },
       planning: { ready: true, unresolvedTransferCount: 0, medianMonthlyNetMinor: 0, observedMonthCount: 6, projections: [{ months: 6, changeMinor: 0 }, { months: 12, changeMinor: 0 }, { months: 60, changeMinor: 0 }] },
       accountLastObserved: {},
+      deprecatedAccountIds: [],
       reviewCounts: { uncategorized: 0, transfers: 0 }, reviewQueue: { items: [], commonCategories: [] }
     };
   }

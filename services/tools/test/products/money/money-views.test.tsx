@@ -20,6 +20,7 @@ function pageData(overrides: Partial<MoneyTrackerPageData> = {}): MoneyTrackerPa
     accountLabels: { cash: "Girokonto", savings: "Tagesgeld", broker: "Depot" },
     accountRoles: { cash: "cash", savings: "cash", broker: "investment" },
     accountLastObserved: { cash: currentMonth, savings: "2026-01-01", broker: currentMonth },
+    deprecatedAccountIds: [],
     months: [
       { date: "2026-01-01", total: 1_500, values: { cash: 1_000, savings: 500 }, observedAccounts: ["cash", "savings"] },
       { date: currentMonth, total: 3_700, values: { cash: 1_200, savings: 500, broker: 2_000 }, observedAccounts: ["cash", "broker"] },
