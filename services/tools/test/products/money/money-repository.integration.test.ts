@@ -73,6 +73,26 @@ it.skipIf(!repository || !admin)("commits savings CSV and Excel into one account
   expect((await repository!.readCashSince("2026-08-08")).snapshots.at(-1)?.valueMinor).toBe(1001);
 });
 
+it.skipIf(!repository || !admin).each([
+  { previousMonth: "Sep", previousFirst: true },
+  { previousMonth: "Sept", previousFirst: true },
+  { previousMonth: "Sep", previousFirst: false },
+  { previousMonth: "Sept", previousFirst: false }
+])("matches savings exports across date spellings and import order ($previousMonth, previous first: $previousFirst)", async ({ previousMonth, previousFirst }) => {
+  const oldHeaders = ["Date", "Description", "Gross Interest Rate Earned", "Money in", "Money out", "Balance"];
+  const newHeaders = ["Date", "Description", "Gross interest rate earned", "Money in", "Money out", "Balance"];
+  const previous = moneyWorkbookFixture([oldHeaders, ["1 Sep 2026", `Net Interest Paid to 'Instant Access Savings' for 1 ${previousMonth} 2026`, "2.00%", "€0.01", "", "€10.01"]]);
+  const current = moneyWorkbookFixture([newHeaders, ["1 Sep 2026", 'Net interest paid to "Instant Access Savings" for Sep 1, 2026', "2.00%", "€0.01", "", "€10.01"]]);
+  const service = new MoneyLedger(repository!);
+  const [first, second] = previousFirst ? [previous, current] : [current, previous];
+  const firstPreview = await service.preview("first.xlsx", first);
+  expect(await service.commit({ filename: "first.xlsx", bytes: first, expectedDigest: firstPreview.digest, actor: "integration@example.test" })).toMatchObject({ insertedCount: 1, duplicateCount: 0 });
+  const secondPreview = await service.preview("second.xlsx", second);
+  expect(secondPreview.duplicateCount).toBe(1);
+  expect(await service.commit({ filename: "second.xlsx", bytes: second, expectedDigest: secondPreview.digest, actor: "integration@example.test" })).toMatchObject({ insertedCount: 0, duplicateCount: 1 });
+  expect((await repository!.readLedgerSnapshot("all")).transactionCount).toBe(1);
+});
+
 it.skipIf(!repository || !admin).each(["original", "duplicate"] as const)("recognizes raw-cell keys after deleting the %s import", async (deleted) => {
   const headers = ["Type", "Product", "Started Date", "Completed Date", "Description", "Amount", "Fee", "Currency", "State", "Balance"];
   const row = ["Interest", "Deposit", "2026-08-09 5:08:51", "2026-08-09 5:08:51", "Interest paid", "0.010", "0.00", "EUR", "COMPLETED", "10.01"];

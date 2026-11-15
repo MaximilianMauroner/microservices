@@ -61,6 +61,33 @@ describe("statement file formats", () => {
     expect(csv.accounts[0]).toMatchObject({ externalRef: "revolut:cash:deposit:EUR", name: "Revolut Instant Access Savings" });
   });
 
+  it.each(["CSV", "Excel"])("skips pending cash transactions in %s until they settle", (format) => {
+    const headers = layouts[0]!.headers;
+    const completed = ["Transfer", "Current", "2026-08-09 08:00:00", "2026-08-09 08:00:00", "Deposit", "50", "0", "EUR", "COMPLETED", "50"];
+    const pending = ["Card Payment", "Current", "2026-08-09 08:10:00", "", "Pending purchase", "-20", "0", "EUR", "PENDING", "30"];
+    const later = ["Card Payment", "Current", "2026-08-09 08:30:00", "2026-08-09 08:30:00", "Purchase", "-5", "0", "EUR", "COMPLETED", "45"];
+    const file = (rows: string[][]) => format === "CSV" ? delimited([headers, ...rows], ",") : moneyWorkbookFixture([headers, ...rows]);
+    const parsed = parseMoneyImport(file([completed, pending, later]));
+
+    expect(parsed.rowCount).toBe(2);
+    expect(parsed.transactions.map(({ sourceRow, description }) => ({ sourceRow, description }))).toEqual([
+      { sourceRow: 2, description: "Deposit" },
+      { sourceRow: 4, description: "Purchase" }
+    ]);
+    expect(parsed.accounts[0]).toMatchObject({ rowCount: 2, completedCount: 2, endingBalanceMinor: 4500, reconciliationMismatchCount: 0 });
+    expect(parsed.balanceSnapshots).toEqual([expect.objectContaining({ valueMinor: 4500, sourceRow: 4 })]);
+    expect(parsed.warnings).toEqual([expect.stringMatching(/1 pending transaction.*skipped/i)]);
+    expect(() => parseMoneyImport(file([pending]))).toThrow("no completed or reverted transactions");
+    expect(() => parseMoneyImport(file([[...pending.slice(0, 8), "UNKNOWN", ""]]))).toThrow("unsupported state");
+
+    const settled = [...pending];
+    settled[3] = "2026-08-09 08:10:00";
+    settled[8] = "COMPLETED";
+    const nextImport = parseMoneyImport(file([settled]));
+    expect(nextImport.transactions[0]).toMatchObject({ description: "Pending purchase", status: "completed", amountMinor: -2000 });
+    expect(nextImport.warnings).toEqual([]);
+  });
+
   it.each([
     {
       name: "raw trading",
@@ -99,6 +126,32 @@ describe("statement file formats", () => {
 });
 
 describe("Revolut savings statements", () => {
+  it("recognizes US savings exports and keeps the source keys of earlier exports", () => {
+    const usHeaders = ["Date", "Description", "Gross interest rate earned", "Money in", "Money out", "Balance"];
+    const oldRows = [
+      ["8 Aug 2026", "Deposit to 'Instant Access Savings'", "", "€10.00", "", "€10.00"],
+      ["9 Aug 2026", "Net Interest Paid to 'Instant Access Savings' for 9 Aug 2026", "2.00%", "€0.01", "", "€10.01"],
+      ["10 Aug 2026", "Withdrawal from 'Instant Access Savings'", "", "", "€1.00", "€9.01"]
+    ];
+    const usRows = [
+      ["8 Aug 2026", 'Deposit to "Instant Access Savings"', "", "€10.00", "", "€10.00"],
+      ["9 Aug 2026", 'Net interest paid to "Instant Access Savings" for Aug 9, 2026', "2.00%", "€0.01", "", "€10.01"],
+      ["10 Aug 2026", 'Withdrawal from "Instant Access Savings"', "", "", "€1.00", "€9.01"]
+    ];
+    const previous = parseMoneyImport(delimited([savingsHeaders, ...oldRows], ","));
+    for (const source of [delimited([usHeaders, ...usRows], ","), moneyWorkbookFixture([usHeaders, ...usRows])]) {
+      const parsed = parseMoneyImport(source);
+      expect(parsed.format).toBe(REVOLUT_SAVINGS_FORMAT);
+      expect(parsed.transactions.map(({ sourceKey }) => sourceKey)).toEqual(previous.transactions.map(({ sourceKey }) => sourceKey));
+      expect(parsed.transactions.map(({ amountMinor, flowKind }) => ({ amountMinor, flowKind }))).toEqual([
+        { amountMinor: 1000, flowKind: "transfer" },
+        { amountMinor: 1, flowKind: "investment_income" },
+        { amountMinor: -100, flowKind: "transfer" }
+      ]);
+      expect(parsed.warnings).toEqual([]);
+    }
+  });
+
   it.each(["Sep", "Sept"])("reads the %s September date spelling", (month) => {
     const row = [`1 ${month} 2026`, "Deposit to 'Instant Access Savings'", "", "€10.00", "", "€10.00"];
     expect(parseMoneyImport(delimited([savingsHeaders, row], ",")).transactions[0]?.localDate).toBe("2026-09-01");

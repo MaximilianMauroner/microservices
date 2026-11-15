@@ -46,6 +46,9 @@ const TRADING_HEADERS = ["Date", "Ticker", "Type", "Quantity", "Price per share"
 const PORTFOLIO_HEADERS = ["datetime", "date", "account_type", "category", "type", "asset_class", "name", "symbol", "shares", "price", "amount", "fee", "tax", "currency", "original_amount", "original_currency", "fx_rate", "description", "transaction_id", "counterparty_name", "counterparty_iban", "payment_reference", "mcc_code"] as const;
 const BALANCE_HEADERS = ["Date", "Account", "Value", "Role", "Currency"] as const;
 const SAVINGS_HEADERS = ["Date", "Description", "Gross Interest Rate Earned", "Money in", "Money out", "Balance"] as const;
+const SAVINGS_US_HEADERS = ["Date", "Description", "Gross interest rate earned", "Money in", "Money out", "Balance"] as const;
+const SAVINGS_DESCRIPTION = /^(Deposit to|Withdrawal from|Net Interest Paid to) (['"])(.+?)\2(?: for (.+))?$/i;
+const LEGACY_SAVINGS_DESCRIPTION = /^(Deposit to|Withdrawal from|Net Interest Paid to) '[^']+'(?: for .+)?$/;
 
 const CASH_TYPES = new Set(["Transfer", "Card Payment", "Topup", "Exchange", "Card Refund", "ATM", "CARD_CREDIT", "Interest"]);
 const TRADING_TYPES = new Set(["DIVIDEND", "CUSTODY FEE", "CASH TOP-UP", "BUY - MARKET", "CASH WITHDRAWAL", "SELL - MARKET", "STOCK SPLIT", "DIVIDEND TAX (CORRECTION)", "CUSTODY FEE REVERSAL", "TRANSFER FROM REVOLUT TRADING LTD TO REVOLUT SECURITIES EUROPE UAB", "TRANSFER FROM REVOLUT BANK UAB TO REVOLUT SECURITIES EUROPE UAB"]);
@@ -174,7 +177,7 @@ export function parseMoneyImport(bytes: Uint8Array): ParsedMoneyImport {
   if (dataRows.length > MONEY_IMPORT_MAX_ROWS) throw invalid("too_many_rows", `Money imports may contain at most ${MONEY_IMPORT_MAX_ROWS.toLocaleString("en-GB")} rows.`);
   const normalizedRows = workbook ? normalizeWorkbookDates(headers, dataRows) : dataRows;
   if (sameStrings(headers, CASH_HEADERS)) return parseCash(normalizedRows, digest);
-  if (sameStrings(headers, SAVINGS_HEADERS)) return parseSavings(normalizedRows, digest);
+  if (sameStrings(headers, SAVINGS_HEADERS) || sameStrings(headers, SAVINGS_US_HEADERS)) return parseSavings(normalizedRows, digest);
   if (sameStrings(headers, TRADING_HEADERS)) return parseTrading(normalizedRows, digest);
   if (sameStrings(headers, PORTFOLIO_HEADERS)) return parsePortfolio(normalizedRows, digest);
   if (sameStrings(headers, BALANCE_HEADERS)) return parseBalances(normalizedRows, digest);
@@ -255,10 +258,19 @@ function parseSparkasse(rows: string[][], digest: string): ParsedMoneyImport {
 }
 
 function parseCash(dataRows: string[][], digest: string): ParsedMoneyImport {
-  const transactions = dataRows.map((row, index) => cashRow(row, index + 2));
+  const transactions: MoneyLedgerTransaction[] = [];
+  let pending = 0;
+  for (const [index, row] of dataRows.entries()) {
+    const sourceRow = index + 2;
+    assertColumns(row, CASH_HEADERS.length, sourceRow);
+    if (row[8] === "PENDING") { pending += 1; continue; }
+    transactions.push(cashRow(row, sourceRow));
+  }
+  if (!transactions.length) throw invalid("empty_statement", "The statement has no completed or reverted transactions. Pending transactions are not imported.");
   const accounts = accountPreviews(transactions);
-  return result(REVOLUT_CASH_FORMAT, digest, transactions, [], buildBalanceSnapshots(transactions), accounts,
-    accounts.some((account) => account.reconciliationMismatchCount) ? ["One or more running balances do not reconcile. Review the account summary before importing."] : []);
+  const warnings = accounts.some((account) => account.reconciliationMismatchCount) ? ["One or more running balances do not reconcile. Review the account summary before importing."] : [];
+  if (pending) warnings.unshift(`${pending} pending transaction${pending === 1 ? " was" : "s were"} skipped. Import a new statement after ${pending === 1 ? "it completes" : "they complete"}.`);
+  return result(REVOLUT_CASH_FORMAT, digest, transactions, [], buildBalanceSnapshots(transactions), accounts, warnings);
 }
 
 function parseSavings(dataRows: string[][], digest: string): ParsedMoneyImport {
@@ -273,12 +285,12 @@ function savingsRow(row: string[], sourceRow: number): MoneyLedgerTransaction {
   const [rawDate, rawDescription, rate, moneyIn, moneyOut, balance] = row;
   const localDate = savingsDate(rawDate, sourceRow);
   const description = sanitizeDescription(rawDescription ?? "");
-  const match = /^(Deposit to|Withdrawal from|Net Interest Paid to) '([^']+)'(?: for .+)?$/.exec(description);
+  const match = SAVINGS_DESCRIPTION.exec(description);
   if (!match) throw invalid("unsupported_transaction_type", `Row ${sourceRow} contains an unsupported savings transaction description.`);
-  const product = match[2]!;
+  const product = match[3]!;
   assertIndexedIdentity(product, sourceRow, "Product");
-  const interest = match[1] === "Net Interest Paid to";
-  const withdrawal = match[1] === "Withdrawal from";
+  const interest = match[1]!.toLowerCase() === "net interest paid to";
+  const withdrawal = match[1]!.toLowerCase() === "withdrawal from";
   if ((moneyIn !== "" && moneyOut !== "") || (moneyIn === "" && moneyOut === "") || (withdrawal ? moneyOut === "" : moneyIn === "")) throw invalid("invalid_amount", `Row ${sourceRow} must have money in or money out matching its savings transaction.`);
   if (rate && !/^(?:\d+(?:\.\d+)?%|\d+(?:\.\d+)?)$/.test(rate)) throw invalid("invalid_interest_rate", `Row ${sourceRow} has an invalid Gross Interest Rate Earned.`);
   const amountMinor = savingsAmount(withdrawal ? moneyOut : moneyIn, sourceRow, withdrawal ? "Money out" : "Money in") * (withdrawal ? -1 : 1);
@@ -288,13 +300,39 @@ function savingsRow(row: string[], sourceRow: number): MoneyLedgerTransaction {
   const occurredAt = `${localDate}T12:00:00.000Z`;
   const sourceType = interest ? "Interest" : withdrawal ? "Withdrawal" : "Deposit";
   const flowKind = interest ? "investment_income" : "transfer";
+  const identityDescription = LEGACY_SAVINGS_DESCRIPTION.test(description) ? description : canonicalSavingsDescription(match, localDate);
   return {
-    sourceKey: fingerprint([REVOLUT_SAVINGS_FORMAT, sourceAccountRef, localDate, description, String(amountMinor), String(balanceAfterMinor)]),
+    sourceKey: fingerprint([REVOLUT_SAVINGS_FORMAT, sourceAccountRef, localDate, identityDescription, String(amountMinor), String(balanceAfterMinor)]),
     sourceRow, provider: "revolut", accountRole: "cash", accountExternalRef, accountName: `Revolut ${product}`,
     occurredAt, completedAt: occurredAt, localDate, description, amountMinor, feeMinor: 0, taxMinor: 0,
     baseAmountMinor: amountMinor, baseFeeMinor: 0, baseTaxMinor: 0, baseCurrency: "EUR", balanceAfterMinor,
     currency: "EUR", status: "completed", sourceType, flowKind, category: inferMoneyCategory(flowKind)
   };
+}
+
+function canonicalSavingsDescription(match: RegExpExecArray, localDate: string) {
+  const action = match[1]!.toLowerCase();
+  const prefix = action === "net interest paid to" ? "Net Interest Paid to" : action === "withdrawal from" ? "Withdrawal from" : "Deposit to";
+  let date = match[4];
+  const usDate = /^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (\d{1,2}), (\d{4})$/.exec(date ?? "");
+  if (usDate) {
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const iso = `${usDate[3]}-${String(months.indexOf(usDate[1]!) + 1).padStart(2, "0")}-${usDate[2]!.padStart(2, "0")}`;
+    if (iso === localDate) date = `${Number(usDate[2])} ${usDate[1]} ${usDate[3]}`;
+  }
+  return `${prefix} '${match[3]}'${date ? ` for ${date}` : ""}`;
+}
+
+export function revolutSavingsSourceKeys(transaction: MoneyLedgerTransaction): string[] {
+  const match = SAVINGS_DESCRIPTION.exec(transaction.description);
+  if (transaction.provider !== "revolut" || !match || transaction.balanceAfterMinor === undefined) return [];
+  const sourceAccountRef = `revolut:cash:${match[3]!.toLocaleLowerCase("en-GB")}:EUR`;
+  const canonical = canonicalSavingsDescription(match, transaction.localDate);
+  const alternate = canonical.replace(/( for \d{1,2} )Sep(t?)( \d{4})$/, (_, start: string, t: string, end: string) => `${start}Sep${t ? "" : "t"}${end}`);
+  const keys = [...new Set([transaction.description, canonical, alternate].map((description) => fingerprint([
+    REVOLUT_SAVINGS_FORMAT, sourceAccountRef, transaction.localDate, description, String(transaction.amountMinor), String(transaction.balanceAfterMinor)
+  ])))];
+  return keys.includes(transaction.sourceKey) ? keys : [];
 }
 
 function savingsDate(value: string | undefined, sourceRow: number) {
@@ -312,7 +350,6 @@ function savingsAmount(value: string | undefined, sourceRow: number, field: stri
 }
 
 function cashRow(row: string[], sourceRow: number): MoneyLedgerTransaction {
-  assertColumns(row, CASH_HEADERS.length, sourceRow);
   const [type, product, started, completed, rawDescription, amount, fee, currency, state, balance] = row;
   if (!type || !CASH_TYPES.has(type)) throw invalid("unsupported_transaction_type", `Row ${sourceRow} contains unsupported transaction type ${JSON.stringify(type ?? "")}.`);
   if (!product?.trim()) throw invalid("invalid_product", `Row ${sourceRow} has no product.`);

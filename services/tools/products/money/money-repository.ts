@@ -11,6 +11,7 @@ import {
   MoneyImportValidationError,
   inferMoneyCategory,
   revolutCashSourceKey,
+  revolutSavingsSourceKeys,
   REVOLUT_CASH_FORMAT,
   type MoneyBalanceSnapshotInput,
   type MoneyCategory,
@@ -1364,6 +1365,22 @@ async function existingTransactionIds(sql: Sql | TransactionSql, own: MoneyOwner
   for (const keys of chunks([...sourceKeys], 1_000)) {
     const rows = await sql<{ id: string; source_key: string }[]>`select id, source_key from ${own.transactions} owned_transactions where source_key in ${sql(keys)}`;
     for (const row of rows) existing.set(row.source_key, row.id);
+  }
+  const alternateOwners = new Map<string, Set<string>>();
+  for (const transaction of transactions) {
+    if (existing.has(transaction.sourceKey)) continue;
+    for (const key of revolutSavingsSourceKeys(transaction)) {
+      if (key === transaction.sourceKey) continue;
+      const owners = alternateOwners.get(key) ?? new Set<string>();
+      owners.add(transaction.sourceKey);
+      alternateOwners.set(key, owners);
+    }
+  }
+  for (const keys of chunks([...alternateOwners.keys()], 1_000)) {
+    const rows = await sql<{ id: string; source_key: string }[]>`select id, source_key from ${own.transactions} owned_transactions where source_key in ${sql(keys)}`;
+    for (const row of rows) for (const sourceKey of alternateOwners.get(row.source_key) ?? []) {
+      if (!existing.has(sourceKey)) existing.set(sourceKey, row.id);
+    }
   }
   const cash = transactions.filter((item) => item.provider === "revolut" && item.accountRole === "cash"
     && !existing.has(item.sourceKey) && item.sourceKey === revolutCashSourceKey(item));
