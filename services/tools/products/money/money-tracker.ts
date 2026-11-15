@@ -4,6 +4,7 @@ export type MoneyTrackerSnapshot = Readonly<{
   accountLabels: Record<string, string>;
   accountRoles: Record<string, "cash" | "investment">;
   accountLastObserved: Record<string, string>;
+  deprecatedAccountIds: string[];
   months: Array<{
     date: string;
     total: number;

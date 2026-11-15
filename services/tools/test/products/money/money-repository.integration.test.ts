@@ -9,6 +9,8 @@ import { cashMovesSince } from "../../../products/money/money-checkin-domain.js"
 import { createPostgresMoneyRepository, type MoneyOwnerRepository } from "../../../products/money/money-repository.js";
 import { moneyTrackerTrendStats } from "../../../products/money/money-tracker-domain.js";
 import { MoneyLedger } from "../../../products/money/money-import-service.js";
+import { updateMoneyAccount } from "../../../products/money/money-route-handlers.js";
+import type { PlatformRouteInput } from "../../../platform/route-handlers.js";
 import { requireLoopbackPostgres } from "../../harness/postgres.ts";
 import { moneyWorkbookFixture } from "./money-workbook-fixture.js";
 
@@ -740,6 +742,146 @@ it.skipIf(!repository || !admin)("materializes carried balance months for monthl
   expect(moneyTrackerTrendStats(points).geometricAverageMonthlyPercent).toBeCloseTo(10);
 });
 
+it.skipIf(!repository || !admin)("deprecates and restores zero-balance cash accounts without changing their history", async () => {
+  await repository!.addManualBalance({ accountName: "Closed cash", date: "2026-01-31", valueMinor: 1_000, currency: "EUR" });
+  const accountId = await accountNamed("Closed cash");
+  await repository!.addManualBalance({ accountId, date: "2026-02-28", valueMinor: 0, currency: "EUR" });
+  const before = await repository!.readLedgerSnapshot("all");
+
+  await repository!.setAccountDeprecated({ accountId, deprecated: true });
+  await repository!.setAccountDeprecated({ accountId, deprecated: true });
+  const deprecated = await repository!.readLedgerSnapshot("all");
+  expect(deprecated.deprecatedAccountIds).toContain(accountId);
+  expect(deprecated.accounts).toContain(accountId);
+  expect(deprecated.months).toEqual(before.months);
+  expect(deprecated.months[0]?.values[accountId]).toBe(10);
+
+  await expect(store!.owner("another-owner").setAccountDeprecated({ accountId, deprecated: false })).rejects.toMatchObject({ code: "account_not_found" });
+  expect((await repository!.readLedgerSnapshot("all")).deprecatedAccountIds).toContain(accountId);
+  await repository!.setAccountDeprecated({ accountId, deprecated: false });
+  expect((await repository!.readLedgerSnapshot("all")).deprecatedAccountIds).not.toContain(accountId);
+});
+
+it.skipIf(!repository || !admin)("checks the actual owner and balance through the account status route", async () => {
+  await repository!.addManualBalance({ accountName: "API cash", date: "2026-01-31", valueMinor: 100, currency: "EUR" });
+  const accountId = await accountNamed("API cash");
+  const update = (subject: string, deprecated: boolean) => updateMoneyAccount({
+    request: new Request("https://tools.example.test/api/money/accounts", {
+      method: "POST", headers: { Origin: "https://tools.example.test", "Content-Type": "application/json" },
+      body: JSON.stringify({ accountId, deprecated })
+    }),
+    params: {},
+    context: { principal: { subject, email: "fixture@example.test" }, runtime: {
+      publicOrigin: "https://tools.example.test", moneyImports: { owner: (owner: string) => new MoneyLedger(store!.owner(owner)) }
+    } }
+  } as unknown as PlatformRouteInput);
+  expect((await update(OWNER, true)).status).toBe(400);
+  expect((await update("another-owner", true)).status).toBe(404);
+  await repository!.addManualBalance({ accountId, date: "2026-02-28", valueMinor: 0, currency: "EUR" });
+  expect((await update(OWNER, true)).status).toBe(200);
+  expect((await repository!.readLedgerSnapshot("all")).deprecatedAccountIds).toContain(accountId);
+  expect((await update(OWNER, false)).status).toBe(200);
+  expect((await repository!.readLedgerSnapshot("all")).deprecatedAccountIds).not.toContain(accountId);
+});
+
+it.skipIf(!repository || !admin)("rejects deprecation for nonzero, unknown, and investment balances", async () => {
+  await repository!.addManualBalance({ accountName: "Positive", date: "2026-02-28", valueMinor: 1, currency: "EUR" });
+  await repository!.addManualBalance({ accountName: "Negative", date: "2026-02-28", valueMinor: -1, currency: "EUR" });
+  await commitCash(repository!, cash(["Transfer\tUnobserved\t2026-02-01 12:00:00\t2026-02-01 12:00:00\tUnknown balance\t1\t0\tEUR\tCOMPLETED\t"]), "unknown.tsv");
+  await commitCash(repository!, Buffer.from([
+    "Date\tTicker\tType\tQuantity\tPrice per share\tTotal Amount\tCurrency\tFX Rate",
+    "2026-02-01T12:00:00.000Z\t\tCASH TOP-UP\t\t\tEUR 1\tEUR\t1"
+  ].join("\r\n")), "investment.tsv");
+
+  for (const name of ["Positive", "Negative", "Revolut Unobserved"]) {
+    await expect(repository!.setAccountDeprecated({ accountId: await accountNamed(name), deprecated: true })).rejects.toMatchObject({ code: "account_balance_not_zero" });
+  }
+  const snapshot = await repository!.readLedgerSnapshot("all");
+  const investment = snapshot.accounts.find((id) => snapshot.accountRoles[id] === "investment");
+  expect(investment).toBeDefined();
+  await expect(repository!.setAccountDeprecated({ accountId: investment!, deprecated: true })).rejects.toMatchObject({ code: "account_not_found" });
+  expect((await repository!.readLedgerSnapshot("all")).deprecatedAccountIds).toEqual([]);
+});
+
+it.skipIf(!repository || !admin)("restores a deprecated account when a newer manual balance is nonzero", async () => {
+  await repository!.addManualBalance({ accountName: "Manual cash", date: "2026-02-28", valueMinor: 0, currency: "EUR" });
+  const accountId = await accountNamed("Manual cash");
+  await repository!.setAccountDeprecated({ accountId, deprecated: true });
+  await repository!.addManualBalance({ accountId, date: "2026-01-31", valueMinor: 500, currency: "EUR" });
+  expect((await repository!.readLedgerSnapshot("all")).deprecatedAccountIds).toContain(accountId);
+  await repository!.addManualBalance({ accountId, date: "2026-03-31", valueMinor: 250, currency: "EUR" });
+  const snapshot = await repository!.readLedgerSnapshot("all");
+  expect(snapshot.deprecatedAccountIds).not.toContain(accountId);
+  expect(snapshot.months.at(-1)?.values[accountId]).toBe(2.5);
+});
+
+it.skipIf(!repository || !admin)("uses the displayed manual balance when an import has a different balance on the same day", async () => {
+  await commitCash(repository!, cash(["Transfer\tCurrent\t2026-02-28 12:00:00\t2026-02-28 12:00:00\tFunding\t10\t0\tEUR\tCOMPLETED\t10"]), "same-day.tsv");
+  const accountId = await accountNamed("Revolut Current");
+  await repository!.addManualBalance({ accountId, date: "2026-02-28", valueMinor: 0, currency: "EUR" });
+  await repository!.setAccountDeprecated({ accountId, deprecated: true });
+  expect((await repository!.readLedgerSnapshot("all")).deprecatedAccountIds).toContain(accountId);
+  await repository!.addManualBalance({ accountId, date: "2026-02-28", valueMinor: 1, currency: "EUR" });
+  expect((await repository!.readLedgerSnapshot("all")).deprecatedAccountIds).not.toContain(accountId);
+});
+
+it.skipIf(!repository || !admin)("restores a deprecated account when deleting its only balance leaves it unknown", async () => {
+  const imported = await commitCash(repository!, cash(["Transfer\tCurrent\t2026-01-01 12:00:00\t2026-01-01 12:00:00\tZero balance\t0\t0\tEUR\tCOMPLETED\t0"]), "only.tsv");
+  const accountId = await accountNamed("Revolut Current");
+  await repository!.setAccountDeprecated({ accountId, deprecated: true });
+  await repository!.deleteImport(imported.id);
+  const [account] = await admin!<{ deprecated: boolean }[]>`select deprecated from tools.money_accounts where owner_subject = ${OWNER} and id = ${accountId}::uuid`;
+  expect(account?.deprecated).toBe(false);
+});
+
+it.skipIf(!repository || !admin)("restores a deprecated account when imports change or remove its closing balance", async () => {
+  await commitCash(repository!, cash(["Transfer\tCurrent\t2026-01-01 12:00:00\t2026-01-01 12:00:00\tFunding\t10\t0\tEUR\tCOMPLETED\t10"]), "opening.tsv");
+  const closing = await commitCash(repository!, cash(["Card Payment\tCurrent\t2026-02-01 12:00:00\t2026-02-01 12:00:00\tClosing\t-10\t0\tEUR\tCOMPLETED\t0"]), "closing.tsv");
+  const accountId = await accountNamed("Revolut Current");
+  await repository!.setAccountDeprecated({ accountId, deprecated: true });
+  await commitCash(repository!, cash(["Transfer\tCurrent\t2025-12-01 12:00:00\t2025-12-01 12:00:00\tEarlier\t1\t0\tEUR\tCOMPLETED\t1"]), "earlier.tsv");
+  expect((await repository!.readLedgerSnapshot("all")).deprecatedAccountIds).toContain(accountId);
+  await repository!.deleteImport(closing.id);
+  let snapshot = await repository!.readLedgerSnapshot("all");
+  expect(snapshot.deprecatedAccountIds).not.toContain(accountId);
+  expect(snapshot.months.at(-1)?.values[accountId]).toBe(10);
+
+  await repository!.addManualBalance({ accountId, date: "2026-02-28", valueMinor: 0, currency: "EUR" });
+  await repository!.setAccountDeprecated({ accountId, deprecated: true });
+  await commitCash(repository!, cash(["Transfer\tCurrent\t2026-03-01 12:00:00\t2026-03-01 12:00:00\tNew funding\t5\t0\tEUR\tCOMPLETED\t5"]), "new.tsv");
+  snapshot = await repository!.readLedgerSnapshot("all");
+  expect(snapshot.deprecatedAccountIds).not.toContain(accountId);
+  expect(snapshot.months.at(-1)?.values[accountId]).toBe(5);
+});
+
+it.skipIf(!repository || !admin)("restores deprecated Trade Republic cash when an investment import changes its derived balance", async () => {
+  const headers = "datetime,date,account_type,category,type,asset_class,name,symbol,shares,price,amount,fee,tax,currency,original_amount,original_currency,fx_rate,description,transaction_id,counterparty_name,counterparty_iban,payment_reference,mcc_code";
+  await commitCash(repository!, Buffer.from([headers,
+    "2026-01-05T12:00:00.000Z,2026-01-05,DEFAULT,CASH,CUSTOMER_INBOUND,,,,,,100,,,EUR,,,,Funding,zero-cash-1,,,,",
+    "2026-02-10T12:00:00.000Z,2026-02-10,DEFAULT,TRADING,BUY,ETF,Fund,VWCE,1,100,-100,,,EUR,,,,Buy,zero-cash-2,,,,"
+  ].join("\r\n")), "zero-cash.csv");
+  const accountId = await accountNamed("Trade Republic Cash");
+  await repository!.setAccountDeprecated({ accountId, deprecated: true });
+  await commitCash(repository!, Buffer.from([headers,
+    "2026-03-10T12:00:00.000Z,2026-03-10,DEFAULT,TRADING,BUY,ETF,Fund,VWCE,1,10,-10,,,EUR,,,,Buy,zero-cash-3,,,,"
+  ].join("\r\n")), "new-trade.csv");
+  const snapshot = await repository!.readLedgerSnapshot("all");
+  expect(snapshot.deprecatedAccountIds).not.toContain(accountId);
+  expect(snapshot.months.at(-1)?.values[accountId]).toBe(-10);
+});
+
+it.skipIf(!repository || !admin)("keeps a nonzero account active when deprecation races with a balance update", async () => {
+  await repository!.addManualBalance({ accountName: "Concurrent cash", date: "2026-02-28", valueMinor: 0, currency: "EUR" });
+  const accountId = await accountNamed("Concurrent cash");
+  await Promise.allSettled([
+    repository!.setAccountDeprecated({ accountId, deprecated: true }),
+    repository!.addManualBalance({ accountId, date: "2026-03-01", valueMinor: 100, currency: "EUR" })
+  ]);
+  const snapshot = await repository!.readLedgerSnapshot("all");
+  expect(snapshot.deprecatedAccountIds).not.toContain(accountId);
+  expect(snapshot.months.at(-1)?.values[accountId]).toBe(1);
+});
+
 it.skipIf(!repository || !admin)("preserves signed transfer corrections in monthly net cash flow", async () => {
   await commitCash(repository!, cash([
     "Transfer\tCurrent\t2026-06-10 12:00:00\t2026-06-10 12:00:00\tSpend correction\t10\t0\tEUR\tCOMPLETED\t10",
@@ -1210,6 +1352,13 @@ it.skipIf(!repository || !admin)("backfills import membership from each row's im
 
 async function descriptions(query: string) {
   return (await repository!.readActivityPage({ query, offset: 0, limit: 10 })).items.map((row) => row.description);
+}
+
+async function accountNamed(name: string) {
+  const snapshot = await repository!.readLedgerSnapshot("all");
+  const account = snapshot.accounts.find((id) => snapshot.accountLabels[id] === name);
+  if (!account) throw new Error(`Account ${name} was not found.`);
+  return account;
 }
 
 function cash(rows: string[]) {

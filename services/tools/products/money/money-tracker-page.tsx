@@ -27,6 +27,7 @@ import { MoneySpendingView, MoneyActivityView, MoneyInvestmentsView, MoneyReview
 import { groupMonth, type GroupedMonth, type Month } from "./money-history.js";
 import { MoneyCheckInBridge } from "./money-checkin-card.js";
 import { BalanceForm } from "./money-balance-form.js";
+import { moneyJson } from "./money-requests.js";
 import { moneyCategoryLabel } from "./money-category-picker.js";
 import { projectMoneyTrajectory } from "./money-plan-domain.js";
 import { Segmented } from "../../platform/ui/components/segmented.js";
@@ -189,7 +190,10 @@ function Overview(props: MoneyTrackerPageData) {
   const bridge = props.checkIn?.overview?.bridge;
   const stalePrices = props.marketData.positions.filter((item) => item.state !== "fresh").length;
   const latestMonth = props.months.at(-1);
-  const oldBalances = latestMonth ? cashAccounts.filter((account) => latestMonth.values[account] !== undefined && !latestMonth.observedAccounts.includes(account)).length : 0;
+  const activeCashAccounts = cashAccounts.filter((account) => !props.deprecatedAccountIds.includes(account));
+  const coverage = cashCoverage(latestMonth, activeCashAccounts);
+  const carriedCount = coverage.cashAccountCount - coverage.observedCashAccountCount;
+  const oldBalances = latestMonth ? activeCashAccounts.filter((account) => latestMonth.values[account] !== undefined && !latestMonth.observedAccounts.includes(account)).length : 0;
   const review = [
     [props.reviewCounts.uncategorized, "uncategorized row", "uncategorized rows"],
     [props.reviewCounts.transfers, "transfer to classify", "transfers to classify"],
@@ -223,7 +227,7 @@ function Overview(props: MoneyTrackerPageData) {
             </p>
           </div>
           <StatStrip label="Net worth parts">
-            <Stat label="Cash" value={formatMinor(position.cash.valueMinor)} detail={position.cash.carriedAccountCount ? `${position.cash.carriedAccountCount} balance${position.cash.carriedAccountCount === 1 ? "" : "s"} carried` : `${position.cash.observedAccountCount} accounts`} />
+            <Stat label="Cash" value={formatMinor(position.cash.valueMinor)} detail={carriedCount ? `${carriedCount} balance${carriedCount === 1 ? "" : "s"} carried` : `${coverage.observedCashAccountCount} accounts`} />
             <Stat label="Portfolio" value={formatMinor(position.portfolio.knownValueMinor)} detail={<><span className={toneClass(props.marketData.totals.knownUnrealizedGainMinor)}>{formatMinor(props.marketData.totals.knownUnrealizedGainMinor, { signed: true })}</span> unrealized</>} />
             <Stat
               label={lastMonth ? `Net flow, ${formatMonth(lastMonth.month, true)}` : "Net flow"}
@@ -425,8 +429,10 @@ function Accounts(props: MoneyTrackerPageData) {
   const trends = useMemo(() => moneyTrackerTrendStats(months.slice(-12), months), [months]);
   const [editing, setEditing] = useState<string>();
   const [selected, setSelected] = useState<string>();
+  const [pendingAccount, setPendingAccount] = useState<string>();
+  const [accountError, setAccountError] = useState<string>();
   const currentMonth = `${new Date().toISOString().slice(0, 7)}-01`;
-  const rows = props.accounts.map((account) => {
+  const allRows = props.accounts.map((account) => {
     const value = latest?.values[account];
     const before = yearAgo?.values[account];
     return {
@@ -439,8 +445,25 @@ function Accounts(props: MoneyTrackerPageData) {
       lastObserved: props.accountLastObserved[account],
     };
   }).sort((left, right) => (right.value ?? -Infinity) - (left.value ?? -Infinity));
+  const rows = allRows.filter((row) => !props.deprecatedAccountIds.includes(row.account));
+  const deprecatedRows = allRows.filter((row) => props.deprecatedAccountIds.includes(row.account));
   const current = rows.filter((row) => row.lastObserved === currentMonth).length;
   const withBalance = rows.filter((row) => row.lastObserved).length;
+  const setDeprecated = async (accountId: string, deprecated: boolean) => {
+    if (pendingAccount) return;
+    if (deprecated && (props.accountRoles[accountId] === "investment" || latest?.values[accountId] !== 0)) return;
+    setPendingAccount(accountId);
+    setAccountError(undefined);
+    try {
+      await moneyJson("/api/money/accounts", { accountId, deprecated });
+      setEditing(undefined);
+      await router.invalidate();
+    } catch (caught) {
+      setAccountError(caught instanceof Error ? caught.message : "The account was not saved.");
+    } finally {
+      setPendingAccount(undefined);
+    }
+  };
   const saved = async () => {
     setEditing(undefined);
     await router.invalidate();
@@ -453,11 +476,13 @@ function Accounts(props: MoneyTrackerPageData) {
         <Stat label="1-year change" value={trends.yearOverYear ? formatEuro(trends.yearOverYear.total.change, { signed: true }) : "—"} tone={trends.yearOverYear?.total.change} detail="All accounts, end of month" />
         <Stat label={`Updated in ${formatMonth(currentMonth, true)}`} value={`${current} of ${withBalance}`} detail={withBalance - current ? <span className="text-warning">{withBalance - current} balance{withBalance - current === 1 ? " is" : "s are"} older</span> : "All current"} />
       </StatStrip>
+      {accountError ? <p role="alert" className="text-sm text-negative">{accountError}</p> : null}
       <MoneyPanel
         title="Balances"
         description="Select an account for its activity and history"
         actions={<Button type="button" size="sm" variant="outline" onClick={() => setEditing(editing === "new" ? undefined : "new")}>Add cash account</Button>}
       >
+        <p className="px-4 py-2 text-xs text-muted-foreground">Only cash accounts with a latest balance of exactly zero can be deprecated. Account and transaction history stays available.</p>
         {editing === "new" ? <BalanceForm accountName onDone={saved} onCancel={() => setEditing(undefined)} /> : null}
         <div className="mt-2 overflow-x-auto">
           <table className="money-table" aria-label="Account balances">
@@ -486,9 +511,15 @@ function Accounts(props: MoneyTrackerPageData) {
                     <td className="hide-sm">{row.lastObserved ? old ? <Badge variant="outline" className="text-warning">{formatMonth(row.lastObserved, true)}</Badge> : <span className="text-muted-foreground">{formatMonth(row.lastObserved, true)}</span> : <span className="text-muted-foreground">Never</span>}</td>
                     <td className="num" onClick={(event) => event.stopPropagation()}>
                       {row.role === "cash" ? (
-                        <Button type="button" size="sm" variant="outline" aria-expanded={editing === row.account} onClick={() => setEditing(editing === row.account ? undefined : row.account)}>
-                          Update
-                        </Button>
+                        <div className="flex flex-wrap justify-end gap-2">
+                          <Button type="button" size="sm" variant="outline" aria-expanded={editing === row.account} onClick={() => setEditing(editing === row.account ? undefined : row.account)}>
+                            Update
+                          </Button>
+                          <Button type="button" size="sm" variant="ghost" aria-label={`Deprecate ${row.label}`} aria-describedby={row.value !== 0 ? `deprecate-${row.account}` : undefined} disabled={pendingAccount !== undefined || row.value !== 0} onClick={() => void setDeprecated(row.account, true)}>
+                            {pendingAccount === row.account ? "Saving…" : "Deprecate"}
+                          </Button>
+                          {row.value !== 0 ? <span id={`deprecate-${row.account}`} className="sr-only">{row.value === undefined ? "A known zero balance is required." : "The latest balance must be zero."}</span> : null}
+                        </div>
                       ) : null}
                     </td>
                   </tr>,
@@ -503,12 +534,26 @@ function Accounts(props: MoneyTrackerPageData) {
               })}
             </tbody>
           </table>
-          {rows.length ? null : <EmptyState title="No accounts yet">Import a statement to add its accounts.</EmptyState>}
+          {rows.length ? null : deprecatedRows.length ? <EmptyState title="No active accounts">Restore a deprecated account or add a cash account.</EmptyState> : <EmptyState title="No accounts yet">Import a statement to add its accounts.</EmptyState>}
         </div>
         <TableTwin label={`Monthly snapshots (${grouped.length})`}>
           <SnapshotTable months={grouped} accounts={props.accounts} />
         </TableTwin>
       </MoneyPanel>
+      {deprecatedRows.length ? (
+        <MoneyPanel title="Deprecated accounts" description="Hidden from active balances. Select an account to see its history.">
+          <ul className="divide-y px-4">
+            {deprecatedRows.map((row) => (
+              <li key={row.account} className="flex flex-wrap items-center justify-between gap-2 py-3">
+                <button type="button" className="min-w-0 break-words text-left text-sm font-medium hover:underline" onClick={() => setSelected(row.account)}>{row.label}</button>
+                <Button type="button" size="sm" variant="outline" aria-label={`Restore ${row.label}`} disabled={pendingAccount !== undefined} onClick={() => void setDeprecated(row.account, false)}>
+                  {pendingAccount === row.account ? "Saving…" : "Restore"}
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </MoneyPanel>
+      ) : null}
       <AccountSheet
         account={selected}
         label={selected ? props.accountLabels[selected] ?? selected : ""}

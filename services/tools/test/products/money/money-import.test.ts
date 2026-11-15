@@ -10,7 +10,7 @@ import {
   type MoneyLedgerTransaction
 } from "../../../products/money/money-import-domain.js";
 import { MoneyLedger } from "../../../products/money/money-import-service.js";
-import { deleteMoneyCategoryRule, deleteMoneyImport, previewMoneyImport, reimportAllMoneyImports, updateMoneyCategory, updateMoneyTransfer } from "../../../products/money/money-route-handlers.js";
+import { deleteMoneyCategoryRule, deleteMoneyImport, previewMoneyImport, reimportAllMoneyImports, updateMoneyAccount, updateMoneyCategory, updateMoneyTransfer } from "../../../products/money/money-route-handlers.js";
 import type {
   MoneyImportCommitInput,
   MoneyActivityPageInput,
@@ -217,6 +217,14 @@ describe("balance snapshot parser", () => {
 });
 
 describe("money import service", () => {
+  it("rejects invalid account IDs before updating the repository", () => {
+    const repository = new MemoryMoneyRepository();
+    const update = vi.spyOn(repository, "setAccountDeprecated");
+    const service = new MoneyLedger(repository);
+    expect(() => service.setAccountDeprecated({ accountId: "not-an-id", deprecated: true })).toThrow("selected cash account is invalid");
+    expect(update).not.toHaveBeenCalled();
+  });
+
   it("allowlists complete-ledger activity filters and sorting", async () => {
     const repository = new MemoryMoneyRepository();
     const service = new MoneyLedger(repository);
@@ -310,6 +318,23 @@ describe("money import service", () => {
 });
 
 describe("money import route", () => {
+  it("updates account status only for an authenticated same-origin request", async () => {
+    const setAccountDeprecated = vi.fn().mockResolvedValue(undefined);
+    const invoke = (origin: string, body: unknown, authenticated = true) => updateMoneyAccount({
+      request: new Request("https://tools.example.test/api/money/accounts", {
+        method: "POST", headers: { Origin: origin, "Content-Type": "application/json" }, body: JSON.stringify(body)
+      }),
+      params: {},
+      context: { principal: authenticated ? { subject: "subject", email: "operator@example.test" } : undefined, runtime: { publicOrigin: "https://tools.example.test", moneyImports: { owner: () => ({ setAccountDeprecated }) } } }
+    } as unknown as PlatformRouteInput);
+    const input = { accountId: "00000000-0000-4000-8000-000000000001", deprecated: true };
+    expect((await invoke("https://tools.example.test", input, false)).status).toBe(401);
+    expect((await invoke("https://attacker.example", input)).status).toBe(403);
+    expect((await invoke("https://tools.example.test", { ...input, deprecated: "true" })).status).toBe(400);
+    expect((await invoke("https://tools.example.test", input)).status).toBe(200);
+    expect(setAccountDeprecated).toHaveBeenCalledOnce();
+    expect(setAccountDeprecated).toHaveBeenCalledWith(input);
+  });
   it("requires an authenticated same-origin multipart request", async () => {
     const preview = vi.fn().mockResolvedValue({ ok: true });
     const response = await previewMoneyImport(routeInput(
@@ -505,6 +530,7 @@ class MemoryMoneyRepository implements MoneyOwnerRepository {
       investments: { positions: [], trades: [], totals: { eventCount: 0, boughtMinor: 0, soldMinor: 0, incomeMinor: 0, feesMinor: 0, taxesMinor: 0 }, realized: { positions: [], totals: { saleCount: 0, proceedsMinor: 0, costBasisMinor: 0, gainMinor: 0, unmatchedSaleCount: 0 } } },
       planning: { ready: true, unresolvedTransferCount: 0, medianMonthlyNetMinor: 0, observedMonthCount: 6, projections: [{ months: 6, changeMinor: 0 }, { months: 12, changeMinor: 0 }, { months: 60, changeMinor: 0 }] },
       accountLastObserved: {},
+      deprecatedAccountIds: [],
       reviewCounts: { uncategorized: 0, transfers: 0 }, reviewQueue: { items: [], commonCategories: [] }
     };
   }
@@ -520,6 +546,7 @@ class MemoryMoneyRepository implements MoneyOwnerRepository {
   async deleteTransferRule() { return false; }
   async setTransferDisposition() {}
   async setTransferDispositions() { return { affectedCount: 0 }; }
+  async setAccountDeprecated() {}
   async addManualBalance() {}
   async readCheckInDays() { return []; }
   async readCashSince() { return { snapshots: [], flows: [], items: [] }; }

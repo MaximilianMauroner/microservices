@@ -220,6 +220,7 @@ export interface MoneyOwnerRepository {
   deleteTransferRule(ruleId: string): Promise<boolean>;
   setTransferDisposition(input: Readonly<{ transactionId: string; disposition: MoneyTransferDisposition }>): Promise<void>;
   setTransferDispositions(input: Readonly<{ transactionIds: readonly string[]; disposition: MoneyTransferDisposition }>): Promise<Readonly<{ affectedCount: number }>>;
+  setAccountDeprecated(input: Readonly<{ accountId: string; deprecated: boolean }>): Promise<void>;
   addManualBalance(input: Readonly<({ accountId: string } | { accountName: string }) & { date: string; valueMinor: number; currency: string }>): Promise<void>;
   /** Europe/Berlin days with at least one committed import, oldest first. */
   readCheckInDays(): Promise<readonly string[]>;
@@ -250,6 +251,7 @@ function ownerRepository(sql: Sql, own: MoneyOwner): MoneyOwnerRepository {
     commitImport(input) {
       return sql.begin(async (tx) => {
         await lockCategoryRules(tx);
+        await lockMoneyBalances(tx, own);
         const committedAt = new Date();
         const created = await tx<{ id: string }[]>`
           insert into tools.money_imports (id, owner_subject, digest, format, filename, bytes, source_row_count, inserted_row_count, duplicate_row_count, warnings, committed_at, created_by)
@@ -315,6 +317,7 @@ function ownerRepository(sql: Sql, own: MoneyOwner): MoneyOwnerRepository {
         await refreshInferredTransactions(tx, own, input.transactions.filter((transaction) => !transactionIds.has(transaction.sourceKey)));
         await linkUnambiguousTransfers(tx, own);
         await applyCategoryRules(tx, own);
+        await restoreChangedDeprecatedAccounts(tx, own);
         if (replay) return receipt(moneyImport, true);
         const duplicateCount = input.rowCount - insertedCount;
         const [saved] = await tx<ImportRow[]>`
@@ -345,6 +348,7 @@ function ownerRepository(sql: Sql, own: MoneyOwner): MoneyOwnerRepository {
     deleteImport(importId) {
       return sql.begin(async (tx) => {
         await lockCategoryRules(tx);
+        await lockMoneyBalances(tx, own);
         const [moneyImport] = await tx<{ id: string }[]>`select id from tools.money_imports where owner_subject = ${own.subject} and id = ${importId} for update`;
         if (!moneyImport) return undefined;
 
@@ -374,6 +378,7 @@ function ownerRepository(sql: Sql, own: MoneyOwner): MoneyOwnerRepository {
         await tx`delete from tools.money_imports where owner_subject = ${own.subject} and id = ${importId}`;
         await linkUnambiguousTransfers(tx, own);
         await applyCategoryRules(tx, own);
+        await restoreChangedDeprecatedAccounts(tx, own);
 
         return {
           transactionCount: deletedTransactions.length,
@@ -659,8 +664,22 @@ function ownerRepository(sql: Sql, own: MoneyOwner): MoneyOwnerRepository {
       });
     },
 
+    setAccountDeprecated(input) {
+      return sql.begin(async (tx) => {
+        await lockMoneyBalances(tx, own);
+        const [account] = await tx<{ id: string }[]>`select id::text id from ${own.accounts} owned_accounts where id = ${input.accountId}::uuid and role = 'cash'`;
+        if (!account) throw new MoneyImportValidationError("account_not_found", "The selected cash account was not found.");
+        if (input.deprecated && latestCashBalances(await balanceSnapshotRows(tx, own)).get(account.id) !== 0) {
+          throw new MoneyImportValidationError("account_balance_not_zero", "Only a cash account with a known zero balance can be deprecated.");
+        }
+        await tx`update tools.money_accounts set deprecated = ${input.deprecated}, updated_at = now()
+          where owner_subject = ${own.subject} and id = ${account.id}::uuid`;
+      });
+    },
+
     addManualBalance(input) {
       return sql.begin(async (tx) => {
+        await lockMoneyBalances(tx, own);
         const account = "accountId" in input
           ? (await tx<{ id: string }[]>`select id from ${own.accounts} owned_accounts where id = ${input.accountId} and role = 'cash' and currency = ${input.currency}`)[0]
           : await createManualAccount(tx, own, input.accountName, input.currency);
@@ -668,6 +687,7 @@ function ownerRepository(sql: Sql, own: MoneyOwner): MoneyOwnerRepository {
         await tx`insert into tools.money_balance_snapshots (owner_subject, account_id, snapshot_date, observed_at, value_minor, currency, origin, import_id)
           values (${own.subject}, ${account.id}, ${input.date}, ${`${input.date}T12:00:00.000Z`}, ${input.valueMinor}, ${input.currency}, 'manual', null)
           on conflict (account_id, snapshot_date, origin) do update set observed_at = excluded.observed_at, value_minor = excluded.value_minor, currency = excluded.currency`;
+        await restoreChangedDeprecatedAccounts(tx, own);
       });
     },
 
@@ -759,7 +779,7 @@ type TradeMarkerRow = { local_date: string; event_kind: "buy" | "sell"; symbol: 
 type CashItemRow = { account_id: string; local_date: string; kind: "income" | "spending"; description: string; source_type: string; amount_minor: string };
 type SpendingRow = { local_date: string; category: MoneyCategory; description: string; source_type: string; amount_minor: string };
 type CashFlowRow = { account_id: string; local_date: string; income_minor: string; spending_minor: string; transfers_minor: string; trades_minor: string };
-type SnapshotRow = { account_id: string; snapshot_date: string | null; value_minor: string | null; currency: string; display_name: string; role: "cash" | "investment"; provider: string };
+type SnapshotRow = { account_id: string; snapshot_date: string | null; value_minor: string | null; currency: string; display_name: string; role: "cash" | "investment"; provider: string; deprecated: boolean };
 type TransferRow = { id: string; account_id: string; provider: string; source_type: string; occurred_at: Date; local_date: string; description: string; amount_minor: string; currency: string };
 type TransferInferenceRow = { id: string; provider: string; source_type: string; description: string; amount_minor: string };
 type TransferRuleOptionRow = { provider: string; source_type: string; count: string; unresolved_count: string };
@@ -898,20 +918,20 @@ function classifiedCashTransactions(sql: Sql, own: MoneyOwner, from: string) {
 }
 
 /** Explicit balance snapshots, monthly Trade Republic cash derived from its ledger, and unobserved accounts. */
-function balanceSnapshotRows(sql: Sql, own: MoneyOwner) {
+function balanceSnapshotRows(sql: Sql | TransactionSql, own: MoneyOwner) {
   return sql<SnapshotRow[]>`with explicit_snapshots as (
     select distinct on (s.account_id, s.snapshot_date) s.account_id::text account_id, s.snapshot_date::text snapshot_date,
-      s.value_minor::text value_minor, s.currency, a.display_name, a.role, a.provider
+      s.value_minor::text value_minor, s.currency, a.display_name, a.role, a.provider, a.deprecated
     from ${own.snapshots} s join ${own.accounts} a on a.id = s.account_id
     order by s.account_id, s.snapshot_date, case when s.origin = 'manual' then 0 else 1 end, s.observed_at desc
   ), trade_republic_cash_snapshots as (
     select monthly.account_id, monthly.snapshot_date,
       sum(monthly.change_minor) over (partition by monthly.account_id order by monthly.snapshot_date)::text value_minor,
-      monthly.currency, monthly.display_name, monthly.role, monthly.provider
+      monthly.currency, monthly.display_name, monthly.role, monthly.provider, monthly.deprecated
     from (
       select cash_account.id::text account_id, max(t.local_date)::text snapshot_date,
         sum(t.amount_minor - t.fee_minor - t.tax_minor) change_minor,
-        cash_account.currency, cash_account.display_name, cash_account.role, cash_account.provider
+        cash_account.currency, cash_account.display_name, cash_account.role, cash_account.provider, cash_account.deprecated
       from (${effectiveTransactions(sql, own)}) t
       join ${own.accounts} source_account on source_account.id = t.account_id
       join ${own.accounts} cash_account
@@ -920,14 +940,14 @@ function balanceSnapshotRows(sql: Sql, own: MoneyOwner) {
       where source_account.provider = 'portfolio_export' and t.currency = 'EUR'
         and not exists (select 1 from ${own.snapshots} s where s.account_id = cash_account.id)
       group by cash_account.id, date_trunc('month', t.local_date), cash_account.currency,
-        cash_account.display_name, cash_account.role, cash_account.provider
+        cash_account.display_name, cash_account.role, cash_account.provider, cash_account.deprecated
     ) monthly
   )
   select * from explicit_snapshots
   union all
   select * from trade_republic_cash_snapshots
   union all
-  select a.id::text, null, null, a.currency, a.display_name, a.role, a.provider
+  select a.id::text, null, null, a.currency, a.display_name, a.role, a.provider, a.deprecated
   from ${own.accounts} a
   where a.currency = 'EUR'
     and not (a.provider = 'portfolio_export' and a.role = 'cash')
@@ -936,8 +956,32 @@ function balanceSnapshotRows(sql: Sql, own: MoneyOwner) {
   order by snapshot_date nulls last, display_name`;
 }
 
+function latestCashBalances(rows: readonly SnapshotRow[]) {
+  const balances = new Map<string, number>();
+  for (const row of rows) {
+    if (row.role === "cash" && row.snapshot_date !== null && row.value_minor !== null) {
+      balances.set(row.account_id, integer(row.value_minor));
+    }
+  }
+  return balances;
+}
+
+async function restoreChangedDeprecatedAccounts(tx: TransactionSql, own: MoneyOwner) {
+  const deprecated = await tx<{ id: string }[]>`select id::text id from ${own.accounts} owned_accounts where deprecated`;
+  if (!deprecated.length) return;
+  const balances = latestCashBalances(await balanceSnapshotRows(tx, own));
+  const restore = deprecated.filter(({ id }) => balances.get(id) !== 0).map(({ id }) => id);
+  if (restore.length) await tx`update tools.money_accounts set deprecated = false, updated_at = now()
+    where owner_subject = ${own.subject} and id in ${tx(restore)}`;
+}
+
 function balanceSnapshot(rows: SnapshotRow[]): MoneyTrackerSnapshot {
-  const byDate = new Map<string, Record<string, number>>(); const labels: Record<string, string> = {}; const roles: Record<string, "cash" | "investment"> = {}; const accountLastObserved: Record<string, string> = {}; const accounts = new Set<string>();
+  const byDate = new Map<string, Record<string, number>>();
+  const labels: Record<string, string> = {};
+  const roles: Record<string, "cash" | "investment"> = {};
+  const accountLastObserved: Record<string, string> = {};
+  const accounts = new Set<string>();
+  const deprecatedAccountIds = new Set<string>();
   const labelsByAccount = new Map(rows.map((row) => [row.account_id, accountDisplayName(row)]));
   const labelCounts = new Map<string, number>();
   for (const label of labelsByAccount.values()) labelCounts.set(label, (labelCounts.get(label) ?? 0) + 1);
@@ -946,6 +990,7 @@ function balanceSnapshot(rows: SnapshotRow[]): MoneyTrackerSnapshot {
     const baseName = labelsByAccount.get(row.account_id)!;
     const name = (labelCounts.get(baseName) ?? 0) > 1 ? `${baseName} · ${row.provider} ${row.account_id.slice(0, 6)}` : baseName;
     accounts.add(row.account_id); labels[row.account_id] = name; roles[row.account_id] = row.role;
+    if (row.deprecated) deprecatedAccountIds.add(row.account_id);
     if (row.snapshot_date === null || row.value_minor === null) continue;
     const month = `${row.snapshot_date.slice(0, 7)}-01`;
     accountLastObserved[row.account_id] = month; const values = byDate.get(month) ?? {}; values[row.account_id] = integer(row.value_minor) / 100; byDate.set(month, values);
@@ -959,7 +1004,7 @@ function balanceSnapshot(rows: SnapshotRow[]): MoneyTrackerSnapshot {
     const values = { ...carried };
     return { date, values, observedAccounts: Object.keys(updates), total: Object.values(values).reduce((sum, value) => sum + value, 0) };
   });
-  return { accounts: [...accounts].sort((left, right) => labels[left]!.localeCompare(labels[right]!)), accountLabels: labels, accountRoles: roles, accountLastObserved, months, latestDate: months.at(-1)?.date };
+  return { accounts: [...accounts].sort((left, right) => labels[left]!.localeCompare(labels[right]!)), accountLabels: labels, accountRoles: roles, accountLastObserved, deprecatedAccountIds: [...deprecatedAccountIds], months, latestDate: months.at(-1)?.date };
 }
 
 function accountDisplayName(row: Pick<SnapshotRow, "display_name" | "provider" | "role">) {
@@ -1001,6 +1046,10 @@ function transferReviewGroups(rows: ActivityRow[]): MoneyTransferReviewGroup[] {
 /** Serializes rule changes with the writes that apply rules, so each write sees one complete rule set. Take it before other locks. */
 async function lockCategoryRules(tx: postgres.TransactionSql) {
   await tx`lock table tools.money_category_rules in share row exclusive mode`;
+}
+
+async function lockMoneyBalances(tx: TransactionSql, own: MoneyOwner) {
+  await tx`select pg_advisory_xact_lock(hashtextextended(${`money-balances:${own.subject}`}, 0))`;
 }
 
 async function readCategoryRules(sql: Sql | postgres.TransactionSql, own: MoneyOwner) {

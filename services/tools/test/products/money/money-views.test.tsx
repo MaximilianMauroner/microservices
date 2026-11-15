@@ -1,12 +1,18 @@
-import type { ReactElement } from "react";
+// @vitest-environment jsdom
+import { act, type ReactElement } from "react";
+import { createRoot } from "react-dom/client";
+import * as Router from "@tanstack/react-router";
 import { renderToStaticMarkup as renderMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { MoneyTrackerPageData } from "../../../platform/protected-data.js";
 import { MoneyTrackerPage } from "../../../products/money/money-tracker-page.js";
 import { MoneySpendingView } from "../../../products/money/money-spending-view.js";
 import { MoneyReviewView } from "../../../products/money/money-review-view.js";
+import { preloadMoneyView } from "../../../products/money/money-view-loading.js";
 import { moneyReviewCounts } from "../../../products/money/money-tracker-navigation.js";
 import { FlowChart, MonthBars, SparkBars } from "../../../products/money/money-ui.js";
+
+vi.mock("../../../platform/ui/components/ui/use-mobile.js", () => ({ useIsMobile: () => false }));
 
 /** Currency amounts use a no-break space before the euro sign. */
 const renderToStaticMarkup = (element: ReactElement) => renderMarkup(element).replaceAll("\u00a0", " ");
@@ -20,6 +26,7 @@ function pageData(overrides: Partial<MoneyTrackerPageData> = {}): MoneyTrackerPa
     accountLabels: { cash: "Girokonto", savings: "Tagesgeld", broker: "Depot" },
     accountRoles: { cash: "cash", savings: "cash", broker: "investment" },
     accountLastObserved: { cash: currentMonth, savings: "2026-01-01", broker: currentMonth },
+    deprecatedAccountIds: [],
     months: [
       { date: "2026-01-01", total: 1_500, values: { cash: 1_000, savings: 500 }, observedAccounts: ["cash", "savings"] },
       { date: currentMonth, total: 3_700, values: { cash: 1_200, savings: 500, broker: 2_000 }, observedAccounts: ["cash", "broker"] },
@@ -104,6 +111,144 @@ describe("Money redesign views", () => {
     expect(html.match(/>Update</g)).toHaveLength(2);
     expect(html).toContain("Monthly snapshots (2)");
     expect(html).not.toContain("1 carried");
+  });
+
+  it("keeps deprecated accounts out of active counts and stale work while retaining history and filters", () => {
+    const data = pageData({ deprecatedAccountIds: ["savings"] });
+    const accounts = renderToStaticMarkup(<MoneyTrackerPage {...data} view="accounts" />);
+    const host = document.createElement("div");
+    host.innerHTML = accounts;
+    const balances = host.querySelector('table[aria-label="Account balances"]')!;
+    expect(balances.textContent).toContain("Girokonto");
+    expect(balances.textContent).not.toContain("Tagesgeld");
+    expect(host.querySelector('[aria-label="Restore Tagesgeld"]')).not.toBeNull();
+    expect(accounts).toContain("Deprecated accounts");
+    expect(accounts).toContain("2 of 2");
+    expect(accounts).toContain("All current");
+    expect(accounts).not.toContain("balance is older");
+    expect(accounts).toMatch(/Cash[\s\S]*1 account/);
+    const overview = renderToStaticMarkup(<MoneyTrackerPage {...data} view="overview" />);
+    const original = renderToStaticMarkup(<MoneyTrackerPage {...pageData()} view="overview" />);
+    expect(overview).not.toContain("1 old balance");
+    expect(overview).not.toContain("1 balance carried");
+    expect(overview).toContain("1.700 €");
+    expect(original).toContain("1.700 €");
+    expect(overview).toContain("Combined net worth, market, and cash from");
+    expect(renderToStaticMarkup(<MoneyReviewView {...data} tab="queue" />)).not.toContain("Tagesgeld");
+    expect(accounts).toContain("Monthly snapshots (2)");
+  });
+
+  it("offers deprecation only for a known, exactly zero cash balance", () => {
+    const data = pageData({
+      accounts: ["zero", "positive", "negative", "unknown", "tiny", "broker"],
+      accountRoles: { zero: "cash", positive: "cash", negative: "cash", unknown: "cash", tiny: "cash", broker: "investment" },
+      months: [{ date: currentMonth, total: 0, values: { zero: 0, positive: 1, negative: -1, tiny: 0.001, broker: 0 }, observedAccounts: [] }],
+    });
+    const host = document.createElement("div");
+    host.innerHTML = renderToStaticMarkup(<MoneyTrackerPage {...data} view="accounts" />);
+    expect(host.querySelector<HTMLButtonElement>('[aria-label="Deprecate zero"]')!.disabled).toBe(false);
+    for (const account of ["positive", "negative", "unknown", "tiny"]) {
+      const button = host.querySelector<HTMLButtonElement>(`[aria-label="Deprecate ${account}"]`)!;
+      expect(button.disabled).toBe(true);
+      expect(host.querySelector(`[id="${button.getAttribute("aria-describedby")}"]`)?.textContent).toMatch(/zero/);
+    }
+    expect(host.querySelector('[aria-label="Deprecate Depot"]')).toBeNull();
+  });
+
+  it("saves deprecation and restoration, shows server errors, and blocks duplicate actions while busy", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const invalidate = vi.fn(async () => {});
+    const router = vi.spyOn(Router, "useRouter").mockReturnValue({ invalidate } as unknown as ReturnType<typeof Router.useRouter>);
+    let finishRequest!: (response: Response) => void;
+    const fetch = vi.fn<typeof globalThis.fetch>();
+    vi.stubGlobal("fetch", fetch);
+    const data = pageData({
+      deprecatedAccountIds: ["savings"],
+      months: [{ date: currentMonth, total: 0, values: { cash: 0, savings: 0 }, observedAccounts: ["cash"] }],
+    });
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    try {
+      await act(async () => root.render(<MoneyTrackerPage {...data} view="accounts" />));
+      const update = [...host.querySelectorAll("button")].find((button) => button.textContent === "Update")!;
+      await act(async () => update.click());
+      expect(host.querySelector('form[aria-label="New balance for Girokonto"]')).not.toBeNull();
+      expect(fetch).not.toHaveBeenCalled();
+      await act(async () => update.click());
+      const deprecate = host.querySelector<HTMLButtonElement>('[aria-label="Deprecate Girokonto"]')!;
+      const restore = host.querySelector<HTMLButtonElement>('[aria-label="Restore Tagesgeld"]')!;
+      fetch.mockImplementationOnce(() => new Promise((resolve) => { finishRequest = resolve; }));
+      await act(async () => deprecate.click());
+      expect(deprecate.disabled).toBe(true);
+      expect(restore.disabled).toBe(true);
+      expect(host.textContent).toContain("Saving…");
+      expect(fetch).toHaveBeenCalledWith("/api/money/accounts", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accountId: "cash", deprecated: true }),
+      });
+      expect(invalidate).not.toHaveBeenCalled();
+      await act(async () => finishRequest(Response.json({ message: "The latest balance is no longer zero." }, { status: 409 })));
+      expect(host.querySelector('[role="alert"]')?.textContent).toContain("no longer zero");
+      expect(deprecate.disabled).toBe(false);
+      expect(invalidate).not.toHaveBeenCalled();
+      fetch.mockResolvedValueOnce(Response.json({ ok: true }));
+      await act(async () => deprecate.click());
+      expect(invalidate).toHaveBeenCalledOnce();
+      expect(host.querySelector('[role="alert"]')).toBeNull();
+      await act(async () => root.render(<MoneyTrackerPage {...data} deprecatedAccountIds={["cash", "savings"]} view="accounts" />));
+      expect(host.querySelector('table[aria-label="Account balances"]')?.textContent).not.toContain("Girokonto");
+      fetch.mockResolvedValueOnce(Response.json({ ok: true }));
+      await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Restore Tagesgeld"]')!.click());
+      expect(fetch).toHaveBeenLastCalledWith("/api/money/accounts", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accountId: "savings", deprecated: false }),
+      });
+      expect(invalidate).toHaveBeenCalledTimes(2);
+      await act(async () => root.render(<MoneyTrackerPage {...data} deprecatedAccountIds={["cash"]} view="accounts" />));
+      expect(host.querySelector('table[aria-label="Account balances"]')?.textContent).toContain("Tagesgeld");
+      expect(host.querySelector('[aria-label="Restore Tagesgeld"]')).toBeNull();
+      expect(host.textContent).toContain("1 balance is older");
+    } finally {
+      await act(async () => root.unmount());
+      host.remove();
+      router.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("keeps deprecated history selectable, snapshot totals, and transaction filters", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    vi.stubGlobal("ResizeObserver", class {
+      observe() {}
+      disconnect() {}
+    });
+    const fetch = vi.fn(async () => Response.json({ items: [], total: 0, hasMore: false }));
+    vi.stubGlobal("fetch", fetch);
+    const data = pageData({ deprecatedAccountIds: ["savings"] });
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    try {
+      await act(async () => root.render(<MoneyTrackerPage {...data} view="accounts" />));
+      const snapshots = [...host.querySelectorAll("details")].find((details) => details.textContent?.includes("Monthly snapshots"))!;
+      await act(async () => { snapshots.open = true; snapshots.dispatchEvent(new Event("toggle")); });
+      expect(snapshots.textContent?.replaceAll("\u00a0", " ")).toContain("3.700 €");
+      expect(snapshots.textContent?.replaceAll("\u00a0", " ")).toContain("1.500 €");
+      const account = [...host.querySelectorAll("button")].find((button) => button.textContent === "Tagesgeld")!;
+      await act(async () => account.click());
+      expect(fetch).toHaveBeenCalledWith(expect.stringContaining("accountId=savings"), expect.anything());
+      expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Tagesgeld");
+      expect(document.querySelector('[role="dialog"]')?.textContent).toContain("No transactions imported for this account.");
+      await preloadMoneyView("transactions");
+      await act(async () => root.render(<MoneyTrackerPage {...data} view="transactions" />));
+      const filter = host.querySelector<HTMLSelectElement>('select[aria-label="Filter by account"]')!;
+      expect(filter.querySelector('option[value="savings"]')?.textContent).toBe("Tagesgeld");
+      await act(async () => { filter.value = "savings"; filter.dispatchEvent(new Event("change", { bubbles: true })); });
+      expect(fetch).toHaveBeenLastCalledWith(expect.stringContaining("accountId=savings"));
+    } finally {
+      await act(async () => root.unmount());
+      host.remove();
+      vi.unstubAllGlobals();
+    }
   });
 
   it("explains why Plan needs more history", () => {

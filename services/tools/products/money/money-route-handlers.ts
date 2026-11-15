@@ -158,6 +158,19 @@ export async function updateMoneyTransfer(input: PlatformRouteInput) {
   }
 }
 
+export async function updateMoneyAccount(input: PlatformRouteInput) {
+  const rejected = validateMutationRequest(input);
+  if (rejected) return rejected;
+  try {
+    const body = await jsonBody(input.request);
+    if (typeof body.deprecated !== "boolean") throw new MoneyImportValidationError("invalid_account_status", "Select a valid account status.");
+    await ledger(input).setAccountDeprecated({ accountId: stringField(body, "accountId"), deprecated: body.deprecated });
+    return json({ ok: true });
+  } catch (error) {
+    return importError(error);
+  }
+}
+
 export async function addMoneyBalance(input: PlatformRouteInput) {
   const rejected = validateMutationRequest(input);
   if (rejected) return rejected;
@@ -324,7 +337,7 @@ async function fileBytes(file: File) {
 function importError(error: unknown) {
   if (error instanceof MoneyImportValidationError) {
     const status = error.code === "file_too_large" || error.code === "request_too_large" ? 413
-      : error.code === "import_not_found" || error.code === "category_rule_not_found" || error.code === "transfer_rule_not_found" ? 404 : 400;
+      : error.code === "import_not_found" || error.code === "account_not_found" || error.code === "category_rule_not_found" || error.code === "transfer_rule_not_found" ? 404 : 400;
     return json({ error: error.code, message: error.message }, status);
   }
   const databaseError = error as { code?: unknown; constraint_name?: unknown };

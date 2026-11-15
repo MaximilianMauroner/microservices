@@ -73,6 +73,7 @@ describe("central platform route policy", () => {
     expect(classifyRoute("/api/money/categories", "POST")).toEqual({ kind: "human-session" });
     expect(classifyRoute("/api/money/categories", "DELETE")).toEqual({ kind: "human-session" });
     expect(classifyRoute("/api/money/transfers", "POST")).toEqual({ kind: "human-session" });
+    expect(classifyRoute("/api/money/accounts", "POST")).toEqual({ kind: "human-session" });
     expect(classifyRoute("/api/money/balances", "POST")).toEqual({ kind: "human-session" });
     expect(classifyRoute("/manage/status", "GET")).toEqual({ kind: "human-session" });
     expect(classifyRoute("/_serverFn/getPublicPageData", "GET")).toEqual({ kind: "server-function" });

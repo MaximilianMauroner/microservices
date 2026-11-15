@@ -110,12 +110,14 @@ export const moneyAccounts = toolsSchema.table("money_accounts", {
   displayName: text("display_name").notNull(),
   role: text("role").notNull(),
   currency: text("currency").notNull(),
+  deprecated: boolean("deprecated").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
 }, (table) => [
   check("money_accounts_provider_check", sql`${table.provider} in ('revolut', 'portfolio_export', 'manual', 'sparkasse')`),
   check("money_accounts_role_check", sql`${table.role} in ('cash', 'investment')`),
   check("money_accounts_currency_check", sql`${table.currency} ~ '^[A-Z]{3}$'`),
+  check("money_accounts_deprecated_cash_check", sql`not ${table.deprecated} or ${table.role} = 'cash'`),
   uniqueIndex("money_accounts_provider_ref_idx").on(table.ownerSubject, table.provider, table.externalRef),
 ]);
 

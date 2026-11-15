@@ -370,7 +370,7 @@ function BalanceQueue({
 }
 
 /** Cash accounts whose latest balance is older than the current month. */
-function staleCashAccounts(props: Pick<MoneyTrackerPageData, "accounts" | "accountRoles" | "accountLastObserved">) {
+function staleCashAccounts(props: Pick<MoneyTrackerPageData, "accounts" | "accountRoles" | "accountLastObserved" | "deprecatedAccountIds">) {
   const currentMonth = `${new Date().toISOString().slice(0, 7)}-01`;
-  return props.accounts.filter((account) => props.accountRoles[account] === "cash" && props.accountLastObserved[account] !== undefined && props.accountLastObserved[account]! < currentMonth);
+  return props.accounts.filter((account) => !props.deprecatedAccountIds.includes(account) && props.accountRoles[account] === "cash" && props.accountLastObserved[account] !== undefined && props.accountLastObserved[account]! < currentMonth);
 }
