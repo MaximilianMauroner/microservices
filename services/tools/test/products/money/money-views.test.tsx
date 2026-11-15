@@ -8,6 +8,7 @@ import type { MoneyTrackerPageData } from "../../../platform/protected-data.js";
 import { MoneyTrackerPage } from "../../../products/money/money-tracker-page.js";
 import { MoneySpendingView } from "../../../products/money/money-spending-view.js";
 import { MoneyReviewView } from "../../../products/money/money-review-view.js";
+import { preloadMoneyView } from "../../../products/money/money-view-loading.js";
 import { moneyReviewCounts } from "../../../products/money/money-tracker-navigation.js";
 import { FlowChart, MonthBars, SparkBars } from "../../../products/money/money-ui.js";
 
@@ -237,6 +238,7 @@ describe("Money redesign views", () => {
       expect(fetch).toHaveBeenCalledWith(expect.stringContaining("accountId=savings"), expect.anything());
       expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Tagesgeld");
       expect(document.querySelector('[role="dialog"]')?.textContent).toContain("No transactions imported for this account.");
+      await preloadMoneyView("transactions");
       await act(async () => root.render(<MoneyTrackerPage {...data} view="transactions" />));
       const filter = host.querySelector<HTMLSelectElement>('select[aria-label="Filter by account"]')!;
       expect(filter.querySelector('option[value="savings"]')?.textContent).toBe("Tagesgeld");

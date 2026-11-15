@@ -518,7 +518,7 @@ function Accounts(props: MoneyTrackerPageData) {
                           <Button type="button" size="sm" variant="ghost" aria-label={`Deprecate ${row.label}`} aria-describedby={row.value !== 0 ? `deprecate-${row.account}` : undefined} disabled={pendingAccount !== undefined || row.value !== 0} onClick={() => void setDeprecated(row.account, true)}>
                             {pendingAccount === row.account ? "Saving…" : "Deprecate"}
                           </Button>
-                          {row.value !== 0 ? <span id={`deprecate-${row.account}`} className="w-full whitespace-normal text-xs text-muted-foreground">{row.value === undefined ? "A known zero balance is required." : "The latest balance must be zero."}</span> : null}
+                          {row.value !== 0 ? <span id={`deprecate-${row.account}`} className="sr-only">{row.value === undefined ? "A known zero balance is required." : "The latest balance must be zero."}</span> : null}
                         </div>
                       ) : null}
                     </td>
