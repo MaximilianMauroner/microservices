@@ -255,7 +255,7 @@ export function MoneyActivityView({
         </div>
       </MoneyPanel>
       {selectedItems.length ? (
-        <div className="sticky bottom-4 z-30 mx-auto flex w-fit max-w-[calc(100%-1.5rem)] flex-wrap items-center gap-2 rounded-full border bg-popover px-4 py-2 text-sm shadow-lg" role="region" aria-label="Selected rows">
+        <div className="sticky bottom-4 z-30 mx-auto flex w-fit max-w-[calc(100%-1.5rem)] flex-wrap items-center gap-2 rounded-lg border bg-popover px-4 py-2 text-sm shadow-lg" role="region" aria-label="Selected rows">
           <strong className="font-semibold">{selectedItems.length} selected</strong>
           <MoneyCategoryPicker compact value="uncategorized" disabled={saving !== undefined} ariaLabel="Set a category for the selected rows" onValue={(next) => void categorize(selectedItems, next)} />
           <Button type="button" size="sm" variant="ghost" onClick={() => setSelectedRows(new Set())}>Clear</Button>
