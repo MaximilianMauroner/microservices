@@ -1,5 +1,6 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import postgres, { type Sql } from "postgres";
+import { type Sql } from "postgres";
+import { connectPostgres } from "../../platform/database/runtime-postgres.js";
 import type { MarkdownAdminSnapshot } from "../dashboard/src/markdown-admin";
 import { applySteps, sourceSnapshot } from "./protocol";
 import { ShareError, type CheckpointBody, type CheckpointSummary, type CreateDocument, type DocumentSnapshot, type EditorContent, type PresenceIdentity, type PublicDocument, type SubmitSteps, type SyncUpdate } from "./types";
@@ -22,7 +23,7 @@ function validateVersion(version: number) {
 export function documentChangeKey(token: string): string { return createHash("sha256").update(token).digest("hex"); }
 
 export function createMarkdownShareRepository(databaseUrl: string) {
-  const sql = postgres(databaseUrl, { max: 4, idle_timeout: 120, connection: { jit: "off" } });
+  const sql = connectPostgres(databaseUrl, { max: 4, idle_timeout: 120, connection: { jit: "off" } });
   async function live(tx: Sql, token: string, lock = false): Promise<Row> {
     const rows = lock
       ? await tx<Row[]>`SELECT * FROM tools.markdown_documents WHERE token=${token} FOR UPDATE`

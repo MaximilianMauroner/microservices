@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import postgres, { type Sql } from "postgres";
+import { type Sql } from "postgres";
+import { connectPostgres } from "../../platform/database/runtime-postgres.js";
 import type { MoneyInvestmentEventKind } from "./money-import-domain.js";
 import type { MoneyDailyPriceBar, MoneyFxRate, MoneyInflationIndex } from "./money-market-data-domain.js";
 import type { MoneyMarketInstrumentDefinition } from "./money-market-data-catalog.js";
@@ -67,7 +68,7 @@ export interface MoneyMarketDataRepository {
 
 export function createPostgresMoneyMarketDataRepository(databaseUrl: string, options: { readOnly?: boolean } = {}) {
   // Valuation reads join the effective-row query; JIT compilation of it costs about half a second, running it takes milliseconds.
-  return postgresMoneyMarketDataRepository(postgres(databaseUrl, { max: 3, idle_timeout: 120, connection: { jit: "off", ...(options.readOnly ? { default_transaction_read_only: true } : {}) } }));
+  return postgresMoneyMarketDataRepository(connectPostgres(databaseUrl, { max: 3, idle_timeout: 120, connection: { jit: "off", ...(options.readOnly ? { default_transaction_read_only: true } : {}) } }));
 }
 
 export function postgresMoneyMarketDataRepository(sql: Sql): MoneyMarketDataRepository {

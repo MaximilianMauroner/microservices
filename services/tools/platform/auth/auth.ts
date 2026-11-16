@@ -9,7 +9,8 @@ import {
 } from "better-auth/social-providers";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
 import { drizzle } from "drizzle-orm/postgres-js";
-import postgres from "postgres";
+import type postgres from "postgres";
+import { connectPostgres } from "../database/runtime-postgres.js";
 import type { PlatformPrincipal } from "#security";
 import {
   authAccounts,
@@ -35,7 +36,7 @@ const DISABLED_CREDENTIAL_PATHS = [
 
 /** Owns browser sign-in: Better Auth, its session tables, and principal resolution. */
 export function createPlatformIdentity(config: PlatformAuthConfig, databaseUrl: string) {
-  const sql = postgres(databaseUrl, { max: 2, idle_timeout: 120 });
+  const sql = connectPostgres(databaseUrl, { max: 2, idle_timeout: 120 });
   const people = createPeopleRepository(sql, config.allowedGoogleEmail);
   const auth = createPlatformAuth(config, sql, people);
   const principalFor = async (identity: { subject: string; email: string }) =>

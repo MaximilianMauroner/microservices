@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
-import postgres, { type Sql, type TransactionSql } from "postgres";
+import type postgres from "postgres";
+import { connectPostgres } from "../../platform/database/runtime-postgres.js";
+import { type Sql, type TransactionSql } from "postgres";
 import { effectiveTransactions, ledgerContributions, ownedMoneyTables, type MoneyOwner } from "./money-ledger-sql.js";
 import type { MoneyTrackerSnapshot } from "./money-tracker.js";
 import { fifoRealizedGains, type MoneyRealizedGainAnalytics } from "./money-investment-domain.js";
@@ -231,7 +233,7 @@ export interface MoneyOwnerRepository {
 
 export function createPostgresMoneyRepository(databaseUrl: string, options: { readOnly?: boolean } = {}): MoneyRepository {
   // Money queries scan a few thousand rows. JIT compilation of the effective-row queries costs about a second; running them takes milliseconds.
-  return postgresMoneyRepository(postgres(databaseUrl, { max: 4, idle_timeout: 120, connection: { jit: "off", ...(options.readOnly ? { default_transaction_read_only: true } : {}) } }));
+  return postgresMoneyRepository(connectPostgres(databaseUrl, { max: 4, idle_timeout: 120, connection: { jit: "off", ...(options.readOnly ? { default_transaction_read_only: true } : {}) } }));
 }
 
 export function postgresMoneyRepository(sql: Sql): MoneyRepository {

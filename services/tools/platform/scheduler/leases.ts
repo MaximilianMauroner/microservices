@@ -1,4 +1,5 @@
-import postgres, { type Sql } from "postgres";
+import { type Sql } from "postgres";
+import { connectPostgres } from "../database/runtime-postgres.js";
 
 export type ScheduledTaskResult = Readonly<{
   outcome: "complete" | "failed";
@@ -24,7 +25,7 @@ export interface ScheduledTaskLeaseRepository {
 export function createPostgresScheduledTaskLeaseRepository(
   databaseUrl: string
 ): ScheduledTaskLeaseRepository {
-  return postgresScheduledTaskLeaseRepository(postgres(databaseUrl, { max: 2, idle_timeout: 120 }));
+  return postgresScheduledTaskLeaseRepository(connectPostgres(databaseUrl, { max: 2, idle_timeout: 120 }));
 }
 
 export function postgresScheduledTaskLeaseRepository(

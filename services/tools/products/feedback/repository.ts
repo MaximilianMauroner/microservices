@@ -1,5 +1,6 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import postgres, { type Sql } from "postgres";
+import { type Sql } from "postgres";
+import { connectPostgres } from "../../platform/database/runtime-postgres.js";
 import { createFeedbackEncryption } from "./encryption.js";
 import {
   type FeedbackFollowUpState,
@@ -45,7 +46,7 @@ export interface FeedbackOwnerRepository {
 }
 
 export function createPostgresFeedbackRepository(databaseUrl: string, options: { readOnly?: boolean; encryptionKey: Buffer }): FeedbackRepository {
-  return feedbackRepository(postgres(databaseUrl, { max: 3, idle_timeout: 120, connection: options.readOnly ? { default_transaction_read_only: true } : undefined }), options.encryptionKey);
+  return feedbackRepository(connectPostgres(databaseUrl, { max: 3, idle_timeout: 120, connection: options.readOnly ? { default_transaction_read_only: true } : undefined }), options.encryptionKey);
 }
 
 export function feedbackRepository(sql: Sql, key: Buffer): FeedbackRepository {

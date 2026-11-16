@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import postgres, { type Sql, type TransactionSql } from "postgres";
+import { type Sql, type TransactionSql } from "postgres";
+import { connectPostgres } from "../../platform/database/runtime-postgres.js";
 import { createSealer, type Sealer } from "../../platform/security/sealed.js";
 import { type Allocation, BodyshopError, type CheckIn, type FoodEntry, type SavedFood, type Setting, type TemplateComponent, type WeightReading } from "./domain.js";
 
@@ -65,7 +66,7 @@ type Row = { id: string; record_id: string; revision: number; removed: boolean; 
 type Db = Sql | TransactionSql;
 
 export function createPostgresBodyshopStore(databaseUrl: string, options: { encryptionKey: Buffer; readOnly?: boolean }): BodyshopStore {
-  return bodyshopStore(postgres(databaseUrl, { max: 3, idle_timeout: 120, connection: options.readOnly ? { default_transaction_read_only: true } : undefined }), createSealer(options.encryptionKey, "bodyshop"));
+  return bodyshopStore(connectPostgres(databaseUrl, { max: 3, idle_timeout: 120, connection: options.readOnly ? { default_transaction_read_only: true } : undefined }), createSealer(options.encryptionKey, "bodyshop"));
 }
 
 /** A transaction, or a savepoint when `db` is already inside one. */
