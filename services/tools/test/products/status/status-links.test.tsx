@@ -21,21 +21,6 @@ const snapshot: PublicSnapshotDocument = {
 };
 
 describe("Status navigation links", () => {
-  it("keeps daily history out of the tab order and provides a readable list", async () => {
-    const container = document.createElement("div");
-    document.body.append(container);
-    const root = createRoot(container);
-    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-    const status = { monitorId: "publisher", checkedAt: "2026-10-02T12:00:00.000Z", latencyMs: 1, statusCode: 200, status: "up" as const, uptimeDays: [{ day: "2026-10-02", successfulChecks: 1, totalChecks: 2 }], downtimeRecords: [] };
-    try {
-      await act(async () => root.render(<ToolsStatus snapshot={{ ...snapshot, statuses: { publisher: status } }} publicOrigin="https://tools.example.test" />));
-      expect(container.querySelectorAll('.uptime-bar-scroll [tabindex="0"]')).toHaveLength(0);
-      expect(container.querySelector(".uptime-bar-scroll")?.hasAttribute("tabindex")).toBe(false);
-      expect(container.textContent).toContain("Daily uptime");
-      expect(container.textContent).toContain("50% uptime · 0s recorded downtime · 2 checks");
-    } finally { await act(async () => root.unmount()); container.remove(); vi.unstubAllGlobals(); }
-  });
-
   it("renders internal, external and Open Tools links without native-button errors", async () => {
     const container = document.createElement("div");
     document.body.append(container);

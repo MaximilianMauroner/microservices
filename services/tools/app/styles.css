@@ -743,6 +743,7 @@ html[data-theme="light"]:has([data-suite-accent]) {
     [data-slot="native-select"],
     [data-slot="select-trigger"],
     [data-slot="tabs-trigger"],
+    button[role="tab"],
     .segmented button,
     button[aria-pressed] { min-height: 2.75rem; }
     [data-slot="native-select"], .segmented button, button[aria-pressed] { min-width: 2.75rem; }
