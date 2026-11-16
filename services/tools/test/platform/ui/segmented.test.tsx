@@ -9,12 +9,14 @@ it("selects one option and supports arrow-key navigation", async () => {
   const host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);
+  const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
   function Example() {
     const [value, setValue] = useState<"day" | "week">("day");
     return <Segmented label="Period" value={value} onValue={setValue} options={[["day", "Day"], ["week", "Week"]]} />;
   }
   try {
     await act(async () => root.render(<Example />));
+    expect(errors).not.toHaveBeenCalled();
     const [day, week] = host.querySelectorAll<HTMLButtonElement>('[role="radio"]');
     expect(day.getAttribute("aria-checked")).toBe("true");
     await act(async () => { day.focus(); day.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })); });
@@ -23,6 +25,7 @@ it("selects one option and supports arrow-key navigation", async () => {
   } finally {
     await act(async () => root.unmount());
     host.remove();
+    errors.mockRestore();
     vi.unstubAllGlobals();
   }
 });

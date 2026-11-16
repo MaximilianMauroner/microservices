@@ -17,7 +17,7 @@ export function Segmented<Value extends string>({
   return (
     <RadioGroup className="segmented" aria-label={label} value={value} onValueChange={onValue}>
       {options.map(([option, text]) => (
-        <Radio.Root key={option} value={option} render={<button type="button" />}>
+        <Radio.Root key={option} value={option} nativeButton render={<button type="button" />}>
           {text}
         </Radio.Root>
       ))}
