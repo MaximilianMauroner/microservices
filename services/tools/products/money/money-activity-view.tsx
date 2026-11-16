@@ -10,9 +10,21 @@ import { MoneySortableHead, MoneyTableSearch, nextMoneySort, type MoneySort } fr
 import { MoneyCategoryPicker, moneyCategoryLabel } from "./money-category-picker.js";
 import { isRuleCategorized } from "./money-category-rules.js";
 import { moneyGet, moneyJson } from "./money-requests.js";
-import { EmptyState, formatDay, formatMinor, MoneyPanel } from "./money-ui.js";
+import {
+  EmptyState,
+  formatDay,
+  formatMinor,
+  MoneyPanel,
+  MoneyTable,
+  MoneyTableBody,
+  MoneyTableCell,
+  MoneyTableHead,
+  MoneyTableHeader,
+  MoneyTableRow,
+} from "./money-ui.js";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { useIsMobile } from "@/components/ui/use-mobile";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -188,7 +200,7 @@ export function MoneyActivityView({
               </ul>
             ) : (
               <div className="overflow-x-auto">
-                <table className="money-table min-w-[52rem] table-fixed" aria-label="Transaction detail table">
+                <MoneyTable className="min-w-[52rem] table-fixed" aria-label="Transaction detail table">
                   <colgroup>
                     <col style={{ width: "2.75rem" }} />
                     <col style={{ width: "6.5rem" }} />
@@ -197,34 +209,34 @@ export function MoneyActivityView({
                     <col style={{ width: "12rem" }} />
                     <col style={{ width: "8.5rem" }} />
                   </colgroup>
-                  <thead>
-                    <tr>
-                      <th><span className="sr-only">Select</span></th>
+                  <MoneyTableHeader>
+                    <MoneyTableRow>
+                      <MoneyTableHead><span className="sr-only">Select</span></MoneyTableHead>
                       <MoneySortableHead label="Date" sortKey="date" active={sort} onSort={changeSort} />
                       <MoneySortableHead label="Description" sortKey="description" active={sort} onSort={changeSort} />
                       <MoneySortableHead label="Account" sortKey="account" active={sort} onSort={changeSort} />
                       <MoneySortableHead label="Category" sortKey="category" active={sort} onSort={changeSort} />
                       <MoneySortableHead label="Amount" sortKey="amount" active={sort} onSort={changeSort} align="right" />
-                    </tr>
-                  </thead>
-                  <tbody>
+                    </MoneyTableRow>
+                  </MoneyTableHeader>
+                  <MoneyTableBody>
                     {rows.map((item) => (
-                      <tr key={item.id} aria-selected={selectedRows.has(item.id)}>
-                        <td>
-                          <input type="checkbox" className="size-4 accent-[var(--primary)]" aria-label={`Select ${item.description}`} checked={selectedRows.has(item.id)} disabled={needsTransferTreatment(item)} onChange={() => toggleRow(item.id)} />
-                        </td>
-                        <td className="whitespace-nowrap text-muted-foreground tabular-nums">{formatDay(item.occurredAt)}</td>
-                        <td className="min-w-0">
+                      <MoneyTableRow key={item.id} aria-selected={selectedRows.has(item.id)}>
+                        <MoneyTableCell>
+                          <Checkbox aria-label={`Select ${item.description}`} checked={selectedRows.has(item.id)} disabled={needsTransferTreatment(item)} onCheckedChange={() => toggleRow(item.id)} />
+                        </MoneyTableCell>
+                        <MoneyTableCell className="whitespace-nowrap text-muted-foreground tabular-nums">{formatDay(item.occurredAt)}</MoneyTableCell>
+                        <MoneyTableCell className="min-w-0">
                           <TransactionDescription className="font-medium" description={item.description || item.sourceType} />
                           <span className="sub truncate">{item.sourceType}{item.transferGroupId ? " · matched transfer" : ""}{item.feeMinor + item.taxMinor ? ` · ${formatMinor(item.feeMinor + item.taxMinor, { precise: true })} costs` : ""}</span>
-                        </td>
-                        <td className="truncate text-muted-foreground" title={item.accountName}>{item.accountName}</td>
-                        <td>{chip(item)}</td>
-                        <td className={`num font-semibold ${item.amountMinor > 0 ? "text-positive" : ""}`}>{formatMinor(item.amountMinor, { precise: true, signed: true })}</td>
-                      </tr>
+                        </MoneyTableCell>
+                        <MoneyTableCell className="truncate text-muted-foreground" title={item.accountName}>{item.accountName}</MoneyTableCell>
+                        <MoneyTableCell>{chip(item)}</MoneyTableCell>
+                        <MoneyTableCell className={`num font-semibold ${item.amountMinor > 0 ? "text-positive" : ""}`}>{formatMinor(item.amountMinor, { precise: true, signed: true })}</MoneyTableCell>
+                      </MoneyTableRow>
                     ))}
-                  </tbody>
-                </table>
+                  </MoneyTableBody>
+                </MoneyTable>
               </div>
             )
           ) : (

@@ -63,6 +63,12 @@ import {
   StatStrip,
   TableTwin,
   toneClass,
+  MoneyTable,
+  MoneyTableBody,
+  MoneyTableCell,
+  MoneyTableHead,
+  MoneyTableHeader,
+  MoneyTableRow,
 } from "./money-ui.js";
 import {
   Alert,
@@ -309,22 +315,22 @@ export function MoneyImportHistory({ imports }: Pick<MoneyTrackerPageData, "impo
       ) : null}
       <div className="mt-2 overflow-x-auto">
         {imports.length ? (
-          <table className="money-table" aria-label="Imports">
-            <thead>
-              <tr><th>File</th><th className="num">New rows</th><th className="num hide-sm">Duplicates</th><th className="num"><span className="sr-only">Actions</span></th></tr>
-            </thead>
+          <MoneyTable aria-label="Imports">
+            <MoneyTableHeader>
+              <MoneyTableRow><MoneyTableHead>File</MoneyTableHead><MoneyTableHead className="num">New rows</MoneyTableHead><MoneyTableHead className="num hide-sm">Duplicates</MoneyTableHead><MoneyTableHead className="num"><span className="sr-only">Actions</span></MoneyTableHead></MoneyTableRow>
+            </MoneyTableHeader>
             {[...importsByDate].map(([date, items]) => (
-              <tbody key={date}>
-                <tr><th scope="rowgroup" colSpan={4} className="bg-muted/60 font-semibold text-foreground">{date}</th></tr>
+              <MoneyTableBody key={date}>
+                <MoneyTableRow><MoneyTableHead scope="rowgroup" colSpan={4} className="bg-muted/60 font-semibold text-foreground">{date}</MoneyTableHead></MoneyTableRow>
                 {items.map((item) => (
-                  <tr key={item.id}>
-                    <td className="max-w-80">
+                  <MoneyTableRow key={item.id}>
+                    <MoneyTableCell className="max-w-80">
                       <span className="block truncate font-medium" title={item.filename}>{item.filename}</span>
                       <span className="sub">{formatLabel(item.format)} · {formatBytes(item.bytes)}</span>
-                    </td>
-                    <td className="num">{item.insertedCount.toLocaleString("en-GB")}</td>
-                    <td className="num hide-sm text-muted-foreground">{item.duplicateCount.toLocaleString("en-GB")}</td>
-                    <td className="num">
+                    </MoneyTableCell>
+                    <MoneyTableCell className="num">{item.insertedCount.toLocaleString("en-GB")}</MoneyTableCell>
+                    <MoneyTableCell className="num hide-sm text-muted-foreground">{item.duplicateCount.toLocaleString("en-GB")}</MoneyTableCell>
+                    <MoneyTableCell className="num">
                       <AlertDialog>
                         <AlertDialogTrigger aria-label={`Delete ${item.filename}`} render={<Button type="button" variant="destructive-subtle" size="icon-sm" disabled={deleting !== undefined || reimporting} />}>
                           <Trash2 />
@@ -345,12 +351,12 @@ export function MoneyImportHistory({ imports }: Pick<MoneyTrackerPageData, "impo
                           </AlertDialogFooter>
                         </AlertDialogContent>
                       </AlertDialog>
-                    </td>
-                  </tr>
+                    </MoneyTableCell>
+                  </MoneyTableRow>
                 ))}
-              </tbody>
+              </MoneyTableBody>
             ))}
-          </table>
+          </MoneyTable>
         ) : (
           <EmptyState title="No imports yet" icon={<Upload />}>Completed imports appear here with their row counts.</EmptyState>
         )}
@@ -642,49 +648,49 @@ export function MoneyInvestmentsView({
         }
       >
         <div className="mt-2 overflow-x-auto">
-          <table className="money-table" aria-label="Portfolio positions">
-            <thead>
-              <tr>
+          <MoneyTable aria-label="Portfolio positions">
+            <MoneyTableHeader>
+              <MoneyTableRow>
                 <MoneySortableHead label="Instrument" sortKey="name" active={positionSort} onSort={changePositionSort} />
                 <MoneySortableHead label="Quantity" sortKey="quantity" active={positionSort} onSort={changePositionSort} align="right" className="hide-sm" />
                 <MoneySortableHead label="Price" sortKey="close" active={positionSort} onSort={changePositionSort} align="right" className="hide-sm" />
                 <MoneySortableHead label="Value" sortKey="value" active={positionSort} onSort={changePositionSort} align="right" />
-                <th className="hide-sm w-[13%]">Weight</th>
+                <MoneyTableHead className="hide-sm w-[13%]">Weight</MoneyTableHead>
                 {checkIn ? <MoneySortableHead label={`Since ${formatDay(checkIn.baseline)}`} sortKey="since" active={positionSort} onSort={changePositionSort} align="right" className="hide-sm" /> : null}
                 <MoneySortableHead label="Gain" sortKey="gain" active={positionSort} onSort={changePositionSort} align="right" />
-              </tr>
-            </thead>
-            <tbody>
+              </MoneyTableRow>
+            </MoneyTableHeader>
+            <MoneyTableBody>
               {visiblePositions.map((position) => {
                 const move = movesSince.get(position.canonicalKey);
                 return (
-                  <tr key={position.canonicalKey}>
-                    <td>
+                  <MoneyTableRow key={position.canonicalKey}>
+                    <MoneyTableCell>
                       <span className="font-medium">{position.name}</span>
                       {position.state !== "fresh" ? <Badge variant="outline" className="ml-2 text-warning">{position.state === "unpriced" ? "No price" : `Price from ${position.priceDate ? formatDay(position.priceDate) : "earlier"}`}</Badge> : null}
                       <span className="sub">{assetClassLabel(position.assetClass)} · {position.providerKey ?? position.canonicalKey} · cost {formatMinor(position.costBasisMinor)}</span>
-                    </td>
-                    <td className="num hide-sm">{Number(position.quantity).toLocaleString("de-DE", { maximumFractionDigits: 4 })}</td>
-                    <td className="num hide-sm">{position.close && position.currency ? decimalMoney(position.close, position.currency) : "—"}</td>
-                    <td className="num font-semibold">
+                    </MoneyTableCell>
+                    <MoneyTableCell className="num hide-sm">{Number(position.quantity).toLocaleString("de-DE", { maximumFractionDigits: 4 })}</MoneyTableCell>
+                    <MoneyTableCell className="num hide-sm">{position.close && position.currency ? decimalMoney(position.close, position.currency) : "—"}</MoneyTableCell>
+                    <MoneyTableCell className="num font-semibold">
                       {position.marketValueMinor === undefined ? "—" : formatMinor(position.marketValueMinor)}
                       {position.marketValueMinor !== undefined && total ? <span className="sub md:hidden">{formatRatio(position.marketValueMinor / total)}</span> : null}
-                    </td>
-                    <td className="hide-sm">
+                    </MoneyTableCell>
+                    <MoneyTableCell className="hide-sm">
                       {position.marketValueMinor === undefined ? null : (
                         <span className="flex items-center gap-2">
                           <ShareBar ratio={position.marketValueMinor / largestValue} className="flex-1" />
                           <span className="w-11 text-right text-xs text-muted-foreground tabular-nums">{formatRatio(position.marketValueMinor / total)}</span>
                         </span>
                       )}
-                    </td>
+                    </MoneyTableCell>
                     {checkIn ? (
-                      <td className={`num hide-sm ${move ? toneClass(move.moveMinor) : "text-muted-foreground"}`}>
+                      <MoneyTableCell className={`num hide-sm ${move ? toneClass(move.moveMinor) : "text-muted-foreground"}`}>
                         {move ? formatMinor(move.moveMinor, { signed: true }) : "—"}
                         {move?.returnPercent === undefined ? null : <span className="sub">{formatPercent(move.returnPercent)}</span>}
-                      </td>
+                      </MoneyTableCell>
                     ) : null}
-                    <td className="num">
+                    <MoneyTableCell className="num">
                       {position.unrealizedGainMinor === undefined ? "—" : (
                         <span className="flex items-center justify-end gap-3">
                           <DivergingBar value={position.unrealizedGainMinor} maximum={maxGain} className="hidden w-20 md:block" />
@@ -694,12 +700,12 @@ export function MoneyInvestmentsView({
                           </span>
                         </span>
                       )}
-                    </td>
-                  </tr>
+                    </MoneyTableCell>
+                  </MoneyTableRow>
                 );
               })}
-            </tbody>
-          </table>
+            </MoneyTableBody>
+          </MoneyTable>
           {visiblePositions.length ? null : <EmptyState title={marketData.positions.length ? "No positions match this filter" : "No open positions"} icon={marketData.positions.length ? <Search /> : <PieChart />}>{marketData.positions.length ? undefined : "Import a trading statement or portfolio CSV."}</EmptyState>}
         </div>
         <InvestmentActivityHistory investments={investments} />
@@ -1005,20 +1011,20 @@ function PortfolioHistoryDisclosure({
   return (
     <TableTwin label="View portfolio values as a table">
       <div className="max-h-80 overflow-y-auto">
-        <table className="money-table">
-          <thead>
-            <tr><th>Date</th><th className="num">Market value</th><th className="num">Cost basis</th></tr>
-          </thead>
-          <tbody>
+        <MoneyTable>
+          <MoneyTableHeader>
+            <MoneyTableRow><MoneyTableHead>Date</MoneyTableHead><MoneyTableHead className="num">Market value</MoneyTableHead><MoneyTableHead className="num">Cost basis</MoneyTableHead></MoneyTableRow>
+          </MoneyTableHeader>
+          <MoneyTableBody>
             {[...history].reverse().map((point) => (
-              <tr key={point.date}>
-                <td>{formatDay(point.date, true)}</td>
-                <td className="num">{formatEuro(point.marketValue, { precise: true })}</td>
-                <td className="num">{formatEuro(point.costBasis, { precise: true })}</td>
-              </tr>
+              <MoneyTableRow key={point.date}>
+                <MoneyTableCell>{formatDay(point.date, true)}</MoneyTableCell>
+                <MoneyTableCell className="num">{formatEuro(point.marketValue, { precise: true })}</MoneyTableCell>
+                <MoneyTableCell className="num">{formatEuro(point.costBasis, { precise: true })}</MoneyTableCell>
+              </MoneyTableRow>
             ))}
-          </tbody>
-        </table>
+          </MoneyTableBody>
+        </MoneyTable>
       </div>
     </TableTwin>
   );
@@ -1093,33 +1099,33 @@ function InvestmentActivityHistory({
         ) : null}
         <div className="overflow-x-auto">
           {realized.positions.length ? (
-            <table className="money-table" aria-label="Realized investment gains table">
-              <thead>
-                <tr>
+            <MoneyTable aria-label="Realized investment gains table">
+              <MoneyTableHeader>
+                <MoneyTableRow>
                   <MoneySortableHead label="Asset" sortKey="asset" active={realizedSort} onSort={changeRealizedSort} />
                   <MoneySortableHead label="Sales" sortKey="sales" active={realizedSort} onSort={changeRealizedSort} align="right" className="hide-sm" />
                   <MoneySortableHead label="Quantity sold" sortKey="quantity" active={realizedSort} onSort={changeRealizedSort} align="right" className="hide-sm" />
                   <MoneySortableHead label="Proceeds" sortKey="proceeds" active={realizedSort} onSort={changeRealizedSort} align="right" />
                   <MoneySortableHead label="FIFO basis" sortKey="basis" active={realizedSort} onSort={changeRealizedSort} align="right" className="hide-sm" />
                   <MoneySortableHead label="Gain" sortKey="gain" active={realizedSort} onSort={changeRealizedSort} align="right" />
-                </tr>
-              </thead>
-              <tbody>
+                </MoneyTableRow>
+              </MoneyTableHeader>
+              <MoneyTableBody>
                 {sortedRealized.map((item) => (
-                  <tr key={item.symbol}>
-                    <td className="font-medium">{item.symbol}</td>
-                    <td className="num hide-sm">{item.saleCount}</td>
-                    <td className="num hide-sm">{item.soldQuantity}</td>
-                    <td className="num">{formatMinor(item.proceedsMinor)}</td>
-                    <td className="num hide-sm">{formatMinor(item.costBasisMinor)}</td>
-                    <td className={`num ${toneClass(item.gainMinor)}`}>
+                  <MoneyTableRow key={item.symbol}>
+                    <MoneyTableCell className="font-medium">{item.symbol}</MoneyTableCell>
+                    <MoneyTableCell className="num hide-sm">{item.saleCount}</MoneyTableCell>
+                    <MoneyTableCell className="num hide-sm">{item.soldQuantity}</MoneyTableCell>
+                    <MoneyTableCell className="num">{formatMinor(item.proceedsMinor)}</MoneyTableCell>
+                    <MoneyTableCell className="num hide-sm">{formatMinor(item.costBasisMinor)}</MoneyTableCell>
+                    <MoneyTableCell className={`num ${toneClass(item.gainMinor)}`}>
                       {formatMinor(item.gainMinor, { signed: true })}
                       <span className="sub">{gainPercent(item.gainMinor, item.costBasisMinor)}</span>
-                    </td>
-                  </tr>
+                    </MoneyTableCell>
+                  </MoneyTableRow>
                 ))}
-              </tbody>
-            </table>
+              </MoneyTableBody>
+            </MoneyTable>
           ) : (
             <EmptyState title="No realized gains yet" icon={<Coins />}>They appear after a sale is matched to earlier purchases.</EmptyState>
           )}
@@ -1128,33 +1134,33 @@ function InvestmentActivityHistory({
       <TableTwin label={`Trade totals by asset · ${positions.length.toLocaleString("en-GB")} assets · ${formatMinor(totals.feesMinor + totals.taxesMinor)} fees and taxes`}>
         <div className="overflow-x-auto">
           {positions.length ? (
-            <table className="money-table" aria-label="Trade-derived investment quantities table">
-              <thead>
-                <tr>
+            <MoneyTable aria-label="Trade-derived investment quantities table">
+              <MoneyTableHeader>
+                <MoneyTableRow>
                   <MoneySortableHead label="Asset" sortKey="asset" active={activitySort} onSort={changeActivitySort} />
                   <MoneySortableHead label="Quantity" sortKey="quantity" active={activitySort} onSort={changeActivitySort} align="right" className="hide-sm" />
                   <MoneySortableHead label="Bought" sortKey="bought" active={activitySort} onSort={changeActivitySort} align="right" />
                   <MoneySortableHead label="Sold" sortKey="sold" active={activitySort} onSort={changeActivitySort} align="right" />
                   <MoneySortableHead label="Income" sortKey="income" active={activitySort} onSort={changeActivitySort} align="right" className="hide-sm" />
                   <MoneySortableHead label="Costs" sortKey="costs" active={activitySort} onSort={changeActivitySort} align="right" className="hide-sm" />
-                </tr>
-              </thead>
-              <tbody>
+                </MoneyTableRow>
+              </MoneyTableHeader>
+              <MoneyTableBody>
                 {sortedPositions.map((item, index) => (
-                  <tr key={`${item.symbol}:${item.name ?? index}`}>
-                    <td>
+                  <MoneyTableRow key={`${item.symbol}:${item.name ?? index}`}>
+                    <MoneyTableCell>
                       <span className="font-medium">{item.symbol}</span>
                       {item.name ? <span className="sub">{item.name}</span> : null}
-                    </td>
-                    <td className="num hide-sm">{item.quantity}</td>
-                    <td className="num">{money(item.boughtMinor, item.currency)}</td>
-                    <td className="num">{money(item.soldMinor, item.currency)}</td>
-                    <td className="num hide-sm">{money(item.incomeMinor, item.currency)}</td>
-                    <td className="num hide-sm">{money(item.feesMinor + item.taxesMinor, item.currency)}</td>
-                  </tr>
+                    </MoneyTableCell>
+                    <MoneyTableCell className="num hide-sm">{item.quantity}</MoneyTableCell>
+                    <MoneyTableCell className="num">{money(item.boughtMinor, item.currency)}</MoneyTableCell>
+                    <MoneyTableCell className="num">{money(item.soldMinor, item.currency)}</MoneyTableCell>
+                    <MoneyTableCell className="num hide-sm">{money(item.incomeMinor, item.currency)}</MoneyTableCell>
+                    <MoneyTableCell className="num hide-sm">{money(item.feesMinor + item.taxesMinor, item.currency)}</MoneyTableCell>
+                  </MoneyTableRow>
                 ))}
-              </tbody>
-            </table>
+              </MoneyTableBody>
+            </MoneyTable>
           ) : (
             <EmptyState title="No investment events" icon={<Activity />}>Import a trading statement or portfolio CSV.</EmptyState>
           )}
@@ -1233,14 +1239,15 @@ function BatchImportPanel({
                   </p>
                 </div>
                 {busy === undefined && !item.receipt ? (
-                  <button
+                  <Button
                     type="button"
-                    className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    variant="ghost"
+                    size="icon-sm"
                     onClick={() => onRemove(item.id)}
                     aria-label={`Remove ${item.file.name}`}
                   >
-                    <X className="size-4" />
-                  </button>
+                    <X />
+                  </Button>
                 ) : null}
               </div>
               {preview ? (

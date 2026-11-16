@@ -58,11 +58,14 @@ that any hook it needs lands in `platform/ui/components/ui`.
 ## Product composition
 
 Products may build their own layout on top of the primitives. Money is the
-largest example: `MoneyPanel` wraps `Card`, `EmptyState` wraps `Empty`, and the
-dashboard charts are a product-specific SVG layer in `money-ui.tsx`. That layer
-is intentional: it keeps chart text sharp, owns the tooltip behaviour, and
-avoids pulling recharts into the overview. The investments view is the one
-place that uses the shadcn `chart` primitive and recharts.
+largest example: `MoneyPanel` wraps `Card`, `EmptyState` wraps `Empty`, and
+`MoneyTable` wraps the shadcn table primitives so the compact money styling
+stays in one place. The activity, review, and plan views use the shared
+`Checkbox`, `RadioGroup`, and `Slider` primitives. The dashboard charts are a
+product-specific SVG layer in `money-ui.tsx`. That layer is intentional: it
+keeps chart text sharp, owns the tooltip behaviour, and avoids pulling recharts
+into the overview. The investments view is the one place that uses the shadcn
+`chart` primitive and recharts.
 
 When a product needs a new table, empty state, skeleton, or control, start with
 the shadcn primitive. Reach for product-specific markup only when the primitive
@@ -72,5 +75,5 @@ cannot express the interaction.
 
 The vendored set is larger than current usage. Before adding a component, check
 whether an unused one already covers the need. `select`, `tabs`,
-`toggle-group`, `skeleton`, `spinner`, `progress`, and `separator` are installed
-but not yet used by a product.
+`toggle-group`, `spinner`, `progress`, and `separator` are installed but not yet
+used by a product.

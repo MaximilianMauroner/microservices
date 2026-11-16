@@ -11,6 +11,14 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import type { MoneySpendingAnalytics } from "./money-repository.js";
 
 /* ---------- Formatting ---------- */
@@ -134,6 +142,37 @@ export function TableTwin({ label, children }: { label: string; children: ReactN
       </div>
     </details>
   );
+}
+
+/* ---------- Tables ---------- */
+
+/**
+ * The shadcn table primitives with the money table styling. The wrapper keeps
+ * the horizontal scroll container, while the row and cell overrides preserve
+ * the compact money layout instead of the default shadcn spacing.
+ */
+export function MoneyTable({ className, ...props }: React.ComponentProps<typeof Table>) {
+  return <Table className={cn("money-table", className)} {...props} />;
+}
+
+export function MoneyTableHeader({ className, ...props }: React.ComponentProps<typeof TableHeader>) {
+  return <TableHeader className={className} {...props} />;
+}
+
+export function MoneyTableBody({ className, ...props }: React.ComponentProps<typeof TableBody>) {
+  return <TableBody className={className} {...props} />;
+}
+
+export function MoneyTableRow({ className, ...props }: React.ComponentProps<typeof TableRow>) {
+  return <TableRow className={cn("border-0 hover:bg-transparent", className)} {...props} />;
+}
+
+export function MoneyTableHead({ className, ...props }: React.ComponentProps<typeof TableHead>) {
+  return <TableHead className={cn("h-auto", className)} {...props} />;
+}
+
+export function MoneyTableCell({ className, ...props }: React.ComponentProps<typeof TableCell>) {
+  return <TableCell className={cn("whitespace-normal", className)} {...props} />;
 }
 
 export function EmptyState({
