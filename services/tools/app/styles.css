@@ -636,7 +636,11 @@ html[data-theme="light"]:has([data-suite-accent]) {
     /* Tables whose hidden columns carry a label become stacked cards, so those values stay
        reachable instead of disappearing. Tables without labels keep the hide-sm behaviour. */
     .money-table:has(td.hide-sm[data-label]) { display: block; }
-    .money-table:has(td.hide-sm[data-label]) thead { display: none; }
+    /* The header becomes a button bar, so sortable columns stay reachable above the cards. */
+    .money-table:has(td.hide-sm[data-label]) thead { display: block; border-bottom: 1px solid var(--border); }
+    .money-table:has(td.hide-sm[data-label]) thead tr { display: flex; flex-wrap: wrap; gap: .25rem; padding: .6rem 1rem .35rem; }
+    .money-table:has(td.hide-sm[data-label]) thead th { display: block; padding: 0; border-bottom: 0; white-space: nowrap; }
+    .money-table:has(td.hide-sm[data-label]) thead th:not(:has(button)) { display: none; }
     .money-table:has(td.hide-sm[data-label]) tbody { display: block; }
     .money-table:has(td.hide-sm[data-label]) tbody tr { display: block; border-bottom: 1px solid var(--border); }
     .money-table:has(td.hide-sm[data-label]) tbody tr:last-child { border-bottom: 0; }
