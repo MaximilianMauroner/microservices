@@ -32,7 +32,7 @@ export function AppShell({ product, accent, icon }: { product: string; accent?: 
                 to={page.to}
                 preload="intent"
                 aria-current={page.match(pathname) ? "page" : undefined}
-                className="inline-flex h-8 shrink-0 items-center rounded-md px-3 text-sm font-medium text-muted-foreground aria-[current=page]:bg-secondary aria-[current=page]:text-secondary-foreground"
+                className="inline-flex h-11 shrink-0 items-center rounded-md px-3 text-sm font-medium text-muted-foreground aria-[current=page]:bg-secondary aria-[current=page]:text-secondary-foreground"
               >
                 {page.label}
               </Link>

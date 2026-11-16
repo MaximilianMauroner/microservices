@@ -64,7 +64,7 @@ export function ToolsSidebar() {
     money: countBadge(moneyRouteReview ? moneyReviewCount(moneyRouteReview) : attention?.moneyReview),
     feedback: countBadge(attention?.feedbackUnread),
     markdown: countBadge(attention?.documentsExpiring?.length),
-    status: attention?.servicesDown?.length ? <span className="size-2 rounded-full bg-negative" title={`${attention.servicesDown.length} down`} /> : null
+    status: attention?.servicesDown?.length ? <span className="size-2 rounded-full bg-negative" aria-hidden="true" /> : null
   };
 
   return (
@@ -85,11 +85,14 @@ export function ToolsSidebar() {
             <SidebarMenu className="gap-0.5">
               {TOOLS_PRODUCTS.filter((product) => principalSeesProduct(principal, product.id)).map((product) => {
                 const active = product.match(pathname) || Boolean(product.pages?.some((page) => page.match(pathname)));
+                const down = product.id === "status" ? attention?.servicesDown?.length : 0;
+                const label = down ? `${product.label}, ${down} ${down === 1 ? "service" : "services"} down` : product.label;
                 return (
                   <SidebarMenuItem key={product.id}>
-                    <SidebarMenuButton className="h-9 px-2.5 text-sm" tooltip={product.label} isActive={active && !product.pages} render={<Link to={product.to} preload="intent" />}>
+                    <SidebarMenuButton className="h-9 px-2.5 text-sm" tooltip={label} isActive={active && !product.pages} render={<Link to={product.to} preload="intent" title={down ? label : undefined} />}>
                       <img className="size-5 rounded" src={product.icon} alt="" width={20} height={20} />
                       <span>{product.label}</span>
+                      {down ? <span className="sr-only">{`, ${down} ${down === 1 ? "service" : "services"} down`}</span> : null}
                     </SidebarMenuButton>
                     {counts[product.id] && !(active && product.pages) ? <SidebarMenuBadge className="top-2 right-2">{counts[product.id]}</SidebarMenuBadge> : null}
                     {active && product.pages ? (

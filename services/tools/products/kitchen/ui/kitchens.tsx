@@ -13,7 +13,7 @@ import type { KitchenAdminAction, KitchenPersonalAction } from "../actions.js";
 import type { Kitchen } from "../domain.js";
 import type { KitchenPerson } from "../repository.js";
 import { runKitchenAdminAction, runKitchenPersonalAction } from "../server-functions.js";
-import { KitchenSheet, LanguageMenu, memberLine, messageOf, SheetAction } from "./kit.js";
+import { KitchenConfirm, KitchenSheet, LanguageMenu, memberLine, messageOf, SheetAction } from "./kit.js";
 import { type KitchenLanguage, useLanguage, useText } from "./language.js";
 import { kitchenToast } from "./action-toast.js";
 
@@ -216,10 +216,9 @@ export function KitchensPage(data: KitchensData) {
                         {kitchen.members.map((member) => (
                           <li key={member.personId} className="inline-flex h-11 max-w-full min-w-0 items-center gap-0.5 rounded-full bg-muted pl-4 text-sm md:h-8 md:pr-1 md:pl-3">
                             <span className="truncate">{member.email}</span>
-                            <button type="button" className="grid size-11 place-items-center rounded-full hover:bg-background md:size-6" aria-label={text.removeMember(member.email, kitchen.name)} disabled={pending}
-                              onClick={() => void run({ type: "member.remove", kitchenId: kitchen.id, personId: member.personId }, text.leftKitchen(member.email, kitchen.name))}>
-                              <XIcon className="size-3.5" aria-hidden />
-                            </button>
+                            <KitchenConfirm message={`${text.removeMember(member.email, kitchen.name)}?`} confirm={text.removeMember(member.email, kitchen.name)}
+                              onConfirm={() => void run({ type: "member.remove", kitchenId: kitchen.id, personId: member.personId }, text.leftKitchen(member.email, kitchen.name))}
+                              trigger={<button type="button" className="grid size-11 place-items-center rounded-full hover:bg-background md:size-6" aria-label={text.removeMember(member.email, kitchen.name)} disabled={pending}><XIcon className="size-3.5" aria-hidden /></button>} />
                           </li>
                         ))}
                       </ul>
@@ -245,18 +244,18 @@ export function KitchensPage(data: KitchensData) {
                     </label>
                     <p className="text-xs text-muted-foreground">{text.mcpHint}</p>
                     <div className="flex flex-wrap gap-2">
-                      <Button size="sm" variant="destructive-outline" disabled={pending} onClick={() => {
-                        if (window.confirm(text.leaveConfirm(kitchen.name))) void run({ type: "kitchen.leave", kitchenId: kitchen.id }, text.left);
-                      }}>{text.leave}</Button>
+                      <KitchenConfirm message={text.leaveConfirm(kitchen.name)} confirm={text.leave}
+                        onConfirm={() => void run({ type: "kitchen.leave", kitchenId: kitchen.id }, text.left)}
+                        trigger={<Button size="sm" variant="destructive-outline" disabled={pending}>{text.leave}</Button>} />
                       {data.isAdmin && data.people.length ? <Button size="sm" variant="outline" disabled={pending} onClick={() => { setMoving(kitchen); setRecipient(""); setLeaveAfterMove(false); }}>{text.move}</Button> : null}
                     </div>
                   </div>
                   <div className="mt-auto flex items-center justify-between gap-2">
                     <Button nativeButton={false} render={<Link to="/kitchen/$kitchenId" params={{ kitchenId: kitchen.id }} />}>{text.open}</Button>
                     {data.isAdmin ? (
-                      <Button size="sm" variant="destructive-outline" disabled={pending} onClick={() => {
-                        if (window.confirm(text.deleteConfirm(kitchen.name))) void run({ type: "kitchen.remove", kitchenId: kitchen.id }, text.deleted(kitchen.name));
-                      }}><Trash2Icon aria-hidden /> {text.delete}</Button>
+                      <KitchenConfirm message={text.deleteConfirm(kitchen.name)} confirm={text.delete}
+                        onConfirm={() => void run({ type: "kitchen.remove", kitchenId: kitchen.id }, text.deleted(kitchen.name))}
+                        trigger={<Button size="sm" variant="destructive-outline" disabled={pending}><Trash2Icon aria-hidden /> {text.delete}</Button>} />
                     ) : null}
                   </div>
                 </li>

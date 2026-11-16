@@ -3,8 +3,8 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ run: vi.fn(), personal: vi.fn(), invalidate: vi.fn() }));
-vi.mock("../../../products/kitchen/server-functions.js", () => ({ runKitchenAction: mocks.run, runKitchenPersonalAction: mocks.personal }));
+const mocks = vi.hoisted(() => ({ run: vi.fn(), personal: vi.fn(), admin: vi.fn(), invalidate: vi.fn() }));
+vi.mock("../../../products/kitchen/server-functions.js", () => ({ runKitchenAction: mocks.run, runKitchenPersonalAction: mocks.personal, runKitchenAdminAction: mocks.admin }));
 vi.mock("../../../platform/ui/components/ui/use-mobile.js", () => ({ useIsMobile: () => false }));
 vi.mock("../../../platform/ui/components/app-shell.js", () => ({ AppShell: () => null }));
 vi.mock("@tanstack/react-router", () => ({
@@ -28,6 +28,7 @@ async function show(element: React.ReactElement, check: () => Promise<void>) {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   mocks.run.mockResolvedValue({});
   mocks.personal.mockResolvedValue({});
+  mocks.admin.mockResolvedValue({});
   mocks.invalidate.mockResolvedValue(undefined);
   const host = document.createElement("div");
   document.body.append(host);
@@ -80,4 +81,15 @@ it("dismisses a stale setting retry after a new setting action", () => show(kitc
   await act(async () => document.querySelector<HTMLButtonElement>('[role="switch"]')!.click());
   expect(button("Try again")).toBeUndefined();
   expect(mocks.personal).toHaveBeenCalledTimes(2);
+}));
+
+it("asks before removing a kitchen member", () => show(<KitchensPage kitchens={[{ id: "kitchen", name: "Home", mcpEnabled: false, hidden: false, members: [{ personId: "person", email: "cook@example.test" }], groups: [] }]} isAdmin people={[]} hiddenKitchens={[]} />, async () => {
+  const remove = document.querySelector<HTMLButtonElement>('[aria-label="Remove cook@example.test from Home"]')!;
+  await act(async () => remove.click());
+  expect(document.body.textContent).toContain("Remove cook@example.test from Home?");
+  await act(async () => button("Cancel")!.click());
+  expect(mocks.admin).not.toHaveBeenCalled();
+  await act(async () => remove.click());
+  await act(async () => button("Remove cook@example.test from Home")!.click());
+  expect(mocks.admin).toHaveBeenCalledWith({ data: { type: "member.remove", kitchenId: "kitchen", personId: "person" } });
 }));
