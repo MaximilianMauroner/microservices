@@ -4,10 +4,10 @@ import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import { UploadLinkManager } from "../../../products/publisher/ui/upload-link-manager.js";
 
-const link = { id: "one", createdAt: "2026-01-01T00:00:00Z", expiresAt: "2099-01-01T00:00:00Z", fileCount: 1 };
+const link = { id: "one", createdAt: "2026-01-01T00:00:00Z", expiresAt: "2026-01-02T00:00:00Z", fileCount: 1 };
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
-it("waits for the list and asks before revoking a link", async () => {
+it("waits for the list and asks before revoking an expired link", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   let finish!: (response: Response) => void;
   const fetchMock = vi.fn((_path: string, options?: RequestInit) => options?.method === "DELETE" ? Promise.resolve(new Response(null, { status: 204 })) : new Promise<Response>((resolve) => { finish = resolve; }));

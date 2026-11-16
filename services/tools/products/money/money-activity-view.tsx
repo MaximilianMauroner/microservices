@@ -100,7 +100,11 @@ export function MoneyActivityView({
     return () => window.clearTimeout(timeout);
   }, [query, searchQuery]);
   useEffect(() => {
-    if (loadedFilters.current === parameters.toString()) return;
+    if (loadedFilters.current === parameters.toString()) {
+      setLoading(false);
+      setLoadError(undefined);
+      return;
+    }
     void loadActivity();
     return () => { requestSequence.current += 1; };
   }, [parameters]);

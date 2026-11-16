@@ -61,9 +61,9 @@ export function ToolsSidebar() {
   }, [pathname]);
 
   const counts: Partial<Record<ToolsProduct["id"], ReactNode>> = {
-    money: countBadge(moneyRouteReview ? moneyReviewCount(moneyRouteReview) : attention?.moneyReview),
-    feedback: countBadge(attention?.feedbackUnread),
-    markdown: countBadge(attention?.documentsExpiring?.length),
+    money: countBadge(moneyRouteReview ? moneyReviewCount(moneyRouteReview) : attention?.moneyReview, "transaction rows to review"),
+    feedback: countBadge(attention?.feedbackUnread, "unread responses"),
+    markdown: countBadge(attention?.documentsExpiring?.length, "documents expiring soon"),
     status: attention?.servicesDown?.length ? <span className="size-2 rounded-full bg-negative" aria-hidden="true" /> : null
   };
 
@@ -109,7 +109,7 @@ export function ToolsSidebar() {
                               render={<Link to="/money" search={{ view: view === "overview" ? undefined : view }} preload="render" />}
                             >
                               <span>{moneyViewTitle(view)}</span>
-                              {view === "review" && moneyRouteReview && moneyReviewCount(moneyRouteReview) ? <MoneyReviewBadge count={moneyReviewCount(moneyRouteReview)} /> : null}
+                              {view === "review" && moneyRouteReview && moneyReviewCount(moneyRouteReview) ? countBadge(moneyReviewCount(moneyRouteReview), "transaction rows to review") : null}
                             </SidebarMenuSubButton>
                           </SidebarMenuSubItem>
                         ))}
@@ -144,7 +144,7 @@ export function ToolsSidebar() {
               <InboxIcon />
               <span>Reports</span>
             </SidebarMenuButton>
-            {attention?.reportsOpen ? <SidebarMenuBadge className="top-2 right-2">{countBadge(attention.reportsOpen)}</SidebarMenuBadge> : null}
+            {attention?.reportsOpen ? <SidebarMenuBadge className="top-2 right-2">{countBadge(attention.reportsOpen, "open reports")}</SidebarMenuBadge> : null}
           </SidebarMenuItem>
         </SidebarMenu> : null}
         <SendFeedbackButton />
@@ -166,8 +166,8 @@ function PageLink({ page, active, badge }: { page: ToolsPage; active: boolean; b
   );
 }
 
-function countBadge(count: number | undefined) {
-  return count ? <MoneyReviewBadge count={count} /> : null;
+function countBadge(count: number | undefined, description: string) {
+  return count ? <MoneyReviewBadge count={count} label={`${count} ${description}`} /> : null;
 }
 
 /** Loads the attention counts after hydration and again after each navigation. */

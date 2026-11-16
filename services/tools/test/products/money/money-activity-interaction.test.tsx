@@ -73,3 +73,23 @@ it("lets phone users select and sort transactions", async () => {
     expect(host.textContent).not.toContain("1 selected");
   } finally { await act(async () => root.unmount()); host.remove(); mobile.value = false; vi.unstubAllGlobals(); }
 });
+
+it("restores loaded results when a pending filter is cleared", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const activity: MoneyTrackerPageData["activity"] = [{ id: "coffee", occurredAt: "2026-01-01T12:00:00Z", accountName: "Account", description: "Coffee", amountMinor: -300, feeMinor: 0, taxMinor: 0, currency: "EUR", status: "completed", sourceType: "Card Payment", flowKind: "spend", category: "dining", categoryOrigin: "source", needsTransferReview: false }];
+  let reject!: (reason: Error) => void;
+  vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>((_, fail) => { reject = fail; })));
+  const host = document.createElement("div"); document.body.append(host); const root = createRoot(host);
+  try {
+    await act(async () => root.render(<MoneyActivityView activity={activity} transactionCount={1} reviewCounts={{ uncategorized: 0, transfers: 0 }} />));
+    const select = host.querySelector<HTMLSelectElement>('select[aria-label="Filter by category"]')!;
+    await act(async () => { select.value = "groceries"; select.dispatchEvent(new Event("change", { bubbles: true })); });
+    expect(host.textContent).toContain("Searching…");
+    await act(async () => { select.value = "all"; select.dispatchEvent(new Event("change", { bubbles: true })); });
+    expect(host.textContent).toContain("Coffee");
+    expect(host.textContent).toContain("1 rows");
+    expect(host.textContent).not.toContain("Loading…");
+    await act(async () => reject(new Error("Offline")));
+    expect(host.textContent).not.toContain("Transactions could not be loaded");
+  } finally { await act(async () => root.unmount()); host.remove(); vi.unstubAllGlobals(); }
+});

@@ -43,7 +43,7 @@ export function moneyReviewCounts(loaderData: unknown) {
 /** Phone navigation. On wider screens the workspace sidebar lists the same views. */
 export function MoneyNav({ current, reviewCount }: { current: MoneyTrackerView; reviewCount: number }) {
   return (
-    <nav className="money-nav md:hidden" style={{ flexWrap: "wrap", overflow: "visible" }} aria-label="Money">
+    <nav className="money-nav md:hidden" aria-label="Money">
       {MONEY_VIEWS.map((view) => (
         <Link
           key={view}
@@ -52,7 +52,7 @@ export function MoneyNav({ current, reviewCount }: { current: MoneyTrackerView; 
           preload="render"
           activeOptions={{ exact: true, includeSearch: true }}
           aria-current={view === current ? "page" : undefined}
-          className="money-nav__item !min-h-11"
+          className="money-nav__item"
         >
           {TITLES[view]}
           {view === "review" && reviewCount ? <MoneyReviewBadge count={reviewCount} label={`${reviewCount} transaction rows to review`} /> : null}
