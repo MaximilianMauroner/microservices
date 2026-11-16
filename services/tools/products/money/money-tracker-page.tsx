@@ -196,6 +196,7 @@ function Overview(props: MoneyTrackerPageData) {
   const averageSpend = average(flow.slice(-12).map((month) => month.spendMinor));
   const bridge = props.checkIn?.overview?.bridge;
   const stalePrices = props.marketData.positions.filter((item) => item.state !== "fresh").length;
+  const priceDate = props.marketData.positions.flatMap((item) => (item.priceDate ? [item.priceDate] : [])).sort().at(-1);
   const latestMonth = props.months.at(-1);
   const activeCashAccounts = cashAccounts.filter((account) => !props.deprecatedAccountIds.includes(account));
   const coverage = cashCoverage(latestMonth, activeCashAccounts);
@@ -233,7 +234,7 @@ function Overview(props: MoneyTrackerPageData) {
               ) : null}
             </p>
             <p className="mt-1.5 text-xs text-muted-foreground/80">
-              Balances through {latestMonth ? formatMonth(latestMonth.date) : "—"} · prices {formatDay(props.marketData.asOf)}
+              Balances through {latestMonth ? formatMonth(latestMonth.date) : "—"} · {priceDate ? `prices ${formatDay(priceDate)}` : "prices unavailable"}
             </p>
           </div>
           <StatStrip label="Net worth parts">

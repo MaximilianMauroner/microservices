@@ -88,6 +88,18 @@ describe("Money redesign views", () => {
     expect(html).toContain("No check-in yet");
   });
 
+  it("shows the cached price date, not the snapshot time, in the freshness line", () => {
+    const html = renderToStaticMarkup(<MoneyTrackerPage {...pageData({
+      marketData: {
+        ...pageData().marketData,
+        asOf: "2026-08-10T12:00:00.000Z",
+        positions: [{ canonicalKey: "asml", name: "ASML", assetClass: "equity", quantity: "1", costBasisMinor: 70_000, state: "stale", priceDate: "2026-08-01" }],
+      },
+    })} view="overview" />);
+    expect(html).toContain("prices 1 Aug");
+    expect(html).not.toContain("prices 10 Aug");
+  });
+
   it("plots combined, market, and cash history together", () => {
     const base = pageData();
     const html = renderToStaticMarkup(<MoneyTrackerPage {...pageData({
