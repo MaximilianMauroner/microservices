@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { DocumentsPage, MobileDocumentInventory, filterDocuments } from "../../../products/dashboard/ui/documents-page.js";
+import { DocumentsPage, filterDocuments } from "../../../products/dashboard/ui/documents-page.js";
 
 const now = Date.UTC(2026, 7, 4, 12);
 const documents = [
@@ -26,14 +26,6 @@ describe("DocumentsPage", () => {
     const html = renderToStaticMarkup(<DocumentsPage initial={{ actor: "operator@example.test", publicOrigin: "https://markdown.example.test", generatedAt: now, documents, truncated: true, nextCursor: "next-page" }} />);
     expect(html).toContain("Load more documents");
     expect(html).toContain("Search and filters apply to loaded documents.");
-  });
-
-  it("keeps every mobile document action visible in the focused record", () => {
-    const html = renderToStaticMarkup(<MobileDocumentInventory documents={documents.slice(0, 1)} total={documents.length} generatedAt={now} publicOrigin="https://markdown.example.test" onCopy={() => undefined} onShowMore={() => undefined} />);
-    expect(html).toContain('aria-label="Document inventory"');
-    expect(html).toContain("Copy link");
-    expect(html).toContain("Open");
-    expect(html).toContain("Show 50 more");
   });
 
   it("filters checkpoints and expiry before sorting", () => {

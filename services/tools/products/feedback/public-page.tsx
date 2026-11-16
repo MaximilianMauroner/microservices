@@ -21,7 +21,9 @@ export function PublicFeedbackPage({ form, submitted, error, shareUrl, shareExpi
       ? (de ? "Bitte wähle eine gültige Laufzeit für den Link." : "Choose a valid sharing period.")
     : submitError === "rate_limited"
       ? (de ? "Von diesem Netzwerk kamen gerade viele Antworten. Bitte versuche es in einigen Minuten erneut." : "Many answers came from this network just now. Try again in a few minutes.")
-    : (de ? "Bitte beantworte mindestens eine Frage und prüfe, ob eine Antwort zu lang ist." : "Please write or select at least one answer and check that no answer is too long.");
+    : ["empty_submission", "answer_too_long", "invalid_answer", "invalid_choice", "request_too_large"].includes(submitError ?? "")
+      ? (de ? "Bitte beantworte mindestens eine Frage und prüfe, ob eine Antwort zu lang ist." : "Please write or select at least one answer and check that no answer is too long.")
+      : (de ? "Deine Rückmeldung konnte nicht gesendet werden. Prüfe deine Verbindung und versuche es erneut." : "Your feedback could not be sent. Check your connection and try again.");
   if (submitted) return <PublicFrame locale={form.locale} wide><FeedbackThankYou de={de} shareUrl={shareUrl} shareExpiresAt={shareExpiresAt} /></PublicFrame>;
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();

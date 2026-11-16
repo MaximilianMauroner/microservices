@@ -68,7 +68,7 @@ function ServiceRow({ entry, status, generatedAt, publicOrigin }: { entry: Publi
     const destination = safeHttpUrl(link.url);
     return destination ? [{ ...link, destination }] : [];
   });
-  return <li><details className="status-service"><summary className="grid cursor-pointer list-none grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 px-4 py-3 marker:hidden lg:grid-cols-[minmax(9rem,1.2fr)_minmax(8rem,.8fr)_minmax(12rem,2fr)_5rem_5rem]"><span className="flex min-w-0 items-center gap-2"><StatusMark state={state} /><span className="min-w-0"><strong className="block truncate text-sm">{entry.name}</strong><span className="block truncate text-xs text-muted-foreground">{entry.description}</span></span></span><span className={`text-right text-xs lg:text-left ${state === "outage" ? "text-negative" : "text-muted-foreground"}`}>{state === "outage" ? "Down" : state === "operational" ? "Operational" : status?.status ?? "No data"}</span><span className="col-span-2 lg:col-span-1"><UptimeBar status={status} generatedAt={generatedAt} summary={uptime} /></span><span className="hidden text-right text-xs tabular-nums lg:block">{uptime.percentage === null ? "—" : `${uptime.percentage.toFixed(2)}%`}</span><span className="hidden text-right text-xs tabular-nums text-muted-foreground lg:block">{status?.latencyMs == null ? "—" : `${status.latencyMs} ms`}</span></summary><div className="grid gap-3 border-t bg-muted/20 px-4 py-3 text-xs sm:grid-cols-2"><div><p><StatusDetails status={status} /></p><p className="mt-1 text-muted-foreground">{uptime.firstObservedDay ? `Observed since ${uptime.firstObservedDay} across ${uptime.totalChecks} checks` : "No checks recorded"}</p><DowntimeHistory status={status} generatedAt={generatedAt} /></div><div><p className="text-muted-foreground">Links</p><div className="service-links">{links.length ? links.map((link) => <ServiceLink key={link.id} href={link.destination} label={link.label} restricted={link.access === "restricted"} publicOrigin={publicOrigin} />) : <span>No links published</span>}</div></div></div></details></li>;
+  return <li><details className="status-service"><summary className="grid cursor-pointer list-none grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 px-4 py-3 marker:hidden lg:grid-cols-[minmax(9rem,1.2fr)_minmax(8rem,.8fr)_minmax(12rem,2fr)_5rem_5rem]"><span className="flex min-w-0 items-center gap-2"><StatusMark state={state} /><span className="min-w-0"><strong className="block truncate text-sm">{entry.name}</strong><span className="block truncate text-xs text-muted-foreground">{entry.description}</span></span></span><span className={`text-right text-xs lg:text-left ${state === "outage" ? "text-negative" : "text-muted-foreground"}`}>{state === "outage" ? "Down" : state === "operational" ? "Operational" : status?.status ?? "No data"}</span><span className="col-span-2 lg:col-span-1"><UptimeBar status={status} generatedAt={generatedAt} summary={uptime} /></span><span className="hidden text-right text-xs tabular-nums lg:block">{uptime.percentage === null ? "—" : `${uptime.percentage.toFixed(2)}%`}</span><span className="hidden text-right text-xs tabular-nums text-muted-foreground lg:block">{status?.latencyMs == null ? "—" : `${status.latencyMs} ms`}</span></summary><div className="grid gap-3 border-t bg-muted/20 px-4 py-3 text-xs sm:grid-cols-2"><div><p><StatusDetails status={status} /></p><p className="mt-1 text-muted-foreground">{uptime.firstObservedDay ? `Observed since ${uptime.firstObservedDay} across ${uptime.totalChecks} checks` : "No checks recorded"}</p><DowntimeHistory status={status} generatedAt={generatedAt} /><DailyUptime status={status} generatedAt={generatedAt} /></div><div><p className="text-muted-foreground">Links</p><div className="service-links">{links.length ? links.map((link) => <ServiceLink key={link.id} href={link.destination} label={link.label} restricted={link.access === "restricted"} publicOrigin={publicOrigin} />) : <span>No links published</span>}</div></div></div></details></li>;
 }
 
 function ServiceLink({ href, label, restricted, publicOrigin }: { href: string; label: string; restricted: boolean; publicOrigin: string }) {
@@ -95,7 +95,7 @@ function UptimeBar({ status, generatedAt, summary }: { status: PublicMonitorStat
     ? `Observed uptime is not available. 0 recorded days and ${countLabel(summary.noDataDays, "no-data day")}.`
     : `${summary.label} across ${countLabel(summary.totalChecks, "check")}; ${countLabel(summary.recordedDays, "recorded day")} and ${countLabel(summary.noDataDays, "no-data day")}.`;
   return (
-    <div className="uptime-bar-scroll" role="region" aria-label="90-day uptime history" tabIndex={0}>
+    <div className="uptime-bar-scroll" role="region" aria-label="90-day uptime history">
       <div className="uptime-bar" role="group" aria-label={label}>
         <span className="visually-hidden">{label}</span>
       {days.map((day) => {
@@ -117,7 +117,7 @@ function UptimeBar({ status, generatedAt, summary }: { status: PublicMonitorStat
         return uptime === undefined ? (
           <span key={day} className="uptime-day uptime-day--unknown" role="img" aria-label={title} title={title} />
         ) : (
-          <span key={day} className={`uptime-day uptime-day--${state}`} role="img" tabIndex={0} aria-label={title} title={title}>
+          <span key={day} className={`uptime-day uptime-day--${state}`} role="img" aria-label={title} title={title}>
             <span className="uptime-popover" role="tooltip" aria-hidden="true">
               <span className="uptime-popover__header"><span>{formatUptimeDate(day)}</span><span className={`uptime-popover__state uptime-popover__state--${state}`}>{state === "operational" ? "Operational" : state === "outage" ? "Outage" : "Partial outage"}</span></span>
               <strong className="uptime-popover__percentage">{formatPercentage(uptime.successfulChecks, uptime.totalChecks)} uptime</strong>
@@ -130,6 +130,19 @@ function UptimeBar({ status, generatedAt, summary }: { status: PublicMonitorStat
       </div>
     </div>
   );
+}
+
+function DailyUptime({ status, generatedAt }: { status: PublicMonitorStatus | undefined; generatedAt: string }) {
+  const window = new Set(rollingDays(generatedAt));
+  const days = (status?.uptimeDays ?? []).filter((day) => window.has(day.day)).sort((a, b) => b.day.localeCompare(a.day));
+  if (!days.length) return null;
+  return <details className="mt-2"><summary className="flex min-h-11 cursor-pointer items-center">Daily uptime</summary><ul className="mt-2 space-y-1">{days.map((day) => {
+    const records = status?.downtimeRecords;
+    const dayRecords = records === undefined ? null : downtimeRecordsForDay(day.day, records, generatedAt);
+    const downtime = dayRecords === null ? "Downtime unavailable" : `${formatDuration(dayRecords.reduce((sum, record) => sum + downtimeForDay(day.day, record, generatedAt), 0))} recorded downtime`;
+    const interruptions = dayRecords === null ? "Interruption history unavailable" : `${countLabel(dayRecords.length, "interruption")} recorded`;
+    return <li key={day.day}>{formatUptimeDate(day.day)} · {formatPercentage(day.successfulChecks, day.totalChecks)} uptime · {downtime} · {countLabel(day.totalChecks, "check")} · {interruptions}</li>;
+  })}</ul></details>;
 }
 
 function DowntimeHistory({ status, generatedAt }: { status: PublicMonitorStatus | undefined; generatedAt: string }) {

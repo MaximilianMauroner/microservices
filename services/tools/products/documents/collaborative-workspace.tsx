@@ -130,6 +130,7 @@ function EditorWorkspace({
   onSyncRecovered: () => void;
 }) {
   const [copied, setCopied] = useState(false);
+  const [copyFailed, setCopyFailed] = useState(false);
   const [pinBusy, setPinBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -215,10 +216,14 @@ function EditorWorkspace({
   }, [topbarMenuOpen]);
 
   const copyLink = async () => {
-    await navigator.clipboard.writeText(window.location.href);
-    setCopied(true);
+    setCopyFailed(false);
+    setCopied(false);
     clearTimeout(copyTimer.current);
-    copyTimer.current = setTimeout(() => setCopied(false), 1500);
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setCopied(true);
+      copyTimer.current = setTimeout(() => setCopied(false), 1500);
+    } catch { setCopyFailed(true); }
   };
 
   const downloadSource = () => {
@@ -450,6 +455,7 @@ function EditorWorkspace({
         </div>
       </header>
 
+      {copyFailed ? <div className="sync-error-banner" role="alert">Copy failed. Select and copy the link: <input aria-label="Document link" readOnly value={window.location.href} onFocus={(event) => event.currentTarget.select()} /></div> : null}
       {actionError ? <p className="sync-error-banner" role="alert">{actionError}</p> : null}
       {session.inputError ? <p className="sync-error-banner" role="alert">{session.inputError}</p> : null}
       {syncFailure ? (
