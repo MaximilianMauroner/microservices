@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
-import postgres, { type Sql, type TransactionSql } from "postgres";
+import type postgres from "postgres";
+import { connectPostgres } from "../../platform/database/runtime-postgres.js";
+import { type Sql, type TransactionSql } from "postgres";
 import type { PlatformPrincipal } from "#security";
 import {
   addDays,
@@ -136,7 +138,7 @@ type PlanRow = { id: string; day: string; meal: Meal; recipe_id: string; recipe:
 type PlanLineRow = { entry_id: string; ingredient_id: string; ingredient: string; unit: IngredientUnit; amount: number; note: string; base: number; servings: number };
 
 export function createPostgresKitchenStore(databaseUrl: string, options: { readOnly?: boolean } = {}): KitchenStore {
-  return kitchenStore(postgres(databaseUrl, { max: 3, idle_timeout: 120, connection: options.readOnly ? { default_transaction_read_only: true } : undefined }));
+  return kitchenStore(connectPostgres(databaseUrl, { max: 3, idle_timeout: 120, connection: options.readOnly ? { default_transaction_read_only: true } : undefined }));
 }
 
 export function kitchenStore(sql: Sql): KitchenStore {

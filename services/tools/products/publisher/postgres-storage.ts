@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
-import postgres, { type Sql, type TransactionSql } from "postgres";
+import { type Sql, type TransactionSql } from "postgres";
+import { connectPostgres } from "../../platform/database/runtime-postgres.js";
 import {
   type GetStoredObjectOptions,
   htmlKey,
@@ -58,11 +59,11 @@ export function createPostgresUploadStorage(
   databaseUrl: string
 ): UploadStorage {
   const bodies = createS3BodyStorage(s3Config);
-  const sql = postgres(databaseUrl, { max: 5, idle_timeout: 120 });
+  const sql = connectPostgres(databaseUrl, { max: 5, idle_timeout: 120 });
   const storage = createMetadataBackedUploadStorage(bodies, sql);
   // Separate bounded lock connections keep long verification reads from
   // starving the durable writes that must happen before S3 completion.
-  const locks = postgres(databaseUrl, { max: 2, idle_timeout: 120 });
+  const locks = connectPostgres(databaseUrl, { max: 2, idle_timeout: 120 });
   storage.directUploads = createDirectUploads(sql, createMultipartStorage(s3Config), locks);
   const endpoint = new URL(s3Config.endpoint);
   storage.uploadOrigins = [endpoint.origin, ...(s3Config.forcePathStyle ? [] :

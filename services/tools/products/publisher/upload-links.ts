@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import postgres from "postgres";
+import { connectPostgres } from "../../platform/database/runtime-postgres.js";
 
 export const MIN_UPLOAD_LINK_DURATION_MS = 5 * 60 * 1000;
 export const MAX_UPLOAD_LINK_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
@@ -44,7 +44,7 @@ export function uploadLinkTokenHash(token: string) {
 }
 
 export function createPostgresUploadLinkRepository(databaseUrl: string): UploadLinkRepository {
-  const sql = postgres(databaseUrl, { max: 3, idle_timeout: 120 });
+  const sql = connectPostgres(databaseUrl, { max: 3, idle_timeout: 120 });
   return {
     owner(ownerSubject) {
       return {

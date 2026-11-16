@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
-import postgres, { type Sql } from "postgres";
+import { type Sql } from "postgres";
+import { connectPostgres } from "../database/runtime-postgres.js";
 import type { DevFeedback, DevFeedbackAuthor, DevFeedbackInput, DevFeedbackKind, DevFeedbackState, ReportApp } from "./report.js";
 
 export type DevFeedbackRepository = ReturnType<typeof devFeedbackRepository>;
 
 export function createPostgresDevFeedbackRepository(databaseUrl: string, options: { readOnly?: boolean }) {
-  return devFeedbackRepository(postgres(databaseUrl, { max: 2, idle_timeout: 120, connection: options.readOnly ? { default_transaction_read_only: true } : undefined }));
+  return devFeedbackRepository(connectPostgres(databaseUrl, { max: 2, idle_timeout: 120, connection: options.readOnly ? { default_transaction_read_only: true } : undefined }));
 }
 
 type Row = { id: string; app: ReportApp; kind: DevFeedbackKind; page: string; message: string; details: string | null; context: string | null; author_email: string | null; contact_email: string | null; state: DevFeedbackState; created_at: Date };

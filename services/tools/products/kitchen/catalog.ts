@@ -1,5 +1,6 @@
 import { setTimeout as sleep } from "node:timers/promises";
-import postgres, { type Sql } from "postgres";
+import { type Sql } from "postgres";
+import { connectPostgres } from "../../platform/database/runtime-postgres.js";
 import type { CatalogProduct, CatalogSource, Nutrition } from "./domain.js";
 
 const SEARCH_LIMIT = 8;
@@ -44,7 +45,7 @@ export interface KitchenCatalog {
 }
 
 export function createPostgresKitchenCatalog(databaseUrl: string, options: { readOnly?: boolean } = {}): KitchenCatalog {
-  return kitchenCatalog(postgres(databaseUrl, { max: 2, idle_timeout: 120, connection: options.readOnly ? { default_transaction_read_only: true } : undefined }));
+  return kitchenCatalog(connectPostgres(databaseUrl, { max: 2, idle_timeout: 120, connection: options.readOnly ? { default_transaction_read_only: true } : undefined }));
 }
 
 type ProductRow = { source: CatalogSource; code: string; name: string; brand: string; quantity: string; unit: "g" | "ml"; kcal: number | null; protein: number | null; carbs: number | null; fat: number | null };

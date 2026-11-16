@@ -1,8 +1,8 @@
-import postgres from "postgres";
 import { createHash } from "node:crypto";
+import { connectPostgres } from "../../platform/database/runtime-postgres.js";
 
 type Waiter = { key: string; finish(): void };
-type Listener = { sql: ReturnType<typeof postgres>; waiters: Set<Waiter>; ready: Promise<void>; listening: boolean; idleTimer?: ReturnType<typeof setTimeout> };
+type Listener = { sql: ReturnType<typeof connectPostgres>; waiters: Set<Waiter>; ready: Promise<void>; listening: boolean; idleTimer?: ReturnType<typeof setTimeout> };
 
 export function createDocumentChanges(databaseUrl: string) {
   let active: Listener | undefined;
@@ -17,7 +17,7 @@ export function createDocumentChanges(databaseUrl: string) {
   }
   function listener(): Listener {
     if (active) return active;
-    const sql = postgres(databaseUrl, { max: 1, idle_timeout: 30, connect_timeout: 5, connection: { application_name: "markdown-share-changes" } });
+    const sql = connectPostgres(databaseUrl, { max: 1, idle_timeout: 30, connect_timeout: 5, connection: { application_name: "markdown-share-changes" } });
     const state: Listener = { sql, waiters: new Set(), ready: Promise.resolve(), listening: false };
     active = state;
     state.ready = sql.listen("markdown_share", payload => {

@@ -1,4 +1,5 @@
-import postgres from "postgres";
+import type postgres from "postgres";
+import { connectPostgres } from "../../platform/database/runtime-postgres.js";
 import {
   decodeCatalogDocument,
   decodeCheckerStateDocument,
@@ -36,7 +37,7 @@ export async function createPostgresCheckerStore(config: CheckerConfig, source?:
     validatedMonitorUrl(definition.kind === "http" ? definition.url : definition.checkUrl);
   }
   const byId = new Map(definitions.map((definition) => [definition.id, definition]));
-  const sql = postgres(config.databaseUrl, { max: 4 });
+  const sql = connectPostgres(config.databaseUrl, { max: 4 });
   const snapshots = createSnapshotStore(config.bucket);
   return {
     async readCatalog() {
