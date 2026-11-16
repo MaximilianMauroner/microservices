@@ -266,9 +266,47 @@ describe("Money redesign views", () => {
     }
   });
 
+  it("retries a failed account activity request", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
+    const fetch = vi.fn().mockRejectedValueOnce(new Error("Offline")).mockResolvedValueOnce(Response.json({ items: [], total: 0, hasMore: false }));
+    vi.stubGlobal("fetch", fetch);
+    const host = document.createElement("div"); document.body.append(host); const root = createRoot(host);
+    try {
+      await act(async () => root.render(<MoneyTrackerPage {...pageData()} view="accounts" />));
+      await act(async () => [...host.querySelectorAll("button")].find((button) => button.textContent === "Tagesgeld")!.click());
+      const dialog = document.querySelector('[role="dialog"]')!;
+      expect(dialog.textContent).toContain("Activity could not be loaded");
+      await act(async () => [...dialog.querySelectorAll("button")].find((button) => button.textContent === "Retry")!.click());
+      expect(fetch).toHaveBeenCalledTimes(2);
+      expect(dialog.textContent).toContain("No transactions imported for this account.");
+    } finally { await act(async () => root.unmount()); host.remove(); vi.unstubAllGlobals(); }
+  });
+
   it("explains why Plan needs more history", () => {
     const html = renderToStaticMarkup(<MoneyTrackerPage {...pageData()} view="plan" />);
     expect(html).toContain("Not enough history");
+  });
+
+  it("keeps the Plan contribution editable and its slider range large enough", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
+    const dates = Array.from({ length: 6 }, (_, index) => `2026-0${index + 1}-01`);
+    const data = pageData({
+      months: dates.map((date) => ({ date, total: 1000, values: { cash: 1000 }, observedAccounts: ["cash"] })),
+      marketData: { ...pageData().marketData, history: dates.map((date, index) => ({ date, costBasisMinor: 100_000 + index * 10_000, knownMarketValueMinor: 110_000 + index * 11_000, knownUnrealizedGainMinor: 10_000 + index * 1_000, target7PercentMinor: 100_000, inflationBenchmarkMinor: 100_000 + index * 10_100, complete: true })) },
+    });
+    const host = document.createElement("div"); document.body.append(host); const root = createRoot(host);
+    try {
+      await act(async () => root.render(<MoneyTrackerPage {...data} view="plan" />));
+      const input = host.querySelector<HTMLInputElement>('input[aria-label="Monthly contribution in euro"]')!;
+      const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+      await act(async () => { setValue.call(input, ""); input.dispatchEvent(new Event("input", { bubbles: true })); });
+      expect(input.value).toBe("");
+      await act(async () => { setValue.call(input, "9000"); input.dispatchEvent(new Event("input", { bubbles: true })); });
+      expect(input.value).toBe("9000");
+      expect(host.textContent?.replaceAll("\u00a0", " ")).toContain("9.000 €");
+    } finally { await act(async () => root.unmount()); host.remove(); vi.unstubAllGlobals(); }
   });
 
   it("filters Spending categories and shows the selected category detail", () => {
@@ -286,6 +324,39 @@ describe("Money redesign views", () => {
     expect(html).toContain("View monthly cash flow as a table");
     expect(html).toMatch(/Largest merchants[\s\S]*BILLA[\s\S]*SPAR/);
     expect(html).toContain("fromMonth=2026-06&amp;toMonth=2026-07");
+  });
+
+  it("filters categories when a keyboard user activates a month in the table", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
+    const host = document.createElement("div"); document.body.append(host); const root = createRoot(host);
+    try {
+      await act(async () => root.render(<MoneySpendingView spending={spending} transferReview={{ linkedPairs: 0, unlinkedCount: 0, unresolvedPositiveCount: 0, unresolvedNegativeCount: 0 }} reviewCounts={{ uncategorized: 1, transfers: 0 }} />));
+      const details = [...host.querySelectorAll("details")].find((item) => item.textContent?.includes("View monthly cash flow as a table"))!;
+      await act(async () => { details.open = true; details.dispatchEvent(new Event("toggle")); });
+      const month = [...host.querySelectorAll("button")].find((button) => button.textContent === "Jun 2026")!;
+      expect(month.getAttribute("aria-pressed")).toBe("false");
+      await act(async () => month.click());
+      expect(month.getAttribute("aria-pressed")).toBe("true");
+      expect(host.textContent?.replaceAll("\u00a0", " ")).toContain("400 €");
+      expect(host.textContent?.replaceAll("\u00a0", " ")).not.toContain("1.200 €");
+      await act(async () => month.click());
+      expect(month.getAttribute("aria-pressed")).toBe("false");
+      expect(host.textContent?.replaceAll("\u00a0", " ")).toContain("1.200 €");
+    } finally { await act(async () => root.unmount()); host.remove(); vi.unstubAllGlobals(); }
+  });
+
+  it("does not categorize a transaction when a digit is pressed", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const fetch = vi.fn(); vi.stubGlobal("fetch", fetch);
+    const item = { id: "t-1", occurredAt: "2026-09-24T10:00:00.000Z", accountName: "Account", description: "Coffee", amountMinor: -300, feeMinor: 0, taxMinor: 0, currency: "EUR", status: "completed" as const, sourceType: "Card Payment", flowKind: "spend" as const, category: "uncategorized" as const, categoryOrigin: "source" as const, needsTransferReview: false, similarCount: 0, suggestions: ["dining" as const] };
+    const host = document.createElement("div"); document.body.append(host); const root = createRoot(host);
+    try {
+      await act(async () => root.render(<MoneyReviewView {...pageData({ reviewCounts: { uncategorized: 1, transfers: 0 }, reviewQueue: { items: [item], commonCategories: [] } })} tab="queue" />));
+      await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "1", bubbles: true })));
+      expect(fetch).not.toHaveBeenCalled();
+      expect(host.textContent).toContain("Coffee");
+    } finally { await act(async () => root.unmount()); host.remove(); vi.unstubAllGlobals(); }
   });
 
   it("shows a category refund received after its purchase month as negative spending", () => {
@@ -340,7 +411,8 @@ describe("Money redesign views", () => {
     expect(html).toContain("Write a rule");
     expect(html).toContain("Showing the newest 1 of 41.");
     expect(html).toContain("Apply to 2 rows");
-    expect(html).toMatch(/Own transfer[\s\S]*Spending[\s\S]*Income[\s\S]*Refund[\s\S]*Leave out/);
+    expect(html).toMatch(/Queue<[^>]*>43 rows/);
+    expect(html).toMatch(/Own-account transfer[\s\S]*Spending[\s\S]*Income[\s\S]*Refund[\s\S]*Leave out/);
     expect(html).toContain("Price from 13 Sep");
     expect(html).toMatch(/Tagesgeld[\s\S]*Last balance Jan 2026/);
   });

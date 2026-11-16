@@ -161,7 +161,7 @@ export function MoneySpendingView({
             <MoneyTableBody>
               {[...months].reverse().map((item) => (
                 <MoneyTableRow key={item.month}>
-                  <MoneyTableCell>{formatMonth(item.month)}</MoneyTableCell>
+                  <MoneyTableCell><button type="button" className="money-inline-link min-h-11" aria-pressed={selectedMonth === item.month} onClick={() => setSelectedMonth((current) => current === item.month ? undefined : item.month)}>{formatMonth(item.month)}</button></MoneyTableCell>
                   <MoneyTableCell className="num">{formatMinor(item.incomeMinor)}</MoneyTableCell>
                   <MoneyTableCell className="num">{formatMinor(item.refundsMinor)}</MoneyTableCell>
                   <MoneyTableCell className="num">{formatMinor(-item.spendMinor)}</MoneyTableCell>
@@ -175,7 +175,7 @@ export function MoneySpendingView({
       </MoneyPanel>
 
       <div className="money-grid money-grid--split">
-        <MoneyPanel title="Categories" description="Tap a month to filter. Select a category to see its details.">
+        <MoneyPanel title="Categories" description="Select a month in the chart or table to filter. Select a category to see its details.">
           <div className="mt-2 overflow-x-auto">
             {shown.length ? (
               <MoneyTable aria-label="Spending categories">

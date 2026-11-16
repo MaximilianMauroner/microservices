@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router";
+import type { MoneyTrackerPageData } from "../../platform/protected-data.js";
 
 export const MONEY_VIEWS = ["overview", "spending", "transactions", "accounts", "investments", "plan", "review"] as const;
 export type MoneyTrackerView = (typeof MONEY_VIEWS)[number];
@@ -24,6 +25,11 @@ export function moneyReviewCount(counts: { uncategorized: number; transfers: num
   return counts ? counts.uncategorized + counts.transfers : 0;
 }
 
+export function staleMoneyCashAccounts(props: Pick<MoneyTrackerPageData, "accounts" | "accountRoles" | "accountLastObserved" | "deprecatedAccountIds">) {
+  const currentMonth = `${new Date().toISOString().slice(0, 7)}-01`;
+  return props.accounts.filter((account) => !props.deprecatedAccountIds.includes(account) && props.accountRoles[account] === "cash" && props.accountLastObserved[account] !== undefined && props.accountLastObserved[account]! < currentMonth);
+}
+
 /** Reads the review counts from Money route loader data, which the workspace sidebar sees as unknown. */
 export function moneyReviewCounts(loaderData: unknown) {
   if (typeof loaderData !== "object" || loaderData === null || !("reviewCounts" in loaderData)) return undefined;
@@ -37,7 +43,7 @@ export function moneyReviewCounts(loaderData: unknown) {
 /** Phone navigation. On wider screens the workspace sidebar lists the same views. */
 export function MoneyNav({ current, reviewCount }: { current: MoneyTrackerView; reviewCount: number }) {
   return (
-    <nav className="money-nav md:hidden" aria-label="Money">
+    <nav className="money-nav md:hidden" style={{ flexWrap: "wrap", overflow: "visible" }} aria-label="Money">
       {MONEY_VIEWS.map((view) => (
         <Link
           key={view}
@@ -46,19 +52,19 @@ export function MoneyNav({ current, reviewCount }: { current: MoneyTrackerView; 
           preload="render"
           activeOptions={{ exact: true, includeSearch: true }}
           aria-current={view === current ? "page" : undefined}
-          className="money-nav__item"
+          className="money-nav__item !min-h-11"
         >
           {TITLES[view]}
-          {view === "review" && reviewCount ? <MoneyReviewBadge count={reviewCount} /> : null}
+          {view === "review" && reviewCount ? <MoneyReviewBadge count={reviewCount} label={`${reviewCount} transaction rows to review`} /> : null}
         </Link>
       ))}
     </nav>
   );
 }
 
-export function MoneyReviewBadge({ count }: { count: number }) {
+export function MoneyReviewBadge({ count, label }: { count: number; label?: string }) {
   return (
-    <span className="money-review-badge" aria-label={`${count} to review`}>
+    <span className="money-review-badge" aria-label={label ?? `${count} to review`}>
       {count > 999 ? "999+" : count}
     </span>
   );

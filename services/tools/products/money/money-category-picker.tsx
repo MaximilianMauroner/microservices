@@ -123,7 +123,7 @@ export function MoneyCategoryPicker({
           compact ? (
             <button
               type="button"
-              className={`inline-flex h-7 max-w-full items-center gap-1.5 rounded-md border px-2 text-[.8125rem] transition-colors disabled:opacity-50 ${missing ? "border-dashed border-warning/70 text-warning hover:bg-warning/10" : "border-transparent bg-muted hover:border-control-border-hover"}`}
+              className={`inline-flex h-7 max-md:min-h-11 max-w-full items-center gap-1.5 rounded-md border px-2 text-[.8125rem] transition-colors disabled:opacity-50 ${missing ? "border-dashed border-warning/70 text-warning hover:bg-warning/10" : "border-transparent bg-muted hover:border-control-border-hover"}`}
               disabled={disabled}
               aria-label={ariaLabel ?? (selected ? `Category: ${selected.label}` : "Choose category")}
             />
