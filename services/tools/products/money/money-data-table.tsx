@@ -1,15 +1,16 @@
 "use client";
 
 import { ArrowDown, ArrowUp, ArrowUpDown, Search } from "lucide-react";
-import { Button } from "../../platform/ui/components/ui/button.js";
-import { Input } from "../../platform/ui/components/ui/input.js";
+import { Button } from "@/components/ui/button";
+import { MoneyTableHead } from "./money-ui.js";
+import { Input } from "@/components/ui/input";
 
 export type MoneySortDirection = "asc" | "desc";
 export type MoneySort<Key extends string> = Readonly<{ key: Key; direction: MoneySortDirection }>;
 
 export function MoneySortableHead<Key extends string>({ label, sortKey, active, onSort, align = "left", className = "" }: Readonly<{ label: string; sortKey: Key; active: MoneySort<Key>; onSort: (key: Key) => void; align?: "left" | "right"; className?: string }>) {
   const Icon = active.key !== sortKey ? ArrowUpDown : active.direction === "asc" ? ArrowUp : ArrowDown;
-  return <th className={`px-2 py-1 ${align === "right" ? "text-right" : "text-left"} ${className}`} aria-sort={active.key === sortKey ? active.direction === "asc" ? "ascending" : "descending" : "none"}><Button type="button" variant="ghost" size="sm" className={`h-8 px-2 text-xs text-muted-foreground hover:text-foreground ${align === "right" ? "ml-auto" : "-ml-2"}`} onClick={() => onSort(sortKey)}>{label}<Icon className="size-3.5" /></Button></th>;
+  return <MoneyTableHead className={`px-2 py-1 ${align === "right" ? "text-right" : "text-left"} ${className}`} aria-sort={active.key === sortKey ? active.direction === "asc" ? "ascending" : "descending" : "none"}><Button type="button" variant="ghost" size="sm" className={`h-8 px-2 text-xs text-muted-foreground hover:text-foreground ${align === "right" ? "ml-auto" : "-ml-2"}`} onClick={() => onSort(sortKey)}>{label}<Icon className="size-3.5" /></Button></MoneyTableHead>;
 }
 
 export function MoneyTableSearch({ value, onValue, placeholder, className = "" }: Readonly<{ value: string; onValue: (value: string) => void; placeholder: string; className?: string }>) {

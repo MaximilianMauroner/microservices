@@ -2,12 +2,12 @@
 
 import { useState } from "react";
 import { Link, useRouter } from "@tanstack/react-router";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, Receipt, Tags } from "lucide-react";
 import type { MoneyTrackerPageData } from "../../platform/protected-data.js";
 import type { MoneyCategory } from "./money-enums.js";
-import { buttonVariants } from "../../platform/ui/components/ui/button.js";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { CategoryValue, moneyCategoryLabel } from "./money-category-picker.js";
-import { Segmented } from "../../platform/ui/components/segmented.js";
+import { Segmented } from "@/components/segmented";
 import {
   EmptyState,
   FlowChart,
@@ -28,6 +28,12 @@ import {
   StatStrip,
   TableTwin,
   toneClass,
+  MoneyTable,
+  MoneyTableBody,
+  MoneyTableCell,
+  MoneyTableHead,
+  MoneyTableHeader,
+  MoneyTableRow,
 } from "./money-ui.js";
 
 type Range = "12" | "24" | "all";
@@ -78,7 +84,7 @@ export function MoneySpendingView({
   if (!observed.length) {
     return (
       <MoneyPanel>
-        <EmptyState title="No spending history">Import a cash or card statement to see income, spending, and categories.</EmptyState>
+        <EmptyState title="No spending history" icon={<Receipt />}>Import a cash or card statement to see income, spending, and categories.</EmptyState>
       </MoneyPanel>
     );
   }
@@ -91,9 +97,9 @@ export function MoneySpendingView({
         </p>
         <div className="flex items-center gap-2">
           {month ? (
-            <button type="button" className={buttonVariants({ variant: "secondary", size: "sm" })} onClick={() => setSelectedMonth(undefined)} aria-label={`Show all months instead of ${formatMonth(month.month)}`}>
+            <Button type="button" variant="secondary" size="sm" onClick={() => setSelectedMonth(undefined)} aria-label={`Show all months instead of ${formatMonth(month.month)}`}>
               {formatMonth(month.month)} ×
-            </button>
+            </Button>
           ) : null}
           <Segmented label="Months shown" value={range} onValue={(value) => { setRange(value); setSelectedMonth(undefined); }} options={[["12", "12M"], ["24", "24M"], ["all", "All"]]} />
         </div>
@@ -148,23 +154,23 @@ export function MoneySpendingView({
           />
         </PanelBody>
         <TableTwin label="View monthly cash flow as a table">
-          <table className="money-table">
-            <thead>
-              <tr><th>Month</th><th className="num">Income</th><th className="num">Refunds deducted</th><th className="num">Net spending</th><th className="num">Fees and taxes</th><th className="num">Net flow</th></tr>
-            </thead>
-            <tbody>
+          <MoneyTable>
+            <MoneyTableHeader>
+              <MoneyTableRow><MoneyTableHead>Month</MoneyTableHead><MoneyTableHead className="num">Income</MoneyTableHead><MoneyTableHead className="num">Refunds deducted</MoneyTableHead><MoneyTableHead className="num">Net spending</MoneyTableHead><MoneyTableHead className="num">Fees and taxes</MoneyTableHead><MoneyTableHead className="num">Net flow</MoneyTableHead></MoneyTableRow>
+            </MoneyTableHeader>
+            <MoneyTableBody>
               {[...months].reverse().map((item) => (
-                <tr key={item.month}>
-                  <td>{formatMonth(item.month)}</td>
-                  <td className="num">{formatMinor(item.incomeMinor)}</td>
-                  <td className="num">{formatMinor(item.refundsMinor)}</td>
-                  <td className="num">{formatMinor(-item.spendMinor)}</td>
-                  <td className="num">{formatMinor(-(item.feesMinor + item.taxesMinor))}</td>
-                  <td className={`num ${toneClass(item.netCashFlowMinor)}`}>{formatMinor(item.netCashFlowMinor, { signed: true })}</td>
-                </tr>
+                <MoneyTableRow key={item.month}>
+                  <MoneyTableCell>{formatMonth(item.month)}</MoneyTableCell>
+                  <MoneyTableCell className="num">{formatMinor(item.incomeMinor)}</MoneyTableCell>
+                  <MoneyTableCell className="num">{formatMinor(item.refundsMinor)}</MoneyTableCell>
+                  <MoneyTableCell className="num">{formatMinor(-item.spendMinor)}</MoneyTableCell>
+                  <MoneyTableCell className="num">{formatMinor(-(item.feesMinor + item.taxesMinor))}</MoneyTableCell>
+                  <MoneyTableCell className={`num ${toneClass(item.netCashFlowMinor)}`}>{formatMinor(item.netCashFlowMinor, { signed: true })}</MoneyTableCell>
+                </MoneyTableRow>
               ))}
-            </tbody>
-          </table>
+            </MoneyTableBody>
+          </MoneyTable>
         </TableTwin>
       </MoneyPanel>
 
@@ -172,21 +178,21 @@ export function MoneySpendingView({
         <MoneyPanel title="Categories" description={month ? `${formatMonth(month.month)} against each category's average` : "Spending after refunds and the shape of each month"}>
           <div className="mt-2 overflow-x-auto">
             {shown.length ? (
-              <table className="money-table" aria-label="Spending categories">
-                <thead>
-                  <tr>
-                    <th>Category</th>
-                    <th className="num">{month ? formatMonth(month.month, true) : "Total"}</th>
-                    <th className="hide-sm">Share</th>
-                    <th className="num hide-sm">{month ? "vs average" : "Per month"}</th>
-                    <th className="num">Trend</th>
-                  </tr>
-                </thead>
-                <tbody>
+              <MoneyTable aria-label="Spending categories">
+                <MoneyTableHeader>
+                  <MoneyTableRow>
+                    <MoneyTableHead>Category</MoneyTableHead>
+                    <MoneyTableHead className="num">{month ? formatMonth(month.month, true) : "Total"}</MoneyTableHead>
+                    <MoneyTableHead className="hide-sm">Share</MoneyTableHead>
+                    <MoneyTableHead className="num hide-sm">{month ? "vs average" : "Per month"}</MoneyTableHead>
+                    <MoneyTableHead className="num">Trend</MoneyTableHead>
+                  </MoneyTableRow>
+                </MoneyTableHeader>
+                <MoneyTableBody>
                   {shown.map((row) => {
                     const delta = row.value - row.average;
                     return (
-                      <tr
+                      <MoneyTableRow
                         key={row.category}
                         data-selectable
                         aria-selected={row.category === selected?.category}
@@ -194,23 +200,23 @@ export function MoneySpendingView({
                         onClick={() => selectCategory(row.category)}
                         onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); selectCategory(row.category); } }}
                       >
-                        <td><CategoryValue category={row.category} /></td>
-                        <td className="num">{formatMinor(row.value)}</td>
-                        <td className="hide-sm w-[28%]">
+                        <MoneyTableCell><CategoryValue category={row.category} /></MoneyTableCell>
+                        <MoneyTableCell className="num">{formatMinor(row.value)}</MoneyTableCell>
+                        <MoneyTableCell className="hide-sm w-[28%]">
                           <span className="flex items-center gap-2">
                             <ShareBar ratio={row.value / largest} className="flex-1" />
                             <span className="w-11 text-right text-xs text-muted-foreground tabular-nums">{formatRatio(categoryTotal ? row.value / categoryTotal : 0)}</span>
                           </span>
-                        </td>
-                        <td className={`num hide-sm ${month ? toneClass(-delta) : ""}`}>{month ? formatMinor(delta, { signed: true }) : formatMinor(row.average)}</td>
-                        <td className="num"><SparkBars values={row.values.slice(-12)} highlight={selectedIndex === undefined ? undefined : selectedIndex - Math.max(0, row.values.length - 12)} /></td>
-                      </tr>
+                        </MoneyTableCell>
+                        <MoneyTableCell className={`num hide-sm ${month ? toneClass(-delta) : ""}`}>{month ? formatMinor(delta, { signed: true }) : formatMinor(row.average)}</MoneyTableCell>
+                        <MoneyTableCell className="num"><SparkBars values={row.values.slice(-12)} highlight={selectedIndex === undefined ? undefined : selectedIndex - Math.max(0, row.values.length - 12)} /></MoneyTableCell>
+                      </MoneyTableRow>
                     );
                   })}
-                </tbody>
-              </table>
+                </MoneyTableBody>
+              </MoneyTable>
             ) : (
-              <EmptyState title="No categorized spending in this range" />
+              <EmptyState title="No categorized spending in this range" icon={<Tags />} />
             )}
           </div>
         </MoneyPanel>

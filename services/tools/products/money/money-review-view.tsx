@@ -2,12 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { Link, useRouter } from "@tanstack/react-router";
-import { Check, RefreshCw } from "lucide-react";
+import { Check, CircleCheck, RefreshCw } from "lucide-react";
 import type { MoneyTrackerPageData } from "../../platform/protected-data.js";
 import type { MoneyCategory, MoneyTransferDisposition } from "./money-enums.js";
 import type { MoneyReviewCategoryItem, MoneyTransferReviewGroup } from "./money-repository.js";
-import { Badge } from "../../platform/ui/components/ui/badge.js";
-import { Button } from "../../platform/ui/components/ui/button.js";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { BalanceForm } from "./money-balance-form.js";
 import { MoneyCategoryPicker, moneyCategoryLabel } from "./money-category-picker.js";
 import { isRuleCategorized } from "./money-category-rules.js";
@@ -15,7 +16,7 @@ import { MoneyImportDrop, MoneyImportHistory } from "./money-ledger-views.js";
 import { MoneyRulesView } from "./money-rules-view.js";
 import { MONEY_REVIEW_TABS, type MoneyReviewTab } from "./money-tracker-navigation.js";
 import { EmptyState, formatDay, formatMinor, formatMonth, MoneyPanel } from "./money-ui.js";
-import { countLabel } from "../../platform/ui/lib/count-label.js";
+import { countLabel } from "@/lib/count-label";
 
 const TAB_LABELS: Record<MoneyReviewTab, string> = { queue: "Queue", rules: "Rules", imports: "Imports" };
 const TREATMENTS: readonly (readonly [MoneyTransferDisposition, string])[] = [
@@ -73,7 +74,7 @@ function Queue(props: MoneyTrackerPageData & { staleAccounts: readonly string[];
       <MoneyImportDrop lastImport={props.imports[0] ? formatDay(props.imports[0].committedAt) : undefined} />
       {empty ? (
         <MoneyPanel>
-          <EmptyState title="Nothing to review">Every row has a category, every transfer has a treatment, and prices and balances are current.</EmptyState>
+          <EmptyState title="Nothing to review" icon={<CircleCheck />}>Every row has a category, every transfer has a treatment, and prices and balances are current.</EmptyState>
         </MoneyPanel>
       ) : null}
       {props.reviewCounts.otherRows ? (
@@ -172,16 +173,24 @@ function CategorizeQueue({ items, common, total, spendingRows }: { items: readon
               {rule ? (
                 <fieldset className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
                   <legend className="sr-only">Apply category to {item.description}</legend>
-                  <label className="inline-flex items-center gap-1.5">
-                    <input type="radio" name={`category-scope-${item.id}`} value="transaction" className="size-4 accent-[var(--primary)]" checked={scope[item.id] !== "merchant"} onChange={() => setScope((current) => ({ ...current, [item.id]: "transaction" }))} />
-                    This transaction
-                  </label>
-                  <label className="inline-flex items-center gap-1.5">
-                    <input type="radio" name={`category-scope-${item.id}`} value="merchant" className="size-4 accent-[var(--primary)]" checked={scope[item.id] === "merchant"} onChange={() => setScope((current) => ({ ...current, [item.id]: "merchant" }))} />
-                    {item.similarCount
-                      ? `This merchant description in ${item.accountName}: ${item.similarCount} other ${item.similarCount === 1 ? "row" : "rows"} and future imports`
-                      : `This merchant description in ${item.accountName}, including future imports`}
-                  </label>
+                  <RadioGroup
+                    className="flex flex-wrap items-center gap-x-4 gap-y-1"
+                    value={scope[item.id] ?? "transaction"}
+                    onValueChange={(value) => setScope((current) => ({ ...current, [item.id]: value as "transaction" | "merchant" }))}
+                  >
+                    <div className="inline-flex items-center gap-1.5">
+                      <RadioGroupItem id={`scope-${item.id}-transaction`} value="transaction" />
+                      <label htmlFor={`scope-${item.id}-transaction`}>This transaction</label>
+                    </div>
+                    <div className="inline-flex items-center gap-1.5">
+                      <RadioGroupItem id={`scope-${item.id}-merchant`} value="merchant" />
+                      <label htmlFor={`scope-${item.id}-merchant`}>
+                        {item.similarCount
+                          ? `This merchant description in ${item.accountName}: ${item.similarCount} other ${item.similarCount === 1 ? "row" : "rows"} and future imports`
+                          : `This merchant description in ${item.accountName}, including future imports`}
+                      </label>
+                    </div>
+                  </RadioGroup>
                   <Link to="/money" search={{ view: "review", tab: "rules", rule: item.description }} className="money-inline-link">Write a rule</Link>
                 </fieldset>
               ) : null}

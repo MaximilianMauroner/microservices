@@ -260,6 +260,25 @@ html:has([data-suite-accent="lime"]) {
   --product-accent-border: #4d7c0f;
 }
 
+/* Money. Emerald is the action color; mint stays the gain color, coral the loss,
+   and amber the warning. The chart series are emerald, amber, and blue. */
+html:has([data-suite-accent="emerald"]) {
+  --primary: #10b981;
+  --primary-foreground: #04140d;
+  --secondary: #0a2419;
+  --secondary-foreground: #a7f3d0;
+  --ring: #10b981;
+  --product-accent: #10b981;
+  --product-accent-soft: #0a2419;
+  --product-accent-border: #047857;
+  --money-series-1: #10b981;
+  --money-series-2: #fbbf24;
+  --money-series-3: #60a5fa;
+  --positive: #6ee7b7;
+  --negative: #fb7185;
+  --warning: #fbbf24;
+}
+
 html:has([data-suite-accent="violet"]) {
   --primary: #c4b5fd;
   --primary-foreground: #160b2c;
@@ -326,6 +345,22 @@ html[data-theme="light"]:has([data-suite-accent="lime"]) {
   --ring: #65a30d;
   --product-accent-soft: #f7fee7;
   --product-accent-border: #84cc16;
+}
+
+html[data-theme="light"]:has([data-suite-accent="emerald"]) {
+  --primary: #047857;
+  --primary-foreground: #ffffff;
+  --secondary: #d1fae5;
+  --secondary-foreground: #065f46;
+  --ring: #059669;
+  --product-accent-soft: #ecfdf5;
+  --product-accent-border: #10b981;
+  --money-series-1: #047857;
+  --money-series-2: #b45309;
+  --money-series-3: #2563eb;
+  --positive: #047857;
+  --negative: #be123c;
+  --warning: #b45309;
 }
 
 html[data-theme="light"]:has([data-suite-accent="violet"]) {
@@ -492,13 +527,15 @@ html[data-theme="light"]:has([data-suite-accent]) {
   .money-stat__value { font-size: 1.2rem; font-weight: 600; letter-spacing: -.01em; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .money-hero { display: grid; grid-template-columns: minmax(0, auto) minmax(0, 1fr); }
   .money-hero__main { padding: .9rem 1.25rem .9rem 1rem; border-right: 1px solid var(--border); }
-  .money-hero__value { font-size: 3rem; font-weight: 620; letter-spacing: -.025em; line-height: 1.05; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .money-hero__value { font-size: clamp(2rem, 7vw, 3rem); font-weight: 620; letter-spacing: -.025em; line-height: 1.05; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .money-hero .money-strip { border-radius: 0; box-shadow: none; background: transparent; align-content: center; }
   .money-callout { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; padding: .6rem 1rem; border-top: 1px solid var(--border); font-size: .8125rem; }
   .money-callout__dot { width: .5rem; height: .5rem; flex: none; border-radius: 99px; background: var(--warning); }
   .money-callout__dot[data-tone="positive"] { background: var(--positive); }
-  .segmented { display: inline-flex; max-width: 100%; overflow-x: auto; scrollbar-width: none; padding: 2px; border: 1px solid var(--border); border-radius: 99px; background: var(--muted); }
-  .segmented button { display: inline-flex; align-items: center; gap: .35rem; height: 1.75rem; padding: 0 .7rem; border-radius: 99px; color: var(--muted-foreground); font-size: .8rem; font-weight: 500; white-space: nowrap; transition: color 150ms ease, background-color 150ms ease; }
+  .money-chip { display: inline-flex; align-items: center; min-height: 1.5rem; padding: 0 .5rem; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--control); color: var(--foreground); font-size: .6875rem; font-weight: 600; white-space: nowrap; }
+  .money-chip:hover { border-color: var(--product-accent-border); }
+  .segmented { display: inline-flex; max-width: 100%; overflow-x: auto; scrollbar-width: none; padding: 2px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--muted); }
+  .segmented button { display: inline-flex; align-items: center; gap: .35rem; height: 1.75rem; padding: 0 .7rem; border-radius: var(--radius-md); color: var(--muted-foreground); font-size: .8rem; font-weight: 500; white-space: nowrap; transition: color 150ms ease, background-color 150ms ease; }
   .segmented button:hover { color: var(--foreground); }
   .segmented button[aria-pressed="true"] { background: var(--control); color: var(--foreground); box-shadow: 0 0 0 1px var(--control-border); }
   .money-twin { border-top: 1px solid var(--border); }
@@ -540,6 +577,7 @@ html[data-theme="light"]:has([data-suite-accent]) {
   .money-axis line { stroke: color-mix(in oklab, var(--border) 70%, transparent); }
   .money-axis line[data-zero] { stroke: var(--muted-foreground); opacity: .6; }
   .money-axis text[data-selected] { fill: var(--foreground); font-weight: 600; }
+  .money-area { fill: color-mix(in oklab, var(--money-series-1) 14%, transparent); stroke: none; }
   .money-series { fill: none; stroke: var(--money-series-1); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
   .money-series[data-series="2"] { stroke: var(--money-series-2); }
   .money-series--dashed { stroke-dasharray: 6 4; }
@@ -573,9 +611,9 @@ html[data-theme="light"]:has([data-suite-accent]) {
   .money-legend__item i[data-shape="dot"] { border-radius: 99px; }
   .money-legend__item i[data-shape="line"] { width: .875rem; height: 2px; border-radius: 1px; }
   .money-legend__item i[data-shape="dash"] { width: .875rem; height: 0; border-top: 2px dashed; border-radius: 0; background: none; }
-  .money-review-badge { display: inline-grid; min-width: 1.25rem; height: 1.25rem; margin-left: auto; place-items: center; padding: 0 .35rem; border-radius: 99px; background: color-mix(in oklab, var(--warning) 18%, transparent); color: var(--warning); font-size: .75rem; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .money-review-badge { display: inline-grid; min-width: 1.25rem; height: 1.25rem; margin-left: auto; place-items: center; padding: 0 .35rem; border-radius: var(--radius-sm); background: color-mix(in oklab, var(--warning) 18%, transparent); color: var(--warning); font-size: .75rem; font-weight: 650; font-variant-numeric: tabular-nums; }
   .money-nav { display: flex; gap: .25rem; margin-inline: -.25rem; padding: .25rem; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; }
-  .money-nav__item { display: inline-flex; flex: none; align-items: center; gap: .4rem; min-height: 2.5rem; padding: 0 .8rem; border-radius: 99px; color: var(--muted-foreground); font-size: .875rem; font-weight: 500; white-space: nowrap; }
+  .money-nav__item { display: inline-flex; flex: none; align-items: center; gap: .4rem; min-height: 2.5rem; padding: 0 .8rem; border-radius: var(--radius-md); color: var(--muted-foreground); font-size: .875rem; font-weight: 500; white-space: nowrap; }
   .money-nav__item[aria-current="page"] { background: var(--secondary); color: var(--secondary-foreground); }
   .money-nav .money-review-badge { margin-left: 0; }
   .money-inline-link { color: var(--muted-foreground); font-size: .75rem; font-weight: 650; white-space: nowrap; }

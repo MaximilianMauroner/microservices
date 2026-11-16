@@ -2,15 +2,25 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useRouter } from "@tanstack/react-router";
-import { ArrowRight, Pencil, Trash2 } from "lucide-react";
+import { ArrowRight, Pencil, Search, Tags, Trash2 } from "lucide-react";
 import type { MoneyTrackerPageData } from "../../platform/protected-data.js";
 import type { MoneyCategoryRuleField, MoneyCategoryRuleOperator } from "./money-category-rules.js";
 import type { MoneyCategory } from "./money-enums.js";
 import type { MoneyCategoryRule, MoneyCategoryRulePreview } from "./money-repository.js";
 import { CategoryValue, MoneyCategoryPicker, moneyCategoryLabel } from "./money-category-picker.js";
 import { ruleErrorMessage, ruleRequest } from "./money-rule-request.js";
-import { EmptyState, formatDay, MoneyPanel } from "./money-ui.js";
-import { countLabel } from "../../platform/ui/lib/count-label.js";
+import {
+  EmptyState,
+  formatDay,
+  MoneyPanel,
+  MoneyTable,
+  MoneyTableBody,
+  MoneyTableCell,
+  MoneyTableHead,
+  MoneyTableHeader,
+  MoneyTableRow,
+} from "./money-ui.js";
+import { countLabel } from "@/lib/count-label";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,10 +30,10 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "../../platform/ui/components/ui/alert-dialog.js";
-import { Button } from "../../platform/ui/components/ui/button.js";
-import { Input } from "../../platform/ui/components/ui/input.js";
-import { NativeSelect, NativeSelectOption } from "../../platform/ui/components/ui/native-select.js";
+} from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 
 type Draft = Readonly<{
   ruleId?: string;
@@ -217,23 +227,23 @@ function RulePreview({ preview, error, categoryChosen, editing }: Readonly<{ pre
         {!preview.matchCount ? <span className="text-muted-foreground"> The rule still applies to future imports.</span> : null}
       </p>
       {shown.length ? (
-        <div className="max-h-72 overflow-y-auto border-t">
-          <table className="money-table">
-            <thead className="sticky top-0 z-10 bg-card">
-              <tr><th className="hide-sm">Date</th><th>Description</th><th className="num">Amount</th><th>Category</th></tr>
-            </thead>
-            <tbody>
+        <div className="max-h-72 overflow-auto border-t [&>[data-slot=table-container]]:overflow-visible">
+          <MoneyTable>
+            <MoneyTableHeader className="sticky top-0 z-10 bg-card">
+              <MoneyTableRow><MoneyTableHead className="hide-sm">Date</MoneyTableHead><MoneyTableHead>Description</MoneyTableHead><MoneyTableHead className="num">Amount</MoneyTableHead><MoneyTableHead>Category</MoneyTableHead></MoneyTableRow>
+            </MoneyTableHeader>
+            <MoneyTableBody>
               {shown.map((row) => {
                 const changes = categoryChosen && row.nextCategory !== row.category;
                 return (
-                  <tr key={row.id} className={changes ? undefined : "text-muted-foreground"}>
-                    <td className="hide-sm whitespace-nowrap">{formatDay(row.date)}</td>
-                    <td className="max-w-80">
+                  <MoneyTableRow key={row.id} className={changes ? undefined : "text-muted-foreground"}>
+                    <MoneyTableCell className="hide-sm whitespace-nowrap">{formatDay(row.date)}</MoneyTableCell>
+                    <MoneyTableCell className="max-w-80">
                       <span className="block truncate" title={row.description}>{row.description}</span>
                       <span className="sub">{row.accountName}{editing && !row.matches ? ", no longer matches this rule" : ""}</span>
-                    </td>
-                    <td className="num">{formatAmount(row.amountMinor, row.currency)}</td>
-                    <td>
+                    </MoneyTableCell>
+                    <MoneyTableCell className="num">{formatAmount(row.amountMinor, row.currency)}</MoneyTableCell>
+                    <MoneyTableCell>
                       <span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 md:flex-nowrap md:whitespace-nowrap">
                         {changes ? (
                           <>
@@ -248,12 +258,12 @@ function RulePreview({ preview, error, categoryChosen, editing }: Readonly<{ pre
                           </>
                         )}
                       </span>
-                    </td>
-                  </tr>
+                    </MoneyTableCell>
+                  </MoneyTableRow>
                 );
               })}
-            </tbody>
-          </table>
+            </MoneyTableBody>
+          </MoneyTable>
         </div>
       ) : null}
       {preview.matchCount > shown.length && shown.length ? <p className="border-t px-3 py-2 text-xs text-muted-foreground">Showing {shown.length} rows. Rows that change come first, then the newest.</p> : null}
@@ -298,38 +308,38 @@ function RuleList({ rules, editing, onEdit, onRemoved }: Readonly<{ rules: reado
       </div>
       {error ? <p role="alert" className="px-4 pb-2 text-sm text-negative">{error}</p> : null}
       {shown.length ? (
-        <div className="max-h-[36rem] overflow-y-auto border-t">
-          <table className="money-table">
-            <thead className="sticky top-0 z-10 bg-card">
-              <tr>
-                <th className="num hide-sm" title="Rules run in this order">Order</th>
-                <th>When</th>
-                <th>Category</th>
-                <th className="num" title="Rows this rule sets the category for">Rows</th>
-                <th><span className="sr-only">Actions</span></th>
-              </tr>
-            </thead>
-            <tbody>
+        <div className="max-h-[36rem] overflow-auto border-t [&>[data-slot=table-container]]:overflow-visible">
+          <MoneyTable>
+            <MoneyTableHeader className="sticky top-0 z-10 bg-card">
+              <MoneyTableRow>
+                <MoneyTableHead className="num hide-sm" title="Rules run in this order">Order</MoneyTableHead>
+                <MoneyTableHead>When</MoneyTableHead>
+                <MoneyTableHead>Category</MoneyTableHead>
+                <MoneyTableHead className="num" title="Rows this rule sets the category for">Rows</MoneyTableHead>
+                <MoneyTableHead><span className="sr-only">Actions</span></MoneyTableHead>
+              </MoneyTableRow>
+            </MoneyTableHeader>
+            <MoneyTableBody>
               {shown.map(({ rule, position }) => (
-                <tr key={rule.id} aria-selected={rule.id === editing ? true : undefined}>
-                  <td className="num hide-sm text-muted-foreground">{position}</td>
-                  <td className="max-w-[28rem]">
+                <MoneyTableRow key={rule.id} aria-selected={rule.id === editing ? true : undefined}>
+                  <MoneyTableCell className="num hide-sm text-muted-foreground">{position}</MoneyTableCell>
+                  <MoneyTableCell className="max-w-[28rem]">
                     <span className="block md:truncate" title={ruleSentence(rule)}><RuleCondition rule={rule} /></span>
                     {rule.accountName ? <span className="sub">Only in {rule.accountName}</span> : null}
-                  </td>
-                  <td><CategoryValue category={rule.category} /></td>
-                  <td className={`num ${rule.rowCount ? "" : "text-muted-foreground"}`}>{rule.rowCount.toLocaleString("en-GB")}</td>
-                  <td className="w-px whitespace-nowrap">
+                  </MoneyTableCell>
+                  <MoneyTableCell><CategoryValue category={rule.category} /></MoneyTableCell>
+                  <MoneyTableCell className={`num ${rule.rowCount ? "" : "text-muted-foreground"}`}>{rule.rowCount.toLocaleString("en-GB")}</MoneyTableCell>
+                  <MoneyTableCell className="w-px whitespace-nowrap">
                     <Button type="button" size="icon-xs" variant="ghost" className="max-md:size-8" aria-label={`Edit rule ${position}`} title="Edit" onClick={() => onEdit(rule)}><Pencil /></Button>
                     <Button type="button" size="icon-xs" variant="ghost" className="max-md:size-8" aria-label={`Remove rule ${position}`} title="Remove" disabled={busy} onClick={() => setRemoving(rule)}><Trash2 /></Button>
-                  </td>
-                </tr>
+                  </MoneyTableCell>
+                </MoneyTableRow>
               ))}
-            </tbody>
-          </table>
+            </MoneyTableBody>
+          </MoneyTable>
         </div>
       ) : (
-        <EmptyState title={rules.length ? "No rules match this search" : "No category rules yet"}>
+        <EmptyState title={rules.length ? "No rules match this search" : "No category rules yet"} icon={rules.length ? <Search /> : <Tags />}>
           {rules.length ? "Change the search text or the category filter." : "Write one above, or choose a category for a merchant in the review queue."}
         </EmptyState>
       )}

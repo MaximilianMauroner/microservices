@@ -77,12 +77,27 @@ describe("Money redesign views", () => {
     const html = renderToStaticMarkup(<MoneyTrackerPage {...pageData({ reviewCounts: { uncategorized: 4, transfers: 2 }, spending })} view="overview" />);
     expect(html).toContain("Known net worth");
     expect(html).toContain("1.700 €");
-    expect(html).toMatch(/Review needed\..*4 uncategorized rows, 2 transfers to classify, 1 old balance/s);
+    expect(html).toContain("Review needed.");
+    expect(html).toContain("4 uncategorized rows");
+    expect(html).toContain("2 transfers to classify");
+    expect(html).toContain("1 old balance");
     expect(html).toContain('href="/money?view=review"');
     expect(html).toContain("View net worth as a table");
     expect(html).toContain("Jul 2026 by category");
     expect(html).toContain("30 € is uncategorized");
     expect(html).toContain("No check-in yet");
+  });
+
+  it("shows the cached price date, not the snapshot time, in the freshness line", () => {
+    const html = renderToStaticMarkup(<MoneyTrackerPage {...pageData({
+      marketData: {
+        ...pageData().marketData,
+        asOf: "2026-08-10T12:00:00.000Z",
+        positions: [{ canonicalKey: "asml", name: "ASML", assetClass: "equity", quantity: "1", costBasisMinor: 70_000, state: "stale", priceDate: "2026-08-01" }],
+      },
+    })} view="overview" />);
+    expect(html).toContain("prices 1 Aug");
+    expect(html).not.toContain("prices 10 Aug");
   });
 
   it("plots combined, market, and cash history together", () => {

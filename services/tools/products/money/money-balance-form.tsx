@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Button } from "../../platform/ui/components/ui/button.js";
-import { Input } from "../../platform/ui/components/ui/input.js";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 /** Saves one balance. Old balances are fixed in the row where they show. */
 export function BalanceForm({

@@ -4,7 +4,7 @@ import { ChevronRight } from "lucide-react";
 import {
   NativeSelect,
   NativeSelectOption,
-} from "../../platform/ui/components/ui/native-select.js";
+} from "@/components/ui/native-select";
 import { moneyCategoryLabel } from "./money-category-picker.js";
 import type { MoneyCheckIn, MoneyCheckInOverview } from "./money-checkin-domain.js";
 import { DivergingBar, formatDay as shortDay, MoneyPanel } from "./money-ui.js";

@@ -22,6 +22,7 @@ and daily market-data work may wake the service, but neither should keep it
 awake between runs.
 
 - [runtime-boundaries.md](./runtime-boundaries.md): service and product ownership.
+- [ui.md](./ui.md): where shadcn components live, how to import them, and when a product composes its own.
 - [people-and-access.md](./people-and-access.md): the admin, invited people, product grants, and per-person data.
 - [access-incident.md](./access-incident.md): authentication containment and recovery.
 - [direct-transfers.md](./direct-transfers.md): durable direct uploads, signed downloads, and reviewed rollout.

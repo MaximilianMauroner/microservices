@@ -1,8 +1,24 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { cn } from "../../platform/ui/lib/utils.js";
-import { Card } from "../../platform/ui/components/ui/card.js";
+import { cn } from "@/lib/utils";
+import { Card } from "@/components/ui/card";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import type { MoneySpendingAnalytics } from "./money-repository.js";
 
 /* ---------- Formatting ---------- */
@@ -128,14 +144,53 @@ export function TableTwin({ label, children }: { label: string; children: ReactN
   );
 }
 
-export function EmptyState({ title, children }: { title: string; children?: ReactNode }) {
+/* ---------- Tables ---------- */
+
+/**
+ * The shadcn table primitives with the money table styling. The wrapper keeps
+ * the horizontal scroll container, while the row and cell overrides preserve
+ * the compact money layout instead of the default shadcn spacing.
+ */
+export function MoneyTable({ className, ...props }: React.ComponentProps<typeof Table>) {
+  return <Table className={cn("money-table", className)} {...props} />;
+}
+
+export { TableBody as MoneyTableBody, TableHeader as MoneyTableHeader };
+
+export function MoneyTableRow({ className, ...props }: React.ComponentProps<typeof TableRow>) {
+  return <TableRow className={cn("border-0 hover:bg-transparent data-[selectable]:hover:bg-muted/70", className)} {...props} />;
+}
+
+export function MoneyTableHead({ className, ...props }: React.ComponentProps<typeof TableHead>) {
+  return <TableHead className={cn("h-auto", className)} {...props} />;
+}
+
+export function MoneyTableCell({ className, ...props }: React.ComponentProps<typeof TableCell>) {
+  return <TableCell className={cn("whitespace-normal", className)} {...props} />;
+}
+
+export function EmptyState({
+  title,
+  children,
+  icon,
+  action,
+  className,
+}: {
+  title: string;
+  children?: ReactNode;
+  icon?: ReactNode;
+  action?: ReactNode;
+  className?: string;
+}) {
   return (
-    <div className="grid min-h-28 place-items-center px-4 py-6 text-center">
-      <div>
-        <p className="text-sm font-medium">{title}</p>
-        {children ? <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">{children}</p> : null}
-      </div>
-    </div>
+    <Empty className={cn("min-h-28 gap-3 border-0 p-6", className)}>
+      <EmptyHeader className="gap-1.5">
+        {icon ? <EmptyMedia variant="icon">{icon}</EmptyMedia> : null}
+        <EmptyTitle className="text-sm font-medium">{title}</EmptyTitle>
+        {children ? <EmptyDescription className="text-sm">{children}</EmptyDescription> : null}
+      </EmptyHeader>
+      {action ? <EmptyContent className="gap-0">{action}</EmptyContent> : null}
+    </Empty>
   );
 }
 
@@ -396,6 +451,7 @@ export function LineTrendChart({
                   <text x={x(marker.index) - 6} y={top + plotHeight - 6} textAnchor="end">{marker.label}</text>
                 </g>
               ) : null}
+              <path className="money-area" d={`${pathFor(points.map((point, index) => [x(index), y(point.value)]))}L${x(points.length - 1)},${top + plotHeight}L${x(0)},${top + plotHeight}Z`} />
               {additionalSeries.map((series, seriesIndex) => (
                 <path key={seriesIndex} className="money-series" style={{ stroke: series.color }} d={pathFor(series.values.map((value, index) => [x(index), y(value)]))} />
               ))}

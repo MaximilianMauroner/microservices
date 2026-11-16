@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useRouter } from "@tanstack/react-router";
+import { Inbox, Search } from "lucide-react";
 import type { MoneyTrackerPageData } from "../../platform/protected-data.js";
 import { MONEY_CATEGORIES, type MoneyCategory } from "./money-enums.js";
 import type { MoneyActivityPage, MoneyActivitySortKey } from "./money-repository.js";
@@ -9,12 +10,24 @@ import { MoneySortableHead, MoneyTableSearch, nextMoneySort, type MoneySort } fr
 import { MoneyCategoryPicker, moneyCategoryLabel } from "./money-category-picker.js";
 import { isRuleCategorized } from "./money-category-rules.js";
 import { moneyGet, moneyJson } from "./money-requests.js";
-import { EmptyState, formatDay, formatMinor, MoneyPanel } from "./money-ui.js";
-import { Alert, AlertDescription, AlertTitle } from "../../platform/ui/components/ui/alert.js";
-import { Button } from "../../platform/ui/components/ui/button.js";
-import { NativeSelect, NativeSelectOption } from "../../platform/ui/components/ui/native-select.js";
-import { useIsMobile } from "../../platform/ui/components/ui/use-mobile.js";
-import { Tooltip, TooltipContent, TooltipTrigger } from "../../platform/ui/components/ui/tooltip.js";
+import {
+  EmptyState,
+  formatDay,
+  formatMinor,
+  MoneyPanel,
+  MoneyTable,
+  MoneyTableBody,
+  MoneyTableCell,
+  MoneyTableHead,
+  MoneyTableHeader,
+  MoneyTableRow,
+} from "./money-ui.js";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { useIsMobile } from "@/components/ui/use-mobile";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 type Activity = MoneyTrackerPageData["activity"][number];
 
@@ -187,7 +200,7 @@ export function MoneyActivityView({
               </ul>
             ) : (
               <div className="overflow-x-auto">
-                <table className="money-table min-w-[52rem] table-fixed" aria-label="Transaction detail table">
+                <MoneyTable className="min-w-[52rem] table-fixed" aria-label="Transaction detail table">
                   <colgroup>
                     <col style={{ width: "2.75rem" }} />
                     <col style={{ width: "6.5rem" }} />
@@ -196,38 +209,41 @@ export function MoneyActivityView({
                     <col style={{ width: "12rem" }} />
                     <col style={{ width: "8.5rem" }} />
                   </colgroup>
-                  <thead>
-                    <tr>
-                      <th><span className="sr-only">Select</span></th>
+                  <MoneyTableHeader>
+                    <MoneyTableRow>
+                      <MoneyTableHead><span className="sr-only">Select</span></MoneyTableHead>
                       <MoneySortableHead label="Date" sortKey="date" active={sort} onSort={changeSort} />
                       <MoneySortableHead label="Description" sortKey="description" active={sort} onSort={changeSort} />
                       <MoneySortableHead label="Account" sortKey="account" active={sort} onSort={changeSort} />
                       <MoneySortableHead label="Category" sortKey="category" active={sort} onSort={changeSort} />
                       <MoneySortableHead label="Amount" sortKey="amount" active={sort} onSort={changeSort} align="right" />
-                    </tr>
-                  </thead>
-                  <tbody>
+                    </MoneyTableRow>
+                  </MoneyTableHeader>
+                  <MoneyTableBody>
                     {rows.map((item) => (
-                      <tr key={item.id} aria-selected={selectedRows.has(item.id)}>
-                        <td>
-                          <input type="checkbox" className="size-4 accent-[var(--primary)]" aria-label={`Select ${item.description}`} checked={selectedRows.has(item.id)} disabled={needsTransferTreatment(item)} onChange={() => toggleRow(item.id)} />
-                        </td>
-                        <td className="whitespace-nowrap text-muted-foreground tabular-nums">{formatDay(item.occurredAt)}</td>
-                        <td className="min-w-0">
+                      <MoneyTableRow key={item.id} aria-selected={selectedRows.has(item.id)}>
+                        <MoneyTableCell>
+                          <Checkbox aria-label={`Select ${item.description}`} checked={selectedRows.has(item.id)} disabled={needsTransferTreatment(item)} onCheckedChange={() => toggleRow(item.id)} />
+                        </MoneyTableCell>
+                        <MoneyTableCell className="whitespace-nowrap text-muted-foreground tabular-nums">{formatDay(item.occurredAt)}</MoneyTableCell>
+                        <MoneyTableCell className="min-w-0">
                           <TransactionDescription className="font-medium" description={item.description || item.sourceType} />
                           <span className="sub truncate">{item.sourceType}{item.transferGroupId ? " · matched transfer" : ""}{item.feeMinor + item.taxMinor ? ` · ${formatMinor(item.feeMinor + item.taxMinor, { precise: true })} costs` : ""}</span>
-                        </td>
-                        <td className="truncate text-muted-foreground" title={item.accountName}>{item.accountName}</td>
-                        <td>{chip(item)}</td>
-                        <td className={`num font-semibold ${item.amountMinor > 0 ? "text-positive" : ""}`}>{formatMinor(item.amountMinor, { precise: true, signed: true })}</td>
-                      </tr>
+                        </MoneyTableCell>
+                        <MoneyTableCell className="truncate text-muted-foreground" title={item.accountName}>{item.accountName}</MoneyTableCell>
+                        <MoneyTableCell>{chip(item)}</MoneyTableCell>
+                        <MoneyTableCell className={`num font-semibold ${item.amountMinor > 0 ? "text-positive" : ""}`}>{formatMinor(item.amountMinor, { precise: true, signed: true })}</MoneyTableCell>
+                      </MoneyTableRow>
                     ))}
-                  </tbody>
-                </table>
+                  </MoneyTableBody>
+                </MoneyTable>
               </div>
             )
           ) : (
-            <EmptyState title={reviewOnly ? "Nothing to review" : transactionCount ? "No matching rows" : "No transactions imported"}>
+            <EmptyState
+              title={reviewOnly ? "Nothing to review" : transactionCount ? "No matching rows" : "No transactions imported"}
+              icon={reviewOnly ? <Inbox /> : <Search />}
+            >
               {reviewOnly ? "No rows that need review match these filters." : transactionCount ? "Change the search or a filter." : "Import a statement to fill the ledger."}
             </EmptyState>
           )}
@@ -239,7 +255,7 @@ export function MoneyActivityView({
         </div>
       </MoneyPanel>
       {selectedItems.length ? (
-        <div className="sticky bottom-4 z-30 mx-auto flex w-fit max-w-[calc(100%-1.5rem)] flex-wrap items-center gap-2 rounded-full border bg-popover px-4 py-2 text-sm shadow-lg" role="region" aria-label="Selected rows">
+        <div className="sticky bottom-4 z-30 mx-auto flex w-fit max-w-[calc(100%-1.5rem)] flex-wrap items-center gap-2 rounded-lg border bg-popover px-4 py-2 text-sm shadow-lg" role="region" aria-label="Selected rows">
           <strong className="font-semibold">{selectedItems.length} selected</strong>
           <MoneyCategoryPicker compact value="uncategorized" disabled={saving !== undefined} ariaLabel="Set a category for the selected rows" onValue={(next) => void categorize(selectedItems, next)} />
           <Button type="button" size="sm" variant="ghost" onClick={() => setSelectedRows(new Set())}>Clear</Button>

@@ -2,25 +2,26 @@
 
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { Link, useRouter } from "@tanstack/react-router";
-import { Upload } from "lucide-react";
+import { ArrowLeftRight, CalendarCheck, Landmark, LoaderCircle, Tags, TrendingUp, Upload, Wallet } from "lucide-react";
 import type { MoneyTrackerPageData } from "../../platform/protected-data.js";
 import {
   moneyFinancialHistory,
   moneyFinancialPosition,
   moneyTrackerTrendStats,
 } from "./money-tracker-domain.js";
-import { AppShell } from "../../platform/ui/components/app-shell.js";
-import { favicons } from "../../platform/ui/favicons.js";
-import { Badge } from "../../platform/ui/components/ui/badge.js";
-import { Button, buttonVariants } from "../../platform/ui/components/ui/button.js";
-import { Card } from "../../platform/ui/components/ui/card.js";
+import { AppShell } from "@/components/app-shell";
+import { favicons } from "@/favicons";
+import { Badge } from "@/components/ui/badge";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Slider } from "@/components/ui/slider";
 import {
   Sheet,
   SheetContent,
   SheetDescription,
   SheetHeader,
   SheetTitle,
-} from "../../platform/ui/components/ui/sheet.js";
+} from "@/components/ui/sheet";
 import type { MoneyCategory } from "./money-enums.js";
 import type { MoneyActivityPage } from "./money-repository.js";
 import { MoneySpendingView, MoneyActivityView, MoneyInvestmentsView, MoneyReviewView } from "./money-view-loading.js";
@@ -30,7 +31,7 @@ import { BalanceForm } from "./money-balance-form.js";
 import { moneyJson } from "./money-requests.js";
 import { moneyCategoryLabel } from "./money-category-picker.js";
 import { projectMoneyTrajectory } from "./money-plan-domain.js";
-import { Segmented } from "../../platform/ui/components/segmented.js";
+import { Segmented } from "@/components/segmented";
 import {
   MoneyNav,
   moneyReviewCount,
@@ -63,6 +64,12 @@ import {
   StatStrip,
   TableTwin,
   toneClass,
+  MoneyTable,
+  MoneyTableBody,
+  MoneyTableCell,
+  MoneyTableHead,
+  MoneyTableHeader,
+  MoneyTableRow,
 } from "./money-ui.js";
 
 export type { MoneyTrackerView } from "./money-tracker-navigation.js";
@@ -93,7 +100,7 @@ export function MoneyTrackerPage(
   const reviewCount = moneyReviewCount(props.reviewCounts);
   return (
     <>
-      <AppShell product="Money" accent="lime" icon={favicons.money} />
+      <AppShell product="Money" accent="emerald" icon={favicons.money} />
       <main id="main" className="money-page">
         <MoneyNav current={props.view} reviewCount={reviewCount} />
         <header className="money-heading">
@@ -103,14 +110,14 @@ export function MoneyTrackerPage(
           </div>
           {props.view === "review" ? null : (
             <div className="money-heading__actions">
-              <Link to="/money" search={{ view: "review", tab: "imports" }} className={buttonVariants({ variant: "outline", size: "sm" })}>
+              <Link to="/money" search={{ view: "review", tab: "imports" }} className={buttonVariants({ variant: "default", size: "sm" })}>
                 <Upload />
                 Import
               </Link>
             </div>
           )}
         </header>
-        <Suspense fallback={<MoneyPanel><EmptyState title="Loading view" /></MoneyPanel>}>
+        <Suspense fallback={<MoneyPanel><EmptyState title="Loading view" icon={<LoaderCircle className="animate-spin" />} /></MoneyPanel>}>
           <MoneyView {...props} />
         </Suspense>
       </main>
@@ -225,6 +232,9 @@ function Overview(props: MoneyTrackerPageData) {
                 </>
               ) : null}
             </p>
+            <p className="mt-1.5 text-xs text-muted-foreground/80">
+              Balances through {latestMonth ? formatMonth(latestMonth.date) : "—"} · {position.portfolio.priceDate ? `prices ${formatDay(position.portfolio.priceDate)}` : "prices unavailable"}
+            </p>
           </div>
           <StatStrip label="Net worth parts">
             <Stat label="Cash" value={formatMinor(position.cash.valueMinor)} detail={carriedCount ? `${carriedCount} balance${carriedCount === 1 ? "" : "s"} carried` : `${coverage.observedCashAccountCount} accounts`} />
@@ -244,14 +254,21 @@ function Overview(props: MoneyTrackerPageData) {
             {open.length ? (
               <>
                 <strong className="font-semibold">Review needed.</strong>{" "}
-                <span className="text-muted-foreground">
-                  {open.map(([count, one, many]) => `${count.toLocaleString("en-GB")} ${count === 1 ? one : many}`).join(", ")}. Totals leave these rows out until you fix them.
-                </span>
+                <span className="text-muted-foreground">Totals leave these rows out until you fix them.</span>
               </>
             ) : (
               "All data is reviewed. Totals include every row."
             )}
           </span>
+          {open.length ? (
+            <span className="flex flex-wrap gap-1.5">
+              {open.map(([count, one, many]) => (
+                <Link key={one} to="/money" search={{ view: "review" }} className="money-chip">
+                  {count.toLocaleString("en-GB")} {count === 1 ? one : many}
+                </Link>
+              ))}
+            </span>
+          ) : null}
           {open.length ? (
             <Link to="/money" search={{ view: "review" }} className={buttonVariants({ variant: "outline", size: "sm" })}>
               Review
@@ -298,7 +315,7 @@ function Overview(props: MoneyTrackerPageData) {
                 />
               </>
             ) : (
-              <EmptyState title="No balance history">Import a statement with balances to see net worth over time.</EmptyState>
+              <EmptyState title="No balance history" icon={<Wallet />}>Import a statement with balances to see net worth over time.</EmptyState>
             )}
           </PanelBody>
           {months.length > 1 ? (
@@ -322,28 +339,34 @@ function Overview(props: MoneyTrackerPageData) {
             </PanelFooter>
           ) : null}
           {months.length ? <TableTwin label="View net worth as a table">
-            <table className="money-table">
-              <thead>
-                <tr><th>Month</th><th className="num">Cash</th><th className="num">Market</th><th className="num">Combined</th></tr>
-              </thead>
-              <tbody>
+            <MoneyTable>
+              <MoneyTableHeader>
+                <MoneyTableRow><MoneyTableHead>Month</MoneyTableHead><MoneyTableHead className="num">Cash</MoneyTableHead><MoneyTableHead className="num">Market</MoneyTableHead><MoneyTableHead className="num">Combined</MoneyTableHead></MoneyTableRow>
+              </MoneyTableHeader>
+              <MoneyTableBody>
                 {[...months].reverse().map((month) => (
-                  <tr key={month.date}>
-                    <td>{formatMonth(month.date)}</td>
-                    <td className="num">{formatEuro(month.money)}</td>
-                    <td className="num">{formatEuro(month.stocks)}</td>
-                    <td className="num">{formatEuro(month.total)}</td>
-                  </tr>
+                  <MoneyTableRow key={month.date}>
+                    <MoneyTableCell>{formatMonth(month.date)}</MoneyTableCell>
+                    <MoneyTableCell className="num">{formatEuro(month.money)}</MoneyTableCell>
+                    <MoneyTableCell className="num">{formatEuro(month.stocks)}</MoneyTableCell>
+                    <MoneyTableCell className="num">{formatEuro(month.total)}</MoneyTableCell>
+                  </MoneyTableRow>
                 ))}
-              </tbody>
-            </table>
+              </MoneyTableBody>
+            </MoneyTable>
           </TableTwin> : null}
         </MoneyPanel>
         {props.checkIn?.overview ? (
           <MoneyCheckInBridge checkIn={props.checkIn} overview={props.checkIn.overview} accountLabels={props.accountLabels} />
         ) : (
           <MoneyPanel title="Since check-in">
-            <EmptyState title="No check-in yet">A check-in is a day with a statement import. Import a statement to start.</EmptyState>
+            <EmptyState
+              title="No check-in yet"
+              icon={<CalendarCheck />}
+              action={<Link to="/money" search={{ view: "review", tab: "imports" }} className={buttonVariants({ variant: "default", size: "sm" })}>Import a statement</Link>}
+            >
+              A check-in is a day with a statement import.
+            </EmptyState>
           </MoneyPanel>
         )}
       </div>
@@ -370,7 +393,7 @@ function Overview(props: MoneyTrackerPageData) {
                 tooltip={(index) => flowTooltip(flow.slice(-6)[index]!)}
               />
             ) : (
-              <EmptyState title="No cash flow yet">Import a cash statement to see income and spending.</EmptyState>
+              <EmptyState title="No cash flow yet" icon={<ArrowLeftRight />}>Import a cash statement to see income and spending.</EmptyState>
             )}
           </PanelBody>
         </MoneyPanel>
@@ -411,7 +434,7 @@ function CategoryMonth({ spending }: { spending: MoneyTrackerPageData["spending"
             {uncategorized ? <p className="text-xs text-muted-foreground">{formatMinor(uncategorized)} is uncategorized and not in these bars.</p> : null}
           </div>
         ) : (
-          <EmptyState title="No categorized spending yet" />
+          <EmptyState title="No categorized spending yet" icon={<Tags />} />
         )}
       </PanelBody>
     </MoneyPanel>
@@ -485,31 +508,31 @@ function Accounts(props: MoneyTrackerPageData) {
         <p className="px-4 py-2 text-xs text-muted-foreground">Only cash accounts with a latest balance of exactly zero can be deprecated. Account and transaction history stays available.</p>
         {editing === "new" ? <BalanceForm accountName onDone={saved} onCancel={() => setEditing(undefined)} /> : null}
         <div className="mt-2 overflow-x-auto">
-          <table className="money-table" aria-label="Account balances">
-            <thead>
-              <tr>
-                <th>Account</th>
-                <th className="num">Balance</th>
-                <th className="num hide-sm">1 year</th>
-                <th className="num hide-sm">12 months</th>
-                <th className="hide-sm">Updated</th>
-                <th className="num"><span className="sr-only">Actions</span></th>
-              </tr>
-            </thead>
-            <tbody>
+          <MoneyTable aria-label="Account balances">
+            <MoneyTableHeader>
+              <MoneyTableRow>
+                <MoneyTableHead>Account</MoneyTableHead>
+                <MoneyTableHead className="num">Balance</MoneyTableHead>
+                <MoneyTableHead className="num hide-sm">1 year</MoneyTableHead>
+                <MoneyTableHead className="num hide-sm">12 months</MoneyTableHead>
+                <MoneyTableHead className="hide-sm">Updated</MoneyTableHead>
+                <MoneyTableHead className="num"><span className="sr-only">Actions</span></MoneyTableHead>
+              </MoneyTableRow>
+            </MoneyTableHeader>
+            <MoneyTableBody>
               {rows.map((row) => {
                 const old = row.lastObserved !== undefined && row.lastObserved < currentMonth;
                 return [
-                  <tr key={row.account} data-selectable onClick={() => setSelected(row.account)}>
-                    <td>
+                  <MoneyTableRow key={row.account} data-selectable onClick={() => setSelected(row.account)}>
+                    <MoneyTableCell>
                       <button type="button" className="text-left font-medium hover:underline" onClick={(event) => { event.stopPropagation(); setSelected(row.account); }}>{row.label}</button>
                       <span className="sub">{row.role === "investment" ? "Investments" : "Cash"}<span className="md:hidden">{row.lastObserved ? ` · ${formatMonth(row.lastObserved, true)}` : ""}</span></span>
-                    </td>
-                    <td className="num font-semibold">{row.value === undefined ? <span className="text-muted-foreground">No balance</span> : formatEuro(row.value, { precise: true })}</td>
-                    <td className={`num hide-sm ${toneClass(row.change)}`}>{row.change === undefined ? "—" : formatEuro(row.change, { signed: true })}</td>
-                    <td className="num hide-sm"><SparkLine values={row.history} /></td>
-                    <td className="hide-sm">{row.lastObserved ? old ? <Badge variant="outline" className="text-warning">{formatMonth(row.lastObserved, true)}</Badge> : <span className="text-muted-foreground">{formatMonth(row.lastObserved, true)}</span> : <span className="text-muted-foreground">Never</span>}</td>
-                    <td className="num" onClick={(event) => event.stopPropagation()}>
+                    </MoneyTableCell>
+                    <MoneyTableCell className="num font-semibold">{row.value === undefined ? <span className="text-muted-foreground">No balance</span> : formatEuro(row.value, { precise: true })}</MoneyTableCell>
+                    <MoneyTableCell className={`num hide-sm ${toneClass(row.change)}`}>{row.change === undefined ? "—" : formatEuro(row.change, { signed: true })}</MoneyTableCell>
+                    <MoneyTableCell className="num hide-sm"><SparkLine values={row.history} /></MoneyTableCell>
+                    <MoneyTableCell className="hide-sm">{row.lastObserved ? old ? <Badge variant="outline" className="text-warning">{formatMonth(row.lastObserved, true)}</Badge> : <span className="text-muted-foreground">{formatMonth(row.lastObserved, true)}</span> : <span className="text-muted-foreground">Never</span>}</MoneyTableCell>
+                    <MoneyTableCell className="num" onClick={(event) => event.stopPropagation()}>
                       {row.role === "cash" ? (
                         <div className="flex flex-wrap justify-end gap-2">
                           <Button type="button" size="sm" variant="outline" aria-expanded={editing === row.account} onClick={() => setEditing(editing === row.account ? undefined : row.account)}>
@@ -521,20 +544,20 @@ function Accounts(props: MoneyTrackerPageData) {
                           {row.value !== 0 ? <span id={`deprecate-${row.account}`} className="sr-only">{row.value === undefined ? "A known zero balance is required." : "The latest balance must be zero."}</span> : null}
                         </div>
                       ) : null}
-                    </td>
-                  </tr>,
+                    </MoneyTableCell>
+                  </MoneyTableRow>,
                   editing === row.account ? (
-                    <tr key={`${row.account}:edit`}>
-                      <td colSpan={6} className="p-0">
+                    <MoneyTableRow key={`${row.account}:edit`}>
+                      <MoneyTableCell colSpan={6} className="p-0">
                         <BalanceForm accountId={row.account} label={row.label} value={row.value} onDone={saved} onCancel={() => setEditing(undefined)} />
-                      </td>
-                    </tr>
+                      </MoneyTableCell>
+                    </MoneyTableRow>
                   ) : null,
                 ];
               })}
-            </tbody>
-          </table>
-          {rows.length ? null : deprecatedRows.length ? <EmptyState title="No active accounts">Restore a deprecated account or add a cash account.</EmptyState> : <EmptyState title="No accounts yet">Import a statement to add its accounts.</EmptyState>}
+            </MoneyTableBody>
+          </MoneyTable>
+          {rows.length ? null : deprecatedRows.length ? <EmptyState title="No active accounts" icon={<Landmark />}>Restore a deprecated account or add a cash account.</EmptyState> : <EmptyState title="No accounts yet" icon={<Landmark />}>Import a statement to add its accounts.</EmptyState>}
         </div>
         <TableTwin label={`Monthly snapshots (${grouped.length})`}>
           <SnapshotTable months={grouped} accounts={props.accounts} />
@@ -566,28 +589,28 @@ function Accounts(props: MoneyTrackerPageData) {
 
 function SnapshotTable({ months, accounts }: { months: GroupedMonth[]; accounts: string[] }) {
   return (
-    <table className="money-table">
-      <thead>
-        <tr><th>Month</th><th className="num">Cash</th><th className="num">Investments</th><th className="num">Total</th><th className="num">Change</th><th className="num">Source</th></tr>
-      </thead>
-      <tbody>
+    <MoneyTable>
+      <MoneyTableHeader>
+        <MoneyTableRow><MoneyTableHead>Month</MoneyTableHead><MoneyTableHead className="num">Cash</MoneyTableHead><MoneyTableHead className="num">Investments</MoneyTableHead><MoneyTableHead className="num">Total</MoneyTableHead><MoneyTableHead className="num">Change</MoneyTableHead><MoneyTableHead className="num">Source</MoneyTableHead></MoneyTableRow>
+      </MoneyTableHeader>
+      <MoneyTableBody>
         {[...months].reverse().map((month, index, list) => {
           const older = list[index + 1];
           const reused = accounts.filter((account) => month.values[account] !== undefined && !month.observedAccounts.includes(account)).length;
           const change = older && sameCoverage(month, older) ? month.total - older.total : undefined;
           return (
-            <tr key={month.date}>
-              <td>{formatMonth(month.date)}</td>
-              <td className="num">{formatEuro(month.money)}</td>
-              <td className="num">{formatEuro(month.stocks)}</td>
-              <td className="num">{formatEuro(month.total)}</td>
-              <td className={`num ${toneClass(change)}`}>{change === undefined ? "—" : formatEuro(change, { signed: true })}</td>
-              <td className="num text-muted-foreground">{reused ? `${reused} carried` : "Updated"}</td>
-            </tr>
+            <MoneyTableRow key={month.date}>
+              <MoneyTableCell>{formatMonth(month.date)}</MoneyTableCell>
+              <MoneyTableCell className="num">{formatEuro(month.money)}</MoneyTableCell>
+              <MoneyTableCell className="num">{formatEuro(month.stocks)}</MoneyTableCell>
+              <MoneyTableCell className="num">{formatEuro(month.total)}</MoneyTableCell>
+              <MoneyTableCell className={`num ${toneClass(change)}`}>{change === undefined ? "—" : formatEuro(change, { signed: true })}</MoneyTableCell>
+              <MoneyTableCell className="num text-muted-foreground">{reused ? `${reused} carried` : "Updated"}</MoneyTableCell>
+            </MoneyTableRow>
           );
         })}
-      </tbody>
-    </table>
+      </MoneyTableBody>
+    </MoneyTable>
   );
 }
 
@@ -669,7 +692,7 @@ function Plan(props: MoneyTrackerPageData) {
   if (!prediction || !historical) {
     return (
       <MoneyPanel>
-        <EmptyState title="Not enough history">The plan needs at least six months of complete portfolio history. It appears when enough balances and prices are imported.</EmptyState>
+        <EmptyState title="Not enough history" icon={<TrendingUp />}>The plan needs at least six months of complete portfolio history. It appears when enough balances and prices are imported.</EmptyState>
       </MoneyPanel>
     );
   }
@@ -694,15 +717,14 @@ function Plan(props: MoneyTrackerPageData) {
           <label className="grid min-w-64 flex-[1_1_18rem] gap-1.5 text-xs text-muted-foreground">
             Monthly contribution
             <span className="flex items-center gap-3">
-              <input
-                type="range"
-                className="w-full accent-[var(--primary)]"
+              <Slider
+                className="w-full"
                 min={0}
                 max={Math.max(5_000, Math.ceil(history / 500) * 1_000)}
                 step={50}
-                value={monthly}
+                value={[monthly]}
                 aria-label="Monthly contribution slider"
-                onChange={(event) => setContribution(event.currentTarget.valueAsNumber)}
+                onValueChange={(value) => setContribution(Array.isArray(value) ? value[0]! : value)}
               />
               <span className="flex h-8 items-center gap-1 rounded-md border border-input bg-control px-2">
                 <input
@@ -771,22 +793,22 @@ function Plan(props: MoneyTrackerPageData) {
           />
         </PanelBody>
         <TableTwin label="View the projection as a table">
-          <table className="money-table">
-            <thead>
-              <tr><th>Month</th><th className="num">Low (10%)</th><th className="num">Central</th><th className="num">High (90%)</th><th className="num">Inflation only</th></tr>
-            </thead>
-            <tbody>
+          <MoneyTable>
+            <MoneyTableHeader>
+              <MoneyTableRow><MoneyTableHead>Month</MoneyTableHead><MoneyTableHead className="num">Low (10%)</MoneyTableHead><MoneyTableHead className="num">Central</MoneyTableHead><MoneyTableHead className="num">High (90%)</MoneyTableHead><MoneyTableHead className="num">Inflation only</MoneyTableHead></MoneyTableRow>
+            </MoneyTableHeader>
+            <MoneyTableBody>
               {prediction.forecast.filter((_, index) => (index + 1) % 12 === 0 || index === prediction.forecast.length - 1).map((point) => (
-                <tr key={point.date}>
-                  <td>{formatMonth(point.date)}</td>
-                  <td className="num">{formatEuro(point.range[0])}</td>
-                  <td className="num">{formatEuro(point.estimate)}</td>
-                  <td className="num">{formatEuro(point.range[1])}</td>
-                  <td className="num">{formatEuro(point.inflation)}</td>
-                </tr>
+                <MoneyTableRow key={point.date}>
+                  <MoneyTableCell>{formatMonth(point.date)}</MoneyTableCell>
+                  <MoneyTableCell className="num">{formatEuro(point.range[0])}</MoneyTableCell>
+                  <MoneyTableCell className="num">{formatEuro(point.estimate)}</MoneyTableCell>
+                  <MoneyTableCell className="num">{formatEuro(point.range[1])}</MoneyTableCell>
+                  <MoneyTableCell className="num">{formatEuro(point.inflation)}</MoneyTableCell>
+                </MoneyTableRow>
               ))}
-            </tbody>
-          </table>
+            </MoneyTableBody>
+          </MoneyTable>
           <p className="px-4 py-2.5 text-xs text-muted-foreground">
             The model compounds the portfolio&apos;s return after contributions, from {prediction.historyMonths} months of history, and keeps cash flat.
             The range uses the spread of monthly returns. Deposits, withdrawals, and new market conditions can move the result outside it.

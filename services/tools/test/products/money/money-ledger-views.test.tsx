@@ -216,7 +216,7 @@ describe("Money rules and imports", () => {
       bytes: 1200, rowCount: 100, insertedCount: 90, duplicateCount: 10, actor: "operator@example.test"
     }));
     const html = renderToStaticMarkup(<MoneyImportHistory imports={imports} />);
-    const groups = [...html.matchAll(/<tbody>(.*?)<\/tbody>/gs)].map((match) => match[1]!);
+    const groups = [...html.matchAll(/<tbody[^>]*>(.*?)<\/tbody>/gs)].map((match) => match[1]!);
 
     expect(groups).toHaveLength(2);
     expect(groups[0]).toContain("12 Oct 2026");
