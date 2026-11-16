@@ -15,6 +15,7 @@ import {
   formatDay,
   formatMinor,
   toneClass,
+  TransactionDescription,
   MoneyPanel,
   MoneyTable,
   MoneyTableBody,
@@ -28,7 +29,6 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { useIsMobile } from "@/components/ui/use-mobile";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 type Activity = MoneyTrackerPageData["activity"][number];
 
@@ -215,7 +215,7 @@ export function MoneyActivityView({
                 {rows.map((item) => (
                   <li key={item.id} className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1.5 px-4 py-2.5">
                     <div className="min-w-0">
-                      <TransactionDescription className="text-sm font-medium" description={item.description || item.sourceType} />
+                      <TransactionDescription className="text-sm font-medium" description={item.description} sourceType={item.sourceType} />
                       <p className="truncate text-xs text-muted-foreground">{formatDay(item.occurredAt)} · {item.accountName}</p>
                     </div>
                     <strong className={`text-right text-sm font-semibold tabular-nums ${toneClass(item.amountMinor)}`}>{formatMinor(item.amountMinor, { precise: true, signed: true })}</strong>
@@ -258,7 +258,7 @@ export function MoneyActivityView({
                         </MoneyTableCell>
                         <MoneyTableCell className="whitespace-nowrap text-muted-foreground tabular-nums">{formatDay(item.occurredAt)}</MoneyTableCell>
                         <MoneyTableCell className="min-w-0">
-                          <TransactionDescription className="font-medium" description={item.description || item.sourceType} />
+                          <TransactionDescription className="font-medium" description={item.description} sourceType={item.sourceType} />
                           <span className="sub truncate">{item.sourceType}{item.transferGroupId ? " · matched transfer" : ""}{item.feeMinor + item.taxMinor ? ` · ${formatMinor(item.feeMinor + item.taxMinor, { precise: true })} costs` : ""}</span>
                         </MoneyTableCell>
                         <MoneyTableCell className="truncate text-muted-foreground" title={item.accountName}>{item.accountName}</MoneyTableCell>
@@ -298,37 +298,6 @@ export function MoneyActivityView({
 
 function needsTransferTreatment(item: Activity) {
   return item.needsTransferReview;
-}
-
-function TransactionDescription({
-  className,
-  description,
-}: {
-  className?: string;
-  description: string;
-}) {
-  const label = (
-    <p
-      className={`min-w-0 truncate ${className ?? ""}`}
-      tabIndex={0}
-      title={description}
-    >
-      {description}
-    </p>
-  );
-
-  return (
-    <Tooltip>
-      <TooltipTrigger render={label} />
-      <TooltipContent
-        className="max-w-lg whitespace-normal break-words"
-        side="top"
-        align="start"
-      >
-        {description}
-      </TooltipContent>
-    </Tooltip>
-  );
 }
 
 function message(error: unknown) {

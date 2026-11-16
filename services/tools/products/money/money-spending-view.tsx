@@ -28,6 +28,7 @@ import {
   StatStrip,
   TableTwin,
   toneClass,
+  TransactionDescription,
   MoneyTable,
   MoneyTableBody,
   MoneyTableCell,
@@ -292,7 +293,7 @@ function CategoryDetail({
             <div className="divide-y">
               {recent.map((row) => (
                 <div key={row.id} className="flex items-center justify-between gap-3 py-1.5 text-sm">
-                  <span className="min-w-0 truncate" title={row.description}>{row.description || row.sourceType}</span>
+                  <TransactionDescription className="flex-1" description={row.description} sourceType={row.sourceType} />
                   <span className="shrink-0 text-muted-foreground">{formatDay(row.occurredAt)}</span>
                   <span className="w-20 shrink-0 text-right tabular-nums">{formatMinor(row.amountMinor, { precise: true, signed: true })}</span>
                 </div>

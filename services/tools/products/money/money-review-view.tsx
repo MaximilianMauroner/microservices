@@ -15,7 +15,7 @@ import { isRuleCategorized } from "./money-category-rules.js";
 import { MoneyImportDrop, MoneyImportHistory } from "./money-ledger-views.js";
 import { MoneyRulesView } from "./money-rules-view.js";
 import { MONEY_REVIEW_TABS, moneyReviewCount, staleMoneyCashAccounts, type MoneyReviewTab } from "./money-tracker-navigation.js";
-import { EmptyState, formatDay, formatMinor, formatMonth, MoneyPanel } from "./money-ui.js";
+import { EmptyState, formatDay, formatMinor, formatMonth, MoneyPanel, TransactionDescription } from "./money-ui.js";
 import { countLabel } from "@/lib/count-label";
 
 const TAB_LABELS: Record<MoneyReviewTab, string> = { queue: "Queue", rules: "Rules", imports: "Imports" };
@@ -142,10 +142,10 @@ function CategorizeQueue({ items, common, total, spendingRows }: { items: readon
           return (
             <li key={item.id} className="grid gap-2 px-4 py-3">
               <div className="flex items-baseline justify-between gap-3">
-                <p className="min-w-0 text-sm">
-                  <strong className="font-semibold">{item.description || item.sourceType}</strong>{" "}
-                  <span className="text-xs text-muted-foreground">{item.accountName} · {formatDay(item.occurredAt)}</span>
-                </p>
+                <div className="min-w-0">
+                  <TransactionDescription className="text-sm font-semibold" description={item.description} sourceType={item.sourceType} />
+                  <p className="truncate text-xs text-muted-foreground">{item.accountName} · {formatDay(item.occurredAt)}</p>
+                </div>
                 <strong className="shrink-0 font-semibold tabular-nums">{formatMinor(item.amountMinor, { precise: true })}</strong>
               </div>
               <div className="flex flex-wrap items-center gap-1.5">

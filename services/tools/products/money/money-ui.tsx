@@ -19,6 +19,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { moneyTransactionSummary } from "./money-description.js";
 import type { MoneySpendingAnalytics } from "./money-repository.js";
 
 /* ---------- Formatting ---------- */
@@ -167,6 +169,24 @@ export function MoneyTableHead({ className, ...props }: React.ComponentProps<typ
 
 export function MoneyTableCell({ className, ...props }: React.ComponentProps<typeof TableCell>) {
   return <TableCell className={cn("whitespace-normal", className)} {...props} />;
+}
+
+/** Counterparty first, movement kind muted, and the full bank text on hover. */
+export function TransactionDescription({ className, description, sourceType }: { className?: string; description: string; sourceType: string }) {
+  const { counterparty, detail } = moneyTransactionSummary(description, sourceType);
+  const full = description || sourceType;
+  const label = (
+    <p className={cn("min-w-0 truncate", className)} tabIndex={0} title={full}>
+      {counterparty}
+      {detail ? <span className="font-normal text-muted-foreground"> · {detail}</span> : null}
+    </p>
+  );
+  return (
+    <Tooltip>
+      <TooltipTrigger render={label} />
+      <TooltipContent className="max-w-lg whitespace-normal break-words" side="top" align="start">{full}</TooltipContent>
+    </Tooltip>
+  );
 }
 
 export function EmptyState({
