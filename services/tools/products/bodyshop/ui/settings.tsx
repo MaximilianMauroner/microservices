@@ -8,7 +8,7 @@ import { toast } from "../../../platform/ui/components/ui/toast.js";
 import type { getBodyshopSettings } from "../server-functions.js";
 import type { ImportPreview, ImportReceipt } from "../service.js";
 import type { SettingKey } from "../settings.js";
-import { BodyshopPage, Field, fmt, numberOrNull, tint, useBodyshopAction } from "./kit.js";
+import { BodyshopPage, ConfirmAction, Field, fmt, numberOrNull, tint, useBodyshopAction } from "./kit.js";
 
 type Data = Awaited<ReturnType<typeof getBodyshopSettings>>;
 
@@ -64,7 +64,7 @@ function ProfileCard({ data }: { data: Data }) {
         <span className="font-medium">Sex</span>
         <Segmented label="Sex" options={SEX_OPTIONS} value={sex} onValue={setSex} />
       </div>
-      <div><Button onClick={() => void save()} disabled={pending || !(profileChanged || heightChanged)}>Save</Button></div>
+      <div><Button onClick={() => void save()} disabled={pending || !(profileChanged || heightChanged)}>{pending ? "Saving…" : "Save"}</Button></div>
     </section>
   );
 }
@@ -85,7 +85,7 @@ function SettingsForm({ data, keys, title, plain }: { data: Data; keys: readonly
           </Field>
         ))}
       </div>
-      <div><Button type="submit" disabled={pending || !changed.length}>Save {changed.length ? `${changed.length} change${changed.length > 1 ? "s" : ""}` : ""}</Button></div>
+      <div><Button type="submit" disabled={pending || !changed.length}>{pending ? "Saving…" : `Save ${changed.length ? `${changed.length} change${changed.length > 1 ? "s" : ""}` : ""}`}</Button></div>
     </form>
   );
   if (plain) return form;
@@ -187,7 +187,7 @@ function ImportCard({ data }: { data: Data }) {
             <p role="alert" style={{ color: "var(--bs-flag)" }}>You corrected or removed {preview.replacedChanges} imported {preview.replacedChanges === 1 ? "record" : "records"} in Bodyshop. This import replaces them with the workbook's rows, so make the same changes in the sheet first.</p>
           ) : null}
           {preview.previous ? <p className="text-muted-foreground">This replaces the import of {preview.previous.fileName} from {new Date(preview.previous.importedAt).toLocaleString("en-GB")}.</p> : null}
-          <div><Button onClick={() => void commit()} disabled={busy || preview.errors.length > 0}>Import {fmt(Object.values(preview.records).reduce((sum, count) => sum + count, 0))} records</Button></div>
+          <div>{preview.previous ? <ConfirmAction trigger={<Button disabled={busy || preview.errors.length > 0}>{busy ? "Importing…" : `Import ${fmt(Object.values(preview.records).reduce((sum, count) => sum + count, 0))} records…`}</Button>} title="Replace the previous import?" description="This replaces earlier imported records, including corrections made in Bodyshop. Records logged in Bodyshop stay." action="Replace import" onConfirm={() => void commit()} /> : <Button onClick={() => void commit()} disabled={busy || preview.errors.length > 0}>{busy ? "Importing…" : `Import ${fmt(Object.values(preview.records).reduce((sum, count) => sum + count, 0))} records`}</Button>}</div>
         </div>
       ) : null}
       {data.imports.length ? (

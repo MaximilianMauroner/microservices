@@ -59,7 +59,11 @@ it.each([null, shared])("creates or restores a share link, then keeps it through
   };
   try {
     await act(async () => root.render(<FamilyQrPage initial={initial} />));
-    if (initial) expect(host.querySelector<HTMLInputElement>("#family-qr-link")?.value).toBe(shared.url);
+    if (initial) {
+      expect(host.querySelector<HTMLInputElement>("#family-qr-link")?.value).toBe(shared.url);
+      expect(host.textContent).toContain("Last upload 2 Nov 2026");
+      expect(host.textContent).not.toContain(shared.updatedAt);
+    }
     await waitForUpload(1);
     expect(vi.mocked(uploadDirectFile).mock.calls[0]?.[2]).toEqual({ kind: "html", project: "Family QR", ...(initial ? { replaceId: shared.id } : {}) });
     const link = () => host.querySelector<HTMLInputElement>("#family-qr-link")?.value;

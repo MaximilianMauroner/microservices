@@ -5,6 +5,7 @@ import { Alert } from "../../../platform/ui/components/ui/alert.js";
 import { Button } from "../../../platform/ui/components/ui/button.js";
 import { Card } from "../../../platform/ui/components/ui/card.js";
 import { Input } from "../../../platform/ui/components/ui/input.js";
+import { formatDateTime } from "../../../platform/ui/lib/format-date.js";
 import { favicons } from "../../../platform/ui/favicons.js";
 import type { UploadSummary } from "../../../platform/protected-data.js";
 import { uploadDirectFile } from "./direct-upload.js";
@@ -74,7 +75,7 @@ export function FamilyQrPage({ initial }: { initial: UploadSummary | null }) {
             <Button type="button" variant="outline" onClick={() => void copyLink()}>Copy link</Button>
             <Button nativeButton={false} variant="outline" render={<a href={shared.url} target="_blank" rel="noreferrer" />}>Open shared page</Button>
           </div>
-          <p className="text-sm text-muted-foreground">Last upload {shared.updatedAt}. The shared page refreshes every 3 seconds. Open it on a second screen to scan with a phone. You can revoke this link in Library.</p>
+          <p className="text-sm text-muted-foreground">Last upload {formatDateTime(shared.updatedAt)}. The shared page refreshes every 3 seconds. Open it on a second screen to scan with a phone. You can revoke this link in Library.</p>
         </section> : <p className="text-sm text-muted-foreground">Your first upload creates the permanent share link.</p>}
       </Card>
     </main>

@@ -8,7 +8,7 @@ import { Textarea } from "../../../platform/ui/components/ui/textarea.js";
 import { cn } from "../../../platform/ui/lib/utils.js";
 import { type DayStatus, MEALS, type Meal } from "../domain.js";
 import type { getBodyshopDay } from "../server-functions.js";
-import { BodyshopPage, COLORS, DayBudget, dayLabel, Field, fmt, MEAL_COLORS, numberOrNull, percent, Sheet, shiftDay, statusReason, tint, useBodyshopAction } from "./kit.js";
+import { BodyshopPage, ConfirmAction, COLORS, DayBudget, dayLabel, Field, fmt, MEAL_COLORS, numberOrNull, percent, Sheet, shiftDay, statusReason, tint, useBodyshopAction } from "./kit.js";
 
 type Data = Awaited<ReturnType<typeof getBodyshopDay>>;
 type Entry = Data["entries"][number];
@@ -140,25 +140,23 @@ function DayPanel({ data, onCheckIn }: { data: Data; onCheckIn: () => void }) {
     <div className="grid gap-3">
       <section aria-label="Weight" className="bs-panel p-4" style={tint(COLORS.trend)}>
         <div className="flex items-baseline justify-between gap-2">
-          <h2 className="bs-title text-[1.0625rem]">Weight</h2>
+          <h2 className="bs-title text-[1.0625rem]">{data.weights.length > 1 ? "Day average" : "Weight"}</h2>
           {mean !== null ? <p><span className="bs-figure text-[2rem]">{fmt(mean, 1)}</span> <span className="bs-quiet text-sm">kg</span></p> : <p className="bs-quiet text-sm">Not weighed</p>}
         </div>
         <form onSubmit={submit} className="mt-3 flex gap-2">
           <Input inputMode="decimal" placeholder="Weight in kg" aria-label="Weight in kg" value={kg} onChange={(event) => setKg(event.target.value)} className="h-11" />
-          <Button type="submit" className="h-11 bg-(--bs-weight) px-5 hover:bg-(--bs-weight)/90" disabled={pending || numberOrNull(kg) === null}>Log</Button>
+          <Button type="submit" className="h-11 bg-(--bs-weight) px-5 hover:bg-(--bs-weight)/90" disabled={pending || numberOrNull(kg) === null}>{pending ? "Working…" : "Log"}</Button>
         </form>
         {data.weights.length > 1 || (data.weights.length && data.weights[0]!.time) ? (
           <ul className="mt-2.5 flex flex-wrap gap-1.5" aria-label="Weigh-ins of the day">
             {data.weights.map((one) => (
               <li key={one.id}>
-                <button type="button" disabled={pending} onClick={() => void run({ type: "remove", kind: "weight", id: one.id }, "Weight removed")} className="bs-quiet rounded-full bg-(--bs-panel) px-2.5 py-1 text-xs hover:text-foreground" aria-label={`Remove ${fmt(one.kg, 1)} kg`}>
-                  {one.time ? `${one.time}, ` : ""}{fmt(one.kg, 1)} kg ×
-                </button>
+                <ConfirmAction trigger={<button type="button" disabled={pending} className="bs-quiet rounded-full bg-(--bs-panel) px-2.5 py-1 text-xs hover:text-foreground" aria-label={`Remove ${fmt(one.kg, 1)} kg`}>{one.time ? `${one.time}, ` : ""}{fmt(one.kg, 1)} kg ×</button>} title={`Remove ${fmt(one.kg, 1)} kg weigh-in?`} description="This removes the weigh-in from your history." action="Remove weigh-in" onConfirm={() => void run({ type: "remove", kind: "weight", id: one.id }, "Weight removed")} />
               </li>
             ))}
           </ul>
         ) : data.weights.length ? (
-          <button type="button" disabled={pending} onClick={() => void run({ type: "remove", kind: "weight", id: data.weights[0]!.id }, "Weight removed")} className="bs-quiet mt-2 text-xs underline decoration-(--bs-line) underline-offset-4 hover:text-foreground">Remove this weight</button>
+          <ConfirmAction trigger={<button type="button" disabled={pending} className="bs-quiet mt-2 text-xs underline decoration-(--bs-line) underline-offset-4 hover:text-foreground">Remove this weight</button>} title={`Remove ${fmt(data.weights[0]!.kg, 1)} kg weigh-in?`} description="This removes the weigh-in from your history." action="Remove weigh-in" onConfirm={() => void run({ type: "remove", kind: "weight", id: data.weights[0]!.id }, "Weight removed")} />
         ) : null}
       </section>
       <section aria-label="Food log status" className="bs-panel grid gap-2.5 p-4" style={status === "Complete" ? tint(COLORS.good, 16) : undefined}>
@@ -214,9 +212,9 @@ function AddSheet({ meal: start, foods, day, onClose }: { meal: Meal | undefined
   }
 
   const footer = food ? (
-    <Button onClick={() => void logSaved()} disabled={pending || count === null || count <= 0}>Log {kcal !== null ? `${fmt(kcal)} kcal` : ""}</Button>
+    <Button onClick={() => void logSaved()} disabled={pending || count === null || count <= 0}>{pending ? "Logging…" : `Log ${kcal !== null ? `${fmt(kcal)} kcal` : ""}`}</Button>
   ) : estimate ? (
-    <Button onClick={() => void logEstimate()} disabled={pending || !query.trim() || numberOrNull(values.kcal) === null}>Log estimate</Button>
+    <Button onClick={() => void logEstimate()} disabled={pending || !query.trim() || numberOrNull(values.kcal) === null}>{pending ? "Logging…" : "Log estimate"}</Button>
   ) : undefined;
 
   return (
@@ -299,7 +297,7 @@ function EditSheet({ entry, foods, onClose }: { entry: Entry; foods: readonly Fo
   return (
     <Sheet open onOpenChange={(open) => { if (!open) onClose(); }} title={entry.food}
       description={`${entry.source}${entry.reference ? ` · ${fmt(entry.reference.nutrients.kcal)} kcal per ${fmt(entry.reference.amount, entry.reference.amount % 1 ? 1 : 0)} ${entry.reference.unit}` : ""}`}
-      footer={<><Button variant="outline" onClick={() => void remove()} disabled={pending}>Remove</Button><Button onClick={() => void save()} disabled={pending}>Save</Button></>}>
+      footer={<><ConfirmAction trigger={<Button variant="destructive-outline" disabled={pending}>Remove…</Button>} title={`Remove ${entry.food}?`} description="This removes the entry from your food log." action="Remove entry" onConfirm={() => void remove()} /><Button onClick={() => void save()} disabled={pending}>{pending ? "Saving…" : "Save"}</Button></>}>
       <div className="grid gap-4">
         <Field label={`Amount in ${entry.unit}`}><Input inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} className="h-11 text-lg" /></Field>
         <Segmented label="Meal" options={MEALS.map((one) => [one, one] as const)} value={meal} onValue={setMeal} />
@@ -337,7 +335,7 @@ function TemplateSheet({ template, foods, day, onClose }: { template: Template; 
   }
   return (
     <Sheet open onOpenChange={(open) => { if (!open) onClose(); }} title={template.name} description={`${template.meal}. Untick what you did not eat.`}
-      footer={<Button onClick={() => void log()} disabled={pending || missing || !parts.some((part) => part.eaten)}>Log meal</Button>}>
+      footer={<div className="grid gap-2">{missing ? <p className="text-sm text-muted-foreground">Choose a food for each selected part.</p> : !parts.some((part) => part.eaten) ? <p className="text-sm text-muted-foreground">Select at least one part to log.</p> : null}<Button onClick={() => void log()} disabled={pending || missing || !parts.some((part) => part.eaten)}>{pending ? "Logging…" : "Log meal"}</Button></div>}>
       <ul className="grid gap-3">
         {parts.map((part, index) => {
           const update = (change: Partial<typeof part>) => setParts(parts.map((one, at) => (at === index ? { ...one, ...change } : one)));
@@ -393,7 +391,7 @@ function CheckInSheet({ open, data, onClose }: { open: boolean; data: Data; onCl
   );
   return (
     <Sheet open={open} onOpenChange={(next) => { if (!next) onClose(); }} title={`Check-in, ${dayLabel(data.day, data.today).toLowerCase()}`}
-      footer={<Button onClick={() => void save()} disabled={pending}>Save check-in</Button>}>
+      footer={<Button onClick={() => void save()} disabled={pending}>{pending ? "Saving…" : "Save check-in"}</Button>}>
       <div className="grid gap-4">
         <div className="grid grid-cols-2 gap-3">
           <Field label="Training"><Input value={form.training} placeholder="Rest, gym, run" onChange={(event) => setForm({ ...form, training: event.target.value })} /></Field>
