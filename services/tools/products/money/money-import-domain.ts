@@ -632,7 +632,7 @@ function sanitizeDescription(value: string) {
     if (repaired === description || repaired.includes("�")) break;
     description = repaired;
   }
-  return description.replace(/\b[A-Z]{2}\d{2}(?:\s?[A-Z0-9]{4}){2,7}(?:\s?[A-Z0-9]{1,4})?\b/gi, "[account]").replace(/\s+/g, " ").slice(0, 500);
+  return description.replace(/\b[A-Z]{2}\d{2}[A-Z0-9]{4,30}\b/gi, "[account]").replace(/\b[A-Z]{2}\d{2}(?:\s?[A-Z0-9]){11,30}\b/gi, "[account]").replace(/\s+/g, " ").slice(0, 500);
 }
 function fingerprint(fields: readonly string[]) { return createHash("sha256").update(JSON.stringify(fields)).digest("hex"); }
 function sameStrings(actual: readonly string[], expected: readonly string[]) { return actual.length === expected.length && expected.every((value, index) => actual[index] === value); }

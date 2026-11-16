@@ -88,6 +88,12 @@ describe("Sparkasse XLSX parser", () => {
     expect(parsed.transactions.find(({ sourceRow }) => sourceRow === 19)?.description).toContain("[account] home4s tudents stiftung - 610983");
   });
 
+  it("redacts IBANs printed with national spacing", () => {
+    const parsed = parseMoneyImport(workbook({ spendDescription: "HOMEBANKINGUEBERWEISUNG\nExample University IBAN Beg.: AT61 19043 00234573201" }));
+
+    expect(parsed.transactions.find(({ sourceRow }) => sourceRow === 19)?.description).toBe("HOMEBANKINGUEBERWEISUNG Example University IBAN Beg.: [account]");
+  });
+
   it("treats card funding of owned financial accounts as transfers", () => {
     const revolut = parseMoneyImport(workbook({ spendDescription: "BEZAHLUNG EU LAENDER\nbei Revolut**4361* Dublin" }));
     const tradeRepublic = parseMoneyImport(workbook({ spendDescription: "BEZAHLUNG EU LAENDER\nbei Trade Republic Berlin" }));

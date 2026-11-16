@@ -65,7 +65,7 @@ export function moneyTransactionSummary(description: string, sourceType = ""): M
   if (!known) return { counterparty: repaired || sourceType || "Unknown merchant" };
   const body = repaired.toUpperCase().startsWith(type) ? repaired.slice(type.length).trim() : repaired;
   const counterparty = known.counterparty?.(body)?.trim();
-  if (!counterparty) return { counterparty: known.label };
+  if (!counterparty) return { counterparty: known.counterparty ? repaired : known.label };
   const reference = known.reference?.(body)?.trim();
   return { counterparty: titleCase(counterparty), detail: reference ? `${known.label} · ${reference}` : known.label };
 }

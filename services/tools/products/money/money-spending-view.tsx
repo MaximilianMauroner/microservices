@@ -262,7 +262,7 @@ function CategoryDetail({
         </Link>
       }
     >
-      <PanelBody className="grid gap-4">
+      <PanelBody className="grid grid-cols-1 gap-4">
         <MonthBars
           label={`${moneyCategoryLabel(category)} spending per month with the average as a dashed line`}
           values={values.map((value) => value / 100)}

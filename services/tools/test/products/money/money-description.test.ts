@@ -36,6 +36,11 @@ describe("money descriptions", () => {
     expect(moneyTransactionSummary("GEBUEHREN", "GEBUEHREN")).toEqual({ counterparty: "Account fees" });
   });
 
+  it("keeps the full description when no counterparty can be extracted", () => {
+    expect(moneyMerchantName("UEBERWEISUNG John Doe", "UEBERWEISUNG")).toBe("UEBERWEISUNG John Doe");
+    expect(moneyMerchantName("UEBERWEISUNG Jane Roe", "UEBERWEISUNG")).toBe("UEBERWEISUNG Jane Roe");
+  });
+
   it("keeps descriptions from providers without a known layout", () => {
     expect(moneyTransactionSummary("Transfer from CHRISTIAN TUTZER", "Transfer")).toEqual({ counterparty: "Transfer from CHRISTIAN TUTZER" });
   });
