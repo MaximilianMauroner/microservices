@@ -739,6 +739,9 @@ html[data-theme="light"]:has([data-suite-accent]) {
   }
   @media (max-width: 767px) {
     [data-slot="button"],
+    [data-slot="alert-dialog-trigger"],
+    [data-slot="alert-dialog-action"],
+    [data-slot="alert-dialog-cancel"],
     [data-slot="input"],
     [data-slot="native-select"],
     [data-slot="select-trigger"],
@@ -747,7 +750,7 @@ html[data-theme="light"]:has([data-suite-accent]) {
     .segmented button,
     button[aria-pressed] { min-height: 2.75rem; }
     [data-slot="native-select"], .segmented button, button[aria-pressed] { min-width: 2.75rem; }
-    [data-slot="button"][data-size^="icon"]:not([data-mobile-compact="true"]) { min-width: 2.75rem; }
+    :is([data-slot="button"], [data-slot="alert-dialog-trigger"], [data-slot="alert-dialog-action"], [data-slot="alert-dialog-cancel"])[data-size^="icon"]:not([data-mobile-compact="true"]) { min-width: 2.75rem; }
     [data-slot="button"][data-mobile-compact="true"] { min-height: 2rem; }
     .money-nav { flex-wrap: wrap; overflow-x: visible; }
     .money-nav__item { min-height: 2.75rem; }

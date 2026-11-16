@@ -93,7 +93,7 @@ export function UploadLinkManager() {
 
   async function createLink() {
     setBusy(true);
-    setError(undefined);
+    if (loadState !== "error") setError(undefined);
     try {
       const response = await fetch(`/api/upload-links?durationMs=${durationMs}`, {
         method: "POST",
@@ -140,7 +140,7 @@ export function UploadLinkManager() {
     <section aria-labelledby="upload-links-title">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h2 id="upload-links-title" className="text-sm font-semibold">Upload links</h2>
-        <div className="flex items-center gap-2"><NativeSelect className="w-32" aria-label="Link duration" value={durationMs} onChange={(event) => setDurationMs(Number(event.currentTarget.value))} disabled={busy || loadState === "loading"}>{durations.map((duration) => <option key={duration.value} value={duration.value}>{duration.label}</option>)}</NativeSelect><Button type="button" size="sm" onClick={() => void createLink()} disabled={busy || loadState !== "ready"}><Plus /> Create link</Button><Button type="button" variant="outline" size="icon-sm" aria-label="Refresh links" onClick={() => void loadLinks()} disabled={busy || loadState === "loading"}><RotateCcw /></Button></div>
+        <div className="flex items-center gap-2"><NativeSelect className="w-32" aria-label="Link duration" value={durationMs} onChange={(event) => setDurationMs(Number(event.currentTarget.value))} disabled={busy || loadState === "loading"}>{durations.map((duration) => <option key={duration.value} value={duration.value}>{duration.label}</option>)}</NativeSelect><Button type="button" size="sm" onClick={() => void createLink()} disabled={busy || loadState === "loading"}><Plus /> Create link</Button><Button type="button" variant="outline" size="icon-sm" aria-label="Refresh links" onClick={() => void loadLinks()} disabled={busy || loadState === "loading"}><RotateCcw /></Button></div>
       </div>
       {error ? <Alert className="mb-3" variant="destructive">{error}</Alert> : null}
         {created ? <Card ref={createdRef} className="mb-3 gap-3 border border-primary/30 bg-secondary p-4" aria-live="polite">

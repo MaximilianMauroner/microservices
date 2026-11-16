@@ -35,12 +35,22 @@ it("waits for the list and asks before revoking an expired link", async () => {
 
 it("does not present an empty list when loading fails", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("Network failed")));
+  const fetchMock = vi.fn((_path: string, options?: RequestInit) => options?.method === "POST"
+    ? Promise.resolve(Response.json({ ...link, url: "https://example.test/upload/new" }))
+    : Promise.reject(new Error("Network failed")));
+  vi.stubGlobal("fetch", fetchMock);
+  vi.stubGlobal("requestAnimationFrame", vi.fn());
   const host = document.createElement("div"); document.body.append(host);
   const root = createRoot(host);
   try {
     await act(async () => root.render(<UploadLinkManager />));
     expect(host.textContent).toContain("Network failed");
     expect(host.textContent).not.toContain("No upload links yet");
+    const create = [...host.querySelectorAll("button")].find((button) => button.textContent?.trim() === "Create link")!;
+    expect(create.disabled).toBe(false);
+    await act(async () => create.click());
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/api/upload-links?durationMs="), expect.objectContaining({ method: "POST" }));
+    expect(host.textContent).toContain("https://example.test/upload/new");
+    expect(host.textContent).toContain("Network failed");
   } finally { await act(async () => root.unmount()); host.remove(); }
 });

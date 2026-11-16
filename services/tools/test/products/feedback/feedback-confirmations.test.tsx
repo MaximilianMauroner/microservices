@@ -4,10 +4,10 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FeedbackForm, FeedbackSubmission } from "../../../products/feedback/domain.js";
 
-const api = vi.hoisted(() => ({ deleteForm: vi.fn(), deleteResponse: vi.fn(), rotate: vi.fn(), navigate: vi.fn(), invalidate: vi.fn(), blocker: vi.fn() }));
+const api = vi.hoisted(() => ({ deleteForm: vi.fn(), deleteResponse: vi.fn(), updateResponse: vi.fn(), rotate: vi.fn(), navigate: vi.fn(), invalidate: vi.fn(), blocker: vi.fn() }));
 vi.mock("@tanstack/react-router", () => ({ Link: ({ children }: { children: React.ReactNode }) => <a>{children}</a>, useRouter: () => ({ invalidate: api.invalidate }), useNavigate: () => api.navigate, useBlocker: api.blocker }));
 vi.mock("../../../platform/ui/components/app-shell.js", () => ({ AppShell: () => null }));
-vi.mock("../../../products/feedback/server-functions.js", () => ({ createFeedbackForm: vi.fn(), deleteFeedbackForm: api.deleteForm, deleteFeedbackSubmission: api.deleteResponse, rotateFeedbackToken: api.rotate, setFeedbackFormStatus: vi.fn(), updateFeedbackForm: vi.fn(), updateFeedbackSubmission: vi.fn() }));
+vi.mock("../../../products/feedback/server-functions.js", () => ({ createFeedbackForm: vi.fn(), deleteFeedbackForm: api.deleteForm, deleteFeedbackSubmission: api.deleteResponse, rotateFeedbackToken: api.rotate, setFeedbackFormStatus: vi.fn(), updateFeedbackForm: vi.fn(), updateFeedbackSubmission: api.updateResponse }));
 import { FeedbackFormPage, FeedbackHome, FeedbackInbox, FeedbackResponsePage } from "../../../products/feedback/ui.js";
 
 const form: FeedbackForm = { id: "form-1", publicToken: "token", language: "en", title: "Workshop", introduction: "Intro", questions: [], status: "active", createdAt: "2026-09-27T08:00:00.000Z", updatedAt: "2026-09-27T08:00:00.000Z", responseCount: 2, unreadCount: 2 };
@@ -54,6 +54,19 @@ describe("feedback action confirmations", () => {
     expect(container.textContent).toContain("1 deleted. offline");
     expect(container.querySelector('[aria-label="Select response from Alice"]')).toBeNull();
     expect(container.querySelector('[aria-label="Select response from Bob"]')).not.toBeNull();
+  });
+
+  it("counts and deletes only selected responses still visible after a review", async () => {
+    await act(async () => root.render(<FeedbackInbox forms={[form]} submissions={[response, secondResponse]} />));
+    await click(container.querySelector<HTMLInputElement>('[aria-label="Select response from Alice"]')!);
+    await click(container.querySelector<HTMLInputElement>('[aria-label="Select response from Bob"]')!);
+    await click(button("Mark reviewed", container));
+    expect(container.textContent).toContain("1 selected");
+    await click(button("Delete selected…", container));
+    expect(dialog().textContent).toContain("Delete 1 selected response?");
+    await click(button("Delete responses", dialog()));
+    expect(api.deleteResponse).toHaveBeenCalledTimes(1);
+    expect(api.deleteResponse).toHaveBeenCalledWith({ data: { submissionId: "response-2" } });
   });
 
   it("confirms selected form deletion by keyboard and reports the number of responses", async () => {
