@@ -457,6 +457,7 @@ export function LineTrendChart({
                   <text x={x(marker.index) - 6} y={top + plotHeight - 6} textAnchor="end">{marker.label}</text>
                 </g>
               ) : null}
+              <path className="money-area" d={`${pathFor(points.map((point, index) => [x(index), y(point.value)]))}L${x(points.length - 1)},${top + plotHeight}L${x(0)},${top + plotHeight}Z`} />
               {additionalSeries.map((series, seriesIndex) => (
                 <path key={seriesIndex} className="money-series" style={{ stroke: series.color }} d={pathFor(series.values.map((value, index) => [x(index), y(value)]))} />
               ))}

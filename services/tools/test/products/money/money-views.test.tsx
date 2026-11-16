@@ -77,7 +77,10 @@ describe("Money redesign views", () => {
     const html = renderToStaticMarkup(<MoneyTrackerPage {...pageData({ reviewCounts: { uncategorized: 4, transfers: 2 }, spending })} view="overview" />);
     expect(html).toContain("Known net worth");
     expect(html).toContain("1.700 €");
-    expect(html).toMatch(/Review needed\..*4 uncategorized rows, 2 transfers to classify, 1 old balance/s);
+    expect(html).toContain("Review needed.");
+    expect(html).toContain("4 uncategorized rows");
+    expect(html).toContain("2 transfers to classify");
+    expect(html).toContain("1 old balance");
     expect(html).toContain('href="/money?view=review"');
     expect(html).toContain("View net worth as a table");
     expect(html).toContain("Jul 2026 by category");

@@ -100,7 +100,7 @@ export function MoneyTrackerPage(
   const reviewCount = moneyReviewCount(props.reviewCounts);
   return (
     <>
-      <AppShell product="Money" accent="lime" icon={favicons.money} />
+      <AppShell product="Money" accent="emerald" icon={favicons.money} />
       <main id="main" className="money-page">
         <MoneyNav current={props.view} reviewCount={reviewCount} />
         <header className="money-heading">
@@ -110,7 +110,7 @@ export function MoneyTrackerPage(
           </div>
           {props.view === "review" ? null : (
             <div className="money-heading__actions">
-              <Link to="/money" search={{ view: "review", tab: "imports" }} className={buttonVariants({ variant: "outline", size: "sm" })}>
+              <Link to="/money" search={{ view: "review", tab: "imports" }} className={buttonVariants({ variant: "default", size: "sm" })}>
                 <Upload />
                 Import
               </Link>
@@ -232,6 +232,9 @@ function Overview(props: MoneyTrackerPageData) {
                 </>
               ) : null}
             </p>
+            <p className="mt-1.5 text-xs text-muted-foreground/80">
+              Balances through {latestMonth ? formatMonth(latestMonth.date) : "—"} · prices {formatDay(props.marketData.asOf)}
+            </p>
           </div>
           <StatStrip label="Net worth parts">
             <Stat label="Cash" value={formatMinor(position.cash.valueMinor)} detail={carriedCount ? `${carriedCount} balance${carriedCount === 1 ? "" : "s"} carried` : `${coverage.observedCashAccountCount} accounts`} />
@@ -251,14 +254,21 @@ function Overview(props: MoneyTrackerPageData) {
             {open.length ? (
               <>
                 <strong className="font-semibold">Review needed.</strong>{" "}
-                <span className="text-muted-foreground">
-                  {open.map(([count, one, many]) => `${count.toLocaleString("en-GB")} ${count === 1 ? one : many}`).join(", ")}. Totals leave these rows out until you fix them.
-                </span>
+                <span className="text-muted-foreground">Totals leave these rows out until you fix them.</span>
               </>
             ) : (
               "All data is reviewed. Totals include every row."
             )}
           </span>
+          {open.length ? (
+            <span className="flex flex-wrap gap-1.5">
+              {open.map(([count, one, many]) => (
+                <Link key={one} to="/money" search={{ view: "review" }} className="money-chip">
+                  {count.toLocaleString("en-GB")} {count === 1 ? one : many}
+                </Link>
+              ))}
+            </span>
+          ) : null}
           {open.length ? (
             <Link to="/money" search={{ view: "review" }} className={buttonVariants({ variant: "outline", size: "sm" })}>
               Review
@@ -350,7 +360,13 @@ function Overview(props: MoneyTrackerPageData) {
           <MoneyCheckInBridge checkIn={props.checkIn} overview={props.checkIn.overview} accountLabels={props.accountLabels} />
         ) : (
           <MoneyPanel title="Since check-in">
-            <EmptyState title="No check-in yet" icon={<CalendarCheck />}>A check-in is a day with a statement import. Import a statement to start.</EmptyState>
+            <EmptyState
+              title="No check-in yet"
+              icon={<CalendarCheck />}
+              action={<Link to="/money" search={{ view: "review", tab: "imports" }} className={buttonVariants({ variant: "default", size: "sm" })}>Import a statement</Link>}
+            >
+              A check-in is a day with a statement import.
+            </EmptyState>
           </MoneyPanel>
         )}
       </div>
