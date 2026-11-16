@@ -492,7 +492,7 @@ html[data-theme="light"]:has([data-suite-accent]) {
   .money-stat__value { font-size: 1.2rem; font-weight: 600; letter-spacing: -.01em; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .money-hero { display: grid; grid-template-columns: minmax(0, auto) minmax(0, 1fr); }
   .money-hero__main { padding: .9rem 1.25rem .9rem 1rem; border-right: 1px solid var(--border); }
-  .money-hero__value { font-size: 3rem; font-weight: 620; letter-spacing: -.025em; line-height: 1.05; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .money-hero__value { font-size: clamp(2rem, 7vw, 3rem); font-weight: 620; letter-spacing: -.025em; line-height: 1.05; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .money-hero .money-strip { border-radius: 0; box-shadow: none; background: transparent; align-content: center; }
   .money-callout { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; padding: .6rem 1rem; border-top: 1px solid var(--border); font-size: .8125rem; }
   .money-callout__dot { width: .5rem; height: .5rem; flex: none; border-radius: 99px; background: var(--warning); }

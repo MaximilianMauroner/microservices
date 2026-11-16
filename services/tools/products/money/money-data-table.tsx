@@ -1,8 +1,8 @@
 "use client";
 
 import { ArrowDown, ArrowUp, ArrowUpDown, Search } from "lucide-react";
-import { Button } from "../../platform/ui/components/ui/button.js";
-import { Input } from "../../platform/ui/components/ui/input.js";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 export type MoneySortDirection = "asc" | "desc";
 export type MoneySort<Key extends string> = Readonly<{ key: Key; direction: MoneySortDirection }>;

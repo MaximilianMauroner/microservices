@@ -2,25 +2,25 @@
 
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { Link, useRouter } from "@tanstack/react-router";
-import { Upload } from "lucide-react";
+import { ArrowLeftRight, CalendarCheck, Landmark, LoaderCircle, Tags, TrendingUp, Upload, Wallet } from "lucide-react";
 import type { MoneyTrackerPageData } from "../../platform/protected-data.js";
 import {
   moneyFinancialHistory,
   moneyFinancialPosition,
   moneyTrackerTrendStats,
 } from "./money-tracker-domain.js";
-import { AppShell } from "../../platform/ui/components/app-shell.js";
-import { favicons } from "../../platform/ui/favicons.js";
-import { Badge } from "../../platform/ui/components/ui/badge.js";
-import { Button, buttonVariants } from "../../platform/ui/components/ui/button.js";
-import { Card } from "../../platform/ui/components/ui/card.js";
+import { AppShell } from "@/components/app-shell";
+import { favicons } from "@/favicons";
+import { Badge } from "@/components/ui/badge";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import {
   Sheet,
   SheetContent,
   SheetDescription,
   SheetHeader,
   SheetTitle,
-} from "../../platform/ui/components/ui/sheet.js";
+} from "@/components/ui/sheet";
 import type { MoneyCategory } from "./money-enums.js";
 import type { MoneyActivityPage } from "./money-repository.js";
 import { MoneySpendingView, MoneyActivityView, MoneyInvestmentsView, MoneyReviewView } from "./money-view-loading.js";
@@ -30,7 +30,7 @@ import { BalanceForm } from "./money-balance-form.js";
 import { moneyJson } from "./money-requests.js";
 import { moneyCategoryLabel } from "./money-category-picker.js";
 import { projectMoneyTrajectory } from "./money-plan-domain.js";
-import { Segmented } from "../../platform/ui/components/segmented.js";
+import { Segmented } from "@/components/segmented";
 import {
   MoneyNav,
   moneyReviewCount,
@@ -110,7 +110,7 @@ export function MoneyTrackerPage(
             </div>
           )}
         </header>
-        <Suspense fallback={<MoneyPanel><EmptyState title="Loading view" /></MoneyPanel>}>
+        <Suspense fallback={<MoneyPanel><EmptyState title="Loading view" icon={<LoaderCircle className="animate-spin" />} /></MoneyPanel>}>
           <MoneyView {...props} />
         </Suspense>
       </main>
@@ -298,7 +298,7 @@ function Overview(props: MoneyTrackerPageData) {
                 />
               </>
             ) : (
-              <EmptyState title="No balance history">Import a statement with balances to see net worth over time.</EmptyState>
+              <EmptyState title="No balance history" icon={<Wallet />}>Import a statement with balances to see net worth over time.</EmptyState>
             )}
           </PanelBody>
           {months.length > 1 ? (
@@ -343,7 +343,7 @@ function Overview(props: MoneyTrackerPageData) {
           <MoneyCheckInBridge checkIn={props.checkIn} overview={props.checkIn.overview} accountLabels={props.accountLabels} />
         ) : (
           <MoneyPanel title="Since check-in">
-            <EmptyState title="No check-in yet">A check-in is a day with a statement import. Import a statement to start.</EmptyState>
+            <EmptyState title="No check-in yet" icon={<CalendarCheck />}>A check-in is a day with a statement import. Import a statement to start.</EmptyState>
           </MoneyPanel>
         )}
       </div>
@@ -370,7 +370,7 @@ function Overview(props: MoneyTrackerPageData) {
                 tooltip={(index) => flowTooltip(flow.slice(-6)[index]!)}
               />
             ) : (
-              <EmptyState title="No cash flow yet">Import a cash statement to see income and spending.</EmptyState>
+              <EmptyState title="No cash flow yet" icon={<ArrowLeftRight />}>Import a cash statement to see income and spending.</EmptyState>
             )}
           </PanelBody>
         </MoneyPanel>
@@ -411,7 +411,7 @@ function CategoryMonth({ spending }: { spending: MoneyTrackerPageData["spending"
             {uncategorized ? <p className="text-xs text-muted-foreground">{formatMinor(uncategorized)} is uncategorized and not in these bars.</p> : null}
           </div>
         ) : (
-          <EmptyState title="No categorized spending yet" />
+          <EmptyState title="No categorized spending yet" icon={<Tags />} />
         )}
       </PanelBody>
     </MoneyPanel>
@@ -534,7 +534,7 @@ function Accounts(props: MoneyTrackerPageData) {
               })}
             </tbody>
           </table>
-          {rows.length ? null : deprecatedRows.length ? <EmptyState title="No active accounts">Restore a deprecated account or add a cash account.</EmptyState> : <EmptyState title="No accounts yet">Import a statement to add its accounts.</EmptyState>}
+          {rows.length ? null : deprecatedRows.length ? <EmptyState title="No active accounts" icon={<Landmark />}>Restore a deprecated account or add a cash account.</EmptyState> : <EmptyState title="No accounts yet" icon={<Landmark />}>Import a statement to add its accounts.</EmptyState>}
         </div>
         <TableTwin label={`Monthly snapshots (${grouped.length})`}>
           <SnapshotTable months={grouped} accounts={props.accounts} />
@@ -669,7 +669,7 @@ function Plan(props: MoneyTrackerPageData) {
   if (!prediction || !historical) {
     return (
       <MoneyPanel>
-        <EmptyState title="Not enough history">The plan needs at least six months of complete portfolio history. It appears when enough balances and prices are imported.</EmptyState>
+        <EmptyState title="Not enough history" icon={<TrendingUp />}>The plan needs at least six months of complete portfolio history. It appears when enough balances and prices are imported.</EmptyState>
       </MoneyPanel>
     );
   }

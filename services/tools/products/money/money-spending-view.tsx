@@ -2,12 +2,12 @@
 
 import { useState } from "react";
 import { Link, useRouter } from "@tanstack/react-router";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, Receipt, Tags } from "lucide-react";
 import type { MoneyTrackerPageData } from "../../platform/protected-data.js";
 import type { MoneyCategory } from "./money-enums.js";
-import { buttonVariants } from "../../platform/ui/components/ui/button.js";
+import { buttonVariants } from "@/components/ui/button";
 import { CategoryValue, moneyCategoryLabel } from "./money-category-picker.js";
-import { Segmented } from "../../platform/ui/components/segmented.js";
+import { Segmented } from "@/components/segmented";
 import {
   EmptyState,
   FlowChart,
@@ -78,7 +78,7 @@ export function MoneySpendingView({
   if (!observed.length) {
     return (
       <MoneyPanel>
-        <EmptyState title="No spending history">Import a cash or card statement to see income, spending, and categories.</EmptyState>
+        <EmptyState title="No spending history" icon={<Receipt />}>Import a cash or card statement to see income, spending, and categories.</EmptyState>
       </MoneyPanel>
     );
   }
@@ -210,7 +210,7 @@ export function MoneySpendingView({
                 </tbody>
               </table>
             ) : (
-              <EmptyState title="No categorized spending in this range" />
+              <EmptyState title="No categorized spending in this range" icon={<Tags />} />
             )}
           </div>
         </MoneyPanel>

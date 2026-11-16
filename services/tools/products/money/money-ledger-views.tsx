@@ -4,9 +4,14 @@ import { memo, useMemo, useRef, useState } from "react";
 import { Link, useRouter } from "@tanstack/react-router";
 import { moneyForm, moneyJson, moneyDelete } from "./money-requests.js";
 import {
+  Activity,
   Check,
+  Coins,
   FileSpreadsheet,
+  LineChart,
+  PieChart,
   RefreshCw,
+  Search,
   Trash2,
   Upload,
   X,
@@ -63,7 +68,7 @@ import {
   Alert,
   AlertDescription,
   AlertTitle,
-} from "../../platform/ui/components/ui/alert.js";
+} from "@/components/ui/alert";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -74,17 +79,17 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from "../../platform/ui/components/ui/alert-dialog.js";
-import { Badge } from "../../platform/ui/components/ui/badge.js";
-import { Button } from "../../platform/ui/components/ui/button.js";
-import { NativeSelect, NativeSelectOption } from "../../platform/ui/components/ui/native-select.js";
-import { Segmented } from "../../platform/ui/components/segmented.js";
+} from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { Segmented } from "@/components/segmented";
 import {
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
   type ChartConfig,
-} from "../../platform/ui/components/ui/chart.js";
+} from "@/components/ui/chart";
 
 type PositionSortKey =
   | "name"
@@ -347,7 +352,7 @@ export function MoneyImportHistory({ imports }: Pick<MoneyTrackerPageData, "impo
             ))}
           </table>
         ) : (
-          <EmptyState title="No imports yet">Completed imports appear here with their row counts.</EmptyState>
+          <EmptyState title="No imports yet" icon={<Upload />}>Completed imports appear here with their row counts.</EmptyState>
         )}
       </div>
     </MoneyPanel>
@@ -570,7 +575,7 @@ export function MoneyInvestmentsView({
                 </ChartContainer>
               </>
             ) : (
-              <EmptyState title="No valuation history yet">Refresh prices once to load historical closing prices.</EmptyState>
+              <EmptyState title="No valuation history yet" icon={<LineChart />}>Refresh prices once to load historical closing prices.</EmptyState>
             )}
           </PanelBody>
           {history.length ? (
@@ -610,7 +615,7 @@ export function MoneyInvestmentsView({
                 </dl>
               </>
             ) : (
-              <EmptyState title="No priced positions" />
+              <EmptyState title="No priced positions" icon={<PieChart />} />
             )}
           </PanelBody>
           {ranked.length ? (
@@ -695,7 +700,7 @@ export function MoneyInvestmentsView({
               })}
             </tbody>
           </table>
-          {visiblePositions.length ? null : <EmptyState title={marketData.positions.length ? "No positions match this filter" : "No open positions"}>{marketData.positions.length ? undefined : "Import a trading statement or portfolio CSV."}</EmptyState>}
+          {visiblePositions.length ? null : <EmptyState title={marketData.positions.length ? "No positions match this filter" : "No open positions"} icon={marketData.positions.length ? <Search /> : <PieChart />}>{marketData.positions.length ? undefined : "Import a trading statement or portfolio CSV."}</EmptyState>}
         </div>
         <InvestmentActivityHistory investments={investments} />
       </MoneyPanel>
@@ -1116,7 +1121,7 @@ function InvestmentActivityHistory({
               </tbody>
             </table>
           ) : (
-            <EmptyState title="No realized gains yet">They appear after a sale is matched to earlier purchases.</EmptyState>
+            <EmptyState title="No realized gains yet" icon={<Coins />}>They appear after a sale is matched to earlier purchases.</EmptyState>
           )}
         </div>
       </TableTwin>
@@ -1151,7 +1156,7 @@ function InvestmentActivityHistory({
               </tbody>
             </table>
           ) : (
-            <EmptyState title="No investment events">Import a trading statement or portfolio CSV.</EmptyState>
+            <EmptyState title="No investment events" icon={<Activity />}>Import a trading statement or portfolio CSV.</EmptyState>
           )}
         </div>
       </TableTwin>

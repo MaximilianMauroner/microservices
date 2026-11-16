@@ -27,7 +27,7 @@ import {
   Utensils,
   WalletCards,
 } from "lucide-react";
-import { Button } from "../../platform/ui/components/ui/button.js";
+import { Button } from "@/components/ui/button";
 import {
   Command,
   CommandEmpty,
@@ -35,12 +35,12 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
-} from "../../platform/ui/components/ui/command.js";
+} from "@/components/ui/command";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "../../platform/ui/components/ui/popover.js";
+} from "@/components/ui/popover";
 import type { MoneyCategory } from "./money-enums.js";
 
 type CategoryMeta = Readonly<{

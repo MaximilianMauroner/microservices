@@ -1,8 +1,16 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { cn } from "../../platform/ui/lib/utils.js";
-import { Card } from "../../platform/ui/components/ui/card.js";
+import { cn } from "@/lib/utils";
+import { Card } from "@/components/ui/card";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
 import type { MoneySpendingAnalytics } from "./money-repository.js";
 
 /* ---------- Formatting ---------- */
@@ -128,14 +136,28 @@ export function TableTwin({ label, children }: { label: string; children: ReactN
   );
 }
 
-export function EmptyState({ title, children }: { title: string; children?: ReactNode }) {
+export function EmptyState({
+  title,
+  children,
+  icon,
+  action,
+  className,
+}: {
+  title: string;
+  children?: ReactNode;
+  icon?: ReactNode;
+  action?: ReactNode;
+  className?: string;
+}) {
   return (
-    <div className="grid min-h-28 place-items-center px-4 py-6 text-center">
-      <div>
-        <p className="text-sm font-medium">{title}</p>
-        {children ? <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">{children}</p> : null}
-      </div>
-    </div>
+    <Empty className={cn("min-h-28 gap-3 border-0 p-6", className)}>
+      <EmptyHeader className="gap-1.5">
+        {icon ? <EmptyMedia variant="icon">{icon}</EmptyMedia> : null}
+        <EmptyTitle className="text-sm font-medium">{title}</EmptyTitle>
+        {children ? <EmptyDescription className="text-sm">{children}</EmptyDescription> : null}
+      </EmptyHeader>
+      {action ? <EmptyContent className="gap-0">{action}</EmptyContent> : null}
+    </Empty>
   );
 }
 

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useRouter } from "@tanstack/react-router";
+import { Inbox, Search } from "lucide-react";
 import type { MoneyTrackerPageData } from "../../platform/protected-data.js";
 import { MONEY_CATEGORIES, type MoneyCategory } from "./money-enums.js";
 import type { MoneyActivityPage, MoneyActivitySortKey } from "./money-repository.js";
@@ -10,11 +11,11 @@ import { MoneyCategoryPicker, moneyCategoryLabel } from "./money-category-picker
 import { isRuleCategorized } from "./money-category-rules.js";
 import { moneyGet, moneyJson } from "./money-requests.js";
 import { EmptyState, formatDay, formatMinor, MoneyPanel } from "./money-ui.js";
-import { Alert, AlertDescription, AlertTitle } from "../../platform/ui/components/ui/alert.js";
-import { Button } from "../../platform/ui/components/ui/button.js";
-import { NativeSelect, NativeSelectOption } from "../../platform/ui/components/ui/native-select.js";
-import { useIsMobile } from "../../platform/ui/components/ui/use-mobile.js";
-import { Tooltip, TooltipContent, TooltipTrigger } from "../../platform/ui/components/ui/tooltip.js";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { useIsMobile } from "@/components/ui/use-mobile";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 type Activity = MoneyTrackerPageData["activity"][number];
 
@@ -227,7 +228,10 @@ export function MoneyActivityView({
               </div>
             )
           ) : (
-            <EmptyState title={reviewOnly ? "Nothing to review" : transactionCount ? "No matching rows" : "No transactions imported"}>
+            <EmptyState
+              title={reviewOnly ? "Nothing to review" : transactionCount ? "No matching rows" : "No transactions imported"}
+              icon={reviewOnly ? <Inbox /> : <Search />}
+            >
               {reviewOnly ? "No rows that need review match these filters." : transactionCount ? "Change the search or a filter." : "Import a statement to fill the ledger."}
             </EmptyState>
           )}

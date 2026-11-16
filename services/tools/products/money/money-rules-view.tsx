@@ -23,12 +23,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from "../../platform/ui/components/ui/alert-dialog.js";
-import { Badge } from "../../platform/ui/components/ui/badge.js";
-import { Button } from "../../platform/ui/components/ui/button.js";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../platform/ui/components/ui/card.js";
-import { Input } from "../../platform/ui/components/ui/input.js";
-import { NativeSelect, NativeSelectOption } from "../../platform/ui/components/ui/native-select.js";
+} from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 
 type RulesViewProps = Pick<
   MoneyTrackerPageData,

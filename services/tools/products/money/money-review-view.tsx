@@ -2,12 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { Link, useRouter } from "@tanstack/react-router";
-import { Check, RefreshCw } from "lucide-react";
+import { Check, CircleCheck, RefreshCw } from "lucide-react";
 import type { MoneyTrackerPageData } from "../../platform/protected-data.js";
 import type { MoneyCategory, MoneyTransferDisposition } from "./money-enums.js";
 import type { MoneyReviewCategoryItem, MoneyTransferReviewGroup } from "./money-repository.js";
-import { Badge } from "../../platform/ui/components/ui/badge.js";
-import { Button } from "../../platform/ui/components/ui/button.js";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { BalanceForm } from "./money-balance-form.js";
 import { MoneyCategoryPicker, moneyCategoryLabel } from "./money-category-picker.js";
 import { isRuleCategorized } from "./money-category-rules.js";
@@ -15,7 +15,7 @@ import { MoneyImportDrop, MoneyImportHistory } from "./money-ledger-views.js";
 import { MoneyRulesView } from "./money-rules-view.js";
 import { MONEY_REVIEW_TABS, type MoneyReviewTab } from "./money-tracker-navigation.js";
 import { EmptyState, formatDay, formatMinor, formatMonth, MoneyPanel } from "./money-ui.js";
-import { countLabel } from "../../platform/ui/lib/count-label.js";
+import { countLabel } from "@/lib/count-label";
 
 const TAB_LABELS: Record<MoneyReviewTab, string> = { queue: "Queue", rules: "Rules", imports: "Imports" };
 const TREATMENTS: readonly (readonly [MoneyTransferDisposition, string])[] = [
@@ -73,7 +73,7 @@ function Queue(props: MoneyTrackerPageData & { staleAccounts: readonly string[];
       <MoneyImportDrop lastImport={props.imports[0] ? formatDay(props.imports[0].committedAt) : undefined} />
       {empty ? (
         <MoneyPanel>
-          <EmptyState title="Nothing to review">Every row has a category, every transfer has a treatment, and prices and balances are current.</EmptyState>
+          <EmptyState title="Nothing to review" icon={<CircleCheck />}>Every row has a category, every transfer has a treatment, and prices and balances are current.</EmptyState>
         </MoneyPanel>
       ) : null}
       {props.reviewCounts.otherRows ? (

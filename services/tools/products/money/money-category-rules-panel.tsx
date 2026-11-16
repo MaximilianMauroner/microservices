@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useRouter } from "@tanstack/react-router";
-import { ArrowRight, Pencil, Trash2 } from "lucide-react";
+import { ArrowRight, Pencil, Search, Tags, Trash2 } from "lucide-react";
 import type { MoneyTrackerPageData } from "../../platform/protected-data.js";
 import type { MoneyCategoryRuleField, MoneyCategoryRuleOperator } from "./money-category-rules.js";
 import type { MoneyCategory } from "./money-enums.js";
@@ -10,7 +10,7 @@ import type { MoneyCategoryRule, MoneyCategoryRulePreview } from "./money-reposi
 import { CategoryValue, MoneyCategoryPicker, moneyCategoryLabel } from "./money-category-picker.js";
 import { ruleErrorMessage, ruleRequest } from "./money-rule-request.js";
 import { EmptyState, formatDay, MoneyPanel } from "./money-ui.js";
-import { countLabel } from "../../platform/ui/lib/count-label.js";
+import { countLabel } from "@/lib/count-label";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,10 +20,10 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "../../platform/ui/components/ui/alert-dialog.js";
-import { Button } from "../../platform/ui/components/ui/button.js";
-import { Input } from "../../platform/ui/components/ui/input.js";
-import { NativeSelect, NativeSelectOption } from "../../platform/ui/components/ui/native-select.js";
+} from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 
 type Draft = Readonly<{
   ruleId?: string;
@@ -329,7 +329,7 @@ function RuleList({ rules, editing, onEdit, onRemoved }: Readonly<{ rules: reado
           </table>
         </div>
       ) : (
-        <EmptyState title={rules.length ? "No rules match this search" : "No category rules yet"}>
+        <EmptyState title={rules.length ? "No rules match this search" : "No category rules yet"} icon={rules.length ? <Search /> : <Tags />}>
           {rules.length ? "Change the search text or the category filter." : "Write one above, or choose a category for a merchant in the review queue."}
         </EmptyState>
       )}
