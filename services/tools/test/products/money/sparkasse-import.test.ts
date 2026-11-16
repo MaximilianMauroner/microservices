@@ -82,6 +82,20 @@ describe("Sparkasse XLSX parser", () => {
     expect(thirdParty.transactions.find(({ sourceRow }) => sourceRow === 19)?.flowKind).toBe("spend");
   });
 
+  it("keeps the creditor name after a direct-debit creditor identifier", () => {
+    const parsed = parseMoneyImport(workbook({ spendDescription: "LASTSCHRIFT\ncore rcur prg.car.: 100000000000001 75750 example, max at00zzz00000000001 home4s tudents stiftung - 610983 abr 10.26" }));
+
+    expect(parsed.transactions.find(({ sourceRow }) => sourceRow === 19)?.description).toContain("[account] home4s tudents stiftung - 610983");
+  });
+
+  it("redacts IBANs printed with national or partial spacing", () => {
+    for (const iban of ["AT61 19043 00234573201", "AT6119043 00234573201"]) {
+      const parsed = parseMoneyImport(workbook({ spendDescription: `HOMEBANKINGUEBERWEISUNG\nExample University IBAN Beg.: ${iban}` }));
+
+      expect(parsed.transactions.find(({ sourceRow }) => sourceRow === 19)?.description).toBe("HOMEBANKINGUEBERWEISUNG Example University IBAN Beg.: [account]");
+    }
+  });
+
   it("treats card funding of owned financial accounts as transfers", () => {
     const revolut = parseMoneyImport(workbook({ spendDescription: "BEZAHLUNG EU LAENDER\nbei Revolut**4361* Dublin" }));
     const tradeRepublic = parseMoneyImport(workbook({ spendDescription: "BEZAHLUNG EU LAENDER\nbei Trade Republic Berlin" }));
