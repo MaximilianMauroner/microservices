@@ -158,7 +158,7 @@ export function MoneyTable({ className, ...props }: React.ComponentProps<typeof 
 export { TableBody as MoneyTableBody, TableHeader as MoneyTableHeader };
 
 export function MoneyTableRow({ className, ...props }: React.ComponentProps<typeof TableRow>) {
-  return <TableRow className={cn("border-0 hover:bg-transparent", className)} {...props} />;
+  return <TableRow className={cn("border-0 hover:bg-transparent data-[selectable]:hover:bg-muted/70", className)} {...props} />;
 }
 
 export function MoneyTableHead({ className, ...props }: React.ComponentProps<typeof TableHead>) {

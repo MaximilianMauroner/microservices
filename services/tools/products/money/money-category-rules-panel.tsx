@@ -227,7 +227,7 @@ function RulePreview({ preview, error, categoryChosen, editing }: Readonly<{ pre
         {!preview.matchCount ? <span className="text-muted-foreground"> The rule still applies to future imports.</span> : null}
       </p>
       {shown.length ? (
-        <div className="max-h-72 overflow-y-auto border-t">
+        <div className="max-h-72 overflow-auto border-t [&>[data-slot=table-container]]:overflow-visible">
           <MoneyTable>
             <MoneyTableHeader className="sticky top-0 z-10 bg-card">
               <MoneyTableRow><MoneyTableHead className="hide-sm">Date</MoneyTableHead><MoneyTableHead>Description</MoneyTableHead><MoneyTableHead className="num">Amount</MoneyTableHead><MoneyTableHead>Category</MoneyTableHead></MoneyTableRow>
@@ -308,7 +308,7 @@ function RuleList({ rules, editing, onEdit, onRemoved }: Readonly<{ rules: reado
       </div>
       {error ? <p role="alert" className="px-4 pb-2 text-sm text-negative">{error}</p> : null}
       {shown.length ? (
-        <div className="max-h-[36rem] overflow-y-auto border-t">
+        <div className="max-h-[36rem] overflow-auto border-t [&>[data-slot=table-container]]:overflow-visible">
           <MoneyTable>
             <MoneyTableHeader className="sticky top-0 z-10 bg-card">
               <MoneyTableRow>
