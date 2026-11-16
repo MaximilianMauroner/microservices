@@ -61,10 +61,10 @@ export function ToolsSidebar() {
   }, [pathname]);
 
   const counts: Partial<Record<ToolsProduct["id"], ReactNode>> = {
-    money: countBadge(moneyRouteReview ? moneyReviewCount(moneyRouteReview) : attention?.moneyReview),
-    feedback: countBadge(attention?.feedbackUnread),
-    markdown: countBadge(attention?.documentsExpiring?.length),
-    status: attention?.servicesDown?.length ? <span className="size-2 rounded-full bg-negative" title={`${attention.servicesDown.length} down`} /> : null
+    money: countBadge(moneyRouteReview ? moneyReviewCount(moneyRouteReview) : attention?.moneyReview, "transaction rows to review"),
+    feedback: countBadge(attention?.feedbackUnread, "unread responses"),
+    markdown: countBadge(attention?.documentsExpiring?.length, "documents expiring soon"),
+    status: attention?.servicesDown?.length ? <span className="size-2 rounded-full bg-negative" aria-hidden="true" /> : null
   };
 
   return (
@@ -85,11 +85,14 @@ export function ToolsSidebar() {
             <SidebarMenu className="gap-0.5">
               {TOOLS_PRODUCTS.filter((product) => principalSeesProduct(principal, product.id)).map((product) => {
                 const active = product.match(pathname) || Boolean(product.pages?.some((page) => page.match(pathname)));
+                const down = product.id === "status" ? attention?.servicesDown?.length : 0;
+                const label = down ? `${product.label}, ${down} ${down === 1 ? "service" : "services"} down` : product.label;
                 return (
                   <SidebarMenuItem key={product.id}>
-                    <SidebarMenuButton className="h-9 px-2.5 text-sm" tooltip={product.label} isActive={active && !product.pages} render={<Link to={product.to} preload="intent" />}>
+                    <SidebarMenuButton className="h-9 px-2.5 text-sm" tooltip={label} isActive={active && !product.pages} render={<Link to={product.to} preload="intent" title={down ? label : undefined} />}>
                       <img className="size-5 rounded" src={product.icon} alt="" width={20} height={20} />
                       <span>{product.label}</span>
+                      {down ? <span className="sr-only">{`, ${down} ${down === 1 ? "service" : "services"} down`}</span> : null}
                     </SidebarMenuButton>
                     {counts[product.id] && !(active && product.pages) ? <SidebarMenuBadge className="top-2 right-2">{counts[product.id]}</SidebarMenuBadge> : null}
                     {active && product.pages ? (
@@ -106,7 +109,7 @@ export function ToolsSidebar() {
                               render={<Link to="/money" search={{ view: view === "overview" ? undefined : view }} preload="render" />}
                             >
                               <span>{moneyViewTitle(view)}</span>
-                              {view === "review" && moneyRouteReview && moneyReviewCount(moneyRouteReview) ? <MoneyReviewBadge count={moneyReviewCount(moneyRouteReview)} /> : null}
+                              {view === "review" && moneyRouteReview && moneyReviewCount(moneyRouteReview) ? countBadge(moneyReviewCount(moneyRouteReview), "transaction rows to review") : null}
                             </SidebarMenuSubButton>
                           </SidebarMenuSubItem>
                         ))}
@@ -141,7 +144,7 @@ export function ToolsSidebar() {
               <InboxIcon />
               <span>Reports</span>
             </SidebarMenuButton>
-            {attention?.reportsOpen ? <SidebarMenuBadge className="top-2 right-2">{countBadge(attention.reportsOpen)}</SidebarMenuBadge> : null}
+            {attention?.reportsOpen ? <SidebarMenuBadge className="top-2 right-2">{countBadge(attention.reportsOpen, "open reports")}</SidebarMenuBadge> : null}
           </SidebarMenuItem>
         </SidebarMenu> : null}
         <SendFeedbackButton />
@@ -163,8 +166,8 @@ function PageLink({ page, active, badge }: { page: ToolsPage; active: boolean; b
   );
 }
 
-function countBadge(count: number | undefined) {
-  return count ? <MoneyReviewBadge count={count} /> : null;
+function countBadge(count: number | undefined, description: string) {
+  return count ? <MoneyReviewBadge count={count} label={`${count} ${description}`} /> : null;
 }
 
 /** Loads the attention counts after hydration and again after each navigation. */

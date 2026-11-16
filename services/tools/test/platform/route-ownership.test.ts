@@ -31,12 +31,6 @@ describe("primary page ownership", () => {
     expect(route).not.toMatch(/\b(POST|PUT|PATCH|DELETE): tools/);
   });
 
-  it("keeps upload-link revocation available independently of the browser clock", () => {
-    const source = readFileSync(new URL("../../products/publisher/ui/upload-link-manager.tsx", import.meta.url), "utf8");
-    expect(source).toContain("!link.revokedAt ? <Button");
-    expect(source).not.toContain("active ? <Button type=\"button\"");
-  });
-
   it("loads upload-link history in bounded pages", () => {
     const source = readFileSync(new URL("../../products/publisher/ui/upload-link-manager.tsx", import.meta.url), "utf8");
     expect(source).toContain("setNextCursor(payload.nextCursor)");

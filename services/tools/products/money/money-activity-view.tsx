@@ -58,6 +58,7 @@ export function MoneyActivityView({
   const [hasMore, setHasMore] = useState(activity.length < transactionCount);
   const [resultTotal, setResultTotal] = useState(transactionCount);
   const [error, setError] = useState<string>();
+  const [loadError, setLoadError] = useState<{ message: string; append: boolean }>();
   const [ruleOffer, setRuleOffer] = useState<Readonly<{ item: Activity; category: MoneyCategory }>>();
   const [notice, setNotice] = useState<string>();
   const [selectedRows, setSelectedRows] = useState<ReadonlySet<string>>(() => new Set());
@@ -76,7 +77,8 @@ export function MoneyActivityView({
   const loadActivity = async (append = false) => {
     const request = ++requestSequence.current;
     setLoading(true);
-    setError(undefined);
+    setLoadError(undefined);
+    if (!append) setSelectedRows(new Set());
     try {
       const requestParameters = new URLSearchParams(parameters);
       requestParameters.set("offset", String(append ? rows.length : 0));
@@ -87,7 +89,7 @@ export function MoneyActivityView({
       setResultTotal(page.total);
       setHasMore(page.hasMore);
     } catch (caught) {
-      if (request === requestSequence.current) setError(message(caught));
+      if (request === requestSequence.current) setLoadError({ message: message(caught), append });
     } finally {
       if (request === requestSequence.current) setLoading(false);
     }
@@ -98,7 +100,11 @@ export function MoneyActivityView({
     return () => window.clearTimeout(timeout);
   }, [query, searchQuery]);
   useEffect(() => {
-    if (loadedFilters.current === parameters.toString()) return;
+    if (loadedFilters.current === parameters.toString()) {
+      setLoading(false);
+      setLoadError(undefined);
+      return;
+    }
     void loadActivity();
     return () => { requestSequence.current += 1; };
   }, [parameters]);
@@ -134,10 +140,11 @@ export function MoneyActivityView({
       else next.add(id);
       return next;
     });
-  const selectedItems = rows.filter((row) => selectedRows.has(row.id));
+  const resultsCurrent = loadedFilters.current === parameters.toString() && query === searchQuery;
+  const selectedItems = resultsCurrent ? rows.filter((row) => selectedRows.has(row.id)) : [];
   const chip = (item: Activity) =>
     needsTransferTreatment(item) ? (
-      <Link to="/money" search={{ view: "review" }} className="inline-flex h-7 items-center rounded-md border border-dashed border-control-border px-2 text-[.8125rem] text-muted-foreground hover:text-foreground">
+      <Link to="/money" search={{ view: "review" }} className="inline-flex h-7 max-md:min-h-11 items-center rounded-md border border-dashed border-control-border px-2 text-[.8125rem] text-muted-foreground hover:text-foreground">
         Transfer to classify
       </Link>
     ) : (
@@ -149,6 +156,12 @@ export function MoneyActivityView({
         <Alert variant="destructive">
           <AlertTitle>Change not saved</AlertTitle>
           <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      ) : null}
+      {loadError ? (
+        <Alert variant="destructive">
+          <AlertTitle>Transactions could not be loaded</AlertTitle>
+          <AlertDescription>{loadError.message} <Button type="button" size="sm" variant="outline" onClick={() => void loadActivity(loadError.append)}>Retry</Button></AlertDescription>
         </Alert>
       ) : null}
       <MoneyPanel>
@@ -167,8 +180,18 @@ export function MoneyActivityView({
             <ListFilter />
             {reviewTotal ? <span className="money-review-badge ml-0">{reviewTotal > 999 ? "999+" : reviewTotal}</span> : null}
           </Button>
+          {isMobile ? (
+            <NativeSelect size="sm" value={`${sort.key}:${sort.direction}`} aria-label="Sort transactions" onChange={(event) => {
+              const [key, direction] = event.currentTarget.value.split(":") as [MoneyActivitySortKey, "asc" | "desc"];
+              setSort({ key, direction });
+            }}>
+              {(["date", "description", "account", "category", "amount"] as const).flatMap((key) => (["asc", "desc"] as const).map((direction) => (
+                <NativeSelectOption key={`${key}:${direction}`} value={`${key}:${direction}`}>{key[0]!.toUpperCase() + key.slice(1)} · {direction === "asc" ? "ascending" : "descending"}</NativeSelectOption>
+              )))}
+            </NativeSelect>
+          ) : null}
           <span className="ml-auto text-xs text-muted-foreground tabular-nums" aria-live="polite">
-            {loading ? "Searching…" : `${resultTotal.toLocaleString("en-GB")} rows`}
+            {!resultsCurrent ? (loadError ? "" : "Searching…") : loading ? "Loading…" : `${resultTotal.toLocaleString("en-GB")} rows`}
           </span>
         </div>
         {notice || ruleOffer ? (
@@ -186,7 +209,7 @@ export function MoneyActivityView({
           </div>
         ) : null}
         <div className="border-t" role="region" aria-label="Transaction ledger">
-          {rows.length ? (
+          {!resultsCurrent ? null : rows.length ? (
             isMobile ? (
               <ul className="divide-y" aria-label="Transactions matching the current filters">
                 {rows.map((item) => (
@@ -196,7 +219,13 @@ export function MoneyActivityView({
                       <p className="truncate text-xs text-muted-foreground">{formatDay(item.occurredAt)} · {item.accountName}</p>
                     </div>
                     <strong className={`text-right text-sm font-semibold tabular-nums ${toneClass(item.amountMinor)}`}>{formatMinor(item.amountMinor, { precise: true, signed: true })}</strong>
-                    <div className="col-span-2 flex justify-end">{chip(item)}</div>
+                    <div className="col-span-2 flex items-center justify-between gap-2">
+                      <label className="inline-flex min-h-11 items-center gap-2 text-sm">
+                        <Checkbox aria-label={`Select ${item.description}`} checked={selectedRows.has(item.id)} disabled={needsTransferTreatment(item)} onCheckedChange={() => toggleRow(item.id)} />
+                        Select
+                      </label>
+                      {chip(item)}
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -249,7 +278,7 @@ export function MoneyActivityView({
               {reviewOnly ? "No rows that need review match these filters." : transactionCount ? "Change the search or a filter." : "Import a statement to fill the ledger."}
             </EmptyState>
           )}
-          {hasMore ? (
+          {resultsCurrent && hasMore ? (
             <div className="border-t p-3 text-center">
               <Button type="button" variant="outline" size="sm" disabled={loading} onClick={() => void loadActivity(true)}>{loading ? "Loading…" : "Load 50 more"}</Button>
             </div>

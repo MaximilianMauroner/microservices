@@ -70,6 +70,13 @@ describe("collaborative workspace", () => {
     expect(container.querySelector(".wordmark")?.getAttribute("href")).toBe("/share");
   });
 
+  it("offers the document URL when clipboard access fails", async () => {
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: vi.fn().mockRejectedValue(new Error("denied")) } });
+    await act(async () => container.querySelector<HTMLButtonElement>(".direct-copy")!.click());
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("Copy failed");
+    expect(container.querySelector<HTMLInputElement>('[aria-label="Document link"]')?.value).toBe(window.location.href);
+  });
+
   it("switches between the source and preview panes", async () => {
     const sourcePanel = container.querySelector("#source-panel");
     const previewPanel = container.querySelector("#preview-panel");

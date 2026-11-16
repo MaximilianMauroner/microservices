@@ -196,7 +196,7 @@ function DocumentPage({ routeToken }: { routeToken: string }) {
     if (window.location.pathname !== canonicalPath) {
       window.history.replaceState(null, "", canonicalPath);
     }
-    window.document.title = `${document.filename} · Markdown Share`;
+    window.document.title = `${document.filename} · Document Share`;
     rememberRecentDocument({
       token: document.token,
       filename: document.filename,

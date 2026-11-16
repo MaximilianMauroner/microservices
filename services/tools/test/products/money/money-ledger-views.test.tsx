@@ -97,7 +97,8 @@ describe("Money transactions", () => {
     const noReview = renderToStaticMarkup(<MoneyActivityView activity={[]} transactionCount={10} reviewCounts={counts} initialReviewOnly />);
     expect(noMatches).toContain("No matching rows");
     expect(noImports).toContain("No transactions imported");
-    expect(noReview).toContain("Nothing to review");
+    expect(noReview).toContain("Searching…");
+    expect(noReview).not.toContain("Nothing to review");
   });
 
   it("opens with URL filters applied", () => {

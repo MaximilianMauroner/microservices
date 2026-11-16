@@ -12,6 +12,7 @@ import {
   type MoneyTransferRuleSign,
 } from "./money-transfer-inference.js";
 import { MoneyCategoryRulesPanel } from "./money-category-rules-panel.js";
+import { formatDay } from "./money-ui.js";
 import { ruleErrorMessage, ruleRequest } from "./money-rule-request.js";
 import {
   AlertDialog,
@@ -190,7 +191,7 @@ function TransferRuleBuilder({ options, unresolved }: { options: MoneyTrackerPag
               <div className="max-h-64 divide-y overflow-auto">
                 {preview.examples.map((row) => (
                   <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] gap-3 py-2" key={row.id}>
-                    <span className="text-muted-foreground">{row.date}</span>
+                    <span className="text-muted-foreground">{formatDay(row.date)}</span>
                     <span className="min-w-0">
                       <span className="block truncate" title={row.description}>{row.description}</span>
                       <span className="block truncate text-xs text-muted-foreground">{row.accountName}</span>

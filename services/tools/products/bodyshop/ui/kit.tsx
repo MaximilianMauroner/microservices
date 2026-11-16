@@ -1,8 +1,9 @@
 import { Link, useRouter, useRouterState } from "@tanstack/react-router";
 import { AppleIcon, type LucideIcon, SlidersHorizontalIcon, SunIcon, TrendingDownIcon } from "lucide-react";
-import { createContext, type CSSProperties, type ReactNode, useContext, useEffect, useState } from "react";
+import { createContext, type CSSProperties, type ReactNode, type ReactElement, useContext, useEffect, useState } from "react";
 import { AppShell } from "../../../platform/ui/components/app-shell.js";
 import { favicons } from "../../../platform/ui/favicons.js";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "../../../platform/ui/components/ui/alert-dialog.js";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../../../platform/ui/components/ui/dialog.js";
 import { Drawer, DrawerContent, DrawerDescription, DrawerFooter, DrawerHeader, DrawerTitle } from "../../../platform/ui/components/ui/drawer.js";
 import { toast } from "../../../platform/ui/components/ui/toast.js";
@@ -115,6 +116,16 @@ export function useBodyshopAction() {
     }
   }
   return { run, pending };
+}
+
+export function ConfirmAction({ trigger, title, description, action, onConfirm }: { trigger: ReactElement; title: string; description: string; action: string; onConfirm: () => void }) {
+  const [open, setOpen] = useState(false);
+  return <AlertDialog open={open} onOpenChange={setOpen}>
+    <AlertDialogTrigger render={trigger} />
+    <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{title}</AlertDialogTitle><AlertDialogDescription>{description}</AlertDialogDescription></AlertDialogHeader>
+      <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={() => { setOpen(false); onConfirm(); }}>{action}</AlertDialogAction></AlertDialogFooter>
+    </AlertDialogContent>
+  </AlertDialog>;
 }
 
 /** A form surface: a bottom sheet on phones and a dialog on larger screens. */
@@ -320,8 +331,8 @@ function Macro({ label, color, value, target }: { label: string; color: string; 
   return (
     <div className="bs-panel grid min-w-0 justify-items-center rounded-[1.125rem] px-1 pt-2.5 pb-2 text-center" style={tint(color, 12)}>
       <Ring size={52} width={5} parts={[{ color, share }]} />
-      <dd className="mt-1.5"><span className="bs-figure text-[1.0625rem]">{fmt(value)}</span><span className="bs-quiet text-xs"> g</span></dd>
       <dt className="text-xs font-semibold">{label}</dt>
+      <dd className="mt-1.5"><span className="bs-figure text-[1.0625rem]">{fmt(value)}</span><span className="bs-quiet text-xs"> g</span></dd>
       <dd className="bs-quiet text-xs">of {fmt(target)} g</dd>
     </div>
   );

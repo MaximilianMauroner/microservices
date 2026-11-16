@@ -8,7 +8,7 @@ import { Textarea } from "../../../platform/ui/components/ui/textarea.js";
 import { cn } from "../../../platform/ui/lib/utils.js";
 import { formatAmount, type Ingredient, type Nutrition, type Recipe, scaledLines } from "../domain.js";
 import type { RecipeSummary } from "../server-functions.js";
-import { byGroup, type Frame, GroupDot, groupColor, KitchenEmpty, KitchenPage, KitchenSheet, mainGroup, PlateRing, SearchField, Stepper, tint, useKitchenAction } from "./kit.js";
+import { byGroup, type Frame, GroupDot, groupColor, KitchenConfirm, KitchenEmpty, KitchenPage, KitchenSheet, mainGroup, PlateRing, SearchField, Stepper, tint, useKitchenAction } from "./kit.js";
 import { type KitchenLanguage, useLanguage, useText } from "./language.js";
 import { type DraftLine, draftLines, LineEditor, useResolveLines } from "./lines.js";
 
@@ -253,7 +253,7 @@ function RecipeView({ data, recipe, onEdit }: { data: RecipeData; recipe: Recipe
     <KitchenPage
       back={<Link to="/kitchen/$kitchenId/recipes" params={{ kitchenId: data.kitchen.id }} className="-ml-1 inline-flex min-h-11 items-center gap-1 pr-2 text-sm text-muted-foreground hover:text-foreground"><ChevronLeftIcon className="size-4" aria-hidden />{text.allRecipes}</Link>}
       title={recipe.name}
-      facts={[recipe.minutes ? text.minutes(recipe.minutes) : "", text.servings(recipe.servings)].filter(Boolean).join(", ")}
+      facts={[recipe.minutes ? text.minutes(recipe.minutes) : "", text.servings(servings)].filter(Boolean).join(", ")}
       actions={(
         <>
           {others.length ? <Button variant="outline" onClick={() => setCopying(true)}><CopyIcon aria-hidden /> {text.copy}</Button> : null}
@@ -305,10 +305,9 @@ function RecipeView({ data, recipe, onEdit }: { data: RecipeData; recipe: Recipe
             </ol>
           ) : <p className="text-sm text-muted-foreground">{text.noSteps}</p>}
           <div className="mt-6 border-t border-[color:var(--surface-border)] pt-4">
-            <Button variant="destructive-outline" disabled={pending} onClick={async () => {
-              if (!window.confirm(text.deleteConfirm(recipe.name))) return;
+            <KitchenConfirm message={text.deleteConfirm(recipe.name)} confirm={text.deleteRecipe} onConfirm={async () => {
               if (await run({ type: "recipe.delete", id: recipe.id }, { title: text.deleted(recipe.name) })) void navigate({ to: "/kitchen/$kitchenId/recipes", params: { kitchenId: data.kitchen.id } });
-            }}><Trash2Icon aria-hidden /> {text.deleteRecipe}</Button>
+            }} trigger={<Button variant="destructive-outline" disabled={pending}><Trash2Icon aria-hidden /> {text.deleteRecipe}</Button>} />
           </div>
         </section>
       </div>

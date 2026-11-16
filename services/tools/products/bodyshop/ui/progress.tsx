@@ -98,6 +98,16 @@ export function ProgressPage({ data, children }: { data: Data; children?: ReactN
               }} />
           </ComposedChart>
         </ChartContainer>
+        <details className="mt-3 text-sm">
+          <summary className="cursor-pointer font-medium">Weight data</summary>
+          <p>Goal: {fmt(goal.low, 1)} to {fmt(goal.high, 1)} kg.</p>
+          <div className="overflow-x-auto">
+            <table className="mt-2 w-full text-left tabular-nums"><caption className="sr-only">Daily weight and projection in kilograms</caption>
+              <thead><tr><th>Day</th><th>Weigh-in</th><th>Trend</th><th>Projection</th><th>Projected range</th></tr></thead>
+              <tbody>{rows.map((row) => <tr key={row.day}><th scope="row">{row.day}</th><td>{row.actual === null ? "–" : fmt(row.actual, 1)}</td><td>{row.trend === null ? "–" : fmt(row.trend, 2)}</td><td>{row.projected == null ? "–" : fmt(row.projected, 1)}</td><td>{row.projectedBand ? `${fmt(row.projectedBand[0], 1)} to ${fmt(row.projectedBand[1], 1)}` : "–"}</td></tr>)}</tbody>
+            </table>
+          </div>
+        </details>
       </ChartSection>
 
       <dl className="mt-3 grid grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-3">
@@ -147,6 +157,16 @@ export function ProgressPage({ data, children }: { data: Data; children?: ReactN
             <Line dataKey="expenditure" type="monotone" stroke={COLORS.burn} strokeWidth={2.5} dot={false} connectNulls isAnimationActive={false} />
           </ComposedChart>
         </ChartContainer>
+        <details className="mt-3 text-sm">
+          <summary className="cursor-pointer font-medium">Eaten and burned data</summary>
+          <p>Daily target: {fmt(data.settings.calorieTarget)} kcal.</p>
+          <div className="overflow-x-auto">
+            <table className="mt-2 w-full text-left tabular-nums"><caption className="sr-only">Daily calories eaten and burned</caption>
+              <thead><tr><th>Day</th><th>Log status</th><th>Eaten (kcal)</th><th>Burned (kcal)</th><th>Burned range (kcal)</th></tr></thead>
+              <tbody>{logged.map((row) => <tr key={row.day}><th scope="row">{row.day}</th><td>{row.status}</td><td>{row.kcal === null ? "–" : fmt(row.kcal)}</td><td>{row.expenditure === null ? "–" : fmt(row.expenditure)}</td><td>{row.band ? `${fmt(row.band[0])} to ${fmt(row.band[1])}` : "–"}</td></tr>)}</tbody>
+            </table>
+          </div>
+        </details>
       </ChartSection>
       <WeekSection review={data.review} target={data.settings.calorieTarget} today={data.today} kcal={new Map(data.rows.map((row) => [row.day, row.kcal]))} />
       <FoodSection insights={data.insights} uncertain={data.uncertain} />

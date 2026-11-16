@@ -35,6 +35,7 @@ import { Segmented } from "@/components/segmented";
 import {
   MoneyNav,
   moneyReviewCount,
+  staleMoneyCashAccounts,
   moneyViewTitle,
   type MoneyReviewTab,
   type MoneyTrackerView,
@@ -200,7 +201,7 @@ function Overview(props: MoneyTrackerPageData) {
   const activeCashAccounts = cashAccounts.filter((account) => !props.deprecatedAccountIds.includes(account));
   const coverage = cashCoverage(latestMonth, activeCashAccounts);
   const carriedCount = coverage.cashAccountCount - coverage.observedCashAccountCount;
-  const oldBalances = latestMonth ? activeCashAccounts.filter((account) => latestMonth.values[account] !== undefined && !latestMonth.observedAccounts.includes(account)).length : 0;
+  const oldBalances = staleMoneyCashAccounts(props).length;
   const review = [
     [props.reviewCounts.uncategorized, "uncategorized row", "uncategorized rows"],
     [props.reviewCounts.transfers, "transfer to classify", "transfers to classify"],
@@ -254,7 +255,7 @@ function Overview(props: MoneyTrackerPageData) {
             {open.length ? (
               <>
                 <strong className="font-semibold">Review needed.</strong>{" "}
-                <span className="text-muted-foreground">{open.map(([count, one, many]) => `${count.toLocaleString("en-GB")} ${count === 1 ? one : many}`).join(", ")}. Totals leave these rows out until you fix them.</span>
+                <span className="text-muted-foreground">{open.map(([count, one, many]) => `${count.toLocaleString("en-GB")} ${count === 1 ? one : many}`).join(", ")}. Review these items to keep your data current.</span>
               </>
             ) : (
               "All data is reviewed. Totals include every row."
@@ -262,7 +263,7 @@ function Overview(props: MoneyTrackerPageData) {
           </span>
           {open.length ? (
             <Link to="/money" search={{ view: "review" }} className={buttonVariants({ variant: "outline", size: "sm" })}>
-              Review {open.reduce((sum, [count]) => sum + count, 0).toLocaleString("en-GB")} items
+              Review items
             </Link>
           ) : null}
         </div>
@@ -610,6 +611,7 @@ function SnapshotTable({ months, accounts }: { months: GroupedMonth[]; accounts:
 function AccountSheet({ account, label, months, onClose }: { account?: string; label: string; months: GroupedMonth[]; onClose: () => void }) {
   const [activity, setActivity] = useState<MoneyActivityPage["items"]>([]);
   const [state, setState] = useState<"idle" | "loading" | "error">("idle");
+  const [retry, setRetry] = useState(0);
   useEffect(() => {
     if (!account) return;
     const controller = new AbortController();
@@ -625,7 +627,7 @@ function AccountSheet({ account, label, months, onClose }: { account?: string; l
         if (!controller.signal.aborted) setState("error");
       });
     return () => controller.abort();
-  }, [account]);
+  }, [account, retry]);
   const history = account ? months.filter((month) => month.values[account] !== undefined).map((month) => ({ date: month.date, value: month.values[account]!, observed: month.observedAccounts.includes(account) })) : [];
   return (
     <Sheet open={account !== undefined} onOpenChange={(open) => { if (!open) onClose(); }}>
@@ -648,7 +650,7 @@ function AccountSheet({ account, label, months, onClose }: { account?: string; l
           ) : null}
           <section aria-label="Recent activity">
             <h3 className="mb-2 text-sm font-semibold">Recent activity</h3>
-            {state === "loading" ? <p className="py-6 text-center text-sm text-muted-foreground">Loading activity…</p> : state === "error" ? <p className="text-sm text-negative" role="alert">Activity could not be loaded.</p> : activity.length ? (
+            {state === "loading" ? <p className="py-6 text-center text-sm text-muted-foreground">Loading activity…</p> : state === "error" ? <div className="text-sm text-negative" role="alert">Activity could not be loaded. <Button type="button" size="sm" variant="outline" onClick={() => setRetry((current) => current + 1)}>Retry</Button></div> : activity.length ? (
               <div className="divide-y rounded-lg border">
                 {activity.map((item) => (
                   <div key={item.id} className="flex items-start justify-between gap-4 px-3 py-2 text-sm">
@@ -676,6 +678,7 @@ function Plan(props: MoneyTrackerPageData) {
   const { months } = useFinancialHistory(props);
   const [horizon, setHorizon] = useState<(typeof HORIZONS)[number][0]>("60");
   const [contribution, setContribution] = useState<number>();
+  const [contributionDraft, setContributionDraft] = useState<string>();
   const horizonMonths = Number(horizon);
   const historical = useMemo(() => projectMoneyTrajectory(months, horizonMonths, props.marketData.history), [horizonMonths, months, props.marketData.history]);
   const prediction = useMemo(
@@ -703,7 +706,7 @@ function Plan(props: MoneyTrackerPageData) {
   // Start the forecast lines at today's value so they join the observed line.
   const joined = points.map((point, index) => (index === observed.length - 1 ? { ...point, central: current, low: current, high: current, inflation: current } : point));
   const planning = props.planning;
-  const contributionMax = Math.max(5_000, Math.ceil(history / 500) * 1_000);
+  const contributionMax = Math.max(5_000, Math.ceil(history / 500) * 1_000, Math.ceil(monthly / 500) * 500);
   return (
     <div className="money-stack">
       <Card className="gap-0 py-0">
@@ -720,7 +723,7 @@ function Plan(props: MoneyTrackerPageData) {
                   step={50}
                   value={[monthly]}
                   aria-label="Monthly contribution slider"
-                  onValueChange={(value) => setContribution(Array.isArray(value) ? value[0]! : value)}
+                  onValueChange={(value) => { setContributionDraft(undefined); setContribution(Array.isArray(value) ? value[0]! : value); }}
                 />
                 <span className="flex justify-between"><span>{formatEuro(0)}</span><span>{formatEuro(contributionMax)}</span></span>
               </span>
@@ -729,10 +732,15 @@ function Plan(props: MoneyTrackerPageData) {
                   className="w-16 bg-transparent text-right text-sm text-foreground tabular-nums outline-none"
                   inputMode="numeric"
                   aria-label="Monthly contribution in euro"
-                  value={monthly}
+                  value={contributionDraft ?? monthly}
                   onChange={(event) => {
-                    const value = Number(event.currentTarget.value.replace(/\D/g, ""));
-                    if (Number.isFinite(value)) setContribution(value);
+                    const draft = event.currentTarget.value.replace(/\D/g, "");
+                    setContributionDraft(draft);
+                    if (draft && Number.isFinite(Number(draft))) setContribution(Number(draft));
+                  }}
+                  onBlur={() => {
+                    if (contributionDraft === "") setContribution(0);
+                    setContributionDraft(undefined);
                   }}
                 />
                 <span className="text-sm">€</span>
@@ -744,7 +752,7 @@ function Plan(props: MoneyTrackerPageData) {
             <Segmented label="Horizon" value={horizon} onValue={setHorizon} options={HORIZONS} />
           </div>
           {contribution !== undefined && contribution !== history ? (
-            <Button type="button" size="sm" variant="ghost" onClick={() => setContribution(undefined)}>Use history: {formatEuro(history)}</Button>
+            <Button type="button" size="sm" variant="ghost" onClick={() => { setContributionDraft(undefined); setContribution(undefined); }}>Use history: {formatEuro(history)}</Button>
           ) : null}
         </div>
         <StatStrip label="Projection summary" className="rounded-none border-t shadow-none">

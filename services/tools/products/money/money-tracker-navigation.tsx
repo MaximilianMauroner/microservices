@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router";
+import type { MoneyTrackerPageData } from "../../platform/protected-data.js";
 
 export const MONEY_VIEWS = ["overview", "spending", "transactions", "accounts", "investments", "plan", "review"] as const;
 export type MoneyTrackerView = (typeof MONEY_VIEWS)[number];
@@ -22,6 +23,11 @@ export function moneyViewTitle(view: MoneyTrackerView) {
 /** Rows that keep data out of the totals until someone reviews them. */
 export function moneyReviewCount(counts: { uncategorized: number; transfers: number } | undefined) {
   return counts ? counts.uncategorized + counts.transfers : 0;
+}
+
+export function staleMoneyCashAccounts(props: Pick<MoneyTrackerPageData, "accounts" | "accountRoles" | "accountLastObserved" | "deprecatedAccountIds">) {
+  const currentMonth = `${new Date().toISOString().slice(0, 7)}-01`;
+  return props.accounts.filter((account) => !props.deprecatedAccountIds.includes(account) && props.accountRoles[account] === "cash" && props.accountLastObserved[account] !== undefined && props.accountLastObserved[account]! < currentMonth);
 }
 
 /** Reads the review counts from Money route loader data, which the workspace sidebar sees as unknown. */
@@ -49,16 +55,16 @@ export function MoneyNav({ current, reviewCount }: { current: MoneyTrackerView; 
           className="money-nav__item"
         >
           {TITLES[view]}
-          {view === "review" && reviewCount ? <MoneyReviewBadge count={reviewCount} /> : null}
+          {view === "review" && reviewCount ? <MoneyReviewBadge count={reviewCount} label={`${reviewCount} transaction rows to review`} /> : null}
         </Link>
       ))}
     </nav>
   );
 }
 
-export function MoneyReviewBadge({ count }: { count: number }) {
+export function MoneyReviewBadge({ count, label }: { count: number; label?: string }) {
   return (
-    <span className="money-review-badge" aria-label={`${count} to review`}>
+    <span className="money-review-badge" aria-label={label ?? `${count} to review`}>
       {count > 999 ? "999+" : count}
     </span>
   );

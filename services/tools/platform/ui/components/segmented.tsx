@@ -1,4 +1,6 @@
 import type { ReactNode } from "react";
+import { Radio } from "@base-ui/react/radio";
+import { RadioGroup } from "@base-ui/react/radio-group";
 
 /** A single choice from a few options, such as a time range or a list filter. Shared by every tool. */
 export function Segmented<Value extends string>({
@@ -13,12 +15,12 @@ export function Segmented<Value extends string>({
   onValue: (value: Value) => void;
 }) {
   return (
-    <div className="segmented" role="group" aria-label={label}>
+    <RadioGroup className="segmented" aria-label={label} value={value} onValueChange={onValue}>
       {options.map(([option, text]) => (
-        <button key={option} type="button" aria-pressed={option === value} onClick={() => onValue(option)}>
+        <Radio.Root key={option} value={option} nativeButton render={<button type="button" />}>
           {text}
-        </button>
+        </Radio.Root>
       ))}
-    </div>
+    </RadioGroup>
   );
 }

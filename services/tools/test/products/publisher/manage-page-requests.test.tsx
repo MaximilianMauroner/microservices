@@ -201,3 +201,19 @@ it("shows each mobile row size and the total active storage", async () => {
     host.remove();
   }
 });
+
+it("disables expiry presets while a file is permanent", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host);
+  const button = (text: string) => [...document.querySelectorAll<HTMLButtonElement>("button")].find((node) => node.textContent?.trim() === text)!;
+  try {
+    await act(async () => root.render(<ManagePage initial={{ uploads: [upload] }} />));
+    await act(async () => button("Change").click());
+    expect(button("1 day").disabled).toBe(true);
+    expect(document.querySelector<HTMLInputElement>("#file-expiry")?.disabled).toBe(true);
+    await act(async () => document.querySelector<HTMLButtonElement>('[role="switch"]')!.click());
+    expect(button("1 day").disabled).toBe(false);
+    expect(document.querySelector<HTMLInputElement>("#file-expiry")?.disabled).toBe(false);
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});

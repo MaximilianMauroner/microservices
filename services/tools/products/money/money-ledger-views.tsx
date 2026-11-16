@@ -933,7 +933,7 @@ function PortfolioChartTooltip({
   if (!active || !point) return null;
   return (
     <div className="min-w-52 rounded-lg border bg-popover p-3 text-xs text-popover-foreground shadow-xl">
-      <strong className="block text-sm">{String(label ?? point.date)}</strong>
+      <strong className="block text-sm">{formatDay(String(label ?? point.date), true)}</strong>
       <div className="mt-2 space-y-1 text-muted-foreground">
         <p className="flex justify-between gap-6">
           <span>Market value</span>
@@ -967,7 +967,7 @@ function PortfolioChartTooltip({
                 {trade.symbol}
               </strong>
               <p className="text-muted-foreground">
-                {trade.date} · {trade.quantity} units ·{" "}
+                {formatDay(trade.date, true)} · {trade.quantity} units ·{" "}
                 {money(trade.amountMinor, trade.currency)}
                 {trade.feeMinor
                   ? ` · ${money(trade.feeMinor, trade.currency)} fee`
@@ -993,7 +993,7 @@ const PortfolioBenchmarkChart = memo(function PortfolioBenchmarkChart({ data }: 
       <CartesianGrid vertical={false} />
       <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={10} minTickGap={28} tickFormatter={(value: string) => formatDay(value, true)} />
       <YAxis tickLine={false} axisLine={false} width={74} tickFormatter={(value: number) => value.toFixed(0)} />
-      <ChartTooltip content={<ChartTooltipContent formatter={(value) => `${Number(value).toFixed(1)}`} />} />
+      <ChartTooltip content={<ChartTooltipContent labelFormatter={(label) => formatDay(String(label), true)} formatter={(value) => `${Number(value).toFixed(1)}`} />} />
       <Line dataKey="actualIndex" name="Portfolio" type="monotone" stroke="var(--money-series-1)" strokeWidth={2} dot={false} isAnimationActive={false} />
       <Line dataKey="inflationIndex" name="Euro-area inflation" type="stepAfter" stroke="var(--money-series-2)" strokeWidth={1.5} dot={false} isAnimationActive={false} />
       <Line dataKey="targetIndex" name="7% per year" type="monotone" stroke="var(--muted-foreground)" strokeWidth={1.5} strokeDasharray="6 5" dot={false} isAnimationActive={false} />

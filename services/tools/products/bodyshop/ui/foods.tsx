@@ -4,7 +4,7 @@ import { Button } from "../../../platform/ui/components/ui/button.js";
 import { Input } from "../../../platform/ui/components/ui/input.js";
 import { Textarea } from "../../../platform/ui/components/ui/textarea.js";
 import type { SavedFood } from "../domain.js";
-import { BodyshopPage, Field, fmt, numberOrNull, percent, Sheet, useBodyshopAction } from "./kit.js";
+import { BodyshopPage, ConfirmAction, Field, fmt, numberOrNull, percent, Sheet, useBodyshopAction } from "./kit.js";
 
 export function FoodsPage({ foods }: { foods: readonly SavedFood[] }) {
   const [query, setQuery] = useState("");
@@ -70,7 +70,7 @@ function FoodSheet({ food, initialName, onClose }: { food: SavedFood | undefined
   }
   return (
     <Sheet open onOpenChange={(open) => { if (!open) onClose(); }} title={food ? food.name : "New food"}
-      footer={<>{food ? <Button variant="outline" onClick={() => void remove()} disabled={pending}>Remove</Button> : null}<Button onClick={() => void save()} disabled={pending || !form.name.trim() || numberOrNull(form.kcal) === null}>Save</Button></>}>
+      footer={<>{food ? <ConfirmAction trigger={<Button variant="destructive-outline" disabled={pending}>Remove…</Button>} title={`Remove ${food.name}?`} description="This removes the saved food. Past entries keep their nutrition." action="Remove food" onConfirm={() => void remove()} /> : null}<Button onClick={() => void save()} disabled={pending || !form.name.trim() || numberOrNull(form.kcal) === null}>{pending ? "Saving…" : "Save"}</Button></>}>
       <div className="grid gap-3">
         <Field label="Name"><Input value={form.name} onChange={set("name")} /></Field>
         <Field label="Brand or description"><Input value={form.brand} onChange={set("brand")} /></Field>

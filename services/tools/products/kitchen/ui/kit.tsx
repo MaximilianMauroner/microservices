@@ -1,9 +1,10 @@
 import { favicons } from "../../../platform/ui/favicons.js";
 import { Link, useHydrated, useRouter, useRouterState } from "@tanstack/react-router";
 import { BookOpenIcon, CalendarDaysIcon, CheckIcon, ChevronDownIcon, LanguagesIcon, LayoutGridIcon, LeafIcon, PlusIcon, RefrigeratorIcon, SearchIcon, ShoppingBasketIcon, XIcon } from "lucide-react";
-import { createContext, type CSSProperties, type ReactNode, useContext, useEffect, useRef, useState } from "react";
+import { createContext, type CSSProperties, type ReactElement, type ReactNode, useContext, useEffect, useRef, useState } from "react";
 import { AppShell } from "../../../platform/ui/components/app-shell.js";
 import { Button } from "../../../platform/ui/components/ui/button.js";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "../../../platform/ui/components/ui/alert-dialog.js";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../../../platform/ui/components/ui/dialog.js";
 import { Drawer, DrawerClose, DrawerContent, DrawerDescription, DrawerFooter, DrawerHeader, DrawerTitle } from "../../../platform/ui/components/ui/drawer.js";
 import { Input } from "../../../platform/ui/components/ui/input.js";
@@ -71,6 +72,8 @@ const en = {
   refreshFailed: "Saved, but the page could not refresh",
   retry: "Try again",
   close: "Close",
+  saving: "Saving…",
+  cancel: "Cancel",
   fewer: (label: string) => `Fewer ${label.toLowerCase()}`,
   more: (label: string) => `More ${label.toLowerCase()}`,
   thisWeek: "This week",
@@ -100,6 +103,8 @@ const TEXT: Record<KitchenLanguage, KitText> = {
     refreshFailed: "Gespeichert, aber die Seite konnte nicht aktualisiert werden",
     retry: "Erneut versuchen",
     close: "Schließen",
+    saving: "Wird gespeichert…",
+    cancel: "Abbrechen",
     fewer: (label: string) => `Weniger ${label}`,
     more: (label: string) => `Mehr ${label}`,
     thisWeek: "Diese Woche",
@@ -422,11 +427,29 @@ export function KitchenSheet({ open, onOpenChange, title, description, children,
 
 /** The main button of a sheet. While something is missing, the button stays off and says next to it what is missing. */
 export function SheetAction({ missing, pending, onClick, children }: { missing?: string; pending: boolean; onClick: () => void; children: ReactNode }) {
+  const text = useText(TEXT);
   return (
     <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-x-3 gap-y-1">
       {missing ? <p className="min-w-0 text-right text-xs text-muted-foreground" aria-live="polite">{missing}</p> : null}
-      <Button size="lg" className="px-5" disabled={missing !== undefined || pending} onClick={onClick}>{children}</Button>
+      <Button size="lg" className="px-5" disabled={missing !== undefined || pending} onClick={onClick}>{pending ? text.saving : children}</Button>
     </div>
+  );
+}
+
+export function KitchenConfirm({ trigger, message, confirm, onConfirm }: { trigger: ReactElement; message: string; confirm: string; onConfirm: () => void }) {
+  const [open, setOpen] = useState(false);
+  const text = useText(TEXT);
+  return (
+    <AlertDialog open={open} onOpenChange={setOpen}>
+      <AlertDialogTrigger render={trigger} />
+      <AlertDialogContent>
+        <AlertDialogHeader><AlertDialogTitle>{message}</AlertDialogTitle></AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>{text.cancel}</AlertDialogCancel>
+          <AlertDialogAction variant="destructive" onClick={() => { setOpen(false); onConfirm(); }}>{confirm}</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 

@@ -126,7 +126,7 @@ function needsItems(attention: AttentionSummary, now: number): NeedsItem[] {
     items.push({ key: `status:${service.name}`, icon: favicons.status, tool: "Status", text: `${service.name} is down${service.since ? ` since ${clockFormatter.format(new Date(service.since))}` : ""}`, link: open("View incident", <Link to="/status" hash="incidents" preload="intent" />), urgent: true });
   }
   for (const document of (attention.documentsExpiring ?? []).slice(0, 3)) {
-    items.push({ key: `document:${document.filename}`, icon: favicons.markdownShare, tool: "Markdown Share", text: `${document.filename} expires in ${timeLeft(document.expiresAt - now)}`, link: open("Review document", <Link to="/documents" preload="intent" />), urgent: true });
+    items.push({ key: `document:${document.filename}`, icon: favicons.markdownShare, tool: "Document Share", text: `${document.filename} expires in ${timeLeft(document.expiresAt - now)}`, link: open("Review document", <Link to="/documents" preload="intent" />), urgent: true });
   }
   if (attention.moneyReview) items.push({ key: "money", icon: favicons.money, tool: "Money", text: `${countLabel(attention.moneyReview, "row")} need${attention.moneyReview === 1 ? "s" : ""} review before the totals are exact`, link: open("Review", <Link to="/money" search={{ view: "review" }} preload="intent" />), urgent: false });
   if (attention.feedbackUnread) items.push({ key: "feedback", icon: favicons.feedback, tool: "Forms", text: countLabel(attention.feedbackUnread, "unread response"), link: open("Read", <Link to="/feedback" preload="intent" />), urgent: false });

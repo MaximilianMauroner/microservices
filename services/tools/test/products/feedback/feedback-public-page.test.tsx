@@ -66,6 +66,15 @@ describe("public feedback confirmation", () => {
     expect(html).toContain('name="details:follow_up"');
   });
 
+  it("distinguishes submission failures from answer validation in both languages", () => {
+    const english = renderToStaticMarkup(<PublicFeedbackPage form={localizeFeedbackForm(form)} submitted={false} error="submission_failed" />);
+    const german = renderToStaticMarkup(<PublicFeedbackPage form={localizeFeedbackForm(germanForm)} submitted={false} error="unexpected" />);
+    const invalid = renderToStaticMarkup(<PublicFeedbackPage form={localizeFeedbackForm(form)} submitted={false} error="empty_submission" />);
+    expect(english).toContain("Check your connection and try again");
+    expect(german).toContain("Prüfe deine Verbindung und versuche es erneut");
+    expect(invalid).toContain("Please write or select at least one answer");
+  });
+
   it("explains the contact requirement when the form offers a meeting", () => {
     const meetingForm = { ...form, questions: addFeedbackFollowUpQuestions([], "en") };
     const html = renderToStaticMarkup(<PublicFeedbackPage form={localizeFeedbackForm(meetingForm)} submitted={false} error="follow_up_contact_required" />);

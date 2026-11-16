@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link, useRouter } from "@tanstack/react-router";
 import { Check, CircleCheck, RefreshCw } from "lucide-react";
 import type { MoneyTrackerPageData } from "../../platform/protected-data.js";
@@ -14,13 +14,13 @@ import { MoneyCategoryPicker, moneyCategoryLabel } from "./money-category-picker
 import { isRuleCategorized } from "./money-category-rules.js";
 import { MoneyImportDrop, MoneyImportHistory } from "./money-ledger-views.js";
 import { MoneyRulesView } from "./money-rules-view.js";
-import { MONEY_REVIEW_TABS, type MoneyReviewTab } from "./money-tracker-navigation.js";
+import { MONEY_REVIEW_TABS, moneyReviewCount, staleMoneyCashAccounts, type MoneyReviewTab } from "./money-tracker-navigation.js";
 import { EmptyState, formatDay, formatMinor, formatMonth, MoneyPanel } from "./money-ui.js";
 import { countLabel } from "@/lib/count-label";
 
 const TAB_LABELS: Record<MoneyReviewTab, string> = { queue: "Queue", rules: "Rules", imports: "Imports" };
 const TREATMENTS: readonly (readonly [MoneyTransferDisposition, string])[] = [
-  ["internal_transfer", "Own transfer"],
+  ["internal_transfer", "Own-account transfer"],
   ["spend", "Spending"],
   ["income", "Income"],
   ["refund", "Refund"],
@@ -30,10 +30,10 @@ const VISIBLE_GROUPS = 8;
 
 /** One place for the work that keeps rows out of the totals, plus the rules and imports behind it. */
 export function MoneyReviewView(props: MoneyTrackerPageData & { tab: MoneyReviewTab; rule?: string }) {
-  const staleAccounts = staleCashAccounts(props);
+  const staleAccounts = staleMoneyCashAccounts(props);
   const stalePrices = props.marketData.positions.filter((position) => position.state !== "fresh");
   const counts: Record<MoneyReviewTab, number> = {
-    queue: props.reviewCounts.uncategorized + props.transferReviewGroups.length + (stalePrices.length ? 1 : 0) + staleAccounts.length,
+    queue: moneyReviewCount(props.reviewCounts),
     rules: props.categoryRules.length + props.transferRules.length + props.transferPairRules.length,
     imports: props.imports.length,
   };
@@ -46,10 +46,10 @@ export function MoneyReviewView(props: MoneyTrackerPageData & { tab: MoneyReview
             to="/money"
             search={{ view: "review", tab: tab === "queue" ? undefined : tab }}
             aria-current={props.tab === tab ? "page" : undefined}
-            className={`-mb-px inline-flex h-9 items-center gap-2 border-b-2 px-3 text-sm font-medium ${props.tab === tab ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+            className={`-mb-px inline-flex min-h-11 items-center gap-2 border-b-2 px-3 text-sm font-medium ${props.tab === tab ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}
           >
             {TAB_LABELS[tab]}
-            <Badge variant="outline">{counts[tab].toLocaleString("en-GB")}</Badge>
+            <Badge variant="outline">{counts[tab].toLocaleString("en-GB")}{tab === "queue" ? " rows" : ""}</Badge>
           </Link>
         ))}
       </nav>
@@ -103,7 +103,6 @@ function QueueTitle({ title, count }: { title: string; count: number }) {
   );
 }
 
-/** The first suggestion is highlighted. Keys 1 to 3 pick for the first row. */
 function CategorizeQueue({ items, common, total, spendingRows }: { items: readonly MoneyReviewCategoryItem[]; common: readonly MoneyCategory[]; total: number; spendingRows?: number }) {
   const router = useRouter();
   const [done, setDone] = useState<readonly Readonly<{ id: string; description: string; category: MoneyCategory; affected: number }>[]>([]);
@@ -132,20 +131,8 @@ function CategorizeQueue({ items, common, total, spendingRows }: { items: readon
       setSaving(undefined);
     }
   };
-  const first = open[0];
-  useEffect(() => {
-    if (!first) return;
-    const onKey = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (event.metaKey || event.ctrlKey || event.altKey || !/^[1-3]$/.test(event.key) || target?.closest("input, textarea, select, [contenteditable], [role=dialog]")) return;
-      const category = picks(first)[Number(event.key) - 1];
-      if (category && !saving) void apply(first, category);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  });
   return (
-    <MoneyPanel title={<QueueTitle title="Categorize" count={Math.max(total - done.length, 0)} />} actions={<span className="hidden text-xs text-muted-foreground md:inline">Keys 1–3 pick a suggestion for the first row</span>}>
+    <MoneyPanel title={<QueueTitle title="Categorize" count={Math.max(total - done.length, 0)} />}>
       {error ? <p className="px-4 pt-2 text-sm text-negative" role="alert">{error}</p> : null}
       {spendingRows ? <p className="px-4 pt-2 text-xs text-muted-foreground">{Math.max(total - done.length, 0)} of {spendingRows.toLocaleString("en-GB")} spending and refund rows need a category ({((Math.max(total - done.length, 0) / spendingRows) * 100).toFixed(1)}%).</p> : null}
       <ul className="mt-2 divide-y border-t">
@@ -165,7 +152,6 @@ function CategorizeQueue({ items, common, total, spendingRows }: { items: readon
                 {options.map((category, index) => (
                   <Button key={category} type="button" size="sm" variant={index === 0 ? "secondary" : "outline"} disabled={saving !== undefined} onClick={() => void apply(item, category)}>
                     {moneyCategoryLabel(category)}
-                    {item === first ? <kbd className="hidden font-mono text-xs opacity-60 md:inline">{index + 1}</kbd> : null}
                   </Button>
                 ))}
                 <MoneyCategoryPicker compact value="uncategorized" disabled={saving !== undefined} ariaLabel={`Choose another category for ${item.description}`} onValue={(category) => void apply(item, category)} />
@@ -377,10 +363,4 @@ function BalanceQueue({
       </ul>
     </MoneyPanel>
   );
-}
-
-/** Cash accounts whose latest balance is older than the current month. */
-function staleCashAccounts(props: Pick<MoneyTrackerPageData, "accounts" | "accountRoles" | "accountLastObserved" | "deprecatedAccountIds">) {
-  const currentMonth = `${new Date().toISOString().slice(0, 7)}-01`;
-  return props.accounts.filter((account) => !props.deprecatedAccountIds.includes(account) && props.accountRoles[account] === "cash" && props.accountLastObserved[account] !== undefined && props.accountLastObserved[account]! < currentMonth);
 }
