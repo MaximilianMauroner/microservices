@@ -279,7 +279,7 @@ describe("Money redesign views", () => {
     expect(html).not.toContain("8.050 €");
     expect(html).toContain("Refunds lower spending");
     expect(html).toContain("+3.045 €");
-    expect(html).toContain("Review 1 rows");
+    expect(html).toContain("Review 1");
     expect(html).toContain("3 transfers still need a treatment.");
     expect(html).toMatch(/aria-selected="true"[\s\S]*Groceries/);
     expect(html).toMatch(/Travel[\s\S]*1\.200 €/);

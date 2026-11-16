@@ -291,16 +291,7 @@ export function MoneyImportHistory({ imports }: Pick<MoneyTrackerPageData, "impo
   return (
     <MoneyPanel
       title="Import history"
-      description="Deleting an import removes only the rows it added. Rebuild recalculates categories and transfer links from stored rows."
-      actions={
-        <AlertDialog open={reimportOpen} onOpenChange={changeReimportOpen}>
-          <AlertDialogTrigger render={<Button type="button" size="sm" variant="outline" disabled={!imports.length || deleting !== undefined || reimporting} />}>
-            <RefreshCw />
-            Rebuild data
-          </AlertDialogTrigger>
-          <ReimportDialogContent reimporting={reimporting} result={reimportResult} error={reimportError} onRetry={() => void reimportAll()} />
-        </AlertDialog>
-      }
+      description="Deleting an import removes only the rows it added."
     >
       {deleteError ? (
         <Alert className="m-3 w-auto" variant="destructive">
@@ -324,13 +315,13 @@ export function MoneyImportHistory({ imports }: Pick<MoneyTrackerPageData, "impo
                 <MoneyTableRow><MoneyTableHead scope="rowgroup" colSpan={4} className="bg-muted/60 font-semibold text-foreground">{date}</MoneyTableHead></MoneyTableRow>
                 {items.map((item) => (
                   <MoneyTableRow key={item.id}>
-                    <MoneyTableCell className="max-w-80">
+                    <MoneyTableCell data-label="File" className="max-w-80">
                       <span className="block truncate font-medium" title={item.filename}>{item.filename}</span>
                       <span className="sub">{formatLabel(item.format)} · {formatBytes(item.bytes)}</span>
                     </MoneyTableCell>
-                    <MoneyTableCell className="num">{item.insertedCount.toLocaleString("en-GB")}</MoneyTableCell>
-                    <MoneyTableCell className="num hide-sm text-muted-foreground">{item.duplicateCount.toLocaleString("en-GB")}</MoneyTableCell>
-                    <MoneyTableCell className="num">
+                    <MoneyTableCell data-label="New rows" className="num">{item.insertedCount.toLocaleString("en-GB")}</MoneyTableCell>
+                    <MoneyTableCell data-label="Duplicates" className="num hide-sm text-muted-foreground">{item.duplicateCount.toLocaleString("en-GB")}</MoneyTableCell>
+                    <MoneyTableCell data-label="Actions" className="num">
                       <AlertDialog>
                         <AlertDialogTrigger aria-label={`Delete ${item.filename}`} render={<Button type="button" variant="destructive-subtle" size="icon-sm" disabled={deleting !== undefined || reimporting} />}>
                           <Trash2 />
@@ -360,6 +351,15 @@ export function MoneyImportHistory({ imports }: Pick<MoneyTrackerPageData, "impo
         ) : (
           <EmptyState title="No imports yet" icon={<Upload />}>Completed imports appear here with their row counts.</EmptyState>
         )}
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3">
+        <p className="text-sm text-muted-foreground">Recalculates categories and transfer links for every stored row.</p>
+        <AlertDialog open={reimportOpen} onOpenChange={changeReimportOpen}>
+          <AlertDialogTrigger render={<Button type="button" size="sm" variant="destructive-outline" disabled={!imports.length || deleting !== undefined || reimporting} />}>
+            <RefreshCw /> Rebuild data
+          </AlertDialogTrigger>
+          <ReimportDialogContent reimporting={reimporting} result={reimportResult} error={reimportError} onRetry={() => void reimportAll()} />
+        </AlertDialog>
       </div>
     </MoneyPanel>
   );
@@ -497,7 +497,6 @@ export function MoneyInvestmentsView({
     .filter((item) => item.value > 0);
   const ranked = [...priced].sort((left, right) => (right.marketValueMinor ?? 0) - (left.marketValueMinor ?? 0));
   const largestValue = ranked[0]?.marketValueMinor ?? 1;
-  const topThree = ranked.slice(0, 3).reduce((sum, position) => sum + (position.marketValueMinor ?? 0), 0);
   const latestBenchmark = history.at(-1);
   const aboveInflationMinor = latestBenchmark?.inflationBenchmark === undefined ? undefined : marketData.totals.knownMarketValueMinor - Math.round(latestBenchmark.inflationBenchmark * 100);
   const versusTargetMinor = latestBenchmark ? marketData.totals.knownMarketValueMinor - Math.round(latestBenchmark.target7Percent * 100) : undefined;
@@ -627,7 +626,6 @@ export function MoneyInvestmentsView({
           {ranked.length ? (
             <PanelFooter>
               <span>Largest <b className="font-semibold text-foreground">{ranked[0]!.name} {formatRatio((ranked[0]!.marketValueMinor ?? 0) / total)}</b></span>
-              <span>Top 3 <b className="font-semibold text-foreground">{formatRatio(topThree / total)}</b></span>
             </PanelFooter>
           ) : null}
         </MoneyPanel>
@@ -665,18 +663,18 @@ export function MoneyInvestmentsView({
                 const move = movesSince.get(position.canonicalKey);
                 return (
                   <MoneyTableRow key={position.canonicalKey}>
-                    <MoneyTableCell>
+                    <MoneyTableCell data-label="Instrument">
                       <span className="font-medium">{position.name}</span>
                       {position.state !== "fresh" ? <Badge variant="outline" className="ml-2 text-warning">{position.state === "unpriced" ? "No price" : `Price from ${position.priceDate ? formatDay(position.priceDate) : "earlier"}`}</Badge> : null}
                       <span className="sub">{assetClassLabel(position.assetClass)} · {position.providerKey ?? position.canonicalKey} · cost {formatMinor(position.costBasisMinor)}</span>
                     </MoneyTableCell>
-                    <MoneyTableCell className="num hide-sm">{Number(position.quantity).toLocaleString("de-DE", { maximumFractionDigits: 4 })}</MoneyTableCell>
-                    <MoneyTableCell className="num hide-sm">{position.close && position.currency ? decimalMoney(position.close, position.currency) : "—"}</MoneyTableCell>
-                    <MoneyTableCell className="num font-semibold">
+                    <MoneyTableCell data-label="Quantity" className="num hide-sm">{Number(position.quantity).toLocaleString("de-DE", { maximumFractionDigits: 4 })}</MoneyTableCell>
+                    <MoneyTableCell data-label="Price" className="num hide-sm">{position.close && position.currency ? decimalMoney(position.close, position.currency) : "—"}</MoneyTableCell>
+                    <MoneyTableCell data-label="Value" className="num font-semibold">
                       {position.marketValueMinor === undefined ? "—" : formatMinor(position.marketValueMinor)}
                       {position.marketValueMinor !== undefined && total ? <span className="sub md:hidden">{formatRatio(position.marketValueMinor / total)}</span> : null}
                     </MoneyTableCell>
-                    <MoneyTableCell className="hide-sm">
+                    <MoneyTableCell data-label="Weight" className="hide-sm">
                       {position.marketValueMinor === undefined ? null : (
                         <span className="flex items-center gap-2">
                           <ShareBar ratio={position.marketValueMinor / largestValue} className="flex-1" />
@@ -685,12 +683,12 @@ export function MoneyInvestmentsView({
                       )}
                     </MoneyTableCell>
                     {checkIn ? (
-                      <MoneyTableCell className={`num hide-sm ${move ? toneClass(move.moveMinor) : "text-muted-foreground"}`}>
+                      <MoneyTableCell data-label="Since check-in" className={`num hide-sm ${move ? toneClass(move.moveMinor) : "text-muted-foreground"}`}>
                         {move ? formatMinor(move.moveMinor, { signed: true }) : "—"}
                         {move?.returnPercent === undefined ? null : <span className="sub">{formatPercent(move.returnPercent)}</span>}
                       </MoneyTableCell>
                     ) : null}
-                    <MoneyTableCell className="num">
+                    <MoneyTableCell data-label="Gain" className="num">
                       {position.unrealizedGainMinor === undefined ? "—" : (
                         <span className="flex items-center justify-end gap-3">
                           <DivergingBar value={position.unrealizedGainMinor} maximum={maxGain} className="hidden w-20 md:block" />
@@ -1113,12 +1111,12 @@ function InvestmentActivityHistory({
               <MoneyTableBody>
                 {sortedRealized.map((item) => (
                   <MoneyTableRow key={item.symbol}>
-                    <MoneyTableCell className="font-medium">{item.symbol}</MoneyTableCell>
-                    <MoneyTableCell className="num hide-sm">{item.saleCount}</MoneyTableCell>
-                    <MoneyTableCell className="num hide-sm">{item.soldQuantity}</MoneyTableCell>
-                    <MoneyTableCell className="num">{formatMinor(item.proceedsMinor)}</MoneyTableCell>
-                    <MoneyTableCell className="num hide-sm">{formatMinor(item.costBasisMinor)}</MoneyTableCell>
-                    <MoneyTableCell className={`num ${toneClass(item.gainMinor)}`}>
+                    <MoneyTableCell data-label="Asset" className="font-medium">{item.symbol}</MoneyTableCell>
+                    <MoneyTableCell data-label="Sales" className="num hide-sm">{item.saleCount}</MoneyTableCell>
+                    <MoneyTableCell data-label="Quantity sold" className="num hide-sm">{item.soldQuantity}</MoneyTableCell>
+                    <MoneyTableCell data-label="Proceeds" className="num">{formatMinor(item.proceedsMinor)}</MoneyTableCell>
+                    <MoneyTableCell data-label="FIFO basis" className="num hide-sm">{formatMinor(item.costBasisMinor)}</MoneyTableCell>
+                    <MoneyTableCell data-label="Gain" className={`num ${toneClass(item.gainMinor)}`}>
                       {formatMinor(item.gainMinor, { signed: true })}
                       <span className="sub">{gainPercent(item.gainMinor, item.costBasisMinor)}</span>
                     </MoneyTableCell>
@@ -1148,15 +1146,15 @@ function InvestmentActivityHistory({
               <MoneyTableBody>
                 {sortedPositions.map((item, index) => (
                   <MoneyTableRow key={`${item.symbol}:${item.name ?? index}`}>
-                    <MoneyTableCell>
+                    <MoneyTableCell data-label="Asset">
                       <span className="font-medium">{item.symbol}</span>
                       {item.name ? <span className="sub">{item.name}</span> : null}
                     </MoneyTableCell>
-                    <MoneyTableCell className="num hide-sm">{item.quantity}</MoneyTableCell>
-                    <MoneyTableCell className="num">{money(item.boughtMinor, item.currency)}</MoneyTableCell>
-                    <MoneyTableCell className="num">{money(item.soldMinor, item.currency)}</MoneyTableCell>
-                    <MoneyTableCell className="num hide-sm">{money(item.incomeMinor, item.currency)}</MoneyTableCell>
-                    <MoneyTableCell className="num hide-sm">{money(item.feesMinor + item.taxesMinor, item.currency)}</MoneyTableCell>
+                    <MoneyTableCell data-label="Quantity" className="num hide-sm">{item.quantity}</MoneyTableCell>
+                    <MoneyTableCell data-label="Bought" className="num">{money(item.boughtMinor, item.currency)}</MoneyTableCell>
+                    <MoneyTableCell data-label="Sold" className="num">{money(item.soldMinor, item.currency)}</MoneyTableCell>
+                    <MoneyTableCell data-label="Income" className="num hide-sm">{money(item.incomeMinor, item.currency)}</MoneyTableCell>
+                    <MoneyTableCell data-label="Costs" className="num hide-sm">{money(item.feesMinor + item.taxesMinor, item.currency)}</MoneyTableCell>
                   </MoneyTableRow>
                 ))}
               </MoneyTableBody>

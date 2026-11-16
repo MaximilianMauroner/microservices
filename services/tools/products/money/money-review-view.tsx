@@ -267,9 +267,10 @@ function TransferQueue({ groups }: { groups: readonly MoneyTransferReviewGroup[]
                 {group.items.slice(0, 3).map((item) => `${formatDay(item.occurredAt)} ${formatMinor(item.amountMinor, { precise: true, signed: true })}`).join(" · ")}
                 {group.items.length > 3 ? ` · ${group.items.length - 3} more` : ""}
               </p>
+              <p className="text-xs text-muted-foreground">Suggested: Own transfer</p>
               <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label={`Treatment for ${group.description}`}>
                 {TREATMENTS.map(([disposition, label]) => (
-                  <Button key={disposition} type="button" size="sm" variant={selected === disposition ? "secondary" : "outline"} aria-pressed={selected === disposition} onClick={() => setChoice((current) => ({ ...current, [group.representativeId]: disposition }))}>
+                  <Button key={disposition} type="button" size="sm" className={disposition === "internal_transfer" ? "border-primary" : undefined} variant={selected === disposition ? "secondary" : "outline"} aria-pressed={selected === disposition} onClick={() => setChoice((current) => ({ ...current, [group.representativeId]: disposition }))}>
                     {selected === disposition ? <Check /> : null}
                     {label}
                   </Button>

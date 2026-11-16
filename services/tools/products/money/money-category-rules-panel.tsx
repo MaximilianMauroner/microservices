@@ -237,13 +237,13 @@ function RulePreview({ preview, error, categoryChosen, editing }: Readonly<{ pre
                 const changes = categoryChosen && row.nextCategory !== row.category;
                 return (
                   <MoneyTableRow key={row.id} className={changes ? undefined : "text-muted-foreground"}>
-                    <MoneyTableCell className="hide-sm whitespace-nowrap">{formatDay(row.date)}</MoneyTableCell>
-                    <MoneyTableCell className="max-w-80">
+                    <MoneyTableCell data-label="Date" className="hide-sm whitespace-nowrap">{formatDay(row.date)}</MoneyTableCell>
+                    <MoneyTableCell data-label="Description" className="max-w-80">
                       <span className="block truncate" title={row.description}>{row.description}</span>
                       <span className="sub">{row.accountName}{editing && !row.matches ? ", no longer matches this rule" : ""}</span>
                     </MoneyTableCell>
-                    <MoneyTableCell className="num">{formatAmount(row.amountMinor, row.currency)}</MoneyTableCell>
-                    <MoneyTableCell>
+                    <MoneyTableCell data-label="Amount" className="num">{formatAmount(row.amountMinor, row.currency)}</MoneyTableCell>
+                    <MoneyTableCell data-label="Category">
                       <span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 md:flex-nowrap md:whitespace-nowrap">
                         {changes ? (
                           <>
@@ -309,7 +309,7 @@ function RuleList({ rules, editing, onEdit, onRemoved }: Readonly<{ rules: reado
       {error ? <p role="alert" className="px-4 pb-2 text-sm text-negative">{error}</p> : null}
       {shown.length ? (
         <div className="max-h-[36rem] overflow-auto border-t [&>[data-slot=table-container]]:overflow-visible">
-          <MoneyTable>
+          <MoneyTable aria-label="Category rules">
             <MoneyTableHeader className="sticky top-0 z-10 bg-card">
               <MoneyTableRow>
                 <MoneyTableHead className="num hide-sm" title="Rules run in this order">Order</MoneyTableHead>
@@ -322,14 +322,14 @@ function RuleList({ rules, editing, onEdit, onRemoved }: Readonly<{ rules: reado
             <MoneyTableBody>
               {shown.map(({ rule, position }) => (
                 <MoneyTableRow key={rule.id} aria-selected={rule.id === editing ? true : undefined}>
-                  <MoneyTableCell className="num hide-sm text-muted-foreground">{position}</MoneyTableCell>
-                  <MoneyTableCell className="max-w-[28rem]">
+                  <MoneyTableCell data-label="Order" className="num hide-sm text-muted-foreground">{position}</MoneyTableCell>
+                  <MoneyTableCell data-label="When" className="max-w-[28rem]">
                     <span className="block md:truncate" title={ruleSentence(rule)}><RuleCondition rule={rule} /></span>
                     {rule.accountName ? <span className="sub">Only in {rule.accountName}</span> : null}
                   </MoneyTableCell>
-                  <MoneyTableCell><CategoryValue category={rule.category} /></MoneyTableCell>
-                  <MoneyTableCell className={`num ${rule.rowCount ? "" : "text-muted-foreground"}`}>{rule.rowCount.toLocaleString("en-GB")}</MoneyTableCell>
-                  <MoneyTableCell className="w-px whitespace-nowrap">
+                  <MoneyTableCell data-label="Category"><CategoryValue category={rule.category} /></MoneyTableCell>
+                  <MoneyTableCell data-label="Rows" className={`num ${rule.rowCount ? "" : "text-muted-foreground"}`}>{rule.rowCount.toLocaleString("en-GB")}</MoneyTableCell>
+                  <MoneyTableCell data-label="Actions" className="w-px whitespace-nowrap">
                     <Button type="button" size="icon-xs" variant="ghost" className="max-md:size-8" aria-label={`Edit rule ${position}`} title="Edit" onClick={() => onEdit(rule)}><Pencil /></Button>
                     <Button type="button" size="icon-xs" variant="ghost" className="max-md:size-8" aria-label={`Remove rule ${position}`} title="Remove" disabled={busy} onClick={() => setRemoving(rule)}><Trash2 /></Button>
                   </MoneyTableCell>

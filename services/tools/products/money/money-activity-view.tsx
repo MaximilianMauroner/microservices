@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useRouter } from "@tanstack/react-router";
-import { Inbox, Search } from "lucide-react";
+import { Inbox, ListFilter, Search } from "lucide-react";
 import type { MoneyTrackerPageData } from "../../platform/protected-data.js";
 import { MONEY_CATEGORIES, type MoneyCategory } from "./money-enums.js";
 import type { MoneyActivityPage, MoneyActivitySortKey } from "./money-repository.js";
@@ -14,6 +14,7 @@ import {
   EmptyState,
   formatDay,
   formatMinor,
+  toneClass,
   MoneyPanel,
   MoneyTable,
   MoneyTableBody,
@@ -161,8 +162,9 @@ export function MoneyActivityView({
             <NativeSelectOption value="all">All categories</NativeSelectOption>
             {MONEY_CATEGORIES.map((value) => <NativeSelectOption key={value} value={value}>{moneyCategoryLabel(value)}</NativeSelectOption>)}
           </NativeSelect>
-          <Button type="button" size="sm" variant={reviewOnly ? "secondary" : "outline"} aria-pressed={reviewOnly} onClick={() => setReviewOnly((current) => !current)}>
+          <Button type="button" size="sm" variant={reviewOnly ? "default" : "outline"} aria-pressed={reviewOnly} onClick={() => setReviewOnly((current) => !current)}>
             Needs review
+            <ListFilter />
             {reviewTotal ? <span className="money-review-badge ml-0">{reviewTotal > 999 ? "999+" : reviewTotal}</span> : null}
           </Button>
           <span className="ml-auto text-xs text-muted-foreground tabular-nums" aria-live="polite">
@@ -193,7 +195,7 @@ export function MoneyActivityView({
                       <TransactionDescription className="text-sm font-medium" description={item.description || item.sourceType} />
                       <p className="truncate text-xs text-muted-foreground">{formatDay(item.occurredAt)} · {item.accountName}</p>
                     </div>
-                    <strong className={`text-right text-sm font-semibold tabular-nums ${item.amountMinor > 0 ? "text-positive" : ""}`}>{formatMinor(item.amountMinor, { precise: true, signed: true })}</strong>
+                    <strong className={`text-right text-sm font-semibold tabular-nums ${toneClass(item.amountMinor)}`}>{formatMinor(item.amountMinor, { precise: true, signed: true })}</strong>
                     <div className="col-span-2 flex justify-end">{chip(item)}</div>
                   </li>
                 ))}
@@ -232,7 +234,7 @@ export function MoneyActivityView({
                         </MoneyTableCell>
                         <MoneyTableCell className="truncate text-muted-foreground" title={item.accountName}>{item.accountName}</MoneyTableCell>
                         <MoneyTableCell>{chip(item)}</MoneyTableCell>
-                        <MoneyTableCell className={`num font-semibold ${item.amountMinor > 0 ? "text-positive" : ""}`}>{formatMinor(item.amountMinor, { precise: true, signed: true })}</MoneyTableCell>
+                        <MoneyTableCell className={`num font-semibold ${toneClass(item.amountMinor)}`}>{formatMinor(item.amountMinor, { precise: true, signed: true })}</MoneyTableCell>
                       </MoneyTableRow>
                     ))}
                   </MoneyTableBody>

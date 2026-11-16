@@ -611,14 +611,19 @@ export function FanChart({ points, label, height = 260, tooltip }: { points: rea
   const values = points.flatMap((point) => [point.observed, point.low, point.high, point.inflation].filter((value): value is number => value !== undefined));
   const ticks = niceTicks(Math.min(...values), Math.max(...values), 4);
   const y = linearScale(ticks, top, plotHeight);
-  const x = (index: number) => left + (index / Math.max(points.length - 1, 1)) * (right - left);
+  const today = points.findLastIndex((point) => point.observed !== undefined);
+  const split = left + (right - left) * 0.4;
+  const x = (index: number) => today <= 0 || today >= points.length - 1
+    ? left + (index / Math.max(points.length - 1, 1)) * (right - left)
+    : index <= today
+      ? left + (index / today) * (split - left)
+      : split + ((index - today) / (points.length - 1 - today)) * (right - split);
   const line = (key: "observed" | "central" | "inflation") =>
     pathFor(points.flatMap((point, index) => (point[key] === undefined ? [] : [[x(index), y(point[key]!)] as const])));
   const range = points.flatMap((point, index) => (point.low === undefined || point.high === undefined ? [] : [{ index, low: point.low, high: point.high }]));
   const band = range.length
     ? `${pathFor(range.map((point) => [x(point.index), y(point.high)]))}${[...range].reverse().map((point) => `L${x(point.index).toFixed(1)},${y(point.low).toFixed(1)}`).join("")}Z`
     : "";
-  const today = points.findLastIndex((point) => point.observed !== undefined);
   const end = points.at(-1);
   return (
     <div ref={ref} className="money-chart" style={{ height }}>

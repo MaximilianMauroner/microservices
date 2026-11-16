@@ -122,7 +122,7 @@ export function MoneySpendingView({
         <Stat
           label="Uncategorized"
           value={formatMinor(uncategorized)}
-          detail={reviewCounts.uncategorized ? <Link to="/money" search={{ view: "review" }} className="text-warning hover:underline">Review {reviewCounts.uncategorized.toLocaleString("en-GB")} rows</Link> : "None"}
+          detail={reviewCounts.uncategorized ? <Button variant="outline" size="sm" render={<Link to="/money" search={{ view: "review" }} />}>Review {reviewCounts.uncategorized.toLocaleString("en-GB")}</Button> : "None"}
         />
       </StatStrip>
 
@@ -130,7 +130,7 @@ export function MoneySpendingView({
         title="Monthly cash flow"
         description={
           <>
-            Select a month to filter the categories. Refunds lower spending. Transfers between your accounts are left out.
+            Refunds lower spending. Transfers between your accounts are left out.
             {transferReview.unresolvedNegativeCount + transferReview.unresolvedPositiveCount ? (
               <> <Link to="/money" search={{ view: "review" }} className="text-warning hover:underline">{(transferReview.unresolvedNegativeCount + transferReview.unresolvedPositiveCount).toLocaleString("en-GB")} transfers still need a treatment.</Link></>
             ) : null}
@@ -175,7 +175,7 @@ export function MoneySpendingView({
       </MoneyPanel>
 
       <div className="money-grid money-grid--split">
-        <MoneyPanel title="Categories" description={month ? `${formatMonth(month.month)} against each category's average` : "Spending after refunds and the shape of each month"}>
+        <MoneyPanel title="Categories" description="Tap a month to filter. Select a category to see its details.">
           <div className="mt-2 overflow-x-auto">
             {shown.length ? (
               <MoneyTable aria-label="Spending categories">
@@ -200,16 +200,16 @@ export function MoneySpendingView({
                         onClick={() => selectCategory(row.category)}
                         onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); selectCategory(row.category); } }}
                       >
-                        <MoneyTableCell><CategoryValue category={row.category} /></MoneyTableCell>
-                        <MoneyTableCell className="num">{formatMinor(row.value)}</MoneyTableCell>
-                        <MoneyTableCell className="hide-sm w-[28%]">
+                        <MoneyTableCell data-label="Category"><CategoryValue category={row.category} /></MoneyTableCell>
+                        <MoneyTableCell data-label="Spending" className="num">{formatMinor(row.value)}</MoneyTableCell>
+                        <MoneyTableCell data-label="Share" className="hide-sm w-[28%]">
                           <span className="flex items-center gap-2">
                             <ShareBar ratio={row.value / largest} className="flex-1" />
                             <span className="w-11 text-right text-xs text-muted-foreground tabular-nums">{formatRatio(categoryTotal ? row.value / categoryTotal : 0)}</span>
                           </span>
                         </MoneyTableCell>
-                        <MoneyTableCell className={`num hide-sm ${month ? toneClass(-delta) : ""}`}>{month ? formatMinor(delta, { signed: true }) : formatMinor(row.average)}</MoneyTableCell>
-                        <MoneyTableCell className="num"><SparkBars values={row.values.slice(-12)} highlight={selectedIndex === undefined ? undefined : selectedIndex - Math.max(0, row.values.length - 12)} /></MoneyTableCell>
+                        <MoneyTableCell data-label={month ? "vs average" : "Per month"} className={`num hide-sm ${month ? toneClass(-delta) : ""}`}>{month ? formatMinor(delta, { signed: true }) : formatMinor(row.average)}</MoneyTableCell>
+                        <MoneyTableCell data-label="Trend" className="num"><SparkBars values={row.values.slice(-12)} highlight={selectedIndex === undefined ? undefined : selectedIndex - Math.max(0, row.values.length - 12)} /></MoneyTableCell>
                       </MoneyTableRow>
                     );
                   })}

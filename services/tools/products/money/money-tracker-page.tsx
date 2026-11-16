@@ -232,7 +232,7 @@ function Overview(props: MoneyTrackerPageData) {
                 </>
               ) : null}
             </p>
-            <p className="mt-1.5 text-xs text-muted-foreground/80">
+            <p className="mt-1.5 text-xs text-muted-foreground">
               Balances through {latestMonth ? formatMonth(latestMonth.date) : "—"} · {position.portfolio.priceDate ? `prices ${formatDay(position.portfolio.priceDate)}` : "prices unavailable"}
             </p>
           </div>
@@ -254,24 +254,15 @@ function Overview(props: MoneyTrackerPageData) {
             {open.length ? (
               <>
                 <strong className="font-semibold">Review needed.</strong>{" "}
-                <span className="text-muted-foreground">Totals leave these rows out until you fix them.</span>
+                <span className="text-muted-foreground">{open.map(([count, one, many]) => `${count.toLocaleString("en-GB")} ${count === 1 ? one : many}`).join(", ")}. Totals leave these rows out until you fix them.</span>
               </>
             ) : (
               "All data is reviewed. Totals include every row."
             )}
           </span>
           {open.length ? (
-            <span className="flex flex-wrap gap-1.5">
-              {open.map(([count, one, many]) => (
-                <Link key={one} to="/money" search={{ view: "review" }} className="money-chip">
-                  {count.toLocaleString("en-GB")} {count === 1 ? one : many}
-                </Link>
-              ))}
-            </span>
-          ) : null}
-          {open.length ? (
             <Link to="/money" search={{ view: "review" }} className={buttonVariants({ variant: "outline", size: "sm" })}>
-              Review
+              Review {open.reduce((sum, [count]) => sum + count, 0).toLocaleString("en-GB")} items
             </Link>
           ) : null}
         </div>
@@ -469,6 +460,7 @@ function Accounts(props: MoneyTrackerPageData) {
     };
   }).sort((left, right) => (right.value ?? -Infinity) - (left.value ?? -Infinity));
   const rows = allRows.filter((row) => !props.deprecatedAccountIds.includes(row.account));
+  const hasYearChange = rows.some((row) => row.change !== undefined);
   const deprecatedRows = allRows.filter((row) => props.deprecatedAccountIds.includes(row.account));
   const current = rows.filter((row) => row.lastObserved === currentMonth).length;
   const withBalance = rows.filter((row) => row.lastObserved).length;
@@ -496,7 +488,7 @@ function Accounts(props: MoneyTrackerPageData) {
       <StatStrip label="Account summary">
         <Stat label="Cash" value={formatMinor(position.cash.valueMinor)} detail={`${rows.filter((row) => row.role === "cash").length} accounts`} />
         <Stat label="Portfolio" value={formatMinor(position.portfolio.knownValueMinor)} detail={position.portfolio.priceDate ? `Prices from ${formatDay(position.portfolio.priceDate)}` : "No prices yet"} />
-        <Stat label="1-year change" value={trends.yearOverYear ? formatEuro(trends.yearOverYear.total.change, { signed: true }) : "—"} tone={trends.yearOverYear?.total.change} detail="All accounts, end of month" />
+        {trends.yearOverYear ? <Stat label="1-year change" value={formatEuro(trends.yearOverYear.total.change, { signed: true })} tone={trends.yearOverYear.total.change} detail="All accounts, end of month" /> : null}
         <Stat label={`Updated in ${formatMonth(currentMonth, true)}`} value={`${current} of ${withBalance}`} detail={withBalance - current ? <span className="text-warning">{withBalance - current} balance{withBalance - current === 1 ? " is" : "s are"} older</span> : "All current"} />
       </StatStrip>
       {accountError ? <p role="alert" className="text-sm text-negative">{accountError}</p> : null}
@@ -513,7 +505,7 @@ function Accounts(props: MoneyTrackerPageData) {
               <MoneyTableRow>
                 <MoneyTableHead>Account</MoneyTableHead>
                 <MoneyTableHead className="num">Balance</MoneyTableHead>
-                <MoneyTableHead className="num hide-sm">1 year</MoneyTableHead>
+                {hasYearChange ? <MoneyTableHead className="num hide-sm">1 year</MoneyTableHead> : null}
                 <MoneyTableHead className="num hide-sm">12 months</MoneyTableHead>
                 <MoneyTableHead className="hide-sm">Updated</MoneyTableHead>
                 <MoneyTableHead className="num"><span className="sr-only">Actions</span></MoneyTableHead>
@@ -522,33 +514,34 @@ function Accounts(props: MoneyTrackerPageData) {
             <MoneyTableBody>
               {rows.map((row) => {
                 const old = row.lastObserved !== undefined && row.lastObserved < currentMonth;
+                const reason = row.value === undefined ? "A known zero balance is required." : "The latest balance must be zero.";
                 return [
                   <MoneyTableRow key={row.account} data-selectable onClick={() => setSelected(row.account)}>
-                    <MoneyTableCell>
+                    <MoneyTableCell data-label="Account">
                       <button type="button" className="text-left font-medium hover:underline" onClick={(event) => { event.stopPropagation(); setSelected(row.account); }}>{row.label}</button>
                       <span className="sub">{row.role === "investment" ? "Investments" : "Cash"}<span className="md:hidden">{row.lastObserved ? ` · ${formatMonth(row.lastObserved, true)}` : ""}</span></span>
                     </MoneyTableCell>
-                    <MoneyTableCell className="num font-semibold">{row.value === undefined ? <span className="text-muted-foreground">No balance</span> : formatEuro(row.value, { precise: true })}</MoneyTableCell>
-                    <MoneyTableCell className={`num hide-sm ${toneClass(row.change)}`}>{row.change === undefined ? "—" : formatEuro(row.change, { signed: true })}</MoneyTableCell>
-                    <MoneyTableCell className="num hide-sm"><SparkLine values={row.history} /></MoneyTableCell>
-                    <MoneyTableCell className="hide-sm">{row.lastObserved ? old ? <Badge variant="outline" className="text-warning">{formatMonth(row.lastObserved, true)}</Badge> : <span className="text-muted-foreground">{formatMonth(row.lastObserved, true)}</span> : <span className="text-muted-foreground">Never</span>}</MoneyTableCell>
-                    <MoneyTableCell className="num" onClick={(event) => event.stopPropagation()}>
+                    <MoneyTableCell data-label="Balance" className="num font-semibold">{row.value === undefined ? <span className="text-muted-foreground">No balance</span> : formatEuro(row.value, { precise: true })}</MoneyTableCell>
+                    {hasYearChange ? <MoneyTableCell data-label="1 year" className={`num hide-sm ${toneClass(row.change)}`}>{row.change === undefined ? <span className="text-muted-foreground">not yet</span> : formatEuro(row.change, { signed: true })}</MoneyTableCell> : null}
+                    <MoneyTableCell data-label="12 months" className="num hide-sm"><SparkLine values={row.history} /></MoneyTableCell>
+                    <MoneyTableCell data-label="Updated" className="hide-sm">{row.lastObserved ? old ? <Badge variant="outline" className="text-warning">{formatMonth(row.lastObserved, true)}</Badge> : <span className="text-muted-foreground">{formatMonth(row.lastObserved, true)}</span> : <span className="text-muted-foreground">Never</span>}</MoneyTableCell>
+                    <MoneyTableCell data-label="Actions" className="num" onClick={(event) => event.stopPropagation()}>
                       {row.role === "cash" ? (
                         <div className="flex flex-wrap justify-end gap-2">
                           <Button type="button" size="sm" variant="outline" aria-expanded={editing === row.account} onClick={() => setEditing(editing === row.account ? undefined : row.account)}>
                             Update
                           </Button>
-                          <Button type="button" size="sm" variant="ghost" aria-label={`Deprecate ${row.label}`} aria-describedby={row.value !== 0 ? `deprecate-${row.account}` : undefined} disabled={pendingAccount !== undefined || row.value !== 0} onClick={() => void setDeprecated(row.account, true)}>
+                          <Button type="button" size="sm" variant="ghost" aria-label={`Deprecate ${row.label}`} aria-describedby={row.value !== 0 ? `deprecate-${row.account}` : undefined} title={row.value !== 0 ? reason : undefined} disabled={pendingAccount !== undefined || row.value !== 0} onClick={() => void setDeprecated(row.account, true)}>
                             {pendingAccount === row.account ? "Saving…" : "Deprecate"}
                           </Button>
-                          {row.value !== 0 ? <span id={`deprecate-${row.account}`} className="sr-only">{row.value === undefined ? "A known zero balance is required." : "The latest balance must be zero."}</span> : null}
+                          {row.value !== 0 ? <span id={`deprecate-${row.account}`} className="sr-only">{reason}</span> : null}
                         </div>
                       ) : null}
                     </MoneyTableCell>
                   </MoneyTableRow>,
                   editing === row.account ? (
                     <MoneyTableRow key={`${row.account}:edit`}>
-                      <MoneyTableCell colSpan={6} className="p-0">
+                      <MoneyTableCell data-label="Update balance" colSpan={hasYearChange ? 6 : 5} className="p-0">
                         <BalanceForm accountId={row.account} label={row.label} value={row.value} onDone={saved} onCancel={() => setEditing(undefined)} />
                       </MoneyTableCell>
                     </MoneyTableRow>
@@ -710,22 +703,27 @@ function Plan(props: MoneyTrackerPageData) {
   // Start the forecast lines at today's value so they join the observed line.
   const joined = points.map((point, index) => (index === observed.length - 1 ? { ...point, central: current, low: current, high: current, inflation: current } : point));
   const planning = props.planning;
+  const contributionMax = Math.max(5_000, Math.ceil(history / 500) * 1_000);
   return (
     <div className="money-stack">
       <Card className="gap-0 py-0">
         <div className="flex flex-wrap items-end gap-x-7 gap-y-3 px-4 py-3.5">
           <label className="grid min-w-64 flex-[1_1_18rem] gap-1.5 text-xs text-muted-foreground">
             Monthly contribution
+            <span>{formatEuro(history)} is your average monthly contribution to the portfolio.</span>
             <span className="flex items-center gap-3">
-              <Slider
-                className="w-full"
-                min={0}
-                max={Math.max(5_000, Math.ceil(history / 500) * 1_000)}
-                step={50}
-                value={[monthly]}
-                aria-label="Monthly contribution slider"
-                onValueChange={(value) => setContribution(Array.isArray(value) ? value[0]! : value)}
-              />
+              <span className="grid flex-1 gap-1">
+                <Slider
+                  className="w-full"
+                  min={0}
+                  max={contributionMax}
+                  step={50}
+                  value={[monthly]}
+                  aria-label="Monthly contribution slider"
+                  onValueChange={(value) => setContribution(Array.isArray(value) ? value[0]! : value)}
+                />
+                <span className="flex justify-between"><span>{formatEuro(0)}</span><span>{formatEuro(contributionMax)}</span></span>
+              </span>
               <span className="flex h-8 items-center gap-1 rounded-md border border-input bg-control px-2">
                 <input
                   className="w-16 bg-transparent text-right text-sm text-foreground tabular-nums outline-none"
@@ -747,9 +745,7 @@ function Plan(props: MoneyTrackerPageData) {
           </div>
           {contribution !== undefined && contribution !== history ? (
             <Button type="button" size="sm" variant="ghost" onClick={() => setContribution(undefined)}>Use history: {formatEuro(history)}</Button>
-          ) : (
-            <p className="pb-1.5 text-xs text-muted-foreground">{formatEuro(history)} is your average monthly contribution to the portfolio.</p>
-          )}
+          ) : null}
         </div>
         <StatStrip label="Projection summary" className="rounded-none border-t shadow-none">
           <Stat label={`In ${years} year${years === 1 ? "" : "s"}`} value={formatEuro(final.estimate)} detail={`80% range ${formatCompact(final.range[0])} – ${formatCompact(final.range[1])} €`} />
