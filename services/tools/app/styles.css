@@ -532,8 +532,6 @@ html[data-theme="light"]:has([data-suite-accent]) {
   .money-callout { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; padding: .6rem 1rem; border-top: 1px solid var(--border); font-size: .8125rem; }
   .money-callout__dot { width: .5rem; height: .5rem; flex: none; border-radius: 99px; background: var(--warning); }
   .money-callout__dot[data-tone="positive"] { background: var(--positive); }
-  .money-chip { display: inline-flex; align-items: center; min-height: 1.5rem; padding: 0 .5rem; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--control); color: var(--foreground); font-size: .6875rem; font-weight: 600; white-space: nowrap; }
-  .money-chip:hover { border-color: var(--product-accent-border); }
   .segmented { display: inline-flex; max-width: 100%; overflow-x: auto; scrollbar-width: none; padding: 2px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--muted); }
   .segmented button { display: inline-flex; align-items: center; gap: .35rem; height: 1.75rem; padding: 0 .7rem; border-radius: var(--radius-md); color: var(--muted-foreground); font-size: .8rem; font-weight: 500; white-space: nowrap; transition: color 150ms ease, background-color 150ms ease; }
   .segmented button:hover { color: var(--foreground); }
@@ -635,6 +633,20 @@ html[data-theme="light"]:has([data-suite-accent]) {
     .money-stat:last-child:nth-child(odd) { grid-column: span 2; }
     .money-heading p { display: none; }
     .money-table .hide-sm { display: none; }
+    /* Tables whose hidden columns carry a label become stacked cards, so those values stay
+       reachable instead of disappearing. Tables without labels keep the hide-sm behaviour. */
+    .money-table:has(td.hide-sm[data-label]) { display: block; }
+    /* The header becomes a button bar, so sortable columns stay reachable above the cards. */
+    .money-table:has(td.hide-sm[data-label]) thead { display: block; border-bottom: 1px solid var(--border); }
+    .money-table:has(td.hide-sm[data-label]) thead tr { display: flex; flex-wrap: wrap; gap: .25rem; padding: .6rem 1rem .35rem; }
+    .money-table:has(td.hide-sm[data-label]) thead th { display: block; padding: 0; border-bottom: 0; white-space: nowrap; }
+    .money-table:has(td.hide-sm[data-label]) thead th:not(:has(button)) { display: none; }
+    .money-table:has(td.hide-sm[data-label]) tbody { display: block; }
+    .money-table:has(td.hide-sm[data-label]) tbody tr { display: block; border-bottom: 1px solid var(--border); }
+    .money-table:has(td.hide-sm[data-label]) tbody tr:last-child { border-bottom: 0; }
+    .money-table:has(td.hide-sm[data-label]) td, .money-table:has(td.hide-sm[data-label]) td.hide-sm { display: flow-root; width: auto; max-width: none; padding: .5rem 1rem; text-align: right; white-space: normal; }
+    .money-table:has(td.hide-sm[data-label]) td[data-label]::before { content: attr(data-label); float: left; margin-right: 1rem; color: var(--muted-foreground); text-align: left; }
+    .money-table:has(td.hide-sm[data-label]) tbody th { display: block; }
   }
   .app-heading { display: flex; align-items: end; justify-content: space-between; gap: 1rem; padding-bottom: 1.5rem; margin-bottom: 1.5rem; border-bottom: 1px solid var(--surface-border); }
   .app-heading h1 { margin-top: .65rem; font-size: 1.875rem; line-height: 1.15; font-weight: 650; letter-spacing: -.03em; }
