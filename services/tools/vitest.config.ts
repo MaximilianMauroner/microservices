@@ -8,6 +8,7 @@ export default defineConfig({
   },
   test: {
     environment: "node",
+    maxWorkers: 2,
     exclude: [...configDefaults.exclude, "test/harness/journeys.test.ts", "test/products/money/money-repository.integration.test.ts", "test/products/money/money-ledger-contributions.integration.test.ts"],
     include: ["test/**/*.test.{ts,tsx}"],
     setupFiles: ["./test/support/router-link-mock.tsx"]

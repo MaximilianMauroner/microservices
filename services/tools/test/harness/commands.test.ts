@@ -1,7 +1,8 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { setTimeout as delay } from "node:timers/promises";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { withOwnedCommands, type CommandExecutor, type CommandSpec } from "./commands.ts";
 
 let directory: string;
@@ -16,27 +17,39 @@ async function waitForFile(path: string) {
   for (let attempt = 0; attempt < 200; attempt += 1) {
     const text = await readFile(path, "utf8").catch(() => undefined);
     if (text) return text;
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    await delay(5);
   }
   throw new Error(`Fixture did not become ready. ${path}`);
 }
 
 async function isAbsent(pid: number) {
   for (let attempt = 0; attempt < 100; attempt += 1) {
-    try { await readFile(`/proc/${pid}/stat`); } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return true;
+    try { process.kill(pid, 0); } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ESRCH") return true;
       throw error;
     }
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    await delay(10);
   }
   return false;
 }
 
 describe("owned command lifecycle", () => {
   it("keeps a deadline failure when TERM makes the target exit zero", async () => {
-    const outcome = await withOwnedCommands({ graceMs: 100 }, (commands) => commands.execute(node(
-      'process.on("SIGTERM", () => process.exit(0)); setTimeout(() => process.exit(9), 2000);', { deadlineMs: 250 },
-    )));
+    const marker = join(directory, "ready");
+    const code = `process.on("SIGTERM", () => process.exit(0));
+      require("node:fs").writeFileSync(${JSON.stringify(marker)}, "ready");
+      setTimeout(() => process.exit(9), 2000);`;
+    const outcome = await withOwnedCommands({ graceMs: 100 }, async (commands) => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      try {
+        const pending = commands.execute(node(code, { deadlineMs: 250 }));
+        await waitForFile(marker);
+        vi.advanceTimersByTime(250);
+        return pending;
+      } finally {
+        vi.useRealTimers();
+      }
+    });
     expect(outcome).toMatchObject({ kind: "failed", termination: { kind: "deadline" }, exit: { kind: "exited", code: 0 }, ownership: "released" });
   });
 

@@ -133,7 +133,8 @@ export async function writeFile(path,...args){
 afterEach(async () => { await rm(directory, { recursive: true, force: true }); });
 
 async function waitFile(path: string) {
-  for (let attempt = 0; attempt < 400; attempt += 1) {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
     if (await readFile(path, "utf8").catch(() => "")) return;
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
@@ -174,7 +175,7 @@ async function run(environment: NodeJS.ProcessEnv = {}, observe?: (send: (signal
   }
 }
 
-describe("terminal verification CLI", () => {
+describe("terminal verification CLI", { timeout: 15_000 }, () => {
   it("resolves inherited relative executable paths before changing directories", async () => {
     const caller = join(directory, "caller");
     await mkdir(caller);

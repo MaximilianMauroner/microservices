@@ -27,10 +27,14 @@ Install dependencies and verify the workspace:
 ```bash
 corepack enable
 pnpm install --frozen-lockfile
-pnpm run typecheck
-pnpm run test
+pnpm run check
 pnpm run verify
 ```
+
+Use `pnpm run check` as the local pre-push gate. It runs tracked-file validation,
+typechecks, and tests for all workspace packages, including Pantrino. It requires
+no Docker daemon or external account. The PostgreSQL contracts and built-app
+journeys remain in `pnpm run verify`.
 
 `pnpm run verify` also requires Docker and a local daemon at
 `/var/run/docker.sock`, with permission to pull `postgres:16-alpine` and create
