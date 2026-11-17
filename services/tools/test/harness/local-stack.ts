@@ -284,7 +284,7 @@ export async function withVerificationStack(
     const serverEntry = await stat(join(toolsOutput, "server/index.mjs")).catch(() => undefined);
     if (!serverEntry?.isFile()) throw new SetupError("failed", "The verified Tools workspace build is missing its server entry.");
   }
-  const directory = await mkdtemp(join(tmpdir(), "tools-identity-"));
+  const directory = await realpath(await mkdtemp(join(tmpdir(), "tools-identity-")));
   const result = profile.kind === "identity-contracts"
     ? await runLocalStack({ ...options, directory }, use as IdentityStackUse, "verification", profile)
     : await runLocalStack({ ...options, directory }, use as LocalStackUse, "verification", profile);
