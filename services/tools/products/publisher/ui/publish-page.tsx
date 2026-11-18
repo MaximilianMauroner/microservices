@@ -15,6 +15,7 @@ import { UploadCancelledError } from "./upload-errors.js";
 import { uploadDirectFile } from "./direct-upload.js";
 import { PageHeader } from "../../../platform/ui/components/page-header.js";
 import { formatDateTime } from "../../../platform/ui/lib/format-date.js";
+import { useCopyToClipboard } from "../../../platform/ui/lib/use-copy-to-clipboard.js";
 
 type ItemStatus = "queued" | "checking" | "uploading" | "processing" | "done" | "error" | "cancelled";
 
@@ -472,8 +473,7 @@ export function PublishPage() {
 
 function RecentArtifacts({ refreshKey }: { refreshKey: number }) {
   const [recent, setRecent] = useState<UploadSummary[]>([]);
-  const [copied, setCopied] = useState<string>();
-  const [copyError, setCopyError] = useState(false);
+  const { copy, copied, failed: copyError } = useCopyToClipboard();
   useEffect(() => {
     let current = true;
     void fetchPublisherRead("/api/external-uploads?limit=6&sort=newest", { credentials: "same-origin" })
@@ -481,7 +481,7 @@ function RecentArtifacts({ refreshKey }: { refreshKey: number }) {
       .then((payload) => { if (current) setRecent(payload.uploads); }, () => undefined);
     return () => { current = false; };
   }, [refreshKey]);
-  return <aside className="self-start overflow-hidden rounded-xl border bg-card" aria-labelledby="recent-artifacts-title"><div className="flex items-center justify-between border-b px-4 py-3"><h2 id="recent-artifacts-title" className="text-sm font-semibold">Recent</h2><Link className="text-xs text-muted-foreground hover:text-foreground" to="/publisher/artifacts" preload="intent">Library ›</Link></div>{recent.length ? <ul className="divide-y">{recent.map((upload) => <li key={upload.id} className="flex min-w-0 items-center gap-2 px-4 py-2.5"><span className="min-w-0 flex-1"><strong className="block truncate text-xs font-medium">{upload.filename}</strong><span className="block truncate text-xs text-muted-foreground">{upload.project ?? "Unassigned"} · {formatDateTime(upload.updatedAt)}</span></span><Badge variant={upload.expiresAt ? "outline" : "secondary"}>{upload.expiresAt ? "Temporary" : "Persistent"}</Badge><Button size="icon-sm" variant="ghost" aria-label={`Copy link for ${upload.filename}`} onClick={() => void navigator.clipboard.writeText(upload.url).then(() => { setCopied(upload.id); setCopyError(false); }, () => setCopyError(true))}>{copied === upload.id ? <Check /> : <Copy />}</Button></li>)}</ul> : <p className="px-4 py-5 text-xs text-muted-foreground">Published artifacts will appear here.</p>}{copyError ? <p className="border-t px-4 py-2 text-xs text-destructive" role="alert">Could not copy the link. Open Library to select it manually.</p> : null}</aside>;
+  return <aside className="self-start overflow-hidden rounded-xl border bg-card" aria-labelledby="recent-artifacts-title"><div className="flex items-center justify-between border-b px-4 py-3"><h2 id="recent-artifacts-title" className="text-sm font-semibold">Recent</h2><Link className="text-xs text-muted-foreground hover:text-foreground" to="/publisher/artifacts" preload="intent">Library ›</Link></div>{recent.length ? <ul className="divide-y">{recent.map((upload) => <li key={upload.id} className="flex min-w-0 items-center gap-2 px-4 py-2.5"><span className="min-w-0 flex-1"><strong className="block truncate text-xs font-medium">{upload.filename}</strong><span className="block truncate text-xs text-muted-foreground">{upload.project ?? "Unassigned"} · {formatDateTime(upload.updatedAt)}</span></span><Badge variant={upload.expiresAt ? "outline" : "secondary"}>{upload.expiresAt ? "Temporary" : "Persistent"}</Badge><Button size="icon-sm" variant="ghost" aria-label={`Copy link for ${upload.filename}`} onClick={() => void copy(upload.url, upload.id)}>{copied(upload.id) ? <Check /> : <Copy />}</Button></li>)}</ul> : <p className="px-4 py-5 text-xs text-muted-foreground">Published artifacts will appear here.</p>}{copyError ? <p className="border-t px-4 py-2 text-xs text-destructive" role="alert">Could not copy the link. Open Library to select it manually.</p> : null}</aside>;
 }
 
 export function UploadIssuesList({ issues, onRetryAll, onRetry }: { issues: UploadItem[]; onRetryAll: () => void; onRetry: (key: string) => void }) {

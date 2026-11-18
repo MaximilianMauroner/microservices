@@ -1,6 +1,7 @@
 import { EditorContent } from "@tiptap/react";
 import type { Content, AnyExtension } from "@tiptap/core";
 import { documentRequest } from "./transport.js";
+import { useCopyToClipboard } from "../../platform/ui/lib/use-copy-to-clipboard.js";
 import { rememberRecentDocument } from "./recent-documents.js";
 import { documentSyncExtension } from "./sync-extension.js";
 import type { PublicDocument, DocumentSnapshot, PresenceEntry, SyncUpdate, CheckpointSummary } from "./types.js";
@@ -129,12 +130,10 @@ function EditorWorkspace({
   syncFailure: SyncFailure | null;
   onSyncRecovered: () => void;
 }) {
-  const [copied, setCopied] = useState(false);
-  const [copyFailed, setCopyFailed] = useState(false);
+  const { copy, copied: isCopied, failed: copyFailed } = useCopyToClipboard(1500);
+  const copied = isCopied();
   const [pinBusy, setPinBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-  const copyTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  useEffect(() => () => clearTimeout(copyTimer.current), []);
   const [topbarMenuOpen, setTopbarMenuOpen] = useState(false);
 
   const { theme: themeChoice, setTheme: setThemeChoice } = useTheme();
@@ -215,16 +214,7 @@ function EditorWorkspace({
     return () => window.cancelAnimationFrame(frame);
   }, [topbarMenuOpen]);
 
-  const copyLink = async () => {
-    setCopyFailed(false);
-    setCopied(false);
-    clearTimeout(copyTimer.current);
-    try {
-      await navigator.clipboard.writeText(window.location.href);
-      setCopied(true);
-      copyTimer.current = setTimeout(() => setCopied(false), 1500);
-    } catch { setCopyFailed(true); }
-  };
+  const copyLink = () => copy(window.location.href);
 
   const downloadSource = () => {
     const url = URL.createObjectURL(new Blob([session.markdown], { type: "text/plain;charset=utf-8" }));
