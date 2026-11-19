@@ -38,11 +38,17 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-it("shows a failure alone when a copy fails after an earlier success", async () => {
-  clipboard("ok", "deny");
+it("keeps the newest result when an earlier write settles late", async () => {
+  let finishFirst!: () => void;
+  const writeText = vi.fn()
+    .mockImplementationOnce(() => new Promise<void>((resolve) => { finishFirst = resolve; }))
+    .mockImplementationOnce(() => Promise.reject(new Error("denied")));
+  Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+  let first!: Promise<void>;
+  await act(async () => { first = copyFn("x", "a"); });
   await act(async () => copyFn("x", "a"));
-  expect(read()).toMatchObject({ a: "true", failed: "false" });
-  await act(async () => copyFn("x", "a"));
+  expect(read()).toMatchObject({ a: "false", failed: "true" });
+  await act(async () => { finishFirst(); await first; });
   expect(read()).toMatchObject({ a: "false", failed: "true" });
 });
 

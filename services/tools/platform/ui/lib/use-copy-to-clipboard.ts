@@ -9,15 +9,19 @@ type CopyResult = { readonly ok: boolean; readonly key: string };
 export function useCopyToClipboard(resetMs = 2000) {
   const [result, setResult] = useState<CopyResult>();
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const latest = useRef(0);
   useEffect(() => () => clearTimeout(timer.current), []);
 
   const copy = useCallback(async (text: string, key = "") => {
+    const attempt = ++latest.current;
     clearTimeout(timer.current);
     try {
       await navigator.clipboard.writeText(text);
+      if (attempt !== latest.current) return;
       setResult({ ok: true, key });
       timer.current = setTimeout(() => setResult(undefined), resetMs);
     } catch {
+      if (attempt !== latest.current) return;
       setResult({ ok: false, key });
     }
   }, [resetMs]);
