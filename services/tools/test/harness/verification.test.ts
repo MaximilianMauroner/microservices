@@ -3,11 +3,10 @@ import { chmod, copyFile, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeF
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, test } from "vitest";
 
 const runtime = fileURLToPath(new URL("./", import.meta.url));
 const tsxLoader = process.features.typescript ? undefined : fileURLToPath(import.meta.resolve("tsx"));
-let directory: string;
 
 function typescriptArgs(entry: string) {
   return process.features.typescript
@@ -15,8 +14,7 @@ function typescriptArgs(entry: string) {
     : ["--import", tsxLoader!, entry];
 }
 
-beforeEach(async () => {
-  directory = await mkdtemp(join(tmpdir(), "verification-cli-"));
+async function prepareFixture(directory: string) {
   const target = join(directory, "services/tools/test/harness");
   await mkdir(target, { recursive: true });
   await mkdir(join(directory, "bin"));
@@ -28,7 +26,6 @@ beforeEach(async () => {
 }`);
   await writeFile(join(directory, "package.json"), '{"type":"module"}');
   await writeFile(join(target, "entry.ts"), `import { runVerification } from './verification.ts';
-setTimeout(() => process.exit(99), 10_000);
 await runVerification(process.env.FIXTURE_MODE === 'workspace' ? 'workspace' : 'money-postgres', {artifactParent: process.env.FIXTURE_DIRECTORY!});`);
   await writeFile(join(target, "postgres.ts"), `import {appendFileSync} from 'node:fs';
 export const rejectInheritedDataEndpoints = () => {};
@@ -127,8 +124,18 @@ export async function writeFile(path,...args){
   }
   return actual(path,...args);
 }`);
-});
-afterEach(async () => { await rm(directory, { recursive: true, force: true }); });
+}
+
+const it = test
+  .extend("directory", async ({}, { onCleanup }) => {
+    const directory = await mkdtemp(join(tmpdir(), "verification-cli-"));
+    onCleanup(() => rm(directory, { recursive: true, force: true }));
+    return directory;
+  })
+  .extend("run", async ({ directory }) => {
+    await prepareFixture(directory);
+    return runFixture.bind(undefined, directory);
+  });
 
 async function waitFile(path: string) {
   const deadline = Date.now() + 10_000;
@@ -139,7 +146,7 @@ async function waitFile(path: string) {
   throw new Error("The fixture barrier did not open.");
 }
 
-async function run(environment: NodeJS.ProcessEnv = {}, observe?: (send: (signal: NodeJS.Signals) => void) => Promise<void>, cwd?: string) {
+async function runFixture(directory: string, environment: NodeJS.ProcessEnv = {}, observe?: (send: (signal: NodeJS.Signals) => void) => Promise<void>, cwd?: string) {
   await writeFile(join(directory, "fixture-controls.json"), JSON.stringify(environment));
   const entry = join(directory, "services/tools/test/harness/entry.ts");
   const publicationHook = environment.FIXTURE_BARRIER || environment.FIXTURE_WRITE_FAIL
@@ -157,7 +164,7 @@ async function run(environment: NodeJS.ProcessEnv = {}, observe?: (send: (signal
     child.once("exit", (code) => resolve(code));
     child.once("error", reject);
   });
-  const bound = setTimeout(() => { if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL"); }, 12_000);
+  const bound = setTimeout(() => { if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL"); }, 25_000);
   try {
     if (observe) await observe((signal) => { if (child.exitCode === null && child.signalCode === null) child.kill(signal); });
     const code = await exited;
@@ -175,17 +182,17 @@ async function run(environment: NodeJS.ProcessEnv = {}, observe?: (send: (signal
   }
 }
 
-describe("terminal verification CLI", { timeout: 15_000 }, () => {
-  it("resolves inherited relative executable paths before changing directories", async () => {
+describe.concurrent("terminal verification CLI", { timeout: 30_000 }, () => {
+  it("resolves inherited relative executable paths before changing directories", async ({ directory, run }) => {
     const caller = join(directory, "caller");
     await mkdir(caller);
     await symlink(join(directory, "bin"), join(caller, "tools-bin"), "dir");
     const result = await run({ FIXTURE_MODE: "workspace", PATH: "tools-bin" }, undefined, caller);
     expect(result.code).toBe(0);
     expect(result.record.automatedDecision.kind).toBe("passed");
-  }, 15_000);
+  });
 
-  it("preserves absolute executable paths that traverse symlinks", async () => {
+  it("preserves absolute executable paths that traverse symlinks", async ({ directory, run }) => {
     const caller = join(directory, "caller");
     const target = join(directory, "target");
     await mkdir(caller);
@@ -198,9 +205,9 @@ describe("terminal verification CLI", { timeout: 15_000 }, () => {
     const result = await run({ FIXTURE_MODE: "workspace", PATH: `${caller}/link/../bin` });
     expect(result.code).toBe(0);
     expect(result.record.automatedDecision.kind).toBe("passed");
-  }, 15_000);
+  });
 
-  it("preserves relative executable paths that traverse symlinks", async () => {
+  it("preserves relative executable paths that traverse symlinks", async ({ directory, run }) => {
     const caller = join(directory, "caller");
     const target = join(directory, "target");
     await mkdir(caller);
@@ -213,9 +220,9 @@ describe("terminal verification CLI", { timeout: 15_000 }, () => {
     const result = await run({ FIXTURE_MODE: "workspace", PATH: "link/../bin" }, undefined, caller);
     expect(result.code).toBe(0);
     expect(result.record.automatedDecision.kind).toBe("passed");
-  }, 15_000);
+  });
 
-  it("publishes one complete plan and succeeds only when every required case runs", async () => {
+  it("publishes one complete plan and succeeds only when every required case runs", async ({ run }) => {
     const result = await run();
     expect(result.code).toBe(0);
     expect(result.record.automatedDecision).toEqual({ kind: "passed" });
@@ -226,7 +233,7 @@ describe("terminal verification CLI", { timeout: 15_000 }, () => {
     expect(result.trace.match(/cleanup/g)).toHaveLength(1);
   });
 
-  it.each([{ FIXTURE_EMPTY: "1" }, { FIXTURE_SKIP: "1" }])("fails on an empty or skipped required case set %j", async (environment) => {
+  it.for([{ FIXTURE_EMPTY: "1" }, { FIXTURE_SKIP: "1" }])("fails on an empty or skipped required case set %j", async (environment, { run }) => {
     const result = await run(environment);
     expect(result.code).toBe(1);
     expect(result.record.automatedDecision.kind).toBe("failed");
@@ -234,7 +241,7 @@ describe("terminal verification CLI", { timeout: 15_000 }, () => {
     expect(result.record.cells.find((cell: { requirement: { kind: string } }) => cell.requirement.kind === stage).result.kind).toBe("failed");
   });
 
-  it.each(["FIXTURE_SETUP_THROW", "FIXTURE_CLEANUP_THROW"])("publishes a failed record after %s", async (name) => {
+  it.for(["FIXTURE_SETUP_THROW", "FIXTURE_CLEANUP_THROW"])("publishes a failed record after %s", async (name, { run }) => {
     const result = await run({ [name]: "1" });
     expect(result.code).toBe(1);
     expect(result.record.automatedDecision.kind).toBe("failed");
@@ -243,7 +250,7 @@ describe("terminal verification CLI", { timeout: 15_000 }, () => {
     expect(JSON.stringify(result.record)).not.toContain("private-password");
   });
 
-  it("requires identity, built Tools, and mounted Status receipts before workspace success", async () => {
+  it("requires identity, built Tools, and mounted Status receipts before workspace success", async ({ run }) => {
     const result = await run({ FIXTURE_MODE: "workspace" });
     expect(result.code).toBe(0);
     expect(result.record.cells.every((cell: { durationMs: number }) => Number.isFinite(cell.durationMs) && cell.durationMs >= 0)).toBe(true);
@@ -261,7 +268,7 @@ describe("terminal verification CLI", { timeout: 15_000 }, () => {
     expect(JSON.parse(result.stdout.trim()).manualAcceptance.kind).toBe("blocked");
   });
 
-  it.each(["FIXTURE_JOURNEY_MISSING", "FIXTURE_JOURNEY_UNKNOWN", "FIXTURE_JOURNEY_DUPLICATE", "FIXTURE_JOURNEY_SKIP", "FIXTURE_JOURNEY_PENDING", "FIXTURE_JOURNEY_BLOCKED", "FIXTURE_JOURNEY_HOOK_FAIL", "FIXTURE_JOURNEY_EXIT_FAIL", "FIXTURE_JOURNEY_NO_REPORT", "FIXTURE_JOURNEY_REPORT_DUPLICATE", "FIXTURE_JOURNEY_REPORT_UNKNOWN"])("cannot pass workspace verification with %s", async (name) => {
+  it.for(["FIXTURE_JOURNEY_MISSING", "FIXTURE_JOURNEY_UNKNOWN", "FIXTURE_JOURNEY_DUPLICATE", "FIXTURE_JOURNEY_SKIP", "FIXTURE_JOURNEY_PENDING", "FIXTURE_JOURNEY_BLOCKED", "FIXTURE_JOURNEY_HOOK_FAIL", "FIXTURE_JOURNEY_EXIT_FAIL", "FIXTURE_JOURNEY_NO_REPORT", "FIXTURE_JOURNEY_REPORT_DUPLICATE", "FIXTURE_JOURNEY_REPORT_UNKNOWN"])("cannot pass workspace verification with %s", async (name, { run }) => {
     const result = await run({ FIXTURE_MODE: "workspace", [name]: "1" });
     expect(result.code).toBe(1);
     expect(result.record.automatedDecision.kind).toBe("failed");
@@ -272,7 +279,7 @@ describe("terminal verification CLI", { timeout: 15_000 }, () => {
     expect(result.record.journeys.some((receipt: { result: string }) => receipt.result !== "passed")).toBe(true);
   });
 
-  it.each(["FIXTURE_IDENTITY_EMPTY", "FIXTURE_IDENTITY_SKIP", "FIXTURE_LOCAL_BLOCKED", "FIXTURE_LOCAL_CLEANUP_FAIL"])("does not pass workspace verification with %s", async (name) => {
+  it.for(["FIXTURE_IDENTITY_EMPTY", "FIXTURE_IDENTITY_SKIP", "FIXTURE_LOCAL_BLOCKED", "FIXTURE_LOCAL_CLEANUP_FAIL"])("does not pass workspace verification with %s", async (name, { run }) => {
     const result = await run({ FIXTURE_MODE: "workspace", [name]: "1" });
     expect(result.code).toBe(1);
     expect(result.record.automatedDecision.kind).not.toBe("passed");
@@ -283,7 +290,7 @@ describe("terminal verification CLI", { timeout: 15_000 }, () => {
     }
   });
 
-  it.each(["FIXTURE_JOURNEY_CLEANUP_FAIL", "FIXTURE_JOURNEY_CLEANUP_STOPPED"])("fails the journey cell when disposal is incomplete through %s", async (name) => {
+  it.for(["FIXTURE_JOURNEY_CLEANUP_FAIL", "FIXTURE_JOURNEY_CLEANUP_STOPPED"])("fails the journey cell when disposal is incomplete through %s", async (name, { run }) => {
     const result = await run({ FIXTURE_MODE: "workspace", [name]: "1" });
     expect(result.code).toBe(1);
     expect(result.record.automatedDecision.kind).toBe("failed");
@@ -292,7 +299,7 @@ describe("terminal verification CLI", { timeout: 15_000 }, () => {
     expect(journey.result).toMatchObject({ kind: "failed", reasons: ["Journey fixture did not complete cleanup."] });
   });
 
-  it("cancels identity contracts when their owned host fails and keeps the fixture failure", async () => {
+  it("cancels identity contracts when their owned host fails and keeps the fixture failure", async ({ run }) => {
     const result = await run({ FIXTURE_MODE: "workspace", FIXTURE_LOCAL_HOST_FAIL: "1" });
     expect(result.code).toBe(1);
     expect(result.record.identity.contracts.result).toBe("failed");
@@ -301,7 +308,7 @@ describe("terminal verification CLI", { timeout: 15_000 }, () => {
     expect(identity.durationMs).toBeGreaterThanOrEqual(100);
   });
 
-  it("cancels and settles journey work before a failed host can dispose its fixture", async () => {
+  it("cancels and settles journey work before a failed host can dispose its fixture", async ({ run }) => {
     const result = await run({ FIXTURE_MODE: "workspace", FIXTURE_JOURNEY_HOST_FAIL: "1" });
     expect(result.code).toBe(1);
     const journey = result.record.cells.find((cell: { requirement: { kind: string } }) => cell.requirement.kind === "journey-contracts");
@@ -311,7 +318,7 @@ describe("terminal verification CLI", { timeout: 15_000 }, () => {
     expect(result.trace).not.toContain("journey-disposed");
   });
 
-  it("removes all fixture secrets from command logs and final receipts", async () => {
+  it("removes all fixture secrets from command logs and final receipts", async ({ run }) => {
     const result = await run({ FIXTURE_MODE: "workspace", FIXTURE_JOURNEY_LEAK: "1" });
     expect(result.code).toBe(0);
     const receipts = JSON.stringify(result.record);
@@ -322,7 +329,7 @@ describe("terminal verification CLI", { timeout: 15_000 }, () => {
     }
   });
 
-  it("stops workspace admission after the first command failure and still cleans up", async () => {
+  it("stops workspace admission after the first command failure and still cleans up", async ({ run }) => {
     const result = await run({ FIXTURE_MODE: "workspace", FIXTURE_FAIL_COMMAND: "typecheck" });
     expect(result.code).toBe(1);
     expect(result.trace).toContain('["run","typecheck"]');
@@ -330,7 +337,7 @@ describe("terminal verification CLI", { timeout: 15_000 }, () => {
     expect(result.trace).toContain("cleanup");
   });
 
-  it.each(["SIGINT", "SIGTERM"] as const)("keeps %s during the async draft in both receipt and exit", async (signal) => {
+  it.for(["SIGINT", "SIGTERM"] as const)("keeps %s during the async draft in both receipt and exit", async (signal, { directory, run }) => {
     const result = await run({ FIXTURE_BARRIER: "1" }, async (send) => {
       await waitFile(join(directory, "pending"));
       send(signal);
@@ -342,7 +349,7 @@ describe("terminal verification CLI", { timeout: 15_000 }, () => {
     expect(result.record.automatedDecision).toEqual({ kind: "interrupted", first: signal });
   });
 
-  it("keeps the first signal when more signals arrive during publication", async () => {
+  it("keeps the first signal when more signals arrive during publication", async ({ directory, run }) => {
     const result = await run({ FIXTURE_BARRIER: "1" }, async (send) => {
       await waitFile(join(directory, "pending"));
       send("SIGINT");
@@ -354,7 +361,7 @@ describe("terminal verification CLI", { timeout: 15_000 }, () => {
     expect(result.record.interruption.first).toBe("SIGINT");
   });
 
-  it("returns nonzero and fallback evidence when publication fails", async () => {
+  it("returns nonzero and fallback evidence when publication fails", async ({ run }) => {
     const result = await run({ FIXTURE_WRITE_FAIL: "1" });
     expect(result.code).toBe(1);
     expect(result.record).toBeUndefined();

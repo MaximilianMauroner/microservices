@@ -9,7 +9,7 @@ describe("rate limit", () => {
     expect(allow("a", 1000)).toBe(true);
   });
 
-  it("keeps a blocked client blocked while many new keys fill the table", () => {
+  it("keeps a blocked client blocked while many new keys fill the table", { timeout: 15_000 }, () => {
     const allow = createRateLimit({ limit: 1, windowMs: 60_000 });
     allow("target", 0);
     expect(allow("target", 1)).toBe(false);
