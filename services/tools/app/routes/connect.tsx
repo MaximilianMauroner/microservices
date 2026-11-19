@@ -1,13 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { createServerFn, getGlobalStartContext } from "@tanstack/react-start";
 import { CheckIcon, CopyIcon } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import type { ReactNode } from "react";
 import { principalSeesProduct } from "../../platform/access/product-access.js";
 import { requireSignedInSession } from "../../platform/auth/middleware.js";
 import { requireSignedIn } from "../../platform/auth/session.js";
 import { AppShell } from "../../platform/ui/components/app-shell.js";
 import { PageHeader } from "../../platform/ui/components/page-header.js";
 import { Button } from "../../platform/ui/components/ui/button.js";
+import { useCopyToClipboard } from "../../platform/ui/lib/use-copy-to-clipboard.js";
 
 /** The MCP address and what the signed-in person's AI app can use there. */
 const getMcpConnection = createServerFn({ method: "GET" })
@@ -152,23 +153,14 @@ function Card({ title, children }: { title: string; children: ReactNode }) {
 }
 
 /** A value to paste somewhere else, with a button that copies it. */
-function CopyField({ label, value }: { label: string; value: string }) {
-  const [copied, setCopied] = useState(false);
-  const [failed, setFailed] = useState(false);
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopied(true); setFailed(false);
-      window.setTimeout(() => setCopied(false), 2000);
-    } catch {
-      setFailed(true);
-    }
-  }
+export function CopyField({ label, value }: { label: string; value: string }) {
+  const { copy, copied: isCopied, failed } = useCopyToClipboard();
+  const copied = isCopied();
   return (
     <div className="mt-1.5 grid gap-1">
       <div className="flex items-start gap-2 rounded-lg bg-muted/60 py-1 pr-1 pl-3">
         <pre aria-label={label} className="min-w-0 flex-1 overflow-x-auto py-1.5 font-mono text-[0.8125rem] leading-5 whitespace-pre-wrap break-all">{value}</pre>
-        <Button size="icon-sm" variant="ghost" className="size-9 shrink-0" aria-label={copied ? "Copied" : `Copy ${label.toLowerCase()}`} onClick={() => void copy()}>
+        <Button size="icon-sm" variant="ghost" className="size-9 shrink-0" aria-label={copied ? "Copied" : `Copy ${label.toLowerCase()}`} onClick={() => void copy(value)}>
           {copied ? <CheckIcon /> : <CopyIcon />}
         </Button>
       </div>
