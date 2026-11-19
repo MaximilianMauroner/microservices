@@ -87,26 +87,26 @@ describe("one-shot process", () => {
       "./fixtures/active-handle-cli.ts",
       import.meta.url
     ).pathname;
-    const child = spawn("tsx", [fixture], {
+    const child = spawn(process.execPath, ["--import", "tsx", fixture], {
       cwd: process.cwd(),
-      stdio: ["ignore", "pipe", "pipe"]
+      stdio: ["ignore", "pipe", "pipe", "ipc"]
     });
     const stdout = readStream(child.stdout);
     const stderr = readStream(child.stderr);
     let timeout: ReturnType<typeof setTimeout> | undefined;
     try {
-      const exitCode = await Promise.race([
-        new Promise<number>((resolve, reject) => {
-          child.once("error", reject);
-          child.once("exit", (code) => resolve(code ?? -1));
-        }),
-        new Promise<never>((_resolve, reject) => {
+      const exitCode = await new Promise<number>((resolve, reject) => {
+        child.once("error", reject);
+        child.once("exit", (code) => resolve(code ?? -1));
+        timeout = setTimeout(() => reject(new Error("spawned checker did not start")), 10_000);
+        child.once("message", () => {
+          clearTimeout(timeout);
           timeout = setTimeout(
             () => reject(new Error("spawned checker did not force-exit")),
             2_000
           );
-        })
-      ]);
+        });
+      });
       const [stdoutText, stderrText] = await Promise.all([stdout, stderr]);
       expect(exitCode).toBe(1);
       expect(stdoutText).toContain("store.closed");
@@ -116,7 +116,7 @@ describe("one-shot process", () => {
       if (timeout) clearTimeout(timeout);
       child.kill();
     }
-  });
+  }, 15_000);
 });
 
 async function readStream(stream: Readable | null): Promise<string> {

@@ -21,7 +21,6 @@ beforeEach(async () => {
   await mkdir(target, { recursive: true });
   await mkdir(join(directory, "bin"));
   await symlink(join(runtime, "../../node_modules"), join(directory, "node_modules"), "dir");
-  await writeFile(join(directory, "bin/package.json"), '{"type":"commonjs"}');
   for (const file of ["verification.ts", "commands.ts", "command-types.ts", "command-anchor.cjs", "receipt.ts"]) await copyFile(join(runtime, file), join(target, file));
   await writeFile(join(target, "minio-image.ts"), `export async function resolveMinioImage() {
   return {reference:'tools-verify-minio:0123456789abcdef0123456789abcdef',inputDigest:'0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
@@ -100,11 +99,10 @@ writeFileSync(process.argv[3]!,JSON.stringify(phase==='discover'
   : {phase,observed:[{identity:'required case',result:process.env.FIXTURE_SKIP || identity && process.env.FIXTURE_IDENTITY_SKIP?'skipped':'passed',evidence:[]}],errors:[]}));`);
   for (const command of ["git", "pnpm"]) {
     const path = join(directory, "bin", command);
-    await writeFile(path, `#!${process.execPath}
-const fs=require('node:fs');
-fs.appendFileSync(process.env.FIXTURE_TRACE,JSON.stringify(process.argv.slice(2))+'\\n');
-if(process.argv[2]==='rev-parse') console.log('fixture-revision');
-if(process.argv[3]===process.env.FIXTURE_FAIL_COMMAND) process.exit(2);
+    await writeFile(path, `#!/bin/sh
+printf '["%s","%s"]\\n' "$1" "$2" >> "$FIXTURE_TRACE"
+if [ "$1" = rev-parse ]; then printf 'fixture-revision\\n'; fi
+if [ "$2" = "$FIXTURE_FAIL_COMMAND" ]; then exit 2; fi
 `);
     await chmod(path, 0o700);
   }
@@ -144,7 +142,9 @@ async function waitFile(path: string) {
 async function run(environment: NodeJS.ProcessEnv = {}, observe?: (send: (signal: NodeJS.Signals) => void) => Promise<void>, cwd?: string) {
   await writeFile(join(directory, "fixture-controls.json"), JSON.stringify(environment));
   const entry = join(directory, "services/tools/test/harness/entry.ts");
-  const child = spawn(process.execPath, ["--import", join(directory, "hook.mjs"), ...typescriptArgs(entry)], {
+  const publicationHook = environment.FIXTURE_BARRIER || environment.FIXTURE_WRITE_FAIL
+    ? ["--import", join(directory, "hook.mjs")] : [];
+  const child = spawn(process.execPath, [...publicationHook, ...typescriptArgs(entry)], {
     env: { PATH: `${join(directory, "bin")}:${process.env.PATH}`, HOME: process.env.HOME, FIXTURE_DIRECTORY: directory, FIXTURE_TRACE: join(directory, "trace"), ...environment },
     cwd,
     stdio: ["ignore", "pipe", "pipe"],
