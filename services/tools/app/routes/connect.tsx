@@ -153,7 +153,7 @@ function Card({ title, children }: { title: string; children: ReactNode }) {
 }
 
 /** A value to paste somewhere else, with a button that copies it. */
-function CopyField({ label, value }: { label: string; value: string }) {
+export function CopyField({ label, value }: { label: string; value: string }) {
   const { copy, copied: isCopied, failed } = useCopyToClipboard();
   const copied = isCopied();
   return (

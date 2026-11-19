@@ -471,7 +471,7 @@ export function PublishPage() {
   );
 }
 
-function RecentArtifacts({ refreshKey }: { refreshKey: number }) {
+export function RecentArtifacts({ refreshKey }: { refreshKey: number }) {
   const [recent, setRecent] = useState<UploadSummary[]>([]);
   const { copy, copied, failed: copyError } = useCopyToClipboard();
   useEffect(() => {
