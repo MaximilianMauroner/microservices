@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Copy, Download, Link2, Plus, RotateCcw, X } from "lucide-react";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "../../../platform/ui/components/ui/alert-dialog.js";
 import { Alert } from "../../../platform/ui/components/ui/alert.js";
@@ -43,7 +43,9 @@ export function UploadLinkManager() {
   const [error, setError] = useState<string>();
   const [revokeId, setRevokeId] = useState<string>();
   const linksRevision = useRef(0);
-  const createdRef = useRef<HTMLDivElement>(null);
+  const scrollToCreated = useCallback((node: HTMLDivElement | null) => {
+    node?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, []);
 
   async function loadLinks() {
     const revision = ++linksRevision.current;
@@ -104,7 +106,6 @@ export function UploadLinkManager() {
       linksRevision.current += 1;
       setCreated(payload);
       setLinks((current) => [payload, ...current]);
-      requestAnimationFrame(() => createdRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Upload link could not be created.");
     } finally {
@@ -143,7 +144,7 @@ export function UploadLinkManager() {
         <div className="flex items-center gap-2"><NativeSelect className="w-32" aria-label="Link duration" value={durationMs} onChange={(event) => setDurationMs(Number(event.currentTarget.value))} disabled={busy || loadState === "loading"}>{durations.map((duration) => <option key={duration.value} value={duration.value}>{duration.label}</option>)}</NativeSelect><Button type="button" size="sm" onClick={() => void createLink()} disabled={busy || loadState === "loading"}><Plus /> Create link</Button><Button type="button" variant="outline" size="icon-sm" aria-label="Refresh links" onClick={() => void loadLinks()} disabled={busy || loadState === "loading"}><RotateCcw /></Button></div>
       </div>
       {error ? <Alert className="mb-3" variant="destructive">{error}</Alert> : null}
-        {created ? <Card ref={createdRef} className="mb-3 gap-3 border border-primary/30 bg-secondary p-4" aria-live="polite">
+        {created ? <Card key={created.id} ref={scrollToCreated} className="mb-3 gap-3 border border-primary/30 bg-secondary p-4" aria-live="polite">
           <div className="flex items-center gap-2"><Badge>New link</Badge><span className="text-xs text-muted-foreground">Copy it now; the secret is not stored.</span></div>
           <p className="mt-3 break-all font-mono text-xs">{created.url}</p>
           <div className="mt-3 flex flex-wrap gap-2"><Button type="button" variant="outline" size="sm" onClick={() => void copyCreated()}><Copy /> Copy link</Button><Button nativeButton={false} variant="outline" size="sm" render={<a href={created.url} target="_blank" rel="noreferrer" />}><Link2 /> Open link</Button></div>

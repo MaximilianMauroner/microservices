@@ -39,7 +39,7 @@ it("does not present an empty list when loading fails", async () => {
     ? Promise.resolve(Response.json({ ...link, url: "https://example.test/upload/new" }))
     : Promise.reject(new Error("Network failed")));
   vi.stubGlobal("fetch", fetchMock);
-  vi.stubGlobal("requestAnimationFrame", vi.fn());
+  Element.prototype.scrollIntoView = vi.fn();
   const host = document.createElement("div"); document.body.append(host);
   const root = createRoot(host);
   try {
@@ -52,5 +52,32 @@ it("does not present an empty list when loading fails", async () => {
     expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/api/upload-links?durationMs="), expect.objectContaining({ method: "POST" }));
     expect(host.textContent).toContain("https://example.test/upload/new");
     expect(host.textContent).toContain("Network failed");
-  } finally { await act(async () => root.unmount()); host.remove(); }
+  } finally { await act(async () => root.unmount()); host.remove(); delete (Element.prototype as Partial<Element>).scrollIntoView; }
+});
+
+it("scrolls each newly created link into view after it appears", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  let frame: FrameRequestCallback | undefined;
+  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => { frame = callback; return 1; });
+  let count = 0;
+  vi.stubGlobal("fetch", vi.fn((_path: string, options?: RequestInit) => Promise.resolve(options?.method === "POST"
+    ? Response.json({ ...link, id: String(++count), url: `https://example.test/upload/${count}` })
+    : Response.json({ links: [] }))));
+  const scroll = vi.fn();
+  Element.prototype.scrollIntoView = scroll;
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(<UploadLinkManager />));
+    const create = [...host.querySelectorAll("button")].find((button) => button.textContent?.trim() === "Create link")!;
+    for (let i = 1; i <= 2; i++) {
+      await act(async () => {
+        create.click();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        frame?.(0);
+      });
+      expect(host.textContent).toContain(`https://example.test/upload/${i}`);
+      expect(scroll).toHaveBeenCalledTimes(i);
+    }
+  } finally { await act(async () => root.unmount()); host.remove(); delete (Element.prototype as Partial<Element>).scrollIntoView; }
 });
