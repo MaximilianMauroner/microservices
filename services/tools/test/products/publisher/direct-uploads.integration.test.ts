@@ -23,7 +23,7 @@ const admin = { role: "admin", subject: ADMIN, email: "admin@example.test" } as 
 const friend = { role: "member", subject: "transfer-friend", email: "friend@example.test", products: ["publisher"] } as const;
 const digest = (bytes: Uint8Array) => crypto.createHash("sha256").update(bytes).digest("hex");
 
-describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", () => {
+describe.skipIf(!enabled)("isolated Postgres and S3 direct transfers", { timeout: 15_000 }, () => {
   let sql: Sql;
   let storage: UploadStorage;
   let bodies: UploadBodyStorage;

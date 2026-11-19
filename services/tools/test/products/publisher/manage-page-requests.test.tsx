@@ -26,7 +26,7 @@ const initial: ManagePageData = {
 
 afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks(); viewport.mobile = false; });
 
-it("requests current criteria across the full library, appends compatible pages, and ignores stale reads", async () => {
+it("requests current criteria across the full library, appends compatible pages, and ignores stale reads", { timeout: 15_000 }, async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const requests: Array<{ url: URL; signal: AbortSignal; finish: (data: ManagePageData) => void }> = [];
   vi.stubGlobal("fetch", vi.fn((path: string, init: RequestInit) => path === "/health/publisher" ?
@@ -85,12 +85,17 @@ it("requests current criteria across the full library, appends compatible pages,
     await act(async () => button("Next 7 days").click());
     expect(requests.at(-1)!.url.searchParams.get("expiry")).toBe("7d");
     await act(async () => requests.at(-1)!.finish({ uploads: [] }));
-    await act(async () => {
-      const input = host.querySelector<HTMLInputElement>('input[aria-label="Search artifacts"]')!;
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, " older report ");
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 275)); });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      await act(async () => {
+        const input = host.querySelector<HTMLInputElement>('input[aria-label="Search artifacts"]')!;
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, " older report ");
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      await act(async () => { vi.advanceTimersByTime(275); });
+    } finally {
+      vi.useRealTimers();
+    }
     expect(Object.fromEntries(requests.at(-1)!.url.searchParams)).toMatchObject({ q: "older report", kind: "file", project: "named", projectName: "work", expiry: "7d", category: "pdf", sort: "size", includeSummary: "true" });
     await act(async () => requests.at(-1)!.finish({ uploads: [{ ...upload, filename: "older report.pdf", category: "pdf" }] }));
     expect(host.textContent).toContain("older report.pdf");
