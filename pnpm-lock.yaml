@@ -11,6 +11,7 @@ overrides:
 
 patchedDependencies:
   '@infinitered/react-native-mlkit-text-recognition@5.0.1': ed94820ee162beb405bbbac260b76af586b8dd483ccd8482d2464fb80f2a8379
+  react-native-health-connect@4.1.3: a66344d4d07446891d6ad56499c1316d826b2e716c1ef54369a07e7fb98e0446
 
 importers:
 
@@ -124,6 +125,9 @@ importers:
       react-native-gesture-handler:
         specifier: ~3.3.0
         version: 3.3.0(react-native@0.88.1(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/metro-config@0.88.1(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.2.18)(react@19.3.0)(supports-color@10.2.2))(react@19.3.0)
+      react-native-health-connect:
+        specifier: 4.1.3
+        version: 4.1.3(patch_hash=a66344d4d07446891d6ad56499c1316d826b2e716c1ef54369a07e7fb98e0446)(@expo/config-plugins@58.0.12(supports-color@10.2.2)(typescript@6.0.3))(expo@58.0.23)(react-native@0.88.1(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/metro-config@0.88.1(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.2.18)(react@19.3.0)(supports-color@10.2.2))(react@19.3.0)
       react-native-reanimated:
         specifier: 4.7.1
         version: 4.7.1(react-native-worklets@0.13.0(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/metro-config@0.88.1(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(react-native@0.88.1(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/metro-config@0.88.1(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.2.18)(react@19.3.0)(supports-color@10.2.2))(react@19.3.0)(supports-color@10.2.2))(react-native@0.88.1(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/metro-config@0.88.1(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.2.18)(react@19.3.0)(supports-color@10.2.2))(react@19.3.0)
@@ -5713,6 +5717,20 @@ packages:
     peerDependencies:
       react: '*'
       react-native: '*'
+
+  react-native-health-connect@4.1.3:
+    resolution: {integrity: sha512-osiWh4RD4tNHdHeggzOeGZFeEVaLQQr0+Yezq61WsPRvN1Yb6eA10rMfSU0+dqcfm6ZvIXSr2tYns+Yg1s37nw==}
+    engines: {node: '>= 16.0.0'}
+    peerDependencies:
+      '@expo/config-plugins': '>= 6.0.2'
+      expo: '*'
+      react: '*'
+      react-native: '*'
+    peerDependenciesMeta:
+      '@expo/config-plugins':
+        optional: true
+      expo:
+        optional: true
 
   react-native-is-edge-to-edge@1.3.1:
     resolution: {integrity: sha512-NIXU/iT5+ORyCc7p0z2nnlkouYKX425vuU1OEm6bMMtWWR9yvb+Xg5AZmImTKoF9abxCPqrKC3rOZsKzUYgYZA==}
@@ -13760,6 +13778,14 @@ snapshots:
       react: 19.2.8
       react-native: 0.88.1(@babel/core@8.0.1)(@react-native/metro-config@0.88.1(@babel/core@8.0.1)(supports-color@10.2.2))(@types/react@19.2.18)(react@19.2.8)(supports-color@10.2.2)
     optional: true
+
+  react-native-health-connect@4.1.3(patch_hash=a66344d4d07446891d6ad56499c1316d826b2e716c1ef54369a07e7fb98e0446)(@expo/config-plugins@58.0.12(supports-color@10.2.2)(typescript@6.0.3))(expo@58.0.23)(react-native@0.88.1(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/metro-config@0.88.1(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.2.18)(react@19.3.0)(supports-color@10.2.2))(react@19.3.0):
+    dependencies:
+      react: 19.3.0
+      react-native: 0.88.1(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/metro-config@0.88.1(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.2.18)(react@19.3.0)(supports-color@10.2.2)
+    optionalDependencies:
+      '@expo/config-plugins': 58.0.12(supports-color@10.2.2)(typescript@6.0.3)
+      expo: 58.0.23(@babel/core@7.29.7(supports-color@10.2.2))(@expo/dom-webview@58.0.2)(@expo/metro-runtime@58.0.17)(expo-router@58.0.30)(react-dom@19.2.8(react@19.3.0))(react-native-worklets@0.13.0(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/metro-config@0.88.1(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(react-native@0.88.1(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/metro-config@0.88.1(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.2.18)(react@19.3.0)(supports-color@10.2.2))(react@19.3.0)(supports-color@10.2.2))(react-native@0.88.1(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/metro-config@0.88.1(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.2.18)(react@19.3.0)(supports-color@10.2.2))(react@19.3.0)(supports-color@10.2.2)(typescript@6.0.3)
 
   react-native-is-edge-to-edge@1.3.1(react-native@0.88.1(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/metro-config@0.88.1(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.2.18)(react@19.3.0)(supports-color@10.2.2))(react@19.3.0):
     dependencies:

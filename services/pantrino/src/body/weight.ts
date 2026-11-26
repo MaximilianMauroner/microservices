@@ -16,3 +16,11 @@ export function weightSummary(history: readonly WeightReading[] | undefined): We
   const start = latest ? days.find((one) => one.day >= addDays(latest.day, -CHANGE_DAYS)) : undefined;
   return { days, latest, change: latest && start && start.day !== latest.day ? { kg: latest.kg - start.kg, since: start.day } : null };
 }
+
+export function rollingWeightAverages(days: readonly DailyWeight[]): readonly DailyWeight[] {
+  return days.map(({ day }, index) => {
+    const start = addDays(day, -6);
+    const week = days.slice(0, index + 1).filter((one) => one.day >= start);
+    return { day, kg: week.reduce((sum, one) => sum + one.kg, 0) / week.length };
+  });
+}

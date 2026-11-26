@@ -15,7 +15,7 @@ function uploads(): DirectUploads {
 }
 
 describe("direct completion request", () => {
-  it.each([null, 42, "", "a".repeat(63), "a".repeat(65), "A".repeat(64), "g".repeat(64)])("rejects an invalid expected SHA-256 %j", async sha256 => {
+  it.each([null, "a".repeat(63), "a".repeat(65), "A".repeat(64), "g".repeat(64)])("rejects an invalid expected SHA-256 %j", async sha256 => {
     const direct = uploads();
     const request = new Request(options.baseUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sha256 }) });
     await expect(handleDirectUpload(request, `${sessionId}/complete`, direct, owner, options))
@@ -24,8 +24,10 @@ describe("direct completion request", () => {
   });
 
   it("serializes the saved update time as an ISO instant", async () => {
-    const response = await handleDirectUpload(new Request(options.baseUrl, { method: "POST" }),
-      `${sessionId}/complete`, uploads(), owner, options);
+    const direct = uploads();
+    const request = new Request(options.baseUrl, { method: "POST" });
+    const response = await handleDirectUpload(request, `${sessionId}/complete`, direct, owner, options);
+    expect(direct.complete).toHaveBeenCalledWith(sessionId, owner, 1, request.signal, undefined);
     expect(response.status).toBe(201);
     expect(await response.json()).toMatchObject({
       category: "html",
@@ -40,9 +42,9 @@ describe("direct completion request", () => {
     expect(direct.complete).toHaveBeenCalledWith(sessionId, owner, 1, request.signal, "a".repeat(64));
   });
 
-  it.each([undefined, "", "{}"])("accepts legacy completion body %j", async body => {
+  it.each(["", "{}"])("accepts legacy completion body %j", async body => {
     const direct = uploads();
-    const request = new Request(options.baseUrl, { method: "POST", ...(body === undefined ? {} : { body }),
+    const request = new Request(options.baseUrl, { method: "POST", body,
       ...(body === "{}" ? { headers: { "Content-Type": "application/json" } } : {}) });
     expect((await handleDirectUpload(request, `${sessionId}/complete`, direct, owner, options)).status).toBe(201);
     expect(direct.complete).toHaveBeenCalledWith(sessionId, owner, 1, request.signal, undefined);

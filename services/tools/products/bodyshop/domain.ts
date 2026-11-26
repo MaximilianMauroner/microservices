@@ -8,6 +8,7 @@ export type Meal = (typeof MEALS)[number];
 
 export const DAY_STATUSES = ["Complete", "Partial", "Unknown"] as const;
 export type DayStatus = (typeof DAY_STATUSES)[number];
+export type EngineState = "Open day" | "Review" | "Building" | "Stale" | "Holding" | "Updating";
 
 export const NUTRIENTS = ["kcal", "protein", "carbs", "fat", "fiber"] as const;
 export type Nutrient = (typeof NUTRIENTS)[number];
@@ -91,7 +92,16 @@ export type TemplateComponent = Readonly<{
 }>;
 
 /** `loggedAt` is when Bodyshop received the reading. Imported readings have none. */
-export type WeightReading = Readonly<{ id: string; day: string; kg: number; time: string | null; notes: string; source: string; loggedAt?: string }>;
+export type WeightReading = Readonly<{ id: string; day: string; kg: number; time: string | null; notes: string; source: string; loggedAt?: string; external?: ExternalWeight }>;
+
+export type ExternalWeight = Readonly<{
+  provider: "health-connect";
+  externalId: string;
+  sourceApp: string;
+  measuredAt: string;
+  offsetSeconds: number | null;
+  modifiedAt: string;
+}>;
 
 /** What happened on a day besides food. `override` wins over every automatic completion rule. */
 export type CheckIn = Readonly<{

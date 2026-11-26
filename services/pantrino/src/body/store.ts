@@ -1,6 +1,7 @@
 import type { BodyshopAction, BodyshopAppSnapshot } from "@tools-platform/service/bodyshop-contract";
 import { useSyncExternalStore } from "react";
 import { Offline, SignedOut } from "../auth/session";
+import { healthSync } from "../health/sync";
 import { vault } from "../storage/vault";
 import { bodyshopApi, NoAccess, Refused } from "../sync/api";
 
@@ -70,6 +71,7 @@ export const bodyStore = {
       if (mine !== epoch) return { ok: false, reason: "cancelled" };
       readVersion += 1;
       set({ snapshot, status: "ready" });
+      void healthSync.sync();
       return { ok: true, repeated: Boolean(result.repeated) };
     } catch (error) {
       if (mine !== epoch) return { ok: false, reason: "cancelled" };

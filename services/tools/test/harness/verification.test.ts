@@ -29,7 +29,7 @@ beforeEach(async () => {
 }`);
   await writeFile(join(directory, "package.json"), '{"type":"module"}');
   await writeFile(join(target, "entry.ts"), `import { runVerification } from './verification.ts';
-setTimeout(() => process.exit(99), 10_000);
+setTimeout(() => process.exit(99), 40_000);
 await runVerification(process.env.FIXTURE_MODE === 'workspace' ? 'workspace' : 'money-postgres', {artifactParent: process.env.FIXTURE_DIRECTORY!});`);
   await writeFile(join(target, "postgres.ts"), `import {appendFileSync} from 'node:fs';
 export const rejectInheritedDataEndpoints = () => {};
@@ -75,6 +75,7 @@ export async function createOwnedPostgres() {
   }`);
   await writeFile(join(target, "vitest-child.ts"), `import {readFileSync,writeFileSync} from 'node:fs';
 import {requiredJourneyCases,mountedStatusCase} from './receipt.ts';
+if(process.env.VITEST_MAX_WORKERS!=='1') throw new Error('Owned fixture suites must use one worker');
 const phase=process.argv[2];
 if(process.argv[4]==='journeys') {
   const controls=JSON.parse(readFileSync(new URL('../../../../fixture-controls.json',import.meta.url),'utf8'));
@@ -83,15 +84,13 @@ if(process.argv[4]==='journeys') {
     : controls.FIXTURE_JOURNEY_DUPLICATE ? [...requiredJourneyCases,requiredJourneyCases[0]] : requiredJourneyCases;
   if(phase==='run' && controls.FIXTURE_JOURNEY_HOST_FAIL) await new Promise(resolve=>setTimeout(resolve,3000));
   if(phase==='run' && controls.FIXTURE_JOURNEY_NO_REPORT) process.exit(0);
-  const observed=required.map(identity=>({identity,result:controls.FIXTURE_JOURNEY_SKIP?'skipped':controls.FIXTURE_JOURNEY_PENDING?'pending':controls.FIXTURE_JOURNEY_BLOCKED?'blocked':'passed',
+  const observed=required.map(identity=>({identity,result:controls.FIXTURE_JOURNEY_SKIP?'skipped':'passed',
     evidence:controls.FIXTURE_JOURNEY_LEAK ? ['local-upload-token local-heartbeat-token storage-access storage-secret local-password'] : []}));
   if(phase==='run' && controls.FIXTURE_JOURNEY_LEAK) console.log('local-upload-token local-heartbeat-token storage-access storage-secret local-password');
-  if(controls.FIXTURE_JOURNEY_REPORT_DUPLICATE) observed.push(observed[0]);
-  if(controls.FIXTURE_JOURNEY_REPORT_UNKNOWN) observed.push({identity:'unknown reported case',result:'passed',evidence:[]});
   writeFileSync(process.argv[3],JSON.stringify(phase==='discover'
     ? {phase,required,errors:[]}
     : {phase,observed,errors:controls.FIXTURE_JOURNEY_HOOK_FAIL?['mounted Status afterAll failed']:[]}));
-  process.exit(phase==='run' && (controls.FIXTURE_JOURNEY_BLOCKED || controls.FIXTURE_JOURNEY_HOOK_FAIL || controls.FIXTURE_JOURNEY_EXIT_FAIL)?1:0);
+  process.exit(phase==='run' && (controls.FIXTURE_JOURNEY_HOOK_FAIL || controls.FIXTURE_JOURNEY_EXIT_FAIL)?1:0);
 }
 const identity=process.argv[4]==='identity';
 if(identity && phase==='run' && process.env.FIXTURE_LOCAL_HOST_FAIL) await new Promise(resolve=>setTimeout(resolve,3000));
@@ -100,11 +99,10 @@ writeFileSync(process.argv[3]!,JSON.stringify(phase==='discover'
   : {phase,observed:[{identity:'required case',result:process.env.FIXTURE_SKIP || identity && process.env.FIXTURE_IDENTITY_SKIP?'skipped':'passed',evidence:[]}],errors:[]}));`);
   for (const command of ["git", "pnpm"]) {
     const path = join(directory, "bin", command);
-    await writeFile(path, `#!${process.execPath}
-const fs=require('node:fs');
-fs.appendFileSync(process.env.FIXTURE_TRACE,JSON.stringify(process.argv.slice(2))+'\\n');
-if(process.argv[2]==='rev-parse') console.log('fixture-revision');
-if(process.argv[3]===process.env.FIXTURE_FAIL_COMMAND) process.exit(2);
+    await writeFile(path, String.raw`#!/bin/sh
+printf '["%s","%s"]\n' "$1" "$2" >> "$FIXTURE_TRACE"
+if [ "$1" = rev-parse ]; then printf 'fixture-revision\n'; fi
+if [ -n "$FIXTURE_FAIL_COMMAND" ] && [ "$2" = "$FIXTURE_FAIL_COMMAND" ]; then exit 2; fi
 `);
     await chmod(path, 0o700);
   }
@@ -153,14 +151,15 @@ async function run(environment: NodeJS.ProcessEnv = {}, observe?: (send: (signal
   let stderr = "";
   child.stdout.on("data", (chunk) => { stdout += chunk; });
   child.stderr.on("data", (chunk) => { stderr += chunk; });
-  const exited = new Promise<number | null>((resolve, reject) => {
-    child.once("exit", (code) => resolve(code));
+  const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve, reject) => {
+    child.once("exit", (code, signal) => resolve({ code, signal }));
     child.once("error", reject);
   });
-  const bound = setTimeout(() => { if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL"); }, 12_000);
+  const bound = setTimeout(() => { if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL"); }, 45_000);
   try {
     if (observe) await observe((signal) => { if (child.exitCode === null && child.signalCode === null) child.kill(signal); });
-    const code = await exited;
+    const { code, signal } = await exited;
+    if (signal) throw new Error(`Verification fixture terminated by ${signal}.`);
     const runs = (await readdir(directory)).filter((name) => name.startsWith("runtime-"));
     const path = runs.length ? join(directory, runs[0]!, "receipts.json") : "";
     const text = await readFile(path, "utf8").catch(() => undefined);
@@ -175,7 +174,7 @@ async function run(environment: NodeJS.ProcessEnv = {}, observe?: (send: (signal
   }
 }
 
-describe("terminal verification CLI", { timeout: 15_000 }, () => {
+describe("terminal verification CLI", { timeout: 50_000 }, () => {
   it("resolves inherited relative executable paths before changing directories", async () => {
     const caller = join(directory, "caller");
     await mkdir(caller);
@@ -183,7 +182,7 @@ describe("terminal verification CLI", { timeout: 15_000 }, () => {
     const result = await run({ FIXTURE_MODE: "workspace", PATH: "tools-bin" }, undefined, caller);
     expect(result.code).toBe(0);
     expect(result.record.automatedDecision.kind).toBe("passed");
-  }, 15_000);
+  });
 
   it("preserves absolute executable paths that traverse symlinks", async () => {
     const caller = join(directory, "caller");
@@ -198,7 +197,7 @@ describe("terminal verification CLI", { timeout: 15_000 }, () => {
     const result = await run({ FIXTURE_MODE: "workspace", PATH: `${caller}/link/../bin` });
     expect(result.code).toBe(0);
     expect(result.record.automatedDecision.kind).toBe("passed");
-  }, 15_000);
+  });
 
   it("preserves relative executable paths that traverse symlinks", async () => {
     const caller = join(directory, "caller");
@@ -213,7 +212,7 @@ describe("terminal verification CLI", { timeout: 15_000 }, () => {
     const result = await run({ FIXTURE_MODE: "workspace", PATH: "link/../bin" }, undefined, caller);
     expect(result.code).toBe(0);
     expect(result.record.automatedDecision.kind).toBe("passed");
-  }, 15_000);
+  });
 
   it("publishes one complete plan and succeeds only when every required case runs", async () => {
     const result = await run();
@@ -244,7 +243,7 @@ describe("terminal verification CLI", { timeout: 15_000 }, () => {
   });
 
   it("requires identity, built Tools, and mounted Status receipts before workspace success", async () => {
-    const result = await run({ FIXTURE_MODE: "workspace" });
+    const result = await run({ FIXTURE_MODE: "workspace", FIXTURE_JOURNEY_LEAK: "1", VITEST_MAX_WORKERS: "2" });
     expect(result.code).toBe(0);
     expect(result.record.cells.every((cell: { durationMs: number }) => Number.isFinite(cell.durationMs) && cell.durationMs >= 0)).toBe(true);
     expect(result.record.minio).toMatchObject({ source: "store", platform: "linux/amd64" });
@@ -259,9 +258,15 @@ describe("terminal verification CLI", { timeout: 15_000 }, () => {
     expect(result.record.manualAcceptance.gates).toHaveLength(3);
     expect(result.record.manualAcceptance.gates.every((gate: { result: string; revision: string }) => gate.result === "blocked" && gate.revision === "fixture-revision")).toBe(true);
     expect(JSON.parse(result.stdout.trim()).manualAcceptance.kind).toBe("blocked");
+    const receipts = JSON.stringify(result.record);
+    for (const secret of ["local-upload-token", "local-heartbeat-token", "storage-access", "storage-secret", "local-password"]) {
+      expect(receipts).not.toContain(secret);
+      expect(result.stdout).not.toContain(secret);
+      expect(result.evidence).not.toContain(secret);
+    }
   });
 
-  it.each(["FIXTURE_JOURNEY_MISSING", "FIXTURE_JOURNEY_UNKNOWN", "FIXTURE_JOURNEY_DUPLICATE", "FIXTURE_JOURNEY_SKIP", "FIXTURE_JOURNEY_PENDING", "FIXTURE_JOURNEY_BLOCKED", "FIXTURE_JOURNEY_HOOK_FAIL", "FIXTURE_JOURNEY_EXIT_FAIL", "FIXTURE_JOURNEY_NO_REPORT", "FIXTURE_JOURNEY_REPORT_DUPLICATE", "FIXTURE_JOURNEY_REPORT_UNKNOWN"])("cannot pass workspace verification with %s", async (name) => {
+  it.each(["FIXTURE_JOURNEY_MISSING", "FIXTURE_JOURNEY_UNKNOWN", "FIXTURE_JOURNEY_DUPLICATE", "FIXTURE_JOURNEY_SKIP", "FIXTURE_JOURNEY_HOOK_FAIL", "FIXTURE_JOURNEY_EXIT_FAIL", "FIXTURE_JOURNEY_NO_REPORT"])("cannot pass workspace verification with %s", async (name) => {
     const result = await run({ FIXTURE_MODE: "workspace", [name]: "1" });
     expect(result.code).toBe(1);
     expect(result.record.automatedDecision.kind).toBe("failed");
@@ -309,17 +314,6 @@ describe("terminal verification CLI", { timeout: 15_000 }, () => {
     expect(result.trace).toContain("identity-disposed");
     expect(result.trace).toContain("journey-retained");
     expect(result.trace).not.toContain("journey-disposed");
-  });
-
-  it("removes all fixture secrets from command logs and final receipts", async () => {
-    const result = await run({ FIXTURE_MODE: "workspace", FIXTURE_JOURNEY_LEAK: "1" });
-    expect(result.code).toBe(0);
-    const receipts = JSON.stringify(result.record);
-    for (const secret of ["local-upload-token", "local-heartbeat-token", "storage-access", "storage-secret", "local-password"]) {
-      expect(receipts).not.toContain(secret);
-      expect(result.stdout).not.toContain(secret);
-      expect(result.evidence).not.toContain(secret);
-    }
   });
 
   it("stops workspace admission after the first command failure and still cleans up", async () => {

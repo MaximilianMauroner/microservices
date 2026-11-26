@@ -14,3 +14,4 @@ overrides:
 
 patchedDependencies:
   '@infinitered/react-native-mlkit-text-recognition@5.0.1': patches/@infinitered__react-native-mlkit-text-recognition@5.0.1.patch
+  'react-native-health-connect@4.1.3': patches/react-native-health-connect@4.1.3.patch

@@ -5,6 +5,7 @@ import { createContext, type ReactNode, useContext, useEffect, useMemo, useState
 import { AppState } from "react-native";
 import type { BodyshopAppSnapshot } from "@tools-platform/service/bodyshop-contract";
 import { bodyStore, useBody } from "./body/store";
+import { healthSync } from "./health/sync";
 import { Offline, signIn as openSignIn, signOut as endSession, SignedOut, storedAccount } from "./auth/session";
 import { localVault, wipeVault, vault } from "./storage/vault";
 import { allowKitchenNetwork, kitchenApi } from "./sync/api";
@@ -33,8 +34,13 @@ kitchenSession.subscribe(() => {
   const { session } = kitchenSession.getState();
   if (session === bodySession) return;
   bodySession = session;
-  if (session === "signed-in") void bodyStore.load();
-  else bodyStore.reset();
+  if (session === "signed-in") {
+    void bodyStore.load();
+    void healthSync.connectSession(() => void bodyStore.refresh());
+  } else {
+    healthSync.clearSession();
+    bodyStore.reset();
+  }
 });
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -63,12 +69,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (state.session !== "signed-in") return;
     const app = AppState.addEventListener("change", (next) => {
       kitchenSession.onAppState(next);
-      if (next === "active") void bodyStore.refresh();
+      if (next === "active") {
+        void bodyStore.refresh();
+        void healthSync.sync();
+      }
     });
     let online: boolean | null = null;
     const net = NetInfo.addEventListener(({ isConnected }) => {
       kitchenSession.onConnectivity(isConnected);
-      if (isConnected && online === false) void bodyStore.refresh();
+      if (isConnected && online === false) {
+        void bodyStore.refresh();
+        void healthSync.sync();
+      }
       online = isConnected;
     });
     return () => { app.remove(); net(); };

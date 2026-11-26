@@ -24,6 +24,8 @@ export type Revision<T> = Readonly<{ revision: number; removed: boolean; created
 /** What an import writes. Each record carries its position in the workbook, such as "Food Log!12". */
 export type ImportRecords = { [K in BodyshopKind]?: readonly { record: BodyshopKinds[K]; source: string }[] };
 
+export type FoodChange = Readonly<{ cursor: string; id: string; revision: number; record: FoodEntry | null }>;
+
 export type StoredImport<Receipt> = Readonly<{ id: string; digest: string; createdAt: string; receipt: Receipt }>;
 
 /** One person's Bodyshop data. Nothing here can read another owner's rows. */
@@ -38,6 +40,8 @@ export interface BodyshopScope {
   save(changes: readonly BodyshopChange[]): Promise<void>;
   /** Every revision of one record, oldest first. */
   history<K extends BodyshopKind>(kind: K, id: string): Promise<Revision<BodyshopKinds[K]>[]>;
+  nutritionBaseline(): Promise<string>;
+  nutritionChanges(after: string, baseline: string): Promise<FoodChange[]>;
   imports<Receipt>(): Promise<StoredImport<Receipt>[]>;
   /**
    * Replaces everything that came from earlier imports with `records`, in one transaction. Records you
@@ -110,6 +114,7 @@ export function bodyshopStore(sql: Sql, sealer: Sealer): BodyshopStore {
       },
       async save(changes) {
         await transaction(db, async (db) => {
+          await db`select pg_advisory_xact_lock(hashtext(${`bodyshop-write:${owner}`}))`;
           for (const change of changes) {
             const id = "remove" in change ? change.remove : change.record.id;
             const [current] = await db<(Row & { kind: string; import_id: string | null })[]>`select id, record_id, revision, removed, payload, created_at, kind, import_id from tools.bodyshop_records
@@ -130,6 +135,24 @@ export function bodyshopStore(sql: Sql, sealer: Sealer): BodyshopStore {
         const rows = await db<Row[]>`select id, record_id, revision, removed, payload, created_at from tools.bodyshop_records
           where owner_subject = ${owner} and kind = ${kind} and record_id = ${id} order by revision`;
         return rows.map((row) => ({ revision: row.revision, removed: row.removed, createdAt: row.created_at.toISOString(), record: open(kind, row) }));
+      },
+      async nutritionBaseline() {
+        const [row] = await db<{ cursor: string }[]>`select coalesce(max(change_sequence), 0)::text as cursor
+          from tools.bodyshop_records where owner_subject = ${owner} and kind = 'entry' and import_id is null`;
+        return row!.cursor;
+      },
+      async nutritionChanges(after, baseline) {
+        const rows = await db<(Row & { cursor: string })[]>`select r.id, r.record_id, r.revision, r.removed, r.payload, r.created_at, r.change_sequence::text as cursor
+          from tools.bodyshop_records r
+          where r.owner_subject = ${owner} and r.kind = 'entry' and r.import_id is null and r.change_sequence > ${after}::bigint
+            and exists (select 1 from tools.bodyshop_records first
+              where first.owner_subject = r.owner_subject and first.record_id = r.record_id
+                and first.revision = 1 and first.change_sequence > ${baseline}::bigint)
+          order by r.change_sequence limit 50`;
+        return rows.map((row) => ({
+          cursor: row.cursor, id: row.record_id, revision: row.revision,
+          record: row.removed ? null : open("entry", row),
+        }));
       },
       async imports<Receipt>() {
         const rows = await db<{ id: string; digest: string; payload: string; created_at: Date }[]>`select id, digest, payload, created_at from tools.bodyshop_imports

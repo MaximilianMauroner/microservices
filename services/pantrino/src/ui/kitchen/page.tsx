@@ -1,7 +1,7 @@
 import { router } from "expo-router";
-import { ChevronRight, Info, LogIn, LogOut, MessageSquareWarning, type LucideIcon, RefreshCw, Users } from "lucide-react-native";
+import { Activity, ChevronRight, Info, LogIn, LogOut, MessageSquareWarning, type LucideIcon, RefreshCw, Users } from "lucide-react-native";
 import { type ReactNode, useContext, useState } from "react";
-import { ActivityIndicator, Alert, StyleSheet, View } from "react-native";
+import { ActivityIndicator, Alert, Platform, StyleSheet, View } from "react-native";
 import { useApp, useBodyshop, useKitchen, useSync } from "../../state";
 import type { SyncStatus } from "../../sync/model";
 import { Button, useKitText, HueBadge, Press, Screen, Sheet, T, usePageColor } from "../kit";
@@ -12,6 +12,8 @@ import { LocalModeNotice } from "../local-mode-notice";
 import { useLocalText } from "../local-mode";
 import { ReportSheet } from "../report-sheet";
 import { TEXT } from "./text";
+import { HEALTH_METRICS_TEXT } from "../body/health-metrics-text";
+import { HealthSettings } from "../body/health-settings";
 
 /** The Kitchen tab: the open kitchen, its ingredients and members, sync, language, and sign-out. It works before the first kitchen arrives. */
 export function KitchenHub() {
@@ -23,7 +25,12 @@ export function KitchenHub() {
   const bodyshop = useBodyshop();
   const text = useText(TEXT);
   const kitText = useKitText();
+  const metricsText = useText(HEALTH_METRICS_TEXT);
   const localText = useLocalText();
+  const sections = useText({
+    en: { kitchen: "Kitchen", services: "Services", preferences: "Preferences", account: "Account and support" },
+    de: { kitchen: "Küche", services: "Dienste", preferences: "Einstellungen", account: "Konto und Hilfe" },
+  });
   const colors = useColors();
   const [switching, setSwitching] = useState(false);
   const [reporting, setReporting] = useState(false);
@@ -36,6 +43,7 @@ export function KitchenHub() {
 
   return (
     <Screen title={kitText.profile} back={{ label: kitText.back, onPress: () => router.back() }}>
+      <SectionTitle label={sections.kitchen} />
       <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <HueBadge size={44} />
         <View style={{ flex: 1, gap: 2 }}>
@@ -62,22 +70,37 @@ export function KitchenHub() {
           <View style={{ flexDirection: "row" }}><Button tone="outline" compact label={text.dismiss} onPress={() => void dismiss(notice.clientActionId)} /></View>
         </View>
       ))}
-      <Choice label={text.language} options={KITCHEN_LANGUAGES} names={LANGUAGE_NAMES} value={language} onValue={setLanguage} />
-      <Choice label={text.vibration} options={VIBRATION} names={text.vibrations} value={vibration} silent onValue={(next) => { setVibration(next); haptic("toggle"); }} />
-      {bodyshop.access !== "none" ? <Choice label={text.bodyshop} options={BODYSHOP} names={text.bodyshopStates} value={bodyshop.access} onValue={(next) => bodyshop.setShown(next === "shown")} /> : null}
-      {session === "local" ? <T muted style={styles.small}>{localText.separate}</T> : <Button tone="outline" label={hasLocal ? localText.returnLocal : localText.useLocal} onPress={() => Alert.alert(localText.title, `${localText.limits}\n\n${localText.accountWarning}`, [
-        { text: text.cancel, style: "cancel" },
-        { text: hasLocal ? localText.returnLocal : localText.useLocal, onPress: () => void openLocal().catch(() => undefined) },
-      ])} />}
-      <List>
-        <Row icon={MessageSquareWarning} title={text.report} detail={text.reportDetail} onPress={() => setReporting(true)} />
-      </List>
-      <List>
-        <Press accessibilityRole="button" onPress={session === "local" ? () => void showSignIn().catch(() => undefined) : confirmSignOut} style={({ pressed }) => [styles.row, { justifyContent: "center", opacity: pressed ? 0.7 : 1 }]}>
-          {session === "local" ? <LogIn size={18} color={colors.foreground} /> : <LogOut size={18} color={colors.destructive} />}
-          <T weight="medium" style={{ color: session === "local" ? colors.foreground : colors.destructive }}>{session === "local" ? localText.signIn : text.signOut}</T>
-        </Press>
-      </List>
+      {Platform.OS === "android" && session === "signed-in" && bodyshop.access !== "none" ? (
+        <View style={styles.section}>
+          <SectionTitle label={sections.services} />
+          <List>
+            <Row icon={Activity} title={metricsText.title} detail={metricsText.manage} onPress={() => router.push("/health-metrics-settings")} />
+          </List>
+          <HealthSettings />
+        </View>
+      ) : null}
+      <View style={styles.section}>
+        <SectionTitle label={sections.preferences} />
+        <Choice label={text.language} options={KITCHEN_LANGUAGES} names={LANGUAGE_NAMES} value={language} onValue={setLanguage} />
+        <Choice label={text.vibration} options={VIBRATION} names={text.vibrations} value={vibration} silent onValue={(next) => { setVibration(next); haptic("toggle"); }} />
+        {bodyshop.access !== "none" ? <Choice label={text.bodyshop} options={BODYSHOP} names={text.bodyshopStates} value={bodyshop.access} onValue={(next) => bodyshop.setShown(next === "shown")} /> : null}
+      </View>
+      <View style={styles.section}>
+        <SectionTitle label={sections.account} />
+        {session === "local" ? <T muted style={styles.small}>{localText.separate}</T> : <Button tone="outline" label={hasLocal ? localText.returnLocal : localText.useLocal} onPress={() => Alert.alert(localText.title, `${localText.limits}\n\n${localText.accountWarning}`, [
+          { text: text.cancel, style: "cancel" },
+          { text: hasLocal ? localText.returnLocal : localText.useLocal, onPress: () => void openLocal().catch(() => undefined) },
+        ])} />}
+        <List>
+          <Row icon={MessageSquareWarning} title={text.report} detail={text.reportDetail} onPress={() => setReporting(true)} />
+        </List>
+        <List>
+          <Press accessibilityRole="button" onPress={session === "local" ? () => void showSignIn().catch(() => undefined) : confirmSignOut} style={({ pressed }) => [styles.row, { justifyContent: "center", opacity: pressed ? 0.7 : 1 }]}>
+            {session === "local" ? <LogIn size={18} color={colors.foreground} /> : <LogOut size={18} color={colors.destructive} />}
+            <T weight="medium" style={{ color: session === "local" ? colors.foreground : colors.destructive }}>{session === "local" ? localText.signIn : text.signOut}</T>
+          </Press>
+        </List>
+      </View>
       <ReportSheet open={reporting} onClose={() => setReporting(false)} signedIn={session === "signed-in"} page="/settings" />
       <Sheet open={switching} onClose={() => setSwitching(false)} title={text.kitchens}>
         {open?.kitchens.map(({ kitchen: one }) => {
@@ -93,6 +116,10 @@ export function KitchenHub() {
       </Sheet>
     </Screen>
   );
+}
+
+function SectionTitle({ label }: { label: string }) {
+  return <T accessibilityRole="header" weight="semibold" style={{ fontSize: 18 }}>{label}</T>;
 }
 
 const BODYSHOP = ["hidden", "shown"] as const;
@@ -153,6 +180,7 @@ function Row({ icon: Icon, title, detail, onPress, trailing }: { icon?: LucideIc
 }
 
 const styles = StyleSheet.create({
+  section: { gap: 12, marginTop: 8 },
   small: { fontSize: 13 },
   card: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth },
   list: { borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, overflow: "hidden" },

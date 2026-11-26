@@ -1,7 +1,7 @@
 import { addDays, type Meal } from "@tools-platform/service/kitchen-contract";
-import { router, useFocusEffect } from "expo-router";
+import { router } from "expo-router";
 import { Check, ChevronRight, Flame } from "lucide-react-native";
-import { useCallback, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { bodyStore } from "../../body/store";
 import { type OpenKitchen, useBodyshop } from "../../state";
@@ -39,10 +39,7 @@ export function Today({ data }: { data: OpenKitchen }) {
   const tonight = view.tonight;
   const selectedEntry = selection && (selection.kind === "entry" || selection.kind === "menu") ? data.kitchen.plan.find((one) => one.id === selection.id) : undefined;
   const bodySnapshot = useBodyshop().snapshot;
-  useFocusEffect(useCallback(() => {
-    if (bodySnapshot && bodySnapshot.day !== data.today) void bodyStore.refresh(data.today);
-  }, [bodySnapshot?.day, data.today]));
-  const bodyToday = bodySnapshot?.day === data.today ? bodySnapshot : null;
+  const bodyToday = bodySnapshot?.day === bodySnapshot?.today ? bodySnapshot : null;
   const kcal = Math.round(bodyToday?.entries.reduce((sum, one) => sum + (one.nutrients.kcal ?? 0), 0) ?? 0);
   const date = dayParts(data.today, language);
   const tomorrow = dayParts(addDays(data.today, 1), language);
@@ -102,7 +99,7 @@ export function Today({ data }: { data: OpenKitchen }) {
   );
   const bodyCard = bodySnapshot ? (
     <View style={[styles.card, { backgroundColor: tint(colors.nutrient.kcal, 10, colors.background) }]}>
-      <Press accessibilityRole="button" onPress={() => { void bodyStore.refresh(data.today); router.navigate("/body"); }} style={styles.row}>
+      <Press accessibilityRole="button" onPress={() => { void bodyStore.refresh(bodySnapshot.today); router.navigate("/body"); }} style={styles.row}>
         <Flame size={28} color={colors.nutrient.kcal} />
         <View style={{ flex: 1, gap: 4 }}><T weight="semibold" style={{ fontSize: 18 }}>{bodyToday ? bodyText.ofTarget(kcal, bodyToday.targets.kcal) : bodyText.loading}</T><T muted>Bodyshop</T></View>
       </Press>
@@ -151,7 +148,7 @@ export function Today({ data }: { data: OpenKitchen }) {
     {selectedEntry && selection?.kind === "entry" ? <EntrySheet data={data} entry={selectedEntry} onClose={close} notify={setNotice} /> : null}
     {selectedEntry && selection?.kind === "menu" ? <MealMenu data={data} entry={selectedEntry} onClose={close} notify={setNotice} onLeftovers={leftovers} /> : null}
     {selection?.kind === "leftover" ? <AddLeftoverSheet {...data} initialName={selection.name} onClose={close} /> : null}
-    {selection?.kind === "log" ? <LogSheet day={data.today} onClose={close} notify={setNotice} /> : null}
+    {selection?.kind === "log" ? <LogSheet day={bodySnapshot?.today} onClose={close} notify={setNotice} /> : null}
   </Screen>;
 }
 

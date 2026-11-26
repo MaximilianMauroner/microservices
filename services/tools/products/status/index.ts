@@ -35,7 +35,8 @@ export interface CheckerCliOptions extends ExecuteOptions {
 }
 
 export async function executeChecker(
-  options: ExecuteOptions = {}
+  options: ExecuteOptions = {},
+  armWatchdog?: (phase: "run" | "cleanup") => void
 ): Promise<void> {
   const config = options.config ?? loadConfig();
   const logger = options.logger ?? consoleLogger;
@@ -49,10 +50,14 @@ export async function executeChecker(
   const deadline = new Promise<never>((_resolve, reject) => {
     rejectDeadline = reject;
   });
+  let timedOut = false;
   const timer = setTimeout(() => {
-    controller.abort(new CheckerDeadlineError(config.runDeadlineMs));
-    rejectDeadline(new CheckerDeadlineError(config.runDeadlineMs));
+    timedOut = true;
+    const error = new CheckerDeadlineError(config.runDeadlineMs);
+    controller.abort(error);
+    rejectDeadline(error);
   }, config.runDeadlineMs);
+  armWatchdog?.("run");
   const run = runChecker({
     store,
     config,
@@ -80,9 +85,9 @@ export async function executeChecker(
   } finally {
     clearTimeout(timer);
     controller.abort();
-    if (!settled) {
-      await waitForSettlement(settlement, options.settlementGraceMs ?? 1_000);
-    }
+    const pending = settled ? undefined : waitForSettlement(settlement, options.settlementGraceMs ?? 1_000);
+    if (timedOut) armWatchdog?.("cleanup");
+    if (pending) await pending;
     await store.close();
   }
 }
@@ -111,13 +116,14 @@ export async function runCheckerCli(
     });
   const cleanupGraceMs = options.cleanupGraceMs ?? 1_000;
   let keepWatchdog = false;
-  const watchdog = setTimeout(() => {
+  const watchdogExpired = () => {
     logger.error("checker_process_force_exit", {
       outcome: "deadline",
       cleanupGraceMs
     });
     forceExit(1);
-  }, config.runDeadlineMs + cleanupGraceMs);
+  };
+  let watchdog = setTimeout(watchdogExpired, config.runDeadlineMs + cleanupGraceMs);
 
   try {
     await executeChecker({
@@ -128,6 +134,9 @@ export async function runCheckerCli(
       now: options.now,
       monitorDefinitions: options.monitorDefinitions,
       settlementGraceMs: options.settlementGraceMs ?? Math.max(1, Math.floor(cleanupGraceMs / 2))
+    }, (phase) => {
+      clearTimeout(watchdog);
+      watchdog = setTimeout(watchdogExpired, phase === "run" ? config.runDeadlineMs + cleanupGraceMs : cleanupGraceMs);
     });
   } catch (error) {
     logger.error("checker_process_terminal", {

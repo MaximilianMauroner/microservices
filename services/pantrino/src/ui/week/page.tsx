@@ -11,7 +11,8 @@ import { haptic } from "../haptics";
 import { useLanguage, useText } from "../language";
 import { groupColor, tint, useColors } from "../theme";
 import { useContentLayout, Workspace } from "../responsive";
-import { buildWeek, swipeStep } from "./model";
+import { swipeStep } from "../swipe-step";
+import { buildWeek } from "./model";
 import { AddLeftoverSheet } from "../home/sheets";
 import { EntrySheet, MealMenu, PlanSheet } from "./sheets";
 import { TEXT } from "./text";
@@ -50,12 +51,12 @@ export function Week({ data }: { data: OpenKitchen }) {
   const release = (translationX: number, velocityX: number) => { if (turn(swipeStep(translationX, velocityX))) haptic("toggle"); };
   const shift = useSharedValue(0);
   const swipe = usePanGesture({
-    activeOffsetX: [-24, 24],
+    activeOffsetX: [-18, 18],
     failOffsetY: [-12, 12],
     hitSlop: { left: -EDGE, right: -EDGE },
-    onUpdate: (event) => { shift.value = Math.max(-48, Math.min(48, event.translationX / 4)); },
+    onUpdate: (event) => { shift.set(Math.max(-48, Math.min(48, event.translationX / 4))); },
     onDeactivate: (event) => { if (!event.canceled) scheduleOnRN(release, event.translationX, event.velocityX); },
-    onFinalize: () => { shift.value = withTiming(0, { duration: 160 }); },
+    onFinalize: () => { shift.set(withTiming(0, { duration: 160 })); },
   });
   const slide = useAnimatedStyle(() => ({ transform: [{ translateX: shift.value }] }));
 

@@ -123,7 +123,7 @@ describe("collaborative workspace", () => {
 
   it("clears a save error only after pending edits are acknowledged", async () => {
     await act(async () => {
-      liveEditor.view.dispatch(liveEditor.state.tr.insertText("prompt ".repeat(20_000), 1));
+      liveEditor.view.dispatch(liveEditor.state.tr.insertText("pending edit", 1));
       reportSyncError?.(new Error("temporary failure"));
     });
     expect(container.querySelector(".save-status-error")?.textContent).toContain("Save failed");

@@ -52,7 +52,7 @@ export function scaled(food: Loggable, amount: number): Nutrients {
  * either, Bodyshop refuses the log, so no calorie value is ever made up.
  * A scan is a label value; a Kitchen recipe or ingredient is an estimate, since its values come from other labels.
  */
-export function logAction(food: Loggable, input: { name: string; amount: number; meal: Meal; day: string; kcal?: number }): BodyshopAction {
+export function logAction(food: Loggable, input: { name: string; amount: number; meal: Meal; day: string; kcal?: number }): Extract<BodyshopAction, { type: "food.log" }> {
   if (food.savedId) return { type: "food.log", day: input.day, items: [{ food: food.savedId, meal: input.meal, amount: input.amount, unit: food.unit }] };
   const { kcal: known, ...rest } = scaled(food, input.amount);
   const kcal = known ?? input.kcal;

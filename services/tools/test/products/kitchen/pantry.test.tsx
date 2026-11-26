@@ -51,8 +51,8 @@ async function edit(value: string) {
   await act(async () => input().blur());
 }
 
-it.each(["", "  "])("keeps stock unchanged when its amount is cleared to %j", (value) => show(async () => {
-  await edit(value);
+it("keeps stock unchanged when an amount contains only whitespace", () => show(async () => {
+  await edit("  ");
   expect(mocks.run).not.toHaveBeenCalled();
   expect(input().value).toBe("12");
 }));

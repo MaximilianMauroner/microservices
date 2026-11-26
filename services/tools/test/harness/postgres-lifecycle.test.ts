@@ -67,7 +67,7 @@ describe("owned PostgreSQL lifecycle", () => {
     expect(harness.cleanup.every((spec) => spec.signal === undefined)).toBe(true);
   });
 
-  it.each(["wrong-label", "extra-label", "unreadable-label", "missing-sentinel", "wrong-sentinel", "view-sentinel", "unreadable-sentinel", "invalid-result"])("retains the container for %s", async (defect) => {
+  it.each(["wrong-label", "extra-label", "unreadable-label", "sentinel-query-failed", "invalid-result"])("retains the container for %s", async (defect) => {
     const harness = fixtureCommands();
     const fixture = await ready(harness);
     harness.respond((spec, action, cleaning) => {

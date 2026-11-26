@@ -4,6 +4,7 @@ import { SETTING_LABELS, SEXES, type SettingKey } from "./settings.js";
 
 /** Every change a person can make in Bodyshop, from the web page and from the app. */
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD.");
+const time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable().optional();
 const id = z.string().max(64);
 const share = z.number().min(0).max(5).nullable();
 const text = (max: number) => z.string().max(max);
@@ -14,13 +15,13 @@ const item = z.object({
 });
 
 export const bodyshopAction = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("food.log"), day, time: z.string().regex(/^\d{2}:\d{2}$/).nullable().optional(), items: z.array(item).min(1).max(30), repeat: z.boolean().optional() }),
+  z.object({ type: z.literal("food.log"), day, time, items: z.array(item).min(1).max(30), repeat: z.boolean().optional() }),
   z.object({
-    type: z.literal("meal.log"), day, template: text(200), meal: z.enum(MEALS).optional(), repeat: z.boolean().optional(), skip: z.array(text(200)).max(40).optional(),
+    type: z.literal("meal.log"), day, time, template: text(200), meal: z.enum(MEALS).optional(), repeat: z.boolean().optional(), skip: z.array(text(200)).max(40).optional(),
     choices: z.array(z.object({ part: text(200), food: text(200).optional(), amount: z.number().positive().optional(), unit: text(40).optional() })).max(40).optional()
   }),
   z.object({
-    type: z.literal("entry.correct"), id, day: day.optional(), meal: z.enum(MEALS).optional(), food: text(200).optional(), amount: z.number().positive().optional(),
+    type: z.literal("entry.correct"), id, day: day.optional(), time, meal: z.enum(MEALS).optional(), food: text(200).optional(), amount: z.number().positive().optional(),
     unit: text(40).optional(), nutrients: nutrients.optional(), range: share.optional(), fiberRange: share.optional(), notes: text(2000).optional()
   }),
   z.object({ type: z.literal("remove"), kind: z.enum(["entry", "weight", "food"]), id }),

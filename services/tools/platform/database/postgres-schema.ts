@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   bigint,
+  bigserial,
   boolean,
   check,
   date,
@@ -827,6 +828,7 @@ export const bodyshopRecords = toolsSchema.table("bodyshop_records", {
   kind: text("kind").notNull(),
   recordId: uuid("record_id").notNull(),
   revision: integer("revision").notNull(),
+  changeSequence: bigserial("change_sequence", { mode: "bigint" }).notNull(),
   current: boolean("current").notNull(),
   removed: boolean("removed").notNull().default(false),
   day: date("day", { mode: "string" }),
@@ -839,6 +841,7 @@ export const bodyshopRecords = toolsSchema.table("bodyshop_records", {
   check("bodyshop_records_revision_check", sql`${table.revision} > 0`),
   uniqueIndex("bodyshop_records_revision_idx").on(table.ownerSubject, table.recordId, table.revision),
   uniqueIndex("bodyshop_records_one_current_idx").on(table.ownerSubject, table.recordId).where(sql`${table.current}`),
+  index("bodyshop_nutrition_feed_idx").on(table.ownerSubject, table.changeSequence).where(sql`${table.kind} = 'entry' and ${table.importId} is null`),
   index("bodyshop_records_current_idx").on(table.ownerSubject, table.kind, table.current, table.day),
 ]);
 

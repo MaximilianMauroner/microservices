@@ -16,6 +16,12 @@ const config: ExpoConfig = {
   android: {
     package: "com.lab4code.pantrino",
     allowBackup: false,
+    permissions: [
+      "READ_WEIGHT", "WRITE_NUTRITION", "READ_STEPS", "READ_SLEEP", "READ_HEALTH_DATA_HISTORY",
+      "READ_ACTIVE_CALORIES_BURNED", "READ_DISTANCE", "READ_ELEVATION_GAINED", "READ_EXERCISE",
+      "READ_FLOORS_CLIMBED", "READ_SPEED", "READ_TOTAL_CALORIES_BURNED", "READ_BODY_FAT",
+      "READ_HEART_RATE", "READ_RESTING_HEART_RATE",
+    ].map((permission) => `android.permission.health.${permission}`),
     adaptiveIcon: {
       backgroundColor: "#11877C",
       foregroundImage: "./assets/android-icon-foreground.png",
@@ -25,6 +31,8 @@ const config: ExpoConfig = {
   },
   plugins: [
     "expo-router",
+    "./plugins/health-connect-rationale.cjs",
+    "react-native-health-connect",
     ["expo-sqlite", { useSQLCipher: true }],
     "expo-secure-store",
     "expo-web-browser",

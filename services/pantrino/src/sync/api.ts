@@ -1,4 +1,4 @@
-import type { BodyshopAction, BodyshopAppSnapshot } from "@tools-platform/service/bodyshop-contract";
+import type { BodyshopAction, BodyshopAppSnapshot, HealthCheckIn, HealthFeed, WeightChange } from "@tools-platform/service/bodyshop-contract";
 import type { AppActionResult, CatalogProduct, KitchenSync } from "@tools-platform/service/kitchen-contract";
 import { accessToken, currentSession, Offline, SignedOut, TOOLS_ORIGIN } from "../auth/session";
 import { Platform } from "react-native";
@@ -66,6 +66,15 @@ export const kitchenApi: KitchenApi = {
 
 /** Bodyshop through the same app token. It needs a connection; the app keeps the last day it read for offline use. */
 export const bodyshopApi = {
+  async healthFeed(position?: { baseline: string; after: string }, signal?: AbortSignal): Promise<HealthFeed> {
+    return (await call(`/api/bodyshop/app/health${position ? `?${new URLSearchParams(position)}` : ""}`, { signal }, "no-access")).json();
+  },
+  async importWeight(changes: readonly WeightChange[], signal?: AbortSignal): Promise<void> {
+    await call("/api/bodyshop/app/health", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(changes), signal }, "no-access");
+  },
+  async importHealthCheckIns(checkIns: readonly HealthCheckIn[], signal?: AbortSignal): Promise<void> {
+    await call("/api/bodyshop/app/health", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ checkIns }), signal }, "no-access");
+  },
   async today(day?: string): Promise<BodyshopAppSnapshot> {
     return (await call(`/api/bodyshop/app/today${day ? `?${new URLSearchParams({ day })}` : ""}`, {}, "no-access")).json();
   },

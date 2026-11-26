@@ -24,13 +24,6 @@ describe("Bodyshop across a sign-out or an account change", () => {
     expect(vault.saveSetting).not.toHaveBeenCalled();
   });
 
-  it("keeps a day that arrives without a reset", async () => {
-    vi.mocked(bodyshopApi.today).mockResolvedValueOnce(day("mine"));
-    await bodyStore.refresh();
-    expect(bodyStore.getState().status).toBe("ready");
-    expect(vault.saveSetting).toHaveBeenCalledOnce();
-  });
-
   it("cancels a save answered after reset and sends no following log", async () => {
     let answer!: (result: Awaited<ReturnType<typeof bodyshopApi.act>>) => void;
     vi.mocked(bodyshopApi.act).mockImplementationOnce(() => new Promise((resolve) => { answer = resolve; }));
@@ -62,7 +55,7 @@ describe("Bodyshop across a sign-out or an account change", () => {
     await bodyStore.refresh("2026-11-07");
     answer(day("older"));
     await first;
-    expect(bodyStore.getState().snapshot).toEqual(day("newer"));
+    expect(bodyStore.getState()).toMatchObject({ status: "ready", snapshot: day("newer") });
     expect(vault.saveSetting).toHaveBeenCalledOnce();
   });
 

@@ -108,8 +108,7 @@ async function createPlatformRuntime(): Promise<PlatformRuntime> {
   try {
     const tools = createToolsApp({
       storage: toolsStorage,
-      authenticate: toolsPrincipalAuthentication(),
-      trustedOrigin: config.publicOrigin
+      authenticate: toolsPrincipalAuthentication()
     });
     const artifact = createFetchApp({
       activityTracker,

@@ -46,6 +46,7 @@ let observed: CaseResult[] = [];
 let runEnds = 0;
 let vitest: Vitest | undefined;
 try {
+  if (phase === "discover") console.error(`Starting Vitest for ${suite} discovery.`);
   vitest = await createVitest("test", {
     root: toolsRoot,
     config: join(toolsRoot, suite === "journeys" ? "vitest.journeys.config.ts" : suite === "identity" ? "vitest.identity.config.ts" : "vitest.postgres.config.ts"),
@@ -60,9 +61,13 @@ try {
     }],
   });
   if (phase === "discover") {
-    const collected = await vitest.collectTests(await vitest.globTestSpecifications());
+    console.error(`Finding ${suite} test files.`);
+    const specifications = await vitest.globTestSpecifications();
+    console.error(`Collecting tests from ${specifications.length} specifications.`);
+    const collected = await vitest.collectTests(specifications);
     required = collected.testModules.flatMap((module) => [...module.children.allTests()].map(identity));
     errors.push(...collected.unhandledErrors.map(message), ...moduleErrors(collected.testModules));
+    console.error(`Collected ${required.length} tests. Closing Vitest.`);
   } else {
     await vitest.start();
     if (runEnds !== 1) errors.push(`Vitest reported the end of the run ${runEnds} times.`);

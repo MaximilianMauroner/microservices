@@ -12,6 +12,7 @@ export function clientAddress(request: Request) {
  */
 export function createRateLimit({ limit, windowMs }: { limit: number; windowMs: number }) {
   const windows = new Map<string, { count: number; resetAt: number }>();
+  let earliestReset = Infinity;
   return (key: string, now = Date.now()) => {
     const current = windows.get(key);
     if (current && current.resetAt > now) {
@@ -19,8 +20,18 @@ export function createRateLimit({ limit, windowMs }: { limit: number; windowMs: 
       return current.count <= limit;
     }
     windows.delete(key);
-    if (windows.size >= MAX_TRACKED_KEYS) for (const [tracked, window] of windows) if (window.resetAt <= now) windows.delete(tracked);
-    if (windows.size < MAX_TRACKED_KEYS) windows.set(key, { count: 1, resetAt: now + windowMs });
+    if (windows.size >= MAX_TRACKED_KEYS && earliestReset <= now) {
+      earliestReset = Infinity;
+      for (const [tracked, window] of windows) {
+        if (window.resetAt <= now) windows.delete(tracked);
+        else earliestReset = Math.min(earliestReset, window.resetAt);
+      }
+    }
+    if (windows.size < MAX_TRACKED_KEYS) {
+      const resetAt = now + windowMs;
+      windows.set(key, { count: 1, resetAt });
+      earliestReset = Math.min(earliestReset, resetAt);
+    }
     return true;
   };
 }

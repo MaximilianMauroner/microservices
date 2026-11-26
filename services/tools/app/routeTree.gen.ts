@@ -88,6 +88,7 @@ import { Route as KitchenKitchenIdShoppingRouteImport } from './routes/kitchen/$
 import { Route as MarkdownDSlugRouteImport } from './routes/markdown/d/$slug'
 import { Route as ShareDSlugRouteImport } from './routes/share/d/$slug'
 import { Route as ApiBodyshopAppActionsRouteImport } from './routes/api/bodyshop/app/actions'
+import { Route as ApiBodyshopAppHealthRouteImport } from './routes/api/bodyshop/app/health'
 import { Route as ApiBodyshopAppTodayRouteImport } from './routes/api/bodyshop/app/today'
 import { Route as ApiBodyshopImportPreviewRouteImport } from './routes/api/bodyshop/import/preview'
 import { Route as ApiMoneyImportsImportIdRouteImport } from './routes/api/money/imports/$importId'
@@ -497,6 +498,11 @@ const ApiBodyshopAppActionsRoute = ApiBodyshopAppActionsRouteImport.update({
   path: '/api/bodyshop/app/actions',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiBodyshopAppHealthRoute = ApiBodyshopAppHealthRouteImport.update({
+  id: '/api/bodyshop/app/health',
+  path: '/api/bodyshop/app/health',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiBodyshopAppTodayRoute = ApiBodyshopAppTodayRouteImport.update({
   id: '/api/bodyshop/app/today',
   path: '/api/bodyshop/app/today',
@@ -633,6 +639,7 @@ export interface FileRoutesByFullPath {
   '/feedback/forms/': typeof FeedbackFormsIndexRoute
   '/kitchen/$kitchenId/': typeof KitchenKitchenIdIndexRoute
   '/api/bodyshop/app/actions': typeof ApiBodyshopAppActionsRoute
+  '/api/bodyshop/app/health': typeof ApiBodyshopAppHealthRoute
   '/api/bodyshop/app/today': typeof ApiBodyshopAppTodayRoute
   '/api/bodyshop/import/preview': typeof ApiBodyshopImportPreviewRoute
   '/api/money/imports/$importId': typeof ApiMoneyImportsImportIdRoute
@@ -717,6 +724,7 @@ export interface FileRoutesByTo {
   '/feedback/forms': typeof FeedbackFormsIndexRoute
   '/kitchen/$kitchenId': typeof KitchenKitchenIdIndexRoute
   '/api/bodyshop/app/actions': typeof ApiBodyshopAppActionsRoute
+  '/api/bodyshop/app/health': typeof ApiBodyshopAppHealthRoute
   '/api/bodyshop/app/today': typeof ApiBodyshopAppTodayRoute
   '/api/bodyshop/import/preview': typeof ApiBodyshopImportPreviewRoute
   '/api/money/imports/$importId': typeof ApiMoneyImportsImportIdRoute
@@ -809,6 +817,7 @@ export interface FileRoutesById {
   '/feedback/forms/': typeof FeedbackFormsIndexRoute
   '/kitchen/$kitchenId/': typeof KitchenKitchenIdIndexRoute
   '/api/bodyshop/app/actions': typeof ApiBodyshopAppActionsRoute
+  '/api/bodyshop/app/health': typeof ApiBodyshopAppHealthRoute
   '/api/bodyshop/app/today': typeof ApiBodyshopAppTodayRoute
   '/api/bodyshop/import/preview': typeof ApiBodyshopImportPreviewRoute
   '/api/money/imports/$importId': typeof ApiMoneyImportsImportIdRoute
@@ -902,6 +911,7 @@ export interface FileRouteTypes {
     | '/feedback/forms/'
     | '/kitchen/$kitchenId/'
     | '/api/bodyshop/app/actions'
+    | '/api/bodyshop/app/health'
     | '/api/bodyshop/app/today'
     | '/api/bodyshop/import/preview'
     | '/api/money/imports/$importId'
@@ -986,6 +996,7 @@ export interface FileRouteTypes {
     | '/feedback/forms'
     | '/kitchen/$kitchenId'
     | '/api/bodyshop/app/actions'
+    | '/api/bodyshop/app/health'
     | '/api/bodyshop/app/today'
     | '/api/bodyshop/import/preview'
     | '/api/money/imports/$importId'
@@ -1077,6 +1088,7 @@ export interface FileRouteTypes {
     | '/feedback/forms/'
     | '/kitchen/$kitchenId/'
     | '/api/bodyshop/app/actions'
+    | '/api/bodyshop/app/health'
     | '/api/bodyshop/app/today'
     | '/api/bodyshop/import/preview'
     | '/api/money/imports/$importId'
@@ -1139,6 +1151,7 @@ export interface RootRouteChildren {
   ApiPublicCatalogRoute: typeof ApiPublicCatalogRoute
   ApiShareDocumentsRoute: typeof ApiShareDocumentsRouteWithChildren
   ApiBodyshopAppActionsRoute: typeof ApiBodyshopAppActionsRoute
+  ApiBodyshopAppHealthRoute: typeof ApiBodyshopAppHealthRoute
   ApiBodyshopAppTodayRoute: typeof ApiBodyshopAppTodayRoute
   ApiStatusHeartbeatsMonitorIdRoute: typeof ApiStatusHeartbeatsMonitorIdRoute
   ApiFeedbackFormsFormIdExportRoute: typeof ApiFeedbackFormsFormIdExportRoute
@@ -1699,6 +1712,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiBodyshopAppActionsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/bodyshop/app/health': {
+      id: '/api/bodyshop/app/health'
+      path: '/api/bodyshop/app/health'
+      fullPath: '/api/bodyshop/app/health'
+      preLoaderRoute: typeof ApiBodyshopAppHealthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/bodyshop/app/today': {
       id: '/api/bodyshop/app/today'
       path: '/api/bodyshop/app/today'
@@ -2039,6 +2059,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicCatalogRoute: ApiPublicCatalogRoute,
   ApiShareDocumentsRoute: ApiShareDocumentsRouteWithChildren,
   ApiBodyshopAppActionsRoute: ApiBodyshopAppActionsRoute,
+  ApiBodyshopAppHealthRoute: ApiBodyshopAppHealthRoute,
   ApiBodyshopAppTodayRoute: ApiBodyshopAppTodayRoute,
   ApiStatusHeartbeatsMonitorIdRoute: ApiStatusHeartbeatsMonitorIdRoute,
   ApiFeedbackFormsFormIdExportRoute: ApiFeedbackFormsFormIdExportRoute,

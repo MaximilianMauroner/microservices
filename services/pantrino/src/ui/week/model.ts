@@ -58,13 +58,3 @@ export function moveStrip(day: string): string[] {
   const start = weekStart(day);
   return Array.from({ length: STRIP_DAYS }, (_, index) => addDays(start, index));
 }
-
-/**
- * The week change a released horizontal swipe asks for: 1 for the next week, -1 for the previous one, 0 for none.
- * A swipe to the left shows the next week, like turning a page. A short fast flick counts as much as a long slow drag.
- */
-export function swipeStep(translationX: number, velocityX: number): -1 | 0 | 1 {
-  const reach = translationX + velocityX * 0.15;
-  if (Math.abs(translationX) < 24 || Math.abs(reach) < 96) return 0;
-  return reach < 0 ? 1 : -1;
-}

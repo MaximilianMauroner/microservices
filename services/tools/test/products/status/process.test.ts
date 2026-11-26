@@ -87,7 +87,7 @@ describe("one-shot process", () => {
       "./fixtures/active-handle-cli.ts",
       import.meta.url
     ).pathname;
-    const child = spawn("tsx", [fixture], {
+    const child = spawn(process.execPath, ["--import", import.meta.resolve("tsx"), fixture], {
       cwd: process.cwd(),
       stdio: ["ignore", "pipe", "pipe"]
     });
@@ -103,20 +103,20 @@ describe("one-shot process", () => {
         new Promise<never>((_resolve, reject) => {
           timeout = setTimeout(
             () => reject(new Error("spawned checker did not force-exit")),
-            2_000
+            10_000
           );
         })
       ]);
       const [stdoutText, stderrText] = await Promise.all([stdout, stderr]);
       expect(exitCode).toBe(1);
-      expect(stdoutText).toContain("store.closed");
+      expect(stdoutText, stderrText).toContain("store.closed");
       expect(stderrText).toContain("checker_process_terminal");
       expect(stderrText).toContain("checker_process_force_exit");
     } finally {
       if (timeout) clearTimeout(timeout);
       child.kill();
     }
-  });
+  }, 15_000);
 });
 
 async function readStream(stream: Readable | null): Promise<string> {

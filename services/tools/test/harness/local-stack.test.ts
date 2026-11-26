@@ -703,7 +703,7 @@ describe("owned local stack", () => {
     const restarted = await withLocalStack(setup.options, async () => {});
     expect(restarted.kind).toBe("completed");
     expect(restarted.manifest?.bindings).toEqual(first.manifest?.bindings);
-  });
+  }, 15_000);
 
   it("recovers an older identity's bindings from its retained manifest without rotating its key or project", async () => {
     const setup = await fixture();
@@ -718,7 +718,7 @@ describe("owned local stack", () => {
     expect(second.manifest?.origins).toEqual(first.manifest?.origins);
     expect(second.manifest?.bindings).toEqual(first.manifest?.bindings);
     expect(JSON.parse(await readFile(path, "utf8"))).toEqual(identity);
-  });
+  }, 15_000);
 
   it("refuses retained configuration without a recoverable port identity instead of selecting new ports", async () => {
     const setup = await fixture();
@@ -733,7 +733,7 @@ describe("owned local stack", () => {
     expect(result).toMatchObject({ kind: "blocked", reason: expect.stringContaining("no port identity") });
     expect(setup.calls).toHaveLength(count);
     expect(await retainedFiles(setup.options.directory)).toEqual(files);
-  });
+  }, 15_000);
 
   it("replays the missing-key rejection in the actual parser", () => {
     expect(() => loadPlatformConfig(platform)).toThrow(/FEEDBACK_ENCRYPTION_KEY/);

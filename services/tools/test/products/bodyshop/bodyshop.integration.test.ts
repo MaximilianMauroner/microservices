@@ -8,11 +8,12 @@ import { handleMcpRequest } from "../../../platform/access/mcp.js";
 import { DISPOSABLE_DATABASE_SENTINEL, withVerifiedDisposableDatabase } from "../../../platform/database/postgres-push-guard.js";
 import { createSealer } from "../../../platform/security/sealed.js";
 import { addDays, type FoodEntry, type WeightReading } from "../../../products/bodyshop/domain.js";
+import { handleBodyshopHealth, importWeightChanges } from "../../../products/bodyshop/health.js";
 import { entryNutrients } from "../../../products/bodyshop/model/day.js";
 import { registerBodyshopTools } from "../../../products/bodyshop/mcp-tools.js";
 import { handleBodyshopActions, handleBodyshopToday } from "../../../products/bodyshop/app.js";
 import { type BodyshopStore, bodyshopStore } from "../../../products/bodyshop/repository.js";
-import { commitImport, correctEntry, dayView, logFood, logMeal, logWeight, previewImport, progress, removeRecord, saveFood, updateProfile, updateSettings } from "../../../products/bodyshop/service.js";
+import { commitImport, correctEntry, dayView, logFood, logMeal, logWeight, previewImport, progress, removeRecord, saveFood, updateDay, updateProfile, updateSettings } from "../../../products/bodyshop/service.js";
 import { requireLoopbackPostgres } from "../../harness/postgres.ts";
 import { eatingWorkbook } from "./workbook-fixture.js";
 
@@ -330,5 +331,74 @@ describe.skipIf(!store)("Bodyshop app API", () => {
     const shown = await read(addDays(today, -60));
     expect(shown.weights, "the shown day keeps its own weigh-ins").toEqual([]);
     expect(shown.history.map((one: WeightReading) => one.kg)).toEqual([98.4, 97.6, 96.8]);
+  });
+});
+
+describe.skipIf(!store)("Bodyshop Health Connect", () => {
+  it("imports, corrects, and deletes by external identity without changing manual readings or another owner", async () => {
+    const mine = store!.owner("owner-subject");
+    const other = store!.owner("other-subject");
+    const manual = await logWeight(mine, { day: "2026-11-04", kg: 71 });
+    const external = {
+      provider: "health-connect" as const, externalId: "health-record", sourceApp: "scale.example",
+      measuredAt: "2026-11-04T08:00:00Z", modifiedAt: "2026-11-04T09:00:00Z", offsetSeconds: 3600, kg: 70,
+    };
+    await Promise.all([mine, mine, other].map((scope) => importWeightChanges(scope, [{ type: "upsert", weight: external }])));
+    const imported = (await mine.list("weight")).find((item) => item.external);
+    expect(imported).toMatchObject({ kg: 70, day: "2026-11-04", time: "09:00", source: "scale.example" });
+    expect(await mine.history("weight", imported!.id)).toHaveLength(1);
+    await importWeightChanges(mine, [{ type: "upsert", weight: { ...external, modifiedAt: "2026-11-04T10:00:00Z", kg: 72 } }]);
+    expect(await mine.get("weight", imported!.id)).toMatchObject({ kg: 72 });
+    const deleted = { type: "delete", externalId: external.externalId } as const;
+    await importWeightChanges(mine, [deleted, deleted, { type: "upsert", weight: external }]);
+    expect(await mine.list("weight")).toEqual([manual]);
+    expect(await other.list("weight")).toHaveLength(1);
+  });
+
+  it("includes web logs, revisions, and tombstones after opt-in, scoped to the bearer owner", async () => {
+    const owner = "health-owner";
+    const scope = store!.owner(owner);
+    const person: PlatformPrincipal = { role: "member", subject: owner, email: "health@example.test", products: ["bodyshop"] };
+    const request = (suffix = "", principal = person) => handleBodyshopHealth(
+      new Request(`https://tools.example.test/api/bodyshop/app/health${suffix}`), async () => principal, store!,
+    );
+    const log = (food: string) => logFood(scope, { day: "2026-11-03", items: [
+      { food, meal: "Dinner", amount: 1, unit: "g", nutrients: { kcal: 9, fiber: null } },
+    ] });
+    const old = await log("Old entry");
+    const { cursor, namespace } = await (await request()).json();
+    await correctEntry(scope, old.entries[0]!.id, { amount: 2 });
+    const { entries: [entry] } = await log("New entry");
+    await correctEntry(scope, entry!.id, { amount: 2 });
+    await removeRecord(scope, "entry", entry!.id);
+    const position = `?baseline=${cursor}&after=${cursor}`;
+    const { changes } = await (await request(position)).json();
+    expect(changes.map((row: { id: string }) => row.id)).toEqual([entry!.id, entry!.id, entry!.id]);
+    expect(changes[1]).toMatchObject({ revision: 2, food: { nutrients: { kcal: 18, fiber: null } } });
+    expect(changes[2]).toMatchObject({ revision: 3, food: null });
+    const other = { ...person, subject: "another-health-owner" };
+    expect((await (await request(position, other)).json()).changes).toEqual([]);
+    expect((await (await request("", other)).json()).namespace).not.toBe(namespace);
+  });
+});
+
+describe.skipIf(!store)("Health Connect check-in import", () => {
+  it("fills only blank values under the authenticated owner and replays without revisions", async () => {
+    const owner = "activity-owner";
+    const scope = store!.owner(owner);
+    const other = store!.owner("other-activity-owner");
+    const person: PlatformPrincipal = { role: "member", subject: owner, email: "activity@example.test", products: ["bodyshop"] };
+    const day = "2026-11-25";
+    const send = (checkIns: unknown) => handleBodyshopHealth(new Request("https://tools.example.test/api/bodyshop/app/health", {
+      method: "POST", body: JSON.stringify({ checkIns }),
+    }), async () => person, store!);
+    await updateDay(scope, { day, steps: 0, notes: "Manual check-in" });
+    expect((await send([{ day, steps: 5000, sleep: 7.5 }])).status).toBe(204);
+    const [checkIn] = await scope.list("checkin");
+    expect(checkIn).toMatchObject({ steps: 0, sleep: 7.5, notes: "Manual check-in" });
+    expect((await send([{ day, steps: 6000, sleep: 8 }])).status).toBe(204);
+    expect(await scope.history("checkin", checkIn!.id)).toHaveLength(2);
+    expect(await other.list("checkin")).toEqual([]);
+    expect((await send([{ day: "2026-02-31", steps: 5000 }])).status).toBe(400);
   });
 });
