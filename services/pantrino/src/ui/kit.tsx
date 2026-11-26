@@ -1,5 +1,5 @@
 import { byGroupOrder, addDays, UNSORTED_SECTION } from "@tools-platform/service/kitchen-contract";
-import { Apple, CalendarDays, ChevronLeft, ChevronRight, CookingPot, type LucideIcon, Search, ShoppingBasket, Sun, UserRound, Utensils, Weight, X } from "lucide-react-native";
+import { Apple, ChartNoAxesCombined, CalendarDays, ChevronLeft, ChevronRight, CookingPot, type LucideIcon, Search, ShoppingBasket, Sun, UserRound, Utensils, Weight, X } from "lucide-react-native";
 import { router, useFocusEffect, useIsFocused } from "expo-router";
 import { Children, createContext, isValidElement, type ReactNode, type RefObject, useCallback, useContext, useEffect, useReducer, useRef, useState } from "react";
 import { AccessibilityInfo, Alert, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, type PressableProps, type PressableStateCallbackType, FlatList, RefreshControl, type RefreshControlProps, ScrollView, type ScrollViewInstance, StyleSheet, Text, type TextProps, TextInput, type TextInputProps, View, type ViewStyle } from "react-native";
@@ -30,10 +30,11 @@ export const TABS = [
   { key: "day", route: "body", mode: "body", icon: Utensils },
   { key: "foods", route: "foods", mode: "body", icon: Apple },
   { key: "weight", route: "weight", mode: "body", icon: Weight },
+  { key: "insights", route: "insights", mode: "body", icon: ChartNoAxesCombined },
 ] as const satisfies readonly { key: PageKey; route: string; mode: Mode; icon: LucideIcon }[];
 
 const en = {
-  tabs: { week: ["Week", "Week"], shopping: ["Shopping list", "Shop"], kitchen: ["Kitchen", "Kitchen"], today: ["Today", "Today"], day: ["Day", "Day"], foods: ["Foods", "Foods"], weight: ["Weight", "Weight"] } as Record<PageKey, [string, string]>,
+  tabs: { week: ["Week", "Week"], shopping: ["Shopping list", "Shop"], kitchen: ["Kitchen", "Kitchen"], today: ["Today", "Today"], day: ["Day", "Day"], foods: ["Foods", "Foods"], weight: ["Weight", "Weight"], insights: ["Insights", "Insights"] } as Record<PageKey, [string, string]>,
   profile: "Profile",
   search: "Search",
   back: "Back",
@@ -59,7 +60,7 @@ const en = {
 const TEXT: Record<KitchenLanguage, typeof en> = {
   en,
   de: {
-    tabs: { week: ["Woche", "Woche"], shopping: ["Einkaufsliste", "Einkauf"], kitchen: ["Küche", "Küche"], today: ["Heute", "Heute"], day: ["Tag", "Tag"], foods: ["Lebensmittel", "Essen"], weight: ["Gewicht", "Gewicht"] },
+    tabs: { week: ["Woche", "Woche"], shopping: ["Einkaufsliste", "Einkauf"], kitchen: ["Küche", "Küche"], today: ["Heute", "Heute"], day: ["Tag", "Tag"], foods: ["Lebensmittel", "Essen"], weight: ["Gewicht", "Gewicht"], insights: ["Auswertung", "Auswertung"] },
     profile: "Profil",
     search: "Suche",
     back: "Zurück",

@@ -1,13 +1,16 @@
-import { addDays, type BodyshopAppSnapshot, MEALS } from "@tools-platform/service/bodyshop-contract";
+import { addDays, type BodyshopAppSnapshot, dailyMeanWeights, MEALS } from "@tools-platform/service/bodyshop-contract";
 import { formatNumber } from "@tools-platform/service/kitchen-contract";
-import { Plus } from "lucide-react-native";
+import { router } from "expo-router";
+import { ChevronRight, Footprints, Moon, Plus, Scale } from "lucide-react-native";
 import { useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { bodyStore } from "../../body/store";
 import { Button, dayParts, Empty, FloatingButton, type Notice, Press, Screen, Sheet, Snackbar, StepNav, T } from "../kit";
+import { SwipeStepArea } from "../swipe-step-area";
 import { useContentLayout } from "../responsive";
 import { useLanguage, useText } from "../language";
 import { tint, useColors } from "../theme";
+import { FoodCharts } from "./food-charts";
 import { LogSheet, unitLabel } from "./log-sheet";
 import { TEXT } from "./text";
 
@@ -22,7 +25,7 @@ export function Today({ snapshot }: { snapshot: BodyshopAppSnapshot }) {
   const [logging, setLogging] = useState(false);
   const [entry, setEntry] = useState<Entry>();
   const [notice, setNotice] = useState<Notice | null>(null);
-  const { day, today, targets, entries } = snapshot;
+  const { day, today, targets, entries, checkIn } = snapshot;
   const eaten = (key: "kcal" | "protein" | "carbs" | "fat" | "fiber") => entries.reduce((sum, one) => sum + (one.nutrients[key] ?? 0), 0);
   const kcal = Math.round(eaten("kcal"));
   const title = day === today ? text.today : day === addDays(today, -1) ? text.yesterday : `${dayParts(day, language).weekdayLong} ${dayParts(day, language).dayMonth}`;
@@ -38,24 +41,33 @@ export function Today({ snapshot }: { snapshot: BodyshopAppSnapshot }) {
       </>}>
       <View style={{ flexDirection: wide ? "row" : "column", gap: wide ? 32 : 16, alignItems: "flex-start" }}>
         <View style={[styles.column, wide ? { flex: 1 } : { width: "100%" }]}>
-          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <T weight="semibold" style={{ fontSize: 28, color: kcal > targets.kcal ? colors.destructive : colors.foreground }}>
-              {kcal > targets.kcal ? text.over(kcal - targets.kcal) : text.left(targets.kcal - kcal)}
-            </T>
-            <NutrientBar share={kcal / targets.kcal} color={colors.nutrient.kcal} />
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
-              {(["protein", "carbs", "fat", "fiber"] as const).map((key) => (
-                <View key={key} style={{ flexGrow: 1, flexBasis: "40%", gap: 4 }}>
-                  <T muted style={{ fontSize: 12 }}>{text.nutrients[key]}</T>
-                  <T weight="medium">{formatNumber(Math.round(eaten(key)), language)} / {targets[key]} g</T>
-                  <NutrientBar share={eaten(key) / targets[key]} color={colors.nutrient[key]} />
-                </View>
-              ))}
+          <SwipeStepArea onStep={(step) => {
+            if ((step > 0 && day >= today) || bodyStore.getState().status === "loading") return false;
+            go(step);
+            return true;
+          }}>
+            <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <T weight="semibold" style={{ fontSize: 28, color: kcal > targets.kcal ? colors.destructive : colors.foreground }}>
+                {kcal > targets.kcal ? text.over(kcal - targets.kcal) : text.left(targets.kcal - kcal)}
+              </T>
+              <NutrientBar share={kcal / targets.kcal} color={colors.nutrient.kcal} />
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
+                {(["protein", "carbs", "fat", "fiber"] as const).map((key) => (
+                  <View key={key} style={{ flexGrow: 1, flexBasis: "40%", gap: 4 }}>
+                    <T muted style={{ fontSize: 12 }}>{text.nutrients[key]}</T>
+                    <T weight="medium">{formatNumber(Math.round(eaten(key)), language)} / {targets[key]} g</T>
+                    <NutrientBar share={eaten(key) / targets[key]} color={colors.nutrient[key]} />
+                  </View>
+                ))}
+              </View>
+              <T muted style={{ fontSize: 12 }}>{text.swipeDay}</T>
+              {entries.some((one) => one.check !== "Ready") ? <T muted style={{ fontSize: 12 }}>{text.checks}</T> : null}
             </View>
-            {entries.some((one) => one.check !== "Ready") ? <T muted style={{ fontSize: 12 }}>{text.checks}</T> : null}
-          </View>
+          </SwipeStepArea>
+          <DayCheckIn checkIn={checkIn} weights={snapshot.weights} />
         </View>
         <View style={[styles.column, wide ? { flex: 1 } : { width: "100%" }]}>
+          {entries.length ? <FoodCharts entries={entries} /> : null}
           {entries.length ? MEALS.filter((meal) => entries.some((one) => one.meal === meal)).map((meal) => {
             const rows = entries.filter((one) => one.meal === meal);
             return (
@@ -82,6 +94,39 @@ export function Today({ snapshot }: { snapshot: BodyshopAppSnapshot }) {
       {logging ? <LogSheet day={day} onClose={() => setLogging(false)} notify={setNotice} /> : null}
       {entry ? <EntrySheet entry={entry} onClose={() => setEntry(undefined)} notify={setNotice} /> : null}
     </Screen>
+  );
+}
+
+function DayCheckIn({ checkIn, weights }: Pick<BodyshopAppSnapshot, "checkIn" | "weights">) {
+  const language = useLanguage();
+  const text = useText(TEXT);
+  const colors = useColors();
+  const weight = dailyMeanWeights(weights)[0]?.kg;
+  const metrics = [
+    { label: text.stepMetric, icon: Footprints, value: checkIn?.steps, unit: "", color: colors.positive },
+    { label: text.sleepMetric, icon: Moon, value: checkIn?.sleep, unit: " h", color: colors.pageInk.kitchen },
+    { label: text.weightMetric, icon: Scale, value: weight, unit: " kg", color: colors.pageInk.weight },
+  ];
+
+  return (
+    <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <T accessibilityRole="header" weight="semibold" style={{ fontSize: 18 }}>{text.checkIn}</T>
+      <View style={styles.metrics}>
+        {metrics.map(({ label, icon: Icon, value, unit, color }) => (
+          <View key={label} style={[styles.metric, { backgroundColor: colors.muted }]}>
+            <Icon size={17} color={color} />
+            <T muted style={{ fontSize: 12 }}>{label}</T>
+            <T weight="semibold" style={{ fontSize: 16, fontVariant: ["tabular-nums"] }}>
+              {value == null ? "—" : `${formatNumber(Math.round(value * 10) / 10, language)}${unit}`}
+            </T>
+          </View>
+        ))}
+      </View>
+      <Press accessibilityRole="button" onPress={() => router.navigate("/(tabs)/weight")} style={styles.trendLink}>
+        <T weight="medium" style={{ color: colors.pageInk.weight, flex: 1 }}>{text.openWeightTrend}</T>
+        <ChevronRight size={18} color={colors.pageInk.weight} />
+      </Press>
+    </View>
   );
 }
 
@@ -126,6 +171,9 @@ function EntrySheet({ entry, onClose, notify }: { entry: Entry; onClose: () => v
 
 const styles = StyleSheet.create({
   card: { gap: 12, padding: 16, borderRadius: 16, borderWidth: 1 },
+  metrics: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  metric: { flexGrow: 1, flexBasis: "29%", minWidth: 80, borderRadius: 12, padding: 10, gap: 4 },
+  trendLink: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: -8 },
   column: { gap: 16, maxWidth: 720 },
   entry: { minHeight: 52, flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 4, paddingVertical: 6, borderBottomWidth: StyleSheet.hairlineWidth },
 });

@@ -1,6 +1,6 @@
 import type { BodyshopAppSnapshot } from "@tools-platform/service/bodyshop-contract";
 import { formatNumber } from "@tools-platform/service/kitchen-contract";
-import { Plus, ScanBarcode } from "lucide-react-native";
+import { BarChart3, Plus, ScanBarcode } from "lucide-react-native";
 import { useState } from "react";
 import { View } from "react-native";
 import { fromSaved, type Loggable } from "../../body/model";
@@ -9,6 +9,7 @@ import { Button, Empty, Field, FloatingButton, type Notice, Press, Screen, Searc
 import { useLanguage, useText } from "../language";
 import { type ScanResult, Scanner } from "../scan/scanner";
 import { useColors } from "../theme";
+import { SavedFoodComparison } from "./food-charts";
 import { LogSheet, unitLabel } from "./log-sheet";
 import { TEXT } from "./text";
 
@@ -17,6 +18,7 @@ export function Foods({ snapshot }: { snapshot: BodyshopAppSnapshot }) {
   const language = useLanguage();
   const text = useText(TEXT);
   const colors = useColors();
+  const [comparing, setComparing] = useState(false);
   const [query, setQuery] = useState("");
   const [logging, setLogging] = useState<Loggable>();
   const [creating, setCreating] = useState(false);
@@ -29,6 +31,10 @@ export function Foods({ snapshot }: { snapshot: BodyshopAppSnapshot }) {
       floating={<Snackbar notice={notice} onUndo={() => undefined} onDone={() => setNotice(null)} />}
       fab={<FloatingButton icon={Plus} label={text.newFood} onPress={() => setCreating(true)} />}>
       {snapshot.foods.length ? <SearchField value={query} onValue={setQuery} label={text.search} /> : null}
+      {snapshot.foods.length ? <Button tone="outline" icon={BarChart3}
+        label={comparing ? text.hideFoodComparison : text.compareFoods}
+        onPress={() => setComparing(!comparing)} /> : null}
+      {comparing ? <SavedFoodComparison foods={foods} /> : null}
       {snapshot.foods.length ? <View style={{ gap: 2 }}>
         {foods.map((food) => (
           <Press key={food.id} accessibilityRole="button" onPress={() => setLogging(fromSaved(food))}

@@ -288,9 +288,28 @@ export async function updateDay(scope: BodyshopScope, input: DayInput, now = new
   return scope.exclusive((locked) => updateDayLocked(locked, input, now));
 }
 
+export async function fillHealthCheckIns(scope: BodyshopScope, rows: readonly { day: string; steps?: number; sleep?: number }[]) {
+  const days = rows.map(({ day, ...values }) => ({ day: parseDay(day), ...values }));
+  await scope.exclusive(async (locked) => {
+    for (const { day, steps, sleep } of days) {
+      const existing = await locked.list("checkin", { from: day, to: day });
+      const patch = {
+        day,
+        steps: existing.some((entry) => entry.steps != null) ? undefined : steps,
+        sleep: existing.some((entry) => entry.sleep != null) ? undefined : sleep,
+      };
+      if (patch.steps !== undefined || patch.sleep !== undefined) await saveCheckIn(locked, day, patch, existing[0]);
+    }
+  });
+}
+
 async function updateDayLocked(scope: BodyshopScope, input: DayInput, now: Date): Promise<CheckIn> {
   const day = input.day ? parseDay(input.day) : await currentDay(scope, now);
   const [existing] = await scope.list("checkin", { from: day, to: day });
+  return saveCheckIn(scope, day, input, existing);
+}
+
+async function saveCheckIn(scope: BodyshopScope, day: string, input: DayInput, existing?: CheckIn): Promise<CheckIn> {
   for (const key of ["hunger", "fatigue", "recovery"] as const) {
     const value = input[key];
     if (value !== undefined && value !== null && !(Number.isInteger(value) && value >= 1 && value <= 5)) throw new BodyshopError(`${key} must be a whole number from 1 to 5.`);

@@ -1,6 +1,6 @@
 import type { WeightReading } from "@tools-platform/service/bodyshop-contract";
 import { expect, it } from "vitest";
-import { weightSummary } from "./weight";
+import { rollingWeightAverages, weightSummary } from "./weight";
 
 const reading = (day: string, kg: number, source = "App"): WeightReading => ({ id: `${day}-${kg}`, day, kg, time: null, notes: "", source });
 
@@ -19,4 +19,15 @@ it("has no change from one weigh-in day, and leaves estimated weights out", () =
 
 it("reads a snapshot without history as no weigh-ins", () => {
   expect(weightSummary(undefined)).toEqual({ days: [], latest: null, change: null });
+});
+
+it("averages measured days in the last seven calendar days, including earlier readings outside the chart range", () => {
+  const { days } = weightSummary([
+    reading("2026-11-01", 90),
+    reading("2026-11-02", 82),
+    reading("2026-11-02", 78),
+    reading("2026-11-04", 60, "Estimated"),
+    reading("2026-11-08", 76),
+  ]);
+  expect(rollingWeightAverages(days).at(-1)).toEqual({ day: "2026-11-08", kg: 78 });
 });

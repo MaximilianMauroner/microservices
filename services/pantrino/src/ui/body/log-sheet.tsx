@@ -52,12 +52,14 @@ function Pick({ day, onFood, onClose, notify }: { day: string; onFood: (food: Lo
   const body = useBody();
   const [query, setQuery] = useState("");
   const [scanning, setScanning] = useState(false);
+  const [time, setTime] = useState("");
   const [error, setError] = useState<string>();
   const index = searchIndex(kitchen?.kitchen ?? null, body.snapshot);
   const hits = query.trim() ? search(index, query) : index.filter((hit) => hit.kind === "food").slice(0, 12);
 
   async function logMeal(hit: SearchHit) {
-    const result = await bodyStore.act({ type: "meal.log", day, template: hit.id });
+    if (!validClock(time)) return;
+    const result = await bodyStore.act({ type: "meal.log", day, template: hit.id, time: time || null });
     if (result.ok) { notify({ message: text.logged(hit.label) }); onClose(); return; }
     setError(result.reason === "refused" ? result.message : result.reason === "offline" ? text.needsConnection : text.failed);
   }
@@ -68,6 +70,7 @@ function Pick({ day, onFood, onClose, notify }: { day: string; onFood: (food: Lo
         <View style={{ flex: 1 }}><SearchField value={query} onValue={setQuery} label={text.search} /></View>
         <Button tone="outline" icon={ScanBarcode} accessibilityLabel={text.scan} onPress={() => setScanning(true)} />
       </View>
+      {hits.some((hit) => !hit.loggable) ? <ConsumptionTime value={time} onChange={setTime} /> : null}
       {error ? <T accessibilityRole="alert">{error}</T> : null}
       <View style={{ gap: 2 }}>
         {hits.map((hit) => <HitRow key={hit.key} hit={hit} onPress={() => hit.loggable ? onFood(hit.loggable) : void logMeal(hit)} />)}
@@ -112,13 +115,14 @@ function Amount({ food, meal: startMeal, day, onBack, onClose, notify }: {
   const [amount, setAmount] = useState(() => fieldNumber(food.usual, language));
   const [meal, setMeal] = useState<Meal>(() => startMeal ?? mealAt(new Date()));
   const [kcal, setKcal] = useState("");
+  const [time, setTime] = useState("");
   const [save, setSave] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const value = Number(amount.replace(",", "."));
   const typedKcal = kcal.trim() ? Number(kcal.replace(",", ".")) : undefined;
   const unknownKcal = food.nutrients.kcal === null;
-  const ready = name.trim().length > 0 && value > 0 && value <= 100_000 && (!unknownKcal || (typedKcal !== undefined && typedKcal >= 0 && typedKcal <= 20_000));
+  const ready = validClock(time) && name.trim().length > 0 && value > 0 && value <= 100_000 && (!unknownKcal || (typedKcal !== undefined && typedKcal >= 0 && typedKcal <= 20_000));
   const values = value > 0 ? scaled(food, value) : null;
   const canSave = !food.savedId && food.nutrients.kcal !== null;
 
@@ -134,7 +138,7 @@ function Amount({ food, meal: startMeal, day, onBack, onClose, notify }: {
       const stored = bodyStore.getState().snapshot?.foods.find((one) => one.name.toLowerCase() === name.trim().toLowerCase());
       if (stored) target = { ...food, savedId: stored.id };
     }
-    const result = await act(logAction(target, { name, amount: value, meal, day, kcal: typedKcal }));
+    const result = await act({ ...logAction(target, { name, amount: value, meal, day, kcal: typedKcal }), time: time || null });
     setBusy(false);
     if (result.ok) {
       notify({ message: result.repeated ? text.alreadyLogged(name.trim()) : text.logged(name.trim()) });
@@ -157,6 +161,7 @@ function Amount({ food, meal: startMeal, day, onBack, onClose, notify }: {
           <T muted>{unitLabel(food.unit, language, value)}</T>
         </View>
       </View>
+      <ConsumptionTime value={time} onChange={setTime} />
       <View accessibilityRole="radiogroup" accessibilityLabel={text.meal} style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
         {MEALS.map((one) => (
           <Press key={one} accessibilityRole="radio" accessibilityState={{ checked: meal === one }} onPress={() => setMeal(one)}
@@ -195,5 +200,26 @@ function Amount({ food, meal: startMeal, day, onBack, onClose, notify }: {
         <Button wide label={text.log} disabled={!ready || busy} onPress={() => void log()} />
       </View>
     </>
+  );
+}
+
+
+const CLOCK_TEXT = {
+  en: { label: "Time eaten (optional, Vienna time)", invalid: "Enter a time as HH:MM." },
+  de: { label: "Uhrzeit der Mahlzeit (optional, Wiener Zeit)", invalid: "Gib die Uhrzeit als HH:MM ein." },
+};
+
+function validClock(value: string) {
+  return value === "" || /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
+}
+
+function ConsumptionTime({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const text = useText(CLOCK_TEXT);
+  return (
+    <View style={{ gap: 6 }}>
+      <T weight="medium">{text.label}</T>
+      <Field accessibilityLabel={text.label} value={value} onChangeText={onChange} placeholder="HH:MM" maxLength={5} />
+      {validClock(value) ? null : <T muted>{text.invalid}</T>}
+    </View>
   );
 }

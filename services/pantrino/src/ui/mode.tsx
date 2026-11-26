@@ -70,7 +70,11 @@ export function ModeProvider({ children }: { children: ReactNode }) {
   useEffect(() => { void SecureStore.setItemAsync(MODE_KEY, mode).catch(() => undefined); }, [mode]);
   useEffect(() => { if (mode === "body" && access !== "shown") go("kitchen"); }, [mode, access]);
   // Body can leave the shared day on another date. Kitchen shows today's calories, so it brings the day back to today.
-  useEffect(() => { if (mode === "kitchen" && snapshot && snapshot.day !== snapshot.today) void bodyStore.refresh(snapshot.today); }, [mode, snapshot]);
+  const bodyDay = snapshot?.day;
+  const bodyToday = snapshot?.today;
+  useEffect(() => {
+    if (mode === "kitchen" && bodyToday && bodyDay !== bodyToday) void bodyStore.refresh(bodyToday);
+  }, [mode, bodyDay, bodyToday]);
   useEffect(() => {
     const switching = arriving.current;
     if (switching?.mode !== mode) return;

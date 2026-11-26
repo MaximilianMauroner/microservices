@@ -36,6 +36,7 @@ function Gate() {
         <Stack.Protected guard={(session === "signed-in" || session === "local")}>
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="settings" />
+          <Stack.Screen name="health-metrics-settings" />
           <Stack.Screen name="search" />
         </Stack.Protected>
         <Stack.Protected guard={session === "signed-out"}>

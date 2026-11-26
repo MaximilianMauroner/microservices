@@ -1,4 +1,4 @@
-import { addDays, type CheckIn, type DayStatus, type DaySummary, daysBetween, type WeightReading } from "../domain.js";
+import { addDays, type CheckIn, type DayStatus, type DaySummary, daysBetween, type EngineState, type WeightReading } from "../domain.js";
 import type { Settings } from "../settings.js";
 import { forecast, mean, sampleDeviation, slope, slopeError } from "./stats.js";
 import { dailyMeanWeights, type WeightDay, weightTrend } from "./weight.js";
@@ -69,12 +69,10 @@ export const GATES = [
 /** The first evidence check that stops a refresh on a day, or Ready when all pass. */
 export type Gate = (typeof GATES)[number];
 
-export const ENGINE_STATES = ["Open day", "Review", "Building", "Stale", "Holding", "Updating"] as const;
 /**
  * Building: not enough matched history. Updating: usable recent estimate. Holding: last valid estimate kept with
  * wider bounds. Stale or Review: current numbers are hidden. Open day: the current logging day.
  */
-export type EngineState = (typeof ENGINE_STATES)[number];
 
 /** The expenditure fit of one calendar day (sheet "Model engine"). Every window ends on this day. */
 export type EngineDay = Readonly<{
