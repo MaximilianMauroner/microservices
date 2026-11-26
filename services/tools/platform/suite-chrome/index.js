@@ -1,36 +1,3 @@
-/** @typedef {"tools" | "publish" | "review" | "status" | "manage"} SuiteDestination */
-
-/** @type {ReadonlyArray<{id: SuiteDestination, href: string, label: string}>} */
-const destinations = [
-  { id: "tools", href: "/", label: "Tools" },
-  { id: "publish", href: "/publish", label: "Publish" },
-  { id: "review", href: "/review", label: "Review" },
-  { id: "status", href: "/status", label: "Status" },
-  { id: "manage", href: "/manage", label: "Manage" }
-];
-
-/**
- * @param {SuiteDestination} active
- * @returns {string}
- */
-export function renderSuiteChrome(active) {
-  const renderLinks = () => destinations.map((destination) =>
-    `<a href="${destination.href}"${destination.id === active ? ' aria-current="page"' : ""}>${destination.label}</a>`
-  ).join("");
-  const links = renderLinks();
-  return `<a class="suite-skip skip-link" href="#main">Skip to content</a>
-    <header class="suite-header" data-suite-shell="command-deck">
-      <div class="suite-header__inner">
-        <a class="suite-brand" href="/" aria-label="Mauroner Tools home"><span aria-hidden="true">M</span>Mauroner Tools</a>
-        <nav class="suite-nav" aria-label="Mauroner Tools">${links}</nav>
-        <details class="suite-menu">
-          <summary>Menu</summary>
-          <nav aria-label="Mauroner Tools mobile">${renderLinks()}</nav>
-        </details>
-      </div>
-    </header>`;
-}
-
 /** Canonical framework-neutral tokens and primitives for every suite surface. */
 export const suiteChromeStyles = String.raw`
 :root {

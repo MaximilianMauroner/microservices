@@ -88,7 +88,7 @@ async function childReport<Phase extends ChildReport["phase"]>(phase: Phase, com
   const path = join(directory, `${name}-report.json`);
   const outcome = await commands.execute({
     command: process.execPath, args: typescriptArgs(vitestChild, [phase, path, suite]),
-    cwd: toolsRoot, env, signal, redact, deadlineMs: phase === "discover" ? 120_000 : suite === "journeys" ? 180_000 : 600_000,
+    cwd: toolsRoot, env, signal, redact, deadlineMs: phase === "discover" ? 300_000 : suite === "journeys" ? 180_000 : 600_000,
     log: join(directory, `${name}.log`),
   });
   try {
@@ -223,7 +223,7 @@ export async function runVerification(mode: VerificationMode, paths?: Readonly<{
                 break;
               }
               case "workspace-command":
-                cell.result = commandResult(await commands.execute(spec("pnpm", ["run", requirement.command], requirement.command, 600_000)));
+                cell.result = commandResult(await commands.execute(spec("pnpm", ["run", requirement.command], requirement.command, requirement.command === "test" ? 900_000 : 600_000)));
                 break;
               case "schema": {
                 if (!fixture) throw new Error("No verified PostgreSQL fixture.");

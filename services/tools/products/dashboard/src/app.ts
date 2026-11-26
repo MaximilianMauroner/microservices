@@ -1,16 +1,6 @@
 import { suiteChromeStyles } from "#suite-chrome";
-import type { PublicSnapshotDocument } from "#domain";
 import { BucketReadError } from "./bucket.js";
 import type { WebStorage } from "./storage.js";
-import {
-  renderPublicPage,
-  renderStatusPage
-} from "./ui/index.js";
-
-export interface PageRenderer {
-  public(snapshot: PublicSnapshotDocument, publicOrigin: string): string;
-  status(snapshot: PublicSnapshotDocument, publicOrigin: string): string;
-}
 
 export interface AppLogger {
   info(event: string, fields: Readonly<Record<string, string | number>>): void;
@@ -35,11 +25,8 @@ export class AuthenticationRequiredError extends Error {
 export function createApp(options: {
   storage: WebStorage;
   authenticate: PrincipalAuthenticator;
-  trustedOrigin: string;
-  renderer?: PageRenderer;
   logger?: AppLogger;
 }): (request: Request) => Promise<Response> {
-  const renderer = options.renderer ?? defaultRenderer;
   const logger = options.logger ?? safeConsoleLogger;
 
   return async (request) => {
@@ -51,9 +38,7 @@ export function createApp(options: {
         request,
         url,
         options.storage,
-        options.authenticate,
-        renderer,
-        options.trustedOrigin
+        options.authenticate
       );
       logger.info("request.complete", {
         requestId,
@@ -81,28 +66,17 @@ async function route(
   request: Request,
   url: URL,
   storage: WebStorage,
-  authenticate: PrincipalAuthenticator,
-  renderer: PageRenderer,
-  trustedOrigin: string
+  authenticate: PrincipalAuthenticator
 ): Promise<Response> {
-  if (request.method === "GET" && url.pathname === "/health") {
-    await storage.readiness();
-    return json({ ok: true });
-  }
-  if (request.method === "GET" && url.pathname === "/live") {
-    return json({ ok: true });
-  }
   const readMethod = request.method === "GET" || request.method === "HEAD";
   if (readMethod && url.pathname === "/api/public/catalog") {
     return json(await storage.readPublicSnapshot(), {
       headers: { "Cache-Control": "public, max-age=60, stale-while-revalidate=240" }
     });
   }
-  if (readMethod && url.pathname === "/") {
-    return html(renderer.public(await storage.readPublicSnapshot(), trustedOrigin));
-  }
-  if (readMethod && url.pathname === "/status") {
-    return html(renderer.status(await storage.readPublicSnapshot(), trustedOrigin));
+  if (request.method === "HEAD" && (url.pathname === "/" || url.pathname === "/status")) {
+    await storage.readPublicSnapshot();
+    return pageHead();
   }
   if (readMethod && url.pathname === "/assets/suite.css") {
     return new Response(suiteChromeStyles, {
@@ -161,17 +135,8 @@ function withCommonHeaders(response: Response, requestId: string): Response {
   return new Response(response.body, { status: response.status, headers });
 }
 
-const defaultRenderer: PageRenderer = {
-  public(snapshot, publicOrigin) {
-    return renderPublicPage(snapshot, publicOrigin);
-  },
-  status(snapshot, publicOrigin) {
-    return renderStatusPage(snapshot, publicOrigin);
-  }
-};
-
-function html(body: string): Response {
-  return new Response(body, {
+function pageHead(): Response {
+  return new Response(null, {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": "public, max-age=60",

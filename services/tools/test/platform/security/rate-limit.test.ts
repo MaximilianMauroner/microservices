@@ -16,6 +16,8 @@ describe("rate limit", () => {
     for (let i = 0; i < 20_000; i++) allow(`noise-${i}`, 2);
     expect(allow("target", 3), "new keys cannot reset an active count").toBe(false);
     expect(allow("target", 60_000), "the window still ends").toBe(true);
+    expect(allow("fresh", 60_002)).toBe(true);
+    expect(allow("fresh", 60_003), "expired keys free capacity for new clients").toBe(false);
   });
 
   it("reads the client address that Cloudflare sets", () => {

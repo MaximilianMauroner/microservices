@@ -26,7 +26,10 @@ seeds both services, starts the Tools server from the build above, checks
 readiness and Document Share HTTP access, checks signed storage, and runs the
 required public journeys. Each receipt cell records its elapsed time in
 `durationMs`. Use those times to find the slow stage before changing tools or
-removing checks.
+removing checks. Discovery logs report Vitest startup, file search, test
+collection, and shutdown. Discovery has a five-minute limit and still requires
+a complete report. The workspace test command has a 15-minute limit. A
+deadline receipt ends the run before dependent stages.
 
 The runner resolves MinIO from a verified local image, a saved archive, or a
 Docker build. The default archive directory is `$XDG_CACHE_HOME/tools-verify`
