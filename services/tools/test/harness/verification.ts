@@ -88,7 +88,8 @@ async function childReport<Phase extends ChildReport["phase"]>(phase: Phase, com
   const path = join(directory, `${name}-report.json`);
   const outcome = await commands.execute({
     command: process.execPath, args: typescriptArgs(vitestChild, [phase, path, suite]),
-    cwd: toolsRoot, env, signal, redact, deadlineMs: phase === "discover" ? 300_000 : suite === "journeys" ? 180_000 : 600_000,
+    cwd: toolsRoot, env: { ...env, VITEST_MAX_WORKERS: "1" }, signal, redact,
+    deadlineMs: phase === "discover" ? 300_000 : suite === "journeys" ? 180_000 : 600_000,
     log: join(directory, `${name}.log`),
   });
   try {

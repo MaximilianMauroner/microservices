@@ -75,6 +75,7 @@ export async function createOwnedPostgres() {
   }`);
   await writeFile(join(target, "vitest-child.ts"), `import {readFileSync,writeFileSync} from 'node:fs';
 import {requiredJourneyCases,mountedStatusCase} from './receipt.ts';
+if(process.env.VITEST_MAX_WORKERS!=='1') throw new Error('Owned fixture suites must use one worker');
 const phase=process.argv[2];
 if(process.argv[4]==='journeys') {
   const controls=JSON.parse(readFileSync(new URL('../../../../fixture-controls.json',import.meta.url),'utf8'));
@@ -242,7 +243,7 @@ describe("terminal verification CLI", { timeout: 50_000 }, () => {
   });
 
   it("requires identity, built Tools, and mounted Status receipts before workspace success", async () => {
-    const result = await run({ FIXTURE_MODE: "workspace", FIXTURE_JOURNEY_LEAK: "1" });
+    const result = await run({ FIXTURE_MODE: "workspace", FIXTURE_JOURNEY_LEAK: "1", VITEST_MAX_WORKERS: "2" });
     expect(result.code).toBe(0);
     expect(result.record.cells.every((cell: { durationMs: number }) => Number.isFinite(cell.durationMs) && cell.durationMs >= 0)).toBe(true);
     expect(result.record.minio).toMatchObject({ source: "store", platform: "linux/amd64" });
